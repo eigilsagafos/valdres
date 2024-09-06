@@ -1,0 +1,5 @@
+{
+    "name": "@valdres/test",
+    "module": "index.ts",
+    "private": true
+}

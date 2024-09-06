@@ -1,0 +1,20 @@
+{
+    "name": "@valdres/react",
+    "version": "0.0.0",
+    "module": "out/index.js",
+    "type": "module",
+    "scripts": {
+        "build": "bun scripts/build.ts"
+    },
+    "devDependencies": {
+        "@testing-library/react-hooks": "8.0.1",
+        "@valdres/test": "workspace:^",
+        "react": ">=18",
+        "react-dom": ">=18",
+        "recoil": "0.7.7",
+        "typescript": "5.5.4"
+    },
+    "peerDependencies": {
+        "@valdres/core": "workspace:^"
+    }
+}

@@ -1,0 +1,19 @@
+name: Test
+on:
+    push:
+        branches:
+            - main
+jobs:
+    test:
+        runs-on: ubuntu-22.04
+        steps:
+            - uses: actions/checkout@v4
+            - uses: oven-sh/setup-bun@v2
+            - name: Install
+              run: bun install
+            - name: Test Core
+              working-directory: ./packages/core
+              run: bun test
+            - name: Test React
+              working-directory: ./packages/react
+              run: bun test

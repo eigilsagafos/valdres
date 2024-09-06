@@ -1,0 +1,16 @@
+{
+    "name": "@valdres/core",
+    "version": "0.0.0",
+    "module": "index.ts",
+    "type": "module",
+    "scripts": {
+        "build": "bun scripts/build.ts"
+    },
+    "devDependencies": {
+        "@testing-library/react-hooks": "8.0.1",
+        "react": ">=18",
+        "react-dom": ">=18",
+        "recoil": "0.7.7",
+        "typescript": "5.5.4"
+    }
+}
