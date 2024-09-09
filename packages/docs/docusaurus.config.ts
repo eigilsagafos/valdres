@@ -4,23 +4,14 @@ import type * as Preset from "@docusaurus/preset-classic"
 
 const config: Config = {
     title: "Valdres State Management",
-    tagline: "Dinosaurs are cool",
+    tagline: "Faster than Recoil and more Recoil than Jotai",
     favicon: "img/valdres.svg",
-
-    // Set the production url of your site here
     url: "https://valdres.dev",
-    // Set the /<baseUrl>/ pathname under which your site is served
-    // For GitHub pages deployment, it is often '/<projectName>/'
     baseUrl: "/",
-
-    // GitHub pages deployment config.
-    // If you aren't using GitHub pages, you don't need these.
     organizationName: "eigilsagafos", // Usually your GitHub org/user name.
     projectName: "valdres", // Usually your repo name.
-
     onBrokenLinks: "throw",
     onBrokenMarkdownLinks: "warn",
-
     // Even if you don't use internationalization, you can use this field to set
     // useful metadata like html lang. For example, if your site is Chinese, you
     // may want to replace "en" with "zh-Hans".
@@ -65,7 +56,7 @@ const config: Config = {
         {
             src: "https://plausible.io/js/script.js",
             defer: true,
-            "data-domain": "yourdomain.com",
+            "data-domain": "valdres.dev",
         },
     ],
     plugins: [
@@ -76,9 +67,9 @@ const config: Config = {
         // Replace with your project's social card
         image: "img/docusaurus-social-card.jpg",
         navbar: {
-            title: "My Site",
+            title: "Valdres",
             logo: {
-                alt: "My Site Logo",
+                alt: "Valdres Logo",
                 src: "img/valdres.svg",
             },
             items: [

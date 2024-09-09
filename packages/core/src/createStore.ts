@@ -13,6 +13,7 @@ import type { State } from "./types/State"
 import type { Store } from "./types/Store"
 import type { StoreData } from "./types/StoreData"
 import type { GetValue } from "./types/GetValue"
+import { resetAtom } from "./lib/resetAtom"
 
 const generateId = () => (Math.random() + 1).toString(36).substring(7)
 
@@ -45,9 +46,7 @@ export const createStore = (id?: string): Store => {
         // if (sw new Error("Invalid state object passed to set")
     }
 
-    const reset = <V>(atom: Atom<V>) => {
-        initAtom(atom, data)
-    }
+    const reset = <V>(atom: Atom<V>) => resetAtom(atom, data)
 
     const sub = <V>(
         state: State<V> | Family<V, any>,

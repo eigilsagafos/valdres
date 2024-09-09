@@ -1,4 +1,4 @@
-import equal from "fast-deep-equal/es6"
+import equal from "fast-deep-equal"
 import { propagateUpdatedAtoms } from "./propagateUpdatedAtoms"
 import { getState } from "./getState"
 import type { Atom } from "../types/Atom"

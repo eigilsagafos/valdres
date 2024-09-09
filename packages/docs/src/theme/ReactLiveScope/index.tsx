@@ -182,13 +182,19 @@ const CompareFPS = () => {
 }
 
 // Add react-live imports you need here
+const packages = {
+    "@valdres/react": valdres,
+}
+
 const ReactLiveScope = {
     React,
     ...React,
-    valdres,
-    jotai,
-    recoil,
+    // valdres,
+    // jotai,
+    // recoil,
     CompareFPS,
+    // ...valdres,
+    require: lib => packages[lib],
 }
 
 export default ReactLiveScope

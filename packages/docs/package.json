@@ -14,6 +14,7 @@
         "typecheck": "tsc"
     },
     "dependencies": {
+        "@valdres/react": "workspace:^",
         "@docusaurus/core": "3.5.2",
         "@docusaurus/preset-classic": "3.5.2",
         "@docusaurus/theme-live-codeblock": "3.5.2",
@@ -22,11 +23,11 @@
         "@faker-js/faker": "9.0.0",
         "clsx": "^2.0.0",
         "jotai": "2.9.3",
+        "mitata": "0.1.14",
         "prism-react-renderer": "^2.3.0",
         "react": "^18.0.0",
         "react-dom": "^18.0.0",
-        "recoil": "0.7.7",
-        "@valdres/react": "workspace:^"
+        "recoil": "0.7.7"
     },
     "devDependencies": {
         "@docusaurus/module-type-aliases": "3.5.2",
