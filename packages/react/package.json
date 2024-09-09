@@ -1,8 +1,11 @@
 {
     "name": "@valdres/react",
-    "version": "0.1.0-alpha.3",
-    "module": "out/index.js",
+    "version": "0.1.0-alpha.4",
+    "module": "dist/index.js",
     "type": "module",
+    "files": [
+        "dist"
+    ],
     "scripts": {
         "build": "bun scripts/build.ts"
     },

@@ -1,7 +1,10 @@
 {
     "name": "@valdres/core",
-    "version": "0.1.0-alpha.3",
-    "module": "index.ts",
+    "version": "0.1.0-alpha.4",
+    "module": "dist/index.js",
+    "files": [
+        "dist"
+    ],
     "type": "module",
     "scripts": {
         "build": "bun scripts/build.ts"
