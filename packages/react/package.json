@@ -1,6 +1,6 @@
 {
     "name": "@valdres/react",
-    "version": "0.1.0-alpha.2",
+    "version": "0.1.0-alpha.3",
     "module": "out/index.js",
     "type": "module",
     "scripts": {
@@ -17,5 +17,9 @@
     "peerDependencies": {
         "@valdres/core": "workspace:^"
     },
-    "gitHead": "b4251ba39ee8e340a23633a8cc12732c01de080f"
+    "publishConfig": {
+        "access": "public",
+        "registry": "https://registry.npmjs.org/"
+    },
+    "gitHead": "53245fd1a080cdb1131f5be9056adc546d05ead4"
 }
