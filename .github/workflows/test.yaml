@@ -11,9 +11,5 @@ jobs:
             - uses: oven-sh/setup-bun@v2
             - name: Install
               run: bun install
-            - name: Test Core
-              working-directory: ./packages/core
-              run: bun test
-            - name: Test React
-              working-directory: ./packages/react
-              run: bun test
+            - name: Test
+              run: bun run test

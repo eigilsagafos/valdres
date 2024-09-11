@@ -1,0 +1,28 @@
+{
+    "name": "@valdres/hotkeys",
+    "version": "0.1.0-alpha.7",
+    "module": "dist/index.js",
+    "type": "module",
+    "files": [
+        "dist"
+    ],
+    "scripts": {
+        "build": "bun scripts/build.ts"
+    },
+    "devDependencies": {
+        "@testing-library/react-hooks": "8.0.1",
+        "@valdres/test": "workspace:^",
+        "react": ">=18",
+        "react-dom": ">=18",
+        "recoil": "0.7.7",
+        "typescript": "5.5.4"
+    },
+    "peerDependencies": {
+        "valdres": "workspace:^"
+    },
+    "publishConfig": {
+        "access": "public",
+        "registry": "https://registry.npmjs.org/"
+    },
+    "gitHead": "53245fd1a080cdb1131f5be9056adc546d05ead4"
+}

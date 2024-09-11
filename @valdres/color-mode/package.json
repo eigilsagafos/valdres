@@ -1,0 +1,23 @@
+{
+    "name": "@valdres/color-mode",
+    "version": "0.1.0-alpha.7",
+    "module": "dist/index.js",
+    "files": [
+        "dist"
+    ],
+    "type": "module",
+    "scripts": {
+        "build": "bun scripts/build.ts"
+    },
+    "dependencies": {},
+    "devDependencies": {
+        "recoil": "0.7.7",
+        "typescript": "5.5.4",
+        "happy-dom": "15.7.4"
+    },
+    "publishConfig": {
+        "access": "public",
+        "registry": "https://registry.npmjs.org/"
+    },
+    "gitHead": "53245fd1a080cdb1131f5be9056adc546d05ead4"
+}
