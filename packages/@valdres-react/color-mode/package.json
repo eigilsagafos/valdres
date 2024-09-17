@@ -1,13 +1,15 @@
 {
     "name": "@valdres-react/color-mode",
-    "version": "0.1.0-alpha.7",
+    "version": "0.1.0-alpha.8",
     "module": "dist/index.js",
+    "types": "dist/index.d.ts",
     "files": [
         "dist"
     ],
     "type": "module",
     "scripts": {
-        "build": "bun scripts/build.ts"
+        "build": "bun scripts/build.ts",
+        "build:types": "tsc index.ts --declaration --emitDeclarationOnly --outDir dist"
     },
     "dependencies": {
         "@valdres/color-mode": "workspace:^",

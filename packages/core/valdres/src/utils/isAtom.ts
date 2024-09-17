@@ -1,3 +1,3 @@
-import type { Atom } from "../types/Atom"
+import type { State } from "../types/State"
 
-export const isAtom = (state: Atom<any>) => Object.hasOwn(state, "defaultValue")
+export const isAtom = (state: State) => Object.hasOwn(state, "defaultValue")

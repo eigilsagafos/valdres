@@ -5,6 +5,6 @@ await build({
     outdir: "./dist",
     target: "browser",
     packages: "external",
-    minify: true,
     format: "esm",
+    // minify: true,
 }).then(res => console.log(res))

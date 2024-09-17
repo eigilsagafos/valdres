@@ -3,6 +3,7 @@
     "type": "module",
     "scripts": {
         "build": "bun run lerna run build",
+        "build:types": "bun run lerna run build:types",
         "test": "bun run lerna run test"
     },
     "workspaces": [

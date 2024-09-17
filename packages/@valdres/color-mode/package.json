@@ -1,21 +1,23 @@
 {
     "name": "@valdres/color-mode",
-    "version": "0.1.0-alpha.7",
+    "version": "0.1.0-alpha.8",
     "module": "dist/index.js",
+    "types": "dist/index.d.ts",
     "files": [
         "dist"
     ],
     "type": "module",
     "scripts": {
-        "build": "bun scripts/build.ts"
+        "build": "bun scripts/build.ts",
+        "build:types": "tsc index.ts --declaration --emitDeclarationOnly --outDir dist"
     },
     "dependencies": {
         "valdres": "workspace:^"
     },
     "devDependencies": {
+        "happy-dom": "15.7.4",
         "recoil": "0.7.7",
-        "typescript": "5.5.4",
-        "happy-dom": "15.7.4"
+        "typescript": "5.5.4"
     },
     "publishConfig": {
         "access": "public",
