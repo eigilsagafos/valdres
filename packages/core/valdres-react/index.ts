@@ -1,10 +1,14 @@
 export {
     atom,
     atomFamily,
-    selector,
-    selectorFamily,
     createStore,
     getDefaultStore,
+    isAtom,
+    isFamily,
+    isPromiseLike,
+    isSelector,
+    selector,
+    selectorFamily,
 } from "valdres"
 export { useResetValdresState } from "./src/useResetValdresState"
 export { useSetValdresState } from "./src/useSetValdresState"

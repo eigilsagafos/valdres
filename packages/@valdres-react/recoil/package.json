@@ -1,5 +1,5 @@
 {
-    "name": "valdres",
+    "name": "@valdres-react/recoil",
     "version": "0.1.0-alpha.9",
     "module": "dist/index.js",
     "types": "dist/index.d.ts",
@@ -9,17 +9,13 @@
     "type": "module",
     "scripts": {
         "build": "bun scripts/build.ts",
-        "build:types": "tsc index.ts --declaration --emitDeclarationOnly --outDir dist",
-        "test": "bun test"
+        "build:types": "tsc index.ts --declaration --emitDeclarationOnly --outDir dist"
     },
     "dependencies": {
-        "fast-deep-equal": ">=3"
+        "@valdres/color-mode": "workspace:^",
+        "valdres-react": "workspace:^"
     },
     "devDependencies": {
-        "@testing-library/react-hooks": "8.0.1",
-        "react": ">=18",
-        "react-dom": ">=18",
-        "recoil": "0.7.7",
         "typescript": "5.5.4"
     },
     "publishConfig": {

@@ -1,3 +1,3 @@
 ---
-title: About
+title: Getting Started
 ---
