@@ -1,6 +1,6 @@
 {
     "name": "valdres-react",
-    "version": "0.1.0-alpha.10",
+    "version": "0.1.0-alpha.11",
     "module": "dist/index.js",
     "types": "dist/index.d.ts",
     "type": "module",
