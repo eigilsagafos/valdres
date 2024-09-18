@@ -1,4 +1,5 @@
 export { atom } from "./src/atom"
 export { atomFamily } from "./src/atomFamily"
+export { isRecoilValue } from "./src/isRecoilValue"
 export { selector } from "./src/selector"
 export { selectorFamily } from "./src/selectorFamily"
