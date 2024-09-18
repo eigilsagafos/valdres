@@ -1,7 +1,7 @@
 import { describe, test, expect } from "bun:test"
 import { renderHook } from "@testing-library/react-hooks"
 import { useResetValdresState } from "./useResetValdresState"
-import { atom, atomFamily, getDefaultStore } from "../../valdres"
+import { atom, atomFamily, getDefaultStore } from "valdres"
 
 describe("useResetValdresState", () => {
     test("atom with primitive value", () => {

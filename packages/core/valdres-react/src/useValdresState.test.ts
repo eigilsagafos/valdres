@@ -1,7 +1,7 @@
 import { describe, test, expect } from "bun:test"
 import { renderHook } from "@testing-library/react-hooks"
 import { useValdresState } from "./useValdresState"
-import { atom } from "../../valdres"
+import { atom } from "valdres"
 
 describe("useValdresState", () => {
     test("default", () => {

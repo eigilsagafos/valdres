@@ -1,5 +1,5 @@
 import { useRef, type ReactNode } from "react"
-import { createStore, type Store, type Atom } from "../../valdres"
+import { createStore, type Store, type Atom } from "valdres"
 import { StoreContext } from "./lib/StoreContext"
 
 type InitializeCallback = () => [Atom, any][]

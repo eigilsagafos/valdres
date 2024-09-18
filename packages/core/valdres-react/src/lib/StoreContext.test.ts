@@ -1,9 +1,4 @@
 import { describe, test, expect, mock } from "bun:test"
-import { createStore } from "../createStore"
-import { atom } from "../atom"
-import { wait } from "../../test/utils/wait"
-import { initAtom } from "./initAtom"
-import { setAtom } from "./setAtom"
 
 describe("StoreContext", () => {
     test("set with direct value", () => {

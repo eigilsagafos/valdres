@@ -1,4 +1,4 @@
-import { isPromiseLike, type State } from "../../valdres"
+import { isPromiseLike, type State } from "valdres"
 import { useSyncExternalStore } from "react"
 import { useValdresStore } from "./useValdresStore"
 

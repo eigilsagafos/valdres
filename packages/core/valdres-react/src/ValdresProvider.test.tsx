@@ -1,6 +1,6 @@
 import { describe, test, expect } from "bun:test"
 import { renderHook } from "@testing-library/react-hooks"
-import { createStore } from "../../valdres"
+import { createStore } from "valdres"
 import { useValdresStoreId } from "./useValdresStoreId"
 import { ValdresProvider } from "./ValdresProvider"
 

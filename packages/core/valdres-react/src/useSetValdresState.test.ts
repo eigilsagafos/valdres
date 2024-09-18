@@ -1,6 +1,6 @@
 import { describe, test, expect } from "bun:test"
 import { renderHook } from "@testing-library/react-hooks"
-import { atom, getDefaultStore } from "../../valdres"
+import { atom, getDefaultStore } from "valdres"
 import { useSetValdresState } from "./useSetValdresState"
 
 describe("useSetValdresState", () => {

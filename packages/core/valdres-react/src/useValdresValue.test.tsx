@@ -1,6 +1,5 @@
 import { describe, test, expect } from "bun:test"
 import { renderHook } from "@testing-library/react-hooks"
-import { wait } from "@valdres/test"
 import { useValdresValue } from "./useValdresValue"
 import {
     atom,
@@ -8,7 +7,7 @@ import {
     getDefaultStore,
     selector,
     selectorFamily,
-} from "../../valdres"
+} from "valdres"
 
 describe("useValdresValue", () => {
     test("atom", () => {

@@ -1,6 +1,6 @@
 import { describe, test, expect } from "bun:test"
 import { renderHook } from "@testing-library/react-hooks"
-import { atom } from "../../valdres"
+import { atom } from "valdres"
 import { useValdresCallback } from "./useValdresCallback"
 
 describe("useValdresCallback", () => {
