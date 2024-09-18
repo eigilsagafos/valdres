@@ -62,6 +62,14 @@ const config: Config = {
     ],
     plugins: [
         "@docusaurus/theme-live-codeblock",
+        [
+            "posthog-docusaurus",
+            {
+                apiKey: "phc_MjR7xyzZcHEsrr09GnGgBUmZ0I40u3T3kbn5BEkd95v",
+                // appUrl: "<ph_client_api_host>", // optional, defaults to "https://us.i.posthog.com"
+                enableInDevelopment: false, // optional
+            },
+        ],
         // [
         //     "@docusaurus/plugin-client-redirects",
         //     {
