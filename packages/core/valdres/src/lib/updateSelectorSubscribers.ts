@@ -15,7 +15,12 @@ export const updateSelectorSubscribers = (
 
     if (!subscribtions?.size && !familySubscriptions?.size) return
 
-    const newValue = initSelector(selector, data)
+    let newValue
+    try {
+        newValue = initSelector(selector, data)
+    } catch (e) {
+        // We have to do this as jotai does not check if the value has changed
+    }
     if (equal(newValue, oldValue)) return
 
     if (subscribtions?.size) {
