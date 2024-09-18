@@ -1,6 +1,6 @@
 {
     "name": "valdres-react",
-    "version": "0.1.0-alpha.9",
+    "version": "0.1.0-alpha.10",
     "module": "dist/index.js",
     "types": "dist/index.d.ts",
     "type": "module",
@@ -11,6 +11,9 @@
         "build": "bun scripts/build.ts",
         "build:types": "tsc index.ts --declaration --emitDeclarationOnly --outDir dist",
         "test": "bun test"
+    },
+    "dependencies": {
+        "valdres": "workspace:^"
     },
     "devDependencies": {
         "@testing-library/react-hooks": "8.0.1",
