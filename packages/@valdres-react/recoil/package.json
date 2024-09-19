@@ -1,6 +1,6 @@
 {
     "name": "@valdres-react/recoil",
-    "version": "0.1.0-alpha.17",
+    "version": "0.1.0-alpha.18",
     "license": "MIT",
     "author": {
         "name": "Eigil Sagafos"
@@ -14,7 +14,7 @@
         "dist"
     ],
     "scripts": {
-        "build": "bun scripts/build.ts",
+        "build": "NODE_ENV=production bun scripts/build.ts",
         "build:types": "tsc index.ts --declaration --emitDeclarationOnly --outDir dist"
     },
     "dependencies": {

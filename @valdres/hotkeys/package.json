@@ -7,7 +7,7 @@
         "dist"
     ],
     "scripts": {
-        "build": "bun scripts/build.ts"
+        "build": "NODE_ENV=production bun scripts/build.ts"
     },
     "devDependencies": {
         "@testing-library/react-hooks": "8.0.1",

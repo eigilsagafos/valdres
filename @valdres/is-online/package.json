@@ -7,7 +7,7 @@
     ],
     "type": "module",
     "scripts": {
-        "build": "bun scripts/build.ts"
+        "build": "NODE_ENV=production bun scripts/build.ts"
     },
     "dependencies": {},
     "devDependencies": {
