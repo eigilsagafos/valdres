@@ -12,8 +12,10 @@ jobs:
             - name: Install
               run: bun install
             - name: Build
-              working-directory: ./packages/core/docs
               run: bun run build
+            # - name: Build
+            #   working-directory: ./packages/core/docs
+            #   run: bun run build
             - name: Upload website artifact
               uses: actions/upload-pages-artifact@v3
               with:
