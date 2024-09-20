@@ -1,13 +1,11 @@
 import equal from "fast-deep-equal"
-import type { Selector } from "../types/Selector"
-import type { State } from "../types/State"
-import type { StoreData } from "../types/StoreData"
 import { initSelector } from "./initSelector"
+import type { Selector } from "../types/Selector"
+import type { StoreData } from "../types/StoreData"
 
 export const updateSelectorSubscribers = (
     selector: Selector,
     data: StoreData,
-    oldValue,
 ) => {
     const subscribtions = data.subscriptions.get(selector)
     const familySubscriptions =
@@ -15,16 +13,29 @@ export const updateSelectorSubscribers = (
 
     if (!subscribtions?.size && !familySubscriptions?.size) return
 
-    let newValue
-    try {
-        newValue = initSelector(selector, data)
-    } catch (e) {
-        // We have to do this as jotai does not check if the value has changed
+    if (
+        (subscribtions?.size &&
+            data.subscriptionsRequireEqualCheck.get(selector)) ||
+        (familySubscriptions?.size &&
+            data.subscriptionsRequireEqualCheck.get(selector.family))
+    ) {
+        /**
+         * As this is just an optimization to check stop subscription callbacks if a value
+         * did not change we catch any errors here to let it bubble up in the right place
+         * later on. The case might sometime be that the subscription is destroyed before
+         * the value is ever used, and the error might be because of state changes that
+         * also leads to the subscripion no longer being relevant.
+         */
+        try {
+            const oldValue = data.expiredValues.get(selector)
+            const newValue = initSelector(selector, data)
+            if (equal(newValue, oldValue)) return
+        } catch (e) {}
     }
-    if (equal(newValue, oldValue)) return
 
     if (subscribtions?.size) {
         for (const subscribtion of subscribtions) {
+            console.log(subscribtion)
             subscribtion.callback()
         }
     }

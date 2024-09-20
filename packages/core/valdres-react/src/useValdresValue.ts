@@ -5,7 +5,7 @@ import { useValdresStore } from "./useValdresStore"
 export const useValdresValue = (state: State) => {
     const store = useValdresStore()
     const res = useSyncExternalStore(
-        cb => store.sub(state, cb),
+        cb => store.sub(state, cb, false),
         () => store.get(state),
     )
     if (isPromiseLike(res)) {

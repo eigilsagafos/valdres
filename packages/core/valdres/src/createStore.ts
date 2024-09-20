@@ -1,19 +1,16 @@
 import { getState } from "./lib/getState"
-import { initAtom } from "./lib/initAtom"
 import { setAtom } from "./lib/setAtom"
 import { subscribe } from "./lib/subscribe"
-import { unsubscribe } from "./lib/unsubscribe"
 import { transaction } from "./lib/transaction"
 import { isAtom } from "./utils/isAtom"
-import { isFamily } from "./utils/isFamily"
 import { isSelector } from "./utils/isSelector"
+import { resetAtom } from "./lib/resetAtom"
 import type { Atom } from "./types/Atom"
 import type { Family } from "./types/Family"
 import type { State } from "./types/State"
 import type { Store } from "./types/Store"
 import type { StoreData } from "./types/StoreData"
 import type { GetValue } from "./types/GetValue"
-import { resetAtom } from "./lib/resetAtom"
 
 const generateId = () => (Math.random() + 1).toString(36).substring(7)
 
@@ -21,7 +18,9 @@ export const createStore = (id?: string): Store => {
     const data = {
         id: id ?? generateId(),
         values: new WeakMap(),
+        expiredValues: new WeakMap(),
         subscriptions: new WeakMap(),
+        subscriptionsRequireEqualCheck: new WeakMap(),
         stateConsumers: new WeakMap(),
         stateDependencies: new WeakMap(),
     } as StoreData
@@ -51,23 +50,8 @@ export const createStore = (id?: string): Store => {
     const sub = <V>(
         state: State<V> | Family<V, any>,
         callback: (value: V, oldValue: V) => void,
-    ) => subscribe(state, callback, data)
-
-    //     {
-    //     let subscription
-    //     if (isFamily(state)) {
-    //         subscription = {
-    //             callback,
-    //             state,
-    //         }
-    //     } else {
-    //         subscription = {
-    //             callback,
-    //         }
-    //     }
-    //     subscribe(state, subscription, data)
-    //     return () => unsubscribe(state, subscription, data)
-    // }
+        deepEqualCheckBeforeCallback: boolean = true,
+    ) => subscribe(state, callback, deepEqualCheckBeforeCallback, data)
 
     const txn = callback => transaction(callback, data)
     return {

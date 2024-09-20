@@ -88,33 +88,38 @@ export const reEvaluateSelector = <V>(
     // return true
 }
 
-export const initSelector = <V>(selector: Selector<V>, data: StoreData): V => {
-    const value = evaluateSelector(selector, data)
-
+const handleSelectorResult = (value, selector, data) => {
     if (value instanceof SuspendAndWaitForResolveError) {
         value.promise.then(() => initSelector(selector, data))
-        data.values.set(selector, value.promise)
+        // data.values.set(selector, value.promise)
         return value.promise
     } else if (isPromiseLike(value)) {
         // When a promise is returned when initializing a selector we suspend,
         // then we retry when the promise resolves.
         // console.log(`initSelector isPromiseLike`, { selector, value })
         value.then(resolved => {
-            // console.log(`initSelector isPromiseLike then`, {
-            //     resolved,
-            //     selector,
-            //     value,
-            // })
             data.values.set(selector, resolved)
             updateStateSubscribers(selector, data)
             console.log(
                 `TODO: Should we check if other selectors are using this?`,
             )
         })
-        data.values.set(selector, value)
         return value
     } else {
-        data.values.set(selector, value)
         return value
     }
+}
+
+export const initSelector = <V>(selector: Selector<V>, data: StoreData): V => {
+    const tmpValue = evaluateSelector(selector, data)
+    const value = handleSelectorResult(tmpValue, selector, data)
+    if (data.expiredValues.has(selector)) {
+        const expiredValue = data.expiredValues.get(selector)
+        if (equal(expiredValue, value)) {
+            data.values.set(selector, expiredValue)
+            return expiredValue
+        }
+    }
+    data.values.set(selector, value)
+    return value
 }

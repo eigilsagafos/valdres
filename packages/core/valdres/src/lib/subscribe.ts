@@ -1,3 +1,4 @@
+import type { Family } from "../types/Family"
 import type { State } from "../types/State"
 import type { StoreData } from "../types/StoreData"
 import { isFamily } from "../utils/isFamily"
@@ -13,8 +14,9 @@ const initSubscribers = (state: State<any>, data: StoreData) => {
 }
 
 export const subscribe = <V>(
-    state: State<V>,
+    state: State<V> | Family<V>,
     callback: any,
+    requireDeepEqualCheckBeforeCallback: boolean,
     data: StoreData,
 ) => {
     const subscribers =
@@ -28,10 +30,12 @@ export const subscribe = <V>(
         subscription = {
             callback,
             state,
+            requireDeepEqualCheckBeforeCallback,
         }
     } else {
         subscription = {
             callback,
+            requireDeepEqualCheckBeforeCallback,
         }
     }
     let mountRes
@@ -42,6 +46,13 @@ export const subscribe = <V>(
         })
     }
     subscribers.add(subscription)
+
+    if (
+        requireDeepEqualCheckBeforeCallback &&
+        data.subscriptionsRequireEqualCheck.get(state) !== true
+    ) {
+        data.subscriptionsRequireEqualCheck.set(state, true)
+    }
 
     return () => unsubscribe(state, subscription, data, mountRes)
 }

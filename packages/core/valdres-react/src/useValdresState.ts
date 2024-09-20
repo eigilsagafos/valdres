@@ -7,7 +7,7 @@ export const useValdresState = <V>(
 ): [V, (newVal: V | ((curr: V) => V)) => void] => {
     const store = useValdresStore()
     const result = useSyncExternalStore(
-        cb => store.sub(state, cb),
+        cb => store.sub(state, cb, false),
         () => store.get(state),
     )
     return [result, (value: V | ((curr: V) => V)) => store.set(state, value)]

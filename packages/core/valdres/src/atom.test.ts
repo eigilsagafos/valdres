@@ -20,6 +20,20 @@ describe("atom", () => {
         expect(store.get(ageDoubleSelector)).toBe(60)
     })
 
+    test("get in default function", () => {
+        const store = createStore()
+        const atom1 = atom(10)
+        const atom2 = atom(() => store.get(atom1) + 10)
+
+        expect(store.get(atom1)).toBe(10)
+        expect(store.get(atom2)).toBe(20)
+        store.set(atom1, 11)
+        expect(store.get(atom1)).toBe(11)
+        expect(store.get(atom2)).toBe(20)
+        store.reset(atom2)
+        expect(store.get(atom2)).toBe(21)
+    })
+
     test("set with function", () => {
         const store = createStore()
         const numberAtom = atom(10)
@@ -57,7 +71,7 @@ describe("atom", () => {
         console.log(store.get(user1))
     })
 
-    test.only("onInit", () => {
+    test("onInit", () => {
         const store = createStore()
         const onInitCallback = mock(() => {})
         const user1 = atom("Foo", {
