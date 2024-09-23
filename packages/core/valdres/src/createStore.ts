@@ -27,6 +27,16 @@ export const createStore = (id?: string): Store => {
 
     const get: GetValue = state => getState(state, data)
 
+    const getWithDefault = (atom, defaultValue) => {
+        if (!isAtom(atom)) throw new Error("Only atom allowed")
+        if (data.values.has(atom)) {
+            return data.values.get(atom)
+        } else {
+            data.values.set(atom, defaultValue)
+            return defaultValue
+        }
+    }
+
     const set = <V>(state: Atom<V>, value: V) => {
         if (isAtom(state)) {
             return setAtom(state, value, data)
@@ -56,6 +66,7 @@ export const createStore = (id?: string): Store => {
     const txn = callback => transaction(callback, data)
     return {
         get,
+        getWithDefault,
         set,
         sub,
         txn,
