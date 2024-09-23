@@ -61,9 +61,9 @@ describe("transaction", () => {
         })
     })
 
-    test.only("transaction works with selectors", () => {
+    test("transaction works with selectors", () => {
         const store = createStore()
-        const atom1 = atom(1, "astom1")
+        const atom1 = atom(1, { label: "astom1" })
         const selectorCb1 = mock(get => get(atom1) + 1)
         const selectorCb2 = mock(get => get(atom1) + 2)
         const selector1 = selector(selectorCb1, "selector1")
@@ -80,14 +80,20 @@ describe("transaction", () => {
             expect(selectorCb1).toHaveBeenCalledTimes(2)
             set(atom1, 3)
             expect(get(selector1)).toBe(4)
-            // expect(selectorCb1).toHaveBeenCalledTimes(3)
-            // expect(selectorCb2).toHaveBeenCalledTimes(1)
+            expect(selectorCb1).toHaveBeenCalledTimes(3)
+            expect(get(selector1)).toBe(4)
+            expect(selectorCb1).toHaveBeenCalledTimes(3)
+            set(atom1, 4)
+            expect(get(selector1)).toBe(5)
+            expect(get(selector2)).toBe(6)
+            expect(selectorCb1).toHaveBeenCalledTimes(4)
+            expect(selectorCb2).toHaveBeenCalledTimes(2)
         })
     })
 
     test.todo("transaction fails when trying to access dirty selector", () => {
         const store = createStore()
-        const atom1 = atom(1, "astom1")
+        const atom1 = atom(1, { label: "astom1" })
         const selector1 = selector(get => get(atom1) + 1, "selector1")
         // const selector2 = selector((get) => get(selector1) + 1, "selector2")
 

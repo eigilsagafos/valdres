@@ -36,19 +36,25 @@ export const transaction = (
     callback: TransactionInterface,
     data: StoreData,
 ) => {
-    let txnMap = new Map()
+    let txnAtomMap = new Map()
+    let txnSelectorCache = new Map()
     let dirtySelectors = new Set()
 
     const txnGet: GetValdresValue = state => {
-        const valueFromTxnState = txnMap.get(state)
-        if (valueFromTxnState) {
-            return valueFromTxnState
-        } else if (dirtySelectors.has(state)) {
-            const res = state.get(txnGet)
-            txnMap.set(state, res)
-            return res
+        if (isAtom(state)) {
+            return txnAtomMap.has(state)
+                ? txnAtomMap.get(state)
+                : getState(state, data)
         } else {
-            return getState(state, data)
+            if (txnSelectorCache.has(state)) {
+                return txnSelectorCache.get(state)
+            } else if (dirtySelectors.has(state)) {
+                const res = state.get(txnGet)
+                txnSelectorCache.set(state, res)
+                return res
+            } else {
+                return getState(state, data)
+            }
         }
     }
     const txnSet: SetValdresValue = (atom, value) => {
@@ -59,18 +65,18 @@ export const transaction = (
         }
         for (const selector of findDependencies(atom, data)) {
             dirtySelectors.add(selector)
-            txnMap.delete(selector)
+            txnSelectorCache.delete(selector)
         }
-        txnMap.set(atom, value)
+        txnAtomMap.set(atom, value)
     }
 
     const txnReset: ResetValdresValue = atom => {
         const value = getAtomInitValue(atom, data)
-        txnMap.set(atom, value)
+        txnAtomMap.set(atom, value)
         return value
     }
     const commit = () => {
-        setAtoms(txnMap, data)
+        setAtoms(txnAtomMap, data)
         dirtySelectors.clear()
     }
     const result = callback(txnSet, txnGet, txnReset, commit)

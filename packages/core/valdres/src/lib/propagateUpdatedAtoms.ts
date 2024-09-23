@@ -1,10 +1,8 @@
-import equal from "fast-deep-equal"
+import { updateStateSubscribers } from "./updateStateSubscribers"
+import { updateSelectorSubscribers } from "./updateSelectorSubscribers"
 import type { Atom } from "../types/Atom"
 import type { Selector } from "../types/Selector"
 import type { StoreData } from "../types/StoreData"
-import { initSelector } from "./initSelector"
-import { updateStateSubscribers } from "./updateStateSubscribers"
-import { updateSelectorSubscribers } from "./updateSelectorSubscribers"
 
 const recursivlyResetSelectorTree = (
     selectors: Set<Selector>,
@@ -27,7 +25,6 @@ const recursivlyResetSelectorTree = (
 
 export const propagateUpdatedAtoms = (atoms: Atom[], data: StoreData) => {
     const clearedSelectors = new Set<Selector>()
-
     for (const atom of atoms) {
         const consumers = data.stateConsumers.get(atom)
         if (consumers && consumers.size) {
@@ -44,6 +41,7 @@ export const propagateUpdatedAtoms = (atoms: Atom[], data: StoreData) => {
             }
         }
     }
+
     for (const selector of clearedSelectors) {
         updateSelectorSubscribers(selector, data)
     }

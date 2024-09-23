@@ -35,7 +35,6 @@ export const updateSelectorSubscribers = (
 
     if (subscribtions?.size) {
         for (const subscribtion of subscribtions) {
-            console.log(subscribtion)
             subscribtion.callback()
         }
     }
