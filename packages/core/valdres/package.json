@@ -1,6 +1,6 @@
 {
     "name": "valdres",
-    "version": "0.1.0-alpha.21",
+    "version": "0.2.0-alpha.0",
     "license": "MIT",
     "author": {
         "name": "Eigil Sagafos"
@@ -23,11 +23,11 @@
     },
     "devDependencies": {
         "@testing-library/react-hooks": "8.0.1",
+        "mitata": "0.1.14",
         "react": ">=18",
         "react-dom": ">=18",
         "recoil": "0.7.7",
-        "typescript": "5.5.4",
-        "mitata": "0.1.14"
+        "typescript": "5.5.4"
     },
     "publishConfig": {
         "access": "public",
