@@ -6,11 +6,10 @@ export default defineConfig({
     description:
         "Fast atom based state library for React and JavaScript. Inspired by but faster than Jotai and Recoil",
     baseUrl: "https://valdres.dev",
+    iconUrl: "/icon.svg",
+    logoUrl: "/logo.svg",
     font: {
         mono: { google: "Fira Code" },
-        // mono: { google: "Source Code Pro" },
-        // mono: { google: "Ubuntu Sans Mono" },
-        // mono: { google: "Roboto Mono" },
     },
     socials: [
         {
