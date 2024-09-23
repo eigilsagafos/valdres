@@ -18,7 +18,6 @@
         "build:types": "tsc index.ts --declaration --emitDeclarationOnly --outDir dist"
     },
     "dependencies": {
-        "@valdres/color-mode": "workspace:^",
         "valdres-react": "workspace:^"
     },
     "devDependencies": {

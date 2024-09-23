@@ -8,6 +8,7 @@
     },
     "workspaces": [
         "packages/core/*",
+        "packages/core/docs/plugins/*",
         "packages/internal/*",
         "packages/valdres/*",
         "packages/valdres-react/*"

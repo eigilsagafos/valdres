@@ -61,6 +61,7 @@ const config: Config = {
         },
     ],
     plugins: [
+        "custom-loader",
         "@docusaurus/theme-live-codeblock",
         [
             "posthog-docusaurus",
