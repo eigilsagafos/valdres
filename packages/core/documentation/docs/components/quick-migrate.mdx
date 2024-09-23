@@ -1,0 +1,15 @@
+## Quick migrate to Valdres
+
+:::code-group
+
+```tsx [From recoil]
+import { atom, selector } from "recoil" // [!code --]
+import { atom, selector } from "@valdres-react/recoil" // [!code ++]
+```
+
+```tsx [From jotai]
+import { atom, createStore } from "jotai" // [!code --]
+import { atom, createStore } from "@valdres-react/jotai" // [!code ++]
+```
+
+:::
