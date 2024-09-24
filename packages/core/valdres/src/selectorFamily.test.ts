@@ -23,8 +23,8 @@ describe("selectorFamily", () => {
 
     test("get returns a promise", async () => {
         const store = createStore()
-        const nameSelectorFamily = selectorFamily(
-            key => get => wait(1).then(() => "done"),
+        const nameSelectorFamily = selectorFamily<string, number>(
+            () => () => wait(1).then(() => "done"),
         )
 
         const res = store.get(nameSelectorFamily(1))

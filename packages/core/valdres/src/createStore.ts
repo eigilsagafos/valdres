@@ -32,6 +32,9 @@ export const createStore = (id?: string): Store => {
         if (data.values.has(atom)) {
             return data.values.get(atom)
         } else {
+            if (typeof defaultValue === "function") {
+                defaultValue = defaultValue(state => getState(state, data))
+            }
             data.values.set(atom, defaultValue)
             return defaultValue
         }

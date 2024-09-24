@@ -8,8 +8,8 @@ import * as jotai from "jotai"
 describe("atom", () => {
     test("is good", () => {
         const store = createStore()
-        const ageAtom = atom(24)
-        const ageDoubleSelector = selector(get => get(ageAtom) * 2)
+        const ageAtom = atom<number>(24)
+        const ageDoubleSelector = selector<number>(get => get(ageAtom) * 2)
 
         store.set(ageAtom, 20)
         expect(store.get(ageAtom)).toBe(20)
@@ -22,7 +22,7 @@ describe("atom", () => {
 
     test("get in default function", () => {
         const store = createStore()
-        const atom1 = atom(10)
+        const atom1 = atom<number>(10)
         const atom2 = atom(() => store.get(atom1) + 10)
 
         expect(store.get(atom1)).toBe(10)

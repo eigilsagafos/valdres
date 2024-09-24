@@ -1,9 +1,13 @@
 import { stableStringify } from "./lib/stableStringify"
 import { selector } from "./selector"
+import type { SelectorFamily } from "./types/SelectorFamily"
 
-export const selectorFamily = <V, A>(get, debugLabel?: string) => {
+export const selectorFamily = <Value, Key>(
+    get: any,
+    debugLabel?: string,
+): SelectorFamily<Value, Key> => {
     const map = new Map()
-    const selectorFamily = (key: A) => {
+    const selectorFamily = (key: Key) => {
         let keyStringified
         try {
             keyStringified = stableStringify(key)
@@ -15,9 +19,9 @@ export const selectorFamily = <V, A>(get, debugLabel?: string) => {
         const selectorDebugLabel = debugLabel
             ? debugLabel + "_" + keyStringified
             : undefined
-        const newSelector = selector(
+        const newSelector = selector<Value, Key>(
             selectorArgs => get(key)(selectorArgs),
-            selectorDebugLabel
+            selectorDebugLabel,
         )
         newSelector.family = selectorFamily
         map.set(keyStringified, newSelector)

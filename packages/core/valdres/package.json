@@ -15,7 +15,7 @@
     ],
     "scripts": {
         "build": "NODE_ENV=production bun scripts/build.ts",
-        "build:types": "tsc index.ts --declaration --emitDeclarationOnly --outDir dist",
+        "build:types": "tsc",
         "test": "bun test"
     },
     "dependencies": {

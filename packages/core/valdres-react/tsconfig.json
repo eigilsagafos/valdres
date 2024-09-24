@@ -1,5 +1,6 @@
 {
-    "exclude": ["dist"],
+    "include": ["src"],
+    "exclude": ["test", "dist"],
     "compilerOptions": {
         // Enable latest features
         "lib": ["ESNext", "DOM"],
@@ -13,7 +14,9 @@
         "moduleResolution": "bundler",
         "allowImportingTsExtensions": true,
         "verbatimModuleSyntax": true,
-        "noEmit": true,
+        "declaration": true,
+        "emitDeclarationOnly": true,
+        "outDir": "dist",
 
         // Best practices
         "strict": true,

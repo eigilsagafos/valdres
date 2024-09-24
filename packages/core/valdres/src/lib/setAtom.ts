@@ -16,7 +16,9 @@ export const setAtom = <V>(atom: Atom<V>, newValue: V, data: StoreData) => {
     if (equal(currentValue, newValue)) return
 
     data.values.set(atom, newValue)
+    // @ts-ignore
     if (currentValue?.__isEmptyAtomPromise__) {
+        // @ts-ignore
         currentValue.__resolveEmptyAtomPromise__(newValue)
     }
 

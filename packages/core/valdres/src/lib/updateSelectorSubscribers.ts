@@ -40,7 +40,7 @@ export const updateSelectorSubscribers = (
     }
     if (familySubscriptions?.size) {
         for (const subscribtion of familySubscriptions) {
-            subscribtion.callback(state.familyKey)
+            subscribtion.callback(selector.familyKey)
         }
     }
 }

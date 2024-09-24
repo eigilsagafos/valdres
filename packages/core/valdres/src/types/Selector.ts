@@ -1,8 +1,9 @@
 import type { GetValue } from "./GetValue"
 import type { SelectorFamily } from "./SelectorFamily"
 
-export type Selector<V = any> = {
-    get: (get: GetValue) => V
+export type Selector<Value = any, FamilyKey = undefined> = {
+    get: (get: GetValue) => Value
     debugLabel?: string
-    family?: SelectorFamily<any, V>
+    family?: SelectorFamily<Value, FamilyKey>
+    familyKey?: FamilyKey
 }

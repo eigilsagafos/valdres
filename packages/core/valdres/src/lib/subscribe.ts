@@ -7,7 +7,7 @@ import { initSelector } from "./initSelector"
 import { setAtom } from "./setAtom"
 import { unsubscribe } from "./unsubscribe"
 
-const initSubscribers = (state: State<any>, data: StoreData) => {
+const initSubscribers = <V>(state: State<V> | Family<V>, data: StoreData) => {
     const set = new Set()
     data.subscriptions.set(state, set)
     return set
@@ -38,8 +38,10 @@ export const subscribe = <V>(
             requireDeepEqualCheckBeforeCallback,
         }
     }
-    let mountRes
+    let mountRes: any
+    // @ts-ignore
     if (subscribers.size === 0 && state.onMount) {
+        // @ts-ignore
         mountRes = state.onMount(value => {
             setAtom(state, value, data)
             // throw new Error(`Fix tghis`)
