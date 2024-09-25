@@ -22,6 +22,7 @@ export type {
 
 export { useResetValdresState } from "./src/useResetValdresState"
 export { useSetValdresState } from "./src/useSetValdresState"
+export { useValdresCallback } from "./src/useValdresCallback"
 export { useValdresStore } from "./src/useValdresStore"
 export { useValdresState } from "./src/useValdresState"
 export { useValdresValue } from "./src/useValdresValue"
