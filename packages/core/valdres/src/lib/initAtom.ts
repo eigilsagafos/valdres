@@ -34,7 +34,6 @@ export const initAtom = <V>(atom: Atom<V>, data: StoreData) => {
     if (atom.onInit)
         atom.onInit((newVal: V) => {
             setAtom(atom, newVal, data)
-            // throw new Error(`TGOD `)
         })
     return value
 }

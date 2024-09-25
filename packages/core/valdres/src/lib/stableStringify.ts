@@ -58,6 +58,7 @@ const stableStringifyRecurse = (x: any, key?: string): string => {
         const obj = {}
         for (const [k, v] of x) {
             // Stringify will escape any nested quotes
+            // @ts-ignore
             obj[typeof k === "string" ? k : stringify(k, opt)] = v
         }
         return stableStringifyRecurse(obj, key)

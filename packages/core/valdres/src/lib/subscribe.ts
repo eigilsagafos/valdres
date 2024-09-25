@@ -4,7 +4,7 @@ import type { StoreData } from "../types/StoreData"
 import { isFamily } from "../utils/isFamily"
 import { isSelector } from "../utils/isSelector"
 import { initSelector } from "./initSelector"
-import { setAtom } from "./setAtom"
+import { storeFromStoreData } from "./storeFromStoreData"
 import { unsubscribe } from "./unsubscribe"
 
 const initSubscribers = <V>(state: State<V> | Family<V>, data: StoreData) => {
@@ -38,16 +38,23 @@ export const subscribe = <V>(
             requireDeepEqualCheckBeforeCallback,
         }
     }
-    let mountRes: any
-    // @ts-ignore
-    if (subscribers.size === 0 && state.onMount) {
-        // @ts-ignore
-        mountRes = state.onMount(value => {
-            setAtom(state, value, data)
-            // throw new Error(`Fix tghis`)
-        })
-    }
     subscribers.add(subscription)
+    let mount: any
+    // @ts-ignore
+    if (subscribers.size === 1 && state.onMount) {
+        // @ts-ignore
+        const store = storeFromStoreData(data)
+        const mountSubscriptions = new Set()
+        const originalSub = store.sub
+        store.sub = (state, callback) => {
+            mountSubscriptions.add(callback)
+            return originalSub(state, callback)
+        }
+        mount = {
+            onMountRes: state.onMount(store, state),
+            mountSubscriptions,
+        }
+    }
 
     if (
         requireDeepEqualCheckBeforeCallback &&
@@ -56,5 +63,5 @@ export const subscribe = <V>(
         data.subscriptionsRequireEqualCheck.set(state, true)
     }
 
-    return () => unsubscribe(state, subscription, data, mountRes)
+    return () => unsubscribe(state, subscription, data, mount)
 }

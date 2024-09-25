@@ -9,6 +9,7 @@ export type Atom<
     label?: string
     family?: AtomFamily<Value, FamilyKey>
     familyKey?: FamilyKey
+    onInit?: () => void
     onMount?: () => MountRes
     onUnmount?: (mountRes?: MountRes) => void
 }

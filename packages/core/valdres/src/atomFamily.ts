@@ -2,8 +2,10 @@ import { atom } from "./atom"
 import { stableStringify } from "./lib/stableStringify"
 import type { AtomFamily } from "./types/AtomFamily"
 
+type DefaultValueCallback<Key, Value> = (arg: Key) => Value | Promise<Value>
+
 export const atomFamily = <Value, Key>(
-    defaultValue?: Value | ((arg: Key) => Value | Promise<Value>),
+    defaultValue?: Value | DefaultValueCallback<Key, Value>,
     debugLabel?: string,
 ): AtomFamily<Value, Key> => {
     const map = new Map()
@@ -15,7 +17,8 @@ export const atomFamily = <Value, Key>(
         const atomDebugLabel = debugLabel && debugLabel + "_" + keyStringified
         const newAtom = atom<Value, Key>(
             typeof defaultValue === "function"
-                ? () => defaultValue(key)
+                ? // @ts-ignore
+                  () => defaultValue(key)
                 : defaultValue,
             {
                 label: atomDebugLabel,

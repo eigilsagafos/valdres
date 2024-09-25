@@ -4,7 +4,7 @@ import { useValdresStore } from "./useValdresStore"
 
 export const useValdresState = <V>(
     state: State<V>,
-): [V, (newVal: V | ((curr: V) => V)) => void] => {
+): [V | Promise<V>, (newVal: V | ((curr: V) => V)) => void] => {
     const store = useValdresStore()
     const result = useSyncExternalStore(
         cb => store.sub(state, cb, false),

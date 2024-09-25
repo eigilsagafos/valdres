@@ -1,10 +1,10 @@
 import type { Atom } from "./types/Atom"
 
-type AtomOptions<M = any> = {
+type AtomOptions<MountRes = undefined> = {
     label?: string
     onInit?: () => void
-    onMount?: () => M
-    onUnmount?: (mountRes?: M) => void
+    onMount?: () => MountRes
+    onUnmount?: (mountRes?: MountRes) => void
 }
 
 export const atom = <
@@ -21,5 +21,5 @@ export const atom = <
     return {
         defaultValue,
         ...options,
-    }
+    } as Atom<Value, FamilyKey>
 }

@@ -5,7 +5,7 @@ export const unsubscribe = <V>(
     state: State<V>,
     subscription,
     data: StoreData,
-    mountRes?: any,
+    mount?: any,
 ) => {
     const subscribers = data.subscriptions.get(state)
     if (subscribers) {
@@ -22,10 +22,11 @@ export const unsubscribe = <V>(
                 data.subscriptionsRequireEqualCheck.delete(state)
             }
         }
-
-        if (subscribers.size === 0) {
-            if (state.onUnmount) {
-                state.onUnmount(mountRes)
+        if (mount) {
+            if (subscribers.size === mount.mountSubscriptions.size) {
+                if (state.onUnmount) {
+                    state.onUnmount(mount.onMountRes)
+                }
             }
         }
     }

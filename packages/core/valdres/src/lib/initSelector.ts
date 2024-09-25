@@ -8,7 +8,7 @@ import type { Selector } from "../types/Selector"
 
 class SuspendAndWaitForResolveError extends Error {
     promise: Promise<any>
-    constructor(promise: Promise) {
+    constructor(promise: Promise<any>) {
         super()
         this.promise = promise
     }
@@ -88,7 +88,11 @@ export const reEvaluateSelector = <V>(
     // return true
 }
 
-const handleSelectorResult = (value, selector, data) => {
+const handleSelectorResult = <Value>(
+    value: Value | SuspendAndWaitForResolveError,
+    selector: Selector<Value>,
+    data: StoreData,
+) => {
     if (value instanceof SuspendAndWaitForResolveError) {
         value.promise.then(() => initSelector(selector, data))
         // data.values.set(selector, value.promise)
@@ -110,9 +114,12 @@ const handleSelectorResult = (value, selector, data) => {
     }
 }
 
-export const initSelector = <V>(selector: Selector<V>, data: StoreData): V => {
+export const initSelector = <V>(
+    selector: Selector<V>,
+    data: StoreData,
+): V | Promise<V> => {
     const tmpValue = evaluateSelector(selector, data)
-    const value = handleSelectorResult(tmpValue, selector, data)
+    const value = handleSelectorResult<V>(tmpValue, selector, data)
     if (data.expiredValues.has(selector)) {
         const expiredValue = data.expiredValues.get(selector)
         if (equal(expiredValue, value)) {

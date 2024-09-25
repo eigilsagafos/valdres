@@ -1,6 +1,6 @@
 {
-    "include": ["src"],
-    "exclude": ["test", "dist"],
+    "include": ["index.ts"],
+    "exclude": ["test", "dist", "src/**/*.test.ts"],
     "compilerOptions": {
         // Enable latest features
         "lib": ["ESNext", "DOM"],

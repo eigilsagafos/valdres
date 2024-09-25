@@ -14,7 +14,7 @@
         "dist"
     ],
     "scripts": {
-        "build": "NODE_ENV=production bun scripts/build.ts",
+        "build": "rm -rf dist && NODE_ENV=production bun scripts/build.ts",
         "build:types": "tsc",
         "test": "bun test"
     },

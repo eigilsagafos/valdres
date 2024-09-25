@@ -12,6 +12,4 @@ export type Store = {
     sub: SubscribeFn
     reset: ResetAtom
     txn: (callback: TransactionFn) => void
-
-    // TransactionFn
 }

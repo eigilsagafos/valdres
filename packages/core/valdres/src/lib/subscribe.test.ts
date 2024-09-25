@@ -1,9 +1,7 @@
 import { describe, test, expect, mock } from "bun:test"
 import { createStore } from "../createStore"
 import { atom } from "../atom"
-import { transaction } from "./transaction"
 import { selector } from "../selector"
-import { atomFamily } from "../atomFamily"
 
 describe("subscribe", () => {
     test("Subscribe to un-mounted atom", () => {

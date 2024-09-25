@@ -27,6 +27,17 @@ describe("useValdresValueWithDefault", () => {
         expect(result.current).toBe(20)
     })
 
+    test("callback using get", () => {
+        const stringAtom = atom("1")
+        const numberAtom = atom()
+        const { result } = renderHook(() =>
+            useValdresValueWithDefault(numberAtom, get =>
+                Number(get(stringAtom)),
+            ),
+        )
+        expect(result.current).toBe(1)
+    })
+
     test("atomFamily", async () => {
         const family = atomFamily<number, string>()
         const atom = family("1")
