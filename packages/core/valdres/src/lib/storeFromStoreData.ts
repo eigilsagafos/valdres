@@ -1,5 +1,4 @@
 import { isAtom } from "../utils/isAtom"
-import { isSelector } from "../utils/isSelector"
 import { getState } from "./getState"
 import { resetAtom } from "./resetAtom"
 import { setAtom } from "./setAtom"
@@ -16,21 +15,8 @@ export const storeFromStoreData = (data: StoreData): Store => {
     const get: GetValue = state => getState(state, data)
 
     const set = <V>(state: Atom<V>, value: V) => {
-        if (isAtom(state)) {
-            return setAtom(state, value, data)
-        } else {
-            if (isSelector(state)) {
-                if (state.set) {
-                    txn((set, get) => state.set({ get, set }, value))
-                    return undefined
-                } else {
-                    throw new Error("set on selector is not supported")
-                }
-            }
-            throw new Error("Invalid state object passed to set")
-        }
-
-        // if (sw new Error("Invalid state object passed to set")
+        if (!isAtom(state)) throw new Error("Invalid state object")
+        return setAtom(state, value, data)
     }
 
     const reset = <V>(atom: Atom<V>) => resetAtom(atom, data)

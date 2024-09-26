@@ -2,6 +2,7 @@ export {
     atom,
     atomFamily,
     createStore,
+    createStoreWithSelectorSet,
     getDefaultStore,
     isAtom,
     isFamily,
