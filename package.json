@@ -10,8 +10,8 @@
         "packages/core/*",
         "packages/core/docs/plugins/*",
         "packages/internal/*",
-        "packages/valdres/*",
-        "packages/valdres-react/*"
+        "packages/@valdres/*",
+        "packages/@valdres-react/*"
     ],
     "devDependencies": {
         "@types/bun": "1.1.8",

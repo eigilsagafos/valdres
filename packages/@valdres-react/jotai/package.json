@@ -15,17 +15,24 @@
     ],
     "scripts": {
         "build": "NODE_ENV=production bun scripts/build.ts",
-        "build:types": "tsc index.ts --declaration --emitDeclarationOnly --outDir dist"
+        "build:types": "tsc",
+        "test": "bun test"
     },
     "dependencies": {
         "valdres-react": "workspace:^"
     },
     "devDependencies": {
+        "@happy-dom/global-registrator": "15.7.4",
+        "@testing-library/dom": "10.4.0",
+        "@testing-library/react": "16.0.1",
+        "@testing-library/user-event": "14.5.2",
+        "react": "18.3.1",
+        "happy-dom": "15.7.4",
+        "jest-leak-detector": "29.7.0",
         "typescript": "5.5.4"
     },
     "publishConfig": {
         "access": "public",
         "registry": "https://registry.npmjs.org/"
-    },
-    "gitHead": "53245fd1a080cdb1131f5be9056adc546d05ead4"
+    }
 }
