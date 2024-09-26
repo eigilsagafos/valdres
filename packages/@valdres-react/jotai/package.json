@@ -5,6 +5,11 @@
     "author": {
         "name": "Eigil Sagafos"
     },
+    "homepage": "https://valdres.dev",
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/eigilsagafos/valdres.git"
+    },
     "type": "module",
     "exports": {
         "types": "./dist/index.d.ts",
