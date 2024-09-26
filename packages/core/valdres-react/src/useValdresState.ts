@@ -1,14 +1,15 @@
-import type { State } from "valdres"
+import type { SetAtomValue, State } from "valdres"
 import { useSyncExternalStore } from "react"
 import { useValdresStore } from "./useValdresStore"
+import { useSetValdresState } from "./useSetValdresState"
 
 export const useValdresState = <V>(
     state: State<V>,
-): [V | Promise<V>, (newVal: V | ((curr: V) => V)) => void] => {
+): [V | Promise<V>, (value: SetAtomValue<V>) => void] => {
     const store = useValdresStore()
     const result = useSyncExternalStore(
         cb => store.sub(state, cb, false),
         () => store.get(state),
     )
-    return [result, (value: V | ((curr: V) => V)) => store.set(state, value)]
+    return [result, useSetValdresState(state)]
 }

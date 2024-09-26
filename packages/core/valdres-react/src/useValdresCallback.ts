@@ -3,7 +3,7 @@ import { useValdresStore } from "./useValdresStore"
 import type { GetValue, SetAtom } from "valdres"
 
 export const useValdresCallback = <T extends Function>(
-    callback: (set: SetAtom, get: GetValue) => T,
+    callback: (set: SetAtom<any>, get: GetValue) => T,
     deps: DependencyList,
 ) => {
     const store = useValdresStore()

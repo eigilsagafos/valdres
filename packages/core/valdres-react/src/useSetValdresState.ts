@@ -1,7 +1,11 @@
-import type { State } from "valdres"
+import type { SetAtomValue, State } from "valdres"
 import { useValdresStore } from "./useValdresStore"
+import { useCallback } from "react"
 
 export const useSetValdresState = <V>(state: State<V>) => {
     const store = useValdresStore()
-    return (value: V) => store.set(state, value)
+    return useCallback(
+        (value: SetAtomValue<V>) => store.set(state, value),
+        [store],
+    )
 }
