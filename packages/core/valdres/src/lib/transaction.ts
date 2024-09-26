@@ -4,6 +4,7 @@ import { getState } from "./getState"
 import { isAtom } from "../utils/isAtom"
 import type { State } from "../types/State"
 import type { StoreData } from "../types/StoreData"
+import { isSelector } from "../utils/isSelector"
 
 const findDependencies = (
     state: State,
@@ -32,12 +33,30 @@ type TransactionInterface = (
     commit: () => void,
 ) => void
 
+const recursivlyResetTxnSelectorCache = (
+    state: State,
+    txnSubscribers: Map<State, Set<State>>,
+    txnSelectorCache: Map<State, any>,
+) => {
+    for (const dep of txnSubscribers.get(state) as Set<State>) {
+        txnSelectorCache.delete(dep)
+        if (txnSubscribers.get(dep)?.size) {
+            recursivlyResetTxnSelectorCache(
+                dep,
+                txnSubscribers,
+                txnSelectorCache,
+            )
+        }
+    }
+}
+
 export const transaction = (
     callback: TransactionInterface,
     data: StoreData,
 ) => {
     let txnAtomMap = new Map()
     let txnSelectorCache = new Map()
+    let txnSubscribers = new Map()
     let dirtySelectors = new Set()
 
     const txnGet: GetValdresValue = state => {
@@ -45,16 +64,25 @@ export const transaction = (
             return txnAtomMap.has(state)
                 ? txnAtomMap.get(state)
                 : getState(state, data)
-        } else {
+        } else if (isSelector(state)) {
             if (txnSelectorCache.has(state)) {
                 return txnSelectorCache.get(state)
-            } else if (dirtySelectors.has(state)) {
-                const res = state.get(txnGet)
-                txnSelectorCache.set(state, res)
-                return res
-            } else {
-                return getState(state, data)
             }
+            const deps = new Set()
+            const res = state.get(s => {
+                deps.add(s)
+                return txnGet(s)
+            })
+            for (const dep of deps) {
+                if (!txnSubscribers.has(dep)) {
+                    txnSubscribers.set(dep, new Set())
+                }
+                txnSubscribers.get(dep).add(state)
+            }
+            txnSelectorCache.set(state, res)
+            return res
+        } else {
+            throw new Error("Unsupported state")
         }
     }
     const txnSet: SetValdresValue = (atom, value) => {
@@ -66,6 +94,13 @@ export const transaction = (
         for (const selector of findDependencies(atom, data)) {
             dirtySelectors.add(selector)
             txnSelectorCache.delete(selector)
+        }
+        if (txnSubscribers.get(atom)?.size) {
+            recursivlyResetTxnSelectorCache(
+                atom,
+                txnSubscribers,
+                txnSelectorCache,
+            )
         }
         txnAtomMap.set(atom, value)
     }

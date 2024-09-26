@@ -104,9 +104,6 @@ const handleSelectorResult = <Value>(
         value.then(resolved => {
             data.values.set(selector, resolved)
             updateStateSubscribers(selector, data)
-            console.log(
-                `TODO: Should we check if other selectors are using this?`,
-            )
         })
         return value
     } else {
