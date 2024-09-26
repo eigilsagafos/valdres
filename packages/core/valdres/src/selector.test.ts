@@ -4,6 +4,8 @@ import { atomFamily } from "./atomFamily"
 import { selector } from "./selector"
 import { createStore } from "./createStore"
 import { wait } from "../test/utils/wait"
+import { createStoreWithSelectorSet } from "./createStoreWithSelectorSet"
+import equal from "fast-deep-equal"
 
 describe("selector", () => {
     test("computations are cached", () => {
@@ -82,6 +84,39 @@ describe("selector", () => {
         // store.set(baseAtom, 20)
         // expect(store.get(selectorLevel1)).toBe(200)
         // expect(store.get(selectorLevel2)).toBe(2000)
+    })
+
+    test("selector set bypass (used for compat moduels)", () => {
+        const store = createStoreWithSelectorSet()
+        const atom1 = atom(1)
+        const atom2 = atom(2)
+        const selector1 = selector(get => get(atom1))
+        selector1.set = (set, get, reset, val1, val2) => {
+            set(atom1, val1)
+            set(atom2, val2)
+        }
+
+        const res = store.set(selector1, 3, 4)
+        expect(store.get(atom1)).toBe(3)
+        expect(store.get(atom2)).toBe(4)
+    })
+
+    test("selector set bypass with async callback (used for compat moduels)", async () => {
+        const store = createStoreWithSelectorSet()
+        const atom1 = atom(1)
+        const atom2 = atom(2)
+        const selector1 = selector(get => get(atom1))
+        selector1.set = async (set, get, reset, val1, val2) => {
+            return wait(10).then(() => {
+                set(atom1, val1)
+                set(atom2, val2)
+            })
+        }
+
+        const res = store.set(selector1, 3, 4)
+        await res
+        expect(store.get(atom1)).toBe(3)
+        expect(store.get(atom2)).toBe(4)
     })
 
     // test("selector with promise",async () => {
@@ -203,7 +238,7 @@ describe("selector", () => {
 
     // })
 
-    test.only("selector listening to atomFamily", () => {
+    test("selector listening to atomFamily", () => {
         // Should we allow this? Maybe directly but not in selectors?
         const store = createStore()
         const keysAtomFamily = atomFamily(false)
@@ -231,11 +266,79 @@ describe("selector", () => {
         ])
         store.set(keysAtomFamily("b"), false)
         const res3 = store.get(selector1)
-        console.log(res3)
+        // console.log(res3)
         // const allUsers = expect(store.get(userAtomFamily)).toStrictEqual([
         //     [1, { name: "Foo" }],
         //     [2, { name: "Bar" }],
         //     [3, {}],
         // ])
+    })
+
+    test.skip("A selector that listens to a promise on an atom object", async () => {
+        // WIP: Added this when running some of the jotai test suite. I'm not sure
+        // if we should support this? One problem now is that Valdres's aggressive
+        // approach to stop propagating changes if a value does not change was
+        // blocking this test as deep equal on Promise returned true.
+        const store = createStore()
+        // const resolved: number[] = []
+        const resolve: ((value: number) => void)[] = []
+        equal(
+            new Promise<number>(r => resolve.push(r)),
+            new Promise<number>(r => resolve.push(r)),
+        )
+        const atom1 = atom({
+            promise: new Promise<number>(r => resolve.push(r)),
+        })
+
+        const selector1 = selector(async get => {
+            await Promise.resolve()
+            return await get(atom1).promise
+        })
+        const res = store.get(selector1)
+        console.log(res)
+
+        await new Promise(r => setTimeout(r))
+        store.set(atom1, {
+            promise: new Promise<number>(r => resolve.push(r)),
+            oter: "sd",
+        })
+        resolve[1](1)
+        console.log(`res2`, resolve)
+        // await wait(1)
+        // await Promise.resolve()
+        await new Promise(r => setTimeout(r))
+        // await res
+        const res2 = store.get(selector1)
+        console.log(`res2`, res2)
+        console.log(
+            `test1`,
+            equal(
+                new Promise<number>(r => resolve.push(r)),
+                new Promise<number>(r => resolve.push(r)),
+            ),
+        )
+        console.log(
+            `test2`,
+            equal(
+                new Promise<number>(r => resolve.push(r)),
+                new Promise<number>(r => {
+                    resolve.push(r)
+                    return "foo"
+                }),
+            ),
+        )
+        console.log(
+            `test3`,
+            Object.is(
+                new Promise<number>(r => resolve.push(r)),
+                new Promise<number>(r => resolve.push(r)),
+            ),
+        )
+
+        // const asyncAtom = atom(async get => {
+        //     // we want to pick up `syncAtom` as an async dep
+        //     await Promise.resolve()
+        //     return await get(syncAtom).promise
+        // })
     })
 })

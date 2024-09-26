@@ -1,8 +1,8 @@
 import type { Atom } from "./types/Atom"
 
-type AtomOptions<MountRes = undefined> = {
+type AtomOptions<Value, MountRes = undefined> = {
     label?: string
-    onInit?: () => void
+    onInit?: (setSelf: (value: Value) => void) => void
     onMount?: () => MountRes
     onUnmount?: (mountRes?: MountRes) => void
 }
@@ -13,9 +13,7 @@ export const atom = <
     MountReturnValue = undefined,
 >(
     defaultValue?: Value | (() => Value | Promise<Value>),
-    options?: AtomOptions<MountReturnValue>,
-    // debugLabel?: string,
-    // debugLabel?: string,
+    options?: AtomOptions<Value, MountReturnValue>,
 ): Atom<Value, FamilyKey> => {
     if (!options) return { defaultValue }
     return {

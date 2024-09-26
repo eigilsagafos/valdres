@@ -7,8 +7,10 @@ export const atom = <T>(args: AtomOptions<T>) => {
     }
 
     if (args.effects?.length) {
+        // @ts-ignore @ts-todo
         options.onMount = (store, atom) => {
-            const onSetCallbacks = []
+            const onSetCallbacks: any[] = []
+            // @ts-ignore @ts-todo
             for (const effect of args.effects) {
                 effect({
                     node: atom,
@@ -35,17 +37,19 @@ export const atom = <T>(args: AtomOptions<T>) => {
                 })
             }
             let oldValue = store.get(atom)
+            // @ts-ignore @ts-todo
             const unsubscribe = store.sub(atom, (...args) => {
                 const newValue = store.get(atom)
                 onSetCallbacks.map(cb => cb(newValue, oldValue, false))
             })
             return unsubscribe
         }
+        // @ts-ignore @ts-todo
         options.onUnmount = unMount => {
             unMount()
         }
     }
-
+    // @ts-ignore @ts-todo
     const newAtom = valdresAtom(args.default, options)
 
     return newAtom

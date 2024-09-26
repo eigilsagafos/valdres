@@ -11,6 +11,7 @@ export const selectorFamily = <T, P extends SerializableParam>(
         | ReadOnlySelectorFamilyOptions<T, P>,
 ) => {
     return valdresSelectorFamily(
+        // @ts-ignore @ts-todo
         key => get => options.get(key)({ get }),
         options.key,
     )

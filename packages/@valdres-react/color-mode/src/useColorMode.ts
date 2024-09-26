@@ -1,4 +1,4 @@
 import { colorMode } from "@valdres/color-mode"
-import { useRecoilValue } from "valdres-react"
+import { useValdresValue } from "valdres-react"
 
-export const useColorMode = () => useRecoilValue(colorMode)
+export const useColorMode = () => useValdresValue(colorMode)
