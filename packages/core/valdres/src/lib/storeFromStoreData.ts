@@ -4,12 +4,13 @@ import { resetAtom } from "./resetAtom"
 import { setAtom } from "./setAtom"
 import { subscribe } from "./subscribe"
 import { transaction } from "./transaction"
-import type { Atom } from "jotai"
 import type { Family } from "../types/Family"
 import type { GetValue } from "../types/GetValue"
 import type { State } from "../types/State"
 import type { Store } from "../types/Store"
 import type { StoreData } from "../types/StoreData"
+import type { TransactionFn } from "../types/TransactionFn"
+import type { Atom } from "../types/Atom"
 
 export const storeFromStoreData = (data: StoreData): Store => {
     const get: GetValue = state => getState(state, data)
@@ -27,7 +28,7 @@ export const storeFromStoreData = (data: StoreData): Store => {
         deepEqualCheckBeforeCallback: boolean = true,
     ) => subscribe(state, callback, deepEqualCheckBeforeCallback, data)
 
-    const txn = callback => transaction(callback, data)
+    const txn = (callback: TransactionFn) => transaction(callback, data)
 
     return {
         get,

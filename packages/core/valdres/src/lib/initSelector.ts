@@ -37,8 +37,13 @@ const evaluateSelector = <V>(selector: Selector<V>, data: StoreData) => {
         result = selector.get(state => {
             const value = getState(state, data)
             updatedDependencies.add(state)
+            // if (!currentDependencies.has(state)) {
+            //     const set = getOrInitConsumersSet(state, data)
+            //     set.add(selector)
+            // }
             if (isPromiseLike(value))
                 throw new SuspendAndWaitForResolveError(value)
+
             return value
         })
     } catch (error) {
@@ -80,7 +85,7 @@ export const reEvaluateSelector = <V>(
         updatedValue.then(resolved => {
             data.values.set(selector, resolved)
         })
-        console.log(`test this path. What should be the right behavior?`)
+        console.log("test this path. What should be the right behavior?")
     } else {
         data.values.set(selector, updatedValue)
     }
@@ -104,6 +109,8 @@ const handleSelectorResult = <Value>(
         value.then(resolved => {
             data.values.set(selector, resolved)
             updateStateSubscribers(selector, data)
+            console.log("Should we reEvaluate?")
+            // reEvaluateSelector(selector, data)
         })
         return value
     } else {

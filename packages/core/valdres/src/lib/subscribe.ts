@@ -51,6 +51,7 @@ export const subscribe = <V>(
             return originalSub(state, callback)
         }
         mount = {
+            // @ts-ignore
             onMountRes: state.onMount(store, state),
             mountSubscriptions,
         }

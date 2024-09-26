@@ -17,6 +17,7 @@ export const updateSelectorSubscribers = (
         (subscribtions?.size &&
             data.subscriptionsRequireEqualCheck.get(selector)) ||
         (familySubscriptions?.size &&
+            selector.family &&
             data.subscriptionsRequireEqualCheck.get(selector.family))
     ) {
         /**

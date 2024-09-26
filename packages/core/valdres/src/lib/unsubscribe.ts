@@ -1,9 +1,11 @@
+import type { Family } from "../types/Family"
 import type { State } from "../types/State"
 import type { StoreData } from "../types/StoreData"
+import type { Subscription } from "../types/Subscription"
 
 export const unsubscribe = <V>(
-    state: State<V>,
-    subscription,
+    state: State<V> | Family<V>,
+    subscription: Subscription,
     data: StoreData,
     mount?: any,
 ) => {
@@ -24,7 +26,9 @@ export const unsubscribe = <V>(
         }
         if (mount) {
             if (subscribers.size === mount.mountSubscriptions.size) {
+                // @ts-ignore @ts-todo
                 if (state.onUnmount) {
+                    // @ts-ignore @ts-todo
                     state.onUnmount(mount.onMountRes)
                 }
             }

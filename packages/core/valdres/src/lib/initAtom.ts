@@ -10,10 +10,13 @@ export const getAtomInitValue = <V>(atom: Atom<V>, data: StoreData) => {
         const promise = new Promise(resolve => {
             promiseResolve = resolve
         })
+        // @ts-ignore
         promise.__isEmptyAtomPromise__ = true
+        // @ts-ignore
         promise.__resolveEmptyAtomPromise__ = promiseResolve
         return promise
     } else if (typeof atom.defaultValue === "function") {
+        // @ts-ignore @ts-todo
         const value = atom.defaultValue()
         if (isPromiseLike(value)) {
             value.then(resolvedValue => {
@@ -32,6 +35,7 @@ export const initAtom = <V>(atom: Atom<V>, data: StoreData) => {
     const value = getAtomInitValue(atom, data)
     data.values.set(atom, value)
     if (atom.onInit)
+        // @ts-ignore @ts-todo
         atom.onInit((newVal: V) => {
             setAtom(atom, newVal, data)
         })

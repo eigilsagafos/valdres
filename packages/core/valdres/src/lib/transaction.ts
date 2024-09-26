@@ -2,9 +2,10 @@ import { getAtomInitValue } from "./initAtom"
 import { setAtoms } from "./setAtoms"
 import { getState } from "./getState"
 import { isAtom } from "../utils/isAtom"
+import { isSelector } from "../utils/isSelector"
 import type { State } from "../types/State"
 import type { StoreData } from "../types/StoreData"
-import { isSelector } from "../utils/isSelector"
+import type { Atom } from "../types/Atom"
 
 const findDependencies = (
     state: State,
@@ -25,7 +26,7 @@ const findDependencies = (
 
 type GetValdresValue = <V>(state: State<V>) => V
 type SetValdresValue = <V>(state: State<V>, value: V) => void
-type ResetValdresValue = <V>(state: State<V>) => V
+type ResetValdresValue = <V>(atom: Atom<V>) => V
 type TransactionInterface = (
     set: SetValdresValue,
     get: GetValdresValue,
