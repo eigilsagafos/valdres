@@ -7,6 +7,7 @@ export const useValdresValue = (state: State) => {
     const res = useSyncExternalStore(
         cb => store.sub(state, cb, false),
         () => store.get(state),
+        () => store.get(state),
     )
     if (isPromiseLike(res)) {
         throw res

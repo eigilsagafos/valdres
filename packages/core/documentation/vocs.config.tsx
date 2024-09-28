@@ -40,21 +40,25 @@ export default defineConfig({
                 text: "Getting Started",
                 link: "/docs/vanilla/getting-started",
             },
-            // {
-            //     text: "About",
-            //     link: "/docs/vanilla//example",
-            // },
             {
                 text: "API",
                 collapsed: false,
                 items: [
                     {
                         text: "atom",
-                        link: "/docs/vanilla/api/atom",
+                        link: "/docs/vanilla/api/atom/",
                     },
                     {
                         text: "selector",
-                        link: "/docs/vanilla/api/selector",
+                        link: "/docs/vanilla/api/selector/",
+                    },
+                    {
+                        text: "selector",
+                        link: "/docs/vanilla/api/atomFamily/",
+                    },
+                    {
+                        text: "selector",
+                        link: "/docs/vanilla/api/selectorFamily/",
                     },
                 ],
             },
@@ -62,47 +66,51 @@ export default defineConfig({
         "/docs/react": [
             {
                 text: "Getting Started",
-                link: "/getting-started",
+                link: "/docs/react/getting-started",
             },
             {
-                text: "Example",
-                link: "/example",
+                text: "Performance",
+                link: "/docs/react/performance/",
             },
+            // {
+            //     text: "Example",
+            //     link: "/example",
+            // },
             {
                 text: "API",
                 collapsed: false,
                 items: [
                     {
                         text: "atom",
-                        link: "/docs/react/api/atom",
+                        link: "/docs/react/api/atom/",
                     },
                     {
                         text: "selector",
-                        link: "/docs/react/api/selector",
+                        link: "/docs/react/api/selector/",
                     },
                     {
                         text: "useValdresValue",
-                        link: "/docs/react/api/useValdresValue",
+                        link: "/docs/react/api/useValdresValue/",
                     },
                     {
                         text: "useValdresState",
-                        link: "/docs/react/api/useValdresState",
+                        link: "/docs/react/api/useValdresState/",
                     },
                     {
                         text: "useSetValdresState",
-                        link: "/docs/react/api/useSetValdresState",
+                        link: "/docs/react/api/useSetValdresState/",
                     },
                     {
                         text: "useResetValdresState",
-                        link: "/docs/react/api/useResetValdresState",
+                        link: "/docs/react/api/useResetValdresState/",
                     },
                     {
                         text: "useValdresStore",
-                        link: "/docs/react/api/useValdresStore",
+                        link: "/docs/react/api/useValdresStore/",
                     },
                     {
                         text: "ValdresProvider",
-                        link: "/docs/react/api/ValdresProvider",
+                        link: "/docs/react/api/ValdresProvider/",
                     },
                 ],
             },
@@ -125,6 +133,3 @@ export default defineConfig({
         ],
     },
 })
-// export { useValdresCallback } from "./src/useValdresCallback"
-// export { useValdresValueWithDefault } from "./src/useValdresValueWithDefault"
-// export { ValdresProvider } from "./src/ValdresProvider"

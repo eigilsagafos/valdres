@@ -1,0 +1,38 @@
+# useResetValdresState
+
+`useResetValdresState` is a React hook that takes an atom and returns a function
+that will reset the atom back to it's deafult value.
+
+## Example 1 - Reset Count
+
+import { Counter } from "../../../../snippets/Counter"
+
+:::code-group
+
+```jsx [Counter.tsx]
+// [!code word:useResetValdresState]
+// [!include ~/snippets/Counter.tsx]
+```
+
+<div data-title="Preview">
+    <Counter />
+</div>
+
+:::
+
+## Example 2 - Fetch data with suspense
+
+import { RandomDog } from "../../../../snippets/RandomDog"
+
+:::code-group
+
+```jsx [RandomDog.tsx]
+// [!code word:useResetValdresState]
+// [!include ~/snippets/RandomDog.tsx]
+```
+
+<div data-title="Preview">
+    <RandomDog />
+</div>
+
+:::
