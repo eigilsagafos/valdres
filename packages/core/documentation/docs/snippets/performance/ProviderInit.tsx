@@ -138,7 +138,7 @@ const MeasureComponentRenderTimes = ({ items, onDone }) => {
     )
 }
 
-const atomCounts = [1_000, 10_000, 100_000, 1_000_000]
+const atomCounts = [1_000, 10_000, 100_000, 1_000_000, 10_000_000]
 const formatter = new Intl.NumberFormat()
 
 export const ProviderInit = () => {
@@ -160,8 +160,11 @@ export const ProviderInit = () => {
                     <select
                         name="atomCount"
                         id="atomCount"
-                        onChange={e => setCount(Number(e.target.value))}
-                        defaultValue={10000}
+                        onChange={e => {
+                            setCount(Number(e.target.value))
+                            setRun(false)
+                        }}
+                        defaultValue={count}
                     >
                         {atomCounts.map(atomCount => (
                             <option key={atomCount} value={atomCount}>
@@ -185,11 +188,15 @@ export const ProviderInit = () => {
                             Component: Jotai,
                             componentArgs: { count },
                         },
-                        {
-                            name: "recoil",
-                            Component: Recoil,
-                            componentArgs: { count },
-                        },
+                        ...(count > 10000
+                            ? []
+                            : [
+                                  {
+                                      name: "recoil",
+                                      Component: Recoil,
+                                      componentArgs: { count },
+                                  },
+                              ]),
                     ]}
                 />
             )}

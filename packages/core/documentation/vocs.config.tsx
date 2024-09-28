@@ -35,7 +35,7 @@ export default defineConfig({
     topNav: [
         {
             text: "React",
-            link: "/docs/react",
+            link: "/docs/react/quick-start",
             match: "/docs/react",
         },
         { text: "Vanilla JS", link: "/docs/vanilla", match: "/docs/vanilla" },
@@ -71,58 +71,69 @@ export default defineConfig({
         ],
         "/docs/react": [
             {
-                text: "Getting Started",
-                link: "/docs/react/getting-started",
-            },
-            {
-                text: "Performance",
-                link: "/docs/react/performance/",
-            },
-            // {
-            //     text: "Example",
-            //     link: "/example",
-            // },
-            {
-                text: "API",
-                collapsed: false,
+                text: "valdres-react",
                 items: [
                     {
-                        text: "atom",
-                        link: "/docs/react/api/atom/",
+                        text: "Getting Started",
+                        collapsed: false,
+                        items: [
+                            {
+                                text: "Introduction",
+                                link: "/docs/react/introduction/",
+                            },
+                            {
+                                text: "Quick Start",
+                                link: "/docs/react/quick-start/",
+                            },
+                            {
+                                text: "Performance",
+                                link: "/docs/react/performance/",
+                            },
+                        ],
                     },
                     {
-                        text: "selector",
-                        link: "/docs/react/api/selector/",
-                    },
-                    {
-                        text: "Provider",
-                        link: "/docs/react/api/Provider/",
-                    },
-                    {
-                        text: "useAtom",
-                        link: "/docs/react/api/useAtom/",
-                    },
-                    {
-                        text: "useValue",
-                        link: "/docs/react/api/useValue/",
-                    },
-                    {
-                        text: "useSetAtom",
-                        link: "/docs/react/api/useSetAtom/",
-                    },
-                    {
-                        text: "useResetAtom",
-                        link: "/docs/react/api/useResetAtom/",
-                    },
-                    {
-                        text: "useStore",
-                        link: "/docs/react/api/useStore/",
+                        text: "API",
+                        collapsed: false,
+                        items: [
+                            {
+                                text: "atom",
+                                link: "/docs/react/api/atom/",
+                            },
+                            {
+                                text: "selector",
+                                link: "/docs/react/api/selector/",
+                            },
+                            {
+                                text: "Provider",
+                                link: "/docs/react/api/Provider/",
+                            },
+                            {
+                                text: "useAtom",
+                                link: "/docs/react/api/useAtom/",
+                            },
+                            {
+                                text: "useValue",
+                                link: "/docs/react/api/useValue/",
+                            },
+                            {
+                                text: "useSetAtom",
+                                link: "/docs/react/api/useSetAtom/",
+                            },
+                            {
+                                text: "useResetAtom",
+                                link: "/docs/react/api/useResetAtom/",
+                            },
+                            {
+                                text: "useStore",
+                                link: "/docs/react/api/useStore/",
+                            },
+                        ],
                     },
                 ],
             },
             {
-                text: "Packages",
-                collapsed: false,
+                text: "@valdres-react",
+                collapsed: true,
                 items: [
                     {
                         text: "@valdres-react/color-mode",
