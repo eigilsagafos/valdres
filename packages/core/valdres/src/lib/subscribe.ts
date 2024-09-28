@@ -52,7 +52,7 @@ export const subscribe = <V>(
         }
         mount = {
             // @ts-ignore
-            onMountRes: state.onMount(store, state),
+            onUnmount: state.onMount(store, state),
             mountSubscriptions,
         }
     }

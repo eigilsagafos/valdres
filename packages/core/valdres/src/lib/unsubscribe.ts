@@ -27,9 +27,9 @@ export const unsubscribe = <V>(
         if (mount) {
             if (subscribers.size === mount.mountSubscriptions.size) {
                 // @ts-ignore @ts-todo
-                if (state.onUnmount) {
+                if (typeof mount.onUnmount === "function") {
                     // @ts-ignore @ts-todo
-                    state.onUnmount(mount.onMountRes)
+                    mount.onUnmount()
                 }
             }
         }
