@@ -1,10 +1,5 @@
 import { run, bench, group } from "mitata"
-import { ValdresProvider } from "../../src/ValdresProvider"
 import { renderHook } from "@testing-library/react-hooks"
-import { render, screen, wait } from "@testing-library/react"
-// import { selector } from "../../src/selector"
-import { useValdresValue } from "../../src/useValdresValue"
-import { useSetValdresState } from "../../src/useSetValdresState"
 import * as valdres from "../.."
 import * as jotai from "jotai"
 import * as jotaiUtils from "jotai/utils"
@@ -18,8 +13,8 @@ const testValdres = async users => {
     const userAtomFamily = valdres.atomFamily<any, string>(null)
 
     const useInit = () => {
-        const isInitialized = valdres.useValdresValue(isInitializedAtom)
-        const store = valdres.useValdresStore()
+        const isInitialized = valdres.useValue(isInitializedAtom)
+        const store = valdres.useStore()
         useEffect(() => {
             users.map(user => store.set(userAtomFamily(user.id), user))
             // store.txn(set =>
@@ -32,7 +27,7 @@ const testValdres = async users => {
     }
     const { result } = renderHook(() => useInit(), {
         wrapper: ({ children }) => (
-            <valdres.ValdresProvider>{children}</valdres.ValdresProvider>
+            <valdres.Provider>{children}</valdres.Provider>
         ),
     })
     // waitFor

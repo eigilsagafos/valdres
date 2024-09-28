@@ -2,9 +2,9 @@ import { describe, expect, test } from "bun:test"
 import { atomFamily, createStore, selector, selectorFamily } from "valdres"
 import { render, screen } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
-import { useValdresValue } from "../src/useValdresValue"
-import { ValdresProvider } from "../src/ValdresProvider"
-import { useValdresState } from "../src/useValdresState"
+import { useValue } from "../src/useValue"
+import { Provider } from "../src/Provider"
+import { useAtom } from "../src/useAtom"
 
 const store = createStore()
 const fileAtom = atomFamily<string, string>()
@@ -145,9 +145,9 @@ const initAtoms = (items, currentDir = "/") => {
 initAtoms(structure)
 
 const Directory = ({ directory }) => {
-    const [isOpen, setIsOpen] = useValdresState(directoryOpenAtom(directory))
+    const [isOpen, setIsOpen] = useAtom(directoryOpenAtom(directory))
     console.log([directory, isOpen])
-    const items = useValdresValue(directoryAtom(directory))
+    const items = useValue(directoryAtom(directory))
     return (
         <div>
             <button
@@ -182,9 +182,7 @@ const Directory = ({ directory }) => {
 }
 
 const File = ({ directory, file }) => {
-    const visibleIndex = useValdresValue(
-        fileVisibleIndexSelector(directory + file),
-    )
+    const visibleIndex = useValue(fileVisibleIndexSelector(directory + file))
     // console.log(visibleIndex)
     return <div>{`[${visibleIndex}] ${directory + file}`}</div>
 }
@@ -192,9 +190,9 @@ const File = ({ directory, file }) => {
 describe("sss", () => {
     test("asdfasdf", async () => {
         render(
-            <ValdresProvider store={store}>
+            <Provider store={store}>
                 <Directory directory={"/"} />
-            </ValdresProvider>,
+            </Provider>,
         )
         await userEvent.click(screen.getByTestId("/Music/"))
         await screen.findByTestId("/Music/_collapsed")

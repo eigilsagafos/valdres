@@ -1,5 +1,5 @@
-import { useValdresState } from "valdres-react"
+import { useAtom as useValdresAtom } from "valdres-react"
 
 export const useAtom = state => {
-    return useValdresState(state)
+    return useValdresAtom(state)
 }

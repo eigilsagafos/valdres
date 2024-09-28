@@ -2,16 +2,16 @@ import { describe, test, expect } from "bun:test"
 import { renderHook } from "@testing-library/react-hooks"
 import { atom } from "valdres"
 import { useValdresCallback } from "./useValdresCallback"
-import { useValdresValue } from "./useValdresValue"
+import { useValue } from "./useValue"
 
 describe("useValdresCallback", () => {
-    test("ValdresProvider", () => {
+    test("default", () => {
         const previousValueAtom = atom("")
         const currentValueAtom = atom("Foo")
         const useTestHook = () => {
             return {
-                previousValue: useValdresValue(previousValueAtom),
-                currentValue: useValdresValue(currentValueAtom),
+                previousValue: useValue(previousValueAtom),
+                currentValue: useValue(currentValueAtom),
                 callback: useValdresCallback(
                     (set, get) => (newValue: string) => {
                         set(previousValueAtom, get(currentValueAtom))

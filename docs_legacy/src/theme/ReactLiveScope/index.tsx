@@ -122,9 +122,9 @@ const libMap = {
     Valdres: {
         atom: v => valdres.atom(v),
         selector: v => valdres.selector(v),
-        useValue: s => valdres.useValdresValue(s),
-        useState: s => valdres.useValdresState(s),
-        Provider: valdres.ValdresProvider,
+        useValue: s => valdres.useValue(s),
+        useState: s => valdres.useAtom(s),
+        Provider: valdres.Provider,
     },
     Recoil: {
         atom: v => recoil.atom({ key: randomString(), default: v }),

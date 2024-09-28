@@ -1,14 +1,14 @@
 import { describe, test, expect } from "bun:test"
 import { render } from "@testing-library/react"
 import { renderHook } from "@testing-library/react-hooks"
-import { useValdresState } from "./useValdresState"
+import { useAtom } from "./useAtom"
 import { atom } from "valdres"
 import { useEffect } from "react"
 
-describe("useValdresState", () => {
+describe("useAtom", () => {
     test("default", () => {
         const numberAtom = atom(10)
-        const { result } = renderHook(() => useValdresState(numberAtom))
+        const { result } = renderHook(() => useAtom(numberAtom))
         expect(result.current[0]).toBe(10)
         result.current[1](20)
         expect(result.current[0]).toBe(20)
@@ -17,7 +17,7 @@ describe("useValdresState", () => {
         const countAtom = atom(0)
 
         const Counter = () => {
-            const [count, setCount] = useValdresState(countAtom)
+            const [count, setCount] = useAtom(countAtom)
             useEffect(() => {
                 setCount(c => c + 1)
             }, [setCount])

@@ -1,11 +1,11 @@
-import { atom, useResetValdresState, useValdresState } from "valdres-react"
+import { atom, useResetAtom, useAtom } from "valdres-react"
 
 const countAtom = atom(0)
 
 export const Counter = () => {
-    const [count, setCount] = useValdresState(countAtom)
+    const [count, setCount] = useAtom(countAtom)
     const increment = () => setCount(curr => curr + 1)
-    const reset = useResetValdresState(countAtom)
+    const reset = useResetAtom(countAtom)
     return (
         <div className="snippet">
             <button onClick={increment}>Increment</button>

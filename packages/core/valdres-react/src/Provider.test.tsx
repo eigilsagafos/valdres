@@ -1,16 +1,16 @@
 import { describe, test, expect } from "bun:test"
 import { renderHook } from "@testing-library/react-hooks"
 import { createStore } from "valdres"
-import { useValdresStoreId } from "./useValdresStoreId"
-import { ValdresProvider } from "./ValdresProvider"
+import { useStoreId } from "./useStoreId"
+import { Provider } from "./Provider"
 
-describe("ValdresProvider", () => {
+describe("Provider", () => {
     test("set with direct value", () => {
         const store = createStore("Foo")
 
-        const { result } = renderHook(() => useValdresStoreId(), {
+        const { result } = renderHook(() => useStoreId(), {
             wrapper: ({ children }) => (
-                <ValdresProvider store={store}>{children}</ValdresProvider>
+                <Provider store={store}>{children}</Provider>
             ),
         })
         expect(result.current).toBe("Foo")

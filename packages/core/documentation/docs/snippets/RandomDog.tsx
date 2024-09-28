@@ -1,5 +1,5 @@
 import { Suspense } from "react"
-import { useResetValdresState, atom, useValdresValue } from "valdres-react"
+import { useResetAtom, atom, useValue } from "valdres-react"
 
 const randomDogImage = atom(() =>
     fetch("https://random.dog/woof.json")
@@ -10,8 +10,8 @@ const randomDogImage = atom(() =>
 const isVideo = (url: string) => url.match(/(?:mp4|webm)$/)
 
 const RandomDogImage = () => {
-    const url = useValdresValue(randomDogImage)
-    const reset = useResetValdresState(randomDogImage)
+    const url = useValue(randomDogImage)
+    const reset = useResetAtom(randomDogImage)
     return (
         <div>
             <button onClick={reset}>Next dog please!</button>

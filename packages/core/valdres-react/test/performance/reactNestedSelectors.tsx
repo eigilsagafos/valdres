@@ -1,9 +1,9 @@
 import { run, bench, group } from "mitata"
-import { ValdresProvider } from "../../src/ValdresProvider"
+import { Provider } from "../../src/Provider"
 import { renderHook } from "@testing-library/react-hooks"
 // import { selector } from "../../src/selector"
-import { useValdresValue } from "../../src/useValdresValue"
-import { useSetValdresState } from "../../src/useSetValdresState"
+import { useValue } from "../../src/useValue"
+import { useSetAtom } from "../../src/useSetAtom"
 import * as valdres from "../../../valdres"
 import * as jotai from "jotai"
 import * as recoil from "recoil"
@@ -20,14 +20,12 @@ const setupValdres = size => {
         }
     })
     const useTestValdres = () => {
-        const values = selectors.map(s => useValdresValue(s))
-        const increment = useSetValdresState(atom)
+        const values = selectors.map(s => useValue(s))
+        const increment = useSetAtom(atom)
         return [values, () => increment(curr => curr + 1)]
     }
     return renderHook(() => useTestValdres(), {
-        wrapper: ({ children }) => (
-            <ValdresProvider>{children}</ValdresProvider>
-        ),
+        wrapper: ({ children }) => <Provider>{children}</Provider>,
     })
 }
 

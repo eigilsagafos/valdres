@@ -33,7 +33,7 @@ citizens.
 ## Usage (React)
 
 ```jsx live noInline
-import { atom, selector, useValdresState } from "@valdres/react"
+import { atom, selector, useAtom, useValue } from "@valdres/react"
 
 const getSystemColorScheme = () =>
     window.matchMedia &&
@@ -49,7 +49,7 @@ window
     .addEventListener("change", e => store.reset(cssMode))
 
 const App = () => {
-    const colorMode = useValdresValue(cssMode)
+    const colorMode = useValue(cssMode)
     return (
         <p>
             Your system is set to <b>{colorMode}</b> mode

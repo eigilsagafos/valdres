@@ -1,4 +1,4 @@
 import { isDarkMode } from "@valdres/color-mode"
-import { useValdresValue } from "valdres-react"
+import { useValue } from "valdres-react"
 
-export const useIsDarkMode = () => useValdresValue(isDarkMode)
+export const useIsDarkMode = () => useValue(isDarkMode)

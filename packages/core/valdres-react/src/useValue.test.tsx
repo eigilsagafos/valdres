@@ -1,6 +1,6 @@
 import { describe, test, expect } from "bun:test"
 import { renderHook } from "@testing-library/react-hooks"
-import { useValdresValue } from "./useValdresValue"
+import { useValue } from "./useValue"
 import {
     atom,
     atomFamily,
@@ -9,10 +9,10 @@ import {
     selectorFamily,
 } from "valdres"
 
-describe("useValdresValue", () => {
+describe("useValue", () => {
     test("atom", () => {
         const numberAtom = atom(10)
-        const { result } = renderHook(() => useValdresValue(numberAtom))
+        const { result } = renderHook(() => useValue(numberAtom))
         expect(result.current).toBe(10)
         const store = getDefaultStore()
         store.set(numberAtom, 20)
@@ -22,7 +22,7 @@ describe("useValdresValue", () => {
     test("selector", () => {
         const numberAtom = atom(10)
         const doubleSelector = selector(get => get(numberAtom) * 2)
-        const { result } = renderHook(() => useValdresValue(doubleSelector))
+        const { result } = renderHook(() => useValue(doubleSelector))
         expect(result.current).toBe(20)
         const store = getDefaultStore()
         store.set(numberAtom, 20)
@@ -34,7 +34,7 @@ describe("useValdresValue", () => {
         const multiply = selectorFamily(
             number => get => get(numberAtom) * number,
         )
-        const { result } = renderHook(() => useValdresValue(multiply(10)))
+        const { result } = renderHook(() => useValue(multiply(10)))
         expect(result.current).toBe(100)
         const store = getDefaultStore()
         store.set(numberAtom, 20)
@@ -44,7 +44,7 @@ describe("useValdresValue", () => {
     test("atomFamily", async () => {
         const family = atomFamily(1)
         const atom = family("1")
-        const { result } = renderHook(() => useValdresValue(atom))
+        const { result } = renderHook(() => useValue(atom))
         expect(result.current).toBe(1)
         const store = getDefaultStore()
         store.set(atom, 2)

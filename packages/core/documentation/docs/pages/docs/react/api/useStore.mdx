@@ -1,13 +1,13 @@
-# useValdresStore
+# useStore
 
 A React hook that returns the valdres store from the closest `<ValdresStore />`
 or in the case of no parent `<ValdresStore />` it will return the default store.
 
 ```tsx
-import { useValdresStore } from "react-valdres"
+import { useStore } from "react-valdres"
 
 const Component = () => {
-    const store = useValdresStore()
+    const store = useStore()
     return <div></div>
 }
 ```

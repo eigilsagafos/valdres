@@ -14,7 +14,7 @@ const initStore = (store = createStore(), initialize?: InitializeCallback) => {
     return store
 }
 
-export const ValdresProvider = ({
+export const Provider = ({
     children,
     store,
     initialize,

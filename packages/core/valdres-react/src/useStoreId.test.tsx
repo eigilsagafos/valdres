@@ -1,21 +1,21 @@
 import { describe, test, expect } from "bun:test"
 import { renderHook } from "@testing-library/react-hooks"
-import { ValdresProvider } from "./ValdresProvider"
+import { Provider } from "./Provider"
 import { createStore } from "valdres"
-import { useValdresStoreId } from "./useValdresStoreId"
+import { useStoreId } from "./useStoreId"
 
-describe("useValdresStoreId", () => {
+describe("useStoreId", () => {
     test("defaultStore", () => {
-        const { result } = renderHook(() => useValdresStoreId())
+        const { result } = renderHook(() => useStoreId())
         expect(result.current).toBe("default")
     })
 
-    test("ValdresProvider", () => {
+    test("Provider", () => {
         const store = createStore()
-        const { result } = renderHook(() => useValdresStoreId(), {
+        const { result } = renderHook(() => useStoreId(), {
             // @ts-ignore
             wrapper: ({ children }) => (
-                <ValdresProvider store={store}>{children}</ValdresProvider>
+                <Provider store={store}>{children}</Provider>
             ),
         })
         expect(result.current).toBe(store.data.id)

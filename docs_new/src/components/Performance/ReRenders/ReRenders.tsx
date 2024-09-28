@@ -120,7 +120,7 @@ const state = {
         atom: valdresAtom,
         selectors: valdresSelectors,
         sum: valdresSum,
-        useValue: valdres.useValdresValue,
+        useValue: valdres.useValue,
     },
     jotai: {
         atom: jotaiAtom,
@@ -137,7 +137,7 @@ const state = {
 }
 
 const Inner = () => {
-    const setValdres = valdres.useSetValdresState(state.valdres.atom)
+    const setValdres = valdres.useSetAtom(state.valdres.atom)
     const setJotai = jotai.useSetAtom(state.jotai.atom)
     const setRecoil = recoil.useSetRecoilState(state.recoil.atom)
     return (

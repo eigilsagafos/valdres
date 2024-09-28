@@ -6,7 +6,7 @@ import {
     type GetValue,
 } from "valdres"
 import { useMemo, useSyncExternalStore } from "react"
-import { useValdresStore } from "./useValdresStore"
+import { useStore } from "./useStore"
 
 const isFunction = <V>(value: any): value is (get: GetValue) => V => {
     return typeof value === "function"
@@ -34,7 +34,7 @@ export const useValdresValueWithDefault = <V>(
     defaultValue: V | (() => V),
     deps = [],
 ) => {
-    const store = useValdresStore()
+    const store = useStore()
     const defaultMemoized = useMemo(() => defaultValue, deps)
     const res = useSyncExternalStore(
         cb => store.sub(atom, cb, false),

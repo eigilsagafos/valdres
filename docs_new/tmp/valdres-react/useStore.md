@@ -1,23 +1,23 @@
 ---
-title: useValdresStore
+title: useStore
 sidebar:
     order: 4
 ---
 
 A hook that returns the closest Valdres store object. If wrapped within a
-ValdresProvider it will return the store else it will return the default store
-same as getDefaultStore.
+`<Provider>` it will return the store else it will return the default store same
+as getDefaultStore.
 
 ## Example
 
 ```jsx
-import { atom, useValdresStore } from "@valdres/store"
+import { atom, useStore } from "@valdres/store"
 
 const userAtom = atom({ name: "Foo" })
 const isSavingAtom = atom(false)
 
 export const Comp = () => {
-    const store = useValdresStore()
+    const store = useStore()
 
     return (
         <button

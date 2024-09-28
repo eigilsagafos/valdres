@@ -1,12 +1,12 @@
 import { useEffect } from "react"
-import { atom, useValdresState } from "../../../../valdres-react"
+import { atom, useAtom } from "../../../../valdres-react"
 
 const timeAtom = atom(0.0)
 const running = atom(false)
 
 export const Stopwatch = () => {
-    const [time, setTime] = useValdresState(timeAtom)
-    const [isRunning, setIsRunning] = useValdresState(running)
+    const [time, setTime] = useAtom(timeAtom)
+    const [isRunning, setIsRunning] = useAtom(running)
 
     useEffect(() => {
         if (isRunning) {

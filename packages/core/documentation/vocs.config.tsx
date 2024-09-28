@@ -6,8 +6,14 @@ export default defineConfig({
     description:
         "Fast atom based state library for React and JavaScript. Inspired by but faster than Jotai and Recoil",
     baseUrl: "https://valdres.dev",
-    iconUrl: "/icon.svg",
-    logoUrl: "/logo.svg",
+    iconUrl: {
+        dark: "/icon-dark.svg",
+        light: "/icon-light.svg",
+    },
+    logoUrl: {
+        dark: "/logo-dark.svg",
+        light: "/logo-light.svg",
+    },
     font: {
         mono: { google: "Fira Code" },
     },
@@ -89,28 +95,28 @@ export default defineConfig({
                         link: "/docs/react/api/selector/",
                     },
                     {
-                        text: "useValdresValue",
-                        link: "/docs/react/api/useValdresValue/",
+                        text: "Provider",
+                        link: "/docs/react/api/Provider/",
                     },
                     {
-                        text: "useValdresState",
-                        link: "/docs/react/api/useValdresState/",
+                        text: "useAtom",
+                        link: "/docs/react/api/useAtom/",
                     },
                     {
-                        text: "useSetValdresState",
-                        link: "/docs/react/api/useSetValdresState/",
+                        text: "useValue",
+                        link: "/docs/react/api/useValue/",
                     },
                     {
-                        text: "useResetValdresState",
-                        link: "/docs/react/api/useResetValdresState/",
+                        text: "useSetAtom",
+                        link: "/docs/react/api/useSetAtom/",
                     },
                     {
-                        text: "useValdresStore",
-                        link: "/docs/react/api/useValdresStore/",
+                        text: "useResetAtom",
+                        link: "/docs/react/api/useResetAtom/",
                     },
                     {
-                        text: "ValdresProvider",
-                        link: "/docs/react/api/ValdresProvider/",
+                        text: "useStore",
+                        link: "/docs/react/api/useStore/",
                     },
                 ],
             },
@@ -124,7 +130,7 @@ export default defineConfig({
                         items: [
                             {
                                 text: "Getting Started",
-                                link: "/docs/react/api/useValdresValue",
+                                link: "/docs/react/api/useValue",
                             },
                         ],
                     },

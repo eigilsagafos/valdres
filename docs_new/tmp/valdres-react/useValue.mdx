@@ -1,25 +1,24 @@
 ---
-title: useValdresValue
+title: useValue
 sidebar:
     order: 2
 ---
 
-The `useValdresValue` subscribes to and returns the value of an atom or
-selector.
+The `useValue` subscribes to and returns the value of an atom or selector.
 
 import { Stopwatch } from "../../../components/examples/Stopwatch"
 
 <Stopwatch client:only />
 
 ```jsx
-import { atom, useValdresValue, useValdresState } from "valdres-react"
+import { atom, useValue, useAtom } from "valdres-react"
 
 const time = atom(0)
 const running = atom(false)
 
 const Comp = () => {
-    const [time, setTime] = useValdresValue(time)
-    const [isRunning, setIsRunning] = useValdresState(running)
+    const [time, setTime] = useValue(time)
+    const [isRunning, setIsRunning] = useAtom(running)
 
     useEffect(() => {
         setInterval(() => {})

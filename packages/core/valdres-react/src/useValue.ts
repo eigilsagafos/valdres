@@ -1,9 +1,9 @@
 import { isPromiseLike, type State } from "valdres"
 import { useSyncExternalStore } from "react"
-import { useValdresStore } from "./useValdresStore"
+import { useStore } from "./useStore"
 
-export const useValdresValue = (state: State) => {
-    const store = useValdresStore()
+export const useValue = (state: State) => {
+    const store = useStore()
     const res = useSyncExternalStore(
         cb => store.sub(state, cb, false),
         () => store.get(state),

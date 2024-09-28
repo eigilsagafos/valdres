@@ -21,11 +21,11 @@ export type {
     State,
 } from "valdres"
 
-export { useResetValdresState } from "./src/useResetValdresState"
-export { useSetValdresState } from "./src/useSetValdresState"
+export { useAtom } from "./src/useAtom"
+export { useResetAtom } from "./src/useResetAtom"
+export { useSetAtom } from "./src/useSetAtom"
+export { useStore } from "./src/useStore"
 export { useValdresCallback } from "./src/useValdresCallback"
-export { useValdresStore } from "./src/useValdresStore"
-export { useValdresState } from "./src/useValdresState"
-export { useValdresValue } from "./src/useValdresValue"
+export { useValue } from "./src/useValue"
 export { useValdresValueWithDefault } from "./src/useValdresValueWithDefault"
-export { ValdresProvider } from "./src/ValdresProvider"
+export { Provider } from "./src/Provider"

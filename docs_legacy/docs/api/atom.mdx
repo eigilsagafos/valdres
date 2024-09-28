@@ -34,7 +34,7 @@ import { atom } from "@valdres/core"
 ## Live example
 
 ```jsx live noInline
-import { atom, useValdresValue, getDefaultStore } from "@valdres/react"
+import { atom, useValue, getDefaultStore } from "@valdres/react"
 const mousePos = atom([0, 0])
 const store = getDefaultStore()
 
@@ -43,7 +43,7 @@ document.addEventListener("mousemove", e => {
 })
 
 const Comp = () => {
-    const [x, y] = useValdresValue(mousePos)
+    const [x, y] = useValue(mousePos)
     return (
         <p>
             Your mouse position is x: {x} y: {y}
