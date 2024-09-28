@@ -2,8 +2,6 @@ import { describe, test, expect, mock } from "bun:test"
 import { atom } from "./atom"
 import { selector } from "./selector"
 import { createStore } from "./createStore"
-import { wait } from "@valdres/test"
-import * as jotai from "jotai"
 
 describe("atom", () => {
     test("is good", () => {
@@ -48,16 +46,16 @@ describe("atom", () => {
             new Promise(resolve => setTimeout(() => resolve("done"), 100))
         const numberAtom = atom(asyncFunction)
         const res = store.get(numberAtom)
-        console.log(res)
     })
 
     test("onMount", () => {
         const store = createStore()
-        const onMountCallback = mock(() => {})
         const onUnmountCallback = mock(() => {})
+        const onMountCallback = mock(() => {
+            return onUnmountCallback
+        })
         const user1 = atom("Foo", {
             onMount: onMountCallback,
-            onUnmount: onUnmountCallback,
         })
         expect(store.get(user1)).toBe("Foo")
         expect(onMountCallback).toHaveBeenCalledTimes(0)
@@ -68,7 +66,6 @@ describe("atom", () => {
         unsubscribe()
         expect(onMountCallback).toHaveBeenCalledTimes(1)
         expect(onUnmountCallback).toHaveBeenCalledTimes(1)
-        console.log(store.get(user1))
     })
 
     test("onInit", () => {
@@ -79,29 +76,15 @@ describe("atom", () => {
         })
         expect(store.get(user1)).toBe("Foo")
         expect(onInitCallback).toHaveBeenCalledTimes(1)
-        // expect(onUnmountCallback).toHaveBeenCalledTimes(0)
-        // const unsubscribe = store.sub(user1, () => {})
-        // expect(onMountCallback).toHaveBeenCalledTimes(1)
-        // expect(onUnmountCallback).toHaveBeenCalledTimes(0)
-        // unsubscribe()
-        // expect(onMountCallback).toHaveBeenCalledTimes(1)
-        // expect(onUnmountCallback).toHaveBeenCalledTimes(1)
-        // console.log(store.get(user1))
     })
 
-    test("jotai", async () => {
-        const store = jotai.createStore()
-        const defaultValue = mock(() => performance.now())
-
-        const atom1 = jotai.atom(defaultValue)
-        atom1.onMount = () => {
-            console.log(`moujnasdf`)
-        }
-        console.log(store.get(atom1))
-        await wait(1)
-        console.log(store.get(atom1))
-        expect(defaultValue).toHaveBeenCalledTimes(1)
-        console.log(atom1.read())
-        store.sub(atom1, () => {})
+    test("onInit atom with no value", () => {
+        const store = createStore()
+        const onInitCallback = mock(setSelf => setSelf("Foo"))
+        const user1 = atom<string>(undefined, {
+            onInit: onInitCallback,
+        })
+        expect(store.get(user1)).toBe("Foo")
+        expect(onInitCallback).toHaveBeenCalledTimes(1)
     })
 })

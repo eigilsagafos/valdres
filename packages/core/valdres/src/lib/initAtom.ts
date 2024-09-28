@@ -32,11 +32,12 @@ export const getAtomInitValue = <V>(atom: Atom<V>, data: StoreData) => {
 }
 
 export const initAtom = <V>(atom: Atom<V>, data: StoreData) => {
-    const value = getAtomInitValue(atom, data)
+    let value = getAtomInitValue(atom, data)
     data.values.set(atom, value)
     if (atom.onInit)
         // @ts-ignore @ts-todo
         atom.onInit((newVal: V) => {
+            value = newVal
             setAtom(atom, newVal, data)
         })
     return value
