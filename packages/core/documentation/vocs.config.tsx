@@ -80,6 +80,10 @@ export default defineConfig({
                             link: "/valdres-react/api/selector/",
                         },
                         {
+                            text: "store",
+                            link: "/valdres-react/api/store/",
+                        },
+                        {
                             text: "Provider",
                             link: "/valdres-react/api/Provider/",
                         },
