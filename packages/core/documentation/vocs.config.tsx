@@ -35,118 +35,169 @@ export default defineConfig({
     topNav: [
         {
             text: "React",
-            link: "/docs/react/quick-start",
-            match: "/docs/react",
+            link: "/valdres-react/introduction",
+            match: "/valdres-react",
         },
         { text: "Vanilla JS", link: "/docs/vanilla", match: "/docs/vanilla" },
     ],
-    sidebar: {
-        "/docs/vanilla": [
-            {
-                text: "Getting Started",
-                link: "/docs/vanilla/getting-started",
-            },
-            {
-                text: "API",
-                collapsed: false,
-                items: [
-                    {
-                        text: "atom",
-                        link: "/docs/vanilla/api/atom/",
-                    },
-                    {
-                        text: "selector",
-                        link: "/docs/vanilla/api/selector/",
-                    },
-                    {
-                        text: "selector",
-                        link: "/docs/vanilla/api/atomFamily/",
-                    },
-                    {
-                        text: "selector",
-                        link: "/docs/vanilla/api/selectorFamily/",
-                    },
-                ],
-            },
-        ],
-        "/docs/react": [
-            {
-                text: "valdres-react",
-                items: [
-                    {
-                        text: "Getting Started",
-                        collapsed: false,
-                        items: [
-                            {
-                                text: "Introduction",
-                                link: "/docs/react/introduction/",
-                            },
-                            {
-                                text: "Quick Start",
-                                link: "/docs/react/quick-start/",
-                            },
-                            {
-                                text: "Performance",
-                                link: "/docs/react/performance/",
-                            },
-                        ],
-                    },
-                    {
-                        text: "API",
-                        collapsed: false,
-                        items: [
-                            {
-                                text: "atom",
-                                link: "/docs/react/api/atom/",
-                            },
-                            {
-                                text: "selector",
-                                link: "/docs/react/api/selector/",
-                            },
-                            {
-                                text: "Provider",
-                                link: "/docs/react/api/Provider/",
-                            },
-                            {
-                                text: "useAtom",
-                                link: "/docs/react/api/useAtom/",
-                            },
-                            {
-                                text: "useValue",
-                                link: "/docs/react/api/useValue/",
-                            },
-                            {
-                                text: "useSetAtom",
-                                link: "/docs/react/api/useSetAtom/",
-                            },
-                            {
-                                text: "useResetAtom",
-                                link: "/docs/react/api/useResetAtom/",
-                            },
-                            {
-                                text: "useStore",
-                                link: "/docs/react/api/useStore/",
-                            },
-                        ],
-                    },
-                ],
-            },
-            {
-                text: "@valdres-react",
-                collapsed: true,
-                items: [
-                    {
-                        text: "@valdres-react/color-mode",
-                        collapsed: true,
-                        items: [
-                            {
-                                text: "Getting Started",
-                                link: "/docs/react/api/useValue",
-                            },
-                        ],
-                    },
-                ],
-            },
-        ],
-    },
+    sidebar: [
+        {
+            text: "valdres-react",
+            collapsed: true,
+            items: [
+                {
+                    text: "Getting Started",
+                    // collapsed: true,
+                    items: [
+                        {
+                            text: "Introduction",
+                            link: "/valdres-react/introduction/",
+                        },
+                        {
+                            text: "Performance",
+                            link: "/valdres-react/performance/",
+                        },
+                        {
+                            text: "Valdres vs Jotai",
+                            link: "/valdres-react/valdres-vs-jotai/",
+                        },
+                        {
+                            text: "Valdres vs Recoil",
+                            link: "/valdres-react/valdres-vs-recoil/",
+                        },
+                    ],
+                },
+                {
+                    text: "API",
+                    // collapsed: false,
+                    items: [
+                        {
+                            text: "atom",
+                            link: "/valdres-react/api/atom/",
+                        },
+                        {
+                            text: "selector",
+                            link: "/valdres-react/api/selector/",
+                        },
+                        {
+                            text: "Provider",
+                            link: "/valdres-react/api/Provider/",
+                        },
+                        {
+                            text: "useAtom",
+                            link: "/valdres-react/api/useAtom/",
+                        },
+                        {
+                            text: "useValue",
+                            link: "/valdres-react/api/useValue/",
+                        },
+                        {
+                            text: "useSetAtom",
+                            link: "/valdres-react/api/useSetAtom/",
+                        },
+                        {
+                            text: "useResetAtom",
+                            link: "/valdres-react/api/useResetAtom/",
+                        },
+                        {
+                            text: "useStore",
+                            link: "/valdres-react/api/useStore/",
+                        },
+                    ],
+                },
+                // {
+                //     text: "@valdres-react",
+                //     collapsed: true,
+                //     items: [
+                //         {
+                //             text: "@valdres-react/color-mode",
+                //             link: "/@valdres-react/color-mode/",
+                //         },
+                //         {
+                //             text: "@valdres-react/jotai",
+                //             link: "/@valdres-react/jotai/",
+                //         },
+                //         {
+                //             text: "@valdres-react/recoil",
+                //             link: "/@valdres-react/recoil/",
+                //         },
+                //     ],
+                // },
+            ],
+        },
+        {
+            text: "@valdres-react",
+            collapsed: true,
+            items: [
+                {
+                    text: "@valdres-react/color-mode",
+                    link: "/@valdres-react/color-mode/",
+                },
+                {
+                    text: "@valdres-react/jotai",
+                    link: "/@valdres-react/jotai/",
+                },
+                {
+                    text: "@valdres-react/recoil",
+                    link: "/@valdres-react/recoil/",
+                },
+            ],
+        },
+        {
+            text: "valdres",
+            collapsed: true,
+            items: [
+                {
+                    text: "Getting Started",
+                    // collapsed: path !== "valdres",
+                    items: [
+                        {
+                            text: "Introduction",
+                            link: "/valdres/getting-started/introduction/",
+                        },
+                        {
+                            text: "Motivation",
+                            link: "/valdres/getting-started/motivation/",
+                        },
+                    ],
+                },
+                {
+                    text: "API",
+                    // collapsed: path !== "valdres",
+                    items: [
+                        {
+                            text: "atom",
+                            link: "/valdres/api/atom/",
+                        },
+                        {
+                            text: "selector",
+                            link: "/valdres/api/selector/",
+                        },
+                        {
+                            text: "atomFamily",
+                            link: "/valdres/api/atomFamily/",
+                        },
+                        {
+                            text: "selectorFamily",
+                            link: "/valdres/api/selectorFamily/",
+                        },
+                        {
+                            text: "store",
+                            link: "/valdres/api/store/",
+                        },
+                    ],
+                },
+            ],
+        },
+        {
+            text: "@valdres",
+            collapsed: true,
+            items: [
+                {
+                    text: "@valdres/color-mode",
+                    link: "/@valdres/color-mode/",
+                },
+            ],
+        },
+    ],
 })

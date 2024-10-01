@@ -1,0 +1,53 @@
+# Valdres vs Jotai
+
+## Introduction
+
+Valdres was created due to performance issues encounterd building an offline
+first process model editor. First with Recoil and then with Jotai due to the
+apperent abandonment of the Recoil project.
+
+Read more about the motivation behind Valdres
+[here](/valdres/getting-started/motivation).
+
+If you are a current Jotai user and want to quickly test out Valdres we have a
+package that is API compatible with a majoritiy of the Jotai api. Read more here
+[@valdres-react/jotai](/@valdres-react/jotai/).
+
+## Similarities
+
+### Storage
+
+Jotai and Valdres have a similar approach to how atoms and selectors are stored
+internally. They both use WeakMap. So if an atom or selector is no longer
+referenced it can be garbage collected.
+
+## Differences
+
+### React implementation
+
+For the React implementation Jotai and Valdres differ in how they handle
+callbacks. Jotai is using a combination of `useEffect` and `useReducer` while
+Valdres utilize `useSyncExternalStore`, similar to the Zustand library. (The
+same developer has created both Zustand and Jotai)
+
+### atom + selector
+
+Jotai has a single concept for both state and derived state. While I do see some
+benefits to that, we chose a similar apporach to Recoil where we seperate this
+and keep stored state in atoms and derived/aggregated state in selectors. Based
+on our experience building and app with several hundred atoms and selectors we
+see a clear benfit to the mental model and the readability of the code.
+
+### atomFamily/selectorFamily
+
+In Jotai atomFamily is a simple uiltiy. In valdres we chose to make atomFamily
+and selectorFamily first class citizens. The api is more similar to what Recoil
+provides. In addition you can subscribe to an entire family and get a list of
+all keys as an array to iterate over. (If you need control over the order you
+still need to keep that in a seperate atom)
+
+### Transactions
+
+One thing Recoil pioneered and that I belive was a great feature was the ability
+to do transactions on the state. We have brought this to Valdres. This is not an
+explicit part of Jotai.

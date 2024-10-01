@@ -8,6 +8,7 @@
         "preview": "vocs preview"
     },
     "dependencies": {
+        "@faker-js/faker": "9.0.3",
         "@types/react": "18.3.8",
         "jotai": "2.10.0",
         "mitata": "1.0.4",

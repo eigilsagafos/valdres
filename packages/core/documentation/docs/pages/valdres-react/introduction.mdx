@@ -1,0 +1,119 @@
+# Introduction
+
+`valdres-react` builds on the vanilla js `valdres` package and adds various
+hooks and the optional `<Provider />`.
+
+## Quick Start
+
+::::steps
+
+### Install
+
+:::code-group
+
+```bash [npm]
+npm install valdres-react
+```
+
+```bash [bun]
+bun add valdres-react
+```
+
+```bash [yarn]
+yarn add valdres-react
+```
+
+```bash [pnpm]
+pnpm add valdres-react
+```
+
+:::
+
+### Create atoms and selectors
+
+An `atom` contains a piece of state while a `selector` represents aggregated
+state or slices of state based on one or more atoms. `atomFamily` and
+`selectorFamily` are used when you have collections of similar objects that vary
+based on input paramters like an id or filters.
+
+In the example below we have the folling state:
+
+-   `currentUserIdAtom` an atom that fetches and stores the currents user id
+-   `userAtom` a atomFamily that stores user objects by userId
+-   `userDisplayNameSelector` a selectorFamily that generates a display name
+    based on the `userAtom` family
+
+:::code-group
+
+```tsx [currentUserIdAtom.ts]
+// [!include ~/snippets/state/atoms/currentUserIdAtom.ts]
+```
+
+```tsx [userAtom.ts]
+// [!include ~/snippets/state/atoms/userAtom.ts]
+```
+
+```tsx [userDisplayNameSelector.ts]
+// [!include ~/snippets/state/selectors/userDisplayNameSelector.ts]
+```
+
+:::
+
+### Use the atoms and selectors in React
+
+Once we have our atoms and selectors we can subscribe to them in our React
+components.
+
+:::code-group
+
+```tsx [UserProfile.tsx]
+// [!include ~/snippets/UserProfile.tsx]
+```
+
+```tsx [UserAvatar.tsx]
+// [!include ~/snippets/UserAvatar.tsx]
+```
+
+:::
+
+:::note[Result]
+
+import { UserProfileWithReset } from "../../snippets/UserProfileWithReset"
+
+<UserProfileWithReset />
+
+:::
+
+### Provider mode (optional)
+
+Unless you wrap your app in a `<Provider>` the default global store is used.
+This is totaly fine. You can access the default store outside the react tree
+with `getDefaultStore()` from the `valdres-react` package.
+
+If you want more control or segregate your state across multiple stores you can
+wrap any part of the React tree with a `<Provider>`. The Provider by default
+creates a new store unless you provide your own store created using the
+[`createStore()`](/react/api/createStore) function.
+
+:::code-group
+
+```tsx [App.tsx]
+import { Provider } from "valdres-react"
+import { store } from "./store"
+
+export function App = ({ children }) {
+    return <Provider store={store}>
+        {children}
+    <Provider>
+}
+```
+
+```ts [store.ts]
+import { createStore } from "valdres-react"
+
+export const store = createStore()
+```
+
+:::
+
+::::
