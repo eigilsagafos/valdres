@@ -4,7 +4,7 @@ import type { AtomFamily } from "./types/AtomFamily"
 
 type DefaultValueCallback<Key, Value> = (arg: Key) => Value | Promise<Value>
 
-export const atomFamily = <Value, Key>(
+export const atomFamily = <Value = unknown, Key = unknown>(
     defaultValue?: Value | DefaultValueCallback<Key, Value>,
     debugLabel?: string,
 ): AtomFamily<Value, Key> => {
