@@ -7,9 +7,7 @@
         "test": "bun run lerna run test"
     },
     "workspaces": [
-        "examples/*",
         "packages/core/*",
-        "packages/core/docs/plugins/*",
         "packages/internal/*",
         "packages/@valdres/*",
         "packages/@valdres-react/*"
