@@ -27,7 +27,7 @@
         "valdres-react": "workspace:^"
     },
     "devDependencies": {
-        "typescript": "5.5.4"
+        "typescript": "5.6.2"
     },
     "publishConfig": {
         "access": "public",
