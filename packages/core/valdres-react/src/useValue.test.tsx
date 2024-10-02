@@ -55,4 +55,13 @@ describe("useValue", () => {
         })
         expect(result.current).toBe(4)
     })
+
+    test.only("atomFamily id list", async () => {
+        const family = atomFamily(1)
+        const atom1 = family("1")
+        const atom2 = family("2")
+        const store = getDefaultStore(family)
+        const { result } = renderHook(() => useValue(family))
+        expect(result.current).toStrictEqual(["1", "2"])
+    })
 })
