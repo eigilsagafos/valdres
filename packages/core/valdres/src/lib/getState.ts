@@ -1,3 +1,4 @@
+import equal from "fast-deep-equal"
 import { initAtom } from "./initAtom"
 import { initSelector } from "./initSelector"
 import { isAtom } from "../utils/isAtom"
@@ -24,7 +25,12 @@ export function getState<V, K>(
     if (data.values.has(state)) return data.values.get(state)
     if (isAtom(state)) return initAtom<V>(state, data)
     if (isSelector(state)) return initSelector<V>(state, data)
-    if (isFamily(state))
-        return Array.from((state as AtomFamily<V, any>)._map.keys())
+    if (isFamily(state)) {
+        // TODO: Find better way to solve this?
+        const array = Array.from((state as AtomFamily<V, any>)._map.keys())
+        if (equal(array, state._keyArray)) return state._keyArray
+        state._keyArray = array
+        return array
+    }
     throw new Error("Invalid object passed to get")
 }

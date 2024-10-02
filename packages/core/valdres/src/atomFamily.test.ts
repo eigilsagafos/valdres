@@ -130,5 +130,6 @@ describe("atomFamily", () => {
         const user2 = store.set(userAtomFamily(2), { name: "Bar" })
         userAtomFamily(3)
         expect(store.get(userAtomFamily)).toStrictEqual([1, 2, 3])
+        expect(store.get(userAtomFamily)).toBe(store.get(userAtomFamily))
     })
 })
