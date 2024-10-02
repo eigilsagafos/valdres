@@ -249,21 +249,12 @@ describe("selector", () => {
         const subCallback = mock(() => {})
         store.sub(keysAtomFamily, subCallback)
         const res1 = store.get(selector1)
-        expect(res1).toStrictEqual([
-            ["a", true],
-            ["b", true],
-            ["c", false],
-        ])
+        expect(res1).toStrictEqual(["a", "b", "c"])
         expect(subCallback).toHaveBeenCalledTimes(0)
         store.set(keysAtomFamily("d"), true)
         expect(subCallback).toHaveBeenCalledTimes(1)
         const res2 = store.get(selector1)
-        expect(res2).toStrictEqual([
-            ["a", true],
-            ["b", true],
-            ["c", false],
-            ["d", true],
-        ])
+        expect(res2).toStrictEqual(["a", "b", "c", "d"])
         store.set(keysAtomFamily("b"), false)
         const res3 = store.get(selector1)
         // console.log(res3)
