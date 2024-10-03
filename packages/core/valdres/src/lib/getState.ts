@@ -13,13 +13,10 @@ import type { Family } from "../types/Family"
 
 export function getState<V, K>(atom: Atom<V>, data: StoreData): V
 export function getState<V, K>(selector: Selector<V>, data: StoreData): V
-export function getState<V, K>(
-    family: AtomFamily<unknown, K>,
-    data: StoreData,
-): K[]
+export function getState<V, K>(family: AtomFamily<V, K>, data: StoreData): K[]
 
 export function getState<V, K>(
-    state: State<V> | Family<V, K>,
+    state: Atom<V> | Selector<V> | Family<V, K>,
     data: StoreData,
 ) {
     if (data.values.has(state)) return data.values.get(state)
@@ -28,7 +25,9 @@ export function getState<V, K>(
     if (isFamily(state)) {
         // TODO: Find better way to solve this?
         const array = Array.from((state as AtomFamily<V, any>)._map.keys())
+        // @ts-ignore
         if (equal(array, state._keyArray)) return state._keyArray
+        // @ts-ignore
         state._keyArray = array
         return array
     }

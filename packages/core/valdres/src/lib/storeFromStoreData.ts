@@ -13,6 +13,7 @@ import type { TransactionFn } from "../types/TransactionFn"
 import type { Atom } from "../types/Atom"
 
 export const storeFromStoreData = (data: StoreData): Store => {
+    // @ts-ignore, @ts-todo
     const get: GetValue = state => getState(state, data)
 
     const set = <V>(state: Atom<V>, value: V) => {
@@ -28,6 +29,7 @@ export const storeFromStoreData = (data: StoreData): Store => {
         deepEqualCheckBeforeCallback: boolean = true,
     ) => subscribe(state, callback, deepEqualCheckBeforeCallback, data)
 
+    // @ts-ignore, @ts-todo
     const txn = (callback: TransactionFn) => transaction(callback, data)
 
     return {

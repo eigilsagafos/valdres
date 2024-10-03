@@ -35,7 +35,9 @@ const evaluateSelector = <V>(selector: Selector<V>, data: StoreData) => {
     let result
     try {
         result = selector.get(state => {
+            // @ts-ignore, @ts-todo
             const value = getState(state, data)
+            // @ts-ignore, @ts-todo
             updatedDependencies.add(state)
             // if (!currentDependencies.has(state)) {
             //     const set = getOrInitConsumersSet(state, data)

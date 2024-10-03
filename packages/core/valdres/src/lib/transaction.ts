@@ -72,6 +72,7 @@ export const transaction = (
             const deps = new Set()
             const res = state.get(s => {
                 deps.add(s)
+                // @ts-ignore, @ts-todo
                 return txnGet(s)
             })
             for (const dep of deps) {
