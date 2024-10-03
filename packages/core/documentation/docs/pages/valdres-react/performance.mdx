@@ -2,10 +2,19 @@
 
 import { Memory } from "../../snippets/Memory"
 
-<Memory />
+{/* <Memory /> */}
 
 ## ProviderInit
 
 import { ProviderInit } from "../../snippets/performance/ProviderInit"
 
-<ProviderInit />
+{/* <ProviderInit /> */}
+
+## FPS
+
+import { FPS } from "../../snippets/performance/FPS"
+import { RenderIfClient } from "../../snippets/components/RenderIfClient"
+
+<RenderIfClient>
+    <FPS />
+</RenderIfClient>
