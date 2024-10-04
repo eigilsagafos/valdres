@@ -1,27 +1,33 @@
-import { stableStringify } from "./lib/stableStringify"
 import { selector } from "./selector"
+import { stableStringify } from "./lib/stableStringify"
 import type { SelectorFamily } from "./types/SelectorFamily"
+import type { SelectorOptions } from "./types/SelectorOptions"
+
+const createOptions = (
+    options: SelectorOptions,
+    key: string | boolean | number,
+) => {
+    if (options.label) {
+        return {
+            ...options,
+            label: options?.label + "_" + key,
+        }
+    } else {
+        return options
+    }
+}
 
 export const selectorFamily = <Value, Key>(
     get: any,
-    debugLabel?: string,
+    options?: SelectorOptions,
 ): SelectorFamily<Value, Key> => {
     const map = new Map()
     const selectorFamily = (key: Key) => {
-        let keyStringified
-        try {
-            keyStringified = stableStringify(key)
-        } catch (e) {
-            console.log(`errro`, { key, debugLabel, e })
-            throw e
-        }
+        const keyStringified = stableStringify(key)
         if (map.has(keyStringified)) return map.get(keyStringified)
-        const selectorDebugLabel = debugLabel
-            ? debugLabel + "_" + keyStringified
-            : undefined
         const newSelector = selector<Value, Key>(
             selectorArgs => get(key)(selectorArgs),
-            selectorDebugLabel,
+            options ? createOptions(options, keyStringified) : undefined,
         )
         newSelector.family = selectorFamily
         map.set(keyStringified, newSelector)

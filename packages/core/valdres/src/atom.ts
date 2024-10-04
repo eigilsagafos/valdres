@@ -1,15 +1,8 @@
 import { setAtom } from "./lib/setAtom"
 import type { Atom } from "./types/Atom"
 import type { AtomOnSet } from "./types/AtomOnSet"
+import type { AtomOptions } from "./types/AtomOptions"
 import type { StoreData } from "./types/StoreData"
-
-type AtomOptions<Value = any> = {
-    global?: boolean
-    label?: string
-    onInit?: (setSelf: (value: Value) => void, store: StoreData) => void
-    onSet?: AtomOnSet<Value>
-    onMount?: () => () => void
-}
 
 export const globalAtom = <Value = any, FamilyKey = undefined>(
     defaultValue: Value | (() => Value | Promise<Value>),

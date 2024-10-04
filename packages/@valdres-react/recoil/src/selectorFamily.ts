@@ -13,6 +13,8 @@ export const selectorFamily = <T, P extends SerializableParam>(
     return valdresSelectorFamily(
         // @ts-ignore @ts-todo
         key => get => options.get(key)({ get }),
-        options.key,
+        {
+            label: options.key,
+        },
     )
 }

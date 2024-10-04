@@ -7,5 +7,5 @@ export const atomFamily = <T, P extends SerializableParam>(
     options: AtomFamilyOptions<T, P>,
 ) => {
     // @ts-ignore @ts-todo
-    return valdresAtomFamily(options.default, options.key)
+    return valdresAtomFamily(options.default, { label: options.key })
 }

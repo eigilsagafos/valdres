@@ -18,7 +18,9 @@ export const selector = <T>(
                     throw new Error("Not implemnted")
                 },
             }),
-        options.key,
+        {
+            label: options.key,
+        },
     )
     // @ts-ignore
     if (options.set) newSelector.set = options.set

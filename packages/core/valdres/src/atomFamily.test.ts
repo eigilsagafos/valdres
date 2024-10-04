@@ -15,6 +15,24 @@ describe("atomFamily", () => {
         expect(store.get(userAtomFamily(1))).toBe("Foo")
     })
 
+    test("label", () => {
+        const userAtomFamily = atomFamily<string, number | string | number[]>(
+            undefined,
+            {
+                label: "familyLabel",
+            },
+        )
+        expect(userAtomFamily.label).toBe("familyLabel")
+        const user1 = userAtomFamily(1)
+        expect(user1.label).toBe("familyLabel_1")
+
+        const user2 = userAtomFamily("2")
+        expect(user2.label).toBe("familyLabel_2")
+
+        const user3 = userAtomFamily([1, 2])
+        expect(user3.label).toBe("familyLabel_[1,2]")
+    })
+
     // test("Allow default override first time atom is created in family", () => {
     //     const store = createStore()
     //     const family = atomFamily<{ id: number; name: string }, number>(id => ({
@@ -65,20 +83,18 @@ describe("atomFamily", () => {
 
     test("debug label", () => {
         const store = createStore()
-        const userAtomFamily = atomFamily<string, string>(
-            undefined,
-            "userFamily",
-        )
+        const userAtomFamily = atomFamily<string, string>(undefined, {
+            label: "userFamily",
+        })
         const user1 = userAtomFamily("Foo")
         expect(user1.label).toBe("userFamily_Foo")
     })
 
     test("subscribe to atomFamily", () => {
         const store = createStore()
-        const userAtomFamily = atomFamily<{ name: string }, string>(
-            undefined,
-            "userFamily",
-        )
+        const userAtomFamily = atomFamily<{ name: string }, string>(undefined, {
+            label: "userFamily",
+        })
         const callbackIds: string[] = []
         const docs: { name: string }[] = []
         store.sub(userAtomFamily, id => {
@@ -106,7 +122,9 @@ describe("atomFamily", () => {
         const store = createStore()
         const userAtomFamily = atomFamily<{ name: string }, { id: number }>(
             undefined,
-            "userFamily",
+            {
+                label: "userFamily",
+            },
         )
         const ids = []
         const docs = []
