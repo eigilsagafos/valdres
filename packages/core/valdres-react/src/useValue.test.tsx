@@ -4,6 +4,7 @@ import { useValue } from "./useValue"
 import {
     atom,
     atomFamily,
+    createStore,
     getDefaultStore,
     selector,
     selectorFamily,
@@ -56,12 +57,22 @@ describe("useValue", () => {
         expect(result.current).toBe(4)
     })
 
-    test.only("atomFamily id list", async () => {
+    test("atomFamily id list", async () => {
         const family = atomFamily(1)
         const atom1 = family("1")
         const atom2 = family("2")
-        const store = getDefaultStore(family)
+        const store = getDefaultStore()
         const { result } = renderHook(() => useValue(family))
         expect(result.current).toStrictEqual(["1", "2"])
+    })
+
+    test("provided store", async () => {
+        const defaultStore = getDefaultStore()
+        const store = createStore()
+        const numberAtom = atom()
+        defaultStore.set(numberAtom, 1)
+        store.set(numberAtom, 2)
+        const { result } = renderHook(() => useValue(numberAtom, store))
+        expect(result.current).toBe(2)
     })
 })
