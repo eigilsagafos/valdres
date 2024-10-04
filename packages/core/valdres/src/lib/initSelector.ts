@@ -26,12 +26,8 @@ const getOrInitConsumersSet = (
 }
 
 const evaluateSelector = <V>(selector: Selector<V>, data: StoreData) => {
-    const currentDependencies =
-        data.stateDependencies.get(selector) ?? new Set<State<any>>()
     const updatedDependencies = new Set<State<any>>()
-    // const currentListeners =
-    //     store.listeners.get(selector) ?? new Set<State<any>>()
-    // const updatedListeners = new Set<State<any>>()
+
     let result
     try {
         result = selector.get(state => {
@@ -39,15 +35,11 @@ const evaluateSelector = <V>(selector: Selector<V>, data: StoreData) => {
             const value = getState(state, data)
             // @ts-ignore, @ts-todo
             updatedDependencies.add(state)
-            // if (!currentDependencies.has(state)) {
-            //     const set = getOrInitConsumersSet(state, data)
-            //     set.add(selector)
-            // }
             if (isPromiseLike(value))
                 throw new SuspendAndWaitForResolveError(value)
 
             return value
-        })
+        }, data.id)
     } catch (error) {
         if (error instanceof SuspendAndWaitForResolveError) {
             result = error
@@ -55,15 +47,24 @@ const evaluateSelector = <V>(selector: Selector<V>, data: StoreData) => {
             throw error
         }
     }
+
+    const currentDependencies =
+        data.stateDependencies.get(selector) ?? new Set<State<any>>()
     const added = updatedDependencies?.difference(currentDependencies)
     const removed = currentDependencies?.difference(updatedDependencies)
     for (const state of added) {
         const set = getOrInitConsumersSet(state, data)
+        // if (set.size === 0 && state.onConsume) {
+        //     const res = state.onConsume()
+        // }
         set.add(selector)
     }
     for (const state of removed) {
         const set = getOrInitConsumersSet(state, data)
         set.delete(selector)
+        // if (set.size === 0 && state.onConsume) {
+        //     throw new Error(`TODO`)
+        // }
     }
 
     data.stateDependencies.set(selector, updatedDependencies)

@@ -70,11 +70,11 @@ export const transaction = (
                 return txnSelectorCache.get(state)
             }
             const deps = new Set()
+            // @ts-ignore, @ts-todo
             const res = state.get(s => {
                 deps.add(s)
-                // @ts-ignore, @ts-todo
                 return txnGet(s)
-            })
+            }, data.id)
             for (const dep of deps) {
                 if (!txnSubscribers.has(dep)) {
                     txnSubscribers.set(dep, new Set())

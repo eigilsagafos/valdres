@@ -5,7 +5,12 @@ import type { Atom } from "../types/Atom"
 import type { StoreData } from "../types/StoreData"
 import { getState } from "./getState"
 
-export const setAtom = <V>(atom: Atom<V>, newValue: V, data: StoreData) => {
+export const setAtom = <Value = any>(
+    atom: Atom<Value>,
+    newValue: Value,
+    data: StoreData,
+    skipOnSet = false,
+) => {
     const currentValue = getState(atom, data)
     if (typeof newValue === "function") {
         newValue = newValue(currentValue)
@@ -16,6 +21,7 @@ export const setAtom = <V>(atom: Atom<V>, newValue: V, data: StoreData) => {
     if (equal(currentValue, newValue)) return
 
     data.values.set(atom, newValue)
+    if (atom.onSet && !skipOnSet) atom.onSet(newValue, data)
     // @ts-ignore
     if (currentValue?.__isEmptyAtomPromise__) {
         // @ts-ignore

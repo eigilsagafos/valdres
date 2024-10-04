@@ -1,8 +1,8 @@
 import { isPromiseLike } from "../utils/isPromiseLike"
 import { propagateUpdatedAtoms } from "./propagateUpdatedAtoms"
+import { setAtom } from "./setAtom"
 import type { Atom } from "../types/Atom"
 import type { StoreData } from "../types/StoreData"
-import { setAtom } from "./setAtom"
 
 export const getAtomInitValue = <V>(atom: Atom<V>, data: StoreData) => {
     if (atom.defaultValue === undefined) {
@@ -35,10 +35,9 @@ export const initAtom = <V>(atom: Atom<V>, data: StoreData) => {
     let value = getAtomInitValue(atom, data)
     data.values.set(atom, value)
     if (atom.onInit)
-        // @ts-ignore @ts-todo
         atom.onInit((newVal: V) => {
             value = newVal
-            setAtom(atom, newVal, data)
-        })
+            setAtom(atom, newVal, data, true)
+        }, data)
     return value
 }
