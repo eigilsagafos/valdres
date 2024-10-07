@@ -1,6 +1,6 @@
 import { describe, test, expect, mock } from "bun:test"
 import { atom } from "./atom"
-import { selector } from "./selector"
+import { selector, selector } from "./selector"
 import { createStore } from "./createStore"
 
 describe("atom", () => {
@@ -86,5 +86,19 @@ describe("atom", () => {
         })
         expect(store.get(user1)).toBe("Foo")
         expect(onInitCallback).toHaveBeenCalledTimes(1)
+    })
+
+    test("atom with selector as default value", () => {
+        const store = createStore()
+        const atom1 = atom(1)
+        const selector1 = selector(get => get(atom1))
+        const atom2 = atom(selector1)
+        expect(store.get(atom2)).toBe(1)
+        store.set(atom1, 2)
+        expect(store.get(atom1)).toBe(2)
+        expect(store.get(atom2)).toBe(1)
+        store.set(atom2, 3)
+        expect(store.get(atom1)).toBe(2)
+        expect(store.get(atom2)).toBe(3)
     })
 })

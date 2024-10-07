@@ -2,6 +2,7 @@ import { setAtom } from "./lib/setAtom"
 import type { Atom } from "./types/Atom"
 import type { AtomOnSet } from "./types/AtomOnSet"
 import type { AtomOptions } from "./types/AtomOptions"
+import type { Selector } from "./types/Selector"
 import type { StoreData } from "./types/StoreData"
 
 export const globalAtom = <Value = any, FamilyKey = undefined>(
@@ -36,7 +37,7 @@ export const globalAtom = <Value = any, FamilyKey = undefined>(
 }
 
 export const atom = <Value = any, FamilyKey = undefined>(
-    defaultValue?: Value | (() => Value | Promise<Value>),
+    defaultValue?: Value | (() => Value | Promise<Value>) | Selector<Value>,
     options?: AtomOptions<Value>,
 ): Atom<Value, FamilyKey> => {
     if (!options) return { defaultValue }

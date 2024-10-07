@@ -3,6 +3,8 @@ import { propagateUpdatedAtoms } from "./propagateUpdatedAtoms"
 import { setAtom } from "./setAtom"
 import type { Atom } from "../types/Atom"
 import type { StoreData } from "../types/StoreData"
+import { isSelector } from "../utils/isSelector"
+import { getState } from "./getState"
 
 export const getAtomInitValue = <V>(atom: Atom<V>, data: StoreData) => {
     if (atom.defaultValue === undefined) {
@@ -25,6 +27,8 @@ export const getAtomInitValue = <V>(atom: Atom<V>, data: StoreData) => {
             })
         }
         return value
+    } else if (isSelector(atom.defaultValue)) {
+        return getState(atom.defaultValue, data)
     } else {
         // data.values.set(atom, atom.defaultValue)
         return atom.defaultValue
