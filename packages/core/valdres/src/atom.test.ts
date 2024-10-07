@@ -1,6 +1,6 @@
 import { describe, test, expect, mock } from "bun:test"
 import { atom } from "./atom"
-import { selector, selector } from "./selector"
+import { selector } from "./selector"
 import { createStore } from "./createStore"
 
 describe("atom", () => {

@@ -1,7 +1,7 @@
 import type { Atom } from "./Atom"
 
-export type AtomFamily<Value, Key> = {
+export type AtomFamily<Value = any, Key = any> = {
     (key: Key, defaultOverride?: any): Atom<Value>
     label?: string
-    _map: Map<Key, Atom<Value, Key>>
+    __valdresAtomFamilyMap: Map<Key, Atom<Value, Key>>
 }

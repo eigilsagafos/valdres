@@ -1,7 +1,9 @@
 import { describe, test, expect } from "bun:test"
 import { createStore } from "./createStore"
 import { atomFamily } from "./atomFamily"
+import { selectorFamily } from "./selectorFamily"
 import { wait } from "../test/utils/wait"
+import { selector } from "./selector"
 
 describe("atomFamily", () => {
     test("the same atom is returned when calling atomFamily", () => {
@@ -149,5 +151,71 @@ describe("atomFamily", () => {
         userAtomFamily(3)
         expect(store.get(userAtomFamily)).toStrictEqual([1, 2, 3])
         expect(store.get(userAtomFamily)).toBe(store.get(userAtomFamily))
+    })
+
+    test("selectorFamily as default value", () => {
+        const now = Date.now()
+        const store = createStore()
+        const todoAtom = atomFamily()
+        const isTodoNewlyCreatedSelector = selectorFamily(
+            id => get => get(todoAtom(id)).created > Date.now() - 60_000,
+        )
+        const todoDisplaySettingsAtom = atomFamily(
+            selectorFamily(id => get => {
+                return {
+                    selected: false,
+                    expanded: get(isTodoNewlyCreatedSelector(id)),
+                }
+            }),
+        )
+
+        const todo1 = store.set(todoAtom(1), {
+            id: 1,
+            name: "Todo 1",
+            created: now - 120_000,
+        })
+        const todo2 = store.set(todoAtom(2), {
+            id: 2,
+            name: "Todo 2",
+            created: now - 20_000,
+        })
+
+        expect(store.get(todoDisplaySettingsAtom(1))).toStrictEqual({
+            selected: false,
+            expanded: false,
+        })
+        expect(store.get(todoDisplaySettingsAtom(2))).toStrictEqual({
+            selected: false,
+            expanded: true,
+        })
+    })
+
+    test("selector as default value", () => {
+        const store = createStore()
+        const defaultStringsAtom = atomFamily()
+        store.set(defaultStringsAtom(1), "Foo")
+        store.set(defaultStringsAtom(2), "Bar")
+        const userSettingsAtom = atomFamily(
+            selector(get => ({
+                string1: get(defaultStringsAtom(1)),
+                string2: get(defaultStringsAtom(2)),
+            })),
+        )
+
+        expect(store.get(userSettingsAtom(1))).toStrictEqual({
+            string1: "Foo",
+            string2: "Bar",
+        })
+
+        store.set(defaultStringsAtom(1), "Foo Updated")
+        store.set(defaultStringsAtom(2), "Bar Updated")
+        expect(store.get(userSettingsAtom(1))).toStrictEqual({
+            string1: "Foo",
+            string2: "Bar",
+        })
+        expect(store.get(userSettingsAtom(2))).toStrictEqual({
+            string1: "Foo Updated",
+            string2: "Bar Updated",
+        })
     })
 })

@@ -33,6 +33,7 @@ export const selectorFamily = <Value, Key>(
         map.set(keyStringified, newSelector)
         return newSelector
     }
-    selectorFamily._map = map
+    selectorFamily.__valdresSelectorFamilyMap = map
+    if (options?.label) selectorFamily.label = options.label
     return selectorFamily
 }

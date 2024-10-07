@@ -2,8 +2,9 @@ import equal from "fast-deep-equal"
 import { initAtom } from "./initAtom"
 import { initSelector } from "./initSelector"
 import { isAtom } from "../utils/isAtom"
+import { isAtomFamily } from "../utils/isAtomFamily"
 import { isSelector } from "../utils/isSelector"
-import { isFamily } from "../utils/isFamily"
+import { isSelectorFamily } from "../utils/isSelectorFamily"
 import type { StoreData } from "../types/StoreData"
 import type { Atom } from "../types/Atom"
 import type { AtomFamily } from "../types/AtomFamily"
@@ -21,9 +22,18 @@ export function getState<V, K>(
     if (data.values.has(state)) return data.values.get(state)
     if (isAtom(state)) return initAtom<V>(state, data)
     if (isSelector(state)) return initSelector<V>(state, data)
-    if (isFamily(state)) {
-        // TODO: Find better way to solve this?
-        const array = Array.from((state as AtomFamily<V, any>)._map.keys())
+    if (isAtomFamily(state)) {
+        // TODO: Impement more efficient way to solve this
+        const array = Array.from(state.__valdresAtomFamilyMap.keys())
+        // @ts-ignore
+        if (equal(array, state._keyArray)) return state._keyArray
+        // @ts-ignore
+        state._keyArray = array
+        return array
+    }
+    if (isSelectorFamily(state)) {
+        // TODO: Impement more efficient way to solve this
+        const array = Array.from(state.__valdresSelectorFamilyMap.keys())
         // @ts-ignore
         if (equal(array, state._keyArray)) return state._keyArray
         // @ts-ignore

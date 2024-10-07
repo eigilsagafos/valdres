@@ -1,6 +1,6 @@
 import type { Selector } from "./Selector"
 
-export type SelectorFamily<Value, Key> = {
+export type SelectorFamily<Value = any, Key = any> = {
     (key: Key, defaultOverride?: any): Selector<Value>
-    _map: Map<Key, Selector<Value, Key>>
+    __valdresSelectorFamilyMap: Map<Key, Selector<Value, Key>>
 }

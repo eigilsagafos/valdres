@@ -1,1 +1,5 @@
-export const isFamily = (state: any) => Object.hasOwn(state, "_map")
+import { isAtomFamily } from "./isAtomFamily"
+import { isSelectorFamily } from "./isSelectorFamily"
+
+export const isFamily = (state: any) =>
+    isAtomFamily(state) || isSelectorFamily(state)

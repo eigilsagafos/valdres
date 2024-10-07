@@ -1,7 +1,10 @@
 import { atom } from "./atom"
 import { stableStringify } from "./lib/stableStringify"
+import { isSelectorFamily } from "./utils/isSelectorFamily"
 import type { AtomFamily } from "./types/AtomFamily"
 import type { AtomOptions } from "./types/AtomOptions"
+import type { Selector } from "./types/Selector"
+import type { SelectorFamily } from "./types/SelectorFamily"
 
 type DefaultValueCallback<Key, Value> = (arg: Key) => Value | Promise<Value>
 
@@ -19,8 +22,25 @@ const createOptions = (
     }
 }
 
+const handleDefaultValue = <Value, Key>(
+    defaultValue: AtomFamilyDefaultValue<Value, Key>,
+    key: Key,
+) => {
+    if (isSelectorFamily(defaultValue)) return defaultValue(key)
+    // @ts-ignore @ts-todo
+    if (typeof defaultValue === "function") return () => defaultValue(key)
+    return defaultValue
+}
+
+type AtomFamilyDefaultValue<Value, Key> =
+    | undefined
+    | Value
+    | DefaultValueCallback<Key, Value>
+    | Selector<Value>
+    | SelectorFamily<Value, Key>
+
 export const atomFamily = <Value = unknown, Key = unknown>(
-    defaultValue?: Value | DefaultValueCallback<Key, Value>,
+    defaultValue?: AtomFamilyDefaultValue<Value, Key>,
     options?: AtomOptions<Value>,
 ): AtomFamily<Value, Key> => {
     const map = new Map()
@@ -31,10 +51,7 @@ export const atomFamily = <Value = unknown, Key = unknown>(
         }
 
         const newAtom = atom<Value, Key>(
-            typeof defaultValue === "function"
-                ? // @ts-ignore
-                  () => defaultValue(key)
-                : defaultValue,
+            handleDefaultValue<Value, Key>(defaultValue, key),
             options ? createOptions(options, keyStringified) : undefined,
         )
         newAtom.family = atomFamily
@@ -42,7 +59,7 @@ export const atomFamily = <Value = unknown, Key = unknown>(
         map.set(keyStringified, newAtom)
         return newAtom
     }
-    atomFamily._map = map
+    atomFamily.__valdresAtomFamilyMap = map
     if (options?.label) atomFamily.label = options.label
     return atomFamily
 }
