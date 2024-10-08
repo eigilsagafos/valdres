@@ -1,7 +1,18 @@
-import { describe, test, expect, mock } from "bun:test"
+import { describe, test, expect, mock, spyOn } from "bun:test"
 import { atom } from "./atom"
 import { selector } from "./selector"
 import { createStore } from "./createStore"
+import { wait } from "../test/utils/wait"
+
+const waitFor = async (callback, count = 0) => {
+    try {
+        callback()
+        return
+    } catch (e) {
+        await wait(1)
+        return waitFor(callback, count++)
+    }
+}
 
 describe("atom", () => {
     test("is good", () => {
@@ -100,5 +111,109 @@ describe("atom", () => {
         store.set(atom2, 3)
         expect(store.get(atom1)).toBe(2)
         expect(store.get(atom2)).toBe(3)
+    })
+
+    test.only("atom with maxAge", async () => {
+        const setIntervalSpy = spyOn(global, "setInterval")
+        const clearIntervalSpy = spyOn(global, "clearInterval")
+        const store = createStore()
+        const atom1 = atom(() => Date.now(), { maxAge: 2 })
+        const res = []
+        expect(setIntervalSpy).toHaveBeenCalledTimes(0)
+        expect(clearIntervalSpy).toHaveBeenCalledTimes(0)
+
+        const callback = mock(() => {
+            res.push(store.get(atom1))
+        })
+        const unsubscribe = store.sub(atom1, callback)
+        expect(setIntervalSpy).toHaveBeenCalledTimes(1)
+        expect(clearIntervalSpy).toHaveBeenCalledTimes(0)
+        await wait(2)
+        expect(callback).toHaveBeenCalledTimes(1)
+        expect(res).toHaveLength(1)
+        await wait(2)
+        expect(callback).toHaveBeenCalledTimes(2)
+        expect(res).toHaveLength(2)
+        unsubscribe()
+        expect(clearIntervalSpy).toHaveBeenCalledTimes(1)
+        await wait(4)
+        expect(callback).toHaveBeenCalledTimes(2)
+        expect(res).toHaveLength(2)
+        setIntervalSpy.mockReset()
+        clearIntervalSpy.mockReset()
+    })
+
+    test.todo("atom with maxAge async", async () => {
+        const setIntervalSpy = spyOn(global, "setInterval")
+        const clearIntervalSpy = spyOn(global, "clearInterval")
+        const store = createStore()
+        let count = 0
+        const atomCallback = async () =>
+            wait(1).then(() => {
+                count++
+                return count
+            })
+        const atom1 = atom(atomCallback, { maxAge: 3 })
+
+        const res: number[] = []
+        const callback = mock(() => {
+            res.push(store.get(atom1))
+        })
+        const unsubscribe = store.sub(atom1, callback)
+        expect(setInterval).toHaveBeenCalledTimes(1)
+        expect(res).toStrictEqual([])
+        await waitFor(() => expect(store.get(atom1)).toBeInstanceOf(Promise))
+        await waitFor(() => expect(store.get(atom1)).toBe(1))
+        expect(res).toStrictEqual([1])
+        expect(callback).toHaveBeenCalledTimes(1)
+        // await waitFor(() => expect(store.get(atom1)).toBeInstanceOf(Promise))
+        // await waitFor(() => expect(store.get(atom1)).toBe(2))
+        // expect(res).toStrictEqual([1, 2])
+        // expect(callback).toHaveBeenCalledTimes(2)
+        // await waitFor(() => expect(store.get(atom1)).toBeInstanceOf(Promise))
+        // await waitFor(() => expect(store.get(atom1)).toBe(3))
+        // expect(res).toStrictEqual([1, 2, 3])
+        // expect(callback).toHaveBeenCalledTimes(3)
+        // unsubscribe()
+        // expect(setInterval).toHaveBeenCalledTimes(1)
+        // expect(clearInterval).toHaveBeenCalledTimes(1)
+    })
+
+    test("atom with maxAge async and staleWhileRevalidate", async () => {
+        const setIntervalSpy = spyOn(global, "setInterval")
+        const clearIntervalSpy = spyOn(global, "clearInterval")
+        const store = createStore()
+        let startCount = 0
+        let completeCount = 0
+        let waitMs = 2
+        const atomCallback = async () => {
+            startCount++
+            return wait(waitMs).then(() => {
+                completeCount++
+                return completeCount
+            })
+        }
+
+        const atom1 = atom(atomCallback, { maxAge: 5, staleWhileRevalidate: 5 })
+
+        const res: number[] = []
+        const callback = mock(() => {
+            res.push(store.get(atom1))
+        })
+        const unsubscribe = store.sub(atom1, callback)
+        expect(setIntervalSpy).toHaveBeenCalledTimes(1)
+        expect(clearIntervalSpy).toHaveBeenCalledTimes(0)
+        await waitFor(() => expect(store.get(atom1)).toBe(1))
+        expect(startCount).toBe(1)
+        await wait(3)
+        expect(startCount).toBe(2)
+        expect(completeCount).toBe(1)
+        await wait(6)
+        expect(startCount).toBe(2)
+        expect(completeCount).toBe(2)
+        unsubscribe()
+        expect(clearIntervalSpy).toHaveBeenCalledTimes(1)
+        setIntervalSpy.mockReset()
+        clearIntervalSpy.mockReset()
     })
 })

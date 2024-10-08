@@ -11,4 +11,6 @@ export type Atom<Value = any, FamilyKey = undefined> = {
     onInit?: AtomOnInit<Value>
     onSet?: AtomOnSet<Value>
     onMount?: () => void | (() => void)
+    maxAge?: number
+    staleWhileRevalidate?: number
 }

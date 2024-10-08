@@ -8,6 +8,7 @@ export const unsubscribe = <V>(
     subscription: Subscription,
     data: StoreData,
     mount?: any,
+    maxAgeCleanup?: any,
 ) => {
     const subscribers = data.subscriptions.get(state)
     if (subscribers) {
@@ -23,6 +24,9 @@ export const unsubscribe = <V>(
             if (remove) {
                 data.subscriptionsRequireEqualCheck.delete(state)
             }
+        }
+        if (subscribers.size === 0) {
+            if (maxAgeCleanup) maxAgeCleanup()
         }
         if (mount) {
             if (subscribers.size === mount.mountSubscriptions.size) {

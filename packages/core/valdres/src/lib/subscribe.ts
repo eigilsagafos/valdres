@@ -1,9 +1,13 @@
 import type { Family } from "../types/Family"
 import type { State } from "../types/State"
 import type { StoreData } from "../types/StoreData"
+import { isAtom } from "../utils/isAtom"
 import { isFamily } from "../utils/isFamily"
+import { isPromiseLike } from "../utils/isPromiseLike"
 import { isSelector } from "../utils/isSelector"
+import { getAtomInitValue } from "./initAtom"
 import { initSelector } from "./initSelector"
+import { propagateUpdatedAtoms } from "./propagateUpdatedAtoms"
 import { storeFromStoreData } from "./storeFromStoreData"
 import { unsubscribe } from "./unsubscribe"
 
@@ -40,20 +44,46 @@ export const subscribe = <V>(
     }
     subscribers.add(subscription)
     let mount: any
-    // @ts-ignore
-    if (subscribers.size === 1 && state.onMount) {
-        // @ts-ignore
-        const store = storeFromStoreData(data)
-        const mountSubscriptions = new Set()
-        const originalSub = store.sub
-        store.sub = (state, callback) => {
-            mountSubscriptions.add(callback)
-            return originalSub(state, callback)
+    let maxAgeCleanup: any
+    if (subscribers.size === 1) {
+        if (isAtom(state) && state.maxAge) {
+            let timeout: Timer
+            const interval = setInterval(() => {
+                let value = getAtomInitValue(state, data)
+                if (isPromiseLike(value)) {
+                    if (state.staleWhileRevalidate) {
+                        const oldValue = data.values.get(state)
+                        timeout = setTimeout(() => {
+                            const nowValue = data.values.get(state)
+                            console.log("todo", oldValue)
+                        }, state.staleWhileRevalidate)
+                        value.then(res => clearTimeout(timeout))
+                    }
+                } else {
+                    data.values.set(state, value)
+                    propagateUpdatedAtoms([state], data)
+                }
+            }, state.maxAge)
+            maxAgeCleanup = () => {
+                clearInterval(interval)
+                if (timeout) clearTimeout(timeout)
+            }
         }
-        mount = {
+        // @ts-ignore
+        if (state.onMount) {
             // @ts-ignore
-            onUnmount: state.onMount(store, state),
-            mountSubscriptions,
+            const store = storeFromStoreData(data)
+            const mountSubscriptions = new Set()
+            const originalSub = store.sub
+            store.sub = (state, callback) => {
+                mountSubscriptions.add(callback)
+                return originalSub(state, callback)
+            }
+            mount = {
+                // @ts-ignore
+                onUnmount: state.onMount(store, state),
+                mountSubscriptions,
+            }
         }
     }
 
@@ -64,5 +94,5 @@ export const subscribe = <V>(
         data.subscriptionsRequireEqualCheck.set(state, true)
     }
 
-    return () => unsubscribe(state, subscription, data, mount)
+    return () => unsubscribe(state, subscription, data, mount, maxAgeCleanup)
 }
