@@ -1,4 +1,7 @@
 import { createContext } from "react"
 import type { Store } from "valdres"
 
-export const StoreContext = createContext<Store | undefined>(undefined)
+export type ProviderContext = [string, { [id: string]: Store }]
+export const StoreContext = createContext<ProviderContext | undefined>(
+    undefined,
+)
