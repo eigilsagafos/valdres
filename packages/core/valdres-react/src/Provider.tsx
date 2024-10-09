@@ -1,13 +1,16 @@
 import { useContext, useRef, type ReactNode } from "react"
-import { createStore, type Store, type Atom, type State } from "valdres"
+import { createStore, type Store, type Atom } from "valdres"
 import { StoreContext, type ProviderContext } from "./lib/StoreContext"
 
 type InitializeCallback = () => [Atom, any][]
 
-const hydrate = (store: Store, state: [State, any][]) =>
-    state.map(([atom, value]) => {
-        store.data.values.set(atom, value)
+const hydrate = (store: Store, state: [Atom, any][]) => {
+    store.txn(set => {
+        for (const [atom, value] of state) {
+            set(atom, value)
+        }
     })
+}
 
 const initStore = (
     parentContext: ProviderContext | undefined,
