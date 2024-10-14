@@ -1,7 +1,7 @@
-import type { AtomOptions } from "recoil"
+import type { AtomOptions, RecoilState } from "recoil"
 import { atom as valdresAtom } from "valdres-react"
 
-export const atom = <T>(args: AtomOptions<T>) => {
+export const atom = <T>(args: AtomOptions<T>): RecoilState<T> => {
     const options = {
         label: args.key,
     }
