@@ -81,8 +81,6 @@ describe("subscribe", () => {
         }))
         expect(callbackResults).toStrictEqual([true, true])
         // expect(callback).toHaveBeenCalledTimes(2)
-
-        console.log(callbackResults)
     })
 
     test("unsubscribe resets when needed", () => {

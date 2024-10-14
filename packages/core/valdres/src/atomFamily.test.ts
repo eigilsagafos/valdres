@@ -13,12 +13,12 @@ describe("atomFamily", () => {
 
     test("Simple default value", () => {
         const store = createStore()
-        const userAtomFamily = atomFamily<string, number>("Foo")
+        const userAtomFamily = atomFamily<number, string>("Foo")
         expect(store.get(userAtomFamily(1))).toBe("Foo")
     })
 
     test("label", () => {
-        const userAtomFamily = atomFamily<string, number | string | number[]>(
+        const userAtomFamily = atomFamily<number | string | number[], string>(
             undefined,
             {
                 label: "familyLabel",
@@ -52,13 +52,13 @@ describe("atomFamily", () => {
 
     test("sync callback as default value", () => {
         const store = createStore()
-        const userAtomFamily = atomFamily<string, number>(() => "Bar")
+        const userAtomFamily = atomFamily<number, string>(() => "Bar")
         expect(store.get(userAtomFamily(1))).toBe("Bar")
     })
 
     test("async callback as default value", async () => {
         const store = createStore()
-        const userAtomFamily = atomFamily<string, number>(() =>
+        const userAtomFamily = atomFamily<number, string>(() =>
             wait(1).then(() => "Done"),
         )
         expect(store.get(userAtomFamily(1))).toBeInstanceOf(Promise)
@@ -69,9 +69,10 @@ describe("atomFamily", () => {
     test("default callback with params as arg", () => {
         const store = createStore()
         const userAtomFamily = atomFamily<
-            [number, number],
-            { foo: number; bar: number }
+            { foo: number; bar: number },
+            [number, number]
         >(({ foo, bar }) => [foo, bar])
+
         expect(store.get(userAtomFamily({ foo: 1, bar: 2 }))).toStrictEqual([
             1, 2,
         ])
@@ -94,7 +95,7 @@ describe("atomFamily", () => {
 
     test("subscribe to atomFamily", () => {
         const store = createStore()
-        const userAtomFamily = atomFamily<{ name: string }, string>(undefined, {
+        const userAtomFamily = atomFamily<string, { name: string }>(undefined, {
             label: "userFamily",
         })
         const callbackIds: string[] = []
@@ -192,9 +193,10 @@ describe("atomFamily", () => {
 
     test("selector as default value", () => {
         const store = createStore()
-        const defaultStringsAtom = atomFamily()
+        const defaultStringsAtom = atomFamily<number, string>()
         store.set(defaultStringsAtom(1), "Foo")
         store.set(defaultStringsAtom(2), "Bar")
+
         const userSettingsAtom = atomFamily(
             selector(get => ({
                 string1: get(defaultStringsAtom(1)),
@@ -217,5 +219,25 @@ describe("atomFamily", () => {
             string1: "Foo Updated",
             string2: "Bar Updated",
         })
+    })
+
+    test("release an atomFamily memeber", () => {
+        const store = createStore()
+        const todosAtomFamily = atomFamily<string>(id => ({
+            id,
+            completed: false,
+            name: "New todo",
+        }))
+        expect(store.get(todosAtomFamily)).toStrictEqual([])
+        todosAtomFamily("1")
+        expect(store.get(todosAtomFamily)).toStrictEqual(["1"])
+        todosAtomFamily.release("1")
+        expect(store.get(todosAtomFamily)).toStrictEqual([])
+        store.get(todosAtomFamily("1"))
+        store.get(todosAtomFamily("2"))
+        store.get(todosAtomFamily("3"))
+        expect(store.get(todosAtomFamily)).toStrictEqual(["1", "2", "3"])
+        todosAtomFamily.release("1")
+        expect(store.get(todosAtomFamily)).toStrictEqual(["2", "3"])
     })
 })

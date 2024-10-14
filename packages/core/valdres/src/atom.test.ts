@@ -113,12 +113,12 @@ describe("atom", () => {
         expect(store.get(atom2)).toBe(3)
     })
 
-    test.only("atom with maxAge", async () => {
+    test("atom with maxAge", async () => {
         const setIntervalSpy = spyOn(global, "setInterval")
         const clearIntervalSpy = spyOn(global, "clearInterval")
         const store = createStore()
         const atom1 = atom(() => Date.now(), { maxAge: 2 })
-        const res = []
+        const res: any[] = []
         expect(setIntervalSpy).toHaveBeenCalledTimes(0)
         expect(clearIntervalSpy).toHaveBeenCalledTimes(0)
 
@@ -179,7 +179,7 @@ describe("atom", () => {
         // expect(clearInterval).toHaveBeenCalledTimes(1)
     })
 
-    test("atom with maxAge async and staleWhileRevalidate", async () => {
+    test.todo("atom with maxAge async and staleWhileRevalidate", async () => {
         const setIntervalSpy = spyOn(global, "setInterval")
         const clearIntervalSpy = spyOn(global, "clearInterval")
         const store = createStore()

@@ -1,7 +1,9 @@
-import type { Atom } from "./Atom"
+import type { AtomFamilyAtom } from "./AtomFamilyAtom"
+import type { FamilyKey } from "./FamilyKey"
 
-export type AtomFamily<Value = any, Key = any> = {
-    (key: Key, defaultOverride?: any): Atom<Value>
+export type AtomFamily<Key = FamilyKey, Value = unknown> = {
+    (key: Key): AtomFamilyAtom<Value, Key>
+    release: (key: Key) => void
     label?: string
-    __valdresAtomFamilyMap: Map<Key, Atom<Value, Key>>
+    __valdresAtomFamilyMap: Map<Key, AtomFamilyAtom<Value, Key>>
 }

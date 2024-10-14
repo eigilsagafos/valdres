@@ -3,7 +3,7 @@ import type { AtomFamily } from "./AtomFamily"
 import type { Selector } from "./Selector"
 
 export type GetValue = {
-    <V, K>(atom: Atom<V>): V
-    <V, K>(selector: Selector<V>): V
-    <V, K>(family: AtomFamily<V, K>): K[]
+    <V>(atom: Atom<V>): V
+    <V>(selector: Selector<V>): V
+    <V, K>(family: AtomFamily<K, V>): K[]
 }

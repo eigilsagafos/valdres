@@ -1,13 +1,10 @@
-import type { AtomFamily } from "./AtomFamily"
+import type { AtomDefaultValue } from "./AtomDefaultValue"
 import type { AtomOnInit } from "./AtomOnInit"
 import type { AtomOnSet } from "./AtomOnSet"
-import type { Selector } from "./Selector"
 
-export type Atom<Value = any, FamilyKey = undefined> = {
-    defaultValue?: Value | (() => Value | Promise<Value>) | Selector<Value>
+export type Atom<Value = unknown> = {
+    defaultValue?: AtomDefaultValue<Value>
     label?: string
-    family?: AtomFamily<Value, FamilyKey>
-    familyKey?: FamilyKey
     onInit?: AtomOnInit<Value>
     onSet?: AtomOnSet<Value>
     onMount?: () => void | (() => void)
