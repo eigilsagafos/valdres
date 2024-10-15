@@ -20,9 +20,9 @@ export function getState<V, K>(
     data: StoreData,
 ) {
     if (data.values.has(state)) return data.values.get(state)
-    if (isAtom(state)) return initAtom<V>(state, data)
-    if (isSelector(state)) return initSelector<V>(state, data)
-    if (isAtomFamily(state)) {
+    if (isAtom<V>(state)) return initAtom<V>(state, data)
+    if (isSelector<V>(state)) return initSelector<V>(state, data)
+    if (isAtomFamily<V, K>(state)) {
         // TODO: Impement more efficient way to solve this
         const array = Array.from(state.__valdresAtomFamilyMap.keys())
         // @ts-ignore

@@ -30,6 +30,7 @@ const evaluateSelector = <V>(selector: Selector<V>, data: StoreData) => {
 
     let result
     try {
+        // @ts-ignore, @ts-todo
         result = selector.get(state => {
             // @ts-ignore, @ts-todo
             const value = getState(state, data)

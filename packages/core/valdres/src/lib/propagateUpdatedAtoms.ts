@@ -1,8 +1,10 @@
+import { isFamilyAtom } from "../utils/isFamilyAtom"
 import { updateStateSubscribers } from "./updateStateSubscribers"
 import { updateSelectorSubscribers } from "./updateSelectorSubscribers"
 import type { Atom } from "../types/Atom"
 import type { Selector } from "../types/Selector"
 import type { StoreData } from "../types/StoreData"
+import type { AtomFamilyAtom } from "../types/AtomFamilyAtom"
 
 const recursivlyResetSelectorTree = (
     selectors: Set<Selector>,
@@ -23,14 +25,18 @@ const recursivlyResetSelectorTree = (
     }
 }
 
-export const propagateUpdatedAtoms = (atoms: Atom[], data: StoreData) => {
+export const propagateUpdatedAtoms = (
+    atoms: (Atom<any> | AtomFamilyAtom<any, any>)[],
+    data: StoreData,
+) => {
     const clearedSelectors = new Set<Selector>()
     for (const atom of atoms) {
         const consumers = data.stateConsumers.get(atom)
         if (consumers && consumers.size) {
             recursivlyResetSelectorTree(consumers, data, clearedSelectors)
         }
-        if (atom.family) {
+
+        if (isFamilyAtom(atom)) {
             const consumersFamily = data.stateConsumers.get(atom.family)
             if (consumersFamily?.size) {
                 recursivlyResetSelectorTree(

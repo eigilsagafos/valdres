@@ -27,5 +27,5 @@ export function atomFamilyAtom<V, K>(
     return {
         ...options,
         defaultValue,
-    }
+    } as AtomFamilyAtom<V, K>
 }

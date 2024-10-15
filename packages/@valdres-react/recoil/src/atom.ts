@@ -52,5 +52,5 @@ export const atom = <T>(args: AtomOptions<T>): RecoilState<T> => {
     // @ts-ignore @ts-todo
     const newAtom = valdresAtom(args.default, options)
 
-    return newAtom
+    return newAtom as RecoilState<T>
 }

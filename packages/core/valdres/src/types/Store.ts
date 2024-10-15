@@ -1,9 +1,17 @@
+import type { Atom } from "./Atom"
+import type { AtomFamily } from "./AtomFamily"
+import type { AtomFamilyAtom } from "./AtomFamilyAtom"
 import type { GetValue } from "./GetValue"
 import type { ResetAtom } from "./ResetAtom"
-import type { SetAtom } from "./SetAtom"
+// import type { SetAtom } from "./SetAtom"
 import type { StoreData } from "./StoreData"
 import type { SubscribeFn } from "./SubscribeFn"
 import type { TransactionFn } from "./TransactionFn"
+
+type SetAtom = {
+    <V, K>(atom: AtomFamilyAtom<V, K>, value: V): void
+    <V>(atom: Atom<V>, value: V): void
+}
 
 export type Store = {
     data: StoreData
