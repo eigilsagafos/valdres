@@ -1,6 +1,7 @@
 import { selector as valdresSelector } from "valdres-react"
 import {
     type GetRecoilValue,
+    type RecoilState,
     type ReadWriteSelectorOptions,
     type ReadOnlySelectorOptions,
 } from "recoil"
@@ -9,7 +10,7 @@ import {
 
 export const selector = <T>(
     options: ReadOnlySelectorOptions<T> | ReadWriteSelectorOptions<T>,
-) => {
+): RecoilState<T> => {
     const newSelector = valdresSelector(
         get =>
             options.get({
@@ -23,6 +24,11 @@ export const selector = <T>(
         },
     )
     // @ts-ignore
-    if (options.set) newSelector.set = options.set
-    return newSelector
+    if (options.set)
+        // @ts-ignore
+        newSelector.set = (set, get, reset, value) => {
+            // @ts-ignore
+            return options.set({ set, get, reset }, value)
+        }
+    return newSelector as unknown as RecoilState<T>
 }
