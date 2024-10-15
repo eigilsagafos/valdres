@@ -4,16 +4,20 @@ import { atom } from "./atom"
 import { useRecoilCallback } from "./useRecoilCallback"
 
 describe("recoil/useRecoilCallback", () => {
-    test.todo("default", () => {
-        const numberAtom = atom(10)
+    test("default", () => {
+        const numberAtom = atom({ default: 10, key: "test" })
         const { result } = renderHook(() =>
-            useRecoilCallback(({ snapshot }) => args => {
-                console.log(args)
-                const res = snapshot.getLoadable(numberAtom).contents
-                console.log(res)
-            }),
+            useRecoilCallback<[], [number, number]>(
+                ({ set, snapshot }) =>
+                    () => {
+                        const get1 = snapshot.getLoadable(numberAtom).contents
+                        set(numberAtom, curr => (curr += 10))
+                        const get2 = snapshot.getLoadable(numberAtom).contents
+                        return [get1, get2]
+                    },
+            ),
         )
-        console.log(result.current(`foo`))
-        result.current(`stuff`)
+        expect(result.current()).toStrictEqual([10, 10])
+        expect(result.current()).toStrictEqual([20, 20])
     })
 })
