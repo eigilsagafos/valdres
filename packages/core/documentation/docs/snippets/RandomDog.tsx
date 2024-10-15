@@ -1,5 +1,6 @@
 import { Suspense } from "react"
-import { useResetAtom, atom, useValue } from "valdres-react"
+import { useResetAtom, atom, useValue, Provider } from "valdres-react"
+import { RenderIfClient } from "./components/RenderIfClient"
 
 const randomDogImage = atom(() =>
     fetch("https://random.dog/woof.json")
@@ -23,8 +24,12 @@ const RandomDogImage = () => {
 
 export const RandomDog = () => {
     return (
-        <Suspense fallback={<>Loading...</>}>
-            <RandomDogImage />
-        </Suspense>
+        <RenderIfClient>
+            <Provider>
+                <Suspense fallback={<>Loading...</>}>
+                    <RandomDogImage />
+                </Suspense>
+            </Provider>
+        </RenderIfClient>
     )
 }

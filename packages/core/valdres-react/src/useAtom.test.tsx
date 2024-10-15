@@ -1,12 +1,14 @@
-import { describe, test, expect } from "bun:test"
 import { render } from "@testing-library/react"
-import { renderHook } from "@testing-library/react-hooks"
-import { useAtom } from "./useAtom"
-import { atom } from "valdres"
+import { describe, expect, test } from "bun:test"
 import { useEffect } from "react"
+import { atom } from "valdres"
+import { generateStoreAndRenderHook } from "../test/generateStoreAndRenderHook"
+import { useAtom } from "./useAtom"
+import { Provider } from "./Provider"
 
 describe("useAtom", () => {
     test("default", () => {
+        const [, renderHook] = generateStoreAndRenderHook()
         const numberAtom = atom(10)
         const { result } = renderHook(() => useAtom(numberAtom))
         expect(result.current[0]).toBe(10)
@@ -29,6 +31,7 @@ describe("useAtom", () => {
             <>
                 <Counter />
             </>,
+            { wrapper: Provider },
         )
 
         await findByText("count: 1")

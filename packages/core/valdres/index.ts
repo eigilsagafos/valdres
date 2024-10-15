@@ -2,7 +2,6 @@ export { atom } from "./src/atom"
 export { atomFamily } from "./src/atomFamily"
 export { createStore } from "./src/createStore"
 export { createStoreWithSelectorSet } from "./src/createStoreWithSelectorSet"
-export { getDefaultStore, resetDefaultStore } from "./src/getDefaultStore"
 export { selector } from "./src/selector"
 export { selectorFamily } from "./src/selectorFamily"
 

@@ -1,9 +1,9 @@
 import { describe, test, expect } from "bun:test"
-import { renderHook } from "@testing-library/react-hooks"
 import { useResetAtom } from "./useResetAtom"
-import { atom, atomFamily, getDefaultStore } from "valdres"
+import { atom, atomFamily } from "valdres"
 import { useAtom } from "./useAtom"
 import { waitFor } from "@testing-library/react"
+import { generateStoreAndRenderHook } from "../test/generateStoreAndRenderHook"
 
 const useTestHook = atom => {
     const reset = useResetAtom(atom)
@@ -17,7 +17,7 @@ const useTestHook = atom => {
 
 describe("useResetAtom", () => {
     test("atom with primitive value", () => {
-        const store = getDefaultStore()
+        const [store, renderHook] = generateStoreAndRenderHook()
         const numberAtom = atom(10)
         const { result } = renderHook(() => useTestHook(numberAtom))
         expect(result.current.value).toBe(10)
@@ -30,7 +30,7 @@ describe("useResetAtom", () => {
     })
 
     test("atomFamily with callback", () => {
-        const store = getDefaultStore()
+        const [store, renderHook] = generateStoreAndRenderHook()
         const fam = atomFamily(arg => [arg])
         const atom1 = fam(10)
         const { result } = renderHook(() => useResetAtom(atom1))

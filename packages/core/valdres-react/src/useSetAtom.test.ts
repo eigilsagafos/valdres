@@ -1,12 +1,12 @@
 import { describe, test, expect } from "bun:test"
-import { renderHook } from "@testing-library/react-hooks"
-import { atom, getDefaultStore } from "valdres"
+import { atom } from "valdres"
 import { useSetAtom } from "./useSetAtom"
+import { generateStoreAndRenderHook } from "../test/generateStoreAndRenderHook"
 
 describe("useSetAtom", () => {
     test("default", () => {
+        const [store, renderHook] = generateStoreAndRenderHook()
         const numberAtom = atom(10)
-        const store = getDefaultStore()
         const { result } = renderHook(() => useSetAtom(numberAtom))
         expect(store.get(numberAtom)).toBe(10)
         result.current(20)

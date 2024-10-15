@@ -1,8 +1,8 @@
-import { atom, useResetAtom, useAtom } from "valdres-react"
+import { atom, Provider, useResetAtom, useAtom } from "valdres-react"
 
 const countAtom = atom(0)
 
-export const Counter = () => {
+const Inner = () => {
     const [count, setCount] = useAtom(countAtom)
     const increment = () => setCount(curr => curr + 1)
     const reset = useResetAtom(countAtom)
@@ -12,5 +12,13 @@ export const Counter = () => {
             <button onClick={reset}>Reset</button>
             <div>Current count is {count}</div>
         </div>
+    )
+}
+
+export const Counter = () => {
+    return (
+        <Provider>
+            <Inner />
+        </Provider>
     )
 }

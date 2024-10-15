@@ -1,6 +1,6 @@
-import { describe, test, expect } from "bun:test"
-import { renderHook } from "@testing-library/react-hooks"
+import { describe, expect, test } from "bun:test"
 import { atom } from "valdres"
+import { generateStoreAndRenderHook } from "../test/generateStoreAndRenderHook"
 import { useValdresCallback } from "./useValdresCallback"
 import { useValue } from "./useValue"
 
@@ -21,6 +21,7 @@ describe("useValdresCallback", () => {
                 ),
             }
         }
+        const [, renderHook] = generateStoreAndRenderHook()
         const { result } = renderHook(() => useTestHook())
         expect(result.current.previousValue).toBe("")
         expect(result.current.currentValue).toBe("Foo")
