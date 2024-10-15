@@ -332,4 +332,14 @@ describe("selector", () => {
         //     return await get(syncAtom).promise
         // })
     })
+
+    test("Trying to set a selector returns an error", async () => {
+        const store = createStore()
+        const atom1 = atom(1)
+        const selector1 = selector(get => get(atom1) + get(atom1))
+
+        expect(() => store.set(selector1, 5)).toThrowError(
+            /You provided a `selector`./,
+        )
+    })
 })

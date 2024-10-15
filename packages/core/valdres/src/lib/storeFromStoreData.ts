@@ -1,4 +1,5 @@
 import { isAtom } from "../utils/isAtom"
+import { isSelector } from "../utils/isSelector"
 import { getState } from "./getState"
 import { resetAtom } from "./resetAtom"
 import { setAtom } from "./setAtom"
@@ -13,12 +14,21 @@ import type { TransactionFn } from "../types/TransactionFn"
 import type { Atom } from "../types/Atom"
 import type { SetAtom } from "../types/SetAtom"
 
+const SelectorProvidedToSetError = `Invalid state object passed to set().
+You provided a \`selector\`.
+Only \`atom\` cam be set.
+`
+const InvalidStateSetError = `Invalid state object passed to set().
+Only \`atom\` can be set.
+`
+
 export const storeFromStoreData = (data: StoreData) => {
     const get: GetValue = (state: State) => getState(state, data)
 
     const set: SetAtom = (state, value) => {
-        if (!isAtom(state)) throw new Error("Invalid state object")
-        return setAtom(state, value, data)
+        if (isAtom(state)) return setAtom(state, value, data)
+        if (isSelector(state)) throw new Error(SelectorProvidedToSetError)
+        throw new Error(InvalidStateSetError)
     }
 
     const reset = <V>(atom: Atom<V>) => resetAtom(atom, data)
