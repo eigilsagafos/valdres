@@ -2,7 +2,7 @@ import { describe, test, expect } from "bun:test"
 import { atom } from "../src/atom"
 import { atomFamily } from "../src/atomFamily"
 import { selector } from "../src/selector"
-import { createStore } from "../src/createStore"
+import { store } from "../src/store"
 import { selectorFamily } from "../src/selectorFamily"
 // import { createStore, atom } from "jotai"
 // import { atomFamily } from "jotai/utils"
@@ -30,22 +30,22 @@ describe("when a transaction removes something that a subscriber has access to",
         const visibleUserIds = selector(get =>
             get(userIds).filter(id => get(user(id)).visible),
         )
-        const store = createStore()
+        const store1 = store()
 
-        store.sub(userEmailSelector(1), emailChanged => {
+        store1.sub(userEmailSelector(1), emailChanged => {
             console.log(`asdf`, emailChanged)
         })
-        store.sub(userEmailSelector(2), emailChanged => {
+        store1.sub(userEmailSelector(2), emailChanged => {
             console.log(`asdf`, emailChanged)
         })
-        store.sub(userEmailSelector(3), emailChanged => {
+        store1.sub(userEmailSelector(3), emailChanged => {
             console.log(`asdf`, emailChanged)
         })
-        store.sub(userEmailSelector(4), emailChanged => {
+        store1.sub(userEmailSelector(4), emailChanged => {
             console.log(`asdf`, emailChanged)
         })
 
-        store.set(userFamily(4), curr => ({ ...curr, visible: false }))
+        store1.set(userFamily(4), curr => ({ ...curr, visible: false }))
     })
     test("jotai", async () => {
         const userIds = jotai.atom([1, 2, 3, 4])

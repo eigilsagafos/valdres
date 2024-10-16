@@ -58,7 +58,7 @@ const runOneBencmark = (lib, iterations = 5) => {
 
 const runBenchmark = async () => {
     const valdresRes = runOneBencmark({
-        createStore: valdres.createStore,
+        createStore: valdres.store,
         atom: valdres.atom,
     })
     const jotaiRes = runOneBencmark({

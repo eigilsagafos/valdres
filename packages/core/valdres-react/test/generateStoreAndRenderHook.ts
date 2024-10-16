@@ -1,17 +1,17 @@
 import { renderHook } from "@testing-library/react-hooks"
-import { createStore } from "valdres"
+import { store } from "valdres"
 import { Provider } from "../src/Provider"
 
 export const generateStoreAndRenderHook = () => {
-    const store = createStore()
+    const store1 = store()
 
     const renderHookCustom = (cb: () => any) =>
         renderHook(cb, {
             wrapper: Provider,
             initialProps: {
-                store,
+                store: store1,
             },
         })
 
-    return [store, renderHookCustom] as const
+    return [store1, renderHookCustom] as const
 }

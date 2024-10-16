@@ -1,22 +1,4 @@
-import {
-    atom as valdresAtom,
-    selector as valdresSelector,
-    createStoreWithSelectorSet,
-} from "valdres-react"
-import {} from "valdres-react"
-
-// @ts-ignore
-
-// console.log(globalThis._valdresStore, createStoreWithSelectorSet("default"))
-// console.log(globalThis._valdresStore.set.length)
-// console.log(createStoreWithSelectorSet("default").set.length)
-if (globalThis._valdresStore.kind !== "storeWithSelectorSet") {
-    globalThis._valdresStore = createStoreWithSelectorSet("default")
-}
-if (!globalThis._valdresStore) {
-    // @ts-ignore
-    // globalThis._valdresStore = createStore("default")
-}
+import { atom as valdresAtom, selector as valdresSelector } from "valdres-react"
 
 const addSetToSelector = (selector, set) => {
     selector.set = (valdresSet, valdresGet, reset, ...args) => {
@@ -39,7 +21,4 @@ export const atom = (get, set) => {
         // if (set) addSetToSelector(newAtom, set)
         return newAtom
     }
-    // console.log(typeof get)
-    // console.log(get)
-    // console.log(get.length)
 }

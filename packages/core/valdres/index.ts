@@ -1,9 +1,9 @@
 export { atom } from "./src/atom"
 export { atomFamily } from "./src/atomFamily"
-export { createStore } from "./src/createStore"
 export { createStoreWithSelectorSet } from "./src/createStoreWithSelectorSet"
 export { selector } from "./src/selector"
 export { selectorFamily } from "./src/selectorFamily"
+export { store } from "./src/store"
 
 export { isAtom } from "./src/utils/isAtom"
 export { isSelector } from "./src/utils/isSelector"

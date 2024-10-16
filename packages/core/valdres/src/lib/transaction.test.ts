@@ -1,5 +1,5 @@
 import { describe, test, expect, mock } from "bun:test"
-import { createStore } from "../createStore"
+import { store } from "../store"
 import { atom } from "../atom"
 import { transaction } from "./transaction"
 import { selector } from "../selector"
@@ -7,16 +7,16 @@ import { atomFamily } from "../atomFamily"
 
 describe("transaction", () => {
     test("txn set with callback", () => {
-        const store = createStore()
+        const store1 = store()
         const atom1 = atom(1)
         transaction(set => {
             set(atom1, curr => curr + 1)
-        }, store.data)
-        expect(store.get(atom1)).toBe(2)
+        }, store1.data)
+        expect(store1.get(atom1)).toBe(2)
     })
 
     test("commit during transaction", () => {
-        const store = createStore()
+        const store1 = store()
 
         const atom1 = atom(10)
         const atom2 = atom(20)
@@ -24,8 +24,8 @@ describe("transaction", () => {
         const sum = selector(get => get(atom1) + get(atom2) + get(atom3))
         const product = selector(get => get(atom1) * get(atom2) * get(atom3))
 
-        expect(store.get(sum)).toBe(60)
-        expect(store.get(product)).toBe(6_000)
+        expect(store1.get(sum)).toBe(60)
+        expect(store1.get(product)).toBe(6_000)
 
         transaction((set, get, reset, commit) => {
             expect(get(sum)).toBe(60)
@@ -36,33 +36,33 @@ describe("transaction", () => {
             commit()
             expect(get(sum)).toBe(600)
             expect(get(product)).toBe(6_000_000)
-        }, store.data)
+        }, store1.data)
 
-        expect(store.get(sum)).toBe(600)
-        expect(store.get(product)).toBe(6_000_000)
+        expect(store1.get(sum)).toBe(600)
+        expect(store1.get(product)).toBe(6_000_000)
     })
 
     test("commit has access to all state", () => {
-        const store = createStore()
+        const store1 = store()
         const ids = atom(["1"])
         const userFamily = atomFamily(null)
-        store.set(userFamily("1"), { id: "1", name: "Foo" })
+        store1.set(userFamily("1"), { id: "1", name: "Foo" })
         const userNames = selector(get =>
             get(ids).map(id => get(userFamily(id)).name),
         )
 
-        expect(store.get(userNames)).toStrictEqual(["Foo"])
+        expect(store1.get(userNames)).toStrictEqual(["Foo"])
 
-        store.txn((set, get, reset, commit) => {
+        store1.txn((set, get, reset, commit) => {
             set(ids, curr => [...curr, "2"])
             set(userFamily("2"), { id: "2", name: "Bar" })
             commit()
-            expect(store.get(userNames)).toStrictEqual(["Foo", "Bar"])
+            expect(store1.get(userNames)).toStrictEqual(["Foo", "Bar"])
         })
     })
 
     test("transaction works with selectors", () => {
-        const store = createStore()
+        const store1 = store()
         const atom1 = atom(1, { label: "astom1" })
         const selectorCb1 = mock(get => get(atom1) + 1)
         const selectorCb2 = mock(get => get(atom1) + 2)
@@ -70,7 +70,7 @@ describe("transaction", () => {
         const selector2 = selector(selectorCb2, "selector2")
         // const selector2 = selector((get) => get(selector1) + 1, "selector2")
 
-        store.txn((set, get, reset, commit) => {
+        store1.txn((set, get, reset, commit) => {
             expect(get(selector1)).toBe(2)
             expect(get(selector2)).toBe(3)
             set(atom1, 2)
@@ -92,14 +92,14 @@ describe("transaction", () => {
     })
 
     test("uninitialized selector reads txn state", () => {
-        const store = createStore()
+        const store1 = store()
         const atom1 = atom(10, { label: "atom1" })
         const atom2 = atom(20, { label: "atom2" })
         const selector1 = selector(get => get(atom1) + 1)
         const selector2 = selector(get => get(atom2) + 1)
         const selector3 = selector(get => get(selector1) + get(selector2))
 
-        store.txn((set, get) => {
+        store1.txn((set, get) => {
             expect(get(selector3)).toBe(32)
             set(atom1, 11)
             set(atom2, 21)
@@ -109,12 +109,12 @@ describe("transaction", () => {
     })
 
     test.todo("transaction fails when trying to access dirty selector", () => {
-        const store = createStore()
+        const store1 = store()
         const atom1 = atom(1, { label: "astom1" })
         const selector1 = selector(get => get(atom1) + 1, "selector1")
         // const selector2 = selector((get) => get(selector1) + 1, "selector2")
 
-        store.txn((set, get, reset, commit) => {
+        store1.txn((set, get, reset, commit) => {
             expect(get(selector1)).toBe(2)
             set(atom1, 2)
             expect(() => get(selector1)).toThrow()

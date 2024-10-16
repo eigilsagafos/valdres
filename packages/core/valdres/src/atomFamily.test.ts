@@ -1,5 +1,5 @@
 import { describe, test, expect } from "bun:test"
-import { createStore } from "./createStore"
+import { store } from "./store"
 import { atomFamily } from "./atomFamily"
 import { selectorFamily } from "./selectorFamily"
 import { wait } from "../test/utils/wait"
@@ -12,9 +12,9 @@ describe("atomFamily", () => {
     })
 
     test("Simple default value", () => {
-        const store = createStore()
+        const store1 = store()
         const userAtomFamily = atomFamily<number, string>("Foo")
-        expect(store.get(userAtomFamily(1))).toBe("Foo")
+        expect(store1.get(userAtomFamily(1))).toBe("Foo")
     })
 
     test("label", () => {
@@ -36,7 +36,7 @@ describe("atomFamily", () => {
     })
 
     // test("Allow default override first time atom is created in family", () => {
-    //     const store = createStore()
+    //     const store1 = store()
     //     const family = atomFamily<{ id: number; name: string }, number>(id => ({
     //         id,
     //         name: "Default",
@@ -44,48 +44,47 @@ describe("atomFamily", () => {
     //     const user1 = family(1)
     //     const user2 = family(2, def => ({ ...def, name: "Foo" }))
     //     const user3 = family(3, { id: 3, name: "Bar" })
-    //     expect(store.get(user1)).toStrictEqual({ id: 1, name: "Default" })
-    //     expect(store.get(user2)).toStrictEqual({ id: 2, name: "Foo" })
-    //     expect(store.get(user3)).toStrictEqual({ id: 3, name: "Bar" })
+    //     expect(store1.get(user1)).toStrictEqual({ id: 1, name: "Default" })
+    //     expect(store1.get(user2)).toStrictEqual({ id: 2, name: "Foo" })
+    //     expect(store1.get(user3)).toStrictEqual({ id: 3, name: "Bar" })
     //     expect(() => family(3, { id: 3, name: "Bar" })).toThrow()
     // })
 
     test("sync callback as default value", () => {
-        const store = createStore()
+        const store1 = store()
         const userAtomFamily = atomFamily<number, string>(() => "Bar")
-        expect(store.get(userAtomFamily(1))).toBe("Bar")
+        expect(store1.get(userAtomFamily(1))).toBe("Bar")
     })
 
     test("async callback as default value", async () => {
-        const store = createStore()
+        const store1 = store()
         const userAtomFamily = atomFamily<number, string>(() =>
             wait(1).then(() => "Done"),
         )
-        expect(store.get(userAtomFamily(1))).toBeInstanceOf(Promise)
+        expect(store1.get(userAtomFamily(1))).toBeInstanceOf(Promise)
         await wait(1)
-        expect(store.get(userAtomFamily(1))).toBe("Done")
+        expect(store1.get(userAtomFamily(1))).toBe("Done")
     })
 
     test("default callback with params as arg", () => {
-        const store = createStore()
+        const store1 = store()
         const userAtomFamily = atomFamily<
             { foo: number; bar: number },
             [number, number]
         >(({ foo, bar }) => [foo, bar])
 
-        expect(store.get(userAtomFamily({ foo: 1, bar: 2 }))).toStrictEqual([
+        expect(store1.get(userAtomFamily({ foo: 1, bar: 2 }))).toStrictEqual([
             1, 2,
         ])
     })
 
     test("no defaultValue suspends", () => {
-        const store = createStore()
+        const store1 = store()
         const userAtomFamily = atomFamily()
-        expect(store.get(userAtomFamily(1))).toBeInstanceOf(Promise)
+        expect(store1.get(userAtomFamily(1))).toBeInstanceOf(Promise)
     })
 
     test("debug label", () => {
-        const store = createStore()
         const userAtomFamily = atomFamily<string, string>(undefined, {
             label: "userFamily",
         })
@@ -94,20 +93,20 @@ describe("atomFamily", () => {
     })
 
     test("subscribe to atomFamily", () => {
-        const store = createStore()
+        const store1 = store()
         const userAtomFamily = atomFamily<string, { name: string }>(undefined, {
             label: "userFamily",
         })
         const callbackIds: string[] = []
         const docs: { name: string }[] = []
-        store.sub(userAtomFamily, id => {
+        store1.sub(userAtomFamily, id => {
             callbackIds.push(id)
-            docs.push(store.get(userAtomFamily(id)))
+            docs.push(store1.get(userAtomFamily(id)))
         })
 
-        store.set(userAtomFamily("1"), { name: "Foo" })
-        store.set(userAtomFamily("2"), { name: "Bar" })
-        store.txn(set => {
+        store1.set(userAtomFamily("1"), { name: "Foo" })
+        store1.set(userAtomFamily("2"), { name: "Bar" })
+        store1.txn(set => {
             set(userAtomFamily("3"), { name: "Lorem" })
             set(userAtomFamily("4"), { name: "Ipsum" })
         })
@@ -122,7 +121,7 @@ describe("atomFamily", () => {
     })
 
     test("atomFamily with object key", () => {
-        const store = createStore()
+        const store1 = store()
         const userAtomFamily = atomFamily<{ name: string }, { id: number }>(
             undefined,
             {
@@ -131,32 +130,32 @@ describe("atomFamily", () => {
         )
         const ids = []
         const docs = []
-        store.sub(userAtomFamily, ({ id }) => {
+        store1.sub(userAtomFamily, ({ id }) => {
             ids.push(id)
-            docs.push(store.get(userAtomFamily({ id })))
+            docs.push(store1.get(userAtomFamily({ id })))
         })
         const user1atom = userAtomFamily({ id: 1 })
         const user2atom = userAtomFamily({ id: 2 })
-        store.set(user1atom, { name: "Foo" })
-        store.set(user2atom, { name: "Bar" })
+        store1.set(user1atom, { name: "Foo" })
+        store1.set(user2atom, { name: "Bar" })
         expect(ids).toStrictEqual([1, 2])
         expect(docs).toStrictEqual([{ name: "Foo" }, { name: "Bar" }])
     })
 
     test("get an entire atom family", () => {
         // Should we allow this? Maybe directly but not in selectors?
-        const store = createStore()
+        const store1 = store()
         const userAtomFamily = atomFamily({})
-        const user1 = store.set(userAtomFamily(1), { name: "Foo" })
-        const user2 = store.set(userAtomFamily(2), { name: "Bar" })
+        const user1 = store1.set(userAtomFamily(1), { name: "Foo" })
+        const user2 = store1.set(userAtomFamily(2), { name: "Bar" })
         userAtomFamily(3)
-        expect(store.get(userAtomFamily)).toStrictEqual([1, 2, 3])
-        expect(store.get(userAtomFamily)).toBe(store.get(userAtomFamily))
+        expect(store1.get(userAtomFamily)).toStrictEqual([1, 2, 3])
+        expect(store1.get(userAtomFamily)).toBe(store1.get(userAtomFamily))
     })
 
     test("selectorFamily as default value", () => {
         const now = Date.now()
-        const store = createStore()
+        const store1 = store()
         const todoAtom = atomFamily()
         const isTodoNewlyCreatedSelector = selectorFamily(
             id => get => get(todoAtom(id)).created > Date.now() - 60_000,
@@ -170,32 +169,32 @@ describe("atomFamily", () => {
             }),
         )
 
-        const todo1 = store.set(todoAtom(1), {
+        const todo1 = store1.set(todoAtom(1), {
             id: 1,
             name: "Todo 1",
             created: now - 120_000,
         })
-        const todo2 = store.set(todoAtom(2), {
+        const todo2 = store1.set(todoAtom(2), {
             id: 2,
             name: "Todo 2",
             created: now - 20_000,
         })
 
-        expect(store.get(todoDisplaySettingsAtom(1))).toStrictEqual({
+        expect(store1.get(todoDisplaySettingsAtom(1))).toStrictEqual({
             selected: false,
             expanded: false,
         })
-        expect(store.get(todoDisplaySettingsAtom(2))).toStrictEqual({
+        expect(store1.get(todoDisplaySettingsAtom(2))).toStrictEqual({
             selected: false,
             expanded: true,
         })
     })
 
     test("selector as default value", () => {
-        const store = createStore()
+        const store1 = store()
         const defaultStringsAtom = atomFamily<number, string>()
-        store.set(defaultStringsAtom(1), "Foo")
-        store.set(defaultStringsAtom(2), "Bar")
+        store1.set(defaultStringsAtom(1), "Foo")
+        store1.set(defaultStringsAtom(2), "Bar")
 
         const userSettingsAtom = atomFamily(
             selector(get => ({
@@ -204,40 +203,40 @@ describe("atomFamily", () => {
             })),
         )
 
-        expect(store.get(userSettingsAtom(1))).toStrictEqual({
+        expect(store1.get(userSettingsAtom(1))).toStrictEqual({
             string1: "Foo",
             string2: "Bar",
         })
 
-        store.set(defaultStringsAtom(1), "Foo Updated")
-        store.set(defaultStringsAtom(2), "Bar Updated")
-        expect(store.get(userSettingsAtom(1))).toStrictEqual({
+        store1.set(defaultStringsAtom(1), "Foo Updated")
+        store1.set(defaultStringsAtom(2), "Bar Updated")
+        expect(store1.get(userSettingsAtom(1))).toStrictEqual({
             string1: "Foo",
             string2: "Bar",
         })
-        expect(store.get(userSettingsAtom(2))).toStrictEqual({
+        expect(store1.get(userSettingsAtom(2))).toStrictEqual({
             string1: "Foo Updated",
             string2: "Bar Updated",
         })
     })
 
     test("release an atomFamily memeber", () => {
-        const store = createStore()
+        const store1 = store()
         const todosAtomFamily = atomFamily<string>(id => ({
             id,
             completed: false,
             name: "New todo",
         }))
-        expect(store.get(todosAtomFamily)).toStrictEqual([])
+        expect(store1.get(todosAtomFamily)).toStrictEqual([])
         todosAtomFamily("1")
-        expect(store.get(todosAtomFamily)).toStrictEqual(["1"])
+        expect(store1.get(todosAtomFamily)).toStrictEqual(["1"])
         todosAtomFamily.release("1")
-        expect(store.get(todosAtomFamily)).toStrictEqual([])
-        store.get(todosAtomFamily("1"))
-        store.get(todosAtomFamily("2"))
-        store.get(todosAtomFamily("3"))
-        expect(store.get(todosAtomFamily)).toStrictEqual(["1", "2", "3"])
+        expect(store1.get(todosAtomFamily)).toStrictEqual([])
+        store1.get(todosAtomFamily("1"))
+        store1.get(todosAtomFamily("2"))
+        store1.get(todosAtomFamily("3"))
+        expect(store1.get(todosAtomFamily)).toStrictEqual(["1", "2", "3"])
         todosAtomFamily.release("1")
-        expect(store.get(todosAtomFamily)).toStrictEqual(["2", "3"])
+        expect(store1.get(todosAtomFamily)).toStrictEqual(["2", "3"])
     })
 })

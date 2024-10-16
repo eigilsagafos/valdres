@@ -1,7 +1,6 @@
 export {
     atom,
     atomFamily,
-    createStore,
     createStoreWithSelectorSet,
     isAtom,
     isFamily,
@@ -9,6 +8,7 @@ export {
     isSelector,
     selector,
     selectorFamily,
+    store,
 } from "valdres"
 
 export type {

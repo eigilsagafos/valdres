@@ -1,12 +1,12 @@
 import { describe, expect, test } from "bun:test"
-import { atomFamily, createStore, selector, selectorFamily } from "valdres"
+import { atomFamily, store, selector, selectorFamily } from "valdres"
 import { render, screen } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { useValue } from "../src/useValue"
 import { Provider } from "../src/Provider"
 import { useAtom } from "../src/useAtom"
 
-const store = createStore()
+const store1 = store()
 const fileAtom = atomFamily<string, string>()
 const directoryAtom = atomFamily<string[], string>([])
 const directoryOpenAtom = atomFamily(true)
@@ -125,19 +125,19 @@ const fileVisibleIndexSelector = selectorFamily(file => get => {
 })
 
 const initAtoms = (items, currentDir = "/") => {
-    store.set(directoryAtom(currentDir), [])
+    store1.set(directoryAtom(currentDir), [])
     for (const item of items) {
         if (Array.isArray(item)) {
             const [folder, nestedItems] = item
             const nestedFolder = currentDir + folder + "/"
-            store.set(directoryAtom(currentDir), curr => [
+            store1.set(directoryAtom(currentDir), curr => [
                 ...curr,
                 folder + "/",
             ])
             initAtoms(nestedItems, nestedFolder)
         } else {
-            store.set(fileAtom(currentDir + item), { name: item })
-            store.set(directoryAtom(currentDir), curr => [...curr, item])
+            store1.set(fileAtom(currentDir + item), { name: item })
+            store1.set(directoryAtom(currentDir), curr => [...curr, item])
         }
     }
 }
@@ -190,7 +190,7 @@ const File = ({ directory, file }) => {
 describe("sss", () => {
     test("asdfasdf", async () => {
         render(
-            <Provider store={store}>
+            <Provider store={store1}>
                 <Directory directory={"/"} />
             </Provider>,
         )

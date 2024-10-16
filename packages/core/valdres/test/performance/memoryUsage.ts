@@ -29,7 +29,7 @@ const testJotai = () => {
 }
 
 const testValdres = () => {
-    const store = valdres.createStore()
+    const store = valdres.store()
     const atoms = users.map(user => {
         const atom = valdres.atom()
         store.set(atom, user)

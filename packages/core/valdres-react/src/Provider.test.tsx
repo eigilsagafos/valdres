@@ -1,6 +1,6 @@
 import { describe, test, expect } from "bun:test"
 import { renderHook } from "@testing-library/react-hooks"
-import { atom, createStore } from "valdres"
+import { atom, store } from "valdres"
 import { useStoreId } from "./useStoreId"
 import { Provider } from "./Provider"
 import { useStore } from "./useStore"
@@ -12,20 +12,20 @@ const StoreId = () => {
 
 describe("Provider", () => {
     test("set with direct value", () => {
-        const store = createStore("Foo")
+        const store1 = store("Foo")
 
         const { result } = renderHook(() => useStoreId(), {
             wrapper: ({ children }) => (
-                <Provider store={store}>{children}</Provider>
+                <Provider store={store1}>{children}</Provider>
             ),
         })
         expect(result.current).toBe("Foo")
     })
 
     test("nested providers can access parent stores by id", () => {
-        const storeA = createStore("A")
-        const storeB = createStore("B")
-        const storeC = createStore("C")
+        const storeA = store("A")
+        const storeB = store("B")
+        const storeC = store("C")
 
         const { result, rerender } = renderHook(
             (storeId?: string) => useStore(storeId),
@@ -54,8 +54,8 @@ describe("Provider", () => {
     })
 
     test("global atom works as expected when initializing store", () => {
-        const storeA = createStore("A")
-        const storeB = createStore("B")
+        const storeA = store("A")
+        const storeB = store("B")
         const userIds = atom<number[]>([], { global: true })
 
         renderHook((storeId?: string) => useStore(storeId), {

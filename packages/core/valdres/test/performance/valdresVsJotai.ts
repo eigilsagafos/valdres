@@ -1,7 +1,7 @@
 import { createStore as jotaiCreateStore, atom as jotaiAtom } from "jotai"
 import { atomFamily as jotaiAtomFamily } from "jotai/utils"
 import { run, bench, group, baseline } from "mitata"
-import { createStore as valdresCreateStore } from "../../src/createStore"
+import { store as valdresCreateStore } from "../../src/store"
 import { atomFamily as valdresAtomFamily } from "../../src/atomFamily"
 import { atom as valdresAtom } from "../../src/atom"
 import { selector as valdresSelector } from "../../src/selector"

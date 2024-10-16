@@ -1,5 +1,5 @@
 import { describe, test, expect, mock } from "bun:test"
-import { createStore } from "valdres"
+import { store } from "valdres"
 import { colorMode } from "./colorMode"
 import { ColorMode } from "../types/ColorMode"
 
@@ -41,19 +41,19 @@ const mockWindow = () => {
 describe("is-dark-mode", () => {
     test("is good", () => {
         const { togglePrefersColorScheme, eventListeners } = mockWindow()
-        const store = createStore()
+        const store1 = store()
         const subscription = mock(() => {})
         expect(eventListeners.size).toBe(0)
-        expect(store.get(colorMode)).toBe(ColorMode.Dark)
+        expect(store1.get(colorMode)).toBe(ColorMode.Dark)
         expect(eventListeners.size).toBe(1)
         togglePrefersColorScheme()
-        expect(store.get(colorMode)).toBe(ColorMode.Light)
+        expect(store1.get(colorMode)).toBe(ColorMode.Light)
 
-        store.sub(colorMode, subscription)
+        store1.sub(colorMode, subscription)
         expect(subscription).toHaveBeenCalledTimes(0)
         togglePrefersColorScheme()
         expect(subscription).toHaveBeenCalledTimes(1)
-        expect(store.get(colorMode)).toBe(ColorMode.Dark)
+        expect(store1.get(colorMode)).toBe(ColorMode.Dark)
         expect(eventListeners.size).toBe(1)
     })
 })

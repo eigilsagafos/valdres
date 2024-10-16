@@ -20,7 +20,7 @@ const runTests = async () => {
     const jotaiAtoms = Array.from({ length: 1000 }).map(() =>
         jotai.atom("Jotai"),
     )
-    const valdresStore = valdres.createStore()
+    const valdresStore = valdres.store()
     console.log(valdresStore)
     const atom = valdres.atom("asdf")
     console.log(atom)

@@ -1,3 +1,7 @@
-import { useStore } from "./useStore"
+import { useContext } from "react"
+import { StoreContext } from "./lib/StoreContext"
 
-export const useStoreId = (): string => useStore().data.id
+export const useStoreId = (): string => {
+    const [currentId] = useContext(StoreContext)
+    return currentId
+}
