@@ -18,7 +18,7 @@ jobs:
             - name: Upload website artifact
               uses: actions/upload-pages-artifact@v3
               with:
-                  path: "packages/core/documentation/docs/dist"
+                  path: "packages/documentation/docs/dist"
     deploy:
         needs: build
         permissions:
