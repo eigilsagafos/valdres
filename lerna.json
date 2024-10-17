@@ -2,7 +2,7 @@
     "$schema": "node_modules/lerna/schemas/lerna-schema.json",
     "version": "0.2.0-alpha.20",
     "packages": [
-        "packages/core/*",
+        "packages/*",
         "packages/@valdres/*",
         "packages/@valdres-react/*"
     ]
