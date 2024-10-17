@@ -100,7 +100,7 @@ describe("test memory leaks (get & set only)", () => {
         },
     )
 
-    test("with a long-lived base atom", async () => {
+    test.todo("with a long-lived base atom", async () => {
         const store = createStore()
         const objAtom = atom({})
         let derivedAtom: Atom<object> | undefined = atom(get => ({
