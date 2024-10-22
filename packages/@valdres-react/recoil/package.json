@@ -12,15 +12,15 @@
     },
     "type": "module",
     "exports": {
-        "types": "./dist/index.d.ts",
-        "default": "./dist/index.js"
+        "default": "./dist/index.js",
+        "types": "./dist/types/index.d.ts"
     },
     "files": [
         "dist"
     ],
     "scripts": {
-        "build": "NODE_ENV=production bun scripts/build.ts",
-        "build:types": "tsc"
+        "build": "NODE_ENV=production bun build index.ts --outdir ./dist --packages external",
+        "build:types": "rm -rf dist/types && tsc"
     },
     "dependencies": {
         "valdres-react": "workspace:^"
