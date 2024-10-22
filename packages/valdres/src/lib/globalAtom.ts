@@ -35,7 +35,7 @@ export const globalAtom = <Value = any>(
         if (stores.size > 1) {
             for (const store of stores) {
                 if (store.id !== currentStore.id) {
-                    setAtom(atom, value, store, true)
+                    setAtom(atom, value, store, undefined, true)
                 }
             }
         }

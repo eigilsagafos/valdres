@@ -21,4 +21,25 @@ describe("store", () => {
         })
         expect(store1.get(selector1)).toBe(44)
     })
+
+    test("store scope", () => {
+        const store1 = store()
+        const atom1 = atom("unset default")
+        store1.set(atom1, "Default Scope")
+
+        store1.scope("scope1", scope => {
+            expect(scope.get(atom1)).toBe("Default Scope")
+            scope.set(atom1, "Scope 1")
+            expect(scope.get(atom1)).toBe("Scope 1")
+        })
+        store1.scope("scope2", scope => {
+            expect(scope.get(atom1)).toBe("Default Scope")
+            scope.set(atom1, "Scope 2")
+            expect(scope.get(atom1)).toBe("Scope 2")
+        })
+
+        expect(store1.get(atom1, "scope1")).toBe("Scope 1")
+        expect(store1.get(atom1, "scope2")).toBe("Scope 2")
+        expect(store1.get(atom1)).toBe("Default Scope")
+    })
 })

@@ -9,7 +9,7 @@ import type { SubscribeFn } from "./SubscribeFn"
 import type { TransactionFn } from "./TransactionFn"
 
 type SetAtom = {
-    <V, K>(atom: AtomFamilyAtom<V, K>, value: V): void
+    <V, K>(atom: AtomFamilyAtom<K, V>, value: V): void
     <V>(atom: Atom<V>, value: V): void
 }
 
@@ -20,4 +20,5 @@ export type Store = {
     sub: SubscribeFn
     reset: ResetAtom
     txn: (callback: TransactionFn) => void
+    scope: (scopeId: string, callback: (scopedStore: Store) => void) => void
 }

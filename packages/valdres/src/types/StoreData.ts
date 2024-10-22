@@ -6,4 +6,6 @@ export type StoreData = {
     subscriptionsRequireEqualCheck: WeakMap<WeakKey, boolean>
     stateConsumers: WeakMap<WeakKey, any>
     stateDependencies: WeakMap<WeakKey, any>
+    scopes: { [scopeId: string]: StoreData }
+    parent?: StoreData
 }

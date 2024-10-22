@@ -1,10 +1,10 @@
-import { isPromiseLike } from "../utils/isPromiseLike"
-import { propagateUpdatedAtoms } from "./propagateUpdatedAtoms"
-import { setAtom } from "./setAtom"
 import type { Atom } from "../types/Atom"
 import type { StoreData } from "../types/StoreData"
+import { isPromiseLike } from "../utils/isPromiseLike"
 import { isSelector } from "../utils/isSelector"
 import { getState } from "./getState"
+import { propagateUpdatedAtoms } from "./propagateUpdatedAtoms"
+import { setAtom } from "./setAtom"
 
 export const getAtomInitValue = <V>(atom: Atom<V>, data: StoreData) => {
     if (atom.defaultValue === undefined) {
@@ -41,7 +41,7 @@ export const initAtom = <V>(atom: Atom<V>, data: StoreData) => {
     if (atom.onInit)
         atom.onInit((newVal: V) => {
             value = newVal
-            setAtom(atom, newVal, data, true)
+            setAtom(atom, newVal, data, undefined, true)
         }, data)
     return value
 }

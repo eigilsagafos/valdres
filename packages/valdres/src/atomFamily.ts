@@ -1,11 +1,11 @@
-import { stableStringify } from "./lib/stableStringify"
 import { atomFamilyAtom } from "./lib/atomFamilyAtom"
-import { isSelectorFamily } from "./utils/isSelectorFamily"
+import { stableStringify } from "./lib/stableStringify"
 import type { AtomFamily } from "./types/AtomFamily"
 import type { AtomOptions } from "./types/AtomOptions"
 import type { FamilyKey } from "./types/FamilyKey"
 import type { Selector } from "./types/Selector"
 import type { SelectorFamily } from "./types/SelectorFamily"
+import { isSelectorFamily } from "./utils/isSelectorFamily"
 
 const createOptions = <K, V>(
     options: AtomOptions<V> = {},
@@ -62,7 +62,8 @@ export function atomFamily<Key = FamilyKey, Value = unknown>(
             return map.get(keyStringified)
         }
 
-        const familyAtom = atomFamilyAtom<Value, Key>(
+        const familyAtom = atomFamilyAtom<Key, Value>(
+            // @ts-ignore @ts-todo
             handleDefaultValue<Key, Value>(defaultValue, key),
             createOptions<Key, Value>(
                 options,

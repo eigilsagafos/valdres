@@ -3,29 +3,29 @@ import type { AtomFamilyAtom } from "../types/AtomFamilyAtom"
 import type { AtomFamilyGlobalAtom } from "../types/AtomFamilyGlobalAtom"
 import type { AtomOptions } from "../types/AtomOptions"
 
-export function atomFamilyAtom<V, K>(
-    defaultValue: AtomDefaultValue<V>,
-    options: AtomOptions<V> & { global: true },
-): AtomFamilyGlobalAtom<V, K>
+export function atomFamilyAtom<Key, Value>(
+    defaultValue: AtomDefaultValue<Value>,
+    options: AtomOptions<Value> & { global: true },
+): AtomFamilyGlobalAtom<Key, Value>
 
-export function atomFamilyAtom<V, K>(
-    defaultValue: AtomDefaultValue<V>,
-    options: AtomOptions<V>,
-): AtomFamilyAtom<V, K>
+export function atomFamilyAtom<Key, Value>(
+    defaultValue: AtomDefaultValue<Value>,
+    options: AtomOptions<Value>,
+): AtomFamilyAtom<Key, Value>
 
-export function atomFamilyAtom<V, K>(
-    defaultValue: AtomDefaultValue<V>,
-    options: AtomOptions<V>,
+export function atomFamilyAtom<Key, Value>(
+    defaultValue: AtomDefaultValue<Value>,
+    options: AtomOptions<Value>,
 ) {
     if (options.global) {
         return {
             ...options,
             defaultValue,
-        } as AtomFamilyGlobalAtom<V, K>
+        } as AtomFamilyGlobalAtom<Key, Value>
     }
 
     return {
         ...options,
         defaultValue,
-    } as AtomFamilyAtom<V, K>
+    } as AtomFamilyAtom<Key, Value>
 }
