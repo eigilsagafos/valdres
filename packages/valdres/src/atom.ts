@@ -18,12 +18,12 @@ export function atom<V>(
 ): GlobalAtom<V>
 
 export function atom<V>(
-    defaultValue: AtomDefaultValue<V>,
+    defaultValue?: AtomDefaultValue<V>,
     options?: AtomOptions<V>,
 ): Atom<V>
 
 export function atom<V>(
-    defaultValue: AtomDefaultValue<V>,
+    defaultValue?: AtomDefaultValue<V>,
     options?: AtomOptions<V>,
 ) {
     if (!options) return { defaultValue }

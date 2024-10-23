@@ -41,7 +41,7 @@ export const initAtom = <V>(atom: Atom<V>, data: StoreData) => {
     if (atom.onInit)
         atom.onInit((newVal: V) => {
             value = newVal
-            setAtom(atom, newVal, data, undefined, true)
+            setAtom(atom, newVal, data, true)
         }, data)
     return value
 }

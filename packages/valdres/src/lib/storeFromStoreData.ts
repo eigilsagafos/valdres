@@ -8,6 +8,7 @@ import type { StoreData } from "../types/StoreData"
 import type { TransactionFn } from "../types/TransactionFn"
 import { isAtom } from "../utils/isAtom"
 import { isSelector } from "../utils/isSelector"
+import { createStoreData } from "./createStoreData"
 import { getState } from "./getState"
 import { resetAtom } from "./resetAtom"
 import { setAtom } from "./setAtom"
@@ -23,11 +24,10 @@ Only \`atom\` can be set.
 `
 
 export const storeFromStoreData = (data: StoreData) => {
-    const get: GetValue = (state: State, scopeId?: string) =>
-        getState(state, data, scopeId)
+    const get: GetValue = (state: State) => getState(state, data)
 
-    const set: SetAtom = (state, value, scopeId?: string) => {
-        if (isAtom(state)) return setAtom(state, value, data, scopeId)
+    const set: SetAtom = (state, value) => {
+        if (isAtom(state)) return setAtom(state, value, data)
         if (isSelector(state)) throw new Error(SelectorProvidedToSetError)
         throw new Error(InvalidStateSetError)
     }
@@ -49,24 +49,25 @@ export const storeFromStoreData = (data: StoreData) => {
         txn,
         reset,
         data,
-        scope: (scopeId: string, callback) => {
-            callback({
-                get: (state: State) => get(state, scopeId),
-                set: <V>(atom: Atom<V>, value: V) => set(atom, value, scopeId),
-                data: data.scopes[scopeId],
-                sub: () => {
-                    throw new Error("TODO")
-                },
-                reset: () => {
-                    throw new Error("TODO")
-                },
-                txn: () => {
-                    throw new Error("TODO")
-                },
-                scope: () => {
-                    throw new Error("TODO")
-                },
-            })
+        createScope: (scopeId: string): Store => {
+            if (scopeId in data.scopes) {
+                throw new Error(`Scope '${scopeId}' already exists`)
+            }
+            const scopedData = createStoreData(scopeId, data)
+            data.scopes[scopeId] = scopedData
+            return storeFromStoreData(scopedData)
+        },
+        getScope: (scopeId: string): Store => {
+            if (scopeId in data.scopes) {
+                throw new Error(`Scope '${scopeId}' does not exist`)
+            }
+            return storeFromStoreData(data.scopes[scopeId])
+        },
+        releaseScope: (scopeId: string) => {
+            if (scopeId in data.scopes === false) {
+                throw new Error(`Scope '${scopeId}' does not exist`)
+            }
+            delete data.scopes[scopeId]
         },
     } as Store
 }
