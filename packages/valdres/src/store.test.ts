@@ -22,24 +22,53 @@ describe("store", () => {
         expect(store1.get(selector1)).toBe(44)
     })
 
-    test("store scope", () => {
-        const store1 = store()
-        const atom1 = atom("unset default")
-        store1.set(atom1, "Default Scope")
+    test("create scope", () => {
+        const root = store("root")
+        const child = root.createScope("child")
+        const nestedChild = child.createScope("nestedChild")
 
-        store1.scope("scope1", scope => {
-            expect(scope.get(atom1)).toBe("Default Scope")
-            scope.set(atom1, "Scope 1")
-            expect(scope.get(atom1)).toBe("Scope 1")
-        })
-        store1.scope("scope2", scope => {
-            expect(scope.get(atom1)).toBe("Default Scope")
-            scope.set(atom1, "Scope 2")
-            expect(scope.get(atom1)).toBe("Scope 2")
-        })
+        const atom1 = atom("default")
 
-        expect(store1.get(atom1, "scope1")).toBe("Scope 1")
-        expect(store1.get(atom1, "scope2")).toBe("Scope 2")
-        expect(store1.get(atom1)).toBe("Default Scope")
+        expect(root.get(atom1)).toBe("default")
+        expect(child.get(atom1)).toBe("default")
+        expect(nestedChild.get(atom1)).toBe("default")
+
+        root.set(atom1, "set in root")
+        expect(root.get(atom1)).toBe("set in root")
+        expect(child.get(atom1)).toBe("set in root")
+        expect(nestedChild.get(atom1)).toBe("set in root")
+
+        child.set(atom1, "set in child")
+        expect(root.get(atom1)).toBe("set in root")
+        expect(child.get(atom1)).toBe("set in child")
+        expect(nestedChild.get(atom1)).toBe("set in child")
+
+        nestedChild.set(atom1, "set in nestedChild")
+        expect(root.get(atom1)).toBe("set in root")
+        expect(child.get(atom1)).toBe("set in child")
+        expect(nestedChild.get(atom1)).toBe("set in nestedChild")
+
+        root.set(atom1, "set in root again")
+        expect(root.get(atom1)).toBe("set in root again")
+        expect(child.get(atom1)).toBe("set in child")
+        expect(nestedChild.get(atom1)).toBe("set in nestedChild")
+    })
+
+    test("selector in scope", () => {
+        const root = store("root")
+        const child = root.createScope("child")
+        const atom1 = atom(1)
+        const selector1 = selector(get => get(atom1) * 2)
+
+        expect(root.get(selector1)).toBe(2)
+        expect(child.get(selector1)).toBe(2)
+        child.set(atom1, 2)
+        expect(child.get(selector1)).toBe(4)
+        expect(root.get(selector1)).toBe(2)
+        child.set(atom1, 3)
+        expect(child.get(selector1)).toBe(6)
+        root.set(atom1, 5)
+        expect(child.get(selector1)).toBe(6)
+        expect(root.get(selector1)).toBe(10)
     })
 })

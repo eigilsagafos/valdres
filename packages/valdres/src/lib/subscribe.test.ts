@@ -50,7 +50,7 @@ describe("subscribe", () => {
      * will fetch the new value, compare with Object.is and only re-render when
      * Object.is returns false. Since state change can trigger wast numbers of
      * subscriptions to be destroyed we don't want to re-calculate selectors
-     * unnecessarily. Therefore we allow callbacks to be called even if we have|
+     * unnecessarily. Therefore we allow callbacks to be called even if we have
      * not checked if the state actually did update. When re-calculating though
      * we ensure that the previous value is returned if deep-equal is true. This
      * ensures that react does not re-render.
@@ -121,5 +121,57 @@ describe("subscribe", () => {
         expect(
             store1.data.subscriptionsRequireEqualCheck.get(selector1),
         ).toBeUndefined()
+    })
+
+    test("subscribe to atom in scoped store", () => {
+        const rootStore = store()
+        const scopedStore = rootStore.createScope("child")
+        const nestedScopedStore = scopedStore.createScope("nested")
+        const anAtom = atom("default")
+        const rootCallback = mock(() => {})
+        const scopedCallback = mock(() => {})
+        const nestedScopedCallback = mock(() => {})
+        const rootUnsub = rootStore.sub(anAtom, rootCallback)
+        const scopedUnsub = scopedStore.sub(anAtom, scopedCallback)
+        const nestedUnsub = nestedScopedStore.sub(anAtom, nestedScopedCallback)
+        expect(rootStore.data.subscriptions.get(anAtom)).toHaveLength(3)
+        expect(scopedStore.data.subscriptions.get(anAtom)).toHaveLength(2)
+        expect(nestedScopedStore.data.subscriptions.get(anAtom)).toHaveLength(1)
+        rootStore.set(anAtom, "root 1")
+        expect(rootCallback).toHaveBeenCalledTimes(1)
+        expect(scopedCallback).toHaveBeenCalledTimes(1)
+        expect(nestedScopedCallback).toHaveBeenCalledTimes(1)
+        scopedStore.set(anAtom, "scoped 1")
+        expect(rootStore.data.subscriptions.get(anAtom)).toHaveLength(1)
+        expect(scopedStore.data.subscriptions.get(anAtom)).toHaveLength(2)
+        expect(nestedScopedStore.data.subscriptions.get(anAtom)).toHaveLength(1)
+        expect(rootCallback).toHaveBeenCalledTimes(1)
+        expect(scopedCallback).toHaveBeenCalledTimes(2)
+        expect(nestedScopedCallback).toHaveBeenCalledTimes(2)
+        rootStore.set(anAtom, "root 2")
+        expect(rootCallback).toHaveBeenCalledTimes(2)
+        expect(scopedCallback).toHaveBeenCalledTimes(2)
+        expect(nestedScopedCallback).toHaveBeenCalledTimes(2)
+        nestedScopedStore.set(anAtom, "nested 1")
+        expect(rootStore.data.subscriptions.get(anAtom)).toHaveLength(1)
+        expect(scopedStore.data.subscriptions.get(anAtom)).toHaveLength(1)
+        expect(nestedScopedStore.data.subscriptions.get(anAtom)).toHaveLength(1)
+        expect(rootCallback).toHaveBeenCalledTimes(2)
+        expect(scopedCallback).toHaveBeenCalledTimes(2)
+        expect(nestedScopedCallback).toHaveBeenCalledTimes(3)
+        scopedStore.set(anAtom, "scoped 2")
+        expect(rootCallback).toHaveBeenCalledTimes(2)
+        expect(scopedCallback).toHaveBeenCalledTimes(3)
+        expect(nestedScopedCallback).toHaveBeenCalledTimes(3)
+        rootStore.set(anAtom, "root 3")
+        expect(rootCallback).toHaveBeenCalledTimes(3)
+        expect(scopedCallback).toHaveBeenCalledTimes(3)
+        expect(nestedScopedCallback).toHaveBeenCalledTimes(3)
+        rootUnsub()
+        scopedUnsub()
+        nestedUnsub()
+        expect(rootStore.data.subscriptions.get(anAtom)).toBeUndefined()
+        expect(scopedStore.data.subscriptions.get(anAtom)).toBeUndefined()
+        expect(nestedScopedStore.data.subscriptions.get(anAtom)).toBeUndefined()
     })
 })

@@ -23,6 +23,26 @@ export const subscribe = <V>(
     requireDeepEqualCheckBeforeCallback: boolean,
     data: StoreData,
 ) => {
+    if (data.parent && !data.values.has(state) && isAtom(state)) {
+        /**
+         * Getting here means that we are within a scope and that the current
+         * atom is not set in the current scope. Therfore we pass the subscription
+         * up the tree and modify the callback to unsubscribe to the parent store
+         * in the case that it is set in this scope.
+         */
+        const parentUnsubscribe = subscribe(
+            state,
+            callback,
+            requireDeepEqualCheckBeforeCallback,
+            data.parent,
+        )
+        let originalCallback = callback
+        callback = () => {
+            parentUnsubscribe()
+            originalCallback()
+        }
+    }
+
     const subscribers =
         data.subscriptions.get(state) || initSubscribers(state, data)
 
