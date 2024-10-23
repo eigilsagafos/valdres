@@ -27,6 +27,7 @@ export const unsubscribe = <V>(
         }
         if (subscribers.size === 0) {
             if (maxAgeCleanup) maxAgeCleanup()
+            data.subscriptions.delete(state)
         }
         if (mount) {
             if (subscribers.size === mount.mountSubscriptions.size) {

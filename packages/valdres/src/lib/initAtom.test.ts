@@ -50,8 +50,8 @@ describe("initAtom", () => {
         const res = await value
         expect(res).toBe("Bar")
         expect(subscriptionCallback).toHaveBeenCalledTimes(1)
-        expect(store1.data.subscriptions.get(callbackAtom)?.size).toBe(1)
+        expect(store1.data.subscriptions.get(callbackAtom)).toHaveLength(1)
         unsubscribe()
-        expect(store1.data.subscriptions.get(callbackAtom)?.size).toBe(0)
+        expect(store1.data.subscriptions.get(callbackAtom)).toBeUndefined()
     })
 })
