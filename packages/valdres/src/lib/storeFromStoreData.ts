@@ -57,17 +57,17 @@ export const storeFromStoreData = (data: StoreData) => {
             data.scopes[scopeId] = scopedData
             return storeFromStoreData(scopedData)
         },
-        getScope: (scopeId: string): Store => {
-            if (scopeId in data.scopes) {
-                throw new Error(`Scope '${scopeId}' does not exist`)
-            }
-            return storeFromStoreData(data.scopes[scopeId])
-        },
         releaseScope: (scopeId: string) => {
             if (scopeId in data.scopes === false) {
                 throw new Error(`Scope '${scopeId}' does not exist`)
             }
             delete data.scopes[scopeId]
+        },
+        scope: (scopeId: string): Store => {
+            if (scopeId in data.scopes === false) {
+                throw new Error(`Scope '${scopeId}' does not exist`)
+            }
+            return storeFromStoreData(data.scopes[scopeId])
         },
     } as Store
 }

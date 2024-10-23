@@ -19,6 +19,6 @@ export type Store = {
     reset: ResetAtom
     txn: (callback: TransactionFn) => void
     createScope: (scopeId: string) => Store
-    getScope: (scopeId: string) => Store
     releaseScope: (scopeId: string) => void
+    scope: (scopeId: string) => Store
 }
