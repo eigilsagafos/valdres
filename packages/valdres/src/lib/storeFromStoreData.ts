@@ -4,7 +4,7 @@ import type { GetValue } from "../types/GetValue"
 import type { SetAtom } from "../types/SetAtom"
 import type { State } from "../types/State"
 import type { Store } from "../types/Store"
-import type { StoreData } from "../types/StoreData"
+import type { ScopedStoreData, StoreData } from "../types/StoreData"
 import type { TransactionFn } from "../types/TransactionFn"
 import { isAtom } from "../utils/isAtom"
 import { isSelector } from "../utils/isSelector"
@@ -23,7 +23,10 @@ const InvalidStateSetError = `Invalid state object passed to set().
 Only \`atom\` can be set.
 `
 
-export const storeFromStoreData = (data: StoreData) => {
+export function storeFromStoreData<StoreDataType extends StoreData>(
+    data: StoreDataType,
+    detach?: () => void,
+): Store<StoreDataType> {
     const get: GetValue = (state: State) => getState(state, data)
 
     const set: SetAtom = (state, value) => {
@@ -49,25 +52,27 @@ export const storeFromStoreData = (data: StoreData) => {
         txn,
         reset,
         data,
-        createScope: (scopeId: string): Store => {
+        detach,
+        scope: scopeId => {
+            let scopedStoreData
             if (scopeId in data.scopes) {
-                throw new Error(`Scope '${scopeId}' already exists`)
+                scopedStoreData = data.scopes[scopeId]
+            } else {
+                scopedStoreData = createStoreData(scopeId, data)
+                data.scopes[scopeId] = scopedStoreData
             }
-            const scopedData = createStoreData(scopeId, data)
-            data.scopes[scopeId] = scopedData
-            return storeFromStoreData(scopedData)
-        },
-        releaseScope: (scopeId: string) => {
-            if (scopeId in data.scopes === false) {
-                throw new Error(`Scope '${scopeId}' does not exist`)
+            const detach = () => {
+                scopedStoreData.scopeConsumers.delete(detach)
+                if (scopedStoreData.scopeConsumers.size === 0) {
+                    delete data.scopes[scopeId]
+                }
             }
-            delete data.scopes[scopeId]
+
+            scopedStoreData.scopeConsumers.add(detach)
+            return storeFromStoreData<ScopedStoreData>(
+                data.scopes[scopeId],
+                detach,
+            )
         },
-        scope: (scopeId: string): Store => {
-            if (scopeId in data.scopes === false) {
-                throw new Error(`Scope '${scopeId}' does not exist`)
-            }
-            return storeFromStoreData(data.scopes[scopeId])
-        },
-    } as Store
+    }
 }

@@ -21,7 +21,7 @@ export function getState<V, K>(
 ) {
     if (data.values.has(state)) return data.values.get(state)
     if (isAtom<V>(state)) {
-        if (data.parent) return getState<V, K>(state, data.parent)
+        if ("parent" in data) return getState<V, K>(state, data.parent)
         return initAtom<V>(state, data)
     }
     if (isSelector<V>(state)) return initSelector<V>(state, data)

@@ -24,8 +24,8 @@ describe("store", () => {
 
     test("create scope", () => {
         const root = store("root")
-        const child = root.createScope("child")
-        const nestedChild = child.createScope("nestedChild")
+        const child = root.scope("child")
+        const nestedChild = child.scope("nestedChild")
 
         const atom1 = atom("default")
 
@@ -56,7 +56,7 @@ describe("store", () => {
 
     test("selector in scope", () => {
         const root = store("root")
-        const child = root.createScope("child")
+        const child = root.scope("child")
         const atom1 = atom(1)
         const selector1 = selector(get => get(atom1) * 2)
 

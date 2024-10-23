@@ -125,8 +125,8 @@ describe("subscribe", () => {
 
     test("subscribe to atom in scoped store", () => {
         const rootStore = store()
-        const scopedStore = rootStore.createScope("child")
-        const nestedScopedStore = scopedStore.createScope("nested")
+        const scopedStore = rootStore.scope("child")
+        const nestedScopedStore = scopedStore.scope("nested")
         const anAtom = atom("default")
         const rootCallback = mock(() => {})
         const scopedCallback = mock(() => {})

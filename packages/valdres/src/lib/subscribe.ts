@@ -23,7 +23,7 @@ export const subscribe = <V>(
     requireDeepEqualCheckBeforeCallback: boolean,
     data: StoreData,
 ) => {
-    if (data.parent && !data.values.has(state) && isAtom(state)) {
+    if ("parent" in data && !data.values.has(state) && isAtom(state)) {
         /**
          * Getting here means that we are within a scope and that the current
          * atom is not set in the current scope. Therfore we pass the subscription
