@@ -19,26 +19,26 @@ const initStore = (
 ) => {
     if (initialize) hydrate(store, initialize())
     if (parentContext) {
-        const [, stores] = parentContext
-        if (store.data.id in stores) {
+        const [, allStores] = parentContext
+        if (store.data.id in allStores) {
             throw new Error(
                 `store with id ${store.data.id} is already defined further up the tree`,
             )
         }
         return [
-            store.data.id,
+            store,
             {
-                ...stores,
+                ...allStores,
                 [store.data.id]: store,
             },
         ]
     }
     return [
-        store.data.id,
+        store,
         {
             [store.data.id]: store,
         },
-    ] as ProviderContext
+    ]
 }
 
 type ProviderArgs = {

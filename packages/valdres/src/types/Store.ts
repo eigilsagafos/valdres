@@ -18,6 +18,9 @@ export type Store<T = StoreData> = {
     sub: SubscribeFn
     reset: ResetAtom
     txn: (callback: TransactionFn) => void
-    scope: (scopeId: string) => Store<ScopedStoreData>
-    detach?: () => void
+    scope: (scopeId: string) => ScopedStore
+}
+
+export type ScopedStore = Store<ScopedStoreData> & {
+    detach: () => void
 }
