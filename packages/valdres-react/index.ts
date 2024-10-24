@@ -34,5 +34,6 @@ export { useValdresCallback } from "./src/useValdresCallback"
 export { useValue } from "./src/useValue"
 export { useValdresValueWithDefault } from "./src/useValdresValueWithDefault"
 export { Provider } from "./src/Provider"
+export { StoreContext } from "./src/lib/StoreContext"
 
 export type { TransactionInterface } from "./src/types/TransactionInterface"

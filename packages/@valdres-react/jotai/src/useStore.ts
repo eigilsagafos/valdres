@@ -1,8 +1,9 @@
-import { useStoreId, useStore as useStoreValdres } from "valdres-react"
+import { useStore as useStoreValdres, StoreContext } from "valdres-react"
 import { getDefaultStore } from "./getDefaultStore"
+import { useContext } from "react"
 
 export const useStore = () => {
-    const storeId = useStoreId()
-    if (!storeId) return getDefaultStore()
+    const [currentStore, allStores] = useContext(StoreContext)
+    if (!currentStore) return getDefaultStore()
     return useStoreValdres()
 }

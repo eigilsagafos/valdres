@@ -6,7 +6,7 @@ const addSetToSelector = (selector, set) => {
     }
 }
 
-export const atom = (get, set) => {
+export const atom = (get, set?: any) => {
     if (typeof get === "function" && get.length === 1) {
         const selector = valdresSelector(get)
         if (set) addSetToSelector(selector, set)
