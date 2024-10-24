@@ -1,5 +1,5 @@
 {
-    "name": "@valdres-react/jotai",
+    "name": "@valdres-react/panable",
     "version": "0.2.0-alpha.20",
     "license": "MIT",
     "author": {
@@ -12,32 +12,27 @@
     },
     "type": "module",
     "exports": {
-        "default": "./dist/index.js",
-        "types": "./dist/types/index.d.ts"
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
     },
     "files": [
         "dist"
     ],
     "scripts": {
         "build": "NODE_ENV=production bun build index.ts --outdir ./dist --packages external",
-        "build:types": "rm -rf dist/types && tsc",
-        "test": "bun test"
+        "build:types--": "tsc"
     },
     "dependencies": {
+        "@react-hook/resize-observer": "^2.0.2",
+        "@valdres-react/draggable": "workspace:^",
         "valdres-react": "workspace:^"
     },
     "devDependencies": {
-        "@happy-dom/global-registrator": "15.7.4",
-        "@testing-library/dom": "10.4.0",
-        "@testing-library/react": "16.0.1",
-        "@testing-library/user-event": "14.5.2",
-        "happy-dom": "15.7.4",
-        "jest-leak-detector": "29.7.0",
-        "react": "18.3.1",
-        "typescript": "5.5.4"
+        "typescript": "5.6.2"
     },
     "publishConfig": {
         "access": "public",
         "registry": "https://registry.npmjs.org/"
-    }
+    },
+    "gitHead": "53245fd1a080cdb1131f5be9056adc546d05ead4"
 }
