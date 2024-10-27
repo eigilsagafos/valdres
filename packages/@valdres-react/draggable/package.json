@@ -20,7 +20,7 @@
     ],
     "scripts": {
         "build": "NODE_ENV=production bun build index.ts --outdir ./dist --packages external",
-        "build:types": "rm -rf dist/types && tsc"
+        "build:types-": "rm -rf dist/types && tsc"
     },
     "dependencies": {
         "@react-hook/resize-observer": "^2.0.2",
