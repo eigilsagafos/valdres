@@ -1,4 +1,4 @@
-import equal from "fast-deep-equal"
+import equal from "fast-deep-equal/es6"
 
 const recursivlyUpdateSelectors = ({
     valueMap,

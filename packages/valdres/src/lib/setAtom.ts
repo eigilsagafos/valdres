@@ -1,4 +1,4 @@
-import equal from "fast-deep-equal"
+import equal from "fast-deep-equal/es6"
 import type { Atom } from "../types/Atom"
 import type { StoreData } from "../types/StoreData"
 import { isPromiseLike } from "../utils/isPromiseLike"

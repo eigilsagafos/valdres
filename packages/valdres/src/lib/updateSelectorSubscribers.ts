@@ -1,4 +1,4 @@
-import equal from "fast-deep-equal"
+import equal from "fast-deep-equal/es6"
 import { initSelector } from "./initSelector"
 import type { Selector } from "../types/Selector"
 import type { StoreData } from "../types/StoreData"
