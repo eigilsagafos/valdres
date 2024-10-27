@@ -56,7 +56,6 @@ export function atomFamily<Key = FamilyKey, Value = unknown>(
     options?: AtomOptions<Value>,
 ) {
     const map = new Map()
-    // const keysAtom = atom(new Map(), { global: true })
 
     const atomFamily = (key: Key) => {
         const keyStringified = stableStringify(key)
@@ -75,15 +74,11 @@ export function atomFamily<Key = FamilyKey, Value = unknown>(
             ),
         )
         map.set(keyStringified, familyAtom)
-        // keysAtom.setSelf(curr => {
-        //     curr.set(keyStringified, key)
-        //     return curr
-        // })
         return familyAtom
     }
     atomFamily.__valdresAtomFamilyMap = map
     atomFamily.release = (key: Key) => map.delete(key)
-    const keysAtom = atom(new Set())
+    const keysAtom = atom(new Set<Key>())
     atomFamily.__keysAtom = keysAtom
     atomFamily.__keysSelector = selector(get => Array.from(get(keysAtom)))
     if (options?.label) atomFamily.label = options.label

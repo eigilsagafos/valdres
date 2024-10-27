@@ -48,7 +48,7 @@ export const initAtom = <V, K>(
         if (!currentKeySet.has(atom.familyKey)) {
             const newSet = new Set(currentKeySet)
             newSet.add(atom.familyKey)
-            setAtom(atom.family.__keysAtom, newSet, data, true)
+            setAtom(atom.family.__keysAtom, newSet, data)
         }
     }
     if (atom.onInit)

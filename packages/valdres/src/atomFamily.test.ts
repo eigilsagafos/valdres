@@ -1,4 +1,4 @@
-import { describe, test, expect } from "bun:test"
+import { describe, test, expect, mock } from "bun:test"
 import { store } from "./store"
 import { atomFamily } from "./atomFamily"
 import { selectorFamily } from "./selectorFamily"
@@ -240,5 +240,22 @@ describe("atomFamily", () => {
         expect(store1.get(todosAtomFamily)).toStrictEqual(["1", "2", "3"])
         todosAtomFamily.release("1")
         expect(store1.get(todosAtomFamily)).toStrictEqual(["1", "2", "3"])
+    })
+
+    test.todo("subscribe to atom family keys", () => {
+        const store1 = store()
+        const testAtomFamily = atomFamily<string>(0)
+        const callback = mock(() => {
+            console.log("hji")
+        })
+        store1.sub(testAtomFamily, callback)
+        const atom1 = testAtomFamily("1")
+        store1.get(atom1)
+        /**
+         * TODO: Figure out how this should work. I'm expecting that when an
+         * atom is initialized and I have a atomFamily subscription then the callback
+         * should be called. Solve it in initAtom?
+         */
+        expect(callback).toHaveBeenCalledTimes(1)
     })
 })

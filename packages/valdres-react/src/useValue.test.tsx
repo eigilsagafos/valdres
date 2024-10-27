@@ -52,10 +52,14 @@ describe("useValue", () => {
 
     test("atomFamily id list", async () => {
         const [store, renderHook] = generateStoreAndRenderHook()
-        const family = atomFamily(1)
+        const family = atomFamily<string, number>(0)
         const atom1 = family("1")
         const atom2 = family("2")
         const { result } = renderHook(() => useValue(family))
+        expect(result.current).toStrictEqual([])
+        store.get(atom1)
+        // expect(result.current).toStrictEqual(["1"]) // TODO: This should work when correctly handled in valdres package...
+        store.set(atom2, 2)
         expect(result.current).toStrictEqual(["1", "2"])
     })
 })
