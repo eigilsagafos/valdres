@@ -1,5 +1,7 @@
+import { atom } from "./atom"
 import { atomFamilyAtom } from "./lib/atomFamilyAtom"
 import { stableStringify } from "./lib/stableStringify"
+import { selector } from "./selector"
 import type { AtomFamily } from "./types/AtomFamily"
 import type { AtomOptions } from "./types/AtomOptions"
 import type { FamilyKey } from "./types/FamilyKey"
@@ -81,6 +83,9 @@ export function atomFamily<Key = FamilyKey, Value = unknown>(
     }
     atomFamily.__valdresAtomFamilyMap = map
     atomFamily.release = (key: Key) => map.delete(key)
+    const keysAtom = atom(new Set())
+    atomFamily.__keysAtom = keysAtom
+    atomFamily.__keysSelector = selector(get => Array.from(get(keysAtom)))
     if (options?.label) atomFamily.label = options.label
     return atomFamily as AtomFamily<Key, Value>
 }

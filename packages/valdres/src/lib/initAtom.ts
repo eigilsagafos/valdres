@@ -1,5 +1,7 @@
 import type { Atom } from "../types/Atom"
+import type { AtomFamilyAtom } from "../types/AtomFamilyAtom"
 import type { StoreData } from "../types/StoreData"
+import { isFamilyAtom } from "../utils/isFamilyAtom"
 import { isPromiseLike } from "../utils/isPromiseLike"
 import { isSelector } from "../utils/isSelector"
 import { getState } from "./getState"
@@ -35,9 +37,20 @@ export const getAtomInitValue = <V>(atom: Atom<V>, data: StoreData) => {
     }
 }
 
-export const initAtom = <V>(atom: Atom<V>, data: StoreData) => {
+export const initAtom = <V, K>(
+    atom: Atom<V> | AtomFamilyAtom<K, V>,
+    data: StoreData,
+) => {
     let value = getAtomInitValue(atom, data)
     data.values.set(atom, value)
+    if (isFamilyAtom(atom)) {
+        const currentKeySet = getState(atom.family.__keysAtom, data)
+        if (!currentKeySet.has(atom.familyKey)) {
+            const newSet = new Set(currentKeySet)
+            newSet.add(atom.familyKey)
+            setAtom(atom.family.__keysAtom, newSet, data, true)
+        }
+    }
     if (atom.onInit)
         atom.onInit((newVal: V) => {
             value = newVal

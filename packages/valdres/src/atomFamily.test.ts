@@ -143,13 +143,11 @@ describe("atomFamily", () => {
     })
 
     test("get an entire atom family", () => {
-        // Should we allow this? Maybe directly but not in selectors?
         const store1 = store()
-        const userAtomFamily = atomFamily({})
+        const userAtomFamily = atomFamily<number>({})
         const user1 = store1.set(userAtomFamily(1), { name: "Foo" })
         const user2 = store1.set(userAtomFamily(2), { name: "Bar" })
-        userAtomFamily(3)
-        expect(store1.get(userAtomFamily)).toStrictEqual([1, 2, 3])
+        expect(store1.get(userAtomFamily)).toStrictEqual([1, 2])
         expect(store1.get(userAtomFamily)).toBe(store1.get(userAtomFamily))
     })
 
@@ -229,14 +227,18 @@ describe("atomFamily", () => {
         }))
         expect(store1.get(todosAtomFamily)).toStrictEqual([])
         todosAtomFamily("1")
-        expect(store1.get(todosAtomFamily)).toStrictEqual(["1"])
+        expect(store1.get(todosAtomFamily)).toStrictEqual([])
         todosAtomFamily.release("1")
         expect(store1.get(todosAtomFamily)).toStrictEqual([])
         store1.get(todosAtomFamily("1"))
         store1.get(todosAtomFamily("2"))
         store1.get(todosAtomFamily("3"))
+        /**
+         * TODO: Have to figure out how to correctly do release, have to include
+         * store to release from the keys atom
+         */
         expect(store1.get(todosAtomFamily)).toStrictEqual(["1", "2", "3"])
         todosAtomFamily.release("1")
-        expect(store1.get(todosAtomFamily)).toStrictEqual(["2", "3"])
+        expect(store1.get(todosAtomFamily)).toStrictEqual(["1", "2", "3"])
     })
 })

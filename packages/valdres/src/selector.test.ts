@@ -1,11 +1,11 @@
-import { describe, test, expect, mock } from "bun:test"
+import { describe, expect, mock, test } from "bun:test"
+import equal from "fast-deep-equal/es6"
+import { wait } from "../test/utils/wait"
 import { atom } from "./atom"
 import { atomFamily } from "./atomFamily"
+import { createStoreWithSelectorSet } from "./createStoreWithSelectorSet"
 import { selector } from "./selector"
 import { store } from "./store"
-import { wait } from "../test/utils/wait"
-import { createStoreWithSelectorSet } from "./createStoreWithSelectorSet"
-import equal from "fast-deep-equal"
 
 describe("selector", () => {
     test("computations are cached", () => {
@@ -244,17 +244,17 @@ describe("selector", () => {
         const keysAtomFamily = atomFamily(false)
         const user1 = store1.set(keysAtomFamily("a"), true)
         const user2 = store1.set(keysAtomFamily("b"), true)
-        keysAtomFamily("c")
+        keysAtomFamily("c") // This will not be part of set
         const selector1 = selector(get => get(keysAtomFamily), "Selector1")
         const subCallback = mock(() => {})
         store1.sub(keysAtomFamily, subCallback)
         const res1 = store1.get(selector1)
-        expect(res1).toStrictEqual(["a", "b", "c"])
+        expect(res1).toStrictEqual(["a", "b"])
         expect(subCallback).toHaveBeenCalledTimes(0)
         store1.set(keysAtomFamily("d"), true)
         expect(subCallback).toHaveBeenCalledTimes(1)
         const res2 = store1.get(selector1)
-        expect(res2).toStrictEqual(["a", "b", "c", "d"])
+        expect(res2).toStrictEqual(["a", "b", "d"])
         store1.set(keysAtomFamily("b"), false)
         const res3 = store1.get(selector1)
         // console.log(res3)

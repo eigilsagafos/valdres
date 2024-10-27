@@ -1,4 +1,4 @@
-import equal from "fast-deep-equal"
+import equal from "fast-deep-equal/es6"
 import type { Atom } from "../types/Atom"
 import type { AtomFamily } from "../types/AtomFamily"
 import type { Family } from "../types/Family"
@@ -22,17 +22,18 @@ export function getState<V, K>(
     if (data.values.has(state)) return data.values.get(state)
     if (isAtom<V>(state)) {
         if ("parent" in data) return getState<V, K>(state, data.parent)
-        return initAtom<V>(state, data)
+        return initAtom<V, K>(state, data)
     }
     if (isSelector<V>(state)) return initSelector<V>(state, data)
     if (isAtomFamily<K, V>(state)) {
-        // TODO: Impement more efficient way to solve this
-        const array = Array.from(state.__valdresAtomFamilyMap.keys())
-        // @ts-ignore
-        if (equal(array, state._keyArray)) return state._keyArray
-        // @ts-ignore
-        state._keyArray = array
-        return array
+        if ("parent" in data) {
+            const closestData = findClosestStoreWithAtomInitialized<Set<K>>(
+                state.__keysAtom,
+                data,
+            )
+            return getState<K, V>(state.__keysSelector, closestData)
+        }
+        return getState<K, V>(state.__keysSelector, data)
     }
     if (isSelectorFamily<K, V>(state)) {
         // TODO: Impement more efficient way to solve this
@@ -44,4 +45,13 @@ export function getState<V, K>(
         return array
     }
     throw new Error("Invalid object passed to get")
+}
+
+const findClosestStoreWithAtomInitialized = <V>(
+    atom: Atom<V>,
+    data: StoreData,
+) => {
+    if ("parent" in data === false) return data
+    if (data.values.has(atom)) return data
+    return findClosestStoreWithAtomInitialized(atom, data.parent)
 }
