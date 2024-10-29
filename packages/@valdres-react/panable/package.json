@@ -24,11 +24,14 @@
     },
     "dependencies": {
         "@react-hook/resize-observer": "^2.0.2",
-        "@valdres-react/draggable": "workspace:^",
-        "valdres-react": "workspace:^"
+        "@valdres-react/draggable": "workspace:^"
     },
     "devDependencies": {
-        "typescript": "5.6.2"
+        "typescript": "5.6.2",
+        "valdres-react": "workspace:^"
+    },
+    "peerDependencies": {
+        "valdres-react": "workspace:^"
     },
     "publishConfig": {
         "access": "public",
