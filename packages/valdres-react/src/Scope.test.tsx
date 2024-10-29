@@ -1,25 +1,17 @@
 import { describe, test, expect } from "bun:test"
-import { renderHook } from "@testing-library/react-hooks"
 import { render } from "@testing-library/react"
 import { atom, store, type Atom } from "valdres"
-import { useStoreId } from "./useStoreId"
 import { Provider } from "./Provider"
-import { useStore } from "./useStore"
 import { Scope } from "./Scope"
 import { useSetAtom } from "./useSetAtom"
 import { useValue } from "./useValue"
-
-const StoreId = () => {
-    const id = useStoreId()
-    return <div>{id}</div>
-}
 
 const SetAtom = ({ atom, value, ...rest }) => {
     const set = useSetAtom(atom)
     return <button {...rest} onClick={() => set(value)}></button>
 }
 
-const AtomValue = ({ atom, ...rest }: { atom: Atom<string> }) => {
+const AtomValue = <T extends any>({ atom, ...rest }: { atom: Atom<T> }) => {
     const value = useValue(atom)
     return <div {...rest}>{value}</div>
 }
@@ -45,16 +37,107 @@ describe("Scope", () => {
         scopedStore.set(nameAtom, "scoped")
         const value3 = await res.findByTestId("value")
         expect(value3.innerText).toBe("scoped")
+        await res.unmount()
     })
 
-    test.only("scope is released on unmount", async () => {
+    test("scope is released on unmount", async () => {
         const rootStore = store()
         const res = render(
             <Provider store={rootStore}>
                 <Scope scopeId="Foo" />
             </Provider>,
         )
+        expect(Object.keys(rootStore.data.scopes)).toStrictEqual(["Foo"])
+        await res.unmount()
+        expect(Object.keys(rootStore.data.scopes)).toStrictEqual([])
+    })
 
+    test("Scope with initialize", async () => {
+        const rootStore = store()
+        const atom1 = atom(1)
+        const atom2 = atom(2)
+        const atom3 = atom(3)
+        const res = render(
+            <Provider store={rootStore}>
+                <Scope
+                    scopeId="Foo"
+                    initialize={() => [
+                        [atom1, 4],
+                        [atom2, 5],
+                        [atom3, 6],
+                    ]}
+                >
+                    <AtomValue atom={atom1} data-testid="value1" />
+                    <AtomValue atom={atom2} data-testid="value2" />
+                    <AtomValue atom={atom3} data-testid="value3" />
+                </Scope>
+            </Provider>,
+        )
+        const value1 = await res.findByTestId("value1")
+        expect(value1.innerText).toBe("4")
+        const value2 = await res.findByTestId("value2")
+        expect(value2.innerText).toBe("5")
+        const value3 = await res.findByTestId("value3")
+        expect(value3.innerText).toBe("6")
+        await res.unmount()
+    })
+
+    test("Scope with initialize cb", async () => {
+        const rootStore = store()
+        const atom1 = atom(1)
+        const res = render(
+            <Provider store={rootStore}>
+                <Scope
+                    scopeId="Foo"
+                    initialize={txn => {
+                        txn.set(atom1, 2)
+                    }}
+                >
+                    <AtomValue atom={atom1} data-testid="value1" />
+                </Scope>
+            </Provider>,
+        )
+        const value1 = await res.findByTestId("value1")
+        expect(value1.innerText).toBe("2")
+        await res.unmount()
+    })
+
+    test("Scope with initialize cb called once", async () => {
+        const rootStore = store()
+        const numberAtom = atom(1)
+        const Comp = () => {
+            const value = useValue(numberAtom)
+            return (
+                <>
+                    <div data-testid="valueRoot">{value}</div>
+                    <Scope
+                        scopeId="Foo"
+                        initialize={txn => {
+                            txn.set(numberAtom, curr => curr + 1)
+                        }}
+                    >
+                        <AtomValue
+                            atom={numberAtom}
+                            data-testid="valueScoped"
+                        />
+                    </Scope>
+                </>
+            )
+        }
+        const res = render(
+            <Provider store={rootStore}>
+                <Comp></Comp>
+            </Provider>,
+        )
+        const valueRoot1 = await res.findByTestId("valueRoot")
+        expect(valueRoot1.innerText).toBe("1")
+        const valueScoped1 = await res.findByTestId("valueScoped")
+        expect(valueScoped1.innerText).toBe("2")
+        rootStore.set(numberAtom, 0)
+        const valueRoot2 = await res.findByTestId("valueRoot")
+        expect(valueRoot2.innerText).toBe("0")
+        const valueScoped2 = await res.findByTestId("valueScoped")
+        expect(valueScoped2.innerText).toBe("2")
         await res.unmount()
     })
 

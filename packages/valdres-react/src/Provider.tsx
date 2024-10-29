@@ -1,23 +1,23 @@
 import { useContext, useRef, type ReactNode } from "react"
 import { store as createStore, type Store, type Atom } from "valdres"
 import { StoreContext, type ProviderContext } from "./lib/StoreContext"
-
-type InitializeCallback = () => [Atom, any][]
-
-const hydrate = (store: Store, state: [Atom, any][]) => {
-    store.txn(set => {
-        for (const [atom, value] of state) {
-            set(atom, value)
-        }
-    })
-}
+import type { InitializeCallback } from "./types/InitializeCallback"
+import { hydrate } from "./lib/hydrate"
 
 const initStore = (
     parentContext: ProviderContext | undefined,
     store = createStore(),
     initialize?: InitializeCallback,
 ) => {
-    if (initialize) hydrate(store, initialize())
+    if (initialize) {
+        store.txn((set, get, reset, commit) => {
+            const txn = { set, get, reset, commit }
+            const pairs = initialize(txn)
+            if (pairs) {
+                hydrate(set, pairs)
+            }
+        })
+    }
     if (parentContext) {
         const [, allStores] = parentContext
         if (store.data.id in allStores) {
