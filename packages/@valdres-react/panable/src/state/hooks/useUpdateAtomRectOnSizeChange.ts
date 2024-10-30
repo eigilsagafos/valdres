@@ -1,8 +1,35 @@
-import useResizeObserver from "@react-hook/resize-observer"
 import { useSetAtom, type Atom } from "valdres-react"
 import { useEffect } from "react"
 import type { ScopeId } from "../../types/ScopeId"
 import type { Size } from "../../../../draggable/src/types/Size"
+
+const observerCallbacks = new WeakMap()
+
+const observer = new ResizeObserver(elements => {
+    for (const element of elements) {
+        const callback = observerCallbacks.get(element.target)
+        if (callback) {
+            callback(element)
+        } else {
+            console.log("TODO: Why are we here? Should we clear?")
+        }
+    }
+})
+
+const useResizeObserver = (
+    ref: any,
+    callback: (entry: ResizeObserverEntry) => void,
+) => {
+    useEffect(() => {
+        const el = ref.current
+        observer.observe(el)
+        observerCallbacks.set(el, callback)
+        return () => {
+            observer.unobserve(el)
+            observerCallbacks.delete(el)
+        }
+    }, [ref])
+}
 
 export const useUpdateAtomRectOnSizeChange = (
     ref,

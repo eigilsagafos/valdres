@@ -3,9 +3,9 @@
     "type": "module",
     "private": true,
     "scripts": {
-        "dev": "vocs dev",
-        "build": "vocs build",
-        "preview": "vocs preview"
+        "docs:dev": "vocs dev",
+        "docs:build": "vocs build",
+        "docs:preview": "vocs preview"
     },
     "dependencies": {
         "@faker-js/faker": "9.0.3",

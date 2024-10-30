@@ -23,7 +23,6 @@
         "build:types--": "tsc"
     },
     "dependencies": {
-        "@react-hook/resize-observer": "^2.0.2",
         "@valdres-react/draggable": "workspace:^"
     },
     "devDependencies": {

@@ -5,7 +5,8 @@
         "build": "bun run lerna run build",
         "build:types": "bun run lerna run build:types",
         "publish": "bun run lerna publish  --force-publish",
-        "test": "bun run lerna run test"
+        "test": "bun run lerna run test",
+        "dev": "bun run lerna run build --parallel -- --watch"
     },
     "workspaces": [
         "packages/*",
