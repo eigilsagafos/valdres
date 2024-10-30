@@ -11,8 +11,13 @@ jobs:
             - uses: oven-sh/setup-bun@v2
             - name: Install
               run: bun install
-            - name: Build
+            - name: Build Packages
               run: bun run build
+              env:
+                  NODE_ENV: production
+            - name: Build Docs
+              run: bun run docs:build
+              working-directory: ./packages/documentation
               env:
                   NODE_ENV: production
             - name: Upload website artifact
