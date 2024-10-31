@@ -57,6 +57,9 @@ export const globalAtom = <Value = any>(
         onInit,
         onSet,
         setSelf,
+        get currentValue() {
+            return value
+        },
     }
     return atom
 }
