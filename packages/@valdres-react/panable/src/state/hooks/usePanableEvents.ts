@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useRef } from "react"
 import { useTransaction } from "valdres-react"
-// import { moveDelta } from "../utils/moveDelta"
 import { onMouseDown } from "../actions/onMouseDown"
 import { onMouseUp } from "../actions/onMouseUp"
 import { onTouchEnd } from "../actions/onTouchEnd"
 import { onTouchStart } from "../actions/onTouchStart"
 import { zoom } from "../actions/zoom"
+import { moveDelta } from "../actions/moveDelta"
 // import { useCurrentCapabilities } from "../../../state/hooks/useCurrentCapabilities"
 
 export const usePanableEvents = ({ scopeId, select, onCanvasClick }) => {
@@ -21,12 +21,13 @@ export const usePanableEvents = ({ scopeId, select, onCanvasClick }) => {
                 e.preventDefault()
                 txn(state => zoom(state, e.deltaY, scopeId))
             } else {
-                throw new Error(`TODO`)
+                e.preventDefault()
+                txn(state => moveDelta(state, e.deltaX, e.deltaY, scopeId))
+                // throw new Error(`TODO`)
                 // if (
                 //     capabilities.actions.pan.enabled &&
                 //     capabilities.actions.pan.gestures
                 // ) {
-                //     e.preventDefault()
                 //     txn(state => moveDelta(state, e.deltaX, e.deltaY, scopeId))
                 // }
             }

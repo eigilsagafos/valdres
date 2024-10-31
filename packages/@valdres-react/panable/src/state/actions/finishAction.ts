@@ -14,19 +14,11 @@ export const finishAction = (
     const action = txn.get(actionAtom({ eventId, scopeId }))
     if (action) {
         if (action.kind === "drag") {
-            throw new Error("TODO: Find way to generate draggable id")
-            const draggableId = {
-                ref: action.meta.item.ref,
-                context: action.meta.item.context,
-                scopeId,
-            }
-            const item = txn.get(draggableItemAtom(draggableId))
-            // console.log("debug 1111", { item, action })
-            // throw new Error("TODO: Fix draggableId")
+            const item = txn.get(draggableItemAtom(action.id))
             if (item.isSnapping) {
                 action?.onDrop(eventId)
             }
-            txn.reset(draggableItemAtom(draggableId))
+            txn.reset(draggableItemAtom(action.id))
             if (action?.onDragEnd) {
                 action?.onDragEnd(eventId)
             }

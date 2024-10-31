@@ -1,10 +1,10 @@
-import { move } from "./move"
 import type { TransactionInterface } from "valdres-react"
 import type { Action } from "../../types/Action"
 import { actionAtom } from "../atoms/actionAtom"
 import { cursorPositionAtom } from "../atoms/cursorPositionAtom"
+import { drag } from "./drag"
+import { move } from "./move"
 // import { zoom } from "./zoom"
-// import { drag } from "./drag"
 
 // const zoom = (recoil, scopeId, initialScale, eventScale) => {
 //     const newZoom = initialScale * eventScale
@@ -34,14 +34,8 @@ export const onTouchMove = (
         if (action.kind === "move") {
             move(txn, scopeId, action.eventId, touch.clientX, touch.clientY)
         } else if (action.kind === "drag") {
-            throw new Error("onTouchMove TODO drag")
-            // drag({
-            //     state,
-            //     scopeId,
-            //     eventId: action.eventId,
-            //     x: touch.clientX,
-            //     y: touch.clientY,
-            // })
+            // throw new Error("onTouchMove TODO drag")
+            drag(txn, scopeId, action.eventId, touch.clientX, touch.clientY)
         } else if (action.kind === "select") {
             txn.set(cursorPositionAtom(scopeId), {
                 x: touch.clientX,

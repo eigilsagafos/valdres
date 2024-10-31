@@ -6,6 +6,7 @@ import type { Point } from "./types/Point"
 import type { Size } from "./types/Size"
 
 export const useDraggable = ({
+    id,
     meta,
     scopeId,
     onMouseDown,
@@ -13,6 +14,7 @@ export const useDraggable = ({
     onDragStart,
     onDragInit,
     onDragEnd,
+    dropzonesSelector,
     onDrop,
     itemPos,
     itemSize,
@@ -26,6 +28,7 @@ export const useDraggable = ({
     onDragInit: EventCallbackFn
     onDragEnd: EventCallbackFn
     onDrop: EventCallbackFn
+    dropzonesSelector: Selector
     itemPos: Point
     itemSize: Size
     dragEnabled: boolean
@@ -43,6 +46,7 @@ export const useDraggable = ({
             if (dragEnabled) {
                 txn(state => {
                     setIsDragging(state, e.pageX, e.pageY, {
+                        id,
                         eventId: "mouse",
                         scopeId,
                         meta,
@@ -52,15 +56,18 @@ export const useDraggable = ({
                         onDragInit,
                         onDragEnd,
                         onDrop,
+                        dropzonesSelector,
                     })
                 })
             }
         },
         [
+            id,
             onMouseDown,
             scopeId,
             meta,
             itemPos,
+            dropzonesSelector,
             itemSize,
             onDragStart,
             onDragInit,
@@ -78,6 +85,7 @@ export const useDraggable = ({
             if (dragEnabled) {
                 txn(state => {
                     setIsDragging(state, t.pageX, t.pageY, {
+                        id,
                         eventId: t.identifier,
                         scopeId,
                         meta,
@@ -87,16 +95,19 @@ export const useDraggable = ({
                         onDragInit,
                         onDragEnd,
                         onDrop,
+                        dropzonesSelector,
                     })
                 })
             }
         },
         [
+            id,
             onMouseDown,
             scopeId,
             meta,
             itemPos,
             itemSize,
+            dropzonesSelector,
             onDragStart,
             onDragInit,
             onDragEnd,

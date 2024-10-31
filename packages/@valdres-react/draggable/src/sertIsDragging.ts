@@ -10,6 +10,7 @@ export const setIsDragging = (
     x: number,
     y: number,
     {
+        id,
         eventId,
         scopeId,
         meta,
@@ -19,12 +20,15 @@ export const setIsDragging = (
         onDragInit,
         onDragEnd,
         onDrop,
+        dropzonesSelector,
     },
 ) => {
+    console.log(`dropzonesSelector`, dropzonesSelector)
     const scale = txn.get(scaleAtom(scopeId))
     txn.set(activeActionsAtom(scopeId), curr => [...curr, [eventId, "drag"]])
     txn.set(actionAtom({ eventId, scopeId }), {
         kind: "drag",
+        id,
         meta,
         scopeId,
         eventId,
@@ -40,6 +44,7 @@ export const setIsDragging = (
         onDragStart,
         onDragEnd,
         onDrop,
+        dropzonesSelector,
     })
     onDragInit && onDragInit(txn, { eventId, scopeId })
 }

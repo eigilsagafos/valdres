@@ -6,7 +6,11 @@ export { Panable } from "./src/components/Panable"
 export { PositionAbsolute } from "./src/components/PositionAbsolute"
 export { Selections } from "./src/components/Selections"
 
-// Atoms
+// state/actions
+export { onMouseMove } from "./src/state/actions/onMouseMove"
+export { onTouchMove } from "./src/state/actions/onTouchMove"
+
+// state/atoms
 export { actionAtom } from "./src/state/atoms/actionAtom"
 export { activeActionsAtom } from "./src/state/atoms/activeActionsAtom"
 export { cameraPositionAtom } from "./src/state/atoms/cameraPositionAtom"
