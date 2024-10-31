@@ -23,7 +23,6 @@ export const setIsDragging = (
         dropzonesSelector,
     },
 ) => {
-    console.log(`dropzonesSelector`, dropzonesSelector)
     const scale = txn.get(scaleAtom(scopeId))
     txn.set(activeActionsAtom(scopeId), curr => [...curr, [eventId, "drag"]])
     txn.set(actionAtom({ eventId, scopeId }), {

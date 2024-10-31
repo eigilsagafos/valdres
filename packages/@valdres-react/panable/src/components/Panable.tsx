@@ -47,8 +47,6 @@ const useInitPanableConfig = (scopeId: ScopeId, config) => {
     }, [])
     useEffect(() => {
         store.set(configAtom(scopeId), config)
-
-        console.log("confdig", config)
     }, [config])
 }
 
@@ -59,7 +57,6 @@ export const Panable = ({
     defaultZoom = 0.5,
     allowFullscreen = true,
     showControls = true,
-    select = false,
     scopeId = undefined,
     backgroundColor = undefined,
     outerChildren = undefined,

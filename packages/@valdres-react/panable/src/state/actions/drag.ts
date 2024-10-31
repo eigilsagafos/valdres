@@ -82,7 +82,6 @@ export const drag = (
     }
 
     const scale = txn.get(scaleAtom(scopeId))
-    console.log(action)
     const dropzones = txn.get(action.dropzonesSelector)
 
     const dropZones = Object.entries(dropzones).map(([k, v]) => ({
