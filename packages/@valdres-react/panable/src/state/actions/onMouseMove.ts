@@ -7,7 +7,7 @@ import { drag } from "./drag"
 
 export const onMouseMove = (
     txn: TransactionInterface,
-    e: React.MouseEvent,
+    e: MouseEvent,
     scopeId: ScopeId,
 ) => {
     const action = txn.get(actionAtom({ eventId: "mouse", scopeId }))

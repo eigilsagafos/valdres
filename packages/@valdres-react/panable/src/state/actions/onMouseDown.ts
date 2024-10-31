@@ -3,22 +3,22 @@ import type { TransactionInterface } from "valdres-react"
 import { initMove } from "./initMove"
 import { initSelect } from "./initSelect"
 import type { ScopeId } from "../../types/ScopeId"
+import { configAtom } from "../atoms/configAtom"
 
 export const onMouseDown = (
     txn: TransactionInterface,
-    e: React.MouseEvent,
+    e: MouseEvent,
     scopeId: ScopeId,
-    select: boolean,
 ) => {
+    const { mode } = txn.get(configAtom(scopeId))
     if (e.button === 2) return
-    if (select) {
+    if (mode === "select") {
         e.preventDefault()
         initSelect(txn, scopeId, "mouse", e)
     } else {
         // const capabilities = state.get(currentCapabilitesSelector)
         // if (capabilities.actions.pan.enabled) {
         e.preventDefault()
-        console.log("asd2")
         initMove(txn, scopeId, "mouse", e.clientX, e.clientY, e.timeStamp)
         // }
     }

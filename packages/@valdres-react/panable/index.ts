@@ -17,6 +17,7 @@ export { cameraPositionAtom } from "./src/state/atoms/cameraPositionAtom"
 export { cursorPositionAtom } from "./src/state/atoms/cursorPositionAtom"
 export { fullscreenEnabledAtom } from "./src/state/atoms/fullscreenEnabledAtom"
 export { innerCanvasSizeAtom } from "./src/state/atoms/innerCanvasSizeAtom"
+export { isModifierKeyActiveAtom } from "./src/state/atoms/isModifierKeyActiveAtom"
 export { outerCanvasSizeAtom } from "./src/state/atoms/outerCanvasSizeAtom"
 export { scaleAtom } from "./src/state/atoms/scaleAtom"
 

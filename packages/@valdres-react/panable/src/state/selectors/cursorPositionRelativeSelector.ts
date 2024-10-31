@@ -1,10 +1,11 @@
 import { selectorFamily } from "valdres-react"
 import type { Point } from "../../types/Point"
+import type { ScopeId } from "../../types/ScopeId"
 import { getCursorPositionRelative } from "../../utils/getCursorPositionRelative"
 import { innerCanvasSizeAtom } from "../atoms/innerCanvasSizeAtom"
 
 export const cursorPositionRelativeSelector = selectorFamily<
-    { scopeId: string; innerCanvas?: boolean },
+    { scopeId: ScopeId; innerCanvas?: boolean },
     Point
 >(
     ({ scopeId, innerCanvas }) =>

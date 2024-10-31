@@ -6,10 +6,9 @@ export const onTouchEnd = (
     txn: TransactionInterface,
     e: TouchEvent,
     scopeId: ScopeId,
-    onCanvasClick: () => void,
 ) => {
     const [...changedTouches] = e.changedTouches
     changedTouches.forEach(t => {
-        finishAction(txn, scopeId, t.identifier, e, onCanvasClick)
+        finishAction(txn, scopeId, t.identifier, e)
     })
 }

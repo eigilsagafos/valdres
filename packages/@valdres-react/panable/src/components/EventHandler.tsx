@@ -1,31 +1,26 @@
-import React from "react"
 import { useValue } from "valdres-react"
-import { actionAtom } from "../state/atoms/actionAtom"
+import { cursorSelector } from "../state/selectors/cursorSelector"
 import { usePanableEvents } from "../state/hooks/usePanableEvents"
+import type { ScopeId } from "../types/ScopeId"
 
 export const EventHandler = ({
     scopeId,
     children,
-    onCanvasClick,
-    select = false,
 }: {
+    scopeId: ScopeId
     children: React.ReactNode
-    select: boolean
-    scopeId: string
-    onCanvasClick?: any
 }) => {
-    const isMouseDragging = useValue(actionAtom({ eventId: "mouse", scopeId }))
-    const cursor = select ? "default" : isMouseDragging ? "grabbing" : "grab"
-    const ref = usePanableEvents({ scopeId, select, onCanvasClick })
+    const cursor = useValue(cursorSelector(scopeId))
+    const ref = usePanableEvents(scopeId)
     return (
         <div
+            ref={ref}
             style={{
                 cursor,
                 width: "100%",
                 height: "100%",
                 touchAction: "none",
             }}
-            ref={ref}
         >
             {children}
         </div>

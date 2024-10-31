@@ -4,6 +4,7 @@ import { actionAtom } from "../atoms/actionAtom"
 import { cursorPositionAtom } from "../atoms/cursorPositionAtom"
 import { drag } from "./drag"
 import { move } from "./move"
+import type { ScopeId } from "../../types/ScopeId"
 // import { zoom } from "./zoom"
 
 // const zoom = (recoil, scopeId, initialScale, eventScale) => {
@@ -15,7 +16,7 @@ import { move } from "./move"
 export const onTouchMove = (
     txn: TransactionInterface,
     touchEvent: TouchEvent,
-    scopeId: string,
+    scopeId: ScopeId,
 ) => {
     const [...changedTouches] = touchEvent.changedTouches
     const actions: Action[] = []

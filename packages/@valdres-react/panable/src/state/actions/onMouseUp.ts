@@ -4,10 +4,9 @@ import type { ScopeId } from "../../types/ScopeId"
 
 export const onMouseUp = (
     txn: TransactionInterface,
-    e: React.MouseEvent,
+    e: MouseEvent,
     scopeId: ScopeId,
-    onCanvasClick: () => void,
 ) => {
     if (e.button === 2) return
-    finishAction(txn, scopeId, "mouse", e, onCanvasClick)
+    finishAction(txn, scopeId, "mouse", e)
 }

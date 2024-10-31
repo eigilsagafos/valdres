@@ -1,20 +1,22 @@
 import { useCallback, useEffect, useRef } from "react"
 import { useTransaction } from "valdres-react"
+import type { ScopeId } from "../../types/ScopeId"
+import { moveDelta } from "../actions/moveDelta"
 import { onMouseDown } from "../actions/onMouseDown"
 import { onMouseUp } from "../actions/onMouseUp"
 import { onTouchEnd } from "../actions/onTouchEnd"
 import { onTouchStart } from "../actions/onTouchStart"
 import { zoom } from "../actions/zoom"
-import { moveDelta } from "../actions/moveDelta"
+import { useConfig } from "./useConfig"
 // import { useCurrentCapabilities } from "../../../state/hooks/useCurrentCapabilities"
 
-export const usePanableEvents = ({ scopeId, select, onCanvasClick }) => {
+export const usePanableEvents = (scopeId: ScopeId) => {
+    const config = useConfig(scopeId)
     const txn = useTransaction()
     const ref = useRef<HTMLDivElement>()
-
     // const capabilities = useCurrentCapabilities()
     const onWheel = useCallback(
-        e => {
+        (e: WheelEvent) => {
             e.stopPropagation()
 
             if (e.ctrlKey) {
@@ -36,35 +38,35 @@ export const usePanableEvents = ({ scopeId, select, onCanvasClick }) => {
     )
 
     const mouseDown = useCallback(
-        e => {
-            txn(state => onMouseDown(state, e, scopeId, select))
+        (e: MouseEvent) => {
+            txn(state => onMouseDown(state, e, scopeId))
         },
-        [scopeId, select],
+        [scopeId],
     )
 
     const mouseUp = useCallback(
-        e => {
+        (e: MouseEvent) => {
             e.preventDefault()
             e.stopPropagation()
-            txn(state => onMouseUp(state, e, scopeId, onCanvasClick))
+            txn(state => onMouseUp(state, e, scopeId))
         },
         [scopeId],
     )
 
     const touchStart = useCallback(
-        e => {
+        (e: TouchEvent) => {
             e.preventDefault()
             e.stopPropagation()
-            txn(state => onTouchStart(state, e, scopeId, select))
+            txn(state => onTouchStart(state, e, scopeId))
         },
-        [scopeId, select],
+        [scopeId],
     )
 
     const touchEnd = useCallback(
-        e => {
+        (e: TouchEvent) => {
             e.preventDefault()
             e.stopPropagation()
-            txn(state => onTouchEnd(state, e, scopeId, onCanvasClick))
+            txn(state => onTouchEnd(state, e, scopeId))
         },
         [scopeId],
     )
@@ -105,7 +107,7 @@ export const usePanableEvents = ({ scopeId, select, onCanvasClick }) => {
                 domElement?.removeEventListener("touchend", touchEnd)
             }
         }
-    }, [scopeId, select, mouseDown, mouseUp, onWheel])
+    }, [scopeId, mouseDown, mouseUp, onWheel])
 
     return ref
 }

@@ -7,12 +7,12 @@ import { initMove } from "./initMove"
 import { initSelect } from "./initSelect"
 import { initZoom } from "./initZoom"
 import { upgradeMoveToZoom } from "./upgradeMoveToZoom"
+import { configAtom } from "../atoms/configAtom"
 
 export const onTouchStart = (
     txn: TransactionInterface,
     e: TouchEvent,
     scopeId: ScopeId,
-    select: boolean,
 ) => {
     const [...touches] = e.touches
     const [...changedTouches] = e.changedTouches
@@ -40,7 +40,8 @@ export const onTouchStart = (
             }
         } else {
             const t = changedTouches[0]
-            if (select) {
+            const { mode } = txn.get(configAtom(scopeId))
+            if (mode === "select") {
                 initSelect(txn, scopeId, t.identifier, e)
             } else {
                 initMove(

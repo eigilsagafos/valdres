@@ -1,18 +1,20 @@
 import { draggableItemAtom } from "@valdres-react/draggable"
-import { actionAtom } from "../atoms/actionAtom"
-import type { ScopeId } from "../../types/ScopeId"
 import type { TransactionInterface } from "valdres-react"
+import type { ScopeId } from "../../types/ScopeId"
+import { actionAtom } from "../atoms/actionAtom"
+import { isModifierKeyActiveAtom } from "../atoms/isModifierKeyActiveAtom"
 import { activeActionsAtom } from "../atoms/activeActionsAtom"
+import { configAtom } from "../atoms/configAtom"
 
 export const finishAction = (
     txn: TransactionInterface,
     scopeId: ScopeId,
     eventId: string | number,
     e?: any,
-    onCanvasClick?: any,
 ) => {
     const action = txn.get(actionAtom({ eventId, scopeId }))
     if (action) {
+        const { onCanvasClick } = txn.get(configAtom(scopeId))
         if (action.kind === "drag") {
             const item = txn.get(draggableItemAtom(action.id))
             if (item.isSnapping) {

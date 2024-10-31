@@ -36,7 +36,7 @@ const checkForActiveDropzone = (
 export const drag = (
     txn: TransactionInterface,
     scopeId: ScopeId,
-    eventId: string,
+    eventId: string | number,
     x: number,
     y: number,
 ) => {

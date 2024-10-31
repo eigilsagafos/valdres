@@ -4,43 +4,23 @@ import type { ScopeId } from "../../types/ScopeId"
 import { actionAtom } from "../atoms/actionAtom"
 import { activeActionsAtom } from "../atoms/activeActionsAtom"
 import { cursorPositionRelativeSelector } from "../selectors/cursorPositionRelativeSelector"
-// import { renderSettingsAtomByEntity } from '../../../state/utils/renderSettingsAtomByEntity'
-// import { selectedProcessItemsSelector } from '../../../state/selectors/selectedProcessItemsSelector'
-// import { cursorPositionRelativeSelector } from "../../../dist"
+import { configAtom } from "../atoms/configAtom"
 
 export const initSelect = (
     txn: TransactionInterface,
     scopeId: ScopeId,
     eventId: EventId,
-    e,
+    e: MouseEvent | TouchEvent,
 ) => {
     txn.set(activeActionsAtom(scopeId), curr => [...curr, [eventId, "select"]])
-    let initialSelected = []
-    throw new Error("TODO: Support onInitSelect callback")
-    // if (state.get(isModifierKeyActiveAtom("shift"))) {
-    //     initialSelected = state.get(selectedProcessItemsSelector(scopeId))
-    // } else {
-    //     state.get(selectedProcessItemsSelector(scopeId)).forEach(item => {
-    //         const atom = renderSettingsAtomByEntity(item.entity)({
-    //             ref: item.ref,
-    //             context: item.context,
-    //             scopeId,
-    //         })
-    //         state.set(atom, curr => ({
-    //             ...curr,
-    //             selected: false,
-    //         }))
-    //     })
-    //     initialSelected = []
-    // }
-
     txn.set(actionAtom({ eventId, scopeId }), {
         kind: "select",
         eventId,
         scopeId,
         initialEvent: e,
-        initialSelectedRefs: initialSelected,
         startPosition: txn.get(cursorPositionRelativeSelector({ scopeId })),
         selectedRefsFromPreviousUpdate: [],
     })
+    const { onSelectInit } = txn.get(configAtom(scopeId))
+    if (onSelectInit) onSelectInit(txn, eventId, scopeId)
 }
