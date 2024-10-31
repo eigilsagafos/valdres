@@ -44,7 +44,7 @@ type AtomFamilyDefaultValue<Key, Value> =
     | Value
     | DefaultValueCallback<Key, Value>
     | Selector<Value>
-    | SelectorFamily<Value, Key>
+    | SelectorFamily<Key, Value>
 
 /** [Docs Reference](https://valdres.dev/valdres/api/atomFamily) */
 // Object.fromEntries()

@@ -5,6 +5,6 @@ export type AtomFamilySelector<
     Value = unknown,
     Key = unknown,
 > = Selector<Value> & {
-    family: SelectorFamily<Value, Key>
+    family: SelectorFamily<Key, Value>
     familyKey: Key
 }

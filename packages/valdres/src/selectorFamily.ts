@@ -17,10 +17,10 @@ const createOptions = (
     }
 }
 
-export const selectorFamily = <Value, Key>(
+export const selectorFamily = <Key, Value>(
     get: any,
     options?: SelectorOptions,
-): SelectorFamily<Value, Key> => {
+): SelectorFamily<Key, Value> => {
     const map = new Map()
     const selectorFamily = (key: Key) => {
         const keyStringified = stableStringify(key)
