@@ -1,19 +1,22 @@
-const eventListeners = new Set()
-let currentValue = true
-globalThis.window = {
-    matchMedia: () => {
-        return {
-            matches: currentValue,
-            addEventListener: (event, callback) => {
-                eventListeners.add(callback)
-            },
-            removeEventListener: (event, callback) => {
-                eventListeners.delete(callback)
-            },
-        }
-    },
-}
+import { systemColorModeAtom } from "../src/systemColorModeAtom"
+import { userSelectedColorModeAtom } from "../src/userSelectedColorModeAtom"
+
 export const mockWindow = () => {
+    const eventListeners = new Set()
+    let currentValue = true
+    globalThis.window = {
+        matchMedia: () => {
+            return {
+                matches: currentValue,
+                addEventListener: (event, callback) => {
+                    eventListeners.add(callback)
+                },
+                removeEventListener: (event, callback) => {
+                    eventListeners.delete(callback)
+                },
+            }
+        },
+    }
     return {
         togglePrefersColorScheme: () => {
             currentValue = !currentValue
@@ -28,7 +31,11 @@ export const mockWindow = () => {
                 cb(event)
             }
         },
-        cleanup: () => {},
+        reset: () => {
+            currentValue = true
+            systemColorModeAtom.resetSelf()
+            userSelectedColorModeAtom.resetSelf()
+        },
         eventListeners,
     }
 }

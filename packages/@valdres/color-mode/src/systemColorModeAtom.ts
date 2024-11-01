@@ -6,8 +6,18 @@ import type { ColorMode } from "../types/ColorMode"
 export const systemColorModeAtom = atom<ColorMode>(getSystemColorMode, {
     global: true,
     label: "@valdres/color-mode/systemColorModeAtom",
-})
+    onInit: () => {
+        const listener = () => {
+            systemColorModeAtom.setSelf(getSystemColorMode())
+        }
+        window
+            ?.matchMedia(prefersColorSchemeDark)
+            ?.addEventListener("change", listener)
 
-window?.matchMedia(prefersColorSchemeDark)?.addEventListener("change", () => {
-    systemColorModeAtom.setSelf(getSystemColorMode())
+        return () => {
+            window
+                ?.matchMedia(prefersColorSchemeDark)
+                ?.removeEventListener("change", listener)
+        }
+    },
 })

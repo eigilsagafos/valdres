@@ -7,7 +7,7 @@ import { systemColorModeAtom } from "./systemColorModeAtom"
 
 describe("userSelectedColorModeAtom", () => {
     test("default", () => {
-        const { togglePrefersColorScheme, eventListeners } = mockWindow()
+        const { togglePrefersColorScheme, reset } = mockWindow()
         const rootStore = store()
         expect(rootStore.get(userSelectedColorModeAtom)).toBe("system")
         expect(rootStore.get(colorModeSelector)).toBe("dark")
@@ -17,5 +17,6 @@ describe("userSelectedColorModeAtom", () => {
         expect(rootStore.get(colorModeSelector)).toBe("dark")
         expect(rootStore.get(userSelectedColorModeAtom)).toBe("dark")
         expect(rootStore.get(systemColorModeAtom)).toBe("light")
+        reset()
     })
 })
