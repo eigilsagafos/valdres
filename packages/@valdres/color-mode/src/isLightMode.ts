@@ -1,5 +1,4 @@
 import { selector } from "valdres"
-import { colorMode } from "./colorMode"
-import { ColorMode } from "../types/ColorMode"
+import { colorModeSelector } from "./colorModeSelector"
 
-export const isLightMode = selector(get => get(colorMode) === ColorMode.Light)
+export const isLightMode = selector(get => get(colorModeSelector) === "light")
