@@ -1,6 +1,7 @@
 import { describe, test, expect, mock } from "bun:test"
 import { store } from "../store"
 import { atom } from "../atom"
+import { selector } from "../selector"
 
 describe("globalAtom", () => {
     test("set in one store, read from both", () => {
@@ -85,8 +86,54 @@ describe("globalAtom", () => {
         expect(initialized).toBe(true)
         expect(store2.get(testAtom)).toBe("foo")
         store1.sub(testAtom, () => {})
-        expect(() => testAtom.resetSelf()).toThrow()
     })
 
-    test.todo("reset support for subscriptions etc.", () => {})
+    test("reset support for global atom with selectors", () => {
+        const store1 = store()
+        const store2 = store()
+        const testAtom = atom(3, { global: true })
+        const testSelector = selector(get => get(testAtom) * 2)
+        const sub1cb = mock(() => {})
+        const sub2cb = mock(() => {})
+        store1.sub(testSelector, sub1cb)
+        store2.sub(testSelector, sub2cb)
+        expect(sub1cb).toHaveBeenCalledTimes(0)
+        expect(sub2cb).toHaveBeenCalledTimes(0)
+        expect(store1.get(testSelector)).toBe(6)
+        expect(store2.get(testSelector)).toBe(6)
+        testAtom.setSelf(5)
+        expect(sub1cb).toHaveBeenCalledTimes(1)
+        expect(sub2cb).toHaveBeenCalledTimes(1)
+        expect(store1.get(testSelector)).toBe(10)
+        expect(store2.get(testSelector)).toBe(10)
+        testAtom.resetSelf()
+        expect(sub1cb).toHaveBeenCalledTimes(2)
+        expect(sub2cb).toHaveBeenCalledTimes(2)
+        expect(store1.get(testSelector)).toBe(6)
+        expect(store2.get(testSelector)).toBe(6)
+    })
+
+    test("reset support for global atom with subscriptions", () => {
+        const store1 = store()
+        const store2 = store()
+        const testAtom = atom(3, { global: true })
+        const sub1cb = mock(() => {})
+        const sub2cb = mock(() => {})
+        store1.sub(testAtom, sub1cb)
+        store2.sub(testAtom, sub2cb)
+        expect(store1.get(testAtom)).toBe(3)
+        expect(store2.get(testAtom)).toBe(3)
+        expect(sub1cb).toHaveBeenCalledTimes(0)
+        expect(sub2cb).toHaveBeenCalledTimes(0)
+        testAtom.setSelf(5)
+        expect(sub1cb).toHaveBeenCalledTimes(1)
+        expect(sub2cb).toHaveBeenCalledTimes(1)
+        expect(store1.get(testAtom)).toBe(5)
+        expect(store2.get(testAtom)).toBe(5)
+        testAtom.resetSelf()
+        expect(sub1cb).toHaveBeenCalledTimes(2)
+        expect(sub2cb).toHaveBeenCalledTimes(2)
+        expect(store1.get(testAtom)).toBe(3)
+        expect(store2.get(testAtom)).toBe(3)
+    })
 })
