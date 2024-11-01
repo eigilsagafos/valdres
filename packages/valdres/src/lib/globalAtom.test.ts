@@ -40,4 +40,12 @@ describe("globalAtom", () => {
         expect(store1.get(numberAtom)).toBe(4)
         expect(store2.get(numberAtom)).toBe(4)
     })
+
+    test("function as deafault value", () => {
+        const store1 = store()
+        const store2 = store()
+        const numberAtom = atom(() => "it works", { global: true })
+        expect(store1.get(numberAtom)).toBe("it works")
+        expect(store2.get(numberAtom)).toBe("it works")
+    })
 })
