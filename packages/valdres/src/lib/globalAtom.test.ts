@@ -55,9 +55,38 @@ describe("globalAtom", () => {
         const onInit = mock(setSelf => {
             setSelf("init works")
         })
-        const numberAtom = atom("foo", { global: true, onInit })
-        expect(store1.get(numberAtom)).toBe("init works")
-        expect(store2.get(numberAtom)).toBe("init works")
+        const testAtom = atom("foo", { global: true, onInit })
+        expect(store1.get(testAtom)).toBe("init works")
+        expect(store2.get(testAtom)).toBe("init works")
         expect(onInit).toHaveBeenCalledTimes(1)
     })
+
+    test("reset global atom", () => {
+        const store1 = store()
+        const store2 = store()
+        let initialized = false
+        const onInit = mock(() => {
+            initialized = true
+            return () => {
+                initialized = false
+            }
+        })
+        const testAtom = atom("foo", { global: true, onInit })
+        expect(initialized).toBe(false)
+        expect(store1.get(testAtom)).toBe("foo")
+        expect(initialized).toBe(true)
+        expect(store2.get(testAtom)).toBe("foo")
+        testAtom.setSelf("set self")
+        expect(store1.get(testAtom)).toBe("set self")
+        expect(store2.get(testAtom)).toBe("set self")
+        testAtom.resetSelf()
+        expect(initialized).toBe(false)
+        expect(store1.get(testAtom)).toBe("foo")
+        expect(initialized).toBe(true)
+        expect(store2.get(testAtom)).toBe("foo")
+        store1.sub(testAtom, () => {})
+        expect(() => testAtom.resetSelf()).toThrow()
+    })
+
+    test.todo("reset support for subscriptions etc.", () => {})
 })
