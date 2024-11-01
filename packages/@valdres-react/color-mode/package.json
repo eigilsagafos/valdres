@@ -23,11 +23,14 @@
         "build:types": "tsc"
     },
     "dependencies": {
-        "@valdres/color-mode": "workspace:^",
-        "valdres-react": "workspace:^"
+        "@valdres/color-mode": "workspace:^"
     },
     "devDependencies": {
+        "valdres-react": "workspace:^",
         "typescript": "5.6.2"
+    },
+    "peerDependencies": {
+        "valdres-react": "workspace:^"
     },
     "publishConfig": {
         "access": "public",
