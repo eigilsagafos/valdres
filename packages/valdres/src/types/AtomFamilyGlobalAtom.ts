@@ -1,9 +1,7 @@
 import type { AtomFamilyAtom } from "./AtomFamilyAtom"
-import type { GlobalAtomSetSelfFunc } from "./GlobalAtomSetSelfFunc"
+import type { GlobalAtom } from "./GlobalAtom"
 
 export type AtomFamilyGlobalAtom<
     Key = unknown,
     Value = unknown,
-> = AtomFamilyAtom<Key, Value> & {
-    setSelf: GlobalAtomSetSelfFunc<Value>
-}
+> = AtomFamilyAtom<Key, Value> & GlobalAtom<Value>
