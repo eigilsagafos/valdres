@@ -1,4 +1,4 @@
-import { describe, test, expect } from "bun:test"
+import { describe, test, expect, mock } from "bun:test"
 import { store } from "../store"
 import { atom } from "../atom"
 
@@ -47,5 +47,17 @@ describe("globalAtom", () => {
         const numberAtom = atom(() => "it works", { global: true })
         expect(store1.get(numberAtom)).toBe("it works")
         expect(store2.get(numberAtom)).toBe("it works")
+    })
+
+    test("onInit", () => {
+        const store1 = store()
+        const store2 = store()
+        const onInit = mock(setSelf => {
+            setSelf("init works")
+        })
+        const numberAtom = atom("foo", { global: true, onInit })
+        expect(store1.get(numberAtom)).toBe("init works")
+        expect(store2.get(numberAtom)).toBe("init works")
+        expect(onInit).toHaveBeenCalledTimes(1)
     })
 })

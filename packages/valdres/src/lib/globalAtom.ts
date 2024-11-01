@@ -5,7 +5,7 @@ import type { AtomOnSet } from "./../types/AtomOnSet"
 import type { AtomOptions } from "./../types/AtomOptions"
 import type { GlobalAtom } from "./../types/GlobalAtom"
 import type { StoreData } from "./../types/StoreData"
-import { getAtomInitValue } from "./initAtom"
+import { getAtomInitValue, initAtom } from "./initAtom"
 import { setAtom } from "./setAtom"
 
 const getFirstItemInSet = <T>(set: Set<T>): T => {
@@ -21,16 +21,26 @@ export const globalAtom = <Value = any>(
 ) => {
     const stores = new Set<StoreData>()
     let value: AtomDefaultValue<Value> = defaultValue
+    let initialized = false
     if (options.onSet)
         throw new Error("onSet on globalAtom is currently not supported")
-    if (options.onInit)
-        throw new Error("onInit on globalAtom is currently not supported")
 
     const onInit: AtomOnInit<Value> = (setSelf, data) => {
-        if (value === defaultValue) {
-            value = getAtomInitValue(atom, data)
+        if (!initialized) {
+            if (value === defaultValue) {
+                value = getAtomInitValue(atom, data)
+            }
+            setSelf(value as Value)
+            initialized = true
+            if (options.onInit) {
+                options.onInit(newVal => {
+                    setSelf(newVal)
+                    value = newVal
+                }, data)
+            }
+        } else {
+            setSelf(value as Value)
         }
-        setSelf(value as Value)
         stores.add(data)
     }
 
