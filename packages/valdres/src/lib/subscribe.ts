@@ -5,7 +5,7 @@ import { isAtom } from "../utils/isAtom"
 import { isFamily } from "../utils/isFamily"
 import { isPromiseLike } from "../utils/isPromiseLike"
 import { isSelector } from "../utils/isSelector"
-import { getAtomInitValue } from "./initAtom"
+import { getAtomInitValue, initAtom } from "./initAtom"
 import { initSelector } from "./initSelector"
 import { propagateUpdatedAtoms } from "./propagateUpdatedAtoms"
 import { storeFromStoreData } from "./storeFromStoreData"
@@ -19,7 +19,7 @@ const initSubscribers = <V>(state: State<V> | Family<V>, data: StoreData) => {
 
 export const subscribe = <V>(
     state: State<V> | Family<V>,
-    callback: any,
+    callback: () => void,
     requireDeepEqualCheckBeforeCallback: boolean,
     data: StoreData,
 ) => {
@@ -30,25 +30,38 @@ export const subscribe = <V>(
          * up the tree and modify the callback to unsubscribe to the parent store
          * in the case that it is set in this scope.
          */
+        const originalCallback = callback
         const parentUnsubscribe = subscribe(
             state,
-            callback,
+            originalCallback,
             requireDeepEqualCheckBeforeCallback,
             data.parent,
         )
-        let originalCallback = callback
+        let unsubscribed = false
         callback = () => {
-            parentUnsubscribe()
+            if (!unsubscribed) {
+                /**
+                 * TODO: Find way to test this. Maybe use onMount?
+                 * Here we ensure that the unsubscribe happens only once.
+                 * This is not yet covered in tests.
+                 */
+                parentUnsubscribe()
+                unsubscribed = true
+            }
             originalCallback()
         }
+    } else if (!data.values.has(state) && isAtom(state)) {
+        // Should we do this?
+        initAtom(state, data)
+    }
+    // TODO: Should we init no matter what if not in data.values? Or is that the wrong approach?
+    if (isSelector(state) && !data.values.has(state)) {
+        initSelector(state, data)
     }
 
     const subscribers =
         data.subscriptions.get(state) || initSubscribers(state, data)
 
-    if (isSelector(state) && !data.values.has(state)) {
-        initSelector(state, data)
-    }
     let subscription
     if (isFamily(state)) {
         subscription = {
