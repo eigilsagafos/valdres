@@ -23,6 +23,7 @@ export const subscribe = <V>(
     requireDeepEqualCheckBeforeCallback: boolean,
     data: StoreData,
 ) => {
+    let parentUnsubscribe: undefined | (() => void)
     if ("parent" in data && !data.values.has(state) && isAtom(state)) {
         /**
          * Getting here means that we are within a scope and that the current
@@ -31,22 +32,21 @@ export const subscribe = <V>(
          * in the case that it is set in this scope.
          */
         const originalCallback = callback
-        const parentUnsubscribe = subscribe(
+        parentUnsubscribe = subscribe(
             state,
             originalCallback,
             requireDeepEqualCheckBeforeCallback,
             data.parent,
         )
-        let unsubscribed = false
         callback = () => {
-            if (!unsubscribed) {
+            if (parentUnsubscribe) {
                 /**
                  * TODO: Find way to test this. Maybe use onMount?
                  * Here we ensure that the unsubscribe happens only once.
                  * This is not yet covered in tests.
                  */
                 parentUnsubscribe()
-                unsubscribed = true
+                parentUnsubscribe = undefined
             }
             originalCallback()
         }
@@ -127,5 +127,11 @@ export const subscribe = <V>(
         data.subscriptionsRequireEqualCheck.set(state, true)
     }
 
-    return () => unsubscribe(state, subscription, data, mount, maxAgeCleanup)
+    return () => {
+        if (parentUnsubscribe) {
+            // TODO: Test this scenario
+            parentUnsubscribe()
+        }
+        unsubscribe(state, subscription, data, mount, maxAgeCleanup)
+    }
 }
