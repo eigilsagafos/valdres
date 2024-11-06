@@ -136,4 +136,21 @@ describe("globalAtom", () => {
         expect(store1.get(testAtom)).toBe(3)
         expect(store2.get(testAtom)).toBe(3)
     })
+
+    test("subscribe to global atom adds store to atom", () => {
+        const store1 = store()
+        const testAtom = atom(0, { global: true })
+        const callback = mock(() => {})
+        store1.sub(testAtom, callback)
+        expect(testAtom.stores).toHaveLength(2) // TODO: Should we exclude the globalStore
+        expect(callback).toHaveBeenCalledTimes(0)
+        testAtom.setSelf(1)
+        expect(callback).toHaveBeenCalledTimes(1)
+        testAtom.setSelf(2)
+        expect(callback).toHaveBeenCalledTimes(2)
+    })
+
+    test("getSelf", () => {
+        expect(atom(1, { global: true }).getSelf()).toBe(1)
+    })
 })

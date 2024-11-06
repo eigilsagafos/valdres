@@ -32,6 +32,7 @@ export function storeFromStoreData(
     data: ScopedStoreData | StoreData,
     detach?: () => void,
 ) {
+    // @ts-ignore @ts-todo
     const get: GetValue = (state: State) => getState(state, data)
 
     const set: SetAtom = (state, value) => {
@@ -44,7 +45,7 @@ export function storeFromStoreData(
 
     const sub = <V>(
         state: State<V> | Family<V, any>,
-        callback: (value: V, oldValue: V) => void,
+        callback: () => void,
         deepEqualCheckBeforeCallback: boolean = true,
     ) => subscribe(state, callback, deepEqualCheckBeforeCallback, data)
 

@@ -1,3 +1,4 @@
+import equal from "fast-deep-equal/es6"
 import type { AtomDefaultValue } from "../types/AtomDefaultValue"
 import type { AtomOnInit } from "../types/AtomOnInit"
 import type { GlobalAtomResetSelfFunc } from "../types/GlobalAtomResetSelfFunc"
@@ -6,43 +7,29 @@ import type { AtomOnSet } from "./../types/AtomOnSet"
 import type { AtomOptions } from "./../types/AtomOptions"
 import type { GlobalAtom } from "./../types/GlobalAtom"
 import type { StoreData } from "./../types/StoreData"
-import { getAtomInitValue } from "./initAtom"
 import { propagateUpdatedAtoms } from "./propagateUpdatedAtoms"
 import { setAtom } from "./setAtom"
+import { globalStore } from "./globalStore"
 
-const getFirstItemInSet = <T>(set: Set<T>): T => {
-    for (let item of set) {
-        return item
-    }
-    throw new Error("Non Empty Set")
-}
-
-export const globalAtom = <Value = any>(
+export const globalAtom = <Value = unknown>(
     defaultValue: AtomDefaultValue<Value>,
     options: AtomOptions<Value>,
 ) => {
     const stores = new Set<StoreData>()
-    let value: AtomDefaultValue<Value> = defaultValue
+    let value: Value | undefined
     let initialized = false
     let onReset: (() => void) | void
     if (options.onSet)
         throw new Error("onSet on globalAtom is currently not supported")
 
     const onInit: AtomOnInit<Value> = (setSelf, data) => {
-        if (!initialized) {
-            if (value === defaultValue) {
-                value = getAtomInitValue(atom, data)
-            }
-            setSelf(value as Value)
+        setSelf(globalStore.get(atom))
+        if (!initialized && options.onInit) {
+            onReset = options.onInit(newVal => {
+                setSelf(newVal)
+                value = newVal
+            }, data)
             initialized = true
-            if (options.onInit) {
-                onReset = options.onInit(newVal => {
-                    setSelf(newVal)
-                    value = newVal
-                }, data)
-            }
-        } else {
-            setSelf(value as Value)
         }
         stores.add(data)
     }
@@ -58,16 +45,13 @@ export const globalAtom = <Value = any>(
         }
     }
 
-    const setSelf: GlobalAtomSetSelfFunc<Value> = newValue => {
-        value = newValue
-        if (stores.size > 0) {
-            getFirstItemInSet(stores)
-            const store = getFirstItemInSet(stores)
-            setAtom(atom, newValue, store)
-        }
-    }
+    const getSelf = () => globalStore.get(atom)
+
+    const setSelf: GlobalAtomSetSelfFunc<Value> = newValue =>
+        globalStore.set(atom, newValue)
+
     const resetSelf: GlobalAtomResetSelfFunc = () => {
-        value = defaultValue
+        value = undefined
         initialized = false
         for (const store of stores) {
             if (store.stateDependencies.has(atom)) {
@@ -84,15 +68,17 @@ export const globalAtom = <Value = any>(
     }
 
     const atom: GlobalAtom<Value> = {
+        equal,
         ...options,
         defaultValue,
         label: options?.label,
         onInit,
         onSet,
         setSelf,
+        getSelf,
         resetSelf,
-        get currentValue() {
-            return value
+        get stores() {
+            return stores
         },
     }
     return atom
