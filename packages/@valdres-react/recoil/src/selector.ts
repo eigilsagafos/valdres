@@ -14,7 +14,7 @@ export const selector = <T>(
     const newSelector = valdresSelector(
         get =>
             options.get({
-                get: get as GetRecoilValue,
+                get: get as unknown as GetRecoilValue,
                 getCallback: () => {
                     throw new Error("Not implemnted")
                 },

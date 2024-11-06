@@ -18,7 +18,7 @@ export const useRecoilCallback = <Args extends ReadonlyArray<unknown>, Return>(
                     throw new Error("Not implemented")
                 },
                 snapshot: {
-                    getLoadable: state => {
+                    getLoadable: (state: any) => {
                         return {
                             contents: store.get(state as any),
                         } as any
@@ -41,7 +41,7 @@ export const useRecoilCallback = <Args extends ReadonlyArray<unknown>, Return>(
                     isRetained: undefined as any,
                 },
                 gotoSnapshot: () => {},
-            } as CallbackInterface)(args)
+            } as unknown as CallbackInterface)(args)
         },
         [...deps, store],
     )

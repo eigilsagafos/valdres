@@ -9,6 +9,7 @@ export const useValue = <V>(state: State<V>, store?: Store) => {
         [state, currentStore],
     )
     const getSnapshot = useCallback(
+        // @ts-ignore
         () => currentStore.get(state),
         [state, currentStore],
     )

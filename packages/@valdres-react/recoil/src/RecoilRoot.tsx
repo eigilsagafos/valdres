@@ -20,13 +20,13 @@ export const RecoilRoot: typeof RecoilRoot_original = ({
         if (initializeState) {
             store.txn((set, _get, reset) => {
                 initializeState({
-                    set: set as SetRecoilState,
+                    set: set as unknown as SetRecoilState,
                     getLoadable: state => {
                         return {
                             contents: store.get(state as any),
                         } as any
                     },
-                    reset: reset as ResetRecoilState,
+                    reset: reset as unknown as ResetRecoilState,
                     getID: () => {
                         throw new Error("Not implemented")
                     },

@@ -21,24 +21,33 @@ export const eventHandler = (event: KeyboardEvent) => {
         if (!repeat) {
             const currentCode = currentCodeCombinationAtom.getSelf()
             const newCode = [...currentCode, code]
+            // @ts-ignore
             currentCodeCombinationAtom.setSelf(newCode)
+            // @ts-ignore
             eventByCodeAtom(newCode).setSelf(event)
 
             const currentKey = currentKeyCombinationAtom.getSelf()
             const newKey = [...currentKey, key]
             currentKeyCombinationAtom.setSelf(newKey)
+            // @ts-ignore
             eventByKeyAtom(newKey).setSelf(event)
         }
     } else if (type === "keyup") {
         const currentCode = currentCodeCombinationAtom.getSelf()
+        // @ts-ignore
         eventByCodeAtom(currentCode).setSelf(event)
+        // @ts-ignore
         currentCodeCombinationAtom.setSelf(curr =>
+            // @ts-ignore
             curr.filter(existingCode => existingCode !== code),
         )
 
         const currentKey = currentKeyCombinationAtom.getSelf()
+        // @ts-ignore
         eventByKeyAtom(currentKey).setSelf(event)
+        // @ts-ignore
         currentKeyCombinationAtom.setSelf(curr =>
+            // @ts-ignore
             curr.filter(existingKey => existingKey !== key),
         )
     } else {
