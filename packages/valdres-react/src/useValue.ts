@@ -5,9 +5,7 @@ import { useStore } from "./useStore"
 export const useValue = <V>(state: State<V>, store?: Store) => {
     const currentStore = store || useStore()
     const subscribe = useCallback(
-        (cb: () => void) => {
-            return currentStore.sub(state, cb, false)
-        },
+        (cb: () => void) => currentStore.sub(state, cb, false),
         [state, currentStore],
     )
     const getSnapshot = useCallback(
