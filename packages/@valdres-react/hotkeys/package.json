@@ -1,0 +1,43 @@
+{
+    "name": "@valdres-react/hotkeys",
+    "version": "0.2.0-alpha.30",
+    "license": "MIT",
+    "author": {
+        "name": "Eigil Sagafos"
+    },
+    "homepage": "https://valdres.dev",
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/eigilsagafos/valdres.git"
+    },
+    "type": "module",
+    "exports": {
+        "types": "./dist/types/index.d.ts",
+        "default": "./dist/index.js"
+    },
+    "files": [
+        "dist"
+    ],
+    "scripts": {
+        "build": "NODE_ENV=production bun build index.ts --outdir ./dist --packages external",
+        "build:types--": "tsc"
+    },
+    "devDependencies": {
+        "@testing-library/react": "16.0.1",
+        "@testing-library/react-hooks": "8.0.1",
+        "@valdres/hotkeys": "workspace:^",
+        "valdres-react": "workspace:^",
+        "react": "18.3.1",
+        "react-dom": "18.3.1",
+        "typescript": "5.6.3"
+    },
+    "peerDependencies": {
+        "@valdres/hotkeys": "workspace:^",
+        "valdres-react": "workspace:^"
+    },
+    "publishConfig": {
+        "access": "public",
+        "registry": "https://registry.npmjs.org/"
+    },
+    "gitHead": "53245fd1a080cdb1131f5be9056adc546d05ead4"
+}
