@@ -31,9 +31,9 @@ export function getState<V, K>(
                 state.__keysAtom,
                 data,
             )
-            return getState<K, V>(state.__keysSelector, closestData)
+            return getState<K[], V>(state.__keysSelector, closestData)
         }
-        return getState<K, V>(state.__keysSelector, data)
+        return getState<K[], V>(state.__keysSelector, data)
     }
     if (isSelectorFamily<K, V>(state)) {
         // TODO: Impement more efficient way to solve this

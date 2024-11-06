@@ -1,3 +1,4 @@
+import equal from "fast-deep-equal/es6"
 import { globalAtom } from "./lib/globalAtom"
 import type { Atom } from "./types/Atom"
 import type { AtomDefaultValue } from "./types/AtomDefaultValue"
@@ -26,11 +27,12 @@ export function atom<V>(
     defaultValue?: AtomDefaultValue<V>,
     options?: AtomOptions<V>,
 ) {
-    if (!options) return { defaultValue }
+    if (!options) return { equal, defaultValue }
     if (options.global) {
         return globalAtom(defaultValue, options)
     }
     return {
+        equal,
         defaultValue,
         ...options,
     } as Atom<V>

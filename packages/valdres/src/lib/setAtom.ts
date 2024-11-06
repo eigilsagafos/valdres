@@ -1,4 +1,3 @@
-import equal from "fast-deep-equal/es6"
 import type { Atom } from "../types/Atom"
 import type { StoreData } from "../types/StoreData"
 import { isPromiseLike } from "../utils/isPromiseLike"
@@ -18,7 +17,7 @@ export const setAtom = <Value = any>(
             throw new Error("Todo, how should we handle this?")
         // newValue = newVal
     }
-    if (equal(currentValue, newValue)) return
+    if (atom.equal(currentValue, newValue)) return
     data.values.set(atom, newValue)
     if (atom.onSet && !skipOnSet) atom.onSet(newValue, data)
     // @ts-ignore

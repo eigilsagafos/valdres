@@ -1,4 +1,3 @@
-import equal from "fast-deep-equal/es6"
 import { isPromiseLike } from "../utils/isPromiseLike"
 import { getState } from "./getState"
 import { updateStateSubscribers } from "./updateStateSubscribers"
@@ -78,7 +77,8 @@ export const reEvaluateSelector = <V>(
 ): void => {
     const currentValue = data.values.get(selector)
     const updatedValue = evaluateSelector(selector, data)
-    if (equal(currentValue, updatedValue)) return
+    // @ts-ignore
+    if (selector.equal(currentValue, updatedValue)) return
     if (isPromiseLike(updatedValue)) {
         console.log("ReEvaluate - promise", {
             selector,
@@ -130,7 +130,8 @@ export const initSelector = <V>(
     const value = handleSelectorResult<V>(tmpValue, selector, data)
     if (data.expiredValues.has(selector)) {
         const expiredValue = data.expiredValues.get(selector)
-        if (equal(expiredValue, value)) {
+        // @ts-ignore
+        if (selector.equal(expiredValue, value)) {
             data.values.set(selector, expiredValue)
             return expiredValue
         }

@@ -17,6 +17,7 @@ export { isSelectorFamily } from "./src/utils/isSelectorFamily"
 
 export type { Atom } from "./src/types/Atom"
 export type { AtomFamily } from "./src/types/AtomFamily"
+export type { FamilyKey } from "./src/types/FamilyKey"
 export type { GetValue } from "./src/types/GetValue"
 export type { GlobalAtom } from "./src/types/GlobalAtom"
 export type { ResetAtom } from "./src/types/ResetAtom"

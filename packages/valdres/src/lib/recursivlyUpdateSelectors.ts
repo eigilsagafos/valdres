@@ -1,5 +1,3 @@
-import equal from "fast-deep-equal/es6"
-
 const recursivlyUpdateSelectors = ({
     valueMap,
     subscribersMap,
@@ -10,7 +8,7 @@ const recursivlyUpdateSelectors = ({
         if (subscriber.selector) {
             const currentValue = valueMap.get(subscriber)
             const updatedValue = subscriber.selector({ get })
-            if (!equal(currentValue, updatedValue)) {
+            if (!subscriber.selector.equal(currentValue, updatedValue)) {
                 valueMap.set(subscriber, updatedValue)
                 const nestedSubscribers = subscribersMap.get(subscriber)
                 if (nestedSubscribers && nestedSubscribers.size) {

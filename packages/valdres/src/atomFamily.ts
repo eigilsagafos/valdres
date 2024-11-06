@@ -1,3 +1,4 @@
+import equal from "fast-deep-equal/es6"
 import { atom } from "./atom"
 import { atomFamilyAtom } from "./lib/atomFamilyAtom"
 import { stableStringify } from "./lib/stableStringify"
@@ -17,13 +18,14 @@ const createOptions = <K, V>(
 ) => {
     if (options.label) {
         return {
+            equal,
             ...options,
             label: options?.label + "_" + keyStringified,
             family,
             familyKey,
         }
     } else {
-        return { ...options, family, familyKey }
+        return { equal, ...options, family, familyKey }
     }
 }
 

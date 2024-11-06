@@ -1,4 +1,3 @@
-import equal from "fast-deep-equal/es6"
 import { initSelector } from "./initSelector"
 import type { Selector } from "../types/Selector"
 import type { StoreData } from "../types/StoreData"
@@ -30,7 +29,7 @@ export const updateSelectorSubscribers = (
         try {
             const oldValue = data.expiredValues.get(selector)
             const newValue = initSelector(selector, data)
-            if (equal(newValue, oldValue)) return
+            if (selector.equal(newValue, oldValue)) return
         } catch (e) {}
     }
 
