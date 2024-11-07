@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from "react"
+import React, { useEffect, useRef, type MutableRefObject } from "react"
 import { innerCanvasSizeAtom } from "../state/atoms/innerCanvasSizeAtom"
 import { useCameraPosition } from "../state/hooks/useCameraPosition"
 import { useScale } from "../state/hooks/useScale"
@@ -17,6 +17,21 @@ const calculateAnimationTime = (a: Point, b: Point) => {
     return ms < 200 ? 200 : ms
 }
 
+const useChromeScaleHack = (
+    ref: MutableRefObject<HTMLElement>,
+    scale: number,
+) => {
+    // @ts-ignore
+    if (!window.chrome) return
+
+    useEffect(() => {
+        if (scale > 1.09 && ref.current) {
+            const el = ref.current
+            el.replaceWith(el)
+        }
+    }, [scale])
+}
+
 export const InnerCanvas = React.forwardRef<
     any,
     { children: React.ReactNode; scopeId: ScopeId }
@@ -32,6 +47,7 @@ export const InnerCanvas = React.forwardRef<
     useEffect(() => {
         oldVal.current = { x, y }
     }, [x, y])
+    useChromeScaleHack(ref as MutableRefObject<HTMLElement>, scale)
     return (
         <div
             style={{
