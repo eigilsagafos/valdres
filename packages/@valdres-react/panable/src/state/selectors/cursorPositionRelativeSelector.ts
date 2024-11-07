@@ -21,6 +21,6 @@ export const cursorPositionRelativeSelector = selectorFamily<
             }
         },
     {
-        label: "@valdres-react/panable/cursorPositionRelative",
+        name: "@valdres-react/panable/cursorPositionRelative",
     },
 )

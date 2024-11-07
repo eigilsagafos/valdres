@@ -25,5 +25,5 @@ export const outerCanvasSizeAtom = atomFamily<
         y: number
     }
 >(DEFAULT_VALUE, {
-    label: "panable/outerCanvasSize",
+    name: "panable/outerCanvasSize",
 })

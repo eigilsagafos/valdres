@@ -6,7 +6,7 @@ export const isModifierKeyActiveAtom = atomFamily<ModifierKeyType, boolean>(
     false,
     {
         global: true,
-        label: "@valdres-react/panable/isModifierKeyActiveAtom",
+        name: "@valdres-react/panable/isModifierKeyActiveAtom",
     },
 )
 

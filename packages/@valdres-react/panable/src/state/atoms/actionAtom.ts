@@ -6,4 +6,4 @@ import type { Action } from "../../types/Action"
 export const actionAtom = atomFamily<
     { eventId: EventId; scopeId: ScopeId },
     Action | null
->(null, { label: "@valdres-react/panable/actionAtom" })
+>(null, { name: "@valdres-react/panable/actionAtom" })

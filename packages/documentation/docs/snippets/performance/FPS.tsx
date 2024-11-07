@@ -22,18 +22,18 @@ const libs = {
         Provider: valdres.Provider,
     },
     jotai: {
-        atom: (defaultValue, label) => {
+        atom: (defaultValue, name) => {
             const atom =
                 typeof defaultValue === "function"
                     ? jotaiUtils.atomWithDefault(defaultValue)
                     : jotai.atom(defaultValue)
 
-            atom.debugLabel = label
+            atom.debugLabel = name
             return atom
         },
-        selector: (get, label) => {
+        selector: (get, name) => {
             const atom = jotai.atom(get)
-            atom.debugLabel = label
+            atom.debugLabel = name
             return atom
         },
         useValue: jotai.useAtomValue,
@@ -42,19 +42,19 @@ const libs = {
         Provider: jotai.Provider,
     },
     recoil: {
-        atom: (defaultValue, label: string) =>
+        atom: (defaultValue, name: string) =>
             recoil.atom({
                 default:
                     typeof defaultValue === "function"
                         ? recoil.selector({
                               get: () => defaultValue(),
-                              key: label + "_default_selector",
+                              key: name + "_default_selector",
                           })
                         : defaultValue,
-                key: label,
+                key: name,
             }),
-        selector: (fn, label) =>
-            recoil.selector({ get: ({ get }) => fn(get), key: label }),
+        selector: (fn, name) =>
+            recoil.selector({ get: ({ get }) => fn(get), key: name }),
         useValue: recoil.useRecoilValue,
         useAtom: recoil.useRecoilState,
         useSetAtom: recoil.useSetRecoilState,

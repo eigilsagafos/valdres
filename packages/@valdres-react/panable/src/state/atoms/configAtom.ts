@@ -5,6 +5,6 @@ import type { Config } from "../../types/Config"
 export const configAtom = atomFamily<ScopeId, Config>(
     { mode: "pan" },
     {
-        label: "@valdres-react/panable/configAtom",
+        name: "@valdres-react/panable/configAtom",
     },
 )

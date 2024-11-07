@@ -19,6 +19,6 @@ export const activeInitializedDragEventIds = selectorFamily<ScopeId, EventId[]>(
             .map(([eventId]) => eventId)
     },
     {
-        label: "@valdres-react/panable/activeInitializedDragEventIds",
+        name: "@valdres-react/panable/activeInitializedDragEventIds",
     },
 )

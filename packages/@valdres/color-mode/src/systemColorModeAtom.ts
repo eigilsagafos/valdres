@@ -5,7 +5,7 @@ import type { ColorMode } from "../types/ColorMode"
 
 export const systemColorModeAtom = atom<ColorMode>(getSystemColorMode, {
     global: true,
-    label: "@valdres/color-mode/systemColorModeAtom",
+    name: "@valdres/color-mode/systemColorModeAtom",
     onInit: () => {
         const listener = () => {
             systemColorModeAtom.setSelf(getSystemColorMode())

@@ -5,5 +5,5 @@ import type { EventId } from "../../types/EventId"
 
 export const activeActionsAtom = atomFamily<ScopeId, [EventId, ActionKind][]>(
     [],
-    { label: "@valdres-react/panable/activeActionsAtom" },
+    { name: "@valdres-react/panable/activeActionsAtom" },
 )

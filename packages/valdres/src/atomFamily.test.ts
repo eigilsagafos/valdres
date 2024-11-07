@@ -17,22 +17,22 @@ describe("atomFamily", () => {
         expect(store1.get(userAtomFamily(1))).toBe("Foo")
     })
 
-    test("label", () => {
+    test("name", () => {
         const userAtomFamily = atomFamily<number | string | number[], string>(
             undefined,
             {
-                label: "familyLabel",
+                name: "familyName",
             },
         )
-        expect(userAtomFamily.label).toBe("familyLabel")
+        expect(userAtomFamily.name).toBe("familyName")
         const user1 = userAtomFamily(1)
-        expect(user1.label).toBe("familyLabel_1")
+        expect(user1.name).toBe("familyName_1")
 
         const user2 = userAtomFamily("2")
-        expect(user2.label).toBe("familyLabel_2")
+        expect(user2.name).toBe("familyName_2")
 
         const user3 = userAtomFamily([1, 2])
-        expect(user3.label).toBe("familyLabel_[1,2]")
+        expect(user3.name).toBe("familyName_[1,2]")
     })
 
     // test("Allow default override first time atom is created in family", () => {
@@ -84,18 +84,18 @@ describe("atomFamily", () => {
         expect(store1.get(userAtomFamily(1))).toBeInstanceOf(Promise)
     })
 
-    test("debug label", () => {
+    test("debug name", () => {
         const userAtomFamily = atomFamily<string, string>(undefined, {
-            label: "userFamily",
+            name: "userFamily",
         })
         const user1 = userAtomFamily("Foo")
-        expect(user1.label).toBe("userFamily_Foo")
+        expect(user1.name).toBe("userFamily_Foo")
     })
 
     test("subscribe to atomFamily", () => {
         const store1 = store()
         const userAtomFamily = atomFamily<string, { name: string }>(undefined, {
-            label: "userFamily",
+            name: "userFamily",
         })
         const callbackIds: string[] = []
         const docs: { name: string }[] = []
@@ -125,7 +125,7 @@ describe("atomFamily", () => {
         const userAtomFamily = atomFamily<{ name: string }, { id: number }>(
             undefined,
             {
-                label: "userFamily",
+                name: "userFamily",
             },
         )
         const ids = []
@@ -257,5 +257,24 @@ describe("atomFamily", () => {
          * should be called. Solve it in initAtom?
          */
         expect(callback).toHaveBeenCalledTimes(1)
+    })
+
+    test("global atomFamily returns same family for same key", () => {
+        const family1 = atomFamily("Default", {
+            name: "global_test",
+        })
+        const family2 = atomFamily("Default", {
+            name: "global_test",
+        })
+        expect(Object.is(family1, family2)).toBe(false)
+        const globalGamily1 = atomFamily("Default", {
+            global: true,
+            name: "global_test",
+        })
+        const globalFamily2 = atomFamily("Default", {
+            global: true,
+            name: "global_test",
+        })
+        expect(Object.is(globalGamily1, globalFamily2)).toBe(true)
     })
 })

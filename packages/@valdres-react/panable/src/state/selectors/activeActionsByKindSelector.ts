@@ -16,6 +16,6 @@ export const activeActionsByKindSelector = selectorFamily<
                 .map(([eventId]) => get(actionAtom({ eventId, scopeId })))
         },
     {
-        label: "@valdres-react/panable/activeActionsByKindSelector",
+        name: "@valdres-react/panable/activeActionsByKindSelector",
     },
 )

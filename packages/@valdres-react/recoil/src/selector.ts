@@ -20,7 +20,7 @@ export const selector = <T>(
                 },
             }),
         {
-            label: options.key,
+            name: options.key,
         },
     )
     // @ts-ignore

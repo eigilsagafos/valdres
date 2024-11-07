@@ -23,6 +23,6 @@ export const selectionCoordinatesSelector = selectorFamily<
             }
         },
     {
-        label: "selectionCoordinatesSelector",
+        name: "selectionCoordinatesSelector",
     },
 )

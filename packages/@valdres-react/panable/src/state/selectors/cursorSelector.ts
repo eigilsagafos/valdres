@@ -12,5 +12,5 @@ export const cursorSelector = selectorFamily<ScopeId, CSSProperties["cursor"]>(
         if (isMouseDragging) return "grabbing"
         return "grab"
     },
-    { label: "@valdres-react/panable/cursorSelector" },
+    { name: "@valdres-react/panable/cursorSelector" },
 )

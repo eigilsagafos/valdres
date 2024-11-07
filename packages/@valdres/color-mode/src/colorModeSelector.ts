@@ -10,6 +10,6 @@ export const colorModeSelector = selector<ColorMode>(
         return userSelectedMode
     },
     {
-        label: "@valdres/color-mode/colorModeSelector",
+        name: "@valdres/color-mode/colorModeSelector",
     },
 )

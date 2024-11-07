@@ -10,4 +10,4 @@ const DEFAULT_VALUE = Object.freeze({
 export const draggableItemAtom = atomFamily<
     any,
     { isSnapping: boolean; isDragging: boolean; x: number; y: number }
->(DEFAULT_VALUE, { label: "@valdres-react/draggable/draggableItemAtom" })
+>(DEFAULT_VALUE, { name: "@valdres-react/draggable/draggableItemAtom" })

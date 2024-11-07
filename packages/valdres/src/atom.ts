@@ -10,7 +10,7 @@ import type { GlobalAtom } from "./types/GlobalAtom"
  *
  * @example
  *
- * const user = atom<string>("Default Value", { label: "userAtom"})
+ * const user = atom<string>("Default Value", { name: "userAtom"})
  *
  */
 export function atom<V>(

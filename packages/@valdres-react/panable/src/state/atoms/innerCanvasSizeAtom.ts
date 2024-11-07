@@ -25,5 +25,5 @@ export const innerCanvasSizeAtom = atomFamily<
         y: number
     }
 >(DEFAULT_VALUE, {
-    label: "@valdres-react/panable/innerCanvasSize",
+    name: "@valdres-react/panable/innerCanvasSize",
 })

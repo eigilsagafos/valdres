@@ -14,7 +14,7 @@ export const selectorFamily = <T, P extends SerializableParam>(
         // @ts-ignore @ts-todo
         key => get => options.get(key)({ get }),
         {
-            label: options.key,
+            name: options.key,
         },
     )
 }

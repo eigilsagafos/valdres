@@ -3,7 +3,7 @@ import { atom as valdresAtom } from "valdres-react"
 
 export const atom = <T>(args: AtomOptions<T>): RecoilState<T> => {
     const options = {
-        label: args.key,
+        name: args.key,
     }
 
     if (args.effects?.length) {

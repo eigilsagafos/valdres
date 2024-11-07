@@ -8,5 +8,5 @@ export const isDraggingSelector = selectorFamily<ScopeId, boolean>(
             ([, kind]) => kind === "drag",
         )
     },
-    { label: "@valdres-react/panable/isDraggingSelector" },
+    { name: "@valdres-react/panable/isDraggingSelector" },
 )

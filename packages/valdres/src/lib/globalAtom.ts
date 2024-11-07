@@ -9,7 +9,7 @@ import type { GlobalAtom } from "./../types/GlobalAtom"
 import type { StoreData } from "./../types/StoreData"
 import { propagateUpdatedAtoms } from "./propagateUpdatedAtoms"
 import { setAtom } from "./setAtom"
-import { globalStore } from "./globalStore"
+import { globalStore } from "../globalStore"
 
 export const globalAtom = <Value = unknown>(
     defaultValue: AtomDefaultValue<Value>,
@@ -71,7 +71,7 @@ export const globalAtom = <Value = unknown>(
         equal,
         ...options,
         defaultValue,
-        label: options?.label,
+        name: options?.name,
         onInit,
         onSet,
         setSelf,

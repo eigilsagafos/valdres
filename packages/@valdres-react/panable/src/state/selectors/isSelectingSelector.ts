@@ -24,5 +24,5 @@ export const isSelectingSelector = selectorFamily<ScopeId, boolean>(
 
         return false
     },
-    { label: "@valdres-react/panable/isSelectingSelector" },
+    { name: "@valdres-react/panable/isSelectingSelector" },
 )

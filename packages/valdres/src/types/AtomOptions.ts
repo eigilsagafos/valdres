@@ -4,7 +4,7 @@ import type { StoreData } from "./StoreData"
 
 export type AtomOptions<Value = unknown> = {
     global?: boolean
-    label?: string
+    name?: string
     onInit?: (
         setSelf: (value: Value) => void,
         store: StoreData,

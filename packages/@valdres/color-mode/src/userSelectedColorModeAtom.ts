@@ -3,5 +3,5 @@ import type { UserSelectedColorMode } from "../types/UserSelectedColorMode"
 
 export const userSelectedColorModeAtom = atom<UserSelectedColorMode>("system", {
     global: true,
-    label: "@valdres/color-mode/userSelectedColorModeAtom",
+    name: "@valdres/color-mode/userSelectedColorModeAtom",
 })

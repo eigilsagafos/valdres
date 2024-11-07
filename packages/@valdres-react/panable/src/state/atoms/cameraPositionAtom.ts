@@ -7,6 +7,6 @@ export const cameraPositionAtom = atomFamily<
 >(
     { x: 100, y: 0, animate: false },
     {
-        label: "@valdres-react/panable/cameraPosition",
+        name: "@valdres-react/panable/cameraPosition",
     },
 )

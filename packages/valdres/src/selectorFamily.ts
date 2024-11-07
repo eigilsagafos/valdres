@@ -11,11 +11,11 @@ const createOptions = <K, V>(
     familyKey: K,
     keyStringified: string | boolean | number,
 ) => {
-    if (options.label) {
+    if (options.name) {
         return {
             equal,
             ...options,
-            label: options?.label + "_" + keyStringified,
+            name: options?.name + "_" + keyStringified,
             family,
             familyKey,
         }
@@ -45,6 +45,6 @@ export const selectorFamily = <Key, Value>(
         return newSelector
     }
     selectorFamily.__valdresSelectorFamilyMap = map
-    if (options?.label) selectorFamily.label = options.label
+    if (options?.name) selectorFamily.name = options.name
     return selectorFamily
 }
