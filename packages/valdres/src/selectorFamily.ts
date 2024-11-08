@@ -45,6 +45,10 @@ export const selectorFamily = <Key, Value>(
         return newSelector
     }
     selectorFamily.__valdresSelectorFamilyMap = map
-    if (options?.name) selectorFamily.name = options.name
+    if (options?.name)
+        Object.defineProperty(selectorFamily, "name", {
+            value: options.name,
+            writable: false,
+        })
     return selectorFamily
 }
