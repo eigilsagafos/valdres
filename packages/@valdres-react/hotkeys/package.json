@@ -22,17 +22,18 @@
         "build": "NODE_ENV=production bun build index.ts --outdir ./dist --packages external",
         "build:types": "rm -rf dist/types && tsc"
     },
+    "dependencies": {
+        "@valdres/hotkeys": "workspace:^"
+    },
     "devDependencies": {
         "@testing-library/react": "16.0.1",
         "@testing-library/react-hooks": "8.0.1",
-        "@valdres/hotkeys": "workspace:^",
         "react": "18.3.1",
         "react-dom": "18.3.1",
         "typescript": "5.6.3",
         "valdres-react": "workspace:^"
     },
     "peerDependencies": {
-        "@valdres/hotkeys": "workspace:^",
         "react": ">=18",
         "valdres": "workspace:^",
         "valdres-react": "workspace:^"
