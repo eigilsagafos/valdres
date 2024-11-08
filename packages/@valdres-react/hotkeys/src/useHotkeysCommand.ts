@@ -6,7 +6,7 @@ import type { HookRestArgs } from "./types/HookRestArgs"
 
 export const useHotkeysCommand = (
     command: KeyboardCommand,
-    callback: () => {},
+    callback: () => void,
     ...args: HookRestArgs
 ) => {
     const [opts, deps] = parseHookRestArgs(args)

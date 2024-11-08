@@ -6,5 +6,6 @@ export const eventByCodeAtom = atomFamily<KeyboardCode[], KeyboardEvent | null>(
     {
         global: true,
         equal: (a, b) => a?.timeStamp === b?.timeStamp,
+        name: "@valdres/hotkeys/eventByCodeAtom",
     },
 )

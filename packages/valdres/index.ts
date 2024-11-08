@@ -1,6 +1,7 @@
 export { atom } from "./src/atom"
 export { atomFamily } from "./src/atomFamily"
 export { createStoreWithSelectorSet } from "./src/createStoreWithSelectorSet"
+export { globalStore } from "./src/globalStore"
 export { selector } from "./src/selector"
 export { selectorFamily } from "./src/selectorFamily"
 export { store } from "./src/store"

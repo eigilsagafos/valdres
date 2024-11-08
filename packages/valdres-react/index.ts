@@ -2,6 +2,7 @@ export {
     atom,
     atomFamily,
     createStoreWithSelectorSet,
+    globalStore,
     isAtom,
     isFamily,
     isPromiseLike,

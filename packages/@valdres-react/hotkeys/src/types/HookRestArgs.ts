@@ -1,3 +1,7 @@
 import type { Options } from "@valdres/hotkeys"
 
-export type HookRestArgs = [] | [any[]] | [Options] | [Options, any[]]
+export type HookRestArgs =
+    | []
+    | [any[]]
+    | [Partial<Options>]
+    | [Partial<Options>, any[]]

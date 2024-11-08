@@ -3,6 +3,8 @@ import { eventHandler } from "./src/eventHandler"
 export { currentCodeCombinationAtom } from "./src/currentCodeCombinationAtom"
 export { currentKeyCombinationAtom } from "./src/currentKeyCombinationAtom"
 export { DEFAULT_OPTIONS } from "./src/DEFAULT_OPTIONS"
+export { eventByKeyAtom } from "./src/eventByKeyAtom"
+export { eventByCodeAtom } from "./src/eventByCodeAtom"
 export { eventHandler }
 export { subscribeToCode } from "./src/subscribeToCode"
 export { subscribeToCommand } from "./src/subscribeToCommand"
