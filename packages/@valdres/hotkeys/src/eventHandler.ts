@@ -31,7 +31,6 @@ export const eventHandler = (event: KeyboardEvent) => {
     const {
         type,
         code,
-        key,
         repeat,
         ctrlKey,
         altKey,
@@ -40,6 +39,8 @@ export const eventHandler = (event: KeyboardEvent) => {
         target,
         timeStamp,
     } = event
+
+    const key = event.key.toLowerCase()
 
     if (type === "keydown") {
         // if (!repeat) {

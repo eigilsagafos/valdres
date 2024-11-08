@@ -8,6 +8,7 @@ export { eventByCodeAtom } from "./src/eventByCodeAtom"
 export { eventHandler }
 export { subscribeToCode } from "./src/subscribeToCode"
 export { subscribeToCommand } from "./src/subscribeToCommand"
+export { subscribeToHotkey } from "./src/subscribeToHotkey"
 export { subscribeToKey } from "./src/subscribeToKey"
 
 export type { KeyboardCode } from "./src/types/KeyboardCode"
