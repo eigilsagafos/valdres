@@ -20,7 +20,7 @@
     ],
     "scripts": {
         "build": "NODE_ENV=production bun build index.ts --outdir ./dist --packages external",
-        "build:types--": "tsc"
+        "build:types": "rm -rf dist/types && tsc"
     },
     "devDependencies": {
         "@testing-library/react": "16.0.1",
