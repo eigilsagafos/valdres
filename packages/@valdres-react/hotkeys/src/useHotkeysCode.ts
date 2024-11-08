@@ -4,7 +4,7 @@ import { useStore } from "valdres-react"
 import { parseHookRestArgs } from "./lib/parseHookRestArgs"
 import type { HookRestArgs } from "./types/HookRestArgs"
 
-export const useKeyboardCode = (
+export const useHotkeysCode = (
     code: KeyboardCode | KeyboardCode[],
     callback: () => {},
     ...args: HookRestArgs
@@ -15,6 +15,6 @@ export const useKeyboardCode = (
 
     useEffect(
         () => subscribeToCode(code, memoizedCallback, opts, store),
-        [memoizedCallback, store, ...code, ...deps],
+        [memoizedCallback, store, code, ...deps],
     )
 }

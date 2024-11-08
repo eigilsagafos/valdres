@@ -33,6 +33,8 @@
     },
     "peerDependencies": {
         "@valdres/hotkeys": "workspace:^",
+        "react": ">=18",
+        "valdres": "workspace:^",
         "valdres-react": "workspace:^"
     },
     "publishConfig": {
