@@ -1,4 +1,4 @@
-import { atomFamily as valdresAtomFamily } from "valdres-react"
+import { atomFamily as valdresAtomFamily } from "valdres"
 import { type SerializableParam, type AtomFamilyOptions } from "recoil"
 
 export const atomFamily = <T, P extends SerializableParam>(

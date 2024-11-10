@@ -1,4 +1,4 @@
-import { selector as valdresSelector } from "valdres-react"
+import { selector as valdresSelector } from "valdres"
 import {
     type GetRecoilValue,
     type RecoilState,

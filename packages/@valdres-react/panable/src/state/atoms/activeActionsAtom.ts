@@ -1,4 +1,4 @@
-import { atomFamily } from "valdres-react"
+import { atomFamily } from "valdres"
 import type { ActionKind } from "../../types/ActionKind"
 import type { ScopeId } from "../../types/ScopeId"
 import type { EventId } from "../../types/EventId"

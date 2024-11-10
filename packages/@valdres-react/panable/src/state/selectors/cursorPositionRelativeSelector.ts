@@ -1,4 +1,4 @@
-import { selectorFamily } from "valdres-react"
+import { selectorFamily } from "valdres"
 import type { Point } from "../../types/Point"
 import type { ScopeId } from "../../types/ScopeId"
 import { getCursorPositionRelative } from "../../utils/getCursorPositionRelative"

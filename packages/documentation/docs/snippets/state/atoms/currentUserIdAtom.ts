@@ -1,5 +1,5 @@
 import { faker } from "@faker-js/faker"
-import { atom } from "valdres-react"
+import { atom } from "valdres"
 
 const fetchCurrentUserId = () => faker.string.uuid()
 

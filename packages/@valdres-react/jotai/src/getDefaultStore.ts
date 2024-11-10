@@ -1,4 +1,4 @@
-import { createStoreWithSelectorSet } from "valdres-react"
+import { createStoreWithSelectorSet } from "valdres"
 
 const setDefaultStore = () => {
     const store = createStoreWithSelectorSet("default")

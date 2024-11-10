@@ -1,7 +1,8 @@
-import { type Selector, useValue } from "valdres-react"
 import React, { type CSSProperties } from "react"
-import type { Point } from "../types/Point"
+import type { Selector } from "valdres"
+import { useValue } from "valdres-react"
 import type { Size } from "../../../draggable/src/types/Size"
+import type { Point } from "../types/Point"
 
 export const PositionAbsolute = ({
     children,
@@ -9,6 +10,7 @@ export const PositionAbsolute = ({
     positionSelector,
     zIndex = 3,
     offsetY = 0,
+    ...rest
 }: {
     children: React.ElementType
     sizeSelector: Selector<Size>

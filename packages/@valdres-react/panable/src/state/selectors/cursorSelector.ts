@@ -1,5 +1,5 @@
 import type { CSSProperties } from "react"
-import { selectorFamily } from "valdres-react"
+import { selectorFamily } from "valdres"
 import { type ScopeId } from "../../types/ScopeId"
 import { actionAtom } from "../atoms/actionAtom"
 import { configAtom } from "../atoms/configAtom"

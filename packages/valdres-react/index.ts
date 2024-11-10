@@ -1,30 +1,3 @@
-export {
-    atom,
-    atomFamily,
-    createStoreWithSelectorSet,
-    globalStore,
-    isAtom,
-    isFamily,
-    isPromiseLike,
-    isSelector,
-    selector,
-    selectorFamily,
-    store,
-} from "valdres"
-
-export type {
-    Atom,
-    AtomFamily,
-    GetValue,
-    ResetAtom,
-    Selector,
-    SelectorFamily,
-    SetAtom,
-    State,
-    Store,
-    StoreData,
-} from "valdres"
-
 export { useAtom } from "./src/useAtom"
 export { useResetAtom } from "./src/useResetAtom"
 export { useSetAtom } from "./src/useSetAtom"

@@ -1,4 +1,4 @@
-import { atomFamily } from "valdres-react"
+import { atomFamily } from "valdres"
 import type { ScopeId } from "../../types/ScopeId"
 
 const DEFAULT_VALUE = Object.freeze({

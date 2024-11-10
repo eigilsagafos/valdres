@@ -1,4 +1,4 @@
-import { atomFamily } from "valdres-react"
+import { atomFamily } from "valdres"
 
 export type ModifierKeyType = "shift" | "meta" | "ctrl" | "alt" | "space"
 

@@ -1,4 +1,4 @@
-import { selectorFamily } from "valdres-react"
+import { selectorFamily } from "valdres"
 import { activeActionsAtom } from "../atoms/activeActionsAtom"
 import { type ScopeId } from "../../types/ScopeId"
 

@@ -1,4 +1,4 @@
-import { atom as valdresAtom, selector as valdresSelector } from "valdres-react"
+import { atom as valdresAtom, selector as valdresSelector } from "valdres"
 
 const addSetToSelector = (selector, set) => {
     selector.set = (valdresSet, valdresGet, reset, ...args) => {

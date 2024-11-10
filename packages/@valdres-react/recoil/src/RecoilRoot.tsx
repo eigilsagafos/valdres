@@ -1,5 +1,6 @@
 import { useMemo } from "react"
-import { createStoreWithSelectorSet, Provider } from "valdres-react"
+import { createStoreWithSelectorSet } from "valdres"
+import { Provider } from "valdres-react"
 import type {
     MutableSnapshot,
     RecoilRoot as RecoilRoot_original,

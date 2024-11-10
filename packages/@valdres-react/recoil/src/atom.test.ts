@@ -1,10 +1,10 @@
 import { describe, test, mock, expect } from "bun:test"
 import { atom } from "./atom"
-import { createStore } from "valdres-react"
+import { store } from "valdres"
 
 describe("recoil/atom", () => {
     test("effects", () => {
-        const store = createStore()
+        const store1 = store()
 
         const onSetCallback = mock(() => {})
         const effect = mock(({ onSet, setSelf, storeID, trigger }) => {
@@ -16,14 +16,14 @@ describe("recoil/atom", () => {
             effects: [effect],
         })
 
-        const unsubscribe = store.sub(atom1, () => {})
-        store.set(atom1, 2)
+        const unsubscribe = store1.sub(atom1, () => {})
+        store1.set(atom1, 2)
         expect(onSetCallback).toHaveBeenCalledTimes(1)
         expect(onSetCallback).toHaveBeenLastCalledWith(2, 1, false)
         unsubscribe()
-        store.set(atom1, 3)
+        store1.set(atom1, 3)
         expect(onSetCallback).toHaveBeenCalledTimes(1)
         expect(onSetCallback).toHaveBeenLastCalledWith(2, 1, false)
-        expect(store.data.subscriptions.get(atom1).size).toBe(0)
+        expect(store1.data.subscriptions.get(atom1).size).toBe(0)
     })
 })

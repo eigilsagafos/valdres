@@ -1,4 +1,4 @@
-import { selectorFamily as valdresSelectorFamily } from "valdres-react"
+import { selectorFamily as valdresSelectorFamily } from "valdres"
 import {
     type SerializableParam,
     type ReadWriteSelectorFamilyOptions,

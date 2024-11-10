@@ -1,4 +1,4 @@
-import { atomFamily } from "valdres-react"
+import { atomFamily } from "valdres"
 
 const DEFAULT_VALUE = Object.freeze({
     isSnapping: false,

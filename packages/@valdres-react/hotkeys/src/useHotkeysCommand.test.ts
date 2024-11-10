@@ -2,7 +2,8 @@ import { describe, expect, mock, test } from "bun:test"
 import { renderHook } from "@testing-library/react-hooks"
 import userEvent from "@testing-library/user-event"
 import { useHotkeysCommand } from "./useHotkeysCommand"
-import { globalStore, Provider } from "valdres-react"
+import { globalStore } from "valdres"
+import { Provider } from "valdres-react"
 import { eventByKeyAtom } from "@valdres/hotkeys"
 
 describe("useHotkeysCommand", async () => {

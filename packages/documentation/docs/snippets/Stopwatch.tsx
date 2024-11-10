@@ -1,5 +1,6 @@
 import { useEffect } from "react"
-import { atom, useAtom } from "valdres-react"
+import { atom } from "valdres"
+import { useAtom } from "valdres-react"
 
 const timeAtom = atom(0.0)
 const isRunningAtom = atom(false)

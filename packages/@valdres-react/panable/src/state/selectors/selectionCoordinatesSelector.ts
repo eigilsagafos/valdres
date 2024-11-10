@@ -1,4 +1,4 @@
-import { selectorFamily } from "valdres-react"
+import { selectorFamily } from "valdres"
 import { actionAtom } from "../atoms/actionAtom"
 import { getCursorPositionRelative } from "../../utils/getCursorPositionRelative"
 import { type EventId } from "../../types/EventId"

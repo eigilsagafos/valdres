@@ -1,17 +1,17 @@
-import { describe, test, expect, mock } from "bun:test"
-import { createStore } from "valdres-react"
+import { describe, test, expect } from "bun:test"
+import { store } from "valdres"
 import { atomFamily } from "./atomFamily"
 
 describe("recoil/atomFamily", () => {
     test("simple", () => {
-        const store = createStore()
+        const storeA = store()
         const family = atomFamily({ default: null, key: "Fam" })
         const user = family({ id: "1" })
-        expect(store.get(user)).toBe(null)
+        expect(storeA.get(user)).toBe(null)
     })
 
     test.only("default callback", () => {
-        const store = createStore()
+        const storeA = store()
         const family = atomFamily({
             key: "Fam",
             default: arg => {
@@ -19,6 +19,6 @@ describe("recoil/atomFamily", () => {
             },
         })
         const atom1 = family({ ref: `Foo` })
-        console.log(store.get(atom1))
+        console.log(storeA.get(atom1))
     })
 })

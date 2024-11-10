@@ -1,4 +1,4 @@
-import { atomFamily } from "valdres-react"
+import { atomFamily } from "valdres"
 import type { ScopeId } from "../../types/ScopeId"
 
 export const cameraPositionAtom = atomFamily<
