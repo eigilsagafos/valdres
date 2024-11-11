@@ -1,4 +1,4 @@
-import equal from "fast-deep-equal/es6"
+import { equal } from "./lib/equal"
 import type { GetValue } from "./types/GetValue"
 import type { Selector } from "./types/Selector"
 import type { SelectorOptions } from "./types/SelectorOptions"

@@ -1,4 +1,4 @@
-import equal from "fast-deep-equal/es6"
+import { equal } from "./lib/equal"
 import { selector } from "./selector"
 import { stableStringify } from "./lib/stableStringify"
 import type { SelectorFamily } from "./types/SelectorFamily"

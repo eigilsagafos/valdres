@@ -1,4 +1,4 @@
-import equal from "fast-deep-equal/es6"
+import { equal } from "./equal"
 import type { Atom } from "../types/Atom"
 import type { AtomFamily } from "../types/AtomFamily"
 import type { Family } from "../types/Family"

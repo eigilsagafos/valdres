@@ -1,5 +1,5 @@
 import { describe, expect, mock, test } from "bun:test"
-import equal from "fast-deep-equal/es6"
+import { equal } from "./lib/equal"
 import { wait } from "../test/utils/wait"
 import { atom } from "./atom"
 import { atomFamily } from "./atomFamily"

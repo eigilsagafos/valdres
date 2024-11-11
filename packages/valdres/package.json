@@ -23,9 +23,7 @@
         "build:types": "rm -rf dist/types && tsc",
         "test": "bun test"
     },
-    "dependencies": {
-        "fast-deep-equal": ">=3"
-    },
+    "dependencies": {},
     "devDependencies": {
         "@testing-library/react-hooks": "8.0.1",
         "jotai": "2.10.0",
