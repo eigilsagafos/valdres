@@ -3,7 +3,7 @@ const hasMap = typeof Map === "function"
 const hasSet = typeof Set === "function"
 const hasArrayBuffer = typeof ArrayBuffer === "function" && !!ArrayBuffer.isView
 
-const deepEqualFn = (a, b) => {
+const deepEqualFn = (a: any, b: any) => {
     if (a === b) return true
 
     if (a && b && typeof a == "object" && typeof b == "object") {
@@ -62,6 +62,7 @@ const deepEqualFn = (a, b) => {
             length = a.length
             // @ts-ignore
             if (length != b.length) return false
+            // @ts-ignore
             for (i = length; i-- !== 0; ) if (a[i] !== b[i]) return false
             return true
         }
@@ -130,10 +131,11 @@ const deepEqualFn = (a, b) => {
 }
 // end fast-deep-equal
 
-export const equal = (a, b) => {
+export const equal = (a: any, b: any) => {
     try {
         return deepEqualFn(a, b)
     } catch (error) {
+        // @ts-ignore
         if ((error.message || "").match(/stack|recursion/i)) {
             // warn on circular references, don't crash
             // browsers give this different errors name and messages:
