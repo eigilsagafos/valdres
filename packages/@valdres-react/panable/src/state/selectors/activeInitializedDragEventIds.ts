@@ -1,4 +1,4 @@
-import { selectorFamily } from "valdres-react"
+import { selectorFamily } from "valdres"
 import type { DragAction } from "../../types/DragAction"
 import type { EventId } from "../../types/EventId"
 import type { ScopeId } from "../../types/ScopeId"
