@@ -57,6 +57,7 @@ export const useDraggable = ({
                         onDragEnd,
                         onDrop,
                         dropzonesSelector,
+                        event: { altKey: e.altKey },
                     })
                 })
             }
