@@ -60,13 +60,14 @@ export const InnerCanvas = React.forwardRef<
                 transform,
                 WebkitPerspective: "1000",
                 transition: `${animationTime}ms ease-out`,
+                position: "relative",
             }}
         >
             <div
                 id="innerPanableCanvas"
                 ref={ref}
                 style={{
-                    position: "relative",
+                    position: "absolute",
                 }}
             >
                 {children}
