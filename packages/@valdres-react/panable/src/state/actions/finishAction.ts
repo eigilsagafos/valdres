@@ -18,11 +18,11 @@ export const finishAction = (
         if (action.kind === "drag") {
             const item = txn.get(draggableItemAtom(action.id))
             if (item.isSnapping) {
-                action?.onDrop(eventId)
+                action?.onDrop(e, eventId, txn)
             }
             txn.reset(draggableItemAtom(action.id))
             if (action?.onDragEnd) {
-                action?.onDragEnd(eventId)
+                action?.onDragEnd(e, eventId, txn)
             }
         }
 

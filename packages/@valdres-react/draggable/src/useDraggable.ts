@@ -45,20 +45,25 @@ export const useDraggable = ({
 
             if (dragEnabled) {
                 txn(state => {
-                    setIsDragging(state, e.pageX, e.pageY, {
-                        id,
-                        eventId: "mouse",
-                        scopeId,
-                        meta,
-                        itemPos,
-                        itemSize,
-                        onDragStart,
-                        onDragInit,
-                        onDragEnd,
-                        onDrop,
-                        dropzonesSelector,
-                        event: { altKey: e.altKey },
-                    })
+                    setIsDragging(
+                        state,
+                        e.pageX,
+                        e.pageY,
+                        {
+                            id,
+                            eventId: "mouse",
+                            scopeId,
+                            meta,
+                            itemPos,
+                            itemSize,
+                            onDragStart,
+                            onDragInit,
+                            onDragEnd,
+                            onDrop,
+                            dropzonesSelector,
+                        },
+                        e,
+                    )
                 })
             }
         },
@@ -85,19 +90,25 @@ export const useDraggable = ({
             const t = e.targetTouches[0]
             if (dragEnabled) {
                 txn(state => {
-                    setIsDragging(state, t.pageX, t.pageY, {
-                        id,
-                        eventId: t.identifier,
-                        scopeId,
-                        meta,
-                        itemPos,
-                        itemSize,
-                        onDragStart,
-                        onDragInit,
-                        onDragEnd,
-                        onDrop,
-                        dropzonesSelector,
-                    })
+                    setIsDragging(
+                        state,
+                        t.pageX,
+                        t.pageY,
+                        {
+                            id,
+                            eventId: t.identifier,
+                            scopeId,
+                            meta,
+                            itemPos,
+                            itemSize,
+                            onDragStart,
+                            onDragInit,
+                            onDragEnd,
+                            onDrop,
+                            dropzonesSelector,
+                        },
+                        e,
+                    )
                 })
             }
         },

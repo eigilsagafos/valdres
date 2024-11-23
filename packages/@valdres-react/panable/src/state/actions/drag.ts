@@ -39,6 +39,7 @@ export const drag = (
     eventId: string | number,
     x: number,
     y: number,
+    event: MouseEvent | TouchEvent,
 ) => {
     let action = txn.get(actionAtom({ eventId, scopeId }))
     if (action.invalid) return null
@@ -74,7 +75,7 @@ export const drag = (
                 initialized: true,
             }))
             if (action.onDragStart) {
-                action.onDragStart(txn, { scopeId, eventId, action })
+                action.onDragStart(event, eventId, txn)
                 // We update the action in case the onDragStart modified it
                 action = txn.get(actionAtom({ eventId, scopeId }))
             }

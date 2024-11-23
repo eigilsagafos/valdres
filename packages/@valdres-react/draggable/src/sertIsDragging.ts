@@ -22,6 +22,7 @@ export const setIsDragging = (
         onDrop,
         dropzonesSelector,
     },
+    event,
 ) => {
     const scale = txn.get(scaleAtom(scopeId))
     txn.set(activeActionsAtom(scopeId), curr => [...curr, [eventId, "drag"]])
@@ -45,5 +46,5 @@ export const setIsDragging = (
         onDrop,
         dropzonesSelector,
     })
-    onDragInit && onDragInit(txn, { eventId, scopeId })
+    onDragInit && onDragInit(event, eventId, txn)
 }

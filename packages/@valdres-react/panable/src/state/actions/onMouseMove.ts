@@ -17,7 +17,7 @@ export const onMouseMove = (
         e.preventDefault()
 
         if (action.kind === "drag") {
-            drag(txn, scopeId, action.eventId, x, y)
+            drag(txn, scopeId, action.eventId, x, y, e)
         } else if (action.kind === "select") {
             // Should we just ignore this?
             // updateSelect(action, scopeId, x, y, get, set)

@@ -36,7 +36,14 @@ export const onTouchMove = (
             move(txn, scopeId, action.eventId, touch.clientX, touch.clientY)
         } else if (action.kind === "drag") {
             // throw new Error("onTouchMove TODO drag")
-            drag(txn, scopeId, action.eventId, touch.clientX, touch.clientY)
+            drag(
+                txn,
+                scopeId,
+                action.eventId,
+                touch.clientX,
+                touch.clientY,
+                touchEvent,
+            )
         } else if (action.kind === "select") {
             txn.set(cursorPositionAtom(scopeId), {
                 x: touch.clientX,
