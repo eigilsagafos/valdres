@@ -45,6 +45,7 @@ export const setIsDragging = (
         onDragEnd,
         onDrop,
         dropzonesSelector,
+        event,
     })
     onDragInit && onDragInit(event, eventId, txn)
 }
