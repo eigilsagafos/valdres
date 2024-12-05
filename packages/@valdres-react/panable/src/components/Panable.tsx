@@ -21,11 +21,14 @@ import { Selections } from "./Selections"
 
 import { type CSSProperties } from "react"
 import type { ScopeId } from "../types/ScopeId"
+import { scaleAtom } from "../state/atoms/scaleAtom"
+import { cameraPositionAtom } from "../state/atoms/cameraPositionAtom"
 
 export interface PanableComponentArguments {
     width?: string
     height?: string
     defaultZoom?: number
+    defaultOffset?: { x: number; y: number }
     allowFullscreen?: boolean
     showControls?: boolean
     scopeId?: string
@@ -44,7 +47,22 @@ const useInitPanableConfig = (scopeId: ScopeId, config) => {
         if (store.data.values.get(configAtom(scopeId)) === undefined) {
             store.data.values.set(configAtom(scopeId), config)
         }
+
+        if (config?.defaultZoom) {
+            store.set(scaleAtom(scopeId), config.defaultZoom)
+        }
+
+        if (config?.defaultOffset) {
+            store.set(cameraPositionAtom(scopeId), state => {
+                return {
+                    ...state,
+                    x: config?.defaultOffset?.x ?? 100,
+                    y: config?.defaultOffset.y ?? 0,
+                }
+            })
+        }
     }, [])
+
     useEffect(() => {
         store.set(configAtom(scopeId), config)
     }, [config])
@@ -55,6 +73,7 @@ export const Panable = ({
     height = "340px",
     mode = "pan",
     defaultZoom = 0.5,
+    defaultOffset = { x: 100, y: 0 },
     allowFullscreen = true,
     showControls = true,
     scopeId = undefined,
@@ -76,6 +95,8 @@ export const Panable = ({
         onSelectInit,
         onCanvasClick,
         mode,
+        defaultZoom,
+        defaultOffset,
     })
 
     const mouseMove = useCallback(
