@@ -2,6 +2,7 @@ import { getAtomInitValue } from "./initAtom"
 import { setAtoms } from "./setAtoms"
 import { getState } from "./getState"
 import { isAtom } from "../utils/isAtom"
+import { isFamily } from "../utils/isFamily"
 import { isSelector } from "../utils/isSelector"
 import type { State } from "../types/State"
 import type { StoreData } from "../types/StoreData"
@@ -83,6 +84,10 @@ export const transaction = (
             }
             txnSelectorCache.set(state, res)
             return res
+        } else if (isFamily(state)) {
+            return txnAtomMap.has(state)
+                ? txnAtomMap.get(state)
+                : getState(state.__keysSelector, data)
         } else {
             throw new Error("Unsupported state")
         }
@@ -104,6 +109,7 @@ export const transaction = (
                 txnSelectorCache,
             )
         }
+        ///
         txnAtomMap.set(atom, value)
     }
 

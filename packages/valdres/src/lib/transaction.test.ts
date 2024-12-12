@@ -120,4 +120,20 @@ describe("transaction", () => {
             expect(() => get(selector1)).toThrow()
         })
     })
+
+    test("transaction works when reading atomFamily", () => {
+        const family = atomFamily<number>(null)
+        const store1 = store()
+        store1.set(family(1), { id: 1, name: "Foo" })
+        store1.set(family(2), { id: 2, name: "Bar" })
+        expect(store1.get(family)).toStrictEqual([1, 2])
+        store1.txn((set, get) => {
+            expect(get(family)).toStrictEqual([1, 2])
+            set(family(3), { id: 3, name: "Lorem" })
+            expect(get(family)).toStrictEqual([1, 2])
+            // TODO: Should support updates in transaction so that the following works
+            // expect(get(family)).toStrictEqual([1, 2, 3])
+        })
+        expect(store1.get(family)).toStrictEqual([1, 2, 3])
+    })
 })
