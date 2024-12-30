@@ -142,19 +142,24 @@ describe("transaction", () => {
         const store1 = store()
         const fooScope = store1.scope("Foo")
         const barScope = store1.scope("Bar")
+        const barNestedScope = barScope.scope("Bar Nested")
 
         store1.txn((set, get, reset, commit, scope) => {
             set(nameAtom, "Set in Root")
             scope("Foo", fooSet => {
                 fooSet(nameAtom, "Set in Foo")
             })
-            scope("Bar", barSet => {
+            scope("Bar", (barSet, get, set, commit, scope) => {
                 barSet(nameAtom, "Set in Bar")
+                scope("Bar Nested", barNestedSet => {
+                    barNestedSet(nameAtom, "Set in Bar Nested")
+                })
             })
         })
         expect(store1.get(nameAtom)).toBe("Set in Root")
         expect(fooScope.get(nameAtom)).toBe("Set in Foo")
         expect(barScope.get(nameAtom)).toBe("Set in Bar")
+        expect(barNestedScope.get(nameAtom)).toBe("Set in Bar Nested")
 
         expect(() => {
             store1.txn((set, get, reset, commit, scope) => {
@@ -169,5 +174,13 @@ describe("transaction", () => {
         expect(store1.get(nameAtom)).toBe("Set in Root")
         expect(fooScope.get(nameAtom)).toBe("Set in Foo")
         expect(barScope.get(nameAtom)).toBe("Set in Bar")
+
+        expect(() => {
+            store1.txn((set, get, reset, commit, scope) => {
+                scope("Missing", fooSet => {
+                    fooSet(nameAtom, "fails")
+                })
+            })
+        }).toThrow("Scope not found")
     })
 })

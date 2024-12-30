@@ -143,13 +143,14 @@ export const transaction = (
                     scopedTransactions ||= {}
 
                     transaction(
-                        (set, get, reset, commit) => {
+                        (set, get, reset, commit, scope) => {
                             // @ts-ignore
                             scopedTransactions[scopeId] = [
                                 set,
                                 get,
                                 reset,
                                 commit,
+                                scope,
                             ]
                         },
                         scopedData,
