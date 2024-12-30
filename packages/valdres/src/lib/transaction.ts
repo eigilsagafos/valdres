@@ -7,6 +7,7 @@ import { isSelector } from "../utils/isSelector"
 import type { State } from "../types/State"
 import type { StoreData } from "../types/StoreData"
 import type { Atom } from "../types/Atom"
+import type { TransactionFn } from "../types/TransactionFn"
 
 const findDependencies = (
     state: State,
@@ -28,12 +29,13 @@ const findDependencies = (
 type GetValdresValue = <V>(state: State<V>) => V
 type SetValdresValue = <V>(state: State<V>, value: V) => void
 type ResetValdresValue = <V>(atom: Atom<V>) => V
-type TransactionInterface = (
-    set: SetValdresValue,
-    get: GetValdresValue,
-    reset: ResetValdresValue,
-    commit: () => void,
-) => void
+// type TransactionInterface = (
+//     set: SetValdresValue,
+//     get: GetValdresValue,
+//     reset: ResetValdresValue,
+//     commit: () => void,
+//     scope: (scopeId: string, callback: TransactionInterface) => void,
+// ) => void
 
 const recursivlyResetTxnSelectorCache = (
     state: State,
@@ -53,13 +55,15 @@ const recursivlyResetTxnSelectorCache = (
 }
 
 export const transaction = (
-    callback: TransactionInterface,
+    callback: TransactionFn,
     data: StoreData,
+    autoCommit = true,
 ) => {
     let txnAtomMap = new Map()
     let txnSelectorCache = new Map()
     let txnSubscribers = new Map()
     let dirtySelectors = new Set()
+    let scopedTransactions: undefined | Record<string, any>
 
     const txnGet: GetValdresValue = state => {
         if (isAtom(state)) {
@@ -121,8 +125,44 @@ export const transaction = (
     const commit = () => {
         setAtoms(txnAtomMap, data)
         dirtySelectors.clear()
+        if (scopedTransactions) {
+            for (const scopedTxn of Object.values(scopedTransactions)) {
+                scopedTxn[3]()
+            }
+        }
     }
-    const result = callback(txnSet, txnGet, txnReset, commit)
-    commit()
+    const result = callback(
+        txnSet,
+        txnGet,
+        txnReset,
+        commit,
+        (scopeId, callback) => {
+            if (scopeId in data.scopes) {
+                const scopedData = data.scopes[scopeId]
+                if (scopedTransactions?.[scopeId] === undefined) {
+                    scopedTransactions ||= {}
+
+                    transaction(
+                        (set, get, reset, commit) => {
+                            // @ts-ignore
+                            scopedTransactions[scopeId] = [
+                                set,
+                                get,
+                                reset,
+                                commit,
+                            ]
+                        },
+                        scopedData,
+                        false,
+                    )
+                }
+                // @ts-ignore
+                callback(...scopedTransactions[scopeId])
+            } else {
+                throw new Error("Scope not found")
+            }
+        },
+    )
+    if (autoCommit) commit()
     return result
 }

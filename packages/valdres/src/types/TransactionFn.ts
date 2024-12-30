@@ -7,4 +7,5 @@ export type TransactionFn = (
     get: GetValue,
     reset: ResetAtom,
     commit: () => void,
+    scope: (scopeId: string, callback: TransactionFn) => void,
 ) => void

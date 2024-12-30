@@ -136,4 +136,38 @@ describe("transaction", () => {
         })
         expect(store1.get(family)).toStrictEqual([1, 2, 3])
     })
+
+    test("transaction in scope", () => {
+        const nameAtom = atom("default")
+        const store1 = store()
+        const fooScope = store1.scope("Foo")
+        const barScope = store1.scope("Bar")
+
+        store1.txn((set, get, reset, commit, scope) => {
+            set(nameAtom, "Set in Root")
+            scope("Foo", fooSet => {
+                fooSet(nameAtom, "Set in Foo")
+            })
+            scope("Bar", barSet => {
+                barSet(nameAtom, "Set in Bar")
+            })
+        })
+        expect(store1.get(nameAtom)).toBe("Set in Root")
+        expect(fooScope.get(nameAtom)).toBe("Set in Foo")
+        expect(barScope.get(nameAtom)).toBe("Set in Bar")
+
+        expect(() => {
+            store1.txn((set, get, reset, commit, scope) => {
+                set(nameAtom, "fails")
+                scope("Foo", fooSet => {
+                    fooSet(nameAtom, "fails")
+                })
+                throw new Error("Fail")
+            })
+        }).toThrow("Fail")
+
+        expect(store1.get(nameAtom)).toBe("Set in Root")
+        expect(fooScope.get(nameAtom)).toBe("Set in Foo")
+        expect(barScope.get(nameAtom)).toBe("Set in Bar")
+    })
 })
