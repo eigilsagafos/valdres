@@ -15,7 +15,7 @@ describe("store", () => {
         })
         expect(store1.get(selector1)).toBe(50)
 
-        store1.txn((set, get) => {
+        store1.txn(({ set, get }) => {
             set(atom1, 11)
             set(atom2, 4)
             expect(get(atom1)).toBe(11)

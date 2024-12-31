@@ -19,7 +19,7 @@ const testValdres = async users => {
         const store = valdres.useStore()
         useEffect(() => {
             users.map(user => store.set(userAtomFamily(user.id), user))
-            // store.txn(set =>
+            // store.txn(({set}) =>
             // )
             store.set(isInitializedAtom, true)
             // console.log(store.get(userAtomFamily(users[0].id)))

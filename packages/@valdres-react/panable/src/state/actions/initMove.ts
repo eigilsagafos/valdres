@@ -1,4 +1,4 @@
-import type { TransactionInterface } from "valdres-react"
+import type { TransactionInterface } from "valdres"
 import type { EventId } from "../../types/EventId"
 import type { ScopeId } from "../../types/ScopeId"
 import { actionAtom } from "../atoms/actionAtom"

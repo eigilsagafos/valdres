@@ -106,7 +106,7 @@ describe("atomFamily", () => {
 
         store1.set(userAtomFamily("1"), { name: "Foo" })
         store1.set(userAtomFamily("2"), { name: "Bar" })
-        store1.txn(set => {
+        store1.txn(({ set }) => {
             set(userAtomFamily("3"), { name: "Lorem" })
             set(userAtomFamily("4"), { name: "Ipsum" })
         })

@@ -1,4 +1,4 @@
-import type { TransactionInterface } from "valdres-react"
+import type { TransactionInterface } from "valdres"
 import type { Action } from "../../types/Action"
 import { actionAtom } from "../atoms/actionAtom"
 import { cursorPositionAtom } from "../atoms/cursorPositionAtom"

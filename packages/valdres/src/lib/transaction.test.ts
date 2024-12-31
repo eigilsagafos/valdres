@@ -9,7 +9,7 @@ describe("transaction", () => {
     test("txn set with callback", () => {
         const store1 = store()
         const atom1 = atom(1)
-        transaction(set => {
+        transaction(({ set }) => {
             set(atom1, curr => curr + 1)
         }, store1.data)
         expect(store1.get(atom1)).toBe(2)
@@ -27,7 +27,7 @@ describe("transaction", () => {
         expect(store1.get(sum)).toBe(60)
         expect(store1.get(product)).toBe(6_000)
 
-        transaction((set, get, reset, commit) => {
+        transaction(({ set, get, commit }) => {
             expect(get(sum)).toBe(60)
             expect(get(product)).toBe(6000)
             set(atom1, 100)
@@ -53,7 +53,7 @@ describe("transaction", () => {
 
         expect(store1.get(userNames)).toStrictEqual(["Foo"])
 
-        store1.txn((set, get, reset, commit) => {
+        store1.txn(({ set, get, reset, commit }) => {
             set(ids, curr => [...curr, "2"])
             set(userFamily("2"), { id: "2", name: "Bar" })
             commit()
@@ -70,7 +70,7 @@ describe("transaction", () => {
         const selector2 = selector(selectorCb2, "selector2")
         // const selector2 = selector((get) => get(selector1) + 1, "selector2")
 
-        store1.txn((set, get, reset, commit) => {
+        store1.txn(({ set, get, reset, commit }) => {
             expect(get(selector1)).toBe(2)
             expect(get(selector2)).toBe(3)
             set(atom1, 2)
@@ -99,7 +99,7 @@ describe("transaction", () => {
         const selector2 = selector(get => get(atom2) + 1)
         const selector3 = selector(get => get(selector1) + get(selector2))
 
-        store1.txn((set, get) => {
+        store1.txn(({ set, get }) => {
             expect(get(selector3)).toBe(32)
             set(atom1, 11)
             set(atom2, 21)
@@ -114,7 +114,7 @@ describe("transaction", () => {
         const selector1 = selector(get => get(atom1) + 1, "selector1")
         // const selector2 = selector((get) => get(selector1) + 1, "selector2")
 
-        store1.txn((set, get, reset, commit) => {
+        store1.txn(({ set, get }) => {
             expect(get(selector1)).toBe(2)
             set(atom1, 2)
             expect(() => get(selector1)).toThrow()
@@ -127,7 +127,7 @@ describe("transaction", () => {
         store1.set(family(1), { id: 1, name: "Foo" })
         store1.set(family(2), { id: 2, name: "Bar" })
         expect(store1.get(family)).toStrictEqual([1, 2])
-        store1.txn((set, get) => {
+        store1.txn(({ set, get }) => {
             expect(get(family)).toStrictEqual([1, 2])
             set(family(3), { id: 3, name: "Lorem" })
             expect(get(family)).toStrictEqual([1, 2])
@@ -144,7 +144,7 @@ describe("transaction", () => {
         const barScope = store1.scope("Bar")
         const barNestedScope = barScope.scope("Bar Nested")
 
-        store1.txn((set, get, reset, commit, scope) => {
+        store1.txn(({ set, scope }) => {
             set(nameAtom, "Set in Root")
             scope("Foo", fooSet => {
                 fooSet(nameAtom, "Set in Foo")
@@ -162,7 +162,7 @@ describe("transaction", () => {
         expect(barNestedScope.get(nameAtom)).toBe("Set in Bar Nested")
 
         expect(() => {
-            store1.txn((set, get, reset, commit, scope) => {
+            store1.txn(({ set, get, reset, commit, scope }) => {
                 set(nameAtom, "fails")
                 scope("Foo", fooSet => {
                     fooSet(nameAtom, "fails")
@@ -176,9 +176,9 @@ describe("transaction", () => {
         expect(barScope.get(nameAtom)).toBe("Set in Bar")
 
         expect(() => {
-            store1.txn((set, get, reset, commit, scope) => {
-                scope("Missing", fooSet => {
-                    fooSet(nameAtom, "fails")
+            store1.txn(({ set, get, reset, commit, scope }) => {
+                scope("Missing", txn => {
+                    txn.set(nameAtom, "fails")
                 })
             })
         }).toThrow("Scope not found")

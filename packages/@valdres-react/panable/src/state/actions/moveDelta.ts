@@ -1,7 +1,7 @@
 import { cameraPositionAtom, scaleAtom } from "@valdres-react/panable"
 // import { currentCapabilitesSelector } from '../../../state/selectors/currentCapabilitesSelector'
 import { updateDragActionsAfterMove } from "./updateDragActionsAfterMove"
-import type { TransactionInterface } from "valdres-react"
+import type { TransactionInterface } from "valdres"
 import type { ScopeId } from "../../types/ScopeId"
 
 export const moveDelta = (

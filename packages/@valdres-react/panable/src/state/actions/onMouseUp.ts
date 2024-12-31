@@ -1,4 +1,4 @@
-import type { TransactionInterface } from "valdres-react"
+import type { TransactionInterface } from "valdres"
 import { finishAction } from "./finishAction"
 import type { ScopeId } from "../../types/ScopeId"
 

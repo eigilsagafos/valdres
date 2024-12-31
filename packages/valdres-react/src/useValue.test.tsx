@@ -43,7 +43,7 @@ describe("useValue", () => {
         expect(result.current).toBe(1)
         store.set(atom, 2)
         expect(result.current).toBe(2)
-        store.txn(set => {
+        store.txn(({ set }) => {
             set(atom, 3)
             set(atom, 4)
         })

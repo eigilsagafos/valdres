@@ -22,7 +22,7 @@ export const Comp = () => {
     return (
         <button
             onClick={() => {
-                store.txn(set => {
+                store.txn(({ set }) => {
                     set(userAtom, { name: "Bar" })
                     set(isSavingAtom, true)
                 })

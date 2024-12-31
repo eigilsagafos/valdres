@@ -1,5 +1,5 @@
 import { useContext, useRef, type ReactNode } from "react"
-import { store as createStore, type Store, type Atom } from "valdres"
+import { store as createStore, type Store } from "valdres"
 import { StoreContext, type ProviderContext } from "./lib/StoreContext"
 import type { InitializeCallback } from "./types/InitializeCallback"
 import { hydrate } from "./lib/hydrate"
@@ -10,8 +10,9 @@ const initStore = (
     initialize?: InitializeCallback,
 ) => {
     if (initialize) {
-        store.txn((set, get, reset, commit) => {
+        store.txn(({ set, get, reset, commit }) => {
             const txn = { set, get, reset, commit }
+            // @ts-ignore
             const pairs = initialize(txn)
             if (pairs) {
                 hydrate(set, pairs)

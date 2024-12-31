@@ -10,5 +10,3 @@ export { useValdresValueWithDefault } from "./src/useValdresValueWithDefault"
 export { Provider } from "./src/Provider"
 export { Scope } from "./src/Scope"
 export { StoreContext } from "./src/lib/StoreContext"
-
-export type { TransactionInterface } from "./src/types/TransactionInterface"

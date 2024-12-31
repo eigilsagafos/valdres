@@ -17,7 +17,7 @@ describe("globalAtom", () => {
         const store1 = store()
         const store2 = store()
         const numberAtom = atom(0, { global: true })
-        store1.txn(set => {
+        store1.txn(({ set }) => {
             set(numberAtom, 1)
         })
         expect(store1.get(numberAtom)).toBe(1)

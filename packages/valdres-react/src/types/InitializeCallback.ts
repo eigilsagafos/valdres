@@ -1,5 +1,4 @@
-import { type Atom } from "valdres"
-import type { TransactionInterface } from "./TransactionInterface"
+import type { Atom, TransactionInterface } from "valdres"
 
 type AtomPair<T> = [Atom<T>, T]
 

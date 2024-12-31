@@ -1,5 +1,5 @@
 // import { currentCapabilitesSelector } from "../../../state/selectors/currentCapabilitesSelector"
-import type { TransactionInterface } from "valdres-react"
+import type { TransactionInterface } from "valdres"
 import { initMove } from "./initMove"
 import { initSelect } from "./initSelect"
 import type { ScopeId } from "../../types/ScopeId"

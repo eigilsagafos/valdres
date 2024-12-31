@@ -1,4 +1,4 @@
-import type { TransactionInterface } from "valdres-react"
+import type { TransactionInterface } from "valdres"
 import { actionAtom } from "../atoms/actionAtom"
 import { cameraPositionAtom } from "../atoms/cameraPositionAtom"
 import { scaleAtom } from "../atoms/scaleAtom"

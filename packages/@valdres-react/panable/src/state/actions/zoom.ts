@@ -1,7 +1,7 @@
+import type { TransactionInterface } from "valdres"
 import { scaleAtom } from "../atoms/scaleAtom"
 import { getCursorPositionRelative } from "../../utils/getCursorPositionRelative"
 import { cameraPositionAtom } from "../atoms/cameraPositionAtom"
-import type { TransactionInterface } from "valdres-react"
 import type { ScopeId } from "../../types/ScopeId"
 
 export const zoom = (

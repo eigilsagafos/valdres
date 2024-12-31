@@ -29,13 +29,6 @@ const findDependencies = (
 type GetValdresValue = <V>(state: State<V>) => V
 type SetValdresValue = <V>(state: State<V>, value: V) => void
 type ResetValdresValue = <V>(atom: Atom<V>) => V
-// type TransactionInterface = (
-//     set: SetValdresValue,
-//     get: GetValdresValue,
-//     reset: ResetValdresValue,
-//     commit: () => void,
-//     scope: (scopeId: string, callback: TransactionInterface) => void,
-// ) => void
 
 const recursivlyResetTxnSelectorCache = (
     state: State,
@@ -131,19 +124,19 @@ export const transaction = (
             }
         }
     }
-    const result = callback(
-        txnSet,
-        txnGet,
-        txnReset,
+    const result = callback({
+        set: txnSet,
+        get: txnGet,
+        reset: txnReset,
         commit,
-        (scopeId, callback) => {
+        scope: (scopeId, callback) => {
             if (scopeId in data.scopes) {
                 const scopedData = data.scopes[scopeId]
                 if (scopedTransactions?.[scopeId] === undefined) {
                     scopedTransactions ||= {}
 
                     transaction(
-                        (set, get, reset, commit, scope) => {
+                        ({ set, get, reset, commit, scope }) => {
                             // @ts-ignore
                             scopedTransactions[scopeId] = [
                                 set,
@@ -163,7 +156,7 @@ export const transaction = (
                 throw new Error("Scope not found")
             }
         },
-    )
+    })
     if (autoCommit) commit()
     return result
 }

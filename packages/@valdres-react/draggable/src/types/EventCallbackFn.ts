@@ -1,4 +1,4 @@
-import type { TransactionInterface } from "valdres-react"
+import type { TransactionInterface } from "valdres"
 
 export type EventCallbackFnOld = (
     txn: TransactionInterface,

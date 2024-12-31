@@ -5,11 +5,8 @@ import {
     useRef,
     type ReactElement,
 } from "react"
-import {
-    useStore,
-    useTransaction,
-    type TransactionInterface,
-} from "valdres-react"
+import { useStore, useTransaction } from "valdres-react"
+import { type TransactionInterface } from "valdres"
 import { onMouseMove } from "../state/actions/onMouseMove"
 import { onTouchMove } from "../state/actions/onTouchMove"
 import { configAtom } from "../state/atoms/configAtom"

@@ -19,7 +19,7 @@ export const RecoilRoot: typeof RecoilRoot_original = ({
         const store = createStoreWithSelectorSet()
 
         if (initializeState) {
-            store.txn((set, _get, reset) => {
+            store.txn(({ set, reset }) => {
                 initializeState({
                     set: set as unknown as SetRecoilState,
                     getLoadable: state => {

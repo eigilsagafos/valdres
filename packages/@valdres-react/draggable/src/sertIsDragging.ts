@@ -3,7 +3,7 @@ import {
     actionAtom,
     scaleAtom,
 } from "@valdres-react/panable"
-import type { TransactionInterface } from "valdres-react"
+import type { TransactionInterface } from "valdres"
 
 export const setIsDragging = (
     txn: TransactionInterface,
