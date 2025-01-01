@@ -181,6 +181,6 @@ describe("transaction", () => {
                     txn.set(nameAtom, "fails")
                 })
             })
-        }).toThrow("Scope not found")
+        }).toThrow("Scope 'Missing' not found. Registered scopes: Foo, Bar")
     })
 })

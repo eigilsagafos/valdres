@@ -153,7 +153,9 @@ export const transaction = (
                 // @ts-ignore
                 callback(...scopedTransactions[scopeId])
             } else {
-                throw new Error("Scope not found")
+                throw new Error(
+                    `Scope '${scopeId}' not found. Registered scopes: ${Object.keys(data.scopes).join(", ")}`,
+                )
             }
         },
     })
