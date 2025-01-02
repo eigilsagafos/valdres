@@ -144,15 +144,17 @@ describe("transaction", () => {
         const barScope = store1.scope("Bar")
         const barNestedScope = barScope.scope("Bar Nested")
 
-        store1.txn(({ set, scope }) => {
-            set(nameAtom, "Set in Root")
-            scope("Foo", fooSet => {
-                fooSet(nameAtom, "Set in Foo")
+        store1.txn(txn => {
+            txn.set(nameAtom, "Set in Root")
+            const scopedRes = txn.scope("Foo", scopedTxn => {
+                scopedTxn.set(nameAtom, "Set in Foo")
+                return scopedTxn.get(nameAtom)
             })
-            scope("Bar", (barSet, get, set, commit, scope) => {
-                barSet(nameAtom, "Set in Bar")
-                scope("Bar Nested", barNestedSet => {
-                    barNestedSet(nameAtom, "Set in Bar Nested")
+            expect(scopedRes).toBe("Set in Foo")
+            txn.scope("Bar", scopedTxn => {
+                scopedTxn.set(nameAtom, "Set in Bar")
+                scopedTxn.scope("Bar Nested", nestedScopedTxn => {
+                    nestedScopedTxn.set(nameAtom, "Set in Bar Nested")
                 })
             })
         })
@@ -162,10 +164,10 @@ describe("transaction", () => {
         expect(barNestedScope.get(nameAtom)).toBe("Set in Bar Nested")
 
         expect(() => {
-            store1.txn(({ set, get, reset, commit, scope }) => {
+            store1.txn(({ set, scope }) => {
                 set(nameAtom, "fails")
-                scope("Foo", fooSet => {
-                    fooSet(nameAtom, "fails")
+                scope("Foo", scopedTxn => {
+                    scopedTxn.set(nameAtom, "fails")
                 })
                 throw new Error("Fail")
             })
@@ -176,7 +178,7 @@ describe("transaction", () => {
         expect(barScope.get(nameAtom)).toBe("Set in Bar")
 
         expect(() => {
-            store1.txn(({ set, get, reset, commit, scope }) => {
+            store1.txn(({ scope }) => {
                 scope("Missing", txn => {
                     txn.set(nameAtom, "fails")
                 })

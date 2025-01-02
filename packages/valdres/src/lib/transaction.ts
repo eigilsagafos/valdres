@@ -8,6 +8,7 @@ import type { State } from "../types/State"
 import type { StoreData } from "../types/StoreData"
 import type { Atom } from "../types/Atom"
 import type { TransactionFn } from "../types/TransactionFn"
+import type { TransactionInterface } from "../types/TransactionInterface"
 
 const findDependencies = (
     state: State,
@@ -47,6 +48,21 @@ const recursivlyResetTxnSelectorCache = (
     }
 }
 
+const captureScopedTransaction = (scopedData: StoreData) => {
+    let txn: TransactionInterface
+    transaction(
+        scopedTxn => {
+            txn = scopedTxn
+        },
+        scopedData,
+        false,
+    )
+    // @ts-ignore
+    return txn
+}
+
+type ScopedTransactionsRecord = Record<string, TransactionInterface>
+
 export const transaction = (
     callback: TransactionFn,
     data: StoreData,
@@ -56,7 +72,7 @@ export const transaction = (
     let txnSelectorCache = new Map()
     let txnSubscribers = new Map()
     let dirtySelectors = new Set()
-    let scopedTransactions: undefined | Record<string, any>
+    let scopedTransactions: ScopedTransactionsRecord
 
     const txnGet: GetValdresValue = state => {
         if (isAtom(state)) {
@@ -120,7 +136,7 @@ export const transaction = (
         dirtySelectors.clear()
         if (scopedTransactions) {
             for (const scopedTxn of Object.values(scopedTransactions)) {
-                scopedTxn[3]()
+                scopedTxn.commit()
             }
         }
     }
@@ -132,26 +148,14 @@ export const transaction = (
         scope: (scopeId, callback) => {
             if (scopeId in data.scopes) {
                 const scopedData = data.scopes[scopeId]
-                if (scopedTransactions?.[scopeId] === undefined) {
-                    scopedTransactions ||= {}
-
-                    transaction(
-                        ({ set, get, reset, commit, scope }) => {
-                            // @ts-ignore
-                            scopedTransactions[scopeId] = [
-                                set,
-                                get,
-                                reset,
-                                commit,
-                                scope,
-                            ]
-                        },
-                        scopedData,
-                        false,
-                    )
+                if (scopedTransactions === undefined) {
+                    scopedTransactions = {}
                 }
-                // @ts-ignore
-                callback(...scopedTransactions[scopeId])
+                if (scopedTransactions[scopeId] === undefined) {
+                    scopedTransactions[scopeId] =
+                        captureScopedTransaction(scopedData)
+                }
+                return callback(scopedTransactions[scopeId])
             } else {
                 throw new Error(
                     `Scope '${scopeId}' not found. Registered scopes: ${Object.keys(data.scopes).join(", ")}`,

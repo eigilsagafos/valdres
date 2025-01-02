@@ -8,5 +8,8 @@ export type TransactionInterface = {
     get: GetValue
     reset: ResetAtom
     commit: () => void
-    scope: (scopeId: string, callback: TransactionFn) => void
+    scope: <Callback extends TransactionFn>(
+        scopeId: string,
+        callback: Callback,
+    ) => ReturnType<Callback>
 }
