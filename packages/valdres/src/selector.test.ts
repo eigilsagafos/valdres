@@ -337,9 +337,41 @@ describe("selector", () => {
         const store1 = store()
         const atom1 = atom(1)
         const selector1 = selector(get => get(atom1) + get(atom1))
-
         expect(() => store1.set(selector1, 5)).toThrowError(
             /You provided a `selector`./,
+        )
+    })
+
+    test("circular dependency named selectors", () => {
+        const selector3 = selector(get => get(selector2), {
+            name: "Selector 3",
+        })
+        const selector2 = selector(get => get(selector1), {
+            name: "Selector 2",
+        })
+        const selector1 = selector(get => get(selector3), {
+            name: "Selector 1",
+        })
+        const defaultStore = store()
+        expect(() => defaultStore.get(selector1)).toThrowError(
+            `Circular dependency detected in 'Selector 1'
+[START] Selector 1
+         Selector 2
+          Selector 3
+[CRASH] Selector 1`,
+        )
+    })
+    test("circular dependency anonymous selectors", () => {
+        const selector3 = selector(get => get(selector2))
+        const selector2 = selector(get => get(selector1))
+        const selector1 = selector(get => get(selector3))
+        const defaultStore = store()
+        expect(() => defaultStore.get(selector1)).toThrowError(
+            `Circular dependency detected in 'Anonymous Selector'
+[START] Anonymous Selector
+         Anonymous Selector
+          Anonymous Selector
+[CRASH] Anonymous Selector`,
         )
     })
 })

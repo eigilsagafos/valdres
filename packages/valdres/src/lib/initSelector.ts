@@ -13,6 +13,41 @@ class SuspendAndWaitForResolveError extends Error {
     }
 }
 
+// console.log(generateSelectorTrace)
+const generateSelectorTrace = (selectors: Selector[]) => {
+    const lastIndex = selectors.length - 1
+    return selectors
+        .map((selector, index) => {
+            const name = selector.name ?? "Anonymous Selector"
+            if (index === 0) {
+                return `[START] ${name}`
+            } else if (index === lastIndex) {
+                return `[CRASH] ${name}`
+            } else {
+                return `        ${" ".repeat(index)}${name}`
+            }
+        })
+        .join(`\n`)
+}
+
+class CircularDependencyError extends Error {
+    selectors: any[]
+    constructor() {
+        super()
+        this.selectors = []
+    }
+
+    track(selector: Selector<any>) {
+        this.selectors.push(selector)
+    }
+
+    public get message(): string {
+        const firstSelectorName = this.selectors[0].name ?? "Anonymous Selector"
+        return `Circular dependency detected in '${firstSelectorName}'
+${generateSelectorTrace(this.selectors)}`
+    }
+}
+
 const getOrInitConsumersSet = (
     state: State,
     data: StoreData,
@@ -24,15 +59,24 @@ const getOrInitConsumersSet = (
     return newSet
 }
 
-const evaluateSelector = <V>(selector: Selector<V>, data: StoreData) => {
+const evaluateSelector = <V>(
+    selector: Selector<V>,
+    data: StoreData,
+    circularDependencyMap = new WeakSet(),
+) => {
     const updatedDependencies = new Set<State<any>>()
+    if (circularDependencyMap.has(selector)) {
+        throw new CircularDependencyError()
+    }
+
+    circularDependencyMap.add(selector)
 
     let result
     try {
         // @ts-ignore, @ts-todo
         result = selector.get(state => {
             // @ts-ignore, @ts-todo
-            const value = getState(state, data)
+            const value = getState(state, data, circularDependencyMap)
             // @ts-ignore, @ts-todo
             updatedDependencies.add(state)
             if (isPromiseLike(value))
@@ -71,32 +115,6 @@ const evaluateSelector = <V>(selector: Selector<V>, data: StoreData) => {
     return result
 }
 
-export const reEvaluateSelector = <V>(
-    selector: Selector<V>,
-    data: StoreData,
-): void => {
-    const currentValue = data.values.get(selector)
-    const updatedValue = evaluateSelector(selector, data)
-    // @ts-ignore
-    if (selector.equal(currentValue, updatedValue)) return
-    if (isPromiseLike(updatedValue)) {
-        console.log("ReEvaluate - promise", {
-            selector,
-            currentValue,
-            updatedValue,
-        })
-        // throw new Error(`TODO`)
-        updatedValue.then(resolved => {
-            data.values.set(selector, resolved)
-        })
-        console.log("test this path. What should be the right behavior?")
-    } else {
-        data.values.set(selector, updatedValue)
-    }
-    // console.log(`reEvaluateSelector`,currentValue, updatedValue)
-    // return true
-}
-
 const handleSelectorResult = <Value>(
     value: Value | SuspendAndWaitForResolveError,
     selector: Selector<Value>,
@@ -114,7 +132,6 @@ const handleSelectorResult = <Value>(
             data.values.set(selector, resolved)
             updateStateSubscribers(selector, data)
             console.log("Should we reEvaluate?")
-            // reEvaluateSelector(selector, data)
         })
         return value
     } else {
@@ -125,8 +142,15 @@ const handleSelectorResult = <Value>(
 export const initSelector = <V>(
     selector: Selector<V>,
     data: StoreData,
+    circularDependencySet = new WeakSet(),
 ): V | Promise<V> => {
-    const tmpValue = evaluateSelector(selector, data)
+    let tmpValue
+    try {
+        tmpValue = evaluateSelector(selector, data, circularDependencySet)
+    } catch (e) {
+        if (e instanceof CircularDependencyError) e.track(selector)
+        throw e
+    }
     const value = handleSelectorResult<V>(tmpValue, selector, data)
     if (data.expiredValues.has(selector)) {
         const expiredValue = data.expiredValues.get(selector)

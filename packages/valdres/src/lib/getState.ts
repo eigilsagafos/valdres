@@ -11,29 +11,52 @@ import { isSelectorFamily } from "../utils/isSelectorFamily"
 import { initAtom } from "./initAtom"
 import { initSelector } from "./initSelector"
 
-export function getState<V, K>(atom: Atom<V>, data: StoreData): V
-export function getState<V, K>(selector: Selector<V>, data: StoreData): V
-export function getState<V, K>(family: AtomFamily<V, K>, data: StoreData): K[]
+export function getState<V, K>(
+    atom: Atom<V>,
+    data: StoreData,
+    circularDependencySet?: WeakSet<Selector>,
+): V
+export function getState<V, K>(
+    selector: Selector<V>,
+    data: StoreData,
+    circularDependencySet?: WeakSet<Selector>,
+): V
+export function getState<V, K>(
+    family: AtomFamily<V, K>,
+    data: StoreData,
+    circularDependencySet?: WeakSet<Selector>,
+): K[]
 
 export function getState<V, K>(
     state: Atom<V> | Selector<V> | Family<K, V>,
     data: StoreData,
+    circularDependencySet?: WeakSet<Selector>,
 ) {
     if (data.values.has(state)) return data.values.get(state)
     if (isAtom<V>(state)) {
-        if ("parent" in data) return getState<V, K>(state, data.parent)
+        if ("parent" in data)
+            return getState<V, K>(state, data.parent, circularDependencySet)
         return initAtom<V, K>(state, data)
     }
-    if (isSelector<V>(state)) return initSelector<V>(state, data)
+    if (isSelector<V>(state))
+        return initSelector<V>(state, data, circularDependencySet)
     if (isAtomFamily<K, V>(state)) {
         if ("parent" in data) {
             const closestData = findClosestStoreWithAtomInitialized<Set<K>>(
                 state.__keysAtom,
                 data,
             )
-            return getState<K[], V>(state.__keysSelector, closestData)
+            return getState<K[], V>(
+                state.__keysSelector,
+                closestData,
+                circularDependencySet,
+            )
         }
-        return getState<K[], V>(state.__keysSelector, data)
+        return getState<K[], V>(
+            state.__keysSelector,
+            data,
+            circularDependencySet,
+        )
     }
     if (isSelectorFamily<K, V>(state)) {
         // TODO: Impement more efficient way to solve this
