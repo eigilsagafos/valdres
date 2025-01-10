@@ -343,13 +343,13 @@ describe("selector", () => {
     })
 
     test("circular dependency named selectors", () => {
-        const selector3 = selector(get => get(selector2), {
+        const selector3 = selector(get => get(selector1), {
             name: "Selector 3",
         })
-        const selector2 = selector(get => get(selector1), {
+        const selector2 = selector(get => get(selector3), {
             name: "Selector 2",
         })
-        const selector1 = selector(get => get(selector3), {
+        const selector1 = selector(get => get(selector2), {
             name: "Selector 1",
         })
         const defaultStore = store()

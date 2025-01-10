@@ -16,7 +16,8 @@ class SuspendAndWaitForResolveError extends Error {
 // console.log(generateSelectorTrace)
 const generateSelectorTrace = (selectors: Selector[]) => {
     const lastIndex = selectors.length - 1
-    return selectors
+    return [...selectors]
+        .reverse()
         .map((selector, index) => {
             const name = selector.name ?? "Anonymous Selector"
             if (index === 0) {
