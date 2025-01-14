@@ -76,9 +76,7 @@ const evaluateSelector = <V>(
     try {
         // @ts-ignore, @ts-todo
         result = selector.get(state => {
-            // @ts-ignore, @ts-todo
             const value = getState(state, data, circularDependencyMap)
-            // @ts-ignore, @ts-todo
             updatedDependencies.add(state)
             if (isPromiseLike(value))
                 throw new SuspendAndWaitForResolveError(value)
