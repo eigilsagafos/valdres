@@ -2,6 +2,7 @@ import type { Family } from "../types/Family"
 import type { State } from "../types/State"
 import type { StoreData } from "../types/StoreData"
 import { isAtom } from "../utils/isAtom"
+import { isAtomFamily } from "../utils/isAtomFamily"
 import { isFamily } from "../utils/isFamily"
 import { isPromiseLike } from "../utils/isPromiseLike"
 import { isSelector } from "../utils/isSelector"
@@ -24,7 +25,10 @@ export const subscribe = <V>(
     data: StoreData,
 ) => {
     let parentUnsubscribe: undefined | (() => void)
-    if ("parent" in data && !data.values.has(state) && isAtom(state)) {
+    if (
+        "parent" in data &&
+        ((!data.values.has(state) && isAtom(state)) || isAtomFamily(state))
+    ) {
         /**
          * Getting here means that we are within a scope and that the current
          * atom is not set in the current scope. Therfore we pass the subscription
