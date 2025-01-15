@@ -1,6 +1,7 @@
 import type { GetValue } from "./GetValue"
 import type { ResetAtom } from "./ResetAtom"
 import type { SetAtom } from "./SetAtom"
+import type { StoreData } from "./StoreData"
 import type { TransactionFn } from "./TransactionFn"
 
 export type TransactionInterface = {
@@ -12,4 +13,5 @@ export type TransactionInterface = {
         scopeId: string,
         callback: Callback,
     ) => ReturnType<Callback>
+    data: StoreData
 }

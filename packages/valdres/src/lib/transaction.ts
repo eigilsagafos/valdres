@@ -162,6 +162,7 @@ export const transaction = (
                 )
             }
         },
+        data,
     })
     if (autoCommit) commit()
     return result
