@@ -24,12 +24,10 @@ export const Scope = ({
     const scopedStore = useMemo(() => {
         const store = currentStore.scope(scopeId)
         if (initialize) {
-            store.txn(({ set, get, reset, commit }) => {
-                const txn = { set, get, reset, commit }
-                // @ts-ignore
+            store.txn(txn => {
                 const pairs = initialize(txn)
                 if (pairs) {
-                    hydrate(set, pairs)
+                    hydrate(txn.set, pairs)
                 }
             })
         }

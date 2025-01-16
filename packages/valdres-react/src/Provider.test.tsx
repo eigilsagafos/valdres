@@ -4,6 +4,7 @@ import { atom, store } from "valdres"
 import { useStoreId } from "./useStoreId"
 import { Provider } from "./Provider"
 import { useStore } from "./useStore"
+import { useValue } from "./useValue"
 
 const StoreId = () => {
     const id = useStoreId()
@@ -75,5 +76,24 @@ describe("Provider", () => {
 
         expect(storeA.get(userIds)).toStrictEqual([1, 2, 3])
         expect(storeB.get(userIds)).toStrictEqual([1, 2, 3])
+    })
+
+    test("data.id avilable on init txn", () => {
+        const storeA = store("A")
+        const atom1 = atom("unset")
+
+        const { result } = renderHook(() => useValue(atom1), {
+            wrapper: ({ children }) => (
+                <Provider
+                    store={storeA}
+                    initialize={txn => {
+                        txn.set(atom1, txn.data.id)
+                    }}
+                >
+                    {children}
+                </Provider>
+            ),
+        })
+        expect(result.current).toBe("A")
     })
 })
