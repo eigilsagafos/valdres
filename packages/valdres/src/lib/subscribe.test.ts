@@ -189,9 +189,9 @@ describe("subscribe", () => {
         const level2store = level1store.scope("child")
         const level3store = level2store.scope("nested")
         const userAtom = atomFamily("default")
-        const level1callback = mock(() => () => {})
-        const level2callback = mock(() => () => {})
-        const level3callback = mock(() => () => {})
+        const level1callback = mock(key => {})
+        const level2callback = mock(key => {})
+        const level3callback = mock(key => {})
         const rootUnsub = mock(level1store.sub(userAtom, level1callback))
         const scopedUnsub = mock(level2store.sub(userAtom, level2callback))
         const nestedUnsub = mock(level3store.sub(userAtom, level3callback))
@@ -203,6 +203,9 @@ describe("subscribe", () => {
         expect(level1callback).toHaveBeenCalledTimes(1)
         expect(level2callback).toHaveBeenCalledTimes(1)
         expect(level3callback).toHaveBeenCalledTimes(1)
+        expect(level1callback).toHaveBeenCalledWith("Foo")
+        expect(level2callback).toHaveBeenCalledWith("Foo")
+        expect(level3callback).toHaveBeenCalledWith("Foo")
         expect(rootUnsub).toHaveBeenCalledTimes(0)
         expect(scopedUnsub).toHaveBeenCalledTimes(0)
         expect(nestedUnsub).toHaveBeenCalledTimes(0)
@@ -234,6 +237,21 @@ describe("subscribe", () => {
         expect(level1callback).toHaveBeenCalledTimes(3)
         expect(level2callback).toHaveBeenCalledTimes(3)
         expect(level3callback).toHaveBeenCalledTimes(3)
+
+        level1store.txn(txn => {
+            txn.set(userAtom("Foo"), "txn root")
+            txn.scope("child", txn => {
+                txn.set(userAtom("Foo"), "txn child")
+                txn.scope("nested", txn => {
+                    txn.set(userAtom("Foo"), "txn nested")
+                })
+            })
+        })
+        expect(level1callback).toHaveBeenCalledTimes(4)
+        expect(level2callback).toHaveBeenCalledTimes(4)
+        expect(level3callback).toHaveBeenCalledTimes(4)
+
+        // Unsuscribe
         rootUnsub()
         scopedUnsub()
         nestedUnsub()
@@ -243,5 +261,17 @@ describe("subscribe", () => {
         expect(level1store.data.subscriptions.get(userAtom)).toBeUndefined()
         expect(level2store.data.subscriptions.get(userAtom)).toBeUndefined()
         expect(level3store.data.subscriptions.get(userAtom)).toBeUndefined()
+    })
+
+    test("nested family callback includes key", () => {
+        const userAtom = atomFamily("default")
+        const level1store = store()
+        const level2store = level1store.scope("child")
+        const level1callback = mock(key => {})
+        const level2callback = mock(key => {})
+        mock(level1store.sub(userAtom, level1callback))
+        mock(level2store.sub(userAtom, level2callback))
+        level2store.set(userAtom("Foo"), "nested 1")
+        expect(level2callback).toHaveBeenLastCalledWith("Foo")
     })
 })

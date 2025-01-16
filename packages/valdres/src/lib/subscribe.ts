@@ -20,7 +20,7 @@ const initSubscribers = <V>(state: State<V> | Family<V>, data: StoreData) => {
 
 export const subscribe = <V>(
     state: State<V> | Family<V>,
-    callback: () => void,
+    callback: (arg?: any) => void,
     requireDeepEqualCheckBeforeCallback: boolean,
     data: StoreData,
 ) => {
@@ -42,7 +42,7 @@ export const subscribe = <V>(
             requireDeepEqualCheckBeforeCallback,
             data.parent,
         )
-        callback = () => {
+        callback = arg => {
             if (parentUnsubscribe) {
                 /**
                  * TODO: Find way to test this. Maybe use onMount?
@@ -52,7 +52,7 @@ export const subscribe = <V>(
                 parentUnsubscribe()
                 parentUnsubscribe = undefined
             }
-            originalCallback()
+            originalCallback(arg)
         }
     } else if (!data.values.has(state) && isAtom(state)) {
         // Should we do this?
@@ -112,6 +112,7 @@ export const subscribe = <V>(
             const store = storeFromStoreData(data)
             const mountSubscriptions = new Set()
             const originalSub = store.sub
+            // @ts-ignore
             store.sub = (state, callback) => {
                 mountSubscriptions.add(callback)
                 return originalSub(state, callback)

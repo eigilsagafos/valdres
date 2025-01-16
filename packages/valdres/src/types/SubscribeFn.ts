@@ -1,7 +1,18 @@
-import type { State } from "./State"
+import type { Atom } from "./Atom"
+import type { Family } from "./Family"
+import type { Selector } from "./Selector"
 
-export type SubscribeFn = <V>(
-    state: State<V>,
-    callback: () => void,
-    requireDeepEqualCheckBeforeCallback?: boolean,
-) => () => void
+type UnsuscribeFn = () => void
+
+export type SubscribeFn = {
+    <V, K>(
+        state: Family<K, V>,
+        callback: (arg: K) => void,
+        requireDeepEqualCheckBeforeCallback?: boolean,
+    ): UnsuscribeFn
+    <V>(
+        state: Atom<V> | Selector<V>,
+        callback: () => void,
+        requireDeepEqualCheckBeforeCallback?: boolean,
+    ): UnsuscribeFn
+}

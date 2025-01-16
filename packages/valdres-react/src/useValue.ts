@@ -2,10 +2,11 @@ import { isPromiseLike, type State, type Store } from "valdres"
 import { useCallback, useSyncExternalStore } from "react"
 import { useStore } from "./useStore"
 
-export const useValue = <V>(state: State<V>, store?: Store) => {
+export const useValue = <K, V>(state: State<K, V>, store?: Store) => {
     const currentStore = store || useStore()
     const subscribe = useCallback(
-        (cb: () => void) => currentStore.sub(state, cb, false),
+        // @ts-ignore
+        (cb: (arg?: K) => void) => currentStore.sub(state, cb, false),
         [state, currentStore],
     )
     const getSnapshot = useCallback(
