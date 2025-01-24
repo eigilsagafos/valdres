@@ -21,6 +21,17 @@ describe("setAtom", () => {
         expect(store1.data.values.get(numberAtom)).toBe(2)
     })
 
+    test("set returns the new value", () => {
+        const store1 = store()
+        const numberAtom = atom(1)
+        const returnedValue = setAtom(
+            numberAtom,
+            current => current + 1,
+            store1.data,
+        )
+        expect(returnedValue).toBe(2)
+    })
+
     test("set with same value does not trigger selectors and subscribers to re-evalute", () => {
         const store1 = store()
         const numberAtom = atom(1)

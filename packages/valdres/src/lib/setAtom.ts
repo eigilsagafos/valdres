@@ -4,20 +4,23 @@ import { isPromiseLike } from "../utils/isPromiseLike"
 import { getState } from "./getState"
 import { propagateUpdatedAtoms } from "./propagateUpdatedAtoms"
 
+const isFunction = (value: unknown): value is Function => {
+    return typeof value === "function"
+}
+
 export const setAtom = <Value = any>(
     atom: Atom<Value>,
-    newValue: Value,
+    newValue: Value | ((currentValue: Value) => Value),
     data: StoreData,
     skipOnSet = false,
 ) => {
     const currentValue = getState(atom, data)
-    if (typeof newValue === "function") {
+    if (isFunction(newValue)) {
         newValue = newValue(currentValue)
         if (isPromiseLike(newValue) || isPromiseLike(currentValue))
             throw new Error("Todo, how should we handle this?")
-        // newValue = newVal
     }
-    if (atom.equal(currentValue, newValue)) return
+    if (atom.equal(currentValue, newValue)) return newValue
     data.values.set(atom, newValue)
     if (atom.onSet && !skipOnSet) atom.onSet(newValue, data)
     // @ts-ignore
@@ -27,4 +30,5 @@ export const setAtom = <Value = any>(
     }
 
     propagateUpdatedAtoms([atom], data)
+    return newValue
 }
