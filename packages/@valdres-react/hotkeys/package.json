@@ -1,6 +1,6 @@
 {
     "name": "@valdres-react/hotkeys",
-    "version": "0.2.0-alpha.55",
+    "version": "0.2.0-alpha.56",
     "license": "MIT",
     "author": {
         "name": "Eigil Sagafos"
@@ -20,7 +20,7 @@
     ],
     "scripts": {
         "build": "NODE_ENV=production bun build index.ts --outdir ./dist --packages external",
-        "build:types": "rm -rf dist/types && tsc"
+        "build:types": "rm -rf dist/types && bun run tsc"
     },
     "dependencies": {
         "@valdres/hotkeys": "workspace:^"
