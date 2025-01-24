@@ -111,13 +111,26 @@ describe("transaction", () => {
     test.todo("transaction fails when trying to access dirty selector", () => {
         const store1 = store()
         const atom1 = atom(1, { name: "astom1" })
-        const selector1 = selector(get => get(atom1) + 1, "selector1")
+        const selector1 = selector(get => get(atom1) + 1, { name: "selector1" })
         // const selector2 = selector((get) => get(selector1) + 1, "selector2")
 
         store1.txn(({ set, get }) => {
             expect(get(selector1)).toBe(2)
             set(atom1, 2)
             expect(() => get(selector1)).toThrow()
+        })
+    })
+
+    test("set in transaction", () => {
+        const store1 = store()
+        const counter = atom(0)
+        store1.txn(({ set, get }) => {
+            const res1 = get(counter)
+            expect(res1).toBe(0)
+            const res2 = set(counter, 1)
+            expect(res2).toBe(1)
+            const res3 = set(counter, curr => curr + 1)
+            expect(res3).toBe(2)
         })
     })
 

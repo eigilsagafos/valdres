@@ -3,10 +3,7 @@ import type { StoreData } from "../types/StoreData"
 import { isPromiseLike } from "../utils/isPromiseLike"
 import { getState } from "./getState"
 import { propagateUpdatedAtoms } from "./propagateUpdatedAtoms"
-
-const isFunction = (value: unknown): value is Function => {
-    return typeof value === "function"
-}
+import { isFunction } from "./isFunction"
 
 export const setAtom = <Value = any>(
     atom: Atom<Value>,

@@ -35,6 +35,7 @@ export function storeFromStoreData(
     // @ts-ignore @ts-todo
     const get: GetValue = (state: State) => getState(state, data)
 
+    // @ts-ignore @ts-todo
     const set: SetAtom = (state, value) => {
         if (isAtom(state)) return setAtom(state, value, data)
         if (isSelector(state)) throw new Error(SelectorProvidedToSetError)

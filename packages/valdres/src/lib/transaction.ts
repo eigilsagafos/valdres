@@ -9,6 +9,8 @@ import type { StoreData } from "../types/StoreData"
 import type { Atom } from "../types/Atom"
 import type { TransactionFn } from "../types/TransactionFn"
 import type { TransactionInterface } from "../types/TransactionInterface"
+import type { GetValue } from "../types/GetValue"
+import { isFunction } from "./isFunction"
 
 const findDependencies = (
     state: State,
@@ -28,7 +30,6 @@ const findDependencies = (
 }
 
 type GetValdresValue = <V>(state: State<V>) => V
-type SetValdresValue = <V>(state: State<V>, value: V) => void
 type ResetValdresValue = <V>(atom: Atom<V>) => V
 
 const recursivlyResetTxnSelectorCache = (
@@ -74,7 +75,8 @@ export const transaction = (
     let dirtySelectors = new Set()
     let scopedTransactions: ScopedTransactionsRecord
 
-    const txnGet: GetValdresValue = state => {
+    // @ts-ignore @ts-todo
+    const txnGet: GetValue = state => {
         if (isAtom(state)) {
             return txnAtomMap.has(state)
                 ? txnAtomMap.get(state)
@@ -100,15 +102,18 @@ export const transaction = (
         } else if (isFamily(state)) {
             return txnAtomMap.has(state)
                 ? txnAtomMap.get(state)
-                : getState(state.__keysSelector, data)
+                : // @ts-ignore @ts-todo
+                  getState(state.__keysSelector, data)
         } else {
             throw new Error("Unsupported state")
         }
     }
-    const txnSet: SetValdresValue = (atom, value) => {
+    // @ts-ignore @ts-todo
+    const txnSet = <V>(atom: Atom<V>, value: V | ((currentValue: V) => V)) => {
         if (!isAtom(atom)) throw new Error("Not an atom")
-        if (typeof value === "function") {
+        if (isFunction(value)) {
             const currentValue = txnGet(atom)
+            // @ts-ignore @ts-todo
             value = value(currentValue)
         }
         for (const selector of findDependencies(atom, data)) {
@@ -122,8 +127,8 @@ export const transaction = (
                 txnSelectorCache,
             )
         }
-        ///
         txnAtomMap.set(atom, value)
+        return value
     }
 
     const txnReset: ResetValdresValue = atom => {
