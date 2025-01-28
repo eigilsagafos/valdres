@@ -1,3 +1,16 @@
+import { version } from "./package.json"
+
+declare global {
+    var __valdres__: string
+}
+if (globalThis.__valdres__) {
+    throw new Error(
+        `Error! An instance of valdres is already loaded. Loaded: ${globalThis.__valdres__}. Attempted to load: ${version}`,
+    )
+} else {
+    globalThis.__valdres__ = version
+}
+
 export { atom } from "./src/atom"
 export { atomFamily } from "./src/atomFamily"
 export { createStoreWithSelectorSet } from "./src/createStoreWithSelectorSet"
