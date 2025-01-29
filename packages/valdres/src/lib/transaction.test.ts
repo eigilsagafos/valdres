@@ -1,9 +1,9 @@
-import { describe, test, expect, mock } from "bun:test"
-import { store } from "../store"
+import { describe, expect, mock, test } from "bun:test"
 import { atom } from "../atom"
-import { transaction } from "./transaction"
-import { selector } from "../selector"
 import { atomFamily } from "../atomFamily"
+import { selector } from "../selector"
+import { store } from "../store"
+import { transaction } from "./transaction"
 
 describe("transaction", () => {
     test("txn set with callback", () => {
@@ -134,22 +134,6 @@ describe("transaction", () => {
         })
     })
 
-    test("transaction works when reading atomFamily", () => {
-        const family = atomFamily<number>(null)
-        const store1 = store()
-        store1.set(family(1), { id: 1, name: "Foo" })
-        store1.set(family(2), { id: 2, name: "Bar" })
-        expect(store1.get(family)).toStrictEqual([1, 2])
-        store1.txn(({ set, get }) => {
-            expect(get(family)).toStrictEqual([1, 2])
-            set(family(3), { id: 3, name: "Lorem" })
-            expect(get(family)).toStrictEqual([1, 2])
-            // TODO: Should support updates in transaction so that the following works
-            // expect(get(family)).toStrictEqual([1, 2, 3])
-        })
-        expect(store1.get(family)).toStrictEqual([1, 2, 3])
-    })
-
     test("transaction in scope", () => {
         const nameAtom = atom("default")
         const store1 = store()
@@ -197,5 +181,28 @@ describe("transaction", () => {
                 })
             })
         }).toThrow("Scope 'Missing' not found. Registered scopes: Foo, Bar")
+    })
+    test("family key set in transactions and transaction scopes", () => {
+        const userAtom = atomFamily()
+        const store1 = store()
+        store1.scope("Foo").scope("Bar")
+        store1.txn(txn => {
+            txn.set(userAtom(1), "User 1")
+            expect(txn.get(userAtom)).toStrictEqual([1])
+            txn.set(userAtom(2), "User 2")
+            expect(txn.get(userAtom)).toStrictEqual([1, 2])
+            txn.scope("Foo", fooTxn => {
+                expect(fooTxn.get(userAtom)).toStrictEqual([1, 2])
+                fooTxn.set(userAtom(3), "User 3")
+                expect(fooTxn.get(userAtom)).toStrictEqual([1, 2, 3])
+                fooTxn.scope("Bar", barTxn => {
+                    expect(barTxn.get(userAtom)).toStrictEqual([1, 2, 3])
+                    barTxn.set(userAtom(4), "User 4")
+                    expect(barTxn.get(userAtom)).toStrictEqual([1, 2, 3, 4])
+                })
+                expect(fooTxn.get(userAtom)).toStrictEqual([1, 2, 3])
+            })
+            expect(txn.get(userAtom)).toStrictEqual([1, 2])
+        })
     })
 })

@@ -1,16 +1,19 @@
-import { getAtomInitValue } from "./initAtom"
-import { setAtoms } from "./setAtoms"
-import { getState } from "./getState"
-import { isAtom } from "../utils/isAtom"
-import { isFamily } from "../utils/isFamily"
-import { isSelector } from "../utils/isSelector"
+import type { Atom } from "../types/Atom"
+import type { GetValue } from "../types/GetValue"
 import type { State } from "../types/State"
 import type { StoreData } from "../types/StoreData"
-import type { Atom } from "../types/Atom"
 import type { TransactionFn } from "../types/TransactionFn"
 import type { TransactionInterface } from "../types/TransactionInterface"
-import type { GetValue } from "../types/GetValue"
+import { isAtom } from "../utils/isAtom"
+import { isAtomFamily } from "../utils/isAtomFamily"
+import { isFamily } from "../utils/isFamily"
+import { isFamilyAtom } from "../utils/isFamilyAtom"
+import { isSelector } from "../utils/isSelector"
+import { isSelectorFamily } from "../utils/isSelectorFamily"
+import { getState } from "./getState"
+import { getAtomInitValue } from "./initAtom"
 import { isFunction } from "./isFunction"
+import { setAtoms } from "./setAtoms"
 
 const findDependencies = (
     state: State,
@@ -49,7 +52,10 @@ const recursivlyResetTxnSelectorCache = (
     }
 }
 
-const captureScopedTransaction = (scopedData: StoreData) => {
+const captureScopedTransaction = (
+    scopedData: StoreData,
+    parentGet: GetValue,
+) => {
     let txn: TransactionInterface
     transaction(
         scopedTxn => {
@@ -57,6 +63,7 @@ const captureScopedTransaction = (scopedData: StoreData) => {
         },
         scopedData,
         false,
+        parentGet,
     )
     // @ts-ignore
     return txn
@@ -68,19 +75,23 @@ export const transaction = (
     callback: TransactionFn,
     data: StoreData,
     autoCommit = true,
+    parentScopeGet?: GetValue,
 ) => {
-    let txnAtomMap = new Map()
-    let txnSelectorCache = new Map()
-    let txnSubscribers = new Map()
-    let dirtySelectors = new Set()
+    const txnAtomMap = new Map()
+    const txnSelectorCache = new Map()
+    const txnSubscribers = new Map()
+    const dirtySelectors = new Set()
     let scopedTransactions: ScopedTransactionsRecord
 
     // @ts-ignore @ts-todo
     const txnGet: GetValue = state => {
         if (isAtom(state)) {
-            return txnAtomMap.has(state)
-                ? txnAtomMap.get(state)
-                : getState(state, data)
+            if (txnAtomMap.has(state)) {
+                return txnAtomMap.get(state)
+            } else if (parentScopeGet) {
+                return parentScopeGet(state)
+            }
+            return getState(state, data)
         } else if (isSelector(state)) {
             if (txnSelectorCache.has(state)) {
                 return txnSelectorCache.get(state)
@@ -99,11 +110,8 @@ export const transaction = (
             }
             txnSelectorCache.set(state, res)
             return res
-        } else if (isFamily(state)) {
-            return txnAtomMap.has(state)
-                ? txnAtomMap.get(state)
-                : // @ts-ignore @ts-todo
-                  getState(state.__keysSelector, data)
+        } else if (isAtomFamily(state)) {
+            return txnGet(state.__keysSelector)
         } else {
             throw new Error("Unsupported state")
         }
@@ -128,6 +136,28 @@ export const transaction = (
             )
         }
         txnAtomMap.set(atom, value)
+        if (isFamilyAtom(atom)) {
+            const currentKeySet = txnGet(atom.family.__keysAtom)
+            if (!currentKeySet.has(atom.familyKey)) {
+                const newSet = new Set(currentKeySet)
+                newSet.add(atom.familyKey)
+                txnSet(atom.family.__keysAtom, newSet)
+                // txnAtomMap.set(atom.family.__keysAtom, newSet)
+            }
+            // console.log(currentKeySet)
+
+            // if (isFamilyAtom(atom)) {
+            //     const currentKeySet = getState(atom.family.__keysAtom, data)
+            //     if (!currentKeySet.has(atom.familyKey)) {
+            //         const newSet = new Set(currentKeySet)
+            //         newSet.add(atom.familyKey)
+            //         setAtom(atom.family.__keysAtom, newSet, data)
+            //     }
+            // }
+            // throw new Error("Todo")
+            // const keysSelector = atom.__keysSelector
+            // txnAtomMap.set(keysSelector, value)
+        }
         return value
     }
 
@@ -157,8 +187,10 @@ export const transaction = (
                     scopedTransactions = {}
                 }
                 if (scopedTransactions[scopeId] === undefined) {
-                    scopedTransactions[scopeId] =
-                        captureScopedTransaction(scopedData)
+                    scopedTransactions[scopeId] = captureScopedTransaction(
+                        scopedData,
+                        txnGet,
+                    )
                 }
                 return callback(scopedTransactions[scopeId])
             } else {

@@ -14,9 +14,9 @@ export const getAtomInitValue = <V>(atom: Atom<V>, data: StoreData) => {
         const promise = new Promise(resolve => {
             promiseResolve = resolve
         })
-        // @ts-ignore
+        // @ts-ignore @ts-todo
         promise.__isEmptyAtomPromise__ = true
-        // @ts-ignore
+        // @ts-ignore @ts-todo
         promise.__resolveEmptyAtomPromise__ = promiseResolve
         return promise
     } else if (typeof atom.defaultValue === "function") {
@@ -32,7 +32,6 @@ export const getAtomInitValue = <V>(atom: Atom<V>, data: StoreData) => {
     } else if (isSelector(atom.defaultValue)) {
         return getState(atom.defaultValue, data)
     } else {
-        // data.values.set(atom, atom.defaultValue)
         return atom.defaultValue
     }
 }
