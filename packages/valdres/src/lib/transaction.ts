@@ -52,9 +52,13 @@ const recursivlyResetTxnSelectorCache = (
     }
 }
 
+type GetAtomValue = {
+    <V>(atom: Atom<V>): V
+}
+
 const captureScopedTransaction = (
     scopedData: StoreData,
-    parentGet: GetValue,
+    parentGetFromTxnOrData: GetAtomValue,
 ) => {
     let txn: TransactionInterface
     transaction(
@@ -63,7 +67,7 @@ const captureScopedTransaction = (
         },
         scopedData,
         false,
-        parentGet,
+        parentGetFromTxnOrData,
     )
     // @ts-ignore
     return txn
@@ -75,7 +79,7 @@ export const transaction = (
     callback: TransactionFn,
     data: StoreData,
     autoCommit = true,
-    parentScopeGet?: GetValue,
+    parentGetFromTxnOrData?: GetAtomValue,
 ) => {
     const txnAtomMap = new Map()
     const txnSelectorCache = new Map()
@@ -83,14 +87,23 @@ export const transaction = (
     const dirtySelectors = new Set()
     let scopedTransactions: ScopedTransactionsRecord
 
+    const getFromTxnOrData: GetAtomValue = state => {
+        if (txnAtomMap.has(state)) {
+            return txnAtomMap.get(state)
+        }
+        if (data.values.has(state)) {
+            return data.values.get(state)
+        }
+        if (parentGetFromTxnOrData) {
+            return parentGetFromTxnOrData(state)
+        }
+    }
+
     // @ts-ignore @ts-todo
     const txnGet: GetValue = state => {
         if (isAtom(state)) {
-            if (txnAtomMap.has(state)) {
-                return txnAtomMap.get(state)
-            } else if (parentScopeGet) {
-                return parentScopeGet(state)
-            }
+            const value = getFromTxnOrData(state)
+            if (value) return value
             return getState(state, data)
         } else if (isSelector(state)) {
             if (txnSelectorCache.has(state)) {
@@ -189,7 +202,7 @@ export const transaction = (
                 if (scopedTransactions[scopeId] === undefined) {
                     scopedTransactions[scopeId] = captureScopedTransaction(
                         scopedData,
-                        txnGet,
+                        getFromTxnOrData,
                     )
                 }
                 return callback(scopedTransactions[scopeId])

@@ -205,4 +205,42 @@ describe("transaction", () => {
             expect(txn.get(userAtom)).toStrictEqual([1, 2])
         })
     })
+
+    test("scope re-read test", () => {
+        const documentAtom = atomFamily()
+        const store1 = store()
+        const doc1 = documentAtom("1")
+        store1.set(doc1, [1])
+        store1.scope("foo").scope("bar")
+        store1.txn(txn => {
+            expect(txn.get(doc1)).toStrictEqual([1])
+            txn.set(doc1, [1, 2])
+            expect(txn.get(doc1)).toStrictEqual([1, 2])
+            txn.scope("foo", fooTxn => {
+                expect(fooTxn.get(doc1)).toStrictEqual([1, 2])
+                fooTxn.set(doc1, [1, 2, 3])
+                fooTxn.scope("bar", barTxn => {
+                    expect(barTxn.get(doc1)).toStrictEqual([1, 2, 3])
+                    barTxn.set(doc1, [1, 2, 3, 4])
+                    expect(barTxn.get(doc1)).toStrictEqual([1, 2, 3, 4])
+                })
+            })
+        })
+
+        expect(store1.data.values.get(doc1)).toStrictEqual([1, 2])
+        expect(store1.data.scopes.foo.values.get(doc1)).toStrictEqual([1, 2, 3])
+        expect(
+            store1.data.scopes.foo.scopes.bar.values.get(doc1),
+        ).toStrictEqual([1, 2, 3, 4])
+
+        store1.txn(txn => {
+            expect(txn.get(doc1)).toStrictEqual([1, 2])
+            txn.scope("foo", fooTxn => {
+                expect(fooTxn.get(doc1)).toStrictEqual([1, 2, 3])
+                fooTxn.scope("bar", barTxn => {
+                    expect(barTxn.get(doc1)).toStrictEqual([1, 2, 3, 4])
+                })
+            })
+        })
+    })
 })
