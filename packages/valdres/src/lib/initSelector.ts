@@ -1,51 +1,17 @@
 import { isPromiseLike } from "../utils/isPromiseLike"
 import { getState } from "./getState"
 import { updateStateSubscribers } from "./updateStateSubscribers"
+import { SelectorCircularDependencyError } from "../errors/SelectorCircularDependencyError"
 import type { StoreData } from "../types/StoreData"
 import type { State } from "../types/State"
 import type { Selector } from "../types/Selector"
+import { SelectorEvaluationError } from "../errors/SelectorEvaluationError"
 
 class SuspendAndWaitForResolveError extends Error {
     promise: Promise<any>
     constructor(promise: Promise<any>) {
         super()
         this.promise = promise
-    }
-}
-
-// console.log(generateSelectorTrace)
-const generateSelectorTrace = (selectors: Selector[]) => {
-    const lastIndex = selectors.length - 1
-    return [...selectors]
-        .reverse()
-        .map((selector, index) => {
-            const name = selector.name ?? "Anonymous Selector"
-            if (index === 0) {
-                return `[START] ${name}`
-            } else if (index === lastIndex) {
-                return `[CRASH] ${name}`
-            } else {
-                return `        ${" ".repeat(index)}${name}`
-            }
-        })
-        .join(`\n`)
-}
-
-class CircularDependencyError extends Error {
-    selectors: any[]
-    constructor() {
-        super()
-        this.selectors = []
-    }
-
-    track(selector: Selector<any>) {
-        this.selectors.push(selector)
-    }
-
-    public get message(): string {
-        const firstSelectorName = this.selectors[0].name ?? "Anonymous Selector"
-        return `Circular dependency detected in '${firstSelectorName}'
-${generateSelectorTrace(this.selectors)}`
     }
 }
 
@@ -67,7 +33,7 @@ const evaluateSelector = <V>(
 ) => {
     const updatedDependencies = new Set<State<any>>()
     if (circularDependencyMap.has(selector)) {
-        throw new CircularDependencyError()
+        throw new SelectorCircularDependencyError()
     }
 
     circularDependencyMap.add(selector)
@@ -86,8 +52,10 @@ const evaluateSelector = <V>(
     } catch (error) {
         if (error instanceof SuspendAndWaitForResolveError) {
             result = error
-        } else {
+        } else if (error instanceof SelectorEvaluationError) {
             throw error
+        } else {
+            throw new SelectorEvaluationError(error)
         }
     }
 
@@ -147,7 +115,7 @@ export const initSelector = <V>(
     try {
         tmpValue = evaluateSelector(selector, data, circularDependencySet)
     } catch (e) {
-        if (e instanceof CircularDependencyError) e.track(selector)
+        if (e instanceof SelectorEvaluationError) e.track(selector)
         throw e
     }
     const value = handleSelectorResult<V>(tmpValue, selector, data)

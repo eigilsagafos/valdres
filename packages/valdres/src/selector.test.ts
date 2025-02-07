@@ -361,6 +361,7 @@ describe("selector", () => {
 [CRASH] Selector 1`,
         )
     })
+
     test("circular dependency anonymous selectors", () => {
         const selector3 = selector(get => get(selector2))
         const selector2 = selector(get => get(selector1))
@@ -372,6 +373,36 @@ describe("selector", () => {
          Anonymous Selector
           Anonymous Selector
 [CRASH] Anonymous Selector`,
+        )
+    })
+
+    test("nested selectors error stack trace", () => {
+        const selector5 = selector(
+            get => {
+                throw new Error("Foo")
+            },
+            { name: "Selector 5" },
+        )
+        const selector4 = selector(get => get(selector5), {
+            name: "Selector 4",
+        })
+        const selector3 = selector(get => get(selector4), {
+            name: "Selector 3",
+        })
+        const selector2 = selector(get => get(selector3), {
+            name: "Selector 2",
+        })
+        const selector1 = selector(get => get(selector2), {
+            name: "Selector 1",
+        })
+        const defaultStore = store()
+        expect(() => defaultStore.get(selector1)).toThrowError(
+            `Selector eval crashed in 'Selector 5'
+[START] Selector 1
+         Selector 2
+          Selector 3
+           Selector 4
+[CRASH] Selector 5`,
         )
     })
 })
