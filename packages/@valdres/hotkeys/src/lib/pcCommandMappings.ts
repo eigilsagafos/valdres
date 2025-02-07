@@ -1,4 +1,4 @@
-import type { KeyboardCommand } from "../types/KeyboardCommand"
+import type { KeyboardCommand } from "../../types/KeyboardCommand"
 
 export const pcCommandMappings: { [key in KeyboardCommand]: string } = {
     Save: "Control+s",

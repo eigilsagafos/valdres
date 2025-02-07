@@ -1,6 +1,6 @@
 import type { Store } from "valdres"
-import type { Options } from "./types/Options"
-import type { KeyboardCode } from "./types/KeyboardCode"
+import type { Options } from "../types/Options"
+import type { KeyboardCode } from "../types/KeyboardCode"
 import { eventByCodeAtom } from "./eventByCodeAtom"
 import { callbackHandler } from "./lib/callbackHandler"
 

@@ -1,7 +1,7 @@
 import { subscribeToHotkey } from "@valdres/hotkeys"
 import { useCallback, useEffect } from "react"
 import { parseHookRestArgs } from "./lib/parseHookRestArgs"
-import type { HookRestArgs } from "./types/HookRestArgs"
+import type { HookRestArgs } from "../types/HookRestArgs"
 import { useStore } from "valdres-react"
 
 export const useHotkeys = (

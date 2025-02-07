@@ -1,5 +1,5 @@
 import type { Store } from "valdres"
-import type { Options } from "./types/Options"
+import type { Options } from "../types/Options"
 import { eventByKeyAtom } from "./eventByKeyAtom"
 import { callbackHandler } from "./lib/callbackHandler"
 

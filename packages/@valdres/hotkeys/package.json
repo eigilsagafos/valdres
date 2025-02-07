@@ -13,13 +13,13 @@
     "type": "module",
     "exports": {
         "default": "./dist/index.js",
-        "types": "./dist/types/index.d.ts"
+        "types": "./dist/types/src/index.d.ts"
     },
     "files": [
         "dist"
     ],
     "scripts": {
-        "build": "NODE_ENV=production bun build index.ts --outdir ./dist --packages external",
+        "build": "NODE_ENV=production bun build src/index.ts --outdir ./dist --packages external",
         "build:types": "rm -rf dist/types && bun run tsc",
         "test": "bun test"
     },

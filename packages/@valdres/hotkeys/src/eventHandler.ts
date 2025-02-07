@@ -4,7 +4,7 @@ import { currentKeyCombinationAtom } from "./currentKeyCombinationAtom"
 import { eventByCodeAtom } from "./eventByCodeAtom"
 import { eventByKeyAtom } from "./eventByKeyAtom"
 import { isAppleLike } from "./lib/isAppleLike"
-import type { KeyboardCode } from "./types/KeyboardCode"
+import type { KeyboardCode } from "../types/KeyboardCode"
 
 const isElementLastInArray = (element: any, array: any[]) => {
     return array.indexOf(element) === array.length - 1

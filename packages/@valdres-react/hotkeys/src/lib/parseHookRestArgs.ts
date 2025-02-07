@@ -1,5 +1,5 @@
 import { DEFAULT_OPTIONS, type Options } from "@valdres/hotkeys"
-import type { HookRestArgs } from "../types/HookRestArgs"
+import type { HookRestArgs } from "../../types/HookRestArgs"
 
 export const parseHookRestArgs = (args: HookRestArgs): [Options, any[]] => {
     if (args.length === 0) return [DEFAULT_OPTIONS, []]

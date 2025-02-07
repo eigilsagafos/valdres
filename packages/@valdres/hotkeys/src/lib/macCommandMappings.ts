@@ -1,4 +1,4 @@
-import type { KeyboardCommand } from "../types/KeyboardCommand"
+import type { KeyboardCommand } from "../../types/KeyboardCommand"
 
 export const macCommandMappings: { [key in KeyboardCommand]: string } = {
     Save: "Meta+s",

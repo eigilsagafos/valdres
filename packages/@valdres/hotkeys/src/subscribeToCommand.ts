@@ -1,6 +1,6 @@
 import type { Store } from "valdres"
-import type { KeyboardCommand } from "./types/KeyboardCommand"
-import type { Options } from "./types/Options"
+import type { KeyboardCommand } from "../types/KeyboardCommand"
+import type { Options } from "../types/Options"
 import { macCommandMappings } from "./lib/macCommandMappings"
 import { pcCommandMappings } from "./lib/pcCommandMappings"
 import { isAppleLike } from "./lib/isAppleLike"

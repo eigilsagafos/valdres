@@ -19,7 +19,7 @@
         "dist"
     ],
     "scripts": {
-        "build": "NODE_ENV=production bun build index.ts --outdir ./dist --packages external",
+        "build": "NODE_ENV=production bun build src/index.ts --outdir ./dist --packages external",
         "build:types-": "rm -rf dist/types && bun run tsc"
     },
     "devDependencies": {

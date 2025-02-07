@@ -2,7 +2,7 @@ import { subscribeToCode, type KeyboardCode } from "@valdres/hotkeys"
 import { useCallback, useEffect } from "react"
 import { useStore } from "valdres-react"
 import { parseHookRestArgs } from "./lib/parseHookRestArgs"
-import type { HookRestArgs } from "./types/HookRestArgs"
+import type { HookRestArgs } from "../types/HookRestArgs"
 
 export const useHotkeysCode = (
     code: KeyboardCode | KeyboardCode[],
