@@ -21,7 +21,7 @@ export const Selection = ({
                 height: `${h}px`,
                 position: "absolute",
                 borderRadius: "2px",
-                zIndex: 2,
+                zIndex: 100,
                 border: "1px solid #467EEB",
                 backgroundColor: "color-mix(in srgb, #467EEB, transparent 90%)",
             }}
