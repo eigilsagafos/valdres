@@ -1,7 +1,8 @@
 "use client"
 import * as jotai from "jotai"
 import * as recoil from "recoil"
-import * as valdres from "valdres-react"
+import * as valdres from "valdres"
+import * as valdresReact from "valdres-react"
 import { memo, useCallback, useEffect, useRef, useState } from "react"
 
 const createRecoilAtoms = (count = 1_000_000) =>

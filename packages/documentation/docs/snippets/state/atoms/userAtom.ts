@@ -1,5 +1,5 @@
 import { faker } from "@faker-js/faker"
-import { atomFamily } from "valdres-react"
+import { atomFamily } from "valdres"
 
 export const userAtom = atomFamily(id => ({
     id,

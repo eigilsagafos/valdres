@@ -1,4 +1,5 @@
-import { atom, Provider, useResetAtom, useAtom } from "valdres-react"
+import { atom } from "valdres"
+import { Provider, useResetAtom, useAtom } from "valdres-react"
 
 const countAtom = atom(0)
 

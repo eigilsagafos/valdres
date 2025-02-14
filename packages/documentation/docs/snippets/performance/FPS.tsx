@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react"
-import * as valdres from "valdres-react"
+import * as valdres from "valdres"
+import * as valdresReact from "valdres-react"
 import * as jotai from "jotai"
 import * as jotaiUtils from "jotai/utils"
 import * as recoil from "recoil"
@@ -16,10 +17,10 @@ const libs = {
     valdres: {
         atom: valdres.atom,
         selector: valdres.selector,
-        useValue: valdres.useValue,
-        useAtom: valdres.useAtom,
-        useSetAtom: valdres.useSetAtom,
-        Provider: valdres.Provider,
+        useValue: valdresReact.useValue,
+        useAtom: valdresReact.useAtom,
+        useSetAtom: valdresReact.useSetAtom,
+        Provider: valdresReact.Provider,
     },
     jotai: {
         atom: (defaultValue, name) => {

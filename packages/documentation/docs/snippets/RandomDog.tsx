@@ -1,5 +1,6 @@
 import { Suspense } from "react"
-import { useResetAtom, atom, useValue, Provider } from "valdres-react"
+import { atom } from "valdres"
+import { useResetAtom, useValue, Provider } from "valdres-react"
 import { RenderIfClient } from "./components/RenderIfClient"
 
 const randomDogImage = atom(() =>

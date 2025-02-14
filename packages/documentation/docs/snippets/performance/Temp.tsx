@@ -1,6 +1,6 @@
 import * as recoil from "recoil"
 import * as jotai from "jotai"
-import * as valdres from "valdres-react"
+import * as valdres from "valdres"
 import { useEffect, useState } from "react"
 
 const measure = callback => {

@@ -1,4 +1,4 @@
-import { selectorFamily } from "valdres-react"
+import { selectorFamily } from "valdres"
 import { userAtom } from "../atoms/userAtom"
 
 export const userDisplayNameSelector = selectorFamily(id => get => {
