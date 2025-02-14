@@ -14,10 +14,10 @@
         "packages/@valdres-react/*"
     ],
     "devDependencies": {
-        "@types/bun": "1.2.0",
-        "lerna": "8.1.0",
-        "eslint": "9.18.0",
+        "@types/bun": "1.2.2",
+        "lerna": "8.1.9",
+        "eslint": "9.20.1",
         "eslint-config-prettier": "10.0.1",
-        "prettier": "3.4.2"
+        "prettier": "3.5.1"
     }
 }
