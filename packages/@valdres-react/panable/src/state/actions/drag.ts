@@ -1,7 +1,8 @@
 import { draggableItemAtom } from "@valdres-react/draggable"
-import { actionAtom, scaleAtom } from "@valdres-react/panable"
 import type { TransactionInterface } from "valdres"
 import type { ScopeId } from "../../types/ScopeId"
+import { actionAtom } from "../atoms/actionAtom"
+import { scaleAtom } from "../atoms/scaleAtom"
 // import { DropZone } from '../../../types/DropZone'
 // import { deselectProcessItems } from '../../../state/utils/deselectProcessItems'
 // import { selectedProcessItemsSelector } from '../../../state/selectors/selectedProcessItemsSelector'
