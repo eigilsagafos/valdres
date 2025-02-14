@@ -44,7 +44,7 @@ const Recoil = memo(({ children, count }) => {
 const Valdres = memo(({ children, count }) => {
     console.log(`valdres`, count)
     return (
-        <valdres.Provider
+        <valdresReact.Provider
             initialize={(...args) => {
                 console.log(args)
                 return valdresAtoms
@@ -53,7 +53,7 @@ const Valdres = memo(({ children, count }) => {
             }}
         >
             {children}
-        </valdres.Provider>
+        </valdresReact.Provider>
     )
 })
 

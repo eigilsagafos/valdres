@@ -1,6 +1,14 @@
 {
     "name": "valdres",
     "type": "module",
+    "author": {
+        "name": "Eigil Sagafos"
+    },
+    "homepage": "https://valdres.dev",
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/eigilsagafos/valdres.git"
+    },
     "scripts": {
         "build": "bun run lerna run build",
         "build:types": "bun run lerna run build:types",
