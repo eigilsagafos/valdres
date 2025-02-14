@@ -63,14 +63,16 @@ export const InnerCanvas = React.forwardRef<
                 position: "relative",
             }}
         >
-            <div
-                id="innerPanableCanvas"
-                ref={ref}
-                style={{
-                    position: "absolute",
-                }}
-            >
-                {children}
+            <div style={{ position: "relative" }}>
+                <div
+                    id="innerPanableCanvas"
+                    ref={ref}
+                    style={{
+                        position: "absolute",
+                    }}
+                >
+                    {children}
+                </div>
             </div>
         </div>
     )
