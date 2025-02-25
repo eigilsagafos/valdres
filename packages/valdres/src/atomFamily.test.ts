@@ -261,10 +261,10 @@ describe("atomFamily", () => {
 
     test("global atomFamily returns same family for same key", () => {
         const family1 = atomFamily("Default", {
-            name: "global_test",
+            name: "non_global_test",
         })
         const family2 = atomFamily("Default", {
-            name: "global_test",
+            name: "non_global_test",
         })
         expect(Object.is(family1, family2)).toBe(false)
         const globalGamily1 = atomFamily("Default", {

@@ -1,12 +1,12 @@
-import { equal } from "./equal"
 import { atom } from "../atom"
-import type { AtomFamily } from "../types/AtomFamily"
-import type { AtomOptions } from "../types/AtomOptions"
-import { atomFamilyAtom } from "./atomFamilyAtom"
-import { stableStringify } from "./stableStringify"
 import { selector } from "../selector"
+import type { AtomFamily } from "../types/AtomFamily"
 import type { AtomFamilyDefaultValue } from "../types/AtomFamilyDefaultValue"
+import type { AtomOptions } from "../types/AtomOptions"
 import { isSelectorFamily } from "../utils/isSelectorFamily"
+import { atomFamilyAtom } from "./atomFamilyAtom"
+import { equal } from "./equal"
+import { stableStringify } from "./stableStringify"
 
 const createOptions = <K, V>(
     options: AtomOptions<V> = {},
