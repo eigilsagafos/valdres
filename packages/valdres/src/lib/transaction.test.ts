@@ -243,4 +243,18 @@ describe("transaction", () => {
             })
         })
     })
+
+    test("deep freeze", () => {
+        const defaultStore = store()
+        const postFamily = atomFamily<string, { tags: string[] }>()
+
+        defaultStore.txn(txn => {
+            const post = txn.set(postFamily("1"), {
+                tags: ["tag1"],
+            })
+            expect(() => (post.tags = [])).toThrowError(
+                "Attempted to assign to readonly property.",
+            )
+        })
+    })
 })

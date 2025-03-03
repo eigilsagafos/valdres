@@ -7,6 +7,7 @@ import type { TransactionInterface } from "../types/TransactionInterface"
 import { isAtom } from "../utils/isAtom"
 import { isAtomFamily } from "../utils/isAtomFamily"
 import { isFamily } from "../utils/isFamily"
+import { isProd } from "../lib/isProd"
 import { isFamilyAtom } from "../utils/isFamilyAtom"
 import { isSelector } from "../utils/isSelector"
 import { isSelectorFamily } from "../utils/isSelectorFamily"
@@ -14,6 +15,7 @@ import { getState } from "./getState"
 import { getAtomInitValue } from "./initAtom"
 import { isFunction } from "./isFunction"
 import { setAtoms } from "./setAtoms"
+import { deepFreeze } from "../utils/deepFreeze"
 
 const findDependencies = (
     state: State,
@@ -148,7 +150,12 @@ export const transaction = (
                 txnSelectorCache,
             )
         }
-        txnAtomMap.set(atom, value)
+        if (isProd()) {
+            txnAtomMap.set(atom, value)
+        } else {
+            txnAtomMap.set(atom, deepFreeze(value))
+        }
+
         if (isFamilyAtom(atom)) {
             const currentKeySet = txnGet(atom.family.__keysAtom)
             if (!currentKeySet.has(atom.familyKey)) {
