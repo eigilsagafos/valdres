@@ -10,8 +10,8 @@ export const setAtoms = (pairs: Map<Atom<any>, any>, data: StoreData) => {
         const currentValue = getState(atom, data)
         if (!atom.equal(currentValue, value)) {
             updatedAtoms.push(atom)
+            value = setValueInData(atom, value, data)
             if (atom.onSet) atom.onSet(value, data)
-            setValueInData(atom, value, data)
         }
     }
     propagateUpdatedAtoms(updatedAtoms, data)
