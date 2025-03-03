@@ -5,6 +5,30 @@ import { getState } from "./getState"
 import { propagateUpdatedAtoms } from "./propagateUpdatedAtoms"
 import { isFunction } from "./isFunction"
 
+const deepFreeze = (obj: any, seen = new WeakSet()) => {
+    if (seen.has(obj)) return obj
+    if (obj && typeof obj === "object") seen.add(obj)
+
+    if (Array.isArray(obj)) {
+        for (const item of obj) {
+            if (item && typeof item === "object") {
+                deepFreeze(item, seen)
+            }
+        }
+    } else {
+        const propNames = Object.getOwnPropertyNames(obj)
+        for (const name of propNames) {
+            const value = obj[name]
+            if (value && typeof value === "object") {
+                deepFreeze(value, seen)
+            }
+        }
+    }
+    return Object.freeze(obj)
+}
+
+const isDev = process.env.NODE_ENV === "development"
+
 export const setAtom = <Value = any>(
     atom: Atom<Value>,
     newValue: Value | ((currentValue: Value) => Value),
@@ -18,14 +42,15 @@ export const setAtom = <Value = any>(
             throw new Error("Todo, how should we handle this?")
     }
     if (atom.equal(currentValue, newValue)) return newValue
-    data.values.set(atom, newValue)
-    if (atom.onSet && !skipOnSet) atom.onSet(newValue, data)
+    const frozenNewValue = isDev ? deepFreeze(newValue) : newValue
+    data.values.set(atom, frozenNewValue)
+    if (atom.onSet && !skipOnSet) atom.onSet(frozenNewValue, data)
     // @ts-ignore
     if (currentValue?.__isEmptyAtomPromise__) {
         // @ts-ignore
-        currentValue.__resolveEmptyAtomPromise__(newValue)
+        currentValue.__resolveEmptyAtomPromise__(frozenNewValue)
     }
 
     propagateUpdatedAtoms([atom], data)
-    return newValue
+    return frozenNewValue
 }
