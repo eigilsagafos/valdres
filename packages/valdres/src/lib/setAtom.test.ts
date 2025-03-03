@@ -43,4 +43,14 @@ describe("setAtom", () => {
         expect(store1.get(multiplySelector)).toBe(2)
         expect(selectorCallback).toHaveBeenCalledTimes(1)
     })
+
+    test("check deep freeze", () => {
+        const defaultStore = store()
+        const postAtom = atom({ tags: ["tag1"] })
+        const post = defaultStore.get(postAtom)
+        expect(post.tags).toEqual(["tag1"])
+        expect(() => post.tags.push("tag2")).toThrowError(
+            "Attempted to assign to readonly property",
+        )
+    })
 })

@@ -9,6 +9,7 @@ import { isSelector } from "../utils/isSelector"
 import { getAtomInitValue, initAtom } from "./initAtom"
 import { initSelector } from "./initSelector"
 import { propagateUpdatedAtoms } from "./propagateUpdatedAtoms"
+import { setValueInData } from "./setValueInData"
 import { storeFromStoreData } from "./storeFromStoreData"
 import { unsubscribe } from "./unsubscribe"
 
@@ -97,7 +98,7 @@ export const subscribe = <V>(
                         value.then(res => clearTimeout(timeout))
                     }
                 } else {
-                    data.values.set(state, value)
+                    setValueInData(state, value, data)
                     propagateUpdatedAtoms([state], data)
                 }
             }, state.maxAge)

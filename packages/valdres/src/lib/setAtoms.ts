@@ -2,6 +2,7 @@ import { propagateUpdatedAtoms } from "./propagateUpdatedAtoms"
 import { getState } from "./getState"
 import type { Atom } from "../types/Atom"
 import type { StoreData } from "../types/StoreData"
+import { setValueInData } from "./setValueInData"
 
 export const setAtoms = (pairs: Map<Atom<any>, any>, data: StoreData) => {
     const updatedAtoms = []
@@ -10,7 +11,7 @@ export const setAtoms = (pairs: Map<Atom<any>, any>, data: StoreData) => {
         if (!atom.equal(currentValue, value)) {
             updatedAtoms.push(atom)
             if (atom.onSet) atom.onSet(value, data)
-            data.values.set(atom, value)
+            setValueInData(atom, value, data)
         }
     }
     propagateUpdatedAtoms(updatedAtoms, data)

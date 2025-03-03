@@ -7,8 +7,9 @@ import { isSelector } from "../utils/isSelector"
 import { getState } from "./getState"
 import { propagateUpdatedAtoms } from "./propagateUpdatedAtoms"
 import { setAtom } from "./setAtom"
+import { setValueInData } from "./setValueInData"
 
-export const getAtomInitValue = <V>(atom: Atom<V>, data: StoreData) => {
+export const getAtomInitValue = <V = any>(atom: Atom<V>, data: StoreData) => {
     if (atom.defaultValue === undefined) {
         let promiseResolve: (value: any) => void
         const promise = new Promise(resolve => {
@@ -24,7 +25,8 @@ export const getAtomInitValue = <V>(atom: Atom<V>, data: StoreData) => {
         const value = atom.defaultValue()
         if (isPromiseLike(value)) {
             value.then(resolvedValue => {
-                data.values.set(atom, resolvedValue)
+                // @ts-ignore @ts-todo
+                setValueInData(atom, resolvedValue, data)
                 propagateUpdatedAtoms([atom], data)
             })
         }
@@ -40,8 +42,8 @@ export const initAtom = <V, K>(
     atom: Atom<V> | AtomFamilyAtom<K, V>,
     data: StoreData,
 ) => {
-    let value = getAtomInitValue(atom, data)
-    data.values.set(atom, value)
+    const tmpVal = getAtomInitValue(atom, data)
+    let value = setValueInData(atom, tmpVal, data)
     if (isFamilyAtom(atom)) {
         const currentKeySet = getState(atom.family.__keysAtom, data)
         if (!currentKeySet.has(atom.familyKey)) {

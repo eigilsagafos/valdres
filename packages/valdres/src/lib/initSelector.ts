@@ -6,6 +6,7 @@ import type { StoreData } from "../types/StoreData"
 import type { State } from "../types/State"
 import type { Selector } from "../types/Selector"
 import { SelectorEvaluationError } from "../errors/SelectorEvaluationError"
+import { setValueInData } from "./setValueInData"
 
 class SuspendAndWaitForResolveError extends Error {
     promise: Promise<any>
@@ -89,14 +90,14 @@ const handleSelectorResult = <Value>(
 ) => {
     if (value instanceof SuspendAndWaitForResolveError) {
         value.promise.then(() => initSelector(selector, data))
-        // data.values.set(selector, value.promise)
         return value.promise
     } else if (isPromiseLike(value)) {
         // When a promise is returned when initializing a selector we suspend,
         // then we retry when the promise resolves.
         // console.log(`initSelector isPromiseLike`, { selector, value })
         value.then(resolved => {
-            data.values.set(selector, resolved)
+            // @ts-ignore
+            setValueInData(selector, resolved, data)
             updateStateSubscribers(selector, data)
             console.log("Should we reEvaluate?")
         })
@@ -123,10 +124,9 @@ export const initSelector = <V>(
         const expiredValue = data.expiredValues.get(selector)
         // @ts-ignore
         if (selector.equal(expiredValue, value)) {
-            data.values.set(selector, expiredValue)
-            return expiredValue
+            return setValueInData(selector, expiredValue, data)
         }
     }
-    data.values.set(selector, value)
-    return value
+    // @ts-ignore
+    return setValueInData(selector, value, data)
 }

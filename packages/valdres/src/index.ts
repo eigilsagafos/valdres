@@ -20,6 +20,7 @@ export { selector } from "./selector"
 export { selectorFamily } from "./selectorFamily"
 export { store } from "./store"
 
+export { deepFreeze } from "./utils/deepFreeze"
 export { isAtom } from "./utils/isAtom"
 export { isAtomFamily } from "./utils/isAtomFamily"
 export { isFamily } from "./utils/isFamily"
