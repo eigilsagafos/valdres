@@ -1,6 +1,6 @@
 {
     "name": "@valdres-react/draggable",
-    "version": "0.2.0-alpha.68",
+    "version": "0.2.0-alpha.69",
     "license": "MIT",
     "author": {
         "name": "Eigil Sagafos"
@@ -13,7 +13,7 @@
     "type": "module",
     "exports": {
         "default": "./dist/index.js",
-        "types": "./dist/types/index.d.ts"
+        "types": "./dist/types/src/index.d.ts"
     },
     "files": [
         "dist"
