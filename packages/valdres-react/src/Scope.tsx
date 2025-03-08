@@ -35,8 +35,8 @@ export const Scope = ({
     }, [scopeId, currentStore])
 
     useEffect(() => {
-        if ("detach" in scopedStore) {
-            return scopedStore.detach
+        return () => {
+            return scopedStore?.detach?.()
         }
     }, [scopedStore, scopeId, currentStore])
 
