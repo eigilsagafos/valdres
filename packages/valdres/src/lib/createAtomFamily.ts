@@ -6,12 +6,15 @@ import type { AtomOptions } from "../types/AtomOptions"
 import { isSelectorFamily } from "../utils/isSelectorFamily"
 import { atomFamilyAtom } from "./atomFamilyAtom"
 import { equal } from "./equal"
-import { stableStringify } from "./stableStringify"
+import { stringifyFamilyArgs } from "./stringifyFamilyArgs"
 
-const createOptions = <K, V>(
-    options: AtomOptions<V> = {},
-    family: AtomFamily<K, V>,
-    familyKey: K,
+const createOptions = <
+    Value extends any,
+    Args extends [any, ...any[]] = [any, ...any[]],
+>(
+    options: AtomOptions<Value> = {},
+    family: AtomFamily<Value, Args>,
+    familyKey: Args,
     keyStringified: string | boolean | number,
 ) => {
     if (options.name) {
@@ -27,36 +30,40 @@ const createOptions = <K, V>(
     }
 }
 
-const handleDefaultValue = <Key, Value>(
-    defaultValue: AtomFamilyDefaultValue<Key, Value>,
-    key: Key,
+const handleDefaultValue = <Value extends any, Args extends [any, ...any[]]>(
+    defaultValue: AtomFamilyDefaultValue<Value, Args>,
+    ...args: Args
 ) => {
-    if (isSelectorFamily(defaultValue)) return defaultValue(key)
     // @ts-ignore @ts-todo
-    if (typeof defaultValue === "function") return () => defaultValue(key)
+    if (isSelectorFamily(defaultValue)) return defaultValue(...args)
+    // @ts-ignore @ts-todo
+    if (typeof defaultValue === "function") return () => defaultValue(...args)
     return defaultValue
 }
 
-export const createAtomFamily = <Key, Value>(
-    defaultValue: AtomFamilyDefaultValue<Key, Value>,
+export const createAtomFamily = <
+    Value extends any,
+    Args extends [any, ...any[]] = [any, ...any[]],
+>(
+    defaultValue: AtomFamilyDefaultValue<Value, Args>,
     options?: AtomOptions<Value>,
 ) => {
     const map = new Map()
-    const keysAtom = atom(new Set<Key>())
+    const keysAtom = atom(new Set<Args>())
     const atomFamily = Object.assign(
-        (key: Key) => {
-            const keyStringified = stableStringify(key)
+        (...args: Args) => {
+            const keyStringified = stringifyFamilyArgs(...args)
             if (map.has(keyStringified)) {
                 return map.get(keyStringified)
             }
 
-            const familyAtom = atomFamilyAtom<Key, Value>(
+            const familyAtom = atomFamilyAtom<Value, Args>(
                 // @ts-ignore @ts-todo
-                handleDefaultValue<Key, Value>(defaultValue, key),
-                createOptions<Key, Value>(
+                handleDefaultValue<Value, Args>(defaultValue, ...args),
+                createOptions<Value, Args>(
                     options,
                     atomFamily,
-                    Object.freeze(key),
+                    args,
                     keyStringified,
                 ),
             )
@@ -65,7 +72,8 @@ export const createAtomFamily = <Key, Value>(
         },
         {
             __valdresAtomFamilyMap: map,
-            release: (key: Key) => map.delete(key),
+            release: (...args: Args) =>
+                map.delete(stringifyFamilyArgs(...args)),
             __keysAtom: keysAtom,
             __keysSelector: selector(get => Array.from(get(keysAtom))),
         },
@@ -75,5 +83,5 @@ export const createAtomFamily = <Key, Value>(
             value: options.name,
             writable: false,
         })
-    return atomFamily as AtomFamily<Key, Value>
+    return atomFamily as AtomFamily<Value, Args>
 }

@@ -203,9 +203,12 @@ describe("subscribe", () => {
         expect(level1callback).toHaveBeenCalledTimes(1)
         expect(level2callback).toHaveBeenCalledTimes(1)
         expect(level3callback).toHaveBeenCalledTimes(1)
-        expect(level1callback).toHaveBeenCalledWith("Foo")
-        expect(level2callback).toHaveBeenCalledWith("Foo")
-        expect(level3callback).toHaveBeenCalledWith("Foo")
+        // expect(level1callback).toHaveBeenCalledWith(["Foo"]) // Bun issue?
+        // expect(level2callback).toHaveBeenCalledWith(["Foo"]) // Bun issue?
+        // expect(level3callback).toHaveBeenCalledWith(["Foo"]) // Bun issue?
+        expect(level1callback.mock.calls[0]).toStrictEqual(["Foo"])
+        expect(level2callback.mock.calls[0]).toStrictEqual(["Foo"])
+        expect(level3callback.mock.calls[0]).toStrictEqual(["Foo"])
         expect(rootUnsub).toHaveBeenCalledTimes(0)
         expect(scopedUnsub).toHaveBeenCalledTimes(0)
         expect(nestedUnsub).toHaveBeenCalledTimes(0)
@@ -272,6 +275,8 @@ describe("subscribe", () => {
         mock(level1store.sub(userAtom, level1callback))
         mock(level2store.sub(userAtom, level2callback))
         level2store.set(userAtom("Foo"), "nested 1")
-        expect(level2callback).toHaveBeenLastCalledWith("Foo")
+        expect(level2callback).toHaveBeenCalledTimes(1)
+        // expect(level2callback).toHaveBeenLastCalledWith(["Foo"]) // This is not working in current version of bun. Should work with strictEqual under the hood...
+        expect(level2callback.mock.calls[0]).toStrictEqual(["Foo"])
     })
 })

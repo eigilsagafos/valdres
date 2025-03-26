@@ -1,7 +1,7 @@
-import { propagateUpdatedAtoms } from "./propagateUpdatedAtoms"
-import { getState } from "./getState"
 import type { Atom } from "../types/Atom"
 import type { StoreData } from "../types/StoreData"
+import { getState } from "./getState"
+import { propagateUpdatedAtoms } from "./propagateUpdatedAtoms"
 import { setValueInData } from "./setValueInData"
 
 export const setAtoms = (pairs: Map<Atom<any>, any>, data: StoreData) => {

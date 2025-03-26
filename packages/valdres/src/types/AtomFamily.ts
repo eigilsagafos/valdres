@@ -1,13 +1,15 @@
 import type { Atom } from "./Atom"
 import type { AtomFamilyAtom } from "./AtomFamilyAtom"
-import type { FamilyKey } from "./FamilyKey"
 import type { Selector } from "./Selector"
 
-export type AtomFamily<Key = FamilyKey, Value = unknown> = {
-    (key: Key): AtomFamilyAtom<Key, Value>
-    release: (key: Key) => void
+export type AtomFamily<
+    Value extends any,
+    Args extends [any, ...any[]] = [any, ...any[]],
+> = {
+    (...args: Args): AtomFamilyAtom<Value, Args>
+    release: (...args: Args) => void
     name?: string
-    __valdresAtomFamilyMap: Map<Key, AtomFamilyAtom<Key, Value>>
-    __keysAtom: Atom<Set<Key>>
-    __keysSelector: Selector<Key[]>
+    __valdresAtomFamilyMap: Map<Value, AtomFamilyAtom<Value, Args>>
+    __keysAtom: Atom<Set<Args>>
+    __keysSelector: Selector<Args[]>
 }

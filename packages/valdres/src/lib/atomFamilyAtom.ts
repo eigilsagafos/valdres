@@ -4,29 +4,35 @@ import type { AtomFamilyGlobalAtom } from "../types/AtomFamilyGlobalAtom"
 import type { AtomOptions } from "../types/AtomOptions"
 import { globalAtom } from "./globalAtom"
 
-export function atomFamilyAtom<Key, Value>(
+export function atomFamilyAtom<
+    Value extends any,
+    Args extends [any, ...any[]] = [any, ...any[]],
+>(
     defaultValue: AtomDefaultValue<Value>,
     options: AtomOptions<Value> & { global: true },
-): AtomFamilyGlobalAtom<Key, Value>
+): AtomFamilyGlobalAtom<Value, Args>
 
-export function atomFamilyAtom<Key, Value>(
+export function atomFamilyAtom<
+    Value extends any,
+    Args extends [any, ...any[]] = [any, ...any[]],
+>(
     defaultValue: AtomDefaultValue<Value>,
     options: AtomOptions<Value>,
-): AtomFamilyAtom<Key, Value>
+): AtomFamilyAtom<Value, Args>
 
-export function atomFamilyAtom<Key, Value>(
-    defaultValue: AtomDefaultValue<Value>,
-    options: AtomOptions<Value>,
-) {
+export function atomFamilyAtom<
+    Value extends any,
+    Args extends [any, ...any[]] = [any, ...any[]],
+>(defaultValue: AtomDefaultValue<Value>, options: AtomOptions<Value>) {
     if (options.global) {
         return globalAtom(defaultValue, options) as AtomFamilyGlobalAtom<
-            Key,
-            Value
+            Value,
+            Args
         >
     }
 
     return {
         ...options,
         defaultValue,
-    } as AtomFamilyAtom<Key, Value>
+    } as AtomFamilyAtom<Value, Args>
 }

@@ -7,8 +7,11 @@ import type { SubscribeFn } from "./SubscribeFn"
 import type { TransactionFn } from "./TransactionFn"
 
 type SetAtom = {
-    <V, K>(atom: AtomFamilyAtom<K, V>, value: V): void
-    <V>(atom: Atom<V>, value: V): void
+    <Value extends any, Args extends [any, ...any[]] = [any, ...any[]]>(
+        atom: AtomFamilyAtom<Value, Args>,
+        value: Value,
+    ): void
+    <Value extends any>(atom: Atom<Value>, value: Value): void
 }
 
 export type Store<T = StoreData> = {

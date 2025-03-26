@@ -60,6 +60,6 @@ describe("useValue", () => {
         store.get(atom1)
         // expect(result.current).toStrictEqual(["1"]) // TODO: This should work when correctly handled in valdres package...
         store.set(atom2, 2)
-        expect(result.current).toStrictEqual(["1", "2"])
+        expect(result.current).toStrictEqual([["1"], ["2"]])
     })
 })

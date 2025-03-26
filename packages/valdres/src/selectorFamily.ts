@@ -1,14 +1,14 @@
 import { equal } from "./lib/equal"
+import { stringifyFamilyArgs } from "./lib/stringifyFamilyArgs"
 import { selector } from "./selector"
-import { stableStringify } from "./lib/stableStringify"
+import type { GetValue } from "./types/GetValue"
 import type { SelectorFamily } from "./types/SelectorFamily"
 import type { SelectorOptions } from "./types/SelectorOptions"
-import type { GetValue } from "./types/GetValue"
 
-const createOptions = <K, V>(
-    options: SelectorOptions<V> = {},
-    family: SelectorFamily<K, V>,
-    familyKey: K,
+const createOptions = <Value extends any, Args extends [any, ...any[]]>(
+    options: SelectorOptions<Value> = {},
+    family: SelectorFamily<Value, Args>,
+    familyKey: Args,
     keyStringified: string | boolean | number,
 ) => {
     if (options.name) {
@@ -24,20 +24,23 @@ const createOptions = <K, V>(
     }
 }
 
-export const selectorFamily = <Key, Value>(
-    get: (key: Key) => (get: GetValue) => Value,
+export const selectorFamily = <
+    Value extends any,
+    Args extends [any, ...any[]] = [any, ...any[]],
+>(
+    callback: (...args: Args) => (get: GetValue) => Value | Promise<Value>,
     options?: SelectorOptions<Value>,
-): SelectorFamily<Key, Value> => {
+): SelectorFamily<Value, Args> => {
     const map = new Map()
-    const selectorFamily = (key: Key) => {
-        const keyStringified = stableStringify(key)
+    const selectorFamily = (...args: Args) => {
+        const keyStringified = stringifyFamilyArgs(args)
         if (map.has(keyStringified)) return map.get(keyStringified)
-        const newSelector = selector<Value, Key>(
-            selectorArgs => get(key)(selectorArgs),
-            createOptions<Key, Value>(
+        const newSelector = selector<Value, Args>(
+            selectorArgs => callback(...args)(selectorArgs),
+            createOptions<Value, Args>(
                 options,
                 selectorFamily,
-                key,
+                args,
                 keyStringified,
             ),
         )

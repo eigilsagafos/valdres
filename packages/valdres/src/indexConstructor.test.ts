@@ -28,9 +28,15 @@ describe("index", () => {
         const indexCallback = mock((doc, term) => doc.tags.includes(term))
         const postsByTag = index(post, indexCallback)
         expect(indexCallback).toHaveBeenCalledTimes(0)
-        expect(defaultStore.get(postsByTag("foo"))).toStrictEqual(["1", "3"])
+        expect(defaultStore.get(postsByTag("foo"))).toStrictEqual([
+            ["1"],
+            ["3"],
+        ])
         expect(indexCallback).toHaveBeenCalledTimes(3)
-        expect(defaultStore.get(postsByTag("bar"))).toStrictEqual(["2", "3"])
+        expect(defaultStore.get(postsByTag("bar"))).toStrictEqual([
+            ["2"],
+            ["3"],
+        ])
         expect(indexCallback).toHaveBeenCalledTimes(6)
         defaultStore.set(post("3"), {
             id: "3",
@@ -38,9 +44,9 @@ describe("index", () => {
             tags: [],
         })
         expect(indexCallback).toHaveBeenCalledTimes(6)
-        expect(defaultStore.get(postsByTag("foo"))).toStrictEqual(["1"])
+        expect(defaultStore.get(postsByTag("foo"))).toStrictEqual([["1"]])
         expect(indexCallback).toHaveBeenCalledTimes(7)
-        expect(defaultStore.get(postsByTag("bar"))).toStrictEqual(["2"])
+        expect(defaultStore.get(postsByTag("bar"))).toStrictEqual([["2"]])
         expect(indexCallback).toHaveBeenCalledTimes(8)
     })
 })

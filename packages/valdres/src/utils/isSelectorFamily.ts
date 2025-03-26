@@ -1,6 +1,9 @@
 import type { SelectorFamily } from "../types/SelectorFamily"
 
-export const isSelectorFamily = <K, V>(
+export const isSelectorFamily = <
+    Value extends any,
+    Args extends [any, ...any[]] = [any, ...any[]],
+>(
     state: any,
-): state is SelectorFamily<K, V> =>
+): state is SelectorFamily<Value, Args> =>
     state && Object.hasOwn(state, "__valdresSelectorFamilyMap")

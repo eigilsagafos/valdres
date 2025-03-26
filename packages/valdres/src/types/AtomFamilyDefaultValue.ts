@@ -1,11 +1,16 @@
 import type { Selector } from "./Selector"
 import type { SelectorFamily } from "./SelectorFamily"
 
-type DefaultValueCallback<Key, Value> = (arg: Key) => Value | Promise<Value>
+type DefaultValueCallback<Value extends any, Args extends [any, ...any[]]> = (
+    ...args: Args
+) => Value | Promise<Value>
 
-export type AtomFamilyDefaultValue<Key, Value> =
+export type AtomFamilyDefaultValue<
+    Value extends any,
+    Args extends [any, ...any[]],
+> =
     | undefined
     | Value
-    | DefaultValueCallback<Key, Value>
-    | Selector<Value>
-    | SelectorFamily<Key, Value>
+    | DefaultValueCallback<Value, Args>
+    | Selector<Value, Args>
+    | SelectorFamily<Value, Args>

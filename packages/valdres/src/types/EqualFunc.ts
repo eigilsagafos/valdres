@@ -1,1 +1,1 @@
-export type EqualFunc<Value = any> = (a: Value, b: Value) => boolean
+export type EqualFunc<Value extends any> = (a: Value, b: Value) => boolean

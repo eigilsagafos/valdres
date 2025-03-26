@@ -6,6 +6,7 @@
         "declaration": true,
         "noEmit": false,
         "emitDeclarationOnly": true,
-        "outDir": "dist/types"
+        "outDir": "dist/types",
+        "strict": true
     }
 }

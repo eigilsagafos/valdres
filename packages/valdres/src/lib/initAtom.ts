@@ -38,8 +38,11 @@ export const getAtomInitValue = <V = any>(atom: Atom<V>, data: StoreData) => {
     }
 }
 
-export const initAtom = <V, K>(
-    atom: Atom<V> | AtomFamilyAtom<K, V>,
+export const initAtom = <
+    Value extends any,
+    Args extends [any, ...any[]] = [any, ...any[]],
+>(
+    atom: Atom<Value> | AtomFamilyAtom<Value, Args>,
     data: StoreData,
 ) => {
     const tmpVal = getAtomInitValue(atom, data)
@@ -53,7 +56,7 @@ export const initAtom = <V, K>(
         }
     }
     if (atom.onInit)
-        atom.onInit((newVal: V) => {
+        atom.onInit((newVal: Value) => {
             value = newVal
             setAtom(atom, newVal, data, true)
         }, data)

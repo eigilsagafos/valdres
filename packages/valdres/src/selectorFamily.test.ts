@@ -7,7 +7,10 @@ import { selector } from "./selector"
 
 describe("selectorFamily", () => {
     test("the same atom is returned when calling atomFamily", () => {
-        const nameSelectorFamily = selectorFamily(() => null)
+        const nameSelectorFamily2 = selectorFamily(() => () => null)
+        nameSelectorFamily2(1)
+
+        const nameSelectorFamily = selectorFamily((id: number) => () => null)
         expect(nameSelectorFamily(1)).toEqual(nameSelectorFamily(1))
     })
 
@@ -23,8 +26,8 @@ describe("selectorFamily", () => {
 
     test("get returns a promise", async () => {
         const store1 = store()
-        const nameSelectorFamily = selectorFamily<string, number>(
-            () => () => wait(1).then(() => "done"),
+        const nameSelectorFamily = selectorFamily<string>(
+            (key: number) => async () => wait(1).then(() => "done"),
         )
 
         const res = store1.get(nameSelectorFamily(1))
@@ -51,5 +54,14 @@ describe("selectorFamily", () => {
         const testFamily = selectorFamily(selector => get => get(selector1))
         expect(store1.get(testFamily(selector1))).toEqual("Foo")
         expect(testFamily(selector1)).toStrictEqual(testFamily(selector1))
+    })
+    test("mutli args", async () => {
+        const store1 = store()
+        const testFamily = selectorFamily(
+            (arg1: string, arg2: string) => get => [arg1, arg2] as const,
+        )
+        const selector = testFamily("Foo", "Bar")
+
+        const res = store1.get(selector)
     })
 })

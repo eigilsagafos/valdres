@@ -38,9 +38,11 @@ export const updateSelectorSubscribers = (
             subscribtion.callback()
         }
     }
+    // TODO: Improve this to follow updateStateSubscribers?
     if (familySubscriptions?.size) {
         for (const subscribtion of familySubscriptions) {
-            subscribtion.callback(selector.familyKey)
+            // @ts-ignore
+            subscribtion.callback(...selector.familyKey)
         }
     }
 }

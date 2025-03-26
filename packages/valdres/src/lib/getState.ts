@@ -11,54 +11,74 @@ import { isSelectorFamily } from "../utils/isSelectorFamily"
 import { initAtom } from "./initAtom"
 import { initSelector } from "./initSelector"
 
-export function getState<V, K>(
-    atom: Atom<V>,
+export function getState<
+    Value extends any,
+    Args extends [any, ...any[]] = [any, ...any[]],
+>(
+    atom: Atom<Value>,
     data: StoreData,
     circularDependencySet?: WeakSet<Selector>,
-): V
-export function getState<V, K>(
-    selector: Selector<V>,
-    data: StoreData,
-    circularDependencySet?: WeakSet<Selector>,
-): V
-export function getState<V, K>(
-    family: AtomFamily<V, K>,
-    data: StoreData,
-    circularDependencySet?: WeakSet<Selector>,
-): K[]
+): Value
 
-export function getState<V, K>(
-    state: Atom<V> | Selector<V> | Family<K, V>,
+export function getState<
+    Value extends any,
+    Args extends [any, ...any[]] = [any, ...any[]],
+>(
+    selector: Selector<Value>,
+    data: StoreData,
+    circularDependencySet?: WeakSet<Selector>,
+): Value
+
+export function getState<
+    Value extends any,
+    Args extends [any, ...any[]] = [any, ...any[]],
+>(
+    family: AtomFamily<Value, Args>,
+    data: StoreData,
+    circularDependencySet?: WeakSet<Selector>,
+): Args[]
+
+export function getState<
+    Value extends any,
+    Args extends [any, ...any[]] = [any, ...any[]],
+>(
+    state: Atom<Value> | Selector<Value> | Family<Value, Args>,
     data: StoreData,
     circularDependencySet?: WeakSet<Selector>,
 ) {
     if (data.values.has(state)) return data.values.get(state)
-    if (isAtom<V>(state)) {
+    if (isAtom<Value>(state)) {
         if ("parent" in data)
-            return getState<V, K>(state, data.parent, circularDependencySet)
-        return initAtom<V, K>(state, data)
+            return getState<Value, Args>(
+                state,
+                data.parent,
+                circularDependencySet,
+            )
+        return initAtom<Value, Args>(state, data)
     }
-    if (isSelector<V>(state))
-        return initSelector<V>(state, data, circularDependencySet)
-    if (isAtomFamily<K, V>(state)) {
+    if (isSelector<Value>(state))
+        return initSelector<Value>(state, data, circularDependencySet)
+    if (isAtomFamily<Value, Args>(state)) {
         if ("parent" in data) {
-            const closestData = findClosestStoreWithAtomInitialized<Set<K>>(
+            const closestData = findClosestStoreWithAtomInitialized<Set<Args>>(
                 state.__keysAtom,
                 data,
             )
-            return getState<K[], V>(
+            return getState<Value, Args>(
+                // @ts-ignore @ts-todo
                 state.__keysSelector,
                 closestData,
                 circularDependencySet,
             )
         }
-        return getState<K[], V>(
+        return getState<Value, Args>(
+            // @ts-ignore @ts-todo
             state.__keysSelector,
             data,
             circularDependencySet,
         )
     }
-    if (isSelectorFamily<K, V>(state)) {
+    if (isSelectorFamily<Value, Args>(state)) {
         // TODO: Impement more efficient way to solve this
         const array = Array.from(state.__valdresSelectorFamilyMap.keys())
         // @ts-ignore

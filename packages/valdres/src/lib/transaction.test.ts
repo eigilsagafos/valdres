@@ -188,21 +188,26 @@ describe("transaction", () => {
         store1.scope("Foo").scope("Bar")
         store1.txn(txn => {
             txn.set(userAtom(1), "User 1")
-            expect(txn.get(userAtom)).toStrictEqual([1])
+            expect(txn.get(userAtom)).toStrictEqual([[1]])
             txn.set(userAtom(2), "User 2")
-            expect(txn.get(userAtom)).toStrictEqual([1, 2])
+            expect(txn.get(userAtom)).toStrictEqual([[1], [2]])
             txn.scope("Foo", fooTxn => {
-                expect(fooTxn.get(userAtom)).toStrictEqual([1, 2])
+                expect(fooTxn.get(userAtom)).toStrictEqual([[1], [2]])
                 fooTxn.set(userAtom(3), "User 3")
-                expect(fooTxn.get(userAtom)).toStrictEqual([1, 2, 3])
+                expect(fooTxn.get(userAtom)).toStrictEqual([[1], [2], [3]])
                 fooTxn.scope("Bar", barTxn => {
-                    expect(barTxn.get(userAtom)).toStrictEqual([1, 2, 3])
+                    expect(barTxn.get(userAtom)).toStrictEqual([[1], [2], [3]])
                     barTxn.set(userAtom(4), "User 4")
-                    expect(barTxn.get(userAtom)).toStrictEqual([1, 2, 3, 4])
+                    expect(barTxn.get(userAtom)).toStrictEqual([
+                        [1],
+                        [2],
+                        [3],
+                        [4],
+                    ])
                 })
-                expect(fooTxn.get(userAtom)).toStrictEqual([1, 2, 3])
+                expect(fooTxn.get(userAtom)).toStrictEqual([[1], [2], [3]])
             })
-            expect(txn.get(userAtom)).toStrictEqual([1, 2])
+            expect(txn.get(userAtom)).toStrictEqual([[1], [2]])
         })
     })
 
@@ -246,13 +251,15 @@ describe("transaction", () => {
 
     test("deep freeze", () => {
         const defaultStore = store()
-        const postFamily = atomFamily<string, { tags: string[] }>()
+        const postFamily = atomFamily<string, { data: { tags: string[] } }>()
 
         defaultStore.txn(txn => {
             const post = txn.set(postFamily("1"), {
-                tags: ["tag1"],
+                data: {
+                    tags: ["tag1"],
+                },
             })
-            expect(() => (post.tags = [])).toThrowError(
+            expect(() => (post.data.tags = [])).toThrowError(
                 "Attempted to assign to readonly property.",
             )
         })

@@ -84,7 +84,7 @@ const evaluateSelector = <V>(
 }
 
 const handleSelectorResult = <Value>(
-    value: Value | SuspendAndWaitForResolveError,
+    value: Value | Promise<Value> | SuspendAndWaitForResolveError,
     selector: Selector<Value>,
     data: StoreData,
 ) => {

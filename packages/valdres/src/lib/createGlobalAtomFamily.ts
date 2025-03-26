@@ -1,19 +1,21 @@
 import { globalStore } from "../globalStore"
-import type { AtomOptions } from "../types/AtomOptions"
-import type { FamilyKey } from "../types/FamilyKey"
-import type { AtomFamilyDefaultValue } from "../types/AtomFamilyDefaultValue"
-import { createAtomFamily } from "./createAtomFamily"
 import type { AtomFamily } from "../types/AtomFamily"
+import type { AtomFamilyDefaultValue } from "../types/AtomFamilyDefaultValue"
+import type { AtomOptions } from "../types/AtomOptions"
+import { createAtomFamily } from "./createAtomFamily"
 
-export const createGlobalAtomFamily = <Key = FamilyKey, Value = unknown>(
-    defaultValue: AtomFamilyDefaultValue<Key, Value>,
+export const createGlobalAtomFamily = <
+    Value extends any,
+    Args extends [any, ...any[]] = [any, ...any[]],
+>(
+    defaultValue: AtomFamilyDefaultValue<Value, Args>,
     options: AtomOptions<Value>,
 ) => {
     if (!options.name) throw new Error(`Missing name for global atomFamiliy`)
     if (globalStore.atomFamilies.has(options.name)) {
         return globalStore.atomFamilies.get(options.name) as AtomFamily<
-            Key,
-            Value
+            Value,
+            Args
         >
     }
 

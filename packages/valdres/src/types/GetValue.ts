@@ -2,8 +2,12 @@ import type { Atom } from "./Atom"
 import type { AtomFamily } from "./AtomFamily"
 import type { Selector } from "./Selector"
 
-export type GetValue = {
-    <V>(atom: Atom<V>): V
-    <V>(selector: Selector<V>): V
-    <V, K>(family: AtomFamily<K, V>): K[]
+export type GetValue<> = {
+    <Value extends any>(atom: Atom<Value>): Value
+    <Value extends any, Args extends [any, ...any[]] = [any, ...any[]]>(
+        selector: Selector<Value, Args>,
+    ): Value
+    <Value extends any, Args extends [any, ...any[]]>(
+        family: AtomFamily<Value, Args>,
+    ): Args[]
 }

@@ -2,6 +2,6 @@ import type { AtomFamilyAtom } from "./AtomFamilyAtom"
 import type { GlobalAtom } from "./GlobalAtom"
 
 export type AtomFamilyGlobalAtom<
-    Key = unknown,
-    Value = unknown,
-> = AtomFamilyAtom<Key, Value> & GlobalAtom<Value>
+    Value extends any,
+    Args extends [any, ...any[]] = [any, ...any[]],
+> = AtomFamilyAtom<Value, Args> & GlobalAtom<Value>

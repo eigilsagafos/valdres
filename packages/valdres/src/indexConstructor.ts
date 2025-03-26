@@ -1,32 +1,35 @@
 import { stableStringify } from "./lib/stableStringify"
 import { selector } from "./selector"
 import type { AtomFamily } from "./types/AtomFamily"
-import type { FamilyKey } from "./types/FamilyKey"
 import type { Selector } from "./types/Selector"
 
-export const index = <T, K extends FamilyKey = FamilyKey, V = unknown>(
-    family: AtomFamily<K, V>,
-    callback: (value: V, term: T) => boolean,
-): ((term: T) => Selector<T[]>) => {
+export const index = <
+    Term,
+    Value extends any,
+    FamilyArgs extends [any, ...any[]] = [any, ...any[]],
+>(
+    family: AtomFamily<Value, FamilyArgs>,
+    callback: (value: Value, term: Term) => boolean,
+): ((term: Term) => Selector<Term[]>) => {
     const map = new Map()
-    return (term: T) => {
+    return (term: Term) => {
         const termKey = stableStringify(term)
         if (map.has(termKey)) return map.get(termKey)
         const itemSelectorMap = new Map()
         const selectorMapIndex = selector(get => {
-            const ids = get(family)
-            ids.forEach(id => {
-                if (itemSelectorMap.has(id)) return
+            const array = get(family)
+            array.forEach(args => {
+                if (itemSelectorMap.has(args)) return
                 itemSelectorMap.set(
-                    id,
-                    selector(get => callback(get(family(id)), term)),
+                    args,
+                    selector(get => callback(get(family(...args)), term)),
                 )
             })
             return itemSelectorMap
         })
         const filteredSelector = selector(get => {
             const map = get(selectorMapIndex)
-            const res: K[] = []
+            const res: FamilyArgs[] = []
             map.forEach((selector, key) => {
                 if (get(selector)) {
                     res.push(key)

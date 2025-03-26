@@ -2,11 +2,14 @@ import type { EqualFunc } from "./EqualFunc"
 import type { GetValue } from "./GetValue"
 import type { SelectorFamily } from "./SelectorFamily"
 
-export type Selector<Value = unknown, FamilyKey = undefined> = {
-    get: (get: GetValue, storeId: string) => Value
+export type Selector<
+    Value extends any = any,
+    FamilyArgs extends [any, ...any[]] = [any, ...any[]],
+> = {
+    get: (get: GetValue, storeId: string) => Value | Promise<Value>
     equal: EqualFunc<Value>
     name?: string
-    family?: SelectorFamily<FamilyKey, Value>
-    familyKey?: FamilyKey
+    family?: SelectorFamily<Value, FamilyArgs>
+    familyKey?: FamilyArgs
     onMount?: () => void | (() => void)
 }

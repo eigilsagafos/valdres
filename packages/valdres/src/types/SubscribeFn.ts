@@ -5,13 +5,13 @@ import type { Selector } from "./Selector"
 type UnsuscribeFn = () => void
 
 export type SubscribeFn = {
-    <V, K>(
-        state: Family<K, V>,
-        callback: (arg: K) => void,
+    <Value extends any, Args extends [any, ...any[]] = [any, ...any[]]>(
+        state: Family<Value, Args>,
+        callback: (...args: Args) => void,
         requireDeepEqualCheckBeforeCallback?: boolean,
     ): UnsuscribeFn
-    <V>(
-        state: Atom<V> | Selector<V>,
+    <Value extends any>(
+        state: Atom<Value> | Selector<Value>,
         callback: () => void,
         requireDeepEqualCheckBeforeCallback?: boolean,
     ): UnsuscribeFn
