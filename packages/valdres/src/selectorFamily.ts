@@ -8,19 +8,20 @@ import type { SelectorOptions } from "./types/SelectorOptions"
 const createOptions = <Value extends any, Args extends [any, ...any[]]>(
     options: SelectorOptions<Value> = {},
     family: SelectorFamily<Value, Args>,
-    familyKey: Args,
-    keyStringified: string | boolean | number,
+    familyArgs: Args,
+    familyArgsStringified: string | boolean | number,
 ) => {
     if (options.name) {
         return {
             equal,
             ...options,
-            name: options?.name + "_" + keyStringified,
+            name: options?.name + "_" + familyArgsStringified,
             family,
-            familyKey,
+            familyArgs,
+            familyArgsStringified,
         }
     } else {
-        return { equal, ...options, family, familyKey }
+        return { equal, ...options, family, familyArgs, familyArgsStringified }
     }
 }
 
@@ -33,18 +34,18 @@ export const selectorFamily = <
 ): SelectorFamily<Value, Args> => {
     const map = new Map()
     const selectorFamily = (...args: Args) => {
-        const keyStringified = stringifyFamilyArgs(args)
-        if (map.has(keyStringified)) return map.get(keyStringified)
+        const argsStringified = stringifyFamilyArgs(args)
+        if (map.has(argsStringified)) return map.get(argsStringified)
         const newSelector = selector<Value, Args>(
             selectorArgs => callback(...args)(selectorArgs),
             createOptions<Value, Args>(
                 options,
                 selectorFamily,
                 args,
-                keyStringified,
+                argsStringified,
             ),
         )
-        map.set(keyStringified, newSelector)
+        map.set(argsStringified, newSelector)
         return newSelector
     }
     selectorFamily.__valdresSelectorFamilyMap = map

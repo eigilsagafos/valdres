@@ -1,5 +1,3 @@
-import { atom } from "../atom"
-import { selector } from "../selector"
 import type { AtomFamily } from "../types/AtomFamily"
 import type { AtomFamilyDefaultValue } from "../types/AtomFamilyDefaultValue"
 import type { AtomOptions } from "../types/AtomOptions"
@@ -14,19 +12,20 @@ const createOptions = <
 >(
     options: AtomOptions<Value> = {},
     family: AtomFamily<Value, Args>,
-    familyKey: Args,
-    keyStringified: string | boolean | number,
+    familyArgs: Args,
+    familyArgsStringified: string | boolean | number,
 ) => {
     if (options.name) {
         return {
             equal,
             ...options,
-            name: options?.name + "_" + keyStringified,
+            name: options?.name + "_" + familyArgsStringified,
             family,
-            familyKey,
+            familyArgs,
+            familyArgsStringified,
         }
     } else {
-        return { equal, ...options, family, familyKey }
+        return { equal, ...options, family, familyArgs, familyArgsStringified }
     }
 }
 
@@ -49,12 +48,11 @@ export const createAtomFamily = <
     options?: AtomOptions<Value>,
 ) => {
     const map = new Map()
-    const keysAtom = atom(new Set<Args>())
     const atomFamily = Object.assign(
         (...args: Args) => {
-            const keyStringified = stringifyFamilyArgs(...args)
-            if (map.has(keyStringified)) {
-                return map.get(keyStringified)
+            const argsStringified = stringifyFamilyArgs(args)
+            if (map.has(argsStringified)) {
+                return map.get(argsStringified)
             }
 
             const familyAtom = atomFamilyAtom<Value, Args>(
@@ -64,18 +62,16 @@ export const createAtomFamily = <
                     options,
                     atomFamily,
                     args,
-                    keyStringified,
+                    argsStringified,
                 ),
             )
-            map.set(keyStringified, familyAtom)
+            map.set(argsStringified, familyAtom)
             return familyAtom
         },
         {
             __valdresAtomFamilyMap: map,
-            release: (...args: Args) =>
-                map.delete(stringifyFamilyArgs(...args)),
-            __keysAtom: keysAtom,
-            __keysSelector: selector(get => Array.from(get(keysAtom))),
+            release: (...args: Args) => map.delete(stringifyFamilyArgs(args)),
+            equal,
         },
     )
     if (options?.name)

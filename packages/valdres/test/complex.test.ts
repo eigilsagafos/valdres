@@ -13,7 +13,7 @@ import * as jotaiUtils from "jotai/utils"
 // selector()
 
 describe("when a transaction removes something that a subscriber has access to", () => {
-    test.only("one", async () => {
+    test("valdres", async () => {
         const userIds = atom([1, 2, 3, 4])
         const userFamily = atomFamily(id => ({
             id,
@@ -25,6 +25,7 @@ describe("when a transaction removes something that a subscriber has access to",
             if (user.visible) return user
         })
         const userEmailSelector = selectorFamily(id => get => {
+            const res = get(user(id))
             return get(user(id)).id
         })
         const visibleUserIds = selector(get =>
@@ -42,10 +43,11 @@ describe("when a transaction removes something that a subscriber has access to",
             console.log(`asdf`, emailChanged)
         })
         store1.sub(userEmailSelector(4), emailChanged => {
-            console.log(`asdf`, emailChanged)
+            // console.log(`asdf`, emailChanged)
         })
 
         store1.set(userFamily(4), curr => ({ ...curr, visible: false }))
+        expect(() => store1.get(userEmailSelector(4))).toThrow()
     })
     test("jotai", async () => {
         const userIds = jotai.atom([1, 2, 3, 4])
@@ -63,14 +65,19 @@ describe("when a transaction removes something that a subscriber has access to",
             })
         })
         const userEmailSelector = jotaiUtils.atomFamily(id => {
-            return jotai.atom(get => get(user(id)).id)
+            return jotai.atom(get => {
+                const res = get(user(id))
+
+                if (!res) {
+                    throw new Error("asdfasdf")
+                }
+                return get(user(id)).id
+            })
         })
         const visibleUserIds = jotai.atom(get =>
             get(userIds).filter(id => get(user(id)).visible),
         )
         const store = jotai.createStore()
-
-        console.log(store.get(userEmailSelector(1)))
 
         store.sub(userEmailSelector(1), emailChanged => {
             console.log(`asdf`, emailChanged)
@@ -79,12 +86,13 @@ describe("when a transaction removes something that a subscriber has access to",
             console.log(`asdf`, emailChanged)
         })
         store.sub(userEmailSelector(3), emailChanged => {
-            console.log(`asdf`, emailChanged)
+            console.log(`3 email changed`, emailChanged)
         })
         store.sub(userEmailSelector(4), emailChanged => {
-            console.log(`asdf`, emailChanged)
+            // console.log(`4 email changed`, emailChanged)
         })
 
         store.set(userFamily(4), curr => ({ ...curr, visible: false }))
+        expect(() => store.get(userEmailSelector(4))).toThrow()
     })
 })

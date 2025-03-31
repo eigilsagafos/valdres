@@ -4,7 +4,7 @@ export type RootStoreData = {
     expiredValues: WeakMap<WeakKey, any>
     subscriptions: WeakMap<WeakKey, Set<any>>
     subscriptionsRequireEqualCheck: WeakMap<WeakKey, boolean>
-    stateConsumers: WeakMap<WeakKey, any>
+    stateDependents: WeakMap<WeakKey, any>
     stateDependencies: WeakMap<WeakKey, any>
     scopes: { [scopeId: string]: ScopedStoreData }
 }

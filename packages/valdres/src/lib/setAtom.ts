@@ -26,7 +26,6 @@ export const setAtom = <Value = any>(
         // @ts-ignore
         currentValue.__resolveEmptyAtomPromise__(newValue)
     }
-
     propagateUpdatedAtoms([atom], data)
     return newValue
 }

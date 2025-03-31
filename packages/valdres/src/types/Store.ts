@@ -14,12 +14,20 @@ type SetAtom = {
     <Value extends any>(atom: Atom<Value>, value: Value): void
 }
 
+type DeleteAtom = <
+    Value extends any,
+    Args extends [any, ...any[]] = [any, ...any[]],
+>(
+    atom: AtomFamilyAtom<Value, Args>,
+) => void
+
 export type Store<T = StoreData> = {
     data: T
     get: GetValue
     set: SetAtom
     sub: SubscribeFn
     reset: ResetAtom
+    delete: DeleteAtom
     txn: (callback: TransactionFn) => void
     scope: (scopeId: string) => ScopedStore
 }

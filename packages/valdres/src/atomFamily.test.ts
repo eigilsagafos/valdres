@@ -94,7 +94,7 @@ describe("atomFamily", () => {
 
     test("subscribe to atomFamily", () => {
         const store1 = store()
-        const userAtomFamily = atomFamily<string, { name: string }>(undefined, {
+        const userAtomFamily = atomFamily<{ name: string }, [string]>(null, {
             name: "userFamily",
         })
         const callbackIds: string[] = []
@@ -103,14 +103,12 @@ describe("atomFamily", () => {
             callbackIds.push(id)
             docs.push(store1.get(userAtomFamily(id)))
         })
-
         store1.set(userAtomFamily("1"), { name: "Foo" })
         store1.set(userAtomFamily("2"), { name: "Bar" })
         store1.txn(({ set }) => {
             set(userAtomFamily("3"), { name: "Lorem" })
             set(userAtomFamily("4"), { name: "Ipsum" })
         })
-
         expect(docs).toStrictEqual([
             { name: "Foo" },
             { name: "Bar" },
@@ -122,21 +120,19 @@ describe("atomFamily", () => {
 
     test("atomFamily with object key", () => {
         const store1 = store()
-        const userAtomFamily = atomFamily<{ name: string }, { id: number }>(
+        const userAtomFamily = atomFamily<{ name: string }, [{ id: number }]>(
             undefined,
-            {
-                name: "userFamily",
-            },
+            { name: "userFamily" },
         )
-        const ids = []
-        const docs = []
+        const ids: number[] = []
+        const docs: any[] = []
         store1.sub(userAtomFamily, ({ id }) => {
             ids.push(id)
             docs.push(store1.get(userAtomFamily({ id })))
         })
         const user1atom = userAtomFamily({ id: 1 })
-        const user2atom = userAtomFamily({ id: 2 })
         store1.set(user1atom, { name: "Foo" })
+        const user2atom = userAtomFamily({ id: 2 })
         store1.set(user2atom, { name: "Bar" })
         expect(ids).toStrictEqual([1, 2])
         expect(docs).toStrictEqual([{ name: "Foo" }, { name: "Bar" }])
@@ -144,11 +140,31 @@ describe("atomFamily", () => {
 
     test("get an entire atom family", () => {
         const store1 = store()
-        const userAtomFamily = atomFamily<number>({})
+        const userAtomFamily = atomFamily<{ name: string }, [number]>()
         const user1 = store1.set(userAtomFamily(1), { name: "Foo" })
         const user2 = store1.set(userAtomFamily(2), { name: "Bar" })
-        expect(store1.get(userAtomFamily)).toStrictEqual([[1], [2]])
+        expect(
+            store1.get(userAtomFamily).map(atom => atom.familyArgsStringified),
+        ).toStrictEqual([1, 2])
         expect(store1.get(userAtomFamily)).toBe(store1.get(userAtomFamily))
+    })
+
+    test("Getting an empty atomFamily serves the same array", () => {
+        const store1 = store()
+        const familiy = atomFamily()
+        expect(store1.get(familiy)).toBe(store1.get(familiy))
+    })
+
+    test.todo("get on familyAtom adds it to array", () => {
+        const store1 = store()
+        const familiy = atomFamily("new")
+        const callback = mock(() => {})
+        store1.sub(familiy, callback)
+        const atom1 = familiy("1")
+        store1.get(atom1)
+        // We need to figure out how to get this to work. We need to untangle getState used
+        // explicitly and used from setState and other places.
+        expect(callback).toHaveBeenCalledTimes(1) // now returns 0 as get does not trigger the callback...
     })
 
     test("selectorFamily as default value", () => {
@@ -220,7 +236,7 @@ describe("atomFamily", () => {
 
     test("release an atomFamily memeber", () => {
         const store1 = store()
-        const todosAtomFamily = atomFamily<string>(id => ({
+        const todosAtomFamily = atomFamily((id: string) => ({
             id,
             completed: false,
             name: "New todo",
@@ -237,9 +253,20 @@ describe("atomFamily", () => {
          * TODO: Have to figure out how to correctly do release, have to include
          * store to release from the keys atom
          */
-        expect(store1.get(todosAtomFamily)).toStrictEqual([["1"], ["2"], ["3"]])
+        expect(
+            store1.get(todosAtomFamily).map(atom => atom.familyArgsStringified),
+        ).toStrictEqual(["1", "2", "3"])
+        store1.delete(todosAtomFamily("1"))
+        expect(
+            store1.get(todosAtomFamily).map(atom => atom.familyArgsStringified),
+        ).toStrictEqual(["2", "3"])
+        expect(
+            todosAtomFamily.__valdresAtomFamilyMap.keys().toArray(),
+        ).toStrictEqual(["1", "2", "3"])
         todosAtomFamily.release("1")
-        expect(store1.get(todosAtomFamily)).toStrictEqual([["1"], ["2"], ["3"]])
+        expect(
+            todosAtomFamily.__valdresAtomFamilyMap.keys().toArray(),
+        ).toStrictEqual(["2", "3"])
     })
 
     test.todo("subscribe to atom family keys", () => {

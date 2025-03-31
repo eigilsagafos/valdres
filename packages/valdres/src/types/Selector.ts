@@ -10,6 +10,6 @@ export type Selector<
     equal: EqualFunc<Value>
     name?: string
     family?: SelectorFamily<Value, FamilyArgs>
-    familyKey?: FamilyArgs
+    familyArgs?: FamilyArgs
     onMount?: () => void | (() => void)
 }

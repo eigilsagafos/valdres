@@ -17,7 +17,7 @@ describe("subscribe", () => {
 
     test("Subscribe to un-mounted selector", () => {
         const store1 = store()
-        const atom1 = atom([1, 2, 3])
+        const atom1 = atom([1, 2, 3]) // sum 6
         const selector1 = selector(get => {
             const [int1, int2, int3] = get(atom1)
             return int1 + int2 + int3
@@ -25,11 +25,11 @@ describe("subscribe", () => {
         const callback = mock(() => {})
         store1.sub(selector1, callback)
         expect(callback).toHaveBeenCalledTimes(0)
-        store1.set(atom1, [2, 1, 3])
+        store1.set(atom1, [2, 1, 3]) // sum 6
         expect(callback).toHaveBeenCalledTimes(0)
-        store1.set(atom1, [3, 2, 1])
+        store1.set(atom1, [3, 2, 1]) // sum 6
         expect(callback).toHaveBeenCalledTimes(0)
-        store1.set(atom1, [3, 2, 2])
+        store1.set(atom1, [3, 2, 2]) // sum 7
         expect(callback).toHaveBeenCalledTimes(1)
     })
 
@@ -55,6 +55,9 @@ describe("subscribe", () => {
      * not checked if the state actually did update. When re-calculating though
      * we ensure that the previous value is returned if deep-equal is true. This
      * ensures that react does not re-render.
+     *
+     * UPDATE: I changed the logic for how updates are propagated, so this should
+     * no longer be an issue.
      */
     test("subscribe with no-other", () => {
         const store1 = store()
@@ -62,14 +65,11 @@ describe("subscribe", () => {
         const atom1 = atom({ id: 1, name: "Foo 1", links })
         const linksSelector = selector(get => get(atom1).links)
 
-        const callbackResults: boolean[] = []
-        const callback = mock(() => {
-            callbackResults.push(Object.is(store1.get(linksSelector), links))
-        })
+        const callback = mock(() => {})
         store1.sub(linksSelector, callback, false)
         store1.set(atom1, curr => ({ ...curr, name: "Foo 2" }))
-        expect(callback).toHaveBeenCalledTimes(1)
-        expect(callbackResults).toStrictEqual([true])
+        expect(callback).toHaveBeenCalledTimes(0)
+        // expect(callbackResults).toStrictEqual([])
 
         /** We now replace the links array with one that is deep equal to the
          * previous but that does not equal on Object.is. Valdres should in
@@ -80,8 +80,14 @@ describe("subscribe", () => {
             name: "Foo 3",
             links: ["a", "b", "c"],
         }))
-        expect(callbackResults).toStrictEqual([true, true])
-        // expect(callback).toHaveBeenCalledTimes(2)
+        expect(callback).toHaveBeenCalledTimes(0)
+        store1.set(atom1, curr => ({
+            ...curr,
+            name: "Foo 3",
+            links: ["a", "b", "c", "d"],
+        }))
+        expect(callback).toHaveBeenCalledTimes(1)
+        // expect(callbackResults).toStrictEqual([true, true])
     })
 
     test("unsubscribe resets when needed", () => {
@@ -278,5 +284,84 @@ describe("subscribe", () => {
         expect(level2callback).toHaveBeenCalledTimes(1)
         // expect(level2callback).toHaveBeenLastCalledWith(["Foo"]) // This is not working in current version of bun. Should work with strictEqual under the hood...
         expect(level2callback.mock.calls[0]).toStrictEqual(["Foo"])
+    })
+
+    test("nested selectors should only re-calculate when needed", () => {
+        const rootStore = store()
+        const atom1 = atom(1, { name: "atom" })
+        const selector1cb = mock(get => {
+            get(atom1) // We get the atom but we dont use the value
+            return 1
+        })
+        const selector1 = selector(selector1cb, { name: "selector1" })
+        const selector2cb = mock(get => get(selector1) + 1)
+        const selector2 = selector(selector2cb, { name: "selector2" })
+        const selector3cb = mock(get => get(selector2) + 1)
+        const selector3 = selector(selector3cb, { name: "selector3" })
+        expect(selector1cb).toHaveBeenCalledTimes(0)
+        expect(selector2cb).toHaveBeenCalledTimes(0)
+        expect(selector3cb).toHaveBeenCalledTimes(0)
+        const atom1SubCallback = mock(() => {
+            rootStore.get(atom1)
+        })
+        const selector1SubCallback = mock(() => {
+            rootStore.get(selector1)
+        })
+        const selector2SubCallback = mock(() => {
+            rootStore.get(selector2)
+        })
+        const selector3SubCallback = mock(() => {
+            rootStore.get(selector3)
+        })
+        rootStore.sub(atom1, atom1SubCallback)
+        rootStore.sub(selector1, selector1SubCallback)
+        rootStore.sub(selector2, selector2SubCallback)
+        rootStore.sub(selector3, selector3SubCallback)
+        expect(selector1cb).toHaveBeenCalledTimes(1)
+        expect(selector2cb).toHaveBeenCalledTimes(1)
+        expect(selector3cb).toHaveBeenCalledTimes(1)
+        expect(atom1SubCallback).toHaveBeenCalledTimes(0)
+        expect(selector1SubCallback).toHaveBeenCalledTimes(0)
+        expect(selector3SubCallback).toHaveBeenCalledTimes(0)
+
+        // We set the atom to the same value as before
+        rootStore.set(atom1, 1)
+        expect(selector1cb).toHaveBeenCalledTimes(1)
+        expect(selector2cb).toHaveBeenCalledTimes(1)
+        expect(selector3cb).toHaveBeenCalledTimes(1)
+        expect(atom1SubCallback).toHaveBeenCalledTimes(0)
+        expect(selector3SubCallback).toHaveBeenCalledTimes(0)
+
+        // We set the atom to a new value
+        rootStore.set(atom1, 2)
+        expect(selector1cb).toHaveBeenCalledTimes(2)
+        expect(selector2cb).toHaveBeenCalledTimes(1)
+        expect(selector3cb).toHaveBeenCalledTimes(1)
+        expect(atom1SubCallback).toHaveBeenCalledTimes(1)
+        expect(selector1SubCallback).toHaveBeenCalledTimes(0)
+        expect(selector2SubCallback).toHaveBeenCalledTimes(0)
+        expect(selector3SubCallback).toHaveBeenCalledTimes(0)
+
+        // We set the atom back to a previous value
+        rootStore.set(atom1, 1)
+        expect(atom1SubCallback).toHaveBeenCalledTimes(2)
+        expect(selector1cb).toHaveBeenCalledTimes(3)
+        expect(selector2cb).toHaveBeenCalledTimes(1)
+        expect(selector3cb).toHaveBeenCalledTimes(1)
+        expect(selector1SubCallback).toHaveBeenCalledTimes(0)
+        expect(selector2SubCallback).toHaveBeenCalledTimes(0)
+        expect(selector3SubCallback).toHaveBeenCalledTimes(0)
+
+        // rootStore.get(selector3)
+        // expect(selector1cb).toHaveBeenCalledTimes(2)
+        // We set the atom to the same value as before
+        // expect(selector2cb).toHaveBeenCalledTimes(1)
+        // expect(selector3cb).toHaveBeenCalledTimes(1)
+        // // expect(subCallback).toHaveBeenCalledTimes(1)
+        // rootStore.set(atom1, 1)
+        // expect(selector1cb).toHaveBeenCalledTimes(3)
+        // expect(selector2cb).toHaveBeenCalledTimes(1)
+        // expect(selector3cb).toHaveBeenCalledTimes(1)
+        // expect(subCallback).toHaveBeenCalledTimes(1)
     })
 })

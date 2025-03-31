@@ -48,11 +48,10 @@ export const initAtom = <
     const tmpVal = getAtomInitValue(atom, data)
     let value = setValueInData(atom, tmpVal, data)
     if (isFamilyAtom(atom)) {
-        const currentKeySet = getState(atom.family.__keysAtom, data)
-        if (!currentKeySet.has(atom.familyKey)) {
-            const newSet = new Set(currentKeySet)
-            newSet.add(atom.familyKey)
-            setAtom(atom.family.__keysAtom, newSet, data)
+        const currentAtoms = data.values.get(atom.family) || []
+        if (!currentAtoms.includes(atom)) {
+            data.values.set(atom.family, [...currentAtoms, atom])
+            propagateUpdatedAtoms([atom.family], data)
         }
     }
     if (atom.onInit)

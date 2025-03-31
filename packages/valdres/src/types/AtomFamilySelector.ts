@@ -6,5 +6,5 @@ export type AtomFamilySelector<
     Args extends [any, ...any[]] = [any, ...any[]],
 > = Selector<Value> & {
     family: SelectorFamily<Value, Args>
-    familyKey: Args
+    familyArgs: Args
 }

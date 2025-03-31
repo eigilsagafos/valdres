@@ -1,33 +1,32 @@
+import { isProd } from "../lib/isProd"
 import type { Atom } from "../types/Atom"
+import type { AtomFamilyAtom } from "../types/AtomFamilyAtom"
 import type { GetValue } from "../types/GetValue"
 import type { State } from "../types/State"
 import type { StoreData } from "../types/StoreData"
 import type { TransactionFn } from "../types/TransactionFn"
 import type { TransactionInterface } from "../types/TransactionInterface"
+import { deepFreeze } from "../utils/deepFreeze"
 import { isAtom } from "../utils/isAtom"
 import { isAtomFamily } from "../utils/isAtomFamily"
-import { isFamily } from "../utils/isFamily"
-import { isProd } from "../lib/isProd"
 import { isFamilyAtom } from "../utils/isFamilyAtom"
 import { isSelector } from "../utils/isSelector"
-import { isSelectorFamily } from "../utils/isSelectorFamily"
 import { getState } from "./getState"
 import { getAtomInitValue } from "./initAtom"
 import { isFunction } from "./isFunction"
 import { setAtoms } from "./setAtoms"
-import { deepFreeze } from "../utils/deepFreeze"
 
 const findDependencies = (
     state: State,
     data: StoreData,
     result = new Set(),
 ) => {
-    const consumers = data.stateConsumers.get(state)
-    if (consumers?.size) {
-        for (const consumer of consumers) {
-            if (!result.has(consumer)) {
-                result.add(consumer)
-                findDependencies(consumer, data, result)
+    const dependents = data.stateDependents.get(state)
+    if (dependents?.size) {
+        for (const dependent of dependents) {
+            if (!result.has(dependent)) {
+                result.add(dependent)
+                findDependencies(dependent, data, result)
             }
         }
     }
@@ -60,7 +59,7 @@ type GetAtomValue = {
 
 const captureScopedTransaction = (
     scopedData: StoreData,
-    parentGetFromTxnOrData: GetAtomValue,
+    parentGetInTxnOrData: GetAtomValue,
 ) => {
     let txn: TransactionInterface
     transaction(
@@ -69,10 +68,19 @@ const captureScopedTransaction = (
         },
         scopedData,
         false,
-        parentGetFromTxnOrData,
+        parentGetInTxnOrData,
     )
     // @ts-ignore
     return txn
+}
+
+const deleteAtomFamilyAtoms = (
+    set: Set<AtomFamilyAtom<any, any>>,
+    data: StoreData,
+) => {
+    set.forEach(atom => {
+        data.values.delete(atom)
+    })
 }
 
 type ScopedTransactionsRecord = Record<string, TransactionInterface>
@@ -81,30 +89,31 @@ export const transaction = (
     callback: TransactionFn,
     data: StoreData,
     autoCommit = true,
-    parentGetFromTxnOrData?: GetAtomValue,
+    parentGetInTxnOrData?: GetAtomValue,
 ) => {
     const txnAtomMap = new Map()
+    const txnAtomDeleteSet = new Set<AtomFamilyAtom<any, any>>()
     const txnSelectorCache = new Map()
     const txnSubscribers = new Map()
     const dirtySelectors = new Set()
     let scopedTransactions: ScopedTransactionsRecord
 
-    const getFromTxnOrData: GetAtomValue = state => {
+    const getInTxnOrData: GetAtomValue = state => {
         if (txnAtomMap.has(state)) {
             return txnAtomMap.get(state)
         }
         if (data.values.has(state)) {
             return data.values.get(state)
         }
-        if (parentGetFromTxnOrData) {
-            return parentGetFromTxnOrData(state)
+        if (parentGetInTxnOrData) {
+            return parentGetInTxnOrData(state)
         }
     }
 
     // @ts-ignore @ts-todo
     const txnGet: GetValue = state => {
         if (isAtom(state)) {
-            const value = getFromTxnOrData(state)
+            const value = getInTxnOrData(state)
             if (value) return value
             return getState(state, data)
         } else if (isSelector(state)) {
@@ -126,7 +135,9 @@ export const transaction = (
             txnSelectorCache.set(state, res)
             return res
         } else if (isAtomFamily(state)) {
-            return txnGet(state.__keysSelector)
+            const value = getInTxnOrData(state)
+            if (value) return value
+            return getState(state, data)
         } else {
             throw new Error("Unsupported state")
         }
@@ -157,26 +168,11 @@ export const transaction = (
         }
 
         if (isFamilyAtom(atom)) {
-            const currentKeySet = txnGet(atom.family.__keysAtom)
-            if (!currentKeySet.has(atom.familyKey)) {
-                const newSet = new Set(currentKeySet)
-                newSet.add(atom.familyKey)
-                txnSet(atom.family.__keysAtom, newSet)
-                // txnAtomMap.set(atom.family.__keysAtom, newSet)
+            const currentFamilyList = txnGet(atom.family)
+            if (!currentFamilyList.includes(atom)) {
+                const newArr = [...currentFamilyList, atom]
+                txnAtomMap.set(atom.family, newArr)
             }
-            // console.log(currentKeySet)
-
-            // if (isFamilyAtom(atom)) {
-            //     const currentKeySet = getState(atom.family.__keysAtom, data)
-            //     if (!currentKeySet.has(atom.familyKey)) {
-            //         const newSet = new Set(currentKeySet)
-            //         newSet.add(atom.familyKey)
-            //         setAtom(atom.family.__keysAtom, newSet, data)
-            //     }
-            // }
-            // throw new Error("Todo")
-            // const keysSelector = atom.__keysSelector
-            // txnAtomMap.set(keysSelector, value)
         }
         return value
     }
@@ -186,8 +182,28 @@ export const transaction = (
         txnAtomMap.set(atom, value)
         return value
     }
+
+    const txnDel = (atom: AtomFamilyAtom<any, any>) => {
+        const array = txnGet(atom.family)
+        const index = array.indexOf(atom)
+        const newArr: AtomFamilyAtom<any, any>[] = [
+            ...array.slice(0, index),
+            ...array.slice(index + 1),
+        ]
+        txnAtomMap.set(atom.family, newArr)
+        if (data.values.has(atom)) {
+            txnAtomDeleteSet.add(atom)
+        }
+        if (txnAtomMap.has(atom)) {
+            txnAtomMap.delete(atom)
+        }
+    }
+
     const commit = () => {
         setAtoms(txnAtomMap, data)
+        if (txnAtomDeleteSet.size) {
+            deleteAtomFamilyAtoms(txnAtomDeleteSet, data)
+        }
         dirtySelectors.clear()
         if (scopedTransactions) {
             for (const scopedTxn of Object.values(scopedTransactions)) {
@@ -198,6 +214,7 @@ export const transaction = (
     const result = callback({
         set: txnSet,
         get: txnGet,
+        del: txnDel,
         reset: txnReset,
         commit,
         scope: (scopeId, callback) => {
@@ -209,7 +226,7 @@ export const transaction = (
                 if (scopedTransactions[scopeId] === undefined) {
                     scopedTransactions[scopeId] = captureScopedTransaction(
                         scopedData,
-                        getFromTxnOrData,
+                        getInTxnOrData,
                     )
                 }
                 return callback(scopedTransactions[scopeId])

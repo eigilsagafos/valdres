@@ -13,7 +13,7 @@ export const updateStateSubscribers = (state: State, data: StoreData) => {
         const familySubscriptions = data.subscriptions.get(state.family)
         if (familySubscriptions?.size) {
             for (const subscribtion of familySubscriptions) {
-                subscribtion.callback(...state.familyKey)
+                subscribtion.callback(...state.familyArgs)
             }
         }
     }

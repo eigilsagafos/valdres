@@ -1,4 +1,3 @@
-import type { FamilyKey } from "./FamilyKey"
 import type { Selector } from "./Selector"
 
 export type SelectorFamily<Value extends any, Args extends [any, ...any[]]> = {

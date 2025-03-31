@@ -1,4 +1,4 @@
-import { describe, test, expect } from "bun:test"
+import { describe, test, expect, mock } from "bun:test"
 import { generateStoreAndRenderHook } from "../test/generateStoreAndRenderHook"
 import { useValue } from "./useValue"
 import { atom, atomFamily, selector, selectorFamily } from "valdres"
@@ -52,14 +52,44 @@ describe("useValue", () => {
 
     test("atomFamily id list", async () => {
         const [store, renderHook] = generateStoreAndRenderHook()
-        const family = atomFamily<string, number>(0)
+        const family = atomFamily<number, [string]>(0)
         const atom1 = family("1")
         const atom2 = family("2")
         const { result } = renderHook(() => useValue(family))
         expect(result.current).toStrictEqual([])
         store.get(atom1)
-        // expect(result.current).toStrictEqual(["1"]) // TODO: This should work when correctly handled in valdres package...
+        // console.log(result.current)
+        // // expect(result.current).toStrictEqual(["1"]) // TODO: This should work when correctly handled in valdres package...
         store.set(atom2, 2)
-        expect(result.current).toStrictEqual([["1"], ["2"]])
+        expect(result.current).toStrictEqual([atom1, atom2])
+    })
+
+    test("nested selectors should only re-calculate when needed", () => {
+        const atom1 = atom(1)
+        const selector1cb = mock(get => {
+            get(atom1)
+            //We get the atom but we dont use the value
+            return 1
+        })
+        const selector1 = selector(selector1cb)
+        const selector2cb = mock(get => get(selector1) + 1)
+        const selector2 = selector(selector2cb)
+        const selector3cb = mock(get => get(selector2) + 1)
+        const selector3 = selector(selector3cb)
+        const [store, renderHook] = generateStoreAndRenderHook()
+        const { result } = renderHook(() => [
+            useValue(selector1),
+            useValue(selector2),
+            useValue(selector3),
+        ])
+        expect(result.current).toStrictEqual([1, 2, 3])
+        expect(selector1cb).toHaveBeenCalledTimes(1)
+        expect(selector2cb).toHaveBeenCalledTimes(1)
+        expect(selector3cb).toHaveBeenCalledTimes(1)
+        store.set(atom1, 2)
+        expect(result.current).toStrictEqual([1, 2, 3])
+        expect(selector1cb).toHaveBeenCalledTimes(2)
+        expect(selector2cb).toHaveBeenCalledTimes(1)
+        expect(selector3cb).toHaveBeenCalledTimes(1)
     })
 })

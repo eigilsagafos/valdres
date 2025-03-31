@@ -133,6 +133,45 @@ describe("transaction", () => {
             expect(res3).toBe(2)
         })
     })
+    test("delete in transaction", () => {
+        const rootStore = store()
+        const user = atomFamily<{ id: number; name: string }, [number]>()
+        const user1atom = user(1)
+        const user2atom = user(2)
+        const user3atom = user(3)
+        const user4atom = user(4)
+        rootStore.set(user1atom, { id: 1, name: "Foo" })
+        rootStore.set(user2atom, { id: 2, name: "Bar" })
+        expect(rootStore.data.values.get(user)).toStrictEqual([
+            user1atom,
+            user2atom,
+        ])
+        expect(rootStore.get(user)).toStrictEqual([user1atom, user2atom])
+        rootStore.txn(({ set, get, del }) => {
+            expect(get(user)).toStrictEqual([user1atom, user2atom])
+            set(user3atom, { id: 3, name: "Baz" })
+            expect(get(user)).toStrictEqual([user1atom, user2atom, user3atom])
+            set(user4atom, { id: 4, name: "Fiz" })
+            expect(get(user)).toStrictEqual([
+                user1atom,
+                user2atom,
+                user3atom,
+                user4atom,
+            ])
+            del(user1atom)
+            expect(get(user)).toStrictEqual([user2atom, user3atom, user4atom])
+            del(user3atom)
+            expect(get(user)).toStrictEqual([user2atom, user4atom])
+        })
+        expect(rootStore.data.values.get(user)).toStrictEqual([
+            user2atom,
+            user4atom,
+        ])
+        expect(rootStore.data.values.has(user1atom)).toBe(false)
+        expect(rootStore.data.values.has(user2atom)).toBe(true)
+        expect(rootStore.data.values.has(user3atom)).toBe(false)
+        expect(rootStore.data.values.has(user4atom)).toBe(true)
+    })
 
     test("transaction in scope", () => {
         const nameAtom = atom("default")
@@ -188,26 +227,39 @@ describe("transaction", () => {
         store1.scope("Foo").scope("Bar")
         store1.txn(txn => {
             txn.set(userAtom(1), "User 1")
-            expect(txn.get(userAtom)).toStrictEqual([[1]])
+            expect(txn.get(userAtom).map(a => a.familyArgs)).toStrictEqual([
+                [1],
+            ])
             txn.set(userAtom(2), "User 2")
-            expect(txn.get(userAtom)).toStrictEqual([[1], [2]])
+            expect(txn.get(userAtom).map(a => a.familyArgs)).toStrictEqual([
+                [1],
+                [2],
+            ])
             txn.scope("Foo", fooTxn => {
-                expect(fooTxn.get(userAtom)).toStrictEqual([[1], [2]])
+                expect(
+                    fooTxn.get(userAtom).map(a => a.familyArgs),
+                ).toStrictEqual([[1], [2]])
                 fooTxn.set(userAtom(3), "User 3")
-                expect(fooTxn.get(userAtom)).toStrictEqual([[1], [2], [3]])
+                expect(
+                    fooTxn.get(userAtom).map(a => a.familyArgs),
+                ).toStrictEqual([[1], [2], [3]])
                 fooTxn.scope("Bar", barTxn => {
-                    expect(barTxn.get(userAtom)).toStrictEqual([[1], [2], [3]])
+                    expect(
+                        barTxn.get(userAtom).map(a => a.familyArgs),
+                    ).toStrictEqual([[1], [2], [3]])
                     barTxn.set(userAtom(4), "User 4")
-                    expect(barTxn.get(userAtom)).toStrictEqual([
-                        [1],
-                        [2],
-                        [3],
-                        [4],
-                    ])
+                    expect(
+                        barTxn.get(userAtom).map(a => a.familyArgs),
+                    ).toStrictEqual([[1], [2], [3], [4]])
                 })
-                expect(fooTxn.get(userAtom)).toStrictEqual([[1], [2], [3]])
+                expect(
+                    fooTxn.get(userAtom).map(a => a.familyArgs),
+                ).toStrictEqual([[1], [2], [3]])
             })
-            expect(txn.get(userAtom)).toStrictEqual([[1], [2]])
+            expect(txn.get(userAtom).map(a => a.familyArgs)).toStrictEqual([
+                [1],
+                [2],
+            ])
         })
     })
 

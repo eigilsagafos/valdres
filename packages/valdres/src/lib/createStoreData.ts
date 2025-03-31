@@ -8,7 +8,7 @@ const generateStoreData = (id: string = generateId()) => {
         expiredValues: new WeakMap(),
         subscriptions: new WeakMap(),
         subscriptionsRequireEqualCheck: new WeakMap(),
-        stateConsumers: new WeakMap(),
+        stateDependents: new WeakMap(),
         stateDependencies: new WeakMap(),
         scopes: {},
     }

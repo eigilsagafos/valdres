@@ -19,26 +19,32 @@ describe("selector", () => {
         expect(callback).toHaveBeenCalledTimes(1)
     })
 
-    test("selectors update", () => {
+    test("one level selectors update", () => {
         const store1 = store()
         const numberAtom = atom(5)
         const callback = mock(get => get(numberAtom) * 100)
-        const time100Selector = selector(callback, "times 100 selector")
+        const time100Selector = selector(callback, {
+            name: "times 100 selector",
+        })
         expect(store1.get(time100Selector)).toBe(500)
         expect(callback).toHaveBeenCalledTimes(1)
         store1.set(numberAtom, 10)
         expect(callback).toHaveBeenCalledTimes(1)
-        // expect(store1.get(time100Selector)).toBe(1000)
-        // expect(callback).toHaveBeenCalledTimes(2)
+        expect(store1.get(time100Selector)).toBe(1000)
+        expect(callback).toHaveBeenCalledTimes(2)
     })
 
     test("nested selectors update", () => {
         const store1 = store()
         const baseAtom = atom(10)
         const callbackLevel1 = mock(get => get(baseAtom) * 10)
-        const selectorLevel1 = selector(callbackLevel1, `selectorLevel1`)
+        const selectorLevel1 = selector(callbackLevel1, {
+            name: "selectorLevel1",
+        })
         const callbackLevel2 = mock(get => get(selectorLevel1) * 10)
-        const selectorLevel2 = selector(callbackLevel2, `selectorLevel2`)
+        const selectorLevel2 = selector(callbackLevel2, {
+            name: "selectorLevel2",
+        })
         expect(store1.get(selectorLevel1)).toBe(100)
         expect(store1.get(selectorLevel2)).toBe(1000)
         store1.set(baseAtom, 20)
@@ -48,9 +54,9 @@ describe("selector", () => {
 
     test("conditional nested selector subscriptions update", () => {
         const store1 = store()
-        const boolAtom = atom(true, "bool")
-        const atom1 = atom(1, "atom1")
-        const atom2 = atom(2, "atom2")
+        const boolAtom = atom(true, { name: "bool" })
+        const atom1 = atom(1, { name: "atom1" })
+        const atom2 = atom(2, { name: "atom2" })
 
         const callback1 = mock(get => {
             if (get(boolAtom)) {
@@ -152,8 +158,12 @@ describe("selector", () => {
 
     test("selector with multiple async gets", async () => {
         const store1 = store()
-        const asyncAtom1 = atom(() => wait(1).then(() => 1), "asyncAtom1")
-        const asyncAtom2 = atom(() => wait(1).then(() => 2), "asyncAtom2")
+        const asyncAtom1 = atom(() => wait(1).then(() => 1), {
+            name: "asyncAtom1",
+        })
+        const asyncAtom2 = atom(() => wait(1).then(() => 2), {
+            name: "asyncAtom2",
+        })
 
         const selector1 = selector(get => {
             return [get(asyncAtom1), get(asyncAtom2)]
@@ -173,6 +183,7 @@ describe("selector", () => {
 
         store1.set(asyncAtom1, 3)
         store1.set(asyncAtom2, 4)
+        // TODO: This test now does not pass now due to the change in update strategy.
         expect(store1.data.values.get(selector1)).toBeUndefined()
         expect(store1.get(selector1)).toStrictEqual([3, 4])
         expect(store1.data.values.get(selector1)).toStrictEqual([3, 4])
@@ -245,7 +256,12 @@ describe("selector", () => {
         const user1 = store1.set(keysAtomFamily("a"), true)
         const user2 = store1.set(keysAtomFamily("b"), true)
         keysAtomFamily("c") // This will not be part of set
-        const selector1 = selector(get => get(keysAtomFamily), "Selector1")
+        const selector1 = selector(
+            get => get(keysAtomFamily).map(atom => atom.familyArgs),
+            {
+                name: "Selector1",
+            },
+        )
         const subCallback = mock(() => {})
         store1.sub(keysAtomFamily, subCallback)
         const res1 = store1.get(selector1)

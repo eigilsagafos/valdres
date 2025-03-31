@@ -1,4 +1,5 @@
 import type { Atom } from "../types/Atom"
+import type { AtomFamilyAtom } from "../types/AtomFamilyAtom"
 import type { Family } from "../types/Family"
 import type { GetValue } from "../types/GetValue"
 import type { SetAtom } from "../types/SetAtom"
@@ -9,6 +10,7 @@ import type { TransactionFn } from "../types/TransactionFn"
 import { isAtom } from "../utils/isAtom"
 import { isSelector } from "../utils/isSelector"
 import { createStoreData } from "./createStoreData"
+import { deleteFamilyAtom } from "./deleteFamilyAtom"
 import { getState } from "./getState"
 import { resetAtom } from "./resetAtom"
 import { setAtom } from "./setAtom"
@@ -44,6 +46,13 @@ export function storeFromStoreData(
 
     const reset = <V>(atom: Atom<V>) => resetAtom(atom, data)
 
+    const deleteFn = <
+        Value extends unknown,
+        Args extends [any, ...any[]] = [any, ...any[]],
+    >(
+        atom: AtomFamilyAtom<Value, Args>,
+    ) => deleteFamilyAtom(atom, data)
+
     const sub = <V>(
         state: State<V> | Family<V, any>,
         callback: () => void,
@@ -78,6 +87,7 @@ export function storeFromStoreData(
             sub,
             txn,
             reset,
+            delete: deleteFn,
             data,
             scope,
             detach,
@@ -89,6 +99,7 @@ export function storeFromStoreData(
             sub,
             txn,
             reset,
+            delete: deleteFn,
             data,
             scope,
         } as Store

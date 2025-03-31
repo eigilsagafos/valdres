@@ -20,10 +20,10 @@ const getOrInitConsumersSet = (
     state: State,
     data: StoreData,
 ): Set<State<any>> => {
-    const set = data.stateConsumers.get(state)
+    const set = data.stateDependents.get(state)
     if (set) return set
     const newSet = new Set<State>()
-    data.stateConsumers.set(state, newSet)
+    data.stateDependents.set(state, newSet)
     return newSet
 }
 
@@ -111,7 +111,89 @@ export const initSelector = <V>(
     selector: Selector<V>,
     data: StoreData,
     circularDependencySet = new WeakSet(),
-): V | Promise<V> => {
+): boolean => {
+    const existingValue = data.values.get(selector)
+    const udpatedValue = evaluate(selector, data, circularDependencySet)
+    if (selector.equal(existingValue as V, udpatedValue as V)) {
+        return false
+    } else {
+        setValueInData<V>(selector, udpatedValue as V, data)
+        return true
+    }
+
+    // if (data.expiredValues.has(selector)) {
+    //     /**
+    //      * In this case we want to first check if any dependencies changed before we re-validate.
+    //      * The way valdres works is that when an atom changes we mark the entire dependency tree of
+    //      * that atom as "dirty" by moving the value into expired values. We should therefore ensure
+    //      * that all dirty parents are re-evaluted first and then only trigger the re-evalute if any
+    //      * of the dependencies changes.
+    //      */
+    //     const dependecies = data.stateDependencies.get(selector)
+    //     if (dependecies?.size) {
+    //         let shouldReEvalute = false
+    //         let reason
+    //         for (const dependecy of dependecies) {
+    //             if (shouldReEvalute) break
+    //             if (data.values.has(dependecy)) {
+    //                 shouldReEvalute = true
+    //                 reason = ["has dep", dependecy]
+    //             } else if (data.expiredValues.has(dependecy)) {
+    //                 const didChange = initSelector(
+    //                     dependecy,
+    //                     data,
+    //                     circularDependencySet,
+    //                 )
+    //                 if (didChange) {
+    //                     shouldReEvalute = true
+    //                 }
+    //             } else {
+    //                 shouldReEvalute = true
+    //             }
+    //         }
+
+    //         if (process.env.DEBUG1) {
+    //             console.log("asdf", {
+    //                 selector,
+    //                 hasExpired: data.expiredValues.has(selector),
+    //                 shouldReEvalute,
+    //                 reason,
+    //             })
+    //         }
+
+    //         if (shouldReEvalute) {
+    //             const newValue = evaluate(selector, data, circularDependencySet)
+    //             const expiredValue = data.expiredValues.get(selector)
+    //             if (selector.equal(expiredValue, newValue)) {
+    //                 setValueInData(selector, expiredValue, data)
+    //                 return false
+    //             } else {
+    //                 setValueInData(selector, newValue, data)
+    //                 return true
+    //             }
+    //         } else {
+    //             const expiredValue = data.expiredValues.get(selector)
+    //             setValueInData(selector, expiredValue, data)
+    //             return false
+    //         }
+    //     } else {
+    //         throw new Error("TODO")
+    //     }
+    // } else {
+    //     if (data.values.has(selector)) {
+    //         throw new Error("TODO")
+    //     }
+    //     const value = evaluate(selector, data, circularDependencySet)
+    //     setValueInData(selector, value, data)
+    //     return true
+    // }
+}
+
+const evaluate = <V>(
+    selector: Selector<V>,
+    data: StoreData,
+    circularDependencySet: WeakSet<any>,
+) => {
     let tmpValue
     try {
         tmpValue = evaluateSelector(selector, data, circularDependencySet)
@@ -119,14 +201,5 @@ export const initSelector = <V>(
         if (e instanceof SelectorEvaluationError) e.track(selector)
         throw e
     }
-    const value = handleSelectorResult<V>(tmpValue, selector, data)
-    if (data.expiredValues.has(selector)) {
-        const expiredValue = data.expiredValues.get(selector)
-        // @ts-ignore
-        if (selector.equal(expiredValue, value)) {
-            return setValueInData(selector, expiredValue, data)
-        }
-    }
-    // @ts-ignore
-    return setValueInData(selector, value, data)
+    return handleSelectorResult<V>(tmpValue, selector, data)
 }

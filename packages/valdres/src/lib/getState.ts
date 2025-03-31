@@ -10,6 +10,7 @@ import { isSelector } from "../utils/isSelector"
 import { isSelectorFamily } from "../utils/isSelectorFamily"
 import { initAtom } from "./initAtom"
 import { initSelector } from "./initSelector"
+import type { AtomFamilyAtom } from "../types/AtomFamilyAtom"
 
 export function getState<
     Value extends any,
@@ -36,7 +37,7 @@ export function getState<
     family: AtomFamily<Value, Args>,
     data: StoreData,
     circularDependencySet?: WeakSet<Selector>,
-): Args[]
+): AtomFamilyAtom<Value, Args>[]
 
 export function getState<
     Value extends any,
@@ -56,27 +57,26 @@ export function getState<
             )
         return initAtom<Value, Args>(state, data)
     }
-    if (isSelector<Value>(state))
-        return initSelector<Value>(state, data, circularDependencySet)
+    if (isSelector<Value>(state)) {
+        initSelector<Value>(state, data, circularDependencySet)
+        return data.values.get(state)
+    }
     if (isAtomFamily<Value, Args>(state)) {
         if ("parent" in data) {
             const closestData = findClosestStoreWithAtomInitialized<Set<Args>>(
-                state.__keysAtom,
+                // @ts-ignore @ts-todo
+                state,
                 data,
             )
+            // @ts-ignore @ts-todo
             return getState<Value, Args>(
-                // @ts-ignore @ts-todo
-                state.__keysSelector,
+                state,
                 closestData,
                 circularDependencySet,
             )
         }
-        return getState<Value, Args>(
-            // @ts-ignore @ts-todo
-            state.__keysSelector,
-            data,
-            circularDependencySet,
-        )
+        data.values.set(state, [])
+        return data.values.get(state)
     }
     if (isSelectorFamily<Value, Args>(state)) {
         // TODO: Impement more efficient way to solve this

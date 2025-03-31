@@ -91,7 +91,7 @@ describe("globalAtom", () => {
     test("reset support for global atom with selectors", () => {
         const store1 = store()
         const store2 = store()
-        const testAtom = atom(3, { global: true })
+        const testAtom = atom(3, { global: true, name: "Global test" })
         const testSelector = selector(get => get(testAtom) * 2)
         const sub1cb = mock(() => {})
         const sub2cb = mock(() => {})

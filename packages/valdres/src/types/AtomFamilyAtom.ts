@@ -6,5 +6,6 @@ export type AtomFamilyAtom<
     Args extends [any, ...any[]] = [any, ...any[]],
 > = Atom<Value> & {
     family: AtomFamily<Value, Args>
-    familyKey: Args
+    familyArgs: Args
+    familyArgsStringified: string
 }

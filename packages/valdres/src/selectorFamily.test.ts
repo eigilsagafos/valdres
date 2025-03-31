@@ -57,11 +57,20 @@ describe("selectorFamily", () => {
     })
     test("mutli args", async () => {
         const store1 = store()
-        const testFamily = selectorFamily(
-            (arg1: string, arg2: string) => get => [arg1, arg2] as const,
+        const testFamily1 = selectorFamily(
+            (id: string, capitalize: boolean) => get =>
+                ({ id, capitalize }) as const,
         )
-        const selector = testFamily("Foo", "Bar")
+        const userFamily2 = selectorFamily(
+            (id: string) => get => get(testFamily1(id, true)),
+        )
+
+        const selector = userFamily2("Foo")
 
         const res = store1.get(selector)
+        expect(store1.get(selector)).toStrictEqual({
+            id: "Foo",
+            capitalize: true,
+        })
     })
 })

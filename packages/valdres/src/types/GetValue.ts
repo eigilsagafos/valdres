@@ -1,5 +1,6 @@
 import type { Atom } from "./Atom"
 import type { AtomFamily } from "./AtomFamily"
+import type { AtomFamilyAtom } from "./AtomFamilyAtom"
 import type { Selector } from "./Selector"
 
 export type GetValue<> = {
@@ -9,5 +10,5 @@ export type GetValue<> = {
     ): Value
     <Value extends any, Args extends [any, ...any[]]>(
         family: AtomFamily<Value, Args>,
-    ): Args[]
+    ): AtomFamilyAtom<Value, Args>[]
 }
