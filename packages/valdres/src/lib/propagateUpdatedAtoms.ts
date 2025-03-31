@@ -43,8 +43,8 @@ const recursivlyResetSelectorTree = (
                 data.expiredValues.set(selector, data.values.get(selector))
                 data.values.delete(selector)
             } else if (dependents && subscribers) {
-                if (dependents.size === 0) throw new Error("Should not happen")
-                if (subscribers.size === 0) throw new Error("Should not happen")
+                // if (dependents.size === 0) throw new Error("Should not happen")
+                // if (subscribers.size === 0) throw new Error("Should not happen")
                 const isValueUpdated = revalidate(selector, data)
                 if (isValueUpdated) {
                     recursivlyResetSelectorTree(
@@ -55,7 +55,7 @@ const recursivlyResetSelectorTree = (
                     updateSelectorSubscribers(selector, data)
                 }
             } else if (dependents) {
-                if (dependents.size === 0) throw new Error("Should not happen")
+                // if (dependents.size === 0) throw new Error("Should not happen")
                 const valueUpdated = revalidate(selector, data)
                 if (valueUpdated) {
                     recursivlyResetSelectorTree(
@@ -65,7 +65,7 @@ const recursivlyResetSelectorTree = (
                     )
                 }
             } else if (subscribers) {
-                if (subscribers.size === 0) throw new Error("Should not happen")
+                // if (subscribers.size === 0) throw new Error("Should not happen")
                 const isValueUpdated = revalidate(selector, data)
 
                 if (isValueUpdated) {
