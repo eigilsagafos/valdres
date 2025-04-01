@@ -14,5 +14,7 @@ export const setAtoms = (pairs: Map<Atom<any>, any>, data: StoreData) => {
             if (atom.onSet) atom.onSet(value, data)
         }
     }
-    propagateUpdatedAtoms(updatedAtoms, data)
+    if (updatedAtoms.length > 0) {
+        propagateUpdatedAtoms(updatedAtoms, data)
+    }
 }
