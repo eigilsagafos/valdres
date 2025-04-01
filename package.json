@@ -1,6 +1,7 @@
 {
-    "name": "valdres",
+    "name": "valdres-monorepo",
     "type": "module",
+    "private": true,
     "author": {
         "name": "Eigil Sagafos"
     },
@@ -12,9 +13,12 @@
     "scripts": {
         "build": "bun run lerna run build",
         "build:types": "bun run lerna run build:types",
-        "publish": "bun run lerna publish  --force-publish",
-        "test": "bun run lerna run test",
-        "dev": "bun run lerna run build --parallel -- --watch"
+        "publish_old": "bun run lerna publish  --force-publish",
+        "test_old": "bun run lerna run test",
+        "dev": "bun run lerna run build --parallel -- --watch",
+        "bump": "bun ./scripts/bump.tsx",
+        "publish": "bun scripts/publish.tsx",
+        "test": "bun --filter '*' test"
     },
     "workspaces": [
         "packages/*",
@@ -23,9 +27,13 @@
     ],
     "devDependencies": {
         "@types/bun": "1.2.2",
-        "lerna": "8.1.9",
         "eslint": "9.20.1",
         "eslint-config-prettier": "10.0.1",
-        "prettier": "3.5.1"
+        "ink": "5.2.0",
+        "ink-select-input": "6.0.0",
+        "ink-spinner": "5.0.0",
+        "lerna": "8.1.9",
+        "prettier": "3.5.3",
+        "semver": "7.7.1"
     }
 }

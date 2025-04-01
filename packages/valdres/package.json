@@ -12,8 +12,7 @@
     },
     "type": "module",
     "exports": {
-        "default": "./dist/index.js",
-        "types": "./dist/types/src/index.d.ts"
+        ".": "./src/index.ts"
     },
     "files": [
         "dist"
