@@ -1,6 +1,6 @@
 {
     "name": "valdres-react",
-    "version": "0.2.0-pre.1",
+    "version": "0.2.0-pre.2",
     "license": "MIT",
     "author": {
         "name": "Eigil Sagafos"
@@ -23,7 +23,7 @@
         "test": "bun test"
     },
     "dependencies": {
-        "valdres": "0.2.0-pre.1"
+        "valdres": "0.2.0-pre.2"
     },
     "devDependencies": {
         "@happy-dom/global-registrator": "15.7.4",
@@ -31,7 +31,7 @@
         "@testing-library/react": "16.0.1",
         "@testing-library/react-hooks": "8.0.1",
         "@testing-library/user-event": "14.5.2",
-        "@valdres/test": "0.2.0-pre.1",
+        "@valdres/test": "0.2.0-pre.2",
         "happy-dom": "15.7.4",
         "mitata": "0.1.14",
         "react": "18.3.1",
