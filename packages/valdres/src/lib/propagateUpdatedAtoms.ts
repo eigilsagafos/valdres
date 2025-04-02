@@ -80,6 +80,7 @@ export const propagateUpdatedAtoms = (
     data: StoreData,
     subscriptions: Set<Subscription> = new Set(),
     families: Map<AtomFamily<any>, Set<AtomFamilyAtom<any>>> = new Map(),
+    isRecursive = false,
 ) => {
     // const subscriptions = new Set<Subscription>()
     // const families = new Map<AtomFamily<any>>()
@@ -109,7 +110,10 @@ export const propagateUpdatedAtoms = (
             addFamilyAtomsToSet(family, familyAtoms, data)
         }
     }
-    propagateDirtySelectors(atoms, selectors, data, subscriptions, families)
+
+    if (!isRecursive) {
+        propagateDirtySelectors(atoms, selectors, data, subscriptions, families)
+    }
 }
 
 export const propagateDirtySelectors = (
@@ -136,9 +140,12 @@ export const propagateDirtySelectors = (
         updatedInitializedAtoms,
     )
     if (addedAtoms.size) {
-        throw new Error(
-            "Handle this case. Is probably if a selector initializes an atom",
-        )
+        // propagateUpdatedAtoms
+        console.log("addedAtoms", addedAtoms)
+        console.log("Valdres TODO: Support this case with new atoms added")
+        // throw new Error(
+        //     "Handle this case. Is probably if a selector initializes an atom",
+        // )
     }
     if (subscriptions.size > 0) {
         for (const subscription of subscriptions) {

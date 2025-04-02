@@ -38,7 +38,7 @@ export const evaluateSelector = <V>(
 ) => {
     const updatedDependencies = new Set<State<any>>()
     if (circularDependencySet.has(selector)) {
-        throw new SelectorCircularDependencyError()
+        // throw new SelectorCircularDependencyError()
     }
 
     circularDependencySet.add(selector)
