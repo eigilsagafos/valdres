@@ -1,14 +1,12 @@
-import { version } from "../package.json" //assert { type: "json" }
-
 declare global {
     var __valdres__: string
 }
 if (globalThis.__valdres__) {
     throw new Error(
-        `Error! An instance of valdres is already loaded. Loaded: ${globalThis.__valdres__}. Attempted to load: ${version}`,
+        `Error! An instance of valdres is already loaded. Loaded: ${globalThis.__valdres__}. Attempted to load: ${process.env.VALDRES_VERSION}`,
     )
 } else {
-    globalThis.__valdres__ = version
+    globalThis.__valdres__ = process.env.VALDRES_VERSION as string
 }
 
 export { atom } from "./atom"
