@@ -124,81 +124,81 @@ const steps = [
         name: "tsc",
         callback: shell => shell`bun run build:types`.quiet().nothrow(),
     },
-    // {
-    //     name: "prepack",
-    //     callback: (shell, parentDir) => {
-    //         const up = "../".repeat(parentDir.split("/").length - 1)
-    //         return shell`bun run ${up}scripts/prepack.ts`.quiet().nothrow()
-    //     },
-    // },
-    // {
-    //     name: "pack",
-    //     callback: shell =>
-    //         shell`bun pm pack --destination dist-tarball`.quiet().nothrow(),
-    //     onSuccess: (output, key) => {
-    //         const match = output.match(/dist-tarball\/[^\s]+\.tgz/)
-    //         valdresStore.set(jobMeta(key), { tarball: match[0] })
-    //     },
-    // },
-    // {
-    //     name: "publish",
-    //     callback: async (shell, packagePath, key) => {
-    //         const meta = valdresStore.get(jobMeta(key))
-    //         // const dir = packagePath.split("/")
-    //         // dir.pop()
-    //         // console.log(packagePath, meta, dir.join("/"))
-    //         // const tarPath = `${dir.join("/")}/${meta.tarball}`
-    //         // console.log(tarPath)
-    //         // console.log(packagePath)
-    //         // const tarData = await Bun.file(tarPath).arrayBuffer()
-    //         // // const res = await $`npm config get //registry.npmjs.org/:_authToken`
-    //         // // console.log(res)
-    //         // console.log(process.env.HOME)
-    //         // const ssss = await Bun.file(`${process.env.HOME}/.npmrc`).text()
-    //         // console.log(ssss)
-    //         // const packageJson = await Bun.file(packagePath).json()
-    //         // // throw new Error("asdfasdf")
-    //         // console.log("packageJson", packageJson)
-    //         // return publish(
-    //         //     packageJson,
-    //         //     Buffer.from(tarData),
-    //         //     {
-    //         //         // npmVersion: `${packageJson.name}@${packageJson.version}`,
-    //         //         access: "public",
-    //         //         registry: "https://registry.npmjs.org/",
-    //         //         token: "",
+    {
+        name: "prepack",
+        callback: (shell, parentDir) => {
+            const up = "../".repeat(parentDir.split("/").length - 1)
+            return shell`bun run ${up}scripts/prepack.ts`.quiet().nothrow()
+        },
+    },
+    {
+        name: "pack",
+        callback: shell =>
+            shell`bun pm pack --destination dist-tarball`.quiet().nothrow(),
+        onSuccess: (output, key) => {
+            const match = output.match(/dist-tarball\/[^\s]+\.tgz/)
+            valdresStore.set(jobMeta(key), { tarball: match[0] })
+        },
+    },
+    {
+        name: "publish",
+        callback: async (shell, packagePath, key) => {
+            const meta = valdresStore.get(jobMeta(key))
+            // const dir = packagePath.split("/")
+            // dir.pop()
+            // console.log(packagePath, meta, dir.join("/"))
+            // const tarPath = `${dir.join("/")}/${meta.tarball}`
+            // console.log(tarPath)
+            // console.log(packagePath)
+            // const tarData = await Bun.file(tarPath).arrayBuffer()
+            // // const res = await $`npm config get //registry.npmjs.org/:_authToken`
+            // // console.log(res)
+            // console.log(process.env.HOME)
+            // const ssss = await Bun.file(`${process.env.HOME}/.npmrc`).text()
+            // console.log(ssss)
+            // const packageJson = await Bun.file(packagePath).json()
+            // // throw new Error("asdfasdf")
+            // console.log("packageJson", packageJson)
+            // return publish(
+            //     packageJson,
+            //     Buffer.from(tarData),
+            //     {
+            //         // npmVersion: `${packageJson.name}@${packageJson.version}`,
+            //         access: "public",
+            //         registry: "https://registry.npmjs.org/",
+            //         token: "",
 
-    //         //         // auth: { token: "" },
-    //         //     },
-    //         //     // opts,
-    //         // )
-    //         // .catch(err => {
-    //         //     console.error(err.body.toString())
-    //         // })
-    //         // const meta = valdresStore.get(jobMeta(key))
-    //         // if (!meta.tarball) throw new Error("No tarball")
-    //         // return shell`npm publish ${meta.tarball}`
-    //         const file = meta.tarball.split(`/`).pop()
-    //         const dir = packagePath.split("/")
-    //         dir.pop()
-    //         // return {
-    //         //     exitCode: 0,
-    //         // }
-    //         return $.cwd(
-    //             `${dir.join(`/`)}/dist-tarball`,
-    //         )`npm publish ${file}`.quiet()
-    //     },
-    //     // onSuccess: (output, key) => {
-    //     //     console.log(output)
-    //     // },
-    // },
-    // {
-    //     name: "postpublish",
-    //     callback: (shell, parentDir) => {
-    //         const up = "../".repeat(parentDir.split("/").length - 1)
-    //         return shell`bun run ${up}scripts/postpublish.ts`.quiet().nothrow()
-    //     },
-    // },
+            //         // auth: { token: "" },
+            //     },
+            //     // opts,
+            // )
+            // .catch(err => {
+            //     console.error(err.body.toString())
+            // })
+            // const meta = valdresStore.get(jobMeta(key))
+            // if (!meta.tarball) throw new Error("No tarball")
+            // return shell`npm publish ${meta.tarball}`
+            const file = meta.tarball.split(`/`).pop()
+            const dir = packagePath.split("/")
+            dir.pop()
+            // return {
+            //     exitCode: 0,
+            // }
+            return $.cwd(
+                `${dir.join(`/`)}/dist-tarball`,
+            )`npm publish ${file}`.quiet()
+        },
+        // onSuccess: (output, key) => {
+        //     console.log(output)
+        // },
+    },
+    {
+        name: "postpublish",
+        callback: (shell, parentDir) => {
+            const up = "../".repeat(parentDir.split("/").length - 1)
+            return shell`bun run ${up}scripts/postpublish.ts`.quiet().nothrow()
+        },
+    },
     // {
     //     name: "cleanup",
     //     callback: shell => {
