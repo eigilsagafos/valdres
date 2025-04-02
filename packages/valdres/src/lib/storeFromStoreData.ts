@@ -12,6 +12,7 @@ import { isSelector } from "../utils/isSelector"
 import { createStoreData } from "./createStoreData"
 import { deleteFamilyAtom } from "./deleteFamilyAtom"
 import { getState } from "./getState"
+import { propagateUpdatedAtoms } from "./propagateUpdatedAtoms"
 import { resetAtom } from "./resetAtom"
 import { setAtom } from "./setAtom"
 import { subscribe } from "./subscribe"
@@ -35,7 +36,14 @@ export function storeFromStoreData(
     detach?: () => void,
 ) {
     // @ts-ignore @ts-todo
-    const get: GetValue = (state: State) => getState(state, data)
+    const get: GetValue = (state: State) => {
+        const set = new Set<Atom>()
+        const res = getState(state, data, set)
+        if (set.size) {
+            propagateUpdatedAtoms([...set], data)
+        }
+        return res
+    }
 
     // @ts-ignore @ts-todo
     const set: SetAtom = (state, value) => {
@@ -46,7 +54,7 @@ export function storeFromStoreData(
 
     const reset = <V>(atom: Atom<V>) => resetAtom(atom, data)
 
-    const deleteFn = <
+    const del = <
         Value extends unknown,
         Args extends [any, ...any[]] = [any, ...any[]],
     >(
@@ -87,7 +95,7 @@ export function storeFromStoreData(
             sub,
             txn,
             reset,
-            delete: deleteFn,
+            del,
             data,
             scope,
             detach,
@@ -99,7 +107,7 @@ export function storeFromStoreData(
             sub,
             txn,
             reset,
-            delete: deleteFn,
+            del,
             data,
             scope,
         } as Store

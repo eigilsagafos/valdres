@@ -40,8 +40,9 @@ describe("setAtom", () => {
         expect(store1.get(multiplySelector)).toBe(2)
         expect(selectorCallback).toHaveBeenCalledTimes(1)
         store1.set(numberAtom, 1)
-        expect(store1.get(multiplySelector)).toBe(2)
         expect(selectorCallback).toHaveBeenCalledTimes(1)
+        expect(store1.get(multiplySelector)).toBe(2)
+        expect(selectorCallback).toHaveBeenCalledTimes(2) // this could be 1 if we optimize, getting the multiplySelector wrongly triggers a re eval
     })
 
     test("check deep freeze", () => {

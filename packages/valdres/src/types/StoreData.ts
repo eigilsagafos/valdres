@@ -1,8 +1,10 @@
+import type { Subscription } from "./Subscription"
+
 export type RootStoreData = {
     id: string
     values: WeakMap<WeakKey, any>
     expiredValues: WeakMap<WeakKey, any>
-    subscriptions: WeakMap<WeakKey, Set<any>>
+    subscriptions: WeakMap<WeakKey, Set<Subscription>>
     subscriptionsRequireEqualCheck: WeakMap<WeakKey, boolean>
     stateDependents: WeakMap<WeakKey, any>
     stateDependencies: WeakMap<WeakKey, any>

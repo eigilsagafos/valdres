@@ -1,13 +1,16 @@
+import { SelectorCircularDependencyError } from "../errors/SelectorCircularDependencyError"
+import { SelectorEvaluationError } from "../errors/SelectorEvaluationError"
+import type { Atom } from "../types/Atom"
+import type { Selector } from "../types/Selector"
+import type { State } from "../types/State"
+import type { StoreData } from "../types/StoreData"
 import { isPromiseLike } from "../utils/isPromiseLike"
 import { getState } from "./getState"
-import { updateStateSubscribers } from "./updateStateSubscribers"
-import { SelectorCircularDependencyError } from "../errors/SelectorCircularDependencyError"
-import type { StoreData } from "../types/StoreData"
-import type { State } from "../types/State"
-import type { Selector } from "../types/Selector"
-import { SelectorEvaluationError } from "../errors/SelectorEvaluationError"
+import {
+    propagateDirtySelectors,
+    propagateUpdatedAtoms,
+} from "./propagateUpdatedAtoms"
 import { setValueInData } from "./setValueInData"
-
 class SuspendAndWaitForResolveError extends Error {
     promise: Promise<any>
     constructor(promise: Promise<any>) {
@@ -16,7 +19,7 @@ class SuspendAndWaitForResolveError extends Error {
     }
 }
 
-const getOrInitConsumersSet = (
+const getOrInitDependentsSet = (
     state: State,
     data: StoreData,
 ): Set<State<any>> => {
@@ -27,23 +30,29 @@ const getOrInitConsumersSet = (
     return newSet
 }
 
-const evaluateSelector = <V>(
+export const evaluateSelector = <V>(
     selector: Selector<V>,
     data: StoreData,
-    circularDependencyMap = new WeakSet(),
+    initializedAtomsSet: Set<Atom>,
+    circularDependencySet = new WeakSet(),
 ) => {
     const updatedDependencies = new Set<State<any>>()
-    if (circularDependencyMap.has(selector)) {
+    if (circularDependencySet.has(selector)) {
         throw new SelectorCircularDependencyError()
     }
 
-    circularDependencyMap.add(selector)
+    circularDependencySet.add(selector)
 
     let result
     try {
         // @ts-ignore, @ts-todo
         result = selector.get(state => {
-            const value = getState(state, data, circularDependencyMap)
+            const value = getState(
+                state,
+                data,
+                initializedAtomsSet,
+                circularDependencySet,
+            )
             updatedDependencies.add(state)
             if (isPromiseLike(value))
                 throw new SuspendAndWaitForResolveError(value)
@@ -65,14 +74,14 @@ const evaluateSelector = <V>(
     const added = updatedDependencies?.difference(currentDependencies)
     const removed = currentDependencies?.difference(updatedDependencies)
     for (const state of added) {
-        const set = getOrInitConsumersSet(state, data)
+        const set = getOrInitDependentsSet(state, data)
         // if (set.size === 0 && state.onConsume) {
         //     const res = state.onConsume()
         // }
         set.add(selector)
     }
     for (const state of removed) {
-        const set = getOrInitConsumersSet(state, data)
+        const set = getOrInitDependentsSet(state, data)
         set.delete(selector)
         // if (set.size === 0 && state.onConsume) {
         //     throw new Error(`TODO`)
@@ -89,17 +98,41 @@ const handleSelectorResult = <Value>(
     data: StoreData,
 ) => {
     if (value instanceof SuspendAndWaitForResolveError) {
-        value.promise.then(() => initSelector(selector, data))
+        value.promise.then(() => {
+            const initializedAtomsSet = new Set<Atom>()
+            const res = initSelector(selector, data, initializedAtomsSet)
+            if (initializedAtomsSet.size > 0) {
+                propagateUpdatedAtoms([...initializedAtomsSet], data)
+            }
+            return res
+        })
         return value.promise
     } else if (isPromiseLike(value)) {
         // When a promise is returned when initializing a selector we suspend,
         // then we retry when the promise resolves.
-        // console.log(`initSelector isPromiseLike`, { selector, value })
         value.then(resolved => {
             // @ts-ignore
             setValueInData(selector, resolved, data)
-            updateStateSubscribers(selector, data)
-            console.log("Should we reEvaluate?")
+            const dependents = data.stateDependents.get(selector)
+            const subs = data.subscriptions.get(selector)
+            if (
+                (subs && subs.size > 0) ||
+                (dependents && dependents.size > 0)
+            ) {
+                propagateDirtySelectors(
+                    [],
+                    new Set(dependents),
+                    data,
+                    new Set(subs),
+                    new Map(),
+                )
+            }
+            // if (subs && subs.size > 0) {
+            //     throw new Error("TODO")
+            // }
+            // if (dependents && dependents.size > 0) {
+            //     throw new Error("TODO")
+            // }
         })
         return value
     } else {
@@ -110,10 +143,17 @@ const handleSelectorResult = <Value>(
 export const initSelector = <V>(
     selector: Selector<V>,
     data: StoreData,
+    initializedAtomsSet: Set<Atom>,
     circularDependencySet = new WeakSet(),
 ): boolean => {
     const existingValue = data.values.get(selector)
-    const udpatedValue = evaluate(selector, data, circularDependencySet)
+    const udpatedValue = evaluate(
+        selector,
+        data,
+        initializedAtomsSet,
+        circularDependencySet,
+    )
+
     if (selector.equal(existingValue as V, udpatedValue as V)) {
         return false
     } else {
@@ -152,15 +192,6 @@ export const initSelector = <V>(
     //             }
     //         }
 
-    //         if (process.env.DEBUG1) {
-    //             console.log("asdf", {
-    //                 selector,
-    //                 hasExpired: data.expiredValues.has(selector),
-    //                 shouldReEvalute,
-    //                 reason,
-    //             })
-    //         }
-
     //         if (shouldReEvalute) {
     //             const newValue = evaluate(selector, data, circularDependencySet)
     //             const expiredValue = data.expiredValues.get(selector)
@@ -192,11 +223,17 @@ export const initSelector = <V>(
 const evaluate = <V>(
     selector: Selector<V>,
     data: StoreData,
+    initializedAtomsSet: Set<Atom>,
     circularDependencySet: WeakSet<any>,
 ) => {
     let tmpValue
     try {
-        tmpValue = evaluateSelector(selector, data, circularDependencySet)
+        tmpValue = evaluateSelector(
+            selector,
+            data,
+            initializedAtomsSet,
+            circularDependencySet,
+        )
     } catch (e) {
         if (e instanceof SelectorEvaluationError) e.track(selector)
         throw e

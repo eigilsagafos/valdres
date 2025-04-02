@@ -48,36 +48,36 @@ export const createAtomFamily = <
     options?: AtomOptions<Value>,
 ) => {
     const map = new Map()
-    const atomFamily = Object.assign(
-        (...args: Args) => {
-            const argsStringified = stringifyFamilyArgs(args)
-            if (map.has(argsStringified)) {
-                return map.get(argsStringified)
-            }
+    const atomFamily = (...args: Args) => {
+        const argsStringified = stringifyFamilyArgs(args)
+        if (map.has(argsStringified)) {
+            return map.get(argsStringified)
+        }
 
-            const familyAtom = atomFamilyAtom<Value, Args>(
+        const familyAtom = atomFamilyAtom<Value, Args>(
+            // @ts-ignore @ts-todo
+            handleDefaultValue<Value, Args>(defaultValue, ...args),
+            createOptions<Value, Args>(
+                options,
                 // @ts-ignore @ts-todo
-                handleDefaultValue<Value, Args>(defaultValue, ...args),
-                createOptions<Value, Args>(
-                    options,
-                    atomFamily,
-                    args,
-                    argsStringified,
-                ),
-            )
-            map.set(argsStringified, familyAtom)
-            return familyAtom
-        },
-        {
-            __valdresAtomFamilyMap: map,
-            release: (...args: Args) => map.delete(stringifyFamilyArgs(args)),
-            equal,
-        },
-    )
+                atomFamily,
+                args,
+                argsStringified,
+            ),
+        )
+        map.set(argsStringified, familyAtom)
+        return familyAtom
+    }
+
     if (options?.name)
         Object.defineProperty(atomFamily, "name", {
             value: options.name,
             writable: false,
         })
-    return atomFamily as AtomFamily<Value, Args>
+
+    return Object.assign(atomFamily, {
+        __valdresAtomFamilyMap: map,
+        release: (...args: Args) => map.delete(stringifyFamilyArgs(args)),
+        equal,
+    }) as AtomFamily<Value, Args>
 }

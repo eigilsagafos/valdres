@@ -22,8 +22,6 @@ const testValdres = async users => {
             // store.txn(({set}) =>
             // )
             store.set(isInitializedAtom, true)
-            // console.log(store.get(userAtomFamily(users[0].id)))
-            // console.log(store.get(userAtomFamily(users[1].id)))
         }, [isInitialized])
         return isInitialized
     }

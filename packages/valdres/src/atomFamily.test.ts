@@ -155,7 +155,7 @@ describe("atomFamily", () => {
         expect(store1.get(familiy)).toBe(store1.get(familiy))
     })
 
-    test.todo("get on familyAtom adds it to array", () => {
+    test("get on familyAtom adds it to array", () => {
         const store1 = store()
         const familiy = atomFamily("new")
         const callback = mock(() => {})
@@ -206,7 +206,7 @@ describe("atomFamily", () => {
 
     test("selector as default value", () => {
         const store1 = store()
-        const defaultStringsAtom = atomFamily<number, string>()
+        const defaultStringsAtom = atomFamily<string, [number]>()
         store1.set(defaultStringsAtom(1), "Foo")
         store1.set(defaultStringsAtom(2), "Bar")
 
@@ -256,7 +256,7 @@ describe("atomFamily", () => {
         expect(
             store1.get(todosAtomFamily).map(atom => atom.familyArgsStringified),
         ).toStrictEqual(["1", "2", "3"])
-        store1.delete(todosAtomFamily("1"))
+        store1.del(todosAtomFamily("1"))
         expect(
             store1.get(todosAtomFamily).map(atom => atom.familyArgsStringified),
         ).toStrictEqual(["2", "3"])
@@ -269,20 +269,13 @@ describe("atomFamily", () => {
         ).toStrictEqual(["2", "3"])
     })
 
-    test.todo("subscribe to atom family keys", () => {
+    test("subscribe to atom family keys", () => {
         const store1 = store()
         const testAtomFamily = atomFamily<string>(0)
-        const callback = mock(() => {
-            console.log("hji")
-        })
+        const callback = mock(() => {})
         store1.sub(testAtomFamily, callback)
         const atom1 = testAtomFamily("1")
         store1.get(atom1)
-        /**
-         * TODO: Figure out how this should work. I'm expecting that when an
-         * atom is initialized and I have a atomFamily subscription then the callback
-         * should be called. Solve it in initAtom?
-         */
         expect(callback).toHaveBeenCalledTimes(1)
     })
 

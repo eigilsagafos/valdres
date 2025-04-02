@@ -3,7 +3,10 @@ const hasMap = typeof Map === "function"
 const hasSet = typeof Set === "function"
 const hasArrayBuffer = typeof ArrayBuffer === "function" && !!ArrayBuffer.isView
 
-const deepEqualFn = (a: any, b: any) => {
+const deepEqualFn = (a: any, b: any, updatedAtomsSet?: Set<any>) => {
+    if (updatedAtomsSet) {
+        if (updatedAtomsSet.has(a) || updatedAtomsSet.has(b)) return false
+    }
     if (a === b) return true
 
     if (a && b && typeof a == "object" && typeof b == "object") {
@@ -14,7 +17,7 @@ const deepEqualFn = (a: any, b: any) => {
             length = a.length
             if (length != b.length) return false
             for (i = length; i-- !== 0; )
-                if (!deepEqualFn(a[i], b[i])) return false
+                if (!deepEqualFn(a[i], b[i], updatedAtomsSet)) return false
             return true
         }
 
@@ -45,14 +48,20 @@ const deepEqualFn = (a: any, b: any) => {
             while (!(i = it.next()).done) if (!b.has(i.value[0])) return false
             it = a.entries()
             while (!(i = it.next()).done)
-                if (!deepEqualFn(i.value[1], b.get(i.value[0]))) return false
+                if (
+                    !deepEqualFn(i.value[1], b.get(i.value[0]), updatedAtomsSet)
+                )
+                    return false
             return true
         }
 
         if (hasSet && a instanceof Set && b instanceof Set) {
             if (a.size !== b.size) return false
             it = a.entries()
-            while (!(i = it.next()).done) if (!b.has(i.value[0])) return false
+            while (!(i = it.next()).done) {
+                if (!b.has(i.value[0])) return false
+                if (updatedAtomsSet?.has(i.value[0])) return false
+            }
             return true
         }
         // END: Modifications
@@ -119,7 +128,8 @@ const deepEqualFn = (a: any, b: any) => {
             }
 
             // all other properties should be traversed as usual
-            if (!deepEqualFn(a[keys[i]], b[keys[i]])) return false
+            if (!deepEqualFn(a[keys[i]], b[keys[i]], updatedAtomsSet))
+                return false
         }
         // END: react-fast-compare
 
@@ -131,9 +141,9 @@ const deepEqualFn = (a: any, b: any) => {
 }
 // end fast-deep-equal
 
-export const equal = (a: any, b: any) => {
+export const equal = (a: any, b: any, updatedAtomsSet?: Set<any>) => {
     try {
-        return deepEqualFn(a, b)
+        return deepEqualFn(a, b, updatedAtomsSet)
     } catch (error) {
         // @ts-ignore
         if ((error.message || "").match(/stack|recursion/i)) {

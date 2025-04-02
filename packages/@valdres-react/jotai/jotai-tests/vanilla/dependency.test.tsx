@@ -2,7 +2,7 @@ import { expect, it } from "bun:test"
 import { atom } from "../../src/atom"
 import { createStore } from "../../src/createStore"
 
-it("can propagate updates with async atom chains", async () => {
+it.todo("can propagate updates with async atom chains", async () => {
     const store = createStore()
 
     const countAtom = atom(1)

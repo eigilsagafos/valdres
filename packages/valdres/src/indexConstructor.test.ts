@@ -43,9 +43,8 @@ describe("index", () => {
         expect(defaultStore.get(postsByTag("foo"))).toHaveLength(1)
 
         // Delete works
-        defaultStore.delete(post("1"))
-        expect(indexCallback).toHaveBeenCalledTimes(3) // Can we avoid this? Why does it evaluate again?
-        console.log(defaultStore.get(postsByTag("foo")))
+        defaultStore.del(post("1"))
+        expect(indexCallback).toHaveBeenCalledTimes(3)
     })
 
     test("basic use", () => {
@@ -107,12 +106,28 @@ describe("index", () => {
         ).toStrictEqual(["2"])
         expect(indexCallback).toHaveBeenCalledTimes(8)
         process.debug1 = true
-        defaultStore.delete(post("3"))
+        defaultStore.del(post("3"))
         expect(defaultStore.get(postsByTag("foo"))).toHaveLength(1)
         expect(defaultStore.get(postsByTag("bar"))).toHaveLength(1)
-        defaultStore.delete(post("1"))
-        defaultStore.delete(post("2"))
+        defaultStore.del(post("1"))
+        defaultStore.del(post("2"))
         expect(defaultStore.get(postsByTag("foo"))).toHaveLength(0)
         expect(defaultStore.get(postsByTag("bar"))).toHaveLength(0)
+    })
+
+    test("selector using index", () => {
+        const defaultStore = store()
+        const entityAtom = atomFamily<{ id: string; kind: string }, [string]>(
+            null,
+        )
+        // defaultStore.set(entityAtom("1"), {})
+        const entitesByKind = index(
+            entityAtom,
+            (doc, term) => {
+                return doc.kind === term
+            },
+            { name: "entitiesByKindIndex" },
+        )
+        expect(defaultStore.get(entitesByKind("User"))).toHaveLength(0)
     })
 })

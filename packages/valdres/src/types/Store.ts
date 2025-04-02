@@ -27,7 +27,7 @@ export type Store<T = StoreData> = {
     set: SetAtom
     sub: SubscribeFn
     reset: ResetAtom
-    delete: DeleteAtom
+    del: DeleteAtom
     txn: (callback: TransactionFn) => void
     scope: (scopeId: string) => ScopedStore
 }

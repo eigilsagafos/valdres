@@ -18,6 +18,7 @@ export function getState<
 >(
     atom: Atom<Value>,
     data: StoreData,
+    initializedAtomsSet: Set<Atom>,
     circularDependencySet?: WeakSet<Selector>,
 ): Value
 
@@ -27,6 +28,7 @@ export function getState<
 >(
     selector: Selector<Value>,
     data: StoreData,
+    initializedAtomsSet: Set<Atom>,
     circularDependencySet?: WeakSet<Selector>,
 ): Value
 
@@ -36,6 +38,7 @@ export function getState<
 >(
     family: AtomFamily<Value, Args>,
     data: StoreData,
+    initializedAtomsSet: Set<Atom>,
     circularDependencySet?: WeakSet<Selector>,
 ): AtomFamilyAtom<Value, Args>[]
 
@@ -45,6 +48,7 @@ export function getState<
 >(
     state: Atom<Value> | Selector<Value> | Family<Value, Args>,
     data: StoreData,
+    initializedAtomsSet: Set<Atom<any>>,
     circularDependencySet?: WeakSet<Selector>,
 ) {
     if (data.values.has(state)) return data.values.get(state)
@@ -53,12 +57,20 @@ export function getState<
             return getState<Value, Args>(
                 state,
                 data.parent,
+                initializedAtomsSet,
                 circularDependencySet,
             )
-        return initAtom<Value, Args>(state, data)
+        initAtom<Value, Args>(state, data, initializedAtomsSet)
+        initializedAtomsSet.add(state)
+        return data.values.get(state)
     }
     if (isSelector<Value>(state)) {
-        initSelector<Value>(state, data, circularDependencySet)
+        initSelector<Value>(
+            state,
+            data,
+            initializedAtomsSet,
+            circularDependencySet,
+        )
         return data.values.get(state)
     }
     if (isAtomFamily<Value, Args>(state)) {
@@ -72,10 +84,12 @@ export function getState<
             return getState<Value, Args>(
                 state,
                 closestData,
+                initializedAtomsSet,
                 circularDependencySet,
             )
         }
         data.values.set(state, [])
+        initializedAtomsSet.add(state)
         return data.values.get(state)
     }
     if (isSelectorFamily<Value, Args>(state)) {

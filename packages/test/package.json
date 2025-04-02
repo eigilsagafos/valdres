@@ -1,5 +1,6 @@
 {
     "name": "@valdres/test",
     "module": "index.ts",
-    "private": true
+    "private": true,
+    "version": "0.2.0-pre.1"
 }

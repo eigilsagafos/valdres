@@ -14,7 +14,7 @@ export const index = <
     options?: { name?: string },
 ): ((term: Term) => Selector<Term[]>) => {
     const map = new Map()
-    const indexFn = (term: Term) => {
+    const index = (term: Term) => {
         const termKey = stableStringify(term)
         if (map.has(termKey)) return map.get(termKey)
 
@@ -45,11 +45,12 @@ export const index = <
                             }),
                         )
                     })
+                    return new Set(termIndexSelectorSet)
+                } else {
+                    return termIndexSelectorSet
                 }
-
-                return termIndexSelectorSet
             },
-            { name: `index:${options?.name}:${termKey}` },
+            { name: `index:${options?.name}(${termKey})` },
         )
 
         const filteredSelector = selector(
@@ -70,7 +71,8 @@ export const index = <
         map.set(termKey, filteredSelector)
         return filteredSelector
     }
-    return Object.assign(indexFn, {
+    return Object.assign(index, {
         map,
+        callback,
     })
 }

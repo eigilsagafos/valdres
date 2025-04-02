@@ -33,18 +33,10 @@ describe("when a transaction removes something that a subscriber has access to",
         )
         const store1 = store()
 
-        store1.sub(userEmailSelector(1), emailChanged => {
-            console.log(`asdf`, emailChanged)
-        })
-        store1.sub(userEmailSelector(2), emailChanged => {
-            console.log(`asdf`, emailChanged)
-        })
-        store1.sub(userEmailSelector(3), emailChanged => {
-            console.log(`asdf`, emailChanged)
-        })
-        store1.sub(userEmailSelector(4), emailChanged => {
-            // console.log(`asdf`, emailChanged)
-        })
+        store1.sub(userEmailSelector(1), emailChanged => {})
+        store1.sub(userEmailSelector(2), emailChanged => {})
+        store1.sub(userEmailSelector(3), emailChanged => {})
+        store1.sub(userEmailSelector(4), emailChanged => {})
 
         store1.set(userFamily(4), curr => ({ ...curr, visible: false }))
         expect(() => store1.get(userEmailSelector(4))).toThrow()

@@ -110,12 +110,13 @@ export const transaction = (
         }
     }
 
+    const initializedAtomsSet = new Set<Atom>()
     // @ts-ignore @ts-todo
     const txnGet: GetValue = state => {
         if (isAtom(state)) {
             const value = getInTxnOrData(state)
             if (value) return value
-            return getState(state, data)
+            return getState(state, data, initializedAtomsSet)
         } else if (isSelector(state)) {
             if (txnSelectorCache.has(state)) {
                 return txnSelectorCache.get(state)
@@ -137,7 +138,7 @@ export const transaction = (
         } else if (isAtomFamily(state)) {
             const value = getInTxnOrData(state)
             if (value) return value
-            return getState(state, data)
+            return getState(state, data, initializedAtomsSet)
         } else {
             throw new Error("Unsupported state")
         }
@@ -178,7 +179,7 @@ export const transaction = (
     }
 
     const txnReset: ResetValdresValue = atom => {
-        const value = getAtomInitValue(atom, data)
+        const value = getAtomInitValue(atom, data, initializedAtomsSet)
         txnAtomMap.set(atom, value)
         return value
     }
@@ -200,7 +201,7 @@ export const transaction = (
     }
 
     const commit = () => {
-        setAtoms(txnAtomMap, data)
+        setAtoms(txnAtomMap, data, initializedAtomsSet)
         if (txnAtomDeleteSet.size) {
             deleteAtomFamilyAtoms(txnAtomDeleteSet, data)
         }

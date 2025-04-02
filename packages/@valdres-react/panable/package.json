@@ -1,6 +1,6 @@
 {
     "name": "@valdres-react/panable",
-    "version": "0.2.0-alpha.78",
+    "version": "0.2.0-pre.1",
     "license": "MIT",
     "author": {
         "name": "Eigil Sagafos"
@@ -18,17 +18,17 @@
         "dist"
     ],
     "scripts": {
-        "build": "NODE_ENV=production bun build index.ts --outdir ./dist --packages external",
+        "build": "NODE_ENV=production bun build src/index.ts --outdir ./dist --packages external",
         "build:types": "rm -rf dist/types && bun run tsc --noCheck",
         "test": "echo 'no tests'"
     },
     "devDependencies": {
         "typescript": "5.6.3",
-        "valdres-react": "workspace:^"
+        "valdres-react": "0.2.0-pre.1"
     },
     "peerDependencies": {
-        "@valdres-react/draggable": "workspace:^",
-        "valdres-react": "workspace:^"
+        "@valdres-react/draggable": "0.2.0-pre.1",
+        "valdres-react": "0.2.0-pre.1"
     },
     "peerDependenciesMeta": {
         "@valdres-react/draggable": {

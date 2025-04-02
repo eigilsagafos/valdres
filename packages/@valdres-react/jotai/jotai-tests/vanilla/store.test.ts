@@ -606,22 +606,25 @@ test.todo(
     },
 )
 
-test("should update derived atom even if dependances changed (#2697)", () => {
-    const primitiveAtom = atom<number | undefined>(undefined)
-    const derivedAtom = atom(get => get(primitiveAtom))
-    const conditionalAtom = atom(get => {
-        const base = get(primitiveAtom)
-        if (!base) return
-        return get(derivedAtom)
-    })
+test.todo(
+    "should update derived atom even if dependances changed (#2697)",
+    () => {
+        const primitiveAtom = atom<number | undefined>(undefined)
+        const derivedAtom = atom(get => get(primitiveAtom))
+        const conditionalAtom = atom(get => {
+            const base = get(primitiveAtom)
+            if (!base) return
+            return get(derivedAtom)
+        })
 
-    const store = createStore()
-    const onChangeDerived = mock(() => {})
+        const store = createStore()
+        const onChangeDerived = mock(() => {})
 
-    store.sub(derivedAtom, onChangeDerived)
-    store.sub(conditionalAtom, () => {})
+        store.sub(derivedAtom, onChangeDerived)
+        store.sub(conditionalAtom, () => {})
 
-    expect(onChangeDerived).toHaveBeenCalledTimes(0)
-    store.set(primitiveAtom, 1)
-    expect(onChangeDerived).toHaveBeenCalledTimes(1)
-})
+        expect(onChangeDerived).toHaveBeenCalledTimes(0)
+        store.set(primitiveAtom, 1)
+        expect(onChangeDerived).toHaveBeenCalledTimes(1)
+    },
+)

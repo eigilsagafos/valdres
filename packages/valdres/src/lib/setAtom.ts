@@ -12,7 +12,8 @@ export const setAtom = <Value = any>(
     data: StoreData,
     skipOnSet = false,
 ) => {
-    const currentValue = getState(atom, data)
+    const initializedAtomsSet = new Set<Atom>()
+    const currentValue = getState(atom, data, initializedAtomsSet)
     if (isFunction(newValue)) {
         newValue = newValue(currentValue)
         if (isPromiseLike(newValue) || isPromiseLike(currentValue))
@@ -26,6 +27,12 @@ export const setAtom = <Value = any>(
         // @ts-ignore
         currentValue.__resolveEmptyAtomPromise__(newValue)
     }
-    propagateUpdatedAtoms([atom], data)
+    if (initializedAtomsSet.size > 0) {
+        // @ts-ignore
+        const all = new Set<Atom>([...initializedAtomsSet, atom])
+        propagateUpdatedAtoms([...all], data)
+    } else {
+        propagateUpdatedAtoms([atom], data)
+    }
     return newValue
 }

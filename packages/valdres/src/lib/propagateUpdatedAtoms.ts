@@ -1,111 +1,250 @@
 import type { Atom } from "../types/Atom"
 import type { AtomFamily } from "../types/AtomFamily"
 import type { AtomFamilyAtom } from "../types/AtomFamilyAtom"
+import type { Family } from "../types/Family"
 import type { Selector } from "../types/Selector"
+import type { State } from "../types/State"
 import type { StoreData } from "../types/StoreData"
-import { isAtomFamily } from "../utils/isAtomFamily"
+import type { Subscription } from "../types/Subscription"
 import { isFamilyAtom } from "../utils/isFamilyAtom"
-import { initSelector } from "./initSelector"
-import { updateSelectorSubscribers } from "./updateSelectorSubscribers"
-import { updateStateSubscribers } from "./updateStateSubscribers"
+import { isPromiseLike } from "../utils/isPromiseLike"
+import { evaluateSelector } from "./initSelector"
+import { setValueInData } from "./setValueInData"
 
-const revalidate = (selector: Selector, data: StoreData) => {
+const reEvaluteSelector = (
+    selector: Selector,
+    data: StoreData,
+    updatedAtoms: Set<Atom>,
+) => {
+    const existingValue = data.values.get(selector)
     try {
-        return initSelector(selector, data)
-    } catch (e) {
+        const udpatedValue = evaluateSelector(selector, data, updatedAtoms)
+
+        if (selector.equal(existingValue, udpatedValue, updatedAtoms)) {
+            return [false, false]
+        } else {
+            setValueInData(selector, udpatedValue, data)
+            return [true, false]
+        }
+    } catch (error) {
         data.expiredValues.set(selector, data.values.get(selector))
         data.values.delete(selector)
-        return true
+        return [true, true, error]
     }
 }
 
-const recursivlyResetSelectorTree = (
-    selectors: Set<Selector>,
-    data: StoreData,
-    clearedSelectors: Set<Selector>,
-) => {
-    // TODO: What do we do with async selectors? Should they have a "stale while revalidate" kind of logic?
-    for (const selector of selectors) {
-        if (!clearedSelectors.has(selector)) {
-            /**
-             * TODO: We could improve this by only triggering init if there are subsribers.
-             * we just have to handle cases were dependents do have subsribers, so this is
-             * a balance between simplicity/complexity and performance.
-             * So right now we are not using the expiredValues concept. We might want to do
-             * some kind of recursive 2-pass
-             * */
-            // data.expiredValues.set(selector, data.values.get(selector))
-            // data.values.delete(selector)
-            const subscribers = data.subscriptions.get(selector)
-            const dependents = data.stateDependents.get(selector)
-
-            if (!dependents && !subscribers) {
-                data.expiredValues.set(selector, data.values.get(selector))
-                data.values.delete(selector)
-            } else if (dependents && subscribers) {
-                // if (dependents.size === 0) throw new Error("Should not happen")
-                // if (subscribers.size === 0) throw new Error("Should not happen")
-                const isValueUpdated = revalidate(selector, data)
-                if (isValueUpdated) {
-                    recursivlyResetSelectorTree(
-                        dependents,
-                        data,
-                        clearedSelectors,
-                    )
-                    updateSelectorSubscribers(selector, data)
-                }
-            } else if (dependents) {
-                // if (dependents.size === 0) throw new Error("Should not happen")
-                const valueUpdated = revalidate(selector, data)
-                if (valueUpdated) {
-                    recursivlyResetSelectorTree(
-                        dependents,
-                        data,
-                        clearedSelectors,
-                    )
-                }
-            } else if (subscribers) {
-                // if (subscribers.size === 0) throw new Error("Should not happen")
-                const isValueUpdated = revalidate(selector, data)
-
-                if (isValueUpdated) {
-                    updateSelectorSubscribers(selector, data)
-                }
-            }
+const addSetToSet = (fromSet: Set<any> | undefined, toSet: Set<any>) => {
+    if (fromSet && fromSet.size > 0) {
+        for (const item of fromSet) {
+            toSet.add(item)
         }
+    }
+}
+
+const findClosestStoreWithAtomInitialized = (
+    atom: State | Family<any>,
+    data: StoreData,
+) => {
+    if ("parent" in data === false) return data
+    if (data.values.has(atom)) return data
+    return findClosestStoreWithAtomInitialized(atom, data.parent)
+}
+
+const findInClosestStore = (
+    state: State<any> | Family<any>,
+    data: StoreData,
+) => {
+    const store = findClosestStoreWithAtomInitialized(state, data)
+    return store.values.get(state)
+}
+
+export const addFamilyAtomsToSet = (
+    family: Family<any>,
+    familyAtoms: Set<AtomFamilyAtom<any>>,
+    data: StoreData,
+) => {
+    const currentAtoms = findInClosestStore(family, data) || []
+    const atomsToAdd = []
+    for (const familyAtom of familyAtoms) {
+        if (!currentAtoms.includes(familyAtom)) {
+            atomsToAdd.push(familyAtom)
+        }
+    }
+    if (atomsToAdd.length > 0) {
+        data.values.set(family, [...currentAtoms, ...atomsToAdd])
     }
 }
 
 export const propagateUpdatedAtoms = (
     atoms: (Atom<any> | AtomFamilyAtom<any, any> | AtomFamily<any, any>)[],
     data: StoreData,
+    subscriptions: Set<Subscription> = new Set(),
+    families: Map<AtomFamily<any>, Set<AtomFamilyAtom<any>>> = new Map(),
 ) => {
-    const clearedSelectors = new Set<Selector>()
+    // const subscriptions = new Set<Subscription>()
+    // const families = new Map<AtomFamily<any>>()
+    const selectors = new Set<Selector>()
     for (const atom of atoms) {
-        const dependents = data.stateDependents.get(atom)
-
-        if (dependents && dependents.size) {
-            recursivlyResetSelectorTree(dependents, data, clearedSelectors)
-        }
+        addSetToSet(data.stateDependents.get(atom), selectors)
+        addSetToSet(data.subscriptions.get(atom), subscriptions)
 
         if (isFamilyAtom(atom)) {
-            const consumersFamily = data.stateDependents.get(atom.family)
-            if (consumersFamily?.size) {
-                recursivlyResetSelectorTree(
-                    consumersFamily,
-                    data,
-                    clearedSelectors,
-                )
+            // atom.family
+            if (!families.has(atom.family)) {
+                families.set(atom.family, new Set())
             }
+
+            // @ts-ignore
+            families.get(atom.family).add(atom)
         }
     }
 
-    // for (const selector of clearedSelectors) {
-    //     updateSelectorSubscribers(selector, data)
-    // }
+    if (families.size > 0) {
+        for (const [family, familyAtoms] of families) {
+            addSetToSet(data.stateDependents.get(family), selectors)
+            addSetToSet(data.subscriptions.get(family), subscriptions)
+            if (familyAtoms.size === 0)
+                throw new Error("Should not be possible")
 
-    for (const atom of atoms) {
-        if (isAtomFamily(atom)) continue // If atom is an actual atomFamily we don't do anything
-        updateStateSubscribers(atom, data)
+            addFamilyAtomsToSet(family, familyAtoms, data)
+        }
+    }
+    propagateDirtySelectors(atoms, selectors, data, subscriptions, families)
+}
+
+export const propagateDirtySelectors = (
+    updatedAtoms: Atom[],
+    selectors: Set<Selector>,
+    data: StoreData,
+    subscriptions: Set<Subscription>,
+    families: Map<AtomFamily<any>, Set<AtomFamilyAtom<any>>>,
+) => {
+    const initialUpdatedAtoms = new Set(updatedAtoms)
+    const updatedInitializedAtoms = new Set<Atom>(initialUpdatedAtoms)
+    if (selectors.size > 0) {
+        // At this point we have the first level of selectors that are depeendent on
+        // the atoms that changed. We should now traverse the tree of selectors, collect subsribers
+        // to those that change, and keep track of all selectors that we have visited.
+        recursivlyHandleSelectorUpdates(
+            selectors,
+            data,
+            subscriptions,
+            updatedInitializedAtoms,
+        )
+    }
+    const addedAtoms = initialUpdatedAtoms.symmetricDifference(
+        updatedInitializedAtoms,
+    )
+    if (addedAtoms.size) {
+        throw new Error(
+            "Handle this case. Is probably if a selector initializes an atom",
+        )
+    }
+    if (subscriptions.size > 0) {
+        for (const subscription of subscriptions) {
+            if ("state" in subscription) {
+                const updatedFamilyAtoms = families.get(subscription.state)
+                if (updatedFamilyAtoms) {
+                    for (const atom of updatedFamilyAtoms) {
+                        subscription.callback(...atom.familyArgs)
+                    }
+                }
+            } else {
+                subscription.callback()
+            }
+        }
+    }
+}
+
+const findAllDependents = (
+    selector: Selector,
+    data: StoreData,
+    depsRes = new Set(),
+    subsRes = new Set<any>(),
+) => {
+    const dependents = data.stateDependents.get(selector)
+    const subscriptions = data.subscriptions.get(selector)
+    addSetToSet(dependents, depsRes)
+    addSetToSet(subscriptions, subsRes)
+    if (dependents && dependents.size > 0) {
+        for (const dependent of dependents) {
+            findAllDependents(dependent, data, depsRes, subsRes)
+        }
+    }
+    return [depsRes, subsRes]
+}
+
+// const generateDependencyGraph = (state: State, data: StoreData) => {
+//     const dependents = data.stateDependents.get(state)
+//     return [
+//         state.name,
+//         dependents
+//             ? Array.from(dependents).map(dep =>
+//                   generateDependencyGraph(dep, data),
+//               )
+//             : [],
+//         // Array.from(dependents).map(dep => generateDependencyGraph(dep, data)),
+//     ]
+// }
+
+const recursivlyHandleSelectorUpdates = (
+    selectors: Set<Selector>,
+    data: StoreData,
+    collectedSubscribers: Set<any>,
+    updatedInitializedAtoms: Set<Atom>,
+    seen: Set<Selector> = new Set(),
+) => {
+    const selectorsForNextPass = new Set<Selector>()
+    for (const selector of selectors) {
+        const currentValue = data.values.get(selector)
+        if (isPromiseLike(currentValue)) {
+            continue
+        }
+        seen.add(selector)
+        const dependents = data.stateDependents.get(selector)
+        const subscribers = data.subscriptions.get(selector)
+        if (
+            (!dependents || dependents.size === 0) &&
+            (!subscribers || subscribers.size === 0)
+        ) {
+            data.expiredValues.set(selector, data.values.get(selector))
+            data.values.delete(selector)
+        } else {
+            const [wasValueUpdated, didEvalCrash, error] = reEvaluteSelector(
+                selector,
+                data,
+                updatedInitializedAtoms,
+            )
+            if (didEvalCrash) {
+                const [deps, subs] = findAllDependents(selector, data)
+                if (deps.size > 0) {
+                    for (const dep of deps) {
+                        data.expiredValues.set(dep, data.values.get(dep))
+                        data.values.delete(dep)
+                    }
+                }
+                if (subs.size > 0) {
+                    addSetToSet(subs, collectedSubscribers)
+                }
+            } else {
+                if (!wasValueUpdated) continue
+                addSetToSet(
+                    data.stateDependents.get(selector),
+                    selectorsForNextPass,
+                )
+                addSetToSet(subscribers, collectedSubscribers)
+            }
+
+            // We intentially get the dependents again, since the reevalute might have changed the dependents
+        }
+    }
+    if (selectorsForNextPass.size > 0) {
+        recursivlyHandleSelectorUpdates(
+            selectorsForNextPass,
+            data,
+            collectedSubscribers,
+            updatedInitializedAtoms,
+            seen,
+        )
     }
 }

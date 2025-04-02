@@ -73,44 +73,63 @@ describe("store", () => {
         expect(root.get(selector1)).toBe(10)
     })
     describe("scope", () => {
-        test.only("family", () => {
+        test("family", () => {
             const root = store("root")
             const child = root.scope("child")
             const userFamily = atomFamily<string>(id => ({ id }))
 
             expect(root.get(userFamily)).toHaveLength(0)
             expect(child.get(userFamily)).toHaveLength(0)
+            expect(root.data.values.get(userFamily)).toStrictEqual([])
+            expect(child.data.values.get(userFamily)).toBeUndefined()
+
+            // We get a atom from the family. Nothing should happen
             const user1 = userFamily("1")
             expect(root.get(userFamily)).toHaveLength(0)
             expect(child.get(userFamily)).toHaveLength(0)
+            expect(root.data.values.get(userFamily)).toStrictEqual([])
+            expect(child.data.values.get(userFamily)).toBeUndefined()
 
+            // We get the atom from root. This will then init in the root
             root.get(user1)
             expect(root.get(userFamily)).toHaveLength(1)
             expect(child.get(userFamily)).toHaveLength(1)
+            expect(root.data.values.get(userFamily)).toStrictEqual([user1])
+            expect(child.data.values.get(userFamily)).toBeUndefined()
+            expect(root.data.values.get(user1)).toStrictEqual({ id: "1" })
+            expect(child.data.values.get(user1)).toBeUndefined()
 
+            // Init another user and get from root
             const user2 = userFamily("2")
             root.get(user2)
             expect(root.get(userFamily)).toHaveLength(2)
             expect(child.get(userFamily)).toHaveLength(2)
+            expect(root.data.values.get(userFamily)).toStrictEqual([
+                user1,
+                user2,
+            ])
+            expect(child.data.values.get(userFamily)).toBeUndefined()
 
+            // Now we init user3 and get it on the child. This should trigger
+            // the atom family array to split
             const user3 = userFamily("3")
             child.get(user3)
-            expect(root.get(userFamily)).toHaveLength(3)
+            expect(root.get(userFamily)).toHaveLength(2)
             expect(child.get(userFamily)).toHaveLength(3)
+            expect(root.data.values.get(userFamily)).toStrictEqual([
+                user1,
+                user2,
+            ])
+            expect(child.data.values.get(userFamily)).toStrictEqual([
+                user1,
+                user2,
+                user3,
+            ])
+
             const user4 = userFamily("4")
             child.set(user4, { id: "4", name: "Foo" })
-            expect(root.get(userFamily)).toHaveLength(4)
+            expect(root.get(userFamily)).toHaveLength(2)
             expect(child.get(userFamily)).toHaveLength(4)
-
-            /**
-             * Currently getting the list of keys alawys stays in sync
-             * in root and scoped stores. I'm still figuring out what
-             * would be the expected behaviour, but I'm leaning towards
-             * this not being the right approach. The reason that it
-             * works like this is because when getting the key set it
-             * always bubbles up to the root. Set as well triggers the
-             * get first.
-             */
         })
     })
 })

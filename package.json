@@ -11,7 +11,8 @@
         "url": "git+https://github.com/eigilsagafos/valdres.git"
     },
     "scripts": {
-        "build": "bun run lerna run build",
+        "build": "bun --filter '*' build",
+        "build_old": "bun run lerna run build",
         "build:types": "bun run lerna run build:types",
         "publish_old": "bun run lerna publish  --force-publish",
         "test_old": "bun run lerna run test",
@@ -35,5 +36,6 @@
         "lerna": "8.1.9",
         "prettier": "3.5.3",
         "semver": "7.7.1"
-    }
+    },
+    "version": "0.2.0-pre.1"
 }

@@ -17,6 +17,7 @@ export const deleteFamilyAtom = <
         ...array.slice(index + 1),
     ]
     data.values.delete(atom)
+    // TODO: Update propagation logic to optimize for when we delete
     propagateUpdatedAtoms([atom], data)
     setValueInData(atom.family, newArray, data)
     propagateUpdatedAtoms([atom.family], data)

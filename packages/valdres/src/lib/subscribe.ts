@@ -1,11 +1,14 @@
+import type { Atom } from "../types/Atom"
 import type { Family } from "../types/Family"
 import type { State } from "../types/State"
 import type { StoreData } from "../types/StoreData"
+import type { Subscription } from "../types/Subscription"
 import { isAtom } from "../utils/isAtom"
 import { isAtomFamily } from "../utils/isAtomFamily"
 import { isFamily } from "../utils/isFamily"
 import { isPromiseLike } from "../utils/isPromiseLike"
 import { isSelector } from "../utils/isSelector"
+import { isSelectorFamily } from "../utils/isSelectorFamily"
 import { getAtomInitValue, initAtom } from "./initAtom"
 import { initSelector } from "./initSelector"
 import { propagateUpdatedAtoms } from "./propagateUpdatedAtoms"
@@ -14,10 +17,22 @@ import { storeFromStoreData } from "./storeFromStoreData"
 import { unsubscribe } from "./unsubscribe"
 
 const initSubscribers = <V>(state: State<V> | Family<V>, data: StoreData) => {
-    const set = new Set()
+    const set = new Set<Subscription>()
     data.subscriptions.set(state, set)
     return set
 }
+
+// class SelectorFamilySubscriptionNotSupported extends Error {
+//     constructor() {
+//         super("Selector family subscription not supported")
+//         this.name = "SelectorFamilySubscriptionNotSupported"
+//     }
+// }
+
+// const createTwoWayDependecyBinding = (parent, child, data) => {
+
+//     throw new Error("TODO: Implement this")
+// }
 
 export const subscribe = <V>(
     state: State<V> | Family<V>,
@@ -56,12 +71,15 @@ export const subscribe = <V>(
             originalCallback(arg)
         }
     } else if (!data.values.has(state) && isAtom(state)) {
-        // Should we do this?
-        initAtom(state, data)
+        const initializedAtomsSet = new Set<Atom>()
+        initAtom(state, data, initializedAtomsSet)
+        if (initializedAtomsSet.size) {
+            throw new Error("This should not be possible")
+        }
     }
     // TODO: Should we init no matter what if not in data.values? Or is that the wrong approach?
     if (isSelector(state) && !data.values.has(state)) {
-        initSelector(state, data)
+        initSelector(state, data, new Set(), new WeakSet())
     }
 
     const subscribers =
@@ -69,6 +87,48 @@ export const subscribe = <V>(
 
     let subscription
     if (isFamily(state)) {
+        if (isSelectorFamily(state)) {
+            throw new Error(
+                "Subscribe to selectorFammily is currently not supported",
+            )
+            // let TEST_SYMB = Symbol("asdf")
+            // const dependencies = []
+            // const accumulator = depState => {
+            //     if (isFamilyAtom(depState)) {
+            //         if (
+            //             depState.familyArgs[0] === TEST_SYMB &&
+            //             depState.familyArgs.length === 1
+            //         ) {
+            //             dependencies.push(depState.family)
+            //             // return null
+            //             // return depState.familyArgs[1]
+            //         } else {
+            //             throw new SelectorFamilySubscriptionNotSupported()
+            //         }
+            //         // // if (isAtom(depState)) {
+            //         // // }
+            //         // isSelectorFamily(depState)
+            //         // throw new Error("TODO 000")
+            //     } else {
+            //         throw new SelectorFamilySubscriptionNotSupported()
+            //     }
+            // }
+            // try {
+            //     state(TEST_SYMB).get(accumulator)
+            // } catch (e) {
+            //     if (e instanceof SelectorFamilySubscriptionNotSupported) {
+            //         throw e
+            //     }
+            // }
+            // dependencies.forEach(dependency => {
+            //     if (isAtomFamily(dependency)) {
+            //         // Now we have a selectorFamily that is depentent on a atomFamily
+            //         createTwoWayDependecyBinding(state, dependency, data)
+            //     } else {
+            //         throw new SelectorFamilySubscriptionNotSupported()
+            //     }
+            // })
+        }
         subscription = {
             callback,
             state,
@@ -87,7 +147,9 @@ export const subscribe = <V>(
         if (isAtom(state) && state.maxAge) {
             let timeout: Timer
             const interval = setInterval(() => {
+                // @ts-ignore @ts-todo
                 let value = getAtomInitValue(state, data)
+                // TODO: Fix interal
                 if (isPromiseLike(value)) {
                     if (state.staleWhileRevalidate) {
                         const oldValue = data.values.get(state)
