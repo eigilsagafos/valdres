@@ -1,6 +1,6 @@
 {
     "name": "@valdres-react/draggable",
-    "version": "0.2.0-pre.2",
+    "version": "0.2.0-pre.3",
     "license": "MIT",
     "author": {
         "name": "Eigil Sagafos"
@@ -24,10 +24,10 @@
     },
     "devDependencies": {
         "typescript": "5.6.3",
-        "valdres-react": "0.2.0-pre.2"
+        "valdres-react": "0.2.0-pre.3"
     },
     "peerDependencies": {
-        "valdres-react": "0.2.0-pre.2"
+        "valdres-react": "0.2.0-pre.3"
     },
     "publishConfig": {
         "access": "public",
