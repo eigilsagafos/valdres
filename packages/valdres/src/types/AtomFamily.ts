@@ -9,5 +9,6 @@ export type AtomFamily<
     release: (...args: Args) => void
     equal: EqualFunc<Value>
     name?: string
+    mutable?: boolean
     __valdresAtomFamilyMap: Map<Value, AtomFamilyAtom<Value, Args>>
 }

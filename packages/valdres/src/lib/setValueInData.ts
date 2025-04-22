@@ -9,7 +9,7 @@ export const setValueInData = <Value extends unknown>(
     value: Value,
     data: StoreData,
 ): Value => {
-    if (isProd()) {
+    if (atom.mutable || isProd()) {
         data.values.set(atom, value)
         return value
     } else {

@@ -12,6 +12,7 @@ export type AtomOptions<Value = unknown> = {
     onSet?: AtomOnSet<Value>
     onMount?: () => () => void
     maxAge?: number
+    mutable?: boolean
     staleWhileRevalidate?: number
     equal?: EqualFunc<Value>
 }

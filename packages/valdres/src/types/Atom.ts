@@ -11,5 +11,6 @@ export type Atom<Value = unknown> = {
     onSet?: AtomOnSet<Value>
     onMount?: () => void | (() => void)
     maxAge?: number
+    mutable?: boolean
     staleWhileRevalidate?: number
 }

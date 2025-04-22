@@ -216,4 +216,16 @@ describe("atom", () => {
         setIntervalSpy.mockReset()
         clearIntervalSpy.mockReset()
     })
+
+    test("mutable atom", () => {
+        const store1 = store()
+        const mutableObject = {}
+        const immutableObject = {}
+        const immutableAtom = atom(undefined)
+        const mutableAtom = atom(undefined, { mutable: true })
+        store1.set(immutableAtom, immutableObject)
+        store1.set(mutableAtom, mutableObject)
+        expect(() => (immutableObject.foo = "bar")).toThrowError()
+        expect(() => (mutableObject.foo = "bar")).not.toThrowError()
+    })
 })
