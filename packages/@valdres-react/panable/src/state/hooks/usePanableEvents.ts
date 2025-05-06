@@ -7,31 +7,21 @@ import { onMouseUp } from "../actions/onMouseUp"
 import { onTouchEnd } from "../actions/onTouchEnd"
 import { onTouchStart } from "../actions/onTouchStart"
 import { zoom } from "../actions/zoom"
-import { useConfig } from "./useConfig"
-// import { useCurrentCapabilities } from "../../../state/hooks/useCurrentCapabilities"
 
 export const usePanableEvents = (scopeId: ScopeId) => {
-    const config = useConfig(scopeId)
     const txn = useTransaction()
     const ref = useRef<HTMLDivElement>()
-    // const capabilities = useCurrentCapabilities()
+
     const onWheel = useCallback(
         (e: WheelEvent) => {
             e.stopPropagation()
 
-            if (e.ctrlKey) {
+            if (e.ctrlKey || e.metaKey) {
                 e.preventDefault()
                 txn(state => zoom(state, e.deltaY, scopeId))
             } else {
                 e.preventDefault()
                 txn(state => moveDelta(state, e.deltaX, e.deltaY, scopeId))
-                // throw new Error(`TODO`)
-                // if (
-                //     capabilities.actions.pan.enabled &&
-                //     capabilities.actions.pan.gestures
-                // ) {
-                //     txn(state => moveDelta(state, e.deltaX, e.deltaY, scopeId))
-                // }
             }
         },
         [scopeId],

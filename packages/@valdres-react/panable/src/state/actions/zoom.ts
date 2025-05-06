@@ -18,9 +18,10 @@ export const zoom = (
         zoomChange > 0
             ? 1 / (Math.abs(zoomChange) + 1)
             : 1 + Math.abs(zoomChange)
-    const newZoom = currentZoom * zoomAsFraction
+    let newZoom = currentZoom * zoomAsFraction
 
-    if (newZoom < 0.1 || newZoom > 4.0) return
+    if (newZoom > 8.0) newZoom = 8.0
+    if (newZoom < 0.1) newZoom = 0.1
     const mouseBefore = getCursorPositionRelative(txn.get, scopeId)
     txn.set(scaleAtom(scopeId), newZoom)
     const mouseAfter = getCursorPositionRelative(txn.get, scopeId)
