@@ -175,6 +175,7 @@ const findAllDependents = (
     addSetToSet(subscriptions, subsRes)
     if (dependents && dependents.size > 0) {
         for (const dependent of dependents) {
+            if (depsRes.has(dependent)) continue
             findAllDependents(dependent, data, depsRes, subsRes)
         }
     }
