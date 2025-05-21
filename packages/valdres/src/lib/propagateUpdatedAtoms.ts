@@ -223,27 +223,12 @@ const recursivlyHandleSelectorUpdates = (
                 data,
                 updatedInitializedAtoms,
             )
-            if (didEvalCrash) {
-                const [deps, subs] = findAllDependents(selector, data)
-                if (deps.size > 0) {
-                    for (const dep of deps) {
-                        data.expiredValues.set(dep, data.values.get(dep))
-                        data.values.delete(dep)
-                    }
-                }
-                if (subs.size > 0) {
-                    addSetToSet(subs, collectedSubscribers)
-                }
-            } else {
-                if (!wasValueUpdated) continue
-                addSetToSet(
-                    data.stateDependents.get(selector),
-                    selectorsForNextPass,
-                )
-                addSetToSet(subscribers, collectedSubscribers)
-            }
-
-            // We intentially get the dependents again, since the reevalute might have changed the dependents
+            if (!wasValueUpdated) continue
+            addSetToSet(
+                data.stateDependents.get(selector), // We intentially get the dependents again, since the reevalute might have changed the dependents
+                selectorsForNextPass,
+            )
+            addSetToSet(subscribers, collectedSubscribers)
         }
     }
     if (selectorsForNextPass.size > 0) {
