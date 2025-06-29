@@ -36,7 +36,6 @@ export const usePanableEvents = (scopeId: ScopeId) => {
 
     const mouseUp = useCallback(
         (e: MouseEvent) => {
-            e.preventDefault()
             e.stopPropagation()
             txn(state => onMouseUp(state, e, scopeId))
         },
