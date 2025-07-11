@@ -19,6 +19,7 @@ export const useDraggable = ({
     itemPos,
     itemSize,
     dragEnabled = true,
+    centerDragSource = false,
 }: {
     meta: SerializableParam
     scopeId: string
@@ -61,6 +62,7 @@ export const useDraggable = ({
                             onDragEnd,
                             onDrop,
                             dropzonesSelector,
+                            centerDragSource,
                         },
                         e,
                     )
@@ -106,6 +108,7 @@ export const useDraggable = ({
                             onDragEnd,
                             onDrop,
                             dropzonesSelector,
+                            centerDragSource,
                         },
                         e,
                     )

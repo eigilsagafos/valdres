@@ -21,9 +21,20 @@ export const setIsDragging = (
         onDragEnd,
         onDrop,
         dropzonesSelector,
+        centerDragSource,
     },
     event,
 ) => {
+    const center = ({ x, scale }) => {
+        if (centerDragSource) {
+            const rect = event.currentTarget.getBoundingClientRect()
+            const offsetX = event.clientX - rect.left
+            return x - offsetX / scale + 12
+        }
+
+        return x / scale
+    }
+
     const scale = txn.get(scaleAtom(scopeId))
     txn.set(activeActionsAtom(scopeId), curr => [...curr, [eventId, "drag"]])
     txn.set(actionAtom({ eventId, scopeId }), {
@@ -33,7 +44,7 @@ export const setIsDragging = (
         scopeId,
         eventId,
         initialized: false,
-        x: x / scale,
+        x: center({ x, scale }),
         y: y / scale,
         originPosition: itemPos,
         originSize: itemSize,
