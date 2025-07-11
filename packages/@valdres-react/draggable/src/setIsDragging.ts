@@ -29,7 +29,7 @@ export const setIsDragging = (
         if (centerDragSource) {
             const rect = event.currentTarget.getBoundingClientRect()
             const offsetX = event.clientX - rect.left
-            return x - offsetX / scale + 12
+            return (x - offsetX + 12) / scale
         }
 
         return x / scale
