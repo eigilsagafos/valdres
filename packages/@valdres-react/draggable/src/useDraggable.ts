@@ -33,6 +33,7 @@ export const useDraggable = ({
     itemPos: Point
     itemSize: Size
     dragEnabled: boolean
+    centerDragSource: boolean
 }): React.MutableRefObject<any> => {
     const ref = useRef<HTMLDivElement>(null)
     const txn = useTransaction()
