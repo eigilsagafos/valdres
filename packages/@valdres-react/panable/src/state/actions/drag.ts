@@ -3,10 +3,6 @@ import type { TransactionInterface } from "valdres"
 import type { ScopeId } from "../../types/ScopeId"
 import { actionAtom } from "../atoms/actionAtom"
 import { scaleAtom } from "../atoms/scaleAtom"
-// import { DropZone } from '../../../types/DropZone'
-// import { deselectProcessItems } from '../../../state/utils/deselectProcessItems'
-// import { selectedProcessItemsSelector } from '../../../state/selectors/selectedProcessItemsSelector'
-// import { allDropZonesByScopeIdSelector } from '../../../state/selectors/allDropZonesByScopeIdSelector'
 
 const checkForActiveDropzone = (
     zones: DropZone[],
@@ -34,6 +30,7 @@ const checkForActiveDropzone = (
     })
 }
 
+let dropzones: DropZone[] = []
 export const drag = (
     txn: TransactionInterface,
     scopeId: ScopeId,
@@ -44,13 +41,6 @@ export const drag = (
 ) => {
     let action = txn.get(actionAtom({ eventId, scopeId }))
     if (action.invalid) return null
-
-    // const draggableId = {
-    //     ref: action.meta.item.ref,
-    //     context: action.meta.item.context,
-    //     scopeId,
-    // }
-
     if (action.initialized === false) {
         const xDiff = Math.abs(action.initialMousePosition.x - x)
         const yDiff = Math.abs(action.initialMousePosition.y - y)
@@ -58,38 +48,32 @@ export const drag = (
             return
         } else {
             //Deselect items if dragging one that is not selected
-            console.log("onInit on action?")
-            // const selected = state.get(selectedProcessItemsSelector(scopeId))
-            // if (!selected.find(item => item.ref === action.id.ref)) {
-            //     deselectProcessItems(state, scopeId)
-            //     state.set(actionAtom({ eventId, scopeId }), curr => ({
-            //         ...curr,
-            //         meta: {
-            //             ...curr.meta,
-            //             otherItems: [],
-            //         },
-            //     }))
-            // }
-
             txn.set(actionAtom({ eventId, scopeId }), curr => ({
                 ...curr,
                 initialized: true,
             }))
+
             if (action.onDragStart) {
                 action.onDragStart(event, eventId, txn)
                 // We update the action in case the onDragStart modified it
                 action = txn.get(actionAtom({ eventId, scopeId }))
             }
+
+            dropzones = txn.get(action.dropzonesSelector)
         }
     }
 
     const scale = txn.get(scaleAtom(scopeId))
-    const dropzones = txn.get(action.dropzonesSelector)
+
+    if (dropzones.length === 0) {
+        dropzones = txn.get(action.dropzonesSelector)
+    }
 
     const dropZones = Object.entries(dropzones).map(([k, v]) => ({
         id: k,
         ...v,
     }))
+
     const originPosition =
         typeof action.originPosition === "function"
             ? action.originPosition(state)
