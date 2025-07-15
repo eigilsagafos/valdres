@@ -35,7 +35,6 @@ export function storeFromStoreData(
     data: ScopedStoreData | StoreData,
     detach?: () => void,
 ) {
-    // @ts-ignore @ts-todo
     const get: GetValue = (state: State) => {
         const set = new Set<Atom>()
         const res = getState(state, data, set)

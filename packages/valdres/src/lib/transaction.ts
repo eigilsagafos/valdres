@@ -5,7 +5,6 @@ import type { GetValue } from "../types/GetValue"
 import type { State } from "../types/State"
 import type { StoreData } from "../types/StoreData"
 import type { TransactionFn } from "../types/TransactionFn"
-import type { TransactionInterface } from "../types/TransactionInterface"
 import { deepFreeze } from "../utils/deepFreeze"
 import { isAtom } from "../utils/isAtom"
 import { isAtomFamily } from "../utils/isAtomFamily"
@@ -16,63 +15,22 @@ import { getAtomInitValue } from "./initAtom"
 import { isFunction } from "./isFunction"
 import { setAtoms } from "./setAtoms"
 
-const findDependencies = (
-    state: State,
-    data: StoreData,
-    result = new Set(),
-) => {
-    const dependents = data.stateDependents.get(state)
-    if (dependents?.size) {
-        for (const dependent of dependents) {
-            if (!result.has(dependent)) {
-                result.add(dependent)
-                findDependencies(dependent, data, result)
-            }
-        }
-    }
-    return result
-}
-
-type GetValdresValue = <V>(state: State<V>) => V
-type ResetValdresValue = <V>(atom: Atom<V>) => V
-
-const recursivlyResetTxnSelectorCache = (
-    state: State,
-    txnSubscribers: Map<State, Set<State>>,
-    txnSelectorCache: Map<State, any>,
-) => {
-    for (const dep of txnSubscribers.get(state) as Set<State>) {
-        txnSelectorCache.delete(dep)
-        if (txnSubscribers.get(dep)?.size) {
-            recursivlyResetTxnSelectorCache(
-                dep,
-                txnSubscribers,
-                txnSelectorCache,
-            )
-        }
-    }
-}
-
-type GetAtomValue = {
-    <V>(atom: Atom<V>): V
-}
-
-const captureScopedTransaction = (
-    scopedData: StoreData,
-    parentGetInTxnOrData: GetAtomValue,
-) => {
-    let txn: TransactionInterface
-    transaction(
-        scopedTxn => {
-            txn = scopedTxn
-        },
-        scopedData,
-        false,
-        parentGetInTxnOrData,
-    )
-    // @ts-ignore
-    return txn
-}
+// const findDependencies = (
+//     state: State,
+//     data: StoreData,
+//     result = new Set(),
+// ) => {
+//     const dependents = data.stateDependents.get(state)
+//     if (dependents?.size) {
+//         for (const dependent of dependents) {
+//             if (!result.has(dependent)) {
+//                 result.add(dependent)
+//                 findDependencies(dependent, data, result)
+//             }
+//         }
+//     }
+//     return result
+// }
 
 const deleteAtomFamilyAtoms = (
     set: Set<AtomFamilyAtom<any, any>>,
@@ -83,162 +41,177 @@ const deleteAtomFamilyAtoms = (
     })
 }
 
-type ScopedTransactionsRecord = Record<string, TransactionInterface>
+export class Transaction {
+    data: StoreData
+    parentTransaction: Transaction | undefined
+    dirty: boolean
+    private _scopedTransactions: undefined | { [key: string]: Transaction }
+    private _initializedAtomsSet: any
+    private _deleteSet: any
+    private _selectorDependencies: any
+    private _selectorCache: any
+    private _atomMap: any
+    constructor(data: StoreData, parentTransaction?: Transaction) {
+        this.data = data
+        this.parentTransaction = parentTransaction
+        this.dirty = false
+    }
 
-export const transaction = (
-    callback: TransactionFn,
-    data: StoreData,
-    autoCommit = true,
-    parentGetInTxnOrData?: GetAtomValue,
-) => {
-    const txnAtomMap = new Map()
-    const txnAtomDeleteSet = new Set<AtomFamilyAtom<any, any>>()
-    const txnSelectorCache = new Map()
-    const txnSubscribers = new Map()
-    const dirtySelectors = new Set()
-    let scopedTransactions: ScopedTransactionsRecord
-
-    const getInTxnOrData: GetAtomValue = state => {
-        if (txnAtomMap.has(state)) {
-            return txnAtomMap.get(state)
+    private valueFromTxnOrData: GetValue = (state: State) => {
+        if (this.atomMap.has(state)) {
+            return this.atomMap.get(state)
         }
-        if (data.values.has(state)) {
-            return data.values.get(state)
+        if (this.data.values.has(state)) {
+            return this.data.values.get(state)
         }
-        if (parentGetInTxnOrData) {
-            return parentGetInTxnOrData(state)
+        if (this.parentTransaction) {
+            return this.parentTransaction.valueFromTxnOrData(state)
         }
     }
 
-    const initializedAtomsSet = new Set<Atom>()
-    // @ts-ignore @ts-todo
-    const txnGet: GetValue = state => {
-        if (isAtom(state)) {
-            const value = getInTxnOrData(state)
+    get: GetValue = (state: State<any>) => {
+        if (isAtom(state) || isAtomFamily(state)) {
+            const value = this.valueFromTxnOrData(state)
             if (value) return value
-            return getState(state, data, initializedAtomsSet)
+            return getState(state, this.data, this.initializedAtomsSet)
         } else if (isSelector(state)) {
-            if (txnSelectorCache.has(state)) {
-                return txnSelectorCache.get(state)
+            if (this.dirty) {
+                this.selectorCache.clear()
+                this.selectorDependencies.clear()
+                this.dirty = false
+            } else if (this.selectorCache.has(state)) {
+                // If the selector is cached and not dirty, return the cached value
+                return this.selectorCache.get(state)
             }
-            const deps = new Set()
-            // @ts-ignore, @ts-todo
+
+            // @ts-ignore
             const res = state.get(s => {
-                deps.add(s)
-                return txnGet(s)
-            }, data.id)
-            for (const dep of deps) {
-                if (!txnSubscribers.has(dep)) {
-                    txnSubscribers.set(dep, new Set())
+                // Could we optimize this even further? Could we better track selector dependencies and if any of the deps are touched by the transaction?
+                if (!this.selectorDependencies.has(s)) {
+                    this.selectorDependencies.add(s)
                 }
-                txnSubscribers.get(dep).add(state)
-            }
-            txnSelectorCache.set(state, res)
+                return this.get(s)
+            }, this.data.id)
+            this.selectorCache.set(state, res)
             return res
-        } else if (isAtomFamily(state)) {
-            const value = getInTxnOrData(state)
-            if (value) return value
-            return getState(state, data, initializedAtomsSet)
         } else {
             throw new Error("Unsupported state")
         }
     }
-    // @ts-ignore @ts-todo
-    const txnSet = <V>(atom: Atom<V>, value: V | ((currentValue: V) => V)) => {
+
+    set = <V>(atom: Atom<V>, value: V | ((currentValue: V) => V)) => {
         if (!isAtom(atom)) throw new Error("Not an atom")
         if (isFunction(value)) {
-            const currentValue = txnGet(atom)
-            // @ts-ignore @ts-todo
+            const currentValue = this.get(atom) as V
             value = value(currentValue)
         }
-        for (const selector of findDependencies(atom, data)) {
-            dirtySelectors.add(selector)
-            txnSelectorCache.delete(selector)
-        }
-        if (txnSubscribers.get(atom)?.size) {
-            recursivlyResetTxnSelectorCache(
-                atom,
-                txnSubscribers,
-                txnSelectorCache,
-            )
-        }
+
         if (isProd()) {
-            txnAtomMap.set(atom, value)
+            this.atomMap.set(atom, value)
         } else {
-            txnAtomMap.set(atom, deepFreeze(value))
+            this.atomMap.set(atom, deepFreeze(value))
         }
+        if (!this.dirty) this.dirty = true
 
         if (isFamilyAtom(atom)) {
-            const currentFamilyList = txnGet(atom.family)
+            const currentFamilyList = this.get(atom.family)
             if (!currentFamilyList.includes(atom)) {
                 const newArr = [...currentFamilyList, atom]
-                txnAtomMap.set(atom.family, newArr)
+                this.atomMap.set(atom.family, newArr)
             }
         }
         return value
     }
 
-    const txnReset: ResetValdresValue = atom => {
-        const value = getAtomInitValue(atom, data, initializedAtomsSet)
-        txnAtomMap.set(atom, value)
-        return value
-    }
-
-    const txnDel = (atom: AtomFamilyAtom<any, any>) => {
-        const array = txnGet(atom.family)
+    del = (atom: AtomFamilyAtom<any, any>) => {
+        const array = this.get(atom.family)
         const index = array.indexOf(atom)
         const newArr: AtomFamilyAtom<any, any>[] = [
             ...array.slice(0, index),
             ...array.slice(index + 1),
         ]
-        txnAtomMap.set(atom.family, newArr)
-        if (data.values.has(atom)) {
-            txnAtomDeleteSet.add(atom)
+        this.atomMap.set(atom.family, newArr)
+        if (this.data.values.has(atom)) {
+            this.deleteSet.add(atom)
         }
-        if (txnAtomMap.has(atom)) {
-            txnAtomMap.delete(atom)
+        if (this.atomMap.has(atom)) {
+            this.atomMap.delete(atom)
         }
     }
 
-    const commit = () => {
-        setAtoms(txnAtomMap, data, initializedAtomsSet)
-        if (txnAtomDeleteSet.size) {
-            deleteAtomFamilyAtoms(txnAtomDeleteSet, data)
+    scope = (scopeId: string, callback: (txn: Transaction) => any) => {
+        if (scopeId in this.data.scopes) {
+            return this.scopedTransaction(scopeId).execute(callback, false)
+        } else {
+            throw new Error(
+                `Scope '${scopeId}' not found. Registered scopes: ${Object.keys(this.data.scopes).join(", ")}`,
+            )
         }
-        dirtySelectors.clear()
-        if (scopedTransactions) {
-            for (const scopedTxn of Object.values(scopedTransactions)) {
+    }
+
+    reset = (atom: Atom) => {
+        const value = getAtomInitValue(
+            atom,
+            this.data,
+            this.initializedAtomsSet,
+        )
+        this.atomMap.set(atom, value)
+        return value
+    }
+
+    execute = (callback: TransactionFn, autoCommit = true) => {
+        const result = callback(this)
+        if (autoCommit) this.commit()
+        return result
+    }
+
+    commit = () => {
+        const initializedAtomsSet = new Set<Atom>()
+        setAtoms(this.atomMap, this.data, initializedAtomsSet)
+        if (this.deleteSet?.size) {
+            deleteAtomFamilyAtoms(this.deleteSet, this.data)
+        }
+        if (this._scopedTransactions) {
+            for (const scopedTxn of Object.values(this._scopedTransactions)) {
                 scopedTxn.commit()
             }
         }
     }
-    const result = callback({
-        set: txnSet,
-        get: txnGet,
-        del: txnDel,
-        reset: txnReset,
-        commit,
-        scope: (scopeId, callback) => {
-            if (scopeId in data.scopes) {
-                const scopedData = data.scopes[scopeId]
-                if (scopedTransactions === undefined) {
-                    scopedTransactions = {}
-                }
-                if (scopedTransactions[scopeId] === undefined) {
-                    scopedTransactions[scopeId] = captureScopedTransaction(
-                        scopedData,
-                        getInTxnOrData,
-                    )
-                }
-                return callback(scopedTransactions[scopeId])
-            } else {
-                throw new Error(
-                    `Scope '${scopeId}' not found. Registered scopes: ${Object.keys(data.scopes).join(", ")}`,
-                )
-            }
-        },
-        data,
-    })
-    if (autoCommit) commit()
-    return result
+
+    private get atomMap() {
+        if (!this._atomMap) this._atomMap = new Map()
+        return this._atomMap
+    }
+    private get selectorCache() {
+        if (!this._selectorCache) this._selectorCache = new Map()
+        return this._selectorCache
+    }
+
+    private get selectorDependencies() {
+        if (!this._selectorDependencies) this._selectorDependencies = new Set()
+        return this._selectorDependencies
+    }
+    private get deleteSet() {
+        if (!this._deleteSet) this._deleteSet = new Set()
+        return this._deleteSet
+    }
+
+    private get initializedAtomsSet() {
+        if (!this._initializedAtomsSet) this._initializedAtomsSet = new Set()
+        return this._initializedAtomsSet
+    }
+    private scopedTransaction(scopeId: string) {
+        if (!this._scopedTransactions) this._scopedTransactions = {}
+        if (!this._scopedTransactions[scopeId]) {
+            const scopedData = this.data.scopes[scopeId]
+            const scopedTransaction = new Transaction(scopedData, this)
+            this._scopedTransactions[scopeId] = scopedTransaction
+        }
+        return this._scopedTransactions[scopeId]
+    }
+}
+
+export const transaction = (callback: TransactionFn, data: StoreData) => {
+    const txn = new Transaction(data)
+    return txn.execute(callback)
 }

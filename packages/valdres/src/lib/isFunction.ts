@@ -1,2 +1,2 @@
-export const isFunction = (value: unknown): value is Function =>
+export const isFunction = (value: any): value is Function =>
     typeof value === "function"

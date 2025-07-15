@@ -4,8 +4,17 @@ import { atomFamily } from "../atomFamily"
 import { selector } from "../selector"
 import { store } from "../store"
 import { transaction } from "./transaction"
+import { index } from "../indexConstructor"
 
 describe("transaction", () => {
+    test("txn set direct", () => {
+        const store1 = store()
+        const atom1 = atom(1)
+        transaction(({ set }) => {
+            set(atom1, 2)
+        }, store1.data)
+        expect(store1.get(atom1)).toBe(2)
+    })
     test("txn set with callback", () => {
         const store1 = store()
         const atom1 = atom(1)
@@ -13,6 +22,34 @@ describe("transaction", () => {
             set(atom1, curr => curr + 1)
         }, store1.data)
         expect(store1.get(atom1)).toBe(2)
+    })
+
+    test("txn simple get", () => {
+        const store1 = store()
+        const atom1 = atom(1)
+        transaction(({ get }) => {
+            expect(get(atom1)).toBe(1)
+        }, store1.data)
+    })
+    test("txn get after set", () => {
+        const store1 = store()
+        const atom1 = atom(1)
+        transaction(({ set, get }) => {
+            set(atom1, 2)
+            expect(get(atom1)).toBe(2)
+        }, store1.data)
+    })
+
+    test("txn reset", () => {
+        const store1 = store()
+        const atom1 = atom(1)
+        transaction(({ get, set, reset }) => {
+            set(atom1, 2)
+            expect(get(atom1)).toBe(2)
+            reset(atom1)
+            expect(get(atom1)).toBe(1)
+        }, store1.data)
+        expect(store1.get(atom1)).toBe(1)
     })
 
     test("commit during transaction", () => {
@@ -315,5 +352,37 @@ describe("transaction", () => {
                 "Attempted to assign to readonly property.",
             )
         })
+    })
+
+    test("delete from transaction", () => {
+        const defaultStore = store()
+        const post = atomFamily<{ title: string; tags: string[] }, [string]>(
+            null,
+            {
+                name: "posts",
+            },
+        )
+        const indexCallback = mock((doc, term) => {
+            return doc.tags.includes(term)
+        })
+        const postsByTag = index(post, indexCallback, { name: "postsByTag" })
+        expect(indexCallback).toHaveBeenCalledTimes(0)
+        defaultStore.txn(txn => {
+            txn.set(post("1"), {
+                title: "Initial",
+                tags: ["foo"],
+            })
+        })
+        expect(defaultStore.get(postsByTag("foo"))).toHaveLength(1)
+        defaultStore.set(post("1"), {
+            title: "Initial",
+            tags: ["foo"],
+        })
+
+        expect(indexCallback).toHaveBeenCalledTimes(1)
+        defaultStore.txn(txn => {
+            txn.del(post("1"))
+        })
+        expect(defaultStore.get(postsByTag("foo"))).toHaveLength(0)
     })
 })

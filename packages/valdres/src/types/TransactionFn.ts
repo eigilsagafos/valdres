@@ -1,3 +1,3 @@
-import type { TransactionInterface } from "./TransactionInterface"
+import type { Transaction } from "../lib/transaction"
 
-export type TransactionFn = (args: TransactionInterface) => any
+export type TransactionFn = (args: Transaction) => any
