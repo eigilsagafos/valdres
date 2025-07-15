@@ -1,8 +1,8 @@
-import type { Store, TransactionInterface } from "valdres"
+import type { Store, Transaction } from "valdres"
 import { useStore } from "./useStore"
 
 export const useTransaction = (store?: Store) => {
     const selectedStore = store || useStore()
-    return (callback: (state: TransactionInterface) => any) =>
+    return (callback: (state: Transaction) => any) =>
         selectedStore.txn(args => callback(args))
 }

@@ -1,5 +1,5 @@
 import { draggableItemAtom } from "@valdres-react/draggable"
-import type { TransactionInterface } from "valdres"
+import type { Transaction } from "valdres"
 import type { ScopeId } from "../../types/ScopeId"
 import { actionAtom } from "../atoms/actionAtom"
 import { isModifierKeyActiveAtom } from "../atoms/isModifierKeyActiveAtom"
@@ -7,7 +7,7 @@ import { activeActionsAtom } from "../atoms/activeActionsAtom"
 import { configAtom } from "../atoms/configAtom"
 
 export const finishAction = (
-    txn: TransactionInterface,
+    txn: Transaction,
     scopeId: ScopeId,
     eventId: string | number,
     e?: any,

@@ -1,9 +1,9 @@
-import type { TransactionInterface } from "valdres"
+import type { Transaction } from "valdres"
 import type { ScopeId } from "../../types/ScopeId"
 import { finishAction } from "./finishAction"
 
 export const onTouchEnd = (
-    txn: TransactionInterface,
+    txn: Transaction,
     e: TouchEvent,
     scopeId: ScopeId,
 ) => {

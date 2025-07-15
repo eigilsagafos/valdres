@@ -1,4 +1,4 @@
-import type { TransactionInterface } from "valdres"
+import type { Transaction } from "valdres"
 import type { Action } from "../../types/Action"
 import type { ScopeId } from "../../types/ScopeId"
 import { actionAtom } from "../atoms/actionAtom"
@@ -10,7 +10,7 @@ import { upgradeMoveToZoom } from "./upgradeMoveToZoom"
 import { configAtom } from "../atoms/configAtom"
 
 export const onTouchStart = (
-    txn: TransactionInterface,
+    txn: Transaction,
     e: TouchEvent,
     scopeId: ScopeId,
 ) => {

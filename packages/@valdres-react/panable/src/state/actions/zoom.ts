@@ -1,14 +1,10 @@
-import type { TransactionInterface } from "valdres"
+import type { Transaction } from "valdres"
 import { scaleAtom } from "../atoms/scaleAtom"
 import { getCursorPositionRelative } from "../../utils/getCursorPositionRelative"
 import { cameraPositionAtom } from "../atoms/cameraPositionAtom"
 import type { ScopeId } from "../../types/ScopeId"
 
-export const zoom = (
-    txn: TransactionInterface,
-    zoomY: number,
-    scopeId: ScopeId,
-) => {
+export const zoom = (txn: Transaction, zoomY: number, scopeId: ScopeId) => {
     // const capabilities = state.get(currentCapabilitesSelector)
     const currentZoom = txn.get(scaleAtom(scopeId))
     const clipValue = 25

@@ -1,5 +1,5 @@
 import { draggableItemAtom } from "@valdres-react/draggable"
-import type { TransactionInterface } from "valdres"
+import type { Transaction } from "valdres"
 import type { ScopeId } from "../../types/ScopeId"
 import { actionAtom } from "../atoms/actionAtom"
 import { scaleAtom } from "../atoms/scaleAtom"
@@ -32,7 +32,7 @@ const checkForActiveDropzone = (
 
 let dropzones: DropZone[] = []
 export const drag = (
-    txn: TransactionInterface,
+    txn: Transaction,
     scopeId: ScopeId,
     eventId: string | number,
     x: number,

@@ -1,8 +1,8 @@
-import type { TransactionInterface } from "valdres-react"
+import type { Transaction } from "valdres"
 import type { ScopeId } from "./ScopeId"
 
 export type OnSelectInitFn = (
-    txn: TransactionInterface,
+    txn: Transaction,
     eventId: string | number,
     scopeId: ScopeId,
 ) => void

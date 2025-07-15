@@ -6,7 +6,7 @@ import {
     type ReactElement,
 } from "react"
 import { useStore, useTransaction } from "valdres-react"
-import { type TransactionInterface } from "valdres"
+import { type Transaction } from "valdres"
 import { onMouseMove } from "../state/actions/onMouseMove"
 import { onTouchMove } from "../state/actions/onTouchMove"
 import { configAtom } from "../state/atoms/configAtom"
@@ -35,7 +35,7 @@ export interface PanableComponentArguments {
     backgroundColor?: CSSProperties["backgroundColor"]
     mode: "pan" | "select"
     onCanvasClick?: (txn?: any) => void
-    onSelectInit?: (txn: TransactionInterface) => void
+    onSelectInit?: (txn: Transaction) => void
 }
 
 const useInitPanableConfig = (scopeId: ScopeId, config) => {

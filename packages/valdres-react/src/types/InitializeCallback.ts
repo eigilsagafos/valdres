@@ -1,8 +1,8 @@
-import type { Atom, TransactionInterface } from "valdres"
+import type { Atom, Transaction } from "valdres"
 
 type AtomPair<T> = [Atom<T>, T]
 
 export type InitializeCallback = (
-    txn: TransactionInterface,
+    txn: Transaction,
     // @ts-ignore, @ts-todo
 ) => void | AtomPair[]

@@ -1,4 +1,4 @@
-import type { TransactionInterface } from "valdres"
+import type { Transaction } from "valdres"
 import type { EventId } from "../../types/EventId"
 import type { ScopeId } from "../../types/ScopeId"
 import { actionAtom } from "../atoms/actionAtom"
@@ -7,7 +7,7 @@ import { cursorPositionRelativeSelector } from "../selectors/cursorPositionRelat
 import { configAtom } from "../atoms/configAtom"
 
 export const initSelect = (
-    txn: TransactionInterface,
+    txn: Transaction,
     scopeId: ScopeId,
     eventId: EventId,
     e: MouseEvent | TouchEvent,

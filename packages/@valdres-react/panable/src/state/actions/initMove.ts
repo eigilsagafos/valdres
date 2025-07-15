@@ -1,4 +1,4 @@
-import type { TransactionInterface } from "valdres"
+import type { Transaction } from "valdres"
 import type { EventId } from "../../types/EventId"
 import type { ScopeId } from "../../types/ScopeId"
 import { actionAtom } from "../atoms/actionAtom"
@@ -6,7 +6,7 @@ import { activeActionsAtom } from "../atoms/activeActionsAtom"
 import { cameraPositionAtom } from "../atoms/cameraPositionAtom"
 
 export const initMove = (
-    txn: TransactionInterface,
+    txn: Transaction,
     scopeId: ScopeId,
     eventId: EventId,
     x: number,

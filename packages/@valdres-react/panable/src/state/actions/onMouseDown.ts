@@ -1,12 +1,12 @@
 // import { currentCapabilitesSelector } from "../../../state/selectors/currentCapabilitesSelector"
-import type { TransactionInterface } from "valdres"
+import type { Transaction } from "valdres"
 import { initMove } from "./initMove"
 import { initSelect } from "./initSelect"
 import type { ScopeId } from "../../types/ScopeId"
 import { configAtom } from "../atoms/configAtom"
 
 export const onMouseDown = (
-    txn: TransactionInterface,
+    txn: Transaction,
     e: MouseEvent,
     scopeId: ScopeId,
 ) => {

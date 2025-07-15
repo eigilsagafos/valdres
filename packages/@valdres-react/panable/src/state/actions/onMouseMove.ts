@@ -1,4 +1,4 @@
-import type { TransactionInterface } from "valdres"
+import type { Transaction } from "valdres"
 import type { ScopeId } from "../../types/ScopeId"
 import { actionAtom } from "../atoms/actionAtom"
 import { cursorPositionAtom } from "../atoms/cursorPositionAtom"
@@ -6,7 +6,7 @@ import { move } from "./move"
 import { drag } from "./drag"
 
 export const onMouseMove = (
-    txn: TransactionInterface,
+    txn: Transaction,
     e: MouseEvent,
     scopeId: ScopeId,
 ) => {

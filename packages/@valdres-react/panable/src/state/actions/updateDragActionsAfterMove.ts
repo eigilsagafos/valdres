@@ -1,11 +1,11 @@
 import { draggableItemAtom } from "@valdres-react/draggable"
+import type { Transaction } from "valdres"
+import type { ScopeId } from "../../types/ScopeId"
 import { actionAtom } from "../atoms/actionAtom"
 import { activeActionsAtom } from "../atoms/activeActionsAtom"
-import type { TransactionInterface } from "valdres"
-import type { ScopeId } from "../../types/ScopeId"
 
 export const updateDragActionsAfterMove = (
-    txn: TransactionInterface,
+    txn: Transaction,
     scopeId: ScopeId,
     deltaX: number,
     deltaY: number,

@@ -1,4 +1,4 @@
-import type { TransactionInterface } from "valdres"
+import type { Transaction } from "valdres"
 import type { Action } from "../../types/Action"
 import { actionAtom } from "../atoms/actionAtom"
 import { cursorPositionAtom } from "../atoms/cursorPositionAtom"
@@ -14,7 +14,7 @@ import type { ScopeId } from "../../types/ScopeId"
 // }
 
 export const onTouchMove = (
-    txn: TransactionInterface,
+    txn: Transaction,
     touchEvent: TouchEvent,
     scopeId: ScopeId,
 ) => {

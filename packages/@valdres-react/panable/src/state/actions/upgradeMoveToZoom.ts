@@ -1,4 +1,4 @@
-import type { TransactionInterface } from "valdres"
+import type { Transaction } from "valdres"
 import { actionAtom } from "../atoms/actionAtom"
 import { activeActionsAtom } from "../atoms/activeActionsAtom"
 import { scaleAtom } from "../atoms/scaleAtom"
@@ -6,7 +6,7 @@ import type { ScopeId } from "../../types/ScopeId"
 import type { EventId } from "../../types/EventId"
 
 export const upgradeMoveToZoom = (
-    txn: TransactionInterface,
+    txn: Transaction,
     scopeId: ScopeId,
     moveEventId: EventId,
     t: Touch,

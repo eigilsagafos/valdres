@@ -1,11 +1,11 @@
-import type { TransactionInterface } from "valdres"
+import type { Transaction } from "valdres"
 import type { ScopeId } from "../../types/ScopeId"
 import { actionAtom } from "../atoms/actionAtom"
 import { activeActionsAtom } from "../atoms/activeActionsAtom"
 import { scaleAtom } from "../atoms/scaleAtom"
 
 export const initZoom = (
-    txn: TransactionInterface,
+    txn: Transaction,
     scopeId: ScopeId,
     t1: Touch,
     t2: Touch,
