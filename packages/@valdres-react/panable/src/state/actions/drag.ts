@@ -12,34 +12,23 @@ const checkForActiveDropzone = (
 ): DropZone => {
     return zones.find(zone => {
         if (zone) {
+            const padding = 5
             const { w, h, x, y } = zone
-            const left = x
-            const right = x + w
-            const top = y
-            const bottom = y + h
+            const left = x - padding
+            const right = x + w + padding
+            const top = y - padding
+            const bottom = y + h + padding
             const withinLeftBorder = localX > left
             const withinRightBorder = localX < right
             const withinTopBorder = localY > top
             const withinBottomBorder = localY < bottom
 
-            if (
+            return (
                 withinLeftBorder &&
                 withinRightBorder &&
                 withinTopBorder &&
                 withinBottomBorder
-            ) {
-                console.log(
-                    "AAA:localX, localY",
-                    Math.round(localX),
-                    Math.round(localY),
-                )
-                console.log("AAA:left", left)
-                console.log("AAA:right", right)
-                console.log("AAA:top", top)
-                console.log("AAA:bottom", bottom)
-                console.log("AAA:-----------------")
-                return true
-            }
+            )
         }
     })
 }
@@ -78,7 +67,6 @@ export const drag = (
         }
     }
 
-    // What is the point of this?
     if (dropzones.length === 0) {
         dropzones = txn.get(action.dropzonesSelector)
     }
@@ -89,10 +77,13 @@ export const drag = (
     }))
 
     const scale = txn.get(scaleAtom(scopeId))
-    const initMousePosX = action.initialMousePosition.x
-    const initMousePosY = action.initialMousePosition.y
-    const mouseOffsetX = action.mouseOffset.x
-    const mouseOffsetY = action.mouseOffset.y
+    // All variables are compensated by scale (zoom) level
+    const mousePosX = (clientX + window.scrollX) / scale
+    const mousePosY = (clientY + window.scrollY) / scale
+    const initMousePosX = action.initialMousePosition.x / scale
+    const initMousePosY = action.initialMousePosition.y / scale
+    const mouseOffsetX = action.mouseOffset.x / scale
+    const mouseOffsetY = action.mouseOffset.y / scale
 
     const originPosition =
         typeof action?.originPosition === "function"
@@ -103,18 +94,19 @@ export const drag = (
             ? action.originSize()
             : action.originSize
 
-    // localDeltaX is the relative distance from the initial drag point.
-    const localDeltaX =
-        (clientX + window.scrollX) / scale - initMousePosX / scale
-    const localDeltaY =
-        (clientY + window.scrollY) / scale - initMousePosY / scale
+    // localDeltaX is the distance between current mouse position and initial mouse position.
+    // It starts out as 0, and increases as you move away from the initial position.
+    const localDeltaX = mousePosX - initMousePosX
+    const localDeltaY = mousePosY - initMousePosY
 
-    const offsetX = mouseOffsetX / scale - originSize.w / 2
-    const offsetY = mouseOffsetY / scale - originSize.h / 2
+    // OffsetX and offsetY is the distance between center of the draggableItem and the mouse.
+    // In other words, if you click in the center of a draggableItem, offsetX and offsetY should be 0.
+    const offsetX = mouseOffsetX - originSize.w / 2
+    const offsetY = mouseOffsetY - originSize.h / 2
 
-    // localX and localY is the position in the local coordinate space.
-    const localX = originPosition.x + localDeltaX + mouseOffsetX / scale
-    const localY = originPosition.y + localDeltaY + mouseOffsetY / scale
+    // localX and localY is the position in the local (process) coordinate space.
+    const localX = originPosition.x + localDeltaX + mouseOffsetX
+    const localY = originPosition.y + localDeltaY + mouseOffsetY
 
     const currentActiveDropzone = checkForActiveDropzone(
         dropZones,
