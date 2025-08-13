@@ -3,51 +3,66 @@ import type { Transaction } from "valdres"
 import type { ScopeId } from "../../types/ScopeId"
 import { actionAtom } from "../atoms/actionAtom"
 import { scaleAtom } from "../atoms/scaleAtom"
+import type { DragAction } from "../../types/DragAction"
 
 const checkForActiveDropzone = (
-    zones: DropZone[],
-    itemX: number,
-    itemY: number,
+    zones: Array<DropZone>,
+    localX: number,
+    localY: number,
 ): DropZone => {
     return zones.find(zone => {
         if (zone) {
             const { w, h, x, y } = zone
             const left = x
             const right = x + w
-            const top = y - h / 2
-            const bottom = y + h / 2
-            const withinLeftBorder = itemX > left - w
-            const withinRightBorder = itemX < right
-            const withinTopBorder = itemY > top - h
-            const withinBottomBorder = itemY < bottom
-            return (
+            const top = y
+            const bottom = y + h
+            const withinLeftBorder = localX > left
+            const withinRightBorder = localX < right
+            const withinTopBorder = localY > top
+            const withinBottomBorder = localY < bottom
+
+            if (
                 withinLeftBorder &&
                 withinRightBorder &&
                 withinTopBorder &&
                 withinBottomBorder
-            )
+            ) {
+                console.log(
+                    "AAA:localX, localY",
+                    Math.round(localX),
+                    Math.round(localY),
+                )
+                console.log("AAA:left", left)
+                console.log("AAA:right", right)
+                console.log("AAA:top", top)
+                console.log("AAA:bottom", bottom)
+                console.log("AAA:-----------------")
+                return true
+            }
         }
     })
 }
 
-let dropzones: DropZone[] = []
+let dropzones: Array<DropZone> = []
+
 export const drag = (
     txn: Transaction,
     scopeId: ScopeId,
     eventId: string | number,
-    x: number,
-    y: number,
+    clientX: number,
+    clientY: number,
     event: MouseEvent | TouchEvent,
 ) => {
-    let action = txn.get(actionAtom({ eventId, scopeId }))
-    if (action.invalid) return null
+    let action = txn.get(actionAtom({ eventId, scopeId })) as DragAction
+    if (action?.invalid || action === null) return null
     if (action.initialized === false) {
-        const xDiff = Math.abs(action.initialMousePosition.x - x)
-        const yDiff = Math.abs(action.initialMousePosition.y - y)
-        if (!(xDiff > 3 || yDiff > 3)) {
+        const deltaX = Math.abs(action.initialMousePosition.x - clientX)
+        const deltaY = Math.abs(action.initialMousePosition.y - clientX)
+        if (!(deltaX > 3 || deltaY > 3)) {
             return
         } else {
-            //Deselect items if dragging one that is not selected
+            // Deselect items if dragging one that is not selected
             txn.set(actionAtom({ eventId, scopeId }), curr => ({
                 ...curr,
                 initialized: true,
@@ -56,15 +71,14 @@ export const drag = (
             if (action.onDragStart) {
                 action.onDragStart(event, eventId, txn)
                 // We update the action in case the onDragStart modified it
-                action = txn.get(actionAtom({ eventId, scopeId }))
+                action = txn.get(actionAtom({ eventId, scopeId })) as DragAction
             }
 
             dropzones = txn.get(action.dropzonesSelector)
         }
     }
 
-    const scale = txn.get(scaleAtom(scopeId))
-
+    // What is the point of this?
     if (dropzones.length === 0) {
         dropzones = txn.get(action.dropzonesSelector)
     }
@@ -74,20 +88,27 @@ export const drag = (
         ...v,
     }))
 
+    const scale = txn.get(scaleAtom(scopeId))
+    const initMousePosX = action.initialMousePosition.x
+    const initMousePosY = action.initialMousePosition.y
     const originPosition =
-        typeof action.originPosition === "function"
-            ? action.originPosition(state)
-            : action.originPosition
+        typeof action?.originPosition === "function"
+            ? action?.originPosition()
+            : action?.originPosition
 
-    const xDiff = (x + window.scrollX) / scale - action.x
-    const yDiff = (y + window.scrollY) / scale - action.y
-    const realX = originPosition.x + xDiff
-    const realY = originPosition.y + yDiff
+    // localDeltaX is the relative distance from the initial drag point.
+    const localDeltaX =
+        (clientX + window.scrollX) / scale - initMousePosX / scale
+    const localDeltaY =
+        (clientY + window.scrollY) / scale - initMousePosY / scale
+    // localX and localY is the position in the local coordinate space.
+    const localX = originPosition.x + localDeltaX
+    const localY = originPosition.y + localDeltaY
 
     const currentActiveDropzone = checkForActiveDropzone(
         dropZones,
-        realX,
-        realY,
+        localX,
+        localY,
     )
 
     if (currentActiveDropzone) {
@@ -97,8 +118,9 @@ export const drag = (
         }))
         const originSize =
             typeof action.originSize === "function"
-                ? action.originSize(state)
+                ? action.originSize()
                 : action.originSize
+
         const wDiff = originSize.w - currentActiveDropzone.w
         const hDiff = originSize.h - currentActiveDropzone.h
 
@@ -112,10 +134,10 @@ export const drag = (
     } else if (action.initialized) {
         txn.set(draggableItemAtom(action.id), state => ({
             ...state,
-            x: xDiff,
-            y: yDiff,
-            isSnapping: false,
             isDragging: true,
+            isSnapping: false,
+            x: localDeltaX,
+            y: localDeltaY,
         }))
 
         if (action.activeDropzone) {
