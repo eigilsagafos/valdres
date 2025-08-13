@@ -91,19 +91,30 @@ export const drag = (
     const scale = txn.get(scaleAtom(scopeId))
     const initMousePosX = action.initialMousePosition.x
     const initMousePosY = action.initialMousePosition.y
+    const mouseOffsetX = action.mouseOffset.x
+    const mouseOffsetY = action.mouseOffset.y
+
     const originPosition =
         typeof action?.originPosition === "function"
             ? action?.originPosition()
             : action?.originPosition
+    const originSize =
+        typeof action.originSize === "function"
+            ? action.originSize()
+            : action.originSize
 
     // localDeltaX is the relative distance from the initial drag point.
     const localDeltaX =
         (clientX + window.scrollX) / scale - initMousePosX / scale
     const localDeltaY =
         (clientY + window.scrollY) / scale - initMousePosY / scale
+
+    const offsetX = mouseOffsetX / scale - originSize.w / 2
+    const offsetY = mouseOffsetY / scale - originSize.h / 2
+
     // localX and localY is the position in the local coordinate space.
-    const localX = originPosition.x + localDeltaX
-    const localY = originPosition.y + localDeltaY
+    const localX = originPosition.x + localDeltaX + mouseOffsetX / scale
+    const localY = originPosition.y + localDeltaY + mouseOffsetY / scale
 
     const currentActiveDropzone = checkForActiveDropzone(
         dropZones,
@@ -116,10 +127,6 @@ export const drag = (
             ...curr,
             activeDropzone: currentActiveDropzone,
         }))
-        const originSize =
-            typeof action.originSize === "function"
-                ? action.originSize()
-                : action.originSize
 
         const wDiff = originSize.w - currentActiveDropzone.w
         const hDiff = originSize.h - currentActiveDropzone.h
@@ -136,8 +143,8 @@ export const drag = (
             ...state,
             isDragging: true,
             isSnapping: false,
-            x: localDeltaX,
-            y: localDeltaY,
+            x: localDeltaX + offsetX,
+            y: localDeltaY + offsetY,
         }))
 
         if (action.activeDropzone) {

@@ -40,6 +40,10 @@ export const setIsDragging = (
     },
     event: MouseEvent | TouchEvent,
 ) => {
+    const rect = event.currentTarget.getBoundingClientRect()
+    const offsetX = event.clientX - rect.left
+    const offsetY = event.clientY - rect.top
+
     txn.set(activeActionsAtom(scopeId), curr => [...curr, [eventId, "drag"]])
     txn.set(actionAtom({ eventId, scopeId }), {
         kind: "drag",
@@ -53,6 +57,10 @@ export const setIsDragging = (
         initialMousePosition: {
             x,
             y,
+        },
+        mouseOffset: {
+            x: offsetX,
+            y: offsetY,
         },
         onDragStart,
         onDragEnd,
