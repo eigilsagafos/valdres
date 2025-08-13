@@ -1,23 +1,30 @@
 import { draggableItemAtom } from "@valdres-react/draggable"
 import type { Transaction } from "valdres"
+import type { Size } from "../../../../draggable/types/Size"
+import type { DragAction } from "../../types/DragAction"
 import type { ScopeId } from "../../types/ScopeId"
 import { actionAtom } from "../atoms/actionAtom"
 import { scaleAtom } from "../atoms/scaleAtom"
-import type { DragAction } from "../../types/DragAction"
+import type { DropZone } from "./../../types/DropZone"
 
 const checkForActiveDropzone = (
     zones: Array<DropZone>,
     localX: number,
     localY: number,
-): DropZone => {
+    originSize: Size,
+): DropZone | undefined => {
     return zones.find(zone => {
         if (zone) {
-            const padding = 5
+            const padding = 10
             const { w, h, x, y } = zone
-            const left = x - padding
-            const right = x + w + padding
+            // If the draggableItem is quite wide we increase the dropzones width slightly.
+            const remainingWidth = Math.max(originSize.w / 2 - w, 0)
+
+            const left = x - padding - remainingWidth / 2
+            const right = x + w + padding + remainingWidth / 2
             const top = y - padding
             const bottom = y + h + padding
+
             const withinLeftBorder = localX > left
             const withinRightBorder = localX < right
             const withinTopBorder = localY > top
@@ -77,7 +84,7 @@ export const drag = (
     }))
 
     const scale = txn.get(scaleAtom(scopeId))
-    // All variables are compensated by scale (zoom) level
+    // Compensate all variables by scale/zoom level
     const mousePosX = (clientX + window.scrollX) / scale
     const mousePosY = (clientY + window.scrollY) / scale
     const initMousePosX = action.initialMousePosition.x / scale
@@ -112,6 +119,7 @@ export const drag = (
         dropZones,
         localX,
         localY,
+        originSize,
     )
 
     if (currentActiveDropzone) {

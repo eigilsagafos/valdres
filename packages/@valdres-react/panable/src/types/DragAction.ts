@@ -18,6 +18,10 @@ export type DragAction<Meta = any> = {
         x: number
         y: number
     }
+    mouseOffset: {
+        x: number
+        y: number
+    }
     onDragStart?: EventCallbackFn
     onDragEnd?: EventCallbackFn
     onDrop?: EventCallbackFn
