@@ -4,6 +4,7 @@ import { setIsDragging } from "./setIsDragging"
 import type { EventCallbackFn } from "../types/EventCallbackFn"
 import type { Point } from "../types/Point"
 import type { Size } from "../types/Size"
+import type { Selector } from "../../../valdres/src/types/Selector"
 
 export const useDraggable = ({
     id,
@@ -21,6 +22,7 @@ export const useDraggable = ({
     dragEnabled = true,
     centerDragSource = false,
 }: {
+    id: any
     meta: SerializableParam
     scopeId: string
     onMouseDown: (e: React.MouseEvent | React.TouchEvent) => void
@@ -49,21 +51,20 @@ export const useDraggable = ({
                 txn(state => {
                     setIsDragging(
                         state,
-                        e.pageX,
-                        e.pageY,
+                        e.clientX,
+                        e.clientY,
                         {
                             id,
                             eventId: "mouse",
                             scopeId,
                             meta,
-                            itemPos,
-                            itemSize,
+                            originPosition: itemPos,
+                            originSize: itemSize,
                             onDragStart,
                             onDragInit,
                             onDragEnd,
                             onDrop,
                             dropzonesSelector,
-                            centerDragSource,
                         },
                         e,
                     )
@@ -102,14 +103,13 @@ export const useDraggable = ({
                             eventId: t.identifier,
                             scopeId,
                             meta,
-                            itemPos,
-                            itemSize,
+                            originPosition: itemPos,
+                            originSize: itemSize,
                             onDragStart,
                             onDragInit,
                             onDragEnd,
                             onDrop,
                             dropzonesSelector,
-                            centerDragSource,
                         },
                         e,
                     )

@@ -1,9 +1,13 @@
 import {
-    activeActionsAtom,
     actionAtom,
-    scaleAtom,
+    activeActionsAtom,
+    type EventId,
+    type ScopeId,
 } from "@valdres-react/panable"
-import type { Transaction } from "valdres"
+import type { Selector, Transaction } from "valdres"
+import type { Point } from "../types/Point"
+import type { Size } from "../types/Size"
+import type { EventCallbackFn } from "../types/EventCallbackFn"
 
 export const setIsDragging = (
     txn: Transaction,
@@ -14,28 +18,32 @@ export const setIsDragging = (
         eventId,
         scopeId,
         meta,
-        itemPos,
-        itemSize,
+        originPosition,
+        originSize,
         onDragStart,
         onDragInit,
         onDragEnd,
         onDrop,
         dropzonesSelector,
-        centerDragSource,
+    }: {
+        id: any
+        eventId: EventId
+        scopeId: ScopeId
+        meta: any
+        originPosition: Point
+        originSize: Size
+        onDragStart: EventCallbackFn
+        onDragInit: EventCallbackFn
+        onDragEnd: EventCallbackFn
+        onDrop: EventCallbackFn
+        dropzonesSelector: Selector
     },
-    event,
+    event: MouseEvent | TouchEvent,
 ) => {
-    const center = ({ x, scale }) => {
-        if (centerDragSource) {
-            const rect = event.currentTarget.getBoundingClientRect()
-            const offsetX = event.clientX - rect.left
-            return (x - offsetX + 12) / scale
-        }
+    const rect = event.currentTarget.getBoundingClientRect()
+    const offsetX = event.clientX - rect.left
+    const offsetY = event.clientY - rect.top
 
-        return x / scale
-    }
-
-    const scale = txn.get(scaleAtom(scopeId))
     txn.set(activeActionsAtom(scopeId), curr => [...curr, [eventId, "drag"]])
     txn.set(actionAtom({ eventId, scopeId }), {
         kind: "drag",
@@ -44,13 +52,15 @@ export const setIsDragging = (
         scopeId,
         eventId,
         initialized: false,
-        x: center({ x, scale }),
-        y: y / scale,
-        originPosition: itemPos,
-        originSize: itemSize,
+        originPosition,
+        originSize,
         initialMousePosition: {
             x,
             y,
+        },
+        mouseOffset: {
+            x: offsetX,
+            y: offsetY,
         },
         onDragStart,
         onDragEnd,

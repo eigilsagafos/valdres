@@ -4,6 +4,6 @@ import type { ScopeId } from "../../types/ScopeId"
 import type { Action } from "../../types/Action"
 
 export const actionAtom = atomFamily<
-    { eventId: EventId; scopeId: ScopeId },
-    Action | null
+    Action | null,
+    [{ eventId: EventId; scopeId: ScopeId }]
 >(null, { name: "@valdres-react/panable/actionAtom" })
