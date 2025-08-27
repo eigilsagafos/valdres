@@ -53,9 +53,13 @@ export const drag = (
     let action = txn.get(actionAtom({ eventId, scopeId })) as DragAction
     if (action?.invalid || action === null) return null
     if (action.initialized === false) {
-        const deltaX = Math.abs(action.initialMousePosition.x - clientX)
-        const deltaY = Math.abs(action.initialMousePosition.y - clientX)
-        if (!(deltaX > 3 || deltaY > 3)) {
+        const deltaX = Math.abs(
+            clientX + window.scrollX - action.initialMousePosition.x,
+        )
+        const deltaY = Math.abs(
+            clientY + window.scrollY - action.initialMousePosition.y,
+        )
+        if (!(deltaX > 2 || deltaY > 2)) {
             return
         } else {
             // Deselect items if dragging one that is not selected
