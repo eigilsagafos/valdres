@@ -19,9 +19,10 @@ describe("useResetAtom", () => {
     test("atom with primitive value", () => {
         const [store, renderHook] = generateStoreAndRenderHook()
         const numberAtom = atom(10)
-        const { result } = renderHook(() => useTestHook(numberAtom))
+        const { result, rerender } = renderHook(() => useTestHook(numberAtom))
         expect(result.current.value).toBe(10)
         result.current.set(20)
+        rerender()
         expect(result.current.value).toBe(20)
         result.current.reset()
         waitFor(() => {

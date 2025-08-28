@@ -1,5 +1,5 @@
 import { describe, expect, mock, test } from "bun:test"
-import { renderHook } from "@testing-library/react-hooks"
+import { renderHook } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { useHotkeysCommand } from "./useHotkeysCommand"
 import { globalStore } from "valdres"

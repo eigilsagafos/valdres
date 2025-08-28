@@ -7,22 +7,24 @@ describe("useValdresValueWithDefault", () => {
     test("atom", () => {
         const [store, renderHook] = generateStoreAndRenderHook()
         const numberAtom = atom()
-        const { result } = renderHook(() =>
+        const { result, rerender } = renderHook(() =>
             useValdresValueWithDefault(numberAtom, 10),
         )
         expect(result.current).toBe(10)
         store.set(numberAtom, 20)
+        rerender()
         expect(result.current).toBe(20)
     })
 
     test("atomWithCallback", () => {
         const [store, renderHook] = generateStoreAndRenderHook()
         const numberAtom = atom()
-        const { result } = renderHook(() =>
+        const { result, rerender } = renderHook(() =>
             useValdresValueWithDefault(numberAtom, () => 10),
         )
         expect(result.current).toBe(10)
         store.set(numberAtom, 20)
+        rerender()
         expect(result.current).toBe(20)
     })
 
@@ -42,16 +44,18 @@ describe("useValdresValueWithDefault", () => {
         const [store, renderHook] = generateStoreAndRenderHook()
         const family = atomFamily<number, string>()
         const atom = family("1")
-        const { result } = renderHook(() =>
+        const { result, rerender } = renderHook(() =>
             useValdresValueWithDefault(family("1"), 1),
         )
         expect(result.current).toBe(1)
         store.set(atom, 2)
+        rerender()
         expect(result.current).toBe(2)
         store.txn(({ set }) => {
             set(atom, 3)
             set(atom, 4)
         })
+        rerender()
         expect(result.current).toBe(4)
     })
 })

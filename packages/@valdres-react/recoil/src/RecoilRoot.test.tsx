@@ -1,5 +1,5 @@
 import { describe, test, expect } from "bun:test"
-import { renderHook } from "@testing-library/react-hooks"
+import { renderHook } from "@testing-library/react"
 import { atom } from "./atom"
 import { selector } from "./selector"
 import { useRecoilValue } from "./useRecoilValue"

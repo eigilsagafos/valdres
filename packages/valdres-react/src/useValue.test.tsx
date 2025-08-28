@@ -7,9 +7,10 @@ describe("useValue", () => {
     test("atom", () => {
         const [store, renderHook] = generateStoreAndRenderHook()
         const numberAtom = atom(10)
-        const { result } = renderHook(() => useValue(numberAtom))
+        const { result, rerender } = renderHook(() => useValue(numberAtom))
         expect(result.current).toBe(10)
         store.set(numberAtom, 20)
+        rerender()
         expect(result.current).toBe(20)
     })
 
@@ -17,9 +18,10 @@ describe("useValue", () => {
         const [store, renderHook] = generateStoreAndRenderHook()
         const numberAtom = atom(10)
         const doubleSelector = selector(get => get(numberAtom) * 2)
-        const { result } = renderHook(() => useValue(doubleSelector))
+        const { result, rerender } = renderHook(() => useValue(doubleSelector))
         expect(result.current).toBe(20)
         store.set(numberAtom, 20)
+        rerender()
         expect(result.current).toBe(40)
     })
 
@@ -29,9 +31,10 @@ describe("useValue", () => {
         const multiply = selectorFamily(
             number => get => get(numberAtom) * number,
         )
-        const { result } = renderHook(() => useValue(multiply(10)))
+        const { result, rerender } = renderHook(() => useValue(multiply(10)))
         expect(result.current).toBe(100)
         store.set(numberAtom, 20)
+        rerender()
         expect(result.current).toBe(200)
     })
 
@@ -39,14 +42,16 @@ describe("useValue", () => {
         const [store, renderHook] = generateStoreAndRenderHook()
         const family = atomFamily(1)
         const atom = family("1")
-        const { result } = renderHook(() => useValue(atom))
+        const { result, rerender } = renderHook(() => useValue(atom))
         expect(result.current).toBe(1)
         store.set(atom, 2)
+        rerender()
         expect(result.current).toBe(2)
         store.txn(({ set }) => {
             set(atom, 3)
             set(atom, 4)
         })
+        rerender()
         expect(result.current).toBe(4)
     })
 
@@ -55,12 +60,13 @@ describe("useValue", () => {
         const family = atomFamily<number, [string]>(0)
         const atom1 = family("1")
         const atom2 = family("2")
-        const { result } = renderHook(() => useValue(family))
+        const { result, rerender } = renderHook(() => useValue(family))
         expect(result.current).toStrictEqual([])
         store.get(atom1)
         // console.log(result.current)
         // // expect(result.current).toStrictEqual(["1"]) // TODO: This should work when correctly handled in valdres package...
         store.set(atom2, 2)
+        rerender()
         expect(result.current).toStrictEqual([atom1, atom2])
     })
 

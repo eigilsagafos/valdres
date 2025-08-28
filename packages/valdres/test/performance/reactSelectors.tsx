@@ -1,6 +1,6 @@
 import { run, bench, group } from "mitata"
 import { Provider } from "../../src/Provider"
-import { renderHook } from "@testing-library/react-hooks"
+import { renderHook } from "@testing-library/react"
 import * as jotai from "jotai"
 import * as recoil from "recoil"
 import * as valdres from "../.."

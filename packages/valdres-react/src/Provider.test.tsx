@@ -1,5 +1,5 @@
 import { describe, test, expect } from "bun:test"
-import { renderHook } from "@testing-library/react-hooks"
+import { renderHook } from "@testing-library/react"
 import { atom, store } from "valdres"
 import { useStoreId } from "./useStoreId"
 import { Provider } from "./Provider"

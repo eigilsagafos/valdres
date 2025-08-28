@@ -1,5 +1,5 @@
 import { run, bench, group } from "mitata"
-import { renderHook } from "@testing-library/react-hooks"
+import { renderHook } from "@testing-library/react"
 import * as valdres from "../.."
 import * as jotai from "jotai"
 import * as jotaiUtils from "jotai/utils"

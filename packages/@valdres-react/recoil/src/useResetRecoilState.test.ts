@@ -1,6 +1,5 @@
 import { describe, test, expect } from "bun:test"
-import { waitFor } from "@testing-library/react"
-import { renderHook } from "@testing-library/react-hooks"
+import { waitFor, renderHook } from "@testing-library/react"
 import { atom } from "./atom"
 import { useRecoilState } from "./useRecoilState"
 import { useResetRecoilState } from "./useResetRecoilState"

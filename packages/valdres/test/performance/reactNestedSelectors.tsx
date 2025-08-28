@@ -1,6 +1,6 @@
 import { run, bench, group } from "mitata"
 import { Provider } from "../../src/Provider"
-import { renderHook } from "@testing-library/react-hooks"
+import { renderHook } from "@testing-library/react"
 // import { selector } from "../../src/selector"
 import { useValue } from "../../src/useValue"
 import { useSetAtom } from "../../src/useSetAtom"

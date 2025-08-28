@@ -22,10 +22,11 @@ describe("useValdresCallback", () => {
             }
         }
         const [, renderHook] = generateStoreAndRenderHook()
-        const { result } = renderHook(() => useTestHook())
+        const { result, rerender } = renderHook(() => useTestHook())
         expect(result.current.previousValue).toBe("")
         expect(result.current.currentValue).toBe("Foo")
         result.current.callback("Bar")
+        rerender()
         expect(result.current.previousValue).toBe("Foo")
         expect(result.current.currentValue).toBe("Bar")
     })

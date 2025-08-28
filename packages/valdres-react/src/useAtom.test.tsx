@@ -10,9 +10,10 @@ describe("useAtom", () => {
     test("default", () => {
         const [, renderHook] = generateStoreAndRenderHook()
         const numberAtom = atom(10)
-        const { result } = renderHook(() => useAtom(numberAtom))
+        const { result, rerender } = renderHook(() => useAtom(numberAtom))
         expect(result.current[0]).toBe(10)
         result.current[1](20)
+        rerender()
         expect(result.current[0]).toBe(20)
     })
     test("can write an atom value on useEffect", async () => {

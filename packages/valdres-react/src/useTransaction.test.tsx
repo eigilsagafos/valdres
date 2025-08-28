@@ -14,10 +14,10 @@ describe("useTransaction", () => {
             }
         }
         const [, renderHook] = generateStoreAndRenderHook()
-        const { result } = renderHook(() => useTestHook())
-        result.current
+        const { result, rerender } = renderHook(() => useTestHook())
         expect(result.current.value).toBe("Foo")
         result.current.txn(state => state.set(valueAtom, "Bar"))
+        rerender()
         expect(result.current.value).toBe("Bar")
     })
 })
