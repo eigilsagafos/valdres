@@ -1,6 +1,6 @@
 {
     "name": "@valdres-react/recoil",
-    "version": "0.2.0-pre.11",
+    "version": "0.2.0-pre.12",
     "license": "MIT",
     "author": {
         "name": "Eigil Sagafos"
@@ -23,7 +23,7 @@
         "test": "echo 'no tests'"
     },
     "dependencies": {
-        "valdres-react": "0.2.0-pre.11"
+        "valdres-react": "0.2.0-pre.12"
     },
     "devDependencies": {
         "@testing-library/react": "16.0.1",
