@@ -1,6 +1,6 @@
-import { equal } from "./equal"
 import type { Atom } from "../types/Atom"
 import type { AtomFamily } from "../types/AtomFamily"
+import type { AtomFamilyAtom } from "../types/AtomFamilyAtom"
 import type { Family } from "../types/Family"
 import type { Selector } from "../types/Selector"
 import type { StoreData } from "../types/StoreData"
@@ -8,9 +8,10 @@ import { isAtom } from "../utils/isAtom"
 import { isAtomFamily } from "../utils/isAtomFamily"
 import { isSelector } from "../utils/isSelector"
 import { isSelectorFamily } from "../utils/isSelectorFamily"
+import { equal } from "./equal"
 import { initAtom } from "./initAtom"
 import { initSelector } from "./initSelector"
-import type { AtomFamilyAtom } from "../types/AtomFamilyAtom"
+import { FamilyIndex } from "./propagateUpdatedAtoms"
 
 export function getState<
     Value extends any,
@@ -88,7 +89,7 @@ export function getState<
                 circularDependencySet,
             )
         }
-        data.values.set(state, [])
+        data.values.set(state, new FamilyIndex(state, data).toArray())
         initializedAtomsSet.add(state)
         return data.values.get(state)
     }

@@ -20,9 +20,7 @@ describe("atomFamily", () => {
     test("name", () => {
         const userAtomFamily = atomFamily<number | string | number[], string>(
             undefined,
-            {
-                name: "familyName",
-            },
+            { name: "familyName" },
         )
         expect(userAtomFamily.name).toBe("familyName")
         const user1 = userAtomFamily(1)
@@ -296,5 +294,67 @@ describe("atomFamily", () => {
             name: "global_test",
         })
         expect(Object.is(globalGamily1, globalFamily2)).toBe(true)
+    })
+
+    test("atom families in scope", () => {
+        const rootStore = store()
+        const nestedStore = rootStore.scope("nested")
+        const nestedNestedStore = nestedStore.scope("nested-nested")
+        const userFamily = atomFamily()
+        const user1atom = userFamily(1)
+        const user2atom = userFamily(2)
+        const user3atom = userFamily(3)
+        const user4atom = userFamily(4)
+
+        rootStore.set(user1atom, "User 1 set in root")
+        expect(rootStore.get(userFamily)).toStrictEqual([user1atom])
+        expect(nestedNestedStore.get(userFamily)).toStrictEqual([user1atom])
+        nestedNestedStore.set(user4atom, "User 4 set in nested-nested")
+        expect(nestedNestedStore.get(userFamily)).toStrictEqual([
+            user1atom,
+            user4atom,
+        ])
+        nestedStore.set(user2atom, "User 2 set in nested")
+        expect(nestedStore.get(userFamily)).toStrictEqual([
+            user1atom,
+            user2atom,
+        ])
+        rootStore.set(user3atom, "User 3 set in root")
+        expect(rootStore.get(userFamily)).toStrictEqual([user1atom, user3atom])
+        expect(nestedStore.get(userFamily)).toStrictEqual([
+            user1atom,
+            user3atom,
+            user2atom,
+        ])
+        rootStore.del(user1atom)
+        expect(rootStore.get(userFamily)).toStrictEqual([user3atom])
+        expect(nestedStore.get(userFamily)).toStrictEqual([
+            user3atom,
+            user2atom,
+        ])
+        expect(nestedNestedStore.get(userFamily)).toStrictEqual([
+            user3atom,
+            user2atom,
+            user4atom,
+        ])
+
+        // Test subscriptions
+        const rootCallback = mock(() => {})
+        const nestedCallback = mock(() => {})
+        const nestedNestedCallback = mock(() => {})
+        rootStore.sub(userFamily, rootCallback)
+        nestedStore.sub(userFamily, nestedCallback)
+        nestedNestedStore.sub(userFamily, nestedNestedCallback)
+
+        const user5atom = userFamily(5)
+        rootStore.set(user5atom, "User 5 set in root")
+        expect(rootCallback).toHaveBeenCalledTimes(1)
+        expect(nestedCallback).toHaveBeenCalledTimes(1)
+        expect(nestedNestedCallback).toHaveBeenCalledTimes(1)
+
+        rootStore.del(user5atom)
+        expect(rootCallback).toHaveBeenCalledTimes(2)
+        expect(nestedCallback).toHaveBeenCalledTimes(2)
+        expect(nestedNestedCallback).toHaveBeenCalledTimes(2)
     })
 })

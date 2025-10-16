@@ -57,22 +57,169 @@ const findInClosestStore = (
     const store = findClosestStoreWithAtomInitialized(state, data)
     return store.values.get(state)
 }
+export class FamilyIndex {
+    map: Map<AtomFamilyAtom<any>, boolean>
+    family: AtomFamily<any>
+    data: StoreData
+    parentIndex: FamilyIndex | undefined
+    constructor(
+        family: AtomFamily<any>,
+        data: StoreData,
+        parentIndex?: FamilyIndex,
+        map?: Map<AtomFamilyAtom<any>, boolean>,
+    ) {
+        this.family = family
+        this.data = data
+        this.parentIndex = parentIndex
+        this.map = new Map(map)
+    }
+
+    add(atoms) {
+        atoms.forEach(atom => {
+            this.map.set(atom, true)
+        })
+    }
+
+    delete(atoms) {
+        atoms.forEach(atom => {
+            this.map.set(atom, false)
+        })
+    }
+
+    has(atom) {
+        return this.map.has(atom)
+    }
+
+    clone() {
+        return new FamilyIndex(
+            this.family,
+            this.data,
+            this.parentIndex,
+            this.map,
+        )
+    }
+
+    toSet() {
+        let set
+
+        if (this.parentIndex) {
+            set = new Set(this.parentIndex.toSet())
+        } else {
+            set = new Set()
+        }
+        for (const [key, value] of this.map) {
+            if (value === true) set.add(key)
+            if (value === false) set.delete(key)
+        }
+
+        return set
+    }
+
+    toArray() {
+        const arr = [...this.toSet()]
+        arr.__index = this
+        return arr
+    }
+}
+
+export const deleteFamilyAtomsFromSet = (
+    family: Family<any>,
+    familyAtoms: Set<AtomFamilyAtom<any>>,
+    data: StoreData,
+) => {
+    const index = findFamilyIndex(family, data)
+    index.delete(familyAtoms)
+    data.values.set(family, index.toArray())
+    recursivlyUpdateIndexes(data, family)
+}
+
+const initFamilyIndex = (family, data: StoreData) => {
+    if (data.values.has(family)) return
+    if ("parent" in data) {
+        initFamilyIndex(family, data.parent)
+        const parentIndex = data.parent.values.get(family).__index
+        if (!parentIndex) throw new Error("Parent index is missing")
+        const index = new FamilyIndex(family, data, parentIndex)
+        data.values.set(family, index.toArray())
+    } else {
+        const index = new FamilyIndex(family, data)
+        data.values.set(family, index.toArray())
+    }
+}
+
+const findFamilyIndex = (family, data) => {
+    if (!data.values.has(family)) {
+        initFamilyIndex(family, data)
+    }
+    const value = data.values.get(family)
+    if (!value?.__index) {
+        console.log("value", value)
+        throw new Error("Family index is missing")
+    }
+
+    return value.__index
+}
+
+const recursivlyUpdateIndexes = (data: StoreData, family) => {
+    Object.keys(data.scopes).forEach(scopeKey => {
+        const scopedData = data.scopes[scopeKey]
+        if (scopeKey) {
+            if (scopedData.values.has(family)) {
+                scopedData.values.set(
+                    family,
+                    scopedData.values.get(family).__index.toArray(),
+                )
+            }
+            recursivlyUpdateIndexes(scopedData, family)
+        }
+    })
+}
 
 export const addFamilyAtomsToSet = (
     family: Family<any>,
     familyAtoms: Set<AtomFamilyAtom<any>>,
     data: StoreData,
 ) => {
-    const currentAtoms = findInClosestStore(family, data) || []
-    const atomsToAdd = []
-    for (const familyAtom of familyAtoms) {
-        if (!currentAtoms.includes(familyAtom)) {
-            atomsToAdd.push(familyAtom)
+    const index = findFamilyIndex(family, data)
+    index.add(familyAtoms)
+    data.values.set(family, index.toArray())
+    recursivlyUpdateIndexes(data, family)
+}
+
+export const propagateDeletedAtoms = (
+    atoms,
+    data: StoreData,
+    subscriptions: Set<Subscription> = new Set(),
+    families: Map<AtomFamily<any>, Set<AtomFamilyAtom<any>>> = new Map(),
+) => {
+    const selectors = new Set<Selector>()
+    for (const atom of atoms) {
+        addSetToSet(data.stateDependents.get(atom), selectors)
+        addSetToSet(data.subscriptions.get(atom), subscriptions)
+
+        if (isFamilyAtom(atom)) {
+            // atom.family
+            if (!families.has(atom.family)) {
+                families.set(atom.family, new Set())
+            }
+
+            // @ts-ignore
+            families.get(atom.family).add(atom)
         }
     }
-    if (atomsToAdd.length > 0) {
-        data.values.set(family, [...currentAtoms, ...atomsToAdd])
+    if (families.size > 0) {
+        for (const [family, familyAtoms] of families) {
+            addSetToSet(data.stateDependents.get(family), selectors)
+            addSetToSet(data.subscriptions.get(family), subscriptions)
+            if (familyAtoms.size === 0)
+                throw new Error("Should not be possible")
+
+            deleteFamilyAtomsFromSet(family, familyAtoms, data)
+        }
     }
+    propagateDirtySelectors(atoms, selectors, data, subscriptions, families)
+    //    if (!isRecursive) {
+    // }
 }
 
 export const propagateUpdatedAtoms = (

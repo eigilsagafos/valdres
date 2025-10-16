@@ -13,6 +13,7 @@ import { isSelector } from "../utils/isSelector"
 import { getState } from "./getState"
 import { getAtomInitValue } from "./initAtom"
 import { isFunction } from "./isFunction"
+import { FamilyIndex } from "./propagateUpdatedAtoms"
 import { setAtoms } from "./setAtoms"
 
 // const findDependencies = (
@@ -115,22 +116,22 @@ export class Transaction {
 
         if (isFamilyAtom(atom)) {
             const currentFamilyList = this.get(atom.family)
-            if (!currentFamilyList.includes(atom)) {
-                const newArr = [...currentFamilyList, atom]
-                this.atomMap.set(atom.family, newArr)
+            if (currentFamilyList && !currentFamilyList.__index.has(atom)) {
+                const index = currentFamilyList
+                    ? currentFamilyList.__index.clone()
+                    : new FamilyIndex(atom.family, this.data)
+                index.add([atom])
+                this.atomMap.set(atom.family, index.toArray())
             }
         }
         return value
     }
 
     del = (atom: AtomFamilyAtom<any, any>) => {
-        const array = this.get(atom.family)
-        const index = array.indexOf(atom)
-        const newArr: AtomFamilyAtom<any, any>[] = [
-            ...array.slice(0, index),
-            ...array.slice(index + 1),
-        ]
-        this.atomMap.set(atom.family, newArr)
+        const index = this.get(atom.family).__index
+        const cloned = index.clone()
+        cloned.delete([atom])
+        this.atomMap.set(atom.family, cloned.toArray())
         if (this.data.values.has(atom)) {
             this.deleteSet.add(atom)
         }
