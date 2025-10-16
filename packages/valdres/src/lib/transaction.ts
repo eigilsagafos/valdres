@@ -116,9 +116,11 @@ export class Transaction {
 
         if (isFamilyAtom(atom)) {
             const currentFamilyList = this.get(atom.family)
+            // @ts-ignore
             if (currentFamilyList && !currentFamilyList.__index.has(atom)) {
                 const index = currentFamilyList
-                    ? currentFamilyList.__index.clone()
+                    ? // @ts-ignore
+                      currentFamilyList.__index.clone()
                     : new FamilyIndex(atom.family, this.data)
                 index.add([atom])
                 this.atomMap.set(atom.family, index.toArray())
@@ -128,6 +130,7 @@ export class Transaction {
     }
 
     del = (atom: AtomFamilyAtom<any, any>) => {
+        // @ts-ignore
         const index = this.get(atom.family).__index
         const cloned = index.clone()
         cloned.delete([atom])

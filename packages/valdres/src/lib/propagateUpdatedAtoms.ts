@@ -59,11 +59,11 @@ const findInClosestStore = (
 }
 export class FamilyIndex {
     map: Map<AtomFamilyAtom<any>, boolean>
-    family: AtomFamily<any>
+    family: Family<any>
     data: StoreData
     parentIndex: FamilyIndex | undefined
     constructor(
-        family: AtomFamily<any>,
+        family: Family<any>,
         data: StoreData,
         parentIndex?: FamilyIndex,
         map?: Map<AtomFamilyAtom<any>, boolean>,
@@ -74,19 +74,19 @@ export class FamilyIndex {
         this.map = new Map(map)
     }
 
-    add(atoms) {
+    add(atoms: AtomFamilyAtom<any>[]) {
         atoms.forEach(atom => {
             this.map.set(atom, true)
         })
     }
 
-    delete(atoms) {
+    delete(atoms: AtomFamilyAtom<any>[]) {
         atoms.forEach(atom => {
             this.map.set(atom, false)
         })
     }
 
-    has(atom) {
+    has(atom: AtomFamilyAtom<any>) {
         return this.map.has(atom)
     }
 
@@ -99,8 +99,8 @@ export class FamilyIndex {
         )
     }
 
-    toSet() {
-        let set
+    toSet(): Set<AtomFamilyAtom<any>> {
+        let set: Set<AtomFamilyAtom<any>>
 
         if (this.parentIndex) {
             set = new Set(this.parentIndex.toSet())
@@ -117,6 +117,7 @@ export class FamilyIndex {
 
     toArray() {
         const arr = [...this.toSet()]
+        // @ts-ignore
         arr.__index = this
         return arr
     }
@@ -133,7 +134,7 @@ export const deleteFamilyAtomsFromSet = (
     recursivlyUpdateIndexes(data, family)
 }
 
-const initFamilyIndex = (family, data: StoreData) => {
+const initFamilyIndex = (family: Family<any>, data: StoreData) => {
     if (data.values.has(family)) return
     if ("parent" in data) {
         initFamilyIndex(family, data.parent)
@@ -147,7 +148,7 @@ const initFamilyIndex = (family, data: StoreData) => {
     }
 }
 
-const findFamilyIndex = (family, data) => {
+const findFamilyIndex = (family: Family<any>, data: StoreData) => {
     if (!data.values.has(family)) {
         initFamilyIndex(family, data)
     }
@@ -160,7 +161,7 @@ const findFamilyIndex = (family, data) => {
     return value.__index
 }
 
-const recursivlyUpdateIndexes = (data: StoreData, family) => {
+const recursivlyUpdateIndexes = (data: StoreData, family: Family<any>) => {
     Object.keys(data.scopes).forEach(scopeKey => {
         const scopedData = data.scopes[scopeKey]
         if (scopeKey) {
@@ -187,7 +188,7 @@ export const addFamilyAtomsToSet = (
 }
 
 export const propagateDeletedAtoms = (
-    atoms,
+    atoms: AtomFamilyAtom<any, any>[],
     data: StoreData,
     subscriptions: Set<Subscription> = new Set(),
     families: Map<AtomFamily<any>, Set<AtomFamilyAtom<any>>> = new Map(),

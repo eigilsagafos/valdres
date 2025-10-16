@@ -89,7 +89,10 @@ export function getState<
                 circularDependencySet,
             )
         }
-        data.values.set(state, new FamilyIndex(state, data).toArray())
+        data.values.set(
+            state,
+            new FamilyIndex(state as unknown as Family<any>, data).toArray(),
+        )
         initializedAtomsSet.add(state)
         return data.values.get(state)
     }
