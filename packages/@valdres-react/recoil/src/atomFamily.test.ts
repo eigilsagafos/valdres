@@ -10,7 +10,7 @@ describe("recoil/atomFamily", () => {
         expect(storeA.get(user)).toBe(null)
     })
 
-    test.only("default callback", () => {
+    test("default callback", () => {
         const storeA = store()
         const family = atomFamily({
             key: "Fam",
