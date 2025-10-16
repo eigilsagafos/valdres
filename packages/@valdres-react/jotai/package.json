@@ -1,6 +1,6 @@
 {
     "name": "@valdres-react/jotai",
-    "version": "0.2.0-pre.12",
+    "version": "0.2.0-pre.13",
     "license": "MIT",
     "author": {
         "name": "Eigil Sagafos"
@@ -23,7 +23,7 @@
         "test": "bun test"
     },
     "dependencies": {
-        "valdres-react": "0.2.0-pre.12"
+        "valdres-react": "0.2.0-pre.13"
     },
     "devDependencies": {
         "@happy-dom/global-registrator": "18.0.1",
