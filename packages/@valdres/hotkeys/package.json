@@ -1,6 +1,6 @@
 {
     "name": "@valdres/hotkeys",
-    "version": "0.2.0-pre.13",
+    "version": "0.2.0-pre.14",
     "license": "MIT",
     "author": {
         "name": "Eigil Sagafos"
@@ -24,10 +24,10 @@
     },
     "devDependencies": {
         "typescript": "5.9.2",
-        "valdres": "0.2.0-pre.13"
+        "valdres": "0.2.0-pre.14"
     },
     "peerDependencies": {
-        "valdres": "0.2.0-pre.13"
+        "valdres": "0.2.0-pre.14"
     },
     "publishConfig": {
         "access": "public",
