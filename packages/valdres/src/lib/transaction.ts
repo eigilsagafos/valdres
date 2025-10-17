@@ -153,6 +153,17 @@ export class Transaction {
         }
     }
 
+    parentScope = (callback: (txn: Transaction) => any) => {
+        // @ts-ignore
+        if (!this._parentTransaction) {
+            // @ts-ignore
+            // TODO: Find a way where we can move the transaction scope up.
+            this._parentTransaction = new Transaction(this.data.parent)
+        }
+        // @ts-ignore
+        return this._parentTransaction.execute(callback, false)
+    }
+
     reset = (atom: Atom) => {
         const value = getAtomInitValue(
             atom,
@@ -180,6 +191,11 @@ export class Transaction {
                 scopedTxn.commit()
             }
         }
+        // @ts-ignore
+        if (this._parentTransaction) {
+            // @ts-ignore
+            this._parentTransaction.commit()
+        }
     }
 
     private get atomMap() {
@@ -204,6 +220,29 @@ export class Transaction {
         if (!this._initializedAtomsSet) this._initializedAtomsSet = new Set()
         return this._initializedAtomsSet
     }
+
+    // private parentTransaction() {
+    //     if (this.parentTransaction) return this.parentTransaction
+    //     // if (this.data.parent) {
+    //     //     return this.scopedTransaction("__parent__").execute(callback, false)
+    //     // } else {
+    //     //     throw new Error(`No parent scope found.`)
+    //     // }
+    //     // if (scopeId === "__parent__") {
+    //     //     // console.log("this", this.data.parent)
+    //     //     // const scopedData = this.data.parent
+    //     //     if (this.parentTransaction) throw new Error("TODO")
+    //     //     console.log("parent scope", this)
+    //     //     const parentTransaction = new Transaction(
+    //     //         this.data.parent,
+    //     //         this,
+    //     //     )
+    //     //     this._scopedTransactions[scopeId] = scopedTransaction
+    //     //     // throw new Error("TODO")
+    //     // } else {
+    //     // }
+    // }
+
     private scopedTransaction(scopeId: string) {
         if (!this._scopedTransactions) this._scopedTransactions = {}
         if (!this._scopedTransactions[scopeId]) {

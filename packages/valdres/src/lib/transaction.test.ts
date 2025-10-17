@@ -258,6 +258,47 @@ describe("transaction", () => {
             })
         }).toThrow("Scope 'Missing' not found. Registered scopes: Foo, Bar")
     })
+
+    test("parentScope", () => {
+        const nameAtom = atom("default")
+        const store1 = store()
+        const fooScope = store1.scope("Foo")
+        const barScope = store1.scope("Bar")
+
+        fooScope.txn(txn => {
+            txn.parentScope(parentTxn => {
+                parentTxn.set(nameAtom, "Set in Parent")
+            })
+            // TODO: Make this work. Can we allow the transaction scope tree to grow in both directions?
+            // expect(txn.get(nameAtom)).toBe("Set in Parent")
+            txn.set(nameAtom, "Set in Foo")
+        })
+        expect(store1.get(nameAtom)).toBe("Set in Parent")
+        expect(fooScope.get(nameAtom)).toBe("Set in Foo")
+        expect(barScope.get(nameAtom)).toBe("Set in Parent")
+    })
+
+    test("parentScope crash", () => {
+        const nameAtom = atom("default")
+        const store1 = store()
+        const fooScope = store1.scope("Foo")
+        const barScope = store1.scope("Bar")
+
+        try {
+            fooScope.txn(txn => {
+                txn.parentScope(parentTxn => {
+                    parentTxn.set(nameAtom, "Set in Parent")
+                })
+                expect(txn.get(nameAtom)).toBe("Set in Parent")
+                txn.set(nameAtom, "Set in Foo")
+                throw new Error("Crash")
+            })
+        } catch (e) {}
+        expect(store1.get(nameAtom)).toBe("default")
+        expect(fooScope.get(nameAtom)).toBe("default")
+        expect(barScope.get(nameAtom)).toBe("default")
+    })
+
     test("family key set in transactions and transaction scopes", () => {
         const userAtom = atomFamily()
         const store1 = store()
