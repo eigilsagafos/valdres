@@ -1,5 +1,6 @@
 import { isProd } from "../lib/isProd"
 import type { Atom } from "../types/Atom"
+import type { AtomFamily } from "../types/AtomFamily"
 import type { AtomFamilyAtom } from "../types/AtomFamilyAtom"
 import type { GetValue } from "../types/GetValue"
 import type { State } from "../types/State"
@@ -13,7 +14,10 @@ import { isSelector } from "../utils/isSelector"
 import { getState } from "./getState"
 import { getAtomInitValue } from "./initAtom"
 import { isFunction } from "./isFunction"
-import { FamilyIndex } from "./propagateUpdatedAtoms"
+import {
+    cloneAtomFamilyIndex,
+    renderAtomFamilyIndex,
+} from "./propagateUpdatedAtoms"
 import { setAtoms } from "./setAtoms"
 
 // const findDependencies = (
@@ -46,16 +50,25 @@ export class Transaction {
     data: StoreData
     parentTransaction: Transaction | undefined
     dirty: boolean
-    private _scopedTransactions: undefined | { [key: string]: Transaction }
+    private _scopedTransactions: undefined | Map<string, Transaction>
     private _initializedAtomsSet: any
     private _deleteSet: any
     private _selectorDependencies: any
     private _selectorCache: any
     private _atomMap: any
-    constructor(data: StoreData, parentTransaction?: Transaction) {
+    constructor(
+        data: StoreData,
+        parentTransaction?: Transaction,
+        childTransaction?: Transaction,
+    ) {
         this.data = data
         this.parentTransaction = parentTransaction
         this.dirty = false
+        if (childTransaction) {
+            this._scopedTransactions = new Map([
+                [childTransaction.data.id, childTransaction],
+            ])
+        }
     }
 
     private valueFromTxnOrData: GetValue = (state: State) => {
@@ -115,26 +128,32 @@ export class Transaction {
         if (!this.dirty) this.dirty = true
 
         if (isFamilyAtom(atom)) {
-            const currentFamilyList = this.get(atom.family)
-            // @ts-ignore
-            if (currentFamilyList && !currentFamilyList.__index.has(atom)) {
-                const index = currentFamilyList
-                    ? // @ts-ignore
-                      currentFamilyList.__index.clone()
-                    : new FamilyIndex(atom.family, this.data)
-                index.add([atom])
-                this.atomMap.set(atom.family, index.toArray())
+            if (!this.atomMap.has(atom.family)) {
+                // @ts-ignore
+                this.cloneFamilyIntoTxn(atom.family)
             }
+            const index = this.atomMap.get(atom.family).__index
+            index.created.set(atom, performance.now())
+            index.deleted.delete(atom)
+            index.rendered = null
+            index.renderedArray = null
+            this.recursivlyUpdateAtomFamilyIndexes(atom.family)
         }
         return value
     }
 
     del = (atom: AtomFamilyAtom<any, any>) => {
-        // @ts-ignore
-        const index = this.get(atom.family).__index
-        const cloned = index.clone()
-        cloned.delete([atom])
-        this.atomMap.set(atom.family, cloned.toArray())
+        if (!this.atomMap.has(atom.family)) {
+            // @ts-ignore
+            this.cloneFamilyIntoTxn(atom.family)
+        }
+        const index = this.atomMap.get(atom.family).__index
+        index.created.delete(atom)
+        index.deleted.set(atom, performance.now())
+        index.rendered = null
+        index.renderedArray = null
+        this.atomMap.set(atom.family, renderAtomFamilyIndex(index))
+        this.recursivlyUpdateAtomFamilyIndexes(atom.family)
         if (this.data.values.has(atom)) {
             this.deleteSet.add(atom)
         }
@@ -145,6 +164,7 @@ export class Transaction {
 
     scope = (scopeId: string, callback: (txn: Transaction) => any) => {
         if (scopeId in this.data.scopes) {
+            // @ts-ignore
             return this.scopedTransaction(scopeId).execute(callback, false)
         } else {
             throw new Error(
@@ -154,14 +174,15 @@ export class Transaction {
     }
 
     parentScope = (callback: (txn: Transaction) => any) => {
-        // @ts-ignore
-        if (!this._parentTransaction) {
-            // @ts-ignore
-            // TODO: Find a way where we can move the transaction scope up.
-            this._parentTransaction = new Transaction(this.data.parent)
+        if (!this.parentTransaction) {
+            this.parentTransaction = new Transaction(
+                // @ts-ignore
+                this.data.parent,
+                undefined,
+                this,
+            )
         }
-        // @ts-ignore
-        return this._parentTransaction.execute(callback, false)
+        return this.parentTransaction.execute(callback, false)
     }
 
     reset = (atom: Atom) => {
@@ -176,8 +197,16 @@ export class Transaction {
 
     execute = (callback: TransactionFn, autoCommit = true) => {
         const result = callback(this)
-        if (autoCommit) this.commit()
+        if (autoCommit) this.txnCommit()
         return result
+    }
+
+    private txnCommit = () => {
+        if (this.parentTransaction) {
+            this.parentTransaction.txnCommit()
+        } else {
+            this.commit()
+        }
     }
 
     commit = () => {
@@ -187,14 +216,9 @@ export class Transaction {
             deleteAtomFamilyAtoms(this.deleteSet, this.data)
         }
         if (this._scopedTransactions) {
-            for (const scopedTxn of Object.values(this._scopedTransactions)) {
+            for (const [, scopedTxn] of this._scopedTransactions) {
                 scopedTxn.commit()
             }
-        }
-        // @ts-ignore
-        if (this._parentTransaction) {
-            // @ts-ignore
-            this._parentTransaction.commit()
         }
     }
 
@@ -221,36 +245,56 @@ export class Transaction {
         return this._initializedAtomsSet
     }
 
-    // private parentTransaction() {
-    //     if (this.parentTransaction) return this.parentTransaction
-    //     // if (this.data.parent) {
-    //     //     return this.scopedTransaction("__parent__").execute(callback, false)
-    //     // } else {
-    //     //     throw new Error(`No parent scope found.`)
-    //     // }
-    //     // if (scopeId === "__parent__") {
-    //     //     // console.log("this", this.data.parent)
-    //     //     // const scopedData = this.data.parent
-    //     //     if (this.parentTransaction) throw new Error("TODO")
-    //     //     console.log("parent scope", this)
-    //     //     const parentTransaction = new Transaction(
-    //     //         this.data.parent,
-    //     //         this,
-    //     //     )
-    //     //     this._scopedTransactions[scopeId] = scopedTransaction
-    //     //     // throw new Error("TODO")
-    //     // } else {
-    //     // }
-    // }
-
     private scopedTransaction(scopeId: string) {
-        if (!this._scopedTransactions) this._scopedTransactions = {}
-        if (!this._scopedTransactions[scopeId]) {
+        if (!this._scopedTransactions) this._scopedTransactions = new Map()
+        if (!this._scopedTransactions.has(scopeId)) {
             const scopedData = this.data.scopes[scopeId]
             const scopedTransaction = new Transaction(scopedData, this)
-            this._scopedTransactions[scopeId] = scopedTransaction
+            this._scopedTransactions.set(scopeId, scopedTransaction)
         }
-        return this._scopedTransactions[scopeId]
+        return this._scopedTransactions.get(scopeId)
+    }
+
+    private cloneFamilyIntoTxn(
+        family: any,
+        // @ts-ignore
+        parentIndex,
+        moveUpIfParent = true,
+    ): void {
+        if (moveUpIfParent && this.parentTransaction)
+            return this.parentTransaction.cloneFamilyIntoTxn(
+                family,
+                parentIndex,
+                moveUpIfParent,
+            )
+        const currentFamilyList = this.get(family)
+        const clonedIndex = cloneAtomFamilyIndex(
+            // @ts-ignore
+            currentFamilyList.__index,
+            parentIndex,
+        )
+        if (this._scopedTransactions?.size) {
+            for (const [, scopedTxn] of this._scopedTransactions) {
+                scopedTxn.cloneFamilyIntoTxn(family, clonedIndex, false)
+            }
+        }
+        this.atomMap.set(family, renderAtomFamilyIndex(clonedIndex))
+    }
+
+    private recursivlyUpdateAtomFamilyIndexes(
+        atomFamily: AtomFamily<any, any>,
+    ) {
+        const currentIndex = this.atomMap.get(atomFamily).__index
+        currentIndex.rendered = null
+        currentIndex.renderedArray = null
+        const updatedValue = renderAtomFamilyIndex(currentIndex)
+        this.atomMap.set(atomFamily, updatedValue)
+
+        if (this._scopedTransactions?.size) {
+            for (const [, scopedTxn] of this._scopedTransactions) {
+                scopedTxn.recursivlyUpdateAtomFamilyIndexes(atomFamily)
+            }
+        }
     }
 }
 

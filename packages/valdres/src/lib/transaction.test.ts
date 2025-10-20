@@ -259,23 +259,165 @@ describe("transaction", () => {
         }).toThrow("Scope 'Missing' not found. Registered scopes: Foo, Bar")
     })
 
-    test("parentScope", () => {
+    test("parentScope atom", () => {
         const nameAtom = atom("default")
-        const store1 = store()
-        const fooScope = store1.scope("Foo")
-        const barScope = store1.scope("Bar")
+        const rootStore = store()
+        const childScope1 = rootStore.scope("Child1")
+        const childScope2 = rootStore.scope("Child2")
 
-        fooScope.txn(txn => {
+        childScope1.txn(txn => {
             txn.parentScope(parentTxn => {
                 parentTxn.set(nameAtom, "Set in Parent")
+                parentTxn.scope("Child2", child2txn => {
+                    expect(child2txn.get(nameAtom)).toBe("Set in Parent")
+                })
             })
-            // TODO: Make this work. Can we allow the transaction scope tree to grow in both directions?
-            // expect(txn.get(nameAtom)).toBe("Set in Parent")
-            txn.set(nameAtom, "Set in Foo")
+            expect(txn.get(nameAtom)).toBe("Set in Parent")
         })
-        expect(store1.get(nameAtom)).toBe("Set in Parent")
-        expect(fooScope.get(nameAtom)).toBe("Set in Foo")
-        expect(barScope.get(nameAtom)).toBe("Set in Parent")
+    })
+
+    test("parentScope family", () => {
+        const userAtomFamily = atomFamily()
+        const rootStore = store()
+        const childScope1 = rootStore.scope("Child1")
+        const childScope2 = rootStore.scope("Child2")
+        const user1atom = userAtomFamily(1)
+        const user2atom = userAtomFamily(2)
+        const user3atom = userAtomFamily(3)
+
+        childScope1.txn(txn => {
+            // expect(t)
+            txn.set(user1atom, "User 1")
+            txn.parentScope(parentTxn => {
+                parentTxn.set(user2atom, "User2")
+            })
+            txn.set(user3atom, "User 3")
+            expect(txn.get(userAtomFamily)).toStrictEqual([
+                user1atom,
+                user2atom,
+                user3atom,
+            ])
+        })
+    })
+
+    test("family in scopes", () => {
+        const userAtomFamily = atomFamily()
+        const rootStore = store()
+        const childStore1 = rootStore.scope("Child1")
+
+        const user1atom = userAtomFamily(1)
+        const user2atom = userAtomFamily(2)
+        const user3atom = userAtomFamily(3)
+        const user4atom = userAtomFamily(4)
+        const user5atom = userAtomFamily(5)
+
+        rootStore.set(user1atom, "User 1 set before txn")
+        childStore1.set(user2atom, "User 2 set before txn")
+
+        expect(rootStore.get(userAtomFamily)).toStrictEqual([user1atom])
+        expect(childStore1.get(userAtomFamily)).toStrictEqual([
+            user1atom,
+            user2atom,
+        ])
+
+        rootStore.txn(txn => {
+            expect(txn.get(userAtomFamily)).toStrictEqual([user1atom])
+            txn.scope("Child1", childTxn => {
+                expect(childTxn.get(userAtomFamily)).toStrictEqual([
+                    user1atom,
+                    user2atom,
+                ])
+            })
+            txn.set(user3atom, "User 3 set in root txn")
+            expect(txn.get(userAtomFamily)).toStrictEqual([
+                user1atom,
+                user3atom,
+            ])
+            txn.scope("Child1", childTxn => {
+                const entry = childTxn.get(userAtomFamily)
+                expect(entry.__index.parentIndex).toBeDefined()
+                expect(childTxn.get(userAtomFamily)).toHaveLength(3)
+                expect(childTxn.get(userAtomFamily)).toStrictEqual([
+                    user1atom,
+                    user2atom,
+                    user3atom,
+                ])
+                childTxn.set(user4atom, "User 4 set in child txn")
+            })
+            txn.set(user2atom, "User 2 set in root txn")
+            expect(txn.get(userAtomFamily)).toStrictEqual([
+                user1atom,
+                user3atom,
+                user2atom,
+            ])
+        })
+
+        expect(rootStore.get(user1atom)).toBe("User 1 set before txn")
+        expect(rootStore.get(user2atom)).toBe("User 2 set in root txn")
+        expect(rootStore.get(user3atom)).toBe("User 3 set in root txn")
+        expect(rootStore.get(user4atom)).toBeInstanceOf(Promise)
+
+        expect(childStore1.get(user1atom)).toBe("User 1 set before txn")
+        expect(childStore1.get(user2atom)).toBe("User 2 set before txn")
+        expect(childStore1.get(user3atom)).toBe("User 3 set in root txn")
+        expect(childStore1.get(user4atom)).toBe("User 4 set in child txn")
+    })
+
+    test("atom family add scope to txn after family atom change", () => {
+        const userAtomFamily = atomFamily()
+        const rootStore = store()
+        const childStore = rootStore.scope("Child1")
+
+        const user1atom = userAtomFamily(1)
+        const user2atom = userAtomFamily(2)
+
+        rootStore.txn(txn => {
+            txn.set(user1atom, "User 1 set in root txn")
+            txn.scope("Child1", childTxn => {
+                childTxn.set(user2atom, "User 2 set in child txn")
+                expect(childTxn.get(userAtomFamily)).toHaveLength(2)
+                expect(childTxn.get(userAtomFamily)).toStrictEqual([
+                    user1atom,
+                    user2atom,
+                ])
+            })
+        })
+
+        expect(rootStore.get(userAtomFamily)).toStrictEqual([user1atom])
+        expect(childStore.get(userAtomFamily)).toStrictEqual([
+            user1atom,
+            user2atom,
+        ])
+    })
+
+    test("atomFamily index works when we start txn in scoped store and then access parent txn", () => {
+        const userAtomFamily = atomFamily()
+        const rootStore = store()
+        const childStore = rootStore.scope("Child1")
+
+        const user1atom = userAtomFamily(1)
+        const user2atom = userAtomFamily(2)
+
+        childStore.txn(txn => {
+            txn.set(user1atom, "User 1 atom set in child txn")
+            txn.parentScope(parentTxn => {
+                expect(parentTxn.get(userAtomFamily)).toHaveLength(0)
+                parentTxn.set(user2atom, "User 2 atom set in parentTxn")
+                expect(parentTxn.get(userAtomFamily)).toHaveLength(1)
+                expect(txn.get(userAtomFamily)).toHaveLength(2)
+            })
+            expect(txn.get(userAtomFamily)).toStrictEqual([
+                user1atom,
+                user2atom,
+            ])
+        })
+        expect(rootStore.get(userAtomFamily)).toStrictEqual([user2atom])
+
+        // TODO: Find way for txn insertion order to persist on txn commit...
+        expect(childStore.get(userAtomFamily)).toStrictEqual([
+            user2atom,
+            user1atom,
+        ])
     })
 
     test("parentScope crash", () => {
@@ -425,5 +567,24 @@ describe("transaction", () => {
             txn.del(post("1"))
         })
         expect(defaultStore.get(postsByTag("foo"))).toHaveLength(0)
+    })
+
+    test("when using txn.parentScope commit in child scope and then crashm should persist correctly", () => {
+        const nameAtom = atom("default")
+        const rootStore = store()
+        const nestedStore = rootStore.scope("Nested")
+
+        try {
+            nestedStore.txn(txn => {
+                txn.set(nameAtom, "Set in Foo before parentScope")
+                txn.parentScope(parentTxn => {
+                    parentTxn.set(nameAtom, "Set in Parent")
+                })
+                txn.commit()
+                throw new Error("Crash")
+            })
+        } catch (e) {}
+        expect(nestedStore.get(nameAtom)).toBe("Set in Foo before parentScope")
+        expect(rootStore.get(nameAtom)).toBe("default")
     })
 })

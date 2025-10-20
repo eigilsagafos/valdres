@@ -11,7 +11,10 @@ import { isSelectorFamily } from "../utils/isSelectorFamily"
 import { equal } from "./equal"
 import { initAtom } from "./initAtom"
 import { initSelector } from "./initSelector"
-import { FamilyIndex } from "./propagateUpdatedAtoms"
+import {
+    createAtomFamilyIndex,
+    renderAtomFamilyIndex,
+} from "./propagateUpdatedAtoms"
 
 export function getState<
     Value extends any,
@@ -89,10 +92,7 @@ export function getState<
                 circularDependencySet,
             )
         }
-        data.values.set(
-            state,
-            new FamilyIndex(state as unknown as Family<any>, data).toArray(),
-        )
+        data.values.set(state, renderAtomFamilyIndex(createAtomFamilyIndex()))
         initializedAtomsSet.add(state)
         return data.values.get(state)
     }

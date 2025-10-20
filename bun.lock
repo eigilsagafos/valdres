@@ -18,51 +18,51 @@
     },
     "packages/@valdres-react/color-mode": {
       "name": "@valdres-react/color-mode",
-      "version": "0.2.0-pre.12",
+      "version": "0.2.0-pre.15",
       "dependencies": {
-        "@valdres/color-mode": "0.2.0-pre.12",
+        "@valdres/color-mode": "0.2.0-pre.15",
       },
       "devDependencies": {
         "typescript": "5.9.2",
-        "valdres-react": "0.2.0-pre.12",
+        "valdres-react": "0.2.0-pre.15",
       },
       "peerDependencies": {
-        "valdres-react": "0.2.0-pre.12",
+        "valdres-react": "0.2.0-pre.15",
       },
     },
     "packages/@valdres-react/draggable": {
       "name": "@valdres-react/draggable",
-      "version": "0.2.0-pre.12",
+      "version": "0.2.0-pre.15",
       "devDependencies": {
         "typescript": "5.9.2",
-        "valdres-react": "0.2.0-pre.12",
+        "valdres-react": "0.2.0-pre.15",
       },
       "peerDependencies": {
-        "valdres-react": "0.2.0-pre.12",
+        "valdres-react": "0.2.0-pre.15",
       },
     },
     "packages/@valdres-react/hotkeys": {
       "name": "@valdres-react/hotkeys",
-      "version": "0.2.0-pre.12",
+      "version": "0.2.0-pre.15",
       "dependencies": {
-        "@valdres/hotkeys": "0.2.0-pre.12",
+        "@valdres/hotkeys": "0.2.0-pre.15",
       },
       "devDependencies": {
         "@testing-library/react": "16.3.0",
         "react": "19.1.1",
         "react-dom": "19.1.1",
         "typescript": "5.9.2",
-        "valdres-react": "0.2.0-pre.12",
+        "valdres-react": "0.2.0-pre.15",
       },
       "peerDependencies": {
         "react": ">=18",
-        "valdres": "0.2.0-pre.12",
-        "valdres-react": "0.2.0-pre.12",
+        "valdres": "0.2.0-pre.15",
+        "valdres-react": "0.2.0-pre.15",
       },
     },
     "packages/@valdres-react/jotai": {
       "name": "@valdres-react/jotai",
-      "version": "0.2.0-pre.12",
+      "version": "0.2.0-pre.15",
       "dependencies": {
         "valdres-react": "0.2.0-pre.12",
       },
@@ -79,14 +79,14 @@
     },
     "packages/@valdres-react/panable": {
       "name": "@valdres-react/panable",
-      "version": "0.2.0-pre.12",
+      "version": "0.2.0-pre.15",
       "devDependencies": {
         "typescript": "5.9.2",
-        "valdres-react": "0.2.0-pre.12",
+        "valdres-react": "0.2.0-pre.15",
       },
       "peerDependencies": {
-        "@valdres-react/draggable": "0.2.0-pre.12",
-        "valdres-react": "0.2.0-pre.12",
+        "@valdres-react/draggable": "0.2.0-pre.15",
+        "valdres-react": "0.2.0-pre.15",
       },
       "optionalPeers": [
         "@valdres-react/draggable",
@@ -94,7 +94,7 @@
     },
     "packages/@valdres-react/recoil": {
       "name": "@valdres-react/recoil",
-      "version": "0.2.0-pre.12",
+      "version": "0.2.0-pre.15",
       "dependencies": {
         "valdres-react": "0.2.0-pre.12",
       },
@@ -107,30 +107,30 @@
     },
     "packages/@valdres/color-mode": {
       "name": "@valdres/color-mode",
-      "version": "0.2.0-pre.12",
+      "version": "0.2.0-pre.15",
       "devDependencies": {
         "happy-dom": "18.0.1",
         "typescript": "5.9.2",
-        "valdres": "0.2.0-pre.12",
+        "valdres": "0.2.0-pre.15",
       },
       "peerDependencies": {
-        "valdres": "0.2.0-pre.12",
+        "valdres": "0.2.0-pre.15",
       },
     },
     "packages/@valdres/hotkeys": {
       "name": "@valdres/hotkeys",
-      "version": "0.2.0-pre.12",
+      "version": "0.2.0-pre.15",
       "devDependencies": {
         "typescript": "5.9.2",
-        "valdres": "0.2.0-pre.12",
+        "valdres": "0.2.0-pre.15",
       },
       "peerDependencies": {
-        "valdres": "0.2.0-pre.12",
+        "valdres": "0.2.0-pre.15",
       },
     },
     "packages/documentation": {
       "name": "@valdres/documentation",
-      "version": "0.2.0-pre.12",
+      "version": "0.2.0-pre.15",
       "dependencies": {
         "@faker-js/faker": "9.0.3",
         "@types/react": "18.3.8",
@@ -147,11 +147,11 @@
     },
     "packages/test": {
       "name": "@valdres/test",
-      "version": "0.2.0-pre.12",
+      "version": "0.2.0-pre.15",
     },
     "packages/valdres": {
       "name": "valdres",
-      "version": "0.2.0-pre.12",
+      "version": "0.2.0-pre.15",
       "devDependencies": {
         "@testing-library/react": "16.3.0",
         "jotai": "2.10.0",
@@ -164,17 +164,17 @@
     },
     "packages/valdres-react": {
       "name": "valdres-react",
-      "version": "0.2.0-pre.12",
+      "version": "0.2.0-pre.15",
       "dependencies": {
-        "valdres": "0.2.0-pre.12",
+        "valdres": "0.2.0-pre.15",
       },
       "devDependencies": {
-        "@happy-dom/global-registrator": "18.0.1",
-        "@testing-library/jest-dom": "6.8.0",
+        "@happy-dom/global-registrator": "20.0.5",
+        "@testing-library/jest-dom": "6.9.1",
         "@testing-library/react": "16.3.0",
         "@testing-library/user-event": "14.6.1",
-        "@valdres/test": "0.2.0-pre.12",
-        "happy-dom": "18.0.1",
+        "@valdres/test": "0.2.0-pre.15",
+        "happy-dom": "20.0.5",
         "mitata": "0.1.14",
         "react": "19.1.1",
         "react-test-renderer": "19.1.1",
@@ -709,7 +709,7 @@
 
     "@testing-library/dom": ["@testing-library/dom@10.4.1", "", { "dependencies": { "@babel/code-frame": "^7.10.4", "@babel/runtime": "^7.12.5", "@types/aria-query": "^5.0.1", "aria-query": "5.3.0", "dom-accessibility-api": "^0.5.9", "lz-string": "^1.5.0", "picocolors": "1.1.1", "pretty-format": "^27.0.2" } }, "sha512-o4PXJQidqJl82ckFaXUeoAW+XysPLauYI43Abki5hABd853iMhitooc6znOnczgbTYmEP6U6/y1ZyKAIsvMKGg=="],
 
-    "@testing-library/jest-dom": ["@testing-library/jest-dom@6.8.0", "", { "dependencies": { "@adobe/css-tools": "^4.4.0", "aria-query": "^5.0.0", "css.escape": "^1.5.1", "dom-accessibility-api": "^0.6.3", "picocolors": "^1.1.1", "redent": "^3.0.0" } }, "sha512-WgXcWzVM6idy5JaftTVC8Vs83NKRmGJz4Hqs4oyOuO2J4r/y79vvKZsb+CaGyCSEbUPI6OsewfPd0G1A0/TUZQ=="],
+    "@testing-library/jest-dom": ["@testing-library/jest-dom@6.9.1", "", { "dependencies": { "@adobe/css-tools": "^4.4.0", "aria-query": "^5.0.0", "css.escape": "^1.5.1", "dom-accessibility-api": "^0.6.3", "picocolors": "^1.1.1", "redent": "^3.0.0" } }, "sha512-zIcONa+hVtVSSep9UT3jZ5rizo2BsxgyDYU7WFD5eICBE7no3881HGeb/QkGfsJs6JTkY1aQhT7rIPC7e+0nnA=="],
 
     "@testing-library/react": ["@testing-library/react@16.3.0", "", { "dependencies": { "@babel/runtime": "^7.12.5" }, "peerDependencies": { "@testing-library/dom": "^10.0.0", "@types/react": "^18.0.0 || ^19.0.0", "@types/react-dom": "^18.0.0 || ^19.0.0", "react": "^18.0.0 || ^19.0.0", "react-dom": "^18.0.0 || ^19.0.0" }, "optionalPeers": ["@types/react", "@types/react-dom"] }, "sha512-kFSyxiEDwv1WLl2fgsq6pPBbw5aWKrsY2/noi1Id0TK0UParSF62oFQFGHXIyaG4pp2tEub/Zlel+fjjZILDsw=="],
 
@@ -2886,6 +2886,10 @@
     "update-browserslist-db/picocolors": ["picocolors@1.1.0", "", {}, "sha512-TQ92mBOW0l3LeMeyLV6mzy/kWr8lkd/hp3mTg7wYK7zJhuBStmGMBG0BdeDZS/dZx1IukaX6Bk11zcln25o1Aw=="],
 
     "valdres/mitata": ["mitata@0.1.14", "", {}, "sha512-8kRs0l636eT4jj68PFXOR2D5xl4m56T478g16SzUPOYgkzQU+xaw62guAQxzBPm+SXb15GQi1cCpDxJfkr4CSA=="],
+
+    "valdres-react/@happy-dom/global-registrator": ["@happy-dom/global-registrator@20.0.5", "", { "dependencies": { "@types/node": "^20.0.0", "happy-dom": "^20.0.5" } }, "sha512-RWQ85on4fiYKw5D1xk0nU2YGCYsJEJ5iXmZHTRyeYft4OCN4IRMFZ3uX91/Tncf/9K4tPOnU1HiEOtLs2Zxukw=="],
+
+    "valdres-react/happy-dom": ["happy-dom@20.0.5", "", { "dependencies": { "@types/node": "^20.0.0", "@types/whatwg-mimetype": "^3.0.2", "whatwg-mimetype": "^3.0.0" } }, "sha512-AiqA0rfS7WR1kihXt9W9aA5LFLaOKzwiL+QoI7BkOQ0r21C7VHTOf4k8QNlnWYaHLhpI2tZzJPLV1lY1obDTmw=="],
 
     "valdres-react/mitata": ["mitata@0.1.14", "", {}, "sha512-8kRs0l636eT4jj68PFXOR2D5xl4m56T478g16SzUPOYgkzQU+xaw62guAQxzBPm+SXb15GQi1cCpDxJfkr4CSA=="],
 

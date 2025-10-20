@@ -79,7 +79,12 @@ export function storeFromStoreData(
             scopedStoreData.scopeConsumers.delete(detach)
             if (scopedStoreData.scopeConsumers.size === 0) {
                 delete data.scopes[scopeId]
+                return true
             }
+            console.warn(
+                `Scope still has ${scopedStoreData.scopeConsumers.size} consumers, will not detach`,
+            )
+            return false
         }
 
         scopedStoreData.scopeConsumers.add(detach)

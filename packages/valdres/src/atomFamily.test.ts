@@ -323,21 +323,22 @@ describe("atomFamily", () => {
         expect(rootStore.get(userFamily)).toStrictEqual([user1atom, user3atom])
         expect(nestedStore.get(userFamily)).toStrictEqual([
             user1atom,
-            user3atom,
             user2atom,
+            user3atom,
         ])
         rootStore.del(user1atom)
         expect(rootStore.get(userFamily)).toStrictEqual([user3atom])
         expect(nestedStore.get(userFamily)).toStrictEqual([
-            user3atom,
             user2atom,
+            user3atom,
         ])
         expect(nestedNestedStore.get(userFamily)).toStrictEqual([
-            user3atom,
-            user2atom,
             user4atom,
+            user2atom,
+            user3atom,
         ])
 
+        const user5atom = userFamily(5)
         // Test subscriptions
         const rootCallback = mock(() => {})
         const nestedCallback = mock(() => {})
@@ -346,7 +347,6 @@ describe("atomFamily", () => {
         nestedStore.sub(userFamily, nestedCallback)
         nestedNestedStore.sub(userFamily, nestedNestedCallback)
 
-        const user5atom = userFamily(5)
         rootStore.set(user5atom, "User 5 set in root")
         expect(rootCallback).toHaveBeenCalledTimes(1)
         expect(nestedCallback).toHaveBeenCalledTimes(1)
@@ -356,5 +356,56 @@ describe("atomFamily", () => {
         expect(rootCallback).toHaveBeenCalledTimes(2)
         expect(nestedCallback).toHaveBeenCalledTimes(2)
         expect(nestedNestedCallback).toHaveBeenCalledTimes(2)
+    })
+
+    test("order is based on insertion time", () => {
+        const rootStore = store()
+        const nestedStore = rootStore.scope("nested")
+        const nestedNestedStore = nestedStore.scope("nested-nested")
+        const userFamily = atomFamily()
+        const user1atom = userFamily(1)
+        const user2atom = userFamily(2)
+        const user3atom = userFamily(3)
+        const user4atom = userFamily(4)
+
+        rootStore.set(user1atom, "User 1")
+        nestedStore.set(user2atom, "User 2")
+        rootStore.set(user3atom, "User 3")
+
+        expect(nestedStore.get(userFamily)).toStrictEqual([
+            user1atom,
+            user2atom,
+            user3atom,
+        ])
+    })
+
+    test("delete in nested store handled correctly", () => {
+        const rootStore = store()
+        const nestedStore = rootStore.scope("nested")
+        const nestedNestedStore = nestedStore.scope("nested-nested")
+        const userFamily = atomFamily()
+        const user1atom = userFamily(1)
+
+        // 1. set in root store
+        rootStore.set(user1atom, "5 root")
+        expect(rootStore.get(userFamily)).toStrictEqual([user1atom])
+        expect(nestedStore.get(userFamily)).toStrictEqual([user1atom])
+
+        // 2. del in root store
+        rootStore.del(user1atom)
+        expect(rootStore.get(userFamily)).toStrictEqual([])
+        expect(nestedStore.get(userFamily)).toStrictEqual([])
+
+        // 3. set in root store again
+        rootStore.set(user1atom, "5 root again")
+        expect(rootStore.get(userFamily)).toStrictEqual([user1atom])
+        // expect(nestedStore.get(userFamily)).toStrictEqual([user1atom])
+
+        // 4. set in nested store then delete in root store
+        nestedStore.set(user1atom, "5 nested")
+        rootStore.del(user1atom)
+        expect(rootStore.get(userFamily)).toStrictEqual([])
+        expect(nestedStore.get(userFamily)).toStrictEqual([user1atom])
+        expect(nestedNestedStore.get(userFamily)).toStrictEqual([user1atom])
     })
 })

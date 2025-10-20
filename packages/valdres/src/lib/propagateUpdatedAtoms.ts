@@ -57,69 +57,84 @@ const findInClosestStore = (
     const store = findClosestStoreWithAtomInitialized(state, data)
     return store.values.get(state)
 }
-export class FamilyIndex {
-    map: Map<AtomFamilyAtom<any>, boolean>
-    family: Family<any>
-    data: StoreData
-    parentIndex: FamilyIndex | undefined
-    constructor(
-        family: Family<any>,
-        data: StoreData,
-        parentIndex?: FamilyIndex,
-        map?: Map<AtomFamilyAtom<any>, boolean>,
-    ) {
-        this.family = family
-        this.data = data
-        this.parentIndex = parentIndex
-        this.map = new Map(map)
+
+// @ts-ignore
+const getAtomFamilyRenderedMap = (
+    index: ReturnType<typeof createAtomFamilyIndex>,
+) => {
+    if (index.rendered) return index.rendered
+    // @ts-ignore
+    const result = new Map(
+        index.parentIndex
+            ? getAtomFamilyRenderedMap(index.parentIndex)
+            : undefined,
+    )
+
+    for (const [atom, timestamp] of index.created) {
+        result.set(atom, timestamp)
     }
-
-    add(atoms: AtomFamilyAtom<any>[]) {
-        atoms.forEach(atom => {
-            this.map.set(atom, true)
-        })
+    for (const [atom, timestamp] of index.deleted) {
+        result.delete(atom, timestamp)
     }
+    index.rendered = result
+    return result
+}
 
-    delete(atoms: AtomFamilyAtom<any>[]) {
-        atoms.forEach(atom => {
-            this.map.set(atom, false)
-        })
+const getSortedKeysByValues = <K, V extends number | string>(
+    map: Map<K, V>,
+): K[] => {
+    return Array.from(map.entries())
+        .sort((a, b) => (a[1] > b[1] ? 1 : a[1] < b[1] ? -1 : 0))
+        .map(entry => entry[0])
+    // res.__in
+}
+
+export const renderAtomFamilyIndex = (index: AtomFamilyIndex) => {
+    if (index.renderedArray) {
+        console.log("Using cached rendered array")
+        return index.renderedArray
     }
+    const renderedMap = getAtomFamilyRenderedMap(index)
+    const array = getSortedKeysByValues(renderedMap)
+    // @ts-ignore
+    array.__index = index
+    // @ts-ignore
+    index.renderedArray = array
+    return array
+}
 
-    has(atom: AtomFamilyAtom<any>) {
-        return this.map.has(atom)
+type AtomFamilyIndex = {
+    created: Map<AtomFamilyAtom<any, any>, Number>
+    deleted: Map<AtomFamilyAtom<any, any>, Number>
+    rendered: Map<AtomFamilyAtom<any, any>, Number> | null
+    renderedArray:
+        | (AtomFamilyAtom<any, any>[] & { __index: AtomFamilyIndex })
+        | null
+    parentIndex?: AtomFamilyIndex
+}
+
+export const cloneAtomFamilyIndex = (
+    index: AtomFamilyIndex,
+    parentIndexOverride?: AtomFamilyIndex,
+): AtomFamilyIndex => {
+    return {
+        created: new Map(index.created),
+        deleted: new Map(index.deleted),
+        rendered: null,
+        renderedArray: null,
+        parentIndex: parentIndexOverride || index.parentIndex,
     }
+}
 
-    clone() {
-        return new FamilyIndex(
-            this.family,
-            this.data,
-            this.parentIndex,
-            this.map,
-        )
-    }
-
-    toSet(): Set<AtomFamilyAtom<any>> {
-        let set: Set<AtomFamilyAtom<any>>
-
-        if (this.parentIndex) {
-            set = new Set(this.parentIndex.toSet())
-        } else {
-            set = new Set()
-        }
-        for (const [key, value] of this.map) {
-            if (value === true) set.add(key)
-            if (value === false) set.delete(key)
-        }
-
-        return set
-    }
-
-    toArray() {
-        const arr = [...this.toSet()]
-        // @ts-ignore
-        arr.__index = this
-        return arr
+export const createAtomFamilyIndex = (
+    parentIndex?: AtomFamilyIndex,
+): AtomFamilyIndex => {
+    return {
+        created: new Map(),
+        deleted: new Map(),
+        rendered: null, // new Map(parentIndex?.rendered),
+        renderedArray: null,
+        parentIndex,
     }
 }
 
@@ -127,25 +142,29 @@ export const deleteFamilyAtomsFromSet = (
     family: Family<any>,
     familyAtoms: Set<AtomFamilyAtom<any>>,
     data: StoreData,
+    timestamp: number,
 ) => {
+    if (familyAtoms.size === 0) return
     const index = findFamilyIndex(family, data)
-    index.delete(familyAtoms)
-    data.values.set(family, index.toArray())
+    for (const atom of familyAtoms) {
+        index.deleted.set(atom, timestamp)
+    }
+    index.rendered = null
+    index.renderedArray = null
+    data.values.set(family, renderAtomFamilyIndex(index))
     recursivlyUpdateIndexes(data, family)
 }
 
 const initFamilyIndex = (family: Family<any>, data: StoreData) => {
-    if (data.values.has(family)) return
+    if (data.values.has(family)) return data.values.get(family).__index
+    let parentIndex
     if ("parent" in data) {
-        initFamilyIndex(family, data.parent)
-        const parentIndex = data.parent.values.get(family).__index
+        parentIndex = initFamilyIndex(family, data.parent)
         if (!parentIndex) throw new Error("Parent index is missing")
-        const index = new FamilyIndex(family, data, parentIndex)
-        data.values.set(family, index.toArray())
-    } else {
-        const index = new FamilyIndex(family, data)
-        data.values.set(family, index.toArray())
     }
+    const index = createAtomFamilyIndex(parentIndex)
+    data.values.set(family, renderAtomFamilyIndex(index))
+    return index
 }
 
 const findFamilyIndex = (family: Family<any>, data: StoreData) => {
@@ -166,10 +185,10 @@ const recursivlyUpdateIndexes = (data: StoreData, family: Family<any>) => {
         const scopedData = data.scopes[scopeKey]
         if (scopeKey) {
             if (scopedData.values.has(family)) {
-                scopedData.values.set(
-                    family,
-                    scopedData.values.get(family).__index.toArray(),
-                )
+                const index = scopedData.values.get(family).__index
+                index.rendered = null
+                index.renderedArray = null
+                scopedData.values.set(family, renderAtomFamilyIndex(index))
             }
             recursivlyUpdateIndexes(scopedData, family)
         }
@@ -180,10 +199,18 @@ export const addFamilyAtomsToSet = (
     family: Family<any>,
     familyAtoms: Set<AtomFamilyAtom<any>>,
     data: StoreData,
+    timestamp: Number,
 ) => {
+    if (familyAtoms.size === 0) return
     const index = findFamilyIndex(family, data)
-    index.add(familyAtoms)
-    data.values.set(family, index.toArray())
+    if (!index) throw new Error("index not found")
+    for (const atom of familyAtoms) {
+        index.created.set(atom, timestamp)
+        index.deleted.delete(atom)
+    }
+    index.rendered = null
+    index.renderedArray = null
+    data.values.set(family, renderAtomFamilyIndex(index))
     recursivlyUpdateIndexes(data, family)
 }
 
@@ -192,6 +219,7 @@ export const propagateDeletedAtoms = (
     data: StoreData,
     subscriptions: Set<Subscription> = new Set(),
     families: Map<AtomFamily<any>, Set<AtomFamilyAtom<any>>> = new Map(),
+    timestamp = performance.now(),
 ) => {
     const selectors = new Set<Selector>()
     for (const atom of atoms) {
@@ -215,7 +243,7 @@ export const propagateDeletedAtoms = (
             if (familyAtoms.size === 0)
                 throw new Error("Should not be possible")
 
-            deleteFamilyAtomsFromSet(family, familyAtoms, data)
+            deleteFamilyAtomsFromSet(family, familyAtoms, data, timestamp)
         }
     }
     propagateDirtySelectors(atoms, selectors, data, subscriptions, families)
@@ -229,6 +257,7 @@ export const propagateUpdatedAtoms = (
     subscriptions: Set<Subscription> = new Set(),
     families: Map<AtomFamily<any>, Set<AtomFamilyAtom<any>>> = new Map(),
     isRecursive = false,
+    timestamp = performance.now(),
 ) => {
     // const subscriptions = new Set<Subscription>()
     // const families = new Map<AtomFamily<any>>()
@@ -255,7 +284,7 @@ export const propagateUpdatedAtoms = (
             if (familyAtoms.size === 0)
                 throw new Error("Should not be possible")
 
-            addFamilyAtomsToSet(family, familyAtoms, data)
+            addFamilyAtomsToSet(family, familyAtoms, data, timestamp)
         }
     }
 
