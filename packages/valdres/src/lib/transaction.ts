@@ -142,6 +142,26 @@ export class Transaction {
         return value
     }
 
+    // @ts-ignore
+    batchSetFamilyAtoms(family, pairs) {
+        if (!this.atomMap.has(family)) {
+            // @ts-ignore
+            this.cloneFamilyIntoTxn(family)
+        }
+        const index = this.atomMap.get(family).__index
+        for (const [atom, value] of pairs) {
+            if (atom.family !== family) {
+                throw new Error("Atom does not belong to the provided family")
+            }
+            index.created.set(atom, performance.now())
+            if (index.deleted.has(atom)) index.deleted.delete(atom)
+            this.atomMap.set(atom, value)
+        }
+        index.rendered = null
+        index.renderedArray = null
+        this.recursivlyUpdateAtomFamilyIndexes(family)
+    }
+
     del = (atom: AtomFamilyAtom<any, any>) => {
         if (!this.atomMap.has(atom.family)) {
             // @ts-ignore
