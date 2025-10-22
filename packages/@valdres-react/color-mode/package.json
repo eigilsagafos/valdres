@@ -1,6 +1,6 @@
 {
     "name": "@valdres-react/color-mode",
-    "version": "0.2.0-pre.17",
+    "version": "0.2.0-pre.18",
     "license": "MIT",
     "author": {
         "name": "Eigil Sagafos"
@@ -23,14 +23,14 @@
         "test": "echo 'no tests'"
     },
     "dependencies": {
-        "@valdres/color-mode": "0.2.0-pre.17"
+        "@valdres/color-mode": "0.2.0-pre.18"
     },
     "devDependencies": {
         "typescript": "5.9.2",
-        "valdres-react": "0.2.0-pre.17"
+        "valdres-react": "0.2.0-pre.18"
     },
     "peerDependencies": {
-        "valdres-react": "0.2.0-pre.17"
+        "valdres-react": "0.2.0-pre.18"
     },
     "publishConfig": {
         "access": "public",
