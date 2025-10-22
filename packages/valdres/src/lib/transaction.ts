@@ -143,7 +143,7 @@ export class Transaction {
     }
 
     // @ts-ignore
-    batchSetFamilyAtoms(family, pairs) {
+    batchSetFamilyAtoms = (family, pairs) => {
         if (!this.atomMap.has(family)) {
             // @ts-ignore
             this.cloneFamilyIntoTxn(family)
