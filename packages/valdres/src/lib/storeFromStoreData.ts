@@ -82,7 +82,7 @@ export function storeFromStoreData(
                 return true
             }
             console.warn(
-                `Scope still has ${scopedStoreData.scopeConsumers.size} consumers, will not detach`,
+                `Scope ${scopeId} still has ${scopedStoreData.scopeConsumers.size} consumers, will not detach`,
             )
             return false
         }
