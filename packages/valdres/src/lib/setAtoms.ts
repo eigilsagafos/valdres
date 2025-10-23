@@ -16,6 +16,9 @@ export const setAtoms = (
             updatedAtoms.push(atom)
             value = setValueInData(atom, value, data)
             if (atom.onSet) atom.onSet(value, data)
+        } else {
+            // We do this to ensure that if an atom was set in a scoped transaction but was the same we still override it in that scope
+            setValueInData(atom, value, data)
         }
     }
     const result = new Set([...updatedAtoms, ...initializedAtomsSet])

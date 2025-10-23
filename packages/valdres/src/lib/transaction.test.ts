@@ -587,4 +587,23 @@ describe("transaction", () => {
         expect(nestedStore.get(nameAtom)).toBe("Set in Foo before parentScope")
         expect(rootStore.get(nameAtom)).toBe("default")
     })
+
+    test("If a scope sets a value to the same as the parent scope we should set it in the scope, but not trigger updates", () => {
+        const nameAtom = atom("initial")
+        const rootStore = store()
+        const nestedStore = rootStore.scope("Nested")
+
+        rootStore.set(nameAtom, "Foo")
+        rootStore.txn(txn => {
+            txn.scope("Nested", scopedTxn => {
+                scopedTxn.set(nameAtom, "Foo")
+            })
+        })
+        expect(rootStore.get(nameAtom)).toBe("Foo")
+        expect(nestedStore.get(nameAtom)).toBe("Foo")
+
+        rootStore.set(nameAtom, "Bar")
+        expect(rootStore.get(nameAtom)).toBe("Bar")
+        expect(nestedStore.get(nameAtom)).toBe("Foo")
+    })
 })
