@@ -1,6 +1,5 @@
-import { atomFamily } from "valdres"
-import type { ScopeId } from "../../types/ScopeId"
+import { atom } from "valdres"
 
-export const scaleAtom = atomFamily<number, [ScopeId]>(1.0, {
+export const scaleAtom = atom(1.0, {
     name: "@valdres-react/panable/scaleAtom",
 })

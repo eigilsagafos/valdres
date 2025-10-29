@@ -2,7 +2,6 @@ import { draggableItemAtom } from "@valdres-react/draggable"
 import type { Transaction } from "valdres"
 import type { Size } from "../../../../draggable/types/Size"
 import type { DragAction } from "../../types/DragAction"
-import type { ScopeId } from "../../types/ScopeId"
 import { actionAtom } from "../atoms/actionAtom"
 import { scaleAtom } from "../atoms/scaleAtom"
 import type { DropZone } from "./../../types/DropZone"
@@ -44,13 +43,12 @@ let dropzones: Array<DropZone> = []
 
 export const drag = (
     txn: Transaction,
-    scopeId: ScopeId,
     eventId: string | number,
     clientX: number,
     clientY: number,
     event: MouseEvent | TouchEvent,
 ) => {
-    let action = txn.get(actionAtom({ eventId, scopeId })) as DragAction
+    let action = txn.get(actionAtom(eventId)) as DragAction
     if (action?.invalid || action === null) return null
     if (action.initialized === false) {
         const deltaX = Math.abs(
@@ -63,7 +61,7 @@ export const drag = (
             return
         } else {
             // Deselect items if dragging one that is not selected
-            txn.set(actionAtom({ eventId, scopeId }), curr => ({
+            txn.set(actionAtom(eventId), curr => ({
                 ...curr,
                 initialized: true,
             }))
@@ -71,7 +69,7 @@ export const drag = (
             if (action.onDragStart) {
                 action.onDragStart(event, eventId, txn)
                 // We update the action in case the onDragStart modified it
-                action = txn.get(actionAtom({ eventId, scopeId })) as DragAction
+                action = txn.get(actionAtom(eventId)) as DragAction
             }
 
             dropzones = txn.get(action.dropzonesSelector)
@@ -87,7 +85,7 @@ export const drag = (
         ...v,
     }))
 
-    const scale = txn.get(scaleAtom(scopeId))
+    const scale = txn.get(scaleAtom)
     // Compensate all variables by scale/zoom level
     const mousePosX = (clientX + window.scrollX) / scale
     const mousePosY = (clientY + window.scrollY) / scale
@@ -127,7 +125,7 @@ export const drag = (
     )
 
     if (currentActiveDropzone) {
-        txn.set(actionAtom({ eventId, scopeId }), curr => ({
+        txn.set(actionAtom(eventId), curr => ({
             ...curr,
             activeDropzone: currentActiveDropzone,
         }))
@@ -152,7 +150,7 @@ export const drag = (
         }))
 
         if (action.activeDropzone) {
-            txn.set(actionAtom({ eventId, scopeId }), curr => ({
+            txn.set(actionAtom(eventId), curr => ({
                 ...curr,
                 activeDropzone: null,
             }))

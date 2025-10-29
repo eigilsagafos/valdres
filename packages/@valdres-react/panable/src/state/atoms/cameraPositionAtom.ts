@@ -1,12 +1,11 @@
-import { atomFamily } from "valdres"
-import type { ScopeId } from "../../types/ScopeId"
+import { atom } from "valdres"
 
-export const cameraPositionAtom = atomFamily<
-    ScopeId,
-    { x: number; y: number; default?: boolean; animate?: boolean }
->(
+export const cameraPositionAtom = atom<{
+    x: number
+    y: number
+    default?: boolean
+    animate?: boolean
+}>(
     { x: 100, y: 0, animate: false },
-    {
-        name: "@valdres-react/panable/cameraPosition",
-    },
+    { name: "@valdres-react/panable/cameraPosition" },
 )

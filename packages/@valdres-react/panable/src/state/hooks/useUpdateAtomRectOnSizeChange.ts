@@ -1,6 +1,5 @@
-import { useSetAtom, type Atom } from "valdres-react"
 import { useEffect } from "react"
-import type { ScopeId } from "../../types/ScopeId"
+import { useSetAtom, type Atom } from "valdres-react"
 import type { Size } from "../../../../draggable/src/types/Size"
 
 const observerCallbacks = new WeakMap()
@@ -31,11 +30,7 @@ const useResizeObserver = (
     }, [ref])
 }
 
-export const useUpdateAtomRectOnSizeChange = (
-    ref,
-    atom: Atom<Size>,
-    scopeId: ScopeId = null,
-) => {
+export const useUpdateAtomRectOnSizeChange = (ref, atom: Atom<Size>) => {
     const setSize = useSetAtom(atom)
     useResizeObserver(ref, ({ contentRect, target }) => {
         const rect = target.getBoundingClientRect()
@@ -63,5 +58,5 @@ export const useUpdateAtomRectOnSizeChange = (
             x: rect.x,
             y: rect.y,
         })
-    }, [scopeId])
+    }, [])
 }

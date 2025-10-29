@@ -1,18 +1,14 @@
 import { selectorFamily } from "valdres"
 import type { Point } from "../../types/Point"
-import type { ScopeId } from "../../types/ScopeId"
 import { getCursorPositionRelative } from "../../utils/getCursorPositionRelative"
 import { innerCanvasSizeAtom } from "../atoms/innerCanvasSizeAtom"
 
-export const cursorPositionRelativeSelector = selectorFamily<
-    { scopeId: ScopeId; innerCanvas?: boolean },
-    Point
->(
-    ({ scopeId, innerCanvas }) =>
+export const cursorPositionRelativeSelector = selectorFamily<Point>(
+    (innerCanvas = false) =>
         get => {
-            const res = getCursorPositionRelative(get, scopeId)
+            const res = getCursorPositionRelative(get)
             if (innerCanvas) {
-                const size = get(innerCanvasSizeAtom(scopeId))
+                const size = get(innerCanvasSizeAtom)
                 const offsetY = size.height / 2
                 res.y = res.y - offsetY
                 return res
@@ -20,7 +16,5 @@ export const cursorPositionRelativeSelector = selectorFamily<
                 return res
             }
         },
-    {
-        name: "@valdres-react/panable/cursorPositionRelative",
-    },
+    { name: "@valdres-react/panable/cursorPositionRelative" },
 )

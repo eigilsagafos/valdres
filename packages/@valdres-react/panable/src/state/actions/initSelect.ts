@@ -8,19 +8,17 @@ import { configAtom } from "../atoms/configAtom"
 
 export const initSelect = (
     txn: Transaction,
-    scopeId: ScopeId,
     eventId: EventId,
     e: MouseEvent | TouchEvent,
 ) => {
-    txn.set(activeActionsAtom(scopeId), curr => [...curr, [eventId, "select"]])
-    txn.set(actionAtom({ eventId, scopeId }), {
+    txn.set(activeActionsAtom, curr => [...curr, [eventId, "select"]])
+    txn.set(actionAtom(eventId), {
         kind: "select",
         eventId,
-        scopeId,
         initialEvent: e,
-        startPosition: txn.get(cursorPositionRelativeSelector({ scopeId })),
+        startPosition: txn.get(cursorPositionRelativeSelector()),
         selectedRefsFromPreviousUpdate: [],
     })
-    const { onSelectInit } = txn.get(configAtom(scopeId))
-    if (onSelectInit) onSelectInit(txn, eventId, scopeId)
+    const { onSelectInit } = txn.get(configAtom)
+    if (onSelectInit) onSelectInit(txn, eventId)
 }

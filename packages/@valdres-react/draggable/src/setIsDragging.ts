@@ -2,12 +2,11 @@ import {
     actionAtom,
     activeActionsAtom,
     type EventId,
-    type ScopeId,
 } from "@valdres-react/panable"
 import type { Selector, Transaction } from "valdres"
+import type { EventCallbackFn } from "../types/EventCallbackFn"
 import type { Point } from "../types/Point"
 import type { Size } from "../types/Size"
-import type { EventCallbackFn } from "../types/EventCallbackFn"
 
 export const setIsDragging = (
     txn: Transaction,
@@ -16,7 +15,6 @@ export const setIsDragging = (
     {
         id,
         eventId,
-        scopeId,
         meta,
         originPosition,
         originSize,
@@ -28,7 +26,6 @@ export const setIsDragging = (
     }: {
         id: any
         eventId: EventId
-        scopeId: ScopeId
         meta: any
         originPosition: Point
         originSize: Size
@@ -44,12 +41,11 @@ export const setIsDragging = (
     const offsetX = event.clientX - rect.left
     const offsetY = event.clientY - rect.top
 
-    txn.set(activeActionsAtom(scopeId), curr => [...curr, [eventId, "drag"]])
-    txn.set(actionAtom({ eventId, scopeId }), {
+    txn.set(activeActionsAtom, curr => [...curr, [eventId, "drag"]])
+    txn.set(actionAtom(eventId), {
         kind: "drag",
         id,
         meta,
-        scopeId,
         eventId,
         initialized: false,
         originPosition,

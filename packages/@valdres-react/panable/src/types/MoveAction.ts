@@ -1,7 +1,6 @@
 export type MoveAction = {
     kind: "move"
     eventId: string | number
-    scopeId: string
     initialized: boolean
     initialCameraPosition: {
         x: number

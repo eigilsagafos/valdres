@@ -1,25 +1,16 @@
-// import { currentCapabilitesSelector } from "../../../state/selectors/currentCapabilitesSelector"
 import type { Transaction } from "valdres"
+import { configAtom } from "../atoms/configAtom"
 import { initMove } from "./initMove"
 import { initSelect } from "./initSelect"
-import type { ScopeId } from "../../types/ScopeId"
-import { configAtom } from "../atoms/configAtom"
 
-export const onMouseDown = (
-    txn: Transaction,
-    e: MouseEvent,
-    scopeId: ScopeId,
-) => {
-    const { mode } = txn.get(configAtom(scopeId))
+export const onMouseDown = (txn: Transaction, e: MouseEvent) => {
+    const { mode } = txn.get(configAtom)
     if (e.button === 2) return
     if (mode === "select") {
         e.preventDefault()
-        initSelect(txn, scopeId, "mouse", e)
+        initSelect(txn, "mouse", e)
     } else {
-        // const capabilities = state.get(currentCapabilitesSelector)
-        // if (capabilities.actions.pan.enabled) {
         e.preventDefault()
-        initMove(txn, scopeId, "mouse", e.clientX, e.clientY, e.timeStamp)
-        // }
+        initMove(txn, "mouse", e.clientX, e.clientY, e.timeStamp)
     }
 }

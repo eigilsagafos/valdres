@@ -1,8 +1,7 @@
-import { atomFamily } from "valdres"
-import type { ScopeId } from "../../types/ScopeId"
+import { atom } from "valdres"
 import type { Config } from "../../types/Config"
 
-export const configAtom = atomFamily<ScopeId, Config>(
+export const configAtom = atom<Config>(
     { mode: "pan" },
     { name: "@valdres-react/panable/configAtom" },
 )

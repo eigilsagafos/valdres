@@ -1,16 +1,10 @@
 import { useIsSelecting } from "../state/hooks/useIsSelecting"
 import { useSelectionCoordinates } from "../state/hooks/useSelectionCoordinates"
-import type { ScopeId } from "../types/ScopeId"
+import type { EventId } from "../types/EventId"
 
-export const Selection = ({
-    eventId,
-    scopeId,
-}: {
-    eventId: string
-    scopeId: ScopeId
-}) => {
-    const { x, y, w, h } = useSelectionCoordinates(eventId, scopeId)
-    const isSelecting = useIsSelecting(scopeId)
+export const Selection = ({ eventId }: { eventId: EventId }) => {
+    const { x, y, w, h } = useSelectionCoordinates(eventId)
+    const isSelecting = useIsSelecting()
 
     if (!isSelecting) return null
     return (

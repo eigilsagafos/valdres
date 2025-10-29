@@ -1,21 +1,15 @@
-import { selectorFamily } from "valdres"
+import { selector } from "valdres"
 import { activeActionsAtom } from "../atoms/activeActionsAtom"
 import { selectionCoordinatesSelector } from "./selectionCoordinatesSelector"
-import type { ScopeId } from "../../types/ScopeId"
 
-export const isSelectingSelector = selectorFamily<ScopeId, boolean>(
-    scopeId => get => {
-        const eventId = get(activeActionsAtom(scopeId)).find(
+export const isSelectingSelector = selector<boolean>(
+    get => {
+        const eventId = get(activeActionsAtom).find(
             ([, kind]) => kind === "select",
         )?.[0]
 
         if (eventId) {
-            const { w, h } = get(
-                selectionCoordinatesSelector({
-                    eventId,
-                    scopeId,
-                }),
-            )
+            const { w, h } = get(selectionCoordinatesSelector(eventId))
 
             if (w > 3 || h > 3) {
                 return true

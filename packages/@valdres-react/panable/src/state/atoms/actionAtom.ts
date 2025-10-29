@@ -1,9 +1,7 @@
 import { atomFamily } from "valdres"
-import type { EventId } from "../../types/EventId"
-import type { ScopeId } from "../../types/ScopeId"
 import type { Action } from "../../types/Action"
+import type { EventId } from "../../types/EventId"
 
-export const actionAtom = atomFamily<
-    Action | null,
-    [{ eventId: EventId; scopeId: ScopeId }]
->(null, { name: "@valdres-react/panable/actionAtom" })
+export const actionAtom = atomFamily<Action | null, [EventId]>(null, {
+    name: "@valdres-react/panable/actionAtom",
+})

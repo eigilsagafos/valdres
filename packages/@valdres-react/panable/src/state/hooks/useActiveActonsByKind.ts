@@ -1,7 +1,6 @@
 import { useValue } from "valdres-react"
-import { activeActionsByKindSelector } from "../selectors/activeActionsByKindSelector"
 import type { ActionKind } from "../../types/ActionKind"
-import type { ScopeId } from "../../types/ScopeId"
+import { activeActionsByKindSelector } from "../selectors/activeActionsByKindSelector"
 
-export const useActiveActonsByKind = (kind: ActionKind, scopeId: ScopeId) =>
-    useValue(activeActionsByKindSelector({ scopeId, kind }))
+export const useActiveActonsByKind = (kind: ActionKind) =>
+    useValue(activeActionsByKindSelector(kind))

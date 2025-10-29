@@ -1,7 +1,6 @@
 import { type CSSProperties, forwardRef, memo, useEffect } from "react"
-import { useUpdateAtomRectOnSizeChange } from "../state/hooks/useUpdateAtomRectOnSizeChange"
 import { outerCanvasSizeAtom } from "../state/atoms/outerCanvasSizeAtom"
-import type { ScopeId } from "../types/ScopeId"
+import { useUpdateAtomRectOnSizeChange } from "../state/hooks/useUpdateAtomRectOnSizeChange"
 
 export const OuterCanvas = memo(
     forwardRef<
@@ -11,7 +10,6 @@ export const OuterCanvas = memo(
             height: string
             children: JSX.Element[]
             backgroundColor: CSSProperties["backgroundColor"]
-            scopeId: ScopeId
             onMouseMove: any
             onTouchMove: any
         }
@@ -21,18 +19,13 @@ export const OuterCanvas = memo(
                 children,
                 width,
                 height,
-                scopeId,
                 onMouseMove,
                 onTouchMove,
                 backgroundColor = "#ffffff",
             },
             ref,
         ) => {
-            useUpdateAtomRectOnSizeChange(
-                ref,
-                outerCanvasSizeAtom(scopeId),
-                scopeId,
-            )
+            useUpdateAtomRectOnSizeChange(ref, outerCanvasSizeAtom)
 
             useEffect(() => {
                 if (ref != null && typeof ref !== "function" && ref?.current) {
@@ -64,7 +57,7 @@ export const OuterCanvas = memo(
                         }
                     }
                 }
-            }, [scopeId, onMouseMove, onTouchMove])
+            }, [onMouseMove, onTouchMove])
 
             return (
                 <div

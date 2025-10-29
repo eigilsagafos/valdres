@@ -1,14 +1,11 @@
-import { useAtom, useSetAtom } from "valdres-react"
 import { useEffect } from "react"
-import { scaleAtom } from "../atoms/scaleAtom"
+import { useAtom, useSetAtom } from "valdres-react"
 import { fullscreenEnabledAtom } from "../atoms/fullscreenEnabledAtom"
-import type { ScopeId } from "../../types/ScopeId"
+import { scaleAtom } from "../atoms/scaleAtom"
 
-export const useFullscreen = (ref, scopeId: ScopeId, enabled = true) => {
-    const [isFullscreen, setIsFullscreen] = useAtom(
-        fullscreenEnabledAtom(scopeId),
-    )
-    const setScale = useSetAtom(scaleAtom(scopeId))
+export const useFullscreen = (ref, enabled = true) => {
+    const [isFullscreen, setIsFullscreen] = useAtom(fullscreenEnabledAtom)
+    const setScale = useSetAtom(scaleAtom)
 
     useEffect(() => {
         if (isFullscreen === false) {

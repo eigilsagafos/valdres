@@ -1,5 +1,4 @@
-import { atomFamily } from "valdres"
-import type { ScopeId } from "../../types/ScopeId"
+import { atom } from "valdres"
 
 const DEFAULT_VALUE = Object.freeze({
     left: 0,
@@ -12,18 +11,15 @@ const DEFAULT_VALUE = Object.freeze({
     y: 0,
 })
 
-export const innerCanvasSizeAtom = atomFamily<
-    ScopeId,
-    {
-        left: number
-        right: number
-        bottom: number
-        top: number
-        width: number
-        height: number
-        x: number
-        y: number
-    }
->(DEFAULT_VALUE, {
+export const innerCanvasSizeAtom = atom<{
+    left: number
+    right: number
+    bottom: number
+    top: number
+    width: number
+    height: number
+    x: number
+    y: number
+}>(DEFAULT_VALUE, {
     name: "@valdres-react/panable/innerCanvasSize",
 })

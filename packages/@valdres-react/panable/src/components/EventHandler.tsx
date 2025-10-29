@@ -1,17 +1,10 @@
 import { useValue } from "valdres-react"
 import { cursorSelector } from "../state/selectors/cursorSelector"
 import { usePanableEvents } from "../state/hooks/usePanableEvents"
-import type { ScopeId } from "../types/ScopeId"
 
-export const EventHandler = ({
-    scopeId,
-    children,
-}: {
-    scopeId: ScopeId
-    children: React.ReactNode
-}) => {
-    const cursor = useValue(cursorSelector(scopeId))
-    const ref = usePanableEvents(scopeId)
+export const EventHandler = ({ children }: { children: React.ReactNode }) => {
+    const cursor = useValue(cursorSelector)
+    const ref = usePanableEvents()
     return (
         <div
             ref={ref}

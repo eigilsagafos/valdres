@@ -9,7 +9,6 @@ import type { Selector } from "../../../valdres/src/types/Selector"
 export const useDraggable = ({
     id,
     meta,
-    scopeId,
     onMouseDown,
     onMouseUp,
     onDragStart,
@@ -24,7 +23,6 @@ export const useDraggable = ({
 }: {
     id: any
     meta: SerializableParam
-    scopeId: string
     onMouseDown: (e: React.MouseEvent | React.TouchEvent) => void
     onMouseUp: (e: React.MouseEvent) => void
     onDragStart: EventCallbackFn
@@ -56,7 +54,6 @@ export const useDraggable = ({
                         {
                             id,
                             eventId: "mouse",
-                            scopeId,
                             meta,
                             originPosition: itemPos,
                             originSize: itemSize,
@@ -74,7 +71,6 @@ export const useDraggable = ({
         [
             id,
             onMouseDown,
-            scopeId,
             meta,
             itemPos,
             dropzonesSelector,
@@ -101,7 +97,6 @@ export const useDraggable = ({
                         {
                             id,
                             eventId: t.identifier,
-                            scopeId,
                             meta,
                             originPosition: itemPos,
                             originSize: itemSize,
@@ -119,7 +114,6 @@ export const useDraggable = ({
         [
             id,
             onMouseDown,
-            scopeId,
             meta,
             itemPos,
             itemSize,

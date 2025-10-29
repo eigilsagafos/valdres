@@ -1,7 +1,5 @@
 import { useValue } from "valdres-react"
-import { actionAtom } from "../atoms/actionAtom"
-import type { ScopeId } from "../../types/ScopeId"
 import type { EventId } from "../../types/EventId"
+import { actionAtom } from "../atoms/actionAtom"
 
-export const useAction = (args: { scopeId: ScopeId; eventId: EventId }) =>
-    useValue(actionAtom(args))
+export const useAction = (eventId: EventId) => useValue(actionAtom(eventId))

@@ -1,26 +1,16 @@
-// import { currentCapabilitesSelector } from '../../../state/selectors/currentCapabilitesSelector'
-import { updateDragActionsAfterMove } from "./updateDragActionsAfterMove"
 import type { Transaction } from "valdres"
-import type { ScopeId } from "../../types/ScopeId"
-import { scaleAtom } from "../atoms/scaleAtom"
 import { cameraPositionAtom } from "../atoms/cameraPositionAtom"
+import { scaleAtom } from "../atoms/scaleAtom"
+import { updateDragActionsAfterMove } from "./updateDragActionsAfterMove"
 
-export const moveDelta = (
-    txn: Transaction,
-    x: number,
-    y: number,
-    scopeId: ScopeId,
-) => {
-    // const capabilities = recoil.get(currentCapabilitesSelector)
-    // if (capabilities.actions.pan.enabled && capabilities.actions.pan.gestures) {
-    const scale = txn.get(scaleAtom(scopeId))
+export const moveDelta = (txn: Transaction, x: number, y: number) => {
+    const scale = txn.get(scaleAtom)
     const deltaX = x / scale
     const deltaY = y / scale
-    updateDragActionsAfterMove(txn, scopeId, deltaX, deltaY)
-    txn.set(cameraPositionAtom(scopeId), curr => ({
+    updateDragActionsAfterMove(txn, deltaX, deltaY)
+    txn.set(cameraPositionAtom, curr => ({
         x: curr.x - deltaX,
         y: curr.y - deltaY,
         animate: false,
     }))
-    // }
 }

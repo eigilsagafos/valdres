@@ -45,7 +45,6 @@ export { useUpdateAtomRectOnSizeChange } from "./state/hooks/useUpdateAtomRectOn
 export { type Action } from "./types/Action"
 export { type DragAction } from "./types/DragAction"
 export { type EventId } from "./types/EventId"
-export { type ScopeId } from "./types/ScopeId"
 
 // Utils
 export { getCursorPositionRelative } from "./utils/getCursorPositionRelative"

@@ -1,24 +1,18 @@
-import { selectorFamily } from "valdres"
+import { selector } from "valdres"
 import type { DragAction } from "../../types/DragAction"
-import type { EventId } from "../../types/EventId"
-import type { ScopeId } from "../../types/ScopeId"
 import { actionAtom } from "../atoms/actionAtom"
 import { activeActionsAtom } from "../atoms/activeActionsAtom"
 
-export const activeInitializedDragEventIds = selectorFamily<ScopeId, EventId[]>(
-    scopeId => get => {
-        return get(activeActionsAtom(scopeId))
+export const activeInitializedDragEventIds = selector(
+    get => {
+        return get(activeActionsAtom)
             .filter(([eventId, kind]) => {
                 if (kind !== "drag") return false
-                const action = get(
-                    actionAtom({ eventId, scopeId }),
-                ) as DragAction
+                const action = get(actionAtom(eventId)) as DragAction
                 if (!action.initialized) return false
                 return true
             })
             .map(([eventId]) => eventId)
     },
-    {
-        name: "@valdres-react/panable/activeInitializedDragEventIds",
-    },
+    { name: "@valdres-react/panable/activeInitializedDragEventIds" },
 )

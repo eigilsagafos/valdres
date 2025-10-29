@@ -1,6 +1,5 @@
 import { draggableItemAtom } from "@valdres-react/draggable"
 import type { Transaction } from "valdres"
-import type { ScopeId } from "../../types/ScopeId"
 import { actionAtom } from "../atoms/actionAtom"
 import { isModifierKeyActiveAtom } from "../atoms/isModifierKeyActiveAtom"
 import { activeActionsAtom } from "../atoms/activeActionsAtom"
@@ -8,13 +7,12 @@ import { configAtom } from "../atoms/configAtom"
 
 export const finishAction = (
     txn: Transaction,
-    scopeId: ScopeId,
     eventId: string | number,
     e?: any,
 ) => {
-    const action = txn.get(actionAtom({ eventId, scopeId }))
+    const action = txn.get(actionAtom(eventId))
     if (action) {
-        const { onCanvasClick } = txn.get(configAtom(scopeId))
+        const { onCanvasClick } = txn.get(configAtom)
         if (action.kind === "drag") {
             const item = txn.get(draggableItemAtom(action.id))
             if (item.isSnapping) {
@@ -47,9 +45,9 @@ export const finishAction = (
             onCanvasClick(txn, e)
         }
 
-        txn.set(activeActionsAtom(scopeId), curr =>
+        txn.set(activeActionsAtom, curr =>
             curr.filter(([id]) => id !== eventId),
         )
-        txn.reset(actionAtom({ eventId, scopeId }))
+        txn.reset(actionAtom(eventId))
     }
 }

@@ -1,29 +1,25 @@
 import type { Transaction } from "valdres"
+import type { EventId } from "../../types/EventId"
 import { actionAtom } from "../atoms/actionAtom"
 import { activeActionsAtom } from "../atoms/activeActionsAtom"
 import { scaleAtom } from "../atoms/scaleAtom"
-import type { ScopeId } from "../../types/ScopeId"
-import type { EventId } from "../../types/EventId"
 
 export const upgradeMoveToZoom = (
     txn: Transaction,
-    scopeId: ScopeId,
     moveEventId: EventId,
     t: Touch,
 ) => {
-    const initialScale = txn.get(scaleAtom(scopeId))
-    txn.set(actionAtom({ eventId: moveEventId, scopeId }), {
+    const initialScale = txn.get(scaleAtom)
+    txn.set(actionAtom(moveEventId), {
         kind: "zoom",
         eventId: moveEventId,
-        scopeId,
         initialScale,
     })
     const eventId = t.identifier
-    txn.set(activeActionsAtom(scopeId), curr => [...curr, [eventId, "zoom"]])
-    txn.set(actionAtom({ eventId, scopeId }), {
+    txn.set(activeActionsAtom, curr => [...curr, [eventId, "zoom"]])
+    txn.set(actionAtom(eventId), {
         kind: "zoom",
         eventId,
-        scopeId,
         initialScale,
     })
 }

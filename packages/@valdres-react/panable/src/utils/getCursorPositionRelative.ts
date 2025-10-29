@@ -32,12 +32,12 @@ const calculateRelativeCursorPos = ({
     }
 }
 
-export const getCursorPositionRelative = (get, scopeId) => {
-    const cursor = get(cursorPositionAtom(scopeId))
-    const camera = get(cameraPositionAtom(scopeId))
-    const outerCanvas = get(outerCanvasSizeAtom(scopeId))
-    const innerCanvas = get(innerCanvasSizeAtom(scopeId))
-    const scale = get(scaleAtom(scopeId))
+export const getCursorPositionRelative = get => {
+    const cursor = get(cursorPositionAtom)
+    const camera = get(cameraPositionAtom)
+    const outerCanvas = get(outerCanvasSizeAtom)
+    const innerCanvas = get(innerCanvasSizeAtom)
+    const scale = get(scaleAtom)
     return calculateRelativeCursorPos({
         cursor,
         camera,

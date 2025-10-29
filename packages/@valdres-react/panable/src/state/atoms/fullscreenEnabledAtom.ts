@@ -1,6 +1,5 @@
-import { atomFamily } from "valdres"
-import type { ScopeId } from "../../types/ScopeId"
+import { atom } from "valdres"
 
-export const fullscreenEnabledAtom = atomFamily<ScopeId, boolean>(false, {
+export const fullscreenEnabledAtom = atom<boolean>(false, {
     name: "@valdres-react/panable/fullscreenEnabledAtom",
 })
