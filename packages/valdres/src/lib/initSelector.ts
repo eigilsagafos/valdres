@@ -38,9 +38,8 @@ export const evaluateSelector = <V>(
 ) => {
     const updatedDependencies = new Set<State<any>>()
     if (circularDependencySet.has(selector)) {
-        // throw new SelectorCircularDependencyError()
+        throw new SelectorCircularDependencyError()
     }
-
     circularDependencySet.add(selector)
 
     let result
@@ -89,6 +88,7 @@ export const evaluateSelector = <V>(
     }
 
     data.stateDependencies.set(selector, updatedDependencies)
+    circularDependencySet.delete(selector)
     return result
 }
 

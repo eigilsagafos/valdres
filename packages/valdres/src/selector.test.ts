@@ -317,7 +317,7 @@ describe("selector", () => {
         )
     })
 
-    test.todo("circular dependency named selectors", () => {
+    test("circular dependency named selectors", () => {
         const selector3 = selector(get => get(selector1), {
             name: "Selector 3",
         })
@@ -337,7 +337,7 @@ describe("selector", () => {
         )
     })
 
-    test.todo("circular dependency anonymous selectors", () => {
+    test("circular dependency anonymous selectors", () => {
         const selector3 = selector(get => get(selector2))
         const selector2 = selector(get => get(selector1))
         const selector1 = selector(get => get(selector3))
