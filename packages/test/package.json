@@ -2,5 +2,5 @@
     "name": "@valdres/test",
     "module": "index.ts",
     "private": true,
-    "version": "0.2.0-pre.21"
+    "version": "0.2.0-pre.22"
 }
