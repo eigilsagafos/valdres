@@ -258,22 +258,25 @@ export const propagateUpdatedAtoms = (
     families: Map<AtomFamily<any>, Set<AtomFamilyAtom<any>>> = new Map(),
     isRecursive = false,
     timestamp = performance.now(),
+    selectorsOnly = false,
 ) => {
-    // const subscriptions = new Set<Subscription>()
-    // const families = new Map<AtomFamily<any>>()
     const selectors = new Set<Selector>()
     for (const atom of atoms) {
         addSetToSet(data.stateDependents.get(atom), selectors)
-        addSetToSet(data.subscriptions.get(atom), subscriptions)
+        if (!selectorsOnly) {
+            //**
+            // This check was added to make the test in selector.test.ts named
+            // "selector in scope dependent on atom not set in scope but in parent scope works correctly"
+            // pass. This was a quick fix to make it work. */
+            addSetToSet(data.subscriptions.get(atom), subscriptions)
+            if (isFamilyAtom(atom)) {
+                if (!families.has(atom.family)) {
+                    families.set(atom.family, new Set())
+                }
 
-        if (isFamilyAtom(atom)) {
-            // atom.family
-            if (!families.has(atom.family)) {
-                families.set(atom.family, new Set())
+                // @ts-ignore
+                families.get(atom.family).add(atom)
             }
-
-            // @ts-ignore
-            families.get(atom.family).add(atom)
         }
     }
 
@@ -290,6 +293,28 @@ export const propagateUpdatedAtoms = (
 
     if (!isRecursive) {
         propagateDirtySelectors(atoms, selectors, data, subscriptions, families)
+        if (data.scopes) {
+            for (const scopeId in data.scopes) {
+                const scope = data.scopes[scopeId]
+                const atomsToUpdateInScope = []
+                for (const atom of atoms) {
+                    if (!scope.values.has(atom)) {
+                        atomsToUpdateInScope.push(atom)
+                    }
+                }
+                if (atomsToUpdateInScope.length > 0) {
+                    propagateUpdatedAtoms(
+                        atomsToUpdateInScope,
+                        scope,
+                        undefined,
+                        undefined,
+                        false,
+                        timestamp,
+                        true,
+                    )
+                }
+            }
+        }
     }
 }
 

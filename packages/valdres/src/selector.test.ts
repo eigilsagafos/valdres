@@ -400,4 +400,26 @@ describe("selector", () => {
         rootStore.set(primitiveAtom, 1)
         // expect(onChangeDerived).toHaveBeenCalledTimes(1)
     })
+
+    test("selector in scope dependent on atom not set in scope but in parent scope works correctly ", () => {
+        const rootStore = store()
+        const nestedStore = rootStore.scope("nested")
+        const globalSettings = atom<{ theme: string }>(undefined, {
+            name: "globalSettings",
+        })
+        const themeSelector = selector(get => get(globalSettings).theme, {
+            name: "themeSelector",
+        })
+
+        rootStore.set(globalSettings, { theme: "dark" })
+        expect(nestedStore.get(themeSelector)).toBe("dark")
+        rootStore.set(globalSettings, { theme: "light" })
+        expect(nestedStore.get(themeSelector)).toBe("light")
+        nestedStore.set(globalSettings, { theme: "dark" })
+        expect(rootStore.get(themeSelector)).toBe("light")
+        expect(nestedStore.get(themeSelector)).toBe("dark")
+        nestedStore.del(globalSettings)
+        expect(rootStore.get(themeSelector)).toBe("light")
+        expect(nestedStore.get(themeSelector)).toBe("light")
+    })
 })
