@@ -22,7 +22,7 @@ type DeleteAtom = <
 ) => void
 
 export type ScopeFn = {
-    <ReturnType extends any>(scopeId: string, callback: undefined): ScopedStore
+    <ReturnType extends any>(scopeId: string): ScopedStore
     <ReturnType extends any>(
         scopeId: string,
         callback: (store: ScopedStore) => ReturnType,

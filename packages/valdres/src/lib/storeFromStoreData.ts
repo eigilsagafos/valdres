@@ -68,7 +68,7 @@ export function storeFromStoreData(
 
     const txn = (callback: TransactionFn) => transaction(callback, data)
 
-    const scope: ScopeFn = (scopeId, callback) => {
+    const scope: ScopeFn = ((scopeId: string, callback?: any) => {
         if (callback) {
             if (!(scopeId in data.scopes)) {
                 throw new Error(`Scope ${scopeId} does not exist`)
@@ -108,7 +108,7 @@ export function storeFromStoreData(
             const newStore = storeFromStoreData(data.scopes[scopeId], detach)
             return newStore
         }
-    }
+    }) as ScopeFn
 
     if (detach) {
         return {
