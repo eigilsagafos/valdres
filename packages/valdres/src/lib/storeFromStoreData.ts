@@ -4,7 +4,7 @@ import type { Family } from "../types/Family"
 import type { GetValue } from "../types/GetValue"
 import type { SetAtom } from "../types/SetAtom"
 import type { State } from "../types/State"
-import type { ScopedStore, Store } from "../types/Store"
+import type { ScopedStore, ScopeFn, Store } from "../types/Store"
 import type { ScopedStoreData, StoreData } from "../types/StoreData"
 import type { TransactionFn } from "../types/TransactionFn"
 import { isAtom } from "../utils/isAtom"
@@ -67,29 +67,47 @@ export function storeFromStoreData(
     ) => subscribe(state, callback, deepEqualCheckBeforeCallback, data)
 
     const txn = (callback: TransactionFn) => transaction(callback, data)
-    const scope = (scopeId: string) => {
-        let scopedStoreData
-        if (scopeId in data.scopes) {
-            scopedStoreData = data.scopes[scopeId]
-        } else {
-            scopedStoreData = createStoreData(scopeId, data)
-            data.scopes[scopeId] = scopedStoreData
-        }
-        const detach = () => {
-            scopedStoreData.scopeConsumers.delete(detach)
-            if (scopedStoreData.scopeConsumers.size === 0) {
-                delete data.scopes[scopeId]
-                return true
-            }
-            console.warn(
-                `Scope ${scopeId} still has ${scopedStoreData.scopeConsumers.size} consumers, will not detach`,
-            )
-            return false
-        }
 
-        scopedStoreData.scopeConsumers.add(detach)
-        const newStore = storeFromStoreData(data.scopes[scopeId], detach)
-        return newStore
+    const scope: ScopeFn = (scopeId, callback) => {
+        if (callback) {
+            if (!(scopeId in data.scopes)) {
+                throw new Error(`Scope ${scopeId} does not exist`)
+            }
+            const scopedStoreData = data.scopes[scopeId]
+            const scopedStore = storeFromStoreData(
+                scopedStoreData,
+            ) as ScopedStore
+            const res = callback(scopedStore)
+            return res
+        } else {
+            let scopedStoreData
+            if (scopeId in data.scopes) {
+                scopedStoreData = data.scopes[scopeId]
+            } else {
+                scopedStoreData = createStoreData(scopeId, data)
+                data.scopes[scopeId] = scopedStoreData
+            }
+            const detach = (expectedToDestory = false) => {
+                scopedStoreData.scopeConsumers.delete(detach)
+                if (scopedStoreData.scopeConsumers.size === 0) {
+                    if (expectedToDestory) {
+                        console.log("Deleting scope", scopeId)
+                    }
+                    delete data.scopes[scopeId]
+                    return true
+                }
+                if (expectedToDestory) {
+                    console.warn(
+                        `Scope ${scopeId} still has ${scopedStoreData.scopeConsumers.size} consumers, will not detach`,
+                    )
+                }
+                return false
+            }
+
+            scopedStoreData.scopeConsumers.add(detach)
+            const newStore = storeFromStoreData(data.scopes[scopeId], detach)
+            return newStore
+        }
     }
 
     if (detach) {

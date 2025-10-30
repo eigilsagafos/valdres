@@ -21,7 +21,8 @@ export const Scope = ({
         throw new Error(
             "No <Provider> in tree. <Scope> has to be nested under a <Provider> to work",
         )
-    const scopedStore = useMemo(() => {
+    const [scopedStore, scopeCreated] = useMemo(() => {
+        const scopeCreated = !currentStore.data.scopes?.[scopeId]
         const store = currentStore.scope(scopeId)
         if (initialize) {
             store.txn(txn => {
@@ -31,14 +32,14 @@ export const Scope = ({
                 }
             })
         }
-        return store
+        return [store, scopeCreated]
     }, [scopeId, currentStore])
 
     useEffect(() => {
         return () => {
-            return scopedStore?.detach?.()
+            return scopedStore?.detach?.(scopeCreated)
         }
-    }, [scopedStore, scopeId, currentStore])
+    }, [scopedStore, scopeCreated])
 
     return (
         <StoreContext.Provider value={[scopedStore, allStores]}>

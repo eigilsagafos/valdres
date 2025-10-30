@@ -21,6 +21,14 @@ type DeleteAtom = <
     atom: AtomFamilyAtom<Value, Args>,
 ) => void
 
+export type ScopeFn = {
+    <ReturnType extends any>(scopeId: string, callback: undefined): ScopedStore
+    <ReturnType extends any>(
+        scopeId: string,
+        callback: (store: ScopedStore) => ReturnType,
+    ): ReturnType
+}
+
 export type Store<T = StoreData> = {
     data: T
     get: GetValue
@@ -29,9 +37,9 @@ export type Store<T = StoreData> = {
     reset: ResetAtom
     del: DeleteAtom
     txn: (callback: TransactionFn) => void
-    scope: (scopeId: string) => ScopedStore
+    scope: ScopeFn
 }
 
 export type ScopedStore = Store<ScopedStoreData> & {
-    detach: () => void
+    detach: (warnIfNotDestroyed?: boolean) => void
 }

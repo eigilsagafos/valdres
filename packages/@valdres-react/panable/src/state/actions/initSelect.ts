@@ -1,10 +1,9 @@
 import type { Transaction } from "valdres"
 import type { EventId } from "../../types/EventId"
-import type { ScopeId } from "../../types/ScopeId"
 import { actionAtom } from "../atoms/actionAtom"
 import { activeActionsAtom } from "../atoms/activeActionsAtom"
-import { cursorPositionRelativeSelector } from "../selectors/cursorPositionRelativeSelector"
 import { configAtom } from "../atoms/configAtom"
+import { cursorPositionRelativeSelector } from "../selectors/cursorPositionRelativeSelector"
 
 export const initSelect = (
     txn: Transaction,
