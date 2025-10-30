@@ -1,6 +1,6 @@
 {
     "name": "@valdres-react/hotkeys",
-    "version": "0.2.0-pre.22",
+    "version": "0.2.0-pre.23",
     "license": "MIT",
     "author": {
         "name": "Eigil Sagafos"
@@ -23,19 +23,19 @@
         "test": "echo 'no tests'"
     },
     "dependencies": {
-        "@valdres/hotkeys": "0.2.0-pre.22"
+        "@valdres/hotkeys": "0.2.0-pre.23"
     },
     "devDependencies": {
         "@testing-library/react": "16.3.0",
         "react": "19.1.1",
         "react-dom": "19.1.1",
         "typescript": "5.9.2",
-        "valdres-react": "0.2.0-pre.22"
+        "valdres-react": "0.2.0-pre.23"
     },
     "peerDependencies": {
         "react": ">=18",
-        "valdres": "0.2.0-pre.22",
-        "valdres-react": "0.2.0-pre.22"
+        "valdres": "0.2.0-pre.23",
+        "valdres-react": "0.2.0-pre.23"
     },
     "publishConfig": {
         "access": "public",
