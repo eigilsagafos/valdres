@@ -113,8 +113,8 @@ export const drag = (
 
     // localDeltaX is the distance between current mouse position and initial mouse position.
     // It starts out as 0, and increases as you move away from the initial position.
-    const localDeltaX = mousePosX - initMousePosX
-    const localDeltaY = mousePosY - initMousePosY
+    const localDeltaX = Math.floor(mousePosX - initMousePosX)
+    const localDeltaY = Math.floor(mousePosY - initMousePosY)
 
     // OffsetX and offsetY is the distance between center of the draggableItem and the mouse.
     // In other words, if you click in the center of a draggableItem, offsetX and offsetY should be 0.
