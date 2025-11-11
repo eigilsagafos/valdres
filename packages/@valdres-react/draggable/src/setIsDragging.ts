@@ -1,6 +1,7 @@
 import {
     actionAtom,
     activeActionsAtom,
+    cameraPositionAtom,
     type EventId,
 } from "@valdres-react/panable"
 import type { Selector, Transaction } from "valdres"
@@ -40,6 +41,7 @@ export const setIsDragging = (
     const rect = event.currentTarget.getBoundingClientRect()
     const offsetX = event.clientX - rect.left
     const offsetY = event.clientY - rect.top
+    const cameraPosition = txn.get(cameraPositionAtom)
 
     txn.set(activeActionsAtom, curr => [...curr, [eventId, "drag"]])
     txn.set(actionAtom(eventId), {
@@ -50,6 +52,10 @@ export const setIsDragging = (
         initialized: false,
         originPosition,
         originSize,
+        initialCameraPosition: {
+            x: cameraPosition.x,
+            y: cameraPosition.y,
+        },
         initialMousePosition: {
             x,
             y,

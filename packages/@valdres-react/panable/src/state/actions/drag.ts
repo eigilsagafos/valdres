@@ -5,6 +5,7 @@ import type { DragAction } from "../../types/DragAction"
 import { actionAtom } from "../atoms/actionAtom"
 import { scaleAtom } from "../atoms/scaleAtom"
 import type { DropZone } from "./../../types/DropZone"
+import { cameraPositionAtom } from "../atoms/cameraPositionAtom"
 
 const checkForActiveDropzone = (
     zones: Array<DropZone>,
@@ -86,6 +87,7 @@ export const drag = (
     }))
 
     const scale = txn.get(scaleAtom)
+    const cameraPosition = txn.get(cameraPositionAtom)
     // Compensate all variables by scale/zoom level
     const mousePosX = (clientX + window.scrollX) / scale
     const mousePosY = (clientY + window.scrollY) / scale
@@ -93,6 +95,12 @@ export const drag = (
     const initMousePosY = action.initialMousePosition.y / scale
     const mouseOffsetX = action.mouseOffset.x / scale
     const mouseOffsetY = action.mouseOffset.y / scale
+
+    // These values starts out as 0, but if you pan while dragging we calculate the delta.
+    const cameraPositionDeltaX =
+        action.initialCameraPosition.x - cameraPosition.x
+    const cameraPositionDeltaY =
+        action.initialCameraPosition.y - cameraPosition.y
 
     const originPosition =
         typeof action?.originPosition === "function"
@@ -114,8 +122,10 @@ export const drag = (
     const offsetY = mouseOffsetY - originSize.h / 2
 
     // localX and localY is the position in the local (process) coordinate space.
-    const localX = originPosition.x + localDeltaX + mouseOffsetX
-    const localY = originPosition.y + localDeltaY + mouseOffsetY
+    const localX =
+        originPosition.x + localDeltaX + mouseOffsetX + cameraPositionDeltaX
+    const localY =
+        originPosition.y + localDeltaY + mouseOffsetY + cameraPositionDeltaY
 
     const currentActiveDropzone = checkForActiveDropzone(
         dropZones,
@@ -145,8 +155,8 @@ export const drag = (
             ...state,
             isDragging: true,
             isSnapping: false,
-            x: localDeltaX + offsetX,
-            y: localDeltaY + offsetY,
+            x: localDeltaX + offsetX + cameraPositionDeltaX,
+            y: localDeltaY + offsetY + cameraPositionDeltaY,
         }))
 
         if (action.activeDropzone) {

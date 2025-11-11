@@ -12,6 +12,10 @@ export type DragAction<Meta = any> = {
     meta?: Meta
     originPosition: Point | (() => Point)
     originSize: Size | (() => Size)
+    initialCameraPosition: {
+        x: number
+        y: number
+    }
     initialMousePosition: {
         x: number
         y: number
