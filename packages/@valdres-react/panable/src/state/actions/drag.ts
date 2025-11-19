@@ -5,7 +5,6 @@ import type { DragAction } from "../../types/DragAction"
 import { calculateRelativeCursorPos } from "../../utils/getCursorPositionRelative"
 import { actionAtom } from "../atoms/actionAtom"
 import { cameraPositionAtom } from "../atoms/cameraPositionAtom"
-import { cursorPositionAtom } from "../atoms/cursorPositionAtom"
 import { innerCanvasSizeAtom } from "../atoms/innerCanvasSizeAtom"
 import { outerCanvasSizeAtom } from "../atoms/outerCanvasSizeAtom"
 import { scaleAtom } from "../atoms/scaleAtom"
@@ -164,19 +163,21 @@ export const drag = (
         return
     }
 
-    // These values starts out as 0, but if you pan while dragging we calculate the delta.
+    // cameraPositionDist starts out as 0, but if you pan while dragging we calculate the dist.
     const cameraPositionDist = {
         x: camPosInit.x - camPos.x,
         y: camPosInit.y - camPos.y,
     }
 
-    // localDeltaX is the distance between current mouse position and initial mouse position.
+    // localDist is the distance between current mouse position and initial mouse position.
     // It starts out as 0, and increases as you move away from the initial position.
-    const localDist = {
+    const mouseDist = {
         x: (mousePos.x - mousePosInit.x) / scale,
         y: (mousePos.y - mousePosInit.y) / scale,
     }
 
+    // This is the local coordinate WITHIN the draggableItem.
+    // mouseOffset is {x: 0, y: 0} when dragging at the top left corner of the item.
     const mouseOffset = {
         x: mouseOffsetInit.x / scale,
         y: mouseOffsetInit.y / scale,
@@ -184,8 +185,8 @@ export const drag = (
 
     // localX and localY is the position in the local (process) coordinate space.
     const local = {
-        x: itemPos.x + localDist.x + mouseOffset.x + cameraPositionDist.x,
-        y: itemPos.y + localDist.y + mouseOffset.y + cameraPositionDist.y,
+        x: itemPos.x + mouseDist.x + cameraPositionDist.x + mouseOffset.x,
+        y: itemPos.y + mouseDist.y + cameraPositionDist.y + mouseOffset.y,
     }
 
     const activeDropzone = checkForActiveDropzone(
@@ -212,9 +213,8 @@ export const drag = (
             y: activeDropzone.y - itemPos.y - dropzoneCenterY,
         }))
     } else if (action.initialized) {
-        // offset.x and offset.y is the distance between center of the draggableItem and the mouse.
-        // In other words, if you click in the center of a draggableItem, offset.x and offset.y should be 0.
-        const offset = {
+        // itemCenter moves the draggableItems center underneath the cursor.
+        const itemCenter = {
             x: mouseOffset.x - itemSize.w / 2,
             y: mouseOffset.y - itemSize.h / 2,
         }
@@ -222,8 +222,8 @@ export const drag = (
             ...state,
             isDragging: true,
             isSnapping: false,
-            x: localDist.x + cameraPositionDist.x + offset.x,
-            y: localDist.y + cameraPositionDist.y + offset.y,
+            x: mouseDist.x + cameraPositionDist.x + itemCenter.x,
+            y: mouseDist.y + cameraPositionDist.y + itemCenter.y,
         }))
 
         if (action.activeDropzone) {
