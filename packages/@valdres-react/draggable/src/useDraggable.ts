@@ -33,7 +33,7 @@ export const useDraggable = ({
     itemPos: Point
     itemSize: Size
     dragEnabled: boolean
-    centerDragSource: boolean
+    centerDragSource?: boolean
 }): React.MutableRefObject<any> => {
     const ref = useRef<HTMLDivElement>(null)
     const txn = useTransaction()
@@ -55,8 +55,8 @@ export const useDraggable = ({
                             id,
                             eventId: "mouse",
                             meta,
-                            originPosition: itemPos,
-                            originSize: itemSize,
+                            itemPos,
+                            itemSize,
                             onDragStart,
                             onDragInit,
                             onDragEnd,
@@ -98,8 +98,8 @@ export const useDraggable = ({
                             id,
                             eventId: t.identifier,
                             meta,
-                            originPosition: itemPos,
-                            originSize: itemSize,
+                            itemPos,
+                            itemSize,
                             onDragStart,
                             onDragInit,
                             onDragEnd,

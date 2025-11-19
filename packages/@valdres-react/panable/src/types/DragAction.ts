@@ -10,8 +10,8 @@ export type DragAction<Meta = any> = {
     eventId: EventId
     initialized: boolean
     meta?: Meta
-    originPosition: Point | (() => Point)
-    originSize: Size | (() => Size)
+    itemPos: Point
+    itemSize: Size
     initialMousePosition: {
         x: number
         y: number
