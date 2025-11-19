@@ -177,28 +177,28 @@ export const drag = (
     // localX and localY is the position in the local (process) coordinate space.
     const localX = itemPos.x + localDeltaX + mouseOffsetX + cameraPositionDeltaX
     const localY = itemPos.y + localDeltaY + mouseOffsetY + cameraPositionDeltaY
-    const currentActiveDropzone = checkForActiveDropzone(
+    const activeDropzone = checkForActiveDropzone(
         dropZones,
         localX,
         localY,
         itemSize,
     )
 
-    if (currentActiveDropzone) {
+    if (activeDropzone) {
         txn.set(actionAtom(eventId), curr => ({
             ...curr!,
-            activeDropzone: currentActiveDropzone,
+            activeDropzone,
         }))
 
-        const dropzoneCenterX = (itemSize.w - currentActiveDropzone.w) / 2
-        const dropzoneCenterY = (itemSize.h - currentActiveDropzone.h) / 2
+        const dropzoneCenterX = (itemSize.w - activeDropzone.w) / 2
+        const dropzoneCenterY = (itemSize.h - activeDropzone.h) / 2
 
         txn.set(draggableItemAtom(action.id), state => ({
             ...state,
             isDragging: true,
             isSnapping: true,
-            x: currentActiveDropzone.x - itemPos.x - dropzoneCenterX,
-            y: currentActiveDropzone.y - itemPos.y - dropzoneCenterY,
+            x: activeDropzone.x - itemPos.x - dropzoneCenterX,
+            y: activeDropzone.y - itemPos.y - dropzoneCenterY,
         }))
     } else if (action.initialized) {
         txn.set(draggableItemAtom(action.id), state => ({
