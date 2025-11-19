@@ -2,9 +2,12 @@ import { draggableItemAtom } from "@valdres-react/draggable"
 import { atom, type Transaction } from "valdres"
 import type { Size } from "../../../../draggable/types/Size"
 import type { DragAction } from "../../types/DragAction"
-import { getCursorPositionRelative } from "../../utils/getCursorPositionRelative"
+import { calculateRelativeCursorPos } from "../../utils/getCursorPositionRelative"
 import { actionAtom } from "../atoms/actionAtom"
 import { cameraPositionAtom } from "../atoms/cameraPositionAtom"
+import { cursorPositionAtom } from "../atoms/cursorPositionAtom"
+import { innerCanvasSizeAtom } from "../atoms/innerCanvasSizeAtom"
+import { outerCanvasSizeAtom } from "../atoms/outerCanvasSizeAtom"
 import { scaleAtom } from "../atoms/scaleAtom"
 import type { DropZone } from "./../../types/DropZone"
 
@@ -42,10 +45,10 @@ const checkForActiveDropzone = (
 }
 
 let dropzones: Array<DropZone> = []
-const mousePosInitAtom = atom({ x: 0, y: 0 })
-const camPosInitAtom = atom({ x: 0, y: 0 })
-const mouseOffsetInitAtom = atom({ x: 0, y: 0 })
 const scalePreviousAtom = atom(1)
+const camPosInitAtom = atom({ x: 0, y: 0 })
+const mousePosInitAtom = atom({ x: 0, y: 0 })
+const mouseOffsetInitAtom = atom({ x: 0, y: 0 })
 
 export const drag = (
     txn: Transaction,
@@ -55,16 +58,23 @@ export const drag = (
     event: MouseEvent | TouchEvent,
 ) => {
     let action = txn.get(actionAtom(eventId)) as DragAction
+    const { itemPos, itemSize } = action
     const scale = txn.get(scaleAtom)
+    const scalePrevious = txn.get(scalePreviousAtom)
     const camPos = txn.get(cameraPositionAtom)
-    const mousePosX = clientX + window.scrollX
-    const mousePosY = clientY + window.scrollY
+    const camPosInit = txn.get(camPosInitAtom)
+    const mouseOffsetInit = txn.get(mouseOffsetInitAtom)
+    const mousePosInit = txn.get(mousePosInitAtom)
+    const mousePos = {
+        x: clientX + window.scrollX,
+        y: clientY + window.scrollY,
+    }
 
     if (action?.invalid || action === null) return null
 
     if (action.initialized === false) {
-        const deltaX = Math.abs(mousePosX - action.initialMousePosition.x)
-        const deltaY = Math.abs(mousePosY - action.initialMousePosition.y)
+        const deltaX = Math.abs(mousePos.x - action.initialMousePosition.x)
+        const deltaY = Math.abs(mousePos.y - action.initialMousePosition.y)
 
         if (!(deltaX > 2 || deltaY > 2)) {
             return
@@ -98,7 +108,6 @@ export const drag = (
             dropzones = txn.get(action.dropzonesSelector)
         }
     }
-
     if (dropzones.length === 0) {
         dropzones = txn.get(action.dropzonesSelector)
     }
@@ -108,45 +117,14 @@ export const drag = (
         ...v,
     }))
 
-    const { itemPos, itemSize } = action
-    const camPosInit = txn.get(camPosInitAtom)
-    const mousePosInit = txn.get(mousePosInitAtom)
-    const scalePrevious = txn.get(scalePreviousAtom)
-    const mouseOffsetInit = txn.get(mouseOffsetInitAtom)
-
-    // These values starts out as 0, but if you pan while dragging we calculate the delta.
-    const cameraPositionDeltaX = camPosInit.x - camPos.x
-    const cameraPositionDeltaY = camPosInit.y - camPos.y
-
-    // When zooming we need to recalculate: mousePosInit, camPosInit and mouseOffset
+    // When zooming we need to recalculate: mousePosInit, mouseOffset and camPosInit.
     if (scalePrevious !== scale) {
         const scalar = scale / scalePrevious
 
         // Update initialMousePosition
-        const originalMouseVectorX = mousePosInit.x - mousePosX
-        const originalMouseVectorY = mousePosInit.y - mousePosY
-        const scaledMouseVectorX = originalMouseVectorX * scalar
-        const scaledMouseVectorY = originalMouseVectorY * scalar
-        const deltaMouseX = mousePosX + scaledMouseVectorX
-        const deltaMouseY = mousePosY + scaledMouseVectorY
-        txn.set(mousePosInitAtom, { x: deltaMouseX, y: deltaMouseY })
-
-        // Calculate the camera shift caused by zoom
-        // The zoom function shifts camera to keep cursor at same logical position
-        // We need to calculate that shift and apply it to updatedInitialCameraPos
-        const mouseBefore = getCursorPositionRelative(txn.get)
-        // Temporarily revert scale to calculate what mouse position was before zoom
-        txn.set(scaleAtom, scalePrevious)
-        const mouseBeforeZoom = getCursorPositionRelative(txn.get)
-        txn.set(scaleAtom, scale)
-        const xDiff = mouseBeforeZoom.x - mouseBefore.x
-        const yDiff = mouseBeforeZoom.y - mouseBefore.y
-
-        // Update initialCameraPosition
-        // Shift it by the same amount zoom shifted the camera
-        txn.set(camPosInitAtom, {
-            x: camPosInit.x - xDiff,
-            y: camPosInit.y - yDiff,
+        txn.set(mousePosInitAtom, {
+            x: mousePos.x + (mousePosInit.x - mousePos.x) * scalar,
+            y: mousePos.y + (mousePosInit.y - mousePos.y) * scalar,
         })
 
         // Update mouseOffset
@@ -155,32 +133,65 @@ export const drag = (
             y: mouseOffsetInit.y * scalar,
         })
 
-        // Reset previousScale
+        // Calculate the camera shift caused by zoom
+        const outerCanvas = txn.get(outerCanvasSizeAtom)
+        const innerCanvas = txn.get(innerCanvasSizeAtom)
+        const mouseBeforeZoom = calculateRelativeCursorPos({
+            camera: camPos,
+            cursor: mousePos,
+            scale: scalePrevious,
+            outerCanvas,
+            innerCanvas,
+        })
+        const mouseAfterZoom = calculateRelativeCursorPos({
+            camera: camPos,
+            cursor: mousePos,
+            scale,
+            outerCanvas,
+            innerCanvas,
+        })
+
+        const xDiff = mouseBeforeZoom.x - mouseAfterZoom.x
+        const yDiff = mouseBeforeZoom.y - mouseAfterZoom.y
+        txn.set(camPosInitAtom, {
+            x: camPosInit.x - xDiff,
+            y: camPosInit.y - yDiff,
+        })
+
+        // Set previousScale to scale
         txn.set(scalePreviousAtom, scale)
 
-        // We return early to use fresh values when drag-function is called again.
         return
+    }
+
+    // These values starts out as 0, but if you pan while dragging we calculate the delta.
+    const cameraPositionDist = {
+        x: camPosInit.x - camPos.x,
+        y: camPosInit.y - camPos.y,
     }
 
     // localDeltaX is the distance between current mouse position and initial mouse position.
     // It starts out as 0, and increases as you move away from the initial position.
-    const localDeltaX = (mousePosX - mousePosInit.x) / scale
-    const localDeltaY = (mousePosY - mousePosInit.y) / scale
+    const localDist = {
+        x: (mousePos.x - mousePosInit.x) / scale,
+        y: (mousePos.y - mousePosInit.y) / scale,
+    }
 
-    // OffsetX and offsetY is the distance between center of the draggableItem and the mouse.
-    // In other words, if you click in the center of a draggableItem, offsetX and offsetY should be 0.
-    const mouseOffsetX = mouseOffsetInit.x / scale
-    const mouseOffsetY = mouseOffsetInit.y / scale
-    const offsetX = mouseOffsetX - itemSize.w / 2
-    const offsetY = mouseOffsetY - itemSize.h / 2
+    const mouseOffset = {
+        x: mouseOffsetInit.x / scale,
+        y: mouseOffsetInit.y / scale,
+    }
 
     // localX and localY is the position in the local (process) coordinate space.
-    const localX = itemPos.x + localDeltaX + mouseOffsetX + cameraPositionDeltaX
-    const localY = itemPos.y + localDeltaY + mouseOffsetY + cameraPositionDeltaY
+    const local = {
+        x: itemPos.x + localDist.x + mouseOffset.x + cameraPositionDist.x,
+        y: itemPos.y + localDist.y + mouseOffset.y + cameraPositionDist.y,
+    }
+
     const activeDropzone = checkForActiveDropzone(
         dropZones,
-        localX,
-        localY,
+        local.x,
+        local.y,
         itemSize,
     )
 
@@ -201,12 +212,18 @@ export const drag = (
             y: activeDropzone.y - itemPos.y - dropzoneCenterY,
         }))
     } else if (action.initialized) {
+        // offset.x and offset.y is the distance between center of the draggableItem and the mouse.
+        // In other words, if you click in the center of a draggableItem, offset.x and offset.y should be 0.
+        const offset = {
+            x: mouseOffset.x - itemSize.w / 2,
+            y: mouseOffset.y - itemSize.h / 2,
+        }
         txn.set(draggableItemAtom(action.id), state => ({
             ...state,
             isDragging: true,
             isSnapping: false,
-            x: localDeltaX + offsetX + cameraPositionDeltaX,
-            y: localDeltaY + offsetY + cameraPositionDeltaY,
+            x: localDist.x + cameraPositionDist.x + offset.x,
+            y: localDist.y + cameraPositionDist.y + offset.y,
         }))
 
         if (action.activeDropzone) {
