@@ -45,7 +45,7 @@ const checkForActiveDropzone = (
 let dropzones: Array<DropZone> = []
 const mousePosInitAtom = atom({ x: 0, y: 0 })
 const camPosInitAtom = atom({ x: 0, y: 0 })
-const updatedMouseOffsetAtom = atom({ x: 0, y: 0 })
+const mouseOffsetInitAtom = atom({ x: 0, y: 0 })
 const scalePreviousAtom = atom(1)
 
 export const drag = (
@@ -81,11 +81,12 @@ export const drag = (
                 // We update the action in case the onDragStart modified it
                 action = txn.get(actionAtom(eventId)) as DragAction
             }
+
             txn.set(mousePosInitAtom, {
                 x: action.initialMousePosition.x,
                 y: action.initialMousePosition.y,
             })
-            txn.set(updatedMouseOffsetAtom, {
+            txn.set(mouseOffsetInitAtom, {
                 x: action.mouseOffset.x,
                 y: action.mouseOffset.y,
             })
@@ -108,29 +109,23 @@ export const drag = (
         ...v,
     }))
 
-    const { originPosition, originSize } = action
     const updatedInitialMousePos = txn.get(mousePosInitAtom)
     const camPosInit = txn.get(camPosInitAtom)
-    const updatedMouseOffset = txn.get(updatedMouseOffsetAtom)
-
+    const mouseOffsetInit = txn.get(mouseOffsetInitAtom)
     const scalePrevious = txn.get(scalePreviousAtom)
 
-    const originPositionRes = isFunction(originPosition)
-        ? originPosition()
-        : originPosition
-    const originSizeRes = isFunction(originSize) ? originSize() : originSize
-
-    const mouseOffsetX = updatedMouseOffset.x / scale
-    const mouseOffsetY = updatedMouseOffset.y / scale
+    const originPosition = isFunction(action.originPosition)
+        ? action.originPosition()
+        : action.originPosition
+    const originSize = isFunction(action.originSize)
+        ? action.originSize()
+        : action.originSize
 
     // These values starts out as 0, but if you pan while dragging we calculate the delta.
     const cameraPositionDeltaX = camPosInit.x - camPos.x
     const cameraPositionDeltaY = camPosInit.y - camPos.y
 
-    // When zooming we need to recalculate:
-    // - initialMousePosition
-    // - initialCameraPosition
-    // - mouseOffset
+    // When zooming we need to recalculate: mousePosInit, camPosInit and mouseOffset
     if (scalePrevious !== scale) {
         const scalar = scale / scalePrevious
 
@@ -162,9 +157,9 @@ export const drag = (
         })
 
         // Update mouseOffset
-        txn.set(updatedMouseOffsetAtom, {
-            x: updatedMouseOffset.x * scalar,
-            y: updatedMouseOffset.y * scalar,
+        txn.set(mouseOffsetInitAtom, {
+            x: mouseOffsetInit.x * scalar,
+            y: mouseOffsetInit.y * scalar,
         })
 
         // Reset previousScale
@@ -181,20 +176,21 @@ export const drag = (
 
     // OffsetX and offsetY is the distance between center of the draggableItem and the mouse.
     // In other words, if you click in the center of a draggableItem, offsetX and offsetY should be 0.
-    const offsetX = mouseOffsetX - originSizeRes.w / 2
-    const offsetY = mouseOffsetY - originSizeRes.h / 2
+    const mouseOffsetX = mouseOffsetInit.x / scale
+    const mouseOffsetY = mouseOffsetInit.y / scale
+    const offsetX = mouseOffsetX - originSize.w / 2
+    const offsetY = mouseOffsetY - originSize.h / 2
 
     // localX and localY is the position in the local (process) coordinate space.
     const localX =
-        originPositionRes.x + localDeltaX + mouseOffsetX + cameraPositionDeltaX
+        originPosition.x + localDeltaX + mouseOffsetX + cameraPositionDeltaX
     const localY =
-        originPositionRes.y + localDeltaY + mouseOffsetY + cameraPositionDeltaY
-
+        originPosition.y + localDeltaY + mouseOffsetY + cameraPositionDeltaY
     const currentActiveDropzone = checkForActiveDropzone(
         dropZones,
         localX,
         localY,
-        originSizeRes,
+        originSize,
     )
 
     if (currentActiveDropzone) {
@@ -203,15 +199,15 @@ export const drag = (
             activeDropzone: currentActiveDropzone,
         }))
 
-        const wDiff = originSizeRes.w - currentActiveDropzone.w
-        const hDiff = originSizeRes.h - currentActiveDropzone.h
+        const dropzoneCenterX = (originSize.w - currentActiveDropzone.w) / 2
+        const dropzoneCenterY = (originSize.h - currentActiveDropzone.h) / 2
 
         txn.set(draggableItemAtom(action.id), state => ({
             ...state,
             isDragging: true,
             isSnapping: true,
-            x: currentActiveDropzone.x - originPositionRes.x - wDiff / 2,
-            y: currentActiveDropzone.y - originPositionRes.y - hDiff / 2,
+            x: currentActiveDropzone.x - originPosition.x - dropzoneCenterX,
+            y: currentActiveDropzone.y - originPosition.y - dropzoneCenterY,
         }))
     } else if (action.initialized) {
         txn.set(draggableItemAtom(action.id), state => ({
