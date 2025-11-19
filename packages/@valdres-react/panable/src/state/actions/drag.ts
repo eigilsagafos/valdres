@@ -7,6 +7,7 @@ import { scaleAtom } from "../atoms/scaleAtom"
 import type { DropZone } from "./../../types/DropZone"
 import { cameraPositionAtom } from "../atoms/cameraPositionAtom"
 import { getCursorPositionRelative } from "../../utils/getCursorPositionRelative"
+import { isFunction } from "../../../../../valdres/src/lib/isFunction"
 
 const checkForActiveDropzone = (
     zones: Array<DropZone>,
@@ -42,8 +43,8 @@ const checkForActiveDropzone = (
 }
 
 let dropzones: Array<DropZone> = []
-const updatedInitialMousePosAtom = atom({ x: 0, y: 0 })
-const updatedInitialCameraPosAtom = atom({ x: 0, y: 0 })
+const mousePosInitAtom = atom({ x: 0, y: 0 })
+const camPosInitAtom = atom({ x: 0, y: 0 })
 const updatedMouseOffsetAtom = atom({ x: 0, y: 0 })
 const scalePreviousAtom = atom(1)
 
@@ -55,16 +56,17 @@ export const drag = (
     event: MouseEvent | TouchEvent,
 ) => {
     let action = txn.get(actionAtom(eventId)) as DragAction
+    const scale = txn.get(scaleAtom)
+    const camPos = txn.get(cameraPositionAtom)
+    const mousePosX = clientX + window.scrollX
+    const mousePosY = clientY + window.scrollY
 
     if (action?.invalid || action === null) return null
 
     if (action.initialized === false) {
-        const deltaX = Math.abs(
-            clientX + window.scrollX - action.initialMousePosition.x,
-        )
-        const deltaY = Math.abs(
-            clientY + window.scrollY - action.initialMousePosition.y,
-        )
+        const deltaX = Math.abs(mousePosX - action.initialMousePosition.x)
+        const deltaY = Math.abs(mousePosY - action.initialMousePosition.y)
+
         if (!(deltaX > 2 || deltaY > 2)) {
             return
         } else {
@@ -79,7 +81,7 @@ export const drag = (
                 // We update the action in case the onDragStart modified it
                 action = txn.get(actionAtom(eventId)) as DragAction
             }
-            txn.set(updatedInitialMousePosAtom, {
+            txn.set(mousePosInitAtom, {
                 x: action.initialMousePosition.x,
                 y: action.initialMousePosition.y,
             })
@@ -87,11 +89,11 @@ export const drag = (
                 x: action.mouseOffset.x,
                 y: action.mouseOffset.y,
             })
-            txn.set(updatedInitialCameraPosAtom, {
-                x: action.initialCameraPosition.x,
-                y: action.initialCameraPosition.y,
+            txn.set(camPosInitAtom, {
+                x: camPos.x,
+                y: camPos.y,
             })
-            txn.set(scalePreviousAtom, txn.get(scaleAtom))
+            txn.set(scalePreviousAtom, scale)
 
             dropzones = txn.get(action.dropzonesSelector)
         }
@@ -107,28 +109,23 @@ export const drag = (
     }))
 
     const { originPosition, originSize } = action
-    const updatedInitialMousePos = txn.get(updatedInitialMousePosAtom)
-    const updatedInitialCameraPos = txn.get(updatedInitialCameraPosAtom)
+    const updatedInitialMousePos = txn.get(mousePosInitAtom)
+    const camPosInit = txn.get(camPosInitAtom)
     const updatedMouseOffset = txn.get(updatedMouseOffsetAtom)
 
-    const scale = txn.get(scaleAtom)
     const scalePrevious = txn.get(scalePreviousAtom)
 
-    const originPositionRes =
-        typeof originPosition === "function" ? originPosition() : originPosition
-    const originSizeRes =
-        typeof originSize === "function" ? originSize() : originSize
+    const originPositionRes = isFunction(originPosition)
+        ? originPosition()
+        : originPosition
+    const originSizeRes = isFunction(originSize) ? originSize() : originSize
 
-    const cameraPosition = txn.get(cameraPositionAtom)
-
-    const mousePosX = clientX + window.scrollX
-    const mousePosY = clientY + window.scrollY
     const mouseOffsetX = updatedMouseOffset.x / scale
     const mouseOffsetY = updatedMouseOffset.y / scale
 
     // These values starts out as 0, but if you pan while dragging we calculate the delta.
-    const cameraPositionDeltaX = updatedInitialCameraPos.x - cameraPosition.x
-    const cameraPositionDeltaY = updatedInitialCameraPos.y - cameraPosition.y
+    const cameraPositionDeltaX = camPosInit.x - camPos.x
+    const cameraPositionDeltaY = camPosInit.y - camPos.y
 
     // When zooming we need to recalculate:
     // - initialMousePosition
@@ -136,6 +133,15 @@ export const drag = (
     // - mouseOffset
     if (scalePrevious !== scale) {
         const scalar = scale / scalePrevious
+
+        // Update initialMousePosition
+        const originalMouseVectorX = updatedInitialMousePos.x - mousePosX
+        const originalMouseVectorY = updatedInitialMousePos.y - mousePosY
+        const scaledMouseVectorX = originalMouseVectorX * scalar
+        const scaledMouseVectorY = originalMouseVectorY * scalar
+        const deltaMouseX = mousePosX + scaledMouseVectorX
+        const deltaMouseY = mousePosY + scaledMouseVectorY
+        txn.set(mousePosInitAtom, { x: deltaMouseX, y: deltaMouseY })
 
         // Calculate the camera shift caused by zoom
         // The zoom function shifts camera to keep cursor at same logical position
@@ -148,20 +154,11 @@ export const drag = (
         const xDiff = mouseBeforeZoom.x - mouseBefore.x
         const yDiff = mouseBeforeZoom.y - mouseBefore.y
 
-        // Update initialMousePosition
-        const originalMouseVectorX = updatedInitialMousePos.x - mousePosX
-        const originalMouseVectorY = updatedInitialMousePos.y - mousePosY
-        const scaledMouseVectorX = originalMouseVectorX * scalar
-        const scaledMouseVectorY = originalMouseVectorY * scalar
-        const deltaMouseX = mousePosX + scaledMouseVectorX
-        const deltaMouseY = mousePosY + scaledMouseVectorY
-        txn.set(updatedInitialMousePosAtom, { x: deltaMouseX, y: deltaMouseY })
-
         // Update initialCameraPosition
         // Shift it by the same amount zoom shifted the camera
-        txn.set(updatedInitialCameraPosAtom, {
-            x: updatedInitialCameraPos.x - xDiff,
-            y: updatedInitialCameraPos.y - yDiff,
+        txn.set(camPosInitAtom, {
+            x: camPosInit.x - xDiff,
+            y: camPosInit.y - yDiff,
         })
 
         // Update mouseOffset
