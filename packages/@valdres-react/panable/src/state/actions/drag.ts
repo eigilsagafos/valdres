@@ -104,8 +104,8 @@ export const drag = (
                 y: camPos.y,
             })
             txn.set(scalePreviousAtom, scale)
-
             dropzones = txn.get(action.dropzonesSelector)
+            return
         }
     }
     if (dropzones.length === 0) {
