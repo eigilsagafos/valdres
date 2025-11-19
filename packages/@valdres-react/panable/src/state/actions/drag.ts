@@ -45,7 +45,7 @@ let dropzones: Array<DropZone> = []
 const updatedInitialMousePosAtom = atom({ x: 0, y: 0 })
 const updatedInitialCameraPosAtom = atom({ x: 0, y: 0 })
 const updatedMouseOffsetAtom = atom({ x: 0, y: 0 })
-const previousScaleAtom = atom(1)
+const scalePreviousAtom = atom(1)
 
 export const drag = (
     txn: Transaction,
@@ -91,7 +91,7 @@ export const drag = (
                 x: action.initialCameraPosition.x,
                 y: action.initialCameraPosition.y,
             })
-            txn.set(previousScaleAtom, txn.get(scaleAtom))
+            txn.set(scalePreviousAtom, txn.get(scaleAtom))
 
             dropzones = txn.get(action.dropzonesSelector)
         }
@@ -106,20 +106,13 @@ export const drag = (
         ...v,
     }))
 
-    const {
-        initialMousePosition,
-        initialCameraPosition,
-        initialScale,
-        mouseOffset,
-        originPosition,
-        originSize,
-    } = action
+    const { originPosition, originSize } = action
     const updatedInitialMousePos = txn.get(updatedInitialMousePosAtom)
     const updatedInitialCameraPos = txn.get(updatedInitialCameraPosAtom)
     const updatedMouseOffset = txn.get(updatedMouseOffsetAtom)
 
     const scale = txn.get(scaleAtom)
-    const previousScale = txn.get(previousScaleAtom)
+    const scalePrevious = txn.get(scalePreviousAtom)
 
     const originPositionRes =
         typeof originPosition === "function" ? originPosition() : originPosition
@@ -141,15 +134,15 @@ export const drag = (
     // - initialMousePosition
     // - initialCameraPosition
     // - mouseOffset
-    if (previousScale !== scale) {
-        const scalar = scale / previousScale
+    if (scalePrevious !== scale) {
+        const scalar = scale / scalePrevious
 
         // Calculate the camera shift caused by zoom
         // The zoom function shifts camera to keep cursor at same logical position
         // We need to calculate that shift and apply it to updatedInitialCameraPos
         const mouseBefore = getCursorPositionRelative(txn.get)
         // Temporarily revert scale to calculate what mouse position was before zoom
-        txn.set(scaleAtom, previousScale)
+        txn.set(scaleAtom, scalePrevious)
         const mouseBeforeZoom = getCursorPositionRelative(txn.get)
         txn.set(scaleAtom, scale)
         const xDiff = mouseBeforeZoom.x - mouseBefore.x
@@ -178,7 +171,7 @@ export const drag = (
         })
 
         // Reset previousScale
-        txn.set(previousScaleAtom, scale)
+        txn.set(scalePreviousAtom, scale)
 
         // We return early to use fresh values when drag-function is called again.
         return
