@@ -30,8 +30,8 @@ export const useDraggable = ({
     onDragEnd: EventCallbackFn
     onDrop: EventCallbackFn
     dropzonesSelector: Selector
-    itemPos: Point
-    itemSize: Size
+    itemPos: () => Point
+    itemSize: () => Size
     dragEnabled: boolean
     centerDragSource?: boolean
 }): React.MutableRefObject<any> => {

@@ -57,7 +57,8 @@ export const drag = (
     event: MouseEvent | TouchEvent,
 ) => {
     let action = txn.get(actionAtom(eventId)) as DragAction
-    const { itemPos, itemSize } = action
+    const itemPos = action.itemPos()
+    const itemSize = action.itemSize()
     const scale = txn.get(scaleAtom)
     const scalePrevious = txn.get(scalePreviousAtom)
     const camPos = txn.get(cameraPositionAtom)
@@ -218,6 +219,7 @@ export const drag = (
             x: mouseOffset.x - itemSize.w / 2,
             y: mouseOffset.y - itemSize.h / 2,
         }
+        console.log("itemCenter")
         txn.set(draggableItemAtom(action.id), state => ({
             ...state,
             isDragging: true,

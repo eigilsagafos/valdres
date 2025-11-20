@@ -27,8 +27,8 @@ export const setIsDragging = (
         id: any
         eventId: EventId
         meta: any
-        itemPos: Point
-        itemSize: Size
+        itemPos: () => Point
+        itemSize: () => Size
         onDragStart: EventCallbackFn
         onDragInit: EventCallbackFn
         onDragEnd: EventCallbackFn
