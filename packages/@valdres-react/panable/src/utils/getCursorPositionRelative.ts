@@ -4,7 +4,7 @@ import { innerCanvasSizeAtom } from "../state/atoms/innerCanvasSizeAtom"
 import { outerCanvasSizeAtom } from "../state/atoms/outerCanvasSizeAtom"
 import { scaleAtom } from "../state/atoms/scaleAtom"
 
-const calculateRelativeCursorPos = ({
+export const calculateRelativeCursorPos = ({
     cursor,
     camera,
     outerCanvas,

@@ -1,8 +1,12 @@
 import { draggableItemAtom } from "@valdres-react/draggable"
-import type { Transaction } from "valdres"
+import { atom, type Transaction } from "valdres"
 import type { Size } from "../../../../draggable/types/Size"
 import type { DragAction } from "../../types/DragAction"
+import { calculateRelativeCursorPos } from "../../utils/getCursorPositionRelative"
 import { actionAtom } from "../atoms/actionAtom"
+import { cameraPositionAtom } from "../atoms/cameraPositionAtom"
+import { innerCanvasSizeAtom } from "../atoms/innerCanvasSizeAtom"
+import { outerCanvasSizeAtom } from "../atoms/outerCanvasSizeAtom"
 import { scaleAtom } from "../atoms/scaleAtom"
 import type { DropZone } from "./../../types/DropZone"
 
@@ -40,6 +44,10 @@ const checkForActiveDropzone = (
 }
 
 let dropzones: Array<DropZone> = []
+const scalePreviousAtom = atom(1)
+const camPosInitAtom = atom({ x: 0, y: 0 })
+const mousePosInitAtom = atom({ x: 0, y: 0 })
+const mouseOffsetInitAtom = atom({ x: 0, y: 0 })
 
 export const drag = (
     txn: Transaction,
@@ -49,20 +57,31 @@ export const drag = (
     event: MouseEvent | TouchEvent,
 ) => {
     let action = txn.get(actionAtom(eventId)) as DragAction
+    const itemPos = action.itemPos()
+    const itemSize = action.itemSize()
+    const scale = txn.get(scaleAtom)
+    const scalePrevious = txn.get(scalePreviousAtom)
+    const camPos = txn.get(cameraPositionAtom)
+    const camPosInit = txn.get(camPosInitAtom)
+    const mouseOffsetInit = txn.get(mouseOffsetInitAtom)
+    const mousePosInit = txn.get(mousePosInitAtom)
+    const mousePos = {
+        x: clientX + window.scrollX,
+        y: clientY + window.scrollY,
+    }
+
     if (action?.invalid || action === null) return null
+
     if (action.initialized === false) {
-        const deltaX = Math.abs(
-            clientX + window.scrollX - action.initialMousePosition.x,
-        )
-        const deltaY = Math.abs(
-            clientY + window.scrollY - action.initialMousePosition.y,
-        )
+        const deltaX = Math.abs(mousePos.x - action.initialMousePosition.x)
+        const deltaY = Math.abs(mousePos.y - action.initialMousePosition.y)
+
         if (!(deltaX > 2 || deltaY > 2)) {
             return
         } else {
             // Deselect items if dragging one that is not selected
             txn.set(actionAtom(eventId), curr => ({
-                ...curr,
+                ...curr!,
                 initialized: true,
             }))
 
@@ -72,10 +91,23 @@ export const drag = (
                 action = txn.get(actionAtom(eventId)) as DragAction
             }
 
+            txn.set(mousePosInitAtom, {
+                x: action.initialMousePosition.x,
+                y: action.initialMousePosition.y,
+            })
+            txn.set(mouseOffsetInitAtom, {
+                x: action.mouseOffset.x,
+                y: action.mouseOffset.y,
+            })
+            txn.set(camPosInitAtom, {
+                x: camPos.x,
+                y: camPos.y,
+            })
+            txn.set(scalePreviousAtom, scale)
             dropzones = txn.get(action.dropzonesSelector)
+            return
         }
     }
-
     if (dropzones.length === 0) {
         dropzones = txn.get(action.dropzonesSelector)
     }
@@ -85,73 +117,120 @@ export const drag = (
         ...v,
     }))
 
-    const scale = txn.get(scaleAtom)
-    // Compensate all variables by scale/zoom level
-    const mousePosX = (clientX + window.scrollX) / scale
-    const mousePosY = (clientY + window.scrollY) / scale
-    const initMousePosX = action.initialMousePosition.x / scale
-    const initMousePosY = action.initialMousePosition.y / scale
-    const mouseOffsetX = action.mouseOffset.x / scale
-    const mouseOffsetY = action.mouseOffset.y / scale
+    // When zooming we need to recalculate: mousePosInit, mouseOffset and camPosInit.
+    if (scalePrevious !== scale) {
+        const scalar = scale / scalePrevious
 
-    const originPosition =
-        typeof action?.originPosition === "function"
-            ? action?.originPosition()
-            : action?.originPosition
-    const originSize =
-        typeof action.originSize === "function"
-            ? action.originSize()
-            : action.originSize
+        // Update initialMousePosition
+        txn.set(mousePosInitAtom, {
+            x: mousePos.x + (mousePosInit.x - mousePos.x) * scalar,
+            y: mousePos.y + (mousePosInit.y - mousePos.y) * scalar,
+        })
 
-    // localDeltaX is the distance between current mouse position and initial mouse position.
+        // Update mouseOffset
+        txn.set(mouseOffsetInitAtom, {
+            x: mouseOffsetInit.x * scalar,
+            y: mouseOffsetInit.y * scalar,
+        })
+
+        // Calculate the camera shift caused by zoom
+        const outerCanvas = txn.get(outerCanvasSizeAtom)
+        const innerCanvas = txn.get(innerCanvasSizeAtom)
+        const mouseBeforeZoom = calculateRelativeCursorPos({
+            camera: camPos,
+            cursor: mousePos,
+            scale: scalePrevious,
+            outerCanvas,
+            innerCanvas,
+        })
+        const mouseAfterZoom = calculateRelativeCursorPos({
+            camera: camPos,
+            cursor: mousePos,
+            scale,
+            outerCanvas,
+            innerCanvas,
+        })
+
+        const xDiff = mouseBeforeZoom.x - mouseAfterZoom.x
+        const yDiff = mouseBeforeZoom.y - mouseAfterZoom.y
+        txn.set(camPosInitAtom, {
+            x: camPosInit.x - xDiff,
+            y: camPosInit.y - yDiff,
+        })
+
+        // Set previousScale to scale
+        txn.set(scalePreviousAtom, scale)
+
+        return
+    }
+
+    // cameraPositionDist starts out as 0, but if you pan while dragging we calculate the dist.
+    const cameraPositionDist = {
+        x: camPosInit.x - camPos.x,
+        y: camPosInit.y - camPos.y,
+    }
+
+    // localDist is the distance between current mouse position and initial mouse position.
     // It starts out as 0, and increases as you move away from the initial position.
-    const localDeltaX = mousePosX - initMousePosX
-    const localDeltaY = mousePosY - initMousePosY
+    const mouseDist = {
+        x: (mousePos.x - mousePosInit.x) / scale,
+        y: (mousePos.y - mousePosInit.y) / scale,
+    }
 
-    // OffsetX and offsetY is the distance between center of the draggableItem and the mouse.
-    // In other words, if you click in the center of a draggableItem, offsetX and offsetY should be 0.
-    const offsetX = mouseOffsetX - originSize.w / 2
-    const offsetY = mouseOffsetY - originSize.h / 2
+    // This is the local coordinate WITHIN the draggableItem.
+    // mouseOffset is {x: 0, y: 0} when dragging at the top left corner of the item.
+    const mouseOffset = {
+        x: mouseOffsetInit.x / scale,
+        y: mouseOffsetInit.y / scale,
+    }
 
     // localX and localY is the position in the local (process) coordinate space.
-    const localX = originPosition.x + localDeltaX + mouseOffsetX
-    const localY = originPosition.y + localDeltaY + mouseOffsetY
+    const local = {
+        x: itemPos.x + mouseDist.x + cameraPositionDist.x + mouseOffset.x,
+        y: itemPos.y + mouseDist.y + cameraPositionDist.y + mouseOffset.y,
+    }
 
-    const currentActiveDropzone = checkForActiveDropzone(
+    const activeDropzone = checkForActiveDropzone(
         dropZones,
-        localX,
-        localY,
-        originSize,
+        local.x,
+        local.y,
+        itemSize,
     )
 
-    if (currentActiveDropzone) {
+    if (activeDropzone) {
         txn.set(actionAtom(eventId), curr => ({
-            ...curr,
-            activeDropzone: currentActiveDropzone,
+            ...curr!,
+            activeDropzone,
         }))
 
-        const wDiff = originSize.w - currentActiveDropzone.w
-        const hDiff = originSize.h - currentActiveDropzone.h
+        const dropzoneCenterX = (itemSize.w - activeDropzone.w) / 2
+        const dropzoneCenterY = (itemSize.h - activeDropzone.h) / 2
 
         txn.set(draggableItemAtom(action.id), state => ({
             ...state,
             isDragging: true,
             isSnapping: true,
-            x: currentActiveDropzone.x - originPosition.x - wDiff / 2,
-            y: currentActiveDropzone.y - originPosition.y - hDiff / 2,
+            x: activeDropzone.x - itemPos.x - dropzoneCenterX,
+            y: activeDropzone.y - itemPos.y - dropzoneCenterY,
         }))
     } else if (action.initialized) {
+        // itemCenter moves the draggableItems center underneath the cursor.
+        const itemCenter = {
+            x: mouseOffset.x - itemSize.w / 2,
+            y: mouseOffset.y - itemSize.h / 2,
+        }
+        console.log("itemCenter")
         txn.set(draggableItemAtom(action.id), state => ({
             ...state,
             isDragging: true,
             isSnapping: false,
-            x: localDeltaX + offsetX,
-            y: localDeltaY + offsetY,
+            x: mouseDist.x + cameraPositionDist.x + itemCenter.x,
+            y: mouseDist.y + cameraPositionDist.y + itemCenter.y,
         }))
 
         if (action.activeDropzone) {
             txn.set(actionAtom(eventId), curr => ({
-                ...curr,
+                ...curr!,
                 activeDropzone: null,
             }))
         }

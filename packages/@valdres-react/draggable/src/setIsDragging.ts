@@ -16,8 +16,8 @@ export const setIsDragging = (
         id,
         eventId,
         meta,
-        originPosition,
-        originSize,
+        itemPos,
+        itemSize,
         onDragStart,
         onDragInit,
         onDragEnd,
@@ -27,8 +27,8 @@ export const setIsDragging = (
         id: any
         eventId: EventId
         meta: any
-        originPosition: Point
-        originSize: Size
+        itemPos: () => Point
+        itemSize: () => Size
         onDragStart: EventCallbackFn
         onDragInit: EventCallbackFn
         onDragEnd: EventCallbackFn
@@ -48,8 +48,8 @@ export const setIsDragging = (
         meta,
         eventId,
         initialized: false,
-        originPosition,
-        originSize,
+        itemPos,
+        itemSize,
         initialMousePosition: {
             x,
             y,
