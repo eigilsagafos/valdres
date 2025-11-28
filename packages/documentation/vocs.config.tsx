@@ -38,7 +38,6 @@ export default defineConfig({
             link: "/valdres-react/introduction",
             match: "/valdres-react",
         },
-        { text: "Vanilla JS", link: "/docs/vanilla", match: "/docs/vanilla" },
     ],
     sidebar: [
         {
