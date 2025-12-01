@@ -1,26 +1,26 @@
 import { draggableItemAtom } from "@valdres-react/draggable"
-import type { Transaction } from "valdres"
+import type { Store } from "valdres"
 import { actionAtom } from "../atoms/actionAtom"
 import { activeActionsAtom } from "../atoms/activeActionsAtom"
 
 export const updateDragActionsAfterMove = (
-    txn: Transaction,
+    store: Store,
     deltaX: number,
     deltaY: number,
 ) => {
-    const dragActions = txn
+    const dragActions = store
         .get(activeActionsAtom)
         .filter(([, kind]) => kind === "drag")
-        .map(([eventId]) => txn.get(actionAtom(eventId)))
+        .map(([eventId]) => store.get(actionAtom(eventId)))
     if (dragActions.length > 0) {
         dragActions.forEach(action => {
             const draggableId = action.id
-            txn.set(draggableItemAtom(draggableId), curr => ({
+            store.set(draggableItemAtom(draggableId), curr => ({
                 ...curr,
                 x: curr.x + deltaX,
                 y: curr.y + deltaY,
             }))
-            txn.set(actionAtom(action.eventId), curr => ({
+            store.set(actionAtom(action.eventId), curr => ({
                 ...curr,
                 x: curr.x - deltaX,
                 y: curr.y - deltaY,
