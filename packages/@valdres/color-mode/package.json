@@ -1,6 +1,6 @@
 {
     "name": "@valdres/color-mode",
-    "version": "0.2.0-pre.24",
+    "version": "0.2.0-pre.25",
     "license": "MIT",
     "author": {
         "name": "Eigil Sagafos"
@@ -25,10 +25,10 @@
     "devDependencies": {
         "happy-dom": "18.0.1",
         "typescript": "5.9.2",
-        "valdres": "0.2.0-pre.24"
+        "valdres": "0.2.0-pre.25"
     },
     "peerDependencies": {
-        "valdres": "0.2.0-pre.24"
+        "valdres": "0.2.0-pre.25"
     },
     "publishConfig": {
         "access": "public",
