@@ -86,7 +86,7 @@ export const drag = (
             }))
 
             if (action.onDragStart) {
-                action.onDragStart(event, eventId, txn)
+                action.onDragStart(event, eventId, store)
                 // We update the action in case the onDragStart modified it
                 action = store.get(actionAtom(eventId)) as DragAction
             }
