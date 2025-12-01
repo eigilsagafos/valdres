@@ -1,5 +1,5 @@
 import { draggableItemAtom } from "@valdres-react/draggable"
-import { atom, type Transaction } from "valdres"
+import { atom, type Store, type Transaction } from "valdres"
 import type { Size } from "../../../../draggable/types/Size"
 import type { DragAction } from "../../types/DragAction"
 import { calculateRelativeCursorPos } from "../../utils/getCursorPositionRelative"
@@ -50,21 +50,21 @@ const mousePosInitAtom = atom({ x: 0, y: 0 })
 const mouseOffsetInitAtom = atom({ x: 0, y: 0 })
 
 export const drag = (
-    txn: Transaction,
     eventId: string | number,
     clientX: number,
     clientY: number,
     event: MouseEvent | TouchEvent,
+    store: Store,
 ) => {
-    let action = txn.get(actionAtom(eventId)) as DragAction
+    let action = store.get(actionAtom(eventId)) as DragAction
     const itemPos = action.itemPos()
     const itemSize = action.itemSize()
-    const scale = txn.get(scaleAtom)
-    const scalePrevious = txn.get(scalePreviousAtom)
-    const camPos = txn.get(cameraPositionAtom)
-    const camPosInit = txn.get(camPosInitAtom)
-    const mouseOffsetInit = txn.get(mouseOffsetInitAtom)
-    const mousePosInit = txn.get(mousePosInitAtom)
+    const scale = store.get(scaleAtom)
+    const scalePrevious = store.get(scalePreviousAtom)
+    const camPos = store.get(cameraPositionAtom)
+    const camPosInit = store.get(camPosInitAtom)
+    const mouseOffsetInit = store.get(mouseOffsetInitAtom)
+    const mousePosInit = store.get(mousePosInitAtom)
     const mousePos = {
         x: clientX + window.scrollX,
         y: clientY + window.scrollY,
@@ -80,7 +80,7 @@ export const drag = (
             return
         } else {
             // Deselect items if dragging one that is not selected
-            txn.set(actionAtom(eventId), curr => ({
+            store.set(actionAtom(eventId), curr => ({
                 ...curr!,
                 initialized: true,
             }))
@@ -88,28 +88,28 @@ export const drag = (
             if (action.onDragStart) {
                 action.onDragStart(event, eventId, txn)
                 // We update the action in case the onDragStart modified it
-                action = txn.get(actionAtom(eventId)) as DragAction
+                action = store.get(actionAtom(eventId)) as DragAction
             }
 
-            txn.set(mousePosInitAtom, {
+            store.set(mousePosInitAtom, {
                 x: action.initialMousePosition.x,
                 y: action.initialMousePosition.y,
             })
-            txn.set(mouseOffsetInitAtom, {
+            store.set(mouseOffsetInitAtom, {
                 x: action.mouseOffset.x,
                 y: action.mouseOffset.y,
             })
-            txn.set(camPosInitAtom, {
+            store.set(camPosInitAtom, {
                 x: camPos.x,
                 y: camPos.y,
             })
-            txn.set(scalePreviousAtom, scale)
-            dropzones = txn.get(action.dropzonesSelector)
+            store.set(scalePreviousAtom, scale)
+            dropzones = store.get(action.dropzonesSelector)
             return
         }
     }
     if (dropzones.length === 0) {
-        dropzones = txn.get(action.dropzonesSelector)
+        dropzones = store.get(action.dropzonesSelector)
     }
 
     const dropZones = Object.entries(dropzones).map(([k, v]) => ({
@@ -122,20 +122,20 @@ export const drag = (
         const scalar = scale / scalePrevious
 
         // Update initialMousePosition
-        txn.set(mousePosInitAtom, {
+        store.set(mousePosInitAtom, {
             x: mousePos.x + (mousePosInit.x - mousePos.x) * scalar,
             y: mousePos.y + (mousePosInit.y - mousePos.y) * scalar,
         })
 
         // Update mouseOffset
-        txn.set(mouseOffsetInitAtom, {
+        store.set(mouseOffsetInitAtom, {
             x: mouseOffsetInit.x * scalar,
             y: mouseOffsetInit.y * scalar,
         })
 
         // Calculate the camera shift caused by zoom
-        const outerCanvas = txn.get(outerCanvasSizeAtom)
-        const innerCanvas = txn.get(innerCanvasSizeAtom)
+        const outerCanvas = store.get(outerCanvasSizeAtom)
+        const innerCanvas = store.get(innerCanvasSizeAtom)
         const mouseBeforeZoom = calculateRelativeCursorPos({
             camera: camPos,
             cursor: mousePos,
@@ -153,13 +153,13 @@ export const drag = (
 
         const xDiff = mouseBeforeZoom.x - mouseAfterZoom.x
         const yDiff = mouseBeforeZoom.y - mouseAfterZoom.y
-        txn.set(camPosInitAtom, {
+        store.set(camPosInitAtom, {
             x: camPosInit.x - xDiff,
             y: camPosInit.y - yDiff,
         })
 
         // Set previousScale to scale
-        txn.set(scalePreviousAtom, scale)
+        store.set(scalePreviousAtom, scale)
 
         return
     }
@@ -198,7 +198,7 @@ export const drag = (
     )
 
     if (activeDropzone) {
-        txn.set(actionAtom(eventId), curr => ({
+        store.set(actionAtom(eventId), curr => ({
             ...curr!,
             activeDropzone,
         }))
@@ -206,7 +206,7 @@ export const drag = (
         const dropzoneCenterX = (itemSize.w - activeDropzone.w) / 2
         const dropzoneCenterY = (itemSize.h - activeDropzone.h) / 2
 
-        txn.set(draggableItemAtom(action.id), state => ({
+        store.set(draggableItemAtom(action.id), state => ({
             ...state,
             isDragging: true,
             isSnapping: true,
@@ -220,7 +220,7 @@ export const drag = (
             y: mouseOffset.y - itemSize.h / 2,
         }
         console.log("itemCenter")
-        txn.set(draggableItemAtom(action.id), state => ({
+        store.set(draggableItemAtom(action.id), state => ({
             ...state,
             isDragging: true,
             isSnapping: false,
@@ -229,7 +229,7 @@ export const drag = (
         }))
 
         if (action.activeDropzone) {
-            txn.set(actionAtom(eventId), curr => ({
+            store.set(actionAtom(eventId), curr => ({
                 ...curr!,
                 activeDropzone: null,
             }))

@@ -1,7 +1,7 @@
-import type { Transaction } from "valdres"
+import type { Store } from "valdres"
 
 export type EventCallbackFn = (
     event: MouseEvent | TouchEvent,
     eventId: string,
-    txn: Transaction,
+    store: Store,
 ) => void

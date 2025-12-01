@@ -79,6 +79,7 @@ export const Panable = ({
 }: PanableComponentArguments) => {
     const outerRef = useRef<HTMLDivElement>()
     const innerRef = useRef<HTMLDivElement>()
+    const store = useStore()
     const txn = useTransaction()
 
     useInitPanableConfig({
@@ -91,8 +92,8 @@ export const Panable = ({
 
     const mouseMove = useCallback((e: MouseEvent) => {
         e.stopPropagation()
-        txn(state => onMouseMove(state, e))
-    }, [])
+        onMouseMove(e, store)
+    }, [store])
 
     const touchMove = useCallback((e: TouchEvent) => {
         e.preventDefault()
