@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef } from "react"
-import { useTransaction } from "valdres-react"
+import { useStore } from "valdres-react"
 import { moveDelta } from "../actions/moveDelta"
 import { onMouseDown } from "../actions/onMouseDown"
 import { onMouseUp } from "../actions/onMouseUp"
@@ -8,7 +8,7 @@ import { onTouchStart } from "../actions/onTouchStart"
 import { zoom } from "../actions/zoom"
 
 export const usePanableEvents = () => {
-    const txn = useTransaction()
+    const store = useStore()
     const ref = useRef<HTMLDivElement>()
 
     const onWheel = useCallback((e: WheelEvent) => {
@@ -16,32 +16,32 @@ export const usePanableEvents = () => {
 
         if (e.ctrlKey || e.metaKey) {
             e.preventDefault()
-            txn(state => zoom(state, e.deltaY))
+            zoom(store, e.deltaY)
         } else {
             e.preventDefault()
-            txn(state => moveDelta(state, e.deltaX, e.deltaY))
+            moveDelta(store, e.deltaX, e.deltaY)
         }
     }, [])
 
     const mouseDown = useCallback((e: MouseEvent) => {
-        txn(state => onMouseDown(state, e))
+        onMouseDown(store, e)
     }, [])
 
     const mouseUp = useCallback((e: MouseEvent) => {
         e.stopPropagation()
-        txn(state => onMouseUp(state, e))
+        onMouseUp(store, e)
     }, [])
 
     const touchStart = useCallback((e: TouchEvent) => {
         e.preventDefault()
         e.stopPropagation()
-        txn(state => onTouchStart(state, e))
+        onTouchStart(store, e)
     }, [])
 
     const touchEnd = useCallback((e: TouchEvent) => {
         e.preventDefault()
         e.stopPropagation()
-        txn(state => onTouchEnd(state, e))
+        onTouchEnd(store, e)
     }, [])
 
     useEffect(() => {
