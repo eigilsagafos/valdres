@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef } from "react"
-import { useTransaction } from "valdres-react"
+import { useStore, useTransaction } from "valdres-react"
 import { setIsDragging } from "./setIsDragging"
 import type { EventCallbackFn } from "../types/EventCallbackFn"
 import type { Point } from "../types/Point"
@@ -37,6 +37,7 @@ export const useDraggable = ({
 }): React.MutableRefObject<any> => {
     const ref = useRef<HTMLDivElement>(null)
     const txn = useTransaction()
+    const state = useStore()
 
     const onMouseDownFn = useCallback(
         (e: MouseEvent) => {
@@ -46,26 +47,24 @@ export const useDraggable = ({
             onMouseDown && onMouseDown(e)
 
             if (dragEnabled) {
-                txn(state => {
-                    setIsDragging(
-                        state,
-                        e.clientX,
-                        e.clientY,
-                        {
-                            id,
-                            eventId: "mouse",
-                            meta,
-                            itemPos,
-                            itemSize,
-                            onDragStart,
-                            onDragInit,
-                            onDragEnd,
-                            onDrop,
-                            dropzonesSelector,
-                        },
-                        e,
-                    )
-                })
+                setIsDragging(
+                    state,
+                    e.clientX,
+                    e.clientY,
+                    {
+                        id,
+                        eventId: "mouse",
+                        meta,
+                        itemPos,
+                        itemSize,
+                        onDragStart,
+                        onDragInit,
+                        onDragEnd,
+                        onDrop,
+                        dropzonesSelector,
+                    },
+                    e,
+                )
             }
         },
         [

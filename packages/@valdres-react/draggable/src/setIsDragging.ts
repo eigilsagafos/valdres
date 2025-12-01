@@ -41,7 +41,6 @@ export const setIsDragging = (
     const offsetX = event.clientX - rect.left
     const offsetY = event.clientY - rect.top
 
-    txn.set(activeActionsAtom, curr => [...curr, [eventId, "drag"]])
     txn.set(actionAtom(eventId), {
         kind: "drag",
         id,
@@ -65,4 +64,6 @@ export const setIsDragging = (
         event,
     })
     onDragInit && onDragInit(event, eventId, txn)
+
+    txn.set(activeActionsAtom, curr => [...curr, [eventId, "drag"]])
 }
