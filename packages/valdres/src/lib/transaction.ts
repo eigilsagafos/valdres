@@ -16,6 +16,7 @@ import { getAtomInitValue } from "./initAtom"
 import { isFunction } from "./isFunction"
 import {
     cloneAtomFamilyIndex,
+    propagateDeletedAtoms,
     renderAtomFamilyIndex,
 } from "./propagateUpdatedAtoms"
 import { setAtoms } from "./setAtoms"
@@ -234,6 +235,7 @@ export class Transaction {
         setAtoms(this.atomMap, this.data, initializedAtomsSet)
         if (this.deleteSet?.size) {
             deleteAtomFamilyAtoms(this.deleteSet, this.data)
+            propagateDeletedAtoms([...this.deleteSet], this.data)
         }
         if (this._scopedTransactions) {
             for (const [, scopedTxn] of this._scopedTransactions) {
