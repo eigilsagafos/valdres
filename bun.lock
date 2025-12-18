@@ -18,51 +18,51 @@
     },
     "packages/@valdres-react/color-mode": {
       "name": "@valdres-react/color-mode",
-      "version": "0.2.0-pre.18",
+      "version": "0.2.0-pre.26",
       "dependencies": {
-        "@valdres/color-mode": "0.2.0-pre.18",
+        "@valdres/color-mode": "0.2.0-pre.26",
       },
       "devDependencies": {
         "typescript": "5.9.2",
-        "valdres-react": "0.2.0-pre.18",
+        "valdres-react": "0.2.0-pre.26",
       },
       "peerDependencies": {
-        "valdres-react": "0.2.0-pre.18",
+        "valdres-react": "0.2.0-pre.26",
       },
     },
     "packages/@valdres-react/draggable": {
       "name": "@valdres-react/draggable",
-      "version": "0.2.0-pre.18",
+      "version": "0.2.0-pre.26",
       "devDependencies": {
         "typescript": "5.9.2",
-        "valdres-react": "0.2.0-pre.18",
+        "valdres-react": "0.2.0-pre.26",
       },
       "peerDependencies": {
-        "valdres-react": "0.2.0-pre.18",
+        "valdres-react": "0.2.0-pre.26",
       },
     },
     "packages/@valdres-react/hotkeys": {
       "name": "@valdres-react/hotkeys",
-      "version": "0.2.0-pre.18",
+      "version": "0.2.0-pre.26",
       "dependencies": {
-        "@valdres/hotkeys": "0.2.0-pre.18",
+        "@valdres/hotkeys": "0.2.0-pre.26",
       },
       "devDependencies": {
         "@testing-library/react": "16.3.0",
         "react": "19.1.1",
         "react-dom": "19.1.1",
         "typescript": "5.9.2",
-        "valdres-react": "0.2.0-pre.18",
+        "valdres-react": "0.2.0-pre.26",
       },
       "peerDependencies": {
         "react": ">=18",
-        "valdres": "0.2.0-pre.18",
-        "valdres-react": "0.2.0-pre.18",
+        "valdres": "0.2.0-pre.26",
+        "valdres-react": "0.2.0-pre.26",
       },
     },
     "packages/@valdres-react/jotai": {
       "name": "@valdres-react/jotai",
-      "version": "0.2.0-pre.18",
+      "version": "0.2.0-pre.26",
       "dependencies": {
         "valdres-react": "0.2.0-pre.12",
       },
@@ -79,14 +79,14 @@
     },
     "packages/@valdres-react/panable": {
       "name": "@valdres-react/panable",
-      "version": "0.2.0-pre.18",
+      "version": "0.2.0-pre.26",
       "devDependencies": {
         "typescript": "5.9.2",
-        "valdres-react": "0.2.0-pre.18",
+        "valdres-react": "0.2.0-pre.26",
       },
       "peerDependencies": {
-        "@valdres-react/draggable": "0.2.0-pre.18",
-        "valdres-react": "0.2.0-pre.18",
+        "@valdres-react/draggable": "0.2.0-pre.26",
+        "valdres-react": "0.2.0-pre.26",
       },
       "optionalPeers": [
         "@valdres-react/draggable",
@@ -94,7 +94,7 @@
     },
     "packages/@valdres-react/recoil": {
       "name": "@valdres-react/recoil",
-      "version": "0.2.0-pre.18",
+      "version": "0.2.0-pre.26",
       "dependencies": {
         "valdres-react": "0.2.0-pre.12",
       },
@@ -107,30 +107,43 @@
     },
     "packages/@valdres/color-mode": {
       "name": "@valdres/color-mode",
-      "version": "0.2.0-pre.18",
+      "version": "0.2.0-pre.26",
       "devDependencies": {
         "happy-dom": "18.0.1",
         "typescript": "5.9.2",
-        "valdres": "0.2.0-pre.18",
+        "valdres": "0.2.0-pre.26",
       },
       "peerDependencies": {
-        "valdres": "0.2.0-pre.18",
+        "valdres": "0.2.0-pre.26",
       },
     },
     "packages/@valdres/hotkeys": {
       "name": "@valdres/hotkeys",
-      "version": "0.2.0-pre.18",
+      "version": "0.2.0-pre.26",
       "devDependencies": {
         "typescript": "5.9.2",
-        "valdres": "0.2.0-pre.18",
+        "valdres": "0.2.0-pre.26",
       },
       "peerDependencies": {
-        "valdres": "0.2.0-pre.18",
+        "valdres": "0.2.0-pre.26",
+      },
+    },
+    "packages/@valdres/search": {
+      "name": "@valdres/search",
+      "version": "0.2.0-pre.26",
+      "devDependencies": {
+        "@orama/orama": "^3.1.16",
+        "mitata": "^1.0.34",
+        "typescript": "5.9.2",
+        "valdres": "0.2.0-pre.26",
+      },
+      "peerDependencies": {
+        "valdres": "0.2.0-pre.26",
       },
     },
     "packages/documentation": {
       "name": "@valdres/documentation",
-      "version": "0.2.0-pre.18",
+      "version": "0.2.0-pre.26",
       "dependencies": {
         "@faker-js/faker": "9.0.3",
         "@types/react": "18.3.8",
@@ -147,11 +160,11 @@
     },
     "packages/test": {
       "name": "@valdres/test",
-      "version": "0.2.0-pre.18",
+      "version": "0.2.0-pre.26",
     },
     "packages/valdres": {
       "name": "valdres",
-      "version": "0.2.0-pre.18",
+      "version": "0.2.0-pre.26",
       "devDependencies": {
         "@testing-library/react": "16.3.0",
         "jotai": "2.10.0",
@@ -164,16 +177,16 @@
     },
     "packages/valdres-react": {
       "name": "valdres-react",
-      "version": "0.2.0-pre.18",
+      "version": "0.2.0-pre.26",
       "dependencies": {
-        "valdres": "0.2.0-pre.18",
+        "valdres": "0.2.0-pre.26",
       },
       "devDependencies": {
         "@happy-dom/global-registrator": "20.0.5",
         "@testing-library/jest-dom": "6.9.1",
         "@testing-library/react": "16.3.0",
         "@testing-library/user-event": "14.6.1",
-        "@valdres/test": "0.2.0-pre.18",
+        "@valdres/test": "0.2.0-pre.26",
         "happy-dom": "20.0.5",
         "mitata": "0.1.14",
         "react": "19.1.1",
@@ -476,6 +489,8 @@
     "@octokit/tsconfig": ["@octokit/tsconfig@1.0.2", "", {}, "sha512-I0vDR0rdtP8p2lGMzvsJzbhdOWy405HcGovrspJ8RRibHnyRgggUSNO5AIox5LmqiwmatHKYsvj6VGFHkqS7lA=="],
 
     "@octokit/types": ["@octokit/types@9.3.2", "", { "dependencies": { "@octokit/openapi-types": "^18.0.0" } }, "sha512-D4iHGTdAnEEVsB8fl95m1hiz7D5YiRdQ9b/OEb3BYRVwbLsGHcRVPz+u+BgRLNk0Q0/4iZCBqDN96j2XNxfXrA=="],
+
+    "@orama/orama": ["@orama/orama@3.1.16", "", {}, "sha512-scSmQBD8eANlMUOglxHrN1JdSW8tDghsPuS83otqealBiIeMukCQMOf/wc0JJjDXomqwNdEQFLXLGHrU6PGxuA=="],
 
     "@pkgjs/parseargs": ["@pkgjs/parseargs@0.11.0", "", {}, "sha512-+1VkjdD0QBLPodGrJUeqarH8VAIvQODIbwh9XpP5Syisf7YoQgsJKPNFoqqLQlu+VQ/tVSshMR6loPMn8U+dPg=="],
 
@@ -854,6 +869,8 @@
     "@valdres/documentation": ["@valdres/documentation@workspace:packages/documentation"],
 
     "@valdres/hotkeys": ["@valdres/hotkeys@workspace:packages/@valdres/hotkeys"],
+
+    "@valdres/search": ["@valdres/search@workspace:packages/@valdres/search"],
 
     "@valdres/test": ["@valdres/test@workspace:packages/test"],
 
@@ -2580,6 +2597,8 @@
     "@types/babel__template/@babel/types": ["@babel/types@7.25.7", "", { "dependencies": { "@babel/helper-string-parser": "^7.25.7", "@babel/helper-validator-identifier": "^7.25.7", "to-fast-properties": "^2.0.0" } }, "sha512-vwIVdXG+j+FOpkwqHRcBgHLYNL7XMkufrlaFvL9o6Ai9sJn9+PdyIL5qa0XzTZw084c+u9LOls53eoZWP/W5WQ=="],
 
     "@types/babel__traverse/@babel/types": ["@babel/types@7.25.7", "", { "dependencies": { "@babel/helper-string-parser": "^7.25.7", "@babel/helper-validator-identifier": "^7.25.7", "to-fast-properties": "^2.0.0" } }, "sha512-vwIVdXG+j+FOpkwqHRcBgHLYNL7XMkufrlaFvL9o6Ai9sJn9+PdyIL5qa0XzTZw084c+u9LOls53eoZWP/W5WQ=="],
+
+    "@valdres/search/mitata": ["mitata@1.0.34", "", {}, "sha512-Mc3zrtNBKIMeHSCQ0XqRLo1vbdIx1wvFV9c8NJAiyho6AjNfMY8bVhbS12bwciUdd1t4rj8099CH3N3NFahaUA=="],
 
     "@vanilla-extract/css/picocolors": ["picocolors@1.1.0", "", {}, "sha512-TQ92mBOW0l3LeMeyLV6mzy/kWr8lkd/hp3mTg7wYK7zJhuBStmGMBG0BdeDZS/dZx1IukaX6Bk11zcln25o1Aw=="],
 

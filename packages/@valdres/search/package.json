@@ -1,0 +1,40 @@
+{
+    "name": "@valdres/search",
+    "version": "0.2.0-pre.26",
+    "license": "MIT",
+    "author": {
+        "name": "Eigil Sagafos"
+    },
+    "homepage": "https://valdres.dev",
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/eigilsagafos/valdres.git"
+    },
+    "type": "module",
+    "exports": {
+        ".": "./src/index.ts"
+    },
+    "files": [
+        "dist"
+    ],
+    "scripts": {
+        "build": "NODE_ENV=production bun build src/index.ts --outdir ./dist --packages external",
+        "build:types": "rm -rf dist/types && bun run tsc",
+        "test": "bun test",
+        "bench": "bun run src/benchmark.ts"
+    },
+    "devDependencies": {
+        "@orama/orama": "^3.1.16",
+        "mitata": "^1.0.34",
+        "typescript": "5.9.2",
+        "valdres": "0.2.0-pre.26"
+    },
+    "peerDependencies": {
+        "valdres": "0.2.0-pre.26"
+    },
+    "publishConfig": {
+        "access": "public",
+        "registry": "https://registry.npmjs.org/"
+    },
+    "gitHead": "53245fd1a080cdb1131f5be9056adc546d05ead4"
+}
