@@ -18,51 +18,51 @@
     },
     "packages/@valdres-react/color-mode": {
       "name": "@valdres-react/color-mode",
-      "version": "0.2.0-pre.18",
+      "version": "0.2.0-pre.27",
       "dependencies": {
-        "@valdres/color-mode": "0.2.0-pre.18",
+        "@valdres/color-mode": "0.2.0-pre.27",
       },
       "devDependencies": {
         "typescript": "5.9.2",
-        "valdres-react": "0.2.0-pre.18",
+        "valdres-react": "0.2.0-pre.27",
       },
       "peerDependencies": {
-        "valdres-react": "0.2.0-pre.18",
+        "valdres-react": "0.2.0-pre.27",
       },
     },
     "packages/@valdres-react/draggable": {
       "name": "@valdres-react/draggable",
-      "version": "0.2.0-pre.18",
+      "version": "0.2.0-pre.27",
       "devDependencies": {
         "typescript": "5.9.2",
-        "valdres-react": "0.2.0-pre.18",
+        "valdres-react": "0.2.0-pre.27",
       },
       "peerDependencies": {
-        "valdres-react": "0.2.0-pre.18",
+        "valdres-react": "0.2.0-pre.27",
       },
     },
     "packages/@valdres-react/hotkeys": {
       "name": "@valdres-react/hotkeys",
-      "version": "0.2.0-pre.18",
+      "version": "0.2.0-pre.27",
       "dependencies": {
-        "@valdres/hotkeys": "0.2.0-pre.18",
+        "@valdres/hotkeys": "0.2.0-pre.27",
       },
       "devDependencies": {
         "@testing-library/react": "16.3.0",
         "react": "19.1.1",
         "react-dom": "19.1.1",
         "typescript": "5.9.2",
-        "valdres-react": "0.2.0-pre.18",
+        "valdres-react": "0.2.0-pre.27",
       },
       "peerDependencies": {
         "react": ">=18",
-        "valdres": "0.2.0-pre.18",
-        "valdres-react": "0.2.0-pre.18",
+        "valdres": "0.2.0-pre.27",
+        "valdres-react": "0.2.0-pre.27",
       },
     },
     "packages/@valdres-react/jotai": {
       "name": "@valdres-react/jotai",
-      "version": "0.2.0-pre.18",
+      "version": "0.2.0-pre.27",
       "dependencies": {
         "valdres-react": "0.2.0-pre.12",
       },
@@ -79,14 +79,14 @@
     },
     "packages/@valdres-react/panable": {
       "name": "@valdres-react/panable",
-      "version": "0.2.0-pre.18",
+      "version": "0.2.0-pre.27",
       "devDependencies": {
         "typescript": "5.9.2",
-        "valdres-react": "0.2.0-pre.18",
+        "valdres-react": "0.2.0-pre.27",
       },
       "peerDependencies": {
-        "@valdres-react/draggable": "0.2.0-pre.18",
-        "valdres-react": "0.2.0-pre.18",
+        "@valdres-react/draggable": "0.2.0-pre.27",
+        "valdres-react": "0.2.0-pre.27",
       },
       "optionalPeers": [
         "@valdres-react/draggable",
@@ -94,7 +94,7 @@
     },
     "packages/@valdres-react/recoil": {
       "name": "@valdres-react/recoil",
-      "version": "0.2.0-pre.18",
+      "version": "0.2.0-pre.27",
       "dependencies": {
         "valdres-react": "0.2.0-pre.12",
       },
@@ -107,30 +107,30 @@
     },
     "packages/@valdres/color-mode": {
       "name": "@valdres/color-mode",
-      "version": "0.2.0-pre.18",
+      "version": "0.2.0-pre.27",
       "devDependencies": {
         "happy-dom": "18.0.1",
         "typescript": "5.9.2",
-        "valdres": "0.2.0-pre.18",
+        "valdres": "0.2.0-pre.27",
       },
       "peerDependencies": {
-        "valdres": "0.2.0-pre.18",
+        "valdres": "0.2.0-pre.27",
       },
     },
     "packages/@valdres/hotkeys": {
       "name": "@valdres/hotkeys",
-      "version": "0.2.0-pre.18",
+      "version": "0.2.0-pre.27",
       "devDependencies": {
         "typescript": "5.9.2",
-        "valdres": "0.2.0-pre.18",
+        "valdres": "0.2.0-pre.27",
       },
       "peerDependencies": {
-        "valdres": "0.2.0-pre.18",
+        "valdres": "0.2.0-pre.27",
       },
     },
     "packages/documentation": {
       "name": "@valdres/documentation",
-      "version": "0.2.0-pre.18",
+      "version": "0.2.0-pre.27",
       "dependencies": {
         "@faker-js/faker": "9.0.3",
         "@types/react": "18.3.8",
@@ -147,11 +147,11 @@
     },
     "packages/test": {
       "name": "@valdres/test",
-      "version": "0.2.0-pre.18",
+      "version": "0.2.0-pre.27",
     },
     "packages/valdres": {
       "name": "valdres",
-      "version": "0.2.0-pre.18",
+      "version": "0.2.0-pre.27",
       "devDependencies": {
         "@testing-library/react": "16.3.0",
         "jotai": "2.10.0",
@@ -164,16 +164,16 @@
     },
     "packages/valdres-react": {
       "name": "valdres-react",
-      "version": "0.2.0-pre.18",
+      "version": "0.2.0-pre.27",
       "dependencies": {
-        "valdres": "0.2.0-pre.18",
+        "valdres": "0.2.0-pre.27",
       },
       "devDependencies": {
         "@happy-dom/global-registrator": "20.0.5",
         "@testing-library/jest-dom": "6.9.1",
         "@testing-library/react": "16.3.0",
         "@testing-library/user-event": "14.6.1",
-        "@valdres/test": "0.2.0-pre.18",
+        "@valdres/test": "0.2.0-pre.27",
         "happy-dom": "20.0.5",
         "mitata": "0.1.14",
         "react": "19.1.1",

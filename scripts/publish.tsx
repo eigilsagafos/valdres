@@ -6,6 +6,11 @@ import { Provider, useValue } from "valdres-react"
 import Spinner from "ink-spinner"
 // import { publish, unpublish } from "libnpmpublish"
 
+const NPM_TOKEN = process.env.NPM_TOKEN
+if (!NPM_TOKEN) {
+    throw new Error("NPM_TOKEN not found in .env.local")
+}
+
 const findRootDepth = async (level = 0) => {
     const levels = "../".repeat(level)
     const relativePath = `${levels}package.json`
@@ -144,40 +149,7 @@ const steps = [
         name: "publish",
         callback: async (shell, packagePath, key) => {
             const meta = valdresStore.get(jobMeta(key))
-            // const dir = packagePath.split("/")
-            // dir.pop()
-            // console.log(packagePath, meta, dir.join("/"))
-            // const tarPath = `${dir.join("/")}/${meta.tarball}`
-            // console.log(tarPath)
-            // console.log(packagePath)
-            // const tarData = await Bun.file(tarPath).arrayBuffer()
-            // // const res = await $`npm config get //registry.npmjs.org/:_authToken`
-            // // console.log(res)
-            // console.log(process.env.HOME)
-            // const ssss = await Bun.file(`${process.env.HOME}/.npmrc`).text()
-            // console.log(ssss)
-            // const packageJson = await Bun.file(packagePath).json()
-            // // throw new Error("asdfasdf")
-            // console.log("packageJson", packageJson)
-            // return publish(
-            //     packageJson,
-            //     Buffer.from(tarData),
-            //     {
-            //         // npmVersion: `${packageJson.name}@${packageJson.version}`,
-            //         access: "public",
-            //         registry: "https://registry.npmjs.org/",
-            //         token: "",
 
-            //         // auth: { token: "" },
-            //     },
-            //     // opts,
-            // )
-            // .catch(err => {
-            //     console.error(err.body.toString())
-            // })
-            // const meta = valdresStore.get(jobMeta(key))
-            // if (!meta.tarball) throw new Error("No tarball")
-            // return shell`npm publish ${meta.tarball}`
             const file = meta.tarball.split(`/`).pop()
             const dir = packagePath.split("/")
             dir.pop()
@@ -186,7 +158,7 @@ const steps = [
             // }
             return $.cwd(
                 `${dir.join(`/`)}/dist-tarball`,
-            )`npm publish ${file}`.quiet()
+            )`npm publish ${file} --//registry.npmjs.org/:_authToken=${NPM_TOKEN}`.quiet()
         },
         // onSuccess: (output, key) => {
         //     console.log(output)

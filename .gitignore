@@ -4,3 +4,4 @@ node_modules
 dist
 dist-tarball
 todo.md
+.env.local
