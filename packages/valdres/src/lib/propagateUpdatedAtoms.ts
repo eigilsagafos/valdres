@@ -6,6 +6,7 @@ import type { Selector } from "../types/Selector"
 import type { State } from "../types/State"
 import type { StoreData } from "../types/StoreData"
 import type { Subscription } from "../types/Subscription"
+import { isAtomFamily } from "../utils/isAtomFamily"
 import { isFamilyAtom } from "../utils/isFamilyAtom"
 import { isPromiseLike } from "../utils/isPromiseLike"
 import { evaluateSelector } from "./initSelector"
@@ -247,8 +248,30 @@ export const propagateDeletedAtoms = (
         }
     }
     propagateDirtySelectors(atoms, selectors, data, subscriptions, families)
-    //    if (!isRecursive) {
-    // }
+    // Propagate family changes into child scopes. deleteFamilyAtomsFromSet
+    // already updated the scope's family index via recursivlyUpdateIndexes,
+    // but selectors in those scopes that depend on the family still need to
+    // be re-evaluated so their subscribers get notified.
+    if (families.size > 0 && data.scopes) {
+        const familyAtoms = [...families.keys()]
+        for (const scopeId in data.scopes) {
+            const scope = data.scopes[scopeId]
+            const familiesInScope = familyAtoms.filter(family =>
+                scope.values.has(family),
+            )
+            if (familiesInScope.length > 0) {
+                propagateUpdatedAtoms(
+                    familiesInScope,
+                    scope,
+                    undefined,
+                    undefined,
+                    false,
+                    timestamp,
+                    true,
+                )
+            }
+        }
+    }
 }
 
 export const propagateUpdatedAtoms = (
@@ -299,6 +322,12 @@ export const propagateUpdatedAtoms = (
                 const atomsToUpdateInScope = []
                 for (const atom of atoms) {
                     if (!scope.values.has(atom)) {
+                        atomsToUpdateInScope.push(atom)
+                    } else if (isAtomFamily(atom)) {
+                        // The scope has its own family index, but the parent
+                        // index may have changed (e.g. a member was deleted
+                        // from root). Re-evaluate dependent selectors in the
+                        // scope so subscribers get notified.
                         atomsToUpdateInScope.push(atom)
                     }
                 }

@@ -5,6 +5,42 @@ import { selectorFamily } from "../selectorFamily"
 import { index } from "../indexConstructor"
 import { selector } from "../selector"
 
+test("deleting atom family member from root propagates into scope with cloned family", () => {
+    const rootStore = store()
+    const family = atomFamily<{ name: string }>(undefined, {
+        name: "testFamily",
+    })
+    const atom1 = family("a")
+    const atom2 = family("b")
+
+    rootStore.set(atom1, { name: "A" })
+    rootStore.set(atom2, { name: "B" })
+
+    const countSelector = selector(get => get(family).length, {
+        name: "countSelector",
+    })
+
+    // Create a scope and set a family member in it (clones family into scope)
+    const scopedStore = rootStore.scope("test-scope")
+    scopedStore.set(family("c"), { name: "C" })
+
+    expect(rootStore.get(countSelector)).toBe(2)
+    expect(scopedStore.get(countSelector)).toBe(3)
+
+    // Subscribe to the count selector on the scoped store
+    const scopeCallback = mock(() => {})
+    scopedStore.sub(countSelector, scopeCallback)
+
+    // Delete atom2 from root store
+    rootStore.del(atom2)
+
+    // The scope callback should fire because the family changed in root,
+    // and the scope's family index inherits from root's
+    expect(scopeCallback).toHaveBeenCalledTimes(1)
+    expect(rootStore.get(countSelector)).toBe(1)
+    expect(scopedStore.get(countSelector)).toBe(2)
+})
+
 test("propagateUpdatedAtoms", () => {
     const rootStore = store()
     const userFamily = atomFamily<
