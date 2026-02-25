@@ -253,12 +253,14 @@ export const propagateDeletedAtoms = (
     // but selectors in those scopes that depend on the family still need to
     // be re-evaluated so their subscribers get notified.
     if (families.size > 0 && data.scopes) {
-        const familyAtoms = [...families.keys()]
         for (const scopeId in data.scopes) {
             const scope = data.scopes[scopeId]
-            const familiesInScope = familyAtoms.filter(family =>
-                scope.values.has(family),
-            )
+            const familiesInScope = []
+            for (const family of families.keys()) {
+                if (scope.values.has(family)) {
+                    familiesInScope.push(family)
+                }
+            }
             if (familiesInScope.length > 0) {
                 propagateUpdatedAtoms(
                     familiesInScope,
