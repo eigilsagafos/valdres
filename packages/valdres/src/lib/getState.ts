@@ -6,6 +6,7 @@ import type { Selector } from "../types/Selector"
 import type { StoreData } from "../types/StoreData"
 import { isAtom } from "../utils/isAtom"
 import { isAtomFamily } from "../utils/isAtomFamily"
+import { isFamilyAtom } from "../utils/isFamilyAtom"
 import { isSelector } from "../utils/isSelector"
 import { isSelectorFamily } from "../utils/isSelectorFamily"
 import { equal } from "./equal"
@@ -64,6 +65,14 @@ export function getState<
                 initializedAtomsSet,
                 circularDependencySet,
             )
+        if (isFamilyAtom(state)) {
+            const familyValue = data.values.get(state.family)
+            if (familyValue?.__index) {
+                if (isAtomDeletedInFamilyIndex(state, familyValue.__index)) {
+                    return state.defaultValue as Value
+                }
+            }
+        }
         initAtom<Value, Args>(state, data, initializedAtomsSet)
         initializedAtomsSet.add(state)
         return data.values.get(state)
@@ -115,4 +124,12 @@ const findClosestStoreWithAtomInitialized = <V>(
     if ("parent" in data === false) return data
     if (data.values.has(atom)) return data
     return findClosestStoreWithAtomInitialized(atom, data.parent)
+}
+
+const isAtomDeletedInFamilyIndex = (atom: any, index: any): boolean => {
+    if (index.deleted.has(atom)) return true
+    if (index.created.has(atom)) return false
+    if (index.parentIndex)
+        return isAtomDeletedInFamilyIndex(atom, index.parentIndex)
+    return false
 }
