@@ -231,29 +231,14 @@ export class Transaction {
     }
 
     commit = () => {
-        if (!this._atomMap && !this._deleteSet && !this._scopedTransactions) {
-            return
+        const initializedAtomsSet = new Set<Atom>()
+        setAtoms(this.atomMap, this.data, initializedAtomsSet)
+        if (this.deleteSet?.size) {
+            deleteAtomFamilyAtoms(this.deleteSet, this.data)
+            propagateDeletedAtoms([...this.deleteSet], this.data)
         }
-        const atomMap = this._atomMap
-        const deleteSet = this._deleteSet
-        const scopedTransactions = this._scopedTransactions
-        this._atomMap = undefined
-        this._deleteSet = undefined
-        this._scopedTransactions = undefined
-        this._selectorCache = undefined
-        this._selectorDependencies = undefined
-        this.dirty = false
-
-        if (atomMap?.size) {
-            const initializedAtomsSet = new Set<Atom>()
-            setAtoms(atomMap, this.data, initializedAtomsSet)
-        }
-        if (deleteSet?.size) {
-            deleteAtomFamilyAtoms(deleteSet, this.data)
-            propagateDeletedAtoms([...deleteSet], this.data)
-        }
-        if (scopedTransactions) {
-            for (const [, scopedTxn] of scopedTransactions) {
+        if (this._scopedTransactions) {
+            for (const [, scopedTxn] of this._scopedTransactions) {
                 scopedTxn.commit()
             }
         }

@@ -616,27 +616,6 @@ describe("transaction", () => {
         })
     })
 
-    test("commit is idempotent", () => {
-        const rootStore = store()
-        const mutationAtom = atomFamily<any, [string]>(null)
-        const m1 = mutationAtom("1")
-        const m2 = mutationAtom("2")
-
-        rootStore.set(m1, { id: "1" })
-        rootStore.set(m2, { id: "2" })
-
-        // Simulate double commit (as roc-db end() does)
-        let txnRef: any
-        rootStore.txn(txn => {
-            txnRef = txn
-            txn.del(m1)
-        })
-        // Second commit should be a no-op
-        txnRef.commit()
-
-        expect(rootStore.get(mutationAtom)).toStrictEqual([m2])
-    })
-
     test("If a scope sets a value to the same as the parent scope we should set it in the scope, but not trigger updates", () => {
         const nameAtom = atom("initial")
         const rootStore = store()
