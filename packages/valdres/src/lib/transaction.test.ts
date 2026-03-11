@@ -588,6 +588,34 @@ describe("transaction", () => {
         expect(rootStore.get(nameAtom)).toBe("default")
     })
 
+    test("delete family atom does not corrupt index when subscription re-reads atom", () => {
+        const rootStore = store()
+        const mutationAtom = atomFamily<any, [string]>(null)
+        const m1 = mutationAtom("1")
+        const m2 = mutationAtom("2")
+        const m3 = mutationAtom("3")
+
+        rootStore.set(m1, { id: "1", changeSetRef: "cs1" })
+        rootStore.set(m2, { id: "2", changeSetRef: "cs1" })
+        rootStore.set(m3, { id: "3", changeSetRef: "cs2" })
+
+        // Subscribe to m2 and re-read it on change (simulates mutationSync)
+        rootStore.sub(m2, () => {
+            rootStore.get(m2)
+        })
+
+        rootStore.txn(txn => {
+            txn.del(m1)
+            txn.del(m2)
+        })
+
+        expect(rootStore.get(mutationAtom)).toStrictEqual([m3])
+        const atoms = rootStore.get(mutationAtom)
+        atoms.forEach(a => {
+            expect(rootStore.get(a)).not.toBeNull()
+        })
+    })
+
     test("If a scope sets a value to the same as the parent scope we should set it in the scope, but not trigger updates", () => {
         const nameAtom = atom("initial")
         const rootStore = store()
