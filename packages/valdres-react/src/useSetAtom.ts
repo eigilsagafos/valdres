@@ -7,6 +7,6 @@ export const useSetAtom = <V>(atom: Atom<V>, store?: Store) => {
     return useCallback(
         // @ts-ignore @ts-todo
         (value: SetAtomValue<V>) => selectedStore.set(atom, value),
-        [selectedStore],
+        [atom, selectedStore],
     )
 }
