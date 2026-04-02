@@ -31,16 +31,18 @@ describe("atom", () => {
         )
     })
 
-    test("set (same value)", async () => {
+    test("set (new value)", async () => {
         const vStore = valdresCreateStore()
         const jStore = jotaiCreateStore()
-        const vAtom = valdresAtom("Foo")
-        const jAtom = jotaiAtom("Foo")
+        const vAtom = valdresAtom(0)
+        const jAtom = jotaiAtom(0)
 
+        let vInt = 0
+        let jInt = 0
         await assertFaster(
-            "set(atom, same)",
-            () => vStore.set(vAtom, "Bar"),
-            () => jStore.set(jAtom, "Bar"),
+            "set(atom, value)",
+            () => vStore.set(vAtom, ++vInt),
+            () => jStore.set(jAtom, ++jInt),
             2.0,
         )
     })

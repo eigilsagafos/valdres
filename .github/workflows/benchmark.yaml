@@ -10,6 +10,7 @@ on:
 permissions:
     contents: write
     deployments: write
+    pull-requests: write
 
 jobs:
     benchmark:
@@ -30,22 +31,21 @@ jobs:
             - name: Build
               run: bun run build
 
-            - name: Clean previous results
-              run: rm -f packages/valdres/test/performance/bench-results.ndjson
-
             - name: Run benchmarks
+              # test:bench cleans stale results and runs files serially
               working-directory: packages/valdres
               run: bun run test:bench
 
             - name: Generate benchmark JSON
               run: bun run scripts/generate-bench-json.ts
 
-            # Ensure gh-pages branch exists for benchmark history
+            # Ensure gh-pages branch exists for benchmark history (main only)
             - name: Create gh-pages branch if missing
+              if: github.ref == 'refs/heads/main'
               run: |
                   if ! git ls-remote --exit-code origin gh-pages > /dev/null 2>&1; then
                     git checkout --orphan gh-pages
-                    git reset --hard
+                    git rm -rf .
                     git commit --allow-empty -m "Initialize gh-pages for benchmark data"
                     git push origin gh-pages
                     git checkout ${{ github.sha }}
