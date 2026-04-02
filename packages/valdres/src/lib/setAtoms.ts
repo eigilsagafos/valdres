@@ -1,5 +1,6 @@
 import type { Atom } from "../types/Atom"
 import type { StoreData } from "../types/StoreData"
+import { isPromiseLike } from "../utils/isPromiseLike"
 import { getState } from "./getState"
 import { propagateUpdatedAtoms } from "./propagateUpdatedAtoms"
 import { setValueInData } from "./setValueInData"
@@ -12,7 +13,10 @@ export const setAtoms = (
     const updatedAtoms = []
     for (let [atom, value] of pairs) {
         const currentValue = getState(atom, data, initializedAtomsSet)
-        if (!atom.equal(currentValue, value)) {
+        const areEqual = isPromiseLike(currentValue) || isPromiseLike(value)
+            ? currentValue === value
+            : atom.equal(currentValue, value)
+        if (!areEqual) {
             updatedAtoms.push(atom)
             value = setValueInData(atom, value, data)
             if (atom.onSet) atom.onSet(value, data)

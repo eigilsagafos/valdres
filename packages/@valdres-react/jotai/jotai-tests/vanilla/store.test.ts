@@ -469,7 +469,7 @@ describe("aborting atoms", () => {
         const promise2 = store.get(derivedAtom)
 
         resolve.splice(0).forEach((fn) => fn())
-        expect(promise).rejects.toThrow("aborted")
+        await expect(promise).rejects.toThrow("aborted")
         expect(await promise2).toEqual(4)
         expect(callBeforeAbort).toHaveBeenCalledTimes(2)
         expect(callAfterAbort).toHaveBeenCalledTimes(1)
@@ -543,7 +543,7 @@ test.todo("Unmount an atom that is no longer dependent within a derived atom (#2
     expect(onUnmount).toHaveBeenCalledTimes(1)
 })
 
-test.todo("should update derived atom even if dependencies changed (#2697)", () => {
+test("should update derived atom even if dependencies changed (#2697)", () => {
     const primitiveAtom = atom<number | undefined>(undefined)
     const derivedAtom = atom((get) => get(primitiveAtom))
     const conditionalAtom = atom((get) => {
