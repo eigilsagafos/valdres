@@ -92,13 +92,19 @@ export const evaluateSelector = <V>(
     return result
 }
 
-const handleSelectorResult = <Value>(
+export const handleSelectorResult = <Value>(
     value: Value | Promise<Value> | SuspendAndWaitForResolveError,
     selector: Selector<Value>,
     data: StoreData,
 ) => {
     if (value instanceof SuspendAndWaitForResolveError) {
-        value.promise.then(() => {
+        const promise = value.promise
+        promise.then(() => {
+            // Guard against stale promise — if the selector's value has been
+            // replaced with a different value, this resolution is outdated.
+            // If the value was deleted (e.g. moved to expired), still proceed.
+            const current = data.values.get(selector)
+            if (current !== undefined && current !== promise) return
             const initializedAtomsSet = new Set<Atom>()
             const res = initSelector(selector, data, initializedAtomsSet)
             if (initializedAtomsSet.size > 0) {
@@ -106,11 +112,14 @@ const handleSelectorResult = <Value>(
             }
             return res
         })
-        return value.promise
+        return promise
     } else if (isPromiseLike(value)) {
         // When a promise is returned when initializing a selector we suspend,
         // then we retry when the promise resolves.
         value.then(resolved => {
+            // Guard against stale promise
+            const current = data.values.get(selector)
+            if (current !== undefined && current !== value) return
             // @ts-ignore
             setValueInData(selector, resolved, data)
             const dependents = data.stateDependents.get(selector)
@@ -127,12 +136,6 @@ const handleSelectorResult = <Value>(
                     new Map(),
                 )
             }
-            // if (subs && subs.size > 0) {
-            //     throw new Error("TODO")
-            // }
-            // if (dependents && dependents.size > 0) {
-            //     throw new Error("TODO")
-            // }
         })
         return value
     } else {
@@ -154,7 +157,13 @@ export const initSelector = <V>(
         circularDependencySet,
     )
 
-    if (selector.equal(existingValue as V, udpatedValue as V)) {
+    // Promises should use reference equality — deep equal treats all
+    // promises as structurally identical (both have zero own keys).
+    const areEqual = isPromiseLike(existingValue) || isPromiseLike(udpatedValue)
+        ? existingValue === udpatedValue
+        : selector.equal(existingValue as V, udpatedValue as V)
+
+    if (areEqual) {
         return false
     } else {
         setValueInData<V>(selector, udpatedValue as V, data)

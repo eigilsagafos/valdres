@@ -9,7 +9,10 @@ import type { Subscription } from "../types/Subscription"
 import { isAtomFamily } from "../utils/isAtomFamily"
 import { isFamilyAtom } from "../utils/isFamilyAtom"
 import { isPromiseLike } from "../utils/isPromiseLike"
-import { evaluateSelector } from "./initSelector"
+import {
+    evaluateSelector,
+    handleSelectorResult,
+} from "./initSelector"
 import { setValueInData } from "./setValueInData"
 
 const reEvaluteSelector = (
@@ -19,9 +22,16 @@ const reEvaluteSelector = (
 ) => {
     const existingValue = data.values.get(selector)
     try {
-        const udpatedValue = evaluateSelector(selector, data, updatedAtoms)
+        const rawValue = evaluateSelector(selector, data, updatedAtoms)
+        const udpatedValue = handleSelectorResult(rawValue, selector, data)
 
-        if (selector.equal(existingValue, udpatedValue, updatedAtoms)) {
+        // Use reference equality for promises — deep equal treats all
+        // promises as structurally identical (both have zero own keys).
+        const areEqual =
+            isPromiseLike(existingValue) || isPromiseLike(udpatedValue)
+                ? existingValue === udpatedValue
+                : selector.equal(existingValue, udpatedValue, updatedAtoms)
+        if (areEqual) {
             return [false, false]
         } else {
             setValueInData(selector, udpatedValue, data)
@@ -284,6 +294,7 @@ export const propagateUpdatedAtoms = (
     isRecursive = false,
     timestamp = performance.now(),
     selectorsOnly = false,
+    isInitOnly = false,
 ) => {
     const selectors = new Set<Selector>()
     for (const atom of atoms) {
@@ -317,7 +328,7 @@ export const propagateUpdatedAtoms = (
     }
 
     if (!isRecursive) {
-        propagateDirtySelectors(atoms, selectors, data, subscriptions, families)
+        propagateDirtySelectors(atoms, selectors, data, subscriptions, families, isInitOnly)
         if (data.scopes) {
             for (const scopeId in data.scopes) {
                 const scope = data.scopes[scopeId]
@@ -342,6 +353,7 @@ export const propagateUpdatedAtoms = (
                         false,
                         timestamp,
                         true,
+                        isInitOnly,
                     )
                 }
             }
@@ -355,6 +367,7 @@ export const propagateDirtySelectors = (
     data: StoreData,
     subscriptions: Set<Subscription>,
     families: Map<AtomFamily<any>, Set<AtomFamilyAtom<any>>>,
+    isInitOnly = false,
 ) => {
     const initialUpdatedAtoms = new Set(updatedAtoms)
     const updatedInitializedAtoms = new Set<Atom>(initialUpdatedAtoms)
@@ -367,6 +380,8 @@ export const propagateDirtySelectors = (
             data,
             subscriptions,
             updatedInitializedAtoms,
+            undefined,
+            isInitOnly,
         )
     }
     const addedAtoms = initialUpdatedAtoms.symmetricDifference(
@@ -434,12 +449,26 @@ const recursivlyHandleSelectorUpdates = (
     collectedSubscribers: Set<any>,
     updatedInitializedAtoms: Set<Atom>,
     seen: Set<Selector> = new Set(),
+    isInitOnly = false,
 ) => {
     const selectorsForNextPass = new Set<Selector>()
     for (const selector of selectors) {
         const currentValue = data.values.get(selector)
         if (isPromiseLike(currentValue)) {
-            continue
+            // During init-time propagation, always skip pending-promise selectors
+            // to avoid double-evaluation.
+            if (isInitOnly) continue
+            const dependents = data.stateDependents.get(selector)
+            const subscribers = data.subscriptions.get(selector)
+            // For real changes: only re-evaluate pending-promise selectors that
+            // have subscribers or dependents. Unsubscribed ones are handled
+            // by their existing .then() handler or re-computed on next get().
+            if (
+                (!dependents || dependents.size === 0) &&
+                (!subscribers || subscribers.size === 0)
+            ) {
+                continue
+            }
         }
         seen.add(selector)
         const dependents = data.stateDependents.get(selector)
@@ -471,6 +500,7 @@ const recursivlyHandleSelectorUpdates = (
             collectedSubscribers,
             updatedInitializedAtoms,
             seen,
+            isInitOnly,
         )
     }
 }

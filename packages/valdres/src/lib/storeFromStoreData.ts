@@ -39,7 +39,7 @@ export function storeFromStoreData(
         const set = new Set<Atom>()
         const res = getState(state, data, set)
         if (set.size) {
-            propagateUpdatedAtoms([...set], data)
+            propagateUpdatedAtoms([...set], data, undefined, undefined, false, undefined, false, true)
         }
         return res
     }

@@ -423,3 +423,178 @@ describe("selector", () => {
         expect(nestedStore.get(themeSelector)).toBe("light")
     })
 })
+
+describe("async selector", () => {
+    test("re-evaluates when dependency changes (no subscribers)", async () => {
+        const store1 = store()
+        const countAtom = atom(1)
+        let resolve = () => {}
+        const asyncSelector1 = selector(get => {
+            const count = get(countAtom)
+            return new Promise<number>(r => {
+                resolve = () => r(count)
+            })
+        })
+
+        // Initial get returns a promise
+        const p1 = store1.get(asyncSelector1)
+        expect(p1).toBeInstanceOf(Promise)
+        resolve()
+        expect(await p1).toBe(1)
+        expect(store1.get(asyncSelector1)).toBe(1)
+
+        // Change dependency — should re-evaluate and return new promise
+        store1.set(countAtom, 2)
+        const p2 = store1.get(asyncSelector1)
+        expect(p2).toBeInstanceOf(Promise)
+        resolve()
+        expect(await p2).toBe(2)
+        expect(store1.get(asyncSelector1)).toBe(2)
+    })
+
+    test("subscribed async selector re-evaluates when dependency changes", async () => {
+        const store1 = store()
+        const countAtom = atom(1)
+        let evalCount = 0
+        let resolve = () => {}
+        const asyncSelector1 = selector(get => {
+            const count = get(countAtom)
+            evalCount++
+            return new Promise<number>(r => {
+                resolve = () => r(count)
+            })
+        })
+
+        const callback = mock(() => {})
+        store1.sub(asyncSelector1, callback)
+
+        // Resolve initial promise
+        resolve()
+        await new Promise(r => setTimeout(r, 0))
+        expect(store1.get(asyncSelector1)).toBe(1)
+        expect(callback).toHaveBeenCalledTimes(1)
+        expect(evalCount).toBe(1)
+
+        // Change dependency — selector should be re-evaluated
+        store1.set(countAtom, 2)
+        // The selector should have been re-evaluated by propagation
+        expect(evalCount).toBe(2)
+
+        // The value should now be a new promise
+        const val = store1.get(asyncSelector1)
+        expect(val).toBeInstanceOf(Promise)
+
+        // Resolve the new promise
+        resolve()
+        await new Promise(r => setTimeout(r, 0))
+        expect(store1.get(asyncSelector1)).toBe(2)
+        // 3 notifications: (1) initial resolve, (2) dep change → new promise, (3) new promise resolves
+        expect(callback).toHaveBeenCalledTimes(3)
+    })
+
+    test("re-evaluation of async selector sets up .then() handler", async () => {
+        const store1 = store()
+        const countAtom = atom(1)
+        let resolve = () => {}
+        const asyncSelector1 = selector(get => {
+            const count = get(countAtom)
+            return new Promise<number>(r => {
+                resolve = () => r(count)
+            })
+        })
+
+        // Subscribe to trigger propagation path
+        store1.sub(asyncSelector1, () => {})
+
+        // Resolve initial
+        resolve()
+        await new Promise(r => setTimeout(r, 0))
+        expect(store1.get(asyncSelector1)).toBe(1)
+
+        // Change dependency — propagation should re-evaluate and set up .then()
+        store1.set(countAtom, 2)
+        resolve()
+        await new Promise(r => setTimeout(r, 0))
+
+        // After the new promise resolves, value should be updated automatically
+        expect(store1.get(asyncSelector1)).toBe(2)
+    })
+
+    test("pending async selector re-evaluates on dependency change", async () => {
+        const store1 = store()
+        const countAtom = atom(1)
+        let evalCount = 0
+        let resolve = (_v: number) => {}
+        const asyncSelector1 = selector(get => {
+            const count = get(countAtom)
+            evalCount++
+            return new Promise<number>(r => {
+                resolve = v => r(v)
+            })
+        })
+
+        // Subscribe so propagation re-evaluates
+        store1.sub(asyncSelector1, () => {})
+        expect(evalCount).toBe(1)
+
+        // Value is currently a pending promise
+        expect(store1.get(asyncSelector1)).toBeInstanceOf(Promise)
+
+        // Change dependency while promise is still pending
+        store1.set(countAtom, 2)
+        // The selector should have been re-evaluated during propagation
+        expect(evalCount).toBe(2)
+    })
+
+    test("stale promise resolution does not overwrite newer value", async () => {
+        const store1 = store()
+        const countAtom = atom(1)
+        const resolvers: ((v: number) => void)[] = []
+        let evalCount = 0
+        const asyncSelector1 = selector(get => {
+            const count = get(countAtom)
+            evalCount++
+            return new Promise<number>(r => {
+                resolvers.push(v => r(v))
+            })
+        })
+
+        // Subscribe so propagation re-evaluates
+        store1.sub(asyncSelector1, () => {})
+        expect(evalCount).toBe(1)
+
+        // Change dependency before first promise resolves — should create new promise
+        store1.set(countAtom, 2)
+        expect(evalCount).toBe(2)
+        expect(resolvers).toHaveLength(2)
+
+        // Resolve the SECOND (current) promise first
+        resolvers[1]!(2)
+        await new Promise(r => setTimeout(r, 0))
+        expect(store1.get(asyncSelector1)).toBe(2)
+
+        // Now resolve the FIRST (stale) promise — should NOT overwrite
+        resolvers[0]!(1)
+        await new Promise(r => setTimeout(r, 0))
+        expect(store1.get(asyncSelector1)).toBe(2)
+    })
+
+    test("subscriber is notified when async selector resolves", async () => {
+        const store1 = store()
+        const asyncSelector1 = selector(
+            () => new Promise<string>(r => setTimeout(() => r("done"), 5)),
+        )
+
+        const callback = mock(() => {})
+        store1.sub(asyncSelector1, callback)
+
+        // Initially the value is a promise
+        expect(store1.get(asyncSelector1)).toBeInstanceOf(Promise)
+        expect(callback).toHaveBeenCalledTimes(0)
+
+        // Wait for resolution
+        await wait(10)
+        expect(store1.get(asyncSelector1)).toBe("done")
+        expect(callback).toHaveBeenCalledTimes(1)
+    })
+})

@@ -2,7 +2,7 @@ import { describe, test, expect, mock } from "bun:test"
 import { atom } from "../../src/atom"
 import { createStore } from "../../src/createStore"
 
-test.todo("can propagate updates with async atom chains", async () => {
+test("can propagate updates with async atom chains", async () => {
     const store = createStore()
 
     const countAtom = atom(1)
