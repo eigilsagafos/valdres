@@ -274,4 +274,16 @@ describe("subscriber error handling", () => {
         expect(callbackB).toHaveBeenCalledTimes(1)
         expect(callbackC).toHaveBeenCalledTimes(1)
     })
+
+    test("store.set rethrows the first subscriber error", () => {
+        const store1 = store()
+        const countAtom = atom(0)
+        store1.sub(countAtom, () => {})
+        store1.sub(countAtom, () => {
+            throw new Error("subscriber error")
+        })
+        store1.sub(countAtom, () => {})
+
+        expect(() => store1.set(countAtom, 1)).toThrow("subscriber error")
+    })
 })
