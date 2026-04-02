@@ -1,0 +1,77 @@
+name: Benchmark
+on:
+    push:
+        branches:
+            - main
+    pull_request:
+        branches:
+            - main
+
+permissions:
+    contents: write
+    deployments: write
+    pull-requests: write
+
+jobs:
+    benchmark:
+        runs-on: ubuntu-22.04
+        steps:
+            - uses: actions/checkout@v4
+
+            - name: Configure git identity
+              run: |
+                  git config user.name "github-actions[bot]"
+                  git config user.email "github-actions[bot]@users.noreply.github.com"
+
+            - uses: oven-sh/setup-bun@v2
+
+            - name: Install
+              run: bun install
+
+            - name: Build
+              run: bun run build
+
+            - name: Run benchmarks
+              # test:bench cleans stale results and runs files serially
+              working-directory: packages/valdres
+              run: bun run test:bench
+
+            - name: Generate benchmark JSON
+              run: bun run scripts/generate-bench-json.ts
+
+            # Ensure gh-pages branch exists for benchmark history (main only)
+            - name: Create gh-pages branch if missing
+              if: github.ref == 'refs/heads/main'
+              run: |
+                  if ! git ls-remote --exit-code origin gh-pages > /dev/null 2>&1; then
+                    git checkout --orphan gh-pages
+                    git rm -rf .
+                    git commit --allow-empty -m "Initialize gh-pages for benchmark data"
+                    git push origin gh-pages
+                    git checkout ${{ github.sha }}
+                  fi
+
+            # GitHub Pages trend chart
+            - name: Store benchmark result
+              uses: benchmark-action/github-action-benchmark@v1
+              with:
+                  name: "valdres benchmarks"
+                  tool: "customSmallerIsBetter"
+                  output-file-path: bench-results.json
+                  gh-pages-branch: gh-pages
+                  benchmark-data-dir-path: dev/bench
+                  github-token: ${{ secrets.GITHUB_TOKEN }}
+                  auto-push: ${{ github.ref == 'refs/heads/main' }}
+                  comment-on-alert: true
+                  summary-always: true
+                  alert-threshold: "150%"
+                  fail-on-alert: true
+
+            # Update README on main only (after benchmark action so working tree is clean)
+            - name: Update README with benchmark table
+              if: github.ref == 'refs/heads/main'
+              run: |
+                  bun run scripts/update-bench-readme.ts
+                  git add README.md
+                  git diff --staged --quiet || git commit -m "Update benchmark results in README"
+                  git push
