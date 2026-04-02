@@ -809,7 +809,7 @@ test.todo("should use the correct pending on unmount", () => {
     expect(aListener).toHaveBeenCalledTimes(1)
 })
 
-test.todo("should call subscribers after setAtom updates atom value on mount but not on unmount", () => {
+test("should call subscribers after setAtom updates atom value on mount but not on unmount", () => {
     const store = createStore()
     const a = atom(0)
     let unmount: any
@@ -1172,8 +1172,7 @@ test("notifies subscriber when nested write uses get to read atom with store.set
     expect(dataListener.mock.calls.length).toBe(2)
 })
 
-// Requires async atoms with fake timers
-test.todo("notifies async derived-atom subscriber when read calls store.set before await", async () => {
+test("notifies async derived-atom subscriber when read calls store.set before await", async () => {
     const store = createStore()
     const counterAtom = atom(0)
     const queryAtom = atom(null, (_get, _set, v: number) => v)

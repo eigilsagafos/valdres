@@ -1,20 +1,16 @@
 # Jotai Compatibility - Todo Tests
 
-## Currently Failing (11 tests)
-
-### onMount setSelf is object, not function (2)
-The valdres adapter passes something other than a callable `setSelf` to the `onMount` callback:
-- [ ] `flushPending...with mount` — `setSelf` from `onMount` is an object, not a function
-- [ ] `should call subscribers after setAtom updates atom value on mount but not on unmount` — same issue
+## Currently Failing (10 tests)
 
 ### onMount/onUnmount not called on error (2)
 When a subscriber throws, valdres skips lifecycle hooks:
 - [ ] `should mount and trigger listeners even when an error is thrown > in synchronous onmount`
 - [ ] `should mount and trigger listeners even when an error is thrown > in synchronous onunmount`
 
-### Flush/batching order differs from jotai (3)
+### Flush/batching order differs from jotai (4)
 Valdres notifies listeners at different points in the write cycle:
 - [ ] `flushPending...with set` — listener notification order differs
+- [ ] `flushPending...with mount` — listener notification order differs (batching)
 - [ ] `flushPending...with unmount` — derived atom default is `undefined` instead of `null`
 - [ ] `batches sync writes`
 
@@ -60,7 +56,7 @@ Blocked by bun not supporting `node:v8 setFlagsFromString`. Tests GC behavior, n
 
 ---
 
-## Should Support (40 tests)
+## Should Support (39 tests)
 
 ### Async Atoms — HIGH priority (16)
 Core jotai feature, most common migration blocker:
@@ -71,7 +67,7 @@ Core jotai feature, most common migration blocker:
 - [ ] `resolves dependencies reliably after a delay (#2192)`
 - [x] `should flush pending write triggered asynchronously and indirectly (#2451)`
 - [ ] `async atom with subtle timing > case 2`
-- [ ] `notifies async derived-atom subscriber when read calls store.set before await`
+- [x] `notifies async derived-atom subscriber when read calls store.set before await`
 - [x] `can propagate updates with async atom chains`
 - [ ] `can get async atom with deps more than once before resolving (#1668)`
 - [ ] `settles never resolving async derivations with deps picked up sync`
@@ -89,6 +85,9 @@ Heavily used in jotai codebases for side effects:
 - [ ] `keeps atoms mounted between recalculations`
 - [ ] `chained derive atom with onMount and useEffect (#897)` (react)
 - [ ] `in onmount/onunmount asynchronous setAtom`
+
+### onMount setSelf — now passing (1)
+- [x] `should call subscribers after setAtom updates atom value on mount but not on unmount`
 
 ### Derived Atom Optimization — MEDIUM priority (4)
 Important for correctness and performance:
