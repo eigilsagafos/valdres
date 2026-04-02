@@ -13,9 +13,11 @@ export const createStore = () => {
                 const setAtom = (...args) => store.set(_state, ...args)
                 return jotaiOnMount(setAtom)
             }
-            const unsub = originalSub(state, callback)
-            state.onMount = jotaiOnMount
-            return unsub
+            try {
+                return originalSub(state, callback)
+            } finally {
+                state.onMount = jotaiOnMount
+            }
         }
         return originalSub(state, callback)
     }
