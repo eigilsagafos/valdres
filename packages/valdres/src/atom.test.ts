@@ -249,3 +249,29 @@ describe("atom with promise values", () => {
         expect(callback).not.toHaveBeenCalled()
     })
 })
+
+describe("subscriber error handling", () => {
+    test("all subscribers are notified even if one throws", () => {
+        const store1 = store()
+        const countAtom = atom(0)
+        const callbackA = mock(() => {})
+        const callbackB = mock(() => {
+            throw new Error("subscriber error")
+        })
+        const callbackC = mock(() => {})
+
+        store1.sub(countAtom, callbackA)
+        store1.sub(countAtom, callbackB)
+        store1.sub(countAtom, callbackC)
+
+        try {
+            store1.set(countAtom, 1)
+        } catch {
+            // expected
+        }
+
+        expect(callbackA).toHaveBeenCalledTimes(1)
+        expect(callbackB).toHaveBeenCalledTimes(1)
+        expect(callbackC).toHaveBeenCalledTimes(1)
+    })
+})

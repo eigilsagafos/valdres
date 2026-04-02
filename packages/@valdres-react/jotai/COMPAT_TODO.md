@@ -25,7 +25,7 @@ Deeply nested or circular selector graphs blow the stack:
 
 ### Error resilience in listeners (1)
 Valdres stops at the first throwing listener instead of continuing to notify remaining ones:
-- [ ] `should process all atom listeners even if some of them throw errors`
+- [x] `should process all atom listeners even if some of them throw errors`
 
 ### Selector eval crash on unmount (1)
 Related to how pending state is handled during unsubscribe:

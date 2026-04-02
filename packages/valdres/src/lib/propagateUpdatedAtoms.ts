@@ -396,18 +396,28 @@ export const propagateDirtySelectors = (
         // )
     }
     if (subscriptions.size > 0) {
+        let firstError: unknown
+        let hasError = false
         for (const subscription of subscriptions) {
-            if ("state" in subscription) {
-                const updatedFamilyAtoms = families.get(subscription.state)
-                if (updatedFamilyAtoms) {
-                    for (const atom of updatedFamilyAtoms) {
-                        subscription.callback(...atom.familyArgs)
+            try {
+                if ("state" in subscription) {
+                    const updatedFamilyAtoms = families.get(subscription.state)
+                    if (updatedFamilyAtoms) {
+                        for (const atom of updatedFamilyAtoms) {
+                            subscription.callback(...atom.familyArgs)
+                        }
                     }
+                } else {
+                    subscription.callback()
                 }
-            } else {
-                subscription.callback()
+            } catch (error) {
+                if (!hasError) {
+                    firstError = error
+                    hasError = true
+                }
             }
         }
+        if (hasError) throw firstError
     }
 }
 

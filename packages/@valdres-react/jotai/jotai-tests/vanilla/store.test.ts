@@ -900,7 +900,7 @@ test("should notify subscription even with reading atom in write", () => {
     expect(callback).toHaveBeenCalledTimes(1)
 })
 
-test.todo("should process all atom listeners even if some of them throw errors", () => {
+test("should process all atom listeners even if some of them throw errors", () => {
     const store = createStore()
     const a = atom(0)
     const listenerA = mock(() => {})
