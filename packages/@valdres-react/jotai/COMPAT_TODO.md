@@ -92,7 +92,7 @@ Heavily used in jotai codebases for side effects:
 
 ### Derived Atom Optimization — MEDIUM priority (4)
 Important for correctness and performance:
-- [ ] `should bail out with the same value with chained dependency (#2014)`
+- [x] `should bail out with the same value with chained dependency (#2014)`
 - [x] `should not recompute a derived atom value if unchanged (#2168)`
 - [x] `should update derived atom even if dependencies changed (#2697)`
 - [ ] `handles complex dependency chains`
