@@ -5,3 +5,5 @@ dist
 dist-tarball
 todo.md
 .env.local
+bench-results.ndjson
+bench-results.json

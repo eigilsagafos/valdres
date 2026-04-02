@@ -1,0 +1,62 @@
+name: Benchmark
+on:
+    push:
+        branches:
+            - main
+    pull_request:
+        branches:
+            - main
+
+permissions:
+    contents: write
+    deployments: write
+
+jobs:
+    benchmark:
+        runs-on: ubuntu-22.04
+        steps:
+            - uses: actions/checkout@v4
+
+            - uses: oven-sh/setup-bun@v2
+
+            - name: Install
+              run: bun install
+
+            - name: Build
+              run: bun run build
+
+            - name: Clean previous results
+              run: rm -f packages/valdres/test/performance/bench-results.ndjson
+
+            - name: Run benchmarks
+              working-directory: packages/valdres
+              run: bun run test:bench
+
+            - name: Generate results
+              run: bun run scripts/update-bench-readme.ts
+
+            # GitHub Pages trend chart
+            - name: Store benchmark result
+              uses: benchmark-action/github-action-benchmark@v1
+              with:
+                  name: "valdres benchmarks"
+                  tool: "customSmallerIsBetter"
+                  output-file-path: bench-results.json
+                  gh-pages-branch: gh-pages
+                  benchmark-data-dir-path: dev/bench
+                  github-token: ${{ secrets.GITHUB_TOKEN }}
+                  auto-push: ${{ github.ref == 'refs/heads/main' }}
+                  comment-on-alert: true
+                  summary-always: true
+                  alert-threshold: "150%"
+                  fail-on-alert: true
+
+            # Update README on main only
+            - name: Commit README update
+              if: github.ref == 'refs/heads/main'
+              run: |
+                  git config user.name "github-actions[bot]"
+                  git config user.email "github-actions[bot]@users.noreply.github.com"
+                  git add README.md
+                  git diff --staged --quiet || git commit -m "Update benchmark results in README"
+                  git push
