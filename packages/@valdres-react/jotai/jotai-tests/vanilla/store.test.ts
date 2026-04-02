@@ -211,7 +211,7 @@ test("should update derived atoms during write (#2107)", () => {
 // Requires async atoms with fake timers and setSelf
 test.todo("resolves dependencies reliably after a delay (#2192)", async () => {})
 
-test.todo("should not recompute a derived atom value if unchanged (#2168)", () => {
+test("should not recompute a derived atom value if unchanged (#2168)", () => {
     const store = createStore()
     const countAtom = atom(1)
     const derived1Atom = atom((get) => get(countAtom) * 0)
@@ -306,7 +306,7 @@ test.todo("Unmount an atom that is no longer dependent within a derived atom (#2
     expect(onUnmount).toHaveBeenCalledTimes(1)
 })
 
-test.todo("should update derived atom even if dependencies changed (#2697)", () => {
+test("should update derived atom even if dependencies changed (#2697)", () => {
     const primitiveAtom = atom<number | undefined>(undefined)
     const derivedAtom = atom((get) => get(primitiveAtom))
     const conditionalAtom = atom((get) => {

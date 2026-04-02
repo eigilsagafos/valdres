@@ -72,7 +72,7 @@ Core jotai feature, most common migration blocker:
 - [ ] `should flush pending write triggered asynchronously and indirectly (#2451)`
 - [ ] `async atom with subtle timing > case 2`
 - [ ] `notifies async derived-atom subscriber when read calls store.set before await`
-- [ ] `can propagate updates with async atom chains`
+- [x] `can propagate updates with async atom chains`
 - [ ] `can get async atom with deps more than once before resolving (#1668)`
 - [ ] `settles never resolving async derivations with deps picked up sync`
 - [ ] `settles never resolving async derivations with deps picked up async`
@@ -93,8 +93,8 @@ Heavily used in jotai codebases for side effects:
 ### Derived Atom Optimization — MEDIUM priority (4)
 Important for correctness and performance:
 - [ ] `should bail out with the same value with chained dependency (#2014)`
-- [ ] `should not recompute a derived atom value if unchanged (#2168)`
-- [ ] `should update derived atom even if dependencies changed (#2697)`
+- [x] `should not recompute a derived atom value if unchanged (#2168)`
+- [x] `should update derived atom even if dependencies changed (#2697)`
 - [ ] `handles complex dependency chains`
 
 ### Abort Signal Support — MEDIUM priority (3)
