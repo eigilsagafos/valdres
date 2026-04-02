@@ -186,7 +186,7 @@ test("should notify subscription with tree dependencies with bail-out", () => {
     expect(store.get(dep3Atom)).toBe(4)
 })
 
-test.todo("should bail out with the same value with chained dependency (#2014)", () => {
+test("should bail out with the same value with chained dependency (#2014)", () => {
     const store = createStore()
     const objAtom = atom({ count: 1 })
     const countAtom = atom((get) => get(objAtom).count)

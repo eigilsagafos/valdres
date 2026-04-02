@@ -8,16 +8,16 @@ const addSetToSelector = (selector, set) => {
 
 export const atom = (get, set?: any) => {
     if (typeof get === "function" && get.length === 1) {
-        const selector = valdresSelector(get)
+        const selector = valdresSelector(get, { equal: Object.is })
         if (set) addSetToSelector(selector, set)
         return selector
     } else if (typeof set === "function") {
         if (get === null) get = () => undefined
-        const selector = valdresSelector(get)
+        const selector = valdresSelector(get, { equal: Object.is })
         if (set) addSetToSelector(selector, set)
         return selector
     } else {
-        const newAtom = valdresAtom(get)
+        const newAtom = valdresAtom(get, { equal: Object.is })
         // if (set) addSetToSelector(newAtom, set)
         return newAtom
     }
