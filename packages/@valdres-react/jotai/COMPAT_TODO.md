@@ -1,5 +1,38 @@
 # Jotai Compatibility - Todo Tests
 
+## Currently Failing (11 tests)
+
+### onMount setSelf is object, not function (2)
+The valdres adapter passes something other than a callable `setSelf` to the `onMount` callback:
+- [ ] `flushPending...with mount` — `setSelf` from `onMount` is an object, not a function
+- [ ] `should call subscribers after setAtom updates atom value on mount but not on unmount` — same issue
+
+### onMount/onUnmount not called on error (2)
+When a subscriber throws, valdres skips lifecycle hooks:
+- [ ] `should mount and trigger listeners even when an error is thrown > in synchronous onmount`
+- [ ] `should mount and trigger listeners even when an error is thrown > in synchronous onunmount`
+
+### Flush/batching order differs from jotai (3)
+Valdres notifies listeners at different points in the write cycle:
+- [ ] `flushPending...with set` — listener notification order differs
+- [ ] `flushPending...with unmount` — derived atom default is `undefined` instead of `null`
+- [ ] `batches sync writes`
+
+### Deep recursion / stack overflow (2)
+Deeply nested or circular selector graphs blow the stack:
+- [ ] `processes deep atom graph beyond maxDepth`
+- [ ] `should not inf on subscribe or unsubscribe`
+
+### Error resilience in listeners (1)
+Valdres stops at the first throwing listener instead of continuing to notify remaining ones:
+- [ ] `should process all atom listeners even if some of them throw errors`
+
+### Selector eval crash on unmount (1)
+Related to how pending state is handled during unsubscribe:
+- [ ] `should use the correct pending on unmount`
+
+---
+
 ## Safe to Ignore (14 tests)
 
 ### Jotai Internals (3)
