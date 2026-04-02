@@ -1,8 +1,7 @@
 /**
- * Reads bench-results.ndjson, generates a markdown table and a JSON file
- * for github-action-benchmark, then updates README.md between markers.
+ * Reads bench-results.ndjson and updates the benchmark table in README.md.
  */
-import { readFileSync, writeFileSync, unlinkSync } from "fs"
+import { readFileSync, writeFileSync } from "fs"
 import { join } from "path"
 
 const ROOT = join(import.meta.dir, "..")
@@ -11,7 +10,6 @@ const RESULTS_PATH = join(
     "packages/valdres/test/performance/bench-results.ndjson",
 )
 const README_PATH = join(ROOT, "README.md")
-const GH_BENCH_PATH = join(ROOT, "bench-results.json")
 
 const START_MARKER = "<!-- BENCH:START -->"
 const END_MARKER = "<!-- BENCH:END -->"
@@ -31,7 +29,6 @@ function fmtNs(ns: number): string {
 }
 
 function speedIndicator(ratio: number): string {
-    if (ratio <= 0.5) return "🟢"
     if (ratio <= 1.0) return "🟢"
     if (ratio <= 2.0) return "🟡"
     return "🔴"
@@ -57,9 +54,10 @@ ${compRows.join("\n")}`
 
 // Generate baseline table
 const baseRows = baselines.map(r => `| ${r.name} | ${fmtNs(r.valdres)} |`)
-const baseTable = baselines.length > 0
-    ? `\n\n#### Baseline (raw JS)\n\n| Operation | Time |\n|:----------|-----:|\n${baseRows.join("\n")}`
-    : ""
+const baseTable =
+    baselines.length > 0
+        ? `\n\n#### Baseline (raw JS)\n\n| Operation | Time |\n|:----------|-----:|\n${baseRows.join("\n")}`
+        : ""
 
 const table = compTable + baseTable
 
@@ -89,17 +87,3 @@ if (startIdx !== -1 && endIdx !== -1) {
 
 writeFileSync(README_PATH, updated)
 console.log("README.md updated with benchmark results")
-
-// Generate github-action-benchmark JSON (include all for trend tracking)
-const ghBenchResults = results.map(r => ({
-    name: r.name,
-    unit: "ns",
-    value: Math.round(r.valdres),
-    extra: r.tag === "baseline" ? "baseline" : `jotai: ${fmtNs(r.jotai)} (${r.tag})`,
-}))
-
-writeFileSync(GH_BENCH_PATH, JSON.stringify(ghBenchResults, null, 2))
-console.log("bench-results.json generated for github-action-benchmark")
-
-// Clean up ndjson
-unlinkSync(RESULTS_PATH)

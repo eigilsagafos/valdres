@@ -37,8 +37,8 @@ jobs:
               working-directory: packages/valdres
               run: bun run test:bench
 
-            - name: Generate results
-              run: bun run scripts/update-bench-readme.ts
+            - name: Generate benchmark JSON
+              run: bun run scripts/generate-bench-json.ts
 
             # Ensure gh-pages branch exists for benchmark history
             - name: Create gh-pages branch if missing
@@ -67,10 +67,11 @@ jobs:
                   alert-threshold: "150%"
                   fail-on-alert: true
 
-            # Update README on main only
-            - name: Commit README update
+            # Update README on main only (after benchmark action so working tree is clean)
+            - name: Update README with benchmark table
               if: github.ref == 'refs/heads/main'
               run: |
+                  bun run scripts/update-bench-readme.ts
                   git add README.md
                   git diff --staged --quiet || git commit -m "Update benchmark results in README"
                   git push
