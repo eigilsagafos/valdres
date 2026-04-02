@@ -48,7 +48,7 @@ jobs:
                     git reset --hard
                     git commit --allow-empty -m "Initialize gh-pages for benchmark data"
                     git push origin gh-pages
-                    git checkout -
+                    git checkout ${{ github.sha }}
                   fi
 
             # GitHub Pages trend chart
