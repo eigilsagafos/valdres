@@ -65,11 +65,11 @@ Blocked by bun not supporting `node:v8 setFlagsFromString`. Tests GC behavior, n
 ### Async Atoms — HIGH priority (16)
 Core jotai feature, most common migration blocker:
 - [ ] `should update async atom with delay (#1813)`
-- [ ] `should override a promise by setting`
+- [x] `should override a promise by setting`
 - [ ] `should update async atom with deps after await (#1905)`
 - [ ] `should not fire subscription when async atom promise is the same`
 - [ ] `resolves dependencies reliably after a delay (#2192)`
-- [ ] `should flush pending write triggered asynchronously and indirectly (#2451)`
+- [x] `should flush pending write triggered asynchronously and indirectly (#2451)`
 - [ ] `async atom with subtle timing > case 2`
 - [ ] `notifies async derived-atom subscriber when read calls store.set before await`
 - [x] `can propagate updates with async atom chains`

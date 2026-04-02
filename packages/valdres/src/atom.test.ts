@@ -229,3 +229,23 @@ describe("atom", () => {
         expect(() => (mutableObject.foo = "bar")).not.toThrowError()
     })
 })
+
+describe("atom with promise values", () => {
+    test("setting a different promise replaces the value", () => {
+        const store1 = store()
+        const countAtom = atom(Promise.resolve(0))
+        const infinitePending = new Promise<never>(() => {})
+        store1.set(countAtom, infinitePending)
+        expect(store1.get(countAtom)).toBe(infinitePending)
+    })
+
+    test("setting the same promise is a no-op", () => {
+        const store1 = store()
+        const p = Promise.resolve(1)
+        const countAtom = atom(p)
+        const callback = mock(() => {})
+        store1.sub(countAtom, callback)
+        store1.set(countAtom, p)
+        expect(callback).not.toHaveBeenCalled()
+    })
+})

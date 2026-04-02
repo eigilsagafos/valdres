@@ -19,7 +19,10 @@ export const setAtom = <Value = any>(
         if (isPromiseLike(newValue) || isPromiseLike(currentValue))
             throw new Error("Todo, how should we handle this?")
     }
-    if (atom.equal(currentValue, newValue)) return newValue
+    const areEqual = isPromiseLike(currentValue) || isPromiseLike(newValue)
+        ? currentValue === newValue
+        : atom.equal(currentValue, newValue)
+    if (areEqual) return newValue
     newValue = setValueInData(atom, newValue, data)
     if (atom.onSet && !skipOnSet) atom.onSet(newValue, data)
     // @ts-ignore
