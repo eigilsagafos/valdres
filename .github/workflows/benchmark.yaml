@@ -35,6 +35,17 @@ jobs:
             - name: Generate results
               run: bun run scripts/update-bench-readme.ts
 
+            # Ensure gh-pages branch exists for benchmark history
+            - name: Create gh-pages branch if missing
+              run: |
+                  if ! git ls-remote --exit-code origin gh-pages > /dev/null 2>&1; then
+                    git checkout --orphan gh-pages
+                    git reset --hard
+                    git commit --allow-empty -m "Initialize gh-pages for benchmark data"
+                    git push origin gh-pages
+                    git checkout -
+                  fi
+
             # GitHub Pages trend chart
             - name: Store benchmark result
               uses: benchmark-action/github-action-benchmark@v1
