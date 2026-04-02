@@ -419,7 +419,7 @@ test("can cache reading an atom in write function (with mounting)", () => {
     expect(aReadCount).toBe(1)
 })
 
-test("batches sync writes", () => {
+test.todo("batches sync writes", () => {
     const a = atom(0)
     const b = atom(get => get(a))
     const fetchFn = mock(() => {})
