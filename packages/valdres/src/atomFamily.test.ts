@@ -408,4 +408,27 @@ describe("atomFamily", () => {
         expect(nestedStore.get(userFamily)).toStrictEqual([user1atom])
         expect(nestedNestedStore.get(userFamily)).toStrictEqual([user1atom])
     })
+
+    test("all family atom subscribers are notified even if one throws", () => {
+        const store1 = store()
+        const userFamily = atomFamily<string, [string]>(undefined)
+        const notifiedKeys: string[] = []
+
+        store1.sub(userFamily, key => {
+            if (key === "b") throw new Error("family subscriber error")
+            notifiedKeys.push(key)
+        })
+
+        try {
+            store1.txn(({ set }) => {
+                set(userFamily("a"), "Alice")
+                set(userFamily("b"), "Bob")
+                set(userFamily("c"), "Charlie")
+            })
+        } catch {
+            // expected rethrow
+        }
+
+        expect(notifiedKeys).toStrictEqual(["a", "c"])
+    })
 })
