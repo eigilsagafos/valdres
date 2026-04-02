@@ -1,8 +1,8 @@
-import { expect, it } from "bun:test"
+import { describe, test, expect, mock } from "bun:test"
 import { atom } from "../../src/atom"
 import { createStore } from "../../src/createStore"
 
-it.todo("can propagate updates with async atom chains", async () => {
+test.todo("can propagate updates with async atom chains", async () => {
     const store = createStore()
 
     const countAtom = atom(1)
@@ -30,7 +30,7 @@ it.todo("can propagate updates with async atom chains", async () => {
     await expect(store.get(async3Atom)).resolves.toBe(3)
 })
 
-it.todo(
+test.todo(
     "can get async atom with deps more than once before resolving (#1668)",
     async () => {
         const countAtom = atom(0)
@@ -56,7 +56,7 @@ it.todo(
     },
 )
 
-it("correctly updates async derived atom after get/set update", async () => {
+test("correctly updates async derived atom after get/set update", async () => {
     const baseAtom = atom(0)
     const derivedAsyncAtom = atom(
         async get => get(baseAtom) + 1,
@@ -77,7 +77,7 @@ it("correctly updates async derived atom after get/set update", async () => {
     expect(derived).toBe(3)
 })
 
-it("correctly handles the same promise being returned twice from an atom getter (#2151)", async () => {
+test("correctly handles the same promise being returned twice from an atom getter (#2151)", async () => {
     const asyncDataAtom = atom(async () => {
         return "Asynchronous Data"
     })
@@ -98,7 +98,7 @@ it("correctly handles the same promise being returned twice from an atom getter 
     await expect(store.get(derivedAtom)).resolves.toBe("Asynchronous Data")
 })
 
-it.todo("keeps atoms mounted between recalculations", async () => {
+test.todo("keeps atoms mounted between recalculations", async () => {
     const metrics1 = {
         mounted: 0,
         unmounted: 0,
@@ -158,7 +158,7 @@ it.todo("keeps atoms mounted between recalculations", async () => {
     })
 })
 
-it("should not provide stale values to conditional dependents", () => {
+test("should not provide stale values to conditional dependents", () => {
     const dataAtom = atom<number[]>([100])
     const hasFilterAtom = atom(false)
     const filteredAtom = atom(get => {
@@ -191,7 +191,7 @@ it("should not provide stale values to conditional dependents", () => {
     expect(store.get(stageAtom), "should update").toBe("is-empty")
 })
 
-it.todo(
+test.todo(
     "settles never resolving async derivations with deps picked up sync",
     async () => {
         const resolve: ((value: number) => void)[] = []
@@ -225,7 +225,7 @@ it.todo(
     },
 )
 
-it.todo(
+test.todo(
     "settles never resolving async derivations with deps picked up async",
     async () => {
         const resolve: ((value: number) => void)[] = []
@@ -264,7 +264,7 @@ it.todo(
     },
 )
 
-it.todo("refreshes deps for each async read", async () => {
+test.todo("refreshes deps for each async read", async () => {
     const countAtom = atom(0)
     const depAtom = atom(false)
     const resolve: (() => void)[] = []
@@ -287,4 +287,154 @@ it.todo("refreshes deps for each async read", async () => {
     store.get(asyncAtom)
     resolve.splice(0).forEach(fn => fn())
     expect(values).toEqual([0, 1])
+})
+
+test("should not re-evaluate stable derived atom values in situations where dependencies are re-ordered (#2738)", () => {
+    const callCounter = mock(() => {})
+    const countAtom = atom(0)
+    const rootAtom = atom(false)
+    const stableDep = atom(get => {
+        get(rootAtom)
+        return 1
+    })
+    const stableDepDep = atom(get => {
+        get(stableDep)
+        callCounter()
+        return 2 + get(countAtom)
+    })
+
+    const newAtom = atom(get => {
+        if (get(rootAtom) || get(countAtom) > 0) {
+            return get(stableDepDep)
+        }
+
+        return get(stableDep)
+    })
+
+    const store = createStore()
+    store.sub(stableDepDep, () => {})
+    store.sub(newAtom, () => {})
+    expect(store.get(stableDepDep)).toBe(2)
+    expect(callCounter).toHaveBeenCalledTimes(1)
+
+    store.set(rootAtom, true)
+    expect(store.get(newAtom)).toBe(2)
+    expect(callCounter).toHaveBeenCalledTimes(1)
+
+    store.set(rootAtom, false)
+    store.set(countAtom, 1)
+    expect(store.get(newAtom)).toBe(3)
+    expect(callCounter).toHaveBeenCalledTimes(2)
+})
+
+test.todo("handles complex dependency chains", async () => {
+    const baseAtom = atom(1)
+    const derived1 = atom(get => get(baseAtom) * 2)
+    const derived2 = atom(get => get(derived1) + 1)
+    const asyncDerived = atom(async get => {
+        const value = get(derived2)
+        await new Promise<void>(r => setTimeout(r, 100))
+        return value * 2
+    })
+    const store = createStore()
+
+    store.get(asyncDerived)
+    await new Promise(r => setTimeout(r, 100))
+    await expect(store.get(asyncDerived)).resolves.toBe(6)
+
+    store.set(baseAtom, 2)
+    store.get(asyncDerived)
+    await new Promise(r => setTimeout(r, 100))
+    await expect(store.get(asyncDerived)).resolves.toBe(10)
+})
+
+test("can read sync derived atom in write without initializing", () => {
+    const store = createStore()
+    const a = atom(0)
+    const b = atom(get => get(a) + 1)
+    const c = atom(null, (get, set) => set(a, get(b)))
+    store.set(c)
+    expect(store.get(a)).toBe(1)
+    store.set(c)
+    // note: this is why write get needs to update deps
+    expect(store.get(a)).toBe(2)
+})
+
+test("can read in write function without changing dependencies", () => {
+    // https://github.com/pmndrs/jotai/discussions/2789
+    const a = atom(0)
+    let bReadCount = 0
+    const b = atom(
+        get => {
+            ++bReadCount
+            return get(a)
+        },
+        () => {},
+    )
+    let bIsMounted = false
+    b.onMount = () => {
+        bIsMounted = true
+    }
+    const c = atom(get => get(a))
+    const w = atom(null, (get, set) => {
+        expect(bReadCount).toBe(0)
+        const bValue = get(b)
+        expect(bReadCount).toBe(1)
+        set(a, bValue + 1)
+        expect(bReadCount).toBe(1)
+    })
+
+    const store = createStore()
+    store.sub(c, () => {}) // mounts c,a
+    store.set(w)
+    expect(bIsMounted).toBe(false)
+})
+
+test("can cache reading an atom in write function (without mounting)", () => {
+    let aReadCount = 0
+    const a = atom(() => {
+        ++aReadCount
+        return "a"
+    })
+    const w = atom(null, get => get(a))
+    const store = createStore()
+    store.set(w)
+    expect(aReadCount).toBe(1)
+    store.set(w)
+    expect(aReadCount).toBe(1)
+})
+
+test("can cache reading an atom in write function (with mounting)", () => {
+    let aReadCount = 0
+    const a = atom(() => {
+        ++aReadCount
+        return "a"
+    })
+    const w = atom(null, get => get(a))
+    const store = createStore()
+    store.sub(a, () => {}) // mounts a
+    store.set(w)
+    expect(aReadCount).toBe(1)
+    store.set(w)
+    expect(aReadCount).toBe(1)
+})
+
+test("batches sync writes", () => {
+    const a = atom(0)
+    const b = atom(get => get(a))
+    const fetchFn = mock(() => {})
+    const c = atom(get => fetchFn(get(a)))
+    const w = atom(null, (get, set) => {
+        set(a, 1)
+        expect(get(b)).toBe(1)
+        expect(fetchFn).toHaveBeenCalledTimes(0)
+    })
+    const store = createStore()
+    store.sub(b, () => {})
+    store.sub(c, () => {})
+    fetchFn.mockClear()
+    store.set(w)
+    expect(fetchFn).toHaveBeenCalledTimes(1)
+    expect(fetchFn).toBeCalledWith(1)
+    expect(store.get(a)).toBe(1)
 })

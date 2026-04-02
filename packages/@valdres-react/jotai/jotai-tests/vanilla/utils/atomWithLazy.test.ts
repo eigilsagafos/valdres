@@ -1,8 +1,8 @@
-import { expect, test, mock } from "bun:test"
+import { test, expect, mock } from "bun:test"
 import { createStore } from "../../../src/createStore"
 import { atomWithLazy } from "../../../src/utils/atomWithLazy"
 
-test("initializes on first store get", async () => {
+test("initializes on first store get", () => {
     const storeA = createStore()
     const storeB = createStore()
 
@@ -22,7 +22,7 @@ test("initializes on first store get", async () => {
     expect(initializer).toHaveBeenCalledTimes(2)
 })
 
-test("is writable", async () => {
+test("is writable", () => {
     const store = createStore()
     const anAtom = atomWithLazy(() => 0)
 
@@ -31,7 +31,7 @@ test("is writable", async () => {
     expect(store.get(anAtom)).toEqual(123)
 })
 
-test("should work with a set state action", async () => {
+test("should work with a set state action", () => {
     const store = createStore()
     const anAtom = atomWithLazy(() => 4)
 

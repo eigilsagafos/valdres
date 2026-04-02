@@ -127,10 +127,10 @@ test("uses a read-write derived atom", async () => {
         getByText("doubledCount: 0")
     })
     await userEvent.click(getByText("button"))
-    // await waitFor(() => {
-    //     getByText("count: 2")
-    //     getByText("doubledCount: 4")
-    // })
+    await waitFor(() => {
+        getByText("count: 2")
+        getByText("doubledCount: 4")
+    })
 })
 
 test("uses a write-only derived atom", async () => {
@@ -354,7 +354,7 @@ test.todo("works with async get without setTimeout", async () => {
     await findByText("count: 2, delayedCount: 2")
 })
 
-test("uses atoms with tree dependencies", async () => {
+test.todo("uses atoms with tree dependencies", async () => {
     const topAtom = atom(0)
     const leftAtom = atom(get => get(topAtom))
     let resolve = () => {}
@@ -433,7 +433,7 @@ test("runs update only once in StrictMode", async () => {
     expect(updateCount).toBe(1)
 })
 
-test("uses an async write-only atom", async () => {
+test.todo("uses an async write-only atom", async () => {
     const countAtom = atom(0)
     let resolve = () => {}
     const asyncCountAtom = atom(

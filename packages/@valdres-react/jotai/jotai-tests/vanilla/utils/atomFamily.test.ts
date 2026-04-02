@@ -1,6 +1,6 @@
-import { expect, test, mock } from "bun:test"
-import { createStore } from "../../../src/createStore"
+import { test, expect, mock } from "bun:test"
 import { atom } from "../../../src/atom"
+import { createStore } from "../../../src/createStore"
 import { atomFamily } from "../../../src/utils/atomFamily"
 
 test("should create atoms with different params", () => {
@@ -45,7 +45,7 @@ test("should remove atoms with custom comparator", () => {
 test("should remove atoms with custom shouldRemove", () => {
     const store = createStore()
     const initializeAtom = mock((param: number) => atom(param))
-    const aFamily = atomFamily<number, Atom<number>>(initializeAtom)
+    const aFamily = atomFamily(initializeAtom)
     expect(store.get(aFamily(1))).toEqual(1)
     expect(store.get(aFamily(2))).toEqual(2)
     expect(store.get(aFamily(3))).toEqual(3)
@@ -62,11 +62,7 @@ test("should remove atoms with custom shouldRemove", () => {
 test("should notify listeners", () => {
     const aFamily = atomFamily((param: number) => atom(param))
     const listener = mock(() => {})
-    type Event = {
-        type: "CREATE" | "REMOVE"
-        param: number
-        atom: Atom<number>
-    }
+    type Event = { type: "CREATE" | "REMOVE"; param: number; atom: any }
     const unsubscribe = aFamily.unstable_listen(listener)
     const atom1 = aFamily(1)
     expect(listener).toHaveBeenCalledTimes(1)
