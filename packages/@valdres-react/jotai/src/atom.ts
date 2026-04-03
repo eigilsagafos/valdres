@@ -6,15 +6,20 @@ const addSetToSelector = (selector, set) => {
     }
 }
 
+const isAsyncFunction = (fn: Function) =>
+    fn.constructor.name === "AsyncFunction"
+
 export const atom = (get, set?: any) => {
     if (typeof get === "function" && get.length === 1) {
         const selector = valdresSelector(get, { equal: Object.is })
         if (set) addSetToSelector(selector, set)
+        if (isAsyncFunction(get)) selector.__jotaiAsync = true
         return selector
     } else if (typeof set === "function") {
         if (get === null) get = () => undefined
         const selector = valdresSelector(get, { equal: Object.is })
         if (set) addSetToSelector(selector, set)
+        if (isAsyncFunction(get)) selector.__jotaiAsync = true
         return selector
     } else {
         const newAtom = valdresAtom(get, { equal: Object.is })

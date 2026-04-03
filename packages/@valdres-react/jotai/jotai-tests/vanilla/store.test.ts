@@ -970,7 +970,7 @@ test("recomputes all changed atom dependents together", () => {
     expect(store.get(a0b0)).toEqual([0, 1])
 })
 
-test.todo("should not inf on subscribe or unsubscribe", () => {
+test("should not inf on subscribe or unsubscribe", () => {
     const store = createStore()
     const countAtom = atom(0)
     const effectAtom = atom(

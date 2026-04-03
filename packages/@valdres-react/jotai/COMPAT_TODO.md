@@ -14,10 +14,10 @@ Valdres notifies listeners at different points in the write cycle:
 - [ ] `flushPending...with unmount` — derived atom default is `undefined` instead of `null`
 - [ ] `batches sync writes`
 
-### Deep recursion / stack overflow (2)
+### Deep recursion / stack overflow (1)
 Deeply nested or circular selector graphs blow the stack:
 - [ ] `processes deep atom graph beyond maxDepth`
-- [ ] `should not inf on subscribe or unsubscribe`
+- [x] `should not inf on subscribe or unsubscribe`
 
 ### Error resilience in listeners (1)
 Valdres stops at the first throwing listener instead of continuing to notify remaining ones:
@@ -94,7 +94,7 @@ Important for correctness and performance:
 - [x] `should bail out with the same value with chained dependency (#2014)`
 - [x] `should not recompute a derived atom value if unchanged (#2168)`
 - [x] `should update derived atom even if dependencies changed (#2697)`
-- [ ] `handles complex dependency chains`
+- [x] `handles complex dependency chains`
 
 ### Abort Signal Support — MEDIUM priority (3)
 Used for cancellation of async atoms:
