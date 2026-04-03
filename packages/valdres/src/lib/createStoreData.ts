@@ -1,7 +1,7 @@
 import type { ScopedStoreData, StoreData } from "../types/StoreData"
 
 let nextId = 0
-const generateId = () => "" + nextId++
+const generateId = () => "__valdres_store_" + nextId++
 
 function makeLazyGetter(key: string) {
     return {
@@ -19,7 +19,7 @@ function makeLazyGetter(key: string) {
 }
 
 // Shared prototype with lazy WeakMap getters — defined once, reused by all stores
-const lazyProto = Object.create(null)
+const lazyProto = Object.create(Object.prototype)
 Object.defineProperties(lazyProto, {
     expiredValues: makeLazyGetter("expiredValues"),
     subscriptions: makeLazyGetter("subscriptions"),
