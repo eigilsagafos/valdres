@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1775161985202,
+  "lastUpdate": 1775229071283,
   "repoUrl": "https://github.com/eigilsagafos/valdres",
   "entries": {
     "valdres benchmarks": [
@@ -144,6 +144,150 @@ window.BENCHMARK_DATA = {
             "value": 253,
             "unit": "ns",
             "extra": "jotai: 1.1µs (4.3x faster)"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "eigil@sagafos.no",
+            "name": "Eigil Sagafos",
+            "username": "eigilsagafos"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "a9dce4bf09cbd7d0504ed29762f2147fe757842c",
+          "message": "Replace benchmark alerting with scale-aware regression checker (#23)\n\n* Replace single-threshold benchmark alerting with scale-aware regression checker\n\nThe built-in github-action-benchmark alerting used a single threshold for\nall tests, causing false positives on sub-nanosecond benchmarks (e.g.\nobj.value=n going from 1ns to 2ns). The new custom script compares against\nthe median of the last 10 runs and uses tiered thresholds based on the\nmagnitude of each benchmark.\n\nCo-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>\n\n* Redesign PR comment table: valdres vs jotai side-by-side, skip baselines\n\nRead from ndjson directly to get both valdres and jotai timings. The table\nnow shows each benchmark with both libraries side by side, a \"vs Jotai\"\ncolumn, and the regression check columns. Baseline JS ops (plain object,\nMap) are excluded from the table entirely.\n\nCo-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>\n\n* Address Copilot review: robust comment posting, generated threshold table\n\n- Wrap postOrUpdateComment in try/catch so API failures don't fail the\n  regression check\n- Add per_page=100, res.ok and Array.isArray guards\n- Generate the threshold tiers table from the TIERS config to avoid drift\n\nCo-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 4.6 <noreply@anthropic.com>",
+          "timestamp": "2026-04-03T08:10:17-07:00",
+          "tree_id": "c7c33fb522cd311a25bff210452c2fdc5ccbdc9c",
+          "url": "https://github.com/eigilsagafos/valdres/commit/a9dce4bf09cbd7d0504ed29762f2147fe757842c"
+        },
+        "date": 1775229070335,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "atom(1)",
+            "value": 3,
+            "unit": "ns",
+            "extra": "jotai: 54ns (17.4x faster)"
+          },
+          {
+            "name": "store.get(atom)",
+            "value": 43,
+            "unit": "ns",
+            "extra": "jotai: 83ns (1.9x faster)"
+          },
+          {
+            "name": "set(atom, value)",
+            "value": 702,
+            "unit": "ns",
+            "extra": "jotai: 1.2µs (1.7x faster)"
+          },
+          {
+            "name": "set(atom, curr => curr+1)",
+            "value": 693,
+            "unit": "ns",
+            "extra": "jotai: 1.3µs (1.8x faster)"
+          },
+          {
+            "name": "atomFamily(id)",
+            "value": 687,
+            "unit": "ns",
+            "extra": "jotai: 477ns (1.4x slower)"
+          },
+          {
+            "name": "obj.value",
+            "value": 0,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "map.get(key)",
+            "value": 4,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "valdres get",
+            "value": 5,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "jotai get",
+            "value": 51,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "obj.value = n",
+            "value": 1,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "map.set(key, n)",
+            "value": 16,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "valdres set",
+            "value": 667,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "jotai set",
+            "value": 1195,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "set + read 10 selectors",
+            "value": 9149,
+            "unit": "ns",
+            "extra": "jotai: 7.9µs (1.2x slower)"
+          },
+          {
+            "name": "set + read 100 selectors",
+            "value": 81230,
+            "unit": "ns",
+            "extra": "jotai: 65.4µs (1.2x slower)"
+          },
+          {
+            "name": "set + read through 5 chained selectors",
+            "value": 6595,
+            "unit": "ns",
+            "extra": "jotai: 5.5µs (1.2x slower)"
+          },
+          {
+            "name": "createStore",
+            "value": 631,
+            "unit": "ns",
+            "extra": "jotai: 211ns (3.0x slower)"
+          },
+          {
+            "name": "set 1000 atoms",
+            "value": 76921,
+            "unit": "ns",
+            "extra": "jotai: 251.8µs (3.3x faster)"
+          },
+          {
+            "name": "get 1000 atoms",
+            "value": 10857,
+            "unit": "ns",
+            "extra": "jotai: 74.1µs (6.8x faster)"
+          },
+          {
+            "name": "sub + unsub",
+            "value": 254,
+            "unit": "ns",
+            "extra": "jotai: 1.1µs (4.2x faster)"
           }
         ]
       }
