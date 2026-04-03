@@ -579,6 +579,35 @@ describe("async selector", () => {
         expect(store1.get(asyncSelector1)).toBe(2)
     })
 
+    test("get() re-evaluates after dependency changes while promise is pending", async () => {
+        const store1 = store()
+        const countAtom = atom(0)
+        const resolvers: (() => void)[] = []
+        const asyncSelector1 = selector(get => {
+            const count = get(countAtom)
+            return new Promise<number>(r => {
+                resolvers.push(() => r(count))
+            })
+        })
+
+        // Initial get returns a pending promise
+        store1.get(asyncSelector1)
+        expect(resolvers).toHaveLength(1)
+
+        // Change dependency BEFORE resolving the first promise
+        store1.set(countAtom, 1)
+
+        // Resolve the first (now stale) promise
+        resolvers[0]!()
+        await new Promise(r => setTimeout(r, 0))
+
+        // get() should re-evaluate with the new dependency value, not return stale 0
+        const p2 = store1.get(asyncSelector1)
+        expect(p2).toBeInstanceOf(Promise)
+        resolvers[1]!()
+        expect(await p2).toBe(1)
+    })
+
     test("subscriber is notified when async selector resolves", async () => {
         const store1 = store()
         const asyncSelector1 = selector(

@@ -471,29 +471,23 @@ const recursivlyHandleSelectorUpdates = (
     const selectorsForNextPass = new Set<Selector>()
     for (const selector of selectors) {
         const currentValue = data.values.get(selector)
-        if (isPromiseLike(currentValue)) {
-            // During init-time propagation, always skip pending-promise selectors
+        if (isPromiseLike(currentValue) && isInitOnly) {
+            // During init-time propagation, skip promise-valued selectors
             // to avoid double-evaluation.
-            if (isInitOnly) continue
-            const dependents = data.stateDependents.get(selector)
-            const subscribers = data.subscriptions.get(selector)
-            // For real changes: only re-evaluate pending-promise selectors that
-            // have subscribers or dependents. Unsubscribed ones are handled
-            // by their existing .then() handler or re-computed on next get().
-            if (
-                (!dependents || dependents.size === 0) &&
-                (!subscribers || subscribers.size === 0)
-            ) {
-                continue
-            }
+            continue
         }
         seen.add(selector)
         const dependents = data.stateDependents.get(selector)
         const subscribers = data.subscriptions.get(selector)
         if (
+            !isPromiseLike(currentValue) &&
             (!dependents || dependents.size === 0) &&
             (!subscribers || subscribers.size === 0)
         ) {
+            // Expire unsubscribed non-promise selectors for lazy re-eval.
+            // Promise-valued selectors are always re-evaluated eagerly so
+            // the stale promise is replaced and its .then() handler bails
+            // via the existing reference guard.
             data.expiredValues.set(selector, data.values.get(selector))
             data.values.delete(selector)
         } else {
