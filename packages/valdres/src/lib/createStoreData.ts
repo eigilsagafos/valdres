@@ -1,29 +1,43 @@
 import type { ScopedStoreData, StoreData } from "../types/StoreData"
 
-const generateId = () => (Math.random() + 1).toString(36).substring(7)
-const generateStoreData = (id: string = generateId()) => {
+let nextId = 0
+const generateId = () => "" + nextId++
+
+function makeLazyGetter(key: string) {
     return {
-        id,
-        values: new WeakMap(),
-        expiredValues: new WeakMap(),
-        subscriptions: new WeakMap(),
-        subscriptionsRequireEqualCheck: new WeakMap(),
-        stateDependents: new WeakMap(),
-        stateDependencies: new WeakMap(),
-        scopes: {},
+        get(this: any) {
+            const map = new WeakMap()
+            Object.defineProperty(this, key, {
+                value: map,
+                writable: true,
+                configurable: true,
+            })
+            return map
+        },
+        configurable: true,
     }
 }
+
+// Shared prototype with lazy WeakMap getters — defined once, reused by all stores
+const lazyProto = Object.create(null)
+Object.defineProperties(lazyProto, {
+    expiredValues: makeLazyGetter("expiredValues"),
+    subscriptions: makeLazyGetter("subscriptions"),
+    subscriptionsRequireEqualCheck: makeLazyGetter("subscriptionsRequireEqualCheck"),
+    stateDependents: makeLazyGetter("stateDependents"),
+    stateDependencies: makeLazyGetter("stateDependencies"),
+})
 
 export function createStoreData(id?: string, parent?: undefined): StoreData
 export function createStoreData(id: string, parent: StoreData): ScopedStoreData
 export function createStoreData(id?: string, parent?: StoreData) {
+    const data: any = Object.create(lazyProto)
+    data.id = id ?? generateId()
+    data.values = new WeakMap()
+    data.scopes = {}
     if (parent) {
-        return {
-            ...generateStoreData(id),
-            parent,
-            scopeConsumers: parent ? new Set() : undefined,
-        }
-    } else {
-        return generateStoreData(id)
+        data.parent = parent
+        data.scopeConsumers = new Set()
     }
+    return data
 }
