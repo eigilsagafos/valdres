@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1775229071283,
+  "lastUpdate": 1775230319749,
   "repoUrl": "https://github.com/eigilsagafos/valdres",
   "entries": {
     "valdres benchmarks": [
@@ -288,6 +288,150 @@ window.BENCHMARK_DATA = {
             "value": 254,
             "unit": "ns",
             "extra": "jotai: 1.1µs (4.2x faster)"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "eigil@sagafos.no",
+            "name": "Eigil Sagafos",
+            "username": "eigilsagafos"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "9028f92667ce3bd6d3b7f8b40585a3fca51aff3b",
+          "message": "Re-evaluate pending-promise selectors on dependency change (#21)\n\n* Re-evaluate pending-promise selectors on dependency change\n\nInstead of skipping unsubscribed pending-promise selectors during\npropagation (which left stale cached values), always re-evaluate them.\nRe-evaluation is cheap for async selectors since the actual work is\ndeferred to the promise. The old promise's .then() handler bails via\nthe existing reference guard (data.values.get(selector) !== oldPromise).\n\nThis replaces the dirty-marker approach (dirtySelectorsPendingPromise\nWeakSet) with a simpler structural fix: pending-promise selectors go\nthrough the re-evaluate path instead of the expire path, so no new\nmutable state is needed.\n\nEnables 3 more jotai compat tests:\n- \"should update async atom with delay (#1813)\"\n- \"async atom with subtle timing > case 2\"\n- \"can get async atom with deps more than once before resolving (#1668)\"\n\n57 pass, 44 todo, 0 fail (was 54/47/0)\n\nCo-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>\n\n* Fix comments: use \"promise-valued\" instead of \"pending-promise\"\n\nisPromiseLike cannot distinguish pending from settled promises,\nso the comments should not imply otherwise.\n\nCo-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 4.6 <noreply@anthropic.com>",
+          "timestamp": "2026-04-03T08:31:04-07:00",
+          "tree_id": "ca372450360758fa1985dee04db55bfa107c0d8a",
+          "url": "https://github.com/eigilsagafos/valdres/commit/9028f92667ce3bd6d3b7f8b40585a3fca51aff3b"
+        },
+        "date": 1775230319003,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "atom(1)",
+            "value": 5,
+            "unit": "ns",
+            "extra": "jotai: 69ns (13.9x faster)"
+          },
+          {
+            "name": "store.get(atom)",
+            "value": 32,
+            "unit": "ns",
+            "extra": "jotai: 94ns (3.0x faster)"
+          },
+          {
+            "name": "set(atom, value)",
+            "value": 758,
+            "unit": "ns",
+            "extra": "jotai: 1.3µs (1.7x faster)"
+          },
+          {
+            "name": "set(atom, curr => curr+1)",
+            "value": 779,
+            "unit": "ns",
+            "extra": "jotai: 1.3µs (1.7x faster)"
+          },
+          {
+            "name": "atomFamily(id)",
+            "value": 693,
+            "unit": "ns",
+            "extra": "jotai: 483ns (1.4x slower)"
+          },
+          {
+            "name": "obj.value",
+            "value": 0,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "map.get(key)",
+            "value": 3,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "valdres get",
+            "value": 6,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "jotai get",
+            "value": 53,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "obj.value = n",
+            "value": 1,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "map.set(key, n)",
+            "value": 17,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "valdres set",
+            "value": 731,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "jotai set",
+            "value": 1269,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "set + read 10 selectors",
+            "value": 9692,
+            "unit": "ns",
+            "extra": "jotai: 9.2µs (1.0x slower)"
+          },
+          {
+            "name": "set + read 100 selectors",
+            "value": 75945,
+            "unit": "ns",
+            "extra": "jotai: 71.1µs (1.1x slower)"
+          },
+          {
+            "name": "set + read through 5 chained selectors",
+            "value": 6040,
+            "unit": "ns",
+            "extra": "jotai: 6.1µs (1.0x faster)"
+          },
+          {
+            "name": "createStore",
+            "value": 661,
+            "unit": "ns",
+            "extra": "jotai: 233ns (2.8x slower)"
+          },
+          {
+            "name": "set 1000 atoms",
+            "value": 74493,
+            "unit": "ns",
+            "extra": "jotai: 259.5µs (3.5x faster)"
+          },
+          {
+            "name": "get 1000 atoms",
+            "value": 11422,
+            "unit": "ns",
+            "extra": "jotai: 81.6µs (7.1x faster)"
+          },
+          {
+            "name": "sub + unsub",
+            "value": 270,
+            "unit": "ns",
+            "extra": "jotai: 1.2µs (4.5x faster)"
           }
         ]
       }
