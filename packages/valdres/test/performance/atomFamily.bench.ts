@@ -1,5 +1,5 @@
 import { describe, test } from "bun:test"
-import { createStore as jotaiCreateStore, atom as jotaiAtom } from "jotai"
+import { atom as jotaiAtom } from "jotai"
 import { atomFamily as jotaiAtomFamily } from "jotai/utils"
 import { atom as valdresAtom } from "../../src/atom"
 import { atomFamily as valdresAtomFamily } from "../../src/atomFamily"
