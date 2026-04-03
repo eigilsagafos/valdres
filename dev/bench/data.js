@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1775234838115,
+  "lastUpdate": 1775234972111,
   "repoUrl": "https://github.com/eigilsagafos/valdres",
   "entries": {
     "valdres benchmarks": [
@@ -720,6 +720,150 @@ window.BENCHMARK_DATA = {
             "value": 231,
             "unit": "ns",
             "extra": "jotai: 990ns (4.3x faster)"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "eigil@sagafos.no",
+            "name": "Eigil Sagafos",
+            "username": "eigilsagafos"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "334397d17bc821f3c68a472ed2ebfc25717ef68a",
+          "message": "Optimize selector propagation and store.get hot path (#25)\n\n* Optimize selector propagation and store.get hot path\n\n- store.get: fast-path cache hit via data.values.has(); reuse per-store\n  Set<Atom> instead of allocating a new one per call\n- evaluateSelector: track deps in array, skip dependency diff when deps\n  are unchanged (common case); reuse shared WeakSet for circular dep check\n- setValueInData: skip deepFreeze for primitives (immutable by nature)\n- propagateDirtySelectors: eliminate redundant Set clone, use size check\n  instead of symmetricDifference\n\nSelectors go from 1.2x slower than jotai to 1.2-1.6x faster.\nset(atom) improves ~1.8x, store.get(atom) improves ~1.4x.\n\nCo-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>\n\n* Address Copilot review feedback with regression tests\n\n- storeFromStoreData: wrap getState in try/finally to clear reusable\n  _initSet on error, preventing stale atoms from leaking to next get()\n- setValueInData: include functions in deepFreeze check (typeof function)\n  so function values with own properties remain frozen in dev mode\n- propagateUpdatedAtoms: remove stale console.log TODO — the detected\n  case (atoms initialized during propagation) is benign since newly-init'd\n  atoms cannot have pre-existing dependents\n- Add regression test for function value freezing\n- Add defensive test for stale _initSet after selector throw\n\nCo-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 4.6 <noreply@anthropic.com>",
+          "timestamp": "2026-04-03T09:48:39-07:00",
+          "tree_id": "43f65432511aa5188e3387438225b0a031032078",
+          "url": "https://github.com/eigilsagafos/valdres/commit/334397d17bc821f3c68a472ed2ebfc25717ef68a"
+        },
+        "date": 1775234971232,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "atom(1)",
+            "value": 3,
+            "unit": "ns",
+            "extra": "jotai: 54ns (17.8x faster)"
+          },
+          {
+            "name": "store.get(atom)",
+            "value": 36,
+            "unit": "ns",
+            "extra": "jotai: 91ns (2.5x faster)"
+          },
+          {
+            "name": "set(atom, value)",
+            "value": 286,
+            "unit": "ns",
+            "extra": "jotai: 1.2µs (4.2x faster)"
+          },
+          {
+            "name": "set(atom, curr => curr+1)",
+            "value": 300,
+            "unit": "ns",
+            "extra": "jotai: 1.2µs (4.1x faster)"
+          },
+          {
+            "name": "atomFamily(id)",
+            "value": 690,
+            "unit": "ns",
+            "extra": "jotai: 445ns (1.5x slower)"
+          },
+          {
+            "name": "obj.value",
+            "value": 0,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "map.get(key)",
+            "value": 4,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "valdres get",
+            "value": 3,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "jotai get",
+            "value": 50,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "obj.value = n",
+            "value": 5,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "map.set(key, n)",
+            "value": 19,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "valdres set",
+            "value": 253,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "jotai set",
+            "value": 1233,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "set + read 10 selectors",
+            "value": 5267,
+            "unit": "ns",
+            "extra": "jotai: 9.3µs (1.8x faster)"
+          },
+          {
+            "name": "set + read 100 selectors",
+            "value": 46918,
+            "unit": "ns",
+            "extra": "jotai: 65.0µs (1.4x faster)"
+          },
+          {
+            "name": "set + read through 5 chained selectors",
+            "value": 4407,
+            "unit": "ns",
+            "extra": "jotai: 5.3µs (1.2x faster)"
+          },
+          {
+            "name": "createStore",
+            "value": 168,
+            "unit": "ns",
+            "extra": "jotai: 218ns (1.3x faster)"
+          },
+          {
+            "name": "set 1000 atoms",
+            "value": 80284,
+            "unit": "ns",
+            "extra": "jotai: 243.8µs (3.0x faster)"
+          },
+          {
+            "name": "get 1000 atoms",
+            "value": 9609,
+            "unit": "ns",
+            "extra": "jotai: 75.6µs (7.9x faster)"
+          },
+          {
+            "name": "sub + unsub",
+            "value": 258,
+            "unit": "ns",
+            "extra": "jotai: 1.1µs (4.1x faster)"
           }
         ]
       }
