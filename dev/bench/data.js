@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1775230319749,
+  "lastUpdate": 1775231144756,
   "repoUrl": "https://github.com/eigilsagafos/valdres",
   "entries": {
     "valdres benchmarks": [
@@ -432,6 +432,150 @@ window.BENCHMARK_DATA = {
             "value": 270,
             "unit": "ns",
             "extra": "jotai: 1.2µs (4.5x faster)"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "eigil@sagafos.no",
+            "name": "Eigil Sagafos",
+            "username": "eigilsagafos"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "e0b9d7abf8d27124108312e132ab3843e4e593e6",
+          "message": "Optimize store creation: 6x faster with lazy WeakMaps (#22)\n\n* Optimize store creation with lazy WeakMaps and cheap IDs\n\nTwo changes to createStoreData that make store() 6x faster:\n\n1. Lazy WeakMap initialization via shared prototype with self-replacing\n   getters. Only `values` (always needed) is created eagerly. The other\n   5 WeakMaps are created on first access, then the getter replaces\n   itself with a direct property (zero overhead after init).\n\n2. Replace Math.random().toString(36) ID generation (~150ns) with a\n   sequential counter (~0ns). The ID is only used for identity comparison,\n   not as a human-readable or cross-process unique string.\n\nNote: prototype-based lazy properties are visible via `in` operator\neven before initialization. No current code checks lazy properties\nwith `in` (only `\"parent\" in data` for scope detection).\n\nBefore: createStore 450ns (3.7x slower than jotai)\nAfter:  createStore  78ns (1.5x faster than jotai)\n\nCo-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>\n\n* Address Copilot review: prefix generated store IDs and use Object.prototype\n\n- Prefix auto-generated IDs with \"__valdres_store_\" to prevent collision\n  with user-provided store/scope IDs (which are compared in globalAtom.ts)\n- Use Object.create(Object.prototype) instead of Object.create(null) so\n  store data objects retain standard Object methods\n\nCo-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 4.6 <noreply@anthropic.com>",
+          "timestamp": "2026-04-03T08:44:56-07:00",
+          "tree_id": "511bae0accc47d1c0e60c84863deea6e976f25e6",
+          "url": "https://github.com/eigilsagafos/valdres/commit/e0b9d7abf8d27124108312e132ab3843e4e593e6"
+        },
+        "date": 1775231144206,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "atom(1)",
+            "value": 4,
+            "unit": "ns",
+            "extra": "jotai: 59ns (15.4x faster)"
+          },
+          {
+            "name": "store.get(atom)",
+            "value": 41,
+            "unit": "ns",
+            "extra": "jotai: 86ns (2.1x faster)"
+          },
+          {
+            "name": "set(atom, value)",
+            "value": 697,
+            "unit": "ns",
+            "extra": "jotai: 1.2µs (1.7x faster)"
+          },
+          {
+            "name": "set(atom, curr => curr+1)",
+            "value": 732,
+            "unit": "ns",
+            "extra": "jotai: 1.3µs (1.7x faster)"
+          },
+          {
+            "name": "atomFamily(id)",
+            "value": 704,
+            "unit": "ns",
+            "extra": "jotai: 453ns (1.6x slower)"
+          },
+          {
+            "name": "obj.value",
+            "value": 0,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "map.get(key)",
+            "value": 4,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "valdres get",
+            "value": 8,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "jotai get",
+            "value": 50,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "obj.value = n",
+            "value": 1,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "map.set(key, n)",
+            "value": 19,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "valdres set",
+            "value": 668,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "jotai set",
+            "value": 1202,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "set + read 10 selectors",
+            "value": 9765,
+            "unit": "ns",
+            "extra": "jotai: 7.8µs (1.2x slower)"
+          },
+          {
+            "name": "set + read 100 selectors",
+            "value": 85682,
+            "unit": "ns",
+            "extra": "jotai: 64.0µs (1.3x slower)"
+          },
+          {
+            "name": "set + read through 5 chained selectors",
+            "value": 6700,
+            "unit": "ns",
+            "extra": "jotai: 5.5µs (1.2x slower)"
+          },
+          {
+            "name": "createStore",
+            "value": 151,
+            "unit": "ns",
+            "extra": "jotai: 203ns (1.3x faster)"
+          },
+          {
+            "name": "set 1000 atoms",
+            "value": 83362,
+            "unit": "ns",
+            "extra": "jotai: 268.3µs (3.2x faster)"
+          },
+          {
+            "name": "get 1000 atoms",
+            "value": 10014,
+            "unit": "ns",
+            "extra": "jotai: 75.6µs (7.6x faster)"
+          },
+          {
+            "name": "sub + unsub",
+            "value": 238,
+            "unit": "ns",
+            "extra": "jotai: 1.0µs (4.3x faster)"
           }
         ]
       }
