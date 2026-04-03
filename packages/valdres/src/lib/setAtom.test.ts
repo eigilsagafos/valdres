@@ -54,4 +54,19 @@ describe("setAtom", () => {
             "Attempted to assign to readonly property",
         )
     })
+
+    test("deep freeze applies to function values with properties", () => {
+        const defaultStore = store()
+        const fn = () => "hello"
+        ;(fn as any).count = 0
+        // Wrap in factory to store the function itself (not call it)
+        const fnAtom = atom(() => fn)
+        const val = defaultStore.get(fnAtom) as any
+        expect(val()).toBe("hello")
+        // Functions with own properties should be frozen in dev mode,
+        // preventing mutation of their attached state.
+        expect(() => { val.count = 1 }).toThrowError(
+            "Attempted to assign to readonly property",
+        )
+    })
 })

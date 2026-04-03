@@ -11,6 +11,11 @@ import {
     propagateUpdatedAtoms,
 } from "./propagateUpdatedAtoms"
 import { setValueInData } from "./setValueInData"
+
+// Shared WeakSet for circular dependency detection — safe to reuse because
+// evaluation is synchronous and each selector adds/deletes itself.
+const sharedCircularDepSet = new WeakSet()
+
 class SuspendAndWaitForResolveError extends Error {
     promise: Promise<any>
     constructor(promise: Promise<any>) {
@@ -34,9 +39,12 @@ export const evaluateSelector = <V>(
     selector: Selector<V>,
     data: StoreData,
     initializedAtomsSet: Set<Atom>,
-    circularDependencySet = new WeakSet(),
+    circularDependencySet = sharedCircularDepSet,
 ) => {
-    const updatedDependencies = new Set<State<any>>()
+    const currentDependencies = data.stateDependencies.get(selector)
+    const updatedDepsArray: State<any>[] = []
+    let depsChanged = false
+
     if (circularDependencySet.has(selector)) {
         throw new SelectorCircularDependencyError()
     }
@@ -52,7 +60,10 @@ export const evaluateSelector = <V>(
                 initializedAtomsSet,
                 circularDependencySet,
             )
-            updatedDependencies.add(state)
+            updatedDepsArray.push(state)
+            if (!depsChanged && (!currentDependencies || !currentDependencies.has(state))) {
+                depsChanged = true
+            }
             if (isPromiseLike(value))
                 throw new SuspendAndWaitForResolveError(value)
 
@@ -68,26 +79,28 @@ export const evaluateSelector = <V>(
         }
     }
 
-    const currentDependencies =
-        data.stateDependencies.get(selector) ?? new Set<State<any>>()
-    const added = updatedDependencies?.difference(currentDependencies)
-    const removed = currentDependencies?.difference(updatedDependencies)
-    for (const state of added) {
-        const set = getOrInitDependentsSet(state, data)
-        // if (set.size === 0 && state.onConsume) {
-        //     const res = state.onConsume()
-        // }
-        set.add(selector)
-    }
-    for (const state of removed) {
-        const set = getOrInitDependentsSet(state, data)
-        set.delete(selector)
-        // if (set.size === 0 && state.onConsume) {
-        //     throw new Error(`TODO`)
-        // }
+    // Check if dep count also matches (handles removed deps)
+    if (!depsChanged && currentDependencies && currentDependencies.size !== updatedDepsArray.length) {
+        depsChanged = true
     }
 
-    data.stateDependencies.set(selector, updatedDependencies)
+    if (depsChanged || !currentDependencies) {
+        const updatedDependencies = new Set<State<any>>(updatedDepsArray)
+        const prev = currentDependencies ?? new Set<State<any>>()
+        for (const state of updatedDependencies) {
+            if (!prev.has(state)) {
+                const set = getOrInitDependentsSet(state, data)
+                set.add(selector)
+            }
+        }
+        for (const state of prev) {
+            if (!updatedDependencies.has(state)) {
+                const set = getOrInitDependentsSet(state, data)
+                set.delete(selector)
+            }
+        }
+        data.stateDependencies.set(selector, updatedDependencies)
+    }
     circularDependencySet.delete(selector)
     return result
 }
@@ -147,7 +160,7 @@ export const initSelector = <V>(
     selector: Selector<V>,
     data: StoreData,
     initializedAtomsSet: Set<Atom>,
-    circularDependencySet = new WeakSet(),
+    circularDependencySet = sharedCircularDepSet,
 ): boolean => {
     const existingValue = data.values.get(selector)
     const udpatedValue = evaluate(

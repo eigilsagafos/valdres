@@ -13,7 +13,10 @@ export const setValueInData = <Value extends unknown>(
         data.values.set(atom, value)
         return value
     } else {
-        const frozenValue = deepFreeze(value)
+        // Skip deepFreeze for primitives — they are immutable by nature
+        const frozenValue = value !== null && (typeof value === "object" || typeof value === "function")
+            ? deepFreeze(value)
+            : value
         data.values.set(atom, frozenValue)
         return frozenValue
     }

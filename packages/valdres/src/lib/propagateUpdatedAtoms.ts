@@ -369,8 +369,7 @@ export const propagateDirtySelectors = (
     families: Map<AtomFamily<any>, Set<AtomFamilyAtom<any>>>,
     isInitOnly = false,
 ) => {
-    const initialUpdatedAtoms = new Set(updatedAtoms)
-    const updatedInitializedAtoms = new Set<Atom>(initialUpdatedAtoms)
+    const updatedInitializedAtoms = new Set<Atom>(updatedAtoms)
     if (selectors.size > 0) {
         // At this point we have the first level of selectors that are depeendent on
         // the atoms that changed. We should now traverse the tree of selectors, collect subsribers
@@ -383,17 +382,6 @@ export const propagateDirtySelectors = (
             undefined,
             isInitOnly,
         )
-    }
-    const addedAtoms = initialUpdatedAtoms.symmetricDifference(
-        updatedInitializedAtoms,
-    )
-    if (addedAtoms.size) {
-        // propagateUpdatedAtoms
-        console.log("addedAtoms", addedAtoms)
-        console.log("Valdres TODO: Support this case with new atoms added")
-        // throw new Error(
-        //     "Handle this case. Is probably if a selector initializes an atom",
-        // )
     }
     if (subscriptions.size > 0) {
         let firstError: unknown
