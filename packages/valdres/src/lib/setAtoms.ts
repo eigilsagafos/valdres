@@ -10,7 +10,7 @@ export const setAtoms = (
     data: StoreData,
     initializedAtomsSet: Set<Atom>,
 ) => {
-    const updatedAtoms = []
+    const updatedAtoms: Atom[] = []
     for (let [atom, value] of pairs) {
         const currentValue = getState(atom, data, initializedAtomsSet)
         const areEqual = isPromiseLike(currentValue) || isPromiseLike(value)
@@ -25,8 +25,13 @@ export const setAtoms = (
             setValueInData(atom, value, data)
         }
     }
-    const result = new Set([...updatedAtoms, ...initializedAtomsSet])
-    if (result.size > 0) {
-        propagateUpdatedAtoms([...result], data)
+    // Merge updatedAtoms and initializedAtomsSet without extra Set+spread
+    if (initializedAtomsSet.size > 0) {
+        for (const atom of initializedAtomsSet) {
+            updatedAtoms.push(atom)
+        }
+    }
+    if (updatedAtoms.length > 0) {
+        propagateUpdatedAtoms(updatedAtoms, data)
     }
 }
