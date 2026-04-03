@@ -24,11 +24,30 @@ export const atom = (get, set?: any) => {
         if (wrapped.isAsync) selector.__jotaiAsync = true
         return selector
     } else if (typeof set === "function") {
-        // Write-only or writable primitive atom: atom(null, writeFn) or atom(value, writeFn)
-        // Wrap as a selector so createStoreWithSelectorSet handles the set method.
-        const readFn = get === null ? () => undefined : () => get
-        const selector = valdresSelector(readFn, { equal: Object.is })
-        addSetToSelector(selector, set)
+        if (get === null) {
+            // Write-only atom: atom(null, writeFn)
+            const selector = valdresSelector(() => undefined, {
+                equal: Object.is,
+            })
+            addSetToSelector(selector, set)
+            return selector
+        }
+        // Writable primitive atom: atom(value, writeFn)
+        // Uses a backing valdres atom for mutable storage, with a selector that reads
+        // from it. Self-sets (set(thisAtom, val)) are redirected to the backing atom.
+        const backingAtom = valdresAtom(get, { equal: Object.is })
+        const selector = valdresSelector(g => g(backingAtom), {
+            equal: Object.is,
+        })
+        selector.set = (valdresSet, valdresGet, _reset, ...args) => {
+            const wrappedSet = (target: any, ...setArgs: any[]) => {
+                if (target === selector) {
+                    return valdresSet(backingAtom, ...setArgs)
+                }
+                return valdresSet(target, ...setArgs)
+            }
+            return set(valdresGet, wrappedSet, ...args)
+        }
         return selector
     } else {
         const newAtom = valdresAtom(get, { equal: Object.is })

@@ -433,7 +433,7 @@ test("runs update only once in StrictMode", async () => {
     expect(updateCount).toBe(1)
 })
 
-test.todo("uses an async write-only atom", async () => {
+test("uses an async write-only atom", async () => {
     const countAtom = atom(0)
     let resolve = () => {}
     const asyncCountAtom = atom(
@@ -470,7 +470,7 @@ test.todo("uses an async write-only atom", async () => {
     await findByText("commits: 2, count: 1")
 })
 
-test.todo("uses a writable atom without read function", async () => {
+test("uses a writable atom without read function", async () => {
     let resolve = () => {}
     const countAtom = atom(1, async (get, set, v: number) => {
         await new Promise<void>(r => (resolve = r))
@@ -830,7 +830,7 @@ test("should be able to use a double derived atom twice and useEffect (#373)", a
     await findByText("count: 1,4,4")
 })
 
-test.todo("write self atom (undocumented usage)", async () => {
+test("write self atom (undocumented usage)", async () => {
     const countAtom = atom(0, (get, set, _arg) => {
         set(countAtom, get(countAtom) + 1)
     })

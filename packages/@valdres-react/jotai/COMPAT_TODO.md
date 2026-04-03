@@ -113,9 +113,9 @@ Error recovery in async lifecycle:
 React rendering patterns with atoms:
 - [ ] `re-renders a time delayed derived atom with the same initial value (#947)`
 - [x] `uses atoms with tree dependencies`
-- [ ] `uses an async write-only atom`
-- [ ] `uses a writable atom without read function`
-- [ ] `write self atom (undocumented usage)`
+- [x] `uses an async write-only atom`
+- [x] `uses a writable atom without read function`
+- [x] `write self atom (undocumented usage)`
 
 ### Dev Store / Mounted Atoms — LOW priority (2)
 - [ ] `should unmount with store.get`
