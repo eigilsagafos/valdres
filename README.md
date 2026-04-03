@@ -11,18 +11,18 @@ bun install
 
 | Benchmark | valdres | jotai | Comparison |
 |:----------|--------:|------:|-----------:|
-| atom(1) | 3ns | 57ns | 🟢 20.3x faster |
-| store.get(atom) | 40ns | 83ns | 🟢 2.1x faster |
-| set(atom, value) | 698ns | 1.2µs | 🟢 1.7x faster |
-| set(atom, curr => curr+1) | 710ns | 1.2µs | 🟢 1.7x faster |
-| atomFamily(id) | 681ns | 435ns | 🟡 1.6x slower |
-| set + read 10 selectors | 9.7µs | 7.5µs | 🟡 1.3x slower |
-| set + read 100 selectors | 81.5µs | 63.4µs | 🟡 1.3x slower |
-| set + read through 5 chained selectors | 6.7µs | 5.3µs | 🟡 1.3x slower |
-| createStore | 146ns | 203ns | 🟢 1.4x faster |
-| set 1000 atoms | 81.3µs | 254.3µs | 🟢 3.1x faster |
-| get 1000 atoms | 10.2µs | 72.9µs | 🟢 7.1x faster |
-| sub + unsub | 231ns | 990ns | 🟢 4.3x faster |
+| atom(1) | 3ns | 54ns | 🟢 17.8x faster |
+| store.get(atom) | 36ns | 91ns | 🟢 2.5x faster |
+| set(atom, value) | 286ns | 1.2µs | 🟢 4.2x faster |
+| set(atom, curr => curr+1) | 300ns | 1.2µs | 🟢 4.1x faster |
+| atomFamily(id) | 690ns | 445ns | 🟡 1.5x slower |
+| set + read 10 selectors | 5.3µs | 9.3µs | 🟢 1.8x faster |
+| set + read 100 selectors | 46.9µs | 65.0µs | 🟢 1.4x faster |
+| set + read through 5 chained selectors | 4.4µs | 5.3µs | 🟢 1.2x faster |
+| createStore | 168ns | 218ns | 🟢 1.3x faster |
+| set 1000 atoms | 80.3µs | 243.8µs | 🟢 3.0x faster |
+| get 1000 atoms | 9.6µs | 75.6µs | 🟢 7.9x faster |
+| sub + unsub | 258ns | 1.1µs | 🟢 4.1x faster |
 
 #### Baseline (raw JS)
 
@@ -30,12 +30,12 @@ bun install
 |:----------|-----:|
 | obj.value | 0ns |
 | map.get(key) | 4ns |
-| valdres get | 6ns |
-| jotai get | 51ns |
-| obj.value = n | 2ns |
+| valdres get | 3ns |
+| jotai get | 50ns |
+| obj.value = n | 5ns |
 | map.set(key, n) | 19ns |
-| valdres set | 720ns |
-| jotai set | 1.4µs |
+| valdres set | 253ns |
+| jotai set | 1.2µs |
 
 > Last updated: 2026-04-03 — [Historical trends](https://eigilsagafos.github.io/valdres/dev/bench/)
 <!-- BENCH:END -->
