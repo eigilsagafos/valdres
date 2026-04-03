@@ -1,12 +1,13 @@
 /**
  * Custom benchmark regression checker.
  *
- * Compares current bench-results.json against the median of the last N runs
- * stored on gh-pages. Uses scale-aware thresholds so that sub-nanosecond
- * noise doesn't trigger false positives while real regressions on larger
- * benchmarks are still caught.
+ * Reads bench-results.ndjson (which has both valdres and jotai timings),
+ * compares valdres results against the median of the last N runs on gh-pages,
+ * and posts a PR comment with a side-by-side comparison table.
  *
- * On PRs: posts/updates a comment with the comparison table.
+ * Uses scale-aware thresholds so sub-nanosecond noise doesn't trigger false
+ * positives while real regressions on larger benchmarks are still caught.
+ *
  * Exit code 1 if any regression is detected.
  */
 import { readFileSync } from "fs"
@@ -24,11 +25,6 @@ interface ThresholdTier {
     percentThreshold: number
 }
 
-/**
- * Tiers are evaluated in order — the first tier whose maxMedianNs >= median
- * wins. Benchmarks whose median falls in a very small range are too noisy to
- * track and are skipped.
- */
 const TIERS: ThresholdTier[] = [
     { maxMedianNs: 100, absoluteFloorNs: 50, percentThreshold: Infinity },
     { maxMedianNs: 1_000, absoluteFloorNs: 100, percentThreshold: 1.5 },
@@ -38,17 +34,25 @@ const TIERS: ThresholdTier[] = [
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
-interface BenchResult {
+interface NdjsonResult {
     name: string
-    unit: string
+    valdres: number
+    jotai: number
+    ratio: number
+    tag: string
+}
+
+interface HistoricalBench {
+    name: string
     value: number
+    unit: string
     extra?: string
 }
 
 interface HistoricalEntry {
     commit: { id: string }
     date: number
-    benches: BenchResult[]
+    benches: HistoricalBench[]
 }
 
 interface HistoricalData {
@@ -59,10 +63,11 @@ type Status = "ok" | "skip" | "new" | "regression"
 
 interface Comparison {
     name: string
-    current: number
+    valdres: number
+    jotai: number
+    vsJotai: string
     median: number | null
     changePercent: number | null
-    absoluteChange: number | null
     status: Status
     threshold: number | null
 }
@@ -73,6 +78,13 @@ function fmtNs(ns: number): string {
     if (ns < 1_000) return `${ns.toFixed(0)}ns`
     if (ns < 1_000_000) return `${(ns / 1_000).toFixed(1)}µs`
     return `${(ns / 1_000_000).toFixed(2)}ms`
+}
+
+function fmtChange(ratio: number | null): string {
+    if (ratio == null) return "—"
+    const pct = (ratio - 1) * 100
+    const sign = pct >= 0 ? "+" : ""
+    return `${sign}${pct.toFixed(0)}%`
 }
 
 function median(values: number[]): number {
@@ -90,10 +102,14 @@ function tierFor(medianNs: number): ThresholdTier {
 // ── Core logic ─────────────────────────────────────────────────────────────
 
 const ROOT = join(import.meta.dir, "..")
-const BENCH_JSON = join(ROOT, "bench-results.json")
+const NDJSON_PATH = join(
+    ROOT,
+    "packages/valdres/test/performance/bench-results.ndjson",
+)
 
-function readCurrentResults(): BenchResult[] {
-    return JSON.parse(readFileSync(BENCH_JSON, "utf-8"))
+function readCurrentResults(): NdjsonResult[] {
+    const ndjson = readFileSync(NDJSON_PATH, "utf-8").trim()
+    return ndjson.split("\n").map(line => JSON.parse(line))
 }
 
 async function readHistoricalData(): Promise<HistoricalData | null> {
@@ -106,7 +122,6 @@ async function readHistoricalData(): Promise<HistoricalData | null> {
         const exitCode = await proc.exited
         if (exitCode !== 0) return null
 
-        // data.js has the shape: window.BENCHMARK_DATA = { ... };
         const json = raw
             .replace(/^window\.BENCHMARK_DATA\s*=\s*/, "")
             .replace(/;\s*$/, "")
@@ -138,27 +153,38 @@ function computeMedians(
 }
 
 function compare(
-    current: BenchResult[],
+    current: NdjsonResult[],
     medians: Map<string, number>,
 ): Comparison[] {
-    return current.map(bench => {
+    // Skip baseline entries (plain JS ops)
+    const benchmarks = current.filter(r => r.tag !== "baseline")
+
+    return benchmarks.map(bench => {
         const med = medians.get(bench.name)
+
+        // valdres vs jotai comparison
+        const ratio = bench.jotai > 0 ? bench.valdres / bench.jotai : 1
+        const vsJotai =
+            ratio <= 1
+                ? `${(1 / ratio).toFixed(1)}x faster`
+                : `${ratio.toFixed(1)}x slower`
 
         if (med == null) {
             return {
                 name: bench.name,
-                current: bench.value,
+                valdres: bench.valdres,
+                jotai: bench.jotai,
+                vsJotai,
                 median: null,
                 changePercent: null,
-                absoluteChange: null,
                 status: "new" as Status,
                 threshold: null,
             }
         }
 
         const tier = tierFor(med)
-        const absoluteChange = bench.value - med
-        const changePercent = med > 0 ? bench.value / med : 1
+        const absoluteChange = bench.valdres - med
+        const changePercent = med > 0 ? bench.valdres / med : 1
 
         let status: Status
         if (tier.percentThreshold === Infinity) {
@@ -175,10 +201,11 @@ function compare(
 
         return {
             name: bench.name,
-            current: bench.value,
+            valdres: bench.valdres,
+            jotai: bench.jotai,
+            vsJotai,
             median: med,
             changePercent,
-            absoluteChange,
             status,
             threshold: tier.percentThreshold,
         }
@@ -201,24 +228,18 @@ function formatTable(results: Comparison[]): string {
         "",
         `Compared against **median of last ${WINDOW_SIZE} runs** on \`main\`.`,
         "",
-        "| Status | Benchmark | Current | Median | Change | Threshold |",
-        "|:------:|:----------|--------:|-------:|-------:|----------:|",
+        "| | Benchmark | Valdres | Jotai | vs Jotai | Median | Change |",
+        "|:-|:----------|--------:|------:|---------:|-------:|-------:|",
     ]
 
     for (const r of results) {
         const icon = STATUS_ICON[r.status]
-        const current = fmtNs(r.current)
+        const valdres = fmtNs(r.valdres)
+        const jotai = r.jotai > 0 ? fmtNs(r.jotai) : "—"
         const med = r.median != null ? fmtNs(r.median) : "—"
-        const change =
-            r.changePercent != null
-                ? `${r.changePercent >= 1 ? "+" : ""}${((r.changePercent - 1) * 100).toFixed(0)}%`
-                : "—"
-        const threshold =
-            r.threshold != null && r.threshold !== Infinity
-                ? `${((r.threshold - 1) * 100).toFixed(0)}%`
-                : "—"
+        const change = fmtChange(r.changePercent)
         lines.push(
-            `| ${icon} | ${r.name} | ${current} | ${med} | ${change} | ${threshold} |`,
+            `| ${icon} | ${r.name} | ${valdres} | ${jotai} | ${r.vsJotai} | ${med} | ${change} |`,
         )
     }
 
@@ -257,7 +278,6 @@ async function postOrUpdateComment(body: string): Promise<void> {
         return
     }
 
-    // Get PR number from event payload
     const eventPath = process.env.GITHUB_EVENT_PATH
     if (!eventPath) return
     const event = JSON.parse(readFileSync(eventPath, "utf-8"))
@@ -272,7 +292,6 @@ async function postOrUpdateComment(body: string): Promise<void> {
     const baseUrl = `https://api.github.com/repos/${repo}/issues/${prNumber}/comments`
     const marker = "<!-- bench-regression-check -->"
 
-    // Find existing comment
     const res = await fetch(baseUrl, { headers })
     const comments: any[] = await res.json()
     const existing = comments.find(
@@ -280,11 +299,14 @@ async function postOrUpdateComment(body: string): Promise<void> {
     )
 
     if (existing) {
-        await fetch(`${baseUrl.replace(/\/comments$/, "")}/comments/${existing.id}`, {
-            method: "PATCH",
-            headers,
-            body: JSON.stringify({ body }),
-        })
+        await fetch(
+            `${baseUrl.replace(/\/comments$/, "")}/comments/${existing.id}`,
+            {
+                method: "PATCH",
+                headers,
+                body: JSON.stringify({ body }),
+            },
+        )
         console.log(`Updated existing PR comment #${existing.id}`)
     } else {
         await fetch(baseUrl, {
@@ -300,7 +322,10 @@ async function postOrUpdateComment(body: string): Promise<void> {
 
 async function main() {
     const current = readCurrentResults()
-    console.log(`Read ${current.length} benchmark results from bench-results.json`)
+    const benchmarks = current.filter(r => r.tag !== "baseline")
+    console.log(
+        `Read ${current.length} results (${benchmarks.length} comparison benchmarks, ${current.length - benchmarks.length} baselines skipped)`,
+    )
 
     const history = await readHistoricalData()
     if (!history) {
