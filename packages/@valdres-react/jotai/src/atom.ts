@@ -6,6 +6,37 @@ const addSetToSelector = (selector, set) => {
     }
 }
 
+// Adds an onMount getter/setter that converts jotai-style `(setSelf) => cleanup`
+// to valdres-style `(store, state) => cleanup` when assigned. This ensures the
+// conversion happens at assignment time, so valdres core can call onMount directly
+// during propagation (not just during store.sub).
+//
+// The getter returns the original jotai function (so mock assertions work),
+// while `__valdresOnMount` holds the converted function used by valdres core.
+const addOnMountInterceptor = (target: any) => {
+    let _jotaiOnMount: any = undefined
+    Object.defineProperty(target, "onMount", {
+        get() {
+            return _jotaiOnMount
+        },
+        set(jotaiOnMount) {
+            _jotaiOnMount = jotaiOnMount
+            if (typeof jotaiOnMount !== "function") {
+                target.__valdresOnMount = jotaiOnMount
+                return
+            }
+            target.__valdresOnMount = (innerStore: any, state: any) => {
+                const setSelf = (...args: any[]) =>
+                    innerStore.set(state, ...args)
+                return jotaiOnMount(setSelf)
+            }
+        },
+        configurable: true,
+        enumerable: true,
+    })
+    return target
+}
+
 const isAsyncFunction = (fn: Function) =>
     Object.prototype.toString.call(fn) === "[object AsyncFunction]"
 
@@ -22,7 +53,7 @@ export const atom = (get, set?: any) => {
         const selector = valdresSelector(wrapped.get, { equal: Object.is })
         if (set) addSetToSelector(selector, set)
         if (wrapped.isAsync) selector.__jotaiAsync = true
-        return selector
+        return addOnMountInterceptor(selector)
     } else if (typeof set === "function") {
         if (get === null) {
             // Write-only atom: atom(null, writeFn)
@@ -30,7 +61,7 @@ export const atom = (get, set?: any) => {
                 equal: Object.is,
             })
             addSetToSelector(selector, set)
-            return selector
+            return addOnMountInterceptor(selector)
         }
         // Writable primitive atom: atom(value, writeFn)
         // Uses a backing valdres atom for mutable storage, with a selector that reads
@@ -48,9 +79,9 @@ export const atom = (get, set?: any) => {
             }
             return set(valdresGet, wrappedSet, ...args)
         }
-        return selector
+        return addOnMountInterceptor(selector)
     } else {
         const newAtom = valdresAtom(get, { equal: Object.is })
-        return newAtom
+        return addOnMountInterceptor(newAtom)
     }
 }

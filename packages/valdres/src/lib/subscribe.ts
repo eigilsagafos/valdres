@@ -13,6 +13,7 @@ import { getAtomInitValue, initAtom } from "./initAtom"
 import { initSelector } from "./initSelector"
 import { propagateUpdatedAtoms } from "./propagateUpdatedAtoms"
 import { setValueInData } from "./setValueInData"
+import { mountTransitiveDeps } from "./mountAtom"
 import { storeFromStoreData } from "./storeFromStoreData"
 import { unsubscribe } from "./unsubscribe"
 
@@ -141,7 +142,6 @@ export const subscribe = <V>(
         }
     }
     subscribers.add(subscription)
-    let mount: any
     let maxAgeCleanup: any
     if (subscribers.size === 1) {
         if (isAtom(state) && state.maxAge) {
@@ -169,23 +169,8 @@ export const subscribe = <V>(
                 if (timeout) clearTimeout(timeout)
             }
         }
-        // @ts-ignore
-        if (state.onMount) {
-            // @ts-ignore
-            const store = storeFromStoreData(data)
-            const mountSubscriptions = new Set()
-            const originalSub = store.sub
-            // @ts-ignore
-            store.sub = (state, callback) => {
-                mountSubscriptions.add(callback)
-                return originalSub(state, callback)
-            }
-            mount = {
-                // @ts-ignore
-                onUnmount: state.onMount(store, state),
-                mountSubscriptions,
-            }
-        }
+        // Mount this state and all its transitive dependencies
+        mountTransitiveDeps(state, data)
     }
 
     if (
@@ -200,6 +185,6 @@ export const subscribe = <V>(
             // TODO: Test this scenario
             parentUnsubscribe()
         }
-        unsubscribe(state, subscription, data, mount, maxAgeCleanup)
+        unsubscribe(state, subscription, data, maxAgeCleanup)
     }
 }

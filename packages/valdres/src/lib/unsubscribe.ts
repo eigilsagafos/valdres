@@ -2,12 +2,12 @@ import type { Family } from "../types/Family"
 import type { State } from "../types/State"
 import type { StoreData } from "../types/StoreData"
 import type { Subscription } from "../types/Subscription"
+import { unmountOrphanedDeps } from "./mountAtom"
 
 export const unsubscribe = <V>(
     state: State<V> | Family<V>,
     subscription: Subscription,
     data: StoreData,
-    mount?: any,
     maxAgeCleanup?: any,
 ) => {
     const subscribers = data.subscriptions.get(state)
@@ -28,15 +28,9 @@ export const unsubscribe = <V>(
         if (subscribers.size === 0) {
             if (maxAgeCleanup) maxAgeCleanup()
             data.subscriptions.delete(state)
-        }
-        if (mount) {
-            if (subscribers.size === mount.mountSubscriptions.size) {
-                // @ts-ignore @ts-todo
-                if (typeof mount.onUnmount === "function") {
-                    // @ts-ignore @ts-todo
-                    mount.onUnmount()
-                }
-            }
+            // Unmount this state and any transitive dependencies that are
+            // no longer reachable from any subscriber.
+            unmountOrphanedDeps(state, data)
         }
     }
 }

@@ -253,7 +253,7 @@ test("should update with conditional dependencies (#2084)", () => {
     expect(store.get(f3)).toBe(true)
 })
 
-test.todo("should recompute dependents' state after onMount (#2098)", () => {
+test("should recompute dependents' state after onMount (#2098)", () => {
     const store = createStore()
 
     const condAtom = atom(false)
@@ -367,7 +367,7 @@ test("should not recompute a derived atom value if unchanged (#2168)", () => {
     expect(derive2Fn).toHaveBeenCalledTimes(1)
 })
 
-test.todo("should mount once with atom creator atom (#2314)", () => {
+test("should mount once with atom creator atom (#2314)", () => {
     const countAtom = atom(1)
     countAtom.onMount = mock(((setAtom: (v: number) => void) => {
         setAtom(2)
@@ -528,7 +528,7 @@ describe("aborting atoms", () => {
     })
 })
 
-test.todo("Unmount an atom that is no longer dependent within a derived atom (#2658)", () => {
+test("Unmount an atom that is no longer dependent within a derived atom (#2658)", () => {
     const condAtom = atom(true)
     const baseAtom = atom(0)
     const onUnmount = mock(() => {})
@@ -793,7 +793,7 @@ test("throws falsy errors in onMount, onUnmount, and listeners", () => {
     expect(() => store.set(c, 1)).toThrow("")
 })
 
-test.todo("should use the correct pending on unmount", () => {
+test("should use the correct pending on unmount", () => {
     const store = createStore()
     const a = atom(0)
     const b = atom(0, (_, set, update: number) => set(a, update))

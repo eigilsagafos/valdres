@@ -8,6 +8,7 @@ export type RootStoreData = {
     subscriptionsRequireEqualCheck: WeakMap<WeakKey, boolean>
     stateDependents: WeakMap<WeakKey, any>
     stateDependencies: WeakMap<WeakKey, any>
+    mounts: WeakMap<WeakKey, { cleanup?: () => void }>
     scopes: { [scopeId: string]: ScopedStoreData }
 }
 

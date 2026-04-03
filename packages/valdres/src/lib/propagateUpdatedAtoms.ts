@@ -13,6 +13,11 @@ import {
     evaluateSelector,
     handleSelectorResult,
 } from "./initSelector"
+import {
+    isTransitivelySubscribed,
+    mountTransitiveDeps,
+    unmountOrphanedDeps,
+} from "./mountAtom"
 import { setValueInData } from "./setValueInData"
 
 const reEvaluteSelector = (
@@ -21,8 +26,17 @@ const reEvaluteSelector = (
     updatedAtoms: Set<Atom>,
 ) => {
     const existingValue = data.values.get(selector)
+    const addedDeps = new Set<State>()
+    const removedDeps = new Set<State>()
     try {
-        const rawValue = evaluateSelector(selector, data, updatedAtoms)
+        const rawValue = evaluateSelector(
+            selector,
+            data,
+            updatedAtoms,
+            undefined,
+            addedDeps,
+            removedDeps,
+        )
         const udpatedValue = handleSelectorResult(rawValue, selector, data)
 
         // Use reference equality for promises — deep equal treats all
@@ -32,15 +46,15 @@ const reEvaluteSelector = (
                 ? existingValue === udpatedValue
                 : selector.equal(existingValue, udpatedValue, updatedAtoms)
         if (areEqual) {
-            return [false, false]
+            return [false, false, undefined, addedDeps, removedDeps]
         } else {
             setValueInData(selector, udpatedValue, data)
-            return [true, false]
+            return [true, false, undefined, addedDeps, removedDeps]
         }
     } catch (error) {
         data.expiredValues.set(selector, data.values.get(selector))
         data.values.delete(selector)
-        return [true, true, error]
+        return [true, true, error, addedDeps, removedDeps]
     }
 }
 
@@ -479,11 +493,21 @@ const recursivlyHandleSelectorUpdates = (
             data.expiredValues.set(selector, data.values.get(selector))
             data.values.delete(selector)
         } else {
-            const [wasValueUpdated, didEvalCrash, error] = reEvaluteSelector(
-                selector,
-                data,
-                updatedInitializedAtoms,
-            )
+            const [wasValueUpdated, didEvalCrash, error, addedDeps, removedDeps] =
+                reEvaluteSelector(selector, data, updatedInitializedAtoms)
+            // Mount/unmount dependencies that changed if this selector is
+            // transitively subscribed (i.e. someone is listening)
+            if (
+                (addedDeps.size > 0 || removedDeps.size > 0) &&
+                isTransitivelySubscribed(selector, data)
+            ) {
+                for (const dep of addedDeps) {
+                    mountTransitiveDeps(dep, data)
+                }
+                for (const dep of removedDeps) {
+                    unmountOrphanedDeps(dep, data)
+                }
+            }
             if (!wasValueUpdated) continue
             addSetToSet(
                 data.stateDependents.get(selector), // We intentially get the dependents again, since the reevalute might have changed the dependents
