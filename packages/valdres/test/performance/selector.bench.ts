@@ -5,7 +5,20 @@ import { selector as valdresSelector } from "../../src/selector"
 import { store as valdresCreateStore } from "../../src/store"
 import { assertFaster } from "./bench-utils"
 
+let sink: any
+
 describe("selector", () => {
+    test("creation", async () => {
+        const vAtom = valdresAtom(0)
+        const jAtom = jotaiAtom(0)
+        await assertFaster(
+            "selector(fn)",
+            () => { sink = valdresSelector(get => get(vAtom) + 1) },
+            () => { sink = jotaiAtom(get => get(jAtom) + 1) },
+            2.0,
+        )
+    })
+
     test("set + read with 10 subscribers", async () => {
         const count = 10
 
