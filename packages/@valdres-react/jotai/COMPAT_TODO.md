@@ -112,7 +112,7 @@ Error recovery in async lifecycle:
 ### React Rendering — MEDIUM priority (5)
 React rendering patterns with atoms:
 - [ ] `re-renders a time delayed derived atom with the same initial value (#947)`
-- [ ] `uses atoms with tree dependencies`
+- [x] `uses atoms with tree dependencies`
 - [ ] `uses an async write-only atom`
 - [ ] `uses a writable atom without read function`
 - [ ] `write self atom (undocumented usage)`
