@@ -30,7 +30,7 @@ test("can propagate updates with async atom chains", async () => {
     await expect(store.get(async3Atom)).resolves.toBe(3)
 })
 
-test.todo(
+test(
     "can get async atom with deps more than once before resolving (#1668)",
     async () => {
         const countAtom = atom(0)

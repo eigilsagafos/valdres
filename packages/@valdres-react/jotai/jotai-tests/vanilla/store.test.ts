@@ -42,7 +42,7 @@ test.todo("should unmount with store.get", () => {})
 // Requires createDevStore (jotai internals)
 test.todo("should unmount dependencies with store.get", () => {})
 
-test.todo("should update async atom with delay (#1813)", async () => {
+test("should update async atom with delay (#1813)", async () => {
     const countAtom = atom(0)
 
     const resolve: (() => void)[] = []
@@ -421,7 +421,7 @@ describe("async atom with subtle timing", () => {
         expect(await bValue2).toBe(2)
     })
 
-    test.todo("case 2", async () => {
+    test("case 2", async () => {
         const store = createStore()
         const resolve: (() => void)[] = []
         const a = atom(1)
