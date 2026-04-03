@@ -12,7 +12,7 @@ describe("selector", () => {
             selector(async get => {
                 return get(atom(1))
             })
-        }).toThrow()
+        }).toThrow(/async/i)
     })
 
     test("allows sync function that returns a Promise", () => {

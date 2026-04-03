@@ -1,7 +1,7 @@
-import { createStoreWithSelectorSet as valdresCreateStore } from "valdres"
-
-const isPromiseLike = (value: any): value is Promise<any> =>
-    value && typeof value.then === "function"
+import {
+    createStoreWithSelectorSet as valdresCreateStore,
+    isPromiseLike,
+} from "valdres"
 
 export const createStore = () => {
     const store = valdresCreateStore()

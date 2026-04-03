@@ -7,7 +7,7 @@ const addSetToSelector = (selector, set) => {
 }
 
 const isAsyncFunction = (fn: Function) =>
-    fn.constructor.name === "AsyncFunction"
+    Object.prototype.toString.call(fn) === "[object AsyncFunction]"
 
 // Wraps an async read function into a sync function that returns a Promise,
 // since valdres selectors do not accept async functions directly.

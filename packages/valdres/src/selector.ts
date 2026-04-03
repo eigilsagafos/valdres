@@ -10,7 +10,7 @@ export const selector = <
     get: (get: GetValue, storeId: string) => Value | Promise<Value>,
     options?: SelectorOptions<Value>,
 ): Selector<Value, FamilyArgs> => {
-    if (get.constructor.name === "AsyncFunction") {
+    if (Object.prototype.toString.call(get) === "[object AsyncFunction]") {
         throw new Error(
             "selector() does not accept async functions. " +
                 "Use a sync function that returns a Promise instead.",
