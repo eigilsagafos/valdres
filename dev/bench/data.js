@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1775234972111,
+  "lastUpdate": 1775236333913,
   "repoUrl": "https://github.com/eigilsagafos/valdres",
   "entries": {
     "valdres benchmarks": [
@@ -864,6 +864,162 @@ window.BENCHMARK_DATA = {
             "value": 258,
             "unit": "ns",
             "extra": "jotai: 1.1µs (4.1x faster)"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "eigil@sagafos.no",
+            "name": "Eigil Sagafos",
+            "username": "eigilsagafos"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "796b2b9e08bce7458981283415e3126554d2c095",
+          "message": "Optimize atomFamily/selectorFamily and add creation benchmarks (#27)\n\n* Optimize atomFamily/selectorFamily creation and add benchmarks\n\n- createAtomFamily: inline createOptions + atomFamilyAtom into single\n  object allocation; hoist isSelectorFamily/typeof checks to family\n  creation time (289ns → 200ns, flips from 1.3x slower to 1.1x faster)\n- selectorFamily: same inlining — bypass intermediate createOptions and\n  selector() allocations, build selector object directly\n- selector: use cheaper async function detection\n  (constructor.name vs Object.prototype.toString.call)\n- Add selector(fn) creation benchmark (6.7x faster than jotai)\n- Add selectorFamily(id) creation benchmark (1.1x faster than jotai)\n\nCo-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>\n\n* Remove unused imports in benchmark files\n\nCo-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 4.6 <noreply@anthropic.com>",
+          "timestamp": "2026-04-03T10:11:00-07:00",
+          "tree_id": "98b22c256aef4f80a7c3c32bd5a1a94ff6e3d2b8",
+          "url": "https://github.com/eigilsagafos/valdres/commit/796b2b9e08bce7458981283415e3126554d2c095"
+        },
+        "date": 1775236333126,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "atom(1)",
+            "value": 5,
+            "unit": "ns",
+            "extra": "jotai: 68ns (14.9x faster)"
+          },
+          {
+            "name": "store.get(atom)",
+            "value": 28,
+            "unit": "ns",
+            "extra": "jotai: 97ns (3.4x faster)"
+          },
+          {
+            "name": "set(atom, value)",
+            "value": 331,
+            "unit": "ns",
+            "extra": "jotai: 1.2µs (3.6x faster)"
+          },
+          {
+            "name": "set(atom, curr => curr+1)",
+            "value": 305,
+            "unit": "ns",
+            "extra": "jotai: 1.2µs (4.1x faster)"
+          },
+          {
+            "name": "atomFamily(id)",
+            "value": 373,
+            "unit": "ns",
+            "extra": "jotai: 453ns (1.2x faster)"
+          },
+          {
+            "name": "selectorFamily(id)",
+            "value": 309,
+            "unit": "ns",
+            "extra": "jotai: 441ns (1.4x faster)"
+          },
+          {
+            "name": "obj.value",
+            "value": 4,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "map.get(key)",
+            "value": 15,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "valdres get",
+            "value": 8,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "jotai get",
+            "value": 98,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "obj.value = n",
+            "value": 4,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "map.set(key, n)",
+            "value": 17,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "valdres set",
+            "value": 432,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "jotai set",
+            "value": 1470,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "selector(fn)",
+            "value": 10,
+            "unit": "ns",
+            "extra": "jotai: 73ns (7.7x faster)"
+          },
+          {
+            "name": "set + read 10 selectors",
+            "value": 6306,
+            "unit": "ns",
+            "extra": "jotai: 10.8µs (1.7x faster)"
+          },
+          {
+            "name": "set + read 100 selectors",
+            "value": 55762,
+            "unit": "ns",
+            "extra": "jotai: 80.5µs (1.4x faster)"
+          },
+          {
+            "name": "set + read through 5 chained selectors",
+            "value": 5151,
+            "unit": "ns",
+            "extra": "jotai: 6.0µs (1.2x faster)"
+          },
+          {
+            "name": "createStore",
+            "value": 329,
+            "unit": "ns",
+            "extra": "jotai: 246ns (1.3x slower)"
+          },
+          {
+            "name": "set 1000 atoms",
+            "value": 84251,
+            "unit": "ns",
+            "extra": "jotai: 357.2µs (4.2x faster)"
+          },
+          {
+            "name": "get 1000 atoms",
+            "value": 7327,
+            "unit": "ns",
+            "extra": "jotai: 131.3µs (17.9x faster)"
+          },
+          {
+            "name": "sub + unsub",
+            "value": 288,
+            "unit": "ns",
+            "extra": "jotai: 1.2µs (4.2x faster)"
           }
         ]
       }
