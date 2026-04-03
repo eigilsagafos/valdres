@@ -253,68 +253,105 @@ function formatTable(results: Comparison[]): string {
         lines.push("", "No regressions detected.")
     }
 
+    // Generate threshold tiers table from config to avoid drift
     lines.push(
         "",
         "<details><summary>Threshold tiers</summary>",
         "",
+        `Global minimum absolute change: ${MIN_ABSOLUTE_CHANGE_NS}ns`,
+        "",
         "| Median range | % threshold | Abs. floor |",
         "|:-------------|:------------|:-----------|",
-        "| < 100ns | skip (too noisy) | — |",
-        "| 100ns – 1µs | 50% | 100ns |",
-        "| 1µs – 100µs | 30% | 50ns |",
-        "| > 100µs | 20% | 50ns |",
-        "",
-        "</details>",
     )
+    for (let i = 0; i < TIERS.length; i++) {
+        const tier = TIERS[i]
+        const prevMax = i > 0 ? TIERS[i - 1].maxMedianNs : 0
+        const range =
+            tier.maxMedianNs === Infinity
+                ? `> ${fmtNs(prevMax)}`
+                : i === 0
+                  ? `< ${fmtNs(tier.maxMedianNs)}`
+                  : `${fmtNs(prevMax)} – ${fmtNs(tier.maxMedianNs)}`
+        const pct =
+            tier.percentThreshold === Infinity
+                ? "skip (too noisy)"
+                : `${((tier.percentThreshold - 1) * 100).toFixed(0)}%`
+        const floor =
+            tier.absoluteFloorNs > 0 ? fmtNs(tier.absoluteFloorNs) : "—"
+        lines.push(`| ${range} | ${pct} | ${floor} |`)
+    }
+    lines.push("", "</details>")
 
     return lines.join("\n")
 }
 
 async function postOrUpdateComment(body: string): Promise<void> {
-    const token = process.env.GITHUB_TOKEN
-    const repo = process.env.GITHUB_REPOSITORY
-    if (!token || !repo) {
-        console.log("No GITHUB_TOKEN or GITHUB_REPOSITORY — skipping comment.")
-        return
-    }
+    try {
+        const token = process.env.GITHUB_TOKEN
+        const repo = process.env.GITHUB_REPOSITORY
+        if (!token || !repo) {
+            console.log(
+                "No GITHUB_TOKEN or GITHUB_REPOSITORY — skipping comment.",
+            )
+            return
+        }
 
-    const eventPath = process.env.GITHUB_EVENT_PATH
-    if (!eventPath) return
-    const event = JSON.parse(readFileSync(eventPath, "utf-8"))
-    const prNumber = event?.pull_request?.number
-    if (!prNumber) return
+        const eventPath = process.env.GITHUB_EVENT_PATH
+        if (!eventPath) return
+        const event = JSON.parse(readFileSync(eventPath, "utf-8"))
+        const prNumber = event?.pull_request?.number
+        if (!prNumber) return
 
-    const headers = {
-        Authorization: `token ${token}`,
-        Accept: "application/vnd.github.v3+json",
-        "Content-Type": "application/json",
-    }
-    const baseUrl = `https://api.github.com/repos/${repo}/issues/${prNumber}/comments`
-    const marker = "<!-- bench-regression-check -->"
+        const headers = {
+            Authorization: `token ${token}`,
+            Accept: "application/vnd.github.v3+json",
+            "Content-Type": "application/json",
+        }
+        const baseUrl = `https://api.github.com/repos/${repo}/issues/${prNumber}/comments`
+        const marker = "<!-- bench-regression-check -->"
 
-    const res = await fetch(baseUrl, { headers })
-    const comments: any[] = await res.json()
-    const existing = comments.find(
-        (c: any) => c.body && c.body.includes(marker),
-    )
+        // Fetch existing comments (per_page=100 to reduce pagination needs)
+        const res = await fetch(`${baseUrl}?per_page=100`, { headers })
+        if (!res.ok) {
+            console.warn(
+                `Failed to fetch PR comments (${res.status}) — skipping comment.`,
+            )
+            return
+        }
 
-    if (existing) {
-        await fetch(
-            `${baseUrl.replace(/\/comments$/, "")}/comments/${existing.id}`,
-            {
-                method: "PATCH",
+        const comments = await res.json()
+        if (!Array.isArray(comments)) {
+            console.warn(
+                "Unexpected PR comments response — skipping comment.",
+            )
+            return
+        }
+
+        const existing = comments.find(
+            (c: any) => c.body && c.body.includes(marker),
+        )
+
+        if (existing) {
+            await fetch(
+                `${baseUrl.replace(/\/comments$/, "")}/comments/${existing.id}`,
+                {
+                    method: "PATCH",
+                    headers,
+                    body: JSON.stringify({ body }),
+                },
+            )
+            console.log(`Updated existing PR comment #${existing.id}`)
+        } else {
+            await fetch(baseUrl, {
+                method: "POST",
                 headers,
                 body: JSON.stringify({ body }),
-            },
-        )
-        console.log(`Updated existing PR comment #${existing.id}`)
-    } else {
-        await fetch(baseUrl, {
-            method: "POST",
-            headers,
-            body: JSON.stringify({ body }),
-        })
-        console.log("Posted new PR comment")
+            })
+            console.log("Posted new PR comment")
+        }
+    } catch (err) {
+        // Comment failures should not fail the regression check
+        console.warn("Failed to post/update PR comment — skipping.", err)
     }
 }
 
