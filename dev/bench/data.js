@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1775231144756,
+  "lastUpdate": 1775234838115,
   "repoUrl": "https://github.com/eigilsagafos/valdres",
   "entries": {
     "valdres benchmarks": [
@@ -576,6 +576,150 @@ window.BENCHMARK_DATA = {
             "value": 238,
             "unit": "ns",
             "extra": "jotai: 1.0µs (4.3x faster)"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "eigil@sagafos.no",
+            "name": "Eigil Sagafos",
+            "username": "eigilsagafos"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "83e46c4f14d8f7371fc4d3985589fbb9472f189e",
+          "message": "Reject async selectors in core, wrap in jotai compat layer (#26)\n\n* Wrap store.get for async atoms to match jotai Promise semantics\n\nJotai always returns Promises for async atoms, even after resolution.\nValdres unwraps resolved values. The compat layer now tags async\nselectors and re-wraps resolved values in Promise.resolve() on get.\n\nEnables 2 more compat tests:\n- handles complex dependency chains\n- should not inf on subscribe or unsubscribe\n\nCo-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>\n\n* Reject async functions in selector() to prevent inconsistent return types\n\nAsync functions always return Promises, but valdres unwraps resolved\nvalues. This causes store.get() to return Promise on first call, then\nthe unwrapped value on subsequent calls — an inconsistent return type.\n\nSync functions returning Promises are still allowed and work correctly\nwith valdres's unwrap-on-resolve semantics.\n\nThe jotai compat layer wraps async read functions into sync wrappers\nbefore passing them to valdresSelector.\n\nCo-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>\n\n* Address review: robust async detection, specific error assertion, deduplicate isPromiseLike\n\n- Use Object.prototype.toString.call instead of constructor.name for\n  async function detection (resilient to minification/realms)\n- Assert specific error message in test with toThrow(/async/i)\n- Import isPromiseLike from valdres instead of duplicating in compat\n\nCo-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 4.6 <noreply@anthropic.com>",
+          "timestamp": "2026-04-03T09:46:25-07:00",
+          "tree_id": "251980b8247db6dc6ad7c743d7a5e9445454116b",
+          "url": "https://github.com/eigilsagafos/valdres/commit/83e46c4f14d8f7371fc4d3985589fbb9472f189e"
+        },
+        "date": 1775234837806,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "atom(1)",
+            "value": 3,
+            "unit": "ns",
+            "extra": "jotai: 57ns (20.3x faster)"
+          },
+          {
+            "name": "store.get(atom)",
+            "value": 40,
+            "unit": "ns",
+            "extra": "jotai: 83ns (2.1x faster)"
+          },
+          {
+            "name": "set(atom, value)",
+            "value": 698,
+            "unit": "ns",
+            "extra": "jotai: 1.2µs (1.7x faster)"
+          },
+          {
+            "name": "set(atom, curr => curr+1)",
+            "value": 710,
+            "unit": "ns",
+            "extra": "jotai: 1.2µs (1.7x faster)"
+          },
+          {
+            "name": "atomFamily(id)",
+            "value": 681,
+            "unit": "ns",
+            "extra": "jotai: 435ns (1.6x slower)"
+          },
+          {
+            "name": "obj.value",
+            "value": 0,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "map.get(key)",
+            "value": 4,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "valdres get",
+            "value": 6,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "jotai get",
+            "value": 51,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "obj.value = n",
+            "value": 2,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "map.set(key, n)",
+            "value": 19,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "valdres set",
+            "value": 720,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "jotai set",
+            "value": 1391,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "set + read 10 selectors",
+            "value": 9739,
+            "unit": "ns",
+            "extra": "jotai: 7.5µs (1.3x slower)"
+          },
+          {
+            "name": "set + read 100 selectors",
+            "value": 81544,
+            "unit": "ns",
+            "extra": "jotai: 63.4µs (1.3x slower)"
+          },
+          {
+            "name": "set + read through 5 chained selectors",
+            "value": 6703,
+            "unit": "ns",
+            "extra": "jotai: 5.3µs (1.3x slower)"
+          },
+          {
+            "name": "createStore",
+            "value": 146,
+            "unit": "ns",
+            "extra": "jotai: 203ns (1.4x faster)"
+          },
+          {
+            "name": "set 1000 atoms",
+            "value": 81322,
+            "unit": "ns",
+            "extra": "jotai: 254.3µs (3.1x faster)"
+          },
+          {
+            "name": "get 1000 atoms",
+            "value": 10213,
+            "unit": "ns",
+            "extra": "jotai: 72.9µs (7.1x faster)"
+          },
+          {
+            "name": "sub + unsub",
+            "value": 231,
+            "unit": "ns",
+            "extra": "jotai: 990ns (4.3x faster)"
           }
         ]
       }
