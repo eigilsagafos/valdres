@@ -26,6 +26,26 @@ describe("atomFamily", () => {
     })
 })
 
+describe("atomFamily cache hit", () => {
+    test("atomFamily cache hit", async () => {
+        const vFamily = valdresAtomFamily<string, [number]>(
+            id => `user-${id}`,
+        )
+        const jFamily = jotaiAtomFamily((id: number) => jotaiAtom(`user-${id}`))
+
+        // Prime the cache
+        vFamily(1)
+        jFamily(1)
+
+        await assertFaster(
+            "atomFamily(id) cache hit",
+            () => { sink = vFamily(1) },
+            () => { sink = jFamily(1) },
+            5.0,
+        )
+    })
+})
+
 describe("selectorFamily", () => {
     test("create selectors from family", async () => {
         const vAtom = valdresAtom(0)

@@ -20,6 +20,7 @@ interface Result {
     jotai: number
     ratio: number
     tag: string
+    threshold?: number
 }
 
 function fmtNs(ns: number): string {
@@ -34,12 +35,31 @@ function speedIndicator(ratio: number): string {
     return "🔴"
 }
 
+// Read Jotai version (check workspace-local node_modules first, then root)
+let jotaiVersion = "unknown"
+for (const path of [
+    join(ROOT, "packages/valdres/node_modules/jotai/package.json"),
+    join(ROOT, "node_modules/jotai/package.json"),
+]) {
+    try {
+        const jotaiPkg = JSON.parse(readFileSync(path, "utf-8"))
+        jotaiVersion = jotaiPkg.version
+        break
+    } catch {}
+}
+
 // Read results
 const ndjson = readFileSync(RESULTS_PATH, "utf-8").trim()
 const results: Result[] = ndjson.split("\n").map(line => JSON.parse(line))
 
-// Split results into comparisons and baselines
-const comparisons = results.filter(r => r.tag !== "baseline")
+// Split results into comparisons, optimization targets, and baselines
+const OPTIMIZATION_TARGET_THRESHOLD = 10.0
+const comparisons = results.filter(
+    r => r.tag !== "baseline" && (r.threshold ?? 1.0) < OPTIMIZATION_TARGET_THRESHOLD,
+)
+const optimizationTargets = results.filter(
+    r => r.tag !== "baseline" && (r.threshold ?? 1.0) >= OPTIMIZATION_TARGET_THRESHOLD,
+)
 const baselines = results.filter(r => r.tag === "baseline")
 
 // Generate comparison table
@@ -52,6 +72,12 @@ const compTable = `| Benchmark | valdres | jotai | Comparison |
 |:----------|--------:|------:|-----------:|
 ${compRows.join("\n")}`
 
+// Generate optimization targets table
+const optTable =
+    optimizationTargets.length > 0
+        ? `\n\n#### Optimization targets\n\n| Benchmark | valdres | jotai | Comparison |\n|:----------|--------:|------:|-----------:|\n${optimizationTargets.map(r => `| ${r.name} | ${fmtNs(r.valdres)} | ${fmtNs(r.jotai)} | ${r.tag} |`).join("\n")}`
+        : ""
+
 // Generate baseline table
 const baseRows = baselines.map(r => `| ${r.name} | ${fmtNs(r.valdres)} |`)
 const baseTable =
@@ -59,7 +85,7 @@ const baseTable =
         ? `\n\n#### Baseline (raw JS)\n\n| Operation | Time |\n|:----------|-----:|\n${baseRows.join("\n")}`
         : ""
 
-const table = compTable + baseTable
+const table = compTable + optTable + baseTable
 
 const now = new Date().toISOString().split("T")[0]
 const section = `${START_MARKER}
@@ -67,7 +93,7 @@ const section = `${START_MARKER}
 
 ${table}
 
-> Last updated: ${now} — [Historical trends](https://eigilsagafos.github.io/valdres/dev/bench/)
+> Last updated: ${now} — Jotai v${jotaiVersion} — [Historical trends](https://eigilsagafos.github.io/valdres/dev/bench/)
 ${END_MARKER}`
 
 // Update README

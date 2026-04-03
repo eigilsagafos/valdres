@@ -60,4 +60,46 @@ describe("atom", () => {
             2.0,
         )
     })
+
+    test("set with 10 subscribers", async () => {
+        const vStore = valdresCreateStore()
+        const jStore = jotaiCreateStore()
+        const vAtom = valdresAtom(0)
+        const jAtom = jotaiAtom(0)
+        const noop = () => {}
+
+        for (let i = 0; i < 10; i++) {
+            vStore.sub(vAtom, noop)
+            jStore.sub(jAtom, noop)
+        }
+
+        let vInt = 0
+        let jInt = 0
+        await assertFaster(
+            "set(atom) with 10 subs",
+            () => vStore.set(vAtom, ++vInt),
+            () => jStore.set(jAtom, ++jInt),
+            2.0,
+        )
+    })
+
+    test("lifecycle: create + 100 get + 100 set", async () => {
+        const vStore = valdresCreateStore()
+        const jStore = jotaiCreateStore()
+
+        await assertFaster(
+            "atom lifecycle (create+100get+100set)",
+            () => {
+                const a = valdresAtom(0)
+                for (let i = 0; i < 100; i++) sink = vStore.get(a)
+                for (let i = 0; i < 100; i++) vStore.set(a, i)
+            },
+            () => {
+                const a = jotaiAtom(0)
+                for (let i = 0; i < 100; i++) sink = jStore.get(a)
+                for (let i = 0; i < 100; i++) jStore.set(a, i)
+            },
+            2.0,
+        )
+    })
 })
