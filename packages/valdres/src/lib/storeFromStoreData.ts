@@ -35,11 +35,14 @@ export function storeFromStoreData(
     data: ScopedStoreData | StoreData,
     detach?: () => void,
 ) {
+    const _initSet = new Set<Atom>()
     const get: GetValue = (state: State) => {
-        const set = new Set<Atom>()
-        const res = getState(state, data, set)
-        if (set.size) {
-            propagateUpdatedAtoms([...set], data, undefined, undefined, false, undefined, false, true)
+        if (data.values.has(state)) return data.values.get(state)
+        const res = getState(state, data, _initSet)
+        if (_initSet.size) {
+            const atoms = [..._initSet]
+            _initSet.clear()
+            propagateUpdatedAtoms(atoms, data, undefined, undefined, false, undefined, false, true)
         }
         return res
     }
