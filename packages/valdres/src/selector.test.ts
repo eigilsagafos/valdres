@@ -7,6 +7,22 @@ import { selector } from "./selector"
 import { store } from "./store"
 
 describe("selector", () => {
+    test("throws if given an async function", () => {
+        expect(() => {
+            selector(async get => {
+                return get(atom(1))
+            })
+        }).toThrow(/async/i)
+    })
+
+    test("allows sync function that returns a Promise", () => {
+        expect(() => {
+            selector(get => {
+                return Promise.resolve(get(atom(1)))
+            })
+        }).not.toThrow()
+    })
+
     test("computations are cached", () => {
         const store1 = store()
         const numberAtom = atom(5, { name: "atom" })

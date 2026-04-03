@@ -327,7 +327,7 @@ test("should not re-evaluate stable derived atom values in situations where depe
     expect(callCounter).toHaveBeenCalledTimes(2)
 })
 
-test.todo("handles complex dependency chains", async () => {
+test("handles complex dependency chains", async () => {
     const baseAtom = atom(1)
     const derived1 = atom(get => get(baseAtom) * 2)
     const derived2 = atom(get => get(derived1) + 1)

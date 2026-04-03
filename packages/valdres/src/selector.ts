@@ -10,6 +10,12 @@ export const selector = <
     get: (get: GetValue, storeId: string) => Value | Promise<Value>,
     options?: SelectorOptions<Value>,
 ): Selector<Value, FamilyArgs> => {
+    if (Object.prototype.toString.call(get) === "[object AsyncFunction]") {
+        throw new Error(
+            "selector() does not accept async functions. " +
+                "Use a sync function that returns a Promise instead.",
+        )
+    }
     if (!options) return { equal, get }
     return { equal, ...options, get }
 }

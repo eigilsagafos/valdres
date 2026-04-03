@@ -1,7 +1,22 @@
-import { createStoreWithSelectorSet as valdresCreateStore } from "valdres"
+import {
+    createStoreWithSelectorSet as valdresCreateStore,
+    isPromiseLike,
+} from "valdres"
 
 export const createStore = () => {
     const store = valdresCreateStore()
+
+    // Jotai always returns Promises for async atoms. Valdres unwraps resolved
+    // values, so we re-wrap them to match jotai semantics.
+    const originalGet = store.get
+    store.get = (state: any) => {
+        const value = originalGet(state)
+        if (state.__jotaiAsync && !isPromiseLike(value)) {
+            return Promise.resolve(value)
+        }
+        return value
+    }
+
     const originalSub = store.sub
     // Wraps onMount so that jotai-style `(setAtom) => cleanup` is converted to
     // valdres-style `(store, state) => cleanup` during the subscribe call.
