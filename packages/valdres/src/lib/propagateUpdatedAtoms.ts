@@ -370,7 +370,6 @@ export const propagateDirtySelectors = (
     isInitOnly = false,
 ) => {
     const updatedInitializedAtoms = new Set<Atom>(updatedAtoms)
-    const originalSize = updatedInitializedAtoms.size
     if (selectors.size > 0) {
         // At this point we have the first level of selectors that are depeendent on
         // the atoms that changed. We should now traverse the tree of selectors, collect subsribers
@@ -383,10 +382,6 @@ export const propagateDirtySelectors = (
             undefined,
             isInitOnly,
         )
-    }
-    if (updatedInitializedAtoms.size !== originalSize) {
-        // propagateUpdatedAtoms
-        console.log("Valdres TODO: Support this case with new atoms added")
     }
     if (subscriptions.size > 0) {
         let firstError: unknown

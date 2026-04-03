@@ -14,7 +14,7 @@ export const setValueInData = <Value extends unknown>(
         return value
     } else {
         // Skip deepFreeze for primitives — they are immutable by nature
-        const frozenValue = value !== null && typeof value === "object"
+        const frozenValue = value !== null && (typeof value === "object" || typeof value === "function")
             ? deepFreeze(value)
             : value
         data.values.set(atom, frozenValue)

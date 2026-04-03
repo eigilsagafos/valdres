@@ -38,11 +38,15 @@ export function storeFromStoreData(
     const _initSet = new Set<Atom>()
     const get: GetValue = (state: State) => {
         if (data.values.has(state)) return data.values.get(state)
-        const res = getState(state, data, _initSet)
-        if (_initSet.size) {
-            const atoms = [..._initSet]
-            _initSet.clear()
-            propagateUpdatedAtoms(atoms, data, undefined, undefined, false, undefined, false, true)
+        let res
+        try {
+            res = getState(state, data, _initSet)
+        } finally {
+            if (_initSet.size) {
+                const atoms = [..._initSet]
+                _initSet.clear()
+                propagateUpdatedAtoms(atoms, data, undefined, undefined, false, undefined, false, true)
+            }
         }
         return res
     }

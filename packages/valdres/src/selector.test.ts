@@ -417,6 +417,36 @@ describe("selector", () => {
         // expect(onChangeDerived).toHaveBeenCalledTimes(1)
     })
 
+    test("store.get does not leak stale atoms after a selector throws", () => {
+        const store1 = store()
+        const atom1 = atom(1, { name: "atom1" })
+        const atom2 = atom(10, { name: "atom2" })
+        const atom3 = atom(99, { name: "atom3" })
+
+        // A crashing selector that initializes atom1 before throwing.
+        // atom1 has never been read, so getState will init it and add
+        // it to the internal _initSet.
+        const crashingSelector = selector(get => {
+            get(atom1)
+            throw new Error("boom")
+        })
+
+        expect(() => store1.get(crashingSelector)).toThrow("Selector eval crashed")
+
+        // Now set up a selector + subscriber that depends on atom1
+        const goodSelector = selector(get => get(atom1) * 2)
+        expect(store1.get(goodSelector)).toBe(2)
+        const callback = mock(() => {})
+        store1.sub(goodSelector, callback)
+
+        // Get an unrelated, never-initialized atom. Bug: if _initSet
+        // leaked atom1 from the crashed get, this call will run
+        // propagateUpdatedAtoms for atom1, spuriously notifying
+        // goodSelector's subscriber.
+        expect(store1.get(atom3)).toBe(99)
+        expect(callback).toHaveBeenCalledTimes(0)
+    })
+
     test("selector in scope dependent on atom not set in scope but in parent scope works correctly ", () => {
         const rootStore = store()
         const nestedStore = rootStore.scope("nested")
