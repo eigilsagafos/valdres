@@ -2,9 +2,7 @@ import { describe, test } from "bun:test"
 import { createStore as jotaiCreateStore, atom as jotaiAtom } from "jotai"
 import { atom as valdresAtom } from "../../src/atom"
 import { selector as valdresSelector } from "../../src/selector"
-import { selectorFamily as valdresSelectorFamily } from "../../src/selectorFamily"
 import { store as valdresCreateStore } from "../../src/store"
-import { atomFamily as jotaiAtomFamily } from "jotai/utils"
 import { assertFaster } from "./bench-utils"
 
 let sink: any
