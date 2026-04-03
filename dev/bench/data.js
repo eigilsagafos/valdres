@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1775236333913,
+  "lastUpdate": 1775236667758,
   "repoUrl": "https://github.com/eigilsagafos/valdres",
   "entries": {
     "valdres benchmarks": [
@@ -1020,6 +1020,162 @@ window.BENCHMARK_DATA = {
             "value": 288,
             "unit": "ns",
             "extra": "jotai: 1.2µs (4.2x faster)"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "eigil@sagafos.no",
+            "name": "Eigil Sagafos",
+            "username": "eigilsagafos"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "1f2f0573322c547314cb420cf6257d305cf7d356",
+          "message": "Fix atom(value, writeFn) handling and enable React tree dependencies test (#28)\n\n* Fix atom(value, writeFn) handling and enable React tree dependencies test\n\nHandle writable primitive atoms (atom(value, writeFn)) by creating a\nselector with a constant read function instead of a plain atom, so\ncreateStoreWithSelectorSet properly handles the write method.\n\nAlso removes the get.length === 1 guard so write-only atoms like\natom((get) => ..., writeFn) work regardless of arity.\n\nCo-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>\n\n* Support writable primitive atoms with backing atom and enable 3 React tests\n\natom(value, writeFn) now uses a backing valdres atom for mutable storage,\nwith a selector that reads from it. Self-sets are intercepted and redirected\nto the backing atom, fixing infinite recursion for self-referencing writes.\n\nNewly passing tests:\n- uses an async write-only atom\n- uses a writable atom without read function\n- write self atom (undocumented usage)\n\nCo-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 4.6 <noreply@anthropic.com>",
+          "timestamp": "2026-04-03T10:16:45-07:00",
+          "tree_id": "13df948cff6f79a6ede47e2709c9affe37469264",
+          "url": "https://github.com/eigilsagafos/valdres/commit/1f2f0573322c547314cb420cf6257d305cf7d356"
+        },
+        "date": 1775236667265,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "atom(1)",
+            "value": 3,
+            "unit": "ns",
+            "extra": "jotai: 57ns (17.1x faster)"
+          },
+          {
+            "name": "store.get(atom)",
+            "value": 36,
+            "unit": "ns",
+            "extra": "jotai: 89ns (2.5x faster)"
+          },
+          {
+            "name": "set(atom, value)",
+            "value": 273,
+            "unit": "ns",
+            "extra": "jotai: 1.2µs (4.5x faster)"
+          },
+          {
+            "name": "set(atom, curr => curr+1)",
+            "value": 304,
+            "unit": "ns",
+            "extra": "jotai: 1.3µs (4.2x faster)"
+          },
+          {
+            "name": "atomFamily(id)",
+            "value": 356,
+            "unit": "ns",
+            "extra": "jotai: 470ns (1.3x faster)"
+          },
+          {
+            "name": "selectorFamily(id)",
+            "value": 427,
+            "unit": "ns",
+            "extra": "jotai: 1.1µs (2.6x faster)"
+          },
+          {
+            "name": "obj.value",
+            "value": 4,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "map.get(key)",
+            "value": 17,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "valdres get",
+            "value": 9,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "jotai get",
+            "value": 119,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "obj.value = n",
+            "value": 4,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "map.set(key, n)",
+            "value": 18,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "valdres set",
+            "value": 430,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "jotai set",
+            "value": 1253,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "selector(fn)",
+            "value": 5,
+            "unit": "ns",
+            "extra": "jotai: 60ns (11.2x faster)"
+          },
+          {
+            "name": "set + read 10 selectors",
+            "value": 6438,
+            "unit": "ns",
+            "extra": "jotai: 9.6µs (1.5x faster)"
+          },
+          {
+            "name": "set + read 100 selectors",
+            "value": 52344,
+            "unit": "ns",
+            "extra": "jotai: 92.2µs (1.8x faster)"
+          },
+          {
+            "name": "set + read through 5 chained selectors",
+            "value": 4884,
+            "unit": "ns",
+            "extra": "jotai: 5.8µs (1.2x faster)"
+          },
+          {
+            "name": "createStore",
+            "value": 207,
+            "unit": "ns",
+            "extra": "jotai: 217ns (1.0x faster)"
+          },
+          {
+            "name": "set 1000 atoms",
+            "value": 92555,
+            "unit": "ns",
+            "extra": "jotai: 339.4µs (3.7x faster)"
+          },
+          {
+            "name": "get 1000 atoms",
+            "value": 7383,
+            "unit": "ns",
+            "extra": "jotai: 108.6µs (14.7x faster)"
+          },
+          {
+            "name": "sub + unsub",
+            "value": 288,
+            "unit": "ns",
+            "extra": "jotai: 1.1µs (3.8x faster)"
           }
         ]
       }
