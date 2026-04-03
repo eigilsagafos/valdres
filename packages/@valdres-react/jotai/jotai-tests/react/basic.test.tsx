@@ -354,7 +354,7 @@ test.todo("works with async get without setTimeout", async () => {
     await findByText("count: 2, delayedCount: 2")
 })
 
-test.todo("uses atoms with tree dependencies", async () => {
+test("uses atoms with tree dependencies", async () => {
     const topAtom = atom(0)
     const leftAtom = atom(get => get(topAtom))
     let resolve = () => {}

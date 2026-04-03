@@ -17,22 +17,21 @@ const wrapAsync = (fn: Function) => {
 }
 
 export const atom = (get, set?: any) => {
-    if (typeof get === "function" && get.length === 1) {
+    if (typeof get === "function") {
         const wrapped = wrapAsync(get)
         const selector = valdresSelector(wrapped.get, { equal: Object.is })
         if (set) addSetToSelector(selector, set)
         if (wrapped.isAsync) selector.__jotaiAsync = true
         return selector
     } else if (typeof set === "function") {
-        if (get === null) get = () => undefined
-        const wrapped = wrapAsync(get)
-        const selector = valdresSelector(wrapped.get, { equal: Object.is })
-        if (set) addSetToSelector(selector, set)
-        if (wrapped.isAsync) selector.__jotaiAsync = true
+        // Write-only or writable primitive atom: atom(null, writeFn) or atom(value, writeFn)
+        // Wrap as a selector so createStoreWithSelectorSet handles the set method.
+        const readFn = get === null ? () => undefined : () => get
+        const selector = valdresSelector(readFn, { equal: Object.is })
+        addSetToSelector(selector, set)
         return selector
     } else {
         const newAtom = valdresAtom(get, { equal: Object.is })
-        // if (set) addSetToSelector(newAtom, set)
         return newAtom
     }
 }
