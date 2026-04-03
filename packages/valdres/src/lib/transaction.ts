@@ -1,4 +1,3 @@
-import { isProd } from "../lib/isProd"
 import type { Atom } from "../types/Atom"
 import type { AtomFamily } from "../types/AtomFamily"
 import type { AtomFamilyAtom } from "../types/AtomFamilyAtom"
@@ -56,7 +55,7 @@ export class Transaction {
     private _deleteSet: any
     private _selectorDependencies: any
     private _selectorCache: any
-    private _atomMap: any
+    private _atomMap: Map<any, any>
     constructor(
         data: StoreData,
         parentTransaction?: Transaction,
@@ -65,6 +64,7 @@ export class Transaction {
         this.data = data
         this.parentTransaction = parentTransaction
         this.dirty = false
+        this._atomMap = new Map()
         if (childTransaction) {
             this._scopedTransactions = new Map([
                 [childTransaction.data.id, childTransaction],
@@ -73,8 +73,8 @@ export class Transaction {
     }
 
     private valueFromTxnOrData: GetValue = (state: State) => {
-        if (this.atomMap.has(state)) {
-            return this.atomMap.get(state)
+        if (this._atomMap.has(state)) {
+            return this._atomMap.get(state)
         }
         if (this.data.values.has(state)) {
             return this.data.values.get(state)
@@ -121,19 +121,21 @@ export class Transaction {
             value = value(currentValue)
         }
 
-        if (isProd()) {
-            this.atomMap.set(atom, value)
-        } else {
-            this.atomMap.set(atom, deepFreeze(value))
+        // Freeze non-primitives so values are immutable within the transaction.
+        // deepFreeze short-circuits on already-frozen objects, so the
+        // second freeze in setValueInData during commit is a no-op.
+        if (value !== null && (typeof value === "object" || typeof value === "function")) {
+            value = deepFreeze(value)
         }
+        this._atomMap.set(atom, value)
         if (!this.dirty) this.dirty = true
 
         if (isFamilyAtom(atom)) {
-            if (!this.atomMap.has(atom.family)) {
+            if (!this._atomMap.has(atom.family)) {
                 // @ts-ignore
                 this.cloneFamilyIntoTxn(atom.family)
             }
-            const index = this.atomMap.get(atom.family).__index
+            const index = this._atomMap.get(atom.family).__index
             index.created.set(atom, performance.now())
             index.deleted.delete(atom)
             index.rendered = null
@@ -145,18 +147,18 @@ export class Transaction {
 
     // @ts-ignore
     batchSetFamilyAtoms = (family, pairs) => {
-        if (!this.atomMap.has(family)) {
+        if (!this._atomMap.has(family)) {
             // @ts-ignore
             this.cloneFamilyIntoTxn(family)
         }
-        const index = this.atomMap.get(family).__index
+        const index = this._atomMap.get(family).__index
         for (const [atom, value] of pairs) {
             if (atom.family !== family) {
                 throw new Error("Atom does not belong to the provided family")
             }
             index.created.set(atom, performance.now())
             if (index.deleted.has(atom)) index.deleted.delete(atom)
-            this.atomMap.set(atom, value)
+            this._atomMap.set(atom, value)
         }
         index.rendered = null
         index.renderedArray = null
@@ -164,22 +166,22 @@ export class Transaction {
     }
 
     del = (atom: AtomFamilyAtom<any, any>) => {
-        if (!this.atomMap.has(atom.family)) {
+        if (!this._atomMap.has(atom.family)) {
             // @ts-ignore
             this.cloneFamilyIntoTxn(atom.family)
         }
-        const index = this.atomMap.get(atom.family).__index
+        const index = this._atomMap.get(atom.family).__index
         index.created.delete(atom)
         index.deleted.set(atom, performance.now())
         index.rendered = null
         index.renderedArray = null
-        this.atomMap.set(atom.family, renderAtomFamilyIndex(index))
+        this._atomMap.set(atom.family, renderAtomFamilyIndex(index))
         this.recursivlyUpdateAtomFamilyIndexes(atom.family)
         if (this.data.values.has(atom)) {
             this.deleteSet.add(atom)
         }
-        if (this.atomMap.has(atom)) {
-            this.atomMap.delete(atom)
+        if (this._atomMap.has(atom)) {
+            this._atomMap.delete(atom)
         }
     }
 
@@ -212,7 +214,7 @@ export class Transaction {
             this.data,
             this.initializedAtomsSet,
         )
-        this.atomMap.set(atom, value)
+        this._atomMap.set(atom, value)
         return value
     }
 
@@ -232,7 +234,7 @@ export class Transaction {
 
     commit = () => {
         const initializedAtomsSet = new Set<Atom>()
-        setAtoms(this.atomMap, this.data, initializedAtomsSet)
+        setAtoms(this._atomMap, this.data, initializedAtomsSet)
         if (this.deleteSet?.size) {
             deleteAtomFamilyAtoms(this.deleteSet, this.data)
             propagateDeletedAtoms([...this.deleteSet], this.data)
@@ -244,10 +246,6 @@ export class Transaction {
         }
     }
 
-    private get atomMap() {
-        if (!this._atomMap) this._atomMap = new Map()
-        return this._atomMap
-    }
     private get selectorCache() {
         if (!this._selectorCache) this._selectorCache = new Map()
         return this._selectorCache
@@ -300,17 +298,17 @@ export class Transaction {
                 scopedTxn.cloneFamilyIntoTxn(family, clonedIndex, false)
             }
         }
-        this.atomMap.set(family, renderAtomFamilyIndex(clonedIndex))
+        this._atomMap.set(family, renderAtomFamilyIndex(clonedIndex))
     }
 
     private recursivlyUpdateAtomFamilyIndexes(
         atomFamily: AtomFamily<any, any>,
     ) {
-        const currentIndex = this.atomMap.get(atomFamily).__index
+        const currentIndex = this._atomMap.get(atomFamily).__index
         currentIndex.rendered = null
         currentIndex.renderedArray = null
         const updatedValue = renderAtomFamilyIndex(currentIndex)
-        this.atomMap.set(atomFamily, updatedValue)
+        this._atomMap.set(atomFamily, updatedValue)
 
         if (this._scopedTransactions?.size) {
             for (const [, scopedTxn] of this._scopedTransactions) {
