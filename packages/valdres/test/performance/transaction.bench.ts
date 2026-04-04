@@ -69,7 +69,7 @@ describe("transaction", () => {
                 valdresSelector(get => get(a) + i),
             ),
         )
-        vSelectors.map(s => vStore.sub(s, () => {}))
+        vSelectors.forEach(s => vStore.sub(s, () => {}))
 
         // --- jotai setup ---
         const jStore = jotaiCreateStore()
@@ -81,7 +81,7 @@ describe("transaction", () => {
                 jotaiAtom(get => get(a) + i),
             ),
         )
-        jSelectors.map(s => jStore.sub(s, () => {}))
+        jSelectors.forEach(s => jStore.sub(s, () => {}))
 
         let vInt = 0
         let jInt = 0
@@ -216,7 +216,7 @@ describe("transaction", () => {
             const a2 = vAtoms[(i + 2) % atomCount]
             return valdresSelector(get => get(a0) + get(a1) + get(a2))
         })
-        vSelectors.map(s => vStore.sub(s, () => {}))
+        vSelectors.forEach(s => vStore.sub(s, () => {}))
 
         // --- jotai setup ---
         const jStore = jotaiCreateStore()
@@ -229,7 +229,7 @@ describe("transaction", () => {
             const a2 = jAtoms[(i + 2) % atomCount]
             return jotaiAtom(get => get(a0) + get(a1) + get(a2))
         })
-        jSelectors.map(s => jStore.sub(s, () => {}))
+        jSelectors.forEach(s => jStore.sub(s, () => {}))
 
         let vInt = 0
         let jInt = 0
