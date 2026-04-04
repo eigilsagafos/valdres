@@ -66,11 +66,9 @@ describe("atom", () => {
         const jStore = jotaiCreateStore()
         const vAtom = valdresAtom(0)
         const jAtom = jotaiAtom(0)
-        const noop = () => {}
-
         for (let i = 0; i < 10; i++) {
-            vStore.sub(vAtom, noop)
-            jStore.sub(jAtom, noop)
+            vStore.sub(vAtom, () => {})
+            jStore.sub(jAtom, () => {})
         }
 
         let vInt = 0

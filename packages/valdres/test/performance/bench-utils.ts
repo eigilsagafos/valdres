@@ -11,8 +11,10 @@ export async function assertFaster(
     competitorFn: () => void,
     maxSlowerRatio: number = 1.0,
 ) {
-    // Randomize measurement order to eliminate systematic ordering bias
-    const runValdresFirst = Math.random() < 0.5
+    // Deterministic but varied measurement order to eliminate systematic bias
+    // Derive from benchmark name so results are reproducible across runs
+    const hash = name.split("").reduce((h, c) => ((h << 5) - h + c.charCodeAt(0)) | 0, 0)
+    const runValdresFirst = hash % 2 === 0
     const [firstStats, secondStats] = runValdresFirst
         ? [await measure(valdresFn), await measure(competitorFn)]
         : [await measure(competitorFn), await measure(valdresFn)]

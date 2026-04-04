@@ -45,7 +45,10 @@ for (const path of [
         const jotaiPkg = JSON.parse(readFileSync(path, "utf-8"))
         jotaiVersion = jotaiPkg.version
         break
-    } catch {}
+    } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "ENOENT") continue
+        throw error
+    }
 }
 
 // Read results
