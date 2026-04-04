@@ -11,12 +11,19 @@ export async function assertFaster(
     competitorFn: () => void,
     maxSlowerRatio: number = 1.0,
 ) {
-    // Run sequentially to avoid CPU contention between measurements
-    const valdresStats = await measure(valdresFn)
-    const competitorStats = await measure(competitorFn)
+    // Deterministic but varied measurement order to eliminate systematic bias
+    // Derive from benchmark name so results are reproducible across runs
+    const hash = name.split("").reduce((h, c) => ((h << 5) - h + c.charCodeAt(0)) | 0, 0)
+    const runValdresFirst = hash % 2 === 0
+    const [firstStats, secondStats] = runValdresFirst
+        ? [await measure(valdresFn), await measure(competitorFn)]
+        : [await measure(competitorFn), await measure(valdresFn)]
+    const valdresStats = runValdresFirst ? firstStats : secondStats
+    const competitorStats = runValdresFirst ? secondStats : firstStats
 
-    const ratio = valdresStats.avg / competitorStats.avg
-    const speedup = competitorStats.avg / valdresStats.avg
+    // Use median (p50) instead of avg — resistant to GC-pause outliers
+    const ratio = valdresStats.p50 / competitorStats.p50
+    const speedup = competitorStats.p50 / valdresStats.p50
 
     const tag =
         ratio <= 1.0
@@ -24,15 +31,16 @@ export async function assertFaster(
             : `${ratio.toFixed(1)}x slower`
 
     console.log(
-        `  ${name}: valdres=${fmtNs(valdresStats.avg)} jotai=${fmtNs(competitorStats.avg)} (${tag})`,
+        `  ${name}: valdres=${fmtNs(valdresStats.p50)} jotai=${fmtNs(competitorStats.p50)} (${tag})`,
     )
 
     const result = {
         name,
-        valdres: valdresStats.avg,
-        jotai: competitorStats.avg,
+        valdres: valdresStats.p50,
+        jotai: competitorStats.p50,
         ratio,
         tag,
+        threshold: maxSlowerRatio,
     }
 
     appendFileSync(RESULTS_PATH, JSON.stringify(result) + "\n")
@@ -43,11 +51,11 @@ export async function assertFaster(
 export async function measureOne(name: string, fn: () => void) {
     const stats = await measure(fn)
 
-    console.log(`  ${name}: ${fmtNs(stats.avg)}`)
+    console.log(`  ${name}: ${fmtNs(stats.p50)}`)
 
     const result = {
         name,
-        valdres: stats.avg,
+        valdres: stats.p50,
         jotai: 0,
         ratio: 0,
         tag: "baseline",
