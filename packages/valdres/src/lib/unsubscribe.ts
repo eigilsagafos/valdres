@@ -30,7 +30,7 @@ export const unsubscribe = <V>(
             data.subscriptions.delete(state)
             // Unmount this state and any transitive dependencies that are
             // no longer reachable from any subscriber.
-            unmountOrphanedDeps(state, data)
+            unmountOrphanedDeps(state as State<V>, data)
         }
     }
 }

@@ -170,7 +170,9 @@ export const subscribe = <V>(
             }
         }
         // Mount this state and all its transitive dependencies
-        mountTransitiveDeps(state, data)
+        if (!isFamily(state)) {
+            mountTransitiveDeps(state, data)
+        }
     }
 
     if (

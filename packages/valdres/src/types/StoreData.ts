@@ -1,3 +1,4 @@
+import type { Store } from "./Store"
 import type { Subscription } from "./Subscription"
 
 export type RootStoreData = {
@@ -9,6 +10,7 @@ export type RootStoreData = {
     stateDependents: WeakMap<WeakKey, any>
     stateDependencies: WeakMap<WeakKey, any>
     mounts: WeakMap<WeakKey, { cleanup?: () => void }>
+    storeRef?: Store
     scopes: { [scopeId: string]: ScopedStoreData }
 }
 

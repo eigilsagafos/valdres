@@ -39,22 +39,26 @@ export const mountAtom = (state: State, data: StoreData) => {
     // (onMount may call setSelf which triggers propagation and dep changes)
     const mountEntry: { cleanup?: () => void } = {}
     data.mounts.set(state, mountEntry)
-    // @ts-ignore — storeRef is set by createStoreWithSelectorSet or compat layers
     const store = data.storeRef ?? storeFromStoreData(data)
-    mountEntry.cleanup = onMountFn(store, state)
+    try {
+        mountEntry.cleanup = onMountFn(store, state)
+    } catch (error) {
+        data.mounts.delete(state)
+        throw error
+    }
 }
 
 /**
- * Unmount a single atom: call its cleanup and remove from data.mounts.
+ * Unmount a single atom: remove it from data.mounts and call its cleanup.
  * No-op if the atom is not mounted.
  */
 export const unmountAtom = (state: State, data: StoreData) => {
     const mount = data.mounts.get(state)
     if (!mount) return
+    data.mounts.delete(state)
     if (typeof mount.cleanup === "function") {
         mount.cleanup()
     }
-    data.mounts.delete(state)
 }
 
 /**
