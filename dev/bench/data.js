@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1775236667758,
+  "lastUpdate": 1775323404955,
   "repoUrl": "https://github.com/eigilsagafos/valdres",
   "entries": {
     "valdres benchmarks": [
@@ -1176,6 +1176,162 @@ window.BENCHMARK_DATA = {
             "value": 288,
             "unit": "ns",
             "extra": "jotai: 1.1µs (3.8x faster)"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "eigil@sagafos.no",
+            "name": "Eigil Sagafos",
+            "username": "eigilsagafos"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "3db9468fc489b9dc6fb5648d05a24bf900522750",
+          "message": "Add dependency-aware onMount/onUnmount lifecycle hooks (#30)\n\n* Add dependency-aware onMount/onUnmount lifecycle hooks\n\nPreviously, onMount only fired when store.sub() was called directly on an\natom. Now onMount fires when an atom becomes a transitive dependency of any\nsubscribed selector, and onUnmount fires when it's no longer reachable.\n\nThis enables patterns like starting a WebSocket when data is \"in use\" and\nstopping when it isn't, matching how jotai's mount/unmount system works.\n\nCore changes:\n- Add data.mounts WeakMap to track mounted atoms and cleanup functions\n- Add mountAtom.ts with helpers for transitive mount/unmount\n- subscribe.ts calls mountTransitiveDeps on first subscriber\n- unsubscribe.ts calls unmountOrphanedDeps when last subscriber leaves\n- propagateUpdatedAtoms processes dependency changes during re-evaluation\n- evaluateSelector exposes added/removed deps via optional out-params\n- createStoreWithSelectorSet stores storeRef on data for onMount callbacks\n- Fix reentrant mount by marking atom as mounted before calling onMountFn\n\nJotai compat changes:\n- atom.ts uses onMount getter/setter to convert jotai signature at\n  assignment time (not during store.sub), enabling propagation-time mounts\n- createStore.ts simplified (no longer needs temporary onMount swap)\n\nNewly passing jotai tests (4):\n- should recompute dependents' state after onMount (#2098)\n- should mount once with atom creator atom (#2314)\n- Unmount an atom that is no longer dependent (#2658)\n- should use the correct pending on unmount\n\nCo-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>\n\n* Address review: error resilience in mount/unmount and type fixes\n\n- mountAtom: clean up data.mounts entry if onMountFn throws\n- unmountAtom: delete entry before calling cleanup to prevent stuck state\n- subscribe.ts: guard mountTransitiveDeps with !isFamily check\n- unsubscribe.ts: cast state to State<V> for unmountOrphanedDeps\n- Add storeRef to RootStoreData type, remove @ts-ignore\n\nCo-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 4.6 <noreply@anthropic.com>",
+          "timestamp": "2026-04-04T10:22:19-07:00",
+          "tree_id": "8b400c735fd97b37f8456d206a6389bbc1aa4ea2",
+          "url": "https://github.com/eigilsagafos/valdres/commit/3db9468fc489b9dc6fb5648d05a24bf900522750"
+        },
+        "date": 1775323404455,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "atom(1)",
+            "value": 3,
+            "unit": "ns",
+            "extra": "jotai: 54ns (15.5x faster)"
+          },
+          {
+            "name": "store.get(atom)",
+            "value": 36,
+            "unit": "ns",
+            "extra": "jotai: 92ns (2.6x faster)"
+          },
+          {
+            "name": "set(atom, value)",
+            "value": 280,
+            "unit": "ns",
+            "extra": "jotai: 1.2µs (4.3x faster)"
+          },
+          {
+            "name": "set(atom, curr => curr+1)",
+            "value": 301,
+            "unit": "ns",
+            "extra": "jotai: 1.3µs (4.2x faster)"
+          },
+          {
+            "name": "atomFamily(id)",
+            "value": 373,
+            "unit": "ns",
+            "extra": "jotai: 464ns (1.2x faster)"
+          },
+          {
+            "name": "selectorFamily(id)",
+            "value": 345,
+            "unit": "ns",
+            "extra": "jotai: 464ns (1.3x faster)"
+          },
+          {
+            "name": "obj.value",
+            "value": 5,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "map.get(key)",
+            "value": 17,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "valdres get",
+            "value": 9,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "jotai get",
+            "value": 129,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "obj.value = n",
+            "value": 4,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "map.set(key, n)",
+            "value": 18,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "valdres set",
+            "value": 472,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "jotai set",
+            "value": 1951,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "selector(fn)",
+            "value": 6,
+            "unit": "ns",
+            "extra": "jotai: 67ns (11.4x faster)"
+          },
+          {
+            "name": "set + read 10 selectors",
+            "value": 6458,
+            "unit": "ns",
+            "extra": "jotai: 12.7µs (2.0x faster)"
+          },
+          {
+            "name": "set + read 100 selectors",
+            "value": 55159,
+            "unit": "ns",
+            "extra": "jotai: 83.5µs (1.5x faster)"
+          },
+          {
+            "name": "set + read through 5 chained selectors",
+            "value": 5846,
+            "unit": "ns",
+            "extra": "jotai: 6.9µs (1.2x faster)"
+          },
+          {
+            "name": "createStore",
+            "value": 405,
+            "unit": "ns",
+            "extra": "jotai: 249ns (1.6x slower)"
+          },
+          {
+            "name": "set 1000 atoms",
+            "value": 91579,
+            "unit": "ns",
+            "extra": "jotai: 421.1µs (4.6x faster)"
+          },
+          {
+            "name": "get 1000 atoms",
+            "value": 7760,
+            "unit": "ns",
+            "extra": "jotai: 154.6µs (19.9x faster)"
+          },
+          {
+            "name": "sub + unsub",
+            "value": 407,
+            "unit": "ns",
+            "extra": "jotai: 1.2µs (3.0x faster)"
           }
         ]
       }
