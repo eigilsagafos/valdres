@@ -1,6 +1,8 @@
 export const deepFreeze = (obj: any, seen = new WeakSet()) => {
-    if (obj === null || obj === undefined || seen.has(obj)) return obj
-    if (obj && typeof obj === "object") seen.add(obj)
+    if (obj === null || obj === undefined) return obj
+    if (typeof obj !== "object" && typeof obj !== "function") return obj
+    if (seen.has(obj) || Object.isFrozen(obj)) return obj
+    seen.add(obj)
     if (Array.isArray(obj)) {
         for (const item of obj) {
             if (item && typeof item === "object") {
