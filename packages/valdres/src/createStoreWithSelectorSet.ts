@@ -23,5 +23,7 @@ export const createStoreWithSelectorSet = (id?: string): Store => {
     }
     // @ts-ignore
     store.kind = "storeWithSelectorSet"
+    // Store reference so mountAtom can use it for onMount callbacks
+    data.storeRef = store
     return store
 }

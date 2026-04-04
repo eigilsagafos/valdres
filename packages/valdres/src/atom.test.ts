@@ -79,6 +79,86 @@ describe("atom", () => {
         expect(onUnmountCallback).toHaveBeenCalledTimes(1)
     })
 
+    test("onMount fires when subscribing to a selector that depends on the atom", () => {
+        const store1 = store()
+        const onUnmount = mock(() => {})
+        const onMount = mock(() => onUnmount)
+        const baseAtom = atom(0, { onMount })
+        const derived = selector(get => get(baseAtom) * 2)
+
+        const unsub = store1.sub(derived, () => {})
+        expect(onMount).toHaveBeenCalledTimes(1)
+        expect(onUnmount).toHaveBeenCalledTimes(0)
+
+        unsub()
+        expect(onUnmount).toHaveBeenCalledTimes(1)
+    })
+
+    test("onMount fires when atom becomes a transitive dependency of a subscribed selector", () => {
+        const store1 = store()
+        const condAtom = atom(false)
+        const onUnmount = mock(() => {})
+        const onMount = mock(() => onUnmount)
+        const baseAtom = atom("hello", { onMount })
+
+        // Selector conditionally depends on baseAtom
+        const derived = selector(get => {
+            if (get(condAtom)) return get(baseAtom)
+            return "default"
+        })
+
+        // Subscribe to derived — baseAtom is NOT a dependency yet
+        store1.sub(derived, () => {})
+        expect(onMount).toHaveBeenCalledTimes(0)
+
+        // Now make baseAtom a dependency by changing the condition
+        store1.set(condAtom, true)
+        expect(onMount).toHaveBeenCalledTimes(1)
+        expect(onUnmount).toHaveBeenCalledTimes(0)
+    })
+
+    test("onUnmount fires when atom is no longer a transitive dependency", () => {
+        const store1 = store()
+        const condAtom = atom(true)
+        const onUnmount = mock(() => {})
+        const onMount = mock(() => onUnmount)
+        const baseAtom = atom(0, { onMount })
+
+        const derived = selector(get => {
+            if (get(condAtom)) return get(baseAtom)
+            return "unused"
+        })
+
+        store1.sub(derived, () => {})
+        expect(onMount).toHaveBeenCalledTimes(1)
+
+        // Remove baseAtom from dependency graph
+        store1.set(condAtom, false)
+        expect(onUnmount).toHaveBeenCalledTimes(1)
+    })
+
+    test("onMount setSelf updates value for transitive dependents", () => {
+        const store1 = store()
+        const condAtom = atom(false)
+        const baseAtom = atom(0, {
+            onMount: (store1, state) => {
+                store1.set(state, 42)
+            },
+        })
+
+        const derived = selector(get => {
+            if (get(condAtom)) return get(baseAtom)
+            return -1
+        })
+
+        store1.sub(derived, () => {})
+        expect(store1.get(derived)).toBe(-1)
+
+        store1.set(condAtom, true)
+        expect(store1.get(baseAtom)).toBe(42)
+        expect(store1.get(derived)).toBe(42)
+    })
+
     test("onInit", () => {
         const store1 = store()
         const onInitCallback = mock(() => {})

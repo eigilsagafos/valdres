@@ -26,6 +26,7 @@ Object.defineProperties(lazyProto, {
     subscriptionsRequireEqualCheck: makeLazyGetter("subscriptionsRequireEqualCheck"),
     stateDependents: makeLazyGetter("stateDependents"),
     stateDependencies: makeLazyGetter("stateDependencies"),
+    mounts: makeLazyGetter("mounts"),
 })
 
 export function createStoreData(id?: string, parent?: undefined): StoreData

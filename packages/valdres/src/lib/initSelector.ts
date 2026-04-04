@@ -40,6 +40,8 @@ export const evaluateSelector = <V>(
     data: StoreData,
     initializedAtomsSet: Set<Atom>,
     circularDependencySet = sharedCircularDepSet,
+    addedDepsOut?: Set<State>,
+    removedDepsOut?: Set<State>,
 ) => {
     const currentDependencies = data.stateDependencies.get(selector)
     const updatedDepsArray: State<any>[] = []
@@ -91,12 +93,14 @@ export const evaluateSelector = <V>(
             if (!prev.has(state)) {
                 const set = getOrInitDependentsSet(state, data)
                 set.add(selector)
+                if (addedDepsOut) addedDepsOut.add(state)
             }
         }
         for (const state of prev) {
             if (!updatedDependencies.has(state)) {
                 const set = getOrInitDependentsSet(state, data)
                 set.delete(selector)
+                if (removedDepsOut) removedDepsOut.add(state)
             }
         }
         data.stateDependencies.set(selector, updatedDependencies)

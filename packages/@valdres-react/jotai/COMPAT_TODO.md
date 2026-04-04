@@ -25,7 +25,7 @@ Valdres stops at the first throwing listener instead of continuing to notify rem
 
 ### Selector eval crash on unmount (1)
 Related to how pending state is handled during unsubscribe:
-- [ ] `should use the correct pending on unmount`
+- [x] `should use the correct pending on unmount`
 
 ---
 
@@ -79,9 +79,9 @@ Core jotai feature, most common migration blocker:
 
 ### onMount Lifecycle — HIGH priority (6)
 Heavily used in jotai codebases for side effects:
-- [ ] `should recompute dependents' state after onMount (#2098)`
-- [ ] `should mount once with atom creator atom (#2314)`
-- [ ] `Unmount an atom that is no longer dependent within a derived atom (#2658)`
+- [x] `should recompute dependents' state after onMount (#2098)`
+- [x] `should mount once with atom creator atom (#2314)`
+- [x] `Unmount an atom that is no longer dependent within a derived atom (#2658)`
 - [ ] `keeps atoms mounted between recalculations`
 - [ ] `chained derive atom with onMount and useEffect (#897)` (react)
 - [ ] `in onmount/onunmount asynchronous setAtom`
