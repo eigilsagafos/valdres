@@ -20,6 +20,9 @@ import { setValueInData } from "./setValueInData"
 // evaluation is synchronous and each selector adds/deletes itself.
 const sharedCircularDepSet = new WeakSet()
 
+// Static signal for known-sync selectors — avoids AbortController allocation.
+const neverAbortedSignal = new AbortController().signal
+
 class SuspendAndWaitForResolveError extends Error {
     promise: Promise<any>
     constructor(promise: Promise<any>) {
@@ -107,12 +110,21 @@ export const evaluateSelector = <V>(
     }
     circularDependencySet.add(selector)
 
-    // Abort any in-flight evaluation for this selector in this store,
-    // then create a fresh AbortController for the new evaluation.
-    const prevController = data.abortControllers.get(selector)
-    if (prevController) prevController.abort()
-    const abortController = new AbortController()
-    data.abortControllers.set(selector, abortController)
+    // Abort signal support: on first eval we allocate an AbortController and
+    // pass its signal to the selector. After eval, handleSelectorResult marks
+    // the entry as `false` for sync results, so subsequent sync evaluations
+    // skip allocation entirely (~140ns saved per eval on the hot path).
+    // For async results the controller stays, and re-evaluation aborts it.
+    const prev = data.abortControllers.get(selector)
+    let abortController: AbortController | undefined
+    if (prev === false) {
+        // Known-sync selector — skip allocation
+        abortController = undefined
+    } else {
+        if (prev) prev.abort()
+        abortController = new AbortController()
+        data.abortControllers.set(selector, abortController)
+    }
 
     let result
     try {
@@ -142,7 +154,7 @@ export const evaluateSelector = <V>(
                 throw new SuspendAndWaitForResolveError(value)
 
             return value
-        }, { signal: abortController.signal, storeId: data.id })
+        }, { signal: abortController ? abortController.signal : neverAbortedSignal, storeId: data.id })
     } catch (error) {
         if (error instanceof SuspendAndWaitForResolveError) {
             result = error
@@ -241,6 +253,9 @@ export const handleSelectorResult = <Value>(
         })
         return value
     } else {
+        // Sync result — mark as known-sync so subsequent evaluations
+        // skip AbortController allocation on the hot path.
+        data.abortControllers.set(selector, false as any)
         return value
     }
 }
