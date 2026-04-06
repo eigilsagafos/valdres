@@ -6,6 +6,12 @@ on:
     pull_request:
         branches:
             - main
+    workflow_dispatch:
+        inputs:
+            reset_baseline:
+                description: "Reset benchmark baseline (deletes gh-pages history)"
+                type: boolean
+                default: false
 
 permissions:
     contents: write
@@ -39,9 +45,16 @@ jobs:
             - name: Generate benchmark JSON
               run: bun run scripts/generate-bench-json.ts
 
+            # Reset benchmark baseline when triggered manually
+            - name: Reset benchmark baseline
+              if: inputs.reset_baseline == true
+              run: |
+                  git push origin --delete gh-pages || true
+                  echo "Deleted gh-pages branch — baseline will be rebuilt from this run."
+
             # Ensure gh-pages branch exists for benchmark history (main only)
             - name: Create gh-pages branch if missing
-              if: github.ref == 'refs/heads/main'
+              if: github.ref == 'refs/heads/main' || inputs.reset_baseline == true
               run: |
                   if ! git ls-remote --exit-code origin gh-pages > /dev/null 2>&1; then
                     git checkout --orphan gh-pages

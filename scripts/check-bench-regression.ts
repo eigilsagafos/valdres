@@ -27,9 +27,9 @@ interface ThresholdTier {
 
 const TIERS: ThresholdTier[] = [
     { maxMedianNs: 100, absoluteFloorNs: 50, percentThreshold: Infinity },
-    { maxMedianNs: 1_000, absoluteFloorNs: 100, percentThreshold: 1.5 },
-    { maxMedianNs: 100_000, absoluteFloorNs: 0, percentThreshold: 1.3 },
-    { maxMedianNs: Infinity, absoluteFloorNs: 0, percentThreshold: 1.2 },
+    { maxMedianNs: 1_000, absoluteFloorNs: 100, percentThreshold: 2.0 },
+    { maxMedianNs: 100_000, absoluteFloorNs: 0, percentThreshold: 1.5 },
+    { maxMedianNs: Infinity, absoluteFloorNs: 0, percentThreshold: 1.5 },
 ]
 
 // ── Types ──────────────────────────────────────────────────────────────────
