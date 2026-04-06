@@ -235,7 +235,7 @@ test("only re-renders if value has changed", async () => {
     })
 })
 
-test.todo(
+test(
     "re-renders a time delayed derived atom with the same initial value (#947)",
     async () => {
         const aAtom = atom(false)
@@ -927,7 +927,7 @@ test("sync re-renders with useState re-renders (#827)", async () => {
     await findByText("commits: 3")
 })
 
-test.todo("chained derive atom with onMount and useEffect (#897)", async () => {
+test("chained derive atom with onMount and useEffect (#897)", async () => {
     const countAtom = atom(0)
     countAtom.onMount = set => {
         set(1)

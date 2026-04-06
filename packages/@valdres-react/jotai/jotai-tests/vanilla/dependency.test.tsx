@@ -98,7 +98,7 @@ test("correctly handles the same promise being returned twice from an atom gette
     await expect(store.get(derivedAtom)).resolves.toBe("Asynchronous Data")
 })
 
-test.todo("keeps atoms mounted between recalculations", async () => {
+test("keeps atoms mounted between recalculations", async () => {
     const metrics1 = {
         mounted: 0,
         unmounted: 0,
