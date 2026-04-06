@@ -23,6 +23,9 @@ const sharedCircularDepSet = new WeakSet()
 // Static signal for known-sync selectors — avoids AbortController allocation.
 const neverAbortedSignal = new AbortController().signal
 
+// Cache the sync options object per store to avoid allocation on the hot path.
+const syncOptionsCache = new WeakMap<StoreData, { signal: AbortSignal; storeId: string }>()
+
 class SuspendAndWaitForResolveError extends Error {
     promise: Promise<any>
     constructor(promise: Promise<any>) {
@@ -116,14 +119,20 @@ export const evaluateSelector = <V>(
     // skip allocation entirely (~140ns saved per eval on the hot path).
     // For async results the controller stays, and re-evaluation aborts it.
     const prev = data.abortControllers.get(selector)
-    let abortController: AbortController | undefined
+    let options: { signal: AbortSignal; storeId: string }
     if (prev === false) {
-        // Known-sync selector — skip allocation
-        abortController = undefined
+        // Known-sync selector — use cached options, no allocation
+        let cached = syncOptionsCache.get(data)
+        if (!cached) {
+            cached = { signal: neverAbortedSignal, storeId: data.id }
+            syncOptionsCache.set(data, cached)
+        }
+        options = cached
     } else {
         if (prev) prev.abort()
-        abortController = new AbortController()
+        const abortController = new AbortController()
         data.abortControllers.set(selector, abortController)
+        options = { signal: abortController.signal, storeId: data.id }
     }
 
     let result
@@ -154,7 +163,7 @@ export const evaluateSelector = <V>(
                 throw new SuspendAndWaitForResolveError(value)
 
             return value
-        }, { signal: abortController ? abortController.signal : neverAbortedSignal, storeId: data.id })
+        }, options)
     } catch (error) {
         if (error instanceof SuspendAndWaitForResolveError) {
             result = error
