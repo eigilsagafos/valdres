@@ -664,20 +664,116 @@ describe("should invoke flushPending only after all atoms are updated (#2804)", 
 })
 
 describe("should mount and trigger listeners even when an error is thrown", () => {
-    test.todo("in asynchronous read", async () => {
-        // Requires vi.advanceTimersByTimeAsync
+    test("in asynchronous read", async () => {
+        const store = createStore()
+        const a = atom(0)
+        a.onMount = mock(() => {})
+        const e = atom(
+            () => {
+                throw new Error("error")
+            },
+            () => {},
+        )
+        e.onMount = mock(() => {})
+        const b = atom((get: Getter) => {
+            setTimeout(() => {
+                get(a)
+                try {
+                    get(e)
+                } catch {
+                    // expect error
+                }
+            })
+        })
+
+        store.sub(b, () => {})
+
+        await new Promise<void>(r => setTimeout(r, 0))
+        expect(a.onMount).toHaveBeenCalledTimes(1)
+        expect(e.onMount).toHaveBeenCalledTimes(1)
     })
 
-    test.todo("in read setSelf", async () => {
-        // Requires setSelf and vi.advanceTimersByTimeAsync
+    test("in read setSelf", async () => {
+        const store = createStore()
+        const a = atom(0)
+        const e = atom(
+            () => {
+                throw new Error("error")
+            },
+            () => {},
+        )
+        const b = atom(
+            (_get: Getter, { setSelf }: { setSelf: () => void }) => {
+                setTimeout(() => {
+                    try {
+                        setSelf()
+                    } catch {
+                        // expect error
+                    }
+                })
+            },
+            (get: Getter, set: any) => {
+                set(a, 1)
+                get(e)
+            },
+        )
+        const listener = mock(() => {})
+
+        store.sub(a, listener)
+        store.sub(b, () => {})
+
+        await new Promise<void>(r => setTimeout(r, 0))
+        expect(listener).toHaveBeenCalledTimes(1)
     })
 
-    test.todo("in read promise on settled", async () => {
-        // Requires async atoms and vi.advanceTimersByTimeAsync
+    test("in read promise on settled", async () => {
+        const store = createStore()
+        const a = atom(0)
+        a.onMount = mock(() => {})
+        const e = atom(
+            () => {
+                throw new Error("error")
+            },
+            () => {},
+        )
+        const b = atom(async (get: Getter) => {
+            await new Promise<void>(r => setTimeout(r, 0))
+            get(a)
+            get(e)
+        })
+
+        store.sub(b, () => {})
+
+        await new Promise<void>(r => setTimeout(r, 10))
+        expect(a.onMount).toHaveBeenCalledTimes(1)
     })
 
-    test.todo("in asynchronous write", async () => {
-        // Requires vi.advanceTimersByTimeAsync
+    test("in asynchronous write", async () => {
+        const store = createStore()
+        const a = atom(0)
+        const e = atom(() => {
+            throw new Error("error")
+        })
+        const b = atom(null, (get: Getter, set: any) => {
+            set(a, 1)
+            get(e)
+        })
+        const w = atom(null, async (_get: Getter, set: any) => {
+            setTimeout(() => {
+                try {
+                    set(b)
+                } catch {
+                    // expect error
+                }
+            })
+        })
+        const listener = mock(() => {})
+
+        store.sub(a, listener)
+        store.set(w)
+
+        await new Promise<void>(r => setTimeout(r, 0))
+        expect(listener).toHaveBeenCalledTimes(1)
     })
 
     test("in synchronous write", () => {

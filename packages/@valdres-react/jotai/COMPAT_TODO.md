@@ -104,10 +104,10 @@ Used for cancellation of async atoms:
 
 ### Error Handling in Async — MEDIUM priority (4)
 Error recovery in async lifecycle:
-- [ ] `in asynchronous read`
-- [ ] `in read setSelf`
-- [ ] `in read promise on settled`
-- [ ] `in asynchronous write`
+- [x] `in asynchronous read`
+- [x] `in read setSelf`
+- [x] `in read promise on settled`
+- [x] `in asynchronous write`
 
 ### React Rendering — MEDIUM priority (5)
 React rendering patterns with atoms:
