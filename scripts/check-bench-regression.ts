@@ -1,12 +1,10 @@
 /**
- * Custom benchmark regression checker.
+ * Ratio-based benchmark regression checker.
  *
- * Reads bench-results.ndjson (which has both valdres and jotai timings),
- * compares valdres results against the median of the last N runs on gh-pages,
- * and posts a PR comment with a side-by-side comparison table.
- *
- * Uses scale-aware thresholds so sub-nanosecond noise doesn't trigger false
- * positives while real regressions on larger benchmarks are still caught.
+ * Compares the valdres/jotai ratio from the current run against the median
+ * ratio from the last N runs on gh-pages. Since both libraries run on the
+ * same machine, the ratio cancels out CI runner variance — a slower runner
+ * slows both equally, keeping the ratio stable.
  *
  * Exit code 1 if any regression is detected.
  */
@@ -16,21 +14,14 @@ import { join } from "path"
 // ── Configuration ──────────────────────────────────────────────────────────
 
 const WINDOW_SIZE = 10 // number of recent runs to take the median of
-const MIN_ABSOLUTE_CHANGE_NS = 50 // ignore regressions smaller than this
 
-interface ThresholdTier {
-    maxMedianNs: number
-    absoluteFloorNs: number
-    /** Ratio threshold (e.g. 1.5 = 150%). Infinity means "skip entirely". */
-    percentThreshold: number
-}
-
-const TIERS: ThresholdTier[] = [
-    { maxMedianNs: 100, absoluteFloorNs: 50, percentThreshold: Infinity },
-    { maxMedianNs: 1_000, absoluteFloorNs: 100, percentThreshold: 1.5 },
-    { maxMedianNs: 100_000, absoluteFloorNs: 0, percentThreshold: 1.3 },
-    { maxMedianNs: Infinity, absoluteFloorNs: 0, percentThreshold: 1.2 },
-]
+/**
+ * How much worse the ratio can get before it's flagged.
+ * E.g., 1.5 means the ratio can increase by 50% before it's a regression.
+ * If historical median ratio was 0.5 (2x faster), a regression threshold
+ * of 1.5 means it fails at 0.75 (1.33x faster) — a real slowdown.
+ */
+const RATIO_REGRESSION_THRESHOLD = 1.5
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -65,11 +56,10 @@ interface Comparison {
     name: string
     valdres: number
     jotai: number
-    vsJotai: string
-    median: number | null
-    changePercent: number | null
+    currentRatio: number
+    medianRatio: number | null
+    ratioChange: number | null
     status: Status
-    threshold: number | null
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -80,11 +70,18 @@ function fmtNs(ns: number): string {
     return `${(ns / 1_000_000).toFixed(2)}ms`
 }
 
-function fmtChange(ratio: number | null): string {
-    if (ratio == null) return "—"
-    const pct = (ratio - 1) * 100
-    const sign = pct >= 0 ? "+" : ""
-    return `${sign}${pct.toFixed(0)}%`
+function fmtRatio(ratio: number): string {
+    return ratio <= 1
+        ? `${(1 / ratio).toFixed(1)}x faster`
+        : `${ratio.toFixed(1)}x slower`
+}
+
+function fmtChange(ratioChange: number | null): string {
+    if (ratioChange == null) return "—"
+    const pct = Math.abs((ratioChange - 1) * 100)
+    return ratioChange >= 1
+        ? `${pct.toFixed(0)}% worse`
+        : `${pct.toFixed(0)}% better`
 }
 
 function median(values: number[]): number {
@@ -93,10 +90,6 @@ function median(values: number[]): number {
     return sorted.length % 2 !== 0
         ? sorted[mid]
         : (sorted[mid - 1] + sorted[mid]) / 2
-}
-
-function tierFor(medianNs: number): ThresholdTier {
-    return TIERS.find(t => medianNs <= t.maxMedianNs)!
 }
 
 // ── Core logic ─────────────────────────────────────────────────────────────
@@ -131,7 +124,13 @@ async function readHistoricalData(): Promise<HistoricalData | null> {
     }
 }
 
-function computeMedians(
+function parseRatioFromExtra(extra?: string): number | null {
+    if (!extra) return null
+    const match = extra.match(/ratio=([\d.]+)/)
+    return match ? parseFloat(match[1]) : null
+}
+
+function computeMedianRatios(
     entries: HistoricalEntry[],
     windowSize: number,
 ): Map<string, number> {
@@ -140,8 +139,10 @@ function computeMedians(
 
     for (const entry of recent) {
         for (const bench of entry.benches) {
+            const ratio = parseRatioFromExtra(bench.extra)
+            if (ratio == null) continue
             if (!byName.has(bench.name)) byName.set(bench.name, [])
-            byName.get(bench.name)!.push(bench.value)
+            byName.get(bench.name)!.push(ratio)
         }
     }
 
@@ -154,60 +155,42 @@ function computeMedians(
 
 function compare(
     current: NdjsonResult[],
-    medians: Map<string, number>,
+    medianRatios: Map<string, number>,
 ): Comparison[] {
-    // Skip baseline entries (plain JS ops)
     const benchmarks = current.filter(r => r.tag !== "baseline")
 
     return benchmarks.map(bench => {
-        const med = medians.get(bench.name)
+        const currentRatio = bench.jotai > 0 ? bench.valdres / bench.jotai : 1
+        const medRatio = medianRatios.get(bench.name)
 
-        // valdres vs jotai comparison
-        const ratio = bench.jotai > 0 ? bench.valdres / bench.jotai : 1
-        const vsJotai =
-            ratio <= 1
-                ? `${(1 / ratio).toFixed(1)}x faster`
-                : `${ratio.toFixed(1)}x slower`
-
-        if (med == null) {
+        if (medRatio == null) {
             return {
                 name: bench.name,
                 valdres: bench.valdres,
                 jotai: bench.jotai,
-                vsJotai,
-                median: null,
-                changePercent: null,
+                currentRatio,
+                medianRatio: null,
+                ratioChange: null,
                 status: "new" as Status,
-                threshold: null,
             }
         }
 
-        const tier = tierFor(med)
-        const absoluteChange = bench.valdres - med
-        const changePercent = med > 0 ? bench.valdres / med : 1
+        // How much did the ratio worsen? >1 means worse, <1 means better.
+        // E.g., if median was 0.5 (2x faster) and now it's 0.75 (1.33x faster),
+        // ratioChange = 0.75 / 0.5 = 1.5 — 50% worse.
+        const ratioChange = currentRatio / medRatio
 
-        let status: Status
-        if (tier.percentThreshold === Infinity) {
-            status = "skip"
-        } else if (
-            changePercent > tier.percentThreshold &&
-            absoluteChange > MIN_ABSOLUTE_CHANGE_NS &&
-            absoluteChange > tier.absoluteFloorNs
-        ) {
-            status = "regression"
-        } else {
-            status = "ok"
-        }
+        const status: Status =
+            ratioChange > RATIO_REGRESSION_THRESHOLD ? "regression" : "ok"
 
         return {
             name: bench.name,
             valdres: bench.valdres,
             jotai: bench.jotai,
-            vsJotai,
-            median: med,
-            changePercent,
+            currentRatio,
+            medianRatio: medRatio,
+            ratioChange,
             status,
-            threshold: tier.percentThreshold,
         }
     })
 }
@@ -226,20 +209,22 @@ function formatTable(results: Comparison[]): string {
         "<!-- bench-regression-check -->",
         "## Benchmark Regression Report",
         "",
-        `Compared against **median of last ${WINDOW_SIZE} runs** on \`main\`.`,
+        `Compared **valdres/jotai ratio** against median of last ${WINDOW_SIZE} runs on \`main\`.`,
+        `Regression threshold: ratio worsened by more than ${((RATIO_REGRESSION_THRESHOLD - 1) * 100).toFixed(0)}%.`,
         "",
-        "| | Benchmark | Valdres | Jotai | vs Jotai | Median | Change |",
-        "|:-|:----------|--------:|------:|---------:|-------:|-------:|",
+        "| | Benchmark | Valdres | Jotai | vs Jotai | Baseline | Change |",
+        "|:-|:----------|--------:|------:|---------:|---------:|-------:|",
     ]
 
     for (const r of results) {
         const icon = STATUS_ICON[r.status]
         const valdres = fmtNs(r.valdres)
         const jotai = r.jotai > 0 ? fmtNs(r.jotai) : "—"
-        const med = r.median != null ? fmtNs(r.median) : "—"
-        const change = fmtChange(r.changePercent)
+        const vsJotai = fmtRatio(r.currentRatio)
+        const baseline = r.medianRatio != null ? fmtRatio(r.medianRatio) : "—"
+        const change = fmtChange(r.ratioChange)
         lines.push(
-            `| ${icon} | ${r.name} | ${valdres} | ${jotai} | ${r.vsJotai} | ${med} | ${change} |`,
+            `| ${icon} | ${r.name} | ${valdres} | ${jotai} | ${vsJotai} | ${baseline} | ${change} |`,
         )
     }
 
@@ -252,35 +237,6 @@ function formatTable(results: Comparison[]): string {
     } else {
         lines.push("", "No regressions detected.")
     }
-
-    // Generate threshold tiers table from config to avoid drift
-    lines.push(
-        "",
-        "<details><summary>Threshold tiers</summary>",
-        "",
-        `Global minimum absolute change: ${MIN_ABSOLUTE_CHANGE_NS}ns`,
-        "",
-        "| Median range | % threshold | Abs. floor |",
-        "|:-------------|:------------|:-----------|",
-    )
-    for (let i = 0; i < TIERS.length; i++) {
-        const tier = TIERS[i]
-        const prevMax = i > 0 ? TIERS[i - 1].maxMedianNs : 0
-        const range =
-            tier.maxMedianNs === Infinity
-                ? `> ${fmtNs(prevMax)}`
-                : i === 0
-                  ? `< ${fmtNs(tier.maxMedianNs)}`
-                  : `${fmtNs(prevMax)} – ${fmtNs(tier.maxMedianNs)}`
-        const pct =
-            tier.percentThreshold === Infinity
-                ? "skip (too noisy)"
-                : `${((tier.percentThreshold - 1) * 100).toFixed(0)}%`
-        const floor =
-            tier.absoluteFloorNs > 0 ? fmtNs(tier.absoluteFloorNs) : "—"
-        lines.push(`| ${range} | ${pct} | ${floor} |`)
-    }
-    lines.push("", "</details>")
 
     return lines.join("\n")
 }
@@ -310,7 +266,6 @@ async function postOrUpdateComment(body: string): Promise<void> {
         const baseUrl = `https://api.github.com/repos/${repo}/issues/${prNumber}/comments`
         const marker = "<!-- bench-regression-check -->"
 
-        // Fetch existing comments (per_page=100 to reduce pagination needs)
         const res = await fetch(`${baseUrl}?per_page=100`, { headers })
         if (!res.ok) {
             console.warn(
@@ -350,7 +305,6 @@ async function postOrUpdateComment(body: string): Promise<void> {
             console.log("Posted new PR comment")
         }
     } catch (err) {
-        // Comment failures should not fail the regression check
         console.warn("Failed to post/update PR comment — skipping.", err)
     }
 }
@@ -382,8 +336,16 @@ async function main() {
         `Found ${entries.length} historical runs (using last ${Math.min(entries.length, WINDOW_SIZE)})`,
     )
 
-    const medians = computeMedians(entries, WINDOW_SIZE)
-    const results = compare(current, medians)
+    const medianRatios = computeMedianRatios(entries, WINDOW_SIZE)
+
+    if (medianRatios.size === 0) {
+        console.log(
+            "No historical ratio data found (older format?) — skipping regression check.",
+        )
+        process.exit(0)
+    }
+
+    const results = compare(current, medianRatios)
 
     const table = formatTable(results)
     console.log("\n" + table + "\n")

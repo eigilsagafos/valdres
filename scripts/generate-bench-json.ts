@@ -36,7 +36,7 @@ const ghBenchResults = results.map(r => ({
     extra:
         r.tag === "baseline"
             ? "baseline"
-            : `jotai: ${fmtNs(r.jotai)} (${r.tag})`,
+            : `jotai=${Math.round(r.jotai)} ratio=${r.ratio.toFixed(4)} ${r.tag}`,
 }))
 
 writeFileSync(GH_BENCH_PATH, JSON.stringify(ghBenchResults, null, 2))
