@@ -85,7 +85,6 @@ jobs:
 
             - name: Check for benchmark regressions
               if: github.event_name == 'pull_request'
-              continue-on-error: true
               env:
                   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
                   GITHUB_REPOSITORY: ${{ github.repository }}
