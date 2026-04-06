@@ -159,6 +159,139 @@ describe("atom", () => {
         expect(store1.get(derived)).toBe(42)
     })
 
+    // Helper: wrap async fn so selector() accepts it (it rejects AsyncFunction).
+    // This mirrors what the jotai adapter does via wrapAsync.
+    const wrapAsync = (fn: Function) => (...args: any[]) => fn(...args)
+
+    test("async selector: deps read after await are not unmounted on re-evaluation", async () => {
+        // When a sync dep changes, the async selector is re-evaluated.
+        // The sync phase only discovers atom1, so atom2 (read after await)
+        // would appear as a "removed dep" and get unmounted — unless the
+        // dep-preservation logic retains it.
+        const store1 = store()
+        const metrics1 = { mounted: 0, unmounted: 0 }
+        const atom1 = atom(0, {
+            onMount: () => {
+                ++metrics1.mounted
+                return () => { ++metrics1.unmounted }
+            },
+        })
+        const metrics2 = { mounted: 0, unmounted: 0 }
+        const atom2 = atom(0, {
+            onMount: () => {
+                ++metrics2.mounted
+                return () => { ++metrics2.unmounted }
+            },
+        })
+
+        let resolve = () => {}
+        const asyncDerived = selector(wrapAsync(async get => {
+            get(atom1)
+            await new Promise<void>(r => (resolve = r))
+            get(atom2)
+        }))
+
+        store1.sub(asyncDerived, () => {})
+        resolve()
+        await Promise.resolve()
+        await Promise.resolve()
+
+        expect(metrics1).toEqual({ mounted: 1, unmounted: 0 })
+        expect(metrics2).toEqual({ mounted: 1, unmounted: 0 })
+
+        // Trigger re-evaluation via sync dep change.
+        // Without dep-preservation, atom2 is reported as removed and unmounted.
+        store1.set(atom1, 1)
+        resolve()
+
+        expect(metrics1).toEqual({ mounted: 1, unmounted: 0 })
+        expect(metrics2).toEqual({ mounted: 1, unmounted: 0 })
+    })
+
+    test("async selector: dropped async dep no longer triggers subscriber", async () => {
+        // Correctness test for the reconciliation path in handleSelectorResult.
+        // The dep-preservation logic (tested above) retains previous deps
+        // during re-evaluation to prevent premature unmounting. This test
+        // verifies that genuinely stale deps are cleaned up when the promise
+        // resolves, so they don't cause phantom re-evaluations.
+        const store1 = store()
+        const triggerAtom = atom(0)
+        const atomA = atom("A")
+
+        let resolve = () => {}
+        let readAtomA = true
+        const asyncDerived = selector(wrapAsync(async get => {
+            get(triggerAtom)
+            await new Promise<void>(r => (resolve = r))
+            if (readAtomA) return get(atomA)
+            return "static"
+        }))
+
+        const callback = mock(() => {})
+        store1.sub(asyncDerived, callback)
+        resolve()
+        await Promise.resolve()
+        await Promise.resolve()
+
+        // Eval 2: stop reading atomA
+        readAtomA = false
+        store1.set(triggerAtom, 1)
+        resolve()
+        await Promise.resolve()
+        await Promise.resolve()
+
+        const callCountAfterEval2 = callback.mock.calls.length
+
+        // Now change atomA — this should NOT trigger the subscriber
+        // because atomA is no longer a dependency after reconciliation.
+        store1.set(atomA, "changed")
+        resolve()
+        await Promise.resolve()
+        await Promise.resolve()
+
+        expect(callback.mock.calls.length).toBe(callCountAfterEval2)
+    })
+
+    test("async selector: rejection cleans up pendingAsyncDeps", async () => {
+        // If an async selector rejects, the .catch() handler must clean up
+        // the pendingAsyncDeps entry so it doesn't leak. Verify by checking
+        // that subsequent evaluations work correctly.
+        const store1 = store()
+        const onUnmount = mock(() => {})
+        const onMount = mock(() => onUnmount)
+        const atom1 = atom(0, { onMount })
+
+        let resolve = () => {}
+        let shouldReject = true
+        const asyncDerived = selector(wrapAsync(async get => {
+            get(atom1)
+            await new Promise<void>(r => (resolve = r))
+            if (shouldReject) throw new Error("boom")
+            return "ok"
+        }))
+
+        store1.sub(asyncDerived, () => {})
+        resolve()
+        await Promise.resolve()
+        await Promise.resolve()
+
+        // Despite rejection, onMount was called (atom1 was a sync dep)
+        expect(onMount).toHaveBeenCalledTimes(1)
+
+        // After rejection, the selector value should be cleaned up
+        // and the system should not be in a corrupted state.
+        // Re-trigger: set atom1 to force re-evaluation
+        shouldReject = false
+        store1.set(atom1, 1)
+        resolve()
+        await Promise.resolve()
+        await Promise.resolve()
+
+        // atom1 should still be mounted (not double-mounted or leaked)
+        expect(onMount).toHaveBeenCalledTimes(1)
+        expect(onUnmount).toHaveBeenCalledTimes(0)
+    })
+
     test("onInit", () => {
         const store1 = store()
         const onInitCallback = mock(() => {})

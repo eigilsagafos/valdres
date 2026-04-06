@@ -9,12 +9,18 @@ import { getState } from "./getState"
 import {
     isTransitivelySubscribed,
     mountTransitiveDeps,
+    unmountOrphanedDeps,
 } from "./mountAtom"
 import {
     propagateDirtySelectors,
     propagateUpdatedAtoms,
 } from "./propagateUpdatedAtoms"
 import { setValueInData } from "./setValueInData"
+
+// Tracks all deps (sync + async) for each pending async selector evaluation.
+// Keyed by the Promise returned by the async selector. When the promise
+// resolves, handleSelectorResult reads this to reconcile stale deps.
+const pendingAsyncDeps = new WeakMap<Promise<any>, Set<State>>()
 
 // Shared WeakSet for circular dependency detection — safe to reuse because
 // evaluation is synchronous and each selector adds/deletes itself.
@@ -135,12 +141,20 @@ export const evaluateSelector = <V>(
         options = { signal: abortController.signal, storeId: data.id }
     }
 
+    // Lazily populated: tracks ALL deps read during this evaluation (sync +
+    // async). Only allocated when the result turns out to be a promise.
+    let allDepsThisEval: Set<State> | undefined
+
     let result
     try {
         // @ts-ignore, @ts-todo
         result = selector.get(state => {
             // Deferred get calls (setTimeout, after await) use late binding
             if (evaluationComplete) {
+                // Track for reconciliation (unless this is a stale closure)
+                if (!evalCtx.revoked && allDepsThisEval) {
+                    allDepsThisEval.add(state)
+                }
                 if (evalCtx.revoked) {
                     // Stale closure — the selector has been re-evaluated since
                     // this closure was created. Read the value without
@@ -176,13 +190,27 @@ export const evaluateSelector = <V>(
 
     evaluationComplete = true
 
-    // Check if dep count also matches (handles removed deps)
-    if (!depsChanged && currentDependencies && currentDependencies.size !== updatedDepsArray.length) {
+    const isAsyncResult =
+        result instanceof SuspendAndWaitForResolveError || isPromiseLike(result)
+
+    // For sync selectors, check if dep count changed (handles removed deps).
+    // For async selectors, skip — the dep count is incomplete until the
+    // promise resolves.
+    if (!isAsyncResult && !depsChanged && currentDependencies && currentDependencies.size !== updatedDepsArray.length) {
         depsChanged = true
     }
 
     if (depsChanged || !currentDependencies) {
         const updatedDependencies = new Set<State<any>>(updatedDepsArray)
+        // For async selectors, retain all previous deps so they aren't
+        // prematurely removed (and unmounted) before the continuation runs.
+        // Stale deps are cleaned up when the promise resolves (see
+        // the reconciliation logic in handleSelectorResult).
+        if (isAsyncResult && currentDependencies) {
+            for (const dep of currentDependencies) {
+                updatedDependencies.add(dep)
+            }
+        }
         const prev = currentDependencies ?? new Set<State<any>>()
         for (const state of updatedDependencies) {
             if (!prev.has(state)) {
@@ -191,15 +219,28 @@ export const evaluateSelector = <V>(
                 if (addedDepsOut) addedDepsOut.add(state)
             }
         }
-        for (const state of prev) {
-            if (!updatedDependencies.has(state)) {
-                const set = getOrInitDependentsSet(state, data)
-                set.delete(selector)
-                if (removedDepsOut) removedDepsOut.add(state)
+        if (!isAsyncResult) {
+            for (const state of prev) {
+                if (!updatedDependencies.has(state)) {
+                    const set = getOrInitDependentsSet(state, data)
+                    set.delete(selector)
+                    if (removedDepsOut) removedDepsOut.add(state)
+                }
             }
         }
         data.stateDependencies.set(selector, updatedDependencies)
     }
+
+    // Store tracking set so handleSelectorResult can reconcile when the
+    // promise resolves. Only needed for native-promise selectors —
+    // SuspendAndWaitForResolveError re-evaluates via initSelector instead.
+    if (isPromiseLike(result)) {
+        // Build the tracking set from sync deps discovered so far. Late
+        // `get` calls (after await) will add to this set dynamically.
+        allDepsThisEval = new Set<State>(updatedDepsArray)
+        pendingAsyncDeps.set(result, allDepsThisEval)
+    }
+
     circularDependencySet.delete(selector)
     return result
 }
@@ -246,7 +287,29 @@ export const handleSelectorResult = <Value>(
         // then we retry when the promise resolves.
         value.then(resolved => {
             // Guard against stale promise
-            if (data.values.has(selector) && data.values.get(selector) !== value) return
+            if (data.values.has(selector) && data.values.get(selector) !== value) {
+                pendingAsyncDeps.delete(value)
+                return
+            }
+
+            // Reconcile deps: remove any that were carried forward from a
+            // previous evaluation but not read in this one.
+            const evalDeps = pendingAsyncDeps.get(value)
+            if (evalDeps) {
+                pendingAsyncDeps.delete(value)
+                const currentDeps = data.stateDependencies.get(selector)
+                if (currentDeps) {
+                    for (const dep of currentDeps) {
+                        if (!evalDeps.has(dep)) {
+                            currentDeps.delete(dep)
+                            const dependents = data.stateDependents.get(dep)
+                            if (dependents) dependents.delete(selector)
+                            unmountOrphanedDeps(dep, data)
+                        }
+                    }
+                }
+            }
+
             // @ts-ignore
             setValueInData(selector, resolved, data)
             const dependents = data.stateDependents.get(selector)
@@ -264,6 +327,7 @@ export const handleSelectorResult = <Value>(
                 )
             }
         }).catch(() => {
+            pendingAsyncDeps.delete(value as Promise<any>)
             cleanUpRejectedPromise(selector, data, value as Promise<any>)
         })
         return value
