@@ -29,14 +29,7 @@ export const createAtomFamily = <
     const hasName = !!options?.name
 
     const atomFamily = (...args: Args) => {
-        // Inline key computation — keep hot path in one function for JIT
-        const key =
-            args.length === 1 &&
-            (typeof args[0] === "string" ||
-                typeof args[0] === "number" ||
-                typeof args[0] === "boolean")
-                ? args[0]
-                : stringifyFamilyArgs(args)
+        const key = familyKey(args)
         const cached = map.get(key)
         if (cached !== undefined) return cached
 

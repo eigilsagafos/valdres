@@ -82,9 +82,10 @@ function fmtNs(ns: number): string {
 
 function fmtChange(ratio: number | null): string {
     if (ratio == null) return "—"
-    const pct = (ratio - 1) * 100
-    const sign = pct >= 0 ? "+" : ""
-    return `${sign}${pct.toFixed(0)}%`
+    const pct = Math.abs((ratio - 1) * 100)
+    return ratio >= 1
+        ? `${pct.toFixed(0)}% slower`
+        : `${pct.toFixed(0)}% faster`
 }
 
 function median(values: number[]): number {
