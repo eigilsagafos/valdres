@@ -272,7 +272,7 @@ test(
     },
 )
 
-test.todo("works with async get", async () => {
+test("works with async get", async () => {
     const countAtom = atom(0)
     let resolve = () => {}
     const asyncCountAtom = atom(async get => {
@@ -317,7 +317,7 @@ test.todo("works with async get", async () => {
     await findByText("commits: 3, count: 2, delayedCount: 2")
 })
 
-test.todo("works with async get without setTimeout", async () => {
+test("works with async get without setTimeout", async () => {
     const countAtom = atom(0)
     const asyncCountAtom = atom(async get => {
         return get(countAtom)
@@ -857,7 +857,7 @@ test("write self atom (undocumented usage)", async () => {
     await findByText("count: 1")
 })
 
-test.todo("async chain for multiple sync and async atoms (#443)", async () => {
+test("async chain for multiple sync and async atoms (#443)", async () => {
     const num1Atom = atom(async () => {
         return 1
     })

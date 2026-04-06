@@ -191,7 +191,7 @@ test("should not provide stale values to conditional dependents", () => {
     expect(store.get(stageAtom), "should update").toBe("is-empty")
 })
 
-test.todo(
+test(
     "settles never resolving async derivations with deps picked up sync",
     async () => {
         const resolve: ((value: number) => void)[] = []
@@ -225,7 +225,7 @@ test.todo(
     },
 )
 
-test.todo(
+test(
     "settles never resolving async derivations with deps picked up async",
     async () => {
         const resolve: ((value: number) => void)[] = []
@@ -264,7 +264,7 @@ test.todo(
     },
 )
 
-test.todo("refreshes deps for each async read", async () => {
+test("refreshes deps for each async read", async () => {
     const countAtom = atom(0)
     const depAtom = atom(false)
     const resolve: (() => void)[] = []

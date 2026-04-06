@@ -1,4 +1,8 @@
-import { atom as valdresAtom, selector as valdresSelector } from "valdres"
+import {
+    atom as valdresAtom,
+    selector as valdresSelector,
+    isSuspendError,
+} from "valdres"
 import { getStoreById } from "./storeRegistry"
 
 const addSetToSelector = (selector, set) => {
@@ -41,13 +45,27 @@ const addOnMountInterceptor = (target: any) => {
 const isAsyncFunction = (fn: Function) =>
     Object.prototype.toString.call(fn) === "[object AsyncFunction]"
 
-// Wraps an async read function into a sync function that returns a Promise,
-// since valdres selectors do not accept async functions directly.
-// The second argument ({ signal, storeId }) is forwarded from valdres core,
-// which matches jotai's expected `{ signal }` in the read function options.
+// Wraps an async read function so that `get(asyncDep)` during the sync phase
+// returns the Promise instead of throwing SuspendAndWaitForResolveError.
+// After the sync phase, core's `lateGet` handles deferred deps natively.
 const wrapAsync = (fn: Function) => {
     if (!isAsyncFunction(fn)) return { get: fn, isAsync: false }
-    return { get: (get: any, options: any) => fn(get, options), isAsync: true }
+    return {
+        get: (get: any, options: any) => {
+            const wrappedGet = (dep: any) => {
+                try {
+                    return get(dep)
+                } catch (e: any) {
+                    if (isSuspendError(e)) {
+                        return e.promise
+                    }
+                    throw e
+                }
+            }
+            return fn(wrappedGet, options)
+        },
+        isAsync: true,
+    }
 }
 
 export const atom = (get, set?: any) => {

@@ -40,6 +40,14 @@ class SuspendAndWaitForResolveError extends Error {
     }
 }
 
+/** Type guard for SuspendAndWaitForResolveError. Exported so consumers
+ *  (e.g. the jotai adapter) can detect suspension without importing the class. */
+export const isSuspendError = (
+    e: unknown,
+): e is { promise: Promise<any> } => {
+    return e instanceof SuspendAndWaitForResolveError
+}
+
 const getOrInitDependentsSet = (
     state: State,
     data: StoreData,
