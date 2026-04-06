@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1775508475958,
+  "lastUpdate": 1775517866789,
   "repoUrl": "https://github.com/eigilsagafos/valdres",
   "entries": {
     "valdres benchmarks": [
@@ -2130,6 +2130,210 @@ window.BENCHMARK_DATA = {
             "value": 1269829,
             "unit": "ns",
             "extra": "jotai=21883358 ratio=0.0580 17.2x faster"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "eigil@sagafos.no",
+            "name": "Eigil Sagafos",
+            "username": "eigilsagafos"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "ff0201c72ec964eb5a6730ec8002e9f4846d2bb4",
+          "message": "Add AbortSignal support for async selectors (#33)\n\n* Add AbortSignal support for async selectors\n\nSelectors now receive an AbortSignal via the second argument ({ signal, storeId }).\nWhen a selector re-evaluates due to dependency changes, the previous signal is\naborted, enabling cancellation of in-flight async work. Each store maintains its\nown AbortController per selector via a WeakMap in StoreData.\n\nAlso adds rejection handlers to promise .then() chains in handleSelectorResult\nto prevent unhandled rejections from aborted async selectors.\n\nEnables 3 jotai compat abort signal tests.\n\nCo-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>\n\n* Optimize AbortController allocation for sync selectors\n\nAfter first evaluation, sync selectors are marked with a `false` sentinel\nin the abortControllers WeakMap. Subsequent evaluations check this sentinel\n(~1ns WeakMap.get) and skip AbortController allocation (~140ns), using a\nstatic never-aborted signal instead. Async selectors continue to get real\nAbortControllers that are aborted on re-evaluation.\n\nCo-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>\n\n* Cache sync selector options to eliminate per-eval object allocation\n\nFor known-sync selectors (marked with `false` sentinel after first eval),\nreuse a cached { signal, storeId } options object per store instead of\nallocating a new object on every evaluation. This eliminates all per-eval\noverhead on the sync hot path beyond a single WeakMap.get (~1ns).\n\nCo-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>\n\n* Fix jotai compat setSelf broken by options object change\n\nThe selector.get override for writable atoms expected the second\nargument to be a plain storeId string, but the abort signal change\nmade it an options object { signal, storeId }. Extract storeId from\nthe object and forward signal to the jotai read function.\n\nCo-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>\n\n* Fix spurious abort on suspension retry and remove unnecessary cast\n\nWhen a selector suspends (dependency is a pending promise), the\nAbortController was left in the map. When the dependency resolved and\npropagation re-evaluated the selector, evaluateSelector would abort\nthe signal even though no async work was started (the selector threw\nbefore completing). Now the controller is cleared on suspension so\nthe retry creates a fresh signal without aborting the previous one.\n\nAlso removes the unnecessary `as any` cast on `false` since the\nWeakMap type already includes `false` in the union.\n\nCo-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 4.6 <noreply@anthropic.com>",
+          "timestamp": "2026-04-06T16:23:15-07:00",
+          "tree_id": "340b6e03475089d5b597266eeb849a6ee6934347",
+          "url": "https://github.com/eigilsagafos/valdres/commit/ff0201c72ec964eb5a6730ec8002e9f4846d2bb4"
+        },
+        "date": 1775517866500,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "atom(1)",
+            "value": 2,
+            "unit": "ns",
+            "extra": "jotai=52 ratio=0.0428 23.4x faster"
+          },
+          {
+            "name": "store.get(atom)",
+            "value": 40,
+            "unit": "ns",
+            "extra": "jotai=381 ratio=0.1050 9.5x faster"
+          },
+          {
+            "name": "set(atom, value)",
+            "value": 251,
+            "unit": "ns",
+            "extra": "jotai=2184 ratio=0.1149 8.7x faster"
+          },
+          {
+            "name": "set(atom, curr => curr+1)",
+            "value": 283,
+            "unit": "ns",
+            "extra": "jotai=2977 ratio=0.0949 10.5x faster"
+          },
+          {
+            "name": "set(atom) with 10 subs",
+            "value": 551,
+            "unit": "ns",
+            "extra": "jotai=3632 ratio=0.1516 6.6x faster"
+          },
+          {
+            "name": "atom lifecycle (create+100get+100set)",
+            "value": 23324,
+            "unit": "ns",
+            "extra": "jotai=280629 ratio=0.0831 12.0x faster"
+          },
+          {
+            "name": "atomFamily(id)",
+            "value": 244,
+            "unit": "ns",
+            "extra": "jotai=399 ratio=0.6135 1.6x faster"
+          },
+          {
+            "name": "atomFamily(id) cache hit",
+            "value": 48,
+            "unit": "ns",
+            "extra": "jotai=11 ratio=4.4554 4.5x slower"
+          },
+          {
+            "name": "selectorFamily(id)",
+            "value": 266,
+            "unit": "ns",
+            "extra": "jotai=396 ratio=0.6709 1.5x faster"
+          },
+          {
+            "name": "obj.value",
+            "value": 4,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "map.get(key)",
+            "value": 19,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "valdres get",
+            "value": 8,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "jotai get",
+            "value": 370,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "obj.value = n",
+            "value": 4,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "map.set(key, n)",
+            "value": 18,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "valdres set",
+            "value": 250,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "jotai set",
+            "value": 2531,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "selector(fn)",
+            "value": 7,
+            "unit": "ns",
+            "extra": "jotai=62 ratio=0.1045 9.6x faster"
+          },
+          {
+            "name": "set + read 10 selectors",
+            "value": 5920,
+            "unit": "ns",
+            "extra": "jotai=24165 ratio=0.2450 4.1x faster"
+          },
+          {
+            "name": "set + read 100 selectors",
+            "value": 51888,
+            "unit": "ns",
+            "extra": "jotai=256062 ratio=0.2026 4.9x faster"
+          },
+          {
+            "name": "set + read through 5 chained selectors",
+            "value": 5213,
+            "unit": "ns",
+            "extra": "jotai=15273 ratio=0.3413 2.9x faster"
+          },
+          {
+            "name": "createStore",
+            "value": 449,
+            "unit": "ns",
+            "extra": "jotai=5924 ratio=0.0758 13.2x faster"
+          },
+          {
+            "name": "set 1000 atoms",
+            "value": 89508,
+            "unit": "ns",
+            "extra": "jotai=1047426 ratio=0.0855 11.7x faster"
+          },
+          {
+            "name": "get 1000 atoms",
+            "value": 7254,
+            "unit": "ns",
+            "extra": "jotai=377431 ratio=0.0192 52.0x faster"
+          },
+          {
+            "name": "sub + unsub",
+            "value": 370,
+            "unit": "ns",
+            "extra": "jotai=2454 ratio=0.1508 6.6x faster"
+          },
+          {
+            "name": "txn: 10 atoms × 10 selectors, set + read",
+            "value": 63530,
+            "unit": "ns",
+            "extra": "jotai=291329 ratio=0.2181 4.6x faster"
+          },
+          {
+            "name": "txn: 10 atoms × 10 selectors, with subs",
+            "value": 117562,
+            "unit": "ns",
+            "extra": "jotai=586976 ratio=0.2003 5.0x faster"
+          },
+          {
+            "name": "txn: 10 atoms × 100 selectors, set + read",
+            "value": 613055,
+            "unit": "ns",
+            "extra": "jotai=2642890 ratio=0.2320 4.3x faster"
+          },
+          {
+            "name": "txn: cross-atom 1000 selectors, set + read",
+            "value": 760072,
+            "unit": "ns",
+            "extra": "jotai=3231680 ratio=0.2352 4.3x faster"
+          },
+          {
+            "name": "txn: cross-atom 1000 selectors, with subs",
+            "value": 1268971,
+            "unit": "ns",
+            "extra": "jotai=20412362 ratio=0.0622 16.1x faster"
           }
         ]
       }
