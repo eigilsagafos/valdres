@@ -2,9 +2,13 @@ import {
     createStoreWithSelectorSet as valdresCreateStore,
     isPromiseLike,
 } from "valdres"
+import { registerStore } from "./storeRegistry"
 
 export const createStore = () => {
     const store = valdresCreateStore()
+
+    // Register for setSelf lookup (selectors use data.id to find the store)
+    registerStore(store.data.id, store)
 
     // Jotai always returns Promises for async atoms. Valdres unwraps resolved
     // values, so we re-wrap them to match jotai semantics.

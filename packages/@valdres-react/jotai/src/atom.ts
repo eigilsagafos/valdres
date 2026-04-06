@@ -1,4 +1,5 @@
 import { atom as valdresAtom, selector as valdresSelector } from "valdres"
+import { getStoreById } from "./storeRegistry"
 
 const addSetToSelector = (selector, set) => {
     selector.set = (valdresSet, valdresGet, reset, ...args) => {
@@ -51,7 +52,21 @@ export const atom = (get, set?: any) => {
     if (typeof get === "function") {
         const wrapped = wrapAsync(get)
         const selector = valdresSelector(wrapped.get, { equal: Object.is })
-        if (set) addSetToSelector(selector, set)
+        if (set) {
+            addSetToSelector(selector, set)
+            // Replace .get to supply jotai-style { setSelf } as the second
+            // argument to the read function. `selector` is already defined
+            // at this point, so the closure reference is safe.
+            selector.get = (coreGet: any, storeId: any) => {
+                const store = getStoreById(storeId)
+                const options: any = {}
+                if (store) {
+                    options.setSelf = (...args: any[]) =>
+                        store.set(selector, ...args)
+                }
+                return wrapped.get(coreGet, options)
+            }
+        }
         if (wrapped.isAsync) selector.__jotaiAsync = true
         return addOnMountInterceptor(selector)
     } else if (typeof set === "function") {

@@ -7,6 +7,10 @@ import type { StoreData } from "../types/StoreData"
 import { isPromiseLike } from "../utils/isPromiseLike"
 import { getState } from "./getState"
 import {
+    isTransitivelySubscribed,
+    mountTransitiveDeps,
+} from "./mountAtom"
+import {
     propagateDirtySelectors,
     propagateUpdatedAtoms,
 } from "./propagateUpdatedAtoms"
@@ -35,6 +39,49 @@ const getOrInitDependentsSet = (
     return newSet
 }
 
+// Tracks the latest evaluation context per selector so that stale closures
+// (from previous evaluations) can detect they are outdated and avoid
+// registering phantom dependencies.
+const latestEvalContext = new WeakMap<Selector, { revoked: boolean }>()
+
+/**
+ * Handle a deferred `get` call — one that runs after the synchronous
+ * evaluation of the selector has already completed (e.g. inside a
+ * setTimeout or after an await). Registers the dependency, mounts it
+ * if the selector is transitively subscribed, and returns the value.
+ */
+const lateGet = (
+    state: State,
+    selector: Selector,
+    data: StoreData,
+) => {
+    // Register dependency
+    let deps = data.stateDependencies.get(selector)
+    if (!deps) {
+        deps = new Set()
+        data.stateDependencies.set(selector, deps)
+    }
+    const isNewDep = !deps.has(state)
+    if (isNewDep) {
+        deps.add(state)
+        const dependents = getOrInitDependentsSet(state, data)
+        dependents.add(selector)
+    }
+
+    // Get the value (may throw for error-throwing selectors).
+    // Atoms lazily initialized here are first-time accesses — no other
+    // selector depends on them yet, so propagation is unnecessary.
+    const lateInitSet = new Set<Atom>()
+    try {
+        return getState(state, data, lateInitSet)
+    } finally {
+        // Mount new dependencies if the selector is subscribed
+        if (isNewDep && isTransitivelySubscribed(selector, data)) {
+            mountTransitiveDeps(state, data)
+        }
+    }
+}
+
 export const evaluateSelector = <V>(
     selector: Selector<V>,
     data: StoreData,
@@ -46,6 +93,14 @@ export const evaluateSelector = <V>(
     const currentDependencies = data.stateDependencies.get(selector)
     const updatedDepsArray: State<any>[] = []
     let depsChanged = false
+    let evaluationComplete = false
+
+    // Revoke any previous late-binding closure for this selector so that
+    // deferred get calls from old evaluations become read-only.
+    const prevCtx = latestEvalContext.get(selector)
+    if (prevCtx) prevCtx.revoked = true
+    const evalCtx = { revoked: false }
+    latestEvalContext.set(selector, evalCtx)
 
     if (circularDependencySet.has(selector)) {
         throw new SelectorCircularDependencyError()
@@ -56,6 +111,16 @@ export const evaluateSelector = <V>(
     try {
         // @ts-ignore, @ts-todo
         result = selector.get(state => {
+            // Deferred get calls (setTimeout, after await) use late binding
+            if (evaluationComplete) {
+                if (evalCtx.revoked) {
+                    // Stale closure — the selector has been re-evaluated since
+                    // this closure was created. Read the value without
+                    // registering deps or mounting.
+                    return getState(state, data, new Set<Atom>())
+                }
+                return lateGet(state, selector, data)
+            }
             const value = getState(
                 state,
                 data,
@@ -80,6 +145,8 @@ export const evaluateSelector = <V>(
             throw new SelectorEvaluationError(error)
         }
     }
+
+    evaluationComplete = true
 
     // Check if dep count also matches (handles removed deps)
     if (!depsChanged && currentDependencies && currentDependencies.size !== updatedDepsArray.length) {
@@ -109,6 +176,15 @@ export const evaluateSelector = <V>(
     return result
 }
 
+const cleanUpRejectedPromise = <Value>(
+    selector: Selector<Value>,
+    data: StoreData,
+    promise: Promise<any>,
+) => {
+    if (data.values.has(selector) && data.values.get(selector) !== promise) return
+    data.values.delete(selector)
+}
+
 export const handleSelectorResult = <Value>(
     value: Value | Promise<Value> | SuspendAndWaitForResolveError,
     selector: Selector<Value>,
@@ -120,14 +196,15 @@ export const handleSelectorResult = <Value>(
             // Guard against stale promise — if the selector's value has been
             // replaced with a different value, this resolution is outdated.
             // If the value was deleted (e.g. moved to expired), still proceed.
-            const current = data.values.get(selector)
-            if (current !== undefined && current !== promise) return
+            if (data.values.has(selector) && data.values.get(selector) !== promise) return
             const initializedAtomsSet = new Set<Atom>()
             const res = initSelector(selector, data, initializedAtomsSet)
             if (initializedAtomsSet.size > 0) {
                 propagateUpdatedAtoms([...initializedAtomsSet], data)
             }
             return res
+        }).catch(() => {
+            cleanUpRejectedPromise(selector, data, promise)
         })
         return promise
     } else if (isPromiseLike(value)) {
@@ -135,8 +212,7 @@ export const handleSelectorResult = <Value>(
         // then we retry when the promise resolves.
         value.then(resolved => {
             // Guard against stale promise
-            const current = data.values.get(selector)
-            if (current !== undefined && current !== value) return
+            if (data.values.has(selector) && data.values.get(selector) !== value) return
             // @ts-ignore
             setValueInData(selector, resolved, data)
             const dependents = data.stateDependents.get(selector)
@@ -153,6 +229,8 @@ export const handleSelectorResult = <Value>(
                     new Map(),
                 )
             }
+        }).catch(() => {
+            cleanUpRejectedPromise(selector, data, value as Promise<any>)
         })
         return value
     } else {
@@ -186,64 +264,6 @@ export const initSelector = <V>(
         setValueInData<V>(selector, udpatedValue as V, data)
         return true
     }
-
-    // if (data.expiredValues.has(selector)) {
-    //     /**
-    //      * In this case we want to first check if any dependencies changed before we re-validate.
-    //      * The way valdres works is that when an atom changes we mark the entire dependency tree of
-    //      * that atom as "dirty" by moving the value into expired values. We should therefore ensure
-    //      * that all dirty parents are re-evaluted first and then only trigger the re-evalute if any
-    //      * of the dependencies changes.
-    //      */
-    //     const dependecies = data.stateDependencies.get(selector)
-    //     if (dependecies?.size) {
-    //         let shouldReEvalute = false
-    //         let reason
-    //         for (const dependecy of dependecies) {
-    //             if (shouldReEvalute) break
-    //             if (data.values.has(dependecy)) {
-    //                 shouldReEvalute = true
-    //                 reason = ["has dep", dependecy]
-    //             } else if (data.expiredValues.has(dependecy)) {
-    //                 const didChange = initSelector(
-    //                     dependecy,
-    //                     data,
-    //                     circularDependencySet,
-    //                 )
-    //                 if (didChange) {
-    //                     shouldReEvalute = true
-    //                 }
-    //             } else {
-    //                 shouldReEvalute = true
-    //             }
-    //         }
-
-    //         if (shouldReEvalute) {
-    //             const newValue = evaluate(selector, data, circularDependencySet)
-    //             const expiredValue = data.expiredValues.get(selector)
-    //             if (selector.equal(expiredValue, newValue)) {
-    //                 setValueInData(selector, expiredValue, data)
-    //                 return false
-    //             } else {
-    //                 setValueInData(selector, newValue, data)
-    //                 return true
-    //             }
-    //         } else {
-    //             const expiredValue = data.expiredValues.get(selector)
-    //             setValueInData(selector, expiredValue, data)
-    //             return false
-    //         }
-    //     } else {
-    //         throw new Error("TODO")
-    //     }
-    // } else {
-    //     if (data.values.has(selector)) {
-    //         throw new Error("TODO")
-    //     }
-    //     const value = evaluate(selector, data, circularDependencySet)
-    //     setValueInData(selector, value, data)
-    //     return true
-    // }
 }
 
 const evaluate = <V>(
