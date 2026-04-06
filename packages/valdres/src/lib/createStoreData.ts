@@ -27,6 +27,7 @@ Object.defineProperties(lazyProto, {
     stateDependents: makeLazyGetter("stateDependents"),
     stateDependencies: makeLazyGetter("stateDependencies"),
     mounts: makeLazyGetter("mounts"),
+    abortControllers: makeLazyGetter("abortControllers"),
 })
 
 export function createStoreData(id?: string, parent?: undefined): StoreData

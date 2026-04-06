@@ -1,13 +1,13 @@
 import { equal } from "./lib/equal"
 import type { GetValue } from "./types/GetValue"
-import type { Selector } from "./types/Selector"
+import type { Selector, SelectorGetOptions } from "./types/Selector"
 import type { SelectorOptions } from "./types/SelectorOptions"
 
 export const selector = <
     Value extends any,
     FamilyArgs extends [any, ...any[]] = [any, ...any[]],
 >(
-    get: (get: GetValue, storeId: string) => Value | Promise<Value>,
+    get: (get: GetValue, options: SelectorGetOptions) => Value | Promise<Value>,
     options?: SelectorOptions<Value>,
 ): Selector<Value, FamilyArgs> => {
     if (get.constructor?.name === "AsyncFunction") {
