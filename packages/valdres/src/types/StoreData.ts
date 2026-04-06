@@ -10,6 +10,7 @@ export type RootStoreData = {
     stateDependents: WeakMap<WeakKey, any>
     stateDependencies: WeakMap<WeakKey, any>
     mounts: WeakMap<WeakKey, { cleanup?: () => void }>
+    abortControllers: WeakMap<WeakKey, AbortController>
     storeRef?: Store
     scopes: { [scopeId: string]: ScopedStoreData }
 }

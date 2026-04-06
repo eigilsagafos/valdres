@@ -107,6 +107,13 @@ export const evaluateSelector = <V>(
     }
     circularDependencySet.add(selector)
 
+    // Abort any in-flight evaluation for this selector in this store,
+    // then create a fresh AbortController for the new evaluation.
+    const prevController = data.abortControllers.get(selector)
+    if (prevController) prevController.abort()
+    const abortController = new AbortController()
+    data.abortControllers.set(selector, abortController)
+
     let result
     try {
         // @ts-ignore, @ts-todo
@@ -135,7 +142,7 @@ export const evaluateSelector = <V>(
                 throw new SuspendAndWaitForResolveError(value)
 
             return value
-        }, data.id)
+        }, { signal: abortController.signal, storeId: data.id })
     } catch (error) {
         if (error instanceof SuspendAndWaitForResolveError) {
             result = error

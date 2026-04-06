@@ -96,11 +96,11 @@ Important for correctness and performance:
 - [x] `should update derived atom even if dependencies changed (#2697)`
 - [x] `handles complex dependency chains`
 
-### Abort Signal Support — MEDIUM priority (3)
+### Abort Signal Support — now passing (3)
 Used for cancellation of async atoms:
-- [ ] `should abort the signal when dependencies change`
-- [ ] `should abort the signal when dependencies change and the atom is mounted`
-- [ ] `should not abort the signal when unsubscribed`
+- [x] `should abort the signal when dependencies change`
+- [x] `should abort the signal when dependencies change and the atom is mounted`
+- [x] `should not abort the signal when unsubscribed`
 
 ### Error Handling in Async — MEDIUM priority (4)
 Error recovery in async lifecycle:

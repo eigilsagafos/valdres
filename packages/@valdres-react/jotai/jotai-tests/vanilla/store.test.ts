@@ -447,7 +447,7 @@ describe("aborting atoms", () => {
         }
     }
 
-    test.todo("should abort the signal when dependencies change", async () => {
+    test("should abort the signal when dependencies change", async () => {
         const a = atom(1)
         const callBeforeAbort = mock(() => {})
         const callAfterAbort = mock(() => {})
@@ -475,7 +475,7 @@ describe("aborting atoms", () => {
         expect(callAfterAbort).toHaveBeenCalledTimes(1)
     })
 
-    test.todo("should abort the signal when dependencies change and the atom is mounted", async () => {
+    test("should abort the signal when dependencies change and the atom is mounted", async () => {
         const a = atom(1)
         const callBeforeAbort = mock(() => {})
         const callAfterAbort = mock(() => {})
@@ -501,7 +501,7 @@ describe("aborting atoms", () => {
         expect(callAfterAbort).toHaveBeenCalledTimes(1)
     })
 
-    test.todo("should not abort the signal when unsubscribed", async () => {
+    test("should not abort the signal when unsubscribed", async () => {
         const a = atom(1)
         const callBeforeAbort = mock(() => {})
         const callAfterAbort = mock(() => {})

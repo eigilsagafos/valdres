@@ -43,9 +43,11 @@ const isAsyncFunction = (fn: Function) =>
 
 // Wraps an async read function into a sync function that returns a Promise,
 // since valdres selectors do not accept async functions directly.
+// The second argument ({ signal, storeId }) is forwarded from valdres core,
+// which matches jotai's expected `{ signal }` in the read function options.
 const wrapAsync = (fn: Function) => {
     if (!isAsyncFunction(fn)) return { get: fn, isAsync: false }
-    return { get: (...args: any[]) => fn(...args), isAsync: true }
+    return { get: (get: any, options: any) => fn(get, options), isAsync: true }
 }
 
 export const atom = (get, set?: any) => {
