@@ -219,6 +219,12 @@ export const handleSelectorResult = <Value>(
     data: StoreData,
 ) => {
     if (value instanceof SuspendAndWaitForResolveError) {
+        // The selector was suspended — it threw before completing, so no
+        // meaningful async work was started with the current signal. Clear
+        // the AbortController so that when the dependency resolves and
+        // propagation re-evaluates this selector, it won't spuriously
+        // abort the signal.
+        data.abortControllers.delete(selector)
         const promise = value.promise
         promise.then(() => {
             // Guard against stale promise — if the selector's value has been
@@ -264,7 +270,7 @@ export const handleSelectorResult = <Value>(
     } else {
         // Sync result — mark as known-sync so subsequent evaluations
         // skip AbortController allocation on the hot path.
-        data.abortControllers.set(selector, false as any)
+        data.abortControllers.set(selector, false)
         return value
     }
 }

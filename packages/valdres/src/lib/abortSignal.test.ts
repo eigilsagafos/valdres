@@ -127,6 +127,39 @@ describe("abort signal support for async selectors", () => {
         expect(signals[1]!.aborted).toBe(false) // store2's signal — untouched
     })
 
+    test("signal is NOT aborted on suspension retry when dep resolves", async () => {
+        const store1 = store()
+        let resolveAsync!: (v: number) => void
+        const asyncDep = selector((_get) => {
+            return new Promise<number>((r) => {
+                resolveAsync = r
+            })
+        })
+        const signals: AbortSignal[] = []
+
+        const derived = selector((get, { signal }) => {
+            signals.push(signal)
+            const val = get(asyncDep)
+            return val * 2
+        })
+
+        // First eval — asyncDep is a promise, derived suspends
+        store1.sub(derived, () => {})
+        expect(signals).toHaveLength(1)
+        expect(signals[0]!.aborted).toBe(false)
+
+        // Resolve asyncDep — derived retries (suspension retry, not dep change)
+        resolveAsync(42)
+        await new Promise(r => setTimeout(r, 10))
+
+        // The signal from the first eval should NOT be aborted — this was a
+        // suspension retry (dep resolved), not a dep change
+        expect(signals).toHaveLength(2)
+        expect(signals[0]!.aborted).toBe(false)
+        expect(signals[1]!.aborted).toBe(false)
+        expect(store1.get(derived)).toBe(84)
+    })
+
     test("rejected async selector does not cause unhandled promise rejection", async () => {
         const store1 = store()
         const countAtom = atom(1)
