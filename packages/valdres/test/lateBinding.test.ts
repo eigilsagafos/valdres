@@ -138,6 +138,38 @@ describe("promise rejection handling in selectors", () => {
         await new Promise<void>(r => setTimeout(r, 50))
     })
 
+    test("rejection does not delete selector whose value settled to undefined", async () => {
+        const s = createStoreWithSelectorSet()
+        const trigger = atom(0)
+        let callCount = 0
+        const sel = selector((get: any) => {
+            get(trigger)
+            callCount++
+            if (callCount === 1) {
+                // First eval: return a promise that will reject
+                return new Promise((_, reject) =>
+                    setTimeout(() => reject(new Error("fail")), 10),
+                )
+            }
+            // Second eval: settles to undefined
+            return undefined
+        })
+
+        s.sub(sel, () => {})
+
+        // Re-evaluate before the promise rejects — selector now holds `undefined`
+        s.set(trigger, 1)
+        expect(callCount).toBe(2)
+        expect(s.get(sel)).toBe(undefined)
+
+        // Wait for the stale promise rejection
+        await new Promise<void>(r => setTimeout(r, 50))
+
+        // The undefined value should NOT have been deleted by the rejection handler
+        expect(s.data.values.has(sel)).toBe(true)
+        expect(s.get(sel)).toBe(undefined)
+    })
+
     test("selector value is cleared after promise rejection", async () => {
         const s = createStoreWithSelectorSet()
         let callCount = 0

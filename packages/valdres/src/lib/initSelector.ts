@@ -181,8 +181,7 @@ const cleanUpRejectedPromise = <Value>(
     data: StoreData,
     promise: Promise<any>,
 ) => {
-    const current = data.values.get(selector)
-    if (current !== undefined && current !== promise) return
+    if (data.values.has(selector) && data.values.get(selector) !== promise) return
     data.values.delete(selector)
 }
 
@@ -197,8 +196,7 @@ export const handleSelectorResult = <Value>(
             // Guard against stale promise — if the selector's value has been
             // replaced with a different value, this resolution is outdated.
             // If the value was deleted (e.g. moved to expired), still proceed.
-            const current = data.values.get(selector)
-            if (current !== undefined && current !== promise) return
+            if (data.values.has(selector) && data.values.get(selector) !== promise) return
             const initializedAtomsSet = new Set<Atom>()
             const res = initSelector(selector, data, initializedAtomsSet)
             if (initializedAtomsSet.size > 0) {
@@ -214,8 +212,7 @@ export const handleSelectorResult = <Value>(
         // then we retry when the promise resolves.
         value.then(resolved => {
             // Guard against stale promise
-            const current = data.values.get(selector)
-            if (current !== undefined && current !== value) return
+            if (data.values.has(selector) && data.values.get(selector) !== value) return
             // @ts-ignore
             setValueInData(selector, resolved, data)
             const dependents = data.stateDependents.get(selector)
