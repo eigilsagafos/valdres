@@ -5,6 +5,15 @@ import { isSelectorFamily } from "../utils/isSelectorFamily"
 import { equal } from "./equal"
 import { stringifyFamilyArgs } from "./stringifyFamilyArgs"
 
+const familyKey = (args: any[]) => {
+    if (args.length === 1) {
+        const a = args[0]
+        const t = typeof a
+        if (t === "string" || t === "number" || t === "boolean") return a
+    }
+    return stringifyFamilyArgs(args)
+}
+
 export const createAtomFamily = <
     Value extends any,
     Args extends [any, ...any[]] = [any, ...any[]],
@@ -20,10 +29,16 @@ export const createAtomFamily = <
     const hasName = !!options?.name
 
     const atomFamily = (...args: Args) => {
-        const argsStringified = stringifyFamilyArgs(args)
-        if (map.has(argsStringified)) {
-            return map.get(argsStringified)
-        }
+        // Inline key computation — keep hot path in one function for JIT
+        const key =
+            args.length === 1 &&
+            (typeof args[0] === "string" ||
+                typeof args[0] === "number" ||
+                typeof args[0] === "boolean")
+                ? args[0]
+                : stringifyFamilyArgs(args)
+        const cached = map.get(key)
+        if (cached !== undefined) return cached
 
         // Resolve default value — inlined to avoid intermediate closures
         let dv: any
@@ -45,13 +60,13 @@ export const createAtomFamily = <
             // @ts-ignore @ts-todo
             family: atomFamily,
             familyArgs: args,
-            familyArgsStringified: argsStringified,
+            familyArgsStringified: key,
             name: hasName
-                ? options!.name + "_" + argsStringified
+                ? options!.name + "_" + key
                 : undefined,
         }
 
-        map.set(argsStringified, familyAtom)
+        map.set(key, familyAtom)
         return familyAtom
     }
 
@@ -63,7 +78,7 @@ export const createAtomFamily = <
 
     return Object.assign(atomFamily, {
         __valdresAtomFamilyMap: map,
-        release: (...args: Args) => map.delete(stringifyFamilyArgs(args)),
+        release: (...args: Args) => map.delete(familyKey(args)),
         equal,
     }) as AtomFamily<Value, Args>
 }
