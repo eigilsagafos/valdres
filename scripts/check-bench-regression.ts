@@ -238,8 +238,10 @@ function formatTable(results: Comparison[], runNumber: number): string {
         lines.push("", "No regressions detected.")
     }
 
-    const now = new Date().toISOString().replace("T", " ").replace(/\.\d+Z$/, " UTC")
-    lines.push("", `<sub>Run #${runNumber} · Updated ${now}</sub>`)
+    if (runNumber > 0) {
+        const now = new Date().toISOString().replace("T", " ").replace(/\.\d+Z$/, " UTC")
+        lines.push("", `<sub>Run #${runNumber} · Updated ${now}</sub>`)
+    }
 
     return lines.join("\n")
 }
@@ -358,8 +360,8 @@ async function main() {
 
     const results = compare(current, medianRatios)
 
-    const table = formatTable(results, 1)
-    console.log("\n" + table + "\n")
+    // Log without run number (only meaningful on the PR comment)
+    console.log("\n" + formatTable(results, 0) + "\n")
 
     await postOrUpdateComment((runNumber) => formatTable(results, runNumber))
 
