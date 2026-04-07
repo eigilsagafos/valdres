@@ -257,11 +257,12 @@ describe("memory leaks (transactions)", () => {
     test("intermediate transaction values are collected", async () => {
         const store1 = store()
         const atom1 = atom<object>({ initial: true })
-        store1.sub(atom1, () => {})
+        const unsub = store1.sub(atom1, () => {})
         const detector = new LeakDetector(store1.get(atom1))
         store1.txn(({ set }) => {
             set(atom1, { txn: true })
         })
+        unsub()
         expect(await detector.isLeaking()).toBe(false)
     })
 })
