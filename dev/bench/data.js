@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1775600930120,
+  "lastUpdate": 1775601145139,
   "repoUrl": "https://github.com/eigilsagafos/valdres",
   "entries": {
     "valdres benchmarks": [
@@ -3966,6 +3966,210 @@ window.BENCHMARK_DATA = {
             "value": 1472358,
             "unit": "ns",
             "extra": "jotai=24602854 ratio=0.0598 16.7x faster"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "eigil@sagafos.no",
+            "name": "Eigil Sagafos",
+            "username": "eigilsagafos"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "ac93c733154d5088774e4b0825ec1a4b0481f232",
+          "message": "Fix onMount/onUnmount lifecycle continuation on error (#45)\n\n* Fix onMount/onUnmount lifecycle continuation when errors are thrown\n\nWhen atom B's onMount or onUnmount throws, valdres now continues processing\nremaining atoms instead of stopping. mountTransitiveDeps and unmountOrphanedDeps\ncollect errors in an internal helper and re-throw the first after all atoms are\nprocessed. Enables 2 more jotai compat tests (109 pass, 0 fail).\n\nCo-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>\n\n* Address Copilot review: use firstError instead of errors array\n\nReplace errors[] collection with a single firstError variable to avoid\nunnecessary allocations. Also fix COMPAT_TODO.md wording to accurately\ndescribe the onMount/onUnmount error scenario.\n\nCo-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 4.6 <noreply@anthropic.com>",
+          "timestamp": "2026-04-07T15:29:54-07:00",
+          "tree_id": "614e209208d94fc9d22f77f71a440ba0a6dc3aa8",
+          "url": "https://github.com/eigilsagafos/valdres/commit/ac93c733154d5088774e4b0825ec1a4b0481f232"
+        },
+        "date": 1775601144723,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "atom(1)",
+            "value": 3,
+            "unit": "ns",
+            "extra": "jotai=52 ratio=0.0511 19.6x faster"
+          },
+          {
+            "name": "store.get(atom)",
+            "value": 40,
+            "unit": "ns",
+            "extra": "jotai=381 ratio=0.1050 9.5x faster"
+          },
+          {
+            "name": "set(atom, value)",
+            "value": 251,
+            "unit": "ns",
+            "extra": "jotai=2134 ratio=0.1176 8.5x faster"
+          },
+          {
+            "name": "set(atom, curr => curr+1)",
+            "value": 251,
+            "unit": "ns",
+            "extra": "jotai=2755 ratio=0.0910 11.0x faster"
+          },
+          {
+            "name": "set(atom) with 10 subs",
+            "value": 578,
+            "unit": "ns",
+            "extra": "jotai=3546 ratio=0.1629 6.1x faster"
+          },
+          {
+            "name": "atom lifecycle (create+100get+100set)",
+            "value": 33223,
+            "unit": "ns",
+            "extra": "jotai=282908 ratio=0.1174 8.5x faster"
+          },
+          {
+            "name": "atomFamily(id)",
+            "value": 299,
+            "unit": "ns",
+            "extra": "jotai=462 ratio=0.6476 1.5x faster"
+          },
+          {
+            "name": "atomFamily(id) cache hit",
+            "value": 47,
+            "unit": "ns",
+            "extra": "jotai=11 ratio=4.4137 4.4x slower"
+          },
+          {
+            "name": "selectorFamily(id)",
+            "value": 328,
+            "unit": "ns",
+            "extra": "jotai=451 ratio=0.7268 1.4x faster"
+          },
+          {
+            "name": "obj.value",
+            "value": 4,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "map.get(key)",
+            "value": 19,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "valdres get",
+            "value": 8,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "jotai get",
+            "value": 368,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "obj.value = n",
+            "value": 4,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "map.set(key, n)",
+            "value": 18,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "valdres set",
+            "value": 474,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "jotai set",
+            "value": 3322,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "selector(fn)",
+            "value": 6,
+            "unit": "ns",
+            "extra": "jotai=71 ratio=0.0895 11.2x faster"
+          },
+          {
+            "name": "set + read 10 selectors",
+            "value": 9280,
+            "unit": "ns",
+            "extra": "jotai=31753 ratio=0.2922 3.4x faster"
+          },
+          {
+            "name": "set + read 100 selectors",
+            "value": 84548,
+            "unit": "ns",
+            "extra": "jotai=333773 ratio=0.2533 3.9x faster"
+          },
+          {
+            "name": "set + read through 5 chained selectors",
+            "value": 8609,
+            "unit": "ns",
+            "extra": "jotai=18440 ratio=0.4669 2.1x faster"
+          },
+          {
+            "name": "createStore",
+            "value": 487,
+            "unit": "ns",
+            "extra": "jotai=6502 ratio=0.0749 13.4x faster"
+          },
+          {
+            "name": "set 1000 atoms",
+            "value": 97161,
+            "unit": "ns",
+            "extra": "jotai=1239174 ratio=0.0784 12.8x faster"
+          },
+          {
+            "name": "get 1000 atoms",
+            "value": 7704,
+            "unit": "ns",
+            "extra": "jotai=375130 ratio=0.0205 48.7x faster"
+          },
+          {
+            "name": "sub + unsub",
+            "value": 391,
+            "unit": "ns",
+            "extra": "jotai=2525 ratio=0.1549 6.5x faster"
+          },
+          {
+            "name": "txn: 10 atoms × 10 selectors, set + read",
+            "value": 93265,
+            "unit": "ns",
+            "extra": "jotai=432587 ratio=0.2156 4.6x faster"
+          },
+          {
+            "name": "txn: 10 atoms × 10 selectors, with subs",
+            "value": 153767,
+            "unit": "ns",
+            "extra": "jotai=743258 ratio=0.2069 4.8x faster"
+          },
+          {
+            "name": "txn: 10 atoms × 100 selectors, set + read",
+            "value": 821845,
+            "unit": "ns",
+            "extra": "jotai=4527793 ratio=0.1815 5.5x faster"
+          },
+          {
+            "name": "txn: cross-atom 1000 selectors, set + read",
+            "value": 971324,
+            "unit": "ns",
+            "extra": "jotai=4771701 ratio=0.2036 4.9x faster"
+          },
+          {
+            "name": "txn: cross-atom 1000 selectors, with subs",
+            "value": 1496154,
+            "unit": "ns",
+            "extra": "jotai=24699231 ratio=0.0606 16.5x faster"
           }
         ]
       }
