@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1775520828438,
+  "lastUpdate": 1775587488460,
   "repoUrl": "https://github.com/eigilsagafos/valdres",
   "entries": {
     "valdres benchmarks": [
@@ -2742,6 +2742,210 @@ window.BENCHMARK_DATA = {
             "value": 1505388,
             "unit": "ns",
             "extra": "jotai=26044617 ratio=0.0578 17.3x faster"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "eigil@sagafos.no",
+            "name": "Eigil Sagafos",
+            "username": "eigilsagafos"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "847aca79a25d6523fdb286d20c9f1f6a53b4a86a",
+          "message": "Add async atom support to jotai compat layer (#37)\n\n* Add async atom support to jotai compat layer and core async tests\n\n- Export isSuspendError type guard from valdres core so adapter uses\n  instanceof check instead of duck-typing\n- Add wrapAsync in jotai adapter to catch SuspendAndWaitForResolveError\n  and return Promise (jotai async atom semantics)\n- Wrap store.get to re-wrap resolved async values as Promises\n- Wrap store.sub to suppress promise-to-promise transition notifications\n- Add 9 core async selector tests (late deps, abort signals, stale\n  promise guard, suspension, dep cleanup)\n- Enable 7 jotai compat tests for async atoms\n\nCo-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>\n\n* Address PR review: improve test quality and keep getDefaultStore unwrapped\n\n- Use shared wait() helper in async selector tests instead of inline setTimeout\n- Complete suspension test: assert resolved value after resolve()\n- Rename test to reflect observed behavior (suspension, not throwing)\n- Keep getDefaultStore using raw valdres store (not compat createStore)\n  because React hooks from valdres-react expect raw values, not\n  Promise-wrapped async atom values\n\nCo-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>\n\n* Unify getDefaultStore with createStore and fix React Suspense compat\n\ngetDefaultStore now uses the compat createStore(), ensuring async atom\nwrapping (get re-wrap, sub suppression) is consistent across all stores.\n\nThe store.get wrapper re-wraps resolved async values as Promise.resolve()\nfor jotai's vanilla API, but this breaks React's useSyncExternalStore\n(new Promise object each call = infinite re-render) and useValue's\nSuspense throw (any Promise = suspend forever). Fix: expose _rawGet on\nthe store and have useAtom pass a store view with the unwrapped get to\nvaldres-react hooks.\n\nCo-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 4.6 <noreply@anthropic.com>",
+          "timestamp": "2026-04-07T11:42:18-07:00",
+          "tree_id": "4dda6fd9b620bc2684ed139d77773b0a0edc2741",
+          "url": "https://github.com/eigilsagafos/valdres/commit/847aca79a25d6523fdb286d20c9f1f6a53b4a86a"
+        },
+        "date": 1775587487542,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "atom(1)",
+            "value": 3,
+            "unit": "ns",
+            "extra": "jotai=50 ratio=0.0500 20.0x faster"
+          },
+          {
+            "name": "store.get(atom)",
+            "value": 40,
+            "unit": "ns",
+            "extra": "jotai=410 ratio=0.0976 10.3x faster"
+          },
+          {
+            "name": "set(atom, value)",
+            "value": 260,
+            "unit": "ns",
+            "extra": "jotai=2144 ratio=0.1213 8.2x faster"
+          },
+          {
+            "name": "set(atom, curr => curr+1)",
+            "value": 278,
+            "unit": "ns",
+            "extra": "jotai=2745 ratio=0.1013 9.9x faster"
+          },
+          {
+            "name": "set(atom) with 10 subs",
+            "value": 557,
+            "unit": "ns",
+            "extra": "jotai=3532 ratio=0.1576 6.3x faster"
+          },
+          {
+            "name": "atom lifecycle (create+100get+100set)",
+            "value": 26990,
+            "unit": "ns",
+            "extra": "jotai=287477 ratio=0.0939 10.7x faster"
+          },
+          {
+            "name": "atomFamily(id)",
+            "value": 321,
+            "unit": "ns",
+            "extra": "jotai=458 ratio=0.7007 1.4x faster"
+          },
+          {
+            "name": "atomFamily(id) cache hit",
+            "value": 47,
+            "unit": "ns",
+            "extra": "jotai=11 ratio=4.2136 4.2x slower"
+          },
+          {
+            "name": "selectorFamily(id)",
+            "value": 327,
+            "unit": "ns",
+            "extra": "jotai=450 ratio=0.7253 1.4x faster"
+          },
+          {
+            "name": "obj.value",
+            "value": 4,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "map.get(key)",
+            "value": 17,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "valdres get",
+            "value": 7,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "jotai get",
+            "value": 369,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "obj.value = n",
+            "value": 4,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "map.set(key, n)",
+            "value": 18,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "valdres set",
+            "value": 463,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "jotai set",
+            "value": 3298,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "selector(fn)",
+            "value": 6,
+            "unit": "ns",
+            "extra": "jotai=70 ratio=0.0917 10.9x faster"
+          },
+          {
+            "name": "set + read 10 selectors",
+            "value": 8812,
+            "unit": "ns",
+            "extra": "jotai=30920 ratio=0.2850 3.5x faster"
+          },
+          {
+            "name": "set + read 100 selectors",
+            "value": 84718,
+            "unit": "ns",
+            "extra": "jotai=333914 ratio=0.2537 3.9x faster"
+          },
+          {
+            "name": "set + read through 5 chained selectors",
+            "value": 8468,
+            "unit": "ns",
+            "extra": "jotai=18239 ratio=0.4643 2.2x faster"
+          },
+          {
+            "name": "createStore",
+            "value": 478,
+            "unit": "ns",
+            "extra": "jotai=6478 ratio=0.0738 13.5x faster"
+          },
+          {
+            "name": "set 1000 atoms",
+            "value": 94958,
+            "unit": "ns",
+            "extra": "jotai=1210862 ratio=0.0784 12.8x faster"
+          },
+          {
+            "name": "get 1000 atoms",
+            "value": 7268,
+            "unit": "ns",
+            "extra": "jotai=377495 ratio=0.0193 51.9x faster"
+          },
+          {
+            "name": "sub + unsub",
+            "value": 371,
+            "unit": "ns",
+            "extra": "jotai=2585 ratio=0.1435 7.0x faster"
+          },
+          {
+            "name": "txn: 10 atoms × 10 selectors, set + read",
+            "value": 91221,
+            "unit": "ns",
+            "extra": "jotai=432398 ratio=0.2110 4.7x faster"
+          },
+          {
+            "name": "txn: 10 atoms × 10 selectors, with subs",
+            "value": 152344,
+            "unit": "ns",
+            "extra": "jotai=748498 ratio=0.2035 4.9x faster"
+          },
+          {
+            "name": "txn: 10 atoms × 100 selectors, set + read",
+            "value": 824290,
+            "unit": "ns",
+            "extra": "jotai=4527839 ratio=0.1820 5.5x faster"
+          },
+          {
+            "name": "txn: cross-atom 1000 selectors, set + read",
+            "value": 983086,
+            "unit": "ns",
+            "extra": "jotai=4813112 ratio=0.2043 4.9x faster"
+          },
+          {
+            "name": "txn: cross-atom 1000 selectors, with subs",
+            "value": 1472551,
+            "unit": "ns",
+            "extra": "jotai=24873570 ratio=0.0592 16.9x faster"
           }
         ]
       }
