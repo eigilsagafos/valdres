@@ -1,7 +1,7 @@
-import { createStoreWithSelectorSet } from "valdres"
+import { createStore } from "./createStore"
 
 const setDefaultStore = () => {
-    const store = createStoreWithSelectorSet("default")
+    const store = createStore("default")
     globalThis._valdresJotaiDefaultStore = store
     return store
 }

@@ -62,20 +62,20 @@ Blocked by bun not supporting `node:v8 setFlagsFromString`. Tests GC behavior, n
 Core jotai feature, most common migration blocker:
 - [x] `should update async atom with delay (#1813)`
 - [x] `should override a promise by setting`
-- [ ] `should update async atom with deps after await (#1905)`
-- [ ] `should not fire subscription when async atom promise is the same`
-- [ ] `resolves dependencies reliably after a delay (#2192)`
+- [x] `should update async atom with deps after await (#1905)`
+- [ ] `should not fire subscription when async atom promise is the same` (bun segfault)
+- [ ] `resolves dependencies reliably after a delay (#2192)` (requires setSelf in read)
 - [x] `should flush pending write triggered asynchronously and indirectly (#2451)`
 - [x] `async atom with subtle timing > case 2`
 - [x] `notifies async derived-atom subscriber when read calls store.set before await`
 - [x] `can propagate updates with async atom chains`
 - [x] `can get async atom with deps more than once before resolving (#1668)`
-- [ ] `settles never resolving async derivations with deps picked up sync`
-- [ ] `settles never resolving async derivations with deps picked up async`
-- [ ] `refreshes deps for each async read`
-- [ ] `works with async get` (react)
-- [ ] `works with async get without setTimeout` (react)
-- [ ] `async chain for multiple sync and async atoms (#443)` (react)
+- [x] `settles never resolving async derivations with deps picked up sync`
+- [x] `settles never resolving async derivations with deps picked up async`
+- [x] `refreshes deps for each async read`
+- [x] `works with async get` (react)
+- [x] `works with async get without setTimeout` (react)
+- [x] `async chain for multiple sync and async atoms (#443)` (react)
 
 ### onMount Lifecycle — HIGH priority (6)
 Heavily used in jotai codebases for side effects:

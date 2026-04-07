@@ -11,6 +11,10 @@ export const registerStore = (id: string, store: any) => {
     storeMap.set(id, store)
 }
 
+export const unregisterStore = (id: string) => {
+    storeMap.delete(id)
+}
+
 export const getStoreById = (id: string) => {
     return storeMap.get(id)
 }

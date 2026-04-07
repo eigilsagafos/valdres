@@ -28,6 +28,7 @@ export { isFamilyState } from "./utils/isFamilyState"
 export { isPromiseLike } from "./utils/isPromiseLike"
 export { isSelector } from "./utils/isSelector"
 export { isSelectorFamily } from "./utils/isSelectorFamily"
+export { isSuspendError } from "./lib/initSelector"
 
 export type { Atom } from "./types/Atom"
 export type { AtomFamily } from "./types/AtomFamily"

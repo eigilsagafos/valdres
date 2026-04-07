@@ -74,7 +74,7 @@ test("should override a promise by setting", async () => {
     expect(await promise2).toBe(1)
 })
 
-test.todo("should update async atom with deps after await (#1905)", async () => {
+test("should update async atom with deps after await (#1905)", async () => {
     const countAtom = atom(0)
     const delayedAtom = atom(async (get) => {
         await new Promise<void>((r) => setTimeout(r, 10))
