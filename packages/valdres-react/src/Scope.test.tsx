@@ -47,9 +47,9 @@ describe("Scope", () => {
                 <Scope scopeId="Foo" />
             </Provider>,
         )
-        expect(Object.keys(rootStore.data.scopes)).toStrictEqual(["Foo"])
+        expect([...rootStore.data.scopes.keys()]).toStrictEqual(["Foo"])
         await res.unmount()
-        expect(Object.keys(rootStore.data.scopes)).toStrictEqual([])
+        expect([...rootStore.data.scopes.keys()]).toStrictEqual([])
     })
 
     test("Scope with initialize", async () => {

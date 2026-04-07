@@ -505,9 +505,9 @@ describe("transaction", () => {
         })
 
         expect(store1.data.values.get(doc1)).toStrictEqual([1, 2])
-        expect(store1.data.scopes.foo.values.get(doc1)).toStrictEqual([1, 2, 3])
+        expect(store1.data.scopes.get("foo")!.values.get(doc1)).toStrictEqual([1, 2, 3])
         expect(
-            store1.data.scopes.foo.scopes.bar.values.get(doc1),
+            store1.data.scopes.get("foo")!.scopes.get("bar")!.values.get(doc1),
         ).toStrictEqual([1, 2, 3, 4])
 
         store1.txn(txn => {

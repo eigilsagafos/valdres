@@ -186,12 +186,12 @@ export class Transaction {
     }
 
     scope = (scopeId: string, callback: (txn: Transaction) => any) => {
-        if (scopeId in this.data.scopes) {
+        if (this.data.scopes.has(scopeId)) {
             // @ts-ignore
             return this.scopedTransaction(scopeId).execute(callback, false)
         } else {
             throw new Error(
-                `Scope '${scopeId}' not found. Registered scopes: ${Object.keys(this.data.scopes).join(", ")}`,
+                `Scope '${scopeId}' not found. Registered scopes: ${[...this.data.scopes.keys()].join(", ")}`,
             )
         }
     }
@@ -268,7 +268,7 @@ export class Transaction {
     private scopedTransaction(scopeId: string) {
         if (!this._scopedTransactions) this._scopedTransactions = new Map()
         if (!this._scopedTransactions.has(scopeId)) {
-            const scopedData = this.data.scopes[scopeId]
+            const scopedData = this.data.scopes.get(scopeId)!
             const scopedTransaction = new Transaction(scopedData, this)
             this._scopedTransactions.set(scopeId, scopedTransaction)
         }

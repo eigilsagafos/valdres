@@ -205,8 +205,7 @@ const findFamilyIndex = (family: Family<any>, data: StoreData) => {
 }
 
 const recursivlyUpdateIndexes = (data: StoreData, family: Family<any>) => {
-    Object.keys(data.scopes).forEach(scopeKey => {
-        const scopedData = data.scopes[scopeKey]
+    data.scopes.forEach((scopedData, scopeKey) => {
         if (scopeKey) {
             if (scopedData.values.has(family)) {
                 const index = scopedData.values.get(family).__index
@@ -276,8 +275,7 @@ export const propagateDeletedAtoms = (
     // but selectors in those scopes that depend on the family still need to
     // be re-evaluated so their subscribers get notified.
     if (families.size > 0 && data.scopes) {
-        for (const scopeId in data.scopes) {
-            const scope = data.scopes[scopeId]
+        for (const [scopeId, scope] of data.scopes) {
             const familiesInScope = []
             for (const family of families.keys()) {
                 if (scope.values.has(family)) {
@@ -343,8 +341,7 @@ export const propagateUpdatedAtoms = (
     if (!isRecursive) {
         propagateDirtySelectors(atoms, selectors, data, subscriptions, families, isInitOnly)
         if (data.scopes) {
-            for (const scopeId in data.scopes) {
-                const scope = data.scopes[scopeId]
+            for (const [scopeId, scope] of data.scopes) {
                 const atomsToUpdateInScope = []
                 for (const atom of atoms) {
                     if (!scope.values.has(atom)) {

@@ -232,13 +232,13 @@ describe("memory leaks (scoped stores)", () => {
         const scoped1: any = store1.scope("shared")
         const scoped2: any = store1.scope("shared")
         // Parent holds the scope
-        expect(store1.data.scopes["shared"]).toBeDefined()
+        expect(store1.data.scopes.has("shared")).toBe(true)
         // Detach one consumer — parent still holds scope
         scoped1.detach()
-        expect(store1.data.scopes["shared"]).toBeDefined()
+        expect(store1.data.scopes.has("shared")).toBe(true)
         // Detach last consumer — parent drops scope
         scoped2.detach()
-        expect(store1.data.scopes["shared"]).toBeUndefined()
+        expect(store1.data.scopes.has("shared")).toBe(false)
     })
 })
 

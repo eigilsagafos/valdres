@@ -22,7 +22,7 @@ export const Scope = ({
             "No <Provider> in tree. <Scope> has to be nested under a <Provider> to work",
         )
     const [scopedStore, scopeCreated] = useMemo(() => {
-        const scopeCreated = !currentStore.data.scopes?.[scopeId]
+        const scopeCreated = !currentStore.data.scopes?.has(scopeId)
         const store = currentStore.scope(scopeId)
         if (initialize) {
             store.txn(txn => {
