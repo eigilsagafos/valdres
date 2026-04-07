@@ -94,6 +94,11 @@ interface Comparison {
     medianRatio: number | null
     ratioChange: number | null
     threshold: number | null
+    // Self-vs-self absolute timing comparison
+    medianValdres: number | null
+    absChange: number | null // >1 means slower, <1 means faster
+    absThreshold: number | null
+    absStatus: Status
     status: Status
 }
 
@@ -175,9 +180,12 @@ async function gitShow(ref: string): Promise<string | null> {
     }
 }
 
-interface HistoricalRatios {
+interface HistoricalData {
     medianRatios: Map<string, number>
-    cvByName: Map<string, number>
+    ratioCvByName: Map<string, number>
+    // Self-vs-self: absolute valdres timings (noisier than ratios)
+    medianValdres: Map<string, number>
+    valdresCvByName: Map<string, number>
     source: "benchmark-data" | "gh-pages"
     entryCount: number
 }
@@ -188,7 +196,7 @@ interface HistoricalRatios {
  */
 const MIN_ENTRIES_FOR_NEW_FORMAT = 5
 
-async function loadHistory(): Promise<HistoricalRatios | null> {
+async function loadHistory(): Promise<HistoricalData | null> {
     // Try benchmark-data branch first (new compact format),
     // but only if it has enough entries for reliable CV computation
     const benchData = await gitShow("origin/benchmark-data:results.json")
@@ -228,57 +236,78 @@ async function loadHistory(): Promise<HistoricalRatios | null> {
     return null
 }
 
-function computeFromBenchmarkData(entries: HistoryEntry[]): HistoricalRatios {
+function computeFromBenchmarkData(entries: HistoryEntry[]): HistoricalData {
     const recent = entries.slice(-WINDOW_SIZE)
-    const byName = new Map<string, number[]>()
+    const ratiosByName = new Map<string, number[]>()
+    const valdresByName = new Map<string, number[]>()
 
     for (const entry of recent) {
         for (const bench of entry.benchmarks) {
-            if (!byName.has(bench.name)) byName.set(bench.name, [])
-            byName.get(bench.name)!.push(bench.ratio)
+            if (!ratiosByName.has(bench.name)) ratiosByName.set(bench.name, [])
+            ratiosByName.get(bench.name)!.push(bench.ratio)
+            if (!valdresByName.has(bench.name)) valdresByName.set(bench.name, [])
+            valdresByName.get(bench.name)!.push(bench.valdres)
         }
     }
 
     const medianRatios = new Map<string, number>()
-    const cvByName = new Map<string, number>()
-    for (const [name, values] of byName) {
+    const ratioCvByName = new Map<string, number>()
+    for (const [name, values] of ratiosByName) {
         medianRatios.set(name, median(values))
-        cvByName.set(name, computeCV(values))
+        ratioCvByName.set(name, computeCV(values))
+    }
+
+    const medianValdres = new Map<string, number>()
+    const valdresCvByName = new Map<string, number>()
+    for (const [name, values] of valdresByName) {
+        medianValdres.set(name, median(values))
+        valdresCvByName.set(name, computeCV(values))
     }
 
     return {
         medianRatios,
-        cvByName,
+        ratioCvByName,
+        medianValdres,
+        valdresCvByName,
         source: "benchmark-data",
         entryCount: entries.length,
     }
 }
 
-function computeFromLegacy(entries: LegacyEntry[]): HistoricalRatios {
+function computeFromLegacy(entries: LegacyEntry[]): HistoricalData {
     const recent = entries.slice(-WINDOW_SIZE)
-    const byName = new Map<string, number[]>()
+    const ratiosByName = new Map<string, number[]>()
+    const valdresByName = new Map<string, number[]>()
 
     for (const entry of recent) {
         for (const bench of entry.benches) {
-            if (!bench.extra) continue
+            if (!bench.extra || bench.extra === "baseline") continue
             const match = bench.extra.match(/ratio=([\d.]+)/)
             if (!match) continue
-            const ratio = parseFloat(match[1])
-            if (!byName.has(bench.name)) byName.set(bench.name, [])
-            byName.get(bench.name)!.push(ratio)
+            ratiosByName.set(bench.name, [...(ratiosByName.get(bench.name) ?? []), parseFloat(match[1])])
+            valdresByName.set(bench.name, [...(valdresByName.get(bench.name) ?? []), bench.value])
         }
     }
 
     const medianRatios = new Map<string, number>()
-    const cvByName = new Map<string, number>()
-    for (const [name, values] of byName) {
+    const ratioCvByName = new Map<string, number>()
+    for (const [name, values] of ratiosByName) {
         medianRatios.set(name, median(values))
-        cvByName.set(name, computeCV(values))
+        ratioCvByName.set(name, computeCV(values))
+    }
+
+    const medianValdres = new Map<string, number>()
+    const valdresCvByName = new Map<string, number>()
+    for (const [name, values] of valdresByName) {
+        medianValdres.set(name, median(values))
+        valdresCvByName.set(name, computeCV(values))
     }
 
     return {
         medianRatios,
-        cvByName,
+        ratioCvByName,
+        medianValdres,
+        valdresCvByName,
         source: "gh-pages",
         entryCount: entries.length,
     }
@@ -288,14 +317,26 @@ function computeFromLegacy(entries: LegacyEntry[]): HistoricalRatios {
 
 function compare(
     current: NdjsonResult[],
-    history: HistoricalRatios,
+    history: HistoricalData,
 ): Comparison[] {
     const benchmarks = current.filter(r => r.tag !== "baseline")
 
     return benchmarks.map(bench => {
         const currentRatio = bench.jotai > 0 ? bench.valdres / bench.jotai : 1
         const medRatio = history.medianRatios.get(bench.name)
-        const histCV = history.cvByName.get(bench.name) ?? 0
+        const ratioCV = history.ratioCvByName.get(bench.name) ?? 0
+
+        // Self-vs-self: compare absolute valdres timing against historical median
+        const medVal = history.medianValdres.get(bench.name)
+        const valCV = history.valdresCvByName.get(bench.name) ?? 0
+        const absChange = medVal ? bench.valdres / medVal : null
+        const absThreshold = medVal ? dynamicThreshold(valCV) : null
+        const absStatus: Status =
+            absChange != null && absThreshold != null && absChange > absThreshold
+                ? "regression"
+                : medVal == null
+                  ? "new"
+                  : "ok"
 
         // Optimization targets are tracked but don't block PRs
         const isOptTarget =
@@ -310,6 +351,10 @@ function compare(
                 medianRatio: medRatio ?? null,
                 ratioChange: medRatio ? currentRatio / medRatio : null,
                 threshold: null,
+                medianValdres: medVal ?? null,
+                absChange,
+                absThreshold,
+                absStatus: "skip" as Status,
                 status: "skip" as Status,
             }
         }
@@ -323,12 +368,16 @@ function compare(
                 medianRatio: null,
                 ratioChange: null,
                 threshold: null,
+                medianValdres: medVal ?? null,
+                absChange,
+                absThreshold,
+                absStatus,
                 status: "new" as Status,
             }
         }
 
         const ratioChange = currentRatio / medRatio
-        const threshold = dynamicThreshold(histCV)
+        const threshold = dynamicThreshold(ratioCV)
 
         const status: Status =
             ratioChange > threshold ? "regression" : "ok"
@@ -341,6 +390,10 @@ function compare(
             medianRatio: medRatio,
             ratioChange,
             threshold,
+            medianValdres: medVal ?? null,
+            absChange,
+            absThreshold,
+            absStatus,
             status,
         }
     })
@@ -398,6 +451,50 @@ function formatTable(
         )
     } else {
         lines.push("", "No regressions detected.")
+    }
+
+    // Self-vs-self absolute timing section (informational, does not gate CI)
+    const selfResults = results.filter(
+        r => r.medianValdres != null && r.absStatus !== "skip",
+    )
+    if (selfResults.length > 0) {
+        lines.push(
+            "",
+            "<details>",
+            "<summary>Self-vs-self timing (does not gate CI)</summary>",
+            "",
+            "Compares absolute valdres timings against historical median. Noisier than ratio comparison (no runner-variance cancellation), but catches regressions invisible to the jotai ratio.",
+            "",
+            "| | Benchmark | Current | Baseline | Change | Threshold |",
+            "|:-|:----------|--------:|---------:|-------:|----------:|",
+        )
+
+        for (const r of selfResults) {
+            const icon = STATUS_ICON[r.absStatus]
+            const current = fmtNs(r.valdres)
+            const baseline =
+                r.medianValdres != null ? fmtNs(r.medianValdres) : "—"
+            const change = fmtChange(r.absChange)
+            const thresh =
+                r.absThreshold != null
+                    ? `${((r.absThreshold - 1) * 100).toFixed(0)}%`
+                    : "—"
+            lines.push(
+                `| ${icon} | ${r.name} | ${current} | ${baseline} | ${change} | ${thresh} |`,
+            )
+        }
+
+        const absRegressions = selfResults.filter(
+            r => r.absStatus === "regression",
+        )
+        if (absRegressions.length > 0) {
+            lines.push(
+                "",
+                `${absRegressions.length} absolute timing regression(s) — review recommended.`,
+            )
+        }
+
+        lines.push("", "</details>")
     }
 
     if (runNumber > 0) {
@@ -519,10 +616,12 @@ async function main() {
     )
 
     // Log per-benchmark CV and dynamic thresholds
-    for (const [name, cv] of history.cvByName) {
+    for (const [name, cv] of history.ratioCvByName) {
         const thresh = dynamicThreshold(cv)
+        const absCV = history.valdresCvByName.get(name)
+        const absPart = absCV != null ? ` | abs CV=${(absCV * 100).toFixed(1)}%` : ""
         console.log(
-            `  ${name}: historical CV=${(cv * 100).toFixed(1)}% → threshold=${((thresh - 1) * 100).toFixed(0)}%`,
+            `  ${name}: ratio CV=${(cv * 100).toFixed(1)}% → threshold=${((thresh - 1) * 100).toFixed(0)}%${absPart}`,
         )
     }
 
