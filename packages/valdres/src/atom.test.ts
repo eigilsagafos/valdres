@@ -480,6 +480,123 @@ describe("atom", () => {
         unsubscribe()
     })
 
+    test.todo(
+        "overlapping ticks should clear each tick's own staleWhileRevalidate timeout",
+        async () => {
+            // Concern: `timeout` is shared across interval ticks. If
+            // revalidation is slower than maxAge, tick 2 overwrites `timeout`
+            // and tick 1's promise clears tick 2's timer instead of its own.
+            // Tick 1's timer is orphaned (never cleared).
+            //
+            // Expected: each tick should track its own timeout so that
+            // resolving any promise clears the correct timer.
+            const store1 = store()
+            let fetchCount = 0
+            const resolvers: Array<(v: number) => void> = []
+            const atomCallback = () => {
+                fetchCount++
+                return new Promise<number>(resolve => {
+                    resolvers.push(resolve)
+                })
+            }
+
+            const atom1 = atom(atomCallback, {
+                maxAge: 20,
+                staleWhileRevalidate: 200,
+            })
+
+            const timeoutIds: ReturnType<typeof setTimeout>[] = []
+            const originalSetTimeout = globalThis.setTimeout
+            const setTimeoutSpy = spyOn(globalThis, "setTimeout").mockImplementation(
+                (...args: any[]) => {
+                    // @ts-ignore
+                    const id = originalSetTimeout(...args)
+                    timeoutIds.push(id)
+                    return id
+                },
+            )
+            const clearedIds: Set<ReturnType<typeof setTimeout>> = new Set()
+            const originalClearTimeout = globalThis.clearTimeout
+            const clearTimeoutSpy = spyOn(
+                globalThis,
+                "clearTimeout",
+            ).mockImplementation((id: any) => {
+                clearedIds.add(id)
+                return originalClearTimeout(id)
+            })
+
+            const callback = mock(() => {})
+            const unsubscribe = store1.sub(atom1, callback)
+
+            // Resolve initial fetch
+            resolvers[0](1)
+            await wait(1)
+
+            // Wait for two revalidation ticks to fire while promises are pending
+            await waitFor(() => expect(fetchCount).toBeGreaterThanOrEqual(3))
+
+            // Resolve tick 1's promise — this should clear tick 1's timeout
+            resolvers[1](2)
+            await wait(1)
+            // Resolve tick 2's promise
+            resolvers[2](3)
+            await wait(1)
+
+            unsubscribe()
+
+            // Every staleWhileRevalidate timeout that was created should
+            // have been cleared (either by promise resolution or by cleanup)
+            for (const id of timeoutIds) {
+                expect(clearedIds.has(id)).toBe(true)
+            }
+
+            setTimeoutSpy.mockRestore()
+            clearTimeoutSpy.mockRestore()
+        },
+    )
+
+    test.todo(
+        "async atom should recover after init rejection",
+        async () => {
+            // Concern: if the async init function rejects, the rejected
+            // promise stays in data.values permanently. The atom never
+            // retries and store.get() returns a rejected promise forever.
+            //
+            // Expected: after rejection, the atom should be in a state
+            // where re-subscribing or re-getting triggers a retry of the
+            // init function, rather than being stuck.
+            const store1 = store()
+            let callCount = 0
+            const atomCallback = () => {
+                callCount++
+                if (callCount === 1) {
+                    return Promise.reject(new Error("init failed"))
+                }
+                return Promise.resolve(42)
+            }
+
+            const atom1 = atom(atomCallback)
+
+            const callback = mock(() => {})
+            const unsub1 = store1.sub(atom1, callback)
+            await wait(5)
+
+            // First access — rejected promise is stuck in the store
+            const value = store1.get(atom1)
+            expect(value).toBeInstanceOf(Promise)
+            unsub1()
+
+            // Re-subscribing should retry the init function and recover
+            const unsub2 = store1.sub(atom1, callback)
+            await wait(5)
+
+            expect(callCount).toBe(2)
+            expect(store1.get(atom1)).toBe(42)
+
+            unsub2()
+        },
+    )
+
     test("mutable atom", () => {
         const store1 = store()
         const mutableObject = {}
