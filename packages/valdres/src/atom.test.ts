@@ -352,8 +352,40 @@ describe("atom", () => {
         await wait(4)
         expect(callback).toHaveBeenCalledTimes(2)
         expect(res).toHaveLength(2)
-        setIntervalSpy.mockReset()
-        clearIntervalSpy.mockReset()
+        setIntervalSpy.mockRestore()
+        clearIntervalSpy.mockRestore()
+    })
+
+    test("atom with maxAge async rejection does not cause unhandled rejection", async () => {
+        const store1 = store()
+        let callCount = 0
+        const atomCallback = () => {
+            callCount++
+            if (callCount > 1) {
+                return new Promise((_, reject) =>
+                    setTimeout(() => reject(new Error("fetch failed")), 1),
+                )
+            }
+            return new Promise(resolve =>
+                setTimeout(() => resolve(callCount), 1),
+            )
+        }
+
+        const atom1 = atom(atomCallback, {
+            maxAge: 10,
+            staleWhileRevalidate: 100,
+        })
+
+        const callback = mock(() => {
+            store1.get(atom1)
+        })
+        const unsubscribe = store1.sub(atom1, callback)
+        await waitFor(() => expect(store1.get(atom1)).toBe(1))
+        // Wait for the interval to fire with a rejection
+        await wait(50)
+        expect(callCount).toBeGreaterThanOrEqual(2)
+        // Cleanup should work without errors
+        unsubscribe()
     })
 
     test.todo("atom with maxAge async", async () => {
@@ -392,42 +424,60 @@ describe("atom", () => {
         // expect(clearInterval).toHaveBeenCalledTimes(1)
     })
 
-    test.todo("atom with maxAge async and staleWhileRevalidate", async () => {
-        const setIntervalSpy = spyOn(global, "setInterval")
-        const clearIntervalSpy = spyOn(global, "clearInterval")
+    test("atom with maxAge async and staleWhileRevalidate", async () => {
         const store1 = store()
-        let startCount = 0
-        let completeCount = 0
-        let waitMs = 2
-        const atomCallback = async () => {
-            startCount++
-            return wait(waitMs).then(() => {
-                completeCount++
-                return completeCount
+        let fetchCount = 0
+        const resolvers: Array<(v: number) => void> = []
+        const atomCallback = () => {
+            fetchCount++
+            return new Promise<number>(resolve => {
+                resolvers.push(resolve)
             })
         }
 
-        const atom1 = atom(atomCallback, { maxAge: 5, staleWhileRevalidate: 5 })
+        const atom1 = atom(atomCallback, {
+            maxAge: 30,
+            staleWhileRevalidate: 200,
+        })
 
-        const res: number[] = []
+        const res: any[] = []
         const callback = mock(() => {
             res.push(store1.get(atom1))
         })
+
+        // Subscribe — triggers initial fetch
         const unsubscribe = store1.sub(atom1, callback)
-        expect(setIntervalSpy).toHaveBeenCalledTimes(1)
-        expect(clearIntervalSpy).toHaveBeenCalledTimes(0)
-        await waitFor(() => expect(store1.get(atom1)).toBe(1))
-        expect(startCount).toBe(1)
-        await wait(3)
-        expect(startCount).toBe(2)
-        expect(completeCount).toBe(1)
-        await wait(6)
-        expect(startCount).toBe(2)
-        expect(completeCount).toBe(2)
+        expect(fetchCount).toBe(1)
+
+        // Initially the store holds the pending promise
+        expect(store1.get(atom1)).toBeInstanceOf(Promise)
+
+        // Resolve the initial fetch
+        resolvers[0](100)
+        await wait(1)
+
+        // Subscriber notified with resolved value
+        expect(store1.get(atom1)).toBe(100)
+        expect(res).toContain(100)
+
+        // Wait for maxAge to expire and trigger revalidation
+        await wait(50)
+        expect(fetchCount).toBe(2)
+
+        // While revalidation is in-flight, store still returns
+        // the stale value (not a promise) — this is the key
+        // stale-while-revalidate behavior
+        expect(store1.get(atom1)).toBe(100)
+
+        // Resolve the revalidation
+        resolvers[1](200)
+        await wait(1)
+
+        // Value updated, subscriber notified
+        expect(store1.get(atom1)).toBe(200)
+        expect(res).toContain(200)
+
         unsubscribe()
-        expect(clearIntervalSpy).toHaveBeenCalledTimes(1)
-        setIntervalSpy.mockReset()
-        clearIntervalSpy.mockReset()
     })
 
     test("mutable atom", () => {

@@ -27,11 +27,14 @@ export const getAtomInitValue = <V = any>(
         // @ts-ignore @ts-todo
         const value = atom.defaultValue()
         if (isPromiseLike(value)) {
-            value.then(resolvedValue => {
-                // @ts-ignore @ts-todo
-                setValueInData(atom, resolvedValue, data)
-                propagateUpdatedAtoms([atom], data)
-            })
+            value.then(
+                resolvedValue => {
+                    // @ts-ignore @ts-todo
+                    setValueInData(atom, resolvedValue, data)
+                    propagateUpdatedAtoms([atom], data)
+                },
+                () => {},
+            )
         }
         return value
     } else if (isSelector(atom.defaultValue)) {

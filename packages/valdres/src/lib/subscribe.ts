@@ -100,12 +100,14 @@ export const subscribe = <V>(
             const interval = setInterval(() => {
                 // @ts-ignore @ts-todo
                 let value = getAtomInitValue(state, data)
-                // TODO: Fix interal
                 if (isPromiseLike(value)) {
                     if (state.staleWhileRevalidate) {
                         timeout = setTimeout(() => {
                         }, state.staleWhileRevalidate)
-                        value.then(res => clearTimeout(timeout))
+                        value.then(
+                            () => clearTimeout(timeout),
+                            () => clearTimeout(timeout),
+                        )
                     }
                 } else {
                     setValueInData(state, value, data)
