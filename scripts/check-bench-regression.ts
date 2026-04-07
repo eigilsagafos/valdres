@@ -204,7 +204,7 @@ const STATUS_ICON: Record<Status, string> = {
     regression: "🚨",
 }
 
-function formatTable(results: Comparison[]): string {
+function formatTable(results: Comparison[], runNumber: number): string {
     const lines: string[] = [
         "<!-- bench-regression-check -->",
         "## Benchmark Regression Report",
@@ -238,10 +238,13 @@ function formatTable(results: Comparison[]): string {
         lines.push("", "No regressions detected.")
     }
 
+    const now = new Date().toISOString().replace("T", " ").replace(/\.\d+Z$/, " UTC")
+    lines.push("", `<sub>Run #${runNumber} · Updated ${now}</sub>`)
+
     return lines.join("\n")
 }
 
-async function postOrUpdateComment(body: string): Promise<void> {
+async function postOrUpdateComment(formatBody: (runNumber: number) => string): Promise<void> {
     try {
         const token = process.env.GITHUB_TOKEN
         const repo = process.env.GITHUB_REPOSITORY
@@ -285,6 +288,14 @@ async function postOrUpdateComment(body: string): Promise<void> {
         const existing = comments.find(
             (c: any) => c.body && c.body.includes(marker),
         )
+
+        let runNumber = 1
+        if (existing) {
+            const match = existing.body?.match(/Run #(\d+)/)
+            if (match) runNumber = parseInt(match[1], 10) + 1
+        }
+
+        const body = formatBody(runNumber)
 
         if (existing) {
             await fetch(
@@ -347,10 +358,10 @@ async function main() {
 
     const results = compare(current, medianRatios)
 
-    const table = formatTable(results)
+    const table = formatTable(results, 1)
     console.log("\n" + table + "\n")
 
-    await postOrUpdateComment(table)
+    await postOrUpdateComment((runNumber) => formatTable(results, runNumber))
 
     const regressions = results.filter(r => r.status === "regression")
     if (regressions.length > 0) {

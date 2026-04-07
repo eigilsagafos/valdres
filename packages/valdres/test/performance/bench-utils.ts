@@ -5,6 +5,14 @@ import { join } from "path"
 
 const RESULTS_PATH = join(import.meta.dir, "bench-results.ndjson")
 
+// Increase min samples and CPU time for more stable results.
+// Defaults: min_samples=2, min_cpu_time=642ms, warmup_samples=2
+const MEASURE_OPTS = {
+    min_samples: 20,
+    min_cpu_time: 1_500 * 1e6, // 1.5s in nanoseconds
+    warmup_samples: 5,
+}
+
 export async function assertFaster(
     name: string,
     valdresFn: () => void,
@@ -16,8 +24,8 @@ export async function assertFaster(
     const hash = name.split("").reduce((h, c) => ((h << 5) - h + c.charCodeAt(0)) | 0, 0)
     const runValdresFirst = hash % 2 === 0
     const [firstStats, secondStats] = runValdresFirst
-        ? [await measure(valdresFn), await measure(competitorFn)]
-        : [await measure(competitorFn), await measure(valdresFn)]
+        ? [await measure(valdresFn, MEASURE_OPTS), await measure(competitorFn, MEASURE_OPTS)]
+        : [await measure(competitorFn, MEASURE_OPTS), await measure(valdresFn, MEASURE_OPTS)]
     const valdresStats = runValdresFirst ? firstStats : secondStats
     const competitorStats = runValdresFirst ? secondStats : firstStats
 
@@ -49,7 +57,7 @@ export async function assertFaster(
 }
 
 export async function measureOne(name: string, fn: () => void) {
-    const stats = await measure(fn)
+    const stats = await measure(fn, MEASURE_OPTS)
 
     console.log(`  ${name}: ${fmtNs(stats.p50)}`)
 
