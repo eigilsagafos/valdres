@@ -4,6 +4,7 @@ import { selector } from "../src/selector"
 import { createStoreWithSelectorSet } from "../src/createStoreWithSelectorSet"
 import { isPromiseLike } from "../src/utils/isPromiseLike"
 import { isSuspendError } from "../src/lib/initSelector"
+import { wait } from "./utils/wait"
 
 describe("async selectors", () => {
     test("selector returning a Promise stores the Promise then resolves", async () => {
@@ -13,7 +14,7 @@ describe("async selectors", () => {
         const value = s.get(sel)
         expect(isPromiseLike(value)).toBe(true)
 
-        await new Promise(r => setTimeout(r, 10))
+        await wait(10)
         expect(s.get(sel)).toBe(42)
     })
 
@@ -27,7 +28,7 @@ describe("async selectors", () => {
         expect(cb).toHaveBeenCalledTimes(0)
 
         resolve(99)
-        await new Promise(r => setTimeout(r, 10))
+        await wait(10)
         expect(cb).toHaveBeenCalledTimes(1)
         expect(s.get(sel)).toBe(99)
     })
@@ -50,7 +51,7 @@ describe("async selectors", () => {
         const cb = mock(() => {})
         s.sub(sel, cb)
 
-        await new Promise(r => setTimeout(r, 20))
+        await wait(20)
         expect(s.get(sel)).toBe(10)
         expect(cb).toHaveBeenCalledTimes(1)
 
@@ -58,25 +59,30 @@ describe("async selectors", () => {
         // Notified twice: once for value→Promise transition, once for Promise→resolved.
         cb.mockClear()
         s.set(base, 2)
-        await new Promise(r => setTimeout(r, 20))
+        await wait(20)
         expect(s.get(sel)).toBe(20)
         expect(cb).toHaveBeenCalledTimes(2)
     })
 
-    test("SuspendAndWaitForResolveError thrown when sync get encounters Promise value", () => {
+    test("suspension resolves and derived selector re-evaluates", async () => {
         const s = createStoreWithSelectorSet()
-        let resolve!: () => void
-        const asyncSel = selector(() => new Promise<void>(r => (resolve = r)))
+        let resolve!: (v: number) => void
+        const asyncSel = selector(
+            () => new Promise<number>(r => (resolve = r)),
+        )
 
-        // A sync selector that gets an async selector throws during eval
-        // and the Promise is stored (suspension behavior)
+        // A sync selector that gets an async selector suspends during eval
+        // and the Promise is stored
         const derived = selector((get: any) => get(asyncSel))
 
         const value = s.get(derived)
         expect(isPromiseLike(value)).toBe(true)
 
         // After resolving, the derived selector should re-evaluate
-        resolve()
+        // to the resolved value
+        resolve(42)
+        await wait(10)
+        expect(s.get(derived)).toBe(42)
     })
 
     test("isSuspendError detects SuspendAndWaitForResolveError", () => {
@@ -133,14 +139,14 @@ describe("async selectors", () => {
 
         s.get(async2) // trigger evaluation
         resolve1()
-        await new Promise(r => setTimeout(r, 10))
+        await wait(10)
         expect(s.get(async2)).toBe(2)
 
         // Change base, re-evaluate the chain
         s.set(base, 5)
         s.get(async2)
         resolve1()
-        await new Promise(r => setTimeout(r, 10))
+        await wait(10)
         expect(s.get(async2)).toBe(10)
     })
 
@@ -158,7 +164,7 @@ describe("async selectors", () => {
         })
 
         s.sub(sel, () => {})
-        await new Promise(r => setTimeout(r, 5))
+        await wait(5)
 
         // Re-evaluate before the first Promise resolves
         s.set(trigger, 1)
@@ -185,12 +191,12 @@ describe("async selectors", () => {
 
         // Resolve the SECOND promise first (newer)
         resolvers[1]!(1)
-        await new Promise(r => setTimeout(r, 10))
+        await wait(10)
         expect(s.get(sel)).toBe(1)
 
         // Resolve the FIRST promise (stale) — should NOT overwrite
         resolvers[0]!(0)
-        await new Promise(r => setTimeout(r, 10))
+        await wait(10)
         expect(s.get(sel)).toBe(1)
     })
 
@@ -215,7 +221,7 @@ describe("async selectors", () => {
         s.sub(sel, cb)
 
         // Wait for first eval's Promise to resolve (lateDep registered)
-        await new Promise(r => setTimeout(r, 20))
+        await wait(20)
         expect(s.get(sel)).toBe(100)
 
         // Re-evaluate synchronously — no late dep this time
