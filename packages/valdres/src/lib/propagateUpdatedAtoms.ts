@@ -116,7 +116,6 @@ const getSortedKeysByValues = <K, V extends number | string>(
 
 export const renderAtomFamilyIndex = (index: AtomFamilyIndex) => {
     if (index.renderedArray) {
-        console.log("Using cached rendered array")
         return index.renderedArray
     }
     const renderedMap = getAtomFamilyRenderedMap(index)
@@ -448,19 +447,6 @@ const findAllDependents = (
     }
     return [depsRes, subsRes]
 }
-
-// const generateDependencyGraph = (state: State, data: StoreData) => {
-//     const dependents = data.stateDependents.get(state)
-//     return [
-//         state.name,
-//         dependents
-//             ? Array.from(dependents).map(dep =>
-//                   generateDependencyGraph(dep, data),
-//               )
-//             : [],
-//         // Array.from(dependents).map(dep => generateDependencyGraph(dep, data)),
-//     ]
-// }
 
 const recursivlyHandleSelectorUpdates = (
     selectors: Set<Selector>,
