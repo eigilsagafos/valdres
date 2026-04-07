@@ -65,9 +65,9 @@ const mountTransitiveDepsInner = (
     state: State,
     data: StoreData,
     visited: Set<State>,
-    errors: unknown[],
-) => {
-    if (visited.has(state)) return
+    firstError: { value: unknown } | null,
+): { value: unknown } | null => {
+    if (visited.has(state)) return firstError
     visited.add(state)
     // Mount this state itself if it's an atom with onMount
     // @ts-ignore
@@ -75,16 +75,17 @@ const mountTransitiveDepsInner = (
         try {
             mountAtom(state, data)
         } catch (error) {
-            errors.push(error)
+            if (!firstError) firstError = { value: error }
         }
     }
     // Recurse into dependencies (for selectors)
     const deps = data.stateDependencies.get(state)
     if (deps) {
         for (const dep of deps) {
-            mountTransitiveDepsInner(dep, data, visited, errors)
+            firstError = mountTransitiveDepsInner(dep, data, visited, firstError)
         }
     }
+    return firstError
 }
 
 /**
@@ -98,10 +99,9 @@ export const mountTransitiveDeps = (
     data: StoreData,
     visited: Set<State> = new Set(),
 ) => {
-    const errors: unknown[] = []
-    mountTransitiveDepsInner(state, data, visited, errors)
-    if (errors.length > 0) {
-        throw errors[0]
+    const firstError = mountTransitiveDepsInner(state, data, visited, null)
+    if (firstError) {
+        throw firstError.value
     }
 }
 
@@ -109,9 +109,9 @@ const unmountOrphanedDepsInner = (
     state: State,
     data: StoreData,
     visited: Set<State>,
-    errors: unknown[],
-) => {
-    if (visited.has(state)) return
+    firstError: { value: unknown } | null,
+): { value: unknown } | null => {
+    if (visited.has(state)) return firstError
     visited.add(state)
     // @ts-ignore
     if ((state.__valdresOnMount || state.onMount) && data.mounts.has(state)) {
@@ -119,16 +119,17 @@ const unmountOrphanedDepsInner = (
             try {
                 unmountAtom(state, data)
             } catch (error) {
-                errors.push(error)
+                if (!firstError) firstError = { value: error }
             }
         }
     }
     const deps = data.stateDependencies.get(state)
     if (deps) {
         for (const dep of deps) {
-            unmountOrphanedDepsInner(dep, data, visited, errors)
+            firstError = unmountOrphanedDepsInner(dep, data, visited, firstError)
         }
     }
+    return firstError
 }
 
 /**
@@ -142,9 +143,8 @@ export const unmountOrphanedDeps = (
     data: StoreData,
     visited: Set<State> = new Set(),
 ) => {
-    const errors: unknown[] = []
-    unmountOrphanedDepsInner(state, data, visited, errors)
-    if (errors.length > 0) {
-        throw errors[0]
+    const firstError = unmountOrphanedDepsInner(state, data, visited, null)
+    if (firstError) {
+        throw firstError.value
     }
 }

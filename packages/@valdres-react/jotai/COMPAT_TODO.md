@@ -3,7 +3,7 @@
 ## Currently Failing (10 tests)
 
 ### onMount/onUnmount not called on error (2)
-When a subscriber throws, valdres skips lifecycle hooks:
+When `onMount`/`onUnmount` throws, valdres skips remaining lifecycle hooks:
 - [x] `should mount and trigger listeners even when an error is thrown > in synchronous onmount`
 - [x] `should mount and trigger listeners even when an error is thrown > in synchronous onunmount`
 
