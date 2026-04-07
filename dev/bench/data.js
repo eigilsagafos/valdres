@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1775600727174,
+  "lastUpdate": 1775600930120,
   "repoUrl": "https://github.com/eigilsagafos/valdres",
   "entries": {
     "valdres benchmarks": [
@@ -3762,6 +3762,210 @@ window.BENCHMARK_DATA = {
             "value": 1478094,
             "unit": "ns",
             "extra": "jotai=25984710 ratio=0.0569 17.6x faster"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "eigil@sagafos.no",
+            "name": "Eigil Sagafos",
+            "username": "eigilsagafos"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "c4e2564da3c3ff5cc3c60a307b99b93e69080ec0",
+          "message": "Fix maxAge timeout leak on async rejection (#42)\n\n* Fix maxAge timeout leak on async atom rejection and add staleWhileRevalidate test\n\nHandle promise rejection in the maxAge/staleWhileRevalidate interval to\nprevent timeout leaks and unhandled rejection crashes. Also fix existing\ntest teardown (mockReset → mockRestore) that was breaking setInterval\nfor subsequent tests.\n\nCo-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>\n\n* Add failing todo tests for known maxAge/staleWhileRevalidate issues\n\nTwo test.todo cases documenting known limitations:\n1. Overlapping interval ticks share a single timeout handle, so slow\n   revalidations cause orphaned timers that are never cleared\n2. Rejected async atom init leaves a rejected promise stuck in the\n   store permanently with no retry/recovery path\n\nCo-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>\n\n* Fix overlapping staleWhileRevalidate timeouts and rejected atom recovery\n\n1. Track per-tick timeouts with a Set instead of a shared handle, so\n   each promise clears its own timer and cleanup cancels all pending.\n\n2. On async atom init rejection, delete the rejected promise from\n   data.values so re-subscribing triggers a fresh init instead of\n   being permanently stuck.\n\nCo-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>\n\n* Skip maxAge revalidation tick while previous is still in-flight\n\nPrevents unbounded accumulation of in-flight promises when async\nrevalidation takes longer than the maxAge interval. Matches HTTP\ncache semantics where you don't re-fetch while already revalidating.\n\nCo-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 4.6 <noreply@anthropic.com>",
+          "timestamp": "2026-04-07T15:26:11-07:00",
+          "tree_id": "63957cf4911f83720c41665127c6ae8dc126111c",
+          "url": "https://github.com/eigilsagafos/valdres/commit/c4e2564da3c3ff5cc3c60a307b99b93e69080ec0"
+        },
+        "date": 1775600929219,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "atom(1)",
+            "value": 3,
+            "unit": "ns",
+            "extra": "jotai=52 ratio=0.0502 19.9x faster"
+          },
+          {
+            "name": "store.get(atom)",
+            "value": 40,
+            "unit": "ns",
+            "extra": "jotai=381 ratio=0.1050 9.5x faster"
+          },
+          {
+            "name": "set(atom, value)",
+            "value": 260,
+            "unit": "ns",
+            "extra": "jotai=2094 ratio=0.1242 8.1x faster"
+          },
+          {
+            "name": "set(atom, curr => curr+1)",
+            "value": 258,
+            "unit": "ns",
+            "extra": "jotai=2746 ratio=0.0941 10.6x faster"
+          },
+          {
+            "name": "set(atom) with 10 subs",
+            "value": 595,
+            "unit": "ns",
+            "extra": "jotai=3627 ratio=0.1641 6.1x faster"
+          },
+          {
+            "name": "atom lifecycle (create+100get+100set)",
+            "value": 34302,
+            "unit": "ns",
+            "extra": "jotai=282137 ratio=0.1216 8.2x faster"
+          },
+          {
+            "name": "atomFamily(id)",
+            "value": 333,
+            "unit": "ns",
+            "extra": "jotai=461 ratio=0.7226 1.4x faster"
+          },
+          {
+            "name": "atomFamily(id) cache hit",
+            "value": 48,
+            "unit": "ns",
+            "extra": "jotai=11 ratio=4.4408 4.4x slower"
+          },
+          {
+            "name": "selectorFamily(id)",
+            "value": 341,
+            "unit": "ns",
+            "extra": "jotai=455 ratio=0.7495 1.3x faster"
+          },
+          {
+            "name": "obj.value",
+            "value": 4,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "map.get(key)",
+            "value": 19,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "valdres get",
+            "value": 8,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "jotai get",
+            "value": 368,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "obj.value = n",
+            "value": 4,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "map.set(key, n)",
+            "value": 18,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "valdres set",
+            "value": 481,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "jotai set",
+            "value": 3313,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "selector(fn)",
+            "value": 7,
+            "unit": "ns",
+            "extra": "jotai=70 ratio=0.0949 10.5x faster"
+          },
+          {
+            "name": "set + read 10 selectors",
+            "value": 9050,
+            "unit": "ns",
+            "extra": "jotai=28342 ratio=0.3193 3.1x faster"
+          },
+          {
+            "name": "set + read 100 selectors",
+            "value": 83356,
+            "unit": "ns",
+            "extra": "jotai=331719 ratio=0.2513 4.0x faster"
+          },
+          {
+            "name": "set + read through 5 chained selectors",
+            "value": 8525,
+            "unit": "ns",
+            "extra": "jotai=18057 ratio=0.4721 2.1x faster"
+          },
+          {
+            "name": "createStore",
+            "value": 456,
+            "unit": "ns",
+            "extra": "jotai=6455 ratio=0.0706 14.2x faster"
+          },
+          {
+            "name": "set 1000 atoms",
+            "value": 97071,
+            "unit": "ns",
+            "extra": "jotai=1221169 ratio=0.0795 12.6x faster"
+          },
+          {
+            "name": "get 1000 atoms",
+            "value": 7255,
+            "unit": "ns",
+            "extra": "jotai=375370 ratio=0.0193 51.7x faster"
+          },
+          {
+            "name": "sub + unsub",
+            "value": 842,
+            "unit": "ns",
+            "extra": "jotai=2574 ratio=0.3270 3.1x faster"
+          },
+          {
+            "name": "txn: 10 atoms × 10 selectors, set + read",
+            "value": 90799,
+            "unit": "ns",
+            "extra": "jotai=412189 ratio=0.2203 4.5x faster"
+          },
+          {
+            "name": "txn: 10 atoms × 10 selectors, with subs",
+            "value": 150240,
+            "unit": "ns",
+            "extra": "jotai=735102 ratio=0.2044 4.9x faster"
+          },
+          {
+            "name": "txn: 10 atoms × 100 selectors, set + read",
+            "value": 815582,
+            "unit": "ns",
+            "extra": "jotai=4488507 ratio=0.1817 5.5x faster"
+          },
+          {
+            "name": "txn: cross-atom 1000 selectors, set + read",
+            "value": 972676,
+            "unit": "ns",
+            "extra": "jotai=4816890 ratio=0.2019 5.0x faster"
+          },
+          {
+            "name": "txn: cross-atom 1000 selectors, with subs",
+            "value": 1472358,
+            "unit": "ns",
+            "extra": "jotai=24602854 ratio=0.0598 16.7x faster"
           }
         ]
       }
