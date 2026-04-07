@@ -107,17 +107,17 @@ React rendering patterns with atoms:
 - [x] `uses a writable atom without read function`
 - [x] `write self atom (undocumented usage)`
 
-### Memory Leak Detection — now passing (9)
+### Memory Leak Detection — now passing (5)
 Using Bun-native LeakDetector (`Bun.gc` + `FinalizationRegistry`) instead of `jest-leak-detector`:
 - [x] `memory leaks (get & set only) > one atom`
 - [x] `memory leaks (get & set only) > two atoms`
 - [x] `memory leaks (get & set only) > with a long-lived base atom`
 - [x] `memory leaks (with subscribe) > one atom`
 - [x] `memory leaks (with subscribe) > two atoms`
-- [x] `memory leaks (with subscribe) > with a long-lived base atom`
-- [x] `memory leaks (with dependencies) > sync dependency`
-- [x] `memory leaks (with dependencies) > async dependency`
-- [x] `memory leaks (with dependencies) > async await dependency`
+- [ ] `memory leaks (with subscribe) > with a long-lived base atom` (valdres retains stateDependents after unsub)
+- [ ] `memory leaks (with dependencies) > sync dependency` (valdres retains stateDependents after unsub)
+- [ ] `memory leaks (with dependencies) > async dependency` (valdres retains stateDependents after unsub)
+- [ ] `memory leaks (with dependencies) > async await dependency` (valdres retains stateDependents after unsub)
 
 ### Dev Store / Mounted Atoms — LOW priority (2)
 - [ ] `should unmount with store.get`
