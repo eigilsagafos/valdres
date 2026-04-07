@@ -171,6 +171,47 @@ describe("setAtom", () => {
         expect(store1.get(emptyAtom)).toBe("resolved")
     })
 
+    test("async updater with same promise reference is a no-op", async () => {
+        const store1 = store()
+        const shared = Promise.resolve("shared")
+        const promiseAtom = atom<string | Promise<string>>(() => shared)
+        store1.get(promiseAtom) // initialize — stores the promise
+        const callback = mock(() => {})
+        store1.sub(promiseAtom, callback)
+
+        // Updater returns the exact same promise reference
+        setAtom(promiseAtom, () => shared, store1.data)
+        // Should be a no-op — no subscriber notification
+        expect(callback).toHaveBeenCalledTimes(0)
+    })
+
+    test("racing async updaters on empty atom resolve suspense promise", async () => {
+        const store1 = store()
+        const emptyAtom = atom<string>()
+
+        // Reading gives us the original suspense promise
+        const suspensePromise = store1.get(emptyAtom) as Promise<string>
+
+        let resolveFirst!: (v: string) => void
+        let resolveSecond!: (v: string) => void
+        const first = new Promise<string>(r => { resolveFirst = r })
+        const second = new Promise<string>(r => { resolveSecond = r })
+
+        setAtom(emptyAtom, () => first, store1.data)
+        setAtom(emptyAtom, () => second, store1.data)
+
+        // Resolve stale first, then the winner
+        resolveFirst("first")
+        await first
+        resolveSecond("second")
+        await second
+
+        // Suspense promise should resolve to the last-write-wins value
+        const suspenseResult = await suspensePromise
+        expect(suspenseResult).toBe("second")
+        expect(store1.get(emptyAtom)).toBe("second")
+    })
+
     test("deep freeze applies to function values with properties", () => {
         const defaultStore = store()
         const fn = () => "hello"
