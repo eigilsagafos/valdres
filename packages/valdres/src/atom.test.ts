@@ -480,7 +480,7 @@ describe("atom", () => {
         unsubscribe()
     })
 
-    test.todo(
+    test(
         "overlapping ticks should clear each tick's own staleWhileRevalidate timeout",
         async () => {
             // Concern: `timeout` is shared across interval ticks. If
@@ -505,13 +505,14 @@ describe("atom", () => {
                 staleWhileRevalidate: 200,
             })
 
-            const timeoutIds: ReturnType<typeof setTimeout>[] = []
+            const staleTimeoutIds: ReturnType<typeof setTimeout>[] = []
             const originalSetTimeout = globalThis.setTimeout
             const setTimeoutSpy = spyOn(globalThis, "setTimeout").mockImplementation(
                 (...args: any[]) => {
                     // @ts-ignore
                     const id = originalSetTimeout(...args)
-                    timeoutIds.push(id)
+                    // Only track staleWhileRevalidate timeouts (delay === 200)
+                    if (args[1] === 200) staleTimeoutIds.push(id)
                     return id
                 },
             )
@@ -546,7 +547,8 @@ describe("atom", () => {
 
             // Every staleWhileRevalidate timeout that was created should
             // have been cleared (either by promise resolution or by cleanup)
-            for (const id of timeoutIds) {
+            expect(staleTimeoutIds.length).toBeGreaterThanOrEqual(2)
+            for (const id of staleTimeoutIds) {
                 expect(clearedIds.has(id)).toBe(true)
             }
 
@@ -555,7 +557,7 @@ describe("atom", () => {
         },
     )
 
-    test.todo(
+    test(
         "async atom should recover after init rejection",
         async () => {
             // Concern: if the async init function rejects, the rejected

@@ -96,17 +96,19 @@ export const subscribe = <V>(
     let maxAgeCleanup: any
     if (subscribers.size === 1) {
         if (isAtom(state) && state.maxAge) {
-            let timeout: Timer
+            const pendingTimeouts = new Set<Timer>()
             const interval = setInterval(() => {
                 // @ts-ignore @ts-todo
                 let value = getAtomInitValue(state, data)
                 if (isPromiseLike(value)) {
                     if (state.staleWhileRevalidate) {
-                        timeout = setTimeout(() => {
+                        const t = setTimeout(() => {
+                            pendingTimeouts.delete(t)
                         }, state.staleWhileRevalidate)
+                        pendingTimeouts.add(t)
                         value.then(
-                            () => clearTimeout(timeout),
-                            () => clearTimeout(timeout),
+                            () => { clearTimeout(t); pendingTimeouts.delete(t) },
+                            () => { clearTimeout(t); pendingTimeouts.delete(t) },
                         )
                     }
                 } else {
@@ -116,7 +118,8 @@ export const subscribe = <V>(
             }, state.maxAge)
             maxAgeCleanup = () => {
                 clearInterval(interval)
-                if (timeout) clearTimeout(timeout)
+                for (const t of pendingTimeouts) clearTimeout(t)
+                pendingTimeouts.clear()
             }
         }
         // Mount this state and all its transitive dependencies

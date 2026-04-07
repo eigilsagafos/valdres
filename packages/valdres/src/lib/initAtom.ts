@@ -33,7 +33,14 @@ export const getAtomInitValue = <V = any>(
                     setValueInData(atom, resolvedValue, data)
                     propagateUpdatedAtoms([atom], data)
                 },
-                () => {},
+                () => {
+                    // On rejection, remove the rejected promise from the
+                    // store so that re-subscribing triggers a fresh init
+                    // rather than being stuck with a rejected promise.
+                    if (data.values.get(atom) === value) {
+                        data.values.delete(atom)
+                    }
+                },
             )
         }
         return value
