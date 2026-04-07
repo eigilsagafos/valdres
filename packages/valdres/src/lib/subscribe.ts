@@ -96,16 +96,26 @@ export const subscribe = <V>(
     let maxAgeCleanup: any
     if (subscribers.size === 1) {
         if (isAtom(state) && state.maxAge) {
-            let timeout: Timer
+            const pendingTimeouts = new Set<Timer>()
+            let revalidating = false
             const interval = setInterval(() => {
+                if (revalidating) return
                 // @ts-ignore @ts-todo
                 let value = getAtomInitValue(state, data)
-                // TODO: Fix interal
                 if (isPromiseLike(value)) {
+                    revalidating = true
+                    const done = () => { revalidating = false }
                     if (state.staleWhileRevalidate) {
-                        timeout = setTimeout(() => {
+                        const t = setTimeout(() => {
+                            pendingTimeouts.delete(t)
                         }, state.staleWhileRevalidate)
-                        value.then(res => clearTimeout(timeout))
+                        pendingTimeouts.add(t)
+                        value.then(
+                            () => { clearTimeout(t); pendingTimeouts.delete(t); done() },
+                            () => { clearTimeout(t); pendingTimeouts.delete(t); done() },
+                        )
+                    } else {
+                        value.then(done, done)
                     }
                 } else {
                     setValueInData(state, value, data)
@@ -114,7 +124,8 @@ export const subscribe = <V>(
             }, state.maxAge)
             maxAgeCleanup = () => {
                 clearInterval(interval)
-                if (timeout) clearTimeout(timeout)
+                for (const t of pendingTimeouts) clearTimeout(t)
+                pendingTimeouts.clear()
             }
         }
         // Mount this state and all its transitive dependencies

@@ -27,11 +27,21 @@ export const getAtomInitValue = <V = any>(
         // @ts-ignore @ts-todo
         const value = atom.defaultValue()
         if (isPromiseLike(value)) {
-            value.then(resolvedValue => {
-                // @ts-ignore @ts-todo
-                setValueInData(atom, resolvedValue, data)
-                propagateUpdatedAtoms([atom], data)
-            })
+            value.then(
+                resolvedValue => {
+                    // @ts-ignore @ts-todo
+                    setValueInData(atom, resolvedValue, data)
+                    propagateUpdatedAtoms([atom], data)
+                },
+                () => {
+                    // On rejection, remove the rejected promise from the
+                    // store so that re-subscribing triggers a fresh init
+                    // rather than being stuck with a rejected promise.
+                    if (data.values.get(atom) === value) {
+                        data.values.delete(atom)
+                    }
+                },
+            )
         }
         return value
     } else if (isSelector(atom.defaultValue)) {
