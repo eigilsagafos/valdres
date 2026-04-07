@@ -97,19 +97,25 @@ export const subscribe = <V>(
     if (subscribers.size === 1) {
         if (isAtom(state) && state.maxAge) {
             const pendingTimeouts = new Set<Timer>()
+            let revalidating = false
             const interval = setInterval(() => {
+                if (revalidating) return
                 // @ts-ignore @ts-todo
                 let value = getAtomInitValue(state, data)
                 if (isPromiseLike(value)) {
+                    revalidating = true
+                    const done = () => { revalidating = false }
                     if (state.staleWhileRevalidate) {
                         const t = setTimeout(() => {
                             pendingTimeouts.delete(t)
                         }, state.staleWhileRevalidate)
                         pendingTimeouts.add(t)
                         value.then(
-                            () => { clearTimeout(t); pendingTimeouts.delete(t) },
-                            () => { clearTimeout(t); pendingTimeouts.delete(t) },
+                            () => { clearTimeout(t); pendingTimeouts.delete(t); done() },
+                            () => { clearTimeout(t); pendingTimeouts.delete(t); done() },
                         )
+                    } else {
+                        value.then(done, done)
                     }
                 } else {
                     setValueInData(state, value, data)

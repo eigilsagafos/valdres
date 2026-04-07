@@ -481,15 +481,8 @@ describe("atom", () => {
     })
 
     test(
-        "overlapping ticks should clear each tick's own staleWhileRevalidate timeout",
+        "staleWhileRevalidate timeout is cleared on revalidation resolve",
         async () => {
-            // Concern: `timeout` is shared across interval ticks. If
-            // revalidation is slower than maxAge, tick 2 overwrites `timeout`
-            // and tick 1's promise clears tick 2's timer instead of its own.
-            // Tick 1's timer is orphaned (never cleared).
-            //
-            // Expected: each tick should track its own timeout so that
-            // resolving any promise clears the correct timer.
             const store1 = store()
             let fetchCount = 0
             const resolvers: Array<(v: number) => void> = []
@@ -511,7 +504,6 @@ describe("atom", () => {
                 (...args: any[]) => {
                     // @ts-ignore
                     const id = originalSetTimeout(...args)
-                    // Only track staleWhileRevalidate timeouts (delay === 200)
                     if (args[1] === 200) staleTimeoutIds.push(id)
                     return id
                 },
@@ -533,27 +525,73 @@ describe("atom", () => {
             resolvers[0](1)
             await wait(1)
 
-            // Wait for two revalidation ticks to fire while promises are pending
-            await waitFor(() => expect(fetchCount).toBeGreaterThanOrEqual(3))
+            // Wait for revalidation tick
+            await waitFor(() => expect(fetchCount).toBe(2))
 
-            // Resolve tick 1's promise — this should clear tick 1's timeout
+            // A staleWhileRevalidate timeout was created
+            expect(staleTimeoutIds.length).toBe(1)
+
+            // Resolve the revalidation — should clear the timeout
             resolvers[1](2)
             await wait(1)
-            // Resolve tick 2's promise
-            resolvers[2](3)
-            await wait(1)
+            expect(clearedIds.has(staleTimeoutIds[0])).toBe(true)
 
             unsubscribe()
 
-            // Every staleWhileRevalidate timeout that was created should
-            // have been cleared (either by promise resolution or by cleanup)
-            expect(staleTimeoutIds.length).toBeGreaterThanOrEqual(2)
-            for (const id of staleTimeoutIds) {
-                expect(clearedIds.has(id)).toBe(true)
-            }
-
             setTimeoutSpy.mockRestore()
             clearTimeoutSpy.mockRestore()
+        },
+    )
+
+    test(
+        "maxAge interval should skip tick while revalidation is in-flight",
+        async () => {
+            // If revalidation takes longer than maxAge, the interval should
+            // NOT start another revalidation. This prevents unbounded
+            // accumulation of in-flight promises and matches HTTP cache
+            // semantics (don't re-fetch while already revalidating).
+            const store1 = store()
+            let fetchCount = 0
+            const resolvers: Array<(v: number) => void> = []
+            const atomCallback = () => {
+                fetchCount++
+                return new Promise<number>(resolve => {
+                    resolvers.push(resolve)
+                })
+            }
+
+            // maxAge is 15ms — interval fires frequently
+            const atom1 = atom(atomCallback, {
+                maxAge: 15,
+                staleWhileRevalidate: 200,
+            })
+
+            const callback = mock(() => {})
+            const unsubscribe = store1.sub(atom1, callback)
+
+            // Resolve initial fetch
+            resolvers[0](1)
+            await wait(1)
+            expect(fetchCount).toBe(1)
+
+            // Wait long enough for multiple ticks to fire (3-4x maxAge)
+            // but DON'T resolve the revalidation promise
+            await wait(60)
+
+            // Only one revalidation should have started, even though
+            // multiple interval ticks fired
+            expect(fetchCount).toBe(2)
+
+            // Resolve the pending revalidation
+            resolvers[1](2)
+            await wait(1)
+            expect(store1.get(atom1)).toBe(2)
+
+            // Now the next tick should be allowed to start a new revalidation
+            await wait(20)
+            expect(fetchCount).toBe(3)
+
+            unsubscribe()
         },
     )
 
