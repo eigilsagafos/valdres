@@ -61,27 +61,72 @@ export const unmountAtom = (state: State, data: StoreData) => {
     }
 }
 
-/**
- * Walk the transitive dependencies of a state and mount any atoms that have
- * onMount. Called when a state gains its first transitive subscriber.
- */
-export const mountTransitiveDeps = (
+const mountTransitiveDepsInner = (
     state: State,
     data: StoreData,
-    visited: Set<State> = new Set(),
+    visited: Set<State>,
+    errors: unknown[],
 ) => {
     if (visited.has(state)) return
     visited.add(state)
     // Mount this state itself if it's an atom with onMount
     // @ts-ignore
     if (state.__valdresOnMount || state.onMount) {
-        mountAtom(state, data)
+        try {
+            mountAtom(state, data)
+        } catch (error) {
+            errors.push(error)
+        }
     }
     // Recurse into dependencies (for selectors)
     const deps = data.stateDependencies.get(state)
     if (deps) {
         for (const dep of deps) {
-            mountTransitiveDeps(dep, data, visited)
+            mountTransitiveDepsInner(dep, data, visited, errors)
+        }
+    }
+}
+
+/**
+ * Walk the transitive dependencies of a state and mount any atoms that have
+ * onMount. Called when a state gains its first transitive subscriber.
+ * Continues mounting remaining atoms even if one throws, then re-throws
+ * the first error.
+ */
+export const mountTransitiveDeps = (
+    state: State,
+    data: StoreData,
+    visited: Set<State> = new Set(),
+) => {
+    const errors: unknown[] = []
+    mountTransitiveDepsInner(state, data, visited, errors)
+    if (errors.length > 0) {
+        throw errors[0]
+    }
+}
+
+const unmountOrphanedDepsInner = (
+    state: State,
+    data: StoreData,
+    visited: Set<State>,
+    errors: unknown[],
+) => {
+    if (visited.has(state)) return
+    visited.add(state)
+    // @ts-ignore
+    if ((state.__valdresOnMount || state.onMount) && data.mounts.has(state)) {
+        if (!isTransitivelySubscribed(state, data)) {
+            try {
+                unmountAtom(state, data)
+            } catch (error) {
+                errors.push(error)
+            }
+        }
+    }
+    const deps = data.stateDependencies.get(state)
+    if (deps) {
+        for (const dep of deps) {
+            unmountOrphanedDepsInner(dep, data, visited, errors)
         }
     }
 }
@@ -89,24 +134,17 @@ export const mountTransitiveDeps = (
 /**
  * Check if a state should be unmounted (no longer transitively subscribed)
  * and unmount it if so. Recurses into its dependencies.
+ * Continues unmounting remaining atoms even if one throws, then re-throws
+ * the first error.
  */
 export const unmountOrphanedDeps = (
     state: State,
     data: StoreData,
     visited: Set<State> = new Set(),
 ) => {
-    if (visited.has(state)) return
-    visited.add(state)
-    // @ts-ignore
-    if ((state.__valdresOnMount || state.onMount) && data.mounts.has(state)) {
-        if (!isTransitivelySubscribed(state, data)) {
-            unmountAtom(state, data)
-        }
-    }
-    const deps = data.stateDependencies.get(state)
-    if (deps) {
-        for (const dep of deps) {
-            unmountOrphanedDeps(dep, data, visited)
-        }
+    const errors: unknown[] = []
+    unmountOrphanedDepsInner(state, data, visited, errors)
+    if (errors.length > 0) {
+        throw errors[0]
     }
 }

@@ -4,8 +4,8 @@
 
 ### onMount/onUnmount not called on error (2)
 When a subscriber throws, valdres skips lifecycle hooks:
-- [ ] `should mount and trigger listeners even when an error is thrown > in synchronous onmount`
-- [ ] `should mount and trigger listeners even when an error is thrown > in synchronous onunmount`
+- [x] `should mount and trigger listeners even when an error is thrown > in synchronous onmount`
+- [x] `should mount and trigger listeners even when an error is thrown > in synchronous onunmount`
 
 ### Flush/batching order differs from jotai (4)
 Valdres notifies listeners at different points in the write cycle:
