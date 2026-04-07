@@ -5,8 +5,9 @@ import { generateHeapSnapshot } from "bun"
  * Replaces jest-leak-detector which requires node:v8 setFlagsFromString.
  *
  * Mirrors jest-leak-detector's approach: FinalizationRegistry tracks when
- * the object is garbage collected. Uses Bun.gc(true) and a heap snapshot
- * fallback for reliable finalization across environments.
+ * the object is garbage collected. Uses Bun.gc(true) and, if needed, a
+ * Bun heap snapshot fallback to more aggressively encourage pending
+ * FinalizationRegistry callbacks to run in Bun.
  *
  * Usage:
  *   const detector = new LeakDetector(someObject)
@@ -17,11 +18,11 @@ export class LeakDetector {
     private _isReferenceBeingHeld = true
     private readonly _finalizationRegistry: FinalizationRegistry<undefined>
 
-    constructor(value: unknown) {
+    constructor(value: object) {
         this._finalizationRegistry = new FinalizationRegistry(() => {
             this._isReferenceBeingHeld = false
         })
-        this._finalizationRegistry.register(value as object, undefined)
+        this._finalizationRegistry.register(value, undefined)
         value = null
     }
 
