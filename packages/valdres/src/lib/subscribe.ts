@@ -23,18 +23,6 @@ const initSubscribers = <V>(state: State<V> | Family<V>, data: StoreData) => {
     return set
 }
 
-// class SelectorFamilySubscriptionNotSupported extends Error {
-//     constructor() {
-//         super("Selector family subscription not supported")
-//         this.name = "SelectorFamilySubscriptionNotSupported"
-//     }
-// }
-
-// const createTwoWayDependecyBinding = (parent, child, data) => {
-
-//     throw new Error("TODO: Implement this")
-// }
-
 export const subscribe = <V>(
     state: State<V> | Family<V>,
     callback: (arg?: any) => void,
@@ -92,43 +80,6 @@ export const subscribe = <V>(
             throw new Error(
                 "Subscribe to selectorFammily is currently not supported",
             )
-            // let TEST_SYMB = Symbol("asdf")
-            // const dependencies = []
-            // const accumulator = depState => {
-            //     if (isFamilyAtom(depState)) {
-            //         if (
-            //             depState.familyArgs[0] === TEST_SYMB &&
-            //             depState.familyArgs.length === 1
-            //         ) {
-            //             dependencies.push(depState.family)
-            //             // return null
-            //             // return depState.familyArgs[1]
-            //         } else {
-            //             throw new SelectorFamilySubscriptionNotSupported()
-            //         }
-            //         // // if (isAtom(depState)) {
-            //         // // }
-            //         // isSelectorFamily(depState)
-            //         // throw new Error("TODO 000")
-            //     } else {
-            //         throw new SelectorFamilySubscriptionNotSupported()
-            //     }
-            // }
-            // try {
-            //     state(TEST_SYMB).get(accumulator)
-            // } catch (e) {
-            //     if (e instanceof SelectorFamilySubscriptionNotSupported) {
-            //         throw e
-            //     }
-            // }
-            // dependencies.forEach(dependency => {
-            //     if (isAtomFamily(dependency)) {
-            //         // Now we have a selectorFamily that is depentent on a atomFamily
-            //         createTwoWayDependecyBinding(state, dependency, data)
-            //     } else {
-            //         throw new SelectorFamilySubscriptionNotSupported()
-            //     }
-            // })
         }
         subscription = {
             callback,
@@ -152,10 +103,7 @@ export const subscribe = <V>(
                 // TODO: Fix interal
                 if (isPromiseLike(value)) {
                     if (state.staleWhileRevalidate) {
-                        const oldValue = data.values.get(state)
                         timeout = setTimeout(() => {
-                            const nowValue = data.values.get(state)
-                            console.log("todo", oldValue)
                         }, state.staleWhileRevalidate)
                         value.then(res => clearTimeout(timeout))
                     }
