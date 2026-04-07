@@ -9,7 +9,7 @@ on:
     workflow_dispatch:
         inputs:
             reset_baseline:
-                description: "Reset benchmark baseline (deletes gh-pages history)"
+                description: "Reset benchmark baseline (deletes all historical data)"
                 type: boolean
                 default: false
 
@@ -17,6 +17,12 @@ permissions:
     contents: write
     deployments: write
     pull-requests: write
+
+# Prevent concurrent runs on the same ref — a second main push would race
+# on the benchmark-data branch, silently dropping the first run's entry.
+concurrency:
+    group: benchmark-${{ github.ref }}
+    cancel-in-progress: true
 
 jobs:
     benchmark:
@@ -45,14 +51,15 @@ jobs:
             - name: Generate benchmark JSON
               run: bun run scripts/generate-bench-json.ts
 
-            # Reset benchmark baseline when triggered manually
+            # ── Baseline reset (manual trigger) ────────────────────────────
             - name: Reset benchmark baseline
               if: inputs.reset_baseline == true
               run: |
                   git push origin --delete gh-pages || true
-                  echo "Deleted gh-pages branch — baseline will be rebuilt from this run."
+                  git push origin --delete benchmark-data || true
+                  echo "Deleted gh-pages and benchmark-data branches — baseline will be rebuilt."
 
-            # Ensure gh-pages branch exists for benchmark history (main only)
+            # ── GitHub Pages trend chart (visualization only) ───────────────
             - name: Create gh-pages branch if missing
               if: github.ref == 'refs/heads/main' || inputs.reset_baseline == true
               run: |
@@ -64,8 +71,7 @@ jobs:
                     git checkout ${{ github.sha }}
                   fi
 
-            # GitHub Pages trend chart (storage only — alerting handled below)
-            - name: Store benchmark result
+            - name: Store benchmark result (GitHub Pages chart)
               uses: benchmark-action/github-action-benchmark@v1
               with:
                   name: "valdres benchmarks"
@@ -77,11 +83,42 @@ jobs:
                   auto-push: ${{ github.ref == 'refs/heads/main' }}
                   summary-always: true
 
-            # Custom regression check: compares against median of last N runs
-            # with scale-aware thresholds to avoid false positives on noisy benchmarks
-            - name: Fetch gh-pages benchmark history
+            # ── Compact history on benchmark-data branch ────────────────────
+            # Our own lean format: ~1KB/run vs ~6KB/run on gh-pages.
+            # This is the primary data source for regression detection.
+            # Uses a worktree to avoid disturbing the main checkout.
+            - name: Store benchmark history
+              if: github.ref == 'refs/heads/main'
+              continue-on-error: true
+              run: |
+                  CURRENT_SHA=$(git rev-parse --short HEAD)
+
+                  # Fetch existing history (or start fresh)
+                  git fetch origin benchmark-data --depth=1 2>/dev/null || true
+                  git show origin/benchmark-data:results.json > /tmp/bench-existing.json 2>/dev/null || echo '[]' > /tmp/bench-existing.json
+
+                  # Append new entry and keep last 50 runs
+                  bun run scripts/append-bench-history.ts /tmp/bench-existing.json bench-history-entry.json /tmp/bench-results.json
+
+                  # Commit to benchmark-data branch using a temporary worktree
+                  TMPDIR=$(mktemp -d)
+                  git worktree add --detach "$TMPDIR"
+                  cd "$TMPDIR"
+                  git checkout --orphan benchmark-data-update
+                  git rm -rf . > /dev/null 2>&1 || true
+                  cp /tmp/bench-results.json results.json
+                  git add results.json
+                  git commit -m "Benchmark results for $CURRENT_SHA"
+                  git push origin benchmark-data-update:benchmark-data --force
+                  cd -
+                  git worktree remove "$TMPDIR"
+
+            # ── Regression detection (PRs only) ────────────────────────────
+            - name: Fetch benchmark history
               if: github.event_name == 'pull_request'
-              run: git fetch origin gh-pages --depth=1
+              run: |
+                  git fetch origin benchmark-data --depth=1 2>/dev/null || true
+                  git fetch origin gh-pages --depth=1 2>/dev/null || true
 
             - name: Check for benchmark regressions
               if: github.event_name == 'pull_request'
@@ -91,7 +128,7 @@ jobs:
                   GITHUB_EVENT_PATH: ${{ github.event_path }}
               run: bun run scripts/check-bench-regression.ts
 
-            # Update README on main only (after benchmark action so working tree is clean)
+            # ── README update (main only) ──────────────────────────────────
             - name: Update README with benchmark table
               if: github.ref == 'refs/heads/main'
               run: |

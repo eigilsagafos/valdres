@@ -7,3 +7,4 @@ todo.md
 .env.local
 bench-results.ndjson
 bench-results.json
+bench-history-entry.json
