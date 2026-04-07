@@ -3,6 +3,7 @@ import { store } from "../store"
 import { atom } from "../atom"
 import { setAtom } from "./setAtom"
 import { selector } from "../selector"
+import { isPromiseLike } from "../utils/isPromiseLike"
 
 describe("setAtom", () => {
     test("set with direct value", () => {
@@ -53,6 +54,121 @@ describe("setAtom", () => {
         expect(() => post.tags.push("tag2")).toThrowError(
             "Attempted to assign to readonly property",
         )
+    })
+
+    test("set with async updater stores promise then resolves", async () => {
+        const store1 = store()
+        const stringAtom = atom("initial")
+        store1.get(stringAtom) // initialize
+        const result = setAtom(
+            stringAtom,
+            current => Promise.resolve(current + " updated"),
+            store1.data,
+        )
+        expect(isPromiseLike(result)).toBe(true)
+        await result
+        expect(store1.data.values.get(stringAtom)).toBe("initial updated")
+    })
+
+    test("async updater notifies subscribers after resolution", async () => {
+        const store1 = store()
+        const stringAtom = atom("hello")
+        store1.get(stringAtom)
+        const callback = mock(() => {})
+        store1.sub(stringAtom, callback)
+        const result = setAtom(
+            stringAtom,
+            () => Promise.resolve("world"),
+            store1.data,
+        )
+        // Subscriber called once with the promise value
+        expect(callback).toHaveBeenCalledTimes(1)
+        await result
+        // Called again after promise resolves with final value
+        expect(callback).toHaveBeenCalledTimes(2)
+        expect(store1.get(stringAtom)).toBe("world")
+    })
+
+    test("async updater race condition: later set wins", async () => {
+        const store1 = store()
+        const stringAtom = atom("initial")
+        store1.get(stringAtom)
+
+        let resolveFirst!: (v: string) => void
+        let resolveSecond!: (v: string) => void
+        const first = new Promise<string>(r => { resolveFirst = r })
+        const second = new Promise<string>(r => { resolveSecond = r })
+
+        setAtom(stringAtom, () => first, store1.data)
+        setAtom(stringAtom, () => second, store1.data)
+
+        // Resolve first call AFTER second was already issued
+        resolveSecond("second")
+        await second
+        resolveFirst("first")
+        await first
+
+        // The atom should hold "second" — last-write-wins, not last-resolve
+        expect(store1.get(stringAtom)).toBe("second")
+    })
+
+    test("async updater rejection does not leave atom in broken state", async () => {
+        const store1 = store()
+        const stringAtom = atom("initial")
+        store1.get(stringAtom)
+
+        const result = setAtom(
+            stringAtom,
+            () => Promise.reject(new Error("boom")),
+            store1.data,
+        )
+
+        try { await result } catch {}
+        // Allow the .catch() handler microtask to run
+        await Promise.resolve()
+
+        // After rejection, atom should revert to original value, not hold a rejected promise
+        expect(store1.get(stringAtom)).toBe("initial")
+    })
+
+    test("async updater calls onSet after resolution", async () => {
+        const onSetMock = mock(() => {})
+        const store1 = store()
+        const stringAtom = atom<string>("initial", { onSet: onSetMock })
+        store1.get(stringAtom)
+
+        const result = setAtom(
+            stringAtom,
+            () => Promise.resolve("updated"),
+            store1.data,
+        )
+        // onSet should NOT be called synchronously with the promise
+        expect(onSetMock).toHaveBeenCalledTimes(0)
+
+        await result
+        // onSet should be called once the resolved value is set
+        expect(onSetMock).toHaveBeenCalledTimes(1)
+        expect(onSetMock).toHaveBeenCalledWith("updated", store1.data)
+    })
+
+    test("async updater resolves __isEmptyAtomPromise__", async () => {
+        const store1 = store()
+        const emptyAtom = atom<string>()
+
+        // Reading the empty atom gives us the suspense promise
+        const suspensePromise = store1.get(emptyAtom) as Promise<string>
+
+        const result = setAtom(
+            emptyAtom,
+            () => Promise.resolve("resolved"),
+            store1.data,
+        )
+
+        await result
+        // The original suspense promise should also resolve
+        const suspenseResult = await suspensePromise
+        expect(suspenseResult).toBe("resolved")
+        expect(store1.get(emptyAtom)).toBe("resolved")
     })
 
     test("deep freeze applies to function values with properties", () => {

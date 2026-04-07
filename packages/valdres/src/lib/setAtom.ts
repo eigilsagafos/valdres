@@ -16,8 +16,35 @@ export const setAtom = <Value = any>(
     const currentValue = getState(atom, data, initializedAtomsSet)
     if (isFunction(newValue)) {
         newValue = newValue(currentValue)
-        if (isPromiseLike(newValue) || isPromiseLike(currentValue))
-            throw new Error("Todo, how should we handle this?")
+        if (isPromiseLike(newValue)) {
+            const promise = newValue as Promise<Value>
+            setValueInData(atom, promise as Value, data)
+            promise.then(resolvedValue => {
+                // Stale promise guard: if another set() overwrote us, bail
+                if (data.values.get(atom) !== promise) return
+                setValueInData(atom, resolvedValue, data)
+                if (atom.onSet && !skipOnSet) atom.onSet(resolvedValue, data)
+                // @ts-ignore
+                if (currentValue?.__isEmptyAtomPromise__) {
+                    // @ts-ignore
+                    currentValue.__resolveEmptyAtomPromise__(resolvedValue)
+                }
+                propagateUpdatedAtoms([atom], data)
+            }).catch(() => {
+                // On rejection, revert to previous value if promise is still current
+                if (data.values.get(atom) !== promise) return
+                setValueInData(atom, currentValue, data)
+                propagateUpdatedAtoms([atom], data)
+            })
+            if (initializedAtomsSet.size > 0) {
+                // @ts-ignore
+                const all = new Set<Atom>([...initializedAtomsSet, atom])
+                propagateUpdatedAtoms([...all], data)
+            } else {
+                propagateUpdatedAtoms([atom], data)
+            }
+            return promise as Value
+        }
     }
     const areEqual = isPromiseLike(currentValue) || isPromiseLike(newValue)
         ? currentValue === newValue
