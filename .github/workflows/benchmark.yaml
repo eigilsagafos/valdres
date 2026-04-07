@@ -18,11 +18,11 @@ permissions:
     deployments: write
     pull-requests: write
 
-# Prevent concurrent runs on the same ref — a second main push would race
-# on the benchmark-data branch, silently dropping the first run's entry.
+# Prevent concurrent runs on the same ref by serializing them — this avoids
+# racing on the benchmark-data branch while still preserving every run's entry.
 concurrency:
     group: benchmark-${{ github.ref }}
-    cancel-in-progress: true
+    cancel-in-progress: false
 
 jobs:
     benchmark:

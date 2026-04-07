@@ -27,6 +27,10 @@ interface TrimmedResult {
 }
 
 function iqrTrimmed(rawSamples: number[]): TrimmedResult {
+    if (rawSamples.length === 0) {
+        throw new Error("iqrTrimmed: received empty samples array")
+    }
+
     const sorted = [...rawSamples].sort((a, b) => a - b)
     const n = sorted.length
 

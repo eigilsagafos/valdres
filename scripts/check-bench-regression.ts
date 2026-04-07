@@ -138,8 +138,9 @@ function computeCV(values: number[]): number {
 
 /**
  * Dynamic regression threshold based on historical CV of the ratio.
- * Stable benchmarks (CV ~5%) get a tight 30% threshold.
- * Noisy benchmarks (CV ~30%) get up to MAX_THRESHOLD.
+ * Stable benchmarks (CV ~0%) get BASE_THRESHOLD (30%).
+ * Noisy benchmarks (CV ~50%+) get up to MAX_THRESHOLD (100%).
+ * E.g., CV=10% → ~44%, CV=25% → ~65%.
  */
 function dynamicThreshold(historicalCV: number): number {
     // Scale: BASE_THRESHOLD at CV=0, linear up to MAX_THRESHOLD at CV=0.5+
