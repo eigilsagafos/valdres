@@ -16,8 +16,47 @@ export const setAtom = <Value = any>(
     const currentValue = getState(atom, data, initializedAtomsSet)
     if (isFunction(newValue)) {
         newValue = newValue(currentValue)
-        if (isPromiseLike(newValue) || isPromiseLike(currentValue))
-            throw new Error("Todo, how should we handle this?")
+        if (isPromiseLike(newValue)) {
+            const promise = newValue as Promise<Value>
+            // Same promise reference — no-op (matches equality check below)
+            if (currentValue === promise) return promise as Value
+            // @ts-ignore
+            // Preserve the empty-atom resolver so racing async sets can
+            // forward it even when the first set becomes stale.
+            const emptyAtomPromise = currentValue?.__isEmptyAtomPromise__
+                ? currentValue
+                // @ts-ignore
+                : currentValue?.__emptyAtomPromiseOrigin__ ?? null
+            if (emptyAtomPromise) {
+                // @ts-ignore
+                promise.__emptyAtomPromiseOrigin__ = emptyAtomPromise
+            }
+            setValueInData(atom, promise as Value, data)
+            promise.then(resolvedValue => {
+                // Stale promise guard: if another set() overwrote us, bail
+                if (data.values.get(atom) !== promise) return
+                setValueInData(atom, resolvedValue, data)
+                if (atom.onSet && !skipOnSet) atom.onSet(resolvedValue, data)
+                if (emptyAtomPromise) {
+                    // @ts-ignore
+                    emptyAtomPromise.__resolveEmptyAtomPromise__(resolvedValue)
+                }
+                propagateUpdatedAtoms([atom], data)
+            }).catch(() => {
+                // On rejection, revert to previous value if promise is still current
+                if (data.values.get(atom) !== promise) return
+                setValueInData(atom, currentValue, data)
+                propagateUpdatedAtoms([atom], data)
+            })
+            if (initializedAtomsSet.size > 0) {
+                // @ts-ignore
+                const all = new Set<Atom>([...initializedAtomsSet, atom])
+                propagateUpdatedAtoms([...all], data)
+            } else {
+                propagateUpdatedAtoms([atom], data)
+            }
+            return promise as Value
+        }
     }
     const areEqual = isPromiseLike(currentValue) || isPromiseLike(newValue)
         ? currentValue === newValue
