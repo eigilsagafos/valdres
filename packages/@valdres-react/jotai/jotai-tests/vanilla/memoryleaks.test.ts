@@ -1,38 +1,8 @@
 import { describe, expect, test } from "bun:test"
-import { generateHeapSnapshot } from "bun"
+import { LeakDetector } from "../../../../test/src/LeakDetector"
 import { createStore } from "../../src/createStore"
 import { atom } from "../../src/atom"
 import type { Atom } from "jotai/vanilla"
-
-class LeakDetector {
-    private _isReferenceBeingHeld = true
-    private readonly _finalizationRegistry: FinalizationRegistry<undefined>
-
-    constructor(value: unknown) {
-        this._finalizationRegistry = new FinalizationRegistry(() => {
-            this._isReferenceBeingHeld = false
-        })
-        this._finalizationRegistry.register(value as object, undefined)
-        // Ensure value is not leaked by the closure
-        value = null
-    }
-
-    async isLeaking(): Promise<boolean> {
-        Bun.gc(true)
-        for (let i = 0; i < 10; i++) {
-            await new Promise(resolve => setTimeout(resolve, 0))
-        }
-        if (this._isReferenceBeingHeld) {
-            // Triggering a heap snapshot is more aggressive than just gc()
-            generateHeapSnapshot()
-            Bun.gc(true)
-            for (let i = 0; i < 10; i++) {
-                await new Promise(resolve => setTimeout(resolve, 0))
-            }
-        }
-        return this._isReferenceBeingHeld
-    }
-}
 
 describe("memory leaks (get & set only)", () => {
     test("one atom", async () => {

@@ -36,6 +36,8 @@ export const selectorFamily = <
         return newSelector
     }
     selectorFamily.__valdresSelectorFamilyMap = map
+    selectorFamily.release = (...args: Args) =>
+        map.delete(stringifyFamilyArgs(args))
     if (hasName)
         Object.defineProperty(selectorFamily, "name", {
             value: options!.name,

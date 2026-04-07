@@ -1,38 +1,10 @@
 import { describe, expect, test } from "bun:test"
-import { generateHeapSnapshot } from "bun"
+import { LeakDetector } from "../../test/src/LeakDetector"
 import { store } from "../src/store"
 import { atom } from "../src/atom"
 import { selector } from "../src/selector"
 import { atomFamily } from "../src/atomFamily"
 import { selectorFamily } from "../src/selectorFamily"
-
-class LeakDetector {
-    private _isReferenceBeingHeld = true
-    private readonly _finalizationRegistry: FinalizationRegistry<undefined>
-
-    constructor(value: unknown) {
-        this._finalizationRegistry = new FinalizationRegistry(() => {
-            this._isReferenceBeingHeld = false
-        })
-        this._finalizationRegistry.register(value as object, undefined)
-        value = null
-    }
-
-    async isLeaking(): Promise<boolean> {
-        Bun.gc(true)
-        for (let i = 0; i < 10; i++) {
-            await new Promise(resolve => setTimeout(resolve, 0))
-        }
-        if (this._isReferenceBeingHeld) {
-            generateHeapSnapshot()
-            Bun.gc(true)
-            for (let i = 0; i < 10; i++) {
-                await new Promise(resolve => setTimeout(resolve, 0))
-            }
-        }
-        return this._isReferenceBeingHeld
-    }
-}
 
 describe("memory leaks (atoms)", () => {
     test("unreferenced atom value is collected", async () => {
@@ -177,10 +149,20 @@ describe("memory leaks (atom families)", () => {
         familyAtom = undefined
         expect(await detector.isLeaking()).toBe(false)
     })
+
+    test("store.del() releases family atom from family map", async () => {
+        const store1 = store()
+        const family = atomFamily<object, [number]>(() => ({}))
+        store1.set(family(1), { value: 1 })
+        // After del(), the family map should no longer hold the entry
+        expect(family.__valdresAtomFamilyMap.has(1)).toBe(true)
+        store1.del(family(1))
+        expect(family.__valdresAtomFamilyMap.has(1)).toBe(false)
+    })
 })
 
 describe("memory leaks (selector families)", () => {
-    test("selector family value is collected when unreferenced", async () => {
+    test("released selector family entry is collected", async () => {
         const store1 = store()
         const baseAtom = atom(1)
         const family = selectorFamily<object, [number]>(
@@ -189,11 +171,23 @@ describe("memory leaks (selector families)", () => {
         )
         let sel: any = family(2)
         const detector = new LeakDetector(store1.get(sel))
-        // Selector families use a Map internally (like atomFamily)
-        // but don't expose .release() — delete via the internal map
-        family.__valdresSelectorFamilyMap.delete(2)
+        family.release(2)
         sel = undefined
         expect(await detector.isLeaking()).toBe(false)
+    })
+
+    test("unreleased selector family entry is retained", async () => {
+        const baseAtom = atom(1)
+        const family = selectorFamily<object, [number]>(
+            (...args) =>
+                get => ({ result: get(baseAtom) * args[0] }),
+        )
+        let sel: any = family(3)
+        const detector = new LeakDetector(sel)
+        sel = undefined
+        expect(await detector.isLeaking()).toBe(true)
+        // Clean up
+        family.release(3)
     })
 })
 
@@ -228,6 +222,31 @@ describe("memory leaks (scoped stores)", () => {
         unsub = undefined
         scoped.set(atom1, { replaced: true })
         expect(await detector.isLeaking()).toBe(false)
+    })
+
+    test("detached scoped store is collected", async () => {
+        const store1 = store()
+        const atom1 = atom(1)
+        let scoped: any = store1.scope("ephemeral")
+        scoped.set(atom1, 42)
+        const detector = new LeakDetector(scoped.data)
+        scoped.detach()
+        scoped = undefined
+        expect(await detector.isLeaking()).toBe(false)
+    })
+
+    test("parent releases scope reference after all consumers detach", () => {
+        const store1 = store()
+        const scoped1: any = store1.scope("shared")
+        const scoped2: any = store1.scope("shared")
+        // Parent holds the scope
+        expect(store1.data.scopes["shared"]).toBeDefined()
+        // Detach one consumer — parent still holds scope
+        scoped1.detach()
+        expect(store1.data.scopes["shared"]).toBeDefined()
+        // Detach last consumer — parent drops scope
+        scoped2.detach()
+        expect(store1.data.scopes["shared"]).toBeUndefined()
     })
 })
 
