@@ -801,7 +801,7 @@ describe("should mount and trigger listeners even when an error is thrown", () =
         // Requires vi.advanceTimersByTimeAsync
     })
 
-    test.todo("in synchronous onmount", () => {
+    test("in synchronous onmount", () => {
         const store = createStore()
         const a = atom(0)
         const aUnmount = mock(() => {})
@@ -822,7 +822,7 @@ describe("should mount and trigger listeners even when an error is thrown", () =
         expect(a.onMount).toHaveBeenCalledTimes(1)
     })
 
-    test.todo("in synchronous onunmount", () => {
+    test("in synchronous onunmount", () => {
         const store = createStore()
         const a = atom(0)
         const aUnmount = mock(() => {})
