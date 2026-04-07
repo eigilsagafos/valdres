@@ -19,7 +19,10 @@ describe("memory leaks (atoms)", () => {
         const store1 = store()
         const atom1 = atom<object>({ original: true })
         const detector = new LeakDetector(store1.get(atom1))
+        // Subscribe so propagation runs and the old value is fully replaced
+        const unsub = store1.sub(atom1, () => {})
         store1.set(atom1, { replaced: true })
+        unsub()
         expect(await detector.isLeaking()).toBe(false)
     })
 })
