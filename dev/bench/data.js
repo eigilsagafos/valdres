@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1775592664282,
+  "lastUpdate": 1775596494465,
   "repoUrl": "https://github.com/eigilsagafos/valdres",
   "entries": {
     "valdres benchmarks": [
@@ -3354,6 +3354,210 @@ window.BENCHMARK_DATA = {
             "value": 1489195,
             "unit": "ns",
             "extra": "jotai=24335605 ratio=0.0612 16.3x faster"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "eigil@sagafos.no",
+            "name": "Eigil Sagafos",
+            "username": "eigilsagafos"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "2baaec842845533df1a014fd995c1d3580fad49e",
+          "message": "Enable jotai memory leak tests with Bun-native LeakDetector (#40)\n\n* Enable jotai memory leak tests with Bun-native LeakDetector\n\nReplace jest-leak-detector (which requires node:v8 setFlagsFromString) with a\nBun-native LeakDetector using Bun.gc, FinalizationRegistry, and\ngenerateHeapSnapshot. Restores 7 original tests and adds 3 new dependency\nleak tests. 9 of 10 now pass; 1 remains todo (upstream jotai).\n\nCo-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>\n\n* Add memory leak test suite for core valdres\n\nTests GC behavior across atoms, selectors, subscriptions, atom families,\nselector families, onMount lifecycle, scoped stores, and transactions.\nUses the same Bun-native LeakDetector (Bun.gc + FinalizationRegistry).\nNotably verifies that unreleased atomFamily entries are retained (by design)\nwhile released ones are properly collected.\n\nCo-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>\n\n* Extract shared LeakDetector, add selectorFamily.release(), fix store.del() cleanup\n\n- Extract LeakDetector to @valdres/test shared utility, used by both\n  core valdres and jotai compat test suites\n- Add .release() to selectorFamily for parity with atomFamily\n- Fix store.del() to also release the atom from its family's internal Map,\n  preventing memory leaks when deleting family atoms\n- Guard deleteFamilyAtom against non-family atoms (e.g. scoped store del)\n- Add tests: store.del() family cleanup, selectorFamily release/retain,\n  scoped store detach + parent reference counting\n\nCo-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>\n\n* Fix flaky memory leak test in CI\n\nAdd subscription to \"atom value is collected after set replaces it\" test\nso propagation runs and the old value is fully replaced in the store.\nWithout a subscriber, the old value could remain in engine internals\ncausing non-deterministic GC behavior on CI runners.\n\nCo-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>\n\n* Fix flaky transaction memory leak test in CI\n\nUnsubscribe before checking for leaks — with an active subscription the\nstore retains internal references that CI GC doesn't collect deterministically.\n\nCo-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>\n\n* Fix flaky memory leak tests in CI\n\nRevert LeakDetector to stable FinalizationRegistry approach (single GC\nround + heap snapshot fallback). Mark tests that depend on valdres\nstateDependents cleanup as todo — these are a known architectural\ndifference from jotai. Replace GC-timing-dependent transaction test\nwith a behavioral assertion.\n\nCo-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>\n\n* Address Copilot review feedback\n\n- Fix Map key types in AtomFamily and SelectorFamily (string, not Args/Value)\n- Tighten LeakDetector constructor to accept `object` instead of `unknown`\n- Clarify LeakDetector doc comment as Bun-specific\n\nCo-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 4.6 <noreply@anthropic.com>",
+          "timestamp": "2026-04-07T14:12:25-07:00",
+          "tree_id": "9d6457c5c9757301fbf452e8c0cfa8e42051414a",
+          "url": "https://github.com/eigilsagafos/valdres/commit/2baaec842845533df1a014fd995c1d3580fad49e"
+        },
+        "date": 1775596493565,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "atom(1)",
+            "value": 2,
+            "unit": "ns",
+            "extra": "jotai=51 ratio=0.0476 21.0x faster"
+          },
+          {
+            "name": "store.get(atom)",
+            "value": 40,
+            "unit": "ns",
+            "extra": "jotai=390 ratio=0.1026 9.8x faster"
+          },
+          {
+            "name": "set(atom, value)",
+            "value": 260,
+            "unit": "ns",
+            "extra": "jotai=2134 ratio=0.1218 8.2x faster"
+          },
+          {
+            "name": "set(atom, curr => curr+1)",
+            "value": 254,
+            "unit": "ns",
+            "extra": "jotai=2725 ratio=0.0932 10.7x faster"
+          },
+          {
+            "name": "set(atom) with 10 subs",
+            "value": 561,
+            "unit": "ns",
+            "extra": "jotai=3585 ratio=0.1565 6.4x faster"
+          },
+          {
+            "name": "atom lifecycle (create+100get+100set)",
+            "value": 25378,
+            "unit": "ns",
+            "extra": "jotai=281779 ratio=0.0901 11.1x faster"
+          },
+          {
+            "name": "atomFamily(id)",
+            "value": 312,
+            "unit": "ns",
+            "extra": "jotai=465 ratio=0.6721 1.5x faster"
+          },
+          {
+            "name": "atomFamily(id) cache hit",
+            "value": 48,
+            "unit": "ns",
+            "extra": "jotai=11 ratio=4.4324 4.4x slower"
+          },
+          {
+            "name": "selectorFamily(id)",
+            "value": 312,
+            "unit": "ns",
+            "extra": "jotai=447 ratio=0.6986 1.4x faster"
+          },
+          {
+            "name": "obj.value",
+            "value": 4,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "map.get(key)",
+            "value": 19,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "valdres get",
+            "value": 8,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "jotai get",
+            "value": 369,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "obj.value = n",
+            "value": 4,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "map.set(key, n)",
+            "value": 18,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "valdres set",
+            "value": 442,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "jotai set",
+            "value": 3337,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "selector(fn)",
+            "value": 7,
+            "unit": "ns",
+            "extra": "jotai=69 ratio=0.0943 10.6x faster"
+          },
+          {
+            "name": "set + read 10 selectors",
+            "value": 8876,
+            "unit": "ns",
+            "extra": "jotai=28824 ratio=0.3079 3.2x faster"
+          },
+          {
+            "name": "set + read 100 selectors",
+            "value": 84338,
+            "unit": "ns",
+            "extra": "jotai=265258 ratio=0.3179 3.1x faster"
+          },
+          {
+            "name": "set + read through 5 chained selectors",
+            "value": 8173,
+            "unit": "ns",
+            "extra": "jotai=15747 ratio=0.5190 1.9x faster"
+          },
+          {
+            "name": "createStore",
+            "value": 474,
+            "unit": "ns",
+            "extra": "jotai=6381 ratio=0.0743 13.5x faster"
+          },
+          {
+            "name": "set 1000 atoms",
+            "value": 95640,
+            "unit": "ns",
+            "extra": "jotai=1202385 ratio=0.0795 12.6x faster"
+          },
+          {
+            "name": "get 1000 atoms",
+            "value": 7314,
+            "unit": "ns",
+            "extra": "jotai=379091 ratio=0.0193 51.8x faster"
+          },
+          {
+            "name": "sub + unsub",
+            "value": 829,
+            "unit": "ns",
+            "extra": "jotai=2515 ratio=0.3295 3.0x faster"
+          },
+          {
+            "name": "txn: 10 atoms × 10 selectors, set + read",
+            "value": 94837,
+            "unit": "ns",
+            "extra": "jotai=416401 ratio=0.2278 4.4x faster"
+          },
+          {
+            "name": "txn: 10 atoms × 10 selectors, with subs",
+            "value": 149831,
+            "unit": "ns",
+            "extra": "jotai=752412 ratio=0.1991 5.0x faster"
+          },
+          {
+            "name": "txn: 10 atoms × 100 selectors, set + read",
+            "value": 813586,
+            "unit": "ns",
+            "extra": "jotai=4516271 ratio=0.1801 5.6x faster"
+          },
+          {
+            "name": "txn: cross-atom 1000 selectors, set + read",
+            "value": 969127,
+            "unit": "ns",
+            "extra": "jotai=4766208 ratio=0.2033 4.9x faster"
+          },
+          {
+            "name": "txn: cross-atom 1000 selectors, with subs",
+            "value": 1485947,
+            "unit": "ns",
+            "extra": "jotai=24512454 ratio=0.0606 16.5x faster"
           }
         ]
       }
