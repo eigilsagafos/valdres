@@ -12,7 +12,7 @@ export type RootStoreData = {
     mounts: WeakMap<WeakKey, { cleanup?: () => void }>
     abortControllers: WeakMap<WeakKey, AbortController | false>
     storeRef?: Store
-    scopes: { [scopeId: string]: ScopedStoreData }
+    scopes: Map<string, ScopedStoreData>
 }
 
 export type ScopedStoreData = RootStoreData & {

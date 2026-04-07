@@ -77,10 +77,10 @@ export function storeFromStoreData(
 
     const scope: ScopeFn = ((scopeId: string, callback?: any) => {
         if (callback) {
-            if (!(scopeId in data.scopes)) {
+            if (!data.scopes.has(scopeId)) {
                 throw new Error(`Scope ${scopeId} does not exist`)
             }
-            const scopedStoreData = data.scopes[scopeId]
+            const scopedStoreData = data.scopes.get(scopeId)!
             const scopedStore = storeFromStoreData(
                 scopedStoreData,
             ) as ScopedStore
@@ -88,11 +88,11 @@ export function storeFromStoreData(
             return res
         } else {
             let scopedStoreData
-            if (scopeId in data.scopes) {
-                scopedStoreData = data.scopes[scopeId]
+            if (data.scopes.has(scopeId)) {
+                scopedStoreData = data.scopes.get(scopeId)!
             } else {
                 scopedStoreData = createStoreData(scopeId, data)
-                data.scopes[scopeId] = scopedStoreData
+                data.scopes.set(scopeId, scopedStoreData)
             }
             const detach = (expectedToDestory = false) => {
                 scopedStoreData.scopeConsumers.delete(detach)
@@ -100,7 +100,7 @@ export function storeFromStoreData(
                     if (expectedToDestory) {
                         console.log("Deleting scope", scopeId)
                     }
-                    delete data.scopes[scopeId]
+                    data.scopes.delete(scopeId)
                     return true
                 }
                 if (expectedToDestory) {
@@ -112,7 +112,7 @@ export function storeFromStoreData(
             }
 
             scopedStoreData.scopeConsumers.add(detach)
-            const newStore = storeFromStoreData(data.scopes[scopeId], detach)
+            const newStore = storeFromStoreData(data.scopes.get(scopeId)!, detach)
             return newStore
         }
     }) as ScopeFn

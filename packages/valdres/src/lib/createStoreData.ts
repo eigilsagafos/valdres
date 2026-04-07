@@ -36,7 +36,7 @@ export function createStoreData(id?: string, parent?: StoreData) {
     const data: any = Object.create(lazyProto)
     data.id = id ?? generateId()
     data.values = new WeakMap()
-    data.scopes = {}
+    data.scopes = new Map()
     if (parent) {
         data.parent = parent
         data.scopeConsumers = new Set()
