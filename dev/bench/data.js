@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1775587488460,
+  "lastUpdate": 1775590546978,
   "repoUrl": "https://github.com/eigilsagafos/valdres",
   "entries": {
     "valdres benchmarks": [
@@ -2946,6 +2946,210 @@ window.BENCHMARK_DATA = {
             "value": 1472551,
             "unit": "ns",
             "extra": "jotai=24873570 ratio=0.0592 16.9x faster"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "eigil@sagafos.no",
+            "name": "Eigil Sagafos",
+            "username": "eigilsagafos"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "7a50eba0421765fc9df33b997ce2e20fcb5a7fc4",
+          "message": "Remove console.logs and commented-out dead code (#39)\n\nCo-authored-by: Claude Opus 4.6 <noreply@anthropic.com>",
+          "timestamp": "2026-04-07T12:33:09-07:00",
+          "tree_id": "6fa4ffddcad79a423cc4056ee76559247aebd5d4",
+          "url": "https://github.com/eigilsagafos/valdres/commit/7a50eba0421765fc9df33b997ce2e20fcb5a7fc4"
+        },
+        "date": 1775590546655,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "atom(1)",
+            "value": 2,
+            "unit": "ns",
+            "extra": "jotai=53 ratio=0.0470 21.3x faster"
+          },
+          {
+            "name": "store.get(atom)",
+            "value": 40,
+            "unit": "ns",
+            "extra": "jotai=380 ratio=0.1053 9.5x faster"
+          },
+          {
+            "name": "set(atom, value)",
+            "value": 250,
+            "unit": "ns",
+            "extra": "jotai=2173 ratio=0.1150 8.7x faster"
+          },
+          {
+            "name": "set(atom, curr => curr+1)",
+            "value": 273,
+            "unit": "ns",
+            "extra": "jotai=2834 ratio=0.0964 10.4x faster"
+          },
+          {
+            "name": "set(atom) with 10 subs",
+            "value": 530,
+            "unit": "ns",
+            "extra": "jotai=3849 ratio=0.1377 7.3x faster"
+          },
+          {
+            "name": "atom lifecycle (create+100get+100set)",
+            "value": 25007,
+            "unit": "ns",
+            "extra": "jotai=292559 ratio=0.0855 11.7x faster"
+          },
+          {
+            "name": "atomFamily(id)",
+            "value": 366,
+            "unit": "ns",
+            "extra": "jotai=514 ratio=0.7129 1.4x faster"
+          },
+          {
+            "name": "atomFamily(id) cache hit",
+            "value": 53,
+            "unit": "ns",
+            "extra": "jotai=11 ratio=4.8008 4.8x slower"
+          },
+          {
+            "name": "selectorFamily(id)",
+            "value": 379,
+            "unit": "ns",
+            "extra": "jotai=512 ratio=0.7411 1.3x faster"
+          },
+          {
+            "name": "obj.value",
+            "value": 5,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "map.get(key)",
+            "value": 16,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "valdres get",
+            "value": 8,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "jotai get",
+            "value": 359,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "obj.value = n",
+            "value": 5,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "map.set(key, n)",
+            "value": 18,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "valdres set",
+            "value": 480,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "jotai set",
+            "value": 3450,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "selector(fn)",
+            "value": 9,
+            "unit": "ns",
+            "extra": "jotai=64 ratio=0.1426 7.0x faster"
+          },
+          {
+            "name": "set + read 10 selectors",
+            "value": 9209,
+            "unit": "ns",
+            "extra": "jotai=31079 ratio=0.2963 3.4x faster"
+          },
+          {
+            "name": "set + read 100 selectors",
+            "value": 85409,
+            "unit": "ns",
+            "extra": "jotai=341103 ratio=0.2504 4.0x faster"
+          },
+          {
+            "name": "set + read through 5 chained selectors",
+            "value": 10888,
+            "unit": "ns",
+            "extra": "jotai=18605 ratio=0.5852 1.7x faster"
+          },
+          {
+            "name": "createStore",
+            "value": 494,
+            "unit": "ns",
+            "extra": "jotai=6772 ratio=0.0730 13.7x faster"
+          },
+          {
+            "name": "set 1000 atoms",
+            "value": 116966,
+            "unit": "ns",
+            "extra": "jotai=1194428 ratio=0.0979 10.2x faster"
+          },
+          {
+            "name": "get 1000 atoms",
+            "value": 7776,
+            "unit": "ns",
+            "extra": "jotai=367744 ratio=0.0211 47.3x faster"
+          },
+          {
+            "name": "sub + unsub",
+            "value": 340,
+            "unit": "ns",
+            "extra": "jotai=2413 ratio=0.1409 7.1x faster"
+          },
+          {
+            "name": "txn: 10 atoms × 10 selectors, set + read",
+            "value": 89384,
+            "unit": "ns",
+            "extra": "jotai=410418 ratio=0.2178 4.6x faster"
+          },
+          {
+            "name": "txn: 10 atoms × 10 selectors, with subs",
+            "value": 148553,
+            "unit": "ns",
+            "extra": "jotai=722127 ratio=0.2057 4.9x faster"
+          },
+          {
+            "name": "txn: 10 atoms × 100 selectors, set + read",
+            "value": 839984,
+            "unit": "ns",
+            "extra": "jotai=4643207 ratio=0.1809 5.5x faster"
+          },
+          {
+            "name": "txn: cross-atom 1000 selectors, set + read",
+            "value": 991558,
+            "unit": "ns",
+            "extra": "jotai=4929454 ratio=0.2011 5.0x faster"
+          },
+          {
+            "name": "txn: cross-atom 1000 selectors, with subs",
+            "value": 1507689,
+            "unit": "ns",
+            "extra": "jotai=25569148 ratio=0.0590 17.0x faster"
           }
         ]
       }
