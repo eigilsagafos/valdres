@@ -10,5 +10,8 @@ export const deleteFamilyAtom = <
     data: StoreData,
 ) => {
     data.values.delete(atom)
+    if (atom.family) {
+        atom.family.release(...atom.familyArgs)
+    }
     propagateDeletedAtoms([atom], data)
 }

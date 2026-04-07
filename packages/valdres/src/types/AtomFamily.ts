@@ -10,5 +10,5 @@ export type AtomFamily<
     equal: EqualFunc<Value>
     name?: string
     mutable?: boolean
-    __valdresAtomFamilyMap: Map<Value, AtomFamilyAtom<Value, Args>>
+    __valdresAtomFamilyMap: Map<string, AtomFamilyAtom<Value, Args>>
 }

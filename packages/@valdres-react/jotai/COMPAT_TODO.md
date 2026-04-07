@@ -29,7 +29,7 @@ Related to how pending state is handled during unsubscribe:
 
 ---
 
-## Safe to Ignore (14 tests)
+## Safe to Ignore (5 tests)
 
 ### Jotai Internals (3)
 Not part of the public API (`INTERNAL_onInit`, `createDevStore`, `deriveStore`):
@@ -41,22 +41,12 @@ Not part of the public API (`INTERNAL_onInit`, `createDevStore`, `deriveStore`):
 Debug/development warning, not functional behavior:
 - [ ] `[DEV-ONLY] should warn store mutation during read`
 
-### Memory Leak Tests (10)
-Blocked by bun not supporting `node:v8 setFlagsFromString`. Tests GC behavior, not adapter correctness:
-- [ ] `memory leaks (get & set only) > one atom`
-- [ ] `memory leaks (get & set only) > two atoms`
-- [ ] `memory leaks (get & set only) > should not hold onto dependent atoms that are not mounted`
-- [ ] `memory leaks (get & set only) > with a long-lived base atom`
-- [ ] `memory leaks (with subscribe) > one atom`
-- [ ] `memory leaks (with subscribe) > two atoms`
-- [ ] `memory leaks (with subscribe) > with a long-lived base atom`
-- [ ] `memory leaks (with dependencies) > sync dependency`
-- [ ] `memory leaks (with dependencies) > async dependency`
-- [ ] `memory leaks (with dependencies) > async await dependency`
+### Memory Leak — upstream todo (1)
+- [ ] `memory leaks (get & set only) > should not hold onto dependent atoms that are not mounted` (todo in upstream jotai)
 
 ---
 
-## Should Support (36 tests)
+## Should Support (50 tests)
 
 ### Async Atoms — HIGH priority (16)
 Core jotai feature, most common migration blocker:
@@ -116,6 +106,18 @@ React rendering patterns with atoms:
 - [x] `uses an async write-only atom`
 - [x] `uses a writable atom without read function`
 - [x] `write self atom (undocumented usage)`
+
+### Memory Leak Detection — now passing (5)
+Using Bun-native LeakDetector (`Bun.gc` + `FinalizationRegistry`) instead of `jest-leak-detector`:
+- [x] `memory leaks (get & set only) > one atom`
+- [x] `memory leaks (get & set only) > two atoms`
+- [x] `memory leaks (get & set only) > with a long-lived base atom`
+- [x] `memory leaks (with subscribe) > one atom`
+- [x] `memory leaks (with subscribe) > two atoms`
+- [ ] `memory leaks (with subscribe) > with a long-lived base atom` (valdres retains stateDependents after unsub)
+- [ ] `memory leaks (with dependencies) > sync dependency` (valdres retains stateDependents after unsub)
+- [ ] `memory leaks (with dependencies) > async dependency` (valdres retains stateDependents after unsub)
+- [ ] `memory leaks (with dependencies) > async await dependency` (valdres retains stateDependents after unsub)
 
 ### Dev Store / Mounted Atoms — LOW priority (2)
 - [ ] `should unmount with store.get`

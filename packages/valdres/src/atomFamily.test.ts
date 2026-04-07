@@ -258,10 +258,7 @@ describe("atomFamily", () => {
         expect(
             store1.get(todosAtomFamily).map(atom => atom.familyArgsStringified),
         ).toStrictEqual(["2", "3"])
-        expect(
-            todosAtomFamily.__valdresAtomFamilyMap.keys().toArray(),
-        ).toStrictEqual(["1", "2", "3"])
-        todosAtomFamily.release("1")
+        // store.del() now also releases the entry from the family map
         expect(
             todosAtomFamily.__valdresAtomFamilyMap.keys().toArray(),
         ).toStrictEqual(["2", "3"])
