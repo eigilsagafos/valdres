@@ -1,14 +1,13 @@
 import { generateHeapSnapshot } from "bun"
+import { fullGC, releaseWeakRefs } from "bun:jsc"
 
 /**
- * Bun-native memory leak detector using WeakRef.
- * Replaces jest-leak-detector which requires node:v8 setFlagsFromString.
+ * Bun-native memory leak detector using WeakRef + bun:jsc primitives.
  *
- * Uses WeakRef.deref() to directly check whether the object has been
- * garbage collected, which is more reliable than FinalizationRegistry
- * callbacks whose timing is non-deterministic. Multiple rounds of
- * Bun.gc(true) and heap snapshots aggressively encourage collection,
- * especially for objects behind WeakMap indirection.
+ * Combines generateHeapSnapshot() (forces the engine to walk the full heap
+ * and determine reachability) with releaseWeakRefs() from bun:jsc (explicitly
+ * processes pending weak reference cleanup that GC alone defers). Polls in a
+ * loop with Bun.sleep() yields, matching patterns from Bun's own test suite.
  *
  * Usage:
  *   const detector = new LeakDetector(someObject)
@@ -24,16 +23,12 @@ export class LeakDetector {
 
     async isLeaking(): Promise<boolean> {
         for (let round = 0; round < 10; round++) {
-            Bun.gc(true)
-            // A real timer delay (not just a microtask yield) gives the
-            // runtime time to process weak reference cleanup between rounds.
-            await new Promise(resolve => setTimeout(resolve, 1))
-            if (this._ref.deref() === undefined) return false
-            // Heap snapshots force more aggressive GC, helping clear
-            // WeakMap/WeakRef entries that survive a simple gc() pass.
+            fullGC()
+            releaseWeakRefs()
             generateHeapSnapshot()
-            Bun.gc(true)
-            await new Promise(resolve => setTimeout(resolve, 1))
+            fullGC()
+            releaseWeakRefs()
+            await Bun.sleep(0)
             if (this._ref.deref() === undefined) return false
         }
         return this._ref.deref() !== undefined
