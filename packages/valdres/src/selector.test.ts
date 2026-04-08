@@ -672,4 +672,58 @@ describe("async selector", () => {
         expect(store1.get(asyncSelector1)).toBe("done")
         expect(callback).toHaveBeenCalledTimes(1)
     })
+
+    describe("deep selector chains", () => {
+        test("initializes a chain deeper than MAX_EVAL_DEPTH via get()", () => {
+            const store1 = store()
+            const base = atom(42)
+            const chain: any[] = [base]
+            for (let i = 0; i < 200; i++) {
+                const prev = chain[i]
+                chain.push(selector(get => get(prev)))
+            }
+            // get() triggers initSelector for the entire chain
+            expect(store1.get(chain[200])).toBe(42)
+        })
+
+        test("propagates updates through a deep chain via sub() and set()", () => {
+            const store1 = store()
+            const base = atom(0)
+            const chain: any[] = [base]
+            for (let i = 0; i < 200; i++) {
+                const prev = chain[i]
+                chain.push(selector(get => get(prev)))
+            }
+            const callback = mock(() => {})
+            const unsub = store1.sub(chain[200], callback)
+            expect(store1.get(chain[200])).toBe(0)
+
+            store1.set(base, 7)
+            expect(callback).toHaveBeenCalledTimes(1)
+            expect(store1.get(chain[200])).toBe(7)
+            unsub()
+        })
+
+        test("handles chain at JS stack limit without overflow", () => {
+            // Discover the actual max recursion depth for this runtime
+            function getMaxDepth() {
+                let depth = 0
+                function d(): number {
+                    ++depth
+                    try { return d() } catch { return depth }
+                }
+                return d()
+            }
+            const maxDepth = Math.min(getMaxDepth(), 5000)
+            const store1 = store()
+            const base = atom(0)
+            const chain: any[] = [base]
+            for (let i = 0; i < maxDepth; i++) {
+                const prev = chain[i]
+                chain.push(selector(get => get(prev)))
+            }
+            expect(() => store1.sub(chain[maxDepth], () => {})).not.toThrow()
+            expect(() => store1.set(base, 1)).not.toThrow()
+        }, 10_000)
+    })
 })

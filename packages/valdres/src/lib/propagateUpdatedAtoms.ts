@@ -384,7 +384,7 @@ export const propagateDirtySelectors = (
         // At this point we have the first level of selectors that are depeendent on
         // the atoms that changed. We should now traverse the tree of selectors, collect subsribers
         // to those that change, and keep track of all selectors that we have visited.
-        recursivlyHandleSelectorUpdates(
+        propagateSelectorUpdates(
             selectors,
             data,
             subscriptions,
@@ -426,26 +426,8 @@ export const propagateDirtySelectors = (
     }
 }
 
-const findAllDependents = (
-    selector: Selector,
-    data: StoreData,
-    depsRes = new Set(),
-    subsRes = new Set<any>(),
-) => {
-    const dependents = data.stateDependents.get(selector)
-    const subscriptions = data.subscriptions.get(selector)
-    addSetToSet(dependents, depsRes)
-    addSetToSet(subscriptions, subsRes)
-    if (dependents && dependents.size > 0) {
-        for (const dependent of dependents) {
-            if (depsRes.has(dependent)) continue
-            findAllDependents(dependent, data, depsRes, subsRes)
-        }
-    }
-    return [depsRes, subsRes]
-}
 
-const recursivlyHandleSelectorUpdates = (
+const propagateSelectorUpdates = (
     selectors: Set<Selector>,
     data: StoreData,
     collectedSubscribers: Set<any>,
@@ -453,60 +435,54 @@ const recursivlyHandleSelectorUpdates = (
     seen: Set<Selector> = new Set(),
     isInitOnly = false,
 ) => {
-    const selectorsForNextPass = new Set<Selector>()
-    for (const selector of selectors) {
-        const currentValue = data.values.get(selector)
-        if (isPromiseLike(currentValue) && isInitOnly) {
-            // During init-time propagation, skip promise-valued selectors
-            // to avoid double-evaluation.
-            continue
-        }
-        seen.add(selector)
-        const dependents = data.stateDependents.get(selector)
-        const subscribers = data.subscriptions.get(selector)
-        if (
-            !isPromiseLike(currentValue) &&
-            (!dependents || dependents.size === 0) &&
-            (!subscribers || subscribers.size === 0)
-        ) {
-            // Expire unsubscribed non-promise selectors for lazy re-eval.
-            // Promise-valued selectors are always re-evaluated eagerly so
-            // the stale promise is replaced and its .then() handler bails
-            // via the existing reference guard.
-            data.expiredValues.set(selector, data.values.get(selector))
-            data.values.delete(selector)
-        } else {
-            const [wasValueUpdated, didEvalCrash, error, addedDeps, removedDeps] =
-                reEvaluteSelector(selector, data, updatedInitializedAtoms)
-            // Mount/unmount dependencies that changed if this selector is
-            // transitively subscribed (i.e. someone is listening)
-            if (
-                (addedDeps.size > 0 || removedDeps.size > 0) &&
-                isTransitivelySubscribed(selector, data)
-            ) {
-                for (const dep of addedDeps) {
-                    mountTransitiveDeps(dep, data)
-                }
-                for (const dep of removedDeps) {
-                    unmountOrphanedDeps(dep, data)
-                }
+    let currentSelectors = selectors
+    while (currentSelectors.size > 0) {
+        const selectorsForNextPass = new Set<Selector>()
+        for (const selector of currentSelectors) {
+            const currentValue = data.values.get(selector)
+            if (isPromiseLike(currentValue) && isInitOnly) {
+                // During init-time propagation, skip promise-valued selectors
+                // to avoid double-evaluation.
+                continue
             }
-            if (!wasValueUpdated) continue
-            addSetToSet(
-                data.stateDependents.get(selector), // We intentially get the dependents again, since the reevalute might have changed the dependents
-                selectorsForNextPass,
-            )
-            addSetToSet(subscribers, collectedSubscribers)
+            seen.add(selector)
+            const dependents = data.stateDependents.get(selector)
+            const subscribers = data.subscriptions.get(selector)
+            if (
+                !isPromiseLike(currentValue) &&
+                (!dependents || dependents.size === 0) &&
+                (!subscribers || subscribers.size === 0)
+            ) {
+                // Expire unsubscribed non-promise selectors for lazy re-eval.
+                // Promise-valued selectors are always re-evaluated eagerly so
+                // the stale promise is replaced and its .then() handler bails
+                // via the existing reference guard.
+                data.expiredValues.set(selector, data.values.get(selector))
+                data.values.delete(selector)
+            } else {
+                const [wasValueUpdated, didEvalCrash, error, addedDeps, removedDeps] =
+                    reEvaluteSelector(selector, data, updatedInitializedAtoms)
+                // Mount/unmount dependencies that changed if this selector is
+                // transitively subscribed (i.e. someone is listening)
+                if (
+                    (addedDeps.size > 0 || removedDeps.size > 0) &&
+                    isTransitivelySubscribed(selector, data)
+                ) {
+                    for (const dep of addedDeps) {
+                        mountTransitiveDeps(dep, data)
+                    }
+                    for (const dep of removedDeps) {
+                        unmountOrphanedDeps(dep, data)
+                    }
+                }
+                if (!wasValueUpdated) continue
+                addSetToSet(
+                    data.stateDependents.get(selector), // We intentionally get the dependents again, since the re-evaluate might have changed the dependents
+                    selectorsForNextPass,
+                )
+                addSetToSet(subscribers, collectedSubscribers)
+            }
         }
-    }
-    if (selectorsForNextPass.size > 0) {
-        recursivlyHandleSelectorUpdates(
-            selectorsForNextPass,
-            data,
-            collectedSubscribers,
-            updatedInitializedAtoms,
-            seen,
-            isInitOnly,
-        )
+        currentSelectors = selectorsForNextPass
     }
 }
