@@ -537,6 +537,23 @@ describe("transaction", () => {
         })
     })
 
+    test("mutable atom is not frozen in transaction", () => {
+        const defaultStore = store()
+        const mutableAtom = atom<{ tags: string[] } | undefined>(undefined, {
+            mutable: true,
+        })
+
+        defaultStore.txn(txn => {
+            const value = txn.set(mutableAtom, { tags: ["tag1"] })
+            // mutable atoms should NOT be frozen, even inside a transaction
+            expect(() => (value.tags = ["tag2"])).not.toThrowError()
+        })
+
+        // Verify the value is still mutable after commit
+        const committed = defaultStore.get(mutableAtom)!
+        expect(() => (committed.tags = ["tag3"])).not.toThrowError()
+    })
+
     test("delete from transaction", () => {
         const defaultStore = store()
         const post = atomFamily<{ title: string; tags: string[] }, [string]>(

@@ -54,7 +54,18 @@ export function storeFromStoreData(
     const ensurePendingTxn = () => {
         if (!_pendingTxn) {
             _pendingTxn = new Transaction(data)
-            queueMicrotask(flushPendingTxn)
+            queueMicrotask(() => {
+                try {
+                    flushPendingTxn()
+                } catch (error) {
+                    // Re-throw asynchronously so the error is observable
+                    // (e.g. via window.onerror / process uncaughtException)
+                    // without blocking the microtask queue.
+                    setTimeout(() => {
+                        throw error
+                    }, 0)
+                }
+            })
         }
         return _pendingTxn
     }
