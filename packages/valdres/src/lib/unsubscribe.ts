@@ -68,6 +68,7 @@ const cleanupOrphanedDeps = (
         }
         data.stateDependencies.delete(state)
         data.values.delete(state)
+        data.expiredValues.delete(state)
         data.abortControllers.delete(state)
     }
 
