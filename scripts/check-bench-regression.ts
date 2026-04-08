@@ -566,22 +566,28 @@ async function postOrUpdateComment(
         const body = formatBody(runNumber)
 
         if (existing) {
-            await fetch(
-                `${baseUrl.replace(/\/comments$/, "")}/comments/${existing.id}`,
-                {
-                    method: "PATCH",
-                    headers,
-                    body: JSON.stringify({ body }),
-                },
-            )
-            console.log(`Updated existing PR comment #${existing.id}`)
+            const patchUrl = `https://api.github.com/repos/${repo}/issues/comments/${existing.id}`
+            const patchRes = await fetch(patchUrl, {
+                method: "PATCH",
+                headers,
+                body: JSON.stringify({ body }),
+            })
+            if (!patchRes.ok) {
+                console.warn(`Failed to update PR comment (${patchRes.status})`)
+            } else {
+                console.log(`Updated existing PR comment #${existing.id}`)
+            }
         } else {
-            await fetch(baseUrl, {
+            const postRes = await fetch(baseUrl, {
                 method: "POST",
                 headers,
                 body: JSON.stringify({ body }),
             })
-            console.log("Posted new PR comment")
+            if (!postRes.ok) {
+                console.warn(`Failed to post PR comment (${postRes.status})`)
+            } else {
+                console.log("Posted new PR comment")
+            }
         }
     } catch (err) {
         console.warn("Failed to post/update PR comment — skipping.", err)
