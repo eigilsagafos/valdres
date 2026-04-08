@@ -15,7 +15,17 @@ if (!existingPath || !entryPath || !outputPath) {
 }
 
 const history = JSON.parse(readFileSync(existingPath, "utf-8"))
+if (!Array.isArray(history)) {
+    console.error(`Expected ${existingPath} to contain a JSON array, got ${typeof history}`)
+    process.exit(1)
+}
+
 const entry = JSON.parse(readFileSync(entryPath, "utf-8"))
+if (entry === null || typeof entry !== "object" || Array.isArray(entry)) {
+    console.error(`Expected ${entryPath} to contain a JSON object, got ${typeof entry}`)
+    process.exit(1)
+}
+
 history.push(entry)
 const trimmed = history.slice(-50)
 writeFileSync(outputPath, JSON.stringify(trimmed, null, 2))

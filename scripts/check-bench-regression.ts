@@ -284,8 +284,10 @@ function computeFromLegacy(entries: LegacyEntry[]): HistoricalData {
             if (!bench.extra || bench.extra === "baseline") continue
             const match = bench.extra.match(/ratio=([\d.]+)/)
             if (!match) continue
-            ratiosByName.set(bench.name, [...(ratiosByName.get(bench.name) ?? []), parseFloat(match[1])])
-            valdresByName.set(bench.name, [...(valdresByName.get(bench.name) ?? []), bench.value])
+            if (!ratiosByName.has(bench.name)) ratiosByName.set(bench.name, [])
+            ratiosByName.get(bench.name)!.push(parseFloat(match[1]))
+            if (!valdresByName.has(bench.name)) valdresByName.set(bench.name, [])
+            valdresByName.get(bench.name)!.push(bench.value)
         }
     }
 
