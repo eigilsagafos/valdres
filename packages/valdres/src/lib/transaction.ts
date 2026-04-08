@@ -13,6 +13,7 @@ import { isSelector } from "../utils/isSelector"
 import { getState } from "./getState"
 import { getAtomInitValue } from "./initAtom"
 import { isFunction } from "./isFunction"
+import { isProd } from "./isProd"
 import {
     cloneAtomFamilyIndex,
     propagateDeletedAtoms,
@@ -72,6 +73,13 @@ export class Transaction {
         }
     }
 
+    private hasTxnOrData = (state: State): boolean => {
+        if (this._atomMap.has(state)) return true
+        if (this.data.values.has(state)) return true
+        if (this.parentTransaction) return this.parentTransaction.hasTxnOrData(state)
+        return false
+    }
+
     private valueFromTxnOrData: GetValue = (state: State) => {
         if (this._atomMap.has(state)) {
             return this._atomMap.get(state)
@@ -86,8 +94,9 @@ export class Transaction {
 
     get: GetValue = (state: State<any>) => {
         if (isAtom(state) || isAtomFamily(state)) {
-            const value = this.valueFromTxnOrData(state)
-            if (value) return value
+            if (this.hasTxnOrData(state)) {
+                return this.valueFromTxnOrData(state)
+            }
             return getState(state, this.data, this.initializedAtomsSet)
         } else if (isSelector(state)) {
             if (this.dirty) {
@@ -122,9 +131,8 @@ export class Transaction {
         }
 
         // Freeze non-primitives so values are immutable within the transaction.
-        // deepFreeze short-circuits on already-frozen objects, so the
-        // second freeze in setValueInData during commit is a no-op.
-        if (value !== null && (typeof value === "object" || typeof value === "function")) {
+        // Respect atom.mutable and production mode, matching setValueInData behavior.
+        if (!atom.mutable && !isProd() && value !== null && (typeof value === "object" || typeof value === "function")) {
             value = deepFreeze(value)
         }
         this._atomMap.set(atom, value)

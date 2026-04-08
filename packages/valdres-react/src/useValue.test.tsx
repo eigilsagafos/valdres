@@ -93,8 +93,9 @@ describe("useValue", () => {
         expect(selector2cb).toHaveBeenCalledTimes(1)
         expect(selector3cb).toHaveBeenCalledTimes(1)
         store.set(atom1, 2)
+        // With batchUpdates, selector re-evaluation is deferred to commit
         expect(result.current).toStrictEqual([1, 2, 3])
-        expect(selector1cb).toHaveBeenCalledTimes(3) // This could also be optimized
+        expect(selector1cb).toHaveBeenCalledTimes(2)
         expect(selector2cb).toHaveBeenCalledTimes(1)
         expect(selector3cb).toHaveBeenCalledTimes(1)
     })

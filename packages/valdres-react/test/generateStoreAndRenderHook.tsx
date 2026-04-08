@@ -9,7 +9,7 @@ const createWrapper = (Wrapper, props) => {
 }
 
 export const generateStoreAndRenderHook = () => {
-    const store1 = store()
+    const store1 = store({ batchUpdates: true })
 
     const renderHookCustom = (cb: () => any) =>
         renderHook(cb, {
