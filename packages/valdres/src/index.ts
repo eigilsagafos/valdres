@@ -11,7 +11,6 @@ if (globalThis.__valdres__) {
 
 export { atom } from "./atom"
 export { atomFamily } from "./atomFamily"
-export { createStoreWithSelectorSet } from "./createStoreWithSelectorSet"
 export { globalStore } from "./globalStore"
 export { index } from "./indexConstructor"
 export { selector } from "./selector"

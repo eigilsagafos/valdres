@@ -1,5 +1,5 @@
 import {
-    createStoreWithSelectorSet as valdresCreateStore,
+    store as valdresCreateStore,
     isPromiseLike,
     isSelector,
     Transaction,
@@ -8,6 +8,9 @@ import { registerStore } from "./storeRegistry"
 
 export const createStore = (id?: string) => {
     const store = valdresCreateStore(id)
+
+    // Ensure mountAtom uses this store (with all wrappings) for onMount callbacks
+    ;(store.data as any).storeRef = store
 
     // Register for setSelf lookup (selectors use data.id to find the store)
     registerStore(store.data.id, store)

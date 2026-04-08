@@ -1,5 +1,5 @@
 import { useMemo } from "react"
-import { createStoreWithSelectorSet } from "valdres"
+import { store as createValdresStore, isSelector } from "valdres"
 import { Provider } from "valdres-react"
 import type {
     MutableSnapshot,
@@ -16,7 +16,15 @@ export const RecoilRoot: typeof RecoilRoot_original = ({
     initializeState?: (mutableSnapshot: MutableSnapshot) => void
 }) => {
     const store = useMemo(() => {
-        const store = createStoreWithSelectorSet()
+        const store = createValdresStore()
+        const originalSet = store.set
+        store.set = ((state: any, ...args: any[]) => {
+            if (isSelector(state)) {
+                return (state as any).set(store.set, store.get, store.reset, ...args)
+            }
+            return originalSet(state, ...args)
+        }) as any
+        ;(store.data as any).storeRef = store
 
         if (initializeState) {
             store.txn(({ set, reset }) => {
