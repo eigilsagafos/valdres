@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1775665067218,
+  "lastUpdate": 1775666969958,
   "repoUrl": "https://github.com/eigilsagafos/valdres",
   "entries": {
     "valdres benchmarks": [
@@ -4374,6 +4374,210 @@ window.BENCHMARK_DATA = {
             "value": 1471362,
             "unit": "ns",
             "extra": "jotai=25660339 ratio=0.0573 17.4x faster"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "eigil@sagafos.no",
+            "name": "Eigil Sagafos",
+            "username": "eigilsagafos"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "6544458a8aecd1682d621bbb720750f60eb63b36",
+          "message": "Stabilize benchmark regression detection (#43)\n\n* Stabilize benchmark regression detection with IQR filtering and variance-aware thresholds\n\n- Add IQR-based outlier removal to bench-utils.ts — filters GC-pause fat\n  tails from mitata's raw samples before computing median, dramatically\n  reducing per-run variance (sub+unsub was swinging 231ns–857ns)\n- Replace flat 50% regression threshold with per-benchmark dynamic\n  thresholds scaled by historical coefficient of variation (CV)\n- Skip regression gating for optimization-target benchmarks (threshold≥10)\n  which are inherently noisy and already gated by the bun test assertion\n- Add compact benchmark-data branch for history storage (~1KB/run vs\n  ~6KB/run on gh-pages), with backwards-compatible gh-pages fallback\n- Add concurrency group to prevent race conditions on parallel main pushes\n\nCo-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>\n\n* Address Copilot review: fix doc comment, add empty-samples guard, serialize concurrent runs\n\nCo-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>\n\n* Update mitata to v1.0.34 (from v1.0.4)\n\nBetter default trimming (slice(2,-2)), higher min_samples (12),\nand new do_not_optimize() / gc options for more stable measurements.\n\nCo-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>\n\n* Add self-vs-self absolute timing tracking alongside jotai ratio comparison\n\nTracks absolute valdres timings against historical median with dynamic\nthresholds. Shown in a collapsible section on the PR comment. Does not\ngate CI — informational only, catches regressions invisible to the ratio.\n\nCo-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>\n\n* Use --frozen-lockfile in benchmark CI to prevent bun.lock drift\n\nThe benchmark-action tries to git switch to gh-pages, which fails if\nbun install left unstaged changes to bun.lock.\n\nCo-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>\n\n* Update bun.lock to match dependency changes\n\nCo-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>\n\n* Address Copilot review: validate history inputs, avoid spread-copy in loop\n\nCo-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>\n\n* Fix GitHub API endpoint for updating PR comments and check response status\n\nCo-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 4.6 <noreply@anthropic.com>",
+          "timestamp": "2026-04-08T09:47:02-07:00",
+          "tree_id": "96dac637fbe20f4397c51fdb2620b20309cd188a",
+          "url": "https://github.com/eigilsagafos/valdres/commit/6544458a8aecd1682d621bbb720750f60eb63b36"
+        },
+        "date": 1775666969442,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "atom(1)",
+            "value": 3,
+            "unit": "ns",
+            "extra": "jotai=54 ratio=0.0500 20.0x faster"
+          },
+          {
+            "name": "store.get(atom)",
+            "value": 40,
+            "unit": "ns",
+            "extra": "jotai=401 ratio=0.0998 10.0x faster"
+          },
+          {
+            "name": "set(atom, value)",
+            "value": 240,
+            "unit": "ns",
+            "extra": "jotai=2144 ratio=0.1119 8.9x faster"
+          },
+          {
+            "name": "set(atom, curr => curr+1)",
+            "value": 251,
+            "unit": "ns",
+            "extra": "jotai=2735 ratio=0.0919 10.9x faster"
+          },
+          {
+            "name": "set(atom) with 10 subs",
+            "value": 576,
+            "unit": "ns",
+            "extra": "jotai=3552 ratio=0.1620 6.2x faster"
+          },
+          {
+            "name": "atom lifecycle (create+100get+100set)",
+            "value": 25989,
+            "unit": "ns",
+            "extra": "jotai=282126 ratio=0.0921 10.9x faster"
+          },
+          {
+            "name": "atomFamily(id)",
+            "value": 311,
+            "unit": "ns",
+            "extra": "jotai=445 ratio=0.6974 1.4x faster"
+          },
+          {
+            "name": "atomFamily(id) cache hit",
+            "value": 48,
+            "unit": "ns",
+            "extra": "jotai=11 ratio=4.4416 4.4x slower"
+          },
+          {
+            "name": "selectorFamily(id)",
+            "value": 1075,
+            "unit": "ns",
+            "extra": "jotai=689 ratio=1.5606 1.6x slower"
+          },
+          {
+            "name": "obj.value",
+            "value": 4,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "map.get(key)",
+            "value": 19,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "valdres get",
+            "value": 8,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "jotai get",
+            "value": 369,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "obj.value = n",
+            "value": 4,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "map.set(key, n)",
+            "value": 18,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "valdres set",
+            "value": 251,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "jotai set",
+            "value": 3444,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "selector(fn)",
+            "value": 7,
+            "unit": "ns",
+            "extra": "jotai=58 ratio=0.1147 8.7x faster"
+          },
+          {
+            "name": "set + read 10 selectors",
+            "value": 9500,
+            "unit": "ns",
+            "extra": "jotai=30828 ratio=0.3082 3.2x faster"
+          },
+          {
+            "name": "set + read 100 selectors",
+            "value": 97582,
+            "unit": "ns",
+            "extra": "jotai=358078 ratio=0.2725 3.7x faster"
+          },
+          {
+            "name": "set + read through 5 chained selectors",
+            "value": 9231,
+            "unit": "ns",
+            "extra": "jotai=19724 ratio=0.4680 2.1x faster"
+          },
+          {
+            "name": "createStore",
+            "value": 163,
+            "unit": "ns",
+            "extra": "jotai=6630 ratio=0.0246 40.6x faster"
+          },
+          {
+            "name": "set 1000 atoms",
+            "value": 98263,
+            "unit": "ns",
+            "extra": "jotai=1270000 ratio=0.0774 12.9x faster"
+          },
+          {
+            "name": "get 1000 atoms",
+            "value": 7300,
+            "unit": "ns",
+            "extra": "jotai=375972 ratio=0.0194 51.5x faster"
+          },
+          {
+            "name": "sub + unsub",
+            "value": 371,
+            "unit": "ns",
+            "extra": "jotai=2615 ratio=0.1419 7.0x faster"
+          },
+          {
+            "name": "txn: 10 atoms × 10 selectors, set + read",
+            "value": 105577,
+            "unit": "ns",
+            "extra": "jotai=493701 ratio=0.2138 4.7x faster"
+          },
+          {
+            "name": "txn: 10 atoms × 10 selectors, with subs",
+            "value": 171970,
+            "unit": "ns",
+            "extra": "jotai=804406 ratio=0.2138 4.7x faster"
+          },
+          {
+            "name": "txn: 10 atoms × 100 selectors, set + read",
+            "value": 873400,
+            "unit": "ns",
+            "extra": "jotai=3942577 ratio=0.2215 4.5x faster"
+          },
+          {
+            "name": "txn: cross-atom 1000 selectors, set + read",
+            "value": 1034856,
+            "unit": "ns",
+            "extra": "jotai=5091541 ratio=0.2033 4.9x faster"
+          },
+          {
+            "name": "txn: cross-atom 1000 selectors, with subs",
+            "value": 1598493,
+            "unit": "ns",
+            "extra": "jotai=26790377 ratio=0.0597 16.8x faster"
           }
         ]
       }
