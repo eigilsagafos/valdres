@@ -1,10 +1,16 @@
 /**
- * Ratio-based benchmark regression checker.
+ * Variance-aware benchmark regression checker.
  *
- * Compares the valdres/jotai ratio from the current run against the median
- * ratio from the last N runs on gh-pages. Since both libraries run on the
- * same machine, the ratio cancels out CI runner variance — a slower runner
- * slows both equally, keeping the ratio stable.
+ * Reads historical data from the benchmark-data branch (compact JSON we
+ * control), falls back to gh-pages data.js for backwards compatibility.
+ *
+ * Key improvements over the original:
+ * - Per-benchmark dynamic thresholds based on historical coefficient of
+ *   variation (CV). Stable benchmarks get tight thresholds; noisy ones
+ *   get lenient thresholds.
+ * - Optimization-target benchmarks (threshold >= 10) are tracked but
+ *   don't block PRs — they're already gated by the bun test assertion.
+ * - Uses median of ratios from last N runs as baseline.
  *
  * Exit code 1 if any regression is detected.
  */
@@ -13,15 +19,25 @@ import { join } from "path"
 
 // ── Configuration ──────────────────────────────────────────────────────────
 
-const WINDOW_SIZE = 10 // number of recent runs to take the median of
+const WINDOW_SIZE = 10
 
 /**
- * How much worse the ratio can get before it's flagged.
- * E.g., 1.5 means the ratio can increase by 50% before it's a regression.
- * If historical median ratio was 0.5 (2x faster), a regression threshold
- * of 1.5 means it fails at 0.75 (1.33x faster) — a real slowdown.
+ * Base regression threshold — the minimum tolerance applied to any benchmark.
+ * Actual threshold is scaled up for benchmarks with high historical variance.
  */
-const RATIO_REGRESSION_THRESHOLD = 1.5
+const BASE_THRESHOLD = 1.3
+
+/**
+ * Maximum regression threshold — even the noisiest comparison benchmarks
+ * won't get a threshold above this.
+ */
+const MAX_THRESHOLD = 2.0
+
+/**
+ * Benchmarks with per-test threshold >= this value are "optimization targets".
+ * They are tracked in the report but don't fail the CI.
+ */
+const OPTIMIZATION_TARGET_THRESHOLD = 10
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -31,23 +47,41 @@ interface NdjsonResult {
     jotai: number
     ratio: number
     tag: string
+    threshold?: number
+    cv?: number
 }
 
-interface HistoricalBench {
+// Our compact format on benchmark-data branch
+interface HistoryBenchmark {
+    name: string
+    valdres: number
+    jotai: number
+    ratio: number
+    threshold: number
+    cv: number
+}
+
+interface HistoryEntry {
+    date: string
+    benchmarks: HistoryBenchmark[]
+}
+
+// Legacy format on gh-pages
+interface LegacyBench {
     name: string
     value: number
     unit: string
     extra?: string
 }
 
-interface HistoricalEntry {
+interface LegacyEntry {
     commit: { id: string }
     date: number
-    benches: HistoricalBench[]
+    benches: LegacyBench[]
 }
 
-interface HistoricalData {
-    entries: Record<string, HistoricalEntry[]>
+interface LegacyData {
+    entries: Record<string, LegacyEntry[]>
 }
 
 type Status = "ok" | "skip" | "new" | "regression"
@@ -59,6 +93,12 @@ interface Comparison {
     currentRatio: number
     medianRatio: number | null
     ratioChange: number | null
+    threshold: number | null
+    // Self-vs-self absolute timing comparison
+    medianValdres: number | null
+    absChange: number | null // >1 means slower, <1 means faster
+    absThreshold: number | null
+    absStatus: Status
     status: Status
 }
 
@@ -92,7 +132,28 @@ function median(values: number[]): number {
         : (sorted[mid - 1] + sorted[mid]) / 2
 }
 
-// ── Core logic ─────────────────────────────────────────────────────────────
+function computeCV(values: number[]): number {
+    if (values.length < 2) return 0
+    const mean = values.reduce((a, b) => a + b, 0) / values.length
+    if (mean === 0) return 0
+    const variance =
+        values.reduce((a, b) => a + (b - mean) ** 2, 0) / values.length
+    return Math.sqrt(variance) / mean
+}
+
+/**
+ * Dynamic regression threshold based on historical CV of the ratio.
+ * Stable benchmarks (CV ~0%) get BASE_THRESHOLD (30%).
+ * Noisy benchmarks (CV ~50%+) get up to MAX_THRESHOLD (100%).
+ * E.g., CV=10% → ~44%, CV=25% → ~65%.
+ */
+function dynamicThreshold(historicalCV: number): number {
+    // Scale: BASE_THRESHOLD at CV=0, linear up to MAX_THRESHOLD at CV=0.5+
+    const scaled = BASE_THRESHOLD + historicalCV * (MAX_THRESHOLD - BASE_THRESHOLD) / 0.5
+    return Math.min(Math.max(scaled, BASE_THRESHOLD), MAX_THRESHOLD)
+}
+
+// ── Data loading ──────────────────────────────────────────────────────────
 
 const ROOT = join(import.meta.dir, "..")
 const NDJSON_PATH = join(
@@ -105,63 +166,200 @@ function readCurrentResults(): NdjsonResult[] {
     return ndjson.split("\n").map(line => JSON.parse(line))
 }
 
-async function readHistoricalData(): Promise<HistoricalData | null> {
+async function gitShow(ref: string): Promise<string | null> {
     try {
-        const proc = Bun.spawn(
-            ["git", "show", "origin/gh-pages:dev/bench/data.js"],
-            { stdout: "pipe", stderr: "pipe" },
-        )
+        const proc = Bun.spawn(["git", "show", ref], {
+            stdout: "pipe",
+            stderr: "pipe",
+        })
         const raw = await new Response(proc.stdout).text()
         const exitCode = await proc.exited
-        if (exitCode !== 0) return null
-
-        const json = raw
-            .replace(/^window\.BENCHMARK_DATA\s*=\s*/, "")
-            .replace(/;\s*$/, "")
-        return JSON.parse(json)
+        return exitCode === 0 ? raw : null
     } catch {
         return null
     }
 }
 
-function parseRatioFromExtra(extra?: string): number | null {
-    if (!extra) return null
-    const match = extra.match(/ratio=([\d.]+)/)
-    return match ? parseFloat(match[1]) : null
+interface HistoricalData {
+    medianRatios: Map<string, number>
+    ratioCvByName: Map<string, number>
+    // Self-vs-self: absolute valdres timings (noisier than ratios)
+    medianValdres: Map<string, number>
+    valdresCvByName: Map<string, number>
+    source: "benchmark-data" | "gh-pages"
+    entryCount: number
 }
 
-function computeMedianRatios(
-    entries: HistoricalEntry[],
-    windowSize: number,
-): Map<string, number> {
-    const recent = entries.slice(-windowSize)
-    const byName = new Map<string, number[]>()
+/**
+ * Minimum entries needed before benchmark-data is trusted over gh-pages.
+ * With fewer entries, CV is unreliable and thresholds would be too tight.
+ */
+const MIN_ENTRIES_FOR_NEW_FORMAT = 5
 
-    for (const entry of recent) {
-        for (const bench of entry.benches) {
-            const ratio = parseRatioFromExtra(bench.extra)
-            if (ratio == null) continue
-            if (!byName.has(bench.name)) byName.set(bench.name, [])
-            byName.get(bench.name)!.push(ratio)
+async function loadHistory(): Promise<HistoricalData | null> {
+    // Try benchmark-data branch first (new compact format),
+    // but only if it has enough entries for reliable CV computation
+    const benchData = await gitShow("origin/benchmark-data:results.json")
+    if (benchData) {
+        try {
+            const entries: HistoryEntry[] = JSON.parse(benchData)
+            if (entries.length >= MIN_ENTRIES_FOR_NEW_FORMAT) {
+                return computeFromBenchmarkData(entries)
+            }
+            if (entries.length > 0) {
+                console.log(
+                    `benchmark-data has ${entries.length} entries (need ${MIN_ENTRIES_FOR_NEW_FORMAT}) — falling back to gh-pages`,
+                )
+            }
+        } catch {
+            console.warn("Failed to parse benchmark-data:results.json")
         }
     }
 
-    const medians = new Map<string, number>()
-    for (const [name, values] of byName) {
-        medians.set(name, median(values))
+    // Fall back to gh-pages (legacy format)
+    const ghPages = await gitShow("origin/gh-pages:dev/bench/data.js")
+    if (ghPages) {
+        try {
+            const json = ghPages
+                .replace(/^window\.BENCHMARK_DATA\s*=\s*/, "")
+                .replace(/;\s*$/, "")
+            const data: LegacyData = JSON.parse(json)
+            const entries = data.entries?.["valdres benchmarks"]
+            if (entries && entries.length > 0) {
+                return computeFromLegacy(entries)
+            }
+        } catch {
+            console.warn("Failed to parse gh-pages data.js")
+        }
     }
-    return medians
+
+    return null
 }
+
+function computeFromBenchmarkData(entries: HistoryEntry[]): HistoricalData {
+    const recent = entries.slice(-WINDOW_SIZE)
+    const ratiosByName = new Map<string, number[]>()
+    const valdresByName = new Map<string, number[]>()
+
+    for (const entry of recent) {
+        for (const bench of entry.benchmarks) {
+            if (!ratiosByName.has(bench.name)) ratiosByName.set(bench.name, [])
+            ratiosByName.get(bench.name)!.push(bench.ratio)
+            if (!valdresByName.has(bench.name)) valdresByName.set(bench.name, [])
+            valdresByName.get(bench.name)!.push(bench.valdres)
+        }
+    }
+
+    const medianRatios = new Map<string, number>()
+    const ratioCvByName = new Map<string, number>()
+    for (const [name, values] of ratiosByName) {
+        medianRatios.set(name, median(values))
+        ratioCvByName.set(name, computeCV(values))
+    }
+
+    const medianValdres = new Map<string, number>()
+    const valdresCvByName = new Map<string, number>()
+    for (const [name, values] of valdresByName) {
+        medianValdres.set(name, median(values))
+        valdresCvByName.set(name, computeCV(values))
+    }
+
+    return {
+        medianRatios,
+        ratioCvByName,
+        medianValdres,
+        valdresCvByName,
+        source: "benchmark-data",
+        entryCount: entries.length,
+    }
+}
+
+function computeFromLegacy(entries: LegacyEntry[]): HistoricalData {
+    const recent = entries.slice(-WINDOW_SIZE)
+    const ratiosByName = new Map<string, number[]>()
+    const valdresByName = new Map<string, number[]>()
+
+    for (const entry of recent) {
+        for (const bench of entry.benches) {
+            if (!bench.extra || bench.extra === "baseline") continue
+            const match = bench.extra.match(/ratio=([\d.]+)/)
+            if (!match) continue
+            if (!ratiosByName.has(bench.name)) ratiosByName.set(bench.name, [])
+            ratiosByName.get(bench.name)!.push(parseFloat(match[1]))
+            if (!valdresByName.has(bench.name)) valdresByName.set(bench.name, [])
+            valdresByName.get(bench.name)!.push(bench.value)
+        }
+    }
+
+    const medianRatios = new Map<string, number>()
+    const ratioCvByName = new Map<string, number>()
+    for (const [name, values] of ratiosByName) {
+        medianRatios.set(name, median(values))
+        ratioCvByName.set(name, computeCV(values))
+    }
+
+    const medianValdres = new Map<string, number>()
+    const valdresCvByName = new Map<string, number>()
+    for (const [name, values] of valdresByName) {
+        medianValdres.set(name, median(values))
+        valdresCvByName.set(name, computeCV(values))
+    }
+
+    return {
+        medianRatios,
+        ratioCvByName,
+        medianValdres,
+        valdresCvByName,
+        source: "gh-pages",
+        entryCount: entries.length,
+    }
+}
+
+// ── Comparison ────────────────────────────────────────────────────────────
 
 function compare(
     current: NdjsonResult[],
-    medianRatios: Map<string, number>,
+    history: HistoricalData,
 ): Comparison[] {
     const benchmarks = current.filter(r => r.tag !== "baseline")
 
     return benchmarks.map(bench => {
         const currentRatio = bench.jotai > 0 ? bench.valdres / bench.jotai : 1
-        const medRatio = medianRatios.get(bench.name)
+        const medRatio = history.medianRatios.get(bench.name)
+        const ratioCV = history.ratioCvByName.get(bench.name) ?? 0
+
+        // Self-vs-self: compare absolute valdres timing against historical median
+        const medVal = history.medianValdres.get(bench.name)
+        const valCV = history.valdresCvByName.get(bench.name) ?? 0
+        const absChange = medVal ? bench.valdres / medVal : null
+        const absThreshold = medVal ? dynamicThreshold(valCV) : null
+        const absStatus: Status =
+            absChange != null && absThreshold != null && absChange > absThreshold
+                ? "regression"
+                : medVal == null
+                  ? "new"
+                  : "ok"
+
+        // Optimization targets are tracked but don't block PRs
+        const isOptTarget =
+            (bench.threshold ?? 0) >= OPTIMIZATION_TARGET_THRESHOLD
+
+        if (isOptTarget) {
+            return {
+                name: bench.name,
+                valdres: bench.valdres,
+                jotai: bench.jotai,
+                currentRatio,
+                medianRatio: medRatio ?? null,
+                ratioChange: medRatio ? currentRatio / medRatio : null,
+                threshold: null,
+                medianValdres: medVal ?? null,
+                absChange,
+                absThreshold,
+                absStatus: "skip" as Status,
+                status: "skip" as Status,
+            }
+        }
 
         if (medRatio == null) {
             return {
@@ -171,17 +369,20 @@ function compare(
                 currentRatio,
                 medianRatio: null,
                 ratioChange: null,
+                threshold: null,
+                medianValdres: medVal ?? null,
+                absChange,
+                absThreshold,
+                absStatus,
                 status: "new" as Status,
             }
         }
 
-        // How much did the ratio worsen? >1 means worse, <1 means better.
-        // E.g., if median was 0.5 (2x faster) and now it's 0.75 (1.33x faster),
-        // ratioChange = 0.75 / 0.5 = 1.5 — 50% worse.
         const ratioChange = currentRatio / medRatio
+        const threshold = dynamicThreshold(ratioCV)
 
         const status: Status =
-            ratioChange > RATIO_REGRESSION_THRESHOLD ? "regression" : "ok"
+            ratioChange > threshold ? "regression" : "ok"
 
         return {
             name: bench.name,
@@ -190,6 +391,11 @@ function compare(
             currentRatio,
             medianRatio: medRatio,
             ratioChange,
+            threshold,
+            medianValdres: medVal ?? null,
+            absChange,
+            absThreshold,
+            absStatus,
             status,
         }
     })
@@ -204,16 +410,21 @@ const STATUS_ICON: Record<Status, string> = {
     regression: "🚨",
 }
 
-function formatTable(results: Comparison[], runNumber: number): string {
+function formatTable(
+    results: Comparison[],
+    runNumber: number,
+    historySource: string,
+    windowUsed: number,
+): string {
     const lines: string[] = [
         "<!-- bench-regression-check -->",
         "## Benchmark Regression Report",
         "",
-        `Compared **valdres/jotai ratio** against median of last ${WINDOW_SIZE} runs on \`main\`.`,
-        `Regression threshold: ratio worsened by more than ${((RATIO_REGRESSION_THRESHOLD - 1) * 100).toFixed(0)}%.`,
+        `Compared **valdres/jotai ratio** against median of last ${windowUsed} runs on \`main\` (source: \`${historySource}\`).`,
+        `Thresholds are dynamic per-benchmark based on historical variance.`,
         "",
-        "| | Benchmark | Valdres | Jotai | vs Jotai | Baseline | Change |",
-        "|:-|:----------|--------:|------:|---------:|---------:|-------:|",
+        "| | Benchmark | Valdres | Jotai | vs Jotai | Baseline | Change | Threshold |",
+        "|:-|:----------|--------:|------:|---------:|---------:|-------:|----------:|",
     ]
 
     for (const r of results) {
@@ -223,8 +434,14 @@ function formatTable(results: Comparison[], runNumber: number): string {
         const vsJotai = fmtRatio(r.currentRatio)
         const baseline = r.medianRatio != null ? fmtRatio(r.medianRatio) : "—"
         const change = fmtChange(r.ratioChange)
+        const thresh =
+            r.status === "skip"
+                ? "opt target"
+                : r.threshold != null
+                  ? `${((r.threshold - 1) * 100).toFixed(0)}%`
+                  : "—"
         lines.push(
-            `| ${icon} | ${r.name} | ${valdres} | ${jotai} | ${vsJotai} | ${baseline} | ${change} |`,
+            `| ${icon} | ${r.name} | ${valdres} | ${jotai} | ${vsJotai} | ${baseline} | ${change} | ${thresh} |`,
         )
     }
 
@@ -238,15 +455,64 @@ function formatTable(results: Comparison[], runNumber: number): string {
         lines.push("", "No regressions detected.")
     }
 
+    // Self-vs-self absolute timing section (informational, does not gate CI)
+    const selfResults = results.filter(
+        r => r.medianValdres != null && r.absStatus !== "skip",
+    )
+    if (selfResults.length > 0) {
+        lines.push(
+            "",
+            "<details>",
+            "<summary>Self-vs-self timing (does not gate CI)</summary>",
+            "",
+            "Compares absolute valdres timings against historical median. Noisier than ratio comparison (no runner-variance cancellation), but catches regressions invisible to the jotai ratio.",
+            "",
+            "| | Benchmark | Current | Baseline | Change | Threshold |",
+            "|:-|:----------|--------:|---------:|-------:|----------:|",
+        )
+
+        for (const r of selfResults) {
+            const icon = STATUS_ICON[r.absStatus]
+            const current = fmtNs(r.valdres)
+            const baseline =
+                r.medianValdres != null ? fmtNs(r.medianValdres) : "—"
+            const change = fmtChange(r.absChange)
+            const thresh =
+                r.absThreshold != null
+                    ? `${((r.absThreshold - 1) * 100).toFixed(0)}%`
+                    : "—"
+            lines.push(
+                `| ${icon} | ${r.name} | ${current} | ${baseline} | ${change} | ${thresh} |`,
+            )
+        }
+
+        const absRegressions = selfResults.filter(
+            r => r.absStatus === "regression",
+        )
+        if (absRegressions.length > 0) {
+            lines.push(
+                "",
+                `${absRegressions.length} absolute timing regression(s) — review recommended.`,
+            )
+        }
+
+        lines.push("", "</details>")
+    }
+
     if (runNumber > 0) {
-        const now = new Date().toISOString().replace("T", " ").replace(/\.\d+Z$/, " UTC")
+        const now = new Date()
+            .toISOString()
+            .replace("T", " ")
+            .replace(/\.\d+Z$/, " UTC")
         lines.push("", `<sub>Run #${runNumber} · Updated ${now}</sub>`)
     }
 
     return lines.join("\n")
 }
 
-async function postOrUpdateComment(formatBody: (runNumber: number) => string): Promise<void> {
+async function postOrUpdateComment(
+    formatBody: (runNumber: number) => string,
+): Promise<void> {
     try {
         const token = process.env.GITHUB_TOKEN
         const repo = process.env.GITHUB_REPOSITORY
@@ -300,22 +566,28 @@ async function postOrUpdateComment(formatBody: (runNumber: number) => string): P
         const body = formatBody(runNumber)
 
         if (existing) {
-            await fetch(
-                `${baseUrl.replace(/\/comments$/, "")}/comments/${existing.id}`,
-                {
-                    method: "PATCH",
-                    headers,
-                    body: JSON.stringify({ body }),
-                },
-            )
-            console.log(`Updated existing PR comment #${existing.id}`)
+            const patchUrl = `https://api.github.com/repos/${repo}/issues/comments/${existing.id}`
+            const patchRes = await fetch(patchUrl, {
+                method: "PATCH",
+                headers,
+                body: JSON.stringify({ body }),
+            })
+            if (!patchRes.ok) {
+                console.warn(`Failed to update PR comment (${patchRes.status})`)
+            } else {
+                console.log(`Updated existing PR comment #${existing.id}`)
+            }
         } else {
-            await fetch(baseUrl, {
+            const postRes = await fetch(baseUrl, {
                 method: "POST",
                 headers,
                 body: JSON.stringify({ body }),
             })
-            console.log("Posted new PR comment")
+            if (!postRes.ok) {
+                console.warn(`Failed to post PR comment (${postRes.status})`)
+            } else {
+                console.log("Posted new PR comment")
+            }
         }
     } catch (err) {
         console.warn("Failed to post/update PR comment — skipping.", err)
@@ -331,39 +603,45 @@ async function main() {
         `Read ${current.length} results (${benchmarks.length} comparison benchmarks, ${current.length - benchmarks.length} baselines skipped)`,
     )
 
-    const history = await readHistoricalData()
+    const history = await loadHistory()
     if (!history) {
         console.log(
-            "No historical data on gh-pages — skipping regression check.",
+            "No historical data found — skipping regression check.",
         )
         process.exit(0)
     }
 
-    const entries = history.entries?.["valdres benchmarks"]
-    if (!entries || entries.length === 0) {
-        console.log("No historical entries found — skipping regression check.")
+    if (history.medianRatios.size === 0) {
+        console.log(
+            "No historical ratio data found — skipping regression check.",
+        )
         process.exit(0)
     }
 
+    const windowUsed = Math.min(history.entryCount, WINDOW_SIZE)
     console.log(
-        `Found ${entries.length} historical runs (using last ${Math.min(entries.length, WINDOW_SIZE)})`,
+        `Found ${history.entryCount} historical runs on ${history.source} (using last ${windowUsed})`,
     )
 
-    const medianRatios = computeMedianRatios(entries, WINDOW_SIZE)
-
-    if (medianRatios.size === 0) {
+    // Log per-benchmark CV and dynamic thresholds
+    for (const [name, cv] of history.ratioCvByName) {
+        const thresh = dynamicThreshold(cv)
+        const absCV = history.valdresCvByName.get(name)
+        const absPart = absCV != null ? ` | abs CV=${(absCV * 100).toFixed(1)}%` : ""
         console.log(
-            "No historical ratio data found (older format?) — skipping regression check.",
+            `  ${name}: ratio CV=${(cv * 100).toFixed(1)}% → threshold=${((thresh - 1) * 100).toFixed(0)}%${absPart}`,
         )
-        process.exit(0)
     }
 
-    const results = compare(current, medianRatios)
+    const results = compare(current, history)
 
-    // Log without run number (only meaningful on the PR comment)
-    console.log("\n" + formatTable(results, 0) + "\n")
+    console.log(
+        "\n" + formatTable(results, 0, history.source, windowUsed) + "\n",
+    )
 
-    await postOrUpdateComment((runNumber) => formatTable(results, runNumber))
+    await postOrUpdateComment(runNumber =>
+        formatTable(results, runNumber, history.source, windowUsed),
+    )
 
     const regressions = results.filter(r => r.status === "regression")
     if (regressions.length > 0) {
