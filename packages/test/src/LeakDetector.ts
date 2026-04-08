@@ -1,13 +1,14 @@
 import { generateHeapSnapshot } from "bun"
+import { fullGC, releaseWeakRefs } from "bun:jsc"
 
 /**
- * Bun-native memory leak detector using FinalizationRegistry.
- * Replaces jest-leak-detector which requires node:v8 setFlagsFromString.
+ * Bun-native memory leak detector using WeakRef + bun:jsc primitives.
  *
- * Mirrors jest-leak-detector's approach: FinalizationRegistry tracks when
- * the object is garbage collected. Uses Bun.gc(true) and, if needed, a
- * Bun heap snapshot fallback to more aggressively encourage pending
- * FinalizationRegistry callbacks to run in Bun.
+ * Strategy: repeated generateHeapSnapshot() rounds to force full reachability
+ * analysis. Each snapshot walks the entire heap, which is essential for
+ * triggering WeakMap ephemeron cleanup in JSC. Lightweight GC rounds without
+ * snapshots are insufficient — WeakMap entries are only cleared when the
+ * engine performs a full reachability trace.
  *
  * Usage:
  *   const detector = new LeakDetector(someObject)
@@ -15,31 +16,22 @@ import { generateHeapSnapshot } from "bun"
  *   expect(await detector.isLeaking()).toBe(false)
  */
 export class LeakDetector {
-    private _isReferenceBeingHeld = true
-    private readonly _finalizationRegistry: FinalizationRegistry<undefined>
+    private _ref: WeakRef<object>
 
     constructor(value: object) {
-        this._finalizationRegistry = new FinalizationRegistry(() => {
-            this._isReferenceBeingHeld = false
-        })
-        this._finalizationRegistry.register(value, undefined)
-        value = null
+        this._ref = new WeakRef(value)
     }
 
     async isLeaking(): Promise<boolean> {
-        Bun.gc(true)
-        for (let i = 0; i < 10; i++) {
-            await new Promise(resolve => setTimeout(resolve, 0))
-        }
-        if (this._isReferenceBeingHeld) {
-            // Triggering a heap snapshot is more aggressive than just gc().
-            // This often causes pending FinalizationRegistry callbacks to fire.
+        for (let round = 0; round < 10; round++) {
+            fullGC()
+            releaseWeakRefs()
             generateHeapSnapshot()
-            Bun.gc(true)
-            for (let i = 0; i < 10; i++) {
-                await new Promise(resolve => setTimeout(resolve, 0))
-            }
+            fullGC()
+            releaseWeakRefs()
+            await Bun.sleep(0)
+            if (this._ref.deref() === undefined) return false
         }
-        return this._isReferenceBeingHeld
+        return this._ref.deref() !== undefined
     }
 }

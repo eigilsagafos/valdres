@@ -20,7 +20,7 @@
     "scripts": {
         "build": "NODE_ENV=production bun run build.ts",
         "build:types": "rm -rf dist/types && bun run tsc",
-        "test": "bun test",
+        "test": "bun test --path-ignore-patterns '**/memoryleaks*' && bun test test/memoryleaks.test.ts",
         "test:bench": "rm -f test/performance/bench-results.ndjson && bun test --timeout 60000 --concurrency 1 ./test/performance/*.bench.ts"
     },
     "devDependencies": {
