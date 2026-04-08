@@ -9,10 +9,10 @@ When `onMount`/`onUnmount` throws, valdres skips remaining lifecycle hooks:
 
 ### Flush/batching order differs from jotai (4)
 Valdres notifies listeners at different points in the write cycle:
-- [ ] `flushPending...with set` — listener notification order differs
-- [ ] `flushPending...with mount` — listener notification order differs (batching)
-- [ ] `flushPending...with unmount` — derived atom default is `undefined` instead of `null`
-- [ ] `batches sync writes`
+- [x] `flushPending...with set` — listener notification order differs
+- [x] `flushPending...with mount` — listener notification order differs (batching)
+- [x] `flushPending...with unmount` — derived atom default is `undefined` instead of `null`
+- [x] `batches sync writes`
 
 ### Deep recursion / stack overflow (1)
 Deeply nested or circular selector graphs blow the stack:
