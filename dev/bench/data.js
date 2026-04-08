@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1775687063479,
+  "lastUpdate": 1775688034621,
   "repoUrl": "https://github.com/eigilsagafos/valdres",
   "entries": {
     "valdres benchmarks": [
@@ -5190,6 +5190,210 @@ window.BENCHMARK_DATA = {
             "value": 1474356,
             "unit": "ns",
             "extra": "jotai=26921046 ratio=0.0548 18.3x faster"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "eigil@sagafos.no",
+            "name": "Eigil Sagafos",
+            "username": "eigilsagafos"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "0a86d41824a49af56d9beec632817cdc516ac0e3",
+          "message": "Add scope reverse index for O(1) propagation lookups (#48)\n\n* Add scope reverse index to optimize O(scopes × atoms) propagation\n\nIntroduces `scopeValueIndex` (WeakMap) on StoreData that maps each\natom/family to the set of child scopes that shadow it. This replaces\nthree O(scopes) linear scans with O(1) lookups:\n\n1. `recursivlyUpdateIndexes` — only visits scopes that have the family\n2. Main propagation loop — skips scopes that shadow the atom via index\n3. `propagateDeletedAtoms` — builds scope→families map from index\n\nAlso adds:\n- `trackScopeValue` helper in setValueInData for index registration\n- `scopeIndexKeys` per scope for efficient cleanup on detach\n- Single-atom fast path and multi-atom precomputed shadow sets\n- Guard against selector pollution via `\"defaultValue\" in atom` check\n- 5 new tests covering deep nesting, detach cleanup, partial shadow,\n  4-level propagation, and selector non-pollution\n- Scope propagation benchmarks (5, 10, 100, 1000 scopes)\n\nCo-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>\n\n* Address PR feedback: use Object.hasOwn and WeakKey type, fix test property name\n\n- trackScopeValue key parameter typed as WeakKey instead of any\n- Use Object.hasOwn(atom, \"defaultValue\") for precise own-property check\n- Fix test assertion: \"default\" → \"defaultValue\" to match actual atom shape\n\nCo-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 4.6 <noreply@anthropic.com>",
+          "timestamp": "2026-04-08T15:37:31-07:00",
+          "tree_id": "4a1685d8fd08d2412bdb2bfa13cedaf941f07ff8",
+          "url": "https://github.com/eigilsagafos/valdres/commit/0a86d41824a49af56d9beec632817cdc516ac0e3"
+        },
+        "date": 1775688034092,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "atom(1)",
+            "value": 4,
+            "unit": "ns",
+            "extra": "jotai=61 ratio=0.0579 17.3x faster"
+          },
+          {
+            "name": "store.get(atom)",
+            "value": 27,
+            "unit": "ns",
+            "extra": "jotai=359 ratio=0.0752 13.3x faster"
+          },
+          {
+            "name": "set(atom, value)",
+            "value": 236,
+            "unit": "ns",
+            "extra": "jotai=2151 ratio=0.1097 9.1x faster"
+          },
+          {
+            "name": "set(atom, curr => curr+1)",
+            "value": 258,
+            "unit": "ns",
+            "extra": "jotai=2655 ratio=0.0973 10.3x faster"
+          },
+          {
+            "name": "set(atom) with 10 subs",
+            "value": 579,
+            "unit": "ns",
+            "extra": "jotai=3529 ratio=0.1640 6.1x faster"
+          },
+          {
+            "name": "atom lifecycle (create+100get+100set)",
+            "value": 26898,
+            "unit": "ns",
+            "extra": "jotai=277658 ratio=0.0969 10.3x faster"
+          },
+          {
+            "name": "atomFamily(id)",
+            "value": 300,
+            "unit": "ns",
+            "extra": "jotai=416 ratio=0.7206 1.4x faster"
+          },
+          {
+            "name": "atomFamily(id) cache hit",
+            "value": 44,
+            "unit": "ns",
+            "extra": "jotai=11 ratio=3.9839 4.0x slower"
+          },
+          {
+            "name": "selectorFamily(id)",
+            "value": 328,
+            "unit": "ns",
+            "extra": "jotai=406 ratio=0.8078 1.2x faster"
+          },
+          {
+            "name": "obj.value",
+            "value": 4,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "map.get(key)",
+            "value": 16,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "valdres get",
+            "value": 7,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "jotai get",
+            "value": 344,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "obj.value = n",
+            "value": 4,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "map.set(key, n)",
+            "value": 17,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "valdres set",
+            "value": 404,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "jotai set",
+            "value": 3071,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "selector(fn)",
+            "value": 8,
+            "unit": "ns",
+            "extra": "jotai=83 ratio=0.1011 9.9x faster"
+          },
+          {
+            "name": "set + read 10 selectors",
+            "value": 9006,
+            "unit": "ns",
+            "extra": "jotai=29314 ratio=0.3072 3.3x faster"
+          },
+          {
+            "name": "set + read 100 selectors",
+            "value": 86629,
+            "unit": "ns",
+            "extra": "jotai=314487 ratio=0.2755 3.6x faster"
+          },
+          {
+            "name": "set + read through 5 chained selectors",
+            "value": 7902,
+            "unit": "ns",
+            "extra": "jotai=16882 ratio=0.4681 2.1x faster"
+          },
+          {
+            "name": "createStore",
+            "value": 530,
+            "unit": "ns",
+            "extra": "jotai=7243 ratio=0.0732 13.7x faster"
+          },
+          {
+            "name": "set 1000 atoms",
+            "value": 85750,
+            "unit": "ns",
+            "extra": "jotai=1148515 ratio=0.0747 13.4x faster"
+          },
+          {
+            "name": "get 1000 atoms",
+            "value": 3883,
+            "unit": "ns",
+            "extra": "jotai=410478 ratio=0.0095 105.7x faster"
+          },
+          {
+            "name": "sub + unsub",
+            "value": 490,
+            "unit": "ns",
+            "extra": "jotai=2574 ratio=0.1904 5.3x faster"
+          },
+          {
+            "name": "txn: 10 atoms × 10 selectors, set + read",
+            "value": 91064,
+            "unit": "ns",
+            "extra": "jotai=291768 ratio=0.3121 3.2x faster"
+          },
+          {
+            "name": "txn: 10 atoms × 10 selectors, with subs",
+            "value": 138917,
+            "unit": "ns",
+            "extra": "jotai=576865 ratio=0.2408 4.2x faster"
+          },
+          {
+            "name": "txn: 10 atoms × 100 selectors, set + read",
+            "value": 776493,
+            "unit": "ns",
+            "extra": "jotai=3231381 ratio=0.2403 4.2x faster"
+          },
+          {
+            "name": "txn: cross-atom 1000 selectors, set + read",
+            "value": 936927,
+            "unit": "ns",
+            "extra": "jotai=4609286 ratio=0.2033 4.9x faster"
+          },
+          {
+            "name": "txn: cross-atom 1000 selectors, with subs",
+            "value": 1435280,
+            "unit": "ns",
+            "extra": "jotai=23977720 ratio=0.0599 16.7x faster"
           }
         ]
       }
