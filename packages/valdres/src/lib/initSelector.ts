@@ -307,6 +307,8 @@ export const handleSelectorResult = <Value>(
             // Guard against stale promise — if the selector's value has been
             // replaced with a different value, this resolution is outdated.
             // If the value was deleted (e.g. moved to expired), still proceed.
+            // If deps were cleaned up (unsubscribe GC), bail entirely.
+            if (!data.stateDependencies.has(selector)) return
             if (data.values.has(selector) && data.values.get(selector) !== promise) return
             const initializedAtomsSet = new Set<Atom>()
             const res = initSelector(selector, data, initializedAtomsSet)
@@ -322,6 +324,11 @@ export const handleSelectorResult = <Value>(
         // When a promise is returned when initializing a selector we suspend,
         // then we retry when the promise resolves.
         value.then(resolved => {
+            // Guard: selector was cleaned up by unsubscribe GC
+            if (!data.stateDependencies.has(selector)) {
+                pendingAsyncDeps.delete(value)
+                return
+            }
             // Guard against stale promise
             if (data.values.has(selector) && data.values.get(selector) !== value) {
                 pendingAsyncDeps.delete(value)
