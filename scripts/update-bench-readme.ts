@@ -3,6 +3,7 @@
  */
 import { readFileSync, writeFileSync } from "fs"
 import { join } from "path"
+import { groupByCategory } from "./lib/bench-categories"
 
 const ROOT = join(import.meta.dir, "..")
 const RESULTS_PATH = join(
@@ -65,27 +66,8 @@ const optimizationTargets = results.filter(
 )
 const baselines = results.filter(r => r.tag === "baseline")
 
-// Benchmark categories for grouped display
-const BENCH_CATEGORIES: [string, RegExp][] = [
-    ["Atoms", /^(atom|store\.get|set\(atom|set \d+ atoms|get \d+ atoms)/],
-    ["Selectors", /^(selector(?!Family)|set \+ read|chained)/],
-    ["Transactions", /^txn:/],
-]
-
-function categorizeBenchmark(name: string): string {
-    for (const [cat, pattern] of BENCH_CATEGORIES) {
-        if (pattern.test(name)) return cat
-    }
-    return "Other"
-}
-
-// Generate grouped comparison table
-const grouped = new Map<string, Result[]>()
-for (const r of comparisons) {
-    const cat = categorizeBenchmark(r.name)
-    if (!grouped.has(cat)) grouped.set(cat, [])
-    grouped.get(cat)!.push(r)
-}
+// Generate grouped comparison table (deterministic order from BENCH_CATEGORIES)
+const grouped = groupByCategory(comparisons, r => r.name)
 
 const compSections: string[] = []
 for (const [cat, benchmarks] of grouped) {
@@ -102,7 +84,10 @@ const compTable = compSections.join("\n\n")
 // Generate optimization targets table (areas where we're already fast, tracking for improvement)
 const optTable =
     optimizationTargets.length > 0
-        ? `\n\n#### Not yet optimized\n\nThese operations are functional but not yet tuned for speed. Tracked for future improvement.\n\n| Benchmark | valdres | jotai | Comparison |\n|:----------|--------:|------:|-----------:|\n${optimizationTargets.map(r => `| ${r.name} | ${fmtNs(r.valdres)} | ${fmtNs(r.jotai)} | ${r.tag} |`).join("\n")}`
+        ? `\n\n#### Not yet optimized\n\nThese operations are functional but not yet tuned for speed. Tracked for future improvement.\n\n| Benchmark | valdres | jotai | Comparison |\n|:----------|--------:|------:|-----------:|\n${optimizationTargets.map(r => {
+              const indicator = speedIndicator(r.ratio)
+              return `| ${r.name} | ${fmtNs(r.valdres)} | ${fmtNs(r.jotai)} | ${indicator} ${r.tag} |`
+          }).join("\n")}`
         : ""
 
 // Generate baseline table

@@ -22,6 +22,7 @@
  */
 import { readFileSync } from "fs"
 import { join } from "path"
+import { groupByCategory } from "./lib/bench-categories"
 
 // ── Configuration ──────────────────────────────────────────────────────────
 
@@ -442,22 +443,6 @@ const STATUS_ICON: Record<Status, string> = {
     regression: "🚨",
 }
 
-// Benchmark categories for grouped display
-const BENCH_CATEGORIES: [string, RegExp][] = [
-    ["Atoms", /^(atom(?!Family)|store\.get|set\(atom|set \d+ atoms|get \d+ atoms)/],
-    ["Selectors", /^(selector(?!Family)|set \+ read|chained)/],
-    ["Transactions", /^txn:/],
-    ["Store", /^(createStore|sub \+ unsub)/],
-    ["Families", /^(atomFamily|selectorFamily)/],
-]
-
-function categorizeBenchmark(name: string): string {
-    for (const [cat, pattern] of BENCH_CATEGORIES) {
-        if (pattern.test(name)) return cat
-    }
-    return "Other"
-}
-
 function formatTable(
     results: Comparison[],
     runNumber: number,
@@ -519,13 +504,8 @@ function formatTable(
         "",
     )
 
-    // Group by category
-    const grouped = new Map<string, Comparison[]>()
-    for (const r of results) {
-        const cat = categorizeBenchmark(r.name)
-        if (!grouped.has(cat)) grouped.set(cat, [])
-        grouped.get(cat)!.push(r)
-    }
+    // Group by category (deterministic order from BENCH_CATEGORIES)
+    const grouped = groupByCategory(results, r => r.name)
 
     for (const [cat, benchmarks] of grouped) {
         lines.push(
