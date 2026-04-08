@@ -4,10 +4,16 @@
  * Reads historical data from the benchmark-data branch (compact JSON we
  * control), falls back to gh-pages data.js for backwards compatibility.
  *
- * Key improvements over the original:
+ * Key design decisions:
  * - Per-benchmark dynamic thresholds based on historical coefficient of
  *   variation (CV). Stable benchmarks get tight thresholds; noisy ones
  *   get lenient thresholds.
+ * - Dual-check gating: CI only fails when BOTH ratio (vs Jotai) AND
+ *   absolute (self-vs-self) checks flag a regression. A single check
+ *   flagging produces a warning but doesn't block. This eliminates
+ *   false positives from Jotai reference noise.
+ * - Noise floor: benchmarks with median < 500ns are auto-skipped from
+ *   gating — nanosecond-scale measurements are dominated by CI noise.
  * - Optimization-target benchmarks (threshold >= 10) are tracked but
  *   don't block PRs — they're already gated by the bun test assertion.
  * - Uses median of ratios from last N runs as baseline.
@@ -38,6 +44,14 @@ const MAX_THRESHOLD = 2.0
  * They are tracked in the report but don't fail the CI.
  */
 const OPTIMIZATION_TARGET_THRESHOLD = 10
+
+/**
+ * Noise floor in nanoseconds. Benchmarks with historical median absolute
+ * timing below this are dominated by measurement noise (GC pauses, CPU
+ * scheduling) and are automatically treated as optimization targets for
+ * regression gating purposes.
+ */
+const NOISE_FLOOR_NS = 500
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -84,7 +98,7 @@ interface LegacyData {
     entries: Record<string, LegacyEntry[]>
 }
 
-type Status = "ok" | "skip" | "new" | "regression"
+type Status = "ok" | "skip" | "new" | "regression" | "warning"
 
 interface Comparison {
     name: string
@@ -119,9 +133,10 @@ function fmtRatio(ratio: number): string {
 function fmtChange(ratioChange: number | null): string {
     if (ratioChange == null) return "—"
     const pct = Math.abs((ratioChange - 1) * 100)
+    if (pct < 1) return "~same"
     return ratioChange >= 1
-        ? `${pct.toFixed(0)}% worse`
-        : `${pct.toFixed(0)}% better`
+        ? `+${pct.toFixed(0)}%`
+        : `-${pct.toFixed(0)}%`
 }
 
 function median(values: number[]): number {
@@ -333,16 +348,19 @@ function compare(
         const valCV = history.valdresCvByName.get(bench.name) ?? 0
         const absChange = medVal ? bench.valdres / medVal : null
         const absThreshold = medVal ? dynamicThreshold(valCV) : null
-        const absStatus: Status =
+        const rawAbsStatus: Status =
             absChange != null && absThreshold != null && absChange > absThreshold
                 ? "regression"
                 : medVal == null
                   ? "new"
                   : "ok"
 
-        // Optimization targets are tracked but don't block PRs
+        // Optimization targets are tracked but don't block PRs.
+        // Also treat sub-microsecond benchmarks as opt targets — their
+        // nanosecond-scale measurements are dominated by noise on shared CI.
         const isOptTarget =
-            (bench.threshold ?? 0) >= OPTIMIZATION_TARGET_THRESHOLD
+            (bench.threshold ?? 0) >= OPTIMIZATION_TARGET_THRESHOLD ||
+            (medVal != null && medVal < NOISE_FLOOR_NS)
 
         if (isOptTarget) {
             return {
@@ -373,7 +391,7 @@ function compare(
                 medianValdres: medVal ?? null,
                 absChange,
                 absThreshold,
-                absStatus,
+                absStatus: rawAbsStatus,
                 status: "new" as Status,
             }
         }
@@ -381,8 +399,21 @@ function compare(
         const ratioChange = currentRatio / medRatio
         const threshold = dynamicThreshold(ratioCV)
 
-        const status: Status =
-            ratioChange > threshold ? "regression" : "ok"
+        const ratioRegressed = ratioChange > threshold
+        const absRegressed = rawAbsStatus === "regression"
+
+        // Require BOTH ratio and absolute checks to agree before failing.
+        // - Ratio-only regression = Jotai reference got faster, not valdres slower
+        // - Abs-only regression = ratio is fine, absolute noise on shared runner
+        // Only when both flag does it indicate a real valdres performance regression.
+        let status: Status
+        if (ratioRegressed && absRegressed) {
+            status = "regression"
+        } else if (ratioRegressed || absRegressed) {
+            status = "warning"
+        } else {
+            status = "ok"
+        }
 
         return {
             name: bench.name,
@@ -395,7 +426,7 @@ function compare(
             medianValdres: medVal ?? null,
             absChange,
             absThreshold,
-            absStatus,
+            absStatus: rawAbsStatus,
             status,
         }
     })
@@ -407,7 +438,24 @@ const STATUS_ICON: Record<Status, string> = {
     ok: "✅",
     skip: "⏭️",
     new: "🆕",
+    warning: "⚠️",
     regression: "🚨",
+}
+
+// Benchmark categories for grouped display
+const BENCH_CATEGORIES: [string, RegExp][] = [
+    ["Atoms", /^(atom(?!Family)|store\.get|set\(atom|set \d+ atoms|get \d+ atoms)/],
+    ["Selectors", /^(selector(?!Family)|set \+ read|chained)/],
+    ["Transactions", /^txn:/],
+    ["Store", /^(createStore|sub \+ unsub)/],
+    ["Families", /^(atomFamily|selectorFamily)/],
+]
+
+function categorizeBenchmark(name: string): string {
+    for (const [cat, pattern] of BENCH_CATEGORIES) {
+        if (pattern.test(name)) return cat
+    }
+    return "Other"
 }
 
 function formatTable(
@@ -416,88 +464,98 @@ function formatTable(
     historySource: string,
     windowUsed: number,
 ): string {
+    const regressions = results.filter(r => r.status === "regression")
+    const warnings = results.filter(r => r.status === "warning")
+    const noteworthy = results.filter(
+        r => r.status === "regression" || r.status === "warning",
+    )
+
     const lines: string[] = [
         "<!-- bench-regression-check -->",
         "## Benchmark Regression Report",
         "",
-        `Compared **valdres/jotai ratio** against median of last ${windowUsed} runs on \`main\` (source: \`${historySource}\`).`,
-        `Thresholds are dynamic per-benchmark based on historical variance.`,
-        "",
-        "| | Benchmark | Valdres | Jotai | vs Jotai | Baseline | Change | Threshold |",
-        "|:-|:----------|--------:|------:|---------:|---------:|-------:|----------:|",
     ]
 
-    for (const r of results) {
-        const icon = STATUS_ICON[r.status]
-        const valdres = fmtNs(r.valdres)
-        const jotai = r.jotai > 0 ? fmtNs(r.jotai) : "—"
-        const vsJotai = fmtRatio(r.currentRatio)
-        const baseline = r.medianRatio != null ? fmtRatio(r.medianRatio) : "—"
-        const change = fmtChange(r.ratioChange)
-        const thresh =
-            r.status === "skip"
-                ? "opt target"
-                : r.threshold != null
-                  ? `${((r.threshold - 1) * 100).toFixed(0)}%`
-                  : "—"
-        lines.push(
-            `| ${icon} | ${r.name} | ${valdres} | ${jotai} | ${vsJotai} | ${baseline} | ${change} | ${thresh} |`,
-        )
-    }
-
-    const regressions = results.filter(r => r.status === "regression")
+    // ── Summary line (the only thing most reviewers need) ──
     if (regressions.length > 0) {
         lines.push(
-            "",
-            `**${regressions.length} regression(s) detected.**`,
+            `🚨 **${regressions.length} regression(s) detected** — both ratio and absolute checks agree.`,
         )
     } else {
-        lines.push("", "No regressions detected.")
+        lines.push("✅ **No regressions detected.**")
     }
-
-    // Self-vs-self absolute timing section (informational, does not gate CI)
-    const selfResults = results.filter(
-        r => r.medianValdres != null && r.absStatus !== "skip",
-    )
-    if (selfResults.length > 0) {
+    if (warnings.length > 0) {
         lines.push(
             "",
-            "<details>",
-            "<summary>Self-vs-self timing (does not gate CI)</summary>",
-            "",
-            "Compares absolute valdres timings against historical median. Noisier than ratio comparison (no runner-variance cancellation), but catches regressions invisible to the jotai ratio.",
-            "",
-            "| | Benchmark | Current | Baseline | Change | Threshold |",
-            "|:-|:----------|--------:|---------:|-------:|----------:|",
+            `⚠️ ${warnings.length} warning(s) — only one check flagged, not blocking CI.`,
         )
-
-        for (const r of selfResults) {
-            const icon = STATUS_ICON[r.absStatus]
-            const current = fmtNs(r.valdres)
-            const baseline =
-                r.medianValdres != null ? fmtNs(r.medianValdres) : "—"
-            const change = fmtChange(r.absChange)
-            const thresh =
-                r.absThreshold != null
-                    ? `${((r.absThreshold - 1) * 100).toFixed(0)}%`
-                    : "—"
-            lines.push(
-                `| ${icon} | ${r.name} | ${current} | ${baseline} | ${change} | ${thresh} |`,
-            )
-        }
-
-        const absRegressions = selfResults.filter(
-            r => r.absStatus === "regression",
-        )
-        if (absRegressions.length > 0) {
-            lines.push(
-                "",
-                `${absRegressions.length} absolute timing regression(s) — review recommended.`,
-            )
-        }
-
-        lines.push("", "</details>")
     }
+
+    // ── Show flagged benchmarks inline (if any) ──
+    if (noteworthy.length > 0) {
+        lines.push(
+            "",
+            "| | Benchmark | vs Jotai | Baseline | Δ Ratio | Δ Absolute |",
+            "|:-|:----------|--------:|---------:|-------:|-----------:|",
+        )
+        for (const r of noteworthy) {
+            const icon = STATUS_ICON[r.status]
+            const vsJotai = fmtRatio(r.currentRatio)
+            const baseline =
+                r.medianRatio != null ? fmtRatio(r.medianRatio) : "—"
+            const ratioChg = fmtChange(r.ratioChange)
+            const absChg = fmtChange(r.absChange)
+            lines.push(
+                `| ${icon} | ${r.name} | ${vsJotai} | ${baseline} | ${ratioChg} | ${absChg} |`,
+            )
+        }
+    }
+
+    // ── Full results in collapsible section ──
+    lines.push(
+        "",
+        "<details>",
+        `<summary>Full results — ${results.length} benchmarks compared against last ${windowUsed} runs on <code>main</code></summary>`,
+        "",
+    )
+
+    // Group by category
+    const grouped = new Map<string, Comparison[]>()
+    for (const r of results) {
+        const cat = categorizeBenchmark(r.name)
+        if (!grouped.has(cat)) grouped.set(cat, [])
+        grouped.get(cat)!.push(r)
+    }
+
+    for (const [cat, benchmarks] of grouped) {
+        lines.push(
+            `**${cat}**`,
+            "",
+            "| | Benchmark | Valdres | vs Jotai | Baseline | Δ Ratio | Δ Absolute |",
+            "|:-|:----------|--------:|--------:|---------:|-------:|-----------:|",
+        )
+
+        for (const r of benchmarks) {
+            const icon = STATUS_ICON[r.status]
+            const valdres = fmtNs(r.valdres)
+            const vsJotai = fmtRatio(r.currentRatio)
+            const baseline =
+                r.medianRatio != null ? fmtRatio(r.medianRatio) : "—"
+            const ratioChg = fmtChange(r.ratioChange)
+            const absChg = fmtChange(r.absChange)
+            lines.push(
+                `| ${icon} | ${r.name} | ${valdres} | ${vsJotai} | ${baseline} | ${ratioChg} | ${absChg} |`,
+            )
+        }
+
+        lines.push("")
+    }
+
+    lines.push(
+        "**Legend:** ✅ pass · ⚠️ warning (one check flagged) · 🚨 regression (both checks agree) · ⏭️ skipped (opt target or below noise floor) · 🆕 new",
+        "",
+        "</details>",
+    )
 
     if (runNumber > 0) {
         const now = new Date()
