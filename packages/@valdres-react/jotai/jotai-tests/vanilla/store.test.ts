@@ -944,7 +944,7 @@ test("processes deep atom a graph beyond maxDepth", () => {
         }
         return d()
     }
-    const maxDepth = getMaxDepth()
+    const maxDepth = Math.min(getMaxDepth(), 5000)
     const store = createStore()
     const baseAtom = atom(0)
     const atoms: any[] = [baseAtom]

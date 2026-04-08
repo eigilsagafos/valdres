@@ -384,7 +384,7 @@ export const propagateDirtySelectors = (
         // At this point we have the first level of selectors that are depeendent on
         // the atoms that changed. We should now traverse the tree of selectors, collect subsribers
         // to those that change, and keep track of all selectors that we have visited.
-        recursivlyHandleSelectorUpdates(
+        propagateSelectorUpdates(
             selectors,
             data,
             subscriptions,
@@ -427,7 +427,7 @@ export const propagateDirtySelectors = (
 }
 
 
-const recursivlyHandleSelectorUpdates = (
+const propagateSelectorUpdates = (
     selectors: Set<Selector>,
     data: StoreData,
     collectedSubscribers: Set<any>,

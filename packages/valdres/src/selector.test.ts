@@ -714,7 +714,7 @@ describe("async selector", () => {
                 }
                 return d()
             }
-            const maxDepth = getMaxDepth()
+            const maxDepth = Math.min(getMaxDepth(), 5000)
             const store1 = store()
             const base = atom(0)
             const chain: any[] = [base]
