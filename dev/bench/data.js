@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1775686697618,
+  "lastUpdate": 1775687063479,
   "repoUrl": "https://github.com/eigilsagafos/valdres",
   "entries": {
     "valdres benchmarks": [
@@ -4986,6 +4986,210 @@ window.BENCHMARK_DATA = {
             "value": 1474455,
             "unit": "ns",
             "extra": "jotai=25039782 ratio=0.0589 17.0x faster"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "eigil@sagafos.no",
+            "name": "Eigil Sagafos",
+            "username": "eigilsagafos"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "99d30cd7a30f5744a2773f276e55569b55f0fd1f",
+          "message": "Clean up stateDependents on unsubscribe to fix memory leaks (#50)\n\n* Clean up stateDependents on unsubscribe to fix memory leaks\n\nAfter unsubscribing from a state, orphaned selectors in the dependency\ngraph were retained via strong references in stateDependents, preventing\ngarbage collection. Add cleanupOrphanedDeps to recursively remove\nselectors from their dependencies' stateDependents sets when no\ntransitive subscribers remain. Cached values and abort controllers are\nalso cleared so re-subscription triggers fresh evaluation.\n\nCo-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>\n\n* Guard against async promise resolution after cleanup\n\nAddress two issues flagged in PR review:\n- Clear expiredValues in cleanupOrphanedDeps so propagated stale values\n  don't retain memory for cleaned-up selectors.\n- Add stateDependencies guard in handleSelectorResult's async paths so\n  promise resolution handlers bail when the selector was cleaned up by\n  unsubscribe, preventing repopulation of data.values without deps.\n\nCo-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>\n\n* Add red-green tests for expiredValues cleanup and async guard\n\n- expiredValues test: verifies expired selector values are cleared on\n  unsubscribe (fails without expiredValues.delete in cleanup)\n- async promise test: verifies resolved promise handler bails after\n  cleanup (fails without stateDependencies guard in handleSelectorResult)\n\nCo-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 4.6 <noreply@anthropic.com>",
+          "timestamp": "2026-04-08T15:21:51-07:00",
+          "tree_id": "67d91037cdc1338e2f23232d5c5bf64295d2e228",
+          "url": "https://github.com/eigilsagafos/valdres/commit/99d30cd7a30f5744a2773f276e55569b55f0fd1f"
+        },
+        "date": 1775687062991,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "atom(1)",
+            "value": 2,
+            "unit": "ns",
+            "extra": "jotai=54 ratio=0.0459 21.8x faster"
+          },
+          {
+            "name": "store.get(atom)",
+            "value": 40,
+            "unit": "ns",
+            "extra": "jotai=380 ratio=0.1053 9.5x faster"
+          },
+          {
+            "name": "set(atom, value)",
+            "value": 251,
+            "unit": "ns",
+            "extra": "jotai=2163 ratio=0.1160 8.6x faster"
+          },
+          {
+            "name": "set(atom, curr => curr+1)",
+            "value": 267,
+            "unit": "ns",
+            "extra": "jotai=2814 ratio=0.0948 10.6x faster"
+          },
+          {
+            "name": "set(atom) with 10 subs",
+            "value": 571,
+            "unit": "ns",
+            "extra": "jotai=3729 ratio=0.1531 6.5x faster"
+          },
+          {
+            "name": "atom lifecycle (create+100get+100set)",
+            "value": 27712,
+            "unit": "ns",
+            "extra": "jotai=290679 ratio=0.0953 10.5x faster"
+          },
+          {
+            "name": "atomFamily(id)",
+            "value": 375,
+            "unit": "ns",
+            "extra": "jotai=513 ratio=0.7307 1.4x faster"
+          },
+          {
+            "name": "atomFamily(id) cache hit",
+            "value": 55,
+            "unit": "ns",
+            "extra": "jotai=11 ratio=4.9299 4.9x slower"
+          },
+          {
+            "name": "selectorFamily(id)",
+            "value": 383,
+            "unit": "ns",
+            "extra": "jotai=516 ratio=0.7428 1.3x faster"
+          },
+          {
+            "name": "obj.value",
+            "value": 5,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "map.get(key)",
+            "value": 17,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "valdres get",
+            "value": 8,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "jotai get",
+            "value": 358,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "obj.value = n",
+            "value": 5,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "map.set(key, n)",
+            "value": 18,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "valdres set",
+            "value": 533,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "jotai set",
+            "value": 3456,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "selector(fn)",
+            "value": 7,
+            "unit": "ns",
+            "extra": "jotai=63 ratio=0.1192 8.4x faster"
+          },
+          {
+            "name": "set + read 10 selectors",
+            "value": 9109,
+            "unit": "ns",
+            "extra": "jotai=28183 ratio=0.3232 3.1x faster"
+          },
+          {
+            "name": "set + read 100 selectors",
+            "value": 85409,
+            "unit": "ns",
+            "extra": "jotai=347650 ratio=0.2457 4.1x faster"
+          },
+          {
+            "name": "set + read through 5 chained selectors",
+            "value": 8509,
+            "unit": "ns",
+            "extra": "jotai=18936 ratio=0.4494 2.2x faster"
+          },
+          {
+            "name": "createStore",
+            "value": 555,
+            "unit": "ns",
+            "extra": "jotai=6723 ratio=0.0826 12.1x faster"
+          },
+          {
+            "name": "set 1000 atoms",
+            "value": 93701,
+            "unit": "ns",
+            "extra": "jotai=1196635 ratio=0.0783 12.8x faster"
+          },
+          {
+            "name": "get 1000 atoms",
+            "value": 9564,
+            "unit": "ns",
+            "extra": "jotai=581102 ratio=0.0165 60.8x faster"
+          },
+          {
+            "name": "sub + unsub",
+            "value": 480,
+            "unit": "ns",
+            "extra": "jotai=2474 ratio=0.1940 5.2x faster"
+          },
+          {
+            "name": "txn: 10 atoms × 10 selectors, set + read",
+            "value": 93361,
+            "unit": "ns",
+            "extra": "jotai=316764 ratio=0.2947 3.4x faster"
+          },
+          {
+            "name": "txn: 10 atoms × 10 selectors, with subs",
+            "value": 147201,
+            "unit": "ns",
+            "extra": "jotai=633099 ratio=0.2325 4.3x faster"
+          },
+          {
+            "name": "txn: 10 atoms × 100 selectors, set + read",
+            "value": 863942,
+            "unit": "ns",
+            "extra": "jotai=3517580 ratio=0.2456 4.1x faster"
+          },
+          {
+            "name": "txn: cross-atom 1000 selectors, set + read",
+            "value": 1000851,
+            "unit": "ns",
+            "extra": "jotai=5152283 ratio=0.1943 5.1x faster"
+          },
+          {
+            "name": "txn: cross-atom 1000 selectors, with subs",
+            "value": 1474356,
+            "unit": "ns",
+            "extra": "jotai=26921046 ratio=0.0548 18.3x faster"
           }
         ]
       }
