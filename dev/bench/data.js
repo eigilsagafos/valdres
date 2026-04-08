@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1775601145139,
+  "lastUpdate": 1775665067218,
   "repoUrl": "https://github.com/eigilsagafos/valdres",
   "entries": {
     "valdres benchmarks": [
@@ -4170,6 +4170,210 @@ window.BENCHMARK_DATA = {
             "value": 1496154,
             "unit": "ns",
             "extra": "jotai=24699231 ratio=0.0606 16.5x faster"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "eigil@sagafos.no",
+            "name": "Eigil Sagafos",
+            "username": "eigilsagafos"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "6b40272ebf63df178ab76fb4527449783f6286e3",
+          "message": "Fix flaky memory leak tests in CI (#46)\n\n* Fix flaky memory leak tests in CI by switching to WeakRef\n\nFinalizationRegistry callbacks have non-deterministic timing — the spec\ndoesn't guarantee when they fire after GC. On CI runners with low memory\npressure, callbacks often didn't fire within the timeout window, causing\ntwo tests to fail intermittently.\n\nReplace FinalizationRegistry with WeakRef.deref() which gives an\nimmediate answer about whether an object has been collected. Use 3\nrounds of gc() + heap snapshot (more aggressive) with early returns\ninstead of 20 fixed yield iterations.\n\nCo-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>\n\n* Increase LeakDetector GC rounds and use real timer delays\n\n3 rounds wasn't enough on CI — \"unreferenced selector value is\ncollected\" still failed. Bump to 10 rounds and use 1ms real timer\ndelays (instead of microtask yields) to give the runtime time to\nprocess WeakMap/WeakRef cleanup between GC passes.\n\nCo-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>\n\n* Use fullGC + releaseWeakRefs + generateHeapSnapshot combo\n\nPrevious approach still failed in CI for selector tests. Now uses the\nfull arsenal from bun:jsc that Bun's own test suite relies on:\n- fullGC() for thorough collection\n- releaseWeakRefs() to explicitly process deferred weak ref cleanup\n- generateHeapSnapshot() to force the engine to walk the full heap\n  and determine reachability\n\n10 rounds with early return, 10/10 stable locally.\n\nCo-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>\n\n* Fix tests asserting collection of objects with live reference chains\n\nThe two CI-flaky tests had real reference chains preventing GC:\n\n1. \"atom value is collected after set replaces it\": atom1.defaultValue\n   held a strong reference to the tracked object. Fix: use undefined\n   as default, set the tracked value via store.set() instead.\n\n2. \"unreferenced selector value is collected\": stateDependents.get(atom1)\n   held a Set containing the selector, keeping it and its value alive.\n   Fix: release atom1 and store1 so the WeakMap entries can be collected.\n\nAlso fixed \"chained selector values\", \"selector value after sub/unsub\",\nand \"released selector family entry\" which had the same stateDependents\nreference chain and could fail flakily on CI.\n\nCo-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>\n\n* Use IIFEs to ensure all references leave the call stack\n\nSetting variables to undefined leaves the bindings allocated in the\nasync function's scope frame. JSC on Linux CI may not resolve the\nWeakMap ephemeron cycle (stateDependents ↔ stateDependencies cross-\nreference selectors and their dependency atoms through Sets in WeakMap\nvalues) when bindings still exist in scope.\n\nIIFEs ensure store, atom, and selector references are truly gone from\nthe call stack before GC runs — no lingering scope bindings.\n\nCo-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>\n\n* Isolate selector getter closures from store scope\n\nJSC captures the entire scope object for closures, not just referenced\nvariables. When a selector getter like `get => get(atom)` is defined\nin the same scope as the store, the closure keeps the store alive.\nCombined with stateDependents (store → atom → Set → selector → getter\n→ scope → store), this creates an uncollectable cycle.\n\nFix: define selectors in nested IIFEs whose scope does NOT contain the\nstore. The getter closure only captures the inner scope (with the atom),\nwhile the store lives in a separate outer scope that's destroyed on\nreturn.\n\nCo-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>\n\n* Use gcAggressionLevel(2) and real delays in LeakDetector\n\nJSC on Linux (CI) is lazier about processing WeakMap ephemeron cycles\nand WeakRef cleanup than on macOS. Two changes:\n\nLeakDetector: temporarily set gcAggressionLevel to maximum (2) during\nchecking, and use Bun.sleep(10) real delays between rounds (matching\nBun's own test patterns which sleep 10-50ms). This gives JSC's GC\nenough pressure and time to process deferred weak reference cleanup.\n\nTests: isolate selector getter closures in nested IIFEs so the getter's\ncaptured scope doesn't include the store (JSC captures entire scope\nobjects for closures, creating uncollectable cycles via stateDependents\nwhen store and selector share a scope).\n\nCo-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>\n\n* Run memory leak tests in isolated process to avoid heap pressure\n\nBun runs all test files in the same process, so heap pressure from\nother test files prevents WeakMap ephemeron cleanup even after many\nGC rounds. Running memoryleaks.test.ts as a separate bun test\ninvocation ensures a clean heap.\n\nAlso simplifies LeakDetector (10 rounds, no gcAggressionLevel hack)\nand wraps all leak tests in IIFEs so stores go fully out of scope.\n\nCo-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 4.6 <noreply@anthropic.com>",
+          "timestamp": "2026-04-08T09:15:16-07:00",
+          "tree_id": "efc4a458e661a13817e8fdd28a1c3ae6708230fc",
+          "url": "https://github.com/eigilsagafos/valdres/commit/6b40272ebf63df178ab76fb4527449783f6286e3"
+        },
+        "date": 1775665066836,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "atom(1)",
+            "value": 3,
+            "unit": "ns",
+            "extra": "jotai=55 ratio=0.0464 21.6x faster"
+          },
+          {
+            "name": "store.get(atom)",
+            "value": 40,
+            "unit": "ns",
+            "extra": "jotai=380 ratio=0.1053 9.5x faster"
+          },
+          {
+            "name": "set(atom, value)",
+            "value": 241,
+            "unit": "ns",
+            "extra": "jotai=2194 ratio=0.1098 9.1x faster"
+          },
+          {
+            "name": "set(atom, curr => curr+1)",
+            "value": 248,
+            "unit": "ns",
+            "extra": "jotai=2814 ratio=0.0882 11.3x faster"
+          },
+          {
+            "name": "set(atom) with 10 subs",
+            "value": 577,
+            "unit": "ns",
+            "extra": "jotai=3799 ratio=0.1519 6.6x faster"
+          },
+          {
+            "name": "atom lifecycle (create+100get+100set)",
+            "value": 25609,
+            "unit": "ns",
+            "extra": "jotai=291559 ratio=0.0878 11.4x faster"
+          },
+          {
+            "name": "atomFamily(id)",
+            "value": 370,
+            "unit": "ns",
+            "extra": "jotai=513 ratio=0.7211 1.4x faster"
+          },
+          {
+            "name": "atomFamily(id) cache hit",
+            "value": 54,
+            "unit": "ns",
+            "extra": "jotai=11 ratio=4.8200 4.8x slower"
+          },
+          {
+            "name": "selectorFamily(id)",
+            "value": 369,
+            "unit": "ns",
+            "extra": "jotai=508 ratio=0.7269 1.4x faster"
+          },
+          {
+            "name": "obj.value",
+            "value": 5,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "map.get(key)",
+            "value": 16,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "valdres get",
+            "value": 8,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "jotai get",
+            "value": 358,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "obj.value = n",
+            "value": 5,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "map.set(key, n)",
+            "value": 18,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "valdres set",
+            "value": 510,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "jotai set",
+            "value": 3416,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "selector(fn)",
+            "value": 9,
+            "unit": "ns",
+            "extra": "jotai=64 ratio=0.1348 7.4x faster"
+          },
+          {
+            "name": "set + read 10 selectors",
+            "value": 8868,
+            "unit": "ns",
+            "extra": "jotai=30101 ratio=0.2946 3.4x faster"
+          },
+          {
+            "name": "set + read 100 selectors",
+            "value": 84046,
+            "unit": "ns",
+            "extra": "jotai=343427 ratio=0.2447 4.1x faster"
+          },
+          {
+            "name": "set + read through 5 chained selectors",
+            "value": 8471,
+            "unit": "ns",
+            "extra": "jotai=18111 ratio=0.4677 2.1x faster"
+          },
+          {
+            "name": "createStore",
+            "value": 501,
+            "unit": "ns",
+            "extra": "jotai=6745 ratio=0.0743 13.5x faster"
+          },
+          {
+            "name": "set 1000 atoms",
+            "value": 94432,
+            "unit": "ns",
+            "extra": "jotai=1195407 ratio=0.0790 12.7x faster"
+          },
+          {
+            "name": "get 1000 atoms",
+            "value": 7727,
+            "unit": "ns",
+            "extra": "jotai=371188 ratio=0.0208 48.0x faster"
+          },
+          {
+            "name": "sub + unsub",
+            "value": 870,
+            "unit": "ns",
+            "extra": "jotai=2494 ratio=0.3490 2.9x faster"
+          },
+          {
+            "name": "txn: 10 atoms × 10 selectors, set + read",
+            "value": 93301,
+            "unit": "ns",
+            "extra": "jotai=406972 ratio=0.2293 4.4x faster"
+          },
+          {
+            "name": "txn: 10 atoms × 10 selectors, with subs",
+            "value": 147892,
+            "unit": "ns",
+            "extra": "jotai=716617 ratio=0.2064 4.8x faster"
+          },
+          {
+            "name": "txn: 10 atoms × 100 selectors, set + read",
+            "value": 824450,
+            "unit": "ns",
+            "extra": "jotai=4528878 ratio=0.1820 5.5x faster"
+          },
+          {
+            "name": "txn: cross-atom 1000 selectors, set + read",
+            "value": 970810,
+            "unit": "ns",
+            "extra": "jotai=5053536 ratio=0.1921 5.2x faster"
+          },
+          {
+            "name": "txn: cross-atom 1000 selectors, with subs",
+            "value": 1471362,
+            "unit": "ns",
+            "extra": "jotai=25660339 ratio=0.0573 17.4x faster"
           }
         ]
       }
