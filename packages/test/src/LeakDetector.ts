@@ -1,13 +1,14 @@
 import { generateHeapSnapshot } from "bun"
 
 /**
- * Bun-native memory leak detector using FinalizationRegistry.
+ * Bun-native memory leak detector using WeakRef.
  * Replaces jest-leak-detector which requires node:v8 setFlagsFromString.
  *
- * Mirrors jest-leak-detector's approach: FinalizationRegistry tracks when
- * the object is garbage collected. Uses Bun.gc(true) and, if needed, a
- * Bun heap snapshot fallback to more aggressively encourage pending
- * FinalizationRegistry callbacks to run in Bun.
+ * Uses WeakRef.deref() to directly check whether the object has been
+ * garbage collected, which is more reliable than FinalizationRegistry
+ * callbacks whose timing is non-deterministic. Multiple rounds of
+ * Bun.gc(true) and heap snapshots aggressively encourage collection,
+ * especially for objects behind WeakMap indirection.
  *
  * Usage:
  *   const detector = new LeakDetector(someObject)
@@ -15,31 +16,24 @@ import { generateHeapSnapshot } from "bun"
  *   expect(await detector.isLeaking()).toBe(false)
  */
 export class LeakDetector {
-    private _isReferenceBeingHeld = true
-    private readonly _finalizationRegistry: FinalizationRegistry<undefined>
+    private _ref: WeakRef<object>
 
     constructor(value: object) {
-        this._finalizationRegistry = new FinalizationRegistry(() => {
-            this._isReferenceBeingHeld = false
-        })
-        this._finalizationRegistry.register(value, undefined)
-        value = null
+        this._ref = new WeakRef(value)
     }
 
     async isLeaking(): Promise<boolean> {
-        Bun.gc(true)
-        for (let i = 0; i < 10; i++) {
+        for (let round = 0; round < 3; round++) {
+            Bun.gc(true)
             await new Promise(resolve => setTimeout(resolve, 0))
-        }
-        if (this._isReferenceBeingHeld) {
-            // Triggering a heap snapshot is more aggressive than just gc().
-            // This often causes pending FinalizationRegistry callbacks to fire.
+            if (this._ref.deref() === undefined) return false
+            // Heap snapshots force more aggressive GC, helping clear
+            // WeakMap/WeakRef entries that survive a simple gc() pass.
             generateHeapSnapshot()
             Bun.gc(true)
-            for (let i = 0; i < 10; i++) {
-                await new Promise(resolve => setTimeout(resolve, 0))
-            }
+            await new Promise(resolve => setTimeout(resolve, 0))
+            if (this._ref.deref() === undefined) return false
         }
-        return this._isReferenceBeingHeld
+        return this._ref.deref() !== undefined
     }
 }
