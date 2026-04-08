@@ -18,8 +18,9 @@ import {
 import { setValueInData } from "./setValueInData"
 
 /**
- * Thrown by getState when a selector needs initialization during trampoline
- * evaluation. The trampoline catches this and evaluates the dependency first.
+ * Thrown by getState when recursion depth exceeds MAX_EVAL_DEPTH and a selector
+ * still needs initialization. The outermost initSelector catches this and
+ * switches to an iterative trampoline to evaluate the dependency chain.
  */
 export class NeedsInitError {
     selector: Selector
@@ -381,7 +382,7 @@ const initSelectorDirect = <V>(
     circularDependencySet: WeakSet<any>,
 ): boolean => {
     const existingValue = data.values.get(selector)
-    const udpatedValue = evaluate(
+    const updatedValue = evaluate(
         selector,
         data,
         initializedAtomsSet,
@@ -390,14 +391,14 @@ const initSelectorDirect = <V>(
 
     // Promises should use reference equality — deep equal treats all
     // promises as structurally identical (both have zero own keys).
-    const areEqual = isPromiseLike(existingValue) || isPromiseLike(udpatedValue)
-        ? existingValue === udpatedValue
-        : selector.equal(existingValue as V, udpatedValue as V)
+    const areEqual = isPromiseLike(existingValue) || isPromiseLike(updatedValue)
+        ? existingValue === updatedValue
+        : selector.equal(existingValue as V, updatedValue as V)
 
     if (areEqual) {
         return false
     } else {
-        setValueInData<V>(selector, udpatedValue as V, data)
+        setValueInData<V>(selector, updatedValue as V, data)
         return true
     }
 }

@@ -426,27 +426,6 @@ export const propagateDirtySelectors = (
     }
 }
 
-const findAllDependents = (
-    selector: Selector,
-    data: StoreData,
-    depsRes = new Set(),
-    subsRes = new Set<any>(),
-) => {
-    const stack: Selector[] = [selector]
-    while (stack.length > 0) {
-        const current = stack.pop()!
-        const dependents = data.stateDependents.get(current)
-        const subscriptions = data.subscriptions.get(current)
-        addSetToSet(dependents, depsRes)
-        addSetToSet(subscriptions, subsRes)
-        if (dependents && dependents.size > 0) {
-            for (const dependent of dependents) {
-                if (!depsRes.has(dependent)) stack.push(dependent)
-            }
-        }
-    }
-    return [depsRes, subsRes]
-}
 
 const recursivlyHandleSelectorUpdates = (
     selectors: Set<Selector>,
@@ -498,7 +477,7 @@ const recursivlyHandleSelectorUpdates = (
                 }
                 if (!wasValueUpdated) continue
                 addSetToSet(
-                    data.stateDependents.get(selector), // We intentially get the dependents again, since the reevalute might have changed the dependents
+                    data.stateDependents.get(selector), // We intentionally get the dependents again, since the re-evaluate might have changed the dependents
                     selectorsForNextPass,
                 )
                 addSetToSet(subscribers, collectedSubscribers)
