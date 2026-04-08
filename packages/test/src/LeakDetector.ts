@@ -4,10 +4,11 @@ import { fullGC, releaseWeakRefs } from "bun:jsc"
 /**
  * Bun-native memory leak detector using WeakRef + bun:jsc primitives.
  *
- * Combines generateHeapSnapshot() (forces the engine to walk the full heap
- * and determine reachability) with releaseWeakRefs() from bun:jsc (explicitly
- * processes pending weak reference cleanup that GC alone defers). Polls in a
- * loop with Bun.sleep() yields, matching patterns from Bun's own test suite.
+ * Temporarily sets gcAggressionLevel to maximum (2) during checking, which
+ * makes JSC's GC run far more aggressively — critical for CI environments
+ * (Linux) where the default GC is lazier about processing WeakMap entries
+ * and ephemeron cycles. Uses Bun.sleep() yields with real delays between
+ * rounds, matching Bun's own test patterns (which sleep 10-50ms per round).
  *
  * Usage:
  *   const detector = new LeakDetector(someObject)
@@ -22,15 +23,21 @@ export class LeakDetector {
     }
 
     async isLeaking(): Promise<boolean> {
-        for (let round = 0; round < 10; round++) {
-            fullGC()
-            releaseWeakRefs()
-            generateHeapSnapshot()
-            fullGC()
-            releaseWeakRefs()
-            await Bun.sleep(0)
-            if (this._ref.deref() === undefined) return false
+        const prevLevel = Bun.unsafe.gcAggressionLevel()
+        Bun.unsafe.gcAggressionLevel(2)
+        try {
+            for (let round = 0; round < 20; round++) {
+                fullGC()
+                releaseWeakRefs()
+                generateHeapSnapshot()
+                fullGC()
+                releaseWeakRefs()
+                await Bun.sleep(10)
+                if (this._ref.deref() === undefined) return false
+            }
+            return this._ref.deref() !== undefined
+        } finally {
+            Bun.unsafe.gcAggressionLevel(prevLevel)
         }
-        return this._ref.deref() !== undefined
     }
 }
