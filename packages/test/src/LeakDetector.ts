@@ -23,15 +23,17 @@ export class LeakDetector {
     }
 
     async isLeaking(): Promise<boolean> {
-        for (let round = 0; round < 3; round++) {
+        for (let round = 0; round < 10; round++) {
             Bun.gc(true)
-            await new Promise(resolve => setTimeout(resolve, 0))
+            // A real timer delay (not just a microtask yield) gives the
+            // runtime time to process weak reference cleanup between rounds.
+            await new Promise(resolve => setTimeout(resolve, 1))
             if (this._ref.deref() === undefined) return false
             // Heap snapshots force more aggressive GC, helping clear
             // WeakMap/WeakRef entries that survive a simple gc() pass.
             generateHeapSnapshot()
             Bun.gc(true)
-            await new Promise(resolve => setTimeout(resolve, 0))
+            await new Promise(resolve => setTimeout(resolve, 1))
             if (this._ref.deref() === undefined) return false
         }
         return this._ref.deref() !== undefined
