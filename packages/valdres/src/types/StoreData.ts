@@ -14,11 +14,13 @@ export type RootStoreData = {
     storeRef?: Store
     scopes: Map<string, ScopedStoreData>
     batchUpdates?: boolean
+    scopeValueIndex: WeakMap<WeakKey, Set<ScopedStoreData>>
 }
 
 export type ScopedStoreData = RootStoreData & {
     parent: StoreData
     scopeConsumers: Set<() => void>
+    scopeIndexKeys: Set<WeakKey>
 }
 
 export type StoreData = RootStoreData | ScopedStoreData

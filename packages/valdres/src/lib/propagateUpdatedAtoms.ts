@@ -4,7 +4,7 @@ import type { AtomFamilyAtom } from "../types/AtomFamilyAtom"
 import type { Family } from "../types/Family"
 import type { Selector } from "../types/Selector"
 import type { State } from "../types/State"
-import type { StoreData } from "../types/StoreData"
+import type { ScopedStoreData, StoreData } from "../types/StoreData"
 import type { Subscription } from "../types/Subscription"
 import { isAtomFamily } from "../utils/isAtomFamily"
 import { isFamilyAtom } from "../utils/isFamilyAtom"
@@ -18,7 +18,7 @@ import {
     mountTransitiveDeps,
     unmountOrphanedDeps,
 } from "./mountAtom"
-import { setValueInData } from "./setValueInData"
+import { setValueInData, trackScopeValue } from "./setValueInData"
 
 const reEvaluteSelector = (
     selector: Selector,
@@ -179,6 +179,11 @@ export const deleteFamilyAtomsFromSet = (
     recursivlyUpdateIndexes(data, family)
 }
 
+// INVARIANT: initFamilyIndex walks up the ancestor chain, so when a scope
+// at depth N gets a family index, all ancestors (depth 0..N-1) also get one.
+// recursivlyUpdateIndexes relies on this: it only recurses into child scopes
+// that appear in scopeValueIndex, trusting that intermediate scopes without
+// the family have no descendants with it either.
 const initFamilyIndex = (family: Family<any>, data: StoreData) => {
     if (data.values.has(family)) return data.values.get(family).__index
     let parentIndex
@@ -188,6 +193,9 @@ const initFamilyIndex = (family: Family<any>, data: StoreData) => {
     }
     const index = createAtomFamilyIndex(parentIndex)
     data.values.set(family, renderAtomFamilyIndex(index))
+    if ("parent" in data) {
+        trackScopeValue(family, data as ScopedStoreData)
+    }
     return index
 }
 
@@ -205,17 +213,15 @@ const findFamilyIndex = (family: Family<any>, data: StoreData) => {
 }
 
 const recursivlyUpdateIndexes = (data: StoreData, family: Family<any>) => {
-    data.scopes.forEach((scopedData, scopeKey) => {
-        if (scopeKey) {
-            if (scopedData.values.has(family)) {
-                const index = scopedData.values.get(family).__index
-                index.rendered = null
-                index.renderedArray = null
-                scopedData.values.set(family, renderAtomFamilyIndex(index))
-            }
-            recursivlyUpdateIndexes(scopedData, family)
-        }
-    })
+    const childScopesWithFamily = data.scopeValueIndex.get(family)
+    if (!childScopesWithFamily || childScopesWithFamily.size === 0) return
+    for (const scopedData of childScopesWithFamily) {
+        const index = scopedData.values.get(family).__index
+        index.rendered = null
+        index.renderedArray = null
+        scopedData.values.set(family, renderAtomFamilyIndex(index))
+        recursivlyUpdateIndexes(scopedData, family)
+    }
 }
 
 export const addFamilyAtomsToSet = (
@@ -274,25 +280,31 @@ export const propagateDeletedAtoms = (
     // already updated the scope's family index via recursivlyUpdateIndexes,
     // but selectors in those scopes that depend on the family still need to
     // be re-evaluated so their subscribers get notified.
-    if (families.size > 0 && data.scopes) {
-        for (const [scopeId, scope] of data.scopes) {
-            const familiesInScope = []
-            for (const family of families.keys()) {
-                if (scope.values.has(family)) {
-                    familiesInScope.push(family)
+    if (families.size > 0 && data.scopes && data.scopes.size > 0) {
+        const scopeFamilies = new Map<StoreData, Family<any>[]>()
+        for (const family of families.keys()) {
+            const scopesWithFamily = data.scopeValueIndex.get(family)
+            if (scopesWithFamily) {
+                for (const scope of scopesWithFamily) {
+                    let list = scopeFamilies.get(scope)
+                    if (!list) {
+                        list = []
+                        scopeFamilies.set(scope, list)
+                    }
+                    list.push(family)
                 }
             }
-            if (familiesInScope.length > 0) {
-                propagateUpdatedAtoms(
-                    familiesInScope,
-                    scope,
-                    undefined,
-                    undefined,
-                    false,
-                    timestamp,
-                    true,
-                )
-            }
+        }
+        for (const [scope, familiesInScope] of scopeFamilies) {
+            propagateUpdatedAtoms(
+                familiesInScope,
+                scope,
+                undefined,
+                undefined,
+                false,
+                timestamp,
+                true,
+            )
         }
     }
 }
@@ -340,31 +352,87 @@ export const propagateUpdatedAtoms = (
 
     if (!isRecursive) {
         propagateDirtySelectors(atoms, selectors, data, subscriptions, families, isInitOnly)
-        if (data.scopes) {
-            for (const [scopeId, scope] of data.scopes) {
-                const atomsToUpdateInScope = []
-                for (const atom of atoms) {
-                    if (!scope.values.has(atom)) {
-                        atomsToUpdateInScope.push(atom)
-                    } else if (isAtomFamily(atom)) {
-                        // The scope has its own family index, but the parent
-                        // index may have changed (e.g. a member was deleted
-                        // from root). Re-evaluate dependent selectors in the
-                        // scope so subscribers get notified.
-                        atomsToUpdateInScope.push(atom)
+        if (data.scopes && data.scopes.size > 0) {
+            if (atoms.length === 1) {
+                // Fast path for single-atom updates (most common case)
+                const atom = atoms[0]
+                const shadowingScopes = isAtomFamily(atom)
+                    ? undefined
+                    : data.scopeValueIndex.get(atom)
+                for (const [, scope] of data.scopes) {
+                    if (!shadowingScopes || !shadowingScopes.has(scope)) {
+                        propagateUpdatedAtoms(
+                            atoms,
+                            scope,
+                            undefined,
+                            undefined,
+                            false,
+                            timestamp,
+                            true,
+                            isInitOnly,
+                        )
                     }
                 }
-                if (atomsToUpdateInScope.length > 0) {
-                    propagateUpdatedAtoms(
-                        atomsToUpdateInScope,
-                        scope,
-                        undefined,
-                        undefined,
-                        false,
-                        timestamp,
-                        true,
-                        isInitOnly,
-                    )
+            } else {
+                // Multi-atom path: precompute shadow sets once
+                let anyShadowed = false
+                let atomShadows: Map<any, Set<any>> | undefined
+                for (const atom of atoms) {
+                    if (!isAtomFamily(atom)) {
+                        const s = data.scopeValueIndex.get(atom)
+                        if (s && s.size > 0) {
+                            if (!atomShadows) atomShadows = new Map()
+                            atomShadows.set(atom, s)
+                            anyShadowed = true
+                        }
+                    }
+                }
+
+                if (!anyShadowed) {
+                    // No atom is shadowed, propagate all to every scope
+                    for (const [, scope] of data.scopes) {
+                        propagateUpdatedAtoms(
+                            atoms,
+                            scope,
+                            undefined,
+                            undefined,
+                            false,
+                            timestamp,
+                            true,
+                            isInitOnly,
+                        )
+                    }
+                } else {
+                    // Some atoms are shadowed, filter per scope
+                    for (const [, scope] of data.scopes) {
+                        const atomsToUpdateInScope = []
+                        for (const atom of atoms) {
+                            if (isAtomFamily(atom)) {
+                                // The scope has its own family index, but the parent
+                                // index may have changed (e.g. a member was deleted
+                                // from root). Re-evaluate dependent selectors in the
+                                // scope so subscribers get notified.
+                                atomsToUpdateInScope.push(atom)
+                            } else {
+                                const s = atomShadows!.get(atom)
+                                if (!s || !s.has(scope)) {
+                                    atomsToUpdateInScope.push(atom)
+                                }
+                            }
+                        }
+                        if (atomsToUpdateInScope.length > 0) {
+                            propagateUpdatedAtoms(
+                                atomsToUpdateInScope,
+                                scope,
+                                undefined,
+                                undefined,
+                                false,
+                                timestamp,
+                                true,
+                                isInitOnly,
+                            )
+                        }
+                    }
                 }
             }
         }
