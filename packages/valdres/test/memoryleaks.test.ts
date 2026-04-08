@@ -110,6 +110,47 @@ describe("memory leaks (subscriptions)", () => {
         expect(await detector.isLeaking()).toBe(false)
     })
 
+    test("derived selector value is collected after base atom unsubscribe", async () => {
+        const baseAtom = atom(1)
+        const sel = selector(get => ({ value: get(baseAtom) }))
+        const detector = (() => {
+            const s = store()
+            s.get(sel)
+            const d = new LeakDetector(s.get(sel))
+            const unsub = s.sub(baseAtom, () => {})
+            unsub()
+            return d
+        })()
+        expect(await detector.isLeaking()).toBe(false)
+    })
+
+    test("stateDependents are cleaned up after selector unsubscribe", () => {
+        const s = store()
+        const baseAtom = atom(1)
+        const sel = selector(get => get(baseAtom) + 1)
+        const unsub = s.sub(sel, () => {})
+        expect(s.data.stateDependents.get(baseAtom)?.has(sel)).toBe(true)
+        unsub()
+        // After unsubscribe, sel should be removed from baseAtom's dependents
+        const after = s.data.stateDependents.get(baseAtom)
+        expect(!after || !after.has(sel)).toBe(true)
+    })
+
+    test("stateDependents are cleaned up after base atom unsubscribe", () => {
+        const s = store()
+        const baseAtom = atom(1)
+        const sel = selector(get => get(baseAtom) + 1)
+        // Evaluate sel so the dep graph is established
+        s.get(sel)
+        expect(s.data.stateDependents.get(baseAtom)?.has(sel)).toBe(true)
+        // Subscribe to the base atom, then unsubscribe
+        const unsub = s.sub(baseAtom, () => {})
+        unsub()
+        // After unsubscribe, sel should be removed from baseAtom's dependents
+        const after = s.data.stateDependents.get(baseAtom)
+        expect(!after || !after.has(sel)).toBe(true)
+    })
+
     test("subscription callback is not retained after unsubscribe", async () => {
         let callback: any = () => {}
         const detector = new LeakDetector(callback)
