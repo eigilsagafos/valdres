@@ -30,14 +30,18 @@ describe("memory leaks (atoms)", () => {
 
 describe("memory leaks (selectors)", () => {
     test("unreferenced selector value is collected", async () => {
-        // IIFE ensures all references (store, atom, selector) truly leave
-        // the call stack. Setting variables to undefined is not enough —
-        // stateDependents/stateDependencies create a WeakMap ephemeron
-        // cycle that JSC may not resolve if bindings linger in scope.
+        // The selector getter closure captures its enclosing scope. In JSC,
+        // this means the ENTIRE scope object — not just referenced variables.
+        // If the store lives in the same scope, the closure keeps it alive,
+        // and stateDependents creates a cycle (store → atom → sel → getter
+        // → scope → store). Fix: define the selector in a nested scope that
+        // does NOT contain the store.
+        const sel = (() => {
+            const a = atom(1)
+            return selector(get => ({ value: get(a) }))
+        })()
         const detector = (() => {
             const s = store()
-            const a = atom(1)
-            const sel = selector(get => ({ value: get(a) }))
             return new LeakDetector(s.get(sel))
         })()
         expect(await detector.isLeaking()).toBe(false)
@@ -54,11 +58,14 @@ describe("memory leaks (selectors)", () => {
     })
 
     test("chained selector values are collected", async () => {
-        const [detector1, detector2] = (() => {
-            const s = store()
+        const { sel1, sel2 } = (() => {
             const a = atom(1)
             const sel1 = selector(get => ({ a: get(a) }))
             const sel2 = selector(get => ({ b: get(sel1) }))
+            return { sel1, sel2 }
+        })()
+        const [detector1, detector2] = (() => {
+            const s = store()
             return [
                 new LeakDetector(s.get(sel1)),
                 new LeakDetector(s.get(sel2)),
@@ -82,10 +89,12 @@ describe("memory leaks (subscriptions)", () => {
     })
 
     test("selector value is collected after subscribe and unsubscribe", async () => {
+        const sel = (() => {
+            const a = atom(1)
+            return selector(get => ({ value: get(a) }))
+        })()
         const detector = (() => {
             const s = store()
-            const a = atom(1)
-            const sel = selector(get => ({ value: get(a) }))
             const d = new LeakDetector(s.get(sel))
             const unsub = s.sub(sel, () => {})
             unsub()
@@ -175,14 +184,16 @@ describe("memory leaks (atom families)", () => {
 
 describe("memory leaks (selector families)", () => {
     test("released selector family entry is collected", async () => {
-        const detector = (() => {
-            const s = store()
+        const { family, sel } = (() => {
             const baseAtom = atom(1)
             const family = selectorFamily<object, [number]>(
                 (...args) =>
                     get => ({ result: get(baseAtom) * args[0] }),
             )
-            const sel = family(2)
+            return { family, sel: family(2) }
+        })()
+        const detector = (() => {
+            const s = store()
             const d = new LeakDetector(s.get(sel))
             family.release(2)
             return d
