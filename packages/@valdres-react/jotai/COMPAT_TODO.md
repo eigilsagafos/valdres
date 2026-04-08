@@ -16,7 +16,7 @@ Valdres notifies listeners at different points in the write cycle:
 
 ### Deep recursion / stack overflow (1)
 Deeply nested or circular selector graphs blow the stack:
-- [x] `processes deep atom graph beyond maxDepth`
+- [x] `processes deep atom a graph beyond maxDepth`
 - [x] `should not inf on subscribe or unsubscribe`
 
 ### Error resilience in listeners (1)
