@@ -168,6 +168,15 @@ export function storeFromStoreData(
                         console.log("Deleting scope", scopeId)
                     }
                     data.scopes.delete(scopeId)
+                    // Clean up scopeValueIndex entries referencing this scope
+                    for (const key of scopedStoreData.scopeIndexKeys) {
+                        const set = data.scopeValueIndex.get(key)
+                        if (set) {
+                            set.delete(scopedStoreData)
+                            if (set.size === 0) data.scopeValueIndex.delete(key)
+                        }
+                    }
+                    scopedStoreData.scopeIndexKeys.clear()
                     return true
                 }
                 if (expectedToDestory) {

@@ -1,5 +1,6 @@
-import { test, expect, mock } from "bun:test"
+import { test, expect, mock, describe } from "bun:test"
 import { store } from "../store"
+import { atom } from "../atom"
 import { atomFamily } from "../atomFamily"
 import { selectorFamily } from "../selectorFamily"
 import { index } from "../indexConstructor"
@@ -146,4 +147,153 @@ test("propagateUpdatedAtoms", () => {
     ])
 
     expect(rootStore.get(usersByCountry("Norway"))).toStrictEqual([user1])
+})
+
+describe("scopeValueIndex", () => {
+    test("3-level deep family deletion: root → A → B with cloned family", () => {
+        const rootStore = store()
+        const family = atomFamily<string>(undefined, { name: "deepFamily" })
+        const member1 = family("x")
+        const member2 = family("y")
+
+        rootStore.set(member1, "val1")
+        rootStore.set(member2, "val2")
+
+        const countSel = selector(get => get(family).length)
+
+        // root → scopeA → scopeB (3 levels)
+        const scopeA = rootStore.scope("A")
+        const scopeB = scopeA.scope("B")
+
+        // Set a family member in scopeB — this triggers initFamilyIndex which
+        // walks up and creates family indexes in both A and B. This is the
+        // invariant that recursivlyUpdateIndexes depends on: if B has a family
+        // index, all ancestors (A, root) must also have one.
+        scopeB.set(family("z"), "scopeB-only")
+
+        expect(rootStore.get(countSel)).toBe(2)
+        expect(scopeA.get(countSel)).toBe(2)
+        expect(scopeB.get(countSel)).toBe(3) // x, y, z
+
+        const bCallback = mock(() => {})
+        scopeB.sub(countSel, bCallback)
+
+        // Delete a member at root — must propagate through A down to B via
+        // recursivlyUpdateIndexes (updates family index) and the
+        // propagateDeletedAtoms scope loop (re-evaluates selectors)
+        rootStore.del(member2)
+
+        expect(bCallback).toHaveBeenCalledTimes(1)
+        expect(rootStore.get(countSel)).toBe(1) // x
+        expect(scopeB.get(countSel)).toBe(2)    // x, z
+    })
+
+    test("scopeValueIndex is empty after scope detach", () => {
+        const rootStore = store()
+        const atom1 = atom("hello")
+        const family1 = atomFamily<string>(undefined, { name: "detachFamily" })
+
+        const scoped = rootStore.scope("temp")
+        // Set an atom and access a family in the scope
+        scoped.set(atom1, "scoped")
+        scoped.get(family1("a"))
+
+        // scopeIndexKeys tracks what keys the scope registered in the parent's index
+        const scopedData = scoped.data as any
+        expect(scopedData.scopeIndexKeys.size).toBeGreaterThan(0)
+
+        // The parent's index should point back to this scope for atom1
+        expect(rootStore.data.scopeValueIndex.has(atom1)).toBe(true)
+
+        // Detach the scope
+        scoped.detach()
+
+        // Parent's index entries for this scope's keys should be cleaned up
+        expect(rootStore.data.scopeValueIndex.has(atom1)).toBe(false)
+    })
+
+    test("multi-atom transaction with partial shadowing propagates correctly", () => {
+        const rootStore = store()
+        const atom1 = atom(0)
+        const atom2 = atom(0)
+        const atom3 = atom(0)
+
+        const sumSel = selector(get => get(atom1) + get(atom2) + get(atom3))
+
+        const scoped = rootStore.scope("partial")
+        // Shadow atom2 in the scope
+        scoped.set(atom2, 100)
+
+        const rootCallback = mock(() => {})
+        const scopeCallback = mock(() => {})
+        rootStore.sub(sumSel, rootCallback)
+        scoped.sub(sumSel, scopeCallback)
+
+        // Transaction sets all 3 atoms at root
+        rootStore.txn(({ set }) => {
+            set(atom1, 10)
+            set(atom2, 20)
+            set(atom3, 30)
+        })
+
+        // Root sees all changes: 10 + 20 + 30 = 60
+        expect(rootStore.get(sumSel)).toBe(60)
+        // Scope shadows atom2 (stays 100), inherits atom1=10, atom3=30: 10 + 100 + 30 = 140
+        expect(scoped.get(sumSel)).toBe(140)
+        expect(rootCallback).toHaveBeenCalledTimes(1)
+        expect(scopeCallback).toHaveBeenCalledTimes(1)
+    })
+
+    test("4-level deep: atom set in A, read in D, then changed in C notifies D", () => {
+        const A = store("A")
+        const B = A.scope("B")
+        const C = B.scope("C")
+        const D = C.scope("D")
+
+        const a = atom(1)
+        A.set(a, 10)
+
+        // D reads the atom (inherits from A through the chain)
+        expect(D.get(a)).toBe(10)
+
+        // D has a selector that depends on the atom
+        const sel = selector(get => get(a) * 2)
+        const dCallback = mock(() => {})
+        D.sub(sel, dCallback)
+        expect(D.get(sel)).toBe(20)
+
+        // C shadows the atom — D should now read from C
+        C.set(a, 50)
+
+        expect(dCallback).toHaveBeenCalledTimes(1)
+        expect(D.get(sel)).toBe(100) // 50 * 2
+
+        // Further updates to C should also propagate to D
+        C.set(a, 75)
+        expect(dCallback).toHaveBeenCalledTimes(2)
+        expect(D.get(sel)).toBe(150) // 75 * 2
+
+        // A's value should be unchanged
+        expect(A.get(a)).toBe(10)
+    })
+
+    test("selectors evaluated in scopes do not pollute scopeValueIndex", () => {
+        const rootStore = store()
+        const atom1 = atom(1)
+        const sel = selector(get => get(atom1) * 2)
+
+        const scoped = rootStore.scope("seltest")
+        // Evaluate selector in scope — caches value in scope's values WeakMap
+        expect(scoped.get(sel)).toBe(2)
+
+        // The scope's scopeIndexKeys should NOT contain the selector
+        const scopedData = scoped.data as any
+        for (const key of scopedData.scopeIndexKeys) {
+            // All keys should be atoms or families, never selectors
+            expect(typeof key === "object" && "get" in key && !("defaultValue" in key)).toBe(false)
+        }
+
+        // The parent's scopeValueIndex should not have the selector
+        expect(rootStore.data.scopeValueIndex.has(sel)).toBe(false)
+    })
 })

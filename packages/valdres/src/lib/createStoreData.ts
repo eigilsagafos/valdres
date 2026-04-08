@@ -41,12 +41,14 @@ export function createStoreData(id?: string, parent?: StoreData, options?: Creat
     data.id = id ?? generateId()
     data.values = new WeakMap()
     data.scopes = new Map()
+    data.scopeValueIndex = new WeakMap()
     if (options?.batchUpdates) {
         data.batchUpdates = true
     }
     if (parent) {
         data.parent = parent
         data.scopeConsumers = new Set()
+        data.scopeIndexKeys = new Set()
     }
     return data
 }
