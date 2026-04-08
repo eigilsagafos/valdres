@@ -18,15 +18,18 @@ const getWithDefault = <V>(
     store: Store,
 ) => {
     if (!isAtom(atom)) throw new Error("Only atom allowed")
-    if (store.data.values.has(atom)) {
-        return store.data.values.get(atom)
-    } else {
+    // Use store.get() so pending implicit transactions are visible.
+    const value = store.get(atom)
+    // An uninitialized atom() with no default returns a promise
+    // (the "empty atom promise"). In that case, apply the default.
+    if (isPromiseLike(value)) {
         if (isFunction(defaultValue)) {
             defaultValue = defaultValue(store.get)
         }
         store.data.values.set(atom, defaultValue)
         return defaultValue
     }
+    return value
 }
 
 export const useValdresValueWithDefault = <V>(

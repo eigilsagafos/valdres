@@ -30,13 +30,20 @@ Object.defineProperties(lazyProto, {
     abortControllers: makeLazyGetter("abortControllers"),
 })
 
-export function createStoreData(id?: string, parent?: undefined): StoreData
-export function createStoreData(id: string, parent: StoreData): ScopedStoreData
-export function createStoreData(id?: string, parent?: StoreData) {
+export type CreateStoreDataOptions = {
+    batchUpdates?: boolean
+}
+
+export function createStoreData(id?: string, parent?: undefined, options?: CreateStoreDataOptions): StoreData
+export function createStoreData(id: string, parent: StoreData, options?: CreateStoreDataOptions): ScopedStoreData
+export function createStoreData(id?: string, parent?: StoreData, options?: CreateStoreDataOptions) {
     const data: any = Object.create(lazyProto)
     data.id = id ?? generateId()
     data.values = new WeakMap()
     data.scopes = new Map()
+    if (options?.batchUpdates) {
+        data.batchUpdates = true
+    }
     if (parent) {
         data.parent = parent
         data.scopeConsumers = new Set()

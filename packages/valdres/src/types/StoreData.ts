@@ -13,6 +13,7 @@ export type RootStoreData = {
     abortControllers: WeakMap<WeakKey, AbortController | false>
     storeRef?: Store
     scopes: Map<string, ScopedStoreData>
+    batchUpdates?: boolean
 }
 
 export type ScopedStoreData = RootStoreData & {

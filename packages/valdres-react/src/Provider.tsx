@@ -6,9 +6,21 @@ import { hydrate } from "./lib/hydrate"
 
 const initStore = (
     parentContext: ProviderContext | undefined,
-    store = createStore(),
+    store?: Store,
     initialize?: InitializeCallback,
 ) => {
+    if (store) {
+        if (!store.data.batchUpdates) {
+            console.warn(
+                "valdres-react: The store passed to <Provider> was not created " +
+                "with { batchUpdates: true }. Sequential store.set() calls " +
+                "will trigger intermediate selector evaluations. Consider " +
+                "using store({ batchUpdates: true }) for optimal React performance.",
+            )
+        }
+    } else {
+        store = createStore({ batchUpdates: true })
+    }
     if (initialize) {
         store.txn(txn => {
             const pairs = initialize(txn)

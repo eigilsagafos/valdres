@@ -72,6 +72,13 @@ export class Transaction {
         }
     }
 
+    private hasTxnOrData = (state: State): boolean => {
+        if (this._atomMap.has(state)) return true
+        if (this.data.values.has(state)) return true
+        if (this.parentTransaction) return this.parentTransaction.hasTxnOrData(state)
+        return false
+    }
+
     private valueFromTxnOrData: GetValue = (state: State) => {
         if (this._atomMap.has(state)) {
             return this._atomMap.get(state)
@@ -86,8 +93,9 @@ export class Transaction {
 
     get: GetValue = (state: State<any>) => {
         if (isAtom(state) || isAtomFamily(state)) {
-            const value = this.valueFromTxnOrData(state)
-            if (value) return value
+            if (this.hasTxnOrData(state)) {
+                return this.valueFromTxnOrData(state)
+            }
             return getState(state, this.data, this.initializedAtomsSet)
         } else if (isSelector(state)) {
             if (this.dirty) {
