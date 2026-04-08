@@ -151,6 +151,43 @@ describe("memory leaks (subscriptions)", () => {
         expect(!after || !after.has(sel)).toBe(true)
     })
 
+    test("expiredValues are cleaned up after unsubscribe", () => {
+        const s = store()
+        const baseAtom = atom(1)
+        const sel = selector(get => get(baseAtom) + 1)
+        // Evaluate sel to establish dep graph
+        s.get(sel)
+        // Subscribe to baseAtom (not sel) so propagation can expire sel
+        const unsub = s.sub(baseAtom, () => {})
+        // Change baseAtom — propagation expires sel (no subs, no dependents)
+        s.set(baseAtom, 2)
+        expect(s.data.expiredValues.has(sel)).toBe(true)
+        // Unsubscribe — cleanup should clear sel's expiredValues
+        unsub()
+        expect(s.data.expiredValues.has(sel)).toBe(false)
+    })
+
+    test("async promise resolution does not repopulate values after cleanup", async () => {
+        const s = store()
+        const baseAtom = atom(1)
+        let resolve!: (v: number) => void
+        const sel = selector(get => {
+            get(baseAtom)
+            return new Promise<number>(r => { resolve = r })
+        })
+        // Subscribe triggers evaluation; sel's value is the pending promise
+        const unsub = s.sub(sel, () => {})
+        expect(s.data.values.has(sel)).toBe(true)
+        // Unsubscribe — cleanup deletes value and deps
+        unsub()
+        expect(s.data.values.has(sel)).toBe(false)
+        expect(s.data.stateDependencies.has(sel)).toBe(false)
+        // Resolve the promise — handler should bail, not repopulate
+        resolve(42)
+        await Promise.resolve()
+        expect(s.data.values.has(sel)).toBe(false)
+    })
+
     test("subscription callback is not retained after unsubscribe", async () => {
         let callback: any = () => {}
         const detector = new LeakDetector(callback)
