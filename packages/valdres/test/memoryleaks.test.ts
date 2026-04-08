@@ -16,27 +16,30 @@ describe("memory leaks (atoms)", () => {
     })
 
     test("atom value is collected after set replaces it", async () => {
-        const store1 = store()
-        // Use a sentinel default so set() installs a distinct object
-        const atom1 = atom<object>(undefined as any)
-        store1.set(atom1, { original: true })
-        const detector = new LeakDetector(store1.get(atom1))
-        store1.set(atom1, { replaced: true })
+        const detector = (() => {
+            const s = store()
+            const a = atom<object>(undefined as any)
+            s.set(a, { original: true })
+            const d = new LeakDetector(s.get(a))
+            s.set(a, { replaced: true })
+            return d
+        })()
         expect(await detector.isLeaking()).toBe(false)
     })
 })
 
 describe("memory leaks (selectors)", () => {
     test("unreferenced selector value is collected", async () => {
-        let store1: any = store()
-        let atom1: any = atom(1)
-        let sel: any = selector(get => ({ value: get(atom1) }))
-        const detector = new LeakDetector(store1.get(sel))
-        // Must release atom1 too: stateDependents.get(atom1) holds a Set
-        // containing the selector, keeping it (and its value) alive.
-        sel = undefined
-        atom1 = undefined
-        store1 = undefined
+        // IIFE ensures all references (store, atom, selector) truly leave
+        // the call stack. Setting variables to undefined is not enough —
+        // stateDependents/stateDependencies create a WeakMap ephemeron
+        // cycle that JSC may not resolve if bindings linger in scope.
+        const detector = (() => {
+            const s = store()
+            const a = atom(1)
+            const sel = selector(get => ({ value: get(a) }))
+            return new LeakDetector(s.get(sel))
+        })()
         expect(await detector.isLeaking()).toBe(false)
     })
 
@@ -51,18 +54,16 @@ describe("memory leaks (selectors)", () => {
     })
 
     test("chained selector values are collected", async () => {
-        let store1: any = store()
-        let atom1: any = atom(1)
-        let sel1: any = selector(get => ({ a: get(atom1) }))
-        let sel2: any = selector(get => ({ b: get(sel1) }))
-        const detector1 = new LeakDetector(store1.get(sel1))
-        const detector2 = new LeakDetector(store1.get(sel2))
-        // Must release atom1 and store: stateDependents.get(atom1) holds
-        // sel1, and stateDependents.get(sel1) holds sel2.
-        sel1 = undefined
-        sel2 = undefined
-        atom1 = undefined
-        store1 = undefined
+        const [detector1, detector2] = (() => {
+            const s = store()
+            const a = atom(1)
+            const sel1 = selector(get => ({ a: get(a) }))
+            const sel2 = selector(get => ({ b: get(sel1) }))
+            return [
+                new LeakDetector(s.get(sel1)),
+                new LeakDetector(s.get(sel2)),
+            ]
+        })()
         expect(await detector1.isLeaking()).toBe(false)
         expect(await detector2.isLeaking()).toBe(false)
     })
@@ -81,16 +82,15 @@ describe("memory leaks (subscriptions)", () => {
     })
 
     test("selector value is collected after subscribe and unsubscribe", async () => {
-        let store1: any = store()
-        let atom1: any = atom(1)
-        let sel: any = selector(get => ({ value: get(atom1) }))
-        const detector = new LeakDetector(store1.get(sel))
-        let unsub: any = store1.sub(sel, () => {})
-        unsub()
-        unsub = undefined
-        sel = undefined
-        atom1 = undefined
-        store1 = undefined
+        const detector = (() => {
+            const s = store()
+            const a = atom(1)
+            const sel = selector(get => ({ value: get(a) }))
+            const d = new LeakDetector(s.get(sel))
+            const unsub = s.sub(sel, () => {})
+            unsub()
+            return d
+        })()
         expect(await detector.isLeaking()).toBe(false)
     })
 
@@ -175,18 +175,18 @@ describe("memory leaks (atom families)", () => {
 
 describe("memory leaks (selector families)", () => {
     test("released selector family entry is collected", async () => {
-        let store1: any = store()
-        let baseAtom: any = atom(1)
-        const family = selectorFamily<object, [number]>(
-            (...args) =>
-                get => ({ result: get(baseAtom) * args[0] }),
-        )
-        let sel: any = family(2)
-        const detector = new LeakDetector(store1.get(sel))
-        family.release(2)
-        sel = undefined
-        baseAtom = undefined
-        store1 = undefined
+        const detector = (() => {
+            const s = store()
+            const baseAtom = atom(1)
+            const family = selectorFamily<object, [number]>(
+                (...args) =>
+                    get => ({ result: get(baseAtom) * args[0] }),
+            )
+            const sel = family(2)
+            const d = new LeakDetector(s.get(sel))
+            family.release(2)
+            return d
+        })()
         expect(await detector.isLeaking()).toBe(false)
     })
 
