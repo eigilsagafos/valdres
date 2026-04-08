@@ -6,7 +6,7 @@ import { isProd } from "./isProd"
 
 /** Register `key` in the parent's scopeValueIndex. Caller MUST ensure
  *  `data` is a ScopedStoreData (has a parent). */
-export const trackScopeValue = (key: any, data: ScopedStoreData) => {
+export const trackScopeValue = (key: WeakKey, data: ScopedStoreData) => {
     const parent = data.parent
     let set = parent.scopeValueIndex.get(key)
     if (!set) {
@@ -26,7 +26,7 @@ export const setValueInData = <Value extends unknown>(
     // also passed here via loose typing but should not pollute the index.
     // Family tracking is handled separately in initFamilyIndex.
     const isNewAtomInScope =
-        "parent" in data && "defaultValue" in atom && !data.values.has(atom)
+        "parent" in data && Object.hasOwn(atom, "defaultValue") && !data.values.has(atom)
     if (atom.mutable || isProd()) {
         data.values.set(atom, value)
         if (isNewAtomInScope) trackScopeValue(atom, data as ScopedStoreData)

@@ -290,7 +290,7 @@ describe("scopeValueIndex", () => {
         const scopedData = scoped.data as any
         for (const key of scopedData.scopeIndexKeys) {
             // All keys should be atoms or families, never selectors
-            expect(typeof key === "object" && "get" in key && !("default" in key)).toBe(false)
+            expect(typeof key === "object" && "get" in key && !("defaultValue" in key)).toBe(false)
         }
 
         // The parent's scopeValueIndex should not have the selector
