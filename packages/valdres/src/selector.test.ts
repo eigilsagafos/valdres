@@ -2,7 +2,6 @@ import { describe, expect, mock, test } from "bun:test"
 import { wait } from "../test/utils/wait"
 import { atom } from "./atom"
 import { atomFamily } from "./atomFamily"
-import { createStoreWithSelectorSet } from "./createStoreWithSelectorSet"
 import { selector } from "./selector"
 import { store } from "./store"
 
@@ -143,38 +142,6 @@ describe("selector", () => {
         expect(callback1).toHaveBeenCalledTimes(2)
     })
 
-    test("selector set bypass (used for compat moduels)", () => {
-        const store1 = createStoreWithSelectorSet()
-        const atom1 = atom(1)
-        const atom2 = atom(2)
-        const selector1 = selector(get => get(atom1))
-        selector1.set = (set, get, reset, val1, val2) => {
-            set(atom1, val1)
-            set(atom2, val2)
-        }
-
-        const res = store1.set(selector1, 3, 4)
-        expect(store1.get(atom1)).toBe(3)
-        expect(store1.get(atom2)).toBe(4)
-    })
-
-    test("selector set bypass with async callback (used for compat moduels)", async () => {
-        const store1 = createStoreWithSelectorSet()
-        const atom1 = atom(1)
-        const atom2 = atom(2)
-        const selector1 = selector(get => get(atom1))
-        selector1.set = async (set, get, reset, val1, val2) => {
-            return wait(10).then(() => {
-                set(atom1, val1)
-                set(atom2, val2)
-            })
-        }
-
-        const res = store1.set(selector1, 3, 4)
-        await res
-        expect(store1.get(atom1)).toBe(3)
-        expect(store1.get(atom2)).toBe(4)
-    })
 
     // test("selector with promise",async () => {
     //     const store1 = store()

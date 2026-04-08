@@ -2,13 +2,22 @@
  * Maps store IDs (data.id) to store instances so that selectors can
  * look up their evaluating store during deferred reads (e.g. setSelf).
  *
- * Stores are long-lived (typically app-lifetime), so a Map keyed by
- * string is acceptable here.
+ * Uses WeakRef so the registry does not prevent stores (and transitively
+ * their atoms/values) from being garbage-collected when nothing else
+ * references them. A FinalizationRegistry cleans up stale map entries.
  */
-const storeMap = new Map<string, any>()
+const storeMap = new Map<string, WeakRef<any>>()
+
+const cleanup = new FinalizationRegistry<string>((id) => {
+    const ref = storeMap.get(id)
+    if (ref && ref.deref() === undefined) {
+        storeMap.delete(id)
+    }
+})
 
 export const registerStore = (id: string, store: any) => {
-    storeMap.set(id, store)
+    storeMap.set(id, new WeakRef(store))
+    cleanup.register(store, id)
 }
 
 export const unregisterStore = (id: string) => {
@@ -16,5 +25,6 @@ export const unregisterStore = (id: string) => {
 }
 
 export const getStoreById = (id: string) => {
-    return storeMap.get(id)
+    const ref = storeMap.get(id)
+    return ref?.deref()
 }

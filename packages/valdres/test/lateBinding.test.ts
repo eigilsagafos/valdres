@@ -1,11 +1,11 @@
 import { describe, test, expect, mock } from "bun:test"
 import { atom } from "../src/atom"
 import { selector } from "../src/selector"
-import { createStoreWithSelectorSet } from "../src/createStoreWithSelectorSet"
+import { store } from "../src/store"
 
 describe("late binding (deferred get calls)", () => {
     test("get called in setTimeout registers dep and mounts atom", async () => {
-        const s = createStoreWithSelectorSet()
+        const s = store()
         const a = atom(0)
         const onMount = mock(() => {})
         ;(a as any).onMount = (store: any, state: any) => {
@@ -27,7 +27,7 @@ describe("late binding (deferred get calls)", () => {
     })
 
     test("get called in setTimeout with error still mounts dep", async () => {
-        const s = createStoreWithSelectorSet()
+        const s = store()
         const a = atom(0)
         const onMount = mock(() => {})
         ;(a as any).onMount = (store: any) => {
@@ -56,7 +56,7 @@ describe("late binding (deferred get calls)", () => {
     })
 
     test("stale closure from previous evaluation does not register deps", async () => {
-        const s = createStoreWithSelectorSet()
+        const s = store()
         const trigger = atom(0)
         const target = atom(0)
         const onMount = mock(() => {})
@@ -91,7 +91,7 @@ describe("late binding (deferred get calls)", () => {
     })
 
     test("late deps are cleaned up when selector is re-evaluated synchronously", async () => {
-        const s = createStoreWithSelectorSet()
+        const s = store()
         const trigger = atom(0)
         const lateDep = atom(0)
 
@@ -125,7 +125,7 @@ describe("late binding (deferred get calls)", () => {
 
 describe("promise rejection handling in selectors", () => {
     test("rejected promise from selector does not cause unhandled rejection", async () => {
-        const s = createStoreWithSelectorSet()
+        const s = store()
         const sel = selector((get: any) => {
             return new Promise((_, reject) =>
                 setTimeout(() => reject(new Error("async fail")), 0),
@@ -139,7 +139,7 @@ describe("promise rejection handling in selectors", () => {
     })
 
     test("rejection does not delete selector whose value settled to undefined", async () => {
-        const s = createStoreWithSelectorSet()
+        const s = store()
         const trigger = atom(0)
         let callCount = 0
         const sel = selector((get: any) => {
@@ -171,7 +171,7 @@ describe("promise rejection handling in selectors", () => {
     })
 
     test("selector value is cleared after promise rejection", async () => {
-        const s = createStoreWithSelectorSet()
+        const s = store()
         let callCount = 0
         const sel = selector((get: any) => {
             callCount++

@@ -563,7 +563,7 @@ test("should update derived atom even if dependencies changed (#2697)", () => {
 })
 
 describe("should invoke flushPending only after all atoms are updated (#2804)", () => {
-    test.todo("should invoke flushPending only after all atoms are updated with set", () => {
+    test("should invoke flushPending only after all atoms are updated with set", () => {
         const store = createStore()
         const a = atom(0)
         const setResult: string[] = []
@@ -595,7 +595,7 @@ describe("should invoke flushPending only after all atoms are updated (#2804)", 
         ])
     })
 
-    test.todo("should invoke flushPending only after all atoms are updated with mount", () => {
+    test("should invoke flushPending only after all atoms are updated with mount", () => {
         const store = createStore()
         const mountResult: string[] = []
         const a = atom(0)
@@ -631,7 +631,7 @@ describe("should invoke flushPending only after all atoms are updated (#2804)", 
         ])
     })
 
-    test.todo("should flush only after all atoms are updated with unmount", () => {
+    test("should flush only after all atoms are updated with unmount", () => {
         const store = createStore()
         const result: string[] = []
         const a = atom(0)

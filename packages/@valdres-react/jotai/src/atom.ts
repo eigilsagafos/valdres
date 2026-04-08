@@ -95,7 +95,7 @@ export const atom = (get, set?: any) => {
     } else if (typeof set === "function") {
         if (get === null) {
             // Write-only atom: atom(null, writeFn)
-            const selector = valdresSelector(() => undefined, {
+            const selector = valdresSelector(() => null, {
                 equal: Object.is,
             })
             addSetToSelector(selector, set)

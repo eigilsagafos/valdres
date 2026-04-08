@@ -1,14 +1,14 @@
 import { describe, test, expect, mock } from "bun:test"
 import { atom } from "../src/atom"
 import { selector } from "../src/selector"
-import { createStoreWithSelectorSet } from "../src/createStoreWithSelectorSet"
+import { store } from "../src/store"
 import { isPromiseLike } from "../src/utils/isPromiseLike"
 import { isSuspendError } from "../src/lib/initSelector"
 import { wait } from "./utils/wait"
 
 describe("async selectors", () => {
     test("selector returning a Promise stores the Promise then resolves", async () => {
-        const s = createStoreWithSelectorSet()
+        const s = store()
         const sel = selector(() => Promise.resolve(42))
 
         const value = s.get(sel)
@@ -19,7 +19,7 @@ describe("async selectors", () => {
     })
 
     test("subscriber is notified when async selector resolves", async () => {
-        const s = createStoreWithSelectorSet()
+        const s = store()
         let resolve!: (v: number) => void
         const sel = selector(() => new Promise<number>(r => (resolve = r)))
 
@@ -34,7 +34,7 @@ describe("async selectors", () => {
     })
 
     test("deps accessed after await are tracked via lateGet", async () => {
-        const s = createStoreWithSelectorSet()
+        const s = store()
         const base = atom(1)
 
         const sel = selector((get: any) => {
@@ -65,7 +65,7 @@ describe("async selectors", () => {
     })
 
     test("suspension resolves and derived selector re-evaluates", async () => {
-        const s = createStoreWithSelectorSet()
+        const s = store()
         let resolve!: (v: number) => void
         const asyncSel = selector(
             () => new Promise<number>(r => (resolve = r)),
@@ -86,7 +86,7 @@ describe("async selectors", () => {
     })
 
     test("isSuspendError detects SuspendAndWaitForResolveError", () => {
-        const s = createStoreWithSelectorSet()
+        const s = store()
         const asyncSel = selector(() => new Promise<void>(() => {}))
 
         let caughtError: unknown
@@ -107,7 +107,7 @@ describe("async selectors", () => {
     })
 
     test("async selector chain: derived async selector gets another async selector", async () => {
-        const s = createStoreWithSelectorSet()
+        const s = store()
         const base = atom(1)
 
         let resolve1!: () => void
@@ -151,7 +151,7 @@ describe("async selectors", () => {
     })
 
     test("abort signal is provided and aborted on re-evaluation", async () => {
-        const s = createStoreWithSelectorSet()
+        const s = store()
         const trigger = atom(0)
         const signals: AbortSignal[] = []
 
@@ -175,7 +175,7 @@ describe("async selectors", () => {
     })
 
     test("stale promise resolution does not overwrite newer value", async () => {
-        const s = createStoreWithSelectorSet()
+        const s = store()
         const trigger = atom(0)
         let resolvers: ((v: number) => void)[] = []
 
@@ -201,7 +201,7 @@ describe("async selectors", () => {
     })
 
     test("late dep cleanup: re-evaluation drops late deps from previous eval", async () => {
-        const s = createStoreWithSelectorSet()
+        const s = store()
         const trigger = atom(0)
         const lateDep = atom(100)
 
