@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1775688034621,
+  "lastUpdate": 1775689208688,
   "repoUrl": "https://github.com/eigilsagafos/valdres",
   "entries": {
     "valdres benchmarks": [
@@ -5394,6 +5394,210 @@ window.BENCHMARK_DATA = {
             "value": 1435280,
             "unit": "ns",
             "extra": "jotai=23977720 ratio=0.0599 16.7x faster"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "eigil@sagafos.no",
+            "name": "Eigil Sagafos",
+            "username": "eigilsagafos"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "6629386ac35173a037d8aeb40852ddabe89260cb",
+          "message": "Fix flaky benchmark CI and improve report readability (#52)\n\n* Fix flaky benchmark CI and improve report readability\n\nBenchmark CI failed on 50% of PR runs due to false positives. Two root\ncauses: (1) selector(fn) measures ~7ns operations where GC pauses cause\n10x spikes, and (2) Jotai reference variance makes the ratio check fail\neven when valdres absolute timing is stable.\n\nFlakiness fixes:\n- Dual-check gating: CI only fails when both ratio AND absolute checks\n  agree on a regression, eliminating Jotai-noise false positives\n- Noise floor at 500ns: sub-microsecond benchmarks auto-skipped from\n  regression gating since they're dominated by CI runner noise\n- New warning status for single-check flags (visible but non-blocking)\n\nReport readability:\n- PR comment: summary line at top, flagged benchmarks inline, full\n  results in collapsible section grouped by category\n- README: benchmarks grouped into Atoms/Selectors/Transactions,\n  clearer \"Not yet optimized\" section, baseline in collapsible details\n- Compact change format (+5% / -3% / ~same) instead of verbose text\n\nCo-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>\n\n* Address review feedback: deduplicate categories, fix ordering\n\n- Extract shared bench-categories.ts module used by both scripts\n- Deterministic category ordering (BENCH_CATEGORIES order, then Other)\n- Add speed indicator (🟢/🟡/🔴) to optimization targets table\n\nCo-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 4.6 <noreply@anthropic.com>",
+          "timestamp": "2026-04-08T15:57:23-07:00",
+          "tree_id": "5120d9931f13d8bf70d4da95236c380f46ed7f62",
+          "url": "https://github.com/eigilsagafos/valdres/commit/6629386ac35173a037d8aeb40852ddabe89260cb"
+        },
+        "date": 1775689208147,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "atom(1)",
+            "value": 2,
+            "unit": "ns",
+            "extra": "jotai=49 ratio=0.0468 21.4x faster"
+          },
+          {
+            "name": "store.get(atom)",
+            "value": 40,
+            "unit": "ns",
+            "extra": "jotai=381 ratio=0.1050 9.5x faster"
+          },
+          {
+            "name": "set(atom, value)",
+            "value": 240,
+            "unit": "ns",
+            "extra": "jotai=2134 ratio=0.1125 8.9x faster"
+          },
+          {
+            "name": "set(atom, curr => curr+1)",
+            "value": 266,
+            "unit": "ns",
+            "extra": "jotai=2715 ratio=0.0978 10.2x faster"
+          },
+          {
+            "name": "set(atom) with 10 subs",
+            "value": 559,
+            "unit": "ns",
+            "extra": "jotai=3496 ratio=0.1599 6.3x faster"
+          },
+          {
+            "name": "atom lifecycle (create+100get+100set)",
+            "value": 25237,
+            "unit": "ns",
+            "extra": "jotai=282735 ratio=0.0893 11.2x faster"
+          },
+          {
+            "name": "atomFamily(id)",
+            "value": 273,
+            "unit": "ns",
+            "extra": "jotai=452 ratio=0.6036 1.7x faster"
+          },
+          {
+            "name": "atomFamily(id) cache hit",
+            "value": 48,
+            "unit": "ns",
+            "extra": "jotai=11 ratio=4.4060 4.4x slower"
+          },
+          {
+            "name": "selectorFamily(id)",
+            "value": 308,
+            "unit": "ns",
+            "extra": "jotai=442 ratio=0.6966 1.4x faster"
+          },
+          {
+            "name": "obj.value",
+            "value": 4,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "map.get(key)",
+            "value": 18,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "valdres get",
+            "value": 8,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "jotai get",
+            "value": 368,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "obj.value = n",
+            "value": 4,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "map.set(key, n)",
+            "value": 18,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "valdres set",
+            "value": 449,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "jotai set",
+            "value": 3345,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "selector(fn)",
+            "value": 5,
+            "unit": "ns",
+            "extra": "jotai=57 ratio=0.0887 11.3x faster"
+          },
+          {
+            "name": "set + read 10 selectors",
+            "value": 9688,
+            "unit": "ns",
+            "extra": "jotai=30999 ratio=0.3125 3.2x faster"
+          },
+          {
+            "name": "set + read 100 selectors",
+            "value": 91260,
+            "unit": "ns",
+            "extra": "jotai=336179 ratio=0.2715 3.7x faster"
+          },
+          {
+            "name": "set + read through 5 chained selectors",
+            "value": 8525,
+            "unit": "ns",
+            "extra": "jotai=18465 ratio=0.4617 2.2x faster"
+          },
+          {
+            "name": "createStore",
+            "value": 641,
+            "unit": "ns",
+            "extra": "jotai=6496 ratio=0.0987 10.1x faster"
+          },
+          {
+            "name": "set 1000 atoms",
+            "value": 88524,
+            "unit": "ns",
+            "extra": "jotai=1218469 ratio=0.0727 13.8x faster"
+          },
+          {
+            "name": "get 1000 atoms",
+            "value": 6531,
+            "unit": "ns",
+            "extra": "jotai=434641 ratio=0.0150 66.6x faster"
+          },
+          {
+            "name": "sub + unsub",
+            "value": 481,
+            "unit": "ns",
+            "extra": "jotai=2534 ratio=0.1898 5.3x faster"
+          },
+          {
+            "name": "txn: 10 atoms × 10 selectors, set + read",
+            "value": 97461,
+            "unit": "ns",
+            "extra": "jotai=308853 ratio=0.3156 3.2x faster"
+          },
+          {
+            "name": "txn: 10 atoms × 10 selectors, with subs",
+            "value": 156020,
+            "unit": "ns",
+            "extra": "jotai=657735 ratio=0.2372 4.2x faster"
+          },
+          {
+            "name": "txn: 10 atoms × 100 selectors, set + read",
+            "value": 851756,
+            "unit": "ns",
+            "extra": "jotai=3393174 ratio=0.2510 4.0x faster"
+          },
+          {
+            "name": "txn: cross-atom 1000 selectors, set + read",
+            "value": 970781,
+            "unit": "ns",
+            "extra": "jotai=4853884 ratio=0.2000 5.0x faster"
+          },
+          {
+            "name": "txn: cross-atom 1000 selectors, with subs",
+            "value": 1518011,
+            "unit": "ns",
+            "extra": "jotai=24764792 ratio=0.0613 16.3x faster"
           }
         ]
       }
