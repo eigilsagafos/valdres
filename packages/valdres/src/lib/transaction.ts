@@ -16,9 +16,9 @@ import { isFunction } from "./isFunction"
 import { isProd } from "./isProd"
 import {
     cloneAtomFamilyIndex,
-    propagateDeletedAtoms,
     renderAtomFamilyIndex,
-} from "./propagateUpdatedAtoms"
+} from "./atomFamilyIndex"
+import { propagateDeletedAtoms } from "./propagateUpdatedAtoms"
 import { setAtoms } from "./setAtoms"
 
 // const findDependencies = (
