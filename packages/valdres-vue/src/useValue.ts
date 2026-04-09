@@ -1,4 +1,4 @@
-import { shallowRef, onScopeDispose, readonly, type DeepReadonly, type Ref } from "vue"
+import { shallowRef, onScopeDispose, type Readonly, type Ref } from "vue"
 import { isPromiseLike, type State, type Store } from "valdres"
 import { useStore } from "./useStore"
 
@@ -8,23 +8,24 @@ export const useValue = <
 >(
     state: State<Value, Args>,
     store?: Store,
-): DeepReadonly<Ref<Value>> => {
+): Readonly<Ref<Value>> => {
     const currentStore = store || useStore()
-    const value = shallowRef(currentStore.get(state))
+    const initial = currentStore.get(state)
 
-    if (isPromiseLike(value.value)) {
-        throw value.value
+    if (isPromiseLike(initial)) {
+        throw initial
     }
+
+    const value = shallowRef(initial)
 
     // @ts-ignore
     const unsub = currentStore.sub(
         state,
         () => {
             const newValue = currentStore.get(state)
-            if (isPromiseLike(newValue)) {
-                throw newValue
+            if (!isPromiseLike(newValue)) {
+                value.value = newValue
             }
-            value.value = newValue
         },
         false,
     )
@@ -33,5 +34,5 @@ export const useValue = <
         unsub()
     })
 
-    return readonly(value) as DeepReadonly<Ref<Value>>
+    return value as Readonly<Ref<Value>>
 }

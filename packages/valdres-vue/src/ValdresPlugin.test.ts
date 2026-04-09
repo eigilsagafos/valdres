@@ -2,11 +2,11 @@ import { describe, test, expect } from "bun:test"
 import { mount } from "@vue/test-utils"
 import { defineComponent } from "vue"
 import { atom, store as createStore } from "valdres"
-import { ValdresPlugin } from "./ValdresPlugin"
+import { createValdres } from "./ValdresPlugin"
 import { useStore } from "./useStore"
 import { useValue } from "./useValue"
 
-describe("ValdresPlugin", () => {
+describe("createValdres", () => {
     test("provides store to components", () => {
         let result: any
         const Comp = defineComponent({
@@ -18,7 +18,7 @@ describe("ValdresPlugin", () => {
         })
         mount(Comp, {
             global: {
-                plugins: [[ValdresPlugin]],
+                plugins: [createValdres()],
             },
         })
         expect(result).toBeDefined()
@@ -37,13 +37,13 @@ describe("ValdresPlugin", () => {
         })
         mount(Comp, {
             global: {
-                plugins: [[ValdresPlugin, { store: storeInstance }]],
+                plugins: [createValdres({ store: storeInstance })],
             },
         })
         expect(result.data.id).toBe(storeInstance.data.id)
     })
 
-    test("initialize callback", () => {
+    test("initialize with array return", () => {
         const countAtom = atom(0)
         let ref: any
         const Comp = defineComponent({
@@ -56,12 +56,9 @@ describe("ValdresPlugin", () => {
         mount(Comp, {
             global: {
                 plugins: [
-                    [
-                        ValdresPlugin,
-                        {
-                            initialize: () => [[countAtom, 42]],
-                        },
-                    ],
+                    createValdres({
+                        initialize: () => [[countAtom, 42]],
+                    }),
                 ],
             },
         })
@@ -81,14 +78,11 @@ describe("ValdresPlugin", () => {
         mount(Comp, {
             global: {
                 plugins: [
-                    [
-                        ValdresPlugin,
-                        {
-                            initialize: (txn: any) => {
-                                txn.set(countAtom, 99)
-                            },
+                    createValdres({
+                        initialize: (txn: any) => {
+                            txn.set(countAtom, 99)
                         },
-                    ],
+                    }),
                 ],
             },
         })

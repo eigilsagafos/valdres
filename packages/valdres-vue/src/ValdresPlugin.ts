@@ -1,4 +1,4 @@
-import type { App, Plugin } from "vue"
+import type { Plugin } from "vue"
 import { store as createStore, type Store } from "valdres"
 import { StoreKey } from "./lib/storeKey"
 import { hydrate } from "./lib/hydrate"
@@ -9,8 +9,8 @@ export interface ValdresPluginOptions {
     initialize?: InitializeCallback
 }
 
-export const ValdresPlugin: Plugin = {
-    install(app: App, options: ValdresPluginOptions = {}) {
+export const createValdres = (options: ValdresPluginOptions = {}): Plugin => ({
+    install(app) {
         let store = options.store
         if (!store) {
             store = createStore()
@@ -25,4 +25,4 @@ export const ValdresPlugin: Plugin = {
         }
         app.provide(StoreKey, store)
     },
-}
+})
