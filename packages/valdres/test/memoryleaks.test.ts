@@ -151,20 +151,22 @@ describe("memory leaks (subscriptions)", () => {
         expect(!after || !after.has(sel)).toBe(true)
     })
 
-    test("expiredValues are cleaned up after unsubscribe", () => {
+    test("invalidated selector value is not retained in store data", () => {
         const s = store()
         const baseAtom = atom(1)
         const sel = selector(get => get(baseAtom) + 1)
-        // Evaluate sel to establish dep graph
-        s.get(sel)
-        // Subscribe to baseAtom (not sel) so propagation can expire sel
+        expect(s.get(sel)).toBe(2)
+        // After init-time propagation, sel has no subscribers/dependents so
+        // its value is removed from data.values to allow GC.
+        expect(s.data.values.has(sel)).toBe(false)
+        // Subscribe to baseAtom (not sel) so propagation runs on change
         const unsub = s.sub(baseAtom, () => {})
-        // Change baseAtom — propagation expires sel (no subs, no dependents)
         s.set(baseAtom, 2)
-        expect(s.data.expiredValues.has(sel)).toBe(true)
-        // Unsubscribe — cleanup should clear sel's expiredValues
+        // Value is still cleared — not stashed in any secondary cache
+        expect(s.data.values.has(sel)).toBe(false)
+        // Lazy re-evaluation on next read still works
+        expect(s.get(sel)).toBe(3)
         unsub()
-        expect(s.data.expiredValues.has(sel)).toBe(false)
     })
 
     test("async promise resolution does not repopulate values after cleanup", async () => {

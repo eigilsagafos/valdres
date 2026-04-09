@@ -52,7 +52,6 @@ const reEvaluteSelector = (
             return [true, false, undefined, addedDeps, removedDeps]
         }
     } catch (error) {
-        data.expiredValues.set(selector, data.values.get(selector))
         data.values.delete(selector)
         return [true, true, error, addedDeps, removedDeps]
     }
@@ -521,11 +520,8 @@ const propagateSelectorUpdates = (
                 (!dependents || dependents.size === 0) &&
                 (!subscribers || subscribers.size === 0)
             ) {
-                // Expire unsubscribed non-promise selectors for lazy re-eval.
-                // Promise-valued selectors are always re-evaluated eagerly so
-                // the stale promise is replaced and its .then() handler bails
-                // via the existing reference guard.
-                data.expiredValues.set(selector, data.values.get(selector))
+                // Invalidate unsubscribed non-promise selectors for lazy
+                // re-eval on next read.
                 data.values.delete(selector)
             } else {
                 const [wasValueUpdated, didEvalCrash, error, addedDeps, removedDeps] =
