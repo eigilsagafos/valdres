@@ -1,0 +1,38 @@
+{
+    "name": "valdres-svelte",
+    "version": "0.2.0-pre.28",
+    "license": "MIT",
+    "author": {
+        "name": "Eigil Sagafos"
+    },
+    "homepage": "https://valdres.dev",
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/eigilsagafos/valdres.git"
+    },
+    "type": "module",
+    "exports": {
+        ".": "./src/index.ts"
+    },
+    "files": [
+        "dist"
+    ],
+    "scripts": {
+        "test": "bun test"
+    },
+    "dependencies": {
+        "valdres": "0.2.0-pre.28"
+    },
+    "devDependencies": {
+        "@valdres/test": "0.2.0-pre.28",
+        "svelte": "5.28.2",
+        "typescript": "5.9.2"
+    },
+    "peerDependencies": {
+        "svelte": ">=5"
+    },
+    "publishConfig": {
+        "access": "public",
+        "registry": "https://registry.npmjs.org/"
+    }
+}
