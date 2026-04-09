@@ -20,7 +20,6 @@ const HISTORY_ENTRY_PATH = join(ROOT, "bench-history-entry.json")
 
 const bunResults = readBenchResults(BUN_RESULTS_PATH)
 const nodeResults = readBenchResults(NODE_RESULTS_PATH)
-const hasBoth = bunResults.length > 0 && nodeResults.length > 0
 
 if (bunResults.length === 0 && nodeResults.length === 0) {
     console.error("No benchmark results found")
@@ -28,9 +27,10 @@ if (bunResults.length === 0 && nodeResults.length === 0) {
 }
 
 // 1. github-action-benchmark format (for GitHub Pages trend chart)
-//    Include both runtimes with "[Bun]" / "[Node]" suffixes when both exist.
+//    Bun names are always unsuffixed (stable baseline for chart continuity).
+//    Node names get a " [Node]" suffix so they appear as separate series.
 function toGhEntry(r: BenchResult, runtime: string) {
-    const suffix = hasBoth ? ` [${runtime === "bun" ? "Bun" : "Node"}]` : ""
+    const suffix = runtime === "node" ? " [Node]" : ""
     return {
         name: r.name + suffix,
         unit: "ns",

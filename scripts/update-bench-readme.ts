@@ -68,7 +68,6 @@ if (!hasBun && !hasNode) {
 }
 
 const nodeByName = new Map(nodeResults.map(r => [r.name, r]))
-const bunByName = new Map(bunResults.map(r => [r.name, r]))
 const primaryResults = hasBun ? bunResults : nodeResults
 
 const comparisons = primaryResults.filter(
