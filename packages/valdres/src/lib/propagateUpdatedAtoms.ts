@@ -301,15 +301,14 @@ export const propagateDirtySelectors = (
 ) => {
     const updatedInitializedAtoms = new Set<Atom>(updatedAtoms)
     if (selectors.size > 0) {
-        // At this point we have the first level of selectors that are depeendent on
-        // the atoms that changed. We should now traverse the tree of selectors, collect subsribers
-        // to those that change, and keep track of all selectors that we have visited.
+        // At this point we have the first level of selectors that are dependent on
+        // the atoms that changed. We now traverse the tree of selectors and collect
+        // subscribers to those that change.
         propagateSelectorUpdates(
             selectors,
             data,
             subscriptions,
             updatedInitializedAtoms,
-            undefined,
             isInitOnly,
         )
     }
@@ -352,7 +351,6 @@ const propagateSelectorUpdates = (
     data: StoreData,
     collectedSubscribers: Set<any>,
     updatedInitializedAtoms: Set<Atom>,
-    seen: Set<Selector> = new Set(),
     isInitOnly = false,
 ) => {
     let currentSelectors = selectors
@@ -365,7 +363,6 @@ const propagateSelectorUpdates = (
                 // to avoid double-evaluation.
                 continue
             }
-            seen.add(selector)
             const dependents = data.stateDependents.get(selector)
             const subscribers = data.subscriptions.get(selector)
             if (
