@@ -15,7 +15,7 @@ import { initSelector, NeedsInitError, _evalDepth, MAX_EVAL_DEPTH } from "./init
 import {
     createAtomFamilyIndex,
     renderAtomFamilyIndex,
-} from "./propagateUpdatedAtoms"
+} from "./atomFamilyIndex"
 
 export function getState<
     Value extends any,

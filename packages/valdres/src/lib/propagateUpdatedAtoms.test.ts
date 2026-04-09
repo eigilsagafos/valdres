@@ -167,7 +167,7 @@ describe("scopeValueIndex", () => {
 
         // Set a family member in scopeB — this triggers initFamilyIndex which
         // walks up and creates family indexes in both A and B. This is the
-        // invariant that recursivlyUpdateIndexes depends on: if B has a family
+        // invariant that recursivelyUpdateIndexes depends on: if B has a family
         // index, all ancestors (A, root) must also have one.
         scopeB.set(family("z"), "scopeB-only")
 
@@ -179,7 +179,7 @@ describe("scopeValueIndex", () => {
         scopeB.sub(countSel, bCallback)
 
         // Delete a member at root — must propagate through A down to B via
-        // recursivlyUpdateIndexes (updates family index) and the
+        // recursivelyUpdateIndexes (updates family index) and the
         // propagateDeletedAtoms scope loop (re-evaluates selectors)
         rootStore.del(member2)
 
