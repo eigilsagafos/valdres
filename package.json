@@ -19,7 +19,8 @@
         "dev": "bun run lerna run build --parallel -- --watch",
         "bump": "bun ./scripts/bump.tsx",
         "publish": "bun scripts/publish.tsx",
-        "test": "bun --filter '*' test"
+        "test": "bun --filter '*' test",
+        "test:ci": "bun --filter '*' test:ci"
     },
     "workspaces": [
         "packages/*",
