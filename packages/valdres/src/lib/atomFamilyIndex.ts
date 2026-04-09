@@ -1,7 +1,7 @@
 import type { AtomFamilyAtom } from "../types/AtomFamilyAtom"
 import type { Family } from "../types/Family"
 import type { ScopedStoreData, StoreData } from "../types/StoreData"
-import { setValueInData, trackScopeValue } from "./setValueInData"
+import { trackScopeValue } from "./setValueInData"
 
 // @ts-ignore
 const getAtomFamilyRenderedMap = (
@@ -19,7 +19,7 @@ const getAtomFamilyRenderedMap = (
         result.set(atom, timestamp)
     }
     for (const [atom, timestamp] of index.deleted) {
-        result.delete(atom, timestamp)
+        result.delete(atom)
     }
     index.rendered = result
     return result
