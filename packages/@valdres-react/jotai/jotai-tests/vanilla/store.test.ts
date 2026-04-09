@@ -126,7 +126,6 @@ test("should update async atom with deps after await (#1905)", async () => {
     unsub()
 })
 
-// NOTE: This test causes a bun segfault — bun bug, not a valdres issue
 test("should not fire subscription when async atom promise is the same", async () => {
     const promise = Promise.resolve()
     const promiseAtom = atom(promise)
@@ -1103,8 +1102,25 @@ test.todo("should call onInit only once per atom", () => {
 
 // Requires INTERNAL_onInit + deriveStore (jotai internals)
 test.todo("should call onInit only once per store", () => {
-    // Uses deriveStore which is a jotai internal API for custom atom state storage.
-    // Full test body omitted — requires deriveStore implementation.
+    const a = atom(0)
+    const aOnInit = mock(() => {})
+    ;(a as any).INTERNAL_onInit = aOnInit
+    const b = atom(0)
+    const bOnInit = mock(() => {})
+    ;(b as any).INTERNAL_onInit = bOnInit
+    type Store = ReturnType<typeof createStore>
+    function testInStore(store: Store) {
+        store.get(a)
+        store.get(b)
+        expect(aOnInit).toHaveBeenCalledTimes(1)
+        expect(bOnInit).toHaveBeenCalledTimes(1)
+        aOnInit.mockClear()
+        bOnInit.mockClear()
+        return store
+    }
+    testInStore(createStore())
+    testInStore(createStore())
+    // jotai also tests with deriveStore(store, ...) which is not implemented
 })
 
 // Requires INTERNAL_onInit (jotai internal)
