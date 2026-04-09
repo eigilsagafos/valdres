@@ -1,31 +1,31 @@
 import { describe, test, expect } from "bun:test"
 import { atom, store } from "valdres"
-import { useSetAtom } from "./useSetAtom"
+import { getSetter } from "./getSetter"
 
-describe("useSetAtom", () => {
+describe("getSetter", () => {
     test("returns a setter function", () => {
         const countAtom = atom(0)
         const s = store()
-        const setter = useSetAtom(countAtom, s)
+        const set = getSetter(countAtom, s)
 
-        expect(typeof setter).toBe("function")
+        expect(typeof set).toBe("function")
     })
 
     test("setter updates the atom value in the store", () => {
         const countAtom = atom(0)
         const s = store()
-        const setter = useSetAtom(countAtom, s)
+        const set = getSetter(countAtom, s)
 
-        setter(5)
+        set(5)
         expect(s.get(countAtom)).toBe(5)
     })
 
     test("setter accepts callback updater", () => {
         const countAtom = atom(10)
         const s = store()
-        const setter = useSetAtom(countAtom, s)
+        const set = getSetter(countAtom, s)
 
-        setter((prev: number) => prev + 5)
+        set((prev: number) => prev + 5)
         expect(s.get(countAtom)).toBe(15)
     })
 })

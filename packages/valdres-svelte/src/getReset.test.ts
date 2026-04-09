@@ -1,12 +1,12 @@
 import { describe, test, expect } from "bun:test"
 import { atom, store } from "valdres"
-import { useResetAtom } from "./useResetAtom"
+import { getReset } from "./getReset"
 
-describe("useResetAtom", () => {
+describe("getReset", () => {
     test("returns a reset function", () => {
         const countAtom = atom(0)
         const s = store()
-        const reset = useResetAtom(countAtom, s)
+        const reset = getReset(countAtom, s)
 
         expect(typeof reset).toBe("function")
     })
@@ -18,7 +18,7 @@ describe("useResetAtom", () => {
         s.set(countAtom, 100)
         expect(s.get(countAtom)).toBe(100)
 
-        const reset = useResetAtom(countAtom, s)
+        const reset = getReset(countAtom, s)
         reset()
 
         expect(s.get(countAtom)).toBe(42)

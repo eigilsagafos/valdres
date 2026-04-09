@@ -1,10 +1,10 @@
 import type { Atom, SetAtomValue, Store } from "valdres"
-import { useStore } from "./useStore"
+import { getStore } from "./getStore"
 
-export const useSetAtom = <V>(
+export const getSetter = <V>(
     atom: Atom<V>,
     store?: Store,
 ): ((value: SetAtomValue<V>) => void) => {
-    const resolvedStore = useStore(store)
+    const resolvedStore = getStore(store)
     return (value: SetAtomValue<V>) => resolvedStore.set(atom, value)
 }

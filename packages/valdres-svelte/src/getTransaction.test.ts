@@ -1,11 +1,11 @@
 import { describe, test, expect } from "bun:test"
 import { atom, store } from "valdres"
-import { useTransaction } from "./useTransaction"
+import { getTransaction } from "./getTransaction"
 
-describe("useTransaction", () => {
+describe("getTransaction", () => {
     test("returns a transaction function", () => {
         const s = store()
-        const txn = useTransaction(s)
+        const txn = getTransaction(s)
 
         expect(typeof txn).toBe("function")
     })
@@ -14,7 +14,7 @@ describe("useTransaction", () => {
         const aAtom = atom(0)
         const bAtom = atom(0)
         const s = store()
-        const txn = useTransaction(s)
+        const txn = getTransaction(s)
 
         txn(({ set }) => {
             set(aAtom, 1)
@@ -28,7 +28,7 @@ describe("useTransaction", () => {
     test("transaction can read and write atoms", () => {
         const countAtom = atom(5)
         const s = store()
-        const txn = useTransaction(s)
+        const txn = getTransaction(s)
 
         txn(({ get, set }) => {
             const current = get(countAtom)

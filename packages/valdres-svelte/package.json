@@ -12,8 +12,12 @@
     },
     "type": "module",
     "exports": {
-        ".": "./src/index.ts"
+        ".": {
+            "svelte": "./src/index.ts",
+            "default": "./src/index.ts"
+        }
     },
+    "svelte": "./src/index.ts",
     "files": [
         "dist"
     ],

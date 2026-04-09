@@ -1,10 +1,10 @@
 import type { Atom, Store } from "valdres"
-import { useStore } from "./useStore"
+import { getStore } from "./getStore"
 
-export const useResetAtom = <V>(
+export const getReset = <V>(
     atom: Atom<V>,
     store?: Store,
 ): (() => void) => {
-    const resolvedStore = useStore(store)
+    const resolvedStore = getStore(store)
     return () => resolvedStore.reset(atom)
 }
