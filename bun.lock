@@ -190,17 +190,16 @@
     "packages/valdres-vue": {
       "name": "valdres-vue",
       "version": "0.2.0-pre.28",
-      "dependencies": {
-        "valdres": "0.2.0-pre.28",
-      },
       "devDependencies": {
         "@happy-dom/global-registrator": "20.0.5",
         "@vue/test-utils": "2.4.6",
         "happy-dom": "20.0.5",
         "typescript": "5.9.2",
+        "valdres": "0.2.0-pre.28",
         "vue": "3.5.13",
       },
       "peerDependencies": {
+        "valdres": ">=0.2.0-pre.28",
         "vue": ">=3.3",
       },
     },
