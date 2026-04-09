@@ -9,3 +9,4 @@ bench-results.ndjson
 bench-results-node.ndjson
 bench-results.json
 bench-history-entry.json
+junit*.xml

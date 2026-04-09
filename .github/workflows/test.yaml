@@ -6,6 +6,8 @@ on:
     pull_request:
         branches:
             - main
+permissions:
+    checks: write
 jobs:
     test:
         runs-on: ubuntu-22.04
@@ -17,4 +19,9 @@ jobs:
             - name: Build
               run: bun run build
             - name: Test
-              run: bun run test
+              run: bun run test:ci
+            - name: Test Report
+              uses: mikepenz/action-junit-report@v5
+              if: always()
+              with:
+                  report_paths: 'packages/**/junit*.xml'
