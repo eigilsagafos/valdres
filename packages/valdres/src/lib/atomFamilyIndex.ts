@@ -48,9 +48,9 @@ export const renderAtomFamilyIndex = (index: AtomFamilyIndex) => {
 }
 
 export type AtomFamilyIndex = {
-    created: Map<AtomFamilyAtom<any, any>, Number>
-    deleted: Map<AtomFamilyAtom<any, any>, Number>
-    rendered: Map<AtomFamilyAtom<any, any>, Number> | null
+    created: Map<AtomFamilyAtom<any, any>, number>
+    deleted: Map<AtomFamilyAtom<any, any>, number>
+    rendered: Map<AtomFamilyAtom<any, any>, number> | null
     renderedArray:
         | (AtomFamilyAtom<any, any>[] & { __index: AtomFamilyIndex })
         | null
@@ -96,12 +96,12 @@ export const deleteFamilyAtomsFromSet = (
     index.rendered = null
     index.renderedArray = null
     data.values.set(family, renderAtomFamilyIndex(index))
-    recursivlyUpdateIndexes(data, family)
+    recursivelyUpdateIndexes(data, family)
 }
 
 // INVARIANT: initFamilyIndex walks up the ancestor chain, so when a scope
 // at depth N gets a family index, all ancestors (depth 0..N-1) also get one.
-// recursivlyUpdateIndexes relies on this: it only recurses into child scopes
+// recursivelyUpdateIndexes relies on this: it only recurses into child scopes
 // that appear in scopeValueIndex, trusting that intermediate scopes without
 // the family have no descendants with it either.
 const initFamilyIndex = (family: Family<any>, data: StoreData) => {
@@ -131,7 +131,7 @@ const findFamilyIndex = (family: Family<any>, data: StoreData) => {
     return value.__index
 }
 
-const recursivlyUpdateIndexes = (data: StoreData, family: Family<any>) => {
+const recursivelyUpdateIndexes = (data: StoreData, family: Family<any>) => {
     const childScopesWithFamily = data.scopeValueIndex.get(family)
     if (!childScopesWithFamily || childScopesWithFamily.size === 0) return
     for (const scopedData of childScopesWithFamily) {
@@ -139,7 +139,7 @@ const recursivlyUpdateIndexes = (data: StoreData, family: Family<any>) => {
         index.rendered = null
         index.renderedArray = null
         scopedData.values.set(family, renderAtomFamilyIndex(index))
-        recursivlyUpdateIndexes(scopedData, family)
+        recursivelyUpdateIndexes(scopedData, family)
     }
 }
 
@@ -147,7 +147,7 @@ export const addFamilyAtomsToSet = (
     family: Family<any>,
     familyAtoms: Set<AtomFamilyAtom<any>>,
     data: StoreData,
-    timestamp: Number,
+    timestamp: number,
 ) => {
     if (familyAtoms.size === 0) return
     const index = findFamilyIndex(family, data)
@@ -159,5 +159,5 @@ export const addFamilyAtomsToSet = (
     index.rendered = null
     index.renderedArray = null
     data.values.set(family, renderAtomFamilyIndex(index))
-    recursivlyUpdateIndexes(data, family)
+    recursivelyUpdateIndexes(data, family)
 }

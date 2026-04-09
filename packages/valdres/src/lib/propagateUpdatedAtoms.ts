@@ -129,7 +129,7 @@ export const propagateDeletedAtoms = (
     }
     propagateDirtySelectors(atoms, selectors, data, subscriptions, families)
     // Propagate family changes into child scopes. deleteFamilyAtomsFromSet
-    // already updated the scope's family index via recursivlyUpdateIndexes,
+    // already updated the scope's family index via recursivelyUpdateIndexes,
     // but selectors in those scopes that depend on the family still need to
     // be re-evaluated so their subscribers get notified.
     if (families.size > 0 && data.scopes && data.scopes.size > 0) {

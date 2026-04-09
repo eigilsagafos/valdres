@@ -148,7 +148,7 @@ export class Transaction {
             index.deleted.delete(atom)
             index.rendered = null
             index.renderedArray = null
-            this.recursivlyUpdateAtomFamilyIndexes(atom.family)
+            this.recursivelyUpdateAtomFamilyIndexes(atom.family)
         }
         return value
     }
@@ -170,7 +170,7 @@ export class Transaction {
         }
         index.rendered = null
         index.renderedArray = null
-        this.recursivlyUpdateAtomFamilyIndexes(family)
+        this.recursivelyUpdateAtomFamilyIndexes(family)
     }
 
     del = (atom: AtomFamilyAtom<any, any>) => {
@@ -184,7 +184,7 @@ export class Transaction {
         index.rendered = null
         index.renderedArray = null
         this._atomMap.set(atom.family, renderAtomFamilyIndex(index))
-        this.recursivlyUpdateAtomFamilyIndexes(atom.family)
+        this.recursivelyUpdateAtomFamilyIndexes(atom.family)
         if (this.data.values.has(atom)) {
             this.deleteSet.add(atom)
         }
@@ -309,7 +309,7 @@ export class Transaction {
         this._atomMap.set(family, renderAtomFamilyIndex(clonedIndex))
     }
 
-    private recursivlyUpdateAtomFamilyIndexes(
+    private recursivelyUpdateAtomFamilyIndexes(
         atomFamily: AtomFamily<any, any>,
     ) {
         const currentIndex = this._atomMap.get(atomFamily).__index
@@ -320,7 +320,7 @@ export class Transaction {
 
         if (this._scopedTransactions?.size) {
             for (const [, scopedTxn] of this._scopedTransactions) {
-                scopedTxn.recursivlyUpdateAtomFamilyIndexes(atomFamily)
+                scopedTxn.recursivelyUpdateAtomFamilyIndexes(atomFamily)
             }
         }
     }
