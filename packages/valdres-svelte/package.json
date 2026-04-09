@@ -22,15 +22,13 @@
         "dist"
     ],
     "scripts": {
-        "test": "bun test src/",
-        "bench": "bun test --timeout 60000 --concurrency 1 ./test/performance/*.bench.ts"
+        "test": "bun test src/"
     },
     "dependencies": {
         "valdres": "0.2.0-pre.28"
     },
     "devDependencies": {
         "@valdres/test": "0.2.0-pre.28",
-        "nanostores": "^1.2.0",
         "svelte": "5.28.2",
         "typescript": "5.9.2"
     },
