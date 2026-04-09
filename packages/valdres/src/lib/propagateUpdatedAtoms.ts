@@ -301,9 +301,9 @@ export const propagateDirtySelectors = (
 ) => {
     const updatedInitializedAtoms = new Set<Atom>(updatedAtoms)
     if (selectors.size > 0) {
-        // At this point we have the first level of selectors that are depeendent on
-        // the atoms that changed. We should now traverse the tree of selectors, collect subsribers
-        // to those that change, and keep track of all selectors that we have visited.
+        // At this point we have the first level of selectors that are dependent on
+        // the atoms that changed. We now traverse the tree of selectors and collect
+        // subscribers to those that change.
         propagateSelectorUpdates(
             selectors,
             data,
