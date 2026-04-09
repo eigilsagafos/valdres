@@ -36,6 +36,9 @@ jobs:
                   git config user.email "github-actions[bot]@users.noreply.github.com"
 
             - uses: oven-sh/setup-bun@v2
+            - uses: actions/setup-node@v4
+              with:
+                  node-version: "22.17"
 
             - name: Install
               run: bun install --frozen-lockfile
@@ -43,10 +46,17 @@ jobs:
             - name: Build
               run: bun run build
 
-            - name: Run benchmarks
+            - name: Run benchmarks (Bun)
               # test:bench cleans stale results and runs files serially
               working-directory: packages/valdres
               run: bun run test:bench
+
+            # Node benchmarks are informational only — not used for regression
+            # detection. Run on main pushes to track V8 performance trends.
+            - name: Run benchmarks (Node)
+              if: github.ref == 'refs/heads/main'
+              working-directory: packages/valdres
+              run: npx vitest run --config vitest.bench.config.ts
 
             - name: Generate benchmark JSON
               run: bun run scripts/generate-bench-json.ts
@@ -133,6 +143,6 @@ jobs:
               if: github.ref == 'refs/heads/main'
               run: |
                   bun run scripts/update-bench-readme.ts
-                  git add README.md
+                  git add README.md BENCHMARKS.md
                   git diff --staged --quiet || git commit -m "Update benchmark results in README"
                   git push

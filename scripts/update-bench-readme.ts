@@ -1,28 +1,28 @@
 /**
- * Reads bench-results.ndjson and updates the benchmark table in README.md.
+ * Reads bench-results.ndjson (Bun) and bench-results-node.ndjson (Node)
+ * and updates:
+ * 1. README.md — compact comparison table (JSC/Safari vs V8/Chrome)
+ * 2. BENCHMARKS.md — full timing details for both runtimes
  */
 import { readFileSync, writeFileSync } from "fs"
 import { join } from "path"
 import { groupByCategory } from "./lib/bench-categories"
+import { type BenchResult, readBenchResults } from "./lib/read-bench-results"
 
 const ROOT = join(import.meta.dir, "..")
-const RESULTS_PATH = join(
-    ROOT,
-    "packages/valdres/test/performance/bench-results.ndjson",
-)
+const PERF_DIR = join(ROOT, "packages/valdres/test/performance")
+const BUN_RESULTS_PATH = join(PERF_DIR, "bench-results.ndjson")
+const NODE_RESULTS_PATH = join(PERF_DIR, "bench-results-node.ndjson")
 const README_PATH = join(ROOT, "README.md")
+const BENCHMARKS_PATH = join(ROOT, "BENCHMARKS.md")
 
 const START_MARKER = "<!-- BENCH:START -->"
 const END_MARKER = "<!-- BENCH:END -->"
 
-interface Result {
-    name: string
-    valdres: number
-    jotai: number
-    ratio: number
-    tag: string
-    threshold?: number
-}
+const JSC_LABEL = "JSC (Safari)"
+const V8_LABEL = "V8 (Chrome)"
+
+const OPTIMIZATION_TARGET_THRESHOLD = 10.0
 
 function fmtNs(ns: number): string {
     if (ns < 1_000) return `${ns.toFixed(0)}ns`
@@ -36,7 +36,11 @@ function speedIndicator(ratio: number): string {
     return "🔴"
 }
 
-// Read Jotai version (check workspace-local node_modules first, then root)
+function fmtTag(r: BenchResult): string {
+    return `${speedIndicator(r.ratio)} ${r.tag}`
+}
+
+// Read Jotai version
 let jotaiVersion = "unknown"
 for (const path of [
     join(ROOT, "packages/valdres/node_modules/jotai/package.json"),
@@ -53,64 +57,79 @@ for (const path of [
 }
 
 // Read results
-const ndjson = readFileSync(RESULTS_PATH, "utf-8").trim()
-const results: Result[] = ndjson.split("\n").map(line => JSON.parse(line))
+const bunResults = readBenchResults(BUN_RESULTS_PATH)
+const nodeResults = readBenchResults(NODE_RESULTS_PATH)
+const hasNode = nodeResults.length > 0
+const hasBun = bunResults.length > 0
 
-// Split results into comparisons, optimization targets, and baselines
-const OPTIMIZATION_TARGET_THRESHOLD = 10.0
-const comparisons = results.filter(
+if (!hasBun && !hasNode) {
+    console.error("No benchmark results found")
+    process.exit(1)
+}
+
+const nodeByName = new Map(nodeResults.map(r => [r.name, r]))
+const primaryResults = hasBun ? bunResults : nodeResults
+
+const comparisons = primaryResults.filter(
     r => r.tag !== "baseline" && (r.threshold ?? 1.0) < OPTIMIZATION_TARGET_THRESHOLD,
 )
-const optimizationTargets = results.filter(
+const optimizationTargets = primaryResults.filter(
     r => r.tag !== "baseline" && (r.threshold ?? 1.0) >= OPTIMIZATION_TARGET_THRESHOLD,
 )
-const baselines = results.filter(r => r.tag === "baseline")
 
-// Generate grouped comparison table (deterministic order from BENCH_CATEGORIES)
+const now = new Date().toISOString().split("T")[0]
+const dual = hasBun && hasNode
+
+// ── README: compact table ────────────────────────────────────────────
+
+function compactHeader(): string {
+    if (dual) {
+        return `| Benchmark | ${JSC_LABEL} | ${V8_LABEL} |\n|:----------|-----------:|-----------:|`
+    }
+    const label = hasBun ? JSC_LABEL : V8_LABEL
+    return `| Benchmark | ${label} |\n|:----------|-----------:|`
+}
+
+function compactRow(r: BenchResult): string {
+    const bunTag = fmtTag(r)
+    if (dual) {
+        const nodeR = nodeByName.get(r.name)
+        const nodeTag = nodeR ? fmtTag(nodeR) : "—"
+        return `| ${r.name} | ${bunTag} | ${nodeTag} |`
+    }
+    return `| ${r.name} | ${bunTag} |`
+}
+
 const grouped = groupByCategory(comparisons, r => r.name)
+const header = compactHeader()
 
 const compSections: string[] = []
 for (const [cat, benchmarks] of grouped) {
-    const rows = benchmarks.map(r => {
-        const indicator = speedIndicator(r.ratio)
-        return `| ${r.name} | ${fmtNs(r.valdres)} | ${fmtNs(r.jotai)} | ${indicator} ${r.tag} |`
-    })
-    compSections.push(
-        `#### ${cat}\n\n| Benchmark | valdres | jotai | Comparison |\n|:----------|--------:|------:|-----------:|\n${rows.join("\n")}`,
-    )
+    compSections.push(`#### ${cat}\n\n${header}\n${benchmarks.map(compactRow).join("\n")}`)
 }
 const compTable = compSections.join("\n\n")
 
-// Generate optimization targets table (areas where we're already fast, tracking for improvement)
 const optTable =
     optimizationTargets.length > 0
-        ? `\n\n#### Not yet optimized\n\nThese operations are functional but not yet tuned for speed. Tracked for future improvement.\n\n| Benchmark | valdres | jotai | Comparison |\n|:----------|--------:|------:|-----------:|\n${optimizationTargets.map(r => {
-              const indicator = speedIndicator(r.ratio)
-              return `| ${r.name} | ${fmtNs(r.valdres)} | ${fmtNs(r.jotai)} | ${indicator} ${r.tag} |`
-          }).join("\n")}`
+        ? `\n\n#### Not yet optimized\n\nThese operations are functional but not yet tuned for speed. Tracked for future improvement.\n\n${header}\n${optimizationTargets.map(compactRow).join("\n")}`
         : ""
 
-// Generate baseline table
-const baseRows = baselines.map(r => `| ${r.name} | ${fmtNs(r.valdres)} |`)
-const baseTable =
-    baselines.length > 0
-        ? `\n\n<details>\n<summary>Baseline (raw JS operations for reference)</summary>\n\n| Operation | Time |\n|:----------|-----:|\n${baseRows.join("\n")}\n\n</details>`
-        : ""
+const runtimeNote = dual
+    ? "Bun (JavaScriptCore / Safari) and Node.js (V8 / Chrome)"
+    : hasBun
+      ? "Bun (JavaScriptCore / Safari)"
+      : "Node.js (V8 / Chrome)"
 
-const table = compTable + optTable + baseTable
-
-const now = new Date().toISOString().split("T")[0]
-const section = `${START_MARKER}
+const readmeSection = `${START_MARKER}
 ### Performance vs Jotai
 
-All benchmarks compare valdres against [Jotai](https://github.com/pmndrs/jotai) v${jotaiVersion} on the same CI runner.
+All benchmarks compare valdres against [Jotai](https://github.com/pmndrs/jotai) v${jotaiVersion} on the same CI runner using ${runtimeNote}.
 
-${table}
+${compTable}${optTable}
 
-> Last updated: ${now} — [Historical trends](https://eigilsagafos.github.io/valdres/dev/bench/)
+> [Full timing details](./BENCHMARKS.md) — Last updated: ${now} — [Historical trends](https://eigilsagafos.github.io/valdres/dev/bench/)
 ${END_MARKER}`
 
-// Update README
 const readme = readFileSync(README_PATH, "utf-8")
 const startIdx = readme.indexOf(START_MARKER)
 const endIdx = readme.indexOf(END_MARKER)
@@ -119,11 +138,77 @@ let updated: string
 if (startIdx !== -1 && endIdx !== -1) {
     updated =
         readme.slice(0, startIdx) +
-        section +
+        readmeSection +
         readme.slice(endIdx + END_MARKER.length)
 } else {
-    updated = readme.trimEnd() + "\n\n" + section + "\n"
+    updated = readme.trimEnd() + "\n\n" + readmeSection + "\n"
 }
 
 writeFileSync(README_PATH, updated)
 console.log("README.md updated with benchmark results")
+
+// ── BENCHMARKS.md: full detail ───────────────────────────────────────
+
+function detailHeader(label: string): string {
+    return `| Benchmark | valdres | jotai | ${label} |\n|:----------|--------:|------:|-----------:|`
+}
+
+function detailRow(r: BenchResult): string {
+    return `| ${r.name} | ${fmtNs(r.valdres)} | ${fmtNs(r.jotai)} | ${fmtTag(r)} |`
+}
+
+function buildDetailSection(results: BenchResult[], label: string): string {
+    const comps = results.filter(
+        r => r.tag !== "baseline" && (r.threshold ?? 1.0) < OPTIMIZATION_TARGET_THRESHOLD,
+    )
+    const opts = results.filter(
+        r => r.tag !== "baseline" && (r.threshold ?? 1.0) >= OPTIMIZATION_TARGET_THRESHOLD,
+    )
+    const bases = results.filter(r => r.tag === "baseline")
+
+    const grouped = groupByCategory(comps, r => r.name)
+    const hdr = detailHeader(label)
+
+    const sections: string[] = []
+    for (const [cat, benchmarks] of grouped) {
+        sections.push(`#### ${cat}\n\n${hdr}\n${benchmarks.map(detailRow).join("\n")}`)
+    }
+
+    if (opts.length > 0) {
+        sections.push(
+            `#### Not yet optimized\n\n${hdr}\n${opts.map(detailRow).join("\n")}`,
+        )
+    }
+
+    if (bases.length > 0) {
+        const baseHdr = `| Operation | Time |\n|:----------|-----:|`
+        const baseRows = bases.map(r => `| ${r.name} | ${fmtNs(r.valdres)} |`)
+        sections.push(`#### Baseline\n\nRaw JS operations for reference.\n\n${baseHdr}\n${baseRows.join("\n")}`)
+    }
+
+    return sections.join("\n\n")
+}
+
+const detailLines: string[] = [
+    "# Benchmark Details",
+    "",
+    `All benchmarks compare valdres against [Jotai](https://github.com/pmndrs/jotai) v${jotaiVersion}.`,
+    "",
+    `> Last updated: ${now}`,
+    "",
+]
+
+if (hasBun) {
+    detailLines.push(`### Bun — ${JSC_LABEL}`, "")
+    detailLines.push(buildDetailSection(bunResults, JSC_LABEL))
+    detailLines.push("")
+}
+
+if (hasNode) {
+    detailLines.push(`### Node.js — ${V8_LABEL}`, "")
+    detailLines.push(buildDetailSection(nodeResults, V8_LABEL))
+    detailLines.push("")
+}
+
+writeFileSync(BENCHMARKS_PATH, detailLines.join("\n"))
+console.log("BENCHMARKS.md updated with full timing details")
