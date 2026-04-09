@@ -22,7 +22,8 @@
         "dist"
     ],
     "scripts": {
-        "test": "bun test"
+        "test": "bun test src/",
+        "bench": "bun test --timeout 60000 --concurrency 1 ./test/performance/*.bench.ts"
     },
     "dependencies": {
         "valdres": "0.2.0-pre.28"
