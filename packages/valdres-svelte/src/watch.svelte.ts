@@ -30,8 +30,8 @@ export function watch<V>(state: State<V>, store?: Store): WatchedValue<V> | Watc
             get value() {
                 return value
             },
-            set: (v: SetAtomValue<V>) => resolvedStore.set(state as Atom<V>, v),
-            reset: () => resolvedStore.reset(state as Atom<V>),
+            set: (v: SetAtomValue<V>) => resolvedStore.set(state, v),
+            reset: () => resolvedStore.reset(state),
         }
     }
 
