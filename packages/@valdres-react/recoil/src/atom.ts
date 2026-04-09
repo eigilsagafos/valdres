@@ -40,7 +40,8 @@ export const atom = <T>(args: AtomOptions<T>): RecoilState<T> => {
             // @ts-ignore @ts-todo
             const unsubscribe = store.sub(atom, (...args) => {
                 const newValue = store.get(atom)
-                onSetCallbacks.map(cb => cb(newValue, oldValue, false))
+                onSetCallbacks.forEach(cb => cb(newValue, oldValue, false))
+                oldValue = newValue
             })
             return unsubscribe
         }
@@ -49,8 +50,16 @@ export const atom = <T>(args: AtomOptions<T>): RecoilState<T> => {
             unMount()
         }
     }
+    // In Recoil, `default: undefined` means "the value is literally undefined".
+    // In valdres, `undefined` means "no default, use Suspense". We wrap
+    // explicit `undefined` in a thunk so valdres treats it as a real value.
+    const defaultValue =
+        // @ts-ignore @ts-todo - AtomOptions is a union; `default` may not exist on all variants
+        "default" in args && args.default === undefined
+            ? () => undefined
+            : (args as { default?: T }).default
     // @ts-ignore @ts-todo
-    const newAtom = valdresAtom(args.default, options)
+    const newAtom = valdresAtom(defaultValue, options)
 
     return newAtom as unknown as RecoilState<T>
 }
