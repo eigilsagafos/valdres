@@ -309,7 +309,6 @@ export const propagateDirtySelectors = (
             data,
             subscriptions,
             updatedInitializedAtoms,
-            undefined,
             isInitOnly,
         )
     }
@@ -352,7 +351,6 @@ const propagateSelectorUpdates = (
     data: StoreData,
     collectedSubscribers: Set<any>,
     updatedInitializedAtoms: Set<Atom>,
-    seen: Set<Selector> = new Set(),
     isInitOnly = false,
 ) => {
     let currentSelectors = selectors
@@ -365,7 +363,6 @@ const propagateSelectorUpdates = (
                 // to avoid double-evaluation.
                 continue
             }
-            seen.add(selector)
             const dependents = data.stateDependents.get(selector)
             const subscribers = data.subscriptions.get(selector)
             if (
