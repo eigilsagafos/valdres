@@ -22,4 +22,20 @@ describe("useSetAtom", () => {
         setter!(42)
         expect(storeInstance.get(countAtom)).toBe(42)
     })
+
+    test("sets atom with updater function", () => {
+        const countAtom = atom(10)
+        const storeInstance = createStore()
+        let setter: (v: any) => void
+        const Comp = defineComponent({
+            setup() {
+                setter = useSetAtom(countAtom, storeInstance)
+                return {}
+            },
+            template: "<div></div>",
+        })
+        mount(Comp)
+        setter!((prev: number) => prev + 5)
+        expect(storeInstance.get(countAtom)).toBe(15)
+    })
 })

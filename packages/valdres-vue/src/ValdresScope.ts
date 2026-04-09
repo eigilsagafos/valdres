@@ -1,4 +1,4 @@
-import { defineComponent, inject, provide, onUnmounted, type PropType } from "vue"
+import { defineComponent, inject, provide, onScopeDispose, type PropType } from "vue"
 import { ValdresKey } from "./lib/storeKey"
 import { hydrate } from "./lib/hydrate"
 import type { InitializeCallback } from "./types/InitializeCallback"
@@ -41,10 +41,11 @@ export const ValdresScope = defineComponent({
             stores: {
                 ...parentCtx.stores,
                 [parentCtx.current.data.id]: parentCtx.current,
+                [scopedStore.data.id]: scopedStore,
             },
         })
 
-        onUnmounted(() => {
+        onScopeDispose(() => {
             scopedStore?.detach?.(scopeCreated)
         })
 

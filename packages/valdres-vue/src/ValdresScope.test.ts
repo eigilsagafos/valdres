@@ -180,6 +180,54 @@ describe("ValdresScope", () => {
         expect(parentStoreResult.data.id).toBe(rootId)
     })
 
+    test("scoped set does not leak to parent", async () => {
+        const nameAtom = atom("default")
+        const rootStore = createStore()
+
+        let parentRef: any
+        let scopedRef: any
+        const ScopedChild = defineComponent({
+            setup() {
+                scopedRef = useValue(nameAtom)
+                return () => h("div")
+            },
+        })
+        const ParentChild = defineComponent({
+            setup() {
+                parentRef = useValue(nameAtom)
+                return () => h("div")
+            },
+        })
+
+        mount(
+            defineComponent({
+                setup() {
+                    return () => [
+                        h(ParentChild),
+                        h(ValdresScope, { scopeId: "isolated" }, () =>
+                            h(ScopedChild),
+                        ),
+                    ]
+                },
+            }),
+            {
+                global: {
+                    plugins: [createValdres({ store: rootStore })],
+                },
+            },
+        )
+
+        expect(parentRef.value).toBe("default")
+        expect(scopedRef.value).toBe("default")
+
+        // Set in scope should not affect parent
+        const scopedStore = rootStore.scope("isolated")
+        scopedStore.set(nameAtom, "scoped-only")
+        await new Promise(r => queueMicrotask(r))
+        expect(scopedRef.value).toBe("scoped-only")
+        expect(parentRef.value).toBe("default")
+    })
+
     test("nested scopes build up store chain", () => {
         const rootStore = createStore()
         const rootId = rootStore.data.id

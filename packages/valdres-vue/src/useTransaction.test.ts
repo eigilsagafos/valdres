@@ -26,4 +26,23 @@ describe("useTransaction", () => {
         expect(storeInstance.get(atomA)).toBe(10)
         expect(storeInstance.get(atomB)).toBe(20)
     })
+
+    test("can read values inside transaction", () => {
+        const countAtom = atom(5)
+        const storeInstance = createStore()
+        let txn: any
+        const Comp = defineComponent({
+            setup() {
+                txn = useTransaction(storeInstance)
+                return {}
+            },
+            template: "<div></div>",
+        })
+        mount(Comp)
+        txn(({ get, set }: any) => {
+            const current = get(countAtom)
+            set(countAtom, current * 3)
+        })
+        expect(storeInstance.get(countAtom)).toBe(15)
+    })
 })
