@@ -27,18 +27,17 @@ describe("memory leaks (get & set only)", () => {
         expect(await detector2.isLeaking()).toBe(false)
     })
 
-    test.todo(
-        "should not hold onto dependent atoms that are not mounted",
-        // async () => {
-        //     const store = createStore()
-        //     const objAtom = atom({})
-        //     let depAtom: Atom<unknown> | undefined = atom(get => get(objAtom))
-        //     const detector = new LeakDetector(depAtom)
-        //     store.get(depAtom)
-        //     depAtom = undefined
-        //     expect(await detector.isLeaking()).toBe(false)
-        // },
-    )
+    // Also todo in upstream jotai
+    test.todo("should not hold onto dependent atoms that are not mounted", async () => {
+        const store = createStore()
+        const objAtom = atom({})
+        let depAtom: Atom<unknown> | undefined = atom((get: any) => get(objAtom))
+        const detector = new LeakDetector(depAtom)
+        store.get(depAtom)
+        depAtom = undefined
+        await Promise.resolve()
+        expect(await detector.isLeaking()).toBe(false)
+    })
 
     test("with a long-lived base atom", async () => {
         const store = createStore()

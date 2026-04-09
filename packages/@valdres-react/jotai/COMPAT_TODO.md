@@ -53,8 +53,8 @@ Core jotai feature, most common migration blocker:
 - [x] `should update async atom with delay (#1813)`
 - [x] `should override a promise by setting`
 - [x] `should update async atom with deps after await (#1905)`
-- [ ] `should not fire subscription when async atom promise is the same` (bun segfault)
-- [ ] `resolves dependencies reliably after a delay (#2192)` (requires setSelf in read)
+- [x] `should not fire subscription when async atom promise is the same`
+- [x] `resolves dependencies reliably after a delay (#2192)`
 - [x] `should flush pending write triggered asynchronously and indirectly (#2451)`
 - [x] `async atom with subtle timing > case 2`
 - [x] `notifies async derived-atom subscriber when read calls store.set before await`
@@ -72,9 +72,9 @@ Heavily used in jotai codebases for side effects:
 - [x] `should recompute dependents' state after onMount (#2098)`
 - [x] `should mount once with atom creator atom (#2314)`
 - [x] `Unmount an atom that is no longer dependent within a derived atom (#2658)`
-- [ ] `keeps atoms mounted between recalculations`
-- [ ] `chained derive atom with onMount and useEffect (#897)` (react)
-- [ ] `in onmount/onunmount asynchronous setAtom`
+- [x] `keeps atoms mounted between recalculations`
+- [x] `chained derive atom with onMount and useEffect (#897)` (react)
+- [x] `in onmount/onunmount asynchronous setAtom`
 
 ### onMount setSelf — now passing (1)
 - [x] `should call subscribers after setAtom updates atom value on mount but not on unmount`
@@ -101,7 +101,7 @@ Error recovery in async lifecycle:
 
 ### React Rendering — MEDIUM priority (5)
 React rendering patterns with atoms:
-- [ ] `re-renders a time delayed derived atom with the same initial value (#947)`
+- [x] `re-renders a time delayed derived atom with the same initial value (#947)`
 - [x] `uses atoms with tree dependencies`
 - [x] `uses an async write-only atom`
 - [x] `uses a writable atom without read function`

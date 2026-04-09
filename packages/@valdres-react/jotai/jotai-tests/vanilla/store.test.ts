@@ -36,11 +36,30 @@ test("should not fire subscription if derived atom value is the same", () => {
     expect(callback).toHaveBeenCalledTimes(calledTimes)
 })
 
-// Requires createDevStore (jotai internals)
-test.todo("should unmount with store.get", () => {})
+// Requires createDevStore + get_mounted_atoms (jotai internals)
+test.todo("should unmount with store.get", () => {
+    const store = createStore() // jotai uses createDevStore()
+    const countAtom = atom(0)
+    const callback = mock(() => {})
+    const unsub = store.sub(countAtom, callback)
 
-// Requires createDevStore (jotai internals)
-test.todo("should unmount dependencies with store.get", () => {})
+    store.get(countAtom)
+    unsub()
+    // jotai asserts: Array.from(store.get_mounted_atoms()) === []
+})
+
+// Requires createDevStore + get_mounted_atoms (jotai internals)
+test.todo("should unmount dependencies with store.get", () => {
+    const store = createStore() // jotai uses createDevStore()
+    const countAtom = atom(0)
+    const derivedAtom = atom((get) => get(countAtom) * 2)
+    const callback = mock(() => {})
+    const unsub = store.sub(derivedAtom, callback)
+
+    store.get(derivedAtom)
+    unsub()
+    // jotai asserts: Array.from(store.get_mounted_atoms()) === []
+})
 
 test("should update async atom with delay (#1813)", async () => {
     const countAtom = atom(0)
@@ -108,7 +127,7 @@ test("should update async atom with deps after await (#1905)", async () => {
 })
 
 // NOTE: This test causes a bun segfault — bun bug, not a valdres issue
-test.todo("should not fire subscription when async atom promise is the same", async () => {
+test("should not fire subscription when async atom promise is the same", async () => {
     const promise = Promise.resolve()
     const promiseAtom = atom(promise)
     const derivedGetter = mock((get: Getter) => get(promiseAtom))
@@ -304,7 +323,7 @@ test("should update derived atoms during write (#2107)", () => {
     expect(store.get(countAtom)).toBe(2)
 })
 
-test.todo("resolves dependencies reliably after a delay (#2192)", async () => {
+test("resolves dependencies reliably after a delay (#2192)", async () => {
     const countAtom = atom(0)
     let result: number | null = null
 
@@ -797,8 +816,47 @@ describe("should mount and trigger listeners even when an error is thrown", () =
         expect(listener).toHaveBeenCalledTimes(1)
     })
 
-    test.todo("in onmount/onunmount asynchronous setAtom", async () => {
-        // Requires vi.advanceTimersByTimeAsync
+    test("in onmount/onunmount asynchronous setAtom", async () => {
+        const store = createStore()
+        const a = atom(0)
+        const e = atom(() => {
+            throw new Error("error")
+        })
+        const b = atom(null, (get, set) => {
+            set(a, (v: number) => ++v)
+            get(e)
+        })
+        b.onMount = (setAtom) => {
+            setTimeout(() => {
+                try {
+                    setAtom()
+                } catch {
+                    // expect error
+                }
+            })
+            return () => {
+                setTimeout(() => {
+                    try {
+                        setAtom()
+                    } catch {
+                        // expect error
+                    }
+                })
+            }
+        }
+        const listener = mock(() => {})
+
+        store.sub(a, listener)
+        const unsub = store.sub(b, () => {})
+
+        await new Promise((resolve) => setTimeout(resolve, 0))
+        expect(listener).toHaveBeenCalledTimes(1)
+
+        listener.mockClear()
+        unsub()
+
+        await new Promise((resolve) => setTimeout(resolve, 0))
+        expect(listener).toHaveBeenCalledTimes(1)
     })
 
     test("in synchronous onmount", () => {
@@ -1020,13 +1078,45 @@ test("should process all atom listeners even if some of them throw errors", () =
 })
 
 // Requires INTERNAL_onInit (jotai internal)
-test.todo("should call onInit only once per atom", () => {})
+test.todo("should call onInit only once per atom", () => {
+    const store = createStore()
+    const a = atom(0)
+    const onInit = mock(() => {})
 
-// Requires deriveStore (jotai internals)
-test.todo("should call onInit only once per store", () => {})
+    ;(a as any).INTERNAL_onInit = onInit
+    store.get(a)
+    expect(onInit).toHaveBeenCalledTimes(1)
+    expect(onInit).toHaveBeenCalledWith(store)
+
+    onInit.mockClear()
+    store.get(a)
+    store.set(a, 1)
+
+    const unsub = store.sub(a, () => {})
+    unsub()
+
+    const b = atom((get) => get(a))
+    store.get(b)
+    store.sub(b, () => {})
+    expect(onInit).not.toHaveBeenCalled()
+})
+
+// Requires INTERNAL_onInit + deriveStore (jotai internals)
+test.todo("should call onInit only once per store", () => {
+    // Uses deriveStore which is a jotai internal API for custom atom state storage.
+    // Full test body omitted — requires deriveStore implementation.
+})
 
 // Requires INTERNAL_onInit (jotai internal)
-test.todo("should pass store and atomState to the atom initializer", () => {})
+test.todo("should pass store and atomState to the atom initializer", () => {
+    const store = createStore()
+    const a = atom(null)
+
+    ;(a as any).INTERNAL_onInit = (s: any) => {
+        expect(s).toBe(store)
+    }
+    store.get(a)
+})
 
 test("recomputes dependents of unmounted atoms", () => {
     const a = atom(0)
@@ -1150,8 +1240,17 @@ test("updates dependents when it eagerly recomputes dirty atoms", () => {
     expect(store.get(activeCountAtom)).toBe(1)
 })
 
-// Requires console.warn mock setup
-test.todo("[DEV-ONLY] should warn store mutation during read", () => {})
+// Requires DEV mode + console.warn mock
+test.todo("[DEV-ONLY] should warn store mutation during read", () => {
+    const store = createStore()
+    const countAtom = atom(0)
+    const derivedAtom = atom(() => {
+        store.set(countAtom, (c: number) => c + 1)
+    })
+    store.get(derivedAtom)
+    // jotai asserts: console.warn called with
+    // "Detected store mutation during atom read. This is not supported."
+})
 
 test("should keep reactivity when a derived atom returns a function that calls get (#3240)", () => {
     const store = createStore()
