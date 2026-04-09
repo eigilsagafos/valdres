@@ -433,7 +433,6 @@ const recursivlyHandleSelectorUpdates = (
     data: StoreData,
     collectedSubscribers: Set<any>,
     updatedInitializedAtoms: Set<Atom>,
-    seen: Set<Selector> = new Set(),
 ) => {
     const selectorsForNextPass = new Set<Selector>()
     for (const selector of selectors) {
@@ -441,7 +440,6 @@ const recursivlyHandleSelectorUpdates = (
         if (isPromiseLike(currentValue)) {
             continue
         }
-        seen.add(selector)
         const dependents = data.stateDependents.get(selector)
         const subscribers = data.subscriptions.get(selector)
         if (
@@ -470,7 +468,6 @@ const recursivlyHandleSelectorUpdates = (
             data,
             collectedSubscribers,
             updatedInitializedAtoms,
-            seen,
         )
     }
 }
