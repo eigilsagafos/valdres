@@ -205,7 +205,6 @@ const findFamilyIndex = (family: Family<any>, data: StoreData) => {
     }
     const value = data.values.get(family)
     if (!value?.__index) {
-        console.log("value", value)
         throw new Error("Family index is missing")
     }
 

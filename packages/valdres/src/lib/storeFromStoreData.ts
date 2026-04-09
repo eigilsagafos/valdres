@@ -161,12 +161,9 @@ export function storeFromStoreData(
                 scopedStoreData = createStoreData(scopeId, data, data.batchUpdates ? { batchUpdates: true } : undefined)
                 data.scopes.set(scopeId, scopedStoreData)
             }
-            const detach = (expectedToDestory = false) => {
+            const detach = (expectedToDestroy = false) => {
                 scopedStoreData.scopeConsumers.delete(detach)
                 if (scopedStoreData.scopeConsumers.size === 0) {
-                    if (expectedToDestory) {
-                        console.log("Deleting scope", scopeId)
-                    }
                     data.scopes.delete(scopeId)
                     // Clean up scopeValueIndex entries referencing this scope
                     for (const key of scopedStoreData.scopeIndexKeys) {
@@ -179,7 +176,7 @@ export function storeFromStoreData(
                     scopedStoreData.scopeIndexKeys.clear()
                     return true
                 }
-                if (expectedToDestory) {
+                if (expectedToDestroy) {
                     console.warn(
                         `Scope ${scopeId} still has ${scopedStoreData.scopeConsumers.size} consumers, will not detach`,
                     )
