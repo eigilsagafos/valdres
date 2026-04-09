@@ -40,7 +40,7 @@ export const atom = <T>(args: AtomOptions<T>): RecoilState<T> => {
             // @ts-ignore @ts-todo
             const unsubscribe = store.sub(atom, (...args) => {
                 const newValue = store.get(atom)
-                onSetCallbacks.map(cb => cb(newValue, oldValue, false))
+                onSetCallbacks.forEach(cb => cb(newValue, oldValue, false))
                 oldValue = newValue
             })
             return unsubscribe

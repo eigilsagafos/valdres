@@ -163,13 +163,6 @@ describe("recoil/selectorFamily", () => {
     })
 
     test("selectorFamily used with atomFamily", () => {
-        const myAtomFamily = atom({
-            key: uniqueKey(),
-            default: 0,
-        })
-        // Note: Using a regular atom here since the compat atomFamily might
-        // not integrate directly with selectorFamily in the same way
-
         const baseAtom = atom({ key: uniqueKey(), default: 10 })
         const mySelector = selectorFamily({
             key: uniqueKey(),

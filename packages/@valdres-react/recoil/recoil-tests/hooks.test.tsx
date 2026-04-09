@@ -3,11 +3,11 @@
  * Tests useRecoilState, useRecoilValue, useSetRecoilState, useResetRecoilState.
  */
 import React, { Profiler, useState } from "react"
-import { describe, test, expect, afterEach, mock } from "bun:test"
+import { describe, test, expect, afterEach } from "bun:test"
 import { render, act, cleanup } from "@testing-library/react"
 import { atom } from "../src/atom"
+import { atomFamily } from "../src/atomFamily"
 import { selector } from "../src/selector"
-import { selectorFamily } from "../src/selectorFamily"
 import { RecoilRoot } from "../src/RecoilRoot"
 import { useRecoilState } from "../src/useRecoilState"
 import { useRecoilValue } from "../src/useRecoilValue"
@@ -383,7 +383,6 @@ describe("recoil/hooks", () => {
         })
 
         test("resets atom family member to default", () => {
-            const { atomFamily } = require("../src/atomFamily")
             const myFamily = atomFamily({
                 key: uniqueKey(),
                 default: "DEFAULT",

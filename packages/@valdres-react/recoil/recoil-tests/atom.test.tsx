@@ -3,7 +3,7 @@
  * Tests basic atom functionality, defaults, valid values, and effects.
  */
 import React, { Profiler } from "react"
-import { describe, test, expect, afterEach, mock } from "bun:test"
+import { describe, test, expect, afterEach } from "bun:test"
 import { render, act, cleanup } from "@testing-library/react"
 import { atom } from "../src/atom"
 import { selector } from "../src/selector"
@@ -312,34 +312,10 @@ describe("recoil/atom - Effects", () => {
         expect(container.textContent).toBe('"DEFAULT"')
     })
 
-    test("cleanup on unmount", () => {
-        const cleanupFn = mock(() => {})
-        const myAtom = atom({
-            key: uniqueKey(),
-            default: "DEFAULT",
-            effects: [
-                () => {
-                    return cleanupFn
-                },
-            ],
-        })
-
-        function Component() {
-            useRecoilValue(myAtom)
-            return null
-        }
-
-        const { unmount } = render(
-            <RecoilRoot>
-                <Component />
-            </RecoilRoot>,
-        )
-
-        expect(cleanupFn).not.toHaveBeenCalled()
-        unmount()
-        // Cleanup should be called when the root unmounts
-        // Note: this depends on the implementation details of onMount/onUnmount
-    })
+    // Effect cleanup on unmount is not yet implemented in the compat layer.
+    // The onUnmount handler calls unsubscribe but doesn't invoke the effect's
+    // cleanup return value.
+    test.todo("cleanup on unmount")
 
     test("multiple onSet handlers from different effects", () => {
         const values1: any[] = []
