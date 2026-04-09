@@ -6,6 +6,9 @@ on:
     pull_request:
         branches:
             - main
+permissions:
+    contents: read
+    checks: write
 jobs:
     test:
         runs-on: ubuntu-22.04
@@ -17,4 +20,99 @@ jobs:
             - name: Build
               run: bun run build
             - name: Test
-              run: bun run test
+              id: test
+              run: bun run test:ci
+              continue-on-error: true
+            - name: Test Report
+              if: always()
+              uses: actions/github-script@v7
+              with:
+                  script: |
+                      const fs = require('fs');
+                      const { execSync } = require('child_process');
+
+                      const testStepFailed = '${{ steps.test.outcome }}' === 'failure';
+
+                      // Find all junit XML files
+                      const files = execSync("find packages -name 'junit*.xml'")
+                          .toString().trim().split('\n').filter(Boolean);
+
+                      if (files.length === 0) {
+                          const title = 'No test results found';
+                          const summary = '⚠️ No JUnit XML files were produced. Tests may have crashed before completing.';
+                          await github.rest.checks.create({
+                              owner: context.repo.owner,
+                              repo: context.repo.repo,
+                              name: `${context.workflow} / ${context.job} (${context.eventName}) — results`,
+                              head_sha: context.sha,
+                              status: 'completed',
+                              conclusion: 'failure',
+                              output: { title, summary }
+                          });
+                          core.setFailed(title);
+                          return;
+                      }
+
+                      // Aggregate results by package
+                      const pkgMap = new Map();
+                      for (const file of files) {
+                          const content = fs.readFileSync(file, 'utf8');
+                          const pkg = file.replace(/^packages\//, '').replace(/\/junit.*\.xml$/, '');
+                          const tests = parseInt(content.match(/tests="(\d+)"/)?.[1] || '0');
+                          const failures = parseInt(content.match(/failures="(\d+)"/)?.[1] || '0');
+                          const skipped = parseInt(content.match(/skipped="(\d+)"/)?.[1] || '0');
+                          const time = parseFloat(content.match(/time="([\d.]+)"/)?.[1] || '0');
+
+                          if (pkgMap.has(pkg)) {
+                              const existing = pkgMap.get(pkg);
+                              existing.tests += tests;
+                              existing.failures += failures;
+                              existing.skipped += skipped;
+                              existing.time += time;
+                          } else {
+                              pkgMap.set(pkg, { tests, failures, skipped, time });
+                          }
+                      }
+
+                      let totalTests = 0, totalFailures = 0, totalSkipped = 0, totalTime = 0;
+                      for (const p of pkgMap.values()) {
+                          totalTests += p.tests;
+                          totalFailures += p.failures;
+                          totalSkipped += p.skipped;
+                          totalTime += p.time;
+                      }
+
+                      const passed = totalTests - totalFailures - totalSkipped;
+                      const hasFailed = totalFailures > 0 || testStepFailed;
+                      const conclusion = hasFailed ? 'failure' : 'success';
+                      const icon = hasFailed ? '❌' : '✅';
+                      const title = `${totalTests} tests run, ${passed} passed, ${totalSkipped} skipped, ${totalFailures} failed`;
+
+                      let summary = `## ${icon} Test Results\n\n`;
+                      summary += `| Package | Tests | Passed | Skipped | Failed | Time |\n`;
+                      summary += `|---------|------:|-------:|--------:|-------:|-----:|\n`;
+                      for (const [pkg, p] of pkgMap) {
+                          const pPassed = p.tests - p.failures - p.skipped;
+                          const pIcon = p.failures > 0 ? '❌' : '✅';
+                          summary += `| ${pIcon} ${pkg} | ${p.tests} | ${pPassed} | ${p.skipped} | ${p.failures} | ${p.time.toFixed(2)}s |\n`;
+                      }
+                      summary += `\n**Total: ${totalTests} tests, ${passed} passed, ${totalSkipped} skipped, ${totalFailures} failed in ${totalTime.toFixed(2)}s**`;
+
+                      await github.rest.checks.create({
+                          owner: context.repo.owner,
+                          repo: context.repo.repo,
+                          name: `${context.workflow} / ${context.job} (${context.eventName}) — results`,
+                          head_sha: context.sha,
+                          status: 'completed',
+                          conclusion,
+                          output: { title, summary }
+                      });
+
+                      fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, summary);
+
+                      if (hasFailed) {
+                          core.setFailed(`${totalFailures} test(s) failed`);
+                      }
+            - name: Fail if tests failed
+              if: steps.test.outcome == 'failure'
+              run: exit 1

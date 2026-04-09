@@ -20,13 +20,16 @@
     "scripts": {
         "build": "NODE_ENV=production bun run build.ts",
         "build:types": "rm -rf dist/types && bun run tsc",
-        "test": "bun test --path-ignore-patterns '**/memoryleaks*' && bun test test/memoryleaks.test.ts",
-        "test:bench": "rm -f test/performance/bench-results.ndjson && bun test --timeout 60000 --concurrency 1 ./test/performance/*.bench.ts"
+        "test": "bun test --reporter=dots --path-ignore-patterns '**/memoryleaks*' && bun test --reporter=dots test/memoryleaks.test.ts",
+        "test:ci": "bun test --reporter=junit --reporter-outfile=junit.xml --path-ignore-patterns '**/memoryleaks*' && bun test --reporter=junit --reporter-outfile=junit-memoryleaks.xml test/memoryleaks.test.ts",
+        "test:bench": "rm -f test/performance/bench-results.ndjson && bun test --timeout 60000 --concurrency 1 ./test/performance/*.bench.ts",
+        "test:bench:node": "rm -f test/performance/bench-results-node.ndjson && npx vitest run --config vitest.bench.config.ts"
     },
     "devDependencies": {
         "@testing-library/react": "16.3.0",
         "jotai": "2.19.0",
         "mitata": "^1.0.34",
+        "vitest": "^3.1.1",
         "react": "19.1.1",
         "react-dom": "19.1.1",
         "recoil": "0.7.7",

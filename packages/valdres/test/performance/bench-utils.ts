@@ -1,9 +1,15 @@
-import { expect } from "bun:test"
+import { expect } from "./test-compat"
 import { measure } from "mitata"
 import { appendFileSync } from "fs"
 import { join } from "path"
+import { fileURLToPath } from "url"
 
-const RESULTS_PATH = join(import.meta.dir, "bench-results.ndjson")
+const RUNTIME = typeof Bun !== "undefined" ? "bun" : "node"
+const __dir = typeof Bun !== "undefined"
+    ? import.meta.dir
+    : join(fileURLToPath(import.meta.url), "..")
+const RESULTS_FILE = RUNTIME === "bun" ? "bench-results.ndjson" : "bench-results-node.ndjson"
+const RESULTS_PATH = join(__dir, RESULTS_FILE)
 
 // Increase min samples and CPU time for more stable results.
 // Defaults: min_samples=2, min_cpu_time=642ms, warmup_samples=2
