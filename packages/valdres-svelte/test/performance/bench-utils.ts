@@ -54,38 +54,37 @@ function iqrTrimmed(rawSamples: number[]): TrimmedResult {
 export async function compare(
     name: string,
     valdresFn: () => void,
-    svelteFn: () => void,
-    maxSlowerRatio: number = 2.0,
+    nanoFn: () => void,
 ) {
     const hash = name.split("").reduce((h, c) => ((h << 5) - h + c.charCodeAt(0)) | 0, 0)
     const runValdresFirst = hash % 2 === 0
     const [firstStats, secondStats] = runValdresFirst
-        ? [await measure(valdresFn, MEASURE_OPTS), await measure(svelteFn, MEASURE_OPTS)]
-        : [await measure(svelteFn, MEASURE_OPTS), await measure(valdresFn, MEASURE_OPTS)]
+        ? [await measure(valdresFn, MEASURE_OPTS), await measure(nanoFn, MEASURE_OPTS)]
+        : [await measure(nanoFn, MEASURE_OPTS), await measure(valdresFn, MEASURE_OPTS)]
     const valdresStats = runValdresFirst ? firstStats : secondStats
-    const svelteStats = runValdresFirst ? secondStats : firstStats
+    const nanoStats = runValdresFirst ? secondStats : firstStats
 
     const valdres = iqrTrimmed(valdresStats.samples)
-    const svelte = iqrTrimmed(svelteStats.samples)
+    const nano = iqrTrimmed(nanoStats.samples)
 
-    const ratio = valdres.median / svelte.median
-    const speedup = svelte.median / valdres.median
+    const ratio = valdres.median / nano.median
+    const speedup = nano.median / valdres.median
 
     const tag =
         ratio <= 1.0
             ? `valdres ${speedup.toFixed(1)}x faster`
-            : `svelte ${ratio.toFixed(1)}x faster`
+            : `nanostores ${ratio.toFixed(1)}x faster`
 
     const trimInfo =
-        valdres.kept < valdres.total || svelte.kept < svelte.total
-            ? ` [trimmed ${valdres.total - valdres.kept}+${svelte.total - svelte.kept} outliers]`
+        valdres.kept < valdres.total || nano.kept < nano.total
+            ? ` [trimmed ${valdres.total - valdres.kept}+${nano.total - nano.kept} outliers]`
             : ""
 
     console.log(
-        `  ${name}: valdres=${fmtNs(valdres.median)} svelte=${fmtNs(svelte.median)} (${tag})${trimInfo}`,
+        `  ${name}: valdres=${fmtNs(valdres.median)} nanostores=${fmtNs(nano.median)} (${tag})${trimInfo}`,
     )
 
-    return { name, valdres: valdres.median, svelte: svelte.median, ratio, tag }
+    return { name, valdres: valdres.median, nanostores: nano.median, ratio, tag }
 }
 
 function fmtNs(ns: number): string {

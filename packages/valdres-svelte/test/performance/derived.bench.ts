@@ -4,20 +4,20 @@ import {
     selector as valdresSelector,
     store as valdresCreateStore,
 } from "valdres"
-import { writable, derived } from "svelte/store"
+import { atom as nanoAtom, computed as nanoComputed } from "nanostores"
 import { compare } from "./bench-utils"
 
 let sink: any
 
-describe("selector vs derived", () => {
+describe("selector vs nanostores computed", () => {
     test("creation", async () => {
         const vAtom = valdresAtom(0)
-        const sWritable = writable(0)
+        const nAtom = nanoAtom(0)
 
         await compare(
-            "create selector/derived",
+            "create selector/computed",
             () => { sink = valdresSelector(get => get(vAtom) + 1) },
-            () => { sink = derived(sWritable, $v => $v + 1) },
+            () => { sink = nanoComputed(nAtom, v => v + 1) },
         )
     })
 
@@ -27,13 +27,12 @@ describe("selector vs derived", () => {
         const vSel = valdresSelector(get => get(vAtom) + 1)
         vStore.get(vSel)
 
-        const sWritable = writable(0)
-        const sDerived = derived(sWritable, $v => $v + 1)
-        let sDerivedValue = 1
-        sDerived.subscribe(v => { sDerivedValue = v })
+        const nAtom = nanoAtom(0)
+        const nComp = nanoComputed(nAtom, v => v + 1)
+        nComp.subscribe(() => {}) // activate
 
         let vInt = 0
-        let sInt = 0
+        let nInt = 0
         await compare(
             "set + read derived",
             () => {
@@ -41,8 +40,8 @@ describe("selector vs derived", () => {
                 sink = vStore.get(vSel)
             },
             () => {
-                sWritable.set(++sInt)
-                sink = sDerivedValue
+                nAtom.set(++nInt)
+                sink = nComp.get()
             },
         )
     })
@@ -57,15 +56,14 @@ describe("selector vs derived", () => {
         )
         vSelectors.forEach(s => vStore.get(s))
 
-        const sWritable = writable(0)
-        const sDerivedStores = Array.from({ length: count }, (_, i) =>
-            derived(sWritable, $v => $v + i),
+        const nAtom = nanoAtom(0)
+        const nComputed = Array.from({ length: count }, (_, i) =>
+            nanoComputed(nAtom, v => v + i),
         )
-        const sDerivedValues: number[] = new Array(count).fill(0)
-        sDerivedStores.forEach((d, i) => d.subscribe(v => { sDerivedValues[i] = v }))
+        nComputed.forEach(c => c.subscribe(() => {}))
 
         let vInt = 0
-        let sInt = 0
+        let nInt = 0
         await compare(
             "set + read 10 derived",
             () => {
@@ -73,13 +71,13 @@ describe("selector vs derived", () => {
                 vSelectors.forEach(s => { sink = vStore.get(s) })
             },
             () => {
-                sWritable.set(++sInt)
-                sDerivedValues.forEach(v => { sink = v })
+                nAtom.set(++nInt)
+                nComputed.forEach(c => { sink = c.get() })
             },
         )
     })
 
-    test("chained derived (depth 5)", async () => {
+    test("chained computed (depth 5)", async () => {
         const vStore = valdresCreateStore()
         const vBase = valdresAtom(0)
         let vPrev: any = vBase
@@ -90,31 +88,30 @@ describe("selector vs derived", () => {
         const vFinal = vPrev
         vStore.get(vFinal)
 
-        const sBase = writable(0)
-        let sPrev: any = sBase
+        const nBase = nanoAtom(0)
+        let nPrev: any = nBase
         for (let i = 0; i < 5; i++) {
-            sPrev = derived(sPrev, ($v: number) => $v + 1)
+            nPrev = nanoComputed(nPrev, (v: number) => v + 1)
         }
-        const sFinal = sPrev
-        let sFinalValue = 5
-        sFinal.subscribe((v: number) => { sFinalValue = v })
+        const nFinal = nPrev
+        nFinal.subscribe(() => {})
 
         let vInt = 0
-        let sInt = 0
+        let nInt = 0
         await compare(
-            "set + read through 5 chained derived",
+            "set + read through 5 chained computed",
             () => {
                 vStore.set(vBase, ++vInt)
                 sink = vStore.get(vFinal)
             },
             () => {
-                sBase.set(++sInt)
-                sink = sFinalValue
+                nBase.set(++nInt)
+                sink = nFinal.get()
             },
         )
     })
 
-    test("chained derived (depth 20)", async () => {
+    test("chained computed (depth 20)", async () => {
         const vStore = valdresCreateStore()
         const vBase = valdresAtom(0)
         let vPrev: any = vBase
@@ -125,26 +122,25 @@ describe("selector vs derived", () => {
         const vFinal = vPrev
         vStore.get(vFinal)
 
-        const sBase = writable(0)
-        let sPrev: any = sBase
+        const nBase = nanoAtom(0)
+        let nPrev: any = nBase
         for (let i = 0; i < 20; i++) {
-            sPrev = derived(sPrev, ($v: number) => $v + 1)
+            nPrev = nanoComputed(nPrev, (v: number) => v + 1)
         }
-        const sFinal = sPrev
-        let sFinalValue = 20
-        sFinal.subscribe((v: number) => { sFinalValue = v })
+        const nFinal = nPrev
+        nFinal.subscribe(() => {})
 
         let vInt = 0
-        let sInt = 0
+        let nInt = 0
         await compare(
-            "set + read through 20 chained derived",
+            "set + read through 20 chained computed",
             () => {
                 vStore.set(vBase, ++vInt)
                 sink = vStore.get(vFinal)
             },
             () => {
-                sBase.set(++sInt)
-                sink = sFinalValue
+                nBase.set(++nInt)
+                sink = nFinal.get()
             },
         )
     })

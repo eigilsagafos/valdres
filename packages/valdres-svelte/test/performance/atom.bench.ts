@@ -1,56 +1,55 @@
 import { describe, test } from "bun:test"
 import { atom as valdresAtom, store as valdresCreateStore } from "valdres"
-import { writable } from "svelte/store"
+import { atom as nanoAtom } from "nanostores"
 import { compare } from "./bench-utils"
 
 let sink: any
 
-describe("atom vs writable", () => {
+describe("atom vs nanostores atom", () => {
     test("creation", async () => {
         await compare(
-            "create atom/writable",
+            "create atom",
             () => { sink = valdresAtom(1) },
-            () => { sink = writable(1) },
+            () => { sink = nanoAtom(1) },
         )
     })
 
-    test("get/read current value", async () => {
+    test("get current value", async () => {
         const vStore = valdresCreateStore()
         const vAtom = valdresAtom("hello")
-        const sWritable = writable("hello")
-        let sValue: string = "hello"
-        sWritable.subscribe(v => { sValue = v })
+        const nAtom = nanoAtom("hello")
 
         await compare(
-            "read current value",
+            "get current value",
             () => { sink = vStore.get(vAtom) },
-            () => { sink = sValue },
+            () => { sink = nAtom.get() },
         )
     })
 
     test("set (new value)", async () => {
         const vStore = valdresCreateStore()
         const vAtom = valdresAtom(0)
-        const sWritable = writable(0)
+        const nAtom = nanoAtom(0)
 
         let vInt = 0
-        let sInt = 0
+        let nInt = 0
         await compare(
             "set new value",
             () => vStore.set(vAtom, ++vInt),
-            () => sWritable.set(++sInt),
+            () => nAtom.set(++nInt),
         )
     })
 
     test("set (updater function)", async () => {
         const vStore = valdresCreateStore()
         const vAtom = valdresAtom(0)
-        const sWritable = writable(0)
+        const nAtom = nanoAtom(0)
 
         await compare(
             "set via updater fn",
             () => vStore.set(vAtom, (c: number) => c + 1),
-            () => sWritable.update(c => c + 1),
+            // nanostores doesn't have updater — read + set
+            () => nAtom.set(nAtom.get() + 1),
         )
     })
 
@@ -59,15 +58,15 @@ describe("atom vs writable", () => {
         const vAtom = valdresAtom(0)
         vStore.sub(vAtom, () => {})
 
-        const sWritable = writable(0)
-        sWritable.subscribe(() => {})
+        const nAtom = nanoAtom(0)
+        nAtom.subscribe(() => {})
 
         let vInt = 0
-        let sInt = 0
+        let nInt = 0
         await compare(
             "set with 1 subscriber",
             () => vStore.set(vAtom, ++vInt),
-            () => sWritable.set(++sInt),
+            () => nAtom.set(++nInt),
         )
     })
 
@@ -76,15 +75,15 @@ describe("atom vs writable", () => {
         const vAtom = valdresAtom(0)
         for (let i = 0; i < 10; i++) vStore.sub(vAtom, () => {})
 
-        const sWritable = writable(0)
-        for (let i = 0; i < 10; i++) sWritable.subscribe(() => {})
+        const nAtom = nanoAtom(0)
+        for (let i = 0; i < 10; i++) nAtom.subscribe(() => {})
 
         let vInt = 0
-        let sInt = 0
+        let nInt = 0
         await compare(
             "set with 10 subscribers",
             () => vStore.set(vAtom, ++vInt),
-            () => sWritable.set(++sInt),
+            () => nAtom.set(++nInt),
         )
     })
 
@@ -93,22 +92,22 @@ describe("atom vs writable", () => {
         const vAtom = valdresAtom(0)
         for (let i = 0; i < 100; i++) vStore.sub(vAtom, () => {})
 
-        const sWritable = writable(0)
-        for (let i = 0; i < 100; i++) sWritable.subscribe(() => {})
+        const nAtom = nanoAtom(0)
+        for (let i = 0; i < 100; i++) nAtom.subscribe(() => {})
 
         let vInt = 0
-        let sInt = 0
+        let nInt = 0
         await compare(
             "set with 100 subscribers",
             () => vStore.set(vAtom, ++vInt),
-            () => sWritable.set(++sInt),
+            () => nAtom.set(++nInt),
         )
     })
 
     test("subscribe + unsubscribe", async () => {
         const vStore = valdresCreateStore()
         const vAtom = valdresAtom(0)
-        const sWritable = writable(0)
+        const nAtom = nanoAtom(0)
 
         await compare(
             "subscribe + unsubscribe",
@@ -117,7 +116,7 @@ describe("atom vs writable", () => {
                 unsub()
             },
             () => {
-                const unsub = sWritable.subscribe(() => {})
+                const unsub = nAtom.subscribe(() => {})
                 unsub()
             },
         )
