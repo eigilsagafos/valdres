@@ -6,8 +6,6 @@ on:
     pull_request:
         branches:
             - main
-permissions:
-    checks: write
 jobs:
     test:
         runs-on: ubuntu-22.04
@@ -20,8 +18,18 @@ jobs:
               run: bun run build
             - name: Test
               run: bun run test:ci
-            - name: Test Report
-              uses: mikepenz/action-junit-report@v5
+            - name: Test Summary
               if: always()
-              with:
-                  report_paths: 'packages/**/junit*.xml'
+              run: |
+                  echo "## Test Results" >> $GITHUB_STEP_SUMMARY
+                  for f in $(find packages -name 'junit*.xml' 2>/dev/null); do
+                    pkg=$(echo "$f" | sed 's|packages/||;s|/junit.*\.xml||')
+                    tests=$(grep -o 'tests="[0-9]*"' "$f" | head -1 | grep -o '[0-9]*')
+                    failures=$(grep -o 'failures="[0-9]*"' "$f" | head -1 | grep -o '[0-9]*')
+                    time=$(grep -o 'time="[0-9.]*"' "$f" | head -1 | grep -o '[0-9.]*')
+                    if [ "$failures" = "0" ]; then
+                      echo "- ✅ **$pkg** — $tests tests passed (${time}s)" >> $GITHUB_STEP_SUMMARY
+                    else
+                      echo "- ❌ **$pkg** — $failures/$tests failed (${time}s)" >> $GITHUB_STEP_SUMMARY
+                    fi
+                  done
