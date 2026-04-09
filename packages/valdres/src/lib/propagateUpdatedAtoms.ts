@@ -214,7 +214,7 @@ export const propagateUpdatedAtoms = (
         !selectorsOnly
     ) {
         const atom = atoms[0]
-        if (!isFamilyAtom(atom)) {
+        if (!isFamilyAtom(atom) && !isAtomFamily(atom)) {
             const dependents = data.stateDependents.get(atom)
             if (
                 (!dependents || dependents.size === 0) &&
