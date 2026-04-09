@@ -3,7 +3,7 @@ import { mount } from "@vue/test-utils"
 import { defineComponent } from "vue"
 import { atom, store as createStore } from "valdres"
 import { useTransaction } from "./useTransaction"
-import { StoreKey } from "./lib/storeKey"
+
 
 describe("useTransaction", () => {
     test("executes transaction", () => {

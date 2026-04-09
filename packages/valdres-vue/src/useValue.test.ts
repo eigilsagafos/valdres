@@ -3,7 +3,7 @@ import { mount } from "@vue/test-utils"
 import { defineComponent, type Readonly, type Ref } from "vue"
 import { atom, selector, store as createStore } from "valdres"
 import { useValue } from "./useValue"
-import { StoreKey } from "./lib/storeKey"
+import { ValdresKey } from "./lib/storeKey"
 
 const mountWithStore = (
     setup: () => any,
@@ -15,7 +15,12 @@ const mountWithStore = (
     })
     const wrapper = mount(Comp, {
         global: {
-            provide: { [StoreKey as symbol]: storeInstance },
+            provide: {
+                [ValdresKey as symbol]: {
+                    current: storeInstance,
+                    stores: { [storeInstance.data.id]: storeInstance },
+                },
+            },
         },
     })
     return { wrapper, store: storeInstance }

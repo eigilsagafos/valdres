@@ -3,7 +3,7 @@ import { mount } from "@vue/test-utils"
 import { defineComponent, type Ref } from "vue"
 import { atom, store as createStore } from "valdres"
 import { useAtom } from "./useAtom"
-import { StoreKey } from "./lib/storeKey"
+
 
 describe("useAtom", () => {
     test("returns a writable ref", async () => {

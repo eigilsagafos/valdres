@@ -3,7 +3,7 @@ import { mount } from "@vue/test-utils"
 import { defineComponent } from "vue"
 import { atom, store as createStore } from "valdres"
 import { useResetAtom } from "./useResetAtom"
-import { StoreKey } from "./lib/storeKey"
+
 
 describe("useResetAtom", () => {
     test("resets atom to default value", () => {

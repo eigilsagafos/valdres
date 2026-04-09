@@ -1,6 +1,6 @@
 import type { Plugin } from "vue"
 import { store as createStore, type Store } from "valdres"
-import { StoreKey } from "./lib/storeKey"
+import { ValdresKey } from "./lib/storeKey"
 import { hydrate } from "./lib/hydrate"
 import type { InitializeCallback } from "./types/InitializeCallback"
 
@@ -23,6 +23,9 @@ export const createValdres = (options: ValdresPluginOptions = {}): Plugin => ({
                 }
             })
         }
-        app.provide(StoreKey, store)
+        app.provide(ValdresKey, {
+            current: store,
+            stores: { [store.data.id]: store },
+        })
     },
 })
