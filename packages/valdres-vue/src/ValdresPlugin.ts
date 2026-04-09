@@ -12,8 +12,17 @@ export interface ValdresPluginOptions {
 export const createValdres = (options: ValdresPluginOptions = {}): Plugin => ({
     install(app) {
         let store = options.store
-        if (!store) {
-            store = createStore()
+        if (store) {
+            if (!store.data.batchUpdates) {
+                console.warn(
+                    "valdres-vue: The store passed to createValdres() was not created " +
+                    "with { batchUpdates: true }. Sequential store.set() calls " +
+                    "will trigger intermediate selector evaluations. Consider " +
+                    "using store({ batchUpdates: true }) for optimal performance.",
+                )
+            }
+        } else {
+            store = createStore({ batchUpdates: true })
         }
         if (options.initialize) {
             store.txn(txn => {

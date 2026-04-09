@@ -26,7 +26,7 @@ describe("createValdres", () => {
     })
 
     test("accepts existing store", () => {
-        const storeInstance = createStore()
+        const storeInstance = createStore({ batchUpdates: true })
         let result: any
         const Comp = defineComponent({
             setup() {

@@ -10,7 +10,7 @@ import { useStore } from "./useStore"
 describe("ValdresScope", () => {
     test("state flows from parent until set in scope", async () => {
         const nameAtom = atom("default")
-        const rootStore = createStore()
+        const rootStore = createStore({ batchUpdates: true })
 
         let ref: any
         const Child = defineComponent({
@@ -47,7 +47,7 @@ describe("ValdresScope", () => {
     })
 
     test("scope is released on unmount", () => {
-        const rootStore = createStore()
+        const rootStore = createStore({ batchUpdates: true })
 
         const wrapper = mount(
             defineComponent({
@@ -70,7 +70,7 @@ describe("ValdresScope", () => {
     test("initialize with array return", () => {
         const atom1 = atom(1)
         const atom2 = atom(2)
-        const rootStore = createStore()
+        const rootStore = createStore({ batchUpdates: true })
 
         let ref1: any
         let ref2: any
@@ -112,7 +112,7 @@ describe("ValdresScope", () => {
 
     test("initialize with txn.set", () => {
         const countAtom = atom(0)
-        const rootStore = createStore()
+        const rootStore = createStore({ batchUpdates: true })
 
         let ref: any
         const Child = defineComponent({
@@ -149,7 +149,7 @@ describe("ValdresScope", () => {
     })
 
     test("useStore(id) accesses parent store from within scope", () => {
-        const rootStore = createStore()
+        const rootStore = createStore({ batchUpdates: true })
         const rootId = rootStore.data.id
 
         let scopedStoreResult: any
@@ -182,7 +182,7 @@ describe("ValdresScope", () => {
 
     test("scoped set does not leak to parent", async () => {
         const nameAtom = atom("default")
-        const rootStore = createStore()
+        const rootStore = createStore({ batchUpdates: true })
 
         let parentRef: any
         let scopedRef: any
@@ -229,7 +229,7 @@ describe("ValdresScope", () => {
     })
 
     test("nested scopes build up store chain", () => {
-        const rootStore = createStore()
+        const rootStore = createStore({ batchUpdates: true })
         const rootId = rootStore.data.id
 
         let innerStore: any
