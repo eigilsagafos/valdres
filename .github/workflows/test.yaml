@@ -71,7 +71,7 @@ jobs:
                       await github.rest.checks.create({
                           owner: context.repo.owner,
                           repo: context.repo.repo,
-                          name: 'Test Results',
+                          name: 'Test / results',
                           head_sha: context.sha,
                           status: 'completed',
                           conclusion,
