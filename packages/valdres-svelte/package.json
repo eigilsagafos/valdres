@@ -24,16 +24,15 @@
     "scripts": {
         "test": "bun test src/"
     },
-    "dependencies": {
-        "valdres": "0.2.0-pre.28"
-    },
     "devDependencies": {
         "@valdres/test": "0.2.0-pre.28",
         "svelte": "5.28.2",
-        "typescript": "5.9.2"
+        "typescript": "5.9.2",
+        "valdres": "0.2.0-pre.28"
     },
     "peerDependencies": {
-        "svelte": ">=5"
+        "svelte": ">=5",
+        "valdres": ">=0.2.0-pre.28"
     },
     "publishConfig": {
         "access": "public",
