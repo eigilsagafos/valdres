@@ -1,7 +1,7 @@
 import type { Readable } from "svelte/store"
 import type { State, Store } from "valdres"
 
-export const toSvelteStore = <Value = any>(
+export const readable = <Value = any>(
     state: State<Value>,
     store: Store,
 ): Readable<Value> => {
