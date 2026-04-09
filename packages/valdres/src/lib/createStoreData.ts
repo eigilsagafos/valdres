@@ -21,7 +21,6 @@ function makeLazyGetter(key: string) {
 // Shared prototype with lazy WeakMap getters — defined once, reused by all stores
 const lazyProto = Object.create(Object.prototype)
 Object.defineProperties(lazyProto, {
-    expiredValues: makeLazyGetter("expiredValues"),
     subscriptions: makeLazyGetter("subscriptions"),
     subscriptionsRequireEqualCheck: makeLazyGetter("subscriptionsRequireEqualCheck"),
     stateDependents: makeLazyGetter("stateDependents"),

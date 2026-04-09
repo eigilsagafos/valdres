@@ -58,7 +58,6 @@ export const globalAtom = <Value = unknown>(
                 throw new Error("TODO: Reset support for stateDependencies")
             }
             store.values.delete(atom)
-            store.expiredValues.delete(atom)
             // TODO: Should we make a different propagate function for reset?
             // and also change reset to rather clear data unless it is found to be in use?
             propagateUpdatedAtoms([atom], store)
