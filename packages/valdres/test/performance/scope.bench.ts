@@ -1,4 +1,4 @@
-import { describe, test } from "bun:test"
+import { describe, test } from "./test-compat"
 import { measure } from "mitata"
 import { atom as valdresAtom } from "../../src/atom"
 import { atomFamily as valdresAtomFamily } from "../../src/atomFamily"

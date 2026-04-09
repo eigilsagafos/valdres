@@ -1,4 +1,4 @@
-import { describe, test } from "bun:test"
+import { describe, test } from "./test-compat"
 import { atom as jotaiAtom } from "jotai"
 import { atomFamily as jotaiAtomFamily } from "jotai/utils"
 import { atom as valdresAtom } from "../../src/atom"
