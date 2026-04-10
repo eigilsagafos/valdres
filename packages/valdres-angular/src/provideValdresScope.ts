@@ -3,7 +3,9 @@ import { VALDRES_STORE } from "./lib/VALDRES_STORE"
 import { hydrate } from "./lib/hydrate"
 import type { InitializeCallback } from "./types/InitializeCallback"
 
-const generateId = () => (Math.random() + 1).toString(36).substring(7)
+let nextScopeId = 0
+const generateId = () =>
+    globalThis.crypto?.randomUUID?.() ?? `valdres-scope-${++nextScopeId}`
 
 export interface ValdresScopeOptions {
     scopeId?: string

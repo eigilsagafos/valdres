@@ -31,24 +31,29 @@ export const injectValue = <V>(
     const status = signal<ValueStatus>("loading")
     const error = signal<unknown | undefined>(undefined)
     let destroyed = false
+    let hasResolved = false
+    let currentVersion = 0
 
     const handleValue = (val: unknown) => {
         if (isPromiseLike(val)) {
-            status.set(value() !== undefined ? "reloading" : "loading")
+            const version = ++currentVersion
+            status.set(hasResolved ? "reloading" : "loading")
             ;(val as Promise<V>).then(
                 (resolved: V) => {
-                    if (destroyed) return
+                    if (destroyed || version !== currentVersion) return
+                    hasResolved = true
                     value.set(resolved)
                     status.set("resolved")
                     error.set(undefined)
                 },
                 (err: unknown) => {
-                    if (destroyed) return
+                    if (destroyed || version !== currentVersion) return
                     error.set(err)
                     status.set("error")
                 },
             )
         } else {
+            hasResolved = true
             value.set(val as V)
             status.set("resolved")
             error.set(undefined)
@@ -57,7 +62,6 @@ export const injectValue = <V>(
 
     handleValue(currentStore.get(state))
 
-    // @ts-ignore
     const unsub = currentStore.sub(
         state,
         () => {
@@ -78,6 +82,8 @@ export const injectValue = <V>(
         isLoading: computed(
             () => status() === "loading" || status() === "reloading",
         ),
-        hasValue: computed(() => value() !== undefined),
+        hasValue: computed(
+            () => status() === "resolved" || status() === "reloading",
+        ),
     }
 }

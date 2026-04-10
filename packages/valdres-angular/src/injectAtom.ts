@@ -1,5 +1,5 @@
 import { signal, DestroyRef, inject, type WritableSignal } from "@angular/core"
-import { isPromiseLike, type Atom, type SetAtomValue, type Store } from "valdres"
+import { isPromiseLike, type Atom, type Store } from "valdres"
 import { injectStore } from "./injectStore"
 
 export type AtomSignal<V> = WritableSignal<V> & {
@@ -23,7 +23,6 @@ export const injectAtom = <V>(atom: Atom<V>, store?: Store): AtomSignal<V> => {
     // must update the Angular signal directly, not go through the store.
     const signalSet = inner.set.bind(inner)
 
-    // @ts-ignore
     const unsub = currentStore.sub(
         atom,
         () => {
@@ -47,15 +46,13 @@ export const injectAtom = <V>(atom: Atom<V>, store?: Store): AtomSignal<V> => {
 
     atomSignal.set = (value: V) => {
         signalSet(value)
-        // @ts-ignore @ts-todo
-        currentStore.set(atom, value as SetAtomValue<V>)
+        currentStore.set(atom, value)
     }
 
     atomSignal.update = (fn: (value: V) => V) => {
         const next = fn(inner())
         signalSet(next)
-        // @ts-ignore @ts-todo
-        currentStore.set(atom, next as SetAtomValue<V>)
+        currentStore.set(atom, next)
     }
 
     atomSignal.reset = () => {
