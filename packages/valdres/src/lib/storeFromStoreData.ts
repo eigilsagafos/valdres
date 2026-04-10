@@ -191,7 +191,10 @@ export function storeFromStoreData(
             if (data.scopes.has(scopeId)) {
                 scopedStoreData = data.scopes.get(scopeId)!
             } else {
-                scopedStoreData = createStoreData(scopeId, data, data.batchUpdates ? { batchUpdates: true } : undefined)
+                const scopeOptions = (data.batchUpdates || data.schemaValidation !== undefined)
+                    ? { batchUpdates: data.batchUpdates || undefined, schemaValidation: data.schemaValidation }
+                    : undefined
+                scopedStoreData = createStoreData(scopeId, data, scopeOptions)
                 data.scopes.set(scopeId, scopedStoreData)
             }
             const detach = (expectedToDestroy = false) => {

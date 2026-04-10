@@ -17,6 +17,7 @@ export type RootStoreData = {
     storeRef?: Store
     scopes: Map<string, ScopedStoreData>
     batchUpdates?: boolean
+    schemaValidation?: boolean
     scopeValueIndex: WeakMap<WeakKey, Set<ScopedStoreData>>
 }
 

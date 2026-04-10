@@ -7,6 +7,7 @@ import { getState } from "./getState"
 import { propagateUpdatedAtoms } from "./propagateUpdatedAtoms"
 import { setAtom } from "./setAtom"
 import { setValueInData } from "./setValueInData"
+import { validateSchema } from "./validateSchema"
 
 export const getAtomInitValue = <V = any>(
     atom: Atom<V>,
@@ -34,6 +35,7 @@ export const getAtomInitValue = <V = any>(
                     // replaced our promise as the cached value, swallow
                     // this resolution. Mirrors setAtom.handlePromise.
                     if (data.values.get(atom) !== value) return
+                    resolvedValue = validateSchema(atom.schema, resolvedValue, data)
                     // @ts-ignore @ts-todo
                     setValueInData(atom, resolvedValue, data)
                     propagateUpdatedAtoms([atom], data)
@@ -47,12 +49,13 @@ export const getAtomInitValue = <V = any>(
                     }
                 },
             )
+            return value
         }
-        return value
+        return validateSchema(atom.schema, value, data)
     } else if (isSelector(atom.defaultValue)) {
         return getState(atom.defaultValue, data, initializedAtomsSet)
     } else {
-        return atom.defaultValue
+        return validateSchema(atom.schema, atom.defaultValue, data)
     }
 }
 
