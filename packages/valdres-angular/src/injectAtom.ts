@@ -17,13 +17,17 @@ export const injectAtom = <V>(atom: Atom<V>, store?: Store): AtomSignal<V> => {
 
     const inner = signal(initial as V)
 
+    // Save the original signal .set before overriding — the subscription
+    // must update the Angular signal directly, not go through the store.
+    const signalSet = inner.set.bind(inner)
+
     // @ts-ignore
     const unsub = currentStore.sub(
         atom,
         () => {
             const newValue = currentStore.get(atom)
             if (!isPromiseLike(newValue)) {
-                inner.set(newValue as V)
+                signalSet(newValue as V)
             }
         },
         false,

@@ -17,7 +17,10 @@ export const provideValdresScope = (
         {
             provide: VALDRES_STORE,
             useFactory: () => {
-                const parentCtx = inject(VALDRES_STORE, { optional: true })
+                const parentCtx = inject(VALDRES_STORE, {
+                    skipSelf: true,
+                    optional: true,
+                })
                 if (!parentCtx) {
                     throw new Error(
                         "No valdres store provided. provideValdresScope() must be nested under provideValdres().",
