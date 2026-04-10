@@ -1,12 +1,9 @@
 import { signal, type Signal, DestroyRef, inject } from "@angular/core"
-import { isPromiseLike, type State, type Store } from "valdres"
+import { isPromiseLike, type Atom, type Selector, type Store } from "valdres"
 import { injectStore } from "./injectStore"
 
-export const injectValue = <
-    Value extends any = any,
-    Args extends [any, ...any[]] = [any, ...any[]],
->(
-    state: State<Value, Args>,
+export const injectValue = <Value extends any = any>(
+    state: Atom<Value> | Selector<Value>,
     store?: Store,
 ): Signal<Value> => {
     const currentStore = store || injectStore()

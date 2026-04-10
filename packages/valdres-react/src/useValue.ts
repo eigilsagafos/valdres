@@ -1,12 +1,9 @@
-import { isPromiseLike, type State, type Store } from "valdres"
+import { isPromiseLike, type Atom, type Selector, type Store } from "valdres"
 import { useCallback, useSyncExternalStore } from "react"
 import { useStore } from "./useStore"
 
-export const useValue = <
-    Value extends any = any,
-    Args extends [any, ...any[]] = [any, ...any[]],
->(
-    state: State<Value, Args>,
+export const useValue = <Value extends any = any>(
+    state: Atom<Value> | Selector<Value>,
     store?: Store,
 ) => {
     const currentStore = store || useStore()
