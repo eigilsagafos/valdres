@@ -8,12 +8,14 @@ import {
 import { isPromiseLike, type Atom, type Selector, type Store } from "valdres"
 import { injectStore } from "./injectStore"
 
-export type ValueStatus = "loading" | "resolved" | "error"
+/** Mirrors Angular's ResourceStatus naming where applicable. */
+export type ValueStatus = "loading" | "reloading" | "resolved" | "error"
 
 export interface ValueState<V> {
     readonly value: Signal<V | undefined>
     readonly status: Signal<ValueStatus>
     readonly error: Signal<unknown | undefined>
+    /** True when status is "loading" or "reloading". */
     readonly isLoading: Signal<boolean>
     readonly hasValue: Signal<boolean>
 }
@@ -32,7 +34,7 @@ export const injectValue = <V>(
 
     const handleValue = (val: unknown) => {
         if (isPromiseLike(val)) {
-            status.set("loading")
+            status.set(value() !== undefined ? "reloading" : "loading")
             ;(val as Promise<V>).then(
                 (resolved: V) => {
                     if (destroyed) return
@@ -73,7 +75,9 @@ export const injectValue = <V>(
         value: value.asReadonly(),
         status: status.asReadonly(),
         error: error.asReadonly(),
-        isLoading: computed(() => status() === "loading"),
+        isLoading: computed(
+            () => status() === "loading" || status() === "reloading",
+        ),
         hasValue: computed(() => value() !== undefined),
     }
 }

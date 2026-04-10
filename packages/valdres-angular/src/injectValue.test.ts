@@ -153,7 +153,7 @@ describe("injectValue", () => {
         expect(result!.hasValue()).toBe(false)
     })
 
-    test("transitions back to loading on dependency change", async () => {
+    test("uses reloading status and retains value on dependency change", async () => {
         const idAtom = atom(1)
         const userSelector = selector(
             get =>
@@ -167,19 +167,26 @@ describe("injectValue", () => {
             result = injectValue(userSelector)
         })
 
+        // First load — no previous value
         expect(result!.status()).toBe("loading")
+        expect(result!.isLoading()).toBe(true)
+        expect(result!.value()).toBe(undefined)
 
         await new Promise(r => setTimeout(r, 50))
         expect(result!.value()).toBe("User 1")
         expect(result!.status()).toBe("resolved")
 
+        // Dependency change — previous value retained, status is "reloading"
         store.set(idAtom, 2)
         await new Promise(r => setTimeout(r, 5))
-        expect(result!.status()).toBe("loading")
+        expect(result!.status()).toBe("reloading")
+        expect(result!.isLoading()).toBe(true)
+        expect(result!.value()).toBe("User 1") // stale value still available
 
         await new Promise(r => setTimeout(r, 50))
         expect(result!.value()).toBe("User 2")
         expect(result!.status()).toBe("resolved")
+        expect(result!.isLoading()).toBe(false)
     })
 
     test("unsubscribes on destroy (sync)", () => {
