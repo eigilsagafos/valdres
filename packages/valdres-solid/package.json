@@ -1,0 +1,38 @@
+{
+    "name": "valdres-solid",
+    "version": "0.2.0-pre.28",
+    "license": "MIT",
+    "author": {
+        "name": "Eigil Sagafos"
+    },
+    "homepage": "https://valdres.dev",
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/eigilsagafos/valdres.git"
+    },
+    "type": "module",
+    "exports": {
+        ".": "./src/index.ts"
+    },
+    "files": [
+        "dist"
+    ],
+    "scripts": {
+        "build": "NODE_ENV=production bun build src/index.ts --outdir ./dist --packages external",
+        "build:types": "rm -rf dist/types && bun run tsc",
+        "test": "bun test"
+    },
+    "devDependencies": {
+        "typescript": "5.9.2",
+        "valdres": "0.2.0-pre.28",
+        "solid-js": "1.9.5"
+    },
+    "peerDependencies": {
+        "valdres": ">=0.2.0-pre.28",
+        "solid-js": ">=1.8"
+    },
+    "publishConfig": {
+        "access": "public",
+        "registry": "https://registry.npmjs.org/"
+    }
+}
