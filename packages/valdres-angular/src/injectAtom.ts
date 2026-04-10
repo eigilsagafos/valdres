@@ -12,7 +12,9 @@ export const injectAtom = <V>(atom: Atom<V>, store?: Store): AtomSignal<V> => {
     const initial = currentStore.get(atom)
 
     if (isPromiseLike(initial)) {
-        throw initial
+        throw new Error(
+            "injectAtom() received async state. Atoms should have synchronous default values.",
+        )
     }
 
     const inner = signal(initial as V)

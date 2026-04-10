@@ -11,7 +11,9 @@ export const injectValue = <Value extends any = any>(
     const initial = currentStore.get(state)
 
     if (isPromiseLike(initial)) {
-        throw initial
+        throw new Error(
+            "injectValue() received async state. Use injectAsyncValue() for selectors that return Promises.",
+        )
     }
 
     const value = signal(initial as Value)

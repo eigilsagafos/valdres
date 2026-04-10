@@ -1,3 +1,5 @@
+export { injectAsyncValue } from "./injectAsyncValue"
+export type { AsyncValue, AsyncValueStatus } from "./injectAsyncValue"
 export { injectAtom } from "./injectAtom"
 export type { AtomSignal } from "./injectAtom"
 export { injectResetAtom } from "./injectResetAtom"
