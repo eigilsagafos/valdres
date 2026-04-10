@@ -1,4 +1,4 @@
-import { inject, makeEnvironmentProviders } from "@angular/core"
+import { inject, type Provider } from "@angular/core"
 import { VALDRES_STORE } from "./lib/VALDRES_STORE"
 import { hydrate } from "./lib/hydrate"
 import type { InitializeCallback } from "./types/InitializeCallback"
@@ -10,8 +10,10 @@ export interface ValdresScopeOptions {
     initialize?: InitializeCallback
 }
 
-export const provideValdresScope = (options: ValdresScopeOptions = {}) => {
-    return makeEnvironmentProviders([
+export const provideValdresScope = (
+    options: ValdresScopeOptions = {},
+): Provider[] => {
+    return [
         {
             provide: VALDRES_STORE,
             useFactory: () => {
@@ -44,5 +46,5 @@ export const provideValdresScope = (options: ValdresScopeOptions = {}) => {
                 }
             },
         },
-    ])
+    ]
 }
