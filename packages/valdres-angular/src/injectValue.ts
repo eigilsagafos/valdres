@@ -1,38 +1,79 @@
-import { signal, type Signal, DestroyRef, inject } from "@angular/core"
+import {
+    signal,
+    computed,
+    type Signal,
+    DestroyRef,
+    inject,
+} from "@angular/core"
 import { isPromiseLike, type Atom, type Selector, type Store } from "valdres"
 import { injectStore } from "./injectStore"
 
-export const injectValue = <Value extends any = any>(
-    state: Atom<Value> | Selector<Value>,
+export type ValueStatus = "loading" | "resolved" | "error"
+
+export interface ValueState<V> {
+    readonly value: Signal<V | undefined>
+    readonly status: Signal<ValueStatus>
+    readonly error: Signal<unknown | undefined>
+    readonly isLoading: Signal<boolean>
+    readonly hasValue: Signal<boolean>
+}
+
+export const injectValue = <V>(
+    state: Atom<V> | Selector<V>,
     store?: Store,
-): Signal<Value> => {
+): ValueState<V> => {
     const currentStore = store || injectStore()
     const destroyRef = inject(DestroyRef)
-    const initial = currentStore.get(state)
 
-    if (isPromiseLike(initial)) {
-        throw new Error(
-            "injectValue() received async state. Use injectAsyncValue() for selectors that return Promises.",
-        )
+    const value = signal<V | undefined>(undefined)
+    const status = signal<ValueStatus>("loading")
+    const error = signal<unknown | undefined>(undefined)
+    let destroyed = false
+
+    const handleValue = (val: unknown) => {
+        if (isPromiseLike(val)) {
+            status.set("loading")
+            ;(val as Promise<V>).then(
+                (resolved: V) => {
+                    if (destroyed) return
+                    value.set(resolved)
+                    status.set("resolved")
+                    error.set(undefined)
+                },
+                (err: unknown) => {
+                    if (destroyed) return
+                    error.set(err)
+                    status.set("error")
+                },
+            )
+        } else {
+            value.set(val as V)
+            status.set("resolved")
+            error.set(undefined)
+        }
     }
 
-    const value = signal(initial as Value)
+    handleValue(currentStore.get(state))
 
     // @ts-ignore
     const unsub = currentStore.sub(
         state,
         () => {
-            const newValue = currentStore.get(state)
-            if (!isPromiseLike(newValue)) {
-                value.set(newValue as Value)
-            }
+            handleValue(currentStore.get(state))
         },
         false,
     )
 
     destroyRef.onDestroy(() => {
+        destroyed = true
         unsub()
     })
 
-    return value.asReadonly()
+    return {
+        value: value.asReadonly(),
+        status: status.asReadonly(),
+        error: error.asReadonly(),
+        isLoading: computed(() => status() === "loading"),
+        hasValue: computed(() => value() !== undefined),
+    }
 }
