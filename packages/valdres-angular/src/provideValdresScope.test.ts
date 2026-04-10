@@ -5,7 +5,7 @@ import { VALDRES_STORE, type ValdresContext } from "./lib/VALDRES_STORE"
 import { provideValdresScope } from "./provideValdresScope"
 import { injectValue } from "./injectValue"
 
-const createParentInjector = (storeInstance = createStore({ batchUpdates: true })) => {
+const createParentInjector = (storeInstance = createStore()) => {
     const ctx: ValdresContext = {
         current: storeInstance,
         stores: { [storeInstance.data.id]: storeInstance },
@@ -28,7 +28,7 @@ describe("provideValdresScope", () => {
         expect(childCtx.current.data.id).not.toBe(rootStore.data.id)
     })
 
-    test("scope starts from defaults and can be set independently", () => {
+    test("scope inherits parent values and can override independently", () => {
         const nameAtom = atom("default")
         const { injector: parent, store: rootStore } = createParentInjector()
         rootStore.set(nameAtom, "root")
@@ -40,10 +40,10 @@ describe("provideValdresScope", () => {
         })
         const childCtx = childInjector.get(VALDRES_STORE)
 
-        // Scope starts from atom default, not parent's current value
-        expect(childCtx.current.get(nameAtom)).toBe("default")
+        // Scope inherits parent value
+        expect(childCtx.current.get(nameAtom)).toBe("root")
 
-        // Setting in scope does not affect parent
+        // Setting in scope overrides without affecting parent
         childCtx.current.set(nameAtom, "scoped")
         expect(childCtx.current.get(nameAtom)).toBe("scoped")
         expect(rootStore.get(nameAtom)).toBe("root")
@@ -135,6 +135,20 @@ describe("provideValdresScope", () => {
         expect(innerCtx.stores[rootStore.data.id].data.id).toBe(
             rootStore.data.id,
         )
+    })
+
+    test("scope is detached on destroy", () => {
+        const { injector: parent, store: rootStore } = createParentInjector()
+        const scopeProviders = provideValdresScope({ scopeId: "temp" })
+        const childInjector = Injector.create({
+            providers: scopeProviders,
+            parent,
+        })
+        // Force factory to run
+        childInjector.get(VALDRES_STORE)
+        expect([...rootStore.data.scopes.keys()]).toStrictEqual(["temp"])
+        childInjector.destroy(false)
+        expect([...rootStore.data.scopes.keys()]).toStrictEqual([])
     })
 
     test("throws without parent store", () => {
