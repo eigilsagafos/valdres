@@ -6,8 +6,6 @@
         "declaration": true,
         "noEmit": false,
         "emitDeclarationOnly": true,
-        "outDir": "dist/types",
-        "jsx": "preserve",
-        "jsxImportSource": "solid-js"
+        "outDir": "dist/types"
     }
 }

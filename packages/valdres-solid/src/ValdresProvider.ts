@@ -1,4 +1,4 @@
-import { type JSX } from "solid-js"
+import { useContext, type JSX } from "solid-js"
 import { store as createStore, type Store } from "valdres"
 import { StoreContext } from "./lib/storeContext"
 import { hydrate } from "./lib/hydrate"
@@ -11,6 +11,8 @@ export interface ValdresProviderProps {
 }
 
 export const ValdresProvider = (props: ValdresProviderProps) => {
+    const parentCtx = useContext(StoreContext)
+
     let store = props.store
     if (store) {
         if (!store.data.batchUpdates) {
@@ -25,6 +27,14 @@ export const ValdresProvider = (props: ValdresProviderProps) => {
         store = createStore({ batchUpdates: true })
     }
 
+    if (parentCtx) {
+        if (store.data.id in parentCtx.stores) {
+            throw new Error(
+                `store with id ${store.data.id} is already defined further up the tree`,
+            )
+        }
+    }
+
     if (props.initialize) {
         store.txn(txn => {
             const pairs = props.initialize!(txn)
@@ -34,14 +44,16 @@ export const ValdresProvider = (props: ValdresProviderProps) => {
         })
     }
 
-    return (
-        <StoreContext.Provider
-            value={{
-                current: store,
-                stores: { [store.data.id]: store },
-            }}
-        >
-            {props.children}
-        </StoreContext.Provider>
-    )
+    return StoreContext.Provider({
+        value: {
+            current: store,
+            stores: {
+                ...(parentCtx?.stores ?? {}),
+                [store.data.id]: store,
+            },
+        },
+        get children() {
+            return props.children
+        },
+    })
 }
