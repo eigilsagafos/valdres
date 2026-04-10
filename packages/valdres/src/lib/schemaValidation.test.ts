@@ -94,6 +94,21 @@ describe("schema validation", () => {
             const nameAtom = atom(() => 123, { schema: z.string() })
             expect(() => store1.get(nameAtom)).toThrow()
         })
+
+        test("selector default value is validated against atom schema", () => {
+            const store1 = store()
+            const source = selector(get => "hello")
+            const nameAtom = atom(source, { schema: z.string() })
+            expect(store1.get(nameAtom)).toBe("hello")
+        })
+
+        test("invalid selector default value throws against atom schema", () => {
+            const store1 = store()
+            const source = selector(get => 123)
+            // @ts-expect-error - selector returns number but atom schema expects string
+            const nameAtom = atom(source, { schema: z.string() })
+            expect(() => store1.get(nameAtom)).toThrow()
+        })
     })
 
     describe("selector", () => {

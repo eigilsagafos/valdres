@@ -53,7 +53,9 @@ export const getAtomInitValue = <V = any>(
         }
         return validateSchema(atom.schema, value, data)
     } else if (isSelector(atom.defaultValue)) {
-        return getState(atom.defaultValue, data, initializedAtomsSet)
+        const value = getState(atom.defaultValue, data, initializedAtomsSet)
+        if (isPromiseLike(value)) return value
+        return validateSchema(atom.schema, value, data)
     } else {
         return validateSchema(atom.schema, atom.defaultValue, data)
     }
