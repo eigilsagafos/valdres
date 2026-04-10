@@ -91,6 +91,23 @@ describe("injectAtom", () => {
         expect(sig!()).toBe(15)
     })
 
+    test("synchronous read-after-write with batchUpdates", () => {
+        const countAtom = atom(0)
+        const batchStore = createStore({ batchUpdates: true })
+        const { injector } = createInjector(batchStore)
+        let sig: AtomSignal<number>
+        runInInjectionContext(injector, () => {
+            sig = injectAtom(countAtom)
+        })
+        sig!.set(42)
+        // Signal must reflect the new value immediately, not after microtask
+        expect(sig!()).toBe(42)
+        sig!.update(v => v + 8)
+        expect(sig!()).toBe(50)
+        sig!.reset()
+        expect(sig!()).toBe(0)
+    })
+
     test("unsubscribes on destroy", () => {
         const countAtom = atom(0)
         const { injector, store } = createInjector()

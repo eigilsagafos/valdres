@@ -1,4 +1,4 @@
-import { inject, type Provider } from "@angular/core"
+import { inject, DestroyRef, type Provider } from "@angular/core"
 import { VALDRES_STORE } from "./lib/VALDRES_STORE"
 import { hydrate } from "./lib/hydrate"
 import type { InitializeCallback } from "./types/InitializeCallback"
@@ -27,7 +27,10 @@ export const provideValdresScope = (
                     )
                 }
 
+                const destroyRef = inject(DestroyRef)
                 const scopeId = options.scopeId ?? generateId()
+                const scopeCreated =
+                    !parentCtx.current.data.scopes?.has(scopeId)
                 const scopedStore = parentCtx.current.scope(scopeId)
 
                 if (options.initialize) {
@@ -38,6 +41,10 @@ export const provideValdresScope = (
                         }
                     })
                 }
+
+                destroyRef.onDestroy(() => {
+                    scopedStore?.detach?.(scopeCreated)
+                })
 
                 return {
                     current: scopedStore,

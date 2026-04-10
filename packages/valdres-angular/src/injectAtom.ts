@@ -37,24 +37,31 @@ export const injectAtom = <V>(atom: Atom<V>, store?: Store): AtomSignal<V> => {
         unsub()
     })
 
-    // Override set/update to write through the valdres store (which triggers
-    // the subscription above, keeping the inner signal in sync).
-    // Preserves the real SIGNAL brand so effect()/computed()/templates work.
+    // Override set/update/reset to write through the valdres store while
+    // also updating the Angular signal synchronously. This ensures
+    // read-after-write consistency even with batchUpdates: true, where
+    // store subscriptions fire asynchronously on microtask.
     const atomSignal = inner as unknown as AtomSignal<V>
 
     atomSignal.set = (value: V) => {
+        signalSet(value)
         // @ts-ignore @ts-todo
         currentStore.set(atom, value as SetAtomValue<V>)
     }
 
     atomSignal.update = (fn: (value: V) => V) => {
-        const current = currentStore.get(atom) as V
+        const next = fn(inner())
+        signalSet(next)
         // @ts-ignore @ts-todo
-        currentStore.set(atom, fn(current) as SetAtomValue<V>)
+        currentStore.set(atom, next as SetAtomValue<V>)
     }
 
     atomSignal.reset = () => {
         currentStore.reset(atom)
+        const resetValue = currentStore.get(atom)
+        if (!isPromiseLike(resetValue)) {
+            signalSet(resetValue as V)
+        }
     }
 
     return atomSignal
