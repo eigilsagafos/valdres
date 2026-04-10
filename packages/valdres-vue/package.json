@@ -1,5 +1,5 @@
 {
-    "name": "@valdres-react/hotkeys",
+    "name": "valdres-vue",
     "version": "0.2.0-pre.28",
     "license": "MIT",
     "author": {
@@ -20,27 +20,22 @@
     "scripts": {
         "build": "NODE_ENV=production bun build src/index.ts --outdir ./dist --packages external",
         "build:types": "rm -rf dist/types && bun run tsc",
-        "test": "echo 'no tests'",
-        "test:ci": "echo 'no tests'"
-    },
-    "dependencies": {
-        "@valdres/hotkeys": "0.2.0-pre.28"
+        "test": "bun test"
     },
     "devDependencies": {
-        "@testing-library/react": "16.3.0",
-        "react": "19.1.1",
-        "react-dom": "19.1.1",
+        "@happy-dom/global-registrator": "20.0.5",
+        "@vue/test-utils": "2.4.6",
+        "happy-dom": "20.0.5",
         "typescript": "5.9.2",
-        "valdres-react": "0.2.0-pre.28"
+        "valdres": "0.2.0-pre.28",
+        "vue": "3.5.13"
     },
     "peerDependencies": {
-        "react": ">=18",
-        "valdres": "0.2.0-pre.28",
-        "valdres-react": "0.2.0-pre.28"
+        "valdres": ">=0.2.0-pre.28",
+        "vue": ">=3.3"
     },
     "publishConfig": {
         "access": "public",
         "registry": "https://registry.npmjs.org/"
-    },
-    "gitHead": "53245fd1a080cdb1131f5be9056adc546d05ead4"
+    }
 }

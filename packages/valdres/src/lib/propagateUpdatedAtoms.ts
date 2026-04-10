@@ -70,6 +70,41 @@ const reEvaluteSelector = (
     }
 }
 
+const callSubscribers = (
+    subscriptions: Set<Subscription>,
+    families?: Map<AtomFamily<any>, Set<AtomFamilyAtom<any>>>,
+) => {
+    let firstError: unknown
+    let hasError = false
+    for (const subscription of subscriptions) {
+        if ("state" in subscription) {
+            const updatedFamilyAtoms = families?.get(subscription.state)
+            if (updatedFamilyAtoms) {
+                for (const atom of updatedFamilyAtoms) {
+                    try {
+                        subscription.callback(...atom.familyArgs)
+                    } catch (error) {
+                        if (!hasError) {
+                            firstError = error
+                            hasError = true
+                        }
+                    }
+                }
+            }
+        } else {
+            try {
+                subscription.callback()
+            } catch (error) {
+                if (!hasError) {
+                    firstError = error
+                    hasError = true
+                }
+            }
+        }
+    }
+    if (hasError) throw firstError
+}
+
 const addSetToSet = (fromSet: Set<any> | undefined, toSet: Set<any>) => {
     if (fromSet && fromSet.size > 0) {
         for (const item of fromSet) {
@@ -164,13 +199,39 @@ export const propagateDeletedAtoms = (
 export const propagateUpdatedAtoms = (
     atoms: (Atom<any> | AtomFamilyAtom<any, any> | AtomFamily<any, any>)[],
     data: StoreData,
-    subscriptions: Set<Subscription> = new Set(),
-    families: Map<AtomFamily<any>, Set<AtomFamilyAtom<any>>> = new Map(),
+    subscriptions?: Set<Subscription>,
+    families?: Map<AtomFamily<any>, Set<AtomFamilyAtom<any>>>,
     isRecursive = false,
     timestamp = performance.now(),
     selectorsOnly = false,
     isInitOnly = false,
 ) => {
+    // Fast path: single non-family atom with no dependent selectors and no
+    // scopes can skip the full graph walk entirely and just notify subscribers.
+    if (
+        atoms.length === 1 &&
+        !isRecursive &&
+        !selectorsOnly
+    ) {
+        const atom = atoms[0]
+        if (!isFamilyAtom(atom) && !isAtomFamily(atom)) {
+            const dependents = data.stateDependents.get(atom)
+            if (
+                (!dependents || dependents.size === 0) &&
+                (!data.scopes || data.scopes.size === 0)
+            ) {
+                const subs = data.subscriptions.get(atom)
+                if (subs && subs.size > 0) {
+                    callSubscribers(subs)
+                }
+                return
+            }
+        }
+    }
+
+    if (!subscriptions) subscriptions = new Set()
+    if (!families) families = new Map()
+
     const selectors = new Set<Selector>()
     for (const atom of atoms) {
         addSetToSet(data.stateDependents.get(atom), selectors)
@@ -301,48 +362,19 @@ export const propagateDirtySelectors = (
 ) => {
     const updatedInitializedAtoms = new Set<Atom>(updatedAtoms)
     if (selectors.size > 0) {
-        // At this point we have the first level of selectors that are depeendent on
-        // the atoms that changed. We should now traverse the tree of selectors, collect subsribers
-        // to those that change, and keep track of all selectors that we have visited.
+        // At this point we have the first level of selectors that are dependent on
+        // the atoms that changed. We now traverse the tree of selectors and collect
+        // subscribers to those that change.
         propagateSelectorUpdates(
             selectors,
             data,
             subscriptions,
             updatedInitializedAtoms,
-            undefined,
             isInitOnly,
         )
     }
     if (subscriptions.size > 0) {
-        let firstError: unknown
-        let hasError = false
-        for (const subscription of subscriptions) {
-            if ("state" in subscription) {
-                const updatedFamilyAtoms = families.get(subscription.state)
-                if (updatedFamilyAtoms) {
-                    for (const atom of updatedFamilyAtoms) {
-                        try {
-                            subscription.callback(...atom.familyArgs)
-                        } catch (error) {
-                            if (!hasError) {
-                                firstError = error
-                                hasError = true
-                            }
-                        }
-                    }
-                }
-            } else {
-                try {
-                    subscription.callback()
-                } catch (error) {
-                    if (!hasError) {
-                        firstError = error
-                        hasError = true
-                    }
-                }
-            }
-        }
-        if (hasError) throw firstError
+        callSubscribers(subscriptions, families)
     }
 }
 
@@ -352,7 +384,6 @@ const propagateSelectorUpdates = (
     data: StoreData,
     collectedSubscribers: Set<any>,
     updatedInitializedAtoms: Set<Atom>,
-    seen: Set<Selector> = new Set(),
     isInitOnly = false,
 ) => {
     let currentSelectors = selectors
@@ -365,7 +396,6 @@ const propagateSelectorUpdates = (
                 // to avoid double-evaluation.
                 continue
             }
-            seen.add(selector)
             const dependents = data.stateDependents.get(selector)
             const subscribers = data.subscriptions.get(selector)
             if (

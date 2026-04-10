@@ -20,13 +20,16 @@
     "scripts": {
         "build": "NODE_ENV=production bun build src/index.ts --outdir ./dist --packages external",
         "build:types": "rm -rf dist/types && bun run tsc",
-        "test": "echo 'no tests'"
+        "test": "bun test",
+        "test:ci": "bun test"
     },
     "dependencies": {
         "valdres-react": "0.2.0-pre.28"
     },
     "devDependencies": {
+        "@happy-dom/global-registrator": "18.0.1",
         "@testing-library/react": "16.3.0",
+        "happy-dom": "18.0.1",
         "react": "19.1.1",
         "react-dom": "19.1.1",
         "typescript": "5.9.2"
