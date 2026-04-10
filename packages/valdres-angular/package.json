@@ -1,0 +1,38 @@
+{
+    "name": "valdres-angular",
+    "version": "0.2.0-pre.28",
+    "license": "MIT",
+    "author": {
+        "name": "Eigil Sagafos"
+    },
+    "homepage": "https://valdres.dev",
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/eigilsagafos/valdres.git"
+    },
+    "type": "module",
+    "exports": {
+        ".": "./src/index.ts"
+    },
+    "files": [
+        "dist"
+    ],
+    "scripts": {
+        "build": "NODE_ENV=production bun build src/index.ts --outdir ./dist --packages external",
+        "build:types": "rm -rf dist/types && bun run tsc",
+        "test": "bun test"
+    },
+    "devDependencies": {
+        "@angular/core": "19.2.0",
+        "typescript": "5.9.2",
+        "valdres": "0.2.0-pre.28"
+    },
+    "peerDependencies": {
+        "@angular/core": ">=17",
+        "valdres": ">=0.2.0-pre.28"
+    },
+    "publishConfig": {
+        "access": "public",
+        "registry": "https://registry.npmjs.org/"
+    }
+}

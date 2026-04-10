@@ -1,0 +1,295 @@
+import { describe, test, expect } from "bun:test"
+import { Injector, runInInjectionContext } from "@angular/core"
+import {
+    atom,
+    atomFamily,
+    selector,
+    selectorFamily,
+    store as createStore,
+} from "valdres"
+import { VALDRES_STORE } from "./lib/VALDRES_STORE"
+import { injectValue, type ValueState } from "./injectValue"
+
+const createInjector = (storeInstance = createStore()) => {
+    const injector = Injector.create({
+        providers: [
+            {
+                provide: VALDRES_STORE,
+                useValue: {
+                    current: storeInstance,
+                    stores: { [storeInstance.data.id]: storeInstance },
+                },
+            },
+        ],
+    })
+    return { injector, store: storeInstance }
+}
+
+describe("injectValue", () => {
+    test("atom", () => {
+        const numberAtom = atom(10)
+        const { injector, store } = createInjector()
+        let result: ValueState<number>
+        runInInjectionContext(injector, () => {
+            result = injectValue(numberAtom)
+        })
+        expect(result!.value()).toBe(10)
+        expect(result!.status()).toBe("resolved")
+        store.set(numberAtom, 20)
+        expect(result!.value()).toBe(20)
+    })
+
+    test("selector", () => {
+        const numberAtom = atom(10)
+        const doubleSelector = selector(get => get(numberAtom) * 2)
+        const { injector, store } = createInjector()
+        let result: ValueState<number>
+        runInInjectionContext(injector, () => {
+            result = injectValue(doubleSelector)
+        })
+        expect(result!.value()).toBe(20)
+        store.set(numberAtom, 20)
+        expect(result!.value()).toBe(40)
+    })
+
+    test("selectorFamily", () => {
+        const numberAtom = atom(10)
+        const multiply = selectorFamily(
+            (factor: number) => (get: any) => get(numberAtom) * factor,
+        )
+        const { injector, store } = createInjector()
+        let result: ValueState<number>
+        runInInjectionContext(injector, () => {
+            result = injectValue(multiply(3))
+        })
+        expect(result!.value()).toBe(30)
+        store.set(numberAtom, 20)
+        expect(result!.value()).toBe(60)
+    })
+
+    test("atomFamily", () => {
+        const family = atomFamily(1)
+        const familyAtom = family("key1")
+        const { injector, store } = createInjector()
+        let result: ValueState<number>
+        runInInjectionContext(injector, () => {
+            result = injectValue(familyAtom)
+        })
+        expect(result!.value()).toBe(1)
+        store.set(familyAtom, 99)
+        expect(result!.value()).toBe(99)
+    })
+
+    test("with explicit store", () => {
+        const numberAtom = atom(10)
+        const storeInstance = createStore()
+        const injector = Injector.create({ providers: [] })
+        let result: ValueState<number>
+        runInInjectionContext(injector, () => {
+            result = injectValue(numberAtom, storeInstance)
+        })
+        expect(result!.value()).toBe(10)
+        expect(result!.status()).toBe("resolved")
+    })
+
+    test("sync state is immediately resolved", () => {
+        const numberAtom = atom(42)
+        const { injector } = createInjector()
+        let result: ValueState<number>
+        runInInjectionContext(injector, () => {
+            result = injectValue(numberAtom)
+        })
+        expect(result!.value()).toBe(42)
+        expect(result!.status()).toBe("resolved")
+        expect(result!.isLoading()).toBe(false)
+        expect(result!.hasValue()).toBe(true)
+        expect(result!.error()).toBe(undefined)
+    })
+
+    test("resolves async selector", async () => {
+        const asyncSelector = selector(
+            () => new Promise<string>(r => setTimeout(() => r("hello"), 10)),
+        )
+        const { injector } = createInjector()
+        let result: ValueState<string>
+        runInInjectionContext(injector, () => {
+            result = injectValue(asyncSelector)
+        })
+
+        expect(result!.value()).toBe(undefined)
+        expect(result!.status()).toBe("loading")
+        expect(result!.isLoading()).toBe(true)
+        expect(result!.hasValue()).toBe(false)
+
+        await new Promise(r => setTimeout(r, 50))
+
+        expect(result!.value()).toBe("hello")
+        expect(result!.status()).toBe("resolved")
+        expect(result!.isLoading()).toBe(false)
+        expect(result!.hasValue()).toBe(true)
+        expect(result!.error()).toBe(undefined)
+    })
+
+    test("handles error in async selector", async () => {
+        const failSelector = selector(
+            () =>
+                new Promise((_, reject) =>
+                    setTimeout(() => reject("boom"), 10),
+                ),
+        )
+        const { injector } = createInjector()
+        let result: ValueState<string>
+        runInInjectionContext(injector, () => {
+            result = injectValue(failSelector)
+        })
+
+        expect(result!.status()).toBe("loading")
+
+        await new Promise(r => setTimeout(r, 50))
+
+        expect(result!.status()).toBe("error")
+        expect(result!.error()).toBe("boom")
+        expect(result!.value()).toBe(undefined)
+        expect(result!.hasValue()).toBe(false)
+    })
+
+    test("uses reloading status and retains value on dependency change", async () => {
+        const idAtom = atom(1)
+        const userSelector = selector(
+            get =>
+                new Promise<string>(r =>
+                    setTimeout(() => r("User " + get(idAtom)), 10),
+                ),
+        )
+        const { injector, store } = createInjector()
+        let result: ValueState<string>
+        runInInjectionContext(injector, () => {
+            result = injectValue(userSelector)
+        })
+
+        // First load — no previous value
+        expect(result!.status()).toBe("loading")
+        expect(result!.isLoading()).toBe(true)
+        expect(result!.value()).toBe(undefined)
+
+        await new Promise(r => setTimeout(r, 50))
+        expect(result!.value()).toBe("User 1")
+        expect(result!.status()).toBe("resolved")
+
+        // Dependency change — previous value retained, status is "reloading"
+        store.set(idAtom, 2)
+        await new Promise(r => setTimeout(r, 5))
+        expect(result!.status()).toBe("reloading")
+        expect(result!.isLoading()).toBe(true)
+        expect(result!.value()).toBe("User 1") // stale value still available
+
+        await new Promise(r => setTimeout(r, 50))
+        expect(result!.value()).toBe("User 2")
+        expect(result!.status()).toBe("resolved")
+        expect(result!.isLoading()).toBe(false)
+    })
+
+    test("hasValue is based on status, not value content", () => {
+        const numberAtom = atom(42)
+        const { injector } = createInjector()
+        let result: ValueState<number>
+        runInInjectionContext(injector, () => {
+            result = injectValue(numberAtom)
+        })
+        // Resolved — hasValue must be true
+        expect(result!.status()).toBe("resolved")
+        expect(result!.hasValue()).toBe(true)
+    })
+
+    test("reloading status works when resolved value is undefined", async () => {
+        const triggerAtom = atom(1)
+        const undefinedSelector = selector(
+            get =>
+                new Promise<undefined>(r =>
+                    setTimeout(() => {
+                        get(triggerAtom)
+                        r(undefined)
+                    }, 10),
+                ),
+        )
+        const { injector, store } = createInjector()
+        let result: ValueState<undefined>
+        runInInjectionContext(injector, () => {
+            result = injectValue(undefinedSelector)
+        })
+
+        expect(result!.status()).toBe("loading")
+        await new Promise(r => setTimeout(r, 50))
+        expect(result!.status()).toBe("resolved")
+
+        // Bug: reloading check used value() !== undefined, so after resolving
+        // to undefined it stays "loading" instead of "reloading"
+        store.set(triggerAtom, 2)
+        await new Promise(r => setTimeout(r, 5))
+        expect(result!.status()).toBe("reloading")
+    })
+
+    test("stale promise does not overwrite newer value", async () => {
+        const idAtom = atom(1)
+        const userSelector = selector(
+            get => {
+                const id = get(idAtom)
+                // First call is slow (30ms), second is fast (5ms)
+                const delay = id === 1 ? 30 : 5
+                return new Promise<string>(r =>
+                    setTimeout(() => r("User " + id), delay),
+                )
+            },
+        )
+        const { injector, store } = createInjector()
+        let result: ValueState<string>
+        runInInjectionContext(injector, () => {
+            result = injectValue(userSelector)
+        })
+
+        expect(result!.status()).toBe("loading")
+
+        // Trigger re-evaluation before first promise resolves
+        // id=1 resolves in 30ms, id=2 resolves in 5ms
+        await new Promise(r => setTimeout(r, 10))
+        store.set(idAtom, 2)
+
+        // Wait for id=2 to resolve (fast, 5ms)
+        await new Promise(r => setTimeout(r, 15))
+        expect(result!.value()).toBe("User 2")
+
+        // Wait for id=1 to resolve (slow, 30ms total) — must NOT overwrite
+        await new Promise(r => setTimeout(r, 30))
+        expect(result!.value()).toBe("User 2")
+        expect(result!.status()).toBe("resolved")
+    })
+
+    test("unsubscribes on destroy (sync)", () => {
+        const numberAtom = atom(10)
+        const { injector, store } = createInjector()
+        let result: ValueState<number>
+        runInInjectionContext(injector, () => {
+            result = injectValue(numberAtom)
+        })
+        expect(result!.value()).toBe(10)
+        injector.destroy(false)
+        store.set(numberAtom, 99)
+        expect(result!.value()).toBe(10)
+    })
+
+    test("unsubscribes on destroy (async)", async () => {
+        const asyncSelector = selector(
+            () => new Promise<string>(r => setTimeout(() => r("hello"), 10)),
+        )
+        const { injector } = createInjector()
+        let result: ValueState<string>
+        runInInjectionContext(injector, () => {
+            result = injectValue(asyncSelector)
+        })
+
+        injector.destroy(false)
+
+        await new Promise(r => setTimeout(r, 50))
+        expect(result!.value()).toBe(undefined)
+    })
+})
