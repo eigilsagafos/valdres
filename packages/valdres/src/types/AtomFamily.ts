@@ -1,3 +1,4 @@
+import type { FamilyKey } from "../lib/familyKey"
 import type { AtomFamilyAtom } from "./AtomFamilyAtom"
 import type { EqualFunc } from "./EqualFunc"
 
@@ -10,5 +11,5 @@ export type AtomFamily<
     equal: EqualFunc<Value>
     name?: string
     mutable?: boolean
-    __valdresAtomFamilyMap: Map<string, AtomFamilyAtom<Value, Args>>
+    __valdresAtomFamilyMap: Map<FamilyKey, AtomFamilyAtom<Value, Args>>
 }
