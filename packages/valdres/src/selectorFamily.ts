@@ -1,5 +1,5 @@
 import { equal } from "./lib/equal"
-import { stringifyFamilyArgs } from "./lib/stringifyFamilyArgs"
+import { familyKey } from "./lib/familyKey"
 import type { GetValue } from "./types/GetValue"
 import type { SelectorFamily } from "./types/SelectorFamily"
 import type { SelectorOptions } from "./types/SelectorOptions"
@@ -15,10 +15,12 @@ export const selectorFamily = <
     const hasName = !!options?.name
 
     const selectorFamily = (...args: Args) => {
-        const argsStringified = stringifyFamilyArgs(args)
-        if (map.has(argsStringified)) return map.get(argsStringified)
+        const key = familyKey(args)
 
-        // Build selector in a single allocation — no intermediate objects
+        // Single Map.get + undefined check instead of has() + get()
+        const cached = map.get(key)
+        if (cached !== undefined) return cached
+
         const get = (selectorArgs: GetValue) => callback(...args)(selectorArgs)
         const newSelector = {
             equal,
@@ -26,18 +28,17 @@ export const selectorFamily = <
             get,
             family: selectorFamily,
             familyArgs: args,
-            familyArgsStringified: argsStringified,
+            familyArgsStringified: key,
             name: hasName
-                ? options!.name + "_" + argsStringified
+                ? options!.name + "_" + key
                 : undefined,
         }
 
-        map.set(argsStringified, newSelector)
+        map.set(key, newSelector)
         return newSelector
     }
     selectorFamily.__valdresSelectorFamilyMap = map
-    selectorFamily.release = (...args: Args) =>
-        map.delete(stringifyFamilyArgs(args))
+    selectorFamily.release = (...args: Args) => map.delete(familyKey(args))
     if (hasName)
         Object.defineProperty(selectorFamily, "name", {
             value: options!.name,

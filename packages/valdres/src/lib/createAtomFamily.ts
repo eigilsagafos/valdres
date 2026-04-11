@@ -3,16 +3,7 @@ import type { AtomFamilyDefaultValue } from "../types/AtomFamilyDefaultValue"
 import type { AtomOptions } from "../types/AtomOptions"
 import { isSelectorFamily } from "../utils/isSelectorFamily"
 import { equal } from "./equal"
-import { stringifyFamilyArgs } from "./stringifyFamilyArgs"
-
-const familyKey = (args: any[]) => {
-    if (args.length === 1) {
-        const a = args[0]
-        const t = typeof a
-        if (t === "string" || t === "number" || t === "boolean") return a
-    }
-    return stringifyFamilyArgs(args)
-}
+import { familyKey } from "./familyKey"
 
 export const createAtomFamily = <
     Value extends any,
