@@ -153,4 +153,89 @@ describe("globalAtom", () => {
     test("getSelf", () => {
         expect(atom(1, { global: true }).getSelf()).toBe(1)
     })
+
+    test("detach removes store from global atom stores set", () => {
+        const store1 = store()
+        const store2 = store()
+        const testAtom = atom(0, { global: true })
+        store1.get(testAtom)
+        store2.get(testAtom)
+        // Both stores should be tracked (plus globalStore)
+        const storesBefore = testAtom.stores.size
+        expect(storesBefore).toBeGreaterThanOrEqual(2)
+        testAtom.detach(store1.data)
+        expect(testAtom.stores.size).toBe(storesBefore - 1)
+    })
+
+    test("detached store no longer receives cross-store updates", () => {
+        const store1 = store()
+        const store2 = store()
+        const testAtom = atom(0, { global: true })
+        store1.get(testAtom)
+        store2.get(testAtom)
+        testAtom.detach(store1.data)
+        store2.set(testAtom, 42)
+        // store1 should NOT have been updated since it's detached
+        expect(store1.get(testAtom)).not.toBe(42)
+    })
+
+    test("onReset cleanup is called exactly once per resetSelf", () => {
+        const store1 = store()
+        const store2 = store()
+        const store3 = store()
+        const onResetMock = mock(() => {})
+        const testAtom = atom("foo", {
+            global: true,
+            onInit: () => onResetMock,
+        })
+        store1.get(testAtom)
+        store2.get(testAtom)
+        store3.get(testAtom)
+        testAtom.resetSelf()
+        expect(onResetMock).toHaveBeenCalledTimes(1)
+    })
+
+    test("resetSelf recovers if subscriber throws", () => {
+        const store1 = store()
+        const store2 = store()
+        const testAtom = atom(0, { global: true })
+        store1.get(testAtom)
+        store2.get(testAtom)
+        testAtom.setSelf(42)
+        // Subscribe with a throwing callback on store1 AFTER initial set
+        let shouldThrow = true
+        store1.sub(testAtom, () => {
+            if (shouldThrow) throw new Error("subscriber blew up")
+        })
+        // resetSelf triggers propagation which will throw from store1's subscriber
+        try {
+            testAtom.resetSelf()
+        } catch {
+            // expected
+        }
+        // After the error, cross-store sync should still work
+        shouldThrow = false
+        testAtom.setSelf(99)
+        expect(store1.get(testAtom)).toBe(99)
+        expect(store2.get(testAtom)).toBe(99)
+    })
+
+    test("resetSelf works correctly with multiple stores", () => {
+        const store1 = store()
+        const store2 = store()
+        const store3 = store()
+        const testAtom = atom(0, { global: true })
+        store1.get(testAtom)
+        store2.get(testAtom)
+        store3.get(testAtom)
+        testAtom.setSelf(99)
+        expect(store1.get(testAtom)).toBe(99)
+        expect(store2.get(testAtom)).toBe(99)
+        expect(store3.get(testAtom)).toBe(99)
+        // resetSelf should reset all stores without errors
+        testAtom.resetSelf()
+        expect(store1.get(testAtom)).toBe(0)
+        expect(store2.get(testAtom)).toBe(0)
+        expect(store3.get(testAtom)).toBe(0)
+    })
 })
