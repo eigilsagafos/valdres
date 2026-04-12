@@ -53,7 +53,10 @@ export const globalAtom = <Value = unknown>(
     const resetSelf: GlobalAtomResetSelfFunc = () => {
         value = undefined
         initialized = false
-        for (const store of stores) {
+        // Snapshot to avoid mutating during iteration
+        const snapshot = [...stores]
+        stores.clear()
+        for (const store of snapshot) {
             if (store.stateDependencies.has(atom)) {
                 throw new Error("TODO: Reset support for stateDependencies")
             }
@@ -61,9 +64,12 @@ export const globalAtom = <Value = unknown>(
             // TODO: Should we make a different propagate function for reset?
             // and also change reset to rather clear data unless it is found to be in use?
             propagateUpdatedAtoms([atom], store)
-            stores.delete(store)
             onReset?.()
         }
+    }
+
+    const detach = (storeData: StoreData) => {
+        stores.delete(storeData)
     }
 
     const atom: GlobalAtom<Value> = {
@@ -76,6 +82,7 @@ export const globalAtom = <Value = unknown>(
         setSelf,
         getSelf,
         resetSelf,
+        detach,
         get stores() {
             return stores
         },

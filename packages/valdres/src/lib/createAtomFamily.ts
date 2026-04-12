@@ -4,6 +4,7 @@ import type { AtomOptions } from "../types/AtomOptions"
 import { isSelectorFamily } from "../utils/isSelectorFamily"
 import { equal } from "./equal"
 import { familyKey } from "./familyKey"
+import { globalAtom } from "./globalAtom"
 
 export const createAtomFamily = <
     Value extends any,
@@ -18,6 +19,7 @@ export const createAtomFamily = <
     const isFunctionDefault =
         !isSelectorFamilyDefault && typeof defaultValue === "function"
     const hasName = !!options?.name
+    const isGlobal = !!options?.global
 
     const atomFamily = (...args: Args) => {
         const key = familyKey(args)
@@ -36,19 +38,30 @@ export const createAtomFamily = <
             dv = defaultValue
         }
 
-        // Build atom in a single allocation — no intermediate objects
-        const familyAtom = {
-            equal,
-            ...options,
-            defaultValue: dv,
-            // @ts-ignore @ts-todo
-            family: atomFamily,
-            familyArgs: args,
-            familyArgsStringified: key,
-            name: hasName
-                ? options!.name + "_" + key
-                : undefined,
+        const memberName = hasName
+            ? options!.name + "_" + key
+            : undefined
+
+        let familyAtom: any
+        if (isGlobal) {
+            familyAtom = globalAtom(dv, {
+                ...options,
+                name: memberName,
+            })
+        } else {
+            // Build atom in a single allocation — no intermediate objects
+            familyAtom = {
+                equal,
+                ...options,
+                defaultValue: dv,
+                name: memberName,
+            }
         }
+
+        // @ts-ignore @ts-todo
+        familyAtom.family = atomFamily
+        familyAtom.familyArgs = args
+        familyAtom.familyArgsStringified = key
 
         map.set(key, familyAtom)
         return familyAtom

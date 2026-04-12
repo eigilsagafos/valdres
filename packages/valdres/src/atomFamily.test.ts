@@ -274,6 +274,44 @@ describe("atomFamily", () => {
         expect(callback).toHaveBeenCalledTimes(1)
     })
 
+    test("global atomFamily members sync across stores", () => {
+        const store1 = store()
+        const store2 = store()
+        const family = atomFamily<string, [string]>("default", {
+            global: true,
+            name: "global_sync_test",
+        })
+        const memberAtom = family("user1")
+        store1.set(memberAtom, "updated")
+        expect(store1.get(memberAtom)).toBe("updated")
+        expect(store2.get(memberAtom)).toBe("updated")
+    })
+
+    test("global atomFamily members have setSelf/getSelf/resetSelf", () => {
+        const family = atomFamily<string, [string]>("default", {
+            global: true,
+            name: "global_self_test",
+        })
+        const memberAtom = family("user1")
+        expect(memberAtom.setSelf).toBeFunction()
+        expect(memberAtom.getSelf).toBeFunction()
+        expect(memberAtom.resetSelf).toBeFunction()
+    })
+
+    test("global atomFamily setSelf propagates to all stores", () => {
+        const store1 = store()
+        const store2 = store()
+        const family = atomFamily<string, [string]>("default", {
+            global: true,
+            name: "global_setSelf_test",
+        })
+        const memberAtom = family("user1")
+        // @ts-ignore - setSelf may not exist yet
+        memberAtom.setSelf("from setSelf")
+        expect(store1.get(memberAtom)).toBe("from setSelf")
+        expect(store2.get(memberAtom)).toBe("from setSelf")
+    })
+
     test("global atomFamily returns same family for same key", () => {
         const family1 = atomFamily("Default", {
             name: "non_global_test",

@@ -8,5 +8,6 @@ export type GlobalAtom<Value = unknown> = Atom<Value> & {
     setSelf: GlobalAtomSetSelfFunc<Value>
     resetSelf: GlobalAtomResetSelfFunc
     getSelf: GlobalAtomGetSelfFunc<Value>
+    detach: (storeData: StoreData) => void
     stores: Set<StoreData>
 }
