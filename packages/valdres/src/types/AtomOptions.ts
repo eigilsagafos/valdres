@@ -14,5 +14,6 @@ export type AtomOptions<Value = unknown> = {
     maxAge?: number
     mutable?: boolean
     staleWhileRevalidate?: number
+    staleIfError?: number
     equal?: EqualFunc<Value>
 }

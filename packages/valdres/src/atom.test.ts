@@ -388,40 +388,41 @@ describe("atom", () => {
         unsubscribe()
     })
 
-    test.todo("atom with maxAge async", async () => {
-        const setIntervalSpy = spyOn(global, "setInterval")
-        const clearIntervalSpy = spyOn(global, "clearInterval")
+    test("atom with maxAge async (no SWR) shows promise during revalidation", async () => {
         const store1 = store()
-        let count = 0
-        const atomCallback = async () =>
-            wait(1).then(() => {
-                count++
-                return count
+        let fetchCount = 0
+        const resolvers: Array<(v: number) => void> = []
+        const atomCallback = () => {
+            fetchCount++
+            return new Promise<number>(resolve => {
+                resolvers.push(resolve)
             })
-        const atom1 = atom(atomCallback, { maxAge: 3 })
+        }
+        const atom1 = atom(atomCallback, { maxAge: 20 })
 
-        const res: number[] = []
-        const callback = mock(() => {
-            res.push(store1.get(atom1))
-        })
+        const callback = mock(() => {})
         const unsubscribe = store1.sub(atom1, callback)
-        expect(setInterval).toHaveBeenCalledTimes(1)
-        expect(res).toStrictEqual([])
-        await waitFor(() => expect(store1.get(atom1)).toBeInstanceOf(Promise))
-        await waitFor(() => expect(store1.get(atom1)).toBe(1))
-        expect(res).toStrictEqual([1])
-        expect(callback).toHaveBeenCalledTimes(1)
-        // await waitFor(() => expect(store1.get(atom1)).toBeInstanceOf(Promise))
-        // await waitFor(() => expect(store1.get(atom1)).toBe(2))
-        // expect(res).toStrictEqual([1, 2])
-        // expect(callback).toHaveBeenCalledTimes(2)
-        // await waitFor(() => expect(store1.get(atom1)).toBeInstanceOf(Promise))
-        // await waitFor(() => expect(store1.get(atom1)).toBe(3))
-        // expect(res).toStrictEqual([1, 2, 3])
-        // expect(callback).toHaveBeenCalledTimes(3)
-        // unsubscribe()
-        // expect(setInterval).toHaveBeenCalledTimes(1)
-        // expect(clearInterval).toHaveBeenCalledTimes(1)
+
+        // Initially holds a pending promise
+        expect(store1.get(atom1)).toBeInstanceOf(Promise)
+
+        // Resolve initial fetch
+        resolvers[0](100)
+        await wait(1)
+        expect(store1.get(atom1)).toBe(100)
+
+        // Wait for maxAge to expire and trigger revalidation
+        await waitFor(() => expect(fetchCount).toBe(2))
+
+        // Without SWR, the store should show the pending promise (loading state)
+        expect(store1.get(atom1)).toBeInstanceOf(Promise)
+
+        // Resolve revalidation
+        resolvers[1](200)
+        await wait(1)
+        expect(store1.get(atom1)).toBe(200)
+
+        unsubscribe()
     })
 
     test("atom with maxAge async and staleWhileRevalidate", async () => {
@@ -590,6 +591,335 @@ describe("atom", () => {
             // Now the next tick should be allowed to start a new revalidation
             await wait(20)
             expect(fetchCount).toBe(3)
+
+            unsubscribe()
+        },
+    )
+
+    test("staleIfError keeps stale value on revalidation rejection", async () => {
+        const store1 = store()
+        let fetchCount = 0
+        const resolvers: Array<{
+            resolve: (v: number) => void
+            reject: (e: Error) => void
+        }> = []
+        const atomCallback = () => {
+            fetchCount++
+            return new Promise<number>((resolve, reject) => {
+                resolvers.push({ resolve, reject })
+            })
+        }
+
+        const atom1 = atom(atomCallback, {
+            maxAge: 20,
+            staleWhileRevalidate: 200,
+            staleIfError: 500,
+        })
+
+        const callback = mock(() => {})
+        const unsubscribe = store1.sub(atom1, callback)
+
+        // Resolve initial fetch
+        resolvers[0].resolve(100)
+        await wait(1)
+        expect(store1.get(atom1)).toBe(100)
+
+        // Wait for revalidation
+        await waitFor(() => expect(fetchCount).toBe(2))
+
+        // Reject the revalidation
+        resolvers[1].reject(new Error("network error"))
+        await wait(1)
+
+        // With staleIfError, the stale value should be preserved
+        expect(store1.get(atom1)).toBe(100)
+
+        unsubscribe()
+    })
+
+    test(
+        "staleIfError window expiration stops serving stale on error",
+        async () => {
+            const store1 = store()
+            let fetchCount = 0
+            const resolvers: Array<{
+                resolve: (v: number) => void
+                reject: (e: Error) => void
+            }> = []
+            const atomCallback = () => {
+                fetchCount++
+                return new Promise<number>((resolve, reject) => {
+                    resolvers.push({ resolve, reject })
+                })
+            }
+
+            const atom1 = atom(atomCallback, {
+                maxAge: 20,
+                staleIfError: 30,
+            })
+
+            const callback = mock(() => {})
+            const unsubscribe = store1.sub(atom1, callback)
+
+            // Resolve initial fetch
+            resolvers[0].resolve(100)
+            await wait(1)
+            expect(store1.get(atom1)).toBe(100)
+
+            // Wait long enough for maxAge + staleIfError to expire
+            await wait(60)
+            expect(fetchCount).toBeGreaterThanOrEqual(2)
+
+            // Reject all pending revalidations
+            for (let i = 1; i < resolvers.length; i++) {
+                resolvers[i].reject(new Error("network error"))
+            }
+            await wait(1)
+
+            // staleIfError window has passed — the rejected promise should
+            // remain in the store (not the stale value, not deleted)
+            const val = store1.get(atom1)
+            expect(val).not.toBe(100)
+            expect(val).toBeInstanceOf(Promise)
+
+            unsubscribe()
+        },
+    )
+
+    test(
+        "SWR revalidation rejection keeps stale value visible",
+        async () => {
+            const store1 = store()
+            let fetchCount = 0
+            const resolvers: Array<{
+                resolve: (v: number) => void
+                reject: (e: Error) => void
+            }> = []
+            const atomCallback = () => {
+                fetchCount++
+                return new Promise<number>((resolve, reject) => {
+                    resolvers.push({ resolve, reject })
+                })
+            }
+
+            const atom1 = atom(atomCallback, {
+                maxAge: 20,
+                staleWhileRevalidate: 200,
+            })
+
+            const callback = mock(() => {})
+            const unsubscribe = store1.sub(atom1, callback)
+
+            // Resolve initial fetch
+            resolvers[0].resolve(100)
+            await wait(1)
+            expect(store1.get(atom1)).toBe(100)
+
+            // Wait for revalidation
+            await waitFor(() => expect(fetchCount).toBe(2))
+
+            // Reject the revalidation
+            resolvers[1].reject(new Error("network error"))
+            await wait(1)
+
+            // With SWR (no staleIfError), the stale value should still
+            // be preserved — rejection shouldn't delete it
+            expect(store1.get(atom1)).toBe(100)
+
+            unsubscribe()
+        },
+    )
+
+    test(
+        "SWR + staleIfError: rejection past window shows error",
+        async () => {
+            const store1 = store()
+            let fetchCount = 0
+            const resolvers: Array<{
+                resolve: (v: number) => void
+                reject: (e: Error) => void
+            }> = []
+            const atomCallback = () => {
+                fetchCount++
+                return new Promise<number>((resolve, reject) => {
+                    resolvers.push({ resolve, reject })
+                })
+            }
+
+            const atom1 = atom(atomCallback, {
+                maxAge: 20,
+                staleWhileRevalidate: 200,
+                staleIfError: 30,
+            })
+
+            const callback = mock(() => {})
+            const unsubscribe = store1.sub(atom1, callback)
+
+            // Resolve initial fetch
+            resolvers[0].resolve(100)
+            await wait(1)
+            expect(store1.get(atom1)).toBe(100)
+
+            // Wait past maxAge + staleIfError (20 + 30 = 50ms)
+            await wait(60)
+            expect(fetchCount).toBeGreaterThanOrEqual(2)
+
+            // Reject all pending revalidations
+            for (let i = 1; i < resolvers.length; i++) {
+                resolvers[i].reject(new Error("network error"))
+            }
+            await wait(1)
+
+            // Past staleIfError window — stale value should NOT be served
+            expect(store1.get(atom1)).not.toBe(100)
+
+            unsubscribe()
+        },
+    )
+
+    test("staleIfError works when atom value is undefined", async () => {
+        const store1 = store()
+        let fetchCount = 0
+        const resolvers: Array<{
+            resolve: (v: undefined) => void
+            reject: (e: Error) => void
+        }> = []
+        const atomCallback = () => {
+            fetchCount++
+            return new Promise<undefined>((resolve, reject) => {
+                resolvers.push({ resolve, reject })
+            })
+        }
+
+        const atom1 = atom(atomCallback, {
+            maxAge: 20,
+            staleIfError: 500,
+        })
+
+        const callback = mock(() => {})
+        const unsubscribe = store1.sub(atom1, callback)
+
+        // Resolve initial fetch with undefined
+        resolvers[0].resolve(undefined)
+        await wait(1)
+        expect(store1.get(atom1)).toBe(undefined)
+
+        // Wait for revalidation
+        await waitFor(() => expect(fetchCount).toBe(2))
+
+        // Reject — within staleIfError window, should restore undefined
+        resolvers[1].reject(new Error("network error"))
+        await wait(1)
+
+        // The stale value (undefined) should be restored, not the rejected promise
+        expect(store1.get(atom1)).toBe(undefined)
+
+        unsubscribe()
+    })
+
+    test(
+        "staleIfError recovery: succeed → fail → succeed",
+        async () => {
+            const store1 = store()
+            let fetchCount = 0
+            const resolvers: Array<{
+                resolve: (v: number) => void
+                reject: (e: Error) => void
+            }> = []
+            const atomCallback = () => {
+                fetchCount++
+                return new Promise<number>((resolve, reject) => {
+                    resolvers.push({ resolve, reject })
+                })
+            }
+
+            const atom1 = atom(atomCallback, {
+                maxAge: 20,
+                staleIfError: 500,
+            })
+
+            const callback = mock(() => {})
+            const unsubscribe = store1.sub(atom1, callback)
+
+            // Resolve initial fetch
+            resolvers[0].resolve(100)
+            await wait(1)
+            expect(store1.get(atom1)).toBe(100)
+
+            // Wait for first revalidation, reject it
+            await waitFor(() => expect(fetchCount).toBe(2))
+            resolvers[1].reject(new Error("network error"))
+            await wait(1)
+
+            // Within staleIfError window — stale value restored
+            expect(store1.get(atom1)).toBe(100)
+
+            // Wait for next revalidation, resolve it
+            await waitFor(() => expect(fetchCount).toBe(3))
+            resolvers[2].resolve(200)
+            await wait(1)
+
+            // Value should be updated to 200
+            expect(store1.get(atom1)).toBe(200)
+
+            unsubscribe()
+        },
+    )
+
+    test(
+        "multiple consecutive failures with staleIfError",
+        async () => {
+            const store1 = store()
+            let fetchCount = 0
+            const resolvers: Array<{
+                resolve: (v: number) => void
+                reject: (e: Error) => void
+            }> = []
+            const atomCallback = () => {
+                fetchCount++
+                return new Promise<number>((resolve, reject) => {
+                    resolvers.push({ resolve, reject })
+                })
+            }
+
+            const atom1 = atom(atomCallback, {
+                maxAge: 15,
+                staleIfError: 40,
+            })
+
+            const callback = mock(() => {})
+            const unsubscribe = store1.sub(atom1, callback)
+
+            // Resolve initial fetch
+            resolvers[0].resolve(100)
+            await wait(1)
+            expect(store1.get(atom1)).toBe(100)
+
+            // First revalidation: reject (within staleIfError window)
+            await waitFor(() => expect(fetchCount).toBe(2))
+            resolvers[1].reject(new Error("fail 1"))
+            await wait(1)
+            expect(store1.get(atom1)).toBe(100) // stale value kept
+
+            // Second revalidation: succeed (resets the window)
+            await waitFor(() => expect(fetchCount).toBe(3))
+            resolvers[2].resolve(200)
+            await wait(1)
+            expect(store1.get(atom1)).toBe(200) // updated
+
+            // Wait past maxAge + staleIfError from last success (15 + 40 = 55ms)
+            await wait(60)
+
+            // Reject all pending revalidations (past window now)
+            const pending = resolvers.length
+            expect(fetchCount).toBeGreaterThanOrEqual(4)
+            for (let i = 3; i < resolvers.length; i++) {
+                resolvers[i].reject(new Error("fail N"))
+            }
+            await wait(1)
+
+            // Past staleIfError window — stale value should NOT be served
+            expect(store1.get(atom1)).not.toBe(200)
 
             unsubscribe()
         },

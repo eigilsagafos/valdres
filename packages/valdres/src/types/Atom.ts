@@ -13,4 +13,5 @@ export type Atom<Value = unknown> = {
     maxAge?: number
     mutable?: boolean
     staleWhileRevalidate?: number
+    staleIfError?: number
 }

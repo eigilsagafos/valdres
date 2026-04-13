@@ -9,7 +9,7 @@ import { isFamily } from "../utils/isFamily"
 import { isPromiseLike } from "../utils/isPromiseLike"
 import { isSelector } from "../utils/isSelector"
 import { isSelectorFamily } from "../utils/isSelectorFamily"
-import { getAtomInitValue, initAtom } from "./initAtom"
+import { initAtom } from "./initAtom"
 import { initSelector } from "./initSelector"
 import { propagateUpdatedAtoms } from "./propagateUpdatedAtoms"
 import { setValueInData } from "./setValueInData"
@@ -98,26 +98,89 @@ export const subscribe = <V>(
         if (isAtom(state) && state.maxAge) {
             const pendingTimeouts = new Set<Timer>()
             let revalidating = false
+            let lastSuccessTime = Date.now()
+            const NO_VALUE = Symbol()
+            let lastGoodValue: any = NO_VALUE
+            const isPastStaleIfErrorWindow = () => {
+                if (!state.staleIfError) return true
+                const elapsed = Date.now() - lastSuccessTime
+                return elapsed >= state.maxAge! + state.staleIfError
+            }
             const interval = setInterval(() => {
                 if (revalidating) return
-                // @ts-ignore @ts-todo
-                let value = getAtomInitValue(state, data)
+                if (typeof state.defaultValue !== "function") return
+                if (data.values.has(state)) {
+                    const currentValue = data.values.get(state)
+                    if (!isPromiseLike(currentValue)) {
+                        lastGoodValue = currentValue
+                    }
+                }
+                const value = state.defaultValue()
                 if (isPromiseLike(value)) {
                     revalidating = true
-                    const done = () => { revalidating = false }
                     if (state.staleWhileRevalidate) {
+                        // SWR: keep stale value visible during revalidation
                         const t = setTimeout(() => {
                             pendingTimeouts.delete(t)
                         }, state.staleWhileRevalidate)
                         pendingTimeouts.add(t)
                         value.then(
-                            () => { clearTimeout(t); pendingTimeouts.delete(t); done() },
-                            () => { clearTimeout(t); pendingTimeouts.delete(t); done() },
+                            (resolved: any) => {
+                                clearTimeout(t)
+                                pendingTimeouts.delete(t)
+                                revalidating = false
+                                lastSuccessTime = Date.now()
+                                lastGoodValue = resolved
+                                setValueInData(state, resolved, data)
+                                propagateUpdatedAtoms([state], data)
+                            },
+                            () => {
+                                clearTimeout(t)
+                                pendingTimeouts.delete(t)
+                                revalidating = false
+                                if (
+                                    state.staleIfError &&
+                                    isPastStaleIfErrorWindow()
+                                ) {
+                                    // Past staleIfError window: replace stale
+                                    // value with rejected promise so consumers
+                                    // see the error
+                                    setValueInData(state, value, data)
+                                    propagateUpdatedAtoms([state], data)
+                                }
+                                // No staleIfError or within window: keep stale
+                            },
                         )
                     } else {
-                        value.then(done, done)
+                        // No SWR: show loading state during revalidation
+                        setValueInData(state, value, data)
+                        propagateUpdatedAtoms([state], data)
+                        value.then(
+                            (resolved: any) => {
+                                revalidating = false
+                                lastSuccessTime = Date.now()
+                                lastGoodValue = resolved
+                                setValueInData(state, resolved, data)
+                                propagateUpdatedAtoms([state], data)
+                            },
+                            () => {
+                                revalidating = false
+                                if (
+                                    !isPastStaleIfErrorWindow() &&
+                                    lastGoodValue !== NO_VALUE
+                                ) {
+                                    // Within staleIfError window: restore last good value
+                                    setValueInData(state, lastGoodValue, data)
+                                    propagateUpdatedAtoms([state], data)
+                                }
+                                // Past window (or no staleIfError): leave
+                                // rejected promise in store; interval retries
+                            },
+                        )
                     }
                 } else {
+                    lastSuccessTime = Date.now()
+                    lastGoodValue = value
                     setValueInData(state, value, data)
                     propagateUpdatedAtoms([state], data)
                 }
