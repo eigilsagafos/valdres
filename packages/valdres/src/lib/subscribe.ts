@@ -99,7 +99,8 @@ export const subscribe = <V>(
             const pendingTimeouts = new Set<Timer>()
             let revalidating = false
             let lastSuccessTime = Date.now()
-            let lastGoodValue: any = undefined
+            const NO_VALUE = Symbol()
+            let lastGoodValue: any = NO_VALUE
             const isPastStaleIfErrorWindow = () => {
                 if (!state.staleIfError) return true
                 const elapsed = Date.now() - lastSuccessTime
@@ -108,9 +109,11 @@ export const subscribe = <V>(
             const interval = setInterval(() => {
                 if (revalidating) return
                 if (typeof state.defaultValue !== "function") return
-                const currentValue = data.values.get(state)
-                if (currentValue !== undefined && !isPromiseLike(currentValue)) {
-                    lastGoodValue = currentValue
+                if (data.values.has(state)) {
+                    const currentValue = data.values.get(state)
+                    if (!isPromiseLike(currentValue)) {
+                        lastGoodValue = currentValue
+                    }
                 }
                 const value = state.defaultValue()
                 if (isPromiseLike(value)) {
@@ -164,7 +167,7 @@ export const subscribe = <V>(
                                 revalidating = false
                                 if (
                                     !isPastStaleIfErrorWindow() &&
-                                    lastGoodValue !== undefined
+                                    lastGoodValue !== NO_VALUE
                                 ) {
                                     // Within staleIfError window: restore last good value
                                     setValueInData(state, lastGoodValue, data)

@@ -777,6 +777,46 @@ describe("atom", () => {
         },
     )
 
+    test("staleIfError works when atom value is undefined", async () => {
+        const store1 = store()
+        let fetchCount = 0
+        const resolvers: Array<{
+            resolve: (v: undefined) => void
+            reject: (e: Error) => void
+        }> = []
+        const atomCallback = () => {
+            fetchCount++
+            return new Promise<undefined>((resolve, reject) => {
+                resolvers.push({ resolve, reject })
+            })
+        }
+
+        const atom1 = atom(atomCallback, {
+            maxAge: 20,
+            staleIfError: 500,
+        })
+
+        const callback = mock(() => {})
+        const unsubscribe = store1.sub(atom1, callback)
+
+        // Resolve initial fetch with undefined
+        resolvers[0].resolve(undefined)
+        await wait(1)
+        expect(store1.get(atom1)).toBe(undefined)
+
+        // Wait for revalidation
+        await waitFor(() => expect(fetchCount).toBe(2))
+
+        // Reject — within staleIfError window, should restore undefined
+        resolvers[1].reject(new Error("network error"))
+        await wait(1)
+
+        // The stale value (undefined) should be restored, not the rejected promise
+        expect(store1.get(atom1)).toBe(undefined)
+
+        unsubscribe()
+    })
+
     test(
         "staleIfError recovery: succeed → fail → succeed",
         async () => {
