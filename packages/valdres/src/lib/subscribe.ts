@@ -108,7 +108,9 @@ export const subscribe = <V>(
                     existing.refCount--
                     if (existing.refCount === 0) {
                         existing.cleanup()
-                        ;(state as GlobalAtom).maxAgeInterval = undefined
+                        if ((state as GlobalAtom).maxAgeInterval === existing) {
+                            ;(state as GlobalAtom).maxAgeInterval = undefined
+                        }
                     }
                 }
             } else {
@@ -229,7 +231,9 @@ export const subscribe = <V>(
                         entry.refCount--
                         if (entry.refCount === 0) {
                             entry.cleanup()
-                            ;(state as GlobalAtom).maxAgeInterval = undefined
+                            if ((state as GlobalAtom).maxAgeInterval === entry) {
+                                ;(state as GlobalAtom).maxAgeInterval = undefined
+                            }
                         }
                     }
                 } else {
