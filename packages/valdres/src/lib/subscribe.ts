@@ -105,6 +105,7 @@ export const subscribe = <V>(
                 // Another store already owns the interval — just bump refCount
                 existing.refCount++
                 maxAgeCleanup = () => {
+                    if (existing.refCount <= 0) return
                     existing.refCount--
                     if (existing.refCount === 0) {
                         existing.cleanup()
@@ -147,6 +148,7 @@ export const subscribe = <V>(
                     if (isGlobal) {
                         const stores = (state as any).stores as Set<StoreData>
                         for (const s of stores) return s
+                        // All stores detached — fall back to the original
                     }
                     return data
                 }
@@ -234,6 +236,7 @@ export const subscribe = <V>(
                     const entry = { cleanup, refCount: 1 }
                     ;(state as GlobalAtom).maxAgeInterval = entry
                     maxAgeCleanup = () => {
+                        if (entry.refCount <= 0) return
                         entry.refCount--
                         if (entry.refCount === 0) {
                             entry.cleanup()

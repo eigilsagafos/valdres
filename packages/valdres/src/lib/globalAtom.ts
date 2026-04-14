@@ -55,6 +55,7 @@ export const globalAtom = <Value = unknown>(
         initialized = false
         if (atom.maxAgeInterval) {
             atom.maxAgeInterval.cleanup()
+            atom.maxAgeInterval.refCount = 0
             atom.maxAgeInterval = undefined
         }
         // Snapshot to avoid mutating during iteration
