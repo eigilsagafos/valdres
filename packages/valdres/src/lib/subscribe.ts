@@ -110,6 +110,7 @@ export const subscribe = <V>(
                 for (const s of globalState!.stores) {
                     if (s !== data && s.values.has(metaAtom)) {
                         setValueInData(metaAtom, s.values.get(metaAtom), data)
+                        propagateUpdatedAtoms([metaAtom], data)
                         break
                     }
                 }

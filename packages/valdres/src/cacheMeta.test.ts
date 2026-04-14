@@ -5,13 +5,16 @@ import { selector } from "./selector"
 import { store } from "./store"
 import { wait } from "../test/utils/wait"
 
-const waitFor = async (callback: () => void, count = 0) => {
+const waitFor = async (callback: () => void, count = 0, maxRetries = 200) => {
     try {
         callback()
         return
     } catch (e) {
+        if (count >= maxRetries) {
+            throw new Error(`waitFor timed out after ${maxRetries} retries`, { cause: e })
+        }
         await wait(1)
-        return waitFor(callback, count++)
+        return waitFor(callback, count + 1, maxRetries)
     }
 }
 
@@ -31,7 +34,7 @@ describe("cacheMeta", () => {
         expect(meta!.lastSuccessAt).toBeGreaterThan(0)
     })
 
-    test("returns undefined for atom without maxAge", () => {
+    test("returns null for atom without maxAge", () => {
         const store1 = store()
         const atom1 = atom(42)
 
