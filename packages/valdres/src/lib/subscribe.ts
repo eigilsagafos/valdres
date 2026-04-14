@@ -116,6 +116,7 @@ export const subscribe = <V>(
             } else {
                 const pendingTimeouts = new Set<Timer>()
                 let revalidating = false
+                let cancelled = false
                 let lastSuccessTime = Date.now()
                 const NO_VALUE = Symbol()
                 let lastGoodValue: any = NO_VALUE
@@ -173,6 +174,7 @@ export const subscribe = <V>(
                                 (resolved: any) => {
                                     clearTimeout(t)
                                     pendingTimeouts.delete(t)
+                                    if (cancelled) return
                                     revalidating = false
                                     lastSuccessTime = Date.now()
                                     lastGoodValue = resolved
@@ -181,6 +183,7 @@ export const subscribe = <V>(
                                 () => {
                                     clearTimeout(t)
                                     pendingTimeouts.delete(t)
+                                    if (cancelled) return
                                     revalidating = false
                                     if (
                                         state.staleIfError &&
@@ -195,12 +198,14 @@ export const subscribe = <V>(
                             setAndPropagate(state, value)
                             value.then(
                                 (resolved: any) => {
+                                    if (cancelled) return
                                     revalidating = false
                                     lastSuccessTime = Date.now()
                                     lastGoodValue = resolved
                                     setAndPropagate(state, resolved)
                                 },
                                 () => {
+                                    if (cancelled) return
                                     revalidating = false
                                     if (
                                         !isPastStaleIfErrorWindow() &&
@@ -219,6 +224,7 @@ export const subscribe = <V>(
                 }, state.maxAge)
 
                 const cleanup = () => {
+                    cancelled = true
                     clearInterval(interval)
                     for (const t of pendingTimeouts) clearTimeout(t)
                     pendingTimeouts.clear()
