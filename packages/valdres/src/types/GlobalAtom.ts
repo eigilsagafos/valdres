@@ -15,5 +15,5 @@ export type GlobalAtom<Value = unknown> = Atom<Value> & {
     getSelf: GlobalAtomGetSelfFunc<Value>
     detach: (storeData: StoreData) => void
     stores: Set<StoreData>
-    _maxAgeInterval: MaxAgeInterval | undefined
+    maxAgeInterval: MaxAgeInterval | undefined
 }

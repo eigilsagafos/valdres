@@ -98,7 +98,7 @@ export const subscribe = <V>(
         if (isAtom(state) && state.maxAge) {
             const isGlobal = "stores" in state
             const existing = isGlobal
-                ? (state as GlobalAtom)._maxAgeInterval
+                ? (state as GlobalAtom).maxAgeInterval
                 : undefined
 
             if (existing) {
@@ -108,7 +108,7 @@ export const subscribe = <V>(
                     existing.refCount--
                     if (existing.refCount === 0) {
                         existing.cleanup()
-                        ;(state as GlobalAtom)._maxAgeInterval = undefined
+                        ;(state as GlobalAtom).maxAgeInterval = undefined
                     }
                 }
             } else {
@@ -224,12 +224,12 @@ export const subscribe = <V>(
 
                 if (isGlobal) {
                     const entry = { cleanup, refCount: 1 }
-                    ;(state as GlobalAtom)._maxAgeInterval = entry
+                    ;(state as GlobalAtom).maxAgeInterval = entry
                     maxAgeCleanup = () => {
                         entry.refCount--
                         if (entry.refCount === 0) {
                             entry.cleanup()
-                            ;(state as GlobalAtom)._maxAgeInterval = undefined
+                            ;(state as GlobalAtom).maxAgeInterval = undefined
                         }
                     }
                 } else {
