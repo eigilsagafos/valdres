@@ -1,5 +1,6 @@
 import type { AtomOnSet } from "./AtomOnSet"
 import type { EqualFunc } from "./EqualFunc"
+import type { Reactive } from "./Reactive"
 import type { StoreData } from "./StoreData"
 
 export type AtomOptions<Value = unknown> = {
@@ -11,9 +12,9 @@ export type AtomOptions<Value = unknown> = {
     ) => (() => void) | void
     onSet?: AtomOnSet<Value>
     onMount?: () => () => void
-    maxAge?: number
+    maxAge?: Reactive<number>
     mutable?: boolean
-    staleWhileRevalidate?: number
-    staleIfError?: number
+    staleWhileRevalidate?: Reactive<number>
+    staleIfError?: Reactive<number>
     equal?: EqualFunc<Value>
 }

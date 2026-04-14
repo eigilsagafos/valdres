@@ -10,6 +10,9 @@ import { isGlobalAtom } from "../utils/isGlobalAtom"
 import { isPromiseLike } from "../utils/isPromiseLike"
 import { isSelector } from "../utils/isSelector"
 import { isSelectorFamily } from "../utils/isSelectorFamily"
+import { isReactive, resolveReactive } from "../utils/resolveReactive"
+import type { CacheMeta } from "../types/Atom"
+import { equal } from "./equal"
 import { initAtom } from "./initAtom"
 import { initSelector } from "./initSelector"
 import { propagateUpdatedAtoms } from "./propagateUpdatedAtoms"
@@ -102,6 +105,15 @@ export const subscribe = <V>(
             if (existing) {
                 // Another store already owns the interval — just bump refCount
                 existing.refCount++
+                // Seed the cache meta in this store from an existing store
+                const metaAtom = state.__cacheMeta ??= { equal, defaultValue: null }
+                for (const s of globalState!.stores) {
+                    if (s !== data && s.values.has(metaAtom)) {
+                        setValueInData(metaAtom, s.values.get(metaAtom), data)
+                        propagateUpdatedAtoms([metaAtom], data)
+                        break
+                    }
+                }
                 setMaxAgeCleanup(data, state, () => {
                     if (existing.refCount <= 0) return
                     existing.refCount--
@@ -119,10 +131,44 @@ export const subscribe = <V>(
                 let lastSuccessTime = Date.now()
                 const NO_VALUE = Symbol()
                 let lastGoodValue: any = NO_VALUE
+                let currentInterval: Timer
+
+                const getMaxAge = (): number =>
+                    resolveReactive(state.maxAge!, data)
+                const getSWR = (): number | undefined =>
+                    state.staleWhileRevalidate
+                        ? resolveReactive(state.staleWhileRevalidate, data)
+                        : undefined
+                const getStaleIfError = (): number | undefined =>
+                    state.staleIfError
+                        ? resolveReactive(state.staleIfError, data)
+                        : undefined
+
+                const metaAtom = state.__cacheMeta ??= { equal, defaultValue: null }
+                const updateMeta = () => {
+                    const meta: CacheMeta = {
+                        isRevalidating: revalidating,
+                        lastSuccessAt: lastSuccessTime,
+                        maxAge: getMaxAge(),
+                        staleWhileRevalidate: getSWR(),
+                        staleIfError: getStaleIfError(),
+                    }
+                    if (globalState) {
+                        for (const store of globalState.stores) {
+                            setValueInData(metaAtom, meta, store)
+                            propagateUpdatedAtoms([metaAtom], store)
+                        }
+                    } else {
+                        setValueInData(metaAtom, meta, data)
+                        propagateUpdatedAtoms([metaAtom], data)
+                    }
+                }
+
                 const isPastStaleIfErrorWindow = () => {
-                    if (!state.staleIfError) return true
+                    const staleIfError = getStaleIfError()
+                    if (!staleIfError) return true
                     const elapsed = Date.now() - lastSuccessTime
-                    return elapsed >= state.maxAge! + state.staleIfError
+                    return elapsed >= getMaxAge() + staleIfError
                 }
 
                 // For global atoms, propagate to all stores; for regular atoms, just this store
@@ -149,7 +195,7 @@ export const subscribe = <V>(
                     return data
                 }
 
-                const interval = setInterval(() => {
+                const tick = () => {
                     if (revalidating) return
                     if (typeof state.defaultValue !== "function") return
                     const valueStore = getValueStore()
@@ -162,11 +208,13 @@ export const subscribe = <V>(
                     const value = state.defaultValue()
                     if (isPromiseLike(value)) {
                         revalidating = true
-                        if (state.staleWhileRevalidate) {
+                        updateMeta()
+                        const swr = getSWR()
+                        if (swr) {
                             // SWR: keep stale value visible during revalidation
                             const t = setTimeout(() => {
                                 pendingTimeouts.delete(t)
-                            }, state.staleWhileRevalidate)
+                            }, swr)
                             pendingTimeouts.add(t)
                             value.then(
                                 (resolved: any) => {
@@ -177,6 +225,7 @@ export const subscribe = <V>(
                                     lastSuccessTime = Date.now()
                                     lastGoodValue = resolved
                                     setAndPropagate(state, resolved)
+                                    updateMeta()
                                 },
                                 () => {
                                     clearTimeout(t)
@@ -184,11 +233,12 @@ export const subscribe = <V>(
                                     if (cancelled) return
                                     revalidating = false
                                     if (
-                                        state.staleIfError &&
+                                        getStaleIfError() &&
                                         isPastStaleIfErrorWindow()
                                     ) {
                                         setAndPropagate(state, value)
                                     }
+                                    updateMeta()
                                 },
                             )
                         } else {
@@ -201,6 +251,7 @@ export const subscribe = <V>(
                                     lastSuccessTime = Date.now()
                                     lastGoodValue = resolved
                                     setAndPropagate(state, resolved)
+                                    updateMeta()
                                 },
                                 () => {
                                     if (cancelled) return
@@ -211,6 +262,7 @@ export const subscribe = <V>(
                                     ) {
                                         setAndPropagate(state, lastGoodValue)
                                     }
+                                    updateMeta()
                                 },
                             )
                         }
@@ -218,14 +270,50 @@ export const subscribe = <V>(
                         lastSuccessTime = Date.now()
                         lastGoodValue = value
                         setAndPropagate(state, value)
+                        updateMeta()
                     }
-                }, state.maxAge)
+                }
+
+                const startInterval = () => {
+                    currentInterval = setInterval(tick, getMaxAge())
+                }
+
+                startInterval()
+                updateMeta()
+
+                // Subscribe to reactive config changes
+                const configUnsubs: (() => void)[] = []
+                if (isReactive(state.maxAge)) {
+                    configUnsubs.push(
+                        subscribe(
+                            state.maxAge as any,
+                            () => {
+                                clearInterval(currentInterval)
+                                startInterval()
+                                updateMeta()
+                            },
+                            false,
+                            data,
+                        ),
+                    )
+                }
+                if (state.staleWhileRevalidate && isReactive(state.staleWhileRevalidate)) {
+                    configUnsubs.push(
+                        subscribe(state.staleWhileRevalidate as any, () => updateMeta(), false, data),
+                    )
+                }
+                if (state.staleIfError && isReactive(state.staleIfError)) {
+                    configUnsubs.push(
+                        subscribe(state.staleIfError as any, () => updateMeta(), false, data),
+                    )
+                }
 
                 const cleanup = () => {
                     cancelled = true
-                    clearInterval(interval)
+                    clearInterval(currentInterval)
                     for (const t of pendingTimeouts) clearTimeout(t)
                     pendingTimeouts.clear()
+                    for (const unsub of configUnsubs) unsub()
                 }
 
                 if (globalState) {
