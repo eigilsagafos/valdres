@@ -1,12 +1,12 @@
 import type { Atom } from "../types/Atom"
 import type { Family } from "../types/Family"
-import type { GlobalAtom } from "../types/GlobalAtom"
 import type { State } from "../types/State"
 import type { StoreData } from "../types/StoreData"
 import type { Subscription } from "../types/Subscription"
 import { isAtom } from "../utils/isAtom"
 import { isAtomFamily } from "../utils/isAtomFamily"
 import { isFamily } from "../utils/isFamily"
+import { isGlobalAtom } from "../utils/isGlobalAtom"
 import { isPromiseLike } from "../utils/isPromiseLike"
 import { isSelector } from "../utils/isSelector"
 import { isSelectorFamily } from "../utils/isSelectorFamily"
@@ -96,10 +96,8 @@ export const subscribe = <V>(
     subscribers.add(subscription)
     if (subscribers.size === 1) {
         if (isAtom(state) && state.maxAge) {
-            const isGlobal = "stores" in state
-            const existing = isGlobal
-                ? (state as GlobalAtom).maxAgeInterval
-                : undefined
+            const globalState = isGlobalAtom(state) ? state : undefined
+            const existing = globalState?.maxAgeInterval
 
             if (existing) {
                 // Another store already owns the interval — just bump refCount
@@ -109,8 +107,8 @@ export const subscribe = <V>(
                     existing.refCount--
                     if (existing.refCount === 0) {
                         existing.cleanup()
-                        if ((state as GlobalAtom).maxAgeInterval === existing) {
-                            ;(state as GlobalAtom).maxAgeInterval = undefined
+                        if (globalState.maxAgeInterval === existing) {
+                            globalState.maxAgeInterval = undefined
                         }
                     }
                 })
@@ -129,9 +127,8 @@ export const subscribe = <V>(
 
                 // For global atoms, propagate to all stores; for regular atoms, just this store
                 const setAndPropagate = (atom: Atom, val: any) => {
-                    if (isGlobal) {
-                        const globalAtom = state as any
-                        for (const store of globalAtom.stores) {
+                    if (globalState) {
+                        for (const store of globalState.stores) {
                             setValueInData(atom, val, store)
                             propagateUpdatedAtoms([atom], store)
                         }
@@ -145,9 +142,8 @@ export const subscribe = <V>(
                 // store in the set rather than the closed-over `data`
                 // which may become stale if that store is detached.
                 const getValueStore = (): StoreData => {
-                    if (isGlobal) {
-                        const stores = (state as any).stores as Set<StoreData>
-                        for (const s of stores) return s
+                    if (globalState) {
+                        for (const s of globalState.stores) return s
                         // All stores detached — fall back to the original
                     }
                     return data
@@ -232,16 +228,16 @@ export const subscribe = <V>(
                     pendingTimeouts.clear()
                 }
 
-                if (isGlobal) {
+                if (globalState) {
                     const entry = { cleanup, refCount: 1 }
-                    ;(state as GlobalAtom).maxAgeInterval = entry
+                    globalState.maxAgeInterval = entry
                     setMaxAgeCleanup(data, state, () => {
                         if (entry.refCount <= 0) return
                         entry.refCount--
                         if (entry.refCount === 0) {
                             entry.cleanup()
-                            if ((state as GlobalAtom).maxAgeInterval === entry) {
-                                ;(state as GlobalAtom).maxAgeInterval = undefined
+                            if (globalState.maxAgeInterval === entry) {
+                                globalState.maxAgeInterval = undefined
                             }
                         }
                     })
