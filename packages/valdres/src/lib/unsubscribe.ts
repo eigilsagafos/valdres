@@ -2,13 +2,13 @@ import type { Family } from "../types/Family"
 import type { State } from "../types/State"
 import type { StoreData } from "../types/StoreData"
 import type { Subscription } from "../types/Subscription"
+import { getMaxAgeCleanup, deleteMaxAgeCleanup } from "./maxAgeCleanups"
 import { isTransitivelySubscribed, unmountOrphanedDeps } from "./mountAtom"
 
 export const unsubscribe = <V>(
     state: State<V> | Family<V>,
     subscription: Subscription,
     data: StoreData,
-    maxAgeCleanup?: any,
 ) => {
     const subscribers = data.subscriptions.get(state)
     if (subscribers) {
@@ -26,7 +26,11 @@ export const unsubscribe = <V>(
             }
         }
         if (subscribers.size === 0) {
-            if (maxAgeCleanup) maxAgeCleanup()
+            const maxAgeCleanup = getMaxAgeCleanup(data, state)
+            if (maxAgeCleanup) {
+                maxAgeCleanup()
+                deleteMaxAgeCleanup(data, state)
+            }
             data.subscriptions.delete(state)
             // Unmount this state and any transitive dependencies that are
             // no longer reachable from any subscriber.

@@ -1079,4 +1079,30 @@ describe("subscriber error handling", () => {
         // because the subscription (and its interval) was cleaned up.
         expect(store1.get(atom1)).toBe(1)
     })
+
+    test("atom with maxAge: last subscriber unsubscribing clears interval even if it was not the first", async () => {
+        const setIntervalSpy = spyOn(global, "setInterval")
+        const clearIntervalSpy = spyOn(global, "clearInterval")
+        const store1 = store()
+        const atom1 = atom(() => Date.now(), { maxAge: 50 })
+
+        // First subscription creates the interval
+        const unsub1 = store1.sub(atom1, () => {})
+        expect(setIntervalSpy).toHaveBeenCalledTimes(1)
+
+        // Second subscription does NOT create a new interval
+        const unsub2 = store1.sub(atom1, () => {})
+        expect(setIntervalSpy).toHaveBeenCalledTimes(1)
+
+        // Unsub the first subscriber — still one left, interval should stay
+        unsub1()
+        expect(clearIntervalSpy).toHaveBeenCalledTimes(0)
+
+        // Unsub the last subscriber — interval should be cleaned up
+        unsub2()
+        expect(clearIntervalSpy).toHaveBeenCalledTimes(1)
+
+        setIntervalSpy.mockRestore()
+        clearIntervalSpy.mockRestore()
+    })
 })

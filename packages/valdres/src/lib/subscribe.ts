@@ -14,6 +14,7 @@ import { initAtom } from "./initAtom"
 import { initSelector } from "./initSelector"
 import { propagateUpdatedAtoms } from "./propagateUpdatedAtoms"
 import { setValueInData } from "./setValueInData"
+import { setMaxAgeCleanup } from "./maxAgeCleanups"
 import { mountTransitiveDeps } from "./mountAtom"
 import { unsubscribe } from "./unsubscribe"
 
@@ -93,7 +94,6 @@ export const subscribe = <V>(
         }
     }
     subscribers.add(subscription)
-    let maxAgeCleanup: any
     if (subscribers.size === 1) {
         if (isAtom(state) && state.maxAge) {
             const isGlobal = "stores" in state
@@ -104,7 +104,7 @@ export const subscribe = <V>(
             if (existing) {
                 // Another store already owns the interval — just bump refCount
                 existing.refCount++
-                maxAgeCleanup = () => {
+                setMaxAgeCleanup(data, state, () => {
                     if (existing.refCount <= 0) return
                     existing.refCount--
                     if (existing.refCount === 0) {
@@ -113,7 +113,7 @@ export const subscribe = <V>(
                             ;(state as GlobalAtom).maxAgeInterval = undefined
                         }
                     }
-                }
+                })
             } else {
                 const pendingTimeouts = new Set<Timer>()
                 let revalidating = false
@@ -235,7 +235,7 @@ export const subscribe = <V>(
                 if (isGlobal) {
                     const entry = { cleanup, refCount: 1 }
                     ;(state as GlobalAtom).maxAgeInterval = entry
-                    maxAgeCleanup = () => {
+                    setMaxAgeCleanup(data, state, () => {
                         if (entry.refCount <= 0) return
                         entry.refCount--
                         if (entry.refCount === 0) {
@@ -244,9 +244,9 @@ export const subscribe = <V>(
                                 ;(state as GlobalAtom).maxAgeInterval = undefined
                             }
                         }
-                    }
+                    })
                 } else {
-                    maxAgeCleanup = cleanup
+                    setMaxAgeCleanup(data, state, cleanup)
                 }
             }
         }
@@ -268,6 +268,6 @@ export const subscribe = <V>(
             // TODO: Test this scenario
             parentUnsubscribe()
         }
-        unsubscribe(state, subscription, data, maxAgeCleanup)
+        unsubscribe(state, subscription, data)
     }
 }
