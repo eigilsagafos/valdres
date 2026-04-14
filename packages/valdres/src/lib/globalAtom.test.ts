@@ -2,6 +2,7 @@ import { describe, test, expect, mock } from "bun:test"
 import { store } from "../store"
 import { atom } from "../atom"
 import { selector } from "../selector"
+import { wait } from "../../test/utils/wait"
 
 describe("globalAtom", () => {
     test("set in one store, read from both", () => {
@@ -237,5 +238,74 @@ describe("globalAtom", () => {
         expect(store1.get(testAtom)).toBe(0)
         expect(store2.get(testAtom)).toBe(0)
         expect(store3.get(testAtom)).toBe(0)
+    })
+
+    test("global atom with maxAge only calls defaultValue once per interval across stores", async () => {
+        let callCount = 0
+        const testAtom = atom(
+            () => {
+                callCount++
+                return callCount
+            },
+            { global: true, maxAge: 50 },
+        )
+
+        const store1 = store()
+        const store2 = store()
+
+        const cb1 = mock(() => {})
+        const cb2 = mock(() => {})
+
+        // Subscribe in both stores — bug causes two independent intervals
+        const unsub1 = store1.sub(testAtom, cb1)
+        const unsub2 = store2.sub(testAtom, cb2)
+
+        // Initial defaultValue call happened once during init
+        const countAfterInit = callCount
+
+        // Wait long enough for exactly one revalidation cycle (50ms interval)
+        await wait(75)
+
+        // With the bug, each store starts its own interval so defaultValue
+        // gets called twice per cycle. It should only be called once.
+        const revalidationCalls = callCount - countAfterInit
+        expect(revalidationCalls).toBe(1)
+
+        // Both stores should have the updated value
+        expect(store1.get(testAtom)).toBe(store2.get(testAtom))
+
+        unsub1()
+        unsub2()
+    })
+
+    test("resetSelf clears maxAge interval for global atom", async () => {
+        let callCount = 0
+        const testAtom = atom(
+            () => {
+                callCount++
+                return callCount
+            },
+            { global: true, maxAge: 50 },
+        )
+
+        const store1 = store()
+        const store2 = store()
+
+        const unsub1 = store1.sub(testAtom, () => {})
+        const unsub2 = store2.sub(testAtom, () => {})
+
+        const countAfterInit = callCount
+
+        // Reset should clear the interval
+        testAtom.resetSelf()
+
+        // Wait past when the interval would have fired
+        await wait(75)
+
+        // No revalidation calls should have happened after reset
+        expect(callCount - countAfterInit).toBe(0)
+
+        unsub1()
+        unsub2()
     })
 })
