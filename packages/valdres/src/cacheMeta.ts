@@ -1,18 +1,17 @@
-import { getOrCreateCacheMetaAtom, type CacheMeta } from "./lib/cacheMetaAtoms"
+import { equal } from "./lib/equal"
 import { selector } from "./selector"
-import type { Atom } from "./types/Atom"
+import type { Atom, CacheMeta } from "./types/Atom"
 import type { Selector } from "./types/Selector"
 
-const map = new WeakMap<Atom, Selector<CacheMeta | null>>()
+export type { CacheMeta } from "./types/Atom"
 
 export const cacheMeta = (
     sourceAtom: Atom,
 ): Selector<CacheMeta | null> => {
-    const cached = map.get(sourceAtom)
-    if (cached) return cached
-
-    const metaAtom = getOrCreateCacheMetaAtom(sourceAtom)
-    const sel = selector(get => get(metaAtom))
-    map.set(sourceAtom, sel)
-    return sel
+    if (sourceAtom.__cacheMetaSelector) return sourceAtom.__cacheMetaSelector
+    if (!sourceAtom.__cacheMeta) {
+        sourceAtom.__cacheMeta = { equal, defaultValue: null }
+    }
+    sourceAtom.__cacheMetaSelector = selector(get => get(sourceAtom.__cacheMeta!))
+    return sourceAtom.__cacheMetaSelector
 }

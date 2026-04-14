@@ -11,7 +11,8 @@ import { isPromiseLike } from "../utils/isPromiseLike"
 import { isSelector } from "../utils/isSelector"
 import { isSelectorFamily } from "../utils/isSelectorFamily"
 import { isReactive, resolveReactive } from "../utils/resolveReactive"
-import { getOrCreateCacheMetaAtom, type CacheMeta } from "./cacheMetaAtoms"
+import type { CacheMeta } from "../types/Atom"
+import { equal } from "./equal"
 import { initAtom } from "./initAtom"
 import { initSelector } from "./initSelector"
 import { propagateUpdatedAtoms } from "./propagateUpdatedAtoms"
@@ -105,7 +106,7 @@ export const subscribe = <V>(
                 // Another store already owns the interval — just bump refCount
                 existing.refCount++
                 // Seed the cache meta in this store from an existing store
-                const metaAtom = getOrCreateCacheMetaAtom(state)
+                const metaAtom = state.__cacheMeta ??= { equal, defaultValue: null }
                 for (const s of globalState!.stores) {
                     if (s !== data && s.values.has(metaAtom)) {
                         setValueInData(metaAtom, s.values.get(metaAtom), data)
@@ -142,7 +143,7 @@ export const subscribe = <V>(
                         ? resolveReactive(state.staleIfError, data)
                         : undefined
 
-                const metaAtom = getOrCreateCacheMetaAtom(state)
+                const metaAtom = state.__cacheMeta ??= { equal, defaultValue: null }
                 const updateMeta = () => {
                     const meta: CacheMeta = {
                         isRevalidating: revalidating,

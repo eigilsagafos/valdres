@@ -31,7 +31,7 @@ export { isSelectorFamily } from "./utils/isSelectorFamily"
 export { isSuspendError } from "./lib/initSelector"
 export { Transaction } from "./lib/transaction"
 
-export type { CacheMeta } from "./lib/cacheMetaAtoms"
+export type { CacheMeta } from "./cacheMeta"
 export type { Atom } from "./types/Atom"
 export type { AtomFamily } from "./types/AtomFamily"
 export type { FamilyKey } from "./types/FamilyKey"
