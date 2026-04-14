@@ -53,6 +53,10 @@ export const globalAtom = <Value = unknown>(
     const resetSelf: GlobalAtomResetSelfFunc = () => {
         value = undefined
         initialized = false
+        if (atom._maxAgeInterval) {
+            atom._maxAgeInterval.cleanup()
+            atom._maxAgeInterval = undefined
+        }
         // Snapshot to avoid mutating during iteration
         const snapshot = [...stores]
         let firstError: unknown
@@ -90,6 +94,7 @@ export const globalAtom = <Value = unknown>(
         get stores() {
             return stores
         },
+        _maxAgeInterval: undefined,
     }
     return atom
 }

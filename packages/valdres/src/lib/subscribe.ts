@@ -1,5 +1,6 @@
 import type { Atom } from "../types/Atom"
 import type { Family } from "../types/Family"
+import type { GlobalAtom } from "../types/GlobalAtom"
 import type { State } from "../types/State"
 import type { StoreData } from "../types/StoreData"
 import type { Subscription } from "../types/Subscription"
@@ -14,7 +15,6 @@ import { initSelector } from "./initSelector"
 import { propagateUpdatedAtoms } from "./propagateUpdatedAtoms"
 import { setValueInData } from "./setValueInData"
 import { mountTransitiveDeps } from "./mountAtom"
-import { storeFromStoreData } from "./storeFromStoreData"
 import { unsubscribe } from "./unsubscribe"
 
 const initSubscribers = <V>(state: State<V> | Family<V>, data: StoreData) => {
@@ -96,99 +96,145 @@ export const subscribe = <V>(
     let maxAgeCleanup: any
     if (subscribers.size === 1) {
         if (isAtom(state) && state.maxAge) {
-            const pendingTimeouts = new Set<Timer>()
-            let revalidating = false
-            let lastSuccessTime = Date.now()
-            const NO_VALUE = Symbol()
-            let lastGoodValue: any = NO_VALUE
-            const isPastStaleIfErrorWindow = () => {
-                if (!state.staleIfError) return true
-                const elapsed = Date.now() - lastSuccessTime
-                return elapsed >= state.maxAge! + state.staleIfError
-            }
-            const interval = setInterval(() => {
-                if (revalidating) return
-                if (typeof state.defaultValue !== "function") return
-                if (data.values.has(state)) {
-                    const currentValue = data.values.get(state)
-                    if (!isPromiseLike(currentValue)) {
-                        lastGoodValue = currentValue
+            const isGlobal = "stores" in state
+            const existing = isGlobal
+                ? (state as GlobalAtom)._maxAgeInterval
+                : undefined
+
+            if (existing) {
+                // Another store already owns the interval — just bump refCount
+                existing.refCount++
+                maxAgeCleanup = () => {
+                    existing.refCount--
+                    if (existing.refCount === 0) {
+                        existing.cleanup()
+                        ;(state as GlobalAtom)._maxAgeInterval = undefined
                     }
                 }
-                const value = state.defaultValue()
-                if (isPromiseLike(value)) {
-                    revalidating = true
-                    if (state.staleWhileRevalidate) {
-                        // SWR: keep stale value visible during revalidation
-                        const t = setTimeout(() => {
-                            pendingTimeouts.delete(t)
-                        }, state.staleWhileRevalidate)
-                        pendingTimeouts.add(t)
-                        value.then(
-                            (resolved: any) => {
-                                clearTimeout(t)
-                                pendingTimeouts.delete(t)
-                                revalidating = false
-                                lastSuccessTime = Date.now()
-                                lastGoodValue = resolved
-                                setValueInData(state, resolved, data)
-                                propagateUpdatedAtoms([state], data)
-                            },
-                            () => {
-                                clearTimeout(t)
-                                pendingTimeouts.delete(t)
-                                revalidating = false
-                                if (
-                                    state.staleIfError &&
-                                    isPastStaleIfErrorWindow()
-                                ) {
-                                    // Past staleIfError window: replace stale
-                                    // value with rejected promise so consumers
-                                    // see the error
-                                    setValueInData(state, value, data)
-                                    propagateUpdatedAtoms([state], data)
-                                }
-                                // No staleIfError or within window: keep stale
-                            },
-                        )
+            } else {
+                const pendingTimeouts = new Set<Timer>()
+                let revalidating = false
+                let lastSuccessTime = Date.now()
+                const NO_VALUE = Symbol()
+                let lastGoodValue: any = NO_VALUE
+                const isPastStaleIfErrorWindow = () => {
+                    if (!state.staleIfError) return true
+                    const elapsed = Date.now() - lastSuccessTime
+                    return elapsed >= state.maxAge! + state.staleIfError
+                }
+
+                // For global atoms, propagate to all stores; for regular atoms, just this store
+                const setAndPropagate = (atom: Atom, val: any) => {
+                    if (isGlobal) {
+                        const globalAtom = state as any
+                        for (const store of globalAtom.stores) {
+                            setValueInData(atom, val, store)
+                            propagateUpdatedAtoms([atom], store)
+                        }
                     } else {
-                        // No SWR: show loading state during revalidation
-                        setValueInData(state, value, data)
-                        propagateUpdatedAtoms([state], data)
-                        value.then(
-                            (resolved: any) => {
-                                revalidating = false
-                                lastSuccessTime = Date.now()
-                                lastGoodValue = resolved
-                                setValueInData(state, resolved, data)
-                                propagateUpdatedAtoms([state], data)
-                            },
-                            () => {
-                                revalidating = false
-                                if (
-                                    !isPastStaleIfErrorWindow() &&
-                                    lastGoodValue !== NO_VALUE
-                                ) {
-                                    // Within staleIfError window: restore last good value
-                                    setValueInData(state, lastGoodValue, data)
-                                    propagateUpdatedAtoms([state], data)
-                                }
-                                // Past window (or no staleIfError): leave
-                                // rejected promise in store; interval retries
-                            },
-                        )
+                        setValueInData(atom, val, data)
+                        propagateUpdatedAtoms([atom], data)
+                    }
+                }
+
+                // For global atoms, read the current value from any
+                // store in the set rather than the closed-over `data`
+                // which may become stale if that store is detached.
+                const getValueStore = (): StoreData => {
+                    if (isGlobal) {
+                        const stores = (state as any).stores as Set<StoreData>
+                        for (const s of stores) return s
+                    }
+                    return data
+                }
+
+                const interval = setInterval(() => {
+                    if (revalidating) return
+                    if (typeof state.defaultValue !== "function") return
+                    const valueStore = getValueStore()
+                    if (valueStore.values.has(state)) {
+                        const currentValue = valueStore.values.get(state)
+                        if (!isPromiseLike(currentValue)) {
+                            lastGoodValue = currentValue
+                        }
+                    }
+                    const value = state.defaultValue()
+                    if (isPromiseLike(value)) {
+                        revalidating = true
+                        if (state.staleWhileRevalidate) {
+                            // SWR: keep stale value visible during revalidation
+                            const t = setTimeout(() => {
+                                pendingTimeouts.delete(t)
+                            }, state.staleWhileRevalidate)
+                            pendingTimeouts.add(t)
+                            value.then(
+                                (resolved: any) => {
+                                    clearTimeout(t)
+                                    pendingTimeouts.delete(t)
+                                    revalidating = false
+                                    lastSuccessTime = Date.now()
+                                    lastGoodValue = resolved
+                                    setAndPropagate(state, resolved)
+                                },
+                                () => {
+                                    clearTimeout(t)
+                                    pendingTimeouts.delete(t)
+                                    revalidating = false
+                                    if (
+                                        state.staleIfError &&
+                                        isPastStaleIfErrorWindow()
+                                    ) {
+                                        setAndPropagate(state, value)
+                                    }
+                                },
+                            )
+                        } else {
+                            // No SWR: show loading state during revalidation
+                            setAndPropagate(state, value)
+                            value.then(
+                                (resolved: any) => {
+                                    revalidating = false
+                                    lastSuccessTime = Date.now()
+                                    lastGoodValue = resolved
+                                    setAndPropagate(state, resolved)
+                                },
+                                () => {
+                                    revalidating = false
+                                    if (
+                                        !isPastStaleIfErrorWindow() &&
+                                        lastGoodValue !== NO_VALUE
+                                    ) {
+                                        setAndPropagate(state, lastGoodValue)
+                                    }
+                                },
+                            )
+                        }
+                    } else {
+                        lastSuccessTime = Date.now()
+                        lastGoodValue = value
+                        setAndPropagate(state, value)
+                    }
+                }, state.maxAge)
+
+                const cleanup = () => {
+                    clearInterval(interval)
+                    for (const t of pendingTimeouts) clearTimeout(t)
+                    pendingTimeouts.clear()
+                }
+
+                if (isGlobal) {
+                    const entry = { cleanup, refCount: 1 }
+                    ;(state as GlobalAtom)._maxAgeInterval = entry
+                    maxAgeCleanup = () => {
+                        entry.refCount--
+                        if (entry.refCount === 0) {
+                            entry.cleanup()
+                            ;(state as GlobalAtom)._maxAgeInterval = undefined
+                        }
                     }
                 } else {
-                    lastSuccessTime = Date.now()
-                    lastGoodValue = value
-                    setValueInData(state, value, data)
-                    propagateUpdatedAtoms([state], data)
+                    maxAgeCleanup = cleanup
                 }
-            }, state.maxAge)
-            maxAgeCleanup = () => {
-                clearInterval(interval)
-                for (const t of pendingTimeouts) clearTimeout(t)
-                pendingTimeouts.clear()
             }
         }
         // Mount this state and all its transitive dependencies
