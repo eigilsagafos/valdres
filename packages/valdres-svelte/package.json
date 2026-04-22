@@ -21,7 +21,7 @@
     "scripts": {
         "build": "NODE_ENV=production bun build src/index.ts --outdir ./dist --packages external",
         "build:types": "rm -rf dist/types && bun run tsc",
-        "test": "bun test src/"
+        "test": "bun test --parallel src/"
     },
     "devDependencies": {
         "@valdres/test": "0.2.0-pre.28",
