@@ -1,1 +1,1 @@
-export { KeyboardCode } from "@valdres/browser-keyboard"
+export type { KeyboardCode } from "@valdres/browser-keyboard"
