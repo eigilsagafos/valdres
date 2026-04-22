@@ -20,8 +20,7 @@
     "scripts": {
         "build": "NODE_ENV=production bun build src/index.ts --outdir ./dist --packages external",
         "build:types": "rm -rf dist/types && bun run tsc",
-        "test": "echo 'no tests'",
-        "test:ci": "echo 'no tests'"
+        "test": "echo 'no tests'"
     },
     "dependencies": {
         "@valdres/hotkeys": "0.2.0-pre.28"

@@ -20,13 +20,16 @@
         "bump": "bun ./scripts/bump.tsx",
         "publish": "bun scripts/publish.tsx",
         "test": "bun --filter '*' test",
-        "test:ci": "bun --filter '*' test:ci"
+        "test:ci": "bun --filter '*' test -- --reporter=junit --reporter-outfile=junit.xml"
     },
     "workspaces": [
         "packages/*",
         "packages/@valdres/*",
         "packages/@valdres-react/*"
     ],
+    "engines": {
+        "bun": ">=1.3.13"
+    },
     "devDependencies": {
         "@types/bun": "1.2.2",
         "eslint": "9.20.1",
