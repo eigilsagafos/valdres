@@ -1,5 +1,5 @@
 {
-    "name": "@valdres/hotkeys",
+    "name": "@valdres/browser-keyboard",
     "version": "0.2.0-pre.28",
     "license": "MIT",
     "author": {
@@ -20,20 +20,18 @@
     "scripts": {
         "build": "NODE_ENV=production bun build src/index.ts --outdir ./dist --packages external",
         "build:types": "rm -rf dist/types && bun run tsc",
-        "test": "echo 'no tests'"
+        "test": "bun test",
+        "test:ci": "bun test"
     },
     "devDependencies": {
-        "@valdres/browser-keyboard": "0.2.0-pre.28",
         "typescript": "5.9.2",
         "valdres": "0.2.0-pre.28"
     },
     "peerDependencies": {
-        "@valdres/browser-keyboard": "0.2.0-pre.28",
         "valdres": "0.2.0-pre.28"
     },
     "publishConfig": {
         "access": "public",
         "registry": "https://registry.npmjs.org/"
-    },
-    "gitHead": "53245fd1a080cdb1131f5be9056adc546d05ead4"
+    }
 }
