@@ -1,0 +1,89 @@
+---
+title: Migration Guide
+description: Migrate from Recoil or Jotai to Valdres with one line
+---
+
+# Migration Guide
+
+Valdres provides drop-in compatibility packages for both Recoil and Jotai. You can migrate your entire app by changing a single import — then gradually adopt the native Valdres API at your own pace.
+
+## From Recoil
+
+Replace your Recoil import with the Valdres compatibility layer:
+
+```ts
+// Before
+import { atom, selector, useRecoilState } from "recoil"
+
+// After
+import { atom, selector, useRecoilState } from "@valdres-react/recoil"
+```
+
+Install the package:
+
+```bash
+npm install @valdres-react/recoil
+```
+
+That's it. Your existing Recoil code will work with Valdres under the hood. You get Valdres performance without any code changes.
+
+<div className="callout callout-tip">
+  <div className="callout-title">Why migrate from Recoil?</div>
+  Recoil is no longer actively maintained. Valdres is actively developed, has a smaller bundle size, and doesn't require string keys for atoms.
+</div>
+
+## From Jotai
+
+Replace your Jotai import with the Valdres compatibility layer:
+
+```ts
+// Before
+import { atom, createStore } from "jotai"
+
+// After
+import { atom, createStore } from "@valdres-react/jotai"
+```
+
+Install the package:
+
+```bash
+npm install @valdres-react/jotai
+```
+
+## Gradual adoption
+
+Once you've migrated, you can incrementally adopt the native Valdres API:
+
+1. **Replace imports** — Switch from `@valdres-react/recoil` or `@valdres-react/jotai` to `valdres` and `valdres-react`
+2. **Use native hooks** — Replace `useRecoilState` with `useAtom`, `useRecoilValue` with `useValue`
+3. **Adopt new features** — Start using transactions, first-class families, and framework-agnostic state
+
+```ts
+// Compatibility layer
+import { atom } from "@valdres-react/recoil"
+import { useRecoilState } from "@valdres-react/recoil"
+
+// Native Valdres
+import { atom } from "valdres"
+import { useAtom } from "valdres-react"
+```
+
+## Key differences from Recoil
+
+| Feature | Recoil | Valdres |
+|---------|--------|---------|
+| Atom keys | Required string keys | No keys needed (identified by reference) |
+| Bundle size | ~80KB | ~5KB |
+| Maintenance | Abandoned | Actively developed |
+| Families | Utility | First-class primitive |
+| Framework support | React only | React, Vue, Svelte, Solid, Angular |
+
+## Key differences from Jotai
+
+| Feature | Jotai | Valdres |
+|---------|-------|---------|
+| React integration | useEffect + useReducer | useSyncExternalStore |
+| Atom types | Unified atom concept | Separate atom + selector |
+| Families | Community utility | First-class with subscription |
+| Transactions | Not explicit | Built-in `store.txn()` |
+| Framework support | React only | React, Vue, Svelte, Solid, Angular |

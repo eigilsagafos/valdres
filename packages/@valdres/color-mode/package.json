@@ -1,5 +1,6 @@
 {
     "name": "@valdres/color-mode",
+    "description": "Color mode (dark/light theme) state powered by Valdres",
     "version": "0.2.0-pre.28",
     "license": "MIT",
     "author": {

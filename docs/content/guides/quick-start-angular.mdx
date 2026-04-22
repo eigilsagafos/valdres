@@ -1,0 +1,75 @@
+---
+title: Quick Start with Angular
+description: Get up and running with Valdres and Angular in under 5 minutes
+---
+
+# Quick Start with Angular
+
+## Install
+
+```bash
+npm install valdres valdres-angular
+```
+
+## Create your first atom
+
+```ts
+// store.ts
+import { atom } from "valdres"
+
+export const countAtom = atom(0)
+```
+
+## Use it in a component
+
+```ts
+import { Component } from "@angular/core"
+import { injectAtom } from "valdres-angular"
+import { countAtom } from "./store"
+
+@Component({
+    template: `
+        <div>
+            <p>Count: {{ count() }}</p>
+            <button (click)="count.update(c => c + 1)">Increment</button>
+        </div>
+    `,
+})
+export class CounterComponent {
+    count = injectAtom(countAtom)
+}
+```
+
+## Provide a store
+
+Use `provideValdres` in your app config:
+
+```ts
+import { provideValdres } from "valdres-angular"
+
+export const appConfig = {
+    providers: [provideValdres()],
+}
+```
+
+## Read-only values
+
+Use `injectValue` when you only need to read:
+
+```ts
+import { Component } from "@angular/core"
+import { injectValue } from "valdres-angular"
+import { countAtom } from "./store"
+
+@Component({
+    template: `<p>The count is {{ count() }}</p>`,
+})
+export class DisplayComponent {
+    count = injectValue(countAtom)
+}
+```
+
+## Next steps
+
+- [Core Concepts](/guides/core-concepts) — atoms, selectors, families, stores
+- [Patterns & Recipes](/guides/patterns) — real-world examples

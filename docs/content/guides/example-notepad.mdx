@@ -1,0 +1,222 @@
+---
+title: "Example: Shared Notepad"
+description: Cross-framework state sharing with a synchronized text editor
+---
+
+# Shared Notepad
+
+A notepad where text is synchronized across all framework implementations. Type in the React version and see it update in Vue, Svelte, Solid, and Angular — all through a single valdres store.
+
+This example demonstrates the core value proposition: **your state is framework-agnostic**. The same atoms power every framework.
+
+## Shared state
+
+```ts
+import { atom, selector, store } from "valdres"
+
+export const noteAtom = atom("")
+export const charCountSelector = selector(get => get(noteAtom).length)
+export const wordCountSelector = selector(get => {
+    const text = get(noteAtom).trim()
+    return text ? text.split(/\s+/).length : 0
+})
+
+// One store shared across all frameworks
+export const appStore = store()
+```
+
+<div className="callout callout-tip">
+  <div className="callout-title">One store, many frameworks</div>
+  The <code>appStore</code> instance is imported by every framework. When React updates <code>noteAtom</code>, Vue and Svelte subscribers are notified immediately — there's no bridge, adapter, or event bus.
+</div>
+
+## React
+
+```tsx
+import { Provider, useAtom, useValue } from "valdres-react"
+import { noteAtom, charCountSelector, wordCountSelector, appStore } from "./state"
+
+function Notepad() {
+    const [note, setNote] = useAtom(noteAtom)
+    const chars = useValue(charCountSelector)
+    const words = useValue(wordCountSelector)
+
+    return (
+        <div>
+            <textarea
+                value={note}
+                onChange={e => setNote(e.target.value)}
+                placeholder="Start typing..."
+                rows={6}
+            />
+            <div>
+                {chars} characters · {words} words
+            </div>
+        </div>
+    )
+}
+
+// Mount with the shared store
+function App() {
+    return (
+        <Provider store={appStore}>
+            <Notepad />
+        </Provider>
+    )
+}
+```
+
+## Vue
+
+```vue
+<script setup>
+import { useAtom, useValue } from "valdres-vue"
+import { noteAtom, charCountSelector, wordCountSelector } from "./state"
+
+const note = useAtom(noteAtom)
+const chars = useValue(charCountSelector)
+const words = useValue(wordCountSelector)
+</script>
+
+<template>
+  <div>
+    <textarea
+      v-model="note"
+      placeholder="Start typing..."
+      rows="6"
+    />
+    <div>
+      {{ chars }} characters · {{ words }} words
+    </div>
+  </div>
+</template>
+```
+
+## Svelte
+
+```svelte
+<script>
+  import { watch, readable } from "valdres-svelte"
+  import { noteAtom, charCountSelector, wordCountSelector } from "./state"
+
+  const note = watch(noteAtom)
+  const chars = readable(charCountSelector)
+  const words = readable(wordCountSelector)
+</script>
+
+<div>
+  <textarea
+    value={note.value}
+    oninput={e => note.set(e.target.value)}
+    placeholder="Start typing..."
+    rows="6"
+  />
+  <div>
+    {chars.value} characters · {words.value} words
+  </div>
+</div>
+```
+
+## Solid
+
+```tsx
+import { createAtom, createValue } from "valdres-solid"
+import { ValdresProvider } from "valdres-solid"
+import { noteAtom, charCountSelector, wordCountSelector, appStore } from "./state"
+
+function Notepad() {
+    const [note, setNote] = createAtom(noteAtom)
+    const chars = createValue(charCountSelector)
+    const words = createValue(wordCountSelector)
+
+    return (
+        <div>
+            <textarea
+                value={note()}
+                onInput={e => setNote(e.target.value)}
+                placeholder="Start typing..."
+                rows="6"
+            />
+            <div>
+                {chars()} characters · {words()} words
+            </div>
+        </div>
+    )
+}
+
+function App() {
+    return (
+        <ValdresProvider store={appStore}>
+            <Notepad />
+        </ValdresProvider>
+    )
+}
+```
+
+## Angular
+
+```ts
+import { Component } from "@angular/core"
+import { injectAtom, injectValue } from "valdres-angular"
+import { noteAtom, charCountSelector, wordCountSelector } from "./state"
+
+@Component({
+    template: `
+        <div>
+            <textarea
+                [value]="note()"
+                (input)="note.set($event.target.value)"
+                placeholder="Start typing..."
+                rows="6"
+            ></textarea>
+            <div>
+                {{ chars() }} characters · {{ words() }} words
+            </div>
+        </div>
+    `,
+})
+export class Notepad {
+    note = injectAtom(noteAtom)
+    chars = injectValue(charCountSelector)
+    words = injectValue(wordCountSelector)
+}
+```
+
+## The cross-framework demo
+
+Here's how you'd mount all five in the same page, sharing a single store:
+
+```ts
+// main.ts
+import { appStore, noteAtom } from "./state"
+
+// React
+import { createRoot } from "react-dom/client"
+import { Provider } from "valdres-react"
+createRoot(document.getElementById("react-notepad")).render(
+    <Provider store={appStore}><ReactNotepad /></Provider>
+)
+
+// Vue
+import { createApp } from "vue"
+import { createValdres } from "valdres-vue"
+const vueApp = createApp(VueNotepad)
+vueApp.use(createValdres({ store: appStore }))
+vueApp.mount("#vue-notepad")
+
+// Svelte
+import { mount } from "svelte"
+import SvelteNotepad from "./SvelteNotepad.svelte"
+mount(SvelteNotepad, { target: document.getElementById("svelte-notepad") })
+
+// All three textareas now stay in sync through appStore
+```
+
+Type in any one — the others update instantly.
+
+## Key takeaways
+
+- **Framework agnostic** — the state layer doesn't know or care which framework reads it.
+- **No bridges needed** — React, Vue, and Svelte all subscribe to the same store directly. There's no event bus, postMessage, or custom synchronization.
+- **Derived state works everywhere** — the word and character counts are selectors that every framework can use.
+- **Micro-frontend friendly** — this pattern works for micro-frontends where different teams use different frameworks but share state.

@@ -1,0 +1,41 @@
+---
+title: Valdres vs Jotai
+description: How Valdres compares to Jotai
+---
+
+# Valdres vs Jotai
+
+Valdres was created due to performance issues encountered building an offline-first process model editor. First with Recoil and then with Jotai due to the apparent abandonment of the Recoil project.
+
+If you are a current Jotai user and want to quickly test out Valdres, we have a compatibility package that mirrors the Jotai API. Just change your imports:
+
+```tsx
+// Before
+import { atom, createStore } from "jotai"
+// After
+import { atom, createStore } from "@valdres-react/jotai"
+```
+
+## Similarities
+
+### Storage
+
+Jotai and Valdres have a similar approach to how atoms and selectors are stored internally. They both use WeakMap — if an atom or selector is no longer referenced it can be garbage collected.
+
+## Differences
+
+### React implementation
+
+Jotai uses a combination of `useEffect` and `useReducer` while Valdres utilizes `useSyncExternalStore`, similar to the Zustand library. (The same developer has created both Zustand and Jotai.)
+
+### atom + selector
+
+Jotai has a single concept for both state and derived state. Valdres separates stored state (atoms) from derived/aggregated state (selectors), similar to Recoil. Based on our experience building an app with several hundred atoms and selectors, we see a clear benefit to the mental model and code readability.
+
+### atomFamily / selectorFamily
+
+In Jotai, `atomFamily` is a simple utility. In Valdres, `atomFamily` and `selectorFamily` are first-class citizens with a Recoil-like API. You can subscribe to an entire family and get all keys as an array.
+
+### Transactions
+
+Recoil pioneered the ability to do transactions on state. Valdres brings this forward — you can batch multiple atom updates so subscribers only fire once. This is not an explicit part of Jotai.

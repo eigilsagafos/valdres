@@ -1,0 +1,366 @@
+---
+title: "Example: User Dashboard"
+description: Dynamic collections with atomFamily, selectorFamily, and derived aggregates
+---
+
+# User Dashboard
+
+A dashboard showing a list of users with individual status indicators and aggregate stats. Demonstrates `atomFamily` for dynamic collections, `selectorFamily` for per-user derived state, and `selector` for aggregates.
+
+## Shared state
+
+```ts
+import { atom, atomFamily, selector, selectorFamily } from "valdres"
+
+export type User = {
+    id: string
+    name: string
+    status: "online" | "away" | "offline"
+    lastSeen: number
+}
+
+export const userAtom = atomFamily<string, User>()
+export const userIdsAtom = atom<string[]>([])
+
+// Per-user derived state
+export const userDisplaySelector = selectorFamily<string, string>(id => get => {
+    const user = get(userAtom(id))
+    const statusEmoji = { online: "●", away: "◐", offline: "○" }
+    return `${statusEmoji[user.status]} ${user.name}`
+})
+
+// Aggregate stats
+export const onlineCountSelector = selector(get => {
+    const ids = get(userIdsAtom)
+    return ids.filter(id => get(userAtom(id)).status === "online").length
+})
+
+export const userStatsSelector = selector(get => {
+    const ids = get(userIdsAtom)
+    const users = ids.map(id => get(userAtom(id)))
+    return {
+        total: users.length,
+        online: users.filter(u => u.status === "online").length,
+        away: users.filter(u => u.status === "away").length,
+        offline: users.filter(u => u.status === "offline").length,
+    }
+})
+
+// Actions
+export function addUser(store, name) {
+    const id = crypto.randomUUID()
+    store.txn(set => {
+        set(userAtom(id), { id, name, status: "online", lastSeen: Date.now() })
+        set(userIdsAtom, ids => [...ids, id])
+    })
+}
+
+export function setStatus(store, id, status) {
+    store.set(userAtom(id), prev => ({
+        ...prev,
+        status,
+        lastSeen: Date.now(),
+    }))
+}
+
+export function removeUser(store, id) {
+    store.txn(set => {
+        set(userIdsAtom, ids => ids.filter(i => i !== id))
+    })
+}
+```
+
+<div className="callout callout-tip">
+  <div className="callout-title">Fine-grained updates</div>
+  When one user's status changes, only the component rendering that specific user re-renders. The stats bar also updates since it depends on all users — but the other user cards don't.
+</div>
+
+## React
+
+```tsx
+import { useValue, useStore } from "valdres-react"
+import { userAtom, userIdsAtom, userStatsSelector, addUser, setStatus, removeUser } from "./state"
+
+function Dashboard() {
+    const store = useStore()
+    const stats = useValue(userStatsSelector)
+    const ids = useValue(userIdsAtom)
+
+    return (
+        <div>
+            <div className="stats-bar">
+                <span>{stats.total} users</span>
+                <span>{stats.online} online</span>
+                <span>{stats.away} away</span>
+                <span>{stats.offline} offline</span>
+            </div>
+            <button onClick={() => addUser(store, prompt("Name?") || "User")}>
+                Add User
+            </button>
+            <div className="user-grid">
+                {ids.map(id => <UserCard key={id} id={id} />)}
+            </div>
+        </div>
+    )
+}
+
+function UserCard({ id }) {
+    const store = useStore()
+    const user = useValue(userAtom(id))
+
+    const statusColors = {
+        online: "#22c55e",
+        away: "#eab308",
+        offline: "#94a3b8",
+    }
+
+    return (
+        <div className="user-card">
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <span style={{
+                    width: 8, height: 8, borderRadius: "50%",
+                    backgroundColor: statusColors[user.status],
+                }} />
+                <strong>{user.name}</strong>
+            </div>
+            <div>
+                <select value={user.status}
+                    onChange={e => setStatus(store, id, e.target.value)}>
+                    <option value="online">Online</option>
+                    <option value="away">Away</option>
+                    <option value="offline">Offline</option>
+                </select>
+                <button onClick={() => removeUser(store, id)}>Remove</button>
+            </div>
+        </div>
+    )
+}
+```
+
+## Vue
+
+```vue
+<script setup>
+import { useValue, useStore } from "valdres-vue"
+import { userAtom, userIdsAtom, userStatsSelector, addUser, setStatus, removeUser } from "./state"
+
+const store = useStore()
+const stats = useValue(userStatsSelector)
+const ids = useValue(userIdsAtom)
+
+const statusColors = { online: "#22c55e", away: "#eab308", offline: "#94a3b8" }
+</script>
+
+<template>
+  <div>
+    <div class="stats-bar">
+      <span>{{ stats.total }} users</span>
+      <span>{{ stats.online }} online</span>
+      <span>{{ stats.away }} away</span>
+    </div>
+    <button @click="addUser(store, prompt('Name?') || 'User')">Add User</button>
+    <div class="user-grid">
+      <UserCard v-for="id in ids" :key="id" :id="id" />
+    </div>
+  </div>
+</template>
+```
+
+```vue
+<!-- UserCard.vue -->
+<script setup>
+import { useValue, useStore } from "valdres-vue"
+import { userAtom, setStatus, removeUser } from "./state"
+
+const props = defineProps(["id"])
+const store = useStore()
+const user = useValue(userAtom(props.id))
+const statusColors = { online: "#22c55e", away: "#eab308", offline: "#94a3b8" }
+</script>
+
+<template>
+  <div class="user-card">
+    <div style="display: flex; align-items: center; gap: 8px">
+      <span :style="{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: statusColors[user.status] }" />
+      <strong>{{ user.name }}</strong>
+    </div>
+    <select :value="user.status" @change="setStatus(store, id, $event.target.value)">
+      <option value="online">Online</option>
+      <option value="away">Away</option>
+      <option value="offline">Offline</option>
+    </select>
+    <button @click="removeUser(store, id)">Remove</button>
+  </div>
+</template>
+```
+
+## Svelte
+
+```svelte
+<script>
+  import { watch, readable } from "valdres-svelte"
+  import { getValdresContext } from "valdres-svelte"
+  import { userAtom, userIdsAtom, userStatsSelector, addUser, setStatus, removeUser } from "./state"
+
+  const store = getValdresContext()
+  const ids = readable(userIdsAtom)
+  const stats = readable(userStatsSelector)
+
+  const statusColors = { online: "#22c55e", away: "#eab308", offline: "#94a3b8" }
+</script>
+
+<div>
+  <div class="stats-bar">
+    <span>{stats.value.total} users</span>
+    <span>{stats.value.online} online</span>
+    <span>{stats.value.away} away</span>
+  </div>
+  <button onclick={() => addUser(store, prompt("Name?") || "User")}>Add User</button>
+  <div class="user-grid">
+    {#each ids.value as id (id)}
+      {@const user = watch(userAtom(id))}
+      <div class="user-card">
+        <div style="display:flex;align-items:center;gap:8px">
+          <span style:background-color={statusColors[user.value.status]}
+            style="width:8px;height:8px;border-radius:50%" />
+          <strong>{user.value.name}</strong>
+        </div>
+        <select value={user.value.status}
+          onchange={e => setStatus(store, id, e.target.value)}>
+          <option value="online">Online</option>
+          <option value="away">Away</option>
+          <option value="offline">Offline</option>
+        </select>
+        <button onclick={() => removeUser(store, id)}>Remove</button>
+      </div>
+    {/each}
+  </div>
+</div>
+```
+
+## Solid
+
+```tsx
+import { For } from "solid-js"
+import { createValue, useStore } from "valdres-solid"
+import { userAtom, userIdsAtom, userStatsSelector, addUser, setStatus, removeUser } from "./state"
+
+function Dashboard() {
+    const store = useStore()
+    const stats = createValue(userStatsSelector)
+    const ids = createValue(userIdsAtom)
+
+    return (
+        <div>
+            <div class="stats-bar">
+                <span>{stats().total} users</span>
+                <span>{stats().online} online</span>
+                <span>{stats().away} away</span>
+            </div>
+            <button onClick={() => addUser(store, prompt("Name?") || "User")}>
+                Add User
+            </button>
+            <div class="user-grid">
+                <For each={ids()}>
+                    {id => <UserCard id={id} />}
+                </For>
+            </div>
+        </div>
+    )
+}
+
+function UserCard(props) {
+    const store = useStore()
+    const user = createValue(userAtom(props.id))
+    const statusColors = { online: "#22c55e", away: "#eab308", offline: "#94a3b8" }
+
+    return (
+        <div class="user-card">
+            <div style={{ display: "flex", "align-items": "center", gap: "8px" }}>
+                <span style={{
+                    width: "8px", height: "8px", "border-radius": "50%",
+                    "background-color": statusColors[user().status],
+                }} />
+                <strong>{user().name}</strong>
+            </div>
+            <select value={user().status}
+                onChange={e => setStatus(store, props.id, e.target.value)}>
+                <option value="online">Online</option>
+                <option value="away">Away</option>
+                <option value="offline">Offline</option>
+            </select>
+            <button onClick={() => removeUser(store, props.id)}>Remove</button>
+        </div>
+    )
+}
+```
+
+## Angular
+
+```ts
+import { Component } from "@angular/core"
+import { injectValue, injectStore } from "valdres-angular"
+import { userAtom, userIdsAtom, userStatsSelector, addUser, setStatus, removeUser } from "./state"
+
+@Component({
+    selector: "user-dashboard",
+    template: `
+        <div class="stats-bar">
+            <span>{{ stats().total }} users</span>
+            <span>{{ stats().online }} online</span>
+            <span>{{ stats().away }} away</span>
+        </div>
+        <button (click)="handleAdd()">Add User</button>
+        <div class="user-grid">
+            @for (id of ids(); track id) {
+                <user-card [userId]="id" />
+            }
+        </div>
+    `,
+})
+export class UserDashboard {
+    store = injectStore()
+    stats = injectValue(userStatsSelector)
+    ids = injectValue(userIdsAtom)
+
+    handleAdd() {
+        addUser(this.store, prompt("Name?") || "User")
+    }
+}
+
+@Component({
+    selector: "user-card",
+    inputs: ["userId"],
+    template: `
+        <div class="user-card">
+            <div style="display:flex;align-items:center;gap:8px">
+                <span [style.background-color]="colors[user().status]"
+                    style="width:8px;height:8px;border-radius:50%"></span>
+                <strong>{{ user().name }}</strong>
+            </div>
+            <select [value]="user().status" (change)="onStatus($event)">
+                <option value="online">Online</option>
+                <option value="away">Away</option>
+                <option value="offline">Offline</option>
+            </select>
+            <button (click)="onRemove()">Remove</button>
+        </div>
+    `,
+})
+export class UserCard {
+    store = injectStore()
+    userId!: string
+    user = injectValue(userAtom(this.userId))
+    colors = { online: "#22c55e", away: "#eab308", offline: "#94a3b8" }
+
+    onStatus(e: Event) { setStatus(this.store, this.userId, (e.target as HTMLSelectElement).value) }
+    onRemove() { removeUser(this.store, this.userId) }
+}
+```
+
+## Key takeaways
+
+- **Dynamic collections** — `atomFamily` + `atom<string[]>` for IDs is the idiomatic Valdres pattern for lists.
+- **Per-item derived state** — `selectorFamily` computes derived values per user without recomputing for unrelated users.
+- **Aggregate selectors** — the stats bar depends on all user atoms but only re-renders when an actual status changes.
+- **Transactions** — adding and removing users atomically updates both the family and the ID list.

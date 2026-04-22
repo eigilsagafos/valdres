@@ -212,3 +212,60 @@ if (hasNode) {
 
 writeFileSync(BENCHMARKS_PATH, detailLines.join("\n"))
 console.log("BENCHMARKS.md updated with full timing details")
+
+// ── docs/content/bench-summary.json ─────────────────────────────────
+
+interface BenchSummaryEntry {
+    name: string
+    jscTag: string | null
+    v8Tag: string | null
+}
+
+interface BenchSummaryCategory {
+    name: string
+    benchmarks: BenchSummaryEntry[]
+}
+
+function geometricMean(values: number[]): number {
+    if (values.length === 0) return 0
+    const logSum = values.reduce((acc, v) => acc + Math.log(v), 0)
+    return Math.exp(logSum / values.length)
+}
+
+function computeAverage(results: BenchResult[]): number {
+    const comps = results.filter(
+        r => r.tag !== "baseline" && (r.threshold ?? 1.0) < OPTIMIZATION_TARGET_THRESHOLD,
+    )
+    // speedup = 1/ratio (ratio is valdres/jotai, so 1/ratio = jotai/valdres)
+    const speedups = comps.map(r => 1 / r.ratio).filter(s => s > 0)
+    return Math.round(geometricMean(speedups) * 10) / 10
+}
+
+const jscAverage = hasBun ? computeAverage(bunResults) : null
+const v8Average = hasNode ? computeAverage(nodeResults) : null
+
+// Build category breakdown for the detailed performance page
+const categories: BenchSummaryCategory[] = []
+for (const [cat, benchmarks] of grouped) {
+    categories.push({
+        name: cat,
+        benchmarks: benchmarks.map(r => ({
+            name: r.name,
+            jscTag: hasBun ? r.tag : null,
+            v8Tag: hasNode ? (nodeByName.get(r.name)?.tag ?? null) : null,
+        })),
+    })
+}
+
+const benchSummary = {
+    jscAverage,
+    v8Average,
+    jotaiVersion,
+    date: now,
+    categories,
+    benchmarkCount: comparisons.length,
+}
+
+const DOCS_BENCH_PATH = join(ROOT, "docs/content/bench-summary.json")
+writeFileSync(DOCS_BENCH_PATH, JSON.stringify(benchSummary, null, 2))
+console.log("docs/content/bench-summary.json updated")

@@ -1,0 +1,63 @@
+---
+title: createAtom
+description: Solid accessor for reading and writing atom state
+---
+
+# createAtom
+
+<div className="not-prose mb-8 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50 p-4">
+  <div className="text-xs font-medium text-zinc-400 dark:text-zinc-500 mb-2 uppercase tracking-wider">Signature</div>
+  <code className="text-sm font-mono text-accent-500">createAtom&lt;T&gt;(atom: Atom&lt;T&gt;): [Accessor&lt;T&gt;, SetterFn&lt;T&gt;]</code>
+  <div className="mt-3 text-xs text-zinc-500 dark:text-zinc-400">
+    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-zinc-200 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 font-medium mr-2">valdres-solid</span>
+    Subscribe to and update an atom's value
+  </div>
+</div>
+
+Returns a Solid accessor and a setter function for an atom. The accessor is reactive — any `createEffect` or component render that reads it will re-run when the atom changes.
+
+## Usage
+
+```tsx
+import { atom } from "valdres"
+import { createAtom } from "valdres-solid"
+
+const countAtom = atom(0)
+
+function Counter() {
+    const [count, setCount] = createAtom(countAtom)
+    return (
+        <div>
+            <span>{count()}</span>
+            <button onClick={() => setCount(c => c + 1)}>+</button>
+        </div>
+    )
+}
+```
+
+## Returns
+
+| Index | Type | Description |
+|-------|------|-------------|
+| `[0]` | `Accessor<T>` | Reactive accessor — call it to read the current value |
+| `[1]` | `SetterFn<T>` | Function to update the atom's value |
+
+## Updater function
+
+The setter supports both direct values and updater functions:
+
+```ts
+setCount(42)              // Set directly
+setCount(prev => prev + 1) // Update based on previous value
+```
+
+<div className="callout callout-note">
+  <div className="callout-title">Note</div>
+  If you only need to read the value, use <a href="/solid/createValue">createValue</a> instead. If you only need the setter, use <a href="/solid/createSetAtom">createSetAtom</a> to avoid subscribing to changes.
+</div>
+
+## See also
+
+- [createValue](/solid/createValue) — read-only accessor (no setter)
+- [createSetAtom](/solid/createSetAtom) — write-only (no subscription)
+- [createResetAtom](/solid/createResetAtom) — reset to default value

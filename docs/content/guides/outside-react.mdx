@@ -1,0 +1,161 @@
+---
+title: Works Everywhere
+description: Use Valdres outside of React — in Node.js, workers, tests, or any JavaScript environment
+---
+
+# Works Everywhere
+
+Unlike most state management libraries, Valdres doesn't depend on any framework. The core `valdres` package is pure JavaScript — it works in Node.js, Deno, Bun, web workers, service workers, or any JavaScript runtime.
+
+This is a fundamental design choice, not an afterthought. Your state logic lives in `valdres`, and framework bindings (`valdres-react`, `valdres-vue`, etc.) are thin adapters that subscribe to it.
+
+## Vanilla JavaScript
+
+```ts
+import { atom, selector, store } from "valdres"
+
+const myStore = store()
+const countAtom = atom(0)
+const doubleSelector = selector(get => get(countAtom) * 2)
+
+myStore.get(countAtom)       // 0
+myStore.get(doubleSelector)  // 0
+
+myStore.set(countAtom, 5)
+myStore.get(doubleSelector)  // 10
+
+// Subscribe to changes
+const unsub = myStore.sub(countAtom, value => {
+    console.log("count changed:", value)
+})
+
+myStore.set(countAtom, 10)
+// logs: "count changed: 10"
+
+unsub() // stop listening
+```
+
+## Node.js / server-side
+
+Valdres works on the server without any special configuration. This is useful for server-side rendering, API routes, or background jobs that share state definitions with the frontend.
+
+```ts
+// shared/state.ts — shared between client and server
+import { atom, atomFamily } from "valdres"
+
+export const sessionAtom = atom(null)
+export const cacheAtom = atomFamily()
+```
+
+```ts
+// server.ts
+import { store } from "valdres"
+import { sessionAtom, cacheAtom } from "./shared/state"
+
+const serverStore = store()
+
+// Pre-populate state on the server
+serverStore.set(sessionAtom, { userId: "abc", role: "admin" })
+serverStore.set(cacheAtom("config"), await loadConfig())
+
+// Pass state to the client via serialization
+const snapshot = {
+    session: serverStore.get(sessionAtom),
+    config: serverStore.get(cacheAtom("config")),
+}
+```
+
+## Web Workers
+
+Since Valdres has no DOM dependency, it runs natively in web workers. Keep heavy computation off the main thread while sharing state definitions.
+
+```ts
+// worker.ts
+import { atom, store } from "valdres"
+
+const progressAtom = atom(0)
+const workerStore = store()
+
+self.onmessage = async (event) => {
+    const items = event.data
+    for (let i = 0; i < items.length; i++) {
+        await processItem(items[i])
+        workerStore.set(progressAtom, (i + 1) / items.length)
+        self.postMessage({ progress: workerStore.get(progressAtom) })
+    }
+}
+```
+
+## Testing
+
+Testing with Valdres is straightforward — create a store, set state, assert. No providers, no mocking, no framework overhead.
+
+```ts
+import { atom, selector, store } from "valdres"
+import { expect, test } from "bun:test"
+
+const countAtom = atom(0)
+const doubleSelector = selector(get => get(countAtom) * 2)
+
+test("selector derives from atom", () => {
+    const testStore = store()
+    testStore.set(countAtom, 5)
+    expect(testStore.get(doubleSelector)).toBe(10)
+})
+
+test("transactions are atomic", () => {
+    const testStore = store()
+    const a = atom(100)
+    const b = atom(100)
+    const total = selector(get => get(a) + get(b))
+
+    testStore.txn(set => {
+        set(a, 50)
+        set(b, 150)
+    })
+
+    expect(testStore.get(total)).toBe(200)
+})
+```
+
+## Sharing state across frameworks
+
+Because state lives in the store — not in components — you can share the same atoms across different frameworks in the same app. This is what powers the demo on our homepage.
+
+```ts
+// shared.ts — import this from React, Vue, Svelte, or anything else
+import { atom, store } from "valdres"
+
+export const appStore = store()
+export const countAtom = atom(0)
+export const themeAtom = atom("dark")
+```
+
+Each framework adapter just subscribes to the same store:
+
+```tsx
+// In React
+import { useValue } from "valdres-react"
+import { countAtom } from "./shared"
+const count = useValue(countAtom)
+```
+
+```vue
+<!-- In Vue -->
+<script setup>
+import { useValue } from "valdres-vue"
+import { countAtom } from "./shared"
+const count = useValue(countAtom)
+</script>
+```
+
+## Why this matters
+
+Most state libraries are tightly coupled to a specific framework's rendering model. This means:
+
+- You can't test state logic without mounting components
+- You can't share state between micro-frontends using different frameworks
+- You can't use state in workers, CLI tools, or server code
+- Migration between frameworks requires rewriting state management
+
+Valdres avoids all of these problems by keeping state management framework-agnostic at its core.

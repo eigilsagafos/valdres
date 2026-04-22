@@ -1,0 +1,79 @@
+---
+title: Scope
+description: React component for creating a scoped child store
+---
+
+# Scope
+
+<div className="not-prose mb-8 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50 p-4">
+  <div className="text-xs font-medium text-zinc-400 dark:text-zinc-500 mb-2 uppercase tracking-wider">Signature</div>
+  <code className="text-sm font-mono text-accent-500">&lt;Scope scopeId?: string, initialize?: InitializeCallback&gt;</code>
+  <div className="mt-3 text-xs text-zinc-500 dark:text-zinc-400">
+    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-zinc-200 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 font-medium mr-2">valdres-react</span>
+    Create an isolated child store for a React subtree
+  </div>
+</div>
+
+Creates a scoped store that inherits state from the parent but can override values independently. Components inside the scope read and write to the scoped store.
+
+## Usage
+
+```tsx
+import { Provider, Scope } from "valdres-react"
+
+function App() {
+    return (
+        <Provider>
+            <MainContent />
+            <Scope scopeId="modal">
+                <ModalContent />
+            </Scope>
+        </Provider>
+    )
+}
+```
+
+## Props
+
+| Prop | Type | Description |
+|------|------|-------------|
+| `scopeId` | `string` | Optional identifier. Auto-generated if omitted. |
+| `initialize` | `(txn) => void \| [Atom, value][]` | Optional callback to set initial values in the scope. |
+| `children` | `ReactNode` | Components that will use the scoped store. |
+
+## Initializing state
+
+```tsx
+<Scope
+    scopeId="edit-form"
+    initialize={txn => {
+        txn.set(nameAtom, "Draft")
+        txn.set(emailAtom, "")
+    }}
+>
+    <EditForm />
+</Scope>
+```
+
+Or with the array format:
+
+```tsx
+<Scope
+    scopeId="edit-form"
+    initialize={() => [
+        [nameAtom, "Draft"],
+        [emailAtom, ""],
+    ]}
+>
+    <EditForm />
+</Scope>
+```
+
+## Cleanup
+
+The scope is automatically cleaned up when the component unmounts.
+
+## See also
+
+- [Scoped Stores](/guides/scoped-stores) — full guide on scoped stores
+- [Provider](/react/Provider) — provide a store to your component tree

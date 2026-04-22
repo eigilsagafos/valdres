@@ -1,0 +1,40 @@
+---
+title: useSetAtom
+description: React hook for writing atom state without subscribing
+---
+
+# useSetAtom
+
+<div className="not-prose mb-8 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50 p-4">
+  <div className="text-xs font-medium text-zinc-400 dark:text-zinc-500 mb-2 uppercase tracking-wider">Signature</div>
+  <code className="text-sm font-mono text-accent-500">useSetAtom&lt;T&gt;(atom: Atom&lt;T&gt;): SetterFn&lt;T&gt;</code>
+  <div className="mt-3 text-xs text-zinc-500 dark:text-zinc-400">
+    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-zinc-200 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 font-medium mr-2">valdres-react</span>
+    Write-only access to an atom
+  </div>
+</div>
+
+Returns a setter function for an atom without subscribing to its value. The component won't re-render when the atom changes — useful for components that only need to trigger updates.
+
+## Usage
+
+```tsx
+import { atom } from "valdres"
+import { useSetAtom } from "valdres-react"
+
+const countAtom = atom(0)
+
+function IncrementButton() {
+    const setCount = useSetAtom(countAtom)
+    return <button onClick={() => setCount(c => c + 1)}>+</button>
+}
+```
+
+## Why use this over useAtom?
+
+If a component only writes to an atom but never displays its value, `useSetAtom` avoids subscribing to changes. This means the component won't re-render when the atom updates, which can improve performance.
+
+## See also
+
+- [useAtom](/react/useAtom) — read + write hook
+- [useResetAtom](/react/useResetAtom) — reset to default value

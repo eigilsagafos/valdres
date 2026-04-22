@@ -1,0 +1,79 @@
+---
+title: store
+description: Create and interact with a valdres store
+---
+
+# store
+
+<div className="not-prose mb-8 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50 p-4">
+  <div className="text-xs font-medium text-zinc-400 dark:text-zinc-500 mb-2 uppercase tracking-wider">Signature</div>
+  <code className="text-sm font-mono text-accent-500">store(): Store</code>
+  <div className="mt-3 text-xs text-zinc-500 dark:text-zinc-400">
+    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-zinc-200 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 font-medium mr-2">valdres</span>
+    Create a store to hold all state
+  </div>
+</div>
+
+Creates a store instance that holds all atom and selector state and manages subscriptions. The store is the central hub for reading, writing, and subscribing to state.
+
+## Usage
+
+```ts
+import { atom, store } from "valdres"
+
+const myStore = store()
+const countAtom = atom(0)
+```
+
+## Reading state
+
+```ts
+myStore.get(countAtom) // 0
+```
+
+## Writing state
+
+```ts
+// Set directly
+myStore.set(countAtom, 42)
+
+// Update based on previous value
+myStore.set(countAtom, prev => prev + 1)
+```
+
+## Subscribing to changes
+
+```ts
+const unsub = myStore.sub(countAtom, value => {
+    console.log("count changed:", value)
+})
+
+// Later: stop listening
+unsub()
+```
+
+## Transactions
+
+Batch multiple updates so subscribers only fire once:
+
+```ts
+myStore.txn(set => {
+    set(atomA, 1)
+    set(atomB, 2)
+    // Subscribers fire once after the transaction completes
+})
+```
+
+<div className="callout callout-warning">
+  <div className="callout-title">Warning</div>
+  Selectors that depend on atoms updated in a transaction will only recompute once, after all updates are applied. This is the intended behavior for performance.
+</div>
+
+## Default global store
+
+If you don't use a `<Provider>` in React, a default global store is used automatically. You can access it with `getDefaultStore()` from `valdres-react`.
+
+## See also
+
+- [Provider](/react/Provider) — provide a store to your component tree
+- [useStore](/react/useStore) — access the current store in your components

@@ -1,0 +1,106 @@
+---
+title: Introduction
+description: Get started with Valdres — fast reactive state management for JavaScript and React
+---
+
+# Introduction
+
+Valdres is a fast, reactive state management library for JavaScript and React. It's inspired by Recoil and Jotai with an emphasis on performance.
+
+## Installation
+
+<div data-tabs>
+  <div className="tabs-list">
+    <button className="tab-trigger active" data-tab="npm">npm</button>
+    <button className="tab-trigger" data-tab="bun">bun</button>
+    <button className="tab-trigger" data-tab="yarn">yarn</button>
+    <button className="tab-trigger" data-tab="pnpm">pnpm</button>
+  </div>
+  <div className="tab-panel active" data-tab="npm">
+
+```bash
+npm install valdres valdres-react
+```
+
+  </div>
+  <div className="tab-panel" data-tab="bun">
+
+```bash
+bun add valdres valdres-react
+```
+
+  </div>
+  <div className="tab-panel" data-tab="yarn">
+
+```bash
+yarn add valdres valdres-react
+```
+
+  </div>
+  <div className="tab-panel" data-tab="pnpm">
+
+```bash
+pnpm add valdres valdres-react
+```
+
+  </div>
+</div>
+
+## Quick Start
+
+Create atoms to hold your state and selectors to derive computed values:
+
+```ts
+import { atom, selector } from "valdres"
+
+const countAtom = atom(0)
+const doubledSelector = selector(get => get(countAtom) * 2)
+```
+
+Use them in your React components:
+
+```tsx
+import { useAtom, useValue } from "valdres-react"
+
+function Counter() {
+    const [count, setCount] = useAtom(countAtom)
+    const doubled = useValue(doubledSelector)
+
+    return (
+        <div>
+            <p>Count: {count}</p>
+            <p>Doubled: {doubled}</p>
+            <button onClick={() => setCount(c => c + 1)}>+</button>
+        </div>
+    )
+}
+```
+
+## Key Concepts
+
+- **Atoms** hold pieces of state. They can be read and written from anywhere.
+- **Selectors** derive computed state from atoms. They update automatically when dependencies change.
+- **Families** (`atomFamily`, `selectorFamily`) create collections of atoms/selectors keyed by a parameter.
+- **Stores** hold all atom values. A default global store is used unless you provide a `<Provider>`.
+
+<div className="callout callout-tip">
+  <div className="callout-title">Tip</div>
+  The core <code>valdres</code> package is framework-agnostic. You can use it with React via <code>valdres-react</code>, or without any framework at all.
+</div>
+
+## Quick Migrate
+
+Already using Recoil or Jotai? Migration is a one-line import change:
+
+```tsx
+// From Recoil
+import { atom, selector } from "@valdres-react/recoil"
+
+// From Jotai
+import { atom, createStore } from "@valdres-react/jotai"
+```
+
+<div className="callout callout-note">
+  <div className="callout-title">Note</div>
+  The compatibility packages mirror the original APIs, so most of your existing code works unchanged. See the <a href="/guides/vs-jotai">Jotai</a> and <a href="/guides/vs-recoil">Recoil</a> comparison guides for details.
+</div>

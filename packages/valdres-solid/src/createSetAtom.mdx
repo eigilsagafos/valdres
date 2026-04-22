@@ -1,0 +1,36 @@
+---
+title: createSetAtom
+description: Solid setter for writing atom state without subscribing
+---
+
+# createSetAtom
+
+<div className="not-prose mb-8 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50 p-4">
+  <div className="text-xs font-medium text-zinc-400 dark:text-zinc-500 mb-2 uppercase tracking-wider">Signature</div>
+  <code className="text-sm font-mono text-accent-500">createSetAtom&lt;T&gt;(atom: Atom&lt;T&gt;): SetterFn&lt;T&gt;</code>
+  <div className="mt-3 text-xs text-zinc-500 dark:text-zinc-400">
+    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-zinc-200 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 font-medium mr-2">valdres-solid</span>
+    Write-only access to an atom
+  </div>
+</div>
+
+Returns a setter function for an atom without subscribing to changes. The component won't re-render when the atom updates.
+
+## Usage
+
+```tsx
+import { atom } from "valdres"
+import { createSetAtom } from "valdres-solid"
+
+const countAtom = atom(0)
+
+function IncrementButton() {
+    const setCount = createSetAtom(countAtom)
+    return <button onClick={() => setCount(c => c + 1)}>+</button>
+}
+```
+
+## See also
+
+- [createAtom](/solid/createAtom) — read + write accessor
+- [createResetAtom](/solid/createResetAtom) — reset to default value

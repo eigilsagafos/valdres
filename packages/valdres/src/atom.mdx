@@ -1,0 +1,236 @@
+---
+title: atom
+description: Create a reactive piece of state
+---
+
+# atom
+
+<div className="not-prose mb-8 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50 p-4">
+  <div className="text-xs font-medium text-zinc-400 dark:text-zinc-500 mb-2 uppercase tracking-wider">Signature</div>
+  <code className="text-sm font-mono text-accent-500">atom&lt;T&gt;(defaultValue: T, options?: AtomOptions): Atom&lt;T&gt;</code>
+  <div className="mt-3 text-xs text-zinc-500 dark:text-zinc-400">
+    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-zinc-200 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 font-medium mr-2">valdres</span>
+    Creates a reactive piece of state
+  </div>
+</div>
+
+An atom holds a single value that can be read and written from any component or outside of React entirely.
+
+## Usage
+
+```ts
+import { atom } from "valdres"
+
+// Simple atom with a default value
+const countAtom = atom(0)
+
+// Atom with an async initializer
+const userAtom = atom(() =>
+    fetch("/api/user").then(res => res.json())
+)
+
+// With a label for debugging
+const nameAtom = atom("default", { label: "nameAtom" })
+```
+
+## Parameters
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `defaultValue` | `T \| () => T \| Promise<T>` | Initial value, or a function that returns one |
+| `options.label` | `string` | Optional label for debugging and devtools |
+| `options.maxAge` | `Reactive<number>` | Re-fetch interval in milliseconds (requires async default). Accepts a number, atom, or selector. |
+| `options.staleWhileRevalidate` | `Reactive<number>` | Serve stale data for this many ms while re-fetching. Accepts a number, atom, or selector. |
+| `options.staleIfError` | `Reactive<number>` | Serve stale data for this many ms after re-fetch errors. Accepts a number, atom, or selector. |
+
+## Async atoms
+
+<div className="callout callout-tip">
+  <div className="callout-title">Tip</div>
+  When you pass a function as the default value, it becomes an async atom. The function is called lazily — only when the atom is first read.
+</div>
+
+In React, async atoms work seamlessly with `Suspense`:
+
+```ts
+const dataAtom = atom(async () => {
+    const res = await fetch("/api/data")
+    return res.json()
+})
+```
+
+## Caching & revalidation
+
+Async atoms support built-in stale-while-revalidate caching via `maxAge`, `staleWhileRevalidate`, and `staleIfError`. This is useful for data that should periodically refresh from an API while keeping the UI responsive.
+
+### maxAge
+
+Sets how often the atom re-fetches its data (in milliseconds). Revalidation only happens while the atom has active subscribers.
+
+```ts
+const pricesAtom = atom(
+    async () => {
+        const res = await fetch("/api/prices")
+        return res.json()
+    },
+    { maxAge: 30_000 }, // Re-fetch every 30 seconds
+)
+```
+
+When `maxAge` expires, the atom calls its default function again. Without `staleWhileRevalidate`, the atom immediately enters a loading state (returns a pending promise), which triggers `Suspense` in React.
+
+### staleWhileRevalidate
+
+Keeps serving the previous value while the re-fetch is in progress, instead of showing a loading state. The value updates seamlessly once the new data resolves.
+
+```ts
+const pricesAtom = atom(
+    async () => {
+        const res = await fetch("/api/prices")
+        return res.json()
+    },
+    {
+        maxAge: 30_000,             // Re-fetch every 30s
+        staleWhileRevalidate: 60_000, // Serve stale data for up to 60s while fetching
+    },
+)
+```
+
+This means your UI never shows a loading spinner on re-fetches — users see the previous data until the fresh data arrives.
+
+### staleIfError
+
+Extends the stale window when re-fetches fail. Instead of surfacing an error to the UI, the atom keeps serving the last successful value for the specified duration.
+
+```ts
+const pricesAtom = atom(
+    async () => {
+        const res = await fetch("/api/prices")
+        if (!res.ok) throw new Error("API error")
+        return res.json()
+    },
+    {
+        maxAge: 30_000,
+        staleWhileRevalidate: 60_000,
+        staleIfError: 300_000, // Keep stale data for up to 5 minutes on errors
+    },
+)
+```
+
+If the re-fetch fails within the `staleIfError` window (measured from the last successful fetch), the previous value is preserved. Once the window expires, the rejected promise is surfaced so error boundaries can handle it.
+
+### Example: API response with caching
+
+```ts
+import { atom } from "valdres"
+
+type User = { id: string; name: string; email: string }
+
+const currentUserAtom = atom<User>(
+    async () => {
+        const res = await fetch("/api/me", {
+            headers: { Authorization: `Bearer ${getToken()}` },
+        })
+        if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
+        return res.json()
+    },
+    {
+        maxAge: 60_000,               // Refresh every minute
+        staleWhileRevalidate: 120_000, // Show stale for 2 min while fetching
+        staleIfError: 300_000,         // Tolerate errors for 5 min
+    },
+)
+```
+
+**Timeline of behavior:**
+
+| Time | Event | What the UI sees |
+|------|-------|-----------------|
+| 0s | First read, fetch starts | Suspense loading state |
+| ~200ms | Fetch resolves | User data |
+| 60s | `maxAge` expires, re-fetch starts | Previous user data (SWR) |
+| ~60.2s | Re-fetch resolves | Updated user data |
+| 120s | `maxAge` expires, re-fetch fails | Previous user data (`staleIfError`) |
+| 180s | `maxAge` expires, re-fetch succeeds | Fresh user data |
+
+<div className="callout callout-note">
+  <div className="callout-title">Note</div>
+  Revalidation is only active while the atom has subscribers. When all components unsubscribe, the interval is cleared. The next subscription triggers a fresh fetch.
+</div>
+
+### Reactive cache configuration
+
+Cache options can be dynamic by passing an atom or selector instead of a static number. When the config value changes, the revalidation interval automatically restarts with the new timing.
+
+```ts
+import { atom, selector } from "valdres"
+
+const refreshIntervalAtom = atom(30_000)
+
+const pricesAtom = atom(
+    async () => {
+        const res = await fetch("/api/prices")
+        return res.json()
+    },
+    { maxAge: refreshIntervalAtom },
+)
+
+// Changing the interval updates the revalidation schedule
+store.set(refreshIntervalAtom, 5_000) // now refreshes every 5 seconds
+```
+
+You can also use a selector to derive the interval from other state:
+
+```ts
+const realtimeModeAtom = atom(false)
+
+const maxAgeSelector = selector(get =>
+    get(realtimeModeAtom) ? 1_000 : 30_000
+)
+
+const dataAtom = atom(
+    async () => fetch("/api/data").then(r => r.json()),
+    { maxAge: maxAgeSelector },
+)
+```
+
+### cacheMeta
+
+Use `cacheMeta()` to get a reactive selector that exposes the caching state of an atom. This is useful for showing loading indicators during revalidation or displaying when data was last refreshed.
+
+```ts
+import { atom, cacheMeta } from "valdres"
+
+const dataAtom = atom(
+    async () => fetch("/api/data").then(r => r.json()),
+    { maxAge: 30_000, staleWhileRevalidate: 60_000 },
+)
+
+const meta = store.get(cacheMeta(dataAtom))
+// {
+//   isRevalidating: false,
+//   lastSuccessAt: 1713100800000,
+//   maxAge: 30000,
+//   staleWhileRevalidate: 60000,
+//   staleIfError: undefined,
+// }
+```
+
+`cacheMeta()` returns a selector, so you can subscribe to it reactively:
+
+```ts
+store.sub(cacheMeta(dataAtom), meta => {
+    console.log(meta.isRevalidating) // true when re-fetching
+    console.log(meta.lastSuccessAt)  // timestamp of last success
+})
+```
+
+Returns `null` for atoms that don't have `maxAge` configured.
+
+<div id="cache-demo" className="not-prose" />
+
+## See also
+
+- [atomFamily](/valdres/atomFamily) — create a collection of atoms keyed by a parameter
+- [selector](/valdres/selector) — derive computed state from atoms
+- [useAtom](/react/useAtom) — read and write an atom in your components

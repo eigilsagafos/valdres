@@ -1,0 +1,41 @@
+---
+title: injectSetAtom
+description: Angular function for writing atom state without subscribing
+---
+
+# injectSetAtom
+
+<div className="not-prose mb-8 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50 p-4">
+  <div className="text-xs font-medium text-zinc-400 dark:text-zinc-500 mb-2 uppercase tracking-wider">Signature</div>
+  <code className="text-sm font-mono text-accent-500">injectSetAtom&lt;T&gt;(atom: Atom&lt;T&gt;): SetterFn&lt;T&gt;</code>
+  <div className="mt-3 text-xs text-zinc-500 dark:text-zinc-400">
+    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-zinc-200 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 font-medium mr-2">valdres-angular</span>
+    Write-only access to an atom
+  </div>
+</div>
+
+Returns a setter function for an atom without subscribing to changes. The component won't be checked for changes when the atom updates.
+
+## Usage
+
+```ts
+import { Component } from "@angular/core"
+import { atom } from "valdres"
+import { injectSetAtom } from "valdres-angular"
+
+const countAtom = atom(0)
+
+@Component({
+    selector: "app-increment",
+    template: `<button (click)="increment()">+</button>`,
+})
+export class IncrementComponent {
+    private setCount = injectSetAtom(countAtom)
+    increment = () => this.setCount(c => c + 1)
+}
+```
+
+## See also
+
+- [injectAtom](/angular/injectAtom) — read + write signal
+- [injectResetAtom](/angular/injectResetAtom) — reset to default value

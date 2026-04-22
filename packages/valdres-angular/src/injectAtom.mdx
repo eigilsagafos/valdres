@@ -1,0 +1,56 @@
+---
+title: injectAtom
+description: Angular function for reading and writing atom state
+---
+
+# injectAtom
+
+<div className="not-prose mb-8 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50 p-4">
+  <div className="text-xs font-medium text-zinc-400 dark:text-zinc-500 mb-2 uppercase tracking-wider">Signature</div>
+  <code className="text-sm font-mono text-accent-500">injectAtom&lt;T&gt;(atom: Atom&lt;T&gt;): AtomSignal&lt;T&gt;</code>
+  <div className="mt-3 text-xs text-zinc-500 dark:text-zinc-400">
+    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-zinc-200 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 font-medium mr-2">valdres-angular</span>
+    Subscribe to and update an atom's value
+  </div>
+</div>
+
+Returns an Angular `WritableSignal` that stays in sync with the atom. Reading the signal returns the current value, and calling `.set()` or `.update()` updates the atom. Also provides a `.reset()` method.
+
+## Usage
+
+```ts
+import { Component } from "@angular/core"
+import { atom } from "valdres"
+import { injectAtom } from "valdres-angular"
+
+const countAtom = atom(0)
+
+@Component({
+    selector: "app-counter",
+    template: `
+        <span>{{ count() }}</span>
+        <button (click)="count.update(c => c + 1)">+</button>
+        <button (click)="count.reset()">Reset</button>
+    `,
+})
+export class CounterComponent {
+    count = injectAtom(countAtom)
+}
+```
+
+## Returns
+
+`AtomSignal<T>` extends Angular's `WritableSignal<T>` with:
+
+| Method | Description |
+|--------|-------------|
+| `()` | Read the current value |
+| `.set(value)` | Set a new value |
+| `.update(fn)` | Update based on previous value |
+| `.reset()` | Reset to the atom's default value |
+
+## See also
+
+- [injectValue](/angular/injectValue) — read-only signal
+- [injectSetAtom](/angular/injectSetAtom) — write-only setter
+- [injectResetAtom](/angular/injectResetAtom) — reset function

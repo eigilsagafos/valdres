@@ -1,0 +1,27 @@
+---
+title: Valdres vs Recoil
+description: How Valdres compares to Recoil
+---
+
+# Valdres vs Recoil
+
+Valdres takes heavy inspiration from Recoil's API design. If you're coming from Recoil, the concepts will feel familiar — atoms, selectors, families, and transactions all work similarly.
+
+## Quick migrate
+
+Change your imports to use the Recoil compatibility package:
+
+```tsx
+// Before
+import { atom, selector } from "recoil"
+// After
+import { atom, selector } from "@valdres-react/recoil"
+```
+
+## Key differences
+
+- **Actively maintained** — Recoil has been effectively abandoned by Meta. Valdres is actively developed.
+- **Smaller bundle** — Valdres has a significantly smaller footprint.
+- **No string keys** — Recoil requires unique string keys for every atom and selector. Valdres atoms and selectors are identified by reference, no keys needed.
+- **WeakMap storage** — Atoms and selectors that are no longer referenced can be garbage collected.
+- **Works outside React** — The core `valdres` package is framework-agnostic.

@@ -1,0 +1,56 @@
+---
+title: selectorFamily
+description: Create a collection of selectors keyed by a parameter
+---
+
+# selectorFamily
+
+<div className="not-prose mb-8 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50 p-4">
+  <div className="text-xs font-medium text-zinc-400 dark:text-zinc-500 mb-2 uppercase tracking-wider">Signature</div>
+  <code className="text-sm font-mono text-accent-500">selectorFamily&lt;K, T&gt;(factory: (key: K) =&gt; (get: GetFn) =&gt; T): SelectorFamily&lt;K, T&gt;</code>
+  <div className="mt-3 text-xs text-zinc-500 dark:text-zinc-400">
+    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-zinc-200 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 font-medium mr-2">valdres</span>
+    Create a keyed collection of derived selectors
+  </div>
+</div>
+
+Creates a family of selectors keyed by a parameter. Each selector derives its value from atoms or other selectors based on the key.
+
+## Usage
+
+```ts
+import { selectorFamily } from "valdres"
+import { userAtom } from "./userAtom"
+
+const userDisplayNameSelector = selectorFamily(id => get => {
+    const { firstName, lastName } = get(userAtom(id))
+    return `${firstName} ${lastName}`
+})
+
+store.get(userDisplayNameSelector("user-1")) // "John Doe"
+```
+
+## With async computation
+
+```ts
+const userPostsSelector = selectorFamily(userId => async get => {
+    const res = await fetch(`/api/users/${userId}/posts`)
+    return res.json()
+})
+```
+
+## In React
+
+```tsx
+import { useValue } from "valdres-react"
+
+function UserName({ userId }) {
+    const displayName = useValue(userDisplayNameSelector(userId))
+    return <span>{displayName}</span>
+}
+```
+
+## See also
+
+- [selector](/valdres/selector) — create a single selector
+- [atomFamily](/valdres/atomFamily) — create a family of atoms
