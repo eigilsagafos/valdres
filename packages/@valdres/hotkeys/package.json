@@ -24,10 +24,12 @@
         "test:ci": "echo 'no tests'"
     },
     "devDependencies": {
+        "@valdres/browser-keyboard": "0.2.0-pre.28",
         "typescript": "5.9.2",
         "valdres": "0.2.0-pre.28"
     },
     "peerDependencies": {
+        "@valdres/browser-keyboard": "0.2.0-pre.28",
         "valdres": "0.2.0-pre.28"
     },
     "publishConfig": {
