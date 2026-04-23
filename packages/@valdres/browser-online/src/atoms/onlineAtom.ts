@@ -1,5 +1,5 @@
 import { atom } from "valdres"
-import { bootstrap } from "../lib/bootstrap"
+import { subscribe } from "../lib/subscribe"
 
 const getInitial = () => {
     if (typeof navigator === "undefined") return true
@@ -9,5 +9,5 @@ const getInitial = () => {
 export const onlineAtom = atom<boolean>(getInitial(), {
     global: true,
     name: "@valdres/browser-online/online",
-    onInit: () => bootstrap(),
+    onInit: () => subscribe(),
 })

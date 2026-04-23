@@ -1,6 +1,6 @@
 import { describe, test, expect, afterEach } from "bun:test"
 import { store } from "valdres"
-import { bootstrap } from "./bootstrap"
+import { subscribe } from "./subscribe"
 import { onlineAtom } from "../atoms/onlineAtom"
 
 const setOnLine = (value: boolean) => {
@@ -10,13 +10,13 @@ const setOnLine = (value: boolean) => {
     })
 }
 
-describe("bootstrap", () => {
+describe("subscribe", () => {
     afterEach(() => setOnLine(true))
 
     test("syncs initial value from navigator.onLine", () => {
         setOnLine(false)
         const s = store()
-        const cleanup = bootstrap()
+        const cleanup = subscribe()
         expect(s.get(onlineAtom)).toBe(false)
         cleanup?.()
     })
@@ -24,7 +24,7 @@ describe("bootstrap", () => {
     test("updates atom when online/offline events fire", () => {
         setOnLine(true)
         const s = store()
-        const cleanup = bootstrap()
+        const cleanup = subscribe()
 
         expect(s.get(onlineAtom)).toBe(true)
 
@@ -42,7 +42,7 @@ describe("bootstrap", () => {
     test("cleanup removes listeners so later events do not update atom", () => {
         setOnLine(true)
         const s = store()
-        const cleanup = bootstrap()
+        const cleanup = subscribe()
         cleanup?.()
 
         setOnLine(false)

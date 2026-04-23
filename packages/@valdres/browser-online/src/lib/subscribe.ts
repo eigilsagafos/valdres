@@ -1,6 +1,6 @@
 import { eventHandler } from "./eventHandler"
 
-export const bootstrap = () => {
+export const subscribe = () => {
     if (typeof window === "undefined") return
     eventHandler()
     window.addEventListener("online", eventHandler)
