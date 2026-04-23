@@ -1,12 +1,14 @@
-import { eventHandler } from "./eventHandler"
+import { onlineAtom } from "../atoms/onlineAtom"
+
+const update = () => onlineAtom.setSelf(navigator.onLine)
 
 export const subscribe = () => {
     if (typeof window === "undefined") return
-    eventHandler()
-    window.addEventListener("online", eventHandler)
-    window.addEventListener("offline", eventHandler)
+    update()
+    window.addEventListener("online", update)
+    window.addEventListener("offline", update)
     return () => {
-        window.removeEventListener("online", eventHandler)
-        window.removeEventListener("offline", eventHandler)
+        window.removeEventListener("online", update)
+        window.removeEventListener("offline", update)
     }
 }
