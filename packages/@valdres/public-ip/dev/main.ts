@@ -1,7 +1,9 @@
 import { store, cacheMeta, type GlobalAtom } from "valdres"
 import {
+    publicIpAtom,
     publicIpV4Atom,
     publicIpV6Atom,
+    publicIpEndpointsAtom,
     publicIpV4EndpointsAtom,
     publicIpV6EndpointsAtom,
     publicIpMaxAgeAtom,
@@ -77,5 +79,6 @@ const wire = (
     })
 }
 
+wire("default", publicIpAtom, publicIpEndpointsAtom)
 wire("v4", publicIpV4Atom, publicIpV4EndpointsAtom)
 wire("v6", publicIpV6Atom, publicIpV6EndpointsAtom)

@@ -60,8 +60,12 @@ describe("publicIpOnInit", () => {
         publicIpMaxAgeAtom.resetSelf()
     })
 
+    afterAll(() => {
+        m.restore()
+    })
+
     test("refetches on window 'online' event", async () => {
-        m.alwaysRespond("https://api.ipify.org", "203.0.113.10")
+        m.alwaysRespond("https://api4.ipify.org", "203.0.113.10")
         const s = store()
         await s.get(publicIpV4Atom)
         s.sub(publicIpV4Atom, () => {})
@@ -72,7 +76,7 @@ describe("publicIpOnInit", () => {
     })
 
     test("refetches on document 'visibilitychange' when visible", async () => {
-        m.alwaysRespond("https://api.ipify.org", "203.0.113.11")
+        m.alwaysRespond("https://api4.ipify.org", "203.0.113.11")
         const s = store()
         await s.get(publicIpV4Atom)
         s.sub(publicIpV4Atom, () => {})
@@ -94,7 +98,7 @@ describe("publicIpOnInit", () => {
         })
 
         test("refetches on connection 'change' event", async () => {
-            m.alwaysRespond("https://api.ipify.org", "203.0.113.12")
+            m.alwaysRespond("https://api4.ipify.org", "203.0.113.12")
             const s = store()
             await s.get(publicIpV4Atom)
             s.sub(publicIpV4Atom, () => {})
@@ -124,7 +128,7 @@ describe("publicIpOnInit", () => {
         })
 
         test("does not refetch when signals fire", async () => {
-            m.alwaysRespond("https://api.ipify.org", "203.0.113.13")
+            m.alwaysRespond("https://api4.ipify.org", "203.0.113.13")
             const s = store()
             await s.get(publicIpV4Atom)
             s.sub(publicIpV4Atom, () => {})

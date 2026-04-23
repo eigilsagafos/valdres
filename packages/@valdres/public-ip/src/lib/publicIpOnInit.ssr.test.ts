@@ -17,6 +17,7 @@ describe("publicIpOnInit (SSR / no browser APIs)", () => {
 
     afterAll(() => {
         m.reset()
+        m.restore()
         publicIpV4Atom.resetSelf()
         publicIpV4EndpointsAtom.resetSelf()
         publicIpMaxAgeAtom.resetSelf()
@@ -27,7 +28,7 @@ describe("publicIpOnInit (SSR / no browser APIs)", () => {
         expect(typeof window).toBe("undefined")
         expect(typeof document).toBe("undefined")
 
-        m.alwaysRespond("https://api.ipify.org", "203.0.113.42")
+        m.alwaysRespond("https://api4.ipify.org", "203.0.113.42")
         const s = store()
         expect(await s.get(publicIpV4Atom)).toBe("203.0.113.42")
     })

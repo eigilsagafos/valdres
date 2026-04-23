@@ -1,10 +1,11 @@
-import { describe, test, expect, afterEach } from "bun:test"
+import { describe, test, expect, afterEach, afterAll } from "bun:test"
 import { fetchPublicIp } from "./fetchPublicIp"
 import { mockFetch } from "../../test/mockFetch"
 
 describe("fetchPublicIp", () => {
     const m = mockFetch()
     afterEach(m.reset)
+    afterAll(() => m.restore())
 
     test("returns the IP from the first successful endpoint", async () => {
         m.queue(m.ok("203.0.113.5"))

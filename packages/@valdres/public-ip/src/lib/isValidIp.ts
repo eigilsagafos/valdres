@@ -1,9 +1,5 @@
-const ipv4 = /^(25[0-5]|2[0-4]\d|[01]?\d?\d)(\.(25[0-5]|2[0-4]\d|[01]?\d?\d)){3}$/
+import { isValidIpV4 } from "./isValidIpV4"
+import { isValidIpV6 } from "./isValidIpV6"
 
-const ipv6 =
-    /^(([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,7}:|([0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,5}(:[0-9a-fA-F]{1,4}){1,2}|([0-9a-fA-F]{1,4}:){1,4}(:[0-9a-fA-F]{1,4}){1,3}|([0-9a-fA-F]{1,4}:){1,3}(:[0-9a-fA-F]{1,4}){1,4}|([0-9a-fA-F]{1,4}:){1,2}(:[0-9a-fA-F]{1,4}){1,5}|[0-9a-fA-F]{1,4}:((:[0-9a-fA-F]{1,4}){1,6})|:((:[0-9a-fA-F]{1,4}){1,7}|:))$/
-
-export const isValidIp = (value: string): boolean => {
-    const trimmed = value.trim()
-    return ipv4.test(trimmed) || ipv6.test(trimmed)
-}
+export const isValidIp = (value: string): boolean =>
+    isValidIpV4(value) || isValidIpV6(value)

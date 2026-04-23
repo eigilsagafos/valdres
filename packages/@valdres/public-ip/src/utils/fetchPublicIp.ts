@@ -1,6 +1,9 @@
 import { isValidIp } from "../lib/isValidIp"
 
-export const fetchPublicIp = async (endpoints: string[]): Promise<string> => {
+export const fetchPublicIp = async (
+    endpoints: string[],
+    validate: (value: string) => boolean = isValidIp,
+): Promise<string> => {
     const errors: unknown[] = []
     for (const endpoint of endpoints) {
         try {
@@ -10,7 +13,7 @@ export const fetchPublicIp = async (endpoints: string[]): Promise<string> => {
                 continue
             }
             const body = (await response.text()).trim()
-            if (!isValidIp(body)) {
+            if (!validate(body)) {
                 errors.push(new Error(`${endpoint} returned non-IP body`))
                 continue
             }

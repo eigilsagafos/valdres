@@ -48,11 +48,12 @@ const registerSharedListeners = () => {
 export const publicIpOnInit = (
     ipAtom: GlobalAtom<Promise<string> | string>,
     endpointsAtom: GlobalAtom<string[]>,
+    validate: (value: string) => boolean,
 ) => {
     const handler = () => {
         const nav = typeof navigator === "undefined" ? undefined : navigator
         if (nav && nav.onLine === false) return
-        ipAtom.setSelf(fetchPublicIp(endpointsAtom.getSelf()))
+        ipAtom.setSelf(fetchPublicIp(endpointsAtom.getSelf(), validate))
     }
     refetchHandlers.add(handler)
     registerSharedListeners()

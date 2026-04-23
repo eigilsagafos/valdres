@@ -24,10 +24,13 @@
             }
             .grid {
                 display: grid;
-                grid-template-columns: 1fr 1fr;
+                grid-template-columns: 1fr 1fr 1fr;
                 gap: 1rem;
             }
-            @media (max-width: 40rem) {
+            .grid-2 {
+                grid-template-columns: 1fr 1fr;
+            }
+            @media (max-width: 60rem) {
                 .grid {
                     grid-template-columns: 1fr;
                 }
@@ -90,6 +93,14 @@
 
         <div class="grid">
             <div class="card">
+                <div>Default <span id="default-status" class="pill">loading…</span></div>
+                <div id="default-ip" class="ip">—</div>
+                <label for="default-endpoints">Endpoints (one per line)</label>
+                <textarea id="default-endpoints"></textarea>
+                <button id="default-refetch">Refetch</button>
+            </div>
+
+            <div class="card">
                 <div>IPv4 <span id="v4-status" class="pill">loading…</span></div>
                 <div id="v4-ip" class="ip">—</div>
                 <label for="v4-endpoints">Endpoints (one per line)</label>
@@ -115,6 +126,7 @@
         <div class="card">
             <strong>cacheMeta</strong>
             <div class="grid">
+                <pre id="default-meta" class="meta">—</pre>
                 <pre id="v4-meta" class="meta">—</pre>
                 <pre id="v6-meta" class="meta">—</pre>
             </div>
