@@ -24,6 +24,8 @@
         "test:ci": "bun test"
     },
     "devDependencies": {
+        "@happy-dom/global-registrator": "20.0.5",
+        "happy-dom": "20.0.5",
         "typescript": "5.9.2",
         "valdres": "0.2.0-pre.28"
     },

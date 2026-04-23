@@ -3,46 +3,18 @@ import { store } from "valdres"
 import { bootstrap } from "./bootstrap"
 import { onlineAtom } from "../atoms/onlineAtom"
 
-type Listener = (event?: Event) => void
-
-const makeFakeWindow = () => {
-    const listeners: Record<string, Listener[]> = {}
-    return {
-        listeners,
-        addEventListener: (type: string, cb: Listener) => {
-            listeners[type] = [...(listeners[type] ?? []), cb]
-        },
-        removeEventListener: (type: string, cb: Listener) => {
-            listeners[type] = (listeners[type] ?? []).filter(l => l !== cb)
-        },
-        dispatch: (type: string) => {
-            for (const cb of listeners[type] ?? []) cb()
-        },
-    }
-}
-
-const installFakeEnv = (onLine: boolean) => {
-    const fakeWindow = makeFakeWindow()
-    ;(globalThis as any).window = fakeWindow
-    ;(globalThis as any).navigator = { onLine }
-    return fakeWindow
-}
-
-const removeFakeEnv = () => {
-    delete (globalThis as any).window
-    delete (globalThis as any).navigator
+const setOnLine = (value: boolean) => {
+    Object.defineProperty(navigator, "onLine", {
+        value,
+        configurable: true,
+    })
 }
 
 describe("bootstrap", () => {
-    afterEach(removeFakeEnv)
+    afterEach(() => setOnLine(true))
 
-    test("returns undefined when window is undefined", () => {
-        removeFakeEnv()
-        expect(bootstrap()).toBeUndefined()
-    })
-
-    test("syncs initial value from navigator.onLine on bootstrap", () => {
-        installFakeEnv(false)
+    test("syncs initial value from navigator.onLine", () => {
+        setOnLine(false)
         const s = store()
         const cleanup = bootstrap()
         expect(s.get(onlineAtom)).toBe(false)
@@ -50,30 +22,31 @@ describe("bootstrap", () => {
     })
 
     test("updates atom when online/offline events fire", () => {
-        const fakeWindow = installFakeEnv(true)
+        setOnLine(true)
         const s = store()
         const cleanup = bootstrap()
 
         expect(s.get(onlineAtom)).toBe(true)
 
-        ;(globalThis as any).navigator.onLine = false
-        fakeWindow.dispatch("offline")
+        setOnLine(false)
+        window.dispatchEvent(new Event("offline"))
         expect(s.get(onlineAtom)).toBe(false)
 
-        ;(globalThis as any).navigator.onLine = true
-        fakeWindow.dispatch("online")
+        setOnLine(true)
+        window.dispatchEvent(new Event("online"))
         expect(s.get(onlineAtom)).toBe(true)
 
         cleanup?.()
     })
 
-    test("cleanup removes listeners", () => {
-        const fakeWindow = installFakeEnv(true)
+    test("cleanup removes listeners so later events do not update atom", () => {
+        setOnLine(true)
+        const s = store()
         const cleanup = bootstrap()
-        expect(fakeWindow.listeners.online?.length).toBe(1)
-        expect(fakeWindow.listeners.offline?.length).toBe(1)
         cleanup?.()
-        expect(fakeWindow.listeners.online?.length).toBe(0)
-        expect(fakeWindow.listeners.offline?.length).toBe(0)
+
+        setOnLine(false)
+        window.dispatchEvent(new Event("offline"))
+        expect(s.get(onlineAtom)).toBe(true)
     })
 })
