@@ -119,6 +119,17 @@
         "valdres": "0.2.0-pre.28",
       },
     },
+    "packages/@valdres/browser-online": {
+      "name": "@valdres/browser-online",
+      "version": "0.2.0-pre.28",
+      "devDependencies": {
+        "typescript": "5.9.2",
+        "valdres": "0.2.0-pre.28",
+      },
+      "peerDependencies": {
+        "valdres": "0.2.0-pre.28",
+      },
+    },
     "packages/@valdres/color-mode": {
       "name": "@valdres/color-mode",
       "version": "0.2.0-pre.28",
@@ -933,6 +944,8 @@
     "@valdres-react/recoil": ["@valdres-react/recoil@workspace:packages/@valdres-react/recoil"],
 
     "@valdres/browser-keyboard": ["@valdres/browser-keyboard@workspace:packages/@valdres/browser-keyboard"],
+
+    "@valdres/browser-online": ["@valdres/browser-online@workspace:packages/@valdres/browser-online"],
 
     "@valdres/color-mode": ["@valdres/color-mode@workspace:packages/@valdres/color-mode"],
 
