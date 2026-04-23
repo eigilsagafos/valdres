@@ -408,8 +408,7 @@ describe("atom", () => {
 
         // Resolve initial fetch
         resolvers[0](100)
-        await wait(1)
-        expect(store1.get(atom1)).toBe(100)
+        await waitFor(() => expect(store1.get(atom1)).toBe(100))
 
         // Wait for maxAge to expire and trigger revalidation
         await waitFor(() => expect(fetchCount).toBe(2))
@@ -419,8 +418,7 @@ describe("atom", () => {
 
         // Resolve revalidation
         resolvers[1](200)
-        await wait(1)
-        expect(store1.get(atom1)).toBe(200)
+        await waitFor(() => expect(store1.get(atom1)).toBe(200))
 
         unsubscribe()
     })
