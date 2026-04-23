@@ -6,7 +6,7 @@ const getInitial = () => {
     return navigator.onLine
 }
 
-export const onlineAtom = atom<boolean>(getInitial(), {
+export const onlineAtom = atom<boolean>(getInitial, {
     global: true,
     name: "@valdres/browser-online/online",
     onInit: () => subscribe(),
