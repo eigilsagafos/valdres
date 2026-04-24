@@ -21,9 +21,9 @@ export const requestScreenDetails = (): Promise<ScreenDetail[] | null> => {
     const api = window as unknown as WindowWithScreenDetails
     if (typeof api.getScreenDetails !== "function")
         return Promise.resolve(null)
-    if (detailsState.inflight) return detailsState.inflight
+    if (detailsState.request) return detailsState.request
 
-    detailsState.inflight = (async (): Promise<ScreenDetail[] | null> => {
+    detailsState.request = (async (): Promise<ScreenDetail[] | null> => {
         try {
             const details = await api.getScreenDetails!()
             screenPermissionAtom.setSelf("granted")
@@ -63,10 +63,10 @@ export const requestScreenDetails = (): Promise<ScreenDetail[] | null> => {
             if (err instanceof DOMException && err.name === "NotAllowedError") {
                 screenPermissionAtom.setSelf("denied")
             }
-            detailsState.inflight = null
+            detailsState.request = null
             throw err
         }
     })()
 
-    return detailsState.inflight
+    return detailsState.request
 }

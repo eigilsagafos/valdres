@@ -74,6 +74,32 @@ describe("subscribe", () => {
         expect(attached).toBe(false)
     })
 
+    test("leaves atom untouched when permissions.query rejects (Safari/Firefox)", async () => {
+        Object.defineProperty(navigator, "permissions", {
+            value: {
+                query: async () => {
+                    throw new TypeError("Unknown permission name")
+                },
+            },
+            configurable: true,
+        })
+        const s = store()
+        const before = s.get(screenPermissionAtom)
+        subscribe()
+        await Promise.resolve()
+        await Promise.resolve()
+        expect(s.get(screenPermissionAtom)).toBe(before)
+    })
+
+    test("returns early when navigator.permissions.query is missing", () => {
+        Object.defineProperty(navigator, "permissions", {
+            value: {},
+            configurable: true,
+        })
+        const cleanup = subscribe()
+        expect(cleanup).toBeUndefined()
+    })
+
     test("cleanup removes the status change listener", async () => {
         const status = makeStatus("granted")
         installPermissions(status)

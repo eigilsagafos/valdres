@@ -71,7 +71,7 @@ describe("requestScreenDetails", () => {
     })
 
     afterEach(() => {
-        detailsState.inflight = null
+        detailsState.request = null
         uninstall()
         screensAtom.resetSelf()
         currentScreenAtom.resetSelf()

@@ -2,7 +2,7 @@ import { screenPermissionAtom } from "../atoms/screenPermissionAtom"
 
 export const subscribe = () => {
     if (typeof window === "undefined") return
-    if (typeof navigator === "undefined" || !navigator.permissions) return
+    if (typeof navigator === "undefined" || !navigator.permissions?.query) return
 
     let cancelled = false
     let teardown: (() => void) | undefined
