@@ -1,4 +1,4 @@
-import { StrictMode, useEffect, useState } from "react"
+import { StrictMode, useEffect, useRef, useState } from "react"
 import { createRoot } from "react-dom/client"
 import { Provider, useValue } from "valdres-react"
 import { visibilityAtom } from "../src"
@@ -8,8 +8,11 @@ type Entry = { at: string; visibility: DocumentVisibilityState }
 const Demo = () => {
     const visibility = useValue(visibilityAtom)
     const [log, setLog] = useState<Entry[]>([])
+    const lastLogged = useRef<DocumentVisibilityState | null>(null)
 
     useEffect(() => {
+        if (lastLogged.current === visibility) return
+        lastLogged.current = visibility
         setLog(prev =>
             [
                 { at: new Date().toLocaleTimeString(), visibility },

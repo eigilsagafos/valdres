@@ -1,4 +1,4 @@
-import { StrictMode, useEffect, useState } from "react"
+import { StrictMode, useEffect, useRef, useState } from "react"
 import { createRoot } from "react-dom/client"
 import { Provider, useValue } from "valdres-react"
 import { focusAtom } from "../src"
@@ -8,8 +8,11 @@ type Entry = { at: string; focused: boolean }
 const Demo = () => {
     const focused = useValue(focusAtom)
     const [log, setLog] = useState<Entry[]>([])
+    const lastLogged = useRef<boolean | null>(null)
 
     useEffect(() => {
+        if (lastLogged.current === focused) return
+        lastLogged.current = focused
         setLog(prev =>
             [
                 { at: new Date().toLocaleTimeString(), focused },
