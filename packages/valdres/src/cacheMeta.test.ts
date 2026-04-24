@@ -130,6 +130,17 @@ describe("cacheMeta", () => {
         expect(meta!.staleWhileRevalidate).toBe(500)
         expect(meta!.staleIfError).toBe(1000)
     })
+
+    test("cacheMeta defaults staleWhileRevalidate and staleIfError to Infinity", () => {
+        const store1 = store()
+        const atom1 = atom(() => 42, { maxAge: 100 })
+
+        store1.sub(atom1, () => {})
+
+        const meta = store1.get(cacheMeta(atom1))
+        expect(meta!.staleWhileRevalidate).toBe(Infinity)
+        expect(meta!.staleIfError).toBe(Infinity)
+    })
 })
 
 describe("reactive maxAge", () => {

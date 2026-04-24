@@ -135,14 +135,14 @@ export const subscribe = <V>(
 
                 const getMaxAge = (): number =>
                     resolveReactive(state.maxAge!, data)
-                const getSWR = (): number | undefined =>
-                    state.staleWhileRevalidate
+                const getSWR = (): number =>
+                    state.staleWhileRevalidate !== undefined
                         ? resolveReactive(state.staleWhileRevalidate, data)
-                        : undefined
-                const getStaleIfError = (): number | undefined =>
-                    state.staleIfError
+                        : Infinity
+                const getStaleIfError = (): number =>
+                    state.staleIfError !== undefined
                         ? resolveReactive(state.staleIfError, data)
-                        : undefined
+                        : Infinity
 
                 const metaAtom = state.__cacheMeta ??= { equal, defaultValue: null }
                 const updateMeta = () => {
@@ -165,10 +165,8 @@ export const subscribe = <V>(
                 }
 
                 const isPastStaleIfErrorWindow = () => {
-                    const staleIfError = getStaleIfError()
-                    if (!staleIfError) return true
                     const elapsed = Date.now() - lastSuccessTime
-                    return elapsed >= getMaxAge() + staleIfError
+                    return elapsed >= getMaxAge() + getStaleIfError()
                 }
 
                 // For global atoms, propagate to all stores; for regular atoms, just this store
@@ -210,61 +208,65 @@ export const subscribe = <V>(
                         revalidating = true
                         updateMeta()
                         const swr = getSWR()
-                        if (swr) {
-                            // SWR: keep stale value visible during revalidation
-                            const t = setTimeout(() => {
-                                pendingTimeouts.delete(t)
-                            }, swr)
-                            pendingTimeouts.add(t)
+
+                        const handleResolve = (resolved: any) => {
+                            if (cancelled) return
+                            revalidating = false
+                            lastSuccessTime = Date.now()
+                            lastGoodValue = resolved
+                            setAndPropagate(state, resolved)
+                            updateMeta()
+                        }
+
+                        const handleReject = () => {
+                            if (cancelled) return
+                            revalidating = false
+                            if (
+                                !isPastStaleIfErrorWindow() &&
+                                lastGoodValue !== NO_VALUE
+                            ) {
+                                setAndPropagate(state, lastGoodValue)
+                            } else {
+                                setAndPropagate(state, value)
+                            }
+                            updateMeta()
+                        }
+
+                        if (swr > 0) {
+                            // SWR: keep stale value visible during revalidation.
+                            // Finite swr enforces a window: if the request is
+                            // still in flight when it expires, flip to the
+                            // pending promise (loading state).
+                            let timeoutRef: Timer | undefined
+                            if (Number.isFinite(swr)) {
+                                timeoutRef = setTimeout(() => {
+                                    pendingTimeouts.delete(timeoutRef!)
+                                    if (cancelled || !revalidating) return
+                                    setAndPropagate(state, value)
+                                }, swr)
+                                pendingTimeouts.add(timeoutRef)
+                            }
                             value.then(
                                 (resolved: any) => {
-                                    clearTimeout(t)
-                                    pendingTimeouts.delete(t)
-                                    if (cancelled) return
-                                    revalidating = false
-                                    lastSuccessTime = Date.now()
-                                    lastGoodValue = resolved
-                                    setAndPropagate(state, resolved)
-                                    updateMeta()
+                                    if (timeoutRef) {
+                                        clearTimeout(timeoutRef)
+                                        pendingTimeouts.delete(timeoutRef)
+                                    }
+                                    handleResolve(resolved)
                                 },
                                 () => {
-                                    clearTimeout(t)
-                                    pendingTimeouts.delete(t)
-                                    if (cancelled) return
-                                    revalidating = false
-                                    if (
-                                        getStaleIfError() &&
-                                        isPastStaleIfErrorWindow()
-                                    ) {
-                                        setAndPropagate(state, value)
+                                    if (timeoutRef) {
+                                        clearTimeout(timeoutRef)
+                                        pendingTimeouts.delete(timeoutRef)
                                     }
-                                    updateMeta()
+                                    handleReject()
                                 },
                             )
                         } else {
-                            // No SWR: show loading state during revalidation
+                            // swr === 0: opt out of stale-while-revalidate;
+                            // show pending promise immediately on revalidate.
                             setAndPropagate(state, value)
-                            value.then(
-                                (resolved: any) => {
-                                    if (cancelled) return
-                                    revalidating = false
-                                    lastSuccessTime = Date.now()
-                                    lastGoodValue = resolved
-                                    setAndPropagate(state, resolved)
-                                    updateMeta()
-                                },
-                                () => {
-                                    if (cancelled) return
-                                    revalidating = false
-                                    if (
-                                        !isPastStaleIfErrorWindow() &&
-                                        lastGoodValue !== NO_VALUE
-                                    ) {
-                                        setAndPropagate(state, lastGoodValue)
-                                    }
-                                    updateMeta()
-                                },
-                            )
+                            value.then(handleResolve, handleReject)
                         }
                     } else {
                         lastSuccessTime = Date.now()
