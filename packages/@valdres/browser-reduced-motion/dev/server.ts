@@ -1,0 +1,11 @@
+import index from "./index.html"
+
+const server = Bun.serve({
+    port: Number(process.env.PORT ?? 3022),
+    development: true,
+    routes: {
+        "/": index,
+    },
+})
+
+console.log(`@valdres/browser-reduced-motion demo: ${server.url}`)

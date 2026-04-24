@@ -108,6 +108,42 @@
         "typescript": "5.9.2",
       },
     },
+    "packages/@valdres/browser-color-scheme": {
+      "name": "@valdres/browser-color-scheme",
+      "version": "0.2.0-pre.28",
+      "devDependencies": {
+        "@happy-dom/global-registrator": "20.0.5",
+        "@types/react": "19.1.12",
+        "@types/react-dom": "19.1.9",
+        "happy-dom": "20.0.5",
+        "react": "19.1.1",
+        "react-dom": "19.1.1",
+        "typescript": "5.9.2",
+        "valdres": "0.2.0-pre.28",
+        "valdres-react": "0.2.0-pre.28",
+      },
+      "peerDependencies": {
+        "valdres": "0.2.0-pre.28",
+      },
+    },
+    "packages/@valdres/browser-contrast": {
+      "name": "@valdres/browser-contrast",
+      "version": "0.2.0-pre.28",
+      "devDependencies": {
+        "@happy-dom/global-registrator": "20.0.5",
+        "@types/react": "19.1.12",
+        "@types/react-dom": "19.1.9",
+        "happy-dom": "20.0.5",
+        "react": "19.1.1",
+        "react-dom": "19.1.1",
+        "typescript": "5.9.2",
+        "valdres": "0.2.0-pre.28",
+        "valdres-react": "0.2.0-pre.28",
+      },
+      "peerDependencies": {
+        "valdres": "0.2.0-pre.28",
+      },
+    },
     "packages/@valdres/browser-focus": {
       "name": "@valdres/browser-focus",
       "version": "0.2.0-pre.28",
@@ -170,6 +206,60 @@
         "@valdres/browser-focus": "0.2.0-pre.28",
         "@valdres/browser-visibility": "0.2.0-pre.28",
       },
+      "devDependencies": {
+        "@happy-dom/global-registrator": "20.0.5",
+        "@types/react": "19.1.12",
+        "@types/react-dom": "19.1.9",
+        "happy-dom": "20.0.5",
+        "react": "19.1.1",
+        "react-dom": "19.1.1",
+        "typescript": "5.9.2",
+        "valdres": "0.2.0-pre.28",
+        "valdres-react": "0.2.0-pre.28",
+      },
+      "peerDependencies": {
+        "valdres": "0.2.0-pre.28",
+      },
+    },
+    "packages/@valdres/browser-reduced-data": {
+      "name": "@valdres/browser-reduced-data",
+      "version": "0.2.0-pre.28",
+      "devDependencies": {
+        "@happy-dom/global-registrator": "20.0.5",
+        "@types/react": "19.1.12",
+        "@types/react-dom": "19.1.9",
+        "happy-dom": "20.0.5",
+        "react": "19.1.1",
+        "react-dom": "19.1.1",
+        "typescript": "5.9.2",
+        "valdres": "0.2.0-pre.28",
+        "valdres-react": "0.2.0-pre.28",
+      },
+      "peerDependencies": {
+        "valdres": "0.2.0-pre.28",
+      },
+    },
+    "packages/@valdres/browser-reduced-motion": {
+      "name": "@valdres/browser-reduced-motion",
+      "version": "0.2.0-pre.28",
+      "devDependencies": {
+        "@happy-dom/global-registrator": "20.0.5",
+        "@types/react": "19.1.12",
+        "@types/react-dom": "19.1.9",
+        "happy-dom": "20.0.5",
+        "react": "19.1.1",
+        "react-dom": "19.1.1",
+        "typescript": "5.9.2",
+        "valdres": "0.2.0-pre.28",
+        "valdres-react": "0.2.0-pre.28",
+      },
+      "peerDependencies": {
+        "valdres": "0.2.0-pre.28",
+      },
+    },
+    "packages/@valdres/browser-reduced-transparency": {
+      "name": "@valdres/browser-reduced-transparency",
+      "version": "0.2.0-pre.28",
       "devDependencies": {
         "@happy-dom/global-registrator": "20.0.5",
         "@types/react": "19.1.12",
@@ -1070,6 +1160,10 @@
 
     "@valdres-react/recoil": ["@valdres-react/recoil@workspace:packages/@valdres-react/recoil"],
 
+    "@valdres/browser-color-scheme": ["@valdres/browser-color-scheme@workspace:packages/@valdres/browser-color-scheme"],
+
+    "@valdres/browser-contrast": ["@valdres/browser-contrast@workspace:packages/@valdres/browser-contrast"],
+
     "@valdres/browser-focus": ["@valdres/browser-focus@workspace:packages/@valdres/browser-focus"],
 
     "@valdres/browser-geolocation": ["@valdres/browser-geolocation@workspace:packages/@valdres/browser-geolocation"],
@@ -1079,6 +1173,12 @@
     "@valdres/browser-online": ["@valdres/browser-online@workspace:packages/@valdres/browser-online"],
 
     "@valdres/browser-presence": ["@valdres/browser-presence@workspace:packages/@valdres/browser-presence"],
+
+    "@valdres/browser-reduced-data": ["@valdres/browser-reduced-data@workspace:packages/@valdres/browser-reduced-data"],
+
+    "@valdres/browser-reduced-motion": ["@valdres/browser-reduced-motion@workspace:packages/@valdres/browser-reduced-motion"],
+
+    "@valdres/browser-reduced-transparency": ["@valdres/browser-reduced-transparency@workspace:packages/@valdres/browser-reduced-transparency"],
 
     "@valdres/browser-screen": ["@valdres/browser-screen@workspace:packages/@valdres/browser-screen"],
 
@@ -2940,6 +3040,14 @@
 
     "@types/babel__traverse/@babel/types": ["@babel/types@7.25.7", "", { "dependencies": { "@babel/helper-string-parser": "^7.25.7", "@babel/helper-validator-identifier": "^7.25.7", "to-fast-properties": "^2.0.0" } }, "sha512-vwIVdXG+j+FOpkwqHRcBgHLYNL7XMkufrlaFvL9o6Ai9sJn9+PdyIL5qa0XzTZw084c+u9LOls53eoZWP/W5WQ=="],
 
+    "@valdres/browser-color-scheme/@happy-dom/global-registrator": ["@happy-dom/global-registrator@20.0.5", "", { "dependencies": { "@types/node": "^20.0.0", "happy-dom": "^20.0.5" } }, "sha512-RWQ85on4fiYKw5D1xk0nU2YGCYsJEJ5iXmZHTRyeYft4OCN4IRMFZ3uX91/Tncf/9K4tPOnU1HiEOtLs2Zxukw=="],
+
+    "@valdres/browser-color-scheme/happy-dom": ["happy-dom@20.0.5", "", { "dependencies": { "@types/node": "^20.0.0", "@types/whatwg-mimetype": "^3.0.2", "whatwg-mimetype": "^3.0.0" } }, "sha512-AiqA0rfS7WR1kihXt9W9aA5LFLaOKzwiL+QoI7BkOQ0r21C7VHTOf4k8QNlnWYaHLhpI2tZzJPLV1lY1obDTmw=="],
+
+    "@valdres/browser-contrast/@happy-dom/global-registrator": ["@happy-dom/global-registrator@20.0.5", "", { "dependencies": { "@types/node": "^20.0.0", "happy-dom": "^20.0.5" } }, "sha512-RWQ85on4fiYKw5D1xk0nU2YGCYsJEJ5iXmZHTRyeYft4OCN4IRMFZ3uX91/Tncf/9K4tPOnU1HiEOtLs2Zxukw=="],
+
+    "@valdres/browser-contrast/happy-dom": ["happy-dom@20.0.5", "", { "dependencies": { "@types/node": "^20.0.0", "@types/whatwg-mimetype": "^3.0.2", "whatwg-mimetype": "^3.0.0" } }, "sha512-AiqA0rfS7WR1kihXt9W9aA5LFLaOKzwiL+QoI7BkOQ0r21C7VHTOf4k8QNlnWYaHLhpI2tZzJPLV1lY1obDTmw=="],
+
     "@valdres/browser-focus/@happy-dom/global-registrator": ["@happy-dom/global-registrator@20.0.5", "", { "dependencies": { "@types/node": "^20.0.0", "happy-dom": "^20.0.5" } }, "sha512-RWQ85on4fiYKw5D1xk0nU2YGCYsJEJ5iXmZHTRyeYft4OCN4IRMFZ3uX91/Tncf/9K4tPOnU1HiEOtLs2Zxukw=="],
 
     "@valdres/browser-focus/happy-dom": ["happy-dom@20.0.5", "", { "dependencies": { "@types/node": "^20.0.0", "@types/whatwg-mimetype": "^3.0.2", "whatwg-mimetype": "^3.0.0" } }, "sha512-AiqA0rfS7WR1kihXt9W9aA5LFLaOKzwiL+QoI7BkOQ0r21C7VHTOf4k8QNlnWYaHLhpI2tZzJPLV1lY1obDTmw=="],
@@ -2955,6 +3063,18 @@
     "@valdres/browser-presence/@happy-dom/global-registrator": ["@happy-dom/global-registrator@20.0.5", "", { "dependencies": { "@types/node": "^20.0.0", "happy-dom": "^20.0.5" } }, "sha512-RWQ85on4fiYKw5D1xk0nU2YGCYsJEJ5iXmZHTRyeYft4OCN4IRMFZ3uX91/Tncf/9K4tPOnU1HiEOtLs2Zxukw=="],
 
     "@valdres/browser-presence/happy-dom": ["happy-dom@20.0.5", "", { "dependencies": { "@types/node": "^20.0.0", "@types/whatwg-mimetype": "^3.0.2", "whatwg-mimetype": "^3.0.0" } }, "sha512-AiqA0rfS7WR1kihXt9W9aA5LFLaOKzwiL+QoI7BkOQ0r21C7VHTOf4k8QNlnWYaHLhpI2tZzJPLV1lY1obDTmw=="],
+
+    "@valdres/browser-reduced-data/@happy-dom/global-registrator": ["@happy-dom/global-registrator@20.0.5", "", { "dependencies": { "@types/node": "^20.0.0", "happy-dom": "^20.0.5" } }, "sha512-RWQ85on4fiYKw5D1xk0nU2YGCYsJEJ5iXmZHTRyeYft4OCN4IRMFZ3uX91/Tncf/9K4tPOnU1HiEOtLs2Zxukw=="],
+
+    "@valdres/browser-reduced-data/happy-dom": ["happy-dom@20.0.5", "", { "dependencies": { "@types/node": "^20.0.0", "@types/whatwg-mimetype": "^3.0.2", "whatwg-mimetype": "^3.0.0" } }, "sha512-AiqA0rfS7WR1kihXt9W9aA5LFLaOKzwiL+QoI7BkOQ0r21C7VHTOf4k8QNlnWYaHLhpI2tZzJPLV1lY1obDTmw=="],
+
+    "@valdres/browser-reduced-motion/@happy-dom/global-registrator": ["@happy-dom/global-registrator@20.0.5", "", { "dependencies": { "@types/node": "^20.0.0", "happy-dom": "^20.0.5" } }, "sha512-RWQ85on4fiYKw5D1xk0nU2YGCYsJEJ5iXmZHTRyeYft4OCN4IRMFZ3uX91/Tncf/9K4tPOnU1HiEOtLs2Zxukw=="],
+
+    "@valdres/browser-reduced-motion/happy-dom": ["happy-dom@20.0.5", "", { "dependencies": { "@types/node": "^20.0.0", "@types/whatwg-mimetype": "^3.0.2", "whatwg-mimetype": "^3.0.0" } }, "sha512-AiqA0rfS7WR1kihXt9W9aA5LFLaOKzwiL+QoI7BkOQ0r21C7VHTOf4k8QNlnWYaHLhpI2tZzJPLV1lY1obDTmw=="],
+
+    "@valdres/browser-reduced-transparency/@happy-dom/global-registrator": ["@happy-dom/global-registrator@20.0.5", "", { "dependencies": { "@types/node": "^20.0.0", "happy-dom": "^20.0.5" } }, "sha512-RWQ85on4fiYKw5D1xk0nU2YGCYsJEJ5iXmZHTRyeYft4OCN4IRMFZ3uX91/Tncf/9K4tPOnU1HiEOtLs2Zxukw=="],
+
+    "@valdres/browser-reduced-transparency/happy-dom": ["happy-dom@20.0.5", "", { "dependencies": { "@types/node": "^20.0.0", "@types/whatwg-mimetype": "^3.0.2", "whatwg-mimetype": "^3.0.0" } }, "sha512-AiqA0rfS7WR1kihXt9W9aA5LFLaOKzwiL+QoI7BkOQ0r21C7VHTOf4k8QNlnWYaHLhpI2tZzJPLV1lY1obDTmw=="],
 
     "@valdres/browser-screen/@happy-dom/global-registrator": ["@happy-dom/global-registrator@20.0.5", "", { "dependencies": { "@types/node": "^20.0.0", "happy-dom": "^20.0.5" } }, "sha512-RWQ85on4fiYKw5D1xk0nU2YGCYsJEJ5iXmZHTRyeYft4OCN4IRMFZ3uX91/Tncf/9K4tPOnU1HiEOtLs2Zxukw=="],
 
