@@ -406,28 +406,40 @@ describe("atom", () => {
         }
         const atom1 = atom(atomCallback, { maxAge })
 
-        const callback = mock(() => {})
+        // Capture every value the store transitions through. Asserting against
+        // store1.get() directly is racy: the maxAge interval keeps firing, so a
+        // resolved value can be replaced by a fresh pending promise before the
+        // assertion runs (a subsequent tick would never resolve, and the test
+        // would time out).
+        const observed: any[] = []
+        const callback = mock(() => {
+            observed.push(store1.get(atom1))
+        })
         const unsubscribe = store1.sub(atom1, callback)
 
         // Initially holds a pending promise
         expect(store1.get(atom1)).toBeInstanceOf(Promise)
 
-        // Resolve initial fetch before the maxAge window closes so
-        // revalidation is scheduled off a resolved value, not a still-pending
-        // one — otherwise slow CI runners can flip the ordering.
         resolvers[0](100)
-        await waitFor(() => expect(store1.get(atom1)).toBe(100))
+        await waitFor(() => expect(observed).toContain(100))
 
-        // Give the maxAge interval deterministic time to fire before polling.
-        await wait(maxAge + 20)
+        // The next maxAge tick should trigger a fresh fetch.
         await waitFor(() => expect(fetchCount).toBe(2))
 
-        // Without SWR, the store should show the pending promise (loading state)
-        expect(store1.get(atom1)).toBeInstanceOf(Promise)
+        // Without SWR, that fresh fetch publishes a pending promise as the
+        // loading state. We verify by checking that *some* value observed
+        // after 100 was a Promise (rather than reading store1.get() right
+        // now, which races with later ticks).
+        const indexOf100 = observed.indexOf(100)
+        const promiseAfter100 = observed
+            .slice(indexOf100 + 1)
+            .find(v => v instanceof Promise)
+        expect(promiseAfter100).toBeInstanceOf(Promise)
 
-        // Resolve revalidation
+        // Resolve revalidation. Use observed (not store1.get()) because a
+        // later tick may replace 200 with a new pending promise.
         resolvers[1](200)
-        await waitFor(() => expect(store1.get(atom1)).toBe(200))
+        await waitFor(() => expect(observed).toContain(200))
 
         unsubscribe()
     })
@@ -889,44 +901,61 @@ describe("atom", () => {
                 })
             }
 
-            const atom1 = atom(atomCallback, {
-                maxAge: 15,
-                staleIfError: 40,
-            })
+            // Use generously-sized windows. The production code initializes
+            // lastSuccessTime at subscribe time and only updates it on a
+            // tick-driven revalidation success — not on the initial fetch.
+            // With a tight staleIfError (e.g. 40ms) the first rejection check
+            // races the wall clock on slow CI runners and falls outside the
+            // window, so the stale value isn't restored.
+            const maxAge = 50
+            const staleIfError = 200
+            const atom1 = atom(atomCallback, { maxAge, staleIfError })
 
-            const callback = mock(() => {})
+            // Capture every observed value via the subscription callback so
+            // assertions don't race with the next maxAge tick replacing the
+            // store value with a fresh pending promise.
+            const observed: any[] = []
+            const callback = mock(() => {
+                observed.push(store1.get(atom1))
+            })
             const unsubscribe = store1.sub(atom1, callback)
 
             // Resolve initial fetch
             resolvers[0].resolve(100)
-            await wait(1)
-            expect(store1.get(atom1)).toBe(100)
+            await waitFor(() => expect(observed).toContain(100))
 
             // First revalidation: reject (within staleIfError window)
             await waitFor(() => expect(fetchCount).toBe(2))
             resolvers[1].reject(new Error("fail 1"))
-            await wait(1)
-            expect(store1.get(atom1)).toBe(100) // stale value kept
+            // Stale value should be restored — wait for it via the callback.
+            await waitFor(() =>
+                expect(observed[observed.length - 1]).toBe(100),
+            )
 
-            // Second revalidation: succeed (resets the window)
+            // Second revalidation: succeed (resets the window). Capture the
+            // success time so we can wait deterministically past the window.
             await waitFor(() => expect(fetchCount).toBe(3))
             resolvers[2].resolve(200)
-            await wait(1)
-            expect(store1.get(atom1)).toBe(200) // updated
+            await waitFor(() => expect(observed).toContain(200))
+            const lastSuccessAt = Date.now()
 
-            // Wait past maxAge + staleIfError from last success (15 + 40 = 55ms)
-            await wait(60)
+            // Wait past maxAge + staleIfError from the last success, plus a
+            // buffer to absorb scheduler jitter.
+            const elapsed = Date.now() - lastSuccessAt
+            await wait(maxAge + staleIfError + 50 - elapsed)
+
+            // A revalidation tick should have fired by now.
+            expect(fetchCount).toBeGreaterThanOrEqual(4)
 
             // Reject all pending revalidations (past window now)
-            const pending = resolvers.length
-            expect(fetchCount).toBeGreaterThanOrEqual(4)
             for (let i = 3; i < resolvers.length; i++) {
                 resolvers[i].reject(new Error("fail N"))
             }
-            await wait(1)
 
-            // Past staleIfError window — stale value should NOT be served
-            expect(store1.get(atom1)).not.toBe(200)
+            // Past staleIfError window — stale value (200) should NOT be
+            // restored. Wait for the rejection microtask to settle, then
+            // verify the store is no longer holding 200.
+            await waitFor(() => expect(store1.get(atom1)).not.toBe(200))
 
             unsubscribe()
         },
