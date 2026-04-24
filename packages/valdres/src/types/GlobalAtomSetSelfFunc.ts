@@ -1,1 +1,5 @@
-export type GlobalAtomSetSelfFunc<Value = unknown> = (value: Value) => void
+import type { SetAtomValue } from "./SetAtomValue"
+
+export type GlobalAtomSetSelfFunc<Value = unknown> = (
+    value: SetAtomValue<Value>,
+) => void

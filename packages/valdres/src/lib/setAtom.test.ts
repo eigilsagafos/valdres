@@ -56,6 +56,50 @@ describe("setAtom", () => {
         )
     })
 
+    test("set with bare promise stores it then resolves", async () => {
+        const store1 = store()
+        const stringAtom = atom("initial")
+        store1.get(stringAtom)
+        const promise = Promise.resolve("updated")
+        const result = setAtom(stringAtom, promise, store1.data)
+        expect(isPromiseLike(result)).toBe(true)
+        expect(store1.data.values.get(stringAtom)).toBe(promise)
+        await result
+        expect(store1.data.values.get(stringAtom)).toBe("updated")
+    })
+
+    test("set with bare rejected promise reverts to previous value", async () => {
+        const store1 = store()
+        const stringAtom = atom("initial")
+        store1.get(stringAtom)
+        const result = setAtom(
+            stringAtom,
+            Promise.reject(new Error("boom")),
+            store1.data,
+        )
+        try { await result } catch {}
+        await Promise.resolve()
+        expect(store1.get(stringAtom)).toBe("initial")
+    })
+
+    test("set with a bare thenable normalizes to a real Promise", async () => {
+        const store1 = store()
+        const stringAtom = atom("initial")
+        store1.get(stringAtom)
+        // Minimal thenable: .then is a function but no .catch/.finally
+        const thenable: PromiseLike<string> = {
+            then(onFulfilled) {
+                return Promise.resolve(
+                    onFulfilled ? onFulfilled("adopted") : ("adopted" as any),
+                ) as any
+            },
+        }
+        const result = setAtom(stringAtom, thenable, store1.data)
+        expect(result instanceof Promise).toBe(true)
+        await result
+        expect(store1.get(stringAtom)).toBe("adopted")
+    })
+
     test("set with async updater stores promise then resolves", async () => {
         const store1 = store()
         const stringAtom = atom("initial")
@@ -210,6 +254,33 @@ describe("setAtom", () => {
         const suspenseResult = await suspensePromise
         expect(suspenseResult).toBe("second")
         expect(store1.get(emptyAtom)).toBe("second")
+    })
+
+    test("async updater onSet throwing does not escape as unhandled rejection", async () => {
+        const rejections: unknown[] = []
+        const handler = (err: unknown) => rejections.push(err)
+        process.on("unhandledRejection", handler)
+        try {
+            const onSetMock = mock(() => {
+                throw new Error("onSet boom")
+            })
+            const store1 = store()
+            const stringAtom = atom<string>("initial", { onSet: onSetMock })
+            store1.get(stringAtom)
+
+            const result = setAtom(
+                stringAtom,
+                () => Promise.resolve("updated"),
+                store1.data,
+            )
+            await result
+            // Allow unhandled rejection tracking to flush
+            await new Promise(r => setTimeout(r, 10))
+
+            expect(rejections).toHaveLength(0)
+        } finally {
+            process.off("unhandledRejection", handler)
+        }
     })
 
     test("deep freeze applies to function values with properties", () => {
