@@ -25,7 +25,11 @@ export const setAtom = <Value = any>(
         newValue = newValue(currentValue)
     }
     if (isPromiseLike(newValue)) {
-        const promise = newValue as Promise<Value>
+        // Normalize thenables to real Promises so internal code (including
+        // downstream .catch/.finally handlers) always works on a Promise.
+        // Promise.resolve(realPromise) returns the same reference, so this
+        // is a no-op allocation for the common case.
+        const promise = Promise.resolve(newValue) as Promise<Value>
         // Same promise reference — no-op (matches equality check below)
         if (currentValue === promise) return promise as Value
         // @ts-ignore
@@ -67,16 +71,19 @@ export const setAtom = <Value = any>(
         }
         return promise as Value
     }
+    // Past the isPromiseLike branch newValue is guaranteed to be a plain
+    // Value (TypeScript can't narrow out PromiseLike fully, so we restate it).
+    let syncValue = newValue as Value
     const areEqual = isPromiseLike(currentValue)
-        ? currentValue === newValue
-        : atom.equal(currentValue, newValue)
-    if (areEqual) return newValue
-    newValue = setValueInData(atom, newValue, data)
-    if (atom.onSet && !skipOnSet) atom.onSet(newValue, data)
+        ? currentValue === syncValue
+        : atom.equal(currentValue, syncValue)
+    if (areEqual) return syncValue
+    syncValue = setValueInData(atom, syncValue, data)
+    if (atom.onSet && !skipOnSet) atom.onSet(syncValue, data)
     // @ts-ignore
     if (currentValue?.__isEmptyAtomPromise__) {
         // @ts-ignore
-        currentValue.__resolveEmptyAtomPromise__(newValue)
+        currentValue.__resolveEmptyAtomPromise__(syncValue)
     }
     if (initializedAtomsSet && initializedAtomsSet.size > 0) {
         initializedAtomsSet.add(atom)
@@ -84,5 +91,5 @@ export const setAtom = <Value = any>(
     } else {
         propagateUpdatedAtoms([atom], data)
     }
-    return newValue
+    return syncValue
 }

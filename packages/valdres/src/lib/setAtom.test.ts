@@ -82,6 +82,24 @@ describe("setAtom", () => {
         expect(store1.get(stringAtom)).toBe("initial")
     })
 
+    test("set with a bare thenable normalizes to a real Promise", async () => {
+        const store1 = store()
+        const stringAtom = atom("initial")
+        store1.get(stringAtom)
+        // Minimal thenable: .then is a function but no .catch/.finally
+        const thenable: PromiseLike<string> = {
+            then(onFulfilled) {
+                return Promise.resolve(
+                    onFulfilled ? onFulfilled("adopted") : ("adopted" as any),
+                ) as any
+            },
+        }
+        const result = setAtom(stringAtom, thenable, store1.data)
+        expect(result instanceof Promise).toBe(true)
+        await result
+        expect(store1.get(stringAtom)).toBe("adopted")
+    })
+
     test("set with async updater stores promise then resolves", async () => {
         const store1 = store()
         const stringAtom = atom("initial")
