@@ -176,6 +176,19 @@
         "valdres": "0.2.0-pre.28",
       },
     },
+    "packages/@valdres/browser-screen-details": {
+      "name": "@valdres/browser-screen-details",
+      "version": "0.2.0-pre.28",
+      "devDependencies": {
+        "@happy-dom/global-registrator": "20.0.5",
+        "happy-dom": "20.0.5",
+        "typescript": "5.9.2",
+        "valdres": "0.2.0-pre.28",
+      },
+      "peerDependencies": {
+        "valdres": "0.2.0-pre.28",
+      },
+    },
     "packages/@valdres/browser-window": {
       "name": "@valdres/browser-window",
       "version": "0.2.0-pre.28",
@@ -1026,6 +1039,8 @@
     "@valdres/browser-online": ["@valdres/browser-online@workspace:packages/@valdres/browser-online"],
 
     "@valdres/browser-screen": ["@valdres/browser-screen@workspace:packages/@valdres/browser-screen"],
+
+    "@valdres/browser-screen-details": ["@valdres/browser-screen-details@workspace:packages/@valdres/browser-screen-details"],
 
     "@valdres/browser-window": ["@valdres/browser-window@workspace:packages/@valdres/browser-window"],
 
@@ -2896,6 +2911,10 @@
     "@valdres/browser-screen/@happy-dom/global-registrator": ["@happy-dom/global-registrator@20.0.5", "", { "dependencies": { "@types/node": "^20.0.0", "happy-dom": "^20.0.5" } }, "sha512-RWQ85on4fiYKw5D1xk0nU2YGCYsJEJ5iXmZHTRyeYft4OCN4IRMFZ3uX91/Tncf/9K4tPOnU1HiEOtLs2Zxukw=="],
 
     "@valdres/browser-screen/happy-dom": ["happy-dom@20.0.5", "", { "dependencies": { "@types/node": "^20.0.0", "@types/whatwg-mimetype": "^3.0.2", "whatwg-mimetype": "^3.0.0" } }, "sha512-AiqA0rfS7WR1kihXt9W9aA5LFLaOKzwiL+QoI7BkOQ0r21C7VHTOf4k8QNlnWYaHLhpI2tZzJPLV1lY1obDTmw=="],
+
+    "@valdres/browser-screen-details/@happy-dom/global-registrator": ["@happy-dom/global-registrator@20.0.5", "", { "dependencies": { "@types/node": "^20.0.0", "happy-dom": "^20.0.5" } }, "sha512-RWQ85on4fiYKw5D1xk0nU2YGCYsJEJ5iXmZHTRyeYft4OCN4IRMFZ3uX91/Tncf/9K4tPOnU1HiEOtLs2Zxukw=="],
+
+    "@valdres/browser-screen-details/happy-dom": ["happy-dom@20.0.5", "", { "dependencies": { "@types/node": "^20.0.0", "@types/whatwg-mimetype": "^3.0.2", "whatwg-mimetype": "^3.0.0" } }, "sha512-AiqA0rfS7WR1kihXt9W9aA5LFLaOKzwiL+QoI7BkOQ0r21C7VHTOf4k8QNlnWYaHLhpI2tZzJPLV1lY1obDTmw=="],
 
     "@valdres/browser-window/@happy-dom/global-registrator": ["@happy-dom/global-registrator@20.0.5", "", { "dependencies": { "@types/node": "^20.0.0", "happy-dom": "^20.0.5" } }, "sha512-RWQ85on4fiYKw5D1xk0nU2YGCYsJEJ5iXmZHTRyeYft4OCN4IRMFZ3uX91/Tncf/9K4tPOnU1HiEOtLs2Zxukw=="],
 
