@@ -1,3 +1,5 @@
+import type { SetAtomValue } from "./SetAtomValue"
+
 export type GlobalAtomSetSelfFunc<Value = unknown> = (
-    value: Value | Promise<Value> | ((current: Value) => Value | Promise<Value>),
+    value: SetAtomValue<Value>,
 ) => void

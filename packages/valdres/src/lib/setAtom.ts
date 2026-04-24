@@ -1,4 +1,5 @@
 import type { Atom } from "../types/Atom"
+import type { SetAtomValue } from "../types/SetAtomValue"
 import type { StoreData } from "../types/StoreData"
 import { isPromiseLike } from "../utils/isPromiseLike"
 import { getState } from "./getState"
@@ -8,10 +9,7 @@ import { setValueInData } from "./setValueInData"
 
 export const setAtom = <Value = any>(
     atom: Atom<Value>,
-    newValue:
-        | Value
-        | Promise<Value>
-        | ((currentValue: Value) => Value | Promise<Value>),
+    newValue: SetAtomValue<Value>,
     data: StoreData,
     skipOnSet = false,
 ) => {
@@ -42,22 +40,25 @@ export const setAtom = <Value = any>(
             promise.__emptyAtomPromiseOrigin__ = emptyAtomPromise
         }
         setValueInData(atom, promise as Value, data)
-        promise.then(resolvedValue => {
-            // Stale promise guard: if another set() overwrote us, bail
-            if (data.values.get(atom) !== promise) return
-            setValueInData(atom, resolvedValue, data)
-            if (atom.onSet && !skipOnSet) atom.onSet(resolvedValue, data)
-            if (emptyAtomPromise) {
-                // @ts-ignore
-                emptyAtomPromise.__resolveEmptyAtomPromise__(resolvedValue)
-            }
-            propagateUpdatedAtoms([atom], data)
-        }).catch(() => {
-            // On rejection, revert to previous value if promise is still current
-            if (data.values.get(atom) !== promise) return
-            setValueInData(atom, currentValue, data)
-            propagateUpdatedAtoms([atom], data)
-        })
+        promise.then(
+            resolvedValue => {
+                // Stale promise guard: if another set() overwrote us, bail
+                if (data.values.get(atom) !== promise) return
+                setValueInData(atom, resolvedValue, data)
+                if (atom.onSet && !skipOnSet) atom.onSet(resolvedValue, data)
+                if (emptyAtomPromise) {
+                    // @ts-ignore
+                    emptyAtomPromise.__resolveEmptyAtomPromise__(resolvedValue)
+                }
+                propagateUpdatedAtoms([atom], data)
+            },
+            () => {
+                // On rejection, revert to previous value if promise is still current
+                if (data.values.get(atom) !== promise) return
+                setValueInData(atom, currentValue, data)
+                propagateUpdatedAtoms([atom], data)
+            },
+        )
         if (initializedAtomsSet && initializedAtomsSet.size > 0) {
             initializedAtomsSet.add(atom)
             propagateUpdatedAtoms([...initializedAtomsSet], data)

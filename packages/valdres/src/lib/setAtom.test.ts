@@ -56,6 +56,32 @@ describe("setAtom", () => {
         )
     })
 
+    test("set with bare promise stores it then resolves", async () => {
+        const store1 = store()
+        const stringAtom = atom("initial")
+        store1.get(stringAtom)
+        const promise = Promise.resolve("updated")
+        const result = setAtom(stringAtom, promise, store1.data)
+        expect(isPromiseLike(result)).toBe(true)
+        expect(store1.data.values.get(stringAtom)).toBe(promise)
+        await result
+        expect(store1.data.values.get(stringAtom)).toBe("updated")
+    })
+
+    test("set with bare rejected promise reverts to previous value", async () => {
+        const store1 = store()
+        const stringAtom = atom("initial")
+        store1.get(stringAtom)
+        const result = setAtom(
+            stringAtom,
+            Promise.reject(new Error("boom")),
+            store1.data,
+        )
+        try { await result } catch {}
+        await Promise.resolve()
+        expect(store1.get(stringAtom)).toBe("initial")
+    })
+
     test("set with async updater stores promise then resolves", async () => {
         const store1 = store()
         const stringAtom = atom("initial")
