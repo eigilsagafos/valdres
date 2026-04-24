@@ -248,14 +248,14 @@ export const subscribe = <V>(
                             }
                             value.then(
                                 (resolved: any) => {
-                                    if (timeoutRef) {
+                                    if (timeoutRef !== undefined) {
                                         clearTimeout(timeoutRef)
                                         pendingTimeouts.delete(timeoutRef)
                                     }
                                     handleResolve(resolved)
                                 },
                                 () => {
-                                    if (timeoutRef) {
+                                    if (timeoutRef !== undefined) {
                                         clearTimeout(timeoutRef)
                                         pendingTimeouts.delete(timeoutRef)
                                     }
