@@ -10,7 +10,10 @@ export const CONTRAST_QUERIES: { value: Contrast; query: string }[] = [
 ]
 
 export const readContrast = (): Contrast => {
-    if (typeof window === "undefined" || !window.matchMedia) {
+    if (
+        typeof window === "undefined" ||
+        typeof window.matchMedia !== "function"
+    ) {
         return "no-preference"
     }
     for (const { value, query } of CONTRAST_QUERIES) {
@@ -22,5 +25,5 @@ export const readContrast = (): Contrast => {
 export const contrastAtom = atom<Contrast>(readContrast, {
     global: true,
     name: "@valdres/browser-contrast/contrast",
-    onInit: () => subscribe(),
+    onMount: () => subscribe(),
 })

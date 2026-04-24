@@ -57,9 +57,10 @@ describe("contrastAtom", () => {
         expect(s.get(contrastAtom)).toBe("no-preference")
     })
 
-    test("updates when any media query change event fires", () => {
+    test("subscribing wires the listeners and reflects media-query changes", () => {
         const mq = installMatchMedia("no-preference")
         const s = store()
+        const unsub = s.sub(contrastAtom, () => {})
         expect(s.get(contrastAtom)).toBe("no-preference")
 
         mq.set("more")
@@ -73,5 +74,6 @@ describe("contrastAtom", () => {
 
         mq.set("no-preference")
         expect(s.get(contrastAtom)).toBe("no-preference")
+        unsub()
     })
 })

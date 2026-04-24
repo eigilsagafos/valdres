@@ -5,7 +5,11 @@ import {
 } from "../atoms/contrastAtom"
 
 export const subscribe = () => {
-    if (typeof window === "undefined" || !window.matchMedia) return
+    if (
+        typeof window === "undefined" ||
+        typeof window.matchMedia !== "function"
+    )
+        return
     const sync = () => contrastAtom.setSelf(readContrast())
     sync()
     const mqs = CONTRAST_QUERIES.map(({ query }) => window.matchMedia(query))
