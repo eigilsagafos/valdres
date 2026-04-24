@@ -4,13 +4,18 @@ import { selector } from "./selector"
 import { store } from "./store"
 import { wait } from "../test/utils/wait"
 
-const waitFor = async (callback, count = 0) => {
-    try {
-        callback()
-        return
-    } catch (e) {
-        await wait(1)
-        return waitFor(callback, count++)
+const waitFor = async (callback: () => void, timeoutMs = 2000) => {
+    const deadline = Date.now() + timeoutMs
+    let lastError: unknown
+    while (true) {
+        try {
+            callback()
+            return
+        } catch (e) {
+            lastError = e
+            if (Date.now() >= deadline) throw lastError
+            await wait(5)
+        }
     }
 }
 

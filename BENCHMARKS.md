@@ -10,48 +10,48 @@ All benchmarks compare valdres against [Jotai](https://github.com/pmndrs/jotai) 
 
 | Benchmark | valdres | jotai | JSC (Safari) |
 |:----------|--------:|------:|-----------:|
-| atom(1) | 5ns | 65ns | 🟢 13.8x faster |
-| store.get(atom) | 26ns | 343ns | 🟢 13.2x faster |
-| set(atom, value) | 166ns | 2.1µs | 🟢 12.9x faster |
-| set(atom, curr => curr+1) | 189ns | 2.7µs | 🟢 14.2x faster |
-| set(atom) with 10 subs | 193ns | 3.7µs | 🟢 19.2x faster |
-| atom lifecycle (create+100get+100set) | 17.4µs | 278.2µs | 🟢 16.0x faster |
-| set 1000 atoms | 72.0µs | 1.12ms | 🟢 15.6x faster |
-| get 1000 atoms | 3.9µs | 488.5µs | 🟢 125.6x faster |
+| atom(1) | 3ns | 53ns | 🟢 19.7x faster |
+| store.get(atom) | 40ns | 361ns | 🟢 9.0x faster |
+| set(atom, value) | 171ns | 2.1µs | 🟢 12.4x faster |
+| set(atom, curr => curr+1) | 180ns | 2.7µs | 🟢 15.1x faster |
+| set(atom) with 10 subs | 194ns | 3.5µs | 🟢 18.3x faster |
+| atom lifecycle (create+100get+100set) | 15.9µs | 280.8µs | 🟢 17.6x faster |
+| set 1000 atoms | 74.7µs | 1.17ms | 🟢 15.7x faster |
+| get 1000 atoms | 6.9µs | 355.4µs | 🟢 51.5x faster |
 
 #### Selectors
 
 | Benchmark | valdres | jotai | JSC (Safari) |
 |:----------|--------:|------:|-----------:|
-| selector(fn) | 8ns | 83ns | 🟢 10.0x faster |
-| set + read 10 selectors | 7.8µs | 28.5µs | 🟢 3.6x faster |
-| set + read 100 selectors | 72.3µs | 312.9µs | 🟢 4.3x faster |
-| set + read through 5 chained selectors | 6.9µs | 16.8µs | 🟢 2.4x faster |
+| selector(fn) | 5ns | 57ns | 🟢 10.9x faster |
+| set + read 10 selectors | 8.6µs | 26.9µs | 🟢 3.1x faster |
+| set + read 100 selectors | 79.3µs | 321.2µs | 🟢 4.1x faster |
+| set + read through 5 chained selectors | 7.6µs | 17.5µs | 🟢 2.3x faster |
 
 #### Transactions
 
 | Benchmark | valdres | jotai | JSC (Safari) |
 |:----------|--------:|------:|-----------:|
-| txn: 10 atoms × 10 selectors, set + read | 76.0µs | 289.5µs | 🟢 3.8x faster |
-| txn: 10 atoms × 10 selectors, with subs | 125.4µs | 566.4µs | 🟢 4.5x faster |
-| txn: 10 atoms × 100 selectors, set + read | 709.7µs | 3.21ms | 🟢 4.5x faster |
-| txn: cross-atom 1000 selectors, set + read | 866.2µs | 4.43ms | 🟢 5.1x faster |
-| txn: cross-atom 1000 selectors, with subs | 1.35ms | 23.71ms | 🟢 17.5x faster |
+| txn: 10 atoms × 10 selectors, set + read | 80.7µs | 389.7µs | 🟢 4.8x faster |
+| txn: 10 atoms × 10 selectors, with subs | 137.5µs | 723.6µs | 🟢 5.3x faster |
+| txn: 10 atoms × 100 selectors, set + read | 765.4µs | 4.41ms | 🟢 5.8x faster |
+| txn: cross-atom 1000 selectors, set + read | 911.2µs | 4.63ms | 🟢 5.1x faster |
+| txn: cross-atom 1000 selectors, with subs | 1.39ms | 23.48ms | 🟢 16.9x faster |
 
 #### Families
 
 | Benchmark | valdres | jotai | JSC (Safari) |
 |:----------|--------:|------:|-----------:|
-| atomFamily(id) cache hit | 28ns | 11ns | 🔴 2.5x slower |
+| atomFamily(id) cache hit | 28ns | 11ns | 🔴 2.7x slower |
 
 #### Not yet optimized
 
 | Benchmark | valdres | jotai | JSC (Safari) |
 |:----------|--------:|------:|-----------:|
-| atomFamily(id) | 302ns | 424ns | 🟢 1.4x faster |
-| selectorFamily(id) | 321ns | 405ns | 🟢 1.3x faster |
-| createStore | 538ns | 7.2µs | 🟢 13.4x faster |
-| sub + unsub | 466ns | 2.6µs | 🟢 5.5x faster |
+| atomFamily(id) | 331ns | 479ns | 🟢 1.4x faster |
+| selectorFamily(id) | 353ns | 475ns | 🟢 1.3x faster |
+| createStore | 587ns | 6.7µs | 🟢 11.3x faster |
+| sub + unsub | 471ns | 2.4µs | 🟢 5.2x faster |
 
 #### Baseline
 
@@ -60,13 +60,13 @@ Raw JS operations for reference.
 | Operation | Time |
 |:----------|-----:|
 | obj.value | 4ns |
-| map.get(key) | 15ns |
-| valdres get | 7ns |
-| jotai get | 327ns |
+| map.get(key) | 16ns |
+| valdres get | 8ns |
+| jotai get | 349ns |
 | obj.value = n | 4ns |
-| map.set(key, n) | 15ns |
-| valdres set | 182ns |
-| jotai set | 2.9µs |
+| map.set(key, n) | 17ns |
+| valdres set | 194ns |
+| jotai set | 2.3µs |
 
 ### Node.js — V8 (Chrome)
 
@@ -74,48 +74,48 @@ Raw JS operations for reference.
 
 | Benchmark | valdres | jotai | V8 (Chrome) |
 |:----------|--------:|------:|-----------:|
-| atom(1) | 22ns | 54ns | 🟢 2.5x faster |
-| store.get(atom) | 11ns | 160ns | 🟢 14.2x faster |
-| set(atom, value) | 245ns | 1.3µs | 🟢 5.3x faster |
-| set(atom, curr => curr+1) | 261ns | 1.5µs | 🟢 5.7x faster |
-| set(atom) with 10 subs | 288ns | 1.9µs | 🟢 6.5x faster |
-| atom lifecycle (create+100get+100set) | 28.4µs | 137.5µs | 🟢 4.9x faster |
-| set 1000 atoms | 80.3µs | 433.9µs | 🟢 5.4x faster |
-| get 1000 atoms | 12.8µs | 188.2µs | 🟢 14.7x faster |
+| atom(1) | 25ns | 50ns | 🟢 2.0x faster |
+| store.get(atom) | 12ns | 161ns | 🟢 13.9x faster |
+| set(atom, value) | 281ns | 1.2µs | 🟢 4.4x faster |
+| set(atom, curr => curr+1) | 306ns | 1.5µs | 🟢 5.0x faster |
+| set(atom) with 10 subs | 319ns | 1.7µs | 🟢 5.4x faster |
+| atom lifecycle (create+100get+100set) | 31.9µs | 141.0µs | 🟢 4.4x faster |
+| set 1000 atoms | 90.2µs | 465.1µs | 🟢 5.2x faster |
+| get 1000 atoms | 14.2µs | 208.2µs | 🟢 14.7x faster |
 
 #### Selectors
 
 | Benchmark | valdres | jotai | V8 (Chrome) |
 |:----------|--------:|------:|-----------:|
-| selector(fn) | 44ns | 61ns | 🟢 1.4x faster |
-| set + read 10 selectors | 8.2µs | 21.0µs | 🟢 2.6x faster |
-| set + read 100 selectors | 70.1µs | 132.9µs | 🟢 1.9x faster |
-| set + read through 5 chained selectors | 4.5µs | 10.5µs | 🟢 2.3x faster |
+| selector(fn) | 43ns | 54ns | 🟢 1.2x faster |
+| set + read 10 selectors | 8.6µs | 19.1µs | 🟢 2.2x faster |
+| set + read 100 selectors | 77.9µs | 128.3µs | 🟢 1.6x faster |
+| set + read through 5 chained selectors | 4.8µs | 9.6µs | 🟢 2.0x faster |
 
 #### Transactions
 
 | Benchmark | valdres | jotai | V8 (Chrome) |
 |:----------|--------:|------:|-----------:|
-| txn: 10 atoms × 10 selectors, set + read | 79.8µs | 146.4µs | 🟢 1.8x faster |
-| txn: 10 atoms × 10 selectors, with subs | 73.0µs | 256.3µs | 🟢 3.5x faster |
-| txn: 10 atoms × 100 selectors, set + read | 777.0µs | 1.43ms | 🟢 1.8x faster |
-| txn: cross-atom 1000 selectors, set + read | 949.4µs | 1.99ms | 🟢 2.1x faster |
-| txn: cross-atom 1000 selectors, with subs | 1.01ms | 12.36ms | 🟢 12.2x faster |
+| txn: 10 atoms × 10 selectors, set + read | 79.8µs | 140.6µs | 🟢 1.8x faster |
+| txn: 10 atoms × 10 selectors, with subs | 78.9µs | 239.5µs | 🟢 3.0x faster |
+| txn: 10 atoms × 100 selectors, set + read | 849.5µs | 1.30ms | 🟢 1.5x faster |
+| txn: cross-atom 1000 selectors, set + read | 1.06ms | 1.81ms | 🟢 1.7x faster |
+| txn: cross-atom 1000 selectors, with subs | 994.4µs | 12.92ms | 🟢 13.0x faster |
 
 #### Families
 
 | Benchmark | valdres | jotai | V8 (Chrome) |
 |:----------|--------:|------:|-----------:|
-| atomFamily(id) cache hit | 19ns | 6ns | 🔴 3.4x slower |
+| atomFamily(id) cache hit | 26ns | 6ns | 🔴 4.2x slower |
 
 #### Not yet optimized
 
 | Benchmark | valdres | jotai | V8 (Chrome) |
 |:----------|--------:|------:|-----------:|
-| createStore | 245ns | 1.5µs | 🟢 6.0x faster |
-| sub + unsub | 850ns | 2.2µs | 🟢 2.6x faster |
-| atomFamily(id) | 390ns | 474ns | 🟢 1.2x faster |
-| selectorFamily(id) | 258ns | 406ns | 🟢 1.6x faster |
+| createStore | 162ns | 1.2µs | 🟢 7.7x faster |
+| sub + unsub | 789ns | 2.2µs | 🟢 2.8x faster |
+| atomFamily(id) | 419ns | 542ns | 🟢 1.3x faster |
+| selectorFamily(id) | 209ns | 374ns | 🟢 1.8x faster |
 
 #### Baseline
 
@@ -125,9 +125,9 @@ Raw JS operations for reference.
 |:----------|-----:|
 | obj.value | 0ns |
 | map.get(key) | 5ns |
-| valdres get | 11ns |
-| jotai get | 187ns |
+| valdres get | 12ns |
+| jotai get | 198ns |
 | obj.value = n | 1ns |
-| map.set(key, n) | 5ns |
-| valdres set | 246ns |
+| map.set(key, n) | 6ns |
+| valdres set | 300ns |
 | jotai set | 1.4µs |
