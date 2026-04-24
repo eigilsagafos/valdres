@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>@valdres/browser-geolocation demo</title>
+        <link
+            rel="stylesheet"
+            href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+            integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+            crossorigin=""
+        />
+        <script
+            defer
+            src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+            integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+            crossorigin=""
+        ></script>
+        <style>
+            :root {
+                color-scheme: light dark;
+                font-family: ui-sans-serif, system-ui, sans-serif;
+            }
+            body {
+                max-width: 52rem;
+                margin: 3rem auto;
+                padding: 0 1rem;
+                line-height: 1.5;
+            }
+            h1 {
+                margin-bottom: 0.25rem;
+            }
+            .sub {
+                color: color-mix(in srgb, currentColor 60%, transparent);
+                margin-top: 0;
+            }
+            .grid {
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                gap: 1rem;
+            }
+            @media (max-width: 48rem) {
+                .grid {
+                    grid-template-columns: 1fr;
+                }
+            }
+            .card {
+                border: 1px solid color-mix(in srgb, currentColor 20%, transparent);
+                border-radius: 0.5rem;
+                padding: 1rem 1.25rem;
+                margin: 1rem 0;
+            }
+            .big {
+                font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+                font-size: 1.5rem;
+                word-break: break-all;
+            }
+            label {
+                display: flex;
+                align-items: center;
+                gap: 0.5rem;
+                font-size: 0.9rem;
+                margin-top: 0.5rem;
+            }
+            input[type="number"] {
+                width: 8rem;
+                font: inherit;
+                padding: 0.35rem 0.5rem;
+                border: 1px solid
+                    color-mix(in srgb, currentColor 25%, transparent);
+                border-radius: 0.25rem;
+                background: transparent;
+                color: inherit;
+                box-sizing: border-box;
+            }
+            .pill {
+                display: inline-block;
+                padding: 0.15rem 0.6rem;
+                border-radius: 999px;
+                font-size: 0.8rem;
+                background: color-mix(in srgb, currentColor 10%, transparent);
+            }
+            .pill-active,
+            .pill-granted {
+                background: color-mix(in srgb, #22c55e 25%, transparent);
+            }
+            .pill-denied,
+            .pill-error {
+                background: color-mix(in srgb, #ef4444 25%, transparent);
+            }
+            .pill-pending,
+            .pill-prompt {
+                background: color-mix(in srgb, #eab308 25%, transparent);
+            }
+            .pill-idle,
+            .pill-unsupported {
+                background: color-mix(in srgb, currentColor 15%, transparent);
+            }
+            .meta {
+                font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+                font-size: 0.85rem;
+                white-space: pre-wrap;
+            }
+            a {
+                color: inherit;
+            }
+            #map {
+                height: 24rem;
+                border-radius: 0.5rem;
+                overflow: hidden;
+            }
+            .leaflet-container {
+                background: color-mix(in srgb, currentColor 5%, transparent);
+            }
+        </style>
+    </head>
+    <body>
+        <h1>@valdres/browser-geolocation</h1>
+        <p class="sub">
+            Reactive geolocation via valdres atoms. Your browser will prompt
+            for permission on first access.
+        </p>
+
+        <div class="grid">
+            <div class="card">
+                <div>
+                    Status <span id="status" class="pill">…</span>
+                </div>
+                <div>
+                    Permission <span id="permission" class="pill">…</span>
+                </div>
+                <div id="error" class="meta" style="margin-top: 0.5rem"></div>
+            </div>
+
+            <div class="card">
+                <strong>Options</strong>
+                <label>
+                    <input id="high-accuracy" type="checkbox" />
+                    enableHighAccuracy
+                </label>
+                <label>
+                    timeout (ms)
+                    <input id="timeout" type="number" min="0" step="1000" />
+                </label>
+                <label>
+                    maximumAge (ms)
+                    <input id="max-age" type="number" min="0" step="1000" />
+                </label>
+                <p class="sub" style="font-size: 0.8rem; margin: 0.5rem 0 0">
+                    Changes restart the watch live.
+                </p>
+            </div>
+        </div>
+
+        <div class="card">
+            <div>Latitude / Longitude</div>
+            <div id="coords" class="big">—</div>
+        </div>
+
+        <div id="map"></div>
+
+        <div class="grid">
+            <div class="card">
+                <div class="sub">Accuracy (m)</div>
+                <div id="accuracy" class="big">—</div>
+            </div>
+            <div class="card">
+                <div class="sub">Altitude (m)</div>
+                <div id="altitude" class="big">—</div>
+            </div>
+            <div class="card">
+                <div class="sub">Altitude accuracy (m)</div>
+                <div id="altitude-accuracy" class="big">—</div>
+            </div>
+            <div class="card">
+                <div class="sub">Heading (°)</div>
+                <div id="heading" class="big">—</div>
+            </div>
+            <div class="card">
+                <div class="sub">Speed (m/s)</div>
+                <div id="speed" class="big">—</div>
+            </div>
+        </div>
+
+        <div class="card">
+            <strong>Full snapshot</strong>
+            <pre id="snapshot" class="meta">—</pre>
+        </div>
+
+        <script>
+            window.process = { env: { NODE_ENV: "development" } }
+        </script>
+        <script type="module" src="./main.ts"></script>
+    </body>
+</html>
