@@ -4,7 +4,11 @@ import {
 } from "../atoms/reducedMotionAtom"
 
 export const subscribe = () => {
-    if (typeof window === "undefined" || !window.matchMedia) return
+    if (
+        typeof window === "undefined" ||
+        typeof window.matchMedia !== "function"
+    )
+        return
     const mq = window.matchMedia(REDUCED_MOTION_MEDIA)
     const sync = () =>
         reducedMotionAtom.setSelf(mq.matches ? "reduce" : "no-preference")
