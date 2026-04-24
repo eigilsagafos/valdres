@@ -108,6 +108,24 @@
         "typescript": "5.9.2",
       },
     },
+    "packages/@valdres/browser-focus": {
+      "name": "@valdres/browser-focus",
+      "version": "0.2.0-pre.28",
+      "devDependencies": {
+        "@happy-dom/global-registrator": "20.0.5",
+        "@types/react": "19.1.12",
+        "@types/react-dom": "19.1.9",
+        "happy-dom": "20.0.5",
+        "react": "19.1.1",
+        "react-dom": "19.1.1",
+        "typescript": "5.9.2",
+        "valdres": "0.2.0-pre.28",
+        "valdres-react": "0.2.0-pre.28",
+      },
+      "peerDependencies": {
+        "valdres": "0.2.0-pre.28",
+      },
+    },
     "packages/@valdres/browser-geolocation": {
       "name": "@valdres/browser-geolocation",
       "version": "0.2.0-pre.28",
@@ -971,7 +989,9 @@
 
     "@types/prop-types": ["@types/prop-types@15.7.13", "", {}, "sha512-hCZTSvwbzWGvhqxp/RqVqwU999pBf2vp7hzIjiYOsl8wqOmUxkQ6ddw1cV3l8811+kdUFus/q4d1Y3E3SyEifA=="],
 
-    "@types/react": ["@types/react@18.3.8", "", { "dependencies": { "@types/prop-types": "*", "csstype": "^3.0.2" } }, "sha512-syBUrW3/XpnW4WJ41Pft+I+aPoDVbrBVQGEnbD7NijDGlVC+8gV/XKRY+7vMDlfPpbwYt0l1vd/Sj8bJGMbs9Q=="],
+    "@types/react": ["@types/react@19.1.12", "", { "dependencies": { "csstype": "^3.0.2" } }, "sha512-cMoR+FoAf/Jyq6+Df2/Z41jISvGZZ2eTlnsaJRptmZ76Caldwy1odD4xTr/gNV9VLj0AWgg/nmkevIyUfIIq5w=="],
+
+    "@types/react-dom": ["@types/react-dom@19.1.9", "", { "peerDependencies": { "@types/react": "^19.0.0" } }, "sha512-qXRuZaOsAdXKFyOhRBg6Lqqc0yay13vN7KrIg4L7N4aaHN68ma9OK3NE1BoDFgFOTfM7zg+3/8+2n8rLUH3OKQ=="],
 
     "@types/trusted-types": ["@types/trusted-types@2.0.7", "", {}, "sha512-ScaPdn1dQczgbl0QFTeTOmVHFULt394XJgOQNoyVhZ6r2vLnMLJfBPd53SB52T/3G36VI1/g2MZaX0cwDuXsfw=="],
 
@@ -996,6 +1016,8 @@
     "@valdres-react/panable": ["@valdres-react/panable@workspace:packages/@valdres-react/panable"],
 
     "@valdres-react/recoil": ["@valdres-react/recoil@workspace:packages/@valdres-react/recoil"],
+
+    "@valdres/browser-focus": ["@valdres/browser-focus@workspace:packages/@valdres/browser-focus"],
 
     "@valdres/browser-geolocation": ["@valdres/browser-geolocation@workspace:packages/@valdres/browser-geolocation"],
 
@@ -2859,6 +2881,10 @@
 
     "@types/babel__traverse/@babel/types": ["@babel/types@7.25.7", "", { "dependencies": { "@babel/helper-string-parser": "^7.25.7", "@babel/helper-validator-identifier": "^7.25.7", "to-fast-properties": "^2.0.0" } }, "sha512-vwIVdXG+j+FOpkwqHRcBgHLYNL7XMkufrlaFvL9o6Ai9sJn9+PdyIL5qa0XzTZw084c+u9LOls53eoZWP/W5WQ=="],
 
+    "@valdres/browser-focus/@happy-dom/global-registrator": ["@happy-dom/global-registrator@20.0.5", "", { "dependencies": { "@types/node": "^20.0.0", "happy-dom": "^20.0.5" } }, "sha512-RWQ85on4fiYKw5D1xk0nU2YGCYsJEJ5iXmZHTRyeYft4OCN4IRMFZ3uX91/Tncf/9K4tPOnU1HiEOtLs2Zxukw=="],
+
+    "@valdres/browser-focus/happy-dom": ["happy-dom@20.0.5", "", { "dependencies": { "@types/node": "^20.0.0", "@types/whatwg-mimetype": "^3.0.2", "whatwg-mimetype": "^3.0.0" } }, "sha512-AiqA0rfS7WR1kihXt9W9aA5LFLaOKzwiL+QoI7BkOQ0r21C7VHTOf4k8QNlnWYaHLhpI2tZzJPLV1lY1obDTmw=="],
+
     "@valdres/browser-geolocation/@happy-dom/global-registrator": ["@happy-dom/global-registrator@20.0.5", "", { "dependencies": { "@types/node": "^20.0.0", "happy-dom": "^20.0.5" } }, "sha512-RWQ85on4fiYKw5D1xk0nU2YGCYsJEJ5iXmZHTRyeYft4OCN4IRMFZ3uX91/Tncf/9K4tPOnU1HiEOtLs2Zxukw=="],
 
     "@valdres/browser-geolocation/happy-dom": ["happy-dom@20.0.5", "", { "dependencies": { "@types/node": "^20.0.0", "@types/whatwg-mimetype": "^3.0.2", "whatwg-mimetype": "^3.0.0" } }, "sha512-AiqA0rfS7WR1kihXt9W9aA5LFLaOKzwiL+QoI7BkOQ0r21C7VHTOf4k8QNlnWYaHLhpI2tZzJPLV1lY1obDTmw=="],
@@ -2874,6 +2900,8 @@
     "@valdres/browser-window/@happy-dom/global-registrator": ["@happy-dom/global-registrator@20.0.5", "", { "dependencies": { "@types/node": "^20.0.0", "happy-dom": "^20.0.5" } }, "sha512-RWQ85on4fiYKw5D1xk0nU2YGCYsJEJ5iXmZHTRyeYft4OCN4IRMFZ3uX91/Tncf/9K4tPOnU1HiEOtLs2Zxukw=="],
 
     "@valdres/browser-window/happy-dom": ["happy-dom@20.0.5", "", { "dependencies": { "@types/node": "^20.0.0", "@types/whatwg-mimetype": "^3.0.2", "whatwg-mimetype": "^3.0.0" } }, "sha512-AiqA0rfS7WR1kihXt9W9aA5LFLaOKzwiL+QoI7BkOQ0r21C7VHTOf4k8QNlnWYaHLhpI2tZzJPLV1lY1obDTmw=="],
+
+    "@valdres/documentation/@types/react": ["@types/react@18.3.8", "", { "dependencies": { "@types/prop-types": "*", "csstype": "^3.0.2" } }, "sha512-syBUrW3/XpnW4WJ41Pft+I+aPoDVbrBVQGEnbD7NijDGlVC+8gV/XKRY+7vMDlfPpbwYt0l1vd/Sj8bJGMbs9Q=="],
 
     "@valdres/public-ip/@happy-dom/global-registrator": ["@happy-dom/global-registrator@20.0.5", "", { "dependencies": { "@types/node": "^20.0.0", "happy-dom": "^20.0.5" } }, "sha512-RWQ85on4fiYKw5D1xk0nU2YGCYsJEJ5iXmZHTRyeYft4OCN4IRMFZ3uX91/Tncf/9K4tPOnU1HiEOtLs2Zxukw=="],
 
