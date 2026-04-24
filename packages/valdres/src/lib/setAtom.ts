@@ -66,7 +66,7 @@ export const setAtom = <Value = any>(
         }
         return promise as Value
     }
-    const areEqual = isPromiseLike(currentValue) || isPromiseLike(newValue)
+    const areEqual = isPromiseLike(currentValue)
         ? currentValue === newValue
         : atom.equal(currentValue, newValue)
     if (areEqual) return newValue
