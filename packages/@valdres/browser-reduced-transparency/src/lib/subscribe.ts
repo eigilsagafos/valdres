@@ -4,7 +4,11 @@ import {
 } from "../atoms/reducedTransparencyAtom"
 
 export const subscribe = () => {
-    if (typeof window === "undefined" || !window.matchMedia) return
+    if (
+        typeof window === "undefined" ||
+        typeof window.matchMedia !== "function"
+    )
+        return
     const mq = window.matchMedia(REDUCED_TRANSPARENCY_MEDIA)
     const sync = () =>
         reducedTransparencyAtom.setSelf(

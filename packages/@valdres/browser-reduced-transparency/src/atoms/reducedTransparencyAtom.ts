@@ -6,7 +6,10 @@ export type ReducedTransparency = "no-preference" | "reduce"
 export const REDUCED_TRANSPARENCY_MEDIA = "(prefers-reduced-transparency: reduce)"
 
 const getInitial = (): ReducedTransparency => {
-    if (typeof window === "undefined" || !window.matchMedia) {
+    if (
+        typeof window === "undefined" ||
+        typeof window.matchMedia !== "function"
+    ) {
         return "no-preference"
     }
     return window.matchMedia(REDUCED_TRANSPARENCY_MEDIA).matches
@@ -17,5 +20,5 @@ const getInitial = (): ReducedTransparency => {
 export const reducedTransparencyAtom = atom<ReducedTransparency>(getInitial, {
     global: true,
     name: "@valdres/browser-reduced-transparency/reducedTransparency",
-    onInit: () => subscribe(),
+    onMount: () => subscribe(),
 })
