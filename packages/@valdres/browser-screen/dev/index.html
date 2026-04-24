@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>@valdres/browser-screen demo</title>
+        <style>
+            :root {
+                color-scheme: light dark;
+                font-family:
+                    system-ui,
+                    -apple-system,
+                    sans-serif;
+            }
+            body {
+                max-width: 720px;
+                margin: 2rem auto;
+                padding: 0 1rem;
+                line-height: 1.5;
+            }
+            h1 {
+                margin-bottom: 0;
+            }
+            .muted {
+                color: #888;
+                font-size: 0.9rem;
+            }
+            .card {
+                margin-top: 1.5rem;
+                border: 1px solid #8884;
+                border-radius: 8px;
+                padding: 1rem 1.25rem;
+            }
+            dl {
+                display: grid;
+                grid-template-columns: auto 1fr;
+                gap: 0.4rem 1.25rem;
+                margin: 0;
+                font-size: 0.95rem;
+            }
+            dt {
+                color: #888;
+            }
+            dd {
+                margin: 0;
+                font-family:
+                    ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+            }
+            .hint {
+                margin-top: 1rem;
+                font-size: 0.85rem;
+            }
+        </style>
+    </head>
+    <body>
+        <h1>@valdres/browser-screen</h1>
+        <p class="muted">
+            Reactive wrapper for <code>window.screen</code>. Resize the window,
+            rotate the screen, or drag the window to a display with a different
+            pixel density to see updates.
+        </p>
+
+        <div class="card">
+            <dl id="screen"></dl>
+        </div>
+
+        <p class="hint muted">
+            Note: pure arrangement changes (e.g. rearranging monitors in System
+            Settings without moving this window) are not detectable through this
+            API — use
+            <code>@valdres/browser-window-management</code> for that.
+        </p>
+
+        <script>
+            // valdres reads process.env.VALDRES_VERSION at import time
+            window.process = window.process || { env: {} }
+        </script>
+        <script type="module" src="./index.ts"></script>
+    </body>
+</html>

@@ -108,6 +108,19 @@
         "typescript": "5.9.2",
       },
     },
+    "packages/@valdres/browser-geolocation": {
+      "name": "@valdres/browser-geolocation",
+      "version": "0.2.0-pre.28",
+      "devDependencies": {
+        "@happy-dom/global-registrator": "20.0.5",
+        "happy-dom": "20.0.5",
+        "typescript": "5.9.2",
+        "valdres": "0.2.0-pre.28",
+      },
+      "peerDependencies": {
+        "valdres": "0.2.0-pre.28",
+      },
+    },
     "packages/@valdres/browser-keyboard": {
       "name": "@valdres/browser-keyboard",
       "version": "0.2.0-pre.28",
@@ -121,6 +134,19 @@
     },
     "packages/@valdres/browser-online": {
       "name": "@valdres/browser-online",
+      "version": "0.2.0-pre.28",
+      "devDependencies": {
+        "@happy-dom/global-registrator": "20.0.5",
+        "happy-dom": "20.0.5",
+        "typescript": "5.9.2",
+        "valdres": "0.2.0-pre.28",
+      },
+      "peerDependencies": {
+        "valdres": "0.2.0-pre.28",
+      },
+    },
+    "packages/@valdres/browser-screen": {
+      "name": "@valdres/browser-screen",
       "version": "0.2.0-pre.28",
       "devDependencies": {
         "@happy-dom/global-registrator": "20.0.5",
@@ -971,9 +997,13 @@
 
     "@valdres-react/recoil": ["@valdres-react/recoil@workspace:packages/@valdres-react/recoil"],
 
+    "@valdres/browser-geolocation": ["@valdres/browser-geolocation@workspace:packages/@valdres/browser-geolocation"],
+
     "@valdres/browser-keyboard": ["@valdres/browser-keyboard@workspace:packages/@valdres/browser-keyboard"],
 
     "@valdres/browser-online": ["@valdres/browser-online@workspace:packages/@valdres/browser-online"],
+
+    "@valdres/browser-screen": ["@valdres/browser-screen@workspace:packages/@valdres/browser-screen"],
 
     "@valdres/browser-window": ["@valdres/browser-window@workspace:packages/@valdres/browser-window"],
 
@@ -2829,9 +2859,17 @@
 
     "@types/babel__traverse/@babel/types": ["@babel/types@7.25.7", "", { "dependencies": { "@babel/helper-string-parser": "^7.25.7", "@babel/helper-validator-identifier": "^7.25.7", "to-fast-properties": "^2.0.0" } }, "sha512-vwIVdXG+j+FOpkwqHRcBgHLYNL7XMkufrlaFvL9o6Ai9sJn9+PdyIL5qa0XzTZw084c+u9LOls53eoZWP/W5WQ=="],
 
+    "@valdres/browser-geolocation/@happy-dom/global-registrator": ["@happy-dom/global-registrator@20.0.5", "", { "dependencies": { "@types/node": "^20.0.0", "happy-dom": "^20.0.5" } }, "sha512-RWQ85on4fiYKw5D1xk0nU2YGCYsJEJ5iXmZHTRyeYft4OCN4IRMFZ3uX91/Tncf/9K4tPOnU1HiEOtLs2Zxukw=="],
+
+    "@valdres/browser-geolocation/happy-dom": ["happy-dom@20.0.5", "", { "dependencies": { "@types/node": "^20.0.0", "@types/whatwg-mimetype": "^3.0.2", "whatwg-mimetype": "^3.0.0" } }, "sha512-AiqA0rfS7WR1kihXt9W9aA5LFLaOKzwiL+QoI7BkOQ0r21C7VHTOf4k8QNlnWYaHLhpI2tZzJPLV1lY1obDTmw=="],
+
     "@valdres/browser-online/@happy-dom/global-registrator": ["@happy-dom/global-registrator@20.0.5", "", { "dependencies": { "@types/node": "^20.0.0", "happy-dom": "^20.0.5" } }, "sha512-RWQ85on4fiYKw5D1xk0nU2YGCYsJEJ5iXmZHTRyeYft4OCN4IRMFZ3uX91/Tncf/9K4tPOnU1HiEOtLs2Zxukw=="],
 
     "@valdres/browser-online/happy-dom": ["happy-dom@20.0.5", "", { "dependencies": { "@types/node": "^20.0.0", "@types/whatwg-mimetype": "^3.0.2", "whatwg-mimetype": "^3.0.0" } }, "sha512-AiqA0rfS7WR1kihXt9W9aA5LFLaOKzwiL+QoI7BkOQ0r21C7VHTOf4k8QNlnWYaHLhpI2tZzJPLV1lY1obDTmw=="],
+
+    "@valdres/browser-screen/@happy-dom/global-registrator": ["@happy-dom/global-registrator@20.0.5", "", { "dependencies": { "@types/node": "^20.0.0", "happy-dom": "^20.0.5" } }, "sha512-RWQ85on4fiYKw5D1xk0nU2YGCYsJEJ5iXmZHTRyeYft4OCN4IRMFZ3uX91/Tncf/9K4tPOnU1HiEOtLs2Zxukw=="],
+
+    "@valdres/browser-screen/happy-dom": ["happy-dom@20.0.5", "", { "dependencies": { "@types/node": "^20.0.0", "@types/whatwg-mimetype": "^3.0.2", "whatwg-mimetype": "^3.0.0" } }, "sha512-AiqA0rfS7WR1kihXt9W9aA5LFLaOKzwiL+QoI7BkOQ0r21C7VHTOf4k8QNlnWYaHLhpI2tZzJPLV1lY1obDTmw=="],
 
     "@valdres/browser-window/@happy-dom/global-registrator": ["@happy-dom/global-registrator@20.0.5", "", { "dependencies": { "@types/node": "^20.0.0", "happy-dom": "^20.0.5" } }, "sha512-RWQ85on4fiYKw5D1xk0nU2YGCYsJEJ5iXmZHTRyeYft4OCN4IRMFZ3uX91/Tncf/9K4tPOnU1HiEOtLs2Zxukw=="],
 
