@@ -1,0 +1,315 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width,initial-scale=1" />
+        <title>@valdres/bandwidth</title>
+        <style>
+            *,
+            *::before,
+            *::after {
+                box-sizing: border-box;
+            }
+            html,
+            body {
+                margin: 0;
+                padding: 0;
+            }
+            body {
+                font-family:
+                    -apple-system, BlinkMacSystemFont, "Inter", system-ui,
+                    sans-serif;
+                background: #0a0a0a;
+                color: #fafafa;
+                min-height: 100vh;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                padding: 2rem 1rem;
+            }
+            main {
+                width: 100%;
+                max-width: 680px;
+            }
+            header {
+                margin-bottom: 1.75rem;
+            }
+            h1 {
+                margin: 0 0 0.25rem;
+                font-weight: 600;
+                font-size: 1.35rem;
+                letter-spacing: -0.01em;
+            }
+            .subtitle {
+                color: #808080;
+                font-size: 0.9rem;
+                margin: 0;
+            }
+            .status {
+                display: inline-flex;
+                align-items: center;
+                gap: 0.45rem;
+                padding: 0.4rem 0.8rem;
+                border-radius: 999px;
+                background: #171717;
+                color: #a3a3a3;
+                font-size: 0.82rem;
+                font-weight: 500;
+                margin: 1.5rem 0;
+            }
+            .status .dot {
+                width: 7px;
+                height: 7px;
+                border-radius: 50%;
+                background: currentColor;
+                opacity: 0.6;
+            }
+            .status.active {
+                background: #0d2744;
+                color: #7ab8ff;
+            }
+            .status.active .dot {
+                animation: pulse 1s ease-in-out infinite;
+            }
+            .status.complete {
+                background: #0d2e1a;
+                color: #4ade80;
+            }
+            .status.error {
+                background: #3a0d0d;
+                color: #f87171;
+            }
+            @keyframes pulse {
+                0%,
+                100% {
+                    opacity: 0.4;
+                }
+                50% {
+                    opacity: 1;
+                }
+            }
+            .grid {
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                gap: 0.75rem;
+                margin-bottom: 1.5rem;
+            }
+            .stat {
+                background: #111;
+                border: 1px solid #222;
+                border-radius: 12px;
+                padding: 1.1rem 1.25rem;
+                transition:
+                    border-color 0.2s,
+                    background 0.2s;
+            }
+            .stat.active {
+                border-color: #1e4a7a;
+                background: #0d1a2b;
+            }
+            .stat.active .stat-value {
+                color: #7ab8ff;
+            }
+            .stat-value {
+                transition: color 0.2s;
+            }
+            .stat-label {
+                color: #6b6b6b;
+                font-size: 0.72rem;
+                font-weight: 600;
+                text-transform: uppercase;
+                letter-spacing: 0.08em;
+                margin-bottom: 0.6rem;
+            }
+            .stat-value {
+                font-size: 2.2rem;
+                font-weight: 600;
+                font-variant-numeric: tabular-nums;
+                line-height: 1;
+            }
+            .stat-unit {
+                color: #525252;
+                font-size: 0.85rem;
+                margin-left: 0.3rem;
+                font-weight: 400;
+            }
+            .actions {
+                display: flex;
+                gap: 0.5rem;
+            }
+            button {
+                background: #fafafa;
+                color: #0a0a0a;
+                border: none;
+                padding: 0.7rem 1.25rem;
+                border-radius: 8px;
+                font-size: 0.9rem;
+                font-weight: 500;
+                cursor: pointer;
+                transition: background 0.1s;
+            }
+            button:hover:not(:disabled) {
+                background: #e5e5e5;
+            }
+            button:disabled {
+                opacity: 0.4;
+                cursor: not-allowed;
+            }
+            code {
+                font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+                font-size: 0.82rem;
+                color: #a3a3a3;
+                background: #171717;
+                padding: 0.1rem 0.4rem;
+                border-radius: 4px;
+            }
+            .hint {
+                margin-top: 1.75rem;
+                color: #6b6b6b;
+                font-size: 0.82rem;
+                line-height: 1.55;
+            }
+            .toggle {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                gap: 1rem;
+                margin-top: 1rem;
+                padding: 0.85rem 1rem;
+                background: #111;
+                border: 1px solid #222;
+                border-radius: 10px;
+            }
+            .toggle-label {
+                display: flex;
+                flex-direction: column;
+                gap: 0.25rem;
+                min-width: 0;
+            }
+            .toggle-title {
+                font-size: 0.88rem;
+                font-weight: 500;
+                color: #e5e5e5;
+            }
+            .toggle-meta {
+                font-size: 0.78rem;
+                color: #6b6b6b;
+                font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                white-space: nowrap;
+            }
+            .switch {
+                position: relative;
+                flex-shrink: 0;
+                width: 40px;
+                height: 22px;
+                cursor: pointer;
+            }
+            .switch input {
+                opacity: 0;
+                width: 0;
+                height: 0;
+            }
+            .switch .slider {
+                position: absolute;
+                inset: 0;
+                background: #2a2a2a;
+                border-radius: 999px;
+                transition: background 0.15s;
+            }
+            .switch .slider::before {
+                content: "";
+                position: absolute;
+                top: 3px;
+                left: 3px;
+                width: 16px;
+                height: 16px;
+                background: #fafafa;
+                border-radius: 50%;
+                transition: transform 0.15s;
+            }
+            .switch input:checked + .slider {
+                background: #2563eb;
+            }
+            .switch input:checked + .slider::before {
+                transform: translateX(18px);
+            }
+        </style>
+    </head>
+    <body>
+        <main>
+            <header>
+                <h1>@valdres/bandwidth</h1>
+                <p class="subtitle">
+                    Reactive network speed measurement via Cloudflare's speed
+                    endpoints.
+                </p>
+            </header>
+
+            <div id="status" class="status">
+                <span class="dot"></span>
+                <span id="status-label">Idle</span>
+            </div>
+
+            <div class="grid">
+                <div class="stat" data-stat="download">
+                    <div class="stat-label">Download</div>
+                    <div>
+                        <span class="stat-value" id="download">—</span
+                        ><span class="stat-unit">Mbps</span>
+                    </div>
+                </div>
+                <div class="stat" data-stat="upload">
+                    <div class="stat-label">Upload</div>
+                    <div>
+                        <span class="stat-value" id="upload">—</span
+                        ><span class="stat-unit">Mbps</span>
+                    </div>
+                </div>
+                <div class="stat" data-stat="latency">
+                    <div class="stat-label">Latency</div>
+                    <div>
+                        <span class="stat-value" id="latency">—</span
+                        ><span class="stat-unit">ms</span>
+                    </div>
+                </div>
+                <div class="stat" data-stat="jitter">
+                    <div class="stat-label">Jitter</div>
+                    <div>
+                        <span class="stat-value" id="jitter">—</span
+                        ><span class="stat-unit">ms</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="actions">
+                <button id="refresh">Run measurement</button>
+            </div>
+
+            <p class="hint">
+                The first measurement was triggered automatically by reading
+                <code>downloadSpeedAtom</code>. The button calls
+                <code>measureBandwidth({ fresh: true })</code>.
+            </p>
+
+            <label class="toggle" for="watch-ip">
+                <div class="toggle-label">
+                    <span class="toggle-title"
+                        >Re-measure on public IP change</span
+                    >
+                    <span class="toggle-meta" id="ip-meta">—</span>
+                </div>
+                <span class="switch">
+                    <input type="checkbox" id="watch-ip" />
+                    <span class="slider"></span>
+                </span>
+            </label>
+        </main>
+        <script>
+            // valdres core reads process.env.VALDRES_VERSION at module load
+            window.process = { env: {} }
+        </script>
+        <script type="module" src="./main.ts"></script>
+    </body>
+</html>
