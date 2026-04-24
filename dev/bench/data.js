@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1777052087601,
+  "lastUpdate": 1777054784506,
   "repoUrl": "https://github.com/eigilsagafos/valdres",
   "entries": {
     "valdres benchmarks": [
@@ -18740,6 +18740,390 @@ window.BENCHMARK_DATA = {
           {
             "name": "jotai set [Node]",
             "value": 1402,
+            "unit": "ns",
+            "extra": "baseline"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "eigil@sagafos.no",
+            "name": "Eigil Sagafos",
+            "username": "eigilsagafos"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "d58dff802c47c8e69a80824a71a971cec3918a1e",
+          "message": "Add isVisibleSelector to @valdres/browser-visibility (#96)\n\nDerives a boolean from visibilityAtom for the common \"is the page\nvisible\" check, while keeping visibilityAtom faithful to the native\nDocumentVisibilityState union.\n\nCo-authored-by: Claude Opus 4.7 <noreply@anthropic.com>",
+          "timestamp": "2026-04-24T11:15:34-07:00",
+          "tree_id": "f93914d02d29f3d0a43e5d69ea17c410ff86fd12",
+          "url": "https://github.com/eigilsagafos/valdres/commit/d58dff802c47c8e69a80824a71a971cec3918a1e"
+        },
+        "date": 1777054783654,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "atom(1)",
+            "value": 4,
+            "unit": "ns",
+            "extra": "jotai=51 ratio=0.0829 12.1x faster"
+          },
+          {
+            "name": "store.get(atom)",
+            "value": 40,
+            "unit": "ns",
+            "extra": "jotai=370 ratio=0.1081 9.3x faster"
+          },
+          {
+            "name": "set(atom, value)",
+            "value": 171,
+            "unit": "ns",
+            "extra": "jotai=2084 ratio=0.0821 12.2x faster"
+          },
+          {
+            "name": "set(atom, curr => curr+1)",
+            "value": 182,
+            "unit": "ns",
+            "extra": "jotai=2675 ratio=0.0681 14.7x faster"
+          },
+          {
+            "name": "set(atom) with 10 subs",
+            "value": 192,
+            "unit": "ns",
+            "extra": "jotai=3720 ratio=0.0515 19.4x faster"
+          },
+          {
+            "name": "atom lifecycle (create+100get+100set)",
+            "value": 16010,
+            "unit": "ns",
+            "extra": "jotai=282135 ratio=0.0567 17.6x faster"
+          },
+          {
+            "name": "atomFamily(id)",
+            "value": 341,
+            "unit": "ns",
+            "extra": "jotai=465 ratio=0.7325 1.4x faster"
+          },
+          {
+            "name": "atomFamily(id) cache hit",
+            "value": 29,
+            "unit": "ns",
+            "extra": "jotai=11 ratio=2.6957 2.7x slower"
+          },
+          {
+            "name": "selectorFamily(id)",
+            "value": 325,
+            "unit": "ns",
+            "extra": "jotai=467 ratio=0.6952 1.4x faster"
+          },
+          {
+            "name": "obj.value",
+            "value": 4,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "map.get(key)",
+            "value": 16,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "valdres get",
+            "value": 7,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "jotai get",
+            "value": 345,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "obj.value = n",
+            "value": 4,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "map.set(key, n)",
+            "value": 17,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "valdres set",
+            "value": 190,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "jotai set",
+            "value": 3184,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "selector(fn)",
+            "value": 5,
+            "unit": "ns",
+            "extra": "jotai=60 ratio=0.0838 11.9x faster"
+          },
+          {
+            "name": "set + read 10 selectors",
+            "value": 8655,
+            "unit": "ns",
+            "extra": "jotai=29543 ratio=0.2930 3.4x faster"
+          },
+          {
+            "name": "set + read 100 selectors",
+            "value": 78526,
+            "unit": "ns",
+            "extra": "jotai=321799 ratio=0.2440 4.1x faster"
+          },
+          {
+            "name": "set + read through 5 chained selectors",
+            "value": 7577,
+            "unit": "ns",
+            "extra": "jotai=18016 ratio=0.4206 2.4x faster"
+          },
+          {
+            "name": "createStore",
+            "value": 589,
+            "unit": "ns",
+            "extra": "jotai=6641 ratio=0.0887 11.3x faster"
+          },
+          {
+            "name": "set 1000 atoms",
+            "value": 76934,
+            "unit": "ns",
+            "extra": "jotai=1173495 ratio=0.0656 15.3x faster"
+          },
+          {
+            "name": "get 1000 atoms",
+            "value": 6754,
+            "unit": "ns",
+            "extra": "jotai=525889 ratio=0.0128 77.9x faster"
+          },
+          {
+            "name": "sub + unsub",
+            "value": 461,
+            "unit": "ns",
+            "extra": "jotai=2464 ratio=0.1871 5.3x faster"
+          },
+          {
+            "name": "txn: 10 atoms × 10 selectors, set + read",
+            "value": 78166,
+            "unit": "ns",
+            "extra": "jotai=293281 ratio=0.2665 3.8x faster"
+          },
+          {
+            "name": "txn: 10 atoms × 10 selectors, with subs",
+            "value": 136704,
+            "unit": "ns",
+            "extra": "jotai=596229 ratio=0.2293 4.4x faster"
+          },
+          {
+            "name": "txn: 10 atoms × 100 selectors, set + read",
+            "value": 749906,
+            "unit": "ns",
+            "extra": "jotai=3274391 ratio=0.2290 4.4x faster"
+          },
+          {
+            "name": "txn: cross-atom 1000 selectors, set + read",
+            "value": 898787,
+            "unit": "ns",
+            "extra": "jotai=4968647 ratio=0.1809 5.5x faster"
+          },
+          {
+            "name": "txn: cross-atom 1000 selectors, with subs",
+            "value": 1438107,
+            "unit": "ns",
+            "extra": "jotai=24346548 ratio=0.0591 16.9x faster"
+          },
+          {
+            "name": "txn: 10 atoms × 10 selectors, set + read [Node]",
+            "value": 78045,
+            "unit": "ns",
+            "extra": "jotai=142135 ratio=0.5491 1.8x faster"
+          },
+          {
+            "name": "txn: 10 atoms × 10 selectors, with subs [Node]",
+            "value": 77644,
+            "unit": "ns",
+            "extra": "jotai=244985 ratio=0.3169 3.2x faster"
+          },
+          {
+            "name": "txn: 10 atoms × 100 selectors, set + read [Node]",
+            "value": 858067,
+            "unit": "ns",
+            "extra": "jotai=1322166 ratio=0.6490 1.5x faster"
+          },
+          {
+            "name": "txn: cross-atom 1000 selectors, set + read [Node]",
+            "value": 1080250,
+            "unit": "ns",
+            "extra": "jotai=1973683 ratio=0.5473 1.8x faster"
+          },
+          {
+            "name": "txn: cross-atom 1000 selectors, with subs [Node]",
+            "value": 1016372,
+            "unit": "ns",
+            "extra": "jotai=12599806 ratio=0.0807 12.4x faster"
+          },
+          {
+            "name": "selector(fn) [Node]",
+            "value": 44,
+            "unit": "ns",
+            "extra": "jotai=52 ratio=0.8371 1.2x faster"
+          },
+          {
+            "name": "set + read 10 selectors [Node]",
+            "value": 9104,
+            "unit": "ns",
+            "extra": "jotai=20164 ratio=0.4515 2.2x faster"
+          },
+          {
+            "name": "set + read 100 selectors [Node]",
+            "value": 80138,
+            "unit": "ns",
+            "extra": "jotai=130463 ratio=0.6143 1.6x faster"
+          },
+          {
+            "name": "set + read through 5 chained selectors [Node]",
+            "value": 5207,
+            "unit": "ns",
+            "extra": "jotai=9815 ratio=0.5306 1.9x faster"
+          },
+          {
+            "name": "atom(1) [Node]",
+            "value": 25,
+            "unit": "ns",
+            "extra": "jotai=48 ratio=0.5155 1.9x faster"
+          },
+          {
+            "name": "store.get(atom) [Node]",
+            "value": 12,
+            "unit": "ns",
+            "extra": "jotai=159 ratio=0.0735 13.6x faster"
+          },
+          {
+            "name": "set(atom, value) [Node]",
+            "value": 291,
+            "unit": "ns",
+            "extra": "jotai=1258 ratio=0.2311 4.3x faster"
+          },
+          {
+            "name": "set(atom, curr => curr+1) [Node]",
+            "value": 306,
+            "unit": "ns",
+            "extra": "jotai=1514 ratio=0.2019 5.0x faster"
+          },
+          {
+            "name": "set(atom) with 10 subs [Node]",
+            "value": 330,
+            "unit": "ns",
+            "extra": "jotai=1812 ratio=0.1821 5.5x faster"
+          },
+          {
+            "name": "atom lifecycle (create+100get+100set) [Node]",
+            "value": 32827,
+            "unit": "ns",
+            "extra": "jotai=143287 ratio=0.2291 4.4x faster"
+          },
+          {
+            "name": "createStore [Node]",
+            "value": 159,
+            "unit": "ns",
+            "extra": "jotai=1521 ratio=0.1044 9.6x faster"
+          },
+          {
+            "name": "set 1000 atoms [Node]",
+            "value": 89136,
+            "unit": "ns",
+            "extra": "jotai=443170 ratio=0.2011 5.0x faster"
+          },
+          {
+            "name": "get 1000 atoms [Node]",
+            "value": 13876,
+            "unit": "ns",
+            "extra": "jotai=214699 ratio=0.0646 15.5x faster"
+          },
+          {
+            "name": "sub + unsub [Node]",
+            "value": 805,
+            "unit": "ns",
+            "extra": "jotai=2108 ratio=0.3817 2.6x faster"
+          },
+          {
+            "name": "atomFamily(id) [Node]",
+            "value": 411,
+            "unit": "ns",
+            "extra": "jotai=476 ratio=0.8630 1.2x faster"
+          },
+          {
+            "name": "atomFamily(id) cache hit [Node]",
+            "value": 26,
+            "unit": "ns",
+            "extra": "jotai=7 ratio=3.7673 3.8x slower"
+          },
+          {
+            "name": "selectorFamily(id) [Node]",
+            "value": 339,
+            "unit": "ns",
+            "extra": "jotai=355 ratio=0.9564 1.0x faster"
+          },
+          {
+            "name": "obj.value [Node]",
+            "value": 5,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "map.get(key) [Node]",
+            "value": 5,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "valdres get [Node]",
+            "value": 12,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "jotai get [Node]",
+            "value": 198,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "obj.value = n [Node]",
+            "value": 1,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "map.set(key, n) [Node]",
+            "value": 6,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "valdres set [Node]",
+            "value": 296,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "jotai set [Node]",
+            "value": 1369,
             "unit": "ns",
             "extra": "baseline"
           }
