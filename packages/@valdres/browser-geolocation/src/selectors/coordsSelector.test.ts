@@ -13,7 +13,7 @@ const setGeolocation = (value: unknown) => {
 describe("coordsSelector", () => {
     beforeEach(() => {
         setGeolocation(null)
-        positionAtom.setSelf(null)
+        positionAtom.resetSelf()
     })
 
     test("returns null when no position", () => {

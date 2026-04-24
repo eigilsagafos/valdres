@@ -33,6 +33,7 @@ export const bootstrap = (
 
     const start = () => {
         if (watchId !== undefined) geo.clearWatch(watchId)
+        geolocationErrorAtom.setSelf(null)
         geolocationStatusAtom.setSelf("pending")
         watchId = geo.watchPosition(
             onSuccess,
@@ -47,6 +48,7 @@ export const bootstrap = (
     return () => {
         unsubscribeOptions()
         if (watchId !== undefined) geo.clearWatch(watchId)
+        geolocationErrorAtom.setSelf(null)
         geolocationStatusAtom.setSelf("idle")
     }
 }

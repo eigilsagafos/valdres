@@ -138,6 +138,29 @@ describe("positionAtom", () => {
         expect(s.get(geolocationStatusAtom)).toBe("unsupported")
     })
 
+    test("restart clears any previously-set error", () => {
+        const s = store()
+        s.get(positionAtom)
+        const err = {
+            code: 2,
+            message: "Position unavailable",
+            PERMISSION_DENIED: 1,
+            POSITION_UNAVAILABLE: 2,
+            TIMEOUT: 3,
+        } as GeolocationPositionError
+        geo._error?.(err)
+        expect(s.get(geolocationErrorAtom)?.code).toBe(2)
+
+        geolocationOptionsAtom.setSelf({
+            enableHighAccuracy: true,
+            timeout: 5_000,
+            maximumAge: 1_000,
+        })
+
+        expect(s.get(geolocationErrorAtom)).toBeNull()
+        expect(s.get(geolocationStatusAtom)).toBe("pending")
+    })
+
     test("options change restarts the watch with the new options", () => {
         const s = store()
         s.get(positionAtom)
