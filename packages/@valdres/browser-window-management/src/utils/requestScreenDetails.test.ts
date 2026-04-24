@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from "bun:test"
+import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import { store } from "valdres"
 import { currentScreenAtom } from "../atoms/currentScreenAtom"
 import { screenPermissionAtom } from "../atoms/screenPermissionAtom"
@@ -58,10 +58,30 @@ const uninstall = () => {
 }
 
 describe("requestScreenDetails", () => {
+    let originalPermissions: typeof navigator.permissions | undefined
+
+    beforeEach(() => {
+        originalPermissions = navigator.permissions
+        // Avoid the subscribe()'s async permissions query racing with
+        // setSelf calls under test.
+        Object.defineProperty(navigator, "permissions", {
+            value: undefined,
+            configurable: true,
+        })
+    })
+
     afterEach(() => {
-        detailsState.details = null
         detailsState.inflight = null
         uninstall()
+        screensAtom.resetSelf()
+        currentScreenAtom.resetSelf()
+        screenPermissionAtom.resetSelf()
+        if (originalPermissions) {
+            Object.defineProperty(navigator, "permissions", {
+                value: originalPermissions,
+                configurable: true,
+            })
+        }
     })
 
     test("returns null when the API is unavailable", async () => {

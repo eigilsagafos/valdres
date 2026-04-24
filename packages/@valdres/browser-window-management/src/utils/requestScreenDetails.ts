@@ -26,7 +26,6 @@ export const requestScreenDetails = (): Promise<ScreenDetail[] | null> => {
     detailsState.inflight = (async (): Promise<ScreenDetail[] | null> => {
         try {
             const details = await api.getScreenDetails!()
-            detailsState.details = details
             screenPermissionAtom.setSelf("granted")
 
             const syncAll = () => {

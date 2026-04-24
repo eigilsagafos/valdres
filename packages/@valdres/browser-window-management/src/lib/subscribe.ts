@@ -1,21 +1,25 @@
 import { screenPermissionAtom } from "../atoms/screenPermissionAtom"
 
-let bootstrapped = false
-
 export const subscribe = () => {
     if (typeof window === "undefined") return
-    if (bootstrapped) return
-    bootstrapped = true
-
     if (typeof navigator === "undefined" || !navigator.permissions) return
+
+    let cancelled = false
+    let teardown: (() => void) | undefined
 
     navigator.permissions
         .query({ name: "window-management" as PermissionName })
         .then(status => {
+            if (cancelled) return
+            const onChange = () => screenPermissionAtom.setSelf(status.state)
             screenPermissionAtom.setSelf(status.state)
-            status.addEventListener("change", () =>
-                screenPermissionAtom.setSelf(status.state),
-            )
+            status.addEventListener("change", onChange)
+            teardown = () => status.removeEventListener("change", onChange)
         })
         .catch(() => {})
+
+    return () => {
+        cancelled = true
+        teardown?.()
+    }
 }
