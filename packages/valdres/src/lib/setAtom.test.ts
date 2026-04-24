@@ -256,6 +256,33 @@ describe("setAtom", () => {
         expect(store1.get(emptyAtom)).toBe("second")
     })
 
+    test("async updater onSet throwing does not escape as unhandled rejection", async () => {
+        const rejections: unknown[] = []
+        const handler = (err: unknown) => rejections.push(err)
+        process.on("unhandledRejection", handler)
+        try {
+            const onSetMock = mock(() => {
+                throw new Error("onSet boom")
+            })
+            const store1 = store()
+            const stringAtom = atom<string>("initial", { onSet: onSetMock })
+            store1.get(stringAtom)
+
+            const result = setAtom(
+                stringAtom,
+                () => Promise.resolve("updated"),
+                store1.data,
+            )
+            await result
+            // Allow unhandled rejection tracking to flush
+            await new Promise(r => setTimeout(r, 10))
+
+            expect(rejections).toHaveLength(0)
+        } finally {
+            process.off("unhandledRejection", handler)
+        }
+    })
+
     test("deep freeze applies to function values with properties", () => {
         const defaultStore = store()
         const fn = () => "hello"

@@ -24,8 +24,8 @@ const handlePromise = <Value>(
         promise.__emptyAtomPromiseOrigin__ = emptyAtomPromise
     }
     setValueInData(atom, promise as Value, data)
-    promise.then(
-        resolvedValue => {
+    promise
+        .then(resolvedValue => {
             // Stale promise guard: if another set() overwrote us, bail
             if (data.values.get(atom) !== promise) return
             setValueInData(atom, resolvedValue, data)
@@ -35,14 +35,17 @@ const handlePromise = <Value>(
                 emptyAtomPromise.__resolveEmptyAtomPromise__(resolvedValue)
             }
             propagateUpdatedAtoms([atom], data)
-        },
-        () => {
-            // On rejection, revert to previous value if promise is still current
+        })
+        // Chained .catch so errors thrown inside the fulfilled handler
+        // (e.g. from atom.onSet) don't surface as unhandled rejections.
+        .catch(() => {
+            // Only revert if the promise is still the current in-flight value;
+            // if a fulfilled handler partially updated state, the guard below
+            // lets us avoid clobbering it.
             if (data.values.get(atom) !== promise) return
             setValueInData(atom, currentValue, data)
             propagateUpdatedAtoms([atom], data)
-        },
-    )
+        })
 }
 
 export const setAtom = <Value = any>(
