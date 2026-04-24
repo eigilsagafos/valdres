@@ -58,22 +58,30 @@ describe("cacheMeta", () => {
             { maxAge: 20, staleWhileRevalidate: 200 },
         )
 
+        // Record every isRevalidating emission. The setInterval driving
+        // revalidation keeps firing, so sampling the *current* value races
+        // against the next tick — we assert on the history instead.
+        const history: boolean[] = []
+        const metaSel = cacheMeta(atom1)
+        store1.sub(metaSel, () => {
+            const m = store1.get(metaSel)
+            if (m) history.push(m.isRevalidating)
+        })
+
         store1.sub(atom1, () => {})
         resolvers[0].resolve(100)
-        await wait(1)
 
-        expect(store1.get(cacheMeta(atom1))!.isRevalidating).toBe(false)
+        // Wait until revalidation starts (first true)
+        await waitFor(() => expect(history).toContain(true))
+        const firstTrueIdx = history.indexOf(true)
+        expect(fetchCount).toBeGreaterThanOrEqual(2)
 
-        // Wait for maxAge to expire and trigger revalidation
-        await waitFor(() => expect(fetchCount).toBe(2))
-
-        expect(store1.get(cacheMeta(atom1))!.isRevalidating).toBe(true)
-
-        // Resolve revalidation
+        // Resolve the revalidation. isRevalidating must flip to false
+        // at least once *after* we observed it go true.
         resolvers[1].resolve(200)
-        await wait(1)
-
-        expect(store1.get(cacheMeta(atom1))!.isRevalidating).toBe(false)
+        await waitFor(() =>
+            expect(history.slice(firstTrueIdx + 1)).toContain(false),
+        )
     })
 
     test("cacheMeta is reactive via subscriptions", async () => {
