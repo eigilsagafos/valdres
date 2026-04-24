@@ -1,38 +1,38 @@
 import { StrictMode, useEffect, useRef, useState } from "react"
 import { createRoot } from "react-dom/client"
 import { Provider, useValue } from "valdres-react"
-import { focusAtom } from "../src"
+import { visibilityAtom } from "../src"
 
-type Entry = { at: string; focused: boolean }
+type Entry = { at: string; visibility: DocumentVisibilityState }
 
 const Demo = () => {
-    const focused = useValue(focusAtom)
+    const visibility = useValue(visibilityAtom)
     const [log, setLog] = useState<Entry[]>([])
-    const lastLogged = useRef<boolean | null>(null)
+    const lastLogged = useRef<DocumentVisibilityState | null>(null)
 
     useEffect(() => {
-        if (lastLogged.current === focused) return
-        lastLogged.current = focused
+        if (lastLogged.current === visibility) return
+        lastLogged.current = visibility
         setLog(prev =>
             [
-                { at: new Date().toLocaleTimeString(), focused },
+                { at: new Date().toLocaleTimeString(), visibility },
                 ...prev,
             ].slice(0, 20),
         )
-    }, [focused])
+    }, [visibility])
 
     return (
         <>
             <div className="card">
-                <span className={`dot${focused ? " on" : ""}`} />
-                <span className="label">
-                    {focused ? "focused" : "blurred"}
-                </span>
+                <span
+                    className={`dot${visibility === "visible" ? " on" : ""}`}
+                />
+                <span className="label">{visibility}</span>
             </div>
             <ul className="log">
                 {log.map((entry, i) => (
                     <li key={i}>
-                        {entry.at} — {entry.focused ? "focus" : "blur"}
+                        {entry.at} — {entry.visibility}
                     </li>
                 ))}
             </ul>
