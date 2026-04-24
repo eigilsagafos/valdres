@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>@valdres/browser-window-management demo</title>
+        <style>
+            :root {
+                color-scheme: light dark;
+                font-family:
+                    system-ui,
+                    -apple-system,
+                    sans-serif;
+            }
+            body {
+                max-width: 960px;
+                margin: 2rem auto;
+                padding: 0 1rem;
+                line-height: 1.5;
+            }
+            h1 {
+                margin-bottom: 0;
+            }
+            .muted {
+                color: #888;
+                font-size: 0.9rem;
+            }
+            button {
+                padding: 0.5rem 1rem;
+                font-size: 1rem;
+                border-radius: 6px;
+                border: 1px solid currentColor;
+                background: transparent;
+                color: inherit;
+                cursor: pointer;
+            }
+            button:disabled {
+                opacity: 0.5;
+                cursor: not-allowed;
+            }
+            section {
+                margin-top: 1.5rem;
+            }
+            .screens {
+                display: grid;
+                gap: 1rem;
+                grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+            }
+            .screen {
+                border: 1px solid #8884;
+                border-radius: 8px;
+                padding: 1rem;
+            }
+            .screen.current {
+                border-color: dodgerblue;
+                box-shadow: 0 0 0 2px dodgerblue inset;
+            }
+            dl {
+                display: grid;
+                grid-template-columns: auto 1fr;
+                gap: 0.25rem 1rem;
+                margin: 0;
+                font-size: 0.85rem;
+            }
+            dt {
+                color: #888;
+            }
+            dd {
+                margin: 0;
+                font-family:
+                    ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+            }
+            .layout {
+                position: relative;
+                background: #8881;
+                border-radius: 8px;
+                overflow: hidden;
+                margin-top: 0.75rem;
+            }
+            .layout-screen {
+                position: absolute;
+                border: 1px solid currentColor;
+                background: #8882;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-size: 0.75rem;
+            }
+            .layout-screen.current {
+                background: dodgerblue;
+                color: white;
+            }
+        </style>
+    </head>
+    <body>
+        <h1>@valdres/browser-window-management</h1>
+        <p class="muted">
+            Reactive state for the Window Management API. Resize the window or
+            drag it across displays to see updates. Click the button to request
+            full multi-screen details.
+        </p>
+
+        <section>
+            <button id="request">Request screen details</button>
+            <span id="permission" class="muted"></span>
+        </section>
+
+        <section>
+            <h2>Arrangement</h2>
+            <div id="layout" class="layout"></div>
+        </section>
+
+        <section>
+            <h2>Screens</h2>
+            <div id="screens" class="screens"></div>
+        </section>
+
+        <script>
+            // valdres reads process.env.VALDRES_VERSION at import time
+            window.process = window.process || { env: {} }
+        </script>
+        <script type="module" src="./index.ts"></script>
+    </body>
+</html>
