@@ -3,15 +3,16 @@ import type { AtomFamilyAtom } from "./AtomFamilyAtom"
 import type { GetValue } from "./GetValue"
 import type { ResetAtom } from "./ResetAtom"
 import type { ScopedStoreData, StoreData } from "./StoreData"
+import type { SetAtomValue } from "./SetAtomValue"
 import type { SubscribeFn } from "./SubscribeFn"
 import type { TransactionFn } from "./TransactionFn"
 
 type SetAtom = {
     <Value extends any, Args extends [any, ...any[]] = [any, ...any[]]>(
         atom: AtomFamilyAtom<Value, Args>,
-        value: Value,
+        value: SetAtomValue<Value>,
     ): void
-    <Value extends any>(atom: Atom<Value>, value: Value): void
+    <Value extends any>(atom: Atom<Value>, value: SetAtomValue<Value>): void
 }
 
 type DeleteAtom = <

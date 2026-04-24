@@ -1,1 +1,4 @@
-export type SetAtomValue<Value> = Value | ((current: Value) => Value)
+export type SetAtomValue<Value> =
+    | Value
+    | Promise<Value>
+    | ((current: Value) => Value | Promise<Value>)
