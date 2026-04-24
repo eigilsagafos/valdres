@@ -9,8 +9,8 @@ export type CacheMeta = {
     isRevalidating: boolean
     lastSuccessAt: number
     maxAge: number
-    staleWhileRevalidate?: number
-    staleIfError?: number
+    staleWhileRevalidate: number
+    staleIfError: number
 }
 
 export type Atom<Value = unknown> = {
