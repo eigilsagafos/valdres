@@ -390,6 +390,7 @@ describe("atom", () => {
 
     test("atom with maxAge async (no SWR) shows promise during revalidation", async () => {
         const store1 = store()
+        const maxAge = 50
         let fetchCount = 0
         const resolvers: Array<(v: number) => void> = []
         const atomCallback = () => {
@@ -398,7 +399,7 @@ describe("atom", () => {
                 resolvers.push(resolve)
             })
         }
-        const atom1 = atom(atomCallback, { maxAge: 20 })
+        const atom1 = atom(atomCallback, { maxAge })
 
         const callback = mock(() => {})
         const unsubscribe = store1.sub(atom1, callback)
@@ -406,11 +407,14 @@ describe("atom", () => {
         // Initially holds a pending promise
         expect(store1.get(atom1)).toBeInstanceOf(Promise)
 
-        // Resolve initial fetch
+        // Resolve initial fetch before the maxAge window closes so
+        // revalidation is scheduled off a resolved value, not a still-pending
+        // one — otherwise slow CI runners can flip the ordering.
         resolvers[0](100)
         await waitFor(() => expect(store1.get(atom1)).toBe(100))
 
-        // Wait for maxAge to expire and trigger revalidation
+        // Give the maxAge interval deterministic time to fire before polling.
+        await wait(maxAge + 20)
         await waitFor(() => expect(fetchCount).toBe(2))
 
         // Without SWR, the store should show the pending promise (loading state)
