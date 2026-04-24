@@ -38,9 +38,10 @@ describe("colorSchemeAtom", () => {
         expect(s.get(colorSchemeAtom)).toBe("dark")
     })
 
-    test("updates when media query change event fires", () => {
+    test("subscribing wires the media query listener and reflects changes", () => {
         const mq = installMatchMedia(false)
         const s = store()
+        const unsub = s.sub(colorSchemeAtom, () => {})
         expect(s.get(colorSchemeAtom)).toBe("light")
 
         mq.set(true)
@@ -48,5 +49,6 @@ describe("colorSchemeAtom", () => {
 
         mq.set(false)
         expect(s.get(colorSchemeAtom)).toBe("light")
+        unsub()
     })
 })
