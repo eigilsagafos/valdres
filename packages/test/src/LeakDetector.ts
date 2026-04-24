@@ -29,7 +29,12 @@ export class LeakDetector {
             if (round > 0) generateHeapSnapshot()
             fullGC()
             releaseWeakRefs()
-            await Bun.sleep(0)
+            // Round 0: microtask yield (fast path, no ephemeron cleanup
+            // needed). Snapshot rounds: 1ms real-timer delay so JSC can
+            // finish the ephemeron trace the snapshot schedules — under CI
+            // allocation pressure a microtask yield isn't enough for WeakMap
+            // chains to clear.
+            await Bun.sleep(round === 0 ? 0 : 1)
             if (this._ref.deref() === undefined) return false
         }
         return this._ref.deref() !== undefined
