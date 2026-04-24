@@ -3,5 +3,5 @@ import type { ScreenDetail } from "../../types/ScreenDetail"
 
 export const screensAtom = atom<ScreenDetail[]>([], {
     global: true,
-    name: "@valdres/browser-window-management/screens",
+    name: "@valdres/browser-screen-details/screens",
 })

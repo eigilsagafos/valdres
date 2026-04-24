@@ -3,5 +3,5 @@ import type { ScreenDetail } from "../../types/ScreenDetail"
 
 export const currentScreenAtom = atom<ScreenDetail | null>(null, {
     global: true,
-    name: "@valdres/browser-window-management/currentScreen",
+    name: "@valdres/browser-screen-details/currentScreen",
 })

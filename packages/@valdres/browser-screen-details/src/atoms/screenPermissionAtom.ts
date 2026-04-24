@@ -11,6 +11,6 @@ const getInitial = (): ScreenPermissionState => {
 
 export const screenPermissionAtom = atom<ScreenPermissionState>(getInitial, {
     global: true,
-    name: "@valdres/browser-window-management/permission",
+    name: "@valdres/browser-screen-details/permission",
     onInit: () => subscribe(),
 })

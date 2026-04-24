@@ -8,4 +8,4 @@ const server = Bun.serve({
     },
 })
 
-console.log(`@valdres/browser-window-management demo: ${server.url}`)
+console.log(`@valdres/browser-screen-details demo: ${server.url}`)
