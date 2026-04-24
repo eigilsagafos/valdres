@@ -9,6 +9,7 @@ import type { GlobalAtom } from "./../types/GlobalAtom"
 import type { StoreData } from "./../types/StoreData"
 import { propagateUpdatedAtoms } from "./propagateUpdatedAtoms"
 import { setAtom } from "./setAtom"
+import { installMaxAgeTimer } from "./subscribe"
 import { globalStore } from "../globalStore"
 
 export const globalAtom = <Value = unknown>(
@@ -74,6 +75,18 @@ export const globalAtom = <Value = unknown>(
             }
         } finally {
             previousOnReset?.()
+        }
+        if (atom.maxAge) {
+            for (const store of snapshot) {
+                const subs = store.subscriptions.get(atom)
+                if (subs && subs.size > 0) {
+                    // Re-add the store so the timer's setAndPropagate can
+                    // reach subscribers whose callbacks don't sync re-read
+                    // (and therefore never re-ran onInit to rejoin `stores`).
+                    stores.add(store)
+                    installMaxAgeTimer(atom, store)
+                }
+            }
         }
         if (firstError) throw firstError
     }
