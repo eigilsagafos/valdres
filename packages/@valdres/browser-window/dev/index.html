@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>@valdres/browser-window demo</title>
+        <style>
+            :root {
+                color-scheme: light dark;
+                font-family:
+                    system-ui,
+                    -apple-system,
+                    sans-serif;
+            }
+            body {
+                max-width: 720px;
+                margin: 2rem auto;
+                padding: 0 1rem;
+                line-height: 1.5;
+            }
+            h1 {
+                margin-bottom: 0;
+            }
+            .muted {
+                color: #888;
+                font-size: 0.9rem;
+            }
+            .card {
+                margin-top: 1.5rem;
+                border: 1px solid #8884;
+                border-radius: 8px;
+                padding: 1rem 1.25rem;
+            }
+            dl {
+                display: grid;
+                grid-template-columns: auto 1fr;
+                gap: 0.4rem 1.25rem;
+                margin: 0;
+                font-size: 0.95rem;
+            }
+            dt {
+                color: #888;
+            }
+            dd {
+                margin: 0;
+                font-family:
+                    ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+            }
+        </style>
+    </head>
+    <body>
+        <h1>@valdres/browser-window</h1>
+        <p class="muted">
+            Reactive wrapper for <code>window.innerWidth/Height</code> and
+            <code>window.outerWidth/Height</code>. Resize the browser window to
+            see updates.
+        </p>
+
+        <div class="card">
+            <dl id="size"></dl>
+        </div>
+
+        <p class="muted" style="margin-top: 1rem; font-size: 0.85rem">
+            Note: window position (<code>screenX</code>, <code>screenY</code>)
+            is intentionally omitted — the browser does not emit an event when
+            the window is dragged without resizing.
+        </p>
+
+        <script>
+            // valdres reads process.env.VALDRES_VERSION at import time
+            window.process = window.process || { env: {} }
+        </script>
+        <script type="module" src="./index.ts"></script>
+    </body>
+</html>
