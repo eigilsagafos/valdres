@@ -333,6 +333,58 @@ describe("globalAtom", () => {
         expect(cleanupCount - cleanupBefore).toBe(1)
     })
 
+    test("setSelf with bare promise throws", () => {
+        const testAtom = atom<string>("initial", {
+            global: true,
+            name: "bare-promise-throws",
+        })
+        expect(() =>
+            testAtom.setSelf(Promise.resolve("new") as unknown as string),
+        ).toThrowError(/promise/i)
+    })
+
+    test("setSelf with () => promise resolves into stored value across stores", async () => {
+        const store1 = store()
+        const store2 = store()
+        const testAtom = atom<string>("initial", {
+            global: true,
+            name: "thunk-promise-resolve",
+        })
+        expect(store1.get(testAtom)).toBe("initial")
+        expect(store2.get(testAtom)).toBe("initial")
+
+        const sub1 = mock(() => {})
+        const sub2 = mock(() => {})
+        store1.sub(testAtom, sub1)
+        store2.sub(testAtom, sub2)
+
+        testAtom.setSelf(() => Promise.resolve("new"))
+        await wait(0)
+
+        expect(store1.get(testAtom)).toBe("new")
+        expect(store2.get(testAtom)).toBe("new")
+        expect(sub1).toHaveBeenCalled()
+        expect(sub2).toHaveBeenCalled()
+    })
+
+    test("setSelf with () => rejected promise reverts to previous value", async () => {
+        const store1 = store()
+        const store2 = store()
+        const testAtom = atom<string>("previous", {
+            global: true,
+            name: "thunk-promise-reject",
+        })
+        expect(store1.get(testAtom)).toBe("previous")
+        expect(store2.get(testAtom)).toBe("previous")
+
+        testAtom.setSelf(() => Promise.reject(new Error("boom")))
+        await wait(0)
+        await Promise.resolve()
+
+        expect(store1.get(testAtom)).toBe("previous")
+        expect(store2.get(testAtom)).toBe("previous")
+    })
+
     test("resetSelf clears maxAge interval for global atom", async () => {
         let callCount = 0
         const testAtom = atom(
