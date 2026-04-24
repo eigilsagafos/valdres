@@ -1,6 +1,6 @@
 import type { ScreenInfo } from "../../types/ScreenInfo"
 
-const EMPTY: ScreenInfo = {
+const EMPTY: ScreenInfo = Object.freeze({
     width: 0,
     height: 0,
     availWidth: 0,
@@ -8,9 +8,9 @@ const EMPTY: ScreenInfo = {
     colorDepth: 24,
     pixelDepth: 24,
     devicePixelRatio: 1,
-    orientationType: "landscape-primary",
+    orientationType: "landscape-primary" as OrientationType,
     orientationAngle: 0,
-}
+})
 
 export const readScreen = (): ScreenInfo => {
     if (typeof window === "undefined" || !window.screen) return EMPTY

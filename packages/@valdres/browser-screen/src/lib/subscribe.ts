@@ -17,19 +17,27 @@ export const subscribe = () => {
         update()
         bindDPR()
     }
+    const addMqListener = (mq: MediaQueryList, fn: () => void) => {
+        if (mq.addEventListener) mq.addEventListener("change", fn)
+        else mq.addListener?.(fn)
+    }
+    const removeMqListener = (mq: MediaQueryList, fn: () => void) => {
+        if (mq.removeEventListener) mq.removeEventListener("change", fn)
+        else mq.removeListener?.(fn)
+    }
     const bindDPR = () => {
         if (typeof window.matchMedia !== "function") return
-        dprMq?.removeEventListener("change", onDPRChange)
+        if (dprMq) removeMqListener(dprMq, onDPRChange)
         dprMq = window.matchMedia(
             `(resolution: ${window.devicePixelRatio}dppx)`,
         )
-        dprMq.addEventListener("change", onDPRChange)
+        addMqListener(dprMq, onDPRChange)
     }
     bindDPR()
 
     return () => {
         window.removeEventListener("resize", update)
         orientation?.removeEventListener?.("change", update)
-        dprMq?.removeEventListener("change", onDPRChange)
+        if (dprMq) removeMqListener(dprMq, onDPRChange)
     }
 }
