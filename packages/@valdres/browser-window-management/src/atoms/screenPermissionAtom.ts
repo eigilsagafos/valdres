@@ -4,7 +4,8 @@ import { subscribe } from "../lib/subscribe"
 
 const getInitial = (): ScreenPermissionState => {
     if (typeof window === "undefined") return "unsupported"
-    if (!("getScreenDetails" in window)) return "unsupported"
+    if (typeof (window as { getScreenDetails?: unknown }).getScreenDetails !== "function")
+        return "unsupported"
     return "prompt"
 }
 

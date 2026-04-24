@@ -7,10 +7,7 @@ export const subscribe = () => {
     if (bootstrapped) return
     bootstrapped = true
 
-    if (typeof navigator === "undefined" || !navigator.permissions) {
-        screenPermissionAtom.setSelf("unsupported")
-        return
-    }
+    if (typeof navigator === "undefined" || !navigator.permissions) return
 
     navigator.permissions
         .query({ name: "window-management" as PermissionName })
@@ -20,5 +17,5 @@ export const subscribe = () => {
                 screenPermissionAtom.setSelf(status.state),
             )
         })
-        .catch(() => screenPermissionAtom.setSelf("unsupported"))
+        .catch(() => {})
 }

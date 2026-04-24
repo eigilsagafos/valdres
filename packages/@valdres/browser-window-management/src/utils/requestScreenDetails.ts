@@ -61,7 +61,9 @@ export const requestScreenDetails = (): Promise<ScreenDetail[] | null> => {
 
             return details.screens.map(toScreenDetail)
         } catch (err) {
-            screenPermissionAtom.setSelf("denied")
+            if (err instanceof DOMException && err.name === "NotAllowedError") {
+                screenPermissionAtom.setSelf("denied")
+            }
             detailsState.inflight = null
             throw err
         }

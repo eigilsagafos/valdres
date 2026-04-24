@@ -13,8 +13,13 @@ const screensEl = document.getElementById("screens")!
 const layoutEl = document.getElementById("layout")!
 const requestBtn = document.getElementById("request") as HTMLButtonElement
 
+const escape = (value: string | number) =>
+    String(value).replace(/[&<>"']/g, ch =>
+        ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]!,
+    )
+
 const field = (label: string, value: string | number) =>
-    `<dt>${label}</dt><dd>${value}</dd>`
+    `<dt>${escape(label)}</dt><dd>${escape(value)}</dd>`
 
 const renderScreen = (screen: ScreenDetail, current: ScreenDetail | null) => {
     const isCurrent = current?.label === screen.label &&
@@ -22,7 +27,7 @@ const renderScreen = (screen: ScreenDetail, current: ScreenDetail | null) => {
         current?.top === screen.top
     return `
         <div class="screen${isCurrent ? " current" : ""}">
-            <strong>${screen.label || "(unnamed)"}</strong>
+            <strong>${escape(screen.label || "(unnamed)")}</strong>
             <dl>
                 ${field("position", `${screen.left}, ${screen.top}`)}
                 ${field("size", `${screen.width} × ${screen.height}`)}
@@ -63,7 +68,7 @@ const renderLayout = (screens: ScreenDetail[], current: ScreenDetail | null) => 
                            top:${(screen.top - minY) * scale + 8}px;
                            width:${screen.width * scale}px;
                            height:${screen.height * scale}px">
-                    ${screen.label || ""}
+                    ${escape(screen.label || "")}
                 </div>
             `
         })

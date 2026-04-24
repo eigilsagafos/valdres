@@ -1,9 +1,17 @@
 import { afterEach, describe, expect, test } from "bun:test"
 import { store } from "valdres"
 import { currentScreenAtom } from "../atoms/currentScreenAtom"
+import { screenPermissionAtom } from "../atoms/screenPermissionAtom"
 import { screensAtom } from "../atoms/screensAtom"
 import { detailsState } from "../lib/detailsState"
 import { requestScreenDetails } from "./requestScreenDetails"
+
+const installReject = (err: unknown) => {
+    ;(window as unknown as { getScreenDetails: () => Promise<unknown> }).getScreenDetails =
+        async () => {
+            throw err
+        }
+}
 
 type FakeScreen = EventTarget & Record<string, unknown>
 
@@ -130,5 +138,25 @@ describe("requestScreenDetails", () => {
         external.dispatchEvent(new Event("change"))
 
         expect(s.get(screensAtom)[1].width).toBe(2560)
+    })
+
+    test("sets permission to 'denied' on NotAllowedError", async () => {
+        installReject(new DOMException("denied", "NotAllowedError"))
+
+        const s = store()
+        screenPermissionAtom.setSelf("prompt")
+
+        await expect(requestScreenDetails()).rejects.toThrow()
+        expect(s.get(screenPermissionAtom)).toBe("denied")
+    })
+
+    test("leaves permission untouched on non-permission errors", async () => {
+        installReject(new Error("network blip"))
+
+        const s = store()
+        screenPermissionAtom.setSelf("prompt")
+
+        await expect(requestScreenDetails()).rejects.toThrow()
+        expect(s.get(screenPermissionAtom)).toBe("prompt")
     })
 })
