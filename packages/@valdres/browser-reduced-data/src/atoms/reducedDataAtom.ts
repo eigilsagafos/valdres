@@ -6,7 +6,10 @@ export type ReducedData = "no-preference" | "reduce"
 export const REDUCED_DATA_MEDIA = "(prefers-reduced-data: reduce)"
 
 const getInitial = (): ReducedData => {
-    if (typeof window === "undefined" || !window.matchMedia) {
+    if (
+        typeof window === "undefined" ||
+        typeof window.matchMedia !== "function"
+    ) {
         return "no-preference"
     }
     return window.matchMedia(REDUCED_DATA_MEDIA).matches

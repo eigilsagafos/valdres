@@ -4,7 +4,11 @@ import {
 } from "../atoms/reducedDataAtom"
 
 export const subscribe = () => {
-    if (typeof window === "undefined" || !window.matchMedia) return
+    if (
+        typeof window === "undefined" ||
+        typeof window.matchMedia !== "function"
+    )
+        return
     const mq = window.matchMedia(REDUCED_DATA_MEDIA)
     const sync = () =>
         reducedDataAtom.setSelf(mq.matches ? "reduce" : "no-preference")
