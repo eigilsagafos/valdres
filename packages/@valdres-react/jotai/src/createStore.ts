@@ -122,6 +122,14 @@ export const createStore = (id?: string) => {
     // so nested sets from unmount cleanups are deferred.
     const originalSet = store.set
     store.set = (state: any, ...args: any[]) => {
+        // Jotai API permits bare-promise writes (atom values of type
+        // Promise<T>). Valdres core requires a thunk so async resolution
+        // is explicit — wrap the bare promise here to preserve jotai
+        // semantics.
+        if (args.length === 1 && isPromiseLike(args[0])) {
+            const bare = args[0]
+            args = [() => bare]
+        }
         if (isSelector(state)) {
             if (activeTxn) {
                 // Already inside a transaction — reuse it

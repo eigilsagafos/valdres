@@ -7,6 +7,7 @@ import type { AtomOnSet } from "./../types/AtomOnSet"
 import type { AtomOptions } from "./../types/AtomOptions"
 import type { GlobalAtom } from "./../types/GlobalAtom"
 import type { StoreData } from "./../types/StoreData"
+import { isPromiseLike } from "../utils/isPromiseLike"
 import { propagateUpdatedAtoms } from "./propagateUpdatedAtoms"
 import { setAtom } from "./setAtom"
 import { globalStore } from "../globalStore"
@@ -23,7 +24,14 @@ export const globalAtom = <Value = unknown>(
         throw new Error("onSet on globalAtom is currently not supported")
 
     const onInit: AtomOnInit<Value> = (setSelf, data) => {
-        setSelf(globalStore.get(atom))
+        const current = globalStore.get(atom)
+        // `current` may be a pending promise from an async defaultValue;
+        // setAtom requires a thunk for promise writes, so wrap when needed.
+        setSelf(
+            isPromiseLike(current)
+                ? ((() => current) as unknown as Value)
+                : current,
+        )
         if (!initialized && options.onInit) {
             onReset = options.onInit(newVal => {
                 setSelf(newVal)
@@ -39,6 +47,9 @@ export const globalAtom = <Value = unknown>(
         if (stores.size > 1) {
             for (const store of stores) {
                 if (store.id !== currentStore.id) {
+                    // onSet is only called with resolved values from setAtom's
+                    // .then handler — never a pending promise — so a direct
+                    // setAtom here is safe under the thunk-required contract.
                     setAtom(atom, value, store, true)
                 }
             }

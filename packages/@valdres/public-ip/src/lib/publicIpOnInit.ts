@@ -53,7 +53,7 @@ export const publicIpOnInit = (
     const handler = () => {
         const nav = typeof navigator === "undefined" ? undefined : navigator
         if (nav && nav.onLine === false) return
-        ipAtom.setSelf(fetchPublicIp(endpointsAtom.getSelf(), validate))
+        ipAtom.setSelf(() => fetchPublicIp(endpointsAtom.getSelf(), validate))
     }
     refetchHandlers.add(handler)
     registerSharedListeners()

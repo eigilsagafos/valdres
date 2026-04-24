@@ -1021,7 +1021,7 @@ describe("atom with promise values", () => {
         const store1 = store()
         const countAtom = atom(Promise.resolve(0))
         const infinitePending = new Promise<never>(() => {})
-        store1.set(countAtom, infinitePending)
+        store1.set(countAtom, () => infinitePending)
         expect(store1.get(countAtom)).toBe(infinitePending)
     })
 
@@ -1031,8 +1031,16 @@ describe("atom with promise values", () => {
         const countAtom = atom(p)
         const callback = mock(() => {})
         store1.sub(countAtom, callback)
-        store1.set(countAtom, p)
+        store1.set(countAtom, () => p)
         expect(callback).not.toHaveBeenCalled()
+    })
+
+    test("set with bare promise throws", () => {
+        const store1 = store()
+        const countAtom = atom<Promise<number>>(Promise.resolve(0))
+        expect(() =>
+            store1.set(countAtom, Promise.resolve(1)),
+        ).toThrowError(/promise/i)
     })
 })
 

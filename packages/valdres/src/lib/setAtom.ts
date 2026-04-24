@@ -63,7 +63,15 @@ export const setAtom = <Value = any>(
             return promise as Value
         }
     }
-    const areEqual = isPromiseLike(currentValue) || isPromiseLike(newValue)
+    if (isPromiseLike(newValue)) {
+        throw new Error(
+            "setAtom received a bare Promise. Pass a thunk instead: " +
+                "set(atom, () => promise). A bare promise would be stored " +
+                "without awaiting resolution, silently leaving subscribers " +
+                "on the unresolved reference.",
+        )
+    }
+    const areEqual = isPromiseLike(currentValue)
         ? currentValue === newValue
         : atom.equal(currentValue, newValue)
     if (areEqual) return newValue
