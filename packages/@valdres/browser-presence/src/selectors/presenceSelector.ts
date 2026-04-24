@@ -1,8 +1,8 @@
 import { selector } from "valdres"
 import { focusAtom } from "@valdres/browser-focus"
-import { visibilityAtom } from "@valdres/browser-visibility"
+import { isVisibleSelector } from "@valdres/browser-visibility"
 
 export const presenceSelector = selector(
-    get => get(visibilityAtom) === "visible" && get(focusAtom),
+    get => get(isVisibleSelector) && get(focusAtom),
     { name: "@valdres/browser-presence/presence" },
 )
