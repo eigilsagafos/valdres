@@ -278,6 +278,61 @@ describe("globalAtom", () => {
         unsub2()
     })
 
+    test("notifies subscribers that re-read synchronously across multiple resets", async () => {
+        const a = atom(() => Promise.resolve("x"), {
+            global: true,
+            name: "test-reset-repeat",
+        })
+        const s = store()
+
+        let notifyCount = 0
+        s.sub(a, () => {
+            notifyCount++
+            s.get(a) // synchronous re-read — what useSyncExternalStore does
+        })
+
+        await s.get(a)
+        await wait(10)
+        const base = notifyCount
+
+        a.resetSelf()
+        await wait(10)
+        const afterFirst = notifyCount
+        expect(afterFirst).toBeGreaterThan(base)
+
+        a.resetSelf()
+        await wait(10)
+        const afterSecond = notifyCount
+        expect(afterSecond).toBeGreaterThan(afterFirst)
+    })
+
+    test("preserves fresh onInit registration when propagation triggers re-init", () => {
+        let registrationCount = 0
+        let cleanupCount = 0
+        const a = atom("initial", {
+            global: true,
+            name: "test-reset-oninit",
+            onInit: () => {
+                registrationCount++
+                return () => {
+                    cleanupCount++
+                }
+            },
+        })
+        const s = store()
+        s.sub(a, () => {
+            s.get(a)
+        })
+        s.get(a)
+
+        const regBefore = registrationCount
+        const cleanupBefore = cleanupCount
+        a.resetSelf()
+
+        expect(registrationCount - regBefore).toBe(1)
+        expect(cleanupCount - cleanupBefore).toBe(1)
+    })
+
     test("resetSelf clears maxAge interval for global atom", async () => {
         let callCount = 0
         const testAtom = atom(

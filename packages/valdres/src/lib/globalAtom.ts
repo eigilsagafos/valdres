@@ -58,22 +58,23 @@ export const globalAtom = <Value = unknown>(
             atom.maxAgeInterval.refCount = 0
             atom.maxAgeInterval = undefined
         }
-        // Snapshot to avoid mutating during iteration
         const snapshot = [...stores]
+        const previousOnReset = onReset
+        onReset = undefined
         let firstError: unknown
-        for (const store of snapshot) {
-            if (store.stateDependencies.has(atom)) {
-                throw new Error("TODO: Reset support for stateDependencies")
+        try {
+            for (const store of snapshot) {
+                stores.delete(store)
+                store.values.delete(atom)
+                try {
+                    propagateUpdatedAtoms([atom], store)
+                } catch (e) {
+                    if (!firstError) firstError = e
+                }
             }
-            store.values.delete(atom)
-            try {
-                propagateUpdatedAtoms([atom], store)
-            } catch (e) {
-                if (!firstError) firstError = e
-            }
+        } finally {
+            previousOnReset?.()
         }
-        stores.clear()
-        onReset?.()
         if (firstError) throw firstError
     }
 
