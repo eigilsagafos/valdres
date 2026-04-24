@@ -1,9 +1,22 @@
-import { describe, expect, test } from "bun:test"
+import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import { store } from "valdres"
 import { windowSizeAtom } from "../atoms/windowSizeAtom"
 import { subscribe } from "./subscribe"
 
 describe("subscribe", () => {
+    let originalInnerWidth: number
+
+    beforeEach(() => {
+        originalInnerWidth = window.innerWidth
+    })
+
+    afterEach(() => {
+        Object.defineProperty(window, "innerWidth", {
+            value: originalInnerWidth,
+            configurable: true,
+        })
+    })
+
     test("cleanup removes the resize listener", () => {
         const s = store()
         const cleanup = subscribe()

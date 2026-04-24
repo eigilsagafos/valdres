@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test"
+import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import { store } from "valdres"
 import { windowSizeAtom } from "./windowSizeAtom"
 
@@ -14,6 +14,18 @@ const setInner = (width: number, height: number) => {
 }
 
 describe("windowSizeAtom", () => {
+    let originalInnerWidth: number
+    let originalInnerHeight: number
+
+    beforeEach(() => {
+        originalInnerWidth = window.innerWidth
+        originalInnerHeight = window.innerHeight
+    })
+
+    afterEach(() => {
+        setInner(originalInnerWidth, originalInnerHeight)
+    })
+
     test("initial value reflects window inner/outer size", () => {
         const s = store()
         const size = s.get(windowSizeAtom)
