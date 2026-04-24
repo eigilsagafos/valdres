@@ -333,7 +333,7 @@ describe("globalAtom", () => {
         expect(cleanupCount - cleanupBefore).toBe(1)
     })
 
-    test("resetSelf clears maxAge interval for global atom", async () => {
+    test("resetSelf rebuilds maxAge interval while subscribers remain", async () => {
         let callCount = 0
         const testAtom = atom(
             () => {
@@ -344,23 +344,79 @@ describe("globalAtom", () => {
         )
 
         const store1 = store()
-        const store2 = store()
 
-        const unsub1 = store1.sub(testAtom, () => {})
-        const unsub2 = store2.sub(testAtom, () => {})
+        const unsub1 = store1.sub(testAtom, () => {
+            store1.get(testAtom)
+        })
 
-        const countAfterInit = callCount
+        // Force initialization so the first defaultValue() call is counted.
+        store1.get(testAtom)
 
-        // Reset should clear the interval
+        // Baseline: the interval fires once before reset.
+        await wait(75)
+        const countBeforeReset = callCount
+        expect(countBeforeReset).toBeGreaterThanOrEqual(2)
+
         testAtom.resetSelf()
 
-        // Wait past when the interval would have fired
+        const countAfterReset = callCount
+
+        // After reset, the timer should be rebuilt for the still-subscribed
+        // store so revalidation continues.
         await wait(75)
 
-        // No revalidation calls should have happened after reset
-        expect(callCount - countAfterInit).toBe(0)
+        expect(callCount).toBeGreaterThan(countAfterReset)
 
         unsub1()
-        unsub2()
+    })
+
+    test("resetSelf revives maxAge for passive subscribers that don't re-read", async () => {
+        let defaultValueCalls = 0
+        const testAtom = atom(
+            () => {
+                defaultValueCalls++
+                return defaultValueCalls
+            },
+            { global: true, maxAge: 50 },
+        )
+
+        const store1 = store()
+        let callbackCalls = 0
+        const unsub = store1.sub(testAtom, () => {
+            callbackCalls++
+        })
+        store1.get(testAtom)
+
+        testAtom.resetSelf()
+
+        const callbackCallsAfterReset = callbackCalls
+        await wait(75)
+
+        // Timer should fire and notify the subscriber even though its
+        // callback never re-reads (so onInit isn't re-run via sync read).
+        expect(callbackCalls).toBeGreaterThan(callbackCallsAfterReset)
+
+        unsub()
+    })
+
+    test("resetSelf stops maxAge interval when no subscribers remain", async () => {
+        let callCount = 0
+        const testAtom = atom(
+            () => {
+                callCount++
+                return callCount
+            },
+            { global: true, maxAge: 50 },
+        )
+
+        const store1 = store()
+        store1.get(testAtom)
+
+        testAtom.resetSelf()
+
+        const countAfterReset = callCount
+        await wait(75)
+
+        expect(callCount).toBe(countAfterReset)
     })
 })
