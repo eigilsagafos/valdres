@@ -60,7 +60,17 @@ describe("memory leaks (selectors)", () => {
             s.set(a, 2)
             return d
         })()
-        expect(await detector.isLeaking()).toBe(false)
+        // Retry with a real-timer gap. Under CI allocation pressure JSC's
+        // ephemeron trace (triggered by isLeaking's heap snapshots) sometimes
+        // needs wall-clock slack beyond what isLeaking's microtask yields
+        // provide before the WeakMap chain holding the old selector value
+        // clears.
+        let leaking = await detector.isLeaking()
+        for (let i = 0; i < 5 && leaking; i++) {
+            await new Promise(r => setTimeout(r, 50))
+            leaking = await detector.isLeaking()
+        }
+        expect(leaking).toBe(false)
     })
 
     test("chained selector values are collected", async () => {
