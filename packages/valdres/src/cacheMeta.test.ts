@@ -60,20 +60,21 @@ describe("cacheMeta", () => {
 
         store1.sub(atom1, () => {})
         resolvers[0].resolve(100)
-        await wait(1)
-
-        expect(store1.get(cacheMeta(atom1))!.isRevalidating).toBe(false)
+        await waitFor(() =>
+            expect(store1.get(cacheMeta(atom1))!.isRevalidating).toBe(false),
+        )
 
         // Wait for maxAge to expire and trigger revalidation
         await waitFor(() => expect(fetchCount).toBe(2))
-
-        expect(store1.get(cacheMeta(atom1))!.isRevalidating).toBe(true)
+        await waitFor(() =>
+            expect(store1.get(cacheMeta(atom1))!.isRevalidating).toBe(true),
+        )
 
         // Resolve revalidation
         resolvers[1].resolve(200)
-        await wait(1)
-
-        expect(store1.get(cacheMeta(atom1))!.isRevalidating).toBe(false)
+        await waitFor(() =>
+            expect(store1.get(cacheMeta(atom1))!.isRevalidating).toBe(false),
+        )
     })
 
     test("cacheMeta is reactive via subscriptions", async () => {
