@@ -38,9 +38,10 @@ describe("reducedDataAtom", () => {
         expect(s.get(reducedDataAtom)).toBe("reduce")
     })
 
-    test("updates when media query change event fires", () => {
+    test("subscribing wires the listener and reflects matchMedia changes", () => {
         const mq = installMatchMedia(false)
         const s = store()
+        const unsub = s.sub(reducedDataAtom, () => {})
         expect(s.get(reducedDataAtom)).toBe("no-preference")
 
         mq.set(true)
@@ -48,5 +49,6 @@ describe("reducedDataAtom", () => {
 
         mq.set(false)
         expect(s.get(reducedDataAtom)).toBe("no-preference")
+        unsub()
     })
 })

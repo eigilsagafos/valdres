@@ -20,5 +20,5 @@ const getInitial = (): ReducedData => {
 export const reducedDataAtom = atom<ReducedData>(getInitial, {
     global: true,
     name: "@valdres/browser-reduced-data/reducedData",
-    onInit: () => subscribe(),
+    onMount: () => subscribe(),
 })

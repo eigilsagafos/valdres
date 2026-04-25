@@ -54,18 +54,13 @@ describe("subscribe", () => {
         cleanup?.()
     })
 
-    test("cleanup calls removeEventListener for the change event", () => {
-        const { mqs } = installMatchMedia(false)
+    test("cleanup removes listeners so later events do not update atom", () => {
+        const mq = installMatchMedia(false)
+        const s = store()
         const cleanup = subscribe()
-        const mq = mqs[0]!
-        let removed = false
-        const origRemove = mq.removeEventListener.bind(mq)
-        mq.removeEventListener = ((type: string, listener: EventListener) => {
-            if (type === "change") removed = true
-            return origRemove(type, listener)
-        }) as EventTarget["removeEventListener"]
-
         cleanup?.()
-        expect(removed).toBe(true)
+
+        mq.set(true)
+        expect(s.get(reducedDataAtom)).toBe("no-preference")
     })
 })
