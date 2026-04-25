@@ -7,11 +7,11 @@ jobs:
     build:
         runs-on: ubuntu-latest
         steps:
-            - uses: actions/checkout@v4
+            - uses: actions/checkout@v6
             - uses: oven-sh/setup-bun@v2
               with:
                   bun-version: 1.3.13
-            - uses: actions/setup-node@v4
+            - uses: actions/setup-node@v6
               with:
                   node-version: "22.x"
             - name: Install
@@ -26,7 +26,7 @@ jobs:
               env:
                   NODE_ENV: production
             - name: Upload website artifact
-              uses: actions/upload-pages-artifact@v3
+              uses: actions/upload-pages-artifact@v5
               with:
                   path: "packages/documentation/docs/dist"
     deploy:
@@ -44,4 +44,4 @@ jobs:
         steps:
             - name: Deploy to GitHub Pages
               id: deployment
-              uses: actions/deploy-pages@v4 # or specific "vX.X.X" version tag for this action
+              uses: actions/deploy-pages@v5 # or specific "vX.X.X" version tag for this action
