@@ -268,6 +268,73 @@ describe("globalAtom", () => {
         }
     })
 
+    test("resetSelf remounts atom when only a dependent selector is subscribed", () => {
+        let mountCalls = 0
+        let unmountCalls = 0
+        const a = atom("foo", {
+            global: true,
+            name: "test/reset-transitive-sub",
+            onMount: () => {
+                mountCalls++
+                return () => {
+                    unmountCalls++
+                }
+            },
+        })
+        const sel = selector(get => get(a))
+        const s = store()
+        const unsub = s.sub(sel, () => {})
+
+        // Selector subscribed → atom transitively mounted.
+        expect(mountCalls).toBe(1)
+        expect(unmountCalls).toBe(0)
+
+        a.resetSelf()
+
+        // Selector is still subscribed; atom should be remounted so listeners
+        // installed by onMount keep tracking external state.
+        expect(unmountCalls).toBe(1)
+        expect(mountCalls).toBe(2)
+
+        unsub()
+        expect(unmountCalls).toBe(2)
+    })
+
+    test("onMount throw rolls back the global mount counter", () => {
+        let calls = 0
+        let shouldThrow = true
+        const a = atom("foo", {
+            global: true,
+            name: "test/onmount-throws-rollback",
+            onMount: () => {
+                calls++
+                if (shouldThrow) {
+                    throw new Error("first mount fails")
+                }
+                return () => {}
+            },
+        })
+
+        // First sub: userOnMount throws. mountAtom rethrows.
+        const s1 = store()
+        let firstThrow: unknown
+        try {
+            s1.sub(a, () => {})
+        } catch (e) {
+            firstThrow = e
+        }
+        expect((firstThrow as Error)?.message).toBe("first mount fails")
+        expect(calls).toBe(1)
+
+        // A fresh sub on a different store should re-fire userOnMount —
+        // a stuck mountCount would leave it >0 and skip the user hook.
+        shouldThrow = false
+        const s2 = store()
+        const unsub = s2.sub(a, () => {})
+        expect(calls).toBe(2)
+        unsub()
+    })
+
     test("global onMount receives (store, state) args like non-global atoms", () => {
         let receivedStore: unknown = null
         let receivedState: unknown = null

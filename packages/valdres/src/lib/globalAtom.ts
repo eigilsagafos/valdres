@@ -7,7 +7,7 @@ import type { AtomOnSet } from "./../types/AtomOnSet"
 import type { AtomOptions } from "./../types/AtomOptions"
 import type { GlobalAtom } from "./../types/GlobalAtom"
 import type { StoreData } from "./../types/StoreData"
-import { mountAtom, unmountAtom } from "./mountAtom"
+import { isTransitivelySubscribed, mountAtom, unmountAtom } from "./mountAtom"
 import { propagateUpdatedAtoms } from "./propagateUpdatedAtoms"
 import { setAtom } from "./setAtom"
 import { installMaxAgeTimer } from "./subscribe"
@@ -52,7 +52,15 @@ export const globalAtom = <Value = unknown>(
         ? (...args: unknown[]) => {
               mountCount++
               if (mountCount === 1) {
-                  userCleanup = userOnMount(...args)
+                  try {
+                      userCleanup = userOnMount(...args)
+                  } catch (error) {
+                      // Roll back so a future mount retries userOnMount
+                      // instead of seeing a stuck non-zero counter.
+                      mountCount--
+                      userCleanup = undefined
+                      throw error
+                  }
               }
               return () => {
                   if (mountCount <= 0) return
@@ -81,7 +89,10 @@ export const globalAtom = <Value = unknown>(
         const snapshot = [...stores]
         const subscribedStores: StoreData[] = []
         for (const s of snapshot) {
-            if ((s.subscriptions.get(atom)?.size ?? 0) > 0) {
+            // Use transitive subscription so selector subscribers (which
+            // mount the atom via mountTransitiveDeps) keep their listeners
+            // alive across resetSelf.
+            if (isTransitivelySubscribed(atom, s)) {
                 subscribedStores.push(s)
             }
         }
