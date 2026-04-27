@@ -9,5 +9,5 @@ export const permissionAtom: GlobalAtom<PermissionValue> =
     atom<PermissionValue>("prompt", {
         global: true,
         name: "@valdres/browser-geolocation/permission",
-        onInit: () => subscribePermission(permissionAtom),
+        onMount: () => subscribePermission(permissionAtom),
     })

@@ -1,7 +1,7 @@
 import { atom } from "valdres"
 import type { GlobalAtom } from "valdres"
 import { fetchPublicIp } from "../utils/fetchPublicIp"
-import { publicIpOnInit } from "./publicIpOnInit"
+import { subscribe } from "./subscribe"
 
 export const createPublicIpAtom = (
     name: string,
@@ -15,8 +15,8 @@ export const createPublicIpAtom = (
         global: true,
         name,
         maxAge: maxAgeAtom,
-        onInit: (): (() => void) =>
-            publicIpOnInit(ipAtom, endpointsAtom, validate),
+        onMount: (): (() => void) =>
+            subscribe(ipAtom, endpointsAtom, validate),
     })
     return ipAtom
 }

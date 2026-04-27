@@ -6,7 +6,7 @@ import { publicIpV4EndpointsAtom } from "../atoms/publicIpV4EndpointsAtom"
 import { publicIpMaxAgeAtom } from "../atoms/publicIpMaxAgeAtom"
 import { mockFetch } from "../../test/mockFetch"
 
-describe("publicIpOnInit (SSR / no browser APIs)", () => {
+describe("subscribe (SSR / no browser APIs)", () => {
     let m: ReturnType<typeof mockFetch>
 
     beforeAll(() => {

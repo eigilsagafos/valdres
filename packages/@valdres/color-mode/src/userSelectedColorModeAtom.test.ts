@@ -9,6 +9,7 @@ describe("userSelectedColorModeAtom", () => {
     test("default", () => {
         const { togglePrefersColorScheme, reset } = mockWindow()
         const rootStore = store()
+        const unsub = rootStore.sub(colorModeSelector, () => {})
         expect(rootStore.get(userSelectedColorModeAtom)).toBe("system")
         expect(rootStore.get(colorModeSelector)).toBe("dark")
         togglePrefersColorScheme()
@@ -17,6 +18,7 @@ describe("userSelectedColorModeAtom", () => {
         expect(rootStore.get(colorModeSelector)).toBe("dark")
         expect(rootStore.get(userSelectedColorModeAtom)).toBe("dark")
         expect(rootStore.get(systemColorModeAtom)).toBe("light")
+        unsub()
         reset()
     })
 })

@@ -51,42 +51,72 @@ describe("globalAtom", () => {
         expect(store2.get(numberAtom)).toBe("it works")
     })
 
-    test("onInit", () => {
+    test("onMount fires once across stores when first subscriber attaches", () => {
         const store1 = store()
         const store2 = store()
-        const onInit = mock(setSelf => {
-            setSelf("init works")
-        })
-        const testAtom = atom("foo", { global: true, onInit })
-        expect(store1.get(testAtom)).toBe("init works")
-        expect(store2.get(testAtom)).toBe("init works")
-        expect(onInit).toHaveBeenCalledTimes(1)
+        const onMount = mock(() => {})
+        const testAtom = atom("foo", { global: true, onMount })
+
+        expect(store1.get(testAtom)).toBe("foo")
+        expect(store2.get(testAtom)).toBe("foo")
+        expect(onMount).toHaveBeenCalledTimes(0)
+
+        const unsub1 = store1.sub(testAtom, () => {})
+        expect(onMount).toHaveBeenCalledTimes(1)
+
+        const unsub2 = store2.sub(testAtom, () => {})
+        expect(onMount).toHaveBeenCalledTimes(1)
+
+        unsub1()
+        unsub2()
     })
 
-    test("reset global atom", () => {
+    test("onMount cleanup fires when last subscriber across stores detaches", () => {
         const store1 = store()
         const store2 = store()
-        let initialized = false
-        const onInit = mock(() => {
-            initialized = true
-            return () => {
-                initialized = false
-            }
+        const cleanup = mock(() => {})
+        const testAtom = atom("foo", {
+            global: true,
+            onMount: () => cleanup,
         })
-        const testAtom = atom("foo", { global: true, onInit })
-        expect(initialized).toBe(false)
+
+        const unsub1 = store1.sub(testAtom, () => {})
+        const unsub2 = store2.sub(testAtom, () => {})
+        expect(cleanup).toHaveBeenCalledTimes(0)
+
+        unsub1()
+        expect(cleanup).toHaveBeenCalledTimes(0)
+
+        unsub2()
+        expect(cleanup).toHaveBeenCalledTimes(1)
+    })
+
+    test("onMount re-fires after full unmount and re-subscribe", () => {
+        const store1 = store()
+        const onMount = mock(() => () => {})
+        const testAtom = atom("foo", { global: true, onMount })
+
+        const unsub1 = store1.sub(testAtom, () => {})
+        expect(onMount).toHaveBeenCalledTimes(1)
+        unsub1()
+
+        const unsub2 = store1.sub(testAtom, () => {})
+        expect(onMount).toHaveBeenCalledTimes(2)
+        unsub2()
+    })
+
+    test("reset global atom restores default across stores", () => {
+        const store1 = store()
+        const store2 = store()
+        const testAtom = atom("foo", { global: true })
         expect(store1.get(testAtom)).toBe("foo")
-        expect(initialized).toBe(true)
         expect(store2.get(testAtom)).toBe("foo")
         testAtom.setSelf("set self")
         expect(store1.get(testAtom)).toBe("set self")
         expect(store2.get(testAtom)).toBe("set self")
         testAtom.resetSelf()
-        expect(initialized).toBe(false)
         expect(store1.get(testAtom)).toBe("foo")
-        expect(initialized).toBe(true)
         expect(store2.get(testAtom)).toBe("foo")
-        store1.sub(testAtom, () => {})
     })
 
     test("reset support for global atom with selectors", () => {
@@ -180,20 +210,254 @@ describe("globalAtom", () => {
         expect(store1.get(testAtom)).not.toBe(42)
     })
 
-    test("onReset cleanup is called exactly once per resetSelf", () => {
+    test("onMount cleanup fires exactly once when last subscriber across stores unsubs", () => {
         const store1 = store()
         const store2 = store()
         const store3 = store()
-        const onResetMock = mock(() => {})
+        const cleanup = mock(() => {})
         const testAtom = atom("foo", {
             global: true,
-            onInit: () => onResetMock,
+            onMount: () => cleanup,
         })
-        store1.get(testAtom)
-        store2.get(testAtom)
-        store3.get(testAtom)
-        testAtom.resetSelf()
-        expect(onResetMock).toHaveBeenCalledTimes(1)
+        const u1 = store1.sub(testAtom, () => {})
+        const u2 = store2.sub(testAtom, () => {})
+        const u3 = store3.sub(testAtom, () => {})
+        u1()
+        u2()
+        expect(cleanup).toHaveBeenCalledTimes(0)
+        u3()
+        expect(cleanup).toHaveBeenCalledTimes(1)
+    })
+
+    test("resetSelf still clears value and remounts when cleanup throws", () => {
+        let mountCalls = 0
+        const a = atom("foo", {
+            global: true,
+            name: "test/reset-cleanup-throws",
+            onMount: () => {
+                mountCalls++
+                return () => {
+                    throw new Error("cleanup boom")
+                }
+            },
+        })
+        const s = store()
+        const unsub = s.sub(a, () => {})
+        expect(mountCalls).toBe(1)
+
+        a.setSelf("changed")
+        expect(s.get(a)).toBe("changed")
+
+        let caught: unknown
+        try {
+            a.resetSelf()
+        } catch (e) {
+            caught = e
+        }
+
+        expect((caught as Error)?.message).toBe("cleanup boom")
+        // Value reset went through despite the throwing cleanup.
+        expect(s.get(a)).toBe("foo")
+        // Active subscriber triggered a remount.
+        expect(mountCalls).toBe(2)
+        try {
+            unsub()
+        } catch {
+            // The remount installed another throwing cleanup;
+            // the unsub firing it is incidental to this test.
+        }
+    })
+
+    test("resetSelf remounts atom when only a dependent selector is subscribed", () => {
+        let mountCalls = 0
+        let unmountCalls = 0
+        const a = atom("foo", {
+            global: true,
+            name: "test/reset-transitive-sub",
+            onMount: () => {
+                mountCalls++
+                return () => {
+                    unmountCalls++
+                }
+            },
+        })
+        const sel = selector(get => get(a))
+        const s = store()
+        const unsub = s.sub(sel, () => {})
+
+        // Selector subscribed → atom transitively mounted.
+        expect(mountCalls).toBe(1)
+        expect(unmountCalls).toBe(0)
+
+        a.resetSelf()
+
+        // Selector is still subscribed; atom should be remounted so listeners
+        // installed by onMount keep tracking external state.
+        expect(unmountCalls).toBe(1)
+        expect(mountCalls).toBe(2)
+
+        unsub()
+        expect(unmountCalls).toBe(2)
+    })
+
+    test("onMount throw rolls back the global mount counter", () => {
+        let calls = 0
+        let shouldThrow = true
+        const a = atom("foo", {
+            global: true,
+            name: "test/onmount-throws-rollback",
+            onMount: () => {
+                calls++
+                if (shouldThrow) {
+                    throw new Error("first mount fails")
+                }
+                return () => {}
+            },
+        })
+
+        // First sub: userOnMount throws. mountAtom rethrows.
+        const s1 = store()
+        let firstThrow: unknown
+        try {
+            s1.sub(a, () => {})
+        } catch (e) {
+            firstThrow = e
+        }
+        expect((firstThrow as Error)?.message).toBe("first mount fails")
+        expect(calls).toBe(1)
+
+        // A fresh sub on a different store should re-fire userOnMount —
+        // a stuck mountCount would leave it >0 and skip the user hook.
+        shouldThrow = false
+        const s2 = store()
+        const unsub = s2.sub(a, () => {})
+        expect(calls).toBe(2)
+        unsub()
+    })
+
+    test("after resetSelf, globalStore is re-added to stores on next interaction", () => {
+        const a = atom("foo", { global: true, name: "test/reset-globalStore-readd" })
+        const s1 = store()
+        const s2 = store()
+
+        s1.get(a)
+        s2.get(a)
+        const storesBeforeReset = a.stores.size
+        expect(storesBeforeReset).toBeGreaterThanOrEqual(3) // s1, s2, globalStore
+
+        a.resetSelf()
+        // No subscribers, so atom.stores collapses on reset.
+        expect(a.stores.size).toBe(0)
+
+        // First interaction (set from a fresh store) must re-establish
+        // globalStore in atom.stores so cross-store sync works.
+        const s3 = store()
+        s3.set(a, "synced")
+        expect(s3.get(a)).toBe("synced")
+        // Cross-store sync: another store reading should observe the value.
+        expect(s2.get(a)).toBe("synced")
+        // globalStore must be back in atom.stores.
+        const storesAfter = a.stores.size
+        expect(storesAfter).toBeGreaterThanOrEqual(2) // s3 + globalStore at minimum
+    })
+
+    test("resetSelf does not install maxAge timer for atoms with only transitive subs", async () => {
+        let callCount = 0
+        const a = atom<number>(
+            () => {
+                callCount++
+                return callCount
+            },
+            {
+                global: true,
+                name: "test/reset-maxage-transitive-only",
+                maxAge: 30,
+            },
+        )
+        const sel = selector(get => get(a))
+        const s = store()
+        s.sub(sel, () => {})
+
+        // Selector subscribed but the atom has no direct subscribers,
+        // so no maxAge timer should be installed before or after reset.
+        expect(a.maxAgeInterval).toBeUndefined()
+
+        a.resetSelf()
+
+        // After reset, still no direct sub on the atom — no timer.
+        expect(a.maxAgeInterval).toBeUndefined()
+    })
+
+    test("get on unmounted atom past maxAge re-runs defaultValue (lazy revalidation)", async () => {
+        let calls = 0
+        const a = atom<number>(
+            () => {
+                calls++
+                return calls
+            },
+            {
+                global: true,
+                name: "test/lazy-revalidate-on-stale-get",
+                maxAge: 50,
+            },
+        )
+        const s = store()
+        const initial = s.get(a)
+        const callsAfterInit = calls
+
+        // Re-read inside the freshness window: cached, no re-eval.
+        expect(s.get(a)).toBe(initial)
+        expect(calls).toBe(callsAfterInit)
+
+        await wait(75) // past maxAge
+
+        // Lazy revalidation: cache is stale; reading should re-run
+        // defaultValue and surface a newer value.
+        const fresh = s.get(a)
+        expect(calls).toBeGreaterThan(callsAfterInit)
+        expect(fresh).not.toBe(initial)
+    })
+
+    test("get within maxAge window returns cached value without re-eval", async () => {
+        let calls = 0
+        const a = atom<number>(
+            () => {
+                calls++
+                return calls
+            },
+            {
+                global: true,
+                name: "test/lazy-revalidate-fresh-cache",
+                maxAge: 200,
+            },
+        )
+        const s = store()
+        const initial = s.get(a)
+        const callsAfterInit = calls
+
+        await wait(20) // well within maxAge
+
+        expect(s.get(a)).toBe(initial)
+        expect(calls).toBe(callsAfterInit)
+    })
+
+    test("global onMount receives (store, state) args like non-global atoms", () => {
+        let receivedStore: unknown = null
+        let receivedState: unknown = null
+        const a = atom("foo", {
+            global: true,
+            name: "test/onMount-args",
+            onMount: (store, state) => {
+                receivedStore = store
+                receivedState = state
+                return () => {}
+            },
+        })
+        const s = store()
+        const unsub = s.sub(a, () => {})
+        expect(receivedStore).not.toBeNull()
+        expect(receivedState).toBe(a)
+        unsub()
     })
 
     test("resetSelf recovers if subscriber throws", () => {
@@ -306,31 +570,50 @@ describe("globalAtom", () => {
         expect(afterSecond).toBeGreaterThan(afterFirst)
     })
 
-    test("preserves fresh onInit registration when propagation triggers re-init", () => {
-        let registrationCount = 0
-        let cleanupCount = 0
+    test("resetSelf cycles mount lifecycle for stores with active subscribers", () => {
+        let mountCount = 0
+        let unmountCount = 0
         const a = atom("initial", {
             global: true,
-            name: "test-reset-oninit",
-            onInit: () => {
-                registrationCount++
+            name: "test-reset-mount-lifecycle",
+            onMount: () => {
+                mountCount++
                 return () => {
-                    cleanupCount++
+                    unmountCount++
                 }
             },
         })
         const s = store()
-        s.sub(a, () => {
-            s.get(a)
-        })
-        s.get(a)
+        const unsub = s.sub(a, () => {})
+        expect(mountCount).toBe(1)
+        expect(unmountCount).toBe(0)
 
-        const regBefore = registrationCount
-        const cleanupBefore = cleanupCount
         a.resetSelf()
 
-        expect(registrationCount - regBefore).toBe(1)
-        expect(cleanupCount - cleanupBefore).toBe(1)
+        // resetSelf is a "full restart": cleanup runs, then onMount re-fires
+        // for any subscribers that survived the reset.
+        expect(unmountCount).toBe(1)
+        expect(mountCount).toBe(2)
+
+        unsub()
+        expect(unmountCount).toBe(2)
+    })
+
+    test("resetSelf without subscribers does not invoke onMount", () => {
+        let mountCount = 0
+        const a = atom("initial", {
+            global: true,
+            name: "test-reset-no-subs",
+            onMount: () => {
+                mountCount++
+                return () => {}
+            },
+        })
+        const s = store()
+        s.get(a)
+        expect(mountCount).toBe(0)
+        a.resetSelf()
+        expect(mountCount).toBe(0)
     })
 
     test("setSelf with bare promise resolves into stored value across stores", async () => {

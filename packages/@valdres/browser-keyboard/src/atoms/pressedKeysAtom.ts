@@ -5,5 +5,5 @@ import { bootstrap } from "../lib/bootstrap"
 export const pressedKeysAtom = atom<PressedKey[]>([], {
     global: true,
     name: "@valdres/browser-keyboard/pressedKeys",
-    onInit: () => bootstrap(),
+    onMount: () => bootstrap(),
 })

@@ -50,10 +50,13 @@ const removeFakeConnection = () => {
     delete (navigator as any).connection
 }
 
-describe("publicIpOnInit", () => {
+describe("subscribe", () => {
     const m = mockFetch()
+    let activeUnsubs: Array<() => void> = []
 
     afterEach(() => {
+        for (const unsub of activeUnsubs) unsub()
+        activeUnsubs = []
         m.reset()
         publicIpV4Atom.resetSelf()
         publicIpV4EndpointsAtom.resetSelf()
@@ -67,8 +70,8 @@ describe("publicIpOnInit", () => {
     test("refetches on window 'online' event", async () => {
         m.alwaysRespond("https://api4.ipify.org", "203.0.113.10")
         const s = store()
+        activeUnsubs.push(s.sub(publicIpV4Atom, () => {}))
         await s.get(publicIpV4Atom)
-        s.sub(publicIpV4Atom, () => {})
         const before = m.calls.length
         window.dispatchEvent(new Event("online"))
         await waitUntil(() => m.calls.length > before)
@@ -78,8 +81,8 @@ describe("publicIpOnInit", () => {
     test("refetches on document 'visibilitychange' when visible", async () => {
         m.alwaysRespond("https://api4.ipify.org", "203.0.113.11")
         const s = store()
+        activeUnsubs.push(s.sub(publicIpV4Atom, () => {}))
         await s.get(publicIpV4Atom)
-        s.sub(publicIpV4Atom, () => {})
         const before = m.calls.length
         document.dispatchEvent(new Event("visibilitychange"))
         await waitUntil(() => m.calls.length > before)
@@ -100,8 +103,8 @@ describe("publicIpOnInit", () => {
         test("refetches on connection 'change' event", async () => {
             m.alwaysRespond("https://api4.ipify.org", "203.0.113.12")
             const s = store()
+            activeUnsubs.push(s.sub(publicIpV4Atom, () => {}))
             await s.get(publicIpV4Atom)
-            s.sub(publicIpV4Atom, () => {})
             const before = m.calls.length
             fake.emit()
             await waitUntil(() => m.calls.length > before)
@@ -130,8 +133,8 @@ describe("publicIpOnInit", () => {
         test("does not refetch when signals fire", async () => {
             m.alwaysRespond("https://api4.ipify.org", "203.0.113.13")
             const s = store()
+            activeUnsubs.push(s.sub(publicIpV4Atom, () => {}))
             await s.get(publicIpV4Atom)
-            s.sub(publicIpV4Atom, () => {})
             const before = m.calls.length
             window.dispatchEvent(new Event("online"))
             document.dispatchEvent(new Event("visibilitychange"))

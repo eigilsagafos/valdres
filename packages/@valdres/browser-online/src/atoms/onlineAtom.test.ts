@@ -12,9 +12,10 @@ const setOnLine = (value: boolean) => {
 describe("onlineAtom", () => {
     afterAll(() => setOnLine(true))
 
-    test("first read evaluates lazily and onInit wires event listeners", () => {
+    test("subscribing wires event listeners and reflects navigator state", () => {
         setOnLine(false)
         const s = store()
+        const unsub = s.sub(onlineAtom, () => {})
         expect(s.get(onlineAtom)).toBe(false)
 
         setOnLine(true)
@@ -24,5 +25,6 @@ describe("onlineAtom", () => {
         setOnLine(false)
         window.dispatchEvent(new Event("offline"))
         expect(s.get(onlineAtom)).toBe(false)
+        unsub()
     })
 })

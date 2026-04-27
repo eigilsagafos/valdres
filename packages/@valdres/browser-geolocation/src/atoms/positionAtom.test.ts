@@ -62,6 +62,12 @@ const makePosition = (): GeolocationPosition =>
 
 describe("positionAtom", () => {
     let geo: FakeGeolocation
+    let activeUnsubs: Array<() => void> = []
+
+    const subscribe = (s: ReturnType<typeof store>) => {
+        const unsub = s.sub(positionAtom, () => {})
+        activeUnsubs.push(unsub)
+    }
 
     beforeEach(() => {
         geo = makeGeolocation()
@@ -73,6 +79,8 @@ describe("positionAtom", () => {
     })
 
     afterEach(() => {
+        for (const unsub of activeUnsubs) unsub()
+        activeUnsubs = []
         setGeolocation(null)
         positionAtom.resetSelf()
         geolocationStatusAtom.resetSelf()
@@ -80,16 +88,16 @@ describe("positionAtom", () => {
         geolocationOptionsAtom.resetSelf()
     })
 
-    test("calls watchPosition on first read and sets status to pending", () => {
+    test("calls watchPosition on first subscribe and sets status to pending", () => {
         const s = store()
-        s.get(positionAtom)
+        subscribe(s)
         expect(typeof geo._success).toBe("function")
         expect(s.get(geolocationStatusAtom)).toBe("pending")
     })
 
     test("success updates position and marks status active", () => {
         const s = store()
-        s.get(positionAtom)
+        subscribe(s)
         geo._success?.(makePosition())
 
         const snapshot = s.get(positionAtom)
@@ -101,7 +109,7 @@ describe("positionAtom", () => {
 
     test("permission-denied error sets status to error and preserves code", () => {
         const s = store()
-        s.get(positionAtom)
+        subscribe(s)
         const err = {
             code: 1,
             message: "User denied Geolocation",
@@ -117,7 +125,7 @@ describe("positionAtom", () => {
 
     test("position-unavailable error sets status to error", () => {
         const s = store()
-        s.get(positionAtom)
+        subscribe(s)
         const err = {
             code: 2,
             message: "Position unavailable",
@@ -134,13 +142,13 @@ describe("positionAtom", () => {
     test("missing geolocation API marks status unsupported", () => {
         setGeolocation(null)
         const s = store()
-        s.get(positionAtom)
+        subscribe(s)
         expect(s.get(geolocationStatusAtom)).toBe("unsupported")
     })
 
     test("restart clears any previously-set error", () => {
         const s = store()
-        s.get(positionAtom)
+        subscribe(s)
         const err = {
             code: 2,
             message: "Position unavailable",
@@ -163,7 +171,7 @@ describe("positionAtom", () => {
 
     test("options change restarts the watch with the new options", () => {
         const s = store()
-        s.get(positionAtom)
+        subscribe(s)
         expect(geo._options?.enableHighAccuracy).toBe(false)
         const firstId = geo._cleared.length
 

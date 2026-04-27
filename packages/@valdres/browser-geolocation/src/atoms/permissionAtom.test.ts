@@ -54,8 +54,9 @@ describe("permissionAtom", () => {
     test("marks permission unsupported when Permissions API is missing", () => {
         setPermissions(undefined)
         const s = store()
-        s.get(permissionAtom)
+        const unsub = s.sub(permissionAtom, () => {})
         expect(s.get(permissionAtom)).toBe("unsupported")
+        unsub()
     })
 
     test("resolves to the current state after query resolves", async () => {
@@ -64,9 +65,10 @@ describe("permissionAtom", () => {
             query: () => Promise.resolve(status),
         })
         const s = store()
-        s.get(permissionAtom)
+        const unsub = s.sub(permissionAtom, () => {})
         await flush()
         expect(s.get(permissionAtom)).toBe("granted")
+        unsub()
     })
 
     test("updates when the underlying PermissionStatus changes", async () => {
@@ -75,7 +77,7 @@ describe("permissionAtom", () => {
             query: () => Promise.resolve(status),
         })
         const s = store()
-        s.get(permissionAtom)
+        const unsub = s.sub(permissionAtom, () => {})
         await flush()
         expect(s.get(permissionAtom)).toBe("prompt")
 
@@ -84,6 +86,7 @@ describe("permissionAtom", () => {
 
         status._setState("denied")
         expect(s.get(permissionAtom)).toBe("denied")
+        unsub()
     })
 
     test("falls back to unsupported when query rejects", async () => {
@@ -91,8 +94,9 @@ describe("permissionAtom", () => {
             query: () => Promise.reject(new Error("nope")),
         })
         const s = store()
-        s.get(permissionAtom)
+        const unsub = s.sub(permissionAtom, () => {})
         await flush()
         expect(s.get(permissionAtom)).toBe("unsupported")
+        unsub()
     })
 })

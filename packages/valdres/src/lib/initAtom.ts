@@ -29,6 +29,11 @@ export const getAtomInitValue = <V = any>(
         if (isPromiseLike(value)) {
             value.then(
                 resolvedValue => {
+                    // Stale-promise guard: if a newer evaluation (e.g.
+                    // from lazy maxAge revalidation or resetSelf+re-init)
+                    // replaced our promise as the cached value, swallow
+                    // this resolution. Mirrors setAtom.handlePromise.
+                    if (data.values.get(atom) !== value) return
                     // @ts-ignore @ts-todo
                     setValueInData(atom, resolvedValue, data)
                     propagateUpdatedAtoms([atom], data)

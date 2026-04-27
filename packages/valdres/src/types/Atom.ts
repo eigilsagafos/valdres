@@ -1,5 +1,6 @@
 import type { AtomDefaultValue } from "./AtomDefaultValue"
 import type { AtomOnInit } from "./AtomOnInit"
+import type { AtomOnMount } from "./AtomOnMount"
 import type { AtomOnSet } from "./AtomOnSet"
 import type { EqualFunc } from "./EqualFunc"
 import type { Reactive } from "./Reactive"
@@ -17,9 +18,10 @@ export type Atom<Value = unknown> = {
     equal: EqualFunc<Value>
     defaultValue?: AtomDefaultValue<Value>
     name?: string
+    /** Internal cross-store sync hook for global atoms. Not user-facing. */
     onInit?: AtomOnInit<Value>
     onSet?: AtomOnSet<Value>
-    onMount?: () => void | (() => void)
+    onMount?: AtomOnMount
     maxAge?: Reactive<number>
     mutable?: boolean
     staleWhileRevalidate?: Reactive<number>

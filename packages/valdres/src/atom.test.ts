@@ -297,26 +297,6 @@ describe("atom", () => {
         expect(onUnmount).toHaveBeenCalledTimes(0)
     })
 
-    test("onInit", () => {
-        const store1 = store()
-        const onInitCallback = mock(() => {})
-        const user1 = atom("Foo", {
-            onInit: onInitCallback,
-        })
-        expect(store1.get(user1)).toBe("Foo")
-        expect(onInitCallback).toHaveBeenCalledTimes(1)
-    })
-
-    test("onInit atom with no value", () => {
-        const store1 = store()
-        const onInitCallback = mock(setSelf => setSelf("Foo"))
-        const user1 = atom<string>(undefined, {
-            onInit: onInitCallback,
-        })
-        expect(store1.get(user1)).toBe("Foo")
-        expect(onInitCallback).toHaveBeenCalledTimes(1)
-    })
-
     test("atom with selector as default value", () => {
         const store1 = store()
         const atom1 = atom(1)
@@ -1344,9 +1324,51 @@ describe("subscriber error handling", () => {
         resolver!(999)
         await wait(1)
 
-        // The resolved value should NOT have been written to the store,
-        // because the subscription (and its interval) was cleaned up.
-        expect(store1.get(atom1)).toBe(1)
+        // The resolved value 999 must not have been written to the store —
+        // the cancelled in-flight promise should be ignored on resolution.
+        // (We assert via the raw cache to avoid triggering lazy maxAge
+        // revalidation on an unmounted read, which is unrelated to the
+        // cleanup invariant being verified here.)
+        expect(store1.data.values.get(atom1)).toBe(1)
+    })
+
+    test("stale init promise from before lazy eviction does not clobber new value", async () => {
+        const resolvers: Array<(v: string) => void> = []
+        let calls = 0
+        const a = atom<string | Promise<string>>(
+            () => {
+                calls++
+                const idx = calls
+                return new Promise<string>(resolve => {
+                    resolvers.push(value => resolve(`${value}-${idx}`))
+                })
+            },
+            { maxAge: 30, name: "test/stale-init-promise-guard" },
+        )
+        const s = store()
+
+        // First init kicks off promise#1.
+        const firstPending = s.get(a)
+        expect(typeof (firstPending as Promise<string>).then).toBe("function")
+        expect(calls).toBe(1)
+
+        await wait(50) // past maxAge
+
+        // Lazy eviction + re-init: promise#2.
+        s.get(a)
+        expect(calls).toBe(2)
+
+        // Resolve promise#2 → store updates to v-2.
+        resolvers[1]("v")
+        await Promise.resolve()
+        await Promise.resolve()
+        expect(s.get(a)).toBe("v-2")
+
+        // Late resolve of stale promise#1 — must NOT clobber v-2.
+        resolvers[0]("v")
+        await Promise.resolve()
+        await Promise.resolve()
+        expect(s.get(a)).toBe("v-2")
     })
 
     test("atom with maxAge: last subscriber unsubscribing clears interval even if it was not the first", async () => {

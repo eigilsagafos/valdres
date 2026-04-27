@@ -9,5 +9,5 @@ const getInitial = () => {
 export const onlineAtom = atom<boolean>(getInitial, {
     global: true,
     name: "@valdres/browser-online/online",
-    onInit: () => subscribe(),
+    onMount: () => subscribe(),
 })

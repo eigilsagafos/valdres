@@ -6,5 +6,5 @@ import { subscribe } from "../lib/subscribe"
 export const screenAtom = atom<ScreenInfo>(readScreen, {
     global: true,
     name: "@valdres/browser-screen/screen",
-    onInit: () => subscribe(),
+    onMount: () => subscribe(),
 })

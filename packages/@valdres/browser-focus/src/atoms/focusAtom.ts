@@ -9,5 +9,5 @@ const getInitial = () => {
 export const focusAtom = atom<boolean>(getInitial, {
     global: true,
     name: "@valdres/browser-focus/focus",
-    onInit: () => subscribe(),
+    onMount: () => subscribe(),
 })

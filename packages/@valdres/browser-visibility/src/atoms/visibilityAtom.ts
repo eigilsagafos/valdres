@@ -9,5 +9,5 @@ const getInitial = (): DocumentVisibilityState => {
 export const visibilityAtom = atom<DocumentVisibilityState>(getInitial, {
     global: true,
     name: "@valdres/browser-visibility/visibility",
-    onInit: () => subscribe(),
+    onMount: () => subscribe(),
 })

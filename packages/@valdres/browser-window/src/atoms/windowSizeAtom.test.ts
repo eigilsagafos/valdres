@@ -20,6 +20,9 @@ describe("windowSizeAtom", () => {
     beforeEach(() => {
         originalInnerWidth = window.innerWidth
         originalInnerHeight = window.innerHeight
+        // The atom is global; reset so a stale cache from other test
+        // files (or earlier runs) doesn't bleed into the assertion.
+        windowSizeAtom.resetSelf()
     })
 
     afterEach(() => {
@@ -35,7 +38,7 @@ describe("windowSizeAtom", () => {
 
     test("updates when window resize fires", () => {
         const s = store()
-        s.get(windowSizeAtom)
+        const unsub = s.sub(windowSizeAtom, () => {})
 
         setInner(640, 480)
         window.dispatchEvent(new Event("resize"))
@@ -43,5 +46,6 @@ describe("windowSizeAtom", () => {
         const size = s.get(windowSizeAtom)
         expect(size.innerWidth).toBe(640)
         expect(size.innerHeight).toBe(480)
+        unsub()
     })
 })
