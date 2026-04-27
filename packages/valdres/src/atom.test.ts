@@ -1332,6 +1332,45 @@ describe("subscriber error handling", () => {
         expect(store1.data.values.get(atom1)).toBe(1)
     })
 
+    test("stale init promise from before lazy eviction does not clobber new value", async () => {
+        const resolvers: Array<(v: string) => void> = []
+        let calls = 0
+        const a = atom<string | Promise<string>>(
+            () => {
+                calls++
+                const idx = calls
+                return new Promise<string>(resolve => {
+                    resolvers.push(value => resolve(`${value}-${idx}`))
+                })
+            },
+            { maxAge: 30, name: "test/stale-init-promise-guard" },
+        )
+        const s = store()
+
+        // First init kicks off promise#1.
+        const firstPending = s.get(a)
+        expect(typeof (firstPending as Promise<string>).then).toBe("function")
+        expect(calls).toBe(1)
+
+        await wait(50) // past maxAge
+
+        // Lazy eviction + re-init: promise#2.
+        s.get(a)
+        expect(calls).toBe(2)
+
+        // Resolve promise#2 → store updates to v-2.
+        resolvers[1]("v")
+        await Promise.resolve()
+        await Promise.resolve()
+        expect(s.get(a)).toBe("v-2")
+
+        // Late resolve of stale promise#1 — must NOT clobber v-2.
+        resolvers[0]("v")
+        await Promise.resolve()
+        await Promise.resolve()
+        expect(s.get(a)).toBe("v-2")
+    })
+
     test("atom with maxAge: last subscriber unsubscribing clears interval even if it was not the first", async () => {
         const setIntervalSpy = spyOn(global, "setInterval")
         const clearIntervalSpy = spyOn(global, "clearInterval")

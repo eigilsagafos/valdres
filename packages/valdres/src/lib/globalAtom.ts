@@ -128,7 +128,12 @@ export const globalAtom = <Value = unknown>(
 
         for (const s of subscribedStores) {
             stores.add(s)
-            if (atom.maxAge) installMaxAgeTimer(atom, s)
+            // Match subscribe.ts: maxAge timer is installed only when the
+            // atom has a DIRECT subscriber. Transitive (selector-only)
+            // subscribers go through the lazy-revalidation path on read.
+            if (atom.maxAge && (s.subscriptions.get(atom)?.size ?? 0) > 0) {
+                installMaxAgeTimer(atom, s)
+            }
             try {
                 mountAtom(atom, s)
             } catch (e) {

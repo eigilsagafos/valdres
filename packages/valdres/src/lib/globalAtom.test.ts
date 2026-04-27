@@ -335,6 +335,59 @@ describe("globalAtom", () => {
         unsub()
     })
 
+    test("after resetSelf, globalStore is re-added to stores on next interaction", () => {
+        const a = atom("foo", { global: true, name: "test/reset-globalStore-readd" })
+        const s1 = store()
+        const s2 = store()
+
+        s1.get(a)
+        s2.get(a)
+        const storesBeforeReset = a.stores.size
+        expect(storesBeforeReset).toBeGreaterThanOrEqual(3) // s1, s2, globalStore
+
+        a.resetSelf()
+        // No subscribers, so atom.stores collapses on reset.
+        expect(a.stores.size).toBe(0)
+
+        // First interaction (set from a fresh store) must re-establish
+        // globalStore in atom.stores so cross-store sync works.
+        const s3 = store()
+        s3.set(a, "synced")
+        expect(s3.get(a)).toBe("synced")
+        // Cross-store sync: another store reading should observe the value.
+        expect(s2.get(a)).toBe("synced")
+        // globalStore must be back in atom.stores.
+        const storesAfter = a.stores.size
+        expect(storesAfter).toBeGreaterThanOrEqual(2) // s3 + globalStore at minimum
+    })
+
+    test("resetSelf does not install maxAge timer for atoms with only transitive subs", async () => {
+        let callCount = 0
+        const a = atom<number>(
+            () => {
+                callCount++
+                return callCount
+            },
+            {
+                global: true,
+                name: "test/reset-maxage-transitive-only",
+                maxAge: 30,
+            },
+        )
+        const sel = selector(get => get(a))
+        const s = store()
+        s.sub(sel, () => {})
+
+        // Selector subscribed but the atom has no direct subscribers,
+        // so no maxAge timer should be installed before or after reset.
+        expect(a.maxAgeInterval).toBeUndefined()
+
+        a.resetSelf()
+
+        // After reset, still no direct sub on the atom — no timer.
+        expect(a.maxAgeInterval).toBeUndefined()
+    })
+
     test("get on unmounted atom past maxAge re-runs defaultValue (lazy revalidation)", async () => {
         let calls = 0
         const a = atom<number>(
