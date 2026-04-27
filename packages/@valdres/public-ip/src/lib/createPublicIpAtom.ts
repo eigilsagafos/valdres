@@ -50,6 +50,9 @@ export const createPublicIpAtom = ({
             },
             err => {
                 if (promise !== latestPromise) return
+                if (staleIfErrorAtom.getSelf() === 0) {
+                    valueAtom.setSelf(null)
+                }
                 statusAtom.setSelf("error")
                 errorAtom.setSelf(
                     err instanceof Error ? err : new Error(String(err)),

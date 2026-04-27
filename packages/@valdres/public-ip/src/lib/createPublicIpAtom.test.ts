@@ -144,6 +144,43 @@ describe("createPublicIpAtom", () => {
             expect(publicIpV4ValueAtom.getSelf()).toBeNull()
             expect(publicIpV4StatusAtom.getSelf()).toBe("loading")
         })
+
+        test("staleIfError=0 nulls valueAtom on failed revalidation", async () => {
+            publicIpStaleIfErrorAtom.setSelf(0)
+            m.alwaysRespond("https://api4.ipify.org", "203.0.113.25")
+            const s = store()
+            await s.get(publicIpV4Atom)
+            unsubs.push(s.sub(publicIpV4Atom, () => {}))
+            expect(publicIpV4ValueAtom.getSelf()).toBe("203.0.113.25")
+
+            m.reset()
+            m.queue(new Error("network down"))
+            m.queue(new Error("network down"))
+            window.dispatchEvent(new Event("online"))
+            await waitUntil(
+                () => publicIpV4StatusAtom.getSelf() === "error",
+            )
+            expect(publicIpV4ValueAtom.getSelf()).toBeNull()
+            expect(publicIpV4ErrorAtom.getSelf()).not.toBeNull()
+        })
+
+        test("staleIfError>0 keeps valueAtom on failed revalidation", async () => {
+            m.alwaysRespond("https://api4.ipify.org", "203.0.113.26")
+            const s = store()
+            await s.get(publicIpV4Atom)
+            unsubs.push(s.sub(publicIpV4Atom, () => {}))
+            expect(publicIpV4ValueAtom.getSelf()).toBe("203.0.113.26")
+
+            m.reset()
+            m.queue(new Error("network down"))
+            m.queue(new Error("network down"))
+            window.dispatchEvent(new Event("online"))
+            await waitUntil(
+                () => publicIpV4StatusAtom.getSelf() === "error",
+            )
+            expect(publicIpV4ValueAtom.getSelf()).toBe("203.0.113.26")
+            expect(publicIpV4ErrorAtom.getSelf()).not.toBeNull()
+        })
     })
 
     describe("stale-resolution race", () => {

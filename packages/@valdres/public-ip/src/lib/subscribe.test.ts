@@ -106,9 +106,9 @@ describe("publicIpOnInit", () => {
             unsubs.push(s.sub(publicIpV4Atom, () => {}))
             const before = m.calls.length
             fake.emit()
-            // Debounce is 750ms. Wait well inside that window so a slow CI
-            // scheduler can't race past it.
-            await new Promise(r => setTimeout(r, 200))
+            // The debounce uses setTimeout, which can't run before this
+            // function yields — so a synchronous check here is deterministic
+            // regardless of CI clock skew.
             expect(m.calls.length).toBe(before)
             await waitUntil(() => m.calls.length > before, 1500)
             expect(m.calls.length).toBeGreaterThan(before)
