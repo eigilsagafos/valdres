@@ -53,4 +53,33 @@ describe("fetchPublicIp", () => {
         const ip = await fetchPublicIp(["https://v6.example"])
         expect(ip).toBe("2001:db8::1")
     })
+
+    test("aborts a slow endpoint and moves on", async () => {
+        const intercepted = globalThis.fetch
+        globalThis.fetch = ((input: any, init?: RequestInit) => {
+            const url = typeof input === "string" ? input : input.url
+            if (url === "https://slow.example") {
+                return new Promise((_, reject) => {
+                    init?.signal?.addEventListener("abort", () => {
+                        reject(init.signal!.reason ?? new Error("aborted"))
+                    })
+                })
+            }
+            return Promise.resolve({
+                ok: true,
+                status: 200,
+                text: async () => "203.0.113.42",
+            }) as any
+        }) as typeof fetch
+        try {
+            const ip = await fetchPublicIp(
+                ["https://slow.example", "https://fast.example"],
+                undefined,
+                50,
+            )
+            expect(ip).toBe("203.0.113.42")
+        } finally {
+            globalThis.fetch = intercepted
+        }
+    })
 })
