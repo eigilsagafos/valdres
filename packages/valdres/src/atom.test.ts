@@ -1324,9 +1324,12 @@ describe("subscriber error handling", () => {
         resolver!(999)
         await wait(1)
 
-        // The resolved value should NOT have been written to the store,
-        // because the subscription (and its interval) was cleaned up.
-        expect(store1.get(atom1)).toBe(1)
+        // The resolved value 999 must not have been written to the store —
+        // the cancelled in-flight promise should be ignored on resolution.
+        // (We assert via the raw cache to avoid triggering lazy maxAge
+        // revalidation on an unmounted read, which is unrelated to the
+        // cleanup invariant being verified here.)
+        expect(store1.data.values.get(atom1)).toBe(1)
     })
 
     test("atom with maxAge: last subscriber unsubscribing clears interval even if it was not the first", async () => {

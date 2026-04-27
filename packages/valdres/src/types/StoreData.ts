@@ -10,6 +10,10 @@ export type RootStoreData = {
     stateDependencies: WeakMap<WeakKey, any>
     mounts: WeakMap<WeakKey, { cleanup?: () => void }>
     abortControllers: WeakMap<WeakKey, AbortController | false>
+    /** Per-atom timestamp of the last value write, used for lazy
+     *  maxAge revalidation when the atom is unmounted (no active timer
+     *  to keep the cache fresh). Only populated for atoms with `maxAge`. */
+    lastValueWriteAt: WeakMap<WeakKey, number>
     storeRef?: Store
     scopes: Map<string, ScopedStoreData>
     batchUpdates?: boolean

@@ -335,6 +335,59 @@ describe("globalAtom", () => {
         unsub()
     })
 
+    test("get on unmounted atom past maxAge re-runs defaultValue (lazy revalidation)", async () => {
+        let calls = 0
+        const a = atom<number>(
+            () => {
+                calls++
+                return calls
+            },
+            {
+                global: true,
+                name: "test/lazy-revalidate-on-stale-get",
+                maxAge: 50,
+            },
+        )
+        const s = store()
+        const initial = s.get(a)
+        const callsAfterInit = calls
+
+        // Re-read inside the freshness window: cached, no re-eval.
+        expect(s.get(a)).toBe(initial)
+        expect(calls).toBe(callsAfterInit)
+
+        await wait(75) // past maxAge
+
+        // Lazy revalidation: cache is stale; reading should re-run
+        // defaultValue and surface a newer value.
+        const fresh = s.get(a)
+        expect(calls).toBeGreaterThan(callsAfterInit)
+        expect(fresh).not.toBe(initial)
+    })
+
+    test("get within maxAge window returns cached value without re-eval", async () => {
+        let calls = 0
+        const a = atom<number>(
+            () => {
+                calls++
+                return calls
+            },
+            {
+                global: true,
+                name: "test/lazy-revalidate-fresh-cache",
+                maxAge: 200,
+            },
+        )
+        const s = store()
+        const initial = s.get(a)
+        const callsAfterInit = calls
+
+        await wait(20) // well within maxAge
+
+        expect(s.get(a)).toBe(initial)
+        expect(calls).toBe(callsAfterInit)
+    })
+
     test("global onMount receives (store, state) args like non-global atoms", () => {
         let receivedStore: unknown = null
         let receivedState: unknown = null

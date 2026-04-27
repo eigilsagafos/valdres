@@ -27,17 +27,23 @@ export const setValueInData = <Value extends unknown>(
     // Family tracking is handled separately in initFamilyIndex.
     const isNewAtomInScope =
         "parent" in data && Object.hasOwn(atom, "defaultValue") && !data.values.has(atom)
+    let written: Value
     if (atom.mutable || isProd()) {
         data.values.set(atom, value)
-        if (isNewAtomInScope) trackScopeValue(atom, data as ScopedStoreData)
-        return value
+        written = value
     } else {
         // Skip deepFreeze for primitives — they are immutable by nature
         const frozenValue = value !== null && (typeof value === "object" || typeof value === "function")
             ? deepFreeze(value)
             : value
         data.values.set(atom, frozenValue)
-        if (isNewAtomInScope) trackScopeValue(atom, data as ScopedStoreData)
-        return frozenValue
+        written = frozenValue
     }
+    if (isNewAtomInScope) trackScopeValue(atom, data as ScopedStoreData)
+    // Record the write timestamp for atoms with maxAge so unmounted reads
+    // can lazily revalidate once the freshness window has elapsed.
+    if ((atom as Atom<Value>).maxAge !== undefined) {
+        data.lastValueWriteAt.set(atom, Date.now())
+    }
+    return written
 }

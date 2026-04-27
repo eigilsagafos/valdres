@@ -8,7 +8,9 @@ import type { ScopedStore, ScopeFn, Store } from "../types/Store"
 import type { ScopedStoreData, StoreData } from "../types/StoreData"
 import type { TransactionFn } from "../types/TransactionFn"
 import { isAtom } from "../utils/isAtom"
+import { isGlobalAtom } from "../utils/isGlobalAtom"
 import { isSelector } from "../utils/isSelector"
+import { resolveReactive } from "../utils/resolveReactive"
 import { createStoreData } from "./createStoreData"
 import { deleteFamilyAtom } from "./deleteFamilyAtom"
 import { getState } from "./getState"
@@ -25,6 +27,31 @@ Only \`atom\` cam be set.
 const InvalidStateSetError = `Invalid state object passed to set().
 Only \`atom\` can be set.
 `
+
+/**
+ * Lazy maxAge revalidation guard. The maxAge timer (installMaxAgeTimer)
+ * is the source of truth for freshness while an atom has subscribers —
+ * during that time we leave the cache alone (otherwise we'd undo the
+ * stale-while-revalidate window that the timer relies on). When there's
+ * no active timer, we drop a cached value past its freshness window so
+ * the next read re-evaluates the default.
+ */
+const isCachedValueStale = (state: State, data: StoreData): boolean => {
+    const atom = state as Atom
+    const maxAge = atom.maxAge
+    if (maxAge === undefined) return false
+    if (isGlobalAtom(atom)) {
+        if (atom.maxAgeInterval !== undefined) return false
+    } else {
+        const subs = data.subscriptions.get(state)
+        if (subs && subs.size > 0) return false
+    }
+    const lastWrite = data.lastValueWriteAt.get(state)
+    if (lastWrite === undefined) return false
+    const ttl =
+        typeof maxAge === "number" ? maxAge : resolveReactive(maxAge, data)
+    return Date.now() - lastWrite > ttl
+}
 
 export function storeFromStoreData(
     data: ScopedStoreData,
@@ -72,7 +99,13 @@ export function storeFromStoreData(
 
     // --- get ---
     const getDefault: GetValue = (state: State) => {
-        if (data.values.has(state)) return data.values.get(state)
+        if (data.values.has(state)) {
+            if (!isCachedValueStale(state, data)) {
+                return data.values.get(state)
+            }
+            data.values.delete(state)
+            data.lastValueWriteAt.delete(state)
+        }
         let res
         try {
             res = getState(state, data, _initSet)

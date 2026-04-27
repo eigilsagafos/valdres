@@ -27,6 +27,7 @@ Object.defineProperties(lazyProto, {
     stateDependencies: makeLazyGetter("stateDependencies"),
     mounts: makeLazyGetter("mounts"),
     abortControllers: makeLazyGetter("abortControllers"),
+    lastValueWriteAt: makeLazyGetter("lastValueWriteAt"),
 })
 
 export type CreateStoreDataOptions = {
