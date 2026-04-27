@@ -51,10 +51,15 @@ export const runPhase = async ({
     }
 
     const running: Promise<void>[] = []
+    let workerError: unknown = null
     const spawn = () => {
         running.push(
             worker(controller.signal, reportBytes).catch(err => {
-                if (!controller.signal.aborted) throw err
+                if (controller.signal.aborted) return
+                if (workerError === null) workerError = err
+                // First non-abort failure cancels the phase so we surface
+                // it instead of returning a misleading rate.
+                controller.abort()
             }),
         )
     }
@@ -93,14 +98,15 @@ export const runPhase = async ({
 
     const sleep = (ms: number): Promise<void> =>
         new Promise(resolve => {
-            const timer = setTimeout(() => {
-                controller.signal.removeEventListener("abort", onAbort)
-                resolve()
-            }, ms)
+            let timer: ReturnType<typeof setTimeout>
             const onAbort = () => {
                 clearTimeout(timer)
                 resolve()
             }
+            timer = setTimeout(() => {
+                controller.signal.removeEventListener("abort", onAbort)
+                resolve()
+            }, ms)
             controller.signal.addEventListener("abort", onAbort, { once: true })
         })
 
@@ -145,6 +151,10 @@ export const runPhase = async ({
         signal?.removeEventListener("abort", abort)
         await Promise.allSettled(running)
     }
+
+    // Surface the first non-abort worker failure rather than returning a
+    // misleading rate built from incomplete samples.
+    if (workerError !== null) throw workerError
 
     // Return the last displayed value so there's no jump between the live
     // readout and the final number.

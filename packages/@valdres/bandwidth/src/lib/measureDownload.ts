@@ -10,10 +10,17 @@ const downloadWorker = async (
 ): Promise<void> => {
     while (!signal.aborted) {
         const res = await fetch(URL, { cache: "no-store", signal })
+        if (!res.ok) {
+            throw new Error(
+                `download failed: ${res.status} ${res.statusText}`.trim(),
+            )
+        }
         if (!res.body) {
+            // No streaming body available — read once and exit. Looping here
+            // would allocate ~CHUNK_BYTES (100 MB) per pass.
             const buf = await res.arrayBuffer()
             reportBytes(buf.byteLength)
-            continue
+            return
         }
         const reader = res.body.getReader()
         while (!signal.aborted) {

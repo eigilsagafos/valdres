@@ -37,6 +37,11 @@ export const runMeasurement = async (
     }
 
     try {
+        // Pre-aborted signal: bail out before flipping any status atoms so
+        // we don't leave consumers stuck on a "measuring-*" state.
+        if (signal?.aborted) {
+            throw Object.assign(new Error("aborted"), { name: "AbortError" })
+        }
         measurementStatusAtom.setSelf("measuring-latency")
         const latencies = await measureLatency(latencySamples, signal)
         const latencyMs = median(latencies)

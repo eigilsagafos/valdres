@@ -16,6 +16,11 @@ const uploadWorker = async (
             cache: "no-store",
             signal,
         })
+        if (!res.ok) {
+            throw new Error(
+                `upload failed: ${res.status} ${res.statusText}`.trim(),
+            )
+        }
         await res.arrayBuffer()
         if (signal.aborted) return
         reportBytes(CHUNK_BYTES)

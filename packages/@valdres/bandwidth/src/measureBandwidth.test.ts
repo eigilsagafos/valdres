@@ -5,6 +5,9 @@ import { median } from "./lib/median"
 import { stdDev } from "./lib/stdDev"
 import { measurementCache } from "./lib/measurementCache"
 import { runPhase } from "./lib/runPhase"
+import { measureDownload } from "./lib/measureDownload"
+import { measureUpload } from "./lib/measureUpload"
+import { measureLatency } from "./lib/measureLatency"
 import { measureBandwidth } from "./utils/measureBandwidth"
 import { invalidateMeasurement } from "./utils/invalidateMeasurement"
 import { downloadSpeedAtom } from "./atoms/downloadSpeedAtom"
@@ -160,7 +163,13 @@ describe("invalidation", () => {
             return new Response(new Uint8Array(bytes), { status: 200 })
         }) as typeof fetch
 
-    beforeEach(resetGlobals)
+    beforeEach(() => {
+        resetGlobals()
+        // Subscribing to a speed atom kicks off a real measurement we cannot
+        // track; install the mock so the leaked run doesn't hit Cloudflare or
+        // bleed fetch calls into later tests.
+        globalThis.fetch = mockFetch()
+    })
 
     afterEach(() => {
         globalThis.fetch = originalFetch
@@ -199,6 +208,9 @@ describe("invalidation", () => {
         // setupInvalidation wires the watchers. measurementStatusAtom
         // has no onMount.
         const unsubSpeed = s.sub(downloadSpeedAtom, () => {})
+        // The subscription kicked off a real measurement; cancel it so it
+        // doesn't keep firing fetches into later tests' mocks.
+        measurementCache.controller?.abort()
 
         // Seed a cache entry to stand in for an in-flight measurement.
         const stale = Promise.resolve({
@@ -235,6 +247,7 @@ describe("invalidation", () => {
         // Under the mount-tied lifecycle, a speed atom subscription
         // is what runs setupInvalidation and wires the watchers.
         const unsubSpeed = s.sub(downloadSpeedAtom, () => {})
+        measurementCache.controller?.abort()
 
         const stale = Promise.resolve({
             downloadMbps: 1,
@@ -265,6 +278,7 @@ describe("invalidation", () => {
         // setupInvalidation wires up under the mount-tied lifecycle.
         invalidateOnAtom.setSelf([])
         const unsubSpeed = s.sub(downloadSpeedAtom, () => {})
+        measurementCache.controller?.abort()
 
         const stale = Promise.resolve({
             downloadMbps: 1,
@@ -298,6 +312,7 @@ describe("invalidation", () => {
 
         invalidateOnAtom.setSelf([triggerAtom])
         const unsubSpeed = s.sub(downloadSpeedAtom, () => {})
+        measurementCache.controller?.abort()
 
         // Remove the trigger from the watch list.
         invalidateOnAtom.setSelf([])
@@ -443,5 +458,179 @@ describe("runPhase", () => {
         })
         // Must not wait out the 500ms sampleInterval (or the 10s max).
         expect(Date.now() - start).toBeLessThan(300)
+    })
+
+    test("rethrows worker errors that occur outside an abort", async () => {
+        const worker = async () => {
+            await new Promise(r => setTimeout(r, 5))
+            throw new Error("worker exploded")
+        }
+
+        await expect(
+            runPhase({
+                worker,
+                maxDurationMs: 1_000,
+                minDurationMs: 50,
+                warmupMs: 0,
+                sampleIntervalMs: 20,
+                startStreams: 1,
+                maxStreams: 1,
+            }),
+        ).rejects.toThrow("worker exploded")
+    })
+})
+
+describe("response validation", () => {
+    const originalFetch = globalThis.fetch
+    beforeEach(resetGlobals)
+    afterEach(() => {
+        globalThis.fetch = originalFetch
+    })
+
+    test("measureLatency throws on non-OK response", async () => {
+        globalThis.fetch = (async () =>
+            new Response("rate limited", { status: 429 })) as typeof fetch
+
+        await expect(measureLatency(1)).rejects.toThrow(/429/)
+    })
+
+    test("measureDownload throws on non-OK response", async () => {
+        globalThis.fetch = (async () =>
+            new Response("server error", { status: 503 })) as typeof fetch
+
+        await expect(
+            measureDownload({
+                maxDurationMs: 200,
+                minDurationMs: 50,
+                warmupMs: 0,
+                startStreams: 1,
+                maxStreams: 1,
+            }),
+        ).rejects.toThrow(/503/)
+    })
+
+    test("measureUpload throws on non-OK response", async () => {
+        globalThis.fetch = (async () =>
+            new Response("nope", { status: 500 })) as typeof fetch
+
+        await expect(
+            measureUpload({
+                maxDurationMs: 200,
+                minDurationMs: 50,
+                warmupMs: 0,
+                startStreams: 1,
+                maxStreams: 1,
+            }),
+        ).rejects.toThrow(/500/)
+    })
+
+    test("measureDownload non-streaming fallback runs once and returns", async () => {
+        // Simulate a runtime where res.body is null (no streaming). The old
+        // code looped, allocating ~100MB per fetch — we only want one call.
+        let calls = 0
+        globalThis.fetch = (async () => {
+            calls++
+            await new Promise(r => setTimeout(r, 10))
+            // A bare Response object whose body getter returns null while
+            // arrayBuffer() still resolves — mimics a runtime without
+            // streaming bodies.
+            return {
+                ok: true,
+                status: 200,
+                statusText: "OK",
+                body: null,
+                arrayBuffer: async () => new ArrayBuffer(1024),
+            } as unknown as Response
+        }) as typeof fetch
+
+        await measureDownload({
+            maxDurationMs: 300,
+            minDurationMs: 50,
+            warmupMs: 0,
+            sampleIntervalMs: 30,
+            startStreams: 1,
+            maxStreams: 1,
+        })
+        // One per started stream, no looping.
+        expect(calls).toBe(1)
+    })
+})
+
+describe("status lifecycle on abort", () => {
+    const originalFetch = globalThis.fetch
+
+    const slowMockFetch = (): typeof fetch =>
+        (async (input: RequestInfo | URL, init?: RequestInit) =>
+            new Promise((resolve, reject) => {
+                const url = typeof input === "string" ? input : input.toString()
+                const match = url.match(/bytes=(\d+)/)
+                const requested = match ? Number(match[1]) : 0
+                const bytes = Math.min(requested, 65_536)
+                const t = setTimeout(() => {
+                    resolve(
+                        new Response(new Uint8Array(bytes), { status: 200 }),
+                    )
+                }, 80)
+                init?.signal?.addEventListener(
+                    "abort",
+                    () => {
+                        clearTimeout(t)
+                        reject(
+                            Object.assign(new Error("aborted"), {
+                                name: "AbortError",
+                            }),
+                        )
+                    },
+                    { once: true },
+                )
+            })) as typeof fetch
+
+    beforeEach(resetGlobals)
+
+    afterEach(() => {
+        globalThis.fetch = originalFetch
+    })
+
+    test("pre-aborted signal does not flip status to measuring-*", async () => {
+        const s = store()
+        globalThis.fetch = slowMockFetch()
+        const external = new AbortController()
+        external.abort()
+
+        await measureBandwidth({
+            latencySamples: 1,
+            maxDurationMs: 200,
+            minDurationMs: 50,
+            warmupMs: 0,
+            startStreams: 1,
+            maxStreams: 1,
+            signal: external.signal,
+        }).catch(() => {})
+
+        expect(s.get(measurementStatusAtom)).toBe("idle")
+    })
+
+    test("external abort with no successor leaves status at idle", async () => {
+        const s = store()
+        globalThis.fetch = slowMockFetch()
+
+        const promise = measureBandwidth({
+            latencySamples: 5,
+            maxDurationMs: 5_000,
+            minDurationMs: 1_000,
+            warmupMs: 0,
+            startStreams: 1,
+            maxStreams: 1,
+        }).catch(() => {})
+
+        // Wait until we're definitely in a measuring-* phase.
+        await new Promise(r => setTimeout(r, 30))
+        expect(s.get(measurementStatusAtom)).toMatch(/^measuring-/)
+
+        // Abort directly without invalidate (no successor measurement starts).
+        measurementCache.controller?.abort()
+        await promise
+
+        expect(s.get(measurementStatusAtom)).toBe("idle")
     })
 })
