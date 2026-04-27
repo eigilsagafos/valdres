@@ -1,8 +1,4 @@
-import {
-    CONTRAST_QUERIES,
-    contrastAtom,
-    readContrast,
-} from "../atoms/contrastAtom"
+import { CONTRAST_QUERIES, contrastAtom } from "../atoms/contrastAtom"
 
 export const subscribe = () => {
     if (
@@ -10,11 +6,17 @@ export const subscribe = () => {
         typeof window.matchMedia !== "function"
     )
         return
-    const sync = () => contrastAtom.setSelf(readContrast())
+    const mqs = CONTRAST_QUERIES.map(({ value, query }) => ({
+        value,
+        mq: window.matchMedia(query),
+    }))
+    const sync = () => {
+        const active = mqs.find(({ mq }) => mq.matches)
+        contrastAtom.setSelf(active ? active.value : "no-preference")
+    }
     sync()
-    const mqs = CONTRAST_QUERIES.map(({ query }) => window.matchMedia(query))
-    for (const mq of mqs) mq.addEventListener("change", sync)
+    for (const { mq } of mqs) mq.addEventListener("change", sync)
     return () => {
-        for (const mq of mqs) mq.removeEventListener("change", sync)
+        for (const { mq } of mqs) mq.removeEventListener("change", sync)
     }
 }

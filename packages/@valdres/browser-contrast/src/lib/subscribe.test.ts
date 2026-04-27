@@ -65,4 +65,19 @@ describe("subscribe", () => {
 
         cleanup?.()
     })
+
+    test("does not update atom after cleanup removes media query listeners", () => {
+        const mq = installMatchMedia("no-preference")
+        const s = store()
+        const cleanup = subscribe()
+        expect(s.get(contrastAtom)).toBe("no-preference")
+
+        mq.set("more")
+        expect(s.get(contrastAtom)).toBe("more")
+
+        cleanup?.()
+
+        mq.set("less")
+        expect(s.get(contrastAtom)).toBe("more")
+    })
 })
