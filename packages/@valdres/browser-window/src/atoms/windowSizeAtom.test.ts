@@ -20,6 +20,9 @@ describe("windowSizeAtom", () => {
     beforeEach(() => {
         originalInnerWidth = window.innerWidth
         originalInnerHeight = window.innerHeight
+        // The atom is global; reset so a stale cache from other test
+        // files (or earlier runs) doesn't bleed into the assertion.
+        windowSizeAtom.resetSelf()
     })
 
     afterEach(() => {
