@@ -1,0 +1,71 @@
+---
+title: Quick Start with Svelte
+description: Get up and running with Valdres and Svelte 5 in under 5 minutes
+---
+
+# Quick Start with Svelte
+
+## Install
+
+```bash
+npm install valdres valdres-svelte
+```
+
+## Create your first atom
+
+```ts
+// store.ts
+import { atom } from "valdres"
+
+export const countAtom = atom(0)
+```
+
+## Use it in a component
+
+```svelte
+<script>
+  import { watch } from "valdres-svelte"
+  import { countAtom } from "./store"
+
+  const count = watch(countAtom)
+</script>
+
+<div>
+  <p>Count: {count.value}</p>
+  <button onclick={() => count.set(c => c + 1)}>Increment</button>
+</div>
+```
+
+## Provide a store
+
+Use `setValdresContext` in your root layout:
+
+```svelte
+<script>
+  import { setValdresContext } from "valdres-svelte"
+
+  setValdresContext()
+</script>
+
+<slot />
+```
+
+## Read-only values
+
+Use `readable` for read-only subscriptions:
+
+```svelte
+<script>
+  import { readable } from "valdres-svelte"
+  import { countAtom } from "./store"
+
+  const count = readable(countAtom)
+</script>
+
+<p>The count is {count.value}</p>
+```
+
+## Next steps
+
+- [Core Concepts](/guides/core-concepts) — atoms, selectors, families, stores
+- [Patterns & Recipes](/guides/patterns) — real-world examples

@@ -1,0 +1,113 @@
+---
+title: Transactions
+description: Batch multiple state updates so subscribers fire only once
+---
+
+# Transactions
+
+Transactions let you update multiple atoms at once. Subscribers and selectors only re-evaluate after all updates are applied — never in an intermediate state.
+
+## The problem
+
+Without transactions, each `set` call immediately notifies subscribers:
+
+```ts
+import { atom, selector, store } from "valdres"
+
+const firstName = atom("John")
+const lastName = atom("Doe")
+const fullName = selector(get => `${get(firstName)} ${get(lastName)}`)
+
+const myStore = store()
+
+// Two separate updates — subscribers fire twice
+// After first set: fullName = "Jane Doe"
+// After second set: fullName = "Jane Smith"
+myStore.set(firstName, "Jane")
+myStore.set(lastName, "Smith")
+```
+
+If a component is subscribed to `fullName`, it briefly shows "Jane Doe" before settling on "Jane Smith". That intermediate state may cause flickers or unnecessary work.
+
+## The solution
+
+Wrap related updates in `store.txn()`:
+
+```ts
+myStore.txn(set => {
+    set(firstName, "Jane")
+    set(lastName, "Smith")
+    // Nothing fires until here
+})
+// Now subscribers fire once with fullName = "Jane Smith"
+```
+
+## Updater functions
+
+Inside a transaction, `set` works the same as outside — you can pass values or updater functions:
+
+```ts
+const countA = atom(0)
+const countB = atom(0)
+
+myStore.txn(set => {
+    set(countA, prev => prev + 1)
+    set(countB, prev => prev + 10)
+})
+```
+
+## When to use transactions
+
+**Use transactions when:**
+- Updating multiple related atoms that feed into the same selector
+- Moving items between collections (remove from one, add to another)
+- Resetting a form (clear all fields at once)
+- Any operation where intermediate state would be wrong or confusing
+
+**You don't need transactions when:**
+- Updating a single atom
+- Updates are unrelated and independent
+- Intermediate states are acceptable
+
+## Real-world example: drag and drop
+
+When an item is dragged from one list to another, you need to remove it from the source and add it to the target atomically:
+
+```ts
+import { atom, atomFamily, store } from "valdres"
+
+const listItemsAtom = atomFamily()  // listId → itemId[]
+const itemAtom = atomFamily()       // itemId → item data
+
+const myStore = store()
+
+function moveItem(itemId, fromListId, toListId) {
+    myStore.txn(set => {
+        set(listItemsAtom(fromListId), ids =>
+            ids.filter(id => id !== itemId)
+        )
+        set(listItemsAtom(toListId), ids =>
+            [...ids, itemId]
+        )
+    })
+    // Components subscribed to either list update once
+    // The item is never "missing" from both lists
+}
+```
+
+## Performance
+
+Transactions aren't just about correctness — they're a performance optimization. Without them, a selector depending on 10 atoms would recompute 10 times during a bulk update. With a transaction, it recomputes once.
+
+```ts
+const atoms = Array.from({ length: 100 }, () => atom(0))
+const sum = selector(get => atoms.reduce((acc, a) => acc + get(a), 0))
+
+// Without txn: sum recomputes 100 times
+atoms.forEach(a => myStore.set(a, 1))
+
+// With txn: sum recomputes once
+myStore.txn(set => {
+    atoms.forEach(a => set(a, 1))
+})
+```

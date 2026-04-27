@@ -1,0 +1,73 @@
+---
+title: atomFamily
+description: Create a collection of atoms keyed by a parameter
+---
+
+# atomFamily
+
+<div className="not-prose mb-8 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50 p-4">
+  <div className="text-xs font-medium text-zinc-400 dark:text-zinc-500 mb-2 uppercase tracking-wider">Signature</div>
+  <code className="text-sm font-mono text-accent-500">atomFamily&lt;K, T&gt;(defaultFactory?: (key: K) =&gt; T): AtomFamily&lt;K, T&gt;</code>
+  <div className="mt-3 text-xs text-zinc-500 dark:text-zinc-400">
+    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-zinc-200 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 font-medium mr-2">valdres</span>
+    Create a keyed collection of atoms
+  </div>
+</div>
+
+Creates a family of atoms keyed by a parameter. Useful for collections of entities like users, todos, or items where each instance needs its own piece of state.
+
+## Usage
+
+```ts
+import { atomFamily } from "valdres"
+
+// Simple family with no default
+const todoAtom = atomFamily()
+
+store.set(todoAtom("abc-123"), { title: "Buy milk", done: false })
+store.get(todoAtom("abc-123")) // { title: "Buy milk", done: false }
+```
+
+## With a default value factory
+
+Pass a function that receives the key and returns the default value:
+
+```ts
+const userAtom = atomFamily(id => ({
+    id,
+    name: "",
+    email: "",
+}))
+
+// The default is generated when first accessed
+store.get(userAtom("user-1")) // { id: "user-1", name: "", email: "" }
+```
+
+## Subscribing to all keys
+
+<div className="callout callout-tip">
+  <div className="callout-title">Tip</div>
+  Unlike Jotai, you can subscribe to an entire family and get all active keys as an array. This is a first-class feature, not a workaround.
+</div>
+
+```ts
+store.sub(todoAtom, keys => {
+    console.log("Active todo keys:", keys)
+})
+```
+
+## In React
+
+```tsx
+import { useValue } from "valdres-react"
+
+function UserProfile({ userId }) {
+    const user = useValue(userAtom(userId))
+    return <div>{user.name}</div>
+}
+```
+
+## See also
+
+- [atom](/valdres/atom) — create a single atom
+- [selectorFamily](/valdres/selectorFamily) — derive state from a family of atoms

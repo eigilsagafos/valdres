@@ -1,0 +1,61 @@
+---
+title: useResetAtom
+description: React hook to reset an atom to its default value
+---
+
+# useResetAtom
+
+<div className="not-prose mb-8 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50 p-4">
+  <div className="text-xs font-medium text-zinc-400 dark:text-zinc-500 mb-2 uppercase tracking-wider">Signature</div>
+  <code className="text-sm font-mono text-accent-500">useResetAtom(atom: Atom&lt;any&gt;): () =&gt; void</code>
+  <div className="mt-3 text-xs text-zinc-500 dark:text-zinc-400">
+    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-zinc-200 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 font-medium mr-2">valdres-react</span>
+    Reset an atom to its default value
+  </div>
+</div>
+
+Returns a function that resets an atom back to its default value. For async atoms, this re-triggers the initializer function.
+
+## Usage
+
+```tsx
+import { atom } from "valdres"
+import { useResetAtom, useAtom } from "valdres-react"
+
+const countAtom = atom(0)
+
+function Counter() {
+    const [count, setCount] = useAtom(countAtom)
+    const reset = useResetAtom(countAtom)
+    return (
+        <div>
+            <span>{count}</span>
+            <button onClick={() => setCount(c => c + 1)}>+</button>
+            <button onClick={reset}>Reset</button>
+        </div>
+    )
+}
+```
+
+## Resetting async atoms
+
+<div className="callout callout-tip">
+  <div className="callout-title">Tip</div>
+  When you reset an async atom, the initializer function runs again. Combined with <code>Suspense</code>, this gives you a clean refetch pattern.
+</div>
+
+```tsx
+const dataAtom = atom(() =>
+    fetch("/api/data").then(res => res.json())
+)
+
+function RefreshButton() {
+    const reset = useResetAtom(dataAtom)
+    return <button onClick={reset}>Refresh</button>
+}
+```
+
+## See also
+
+- [useAtom](/react/useAtom) — read + write hook
+- [useSetAtom](/react/useSetAtom) — write-only hook

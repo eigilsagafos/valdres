@@ -1,0 +1,74 @@
+---
+title: Quick Start with Solid
+description: Get up and running with Valdres and Solid.js in under 5 minutes
+---
+
+# Quick Start with Solid
+
+## Install
+
+```bash
+npm install valdres valdres-solid
+```
+
+## Create your first atom
+
+```ts
+// store.ts
+import { atom } from "valdres"
+
+export const countAtom = atom(0)
+```
+
+## Use it in a component
+
+```tsx
+import { createAtom } from "valdres-solid"
+import { countAtom } from "./store"
+
+function Counter() {
+    const [count, setCount] = createAtom(countAtom)
+
+    return (
+        <div>
+            <p>Count: {count()}</p>
+            <button onClick={() => setCount(c => c + 1)}>Increment</button>
+        </div>
+    )
+}
+```
+
+## Provide a store
+
+Wrap your app with `ValdresProvider`:
+
+```tsx
+import { ValdresProvider } from "valdres-solid"
+
+function App() {
+    return (
+        <ValdresProvider>
+            <Counter />
+        </ValdresProvider>
+    )
+}
+```
+
+## Read-only values
+
+Use `createValue` when you only need to read:
+
+```tsx
+import { createValue } from "valdres-solid"
+import { countAtom } from "./store"
+
+function Display() {
+    const count = createValue(countAtom)
+    return <p>The count is {count()}</p>
+}
+```
+
+## Next steps
+
+- [Core Concepts](/guides/core-concepts) — atoms, selectors, families, stores
+- [Patterns & Recipes](/guides/patterns) — real-world examples

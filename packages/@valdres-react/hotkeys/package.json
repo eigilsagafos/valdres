@@ -1,5 +1,6 @@
 {
     "name": "@valdres-react/hotkeys",
+    "description": "React hotkey hooks powered by Valdres",
     "version": "0.2.0-pre.28",
     "license": "MIT",
     "author": {

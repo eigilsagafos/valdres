@@ -1,0 +1,18 @@
+---
+title: Motivation
+description: Why Valdres was created
+---
+
+# Motivation
+
+Valdres was created due to performance issues encountered building an offline-first process model editor. We started with Recoil, then moved to Jotai when the Recoil project appeared to be abandoned — but ran into performance bottlenecks with Jotai as well.
+
+The core insight was that `useSyncExternalStore` (used by Zustand) provides better React integration performance than the `useEffect` + `useReducer` pattern used by Jotai. Valdres combines the atom-based model of Recoil/Jotai with the subscription approach of Zustand.
+
+## Design Principles
+
+- **Performance first** — designed for apps with hundreds of atoms and frequent updates
+- **Separate atoms and selectors** — clearer mental model than Jotai's unified atom concept
+- **First-class families** — `atomFamily` and `selectorFamily` are core primitives, not utilities
+- **Transactions** — batch multiple updates so subscribers fire once
+- **No framework lock-in** — the core `valdres` package has zero dependencies and works outside React

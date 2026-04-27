@@ -1,0 +1,91 @@
+---
+title: Core Concepts
+description: Atoms, selectors, families, and stores — the building blocks of Valdres
+---
+
+# Core Concepts
+
+Valdres has four building blocks: **atoms**, **selectors**, **families**, and **stores**. Understanding these gets you 90% of the way.
+
+## Atoms
+
+An atom is the smallest unit of state. Create one with a default value:
+
+```ts
+import { atom } from "valdres"
+
+const countAtom = atom(0)
+const nameAtom = atom("world")
+```
+
+Atoms are just descriptions — they don't hold values themselves. Values live in a **store**.
+
+## Selectors
+
+A selector derives a value from one or more atoms (or other selectors). It re-computes automatically when its dependencies change:
+
+```ts
+import { selector } from "valdres"
+
+const doubledCount = selector(get => get(countAtom) * 2)
+
+const greeting = selector(get => `Hello, ${get(nameAtom)}!`)
+```
+
+Selectors are read-only by default. They're great for computed or filtered views of your state.
+
+## Families
+
+When you need many atoms or selectors indexed by a key — a list of users, a grid of cells, todo items by ID — use a family:
+
+```ts
+import { atomFamily, selectorFamily } from "valdres"
+
+const userAtom = atomFamily(userId => ({ id: userId, name: "" }))
+const userLabel = selectorFamily(userId =>
+    get => `User: ${get(userAtom(userId)).name}`
+)
+```
+
+Calling `userAtom("abc")` returns the atom for that specific key. Atoms are created lazily on first access.
+
+## Stores
+
+A store holds all the atom values. You can create one explicitly, or let your framework adapter create a default one:
+
+```ts
+import { store } from "valdres"
+
+const myStore = store()
+
+myStore.set(countAtom, 42)
+console.log(myStore.get(countAtom)) // 42
+
+// Subscribe to changes
+myStore.sub(countAtom, value => {
+    console.log("count changed:", value)
+})
+```
+
+In framework adapters, a store is typically provided via context (e.g. `<Provider>` in React, `createValdres()` in Vue). If you don't provide one, a default global store is used.
+
+## Putting It Together
+
+```ts
+import { atom, selector, store } from "valdres"
+
+const todosAtom = atom([])
+const completedCount = selector(get =>
+    get(todosAtom).filter(t => t.done).length
+)
+
+const myStore = store()
+myStore.set(todosAtom, [
+    { text: "Learn Valdres", done: true },
+    { text: "Build something", done: false },
+])
+
+console.log(myStore.get(completedCount)) // 1
+```
+
+The core `valdres` package is framework-agnostic. Framework adapters like `valdres-react` add hooks and components that subscribe to store changes and trigger re-renders efficiently.

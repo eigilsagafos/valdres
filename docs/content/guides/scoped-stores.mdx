@@ -1,0 +1,283 @@
+---
+title: Scoped Stores
+description: Create isolated child stores that inherit state from their parent
+---
+
+# Scoped Stores
+
+Scoped stores are child stores that inherit all state from their parent but can override values independently. Think of them as a "fork" of state — reads fall through to the parent, but writes stay local.
+
+This is useful for modals, multi-step forms, drag previews, multi-tenant UIs, or any scenario where you need isolated copies of shared state.
+
+## How it works
+
+```ts
+import { atom, store } from "valdres"
+
+const nameAtom = atom("Alice")
+const rootStore = store()
+
+// Create a scoped child store
+const childStore = rootStore.scope("child-1")
+```
+
+### Reading: inherits from parent
+
+```ts
+rootStore.set(nameAtom, "Alice")
+childStore.get(nameAtom) // "Alice" — falls through to parent
+```
+
+### Writing: stays local
+
+```ts
+childStore.set(nameAtom, "Bob")
+
+childStore.get(nameAtom) // "Bob" — shadowed in child
+rootStore.get(nameAtom)  // "Alice" — parent unchanged
+```
+
+### Parent updates don't overwrite shadows
+
+Once a scope shadows an atom, parent updates to that atom no longer affect the scope:
+
+```ts
+rootStore.set(nameAtom, "Charlie")
+
+rootStore.get(nameAtom)  // "Charlie"
+childStore.get(nameAtom) // "Bob" — still the scoped value
+```
+
+But atoms that the scope *hasn't* shadowed continue to flow through:
+
+```ts
+const ageAtom = atom(30)
+rootStore.set(ageAtom, 31)
+childStore.get(ageAtom) // 31 — still reading from parent
+```
+
+## Selectors in scopes
+
+Selectors automatically evaluate against the scope's view of state:
+
+```ts
+import { atom, selector, store } from "valdres"
+
+const priceAtom = atom(100)
+const taxAtom = atom(0.2)
+const totalSelector = selector(get => get(priceAtom) * (1 + get(taxAtom)))
+
+const root = store()
+const child = root.scope("preview")
+
+root.get(totalSelector)  // 120
+
+child.set(taxAtom, 0.25)
+child.get(totalSelector) // 125 — uses child's tax, parent's price
+root.get(totalSelector)  // 120 — unchanged
+```
+
+## Families in scopes
+
+Atom families work across scopes. A child scope inherits the parent's family members but can add its own:
+
+```ts
+import { atomFamily, store } from "valdres"
+
+const todoAtom = atomFamily()
+const root = store()
+const child = root.scope("draft")
+
+root.set(todoAtom("a"), { title: "Buy milk", done: false })
+child.get(todoAtom("a")) // { title: "Buy milk", done: false } — inherited
+
+// Add a new item only in the child scope
+child.set(todoAtom("b"), { title: "Draft todo", done: false })
+
+root.get(todoAtom)  // ["a"]
+child.get(todoAtom) // ["a", "b"] — child sees both
+```
+
+## Subscriptions
+
+Subscriptions within a scope react to changes in that scope's view of state:
+
+```ts
+const root = store()
+const child = root.scope("child")
+const countAtom = atom(0)
+
+child.sub(countAtom, value => {
+    console.log("child sees:", value)
+})
+
+root.set(countAtom, 1)
+// logs: "child sees: 1" — parent update flows through
+
+child.set(countAtom, 99)
+// logs: "child sees: 99" — scoped update
+
+root.set(countAtom, 2)
+// nothing logged — child has shadowed this atom
+```
+
+## Transactions in scopes
+
+Transactions work the same way inside scopes:
+
+```ts
+child.txn(set => {
+    set(nameAtom, "New name")
+    set(ageAtom, 25)
+    // Both updates are atomic within the scope
+})
+```
+
+## Cleanup
+
+When you're done with a scope, call `detach()` to clean it up:
+
+```ts
+const child = root.scope("temp")
+// ... use the scope ...
+child.detach()
+```
+
+In framework integrations, cleanup happens automatically when the scope component unmounts.
+
+## In React
+
+Use the `Scope` component to create a scoped store for a subtree:
+
+```tsx
+import { Provider, Scope } from "valdres-react"
+import { useValue } from "valdres-react"
+
+function App() {
+    return (
+        <Provider>
+            <MainView />
+            <Scope scopeId="modal">
+                <ModalContent />
+            </Scope>
+        </Provider>
+    )
+}
+```
+
+Everything inside `<Scope>` reads and writes to the scoped store. Components outside continue using the parent store.
+
+### Initializing scope state
+
+Pass an `initialize` callback to set up initial values:
+
+```tsx
+<Scope
+    scopeId="edit-form"
+    initialize={txn => {
+        txn.set(nameAtom, "Draft name")
+        txn.set(emailAtom, "draft@example.com")
+    }}
+>
+    <EditForm />
+</Scope>
+```
+
+Or use the array format:
+
+```tsx
+<Scope
+    scopeId="edit-form"
+    initialize={() => [
+        [nameAtom, "Draft name"],
+        [emailAtom, "draft@example.com"],
+    ]}
+>
+    <EditForm />
+</Scope>
+```
+
+### Auto-generated scope IDs
+
+If you omit `scopeId`, a unique ID is generated automatically:
+
+```tsx
+<Scope>
+    <IsolatedWidget />
+</Scope>
+```
+
+## Use cases
+
+### Edit modal with cancel
+
+Create a scope for the edit form. If the user cancels, the scope is discarded. If they save, copy the values to the parent:
+
+```tsx
+function EditModal({ userId }) {
+    const store = useStore()
+
+    const handleSave = () => {
+        store.scope("edit", scopedStore => {
+            // Copy edited values back to parent
+            store.set(userAtom(userId), scopedStore.get(userAtom(userId)))
+        })
+    }
+
+    return (
+        <Scope scopeId="edit">
+            <UserForm userId={userId} />
+            <button onClick={handleSave}>Save</button>
+            <button onClick={onClose}>Cancel</button>
+        </Scope>
+    )
+}
+```
+
+### Multi-tenant dashboard
+
+Each tenant panel gets its own scope, sharing base configuration but with independent data:
+
+```tsx
+function Dashboard({ tenants }) {
+    return (
+        <Provider>
+            {tenants.map(tenant => (
+                <Scope
+                    key={tenant.id}
+                    scopeId={tenant.id}
+                    initialize={() => [
+                        [tenantIdAtom, tenant.id],
+                        [tenantNameAtom, tenant.name],
+                    ]}
+                >
+                    <TenantPanel />
+                </Scope>
+            ))}
+        </Provider>
+    )
+}
+```
+
+### Drag preview
+
+Show a preview of what state will look like without committing:
+
+```tsx
+function DragPreview({ itemId, targetListId }) {
+    return (
+        <Scope scopeId="drag-preview">
+            <MoveItemToList itemId={itemId} listId={targetListId} />
+            <ListPreview listId={targetListId} />
+        </Scope>
+    )
+}
+```
+
+## Performance
+
+Scoped stores are optimized for minimal overhead:
+
+- **No upfront copying** — values are resolved lazily by walking up the scope chain
+- **Selective propagation** — when a parent atom updates, the change only propagates to scopes that haven't shadowed it
+- **Reference counting** — scopes are cleaned up when no consumers remain

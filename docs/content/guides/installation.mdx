@@ -1,0 +1,89 @@
+---
+title: Installation
+description: Install Valdres and your framework adapter
+---
+
+# Installation
+
+Valdres is split into a core package (`valdres`) and framework-specific adapters. Install both the core and the adapter for your framework.
+
+## React
+
+<div data-tabs>
+  <div className="tabs-list">
+    <button className="tab-trigger active" data-tab="npm">npm</button>
+    <button className="tab-trigger" data-tab="bun">bun</button>
+    <button className="tab-trigger" data-tab="yarn">yarn</button>
+    <button className="tab-trigger" data-tab="pnpm">pnpm</button>
+  </div>
+  <div className="tab-panel active" data-tab="npm">
+
+```bash
+npm install valdres valdres-react
+```
+
+  </div>
+  <div className="tab-panel" data-tab="bun">
+
+```bash
+bun add valdres valdres-react
+```
+
+  </div>
+  <div className="tab-panel" data-tab="yarn">
+
+```bash
+yarn add valdres valdres-react
+```
+
+  </div>
+  <div className="tab-panel" data-tab="pnpm">
+
+```bash
+pnpm add valdres valdres-react
+```
+
+  </div>
+</div>
+
+## Vue
+
+```bash
+npm install valdres valdres-vue
+```
+
+## Svelte
+
+```bash
+npm install valdres valdres-svelte
+```
+
+## Solid
+
+```bash
+npm install valdres valdres-solid
+```
+
+## Angular
+
+```bash
+npm install valdres valdres-angular
+```
+
+## Vanilla (no framework)
+
+If you don't need a framework adapter, the core package works standalone:
+
+```bash
+npm install valdres
+```
+
+```ts
+import { atom, selector, store } from "valdres"
+
+const myStore = store()
+const countAtom = atom(0)
+
+myStore.set(countAtom, 42)
+console.log(myStore.get(countAtom)) // 42
+```

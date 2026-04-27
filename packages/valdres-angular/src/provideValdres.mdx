@@ -1,0 +1,47 @@
+---
+title: provideValdres
+description: Setup valdres in Angular's dependency injection
+---
+
+# provideValdres
+
+<div className="not-prose mb-8 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50 p-4">
+  <div className="text-xs font-medium text-zinc-400 dark:text-zinc-500 mb-2 uppercase tracking-wider">Signature</div>
+  <code className="text-sm font-mono text-accent-500">provideValdres(options?: ValdresOptions): EnvironmentProviders</code>
+  <div className="mt-3 text-xs text-zinc-500 dark:text-zinc-400">
+    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-zinc-200 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 font-medium mr-2">valdres-angular</span>
+    Provide a store to your Angular app
+  </div>
+</div>
+
+Registers a valdres store in Angular's dependency injection system, making it available to all components via the `inject*` functions.
+
+## Usage
+
+```ts
+import { bootstrapApplication } from "@angular/platform-browser"
+import { provideValdres } from "valdres-angular"
+import { AppComponent } from "./app.component"
+
+bootstrapApplication(AppComponent, {
+    providers: [provideValdres()],
+})
+```
+
+## With a custom store
+
+```ts
+import { store } from "valdres"
+import { provideValdres } from "valdres-angular"
+
+const myStore = store()
+
+bootstrapApplication(AppComponent, {
+    providers: [provideValdres({ store: myStore })],
+})
+```
+
+## See also
+
+- [injectStore](/angular/injectStore) — access the store in components
+- [store](/valdres/store) — create a store instance
