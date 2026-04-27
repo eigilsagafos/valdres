@@ -296,6 +296,70 @@ export function LandingPage({ bench }: { bench?: BenchProps }) {
                         </div>
                     </section>
 
+                    {/* Browser APIs as reactive state */}
+                    <section className="border-t border-border dark:border-border-dark px-6 py-20">
+                        <div className="max-w-6xl mx-auto">
+                            <div className="text-center mb-12">
+                                <h2 className="text-2xl sm:text-3xl font-bold tracking-tight mb-3">
+                                    Browser APIs, reactive by default.
+                                </h2>
+                                <p className="text-zinc-500 dark:text-zinc-400 max-w-xl mx-auto">
+                                    Valdres ships official packages that expose browser APIs as atoms — keyboard, online status, geolocation, and more. Subscribe from any framework and the UI stays in sync with the browser.
+                                </p>
+                            </div>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                                {/* Keyboard */}
+                                <div className="rounded-xl border border-border dark:border-border-dark bg-surface dark:bg-surface-dark overflow-hidden flex flex-col">
+                                    <div className="flex items-center justify-between px-3 py-2 border-b border-border dark:border-border-dark bg-surface-raised dark:bg-surface-raised-dark">
+                                        <span className="text-xs font-medium">Keyboard</span>
+                                        <code className="text-[9px] font-mono text-zinc-400 dark:text-zinc-500">@valdres/browser-keyboard</code>
+                                    </div>
+                                    <div className="p-3 flex-1 flex flex-col justify-between gap-3">
+                                        <div id="landing-keyboard-island" className="flex items-center">
+                                            <div className="text-[10px] text-zinc-400 dark:text-zinc-500 w-full text-center">Loading...</div>
+                                        </div>
+                                        <p className="text-[10px] text-zinc-500 dark:text-zinc-400 text-center">
+                                            Try typing — keys light up as you press them.
+                                        </p>
+                                    </div>
+                                </div>
+
+                                {/* Online */}
+                                <div className="rounded-xl border border-border dark:border-border-dark bg-surface dark:bg-surface-dark overflow-hidden flex flex-col">
+                                    <div className="flex items-center justify-between px-3 py-2 border-b border-border dark:border-border-dark bg-surface-raised dark:bg-surface-raised-dark">
+                                        <span className="text-xs font-medium">Online</span>
+                                        <code className="text-[9px] font-mono text-zinc-400 dark:text-zinc-500">@valdres/browser-online</code>
+                                    </div>
+                                    <div className="p-3 flex-1 flex flex-col justify-between gap-3">
+                                        <div id="landing-online-island" className="flex-1 flex items-center justify-center min-h-[80px]">
+                                            <div className="text-[10px] text-zinc-400 dark:text-zinc-500">Loading...</div>
+                                        </div>
+                                        <p className="text-[10px] text-zinc-500 dark:text-zinc-400 text-center">
+                                            Toggle offline in DevTools to see it react.
+                                        </p>
+                                    </div>
+                                </div>
+
+                                {/* Location */}
+                                <div className="rounded-xl border border-border dark:border-border-dark bg-surface dark:bg-surface-dark overflow-hidden flex flex-col">
+                                    <div className="flex items-center justify-between px-3 py-2 border-b border-border dark:border-border-dark bg-surface-raised dark:bg-surface-raised-dark">
+                                        <span className="text-xs font-medium">Location</span>
+                                        <code className="text-[9px] font-mono text-zinc-400 dark:text-zinc-500">@valdres/browser-geolocation</code>
+                                    </div>
+                                    <div className="p-3 flex-1 flex flex-col justify-between gap-3">
+                                        <div id="landing-location-island" className="flex-1 flex items-center justify-center min-h-[80px]">
+                                            <div className="text-[10px] text-zinc-400 dark:text-zinc-500">Loading...</div>
+                                        </div>
+                                        <p className="text-[10px] text-zinc-500 dark:text-zinc-400 text-center">
+                                            Reactive geolocation — coords stream as atoms.
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+
                     {/* Features */}
                     <section className="border-t border-border dark:border-border-dark px-6 py-20">
                         <div className="max-w-5xl mx-auto grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">

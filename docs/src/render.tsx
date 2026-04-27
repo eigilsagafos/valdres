@@ -53,7 +53,7 @@ export async function renderPages(docs: CompiledDoc[], distDir: string) {
         }
     }
 
-    for (const doc of docs) {
+    await Promise.all(docs.map(async doc => {
         const { default: MdxContent } = await run(doc.code, {
             ...runtime,
             baseUrl: import.meta.url,
@@ -64,7 +64,6 @@ export async function renderPages(docs: CompiledDoc[], distDir: string) {
             ? getNav(framework, docs)
             : getNavAllFrameworks(docs)
 
-        // Build framework map
         let frameworkMap: Record<string, string | null>
         if (framework) {
             frameworkMap = { ...getFrameworkMap(doc.route) }
@@ -77,7 +76,16 @@ export async function renderPages(docs: CompiledDoc[], distDir: string) {
             frameworkMap = { ...firstPageMap }
         }
 
-        // Custom link component that rewrites cross-framework links
+        const Playground = ({ code }: { code: string }) => (
+            <div
+                data-playground
+                data-code={code}
+                className="not-prose my-6 py-16 text-center text-sm text-zinc-500 dark:text-zinc-400"
+            >
+                Loading playground…
+            </div>
+        )
+
         const mdxComponents = framework
             ? {
                   a: (props: any) => {
@@ -86,8 +94,9 @@ export async function renderPages(docs: CompiledDoc[], distDir: string) {
                       const children = result.apiName ?? props.children
                       return <a {...props} href={result.href}>{children}</a>
                   },
+                  Playground,
               }
-            : undefined
+            : { Playground }
 
         const html = renderToString(
             <RootLayout
@@ -106,8 +115,7 @@ export async function renderPages(docs: CompiledDoc[], distDir: string) {
         const fullHtml = `<!DOCTYPE html>\n${html}`
         const outPath = `${distDir}${doc.route}/index.html`
         await Bun.write(outPath, fullHtml)
-
-    }
+    }))
 
     // Landing page — read benchmark summary for dynamic stats
     let benchData = { jscAverage: null as number | null, v8Average: null as number | null, jotaiVersion: "2.19.0", benchmarkCount: 18 }

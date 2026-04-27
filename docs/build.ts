@@ -41,13 +41,16 @@ const reactDedup: import("bun").BunPlugin = {
     },
 }
 
-console.log("⚡ Bundling API demos...")
+console.log("⚡ Bundling API demos + playground...")
 const demosBuild = await Bun.build({
-    entrypoints: [`${import.meta.dir}/src/islands/demos.ts`],
+    entrypoints: [
+        `${import.meta.dir}/src/islands/demos.ts`,
+        `${import.meta.dir}/src/islands/playground-bundle.tsx`,
+    ],
     outdir: distDir,
     minify: true,
     splitting: true,
-    naming: "demos.js",
+    naming: { entry: "[name].js" },
     plugins: [reactDedup],
     define: {
         "process.env.NODE_ENV": '"production"',

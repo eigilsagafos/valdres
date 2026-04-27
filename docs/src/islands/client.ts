@@ -122,11 +122,36 @@ function initTabs() {
     })
 }
 
+let playgroundLoaded = false
+function initPlaygrounds() {
+    const placeholders = document.querySelectorAll<HTMLElement>(
+        "[data-playground]:not([data-playground-observed])",
+    )
+    if (placeholders.length === 0) return
+    placeholders.forEach(el => el.setAttribute("data-playground-observed", ""))
+
+    const io = new IntersectionObserver(entries => {
+        for (const entry of entries) {
+            if (!entry.isIntersecting) continue
+            io.disconnect()
+            if (playgroundLoaded) return
+            playgroundLoaded = true
+            const s = document.createElement("script")
+            s.src = "/playground-bundle.js"
+            s.type = "module"
+            document.head.appendChild(s)
+            return
+        }
+    }, { rootMargin: "400px" })
+    placeholders.forEach(el => io.observe(el))
+}
+
 function initContent() {
     initCodeBlocks()
     initHeadingAnchors()
     initTocSpy()
     initTabs()
+    initPlaygrounds()
 }
 
 // ════════════════════════════════════════════

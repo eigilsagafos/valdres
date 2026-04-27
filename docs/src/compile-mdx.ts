@@ -46,36 +46,33 @@ function extractHeadings(source: string): TocItem[] {
 export async function compileMdx(
     entries: DocEntry[],
 ): Promise<CompiledDoc[]> {
-    const results: CompiledDoc[] = []
+    // Dedupe by mdxPath — core valdres docs expand to multiple framework routes
+    // from the same source file, so we only need to compile each file once.
+    const uniquePaths = [...new Set(entries.map(e => e.mdxPath))]
+    const compiledByPath = new Map<string, { code: string; rawContent: string; headings: TocItem[] }>()
 
-    for (const entry of entries) {
-        const source = await Bun.file(entry.mdxPath).text()
-
-        const compiled = await compile(source, {
-            outputFormat: "function-body",
-            remarkPlugins: [
-                remarkGfm,
-                remarkFrontmatter,
-                remarkMdxFrontmatter,
-            ],
-            rehypePlugins: [
-                rehypeSlug,
-                [
-                    rehypeShiki,
-                    {
-                        theme: "github-dark",
-                    },
+    await Promise.all(
+        uniquePaths.map(async mdxPath => {
+            const source = await Bun.file(mdxPath).text()
+            const compiled = await compile(source, {
+                outputFormat: "function-body",
+                remarkPlugins: [
+                    remarkGfm,
+                    remarkFrontmatter,
+                    remarkMdxFrontmatter,
                 ],
-            ],
-        })
+                rehypePlugins: [
+                    rehypeSlug,
+                    [rehypeShiki, { theme: "github-dark" }],
+                ],
+            })
+            compiledByPath.set(mdxPath, {
+                code: String(compiled),
+                rawContent: source,
+                headings: extractHeadings(source),
+            })
+        }),
+    )
 
-        results.push({
-            ...entry,
-            code: String(compiled),
-            rawContent: source,
-            headings: extractHeadings(source),
-        })
-    }
-
-    return results
+    return entries.map(entry => ({ ...entry, ...compiledByPath.get(entry.mdxPath)! }))
 }

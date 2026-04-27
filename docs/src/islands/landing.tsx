@@ -6,6 +6,9 @@ import { mountVueCounter } from "./vue-counter"
 import { mountSvelteCounter } from "./svelte-counter"
 import { mountSolidCounter } from "./solid-counter"
 import { mountAngularCounter } from "./angular-counter"
+import { mountKeyboardDemo } from "./landing-keyboard"
+import { mountOnlineDemo } from "./landing-online"
+import { mountLocationDemo } from "./landing-location"
 
 // Mount React island
 const reactRoot = document.getElementById("react-island")
@@ -39,6 +42,27 @@ if (solidRoot) {
 const angularRoot = document.getElementById("angular-island")
 if (angularRoot) {
     mountAngularCounter(angularRoot)
+}
+
+// Mount keyboard island
+const keyboardRoot = document.getElementById("landing-keyboard-island")
+if (keyboardRoot) {
+    keyboardRoot.innerHTML = ""
+    mountKeyboardDemo(keyboardRoot)
+}
+
+// Mount online island
+const onlineRoot = document.getElementById("landing-online-island")
+if (onlineRoot) {
+    onlineRoot.innerHTML = ""
+    mountOnlineDemo(onlineRoot)
+}
+
+// Mount location island
+const locationRoot = document.getElementById("landing-location-island")
+if (locationRoot) {
+    locationRoot.innerHTML = ""
+    mountLocationDemo(locationRoot)
 }
 
 // Prevent text selection on rapid clicks

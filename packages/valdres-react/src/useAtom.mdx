@@ -35,6 +35,33 @@ const Counter = () => {
 }
 ```
 
+## Try it
+
+<Playground code={`import { atom } from "valdres"
+import { Provider, useAtom } from "valdres-react"
+
+const countAtom = atom(0)
+
+function Counter() {
+  const [count, setCount] = useAtom(countAtom)
+  return (
+    <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+      <button onClick={() => setCount(c => c - 1)}>-</button>
+      <span style={{ minWidth: 24, textAlign: "center" }}>{count}</span>
+      <button onClick={() => setCount(c => c + 1)}>+</button>
+    </div>
+  )
+}
+
+export default function App() {
+  return (
+    <Provider>
+      <Counter />
+    </Provider>
+  )
+}
+`} />
+
 ## Returns
 
 | Index | Type | Description |
