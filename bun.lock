@@ -108,6 +108,18 @@
         "typescript": "5.9.2",
       },
     },
+    "packages/@valdres/bandwidth": {
+      "name": "@valdres/bandwidth",
+      "version": "0.2.0-pre.28",
+      "devDependencies": {
+        "@valdres/public-ip": "0.2.0-pre.28",
+        "typescript": "5.9.2",
+        "valdres": "0.2.0-pre.28",
+      },
+      "peerDependencies": {
+        "valdres": "0.2.0-pre.28",
+      },
+    },
     "packages/@valdres/browser-color-scheme": {
       "name": "@valdres/browser-color-scheme",
       "version": "0.2.0-pre.28",
@@ -1184,6 +1196,8 @@
     "@valdres-react/panable": ["@valdres-react/panable@workspace:packages/@valdres-react/panable"],
 
     "@valdres-react/recoil": ["@valdres-react/recoil@workspace:packages/@valdres-react/recoil"],
+
+    "@valdres/bandwidth": ["@valdres/bandwidth@workspace:packages/@valdres/bandwidth"],
 
     "@valdres/browser-color-scheme": ["@valdres/browser-color-scheme@workspace:packages/@valdres/browser-color-scheme"],
 
