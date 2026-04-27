@@ -460,6 +460,34 @@ describe("runPhase", () => {
         expect(Date.now() - start).toBeLessThan(300)
     })
 
+    test("ends promptly when all workers resolve without an abort", async () => {
+        // A worker that exits after a single report — mirrors measureDownload's
+        // non-streaming fallback. The phase has nothing left to measure once
+        // every worker has resolved, so it shouldn't sit waiting for
+        // minDurationMs/maxDurationMs.
+        const worker = async (
+            _signal: AbortSignal,
+            reportBytes: (bytes: number) => void,
+        ) => {
+            await new Promise(r => setTimeout(r, 10))
+            reportBytes(1024)
+        }
+
+        const start = Date.now()
+        await runPhase({
+            worker,
+            maxDurationMs: 2_000,
+            minDurationMs: 1_000,
+            warmupMs: 0,
+            sampleIntervalMs: 50,
+            startStreams: 1,
+            maxStreams: 1,
+        })
+        // Phase should end soon after the worker finishes, well before
+        // minDurationMs (1s) — not run out the full clock.
+        expect(Date.now() - start).toBeLessThan(500)
+    })
+
     test("rethrows worker errors that occur outside an abort", async () => {
         const worker = async () => {
             await new Promise(r => setTimeout(r, 5))

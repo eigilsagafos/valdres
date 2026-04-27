@@ -1,8 +1,8 @@
-const URL = "https://speed.cloudflare.com/__down?bytes=0"
+const LATENCY_URL = "https://speed.cloudflare.com/__down?bytes=0"
 
 const ping = async (signal?: AbortSignal): Promise<number> => {
     const start = performance.now()
-    const res = await fetch(URL, { cache: "no-store", signal })
+    const res = await fetch(LATENCY_URL, { cache: "no-store", signal })
     if (!res.ok) {
         throw new Error(
             `latency probe failed: ${res.status} ${res.statusText}`.trim(),

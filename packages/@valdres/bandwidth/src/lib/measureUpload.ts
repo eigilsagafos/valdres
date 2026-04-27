@@ -1,7 +1,7 @@
 import { runPhase } from "./runPhase"
 import type { RunPhaseOptions } from "./runPhase"
 
-const URL = "https://speed.cloudflare.com/__up"
+const UPLOAD_URL = "https://speed.cloudflare.com/__up"
 const CHUNK_BYTES = 1_000_000
 const body = new Uint8Array(CHUNK_BYTES)
 
@@ -10,7 +10,7 @@ const uploadWorker = async (
     reportBytes: (bytes: number) => void,
 ): Promise<void> => {
     while (!signal.aborted) {
-        const res = await fetch(URL, {
+        const res = await fetch(UPLOAD_URL, {
             method: "POST",
             body,
             cache: "no-store",

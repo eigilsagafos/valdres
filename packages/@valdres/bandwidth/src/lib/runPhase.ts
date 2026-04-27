@@ -52,15 +52,27 @@ export const runPhase = async ({
 
     const running: Promise<void>[] = []
     let workerError: unknown = null
+    let activeWorkers = 0
     const spawn = () => {
+        activeWorkers++
         running.push(
-            worker(controller.signal, reportBytes).catch(err => {
-                if (controller.signal.aborted) return
-                if (workerError === null) workerError = err
-                // First non-abort failure cancels the phase so we surface
-                // it instead of returning a misleading rate.
-                controller.abort()
-            }),
+            worker(controller.signal, reportBytes)
+                .catch(err => {
+                    if (controller.signal.aborted) return
+                    if (workerError === null) workerError = err
+                    // First non-abort failure cancels the phase so we surface
+                    // it instead of returning a misleading rate.
+                    controller.abort()
+                })
+                .finally(() => {
+                    activeWorkers--
+                    // Every worker finished without an external abort — there's
+                    // nothing left to measure, so end the phase instead of
+                    // sleeping out the rest of min/maxDurationMs.
+                    if (activeWorkers === 0 && !controller.signal.aborted) {
+                        controller.abort()
+                    }
+                }),
         )
     }
     for (let i = 0; i < startStreams; i++) spawn()
