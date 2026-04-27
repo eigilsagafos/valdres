@@ -1,5 +1,4 @@
 import type { GlobalAtom } from "valdres"
-import { fetchPublicIp } from "../utils/fetchPublicIp"
 
 interface NetworkInformationLike {
     addEventListener: (type: "change", listener: () => void) => void
@@ -10,11 +9,22 @@ interface NavigatorWithConnection extends Navigator {
     connection?: NetworkInformationLike
 }
 
+const CONNECTION_CHANGE_DEBOUNCE_MS = 750
+
 const refetchHandlers = new Set<() => void>()
 let cleanupSharedListeners: (() => void) | null = null
+let debounceTimer: ReturnType<typeof setTimeout> | null = null
 
 const dispatch = () => {
     for (const handler of refetchHandlers) handler()
+}
+
+const dispatchDebounced = () => {
+    if (debounceTimer !== null) clearTimeout(debounceTimer)
+    debounceTimer = setTimeout(() => {
+        debounceTimer = null
+        dispatch()
+    }, CONNECTION_CHANGE_DEBOUNCE_MS)
 }
 
 const registerSharedListeners = () => {
@@ -31,7 +41,7 @@ const registerSharedListeners = () => {
     const onVisibility = () => {
         if (doc?.visibilityState === "visible") dispatch()
     }
-    const onConnectionChange = () => dispatch()
+    const onConnectionChange = () => dispatchDebounced()
 
     win?.addEventListener?.("online", onOnline)
     doc?.addEventListener?.("visibilitychange", onVisibility)
@@ -41,19 +51,24 @@ const registerSharedListeners = () => {
         win?.removeEventListener?.("online", onOnline)
         doc?.removeEventListener?.("visibilitychange", onVisibility)
         connection?.removeEventListener?.("change", onConnectionChange)
+        if (debounceTimer !== null) {
+            clearTimeout(debounceTimer)
+            debounceTimer = null
+        }
         cleanupSharedListeners = null
     }
 }
 
 export const subscribe = (
     ipAtom: GlobalAtom<Promise<string> | string>,
-    endpointsAtom: GlobalAtom<string[]>,
-    validate: (value: string) => boolean,
+    runFetch: () => Promise<string>,
 ) => {
     const handler = () => {
         const nav = typeof navigator === "undefined" ? undefined : navigator
         if (nav && nav.onLine === false) return
-        ipAtom.setSelf(fetchPublicIp(endpointsAtom.getSelf(), validate))
+        const promise = runFetch()
+        promise.catch(() => {})
+        ipAtom.setSelf(promise)
     }
     refetchHandlers.add(handler)
     registerSharedListeners()
