@@ -297,26 +297,6 @@ describe("atom", () => {
         expect(onUnmount).toHaveBeenCalledTimes(0)
     })
 
-    test("onInit", () => {
-        const store1 = store()
-        const onInitCallback = mock(() => {})
-        const user1 = atom("Foo", {
-            onInit: onInitCallback,
-        })
-        expect(store1.get(user1)).toBe("Foo")
-        expect(onInitCallback).toHaveBeenCalledTimes(1)
-    })
-
-    test("onInit atom with no value", () => {
-        const store1 = store()
-        const onInitCallback = mock(setSelf => setSelf("Foo"))
-        const user1 = atom<string>(undefined, {
-            onInit: onInitCallback,
-        })
-        expect(store1.get(user1)).toBe("Foo")
-        expect(onInitCallback).toHaveBeenCalledTimes(1)
-    })
-
     test("atom with selector as default value", () => {
         const store1 = store()
         const atom1 = atom(1)

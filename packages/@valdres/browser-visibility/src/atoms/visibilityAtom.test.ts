@@ -12,9 +12,10 @@ const setVisibility = (value: DocumentVisibilityState) => {
 describe("visibilityAtom", () => {
     afterAll(() => setVisibility("visible"))
 
-    test("first read evaluates lazily and onInit wires event listeners", () => {
+    test("subscribing wires event listeners and reflects document visibility", () => {
         setVisibility("hidden")
         const s = store()
+        const unsub = s.sub(visibilityAtom, () => {})
         expect(s.get(visibilityAtom)).toBe("hidden")
 
         setVisibility("visible")
@@ -24,5 +25,6 @@ describe("visibilityAtom", () => {
         setVisibility("hidden")
         document.dispatchEvent(new Event("visibilitychange"))
         expect(s.get(visibilityAtom)).toBe("hidden")
+        unsub()
     })
 })

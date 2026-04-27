@@ -45,7 +45,7 @@ const registerSharedListeners = () => {
     }
 }
 
-export const publicIpOnInit = (
+export const subscribe = (
     ipAtom: GlobalAtom<Promise<string> | string>,
     endpointsAtom: GlobalAtom<string[]>,
     validate: (value: string) => boolean,

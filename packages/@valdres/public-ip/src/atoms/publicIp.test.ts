@@ -56,7 +56,11 @@ afterAll(() => {
 
 for (const { label, ipAtom, endpointsAtom, defaultEndpoint, ip, customIp } of cases) {
     describe(label, () => {
+        let activeUnsubs: Array<() => void> = []
+
         afterEach(() => {
+            for (const unsub of activeUnsubs) unsub()
+            activeUnsubs = []
             m.reset()
             ;(ipAtom as GlobalAtom<any>).resetSelf()
             endpointsAtom.resetSelf()
@@ -81,7 +85,7 @@ for (const { label, ipAtom, endpointsAtom, defaultEndpoint, ip, customIp } of ca
             publicIpMaxAgeAtom.setSelf(30)
             m.alwaysRespond(defaultEndpoint, ip)
             const s = store()
-            s.sub(ipAtom, () => {})
+            activeUnsubs.push(s.sub(ipAtom, () => {}))
             const before = m.calls.length
             await waitUntil(() => m.calls.length > before)
             expect(await s.get(ipAtom)).toBe(ip)

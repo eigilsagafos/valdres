@@ -12,9 +12,10 @@ const setHasFocus = (value: boolean) => {
 describe("focusAtom", () => {
     afterAll(() => setHasFocus(true))
 
-    test("first read evaluates lazily and onInit wires event listeners", () => {
+    test("subscribing wires event listeners and reflects document focus", () => {
         setHasFocus(false)
         const s = store()
+        const unsub = s.sub(focusAtom, () => {})
         expect(s.get(focusAtom)).toBe(false)
 
         window.dispatchEvent(new Event("focus"))
@@ -22,5 +23,6 @@ describe("focusAtom", () => {
 
         window.dispatchEvent(new Event("blur"))
         expect(s.get(focusAtom)).toBe(false)
+        unsub()
     })
 })

@@ -33,6 +33,7 @@ describe("presenceSelector", () => {
         setHasFocus(true)
         setVisibility("visible")
         const s = store()
+        const unsub = s.sub(presenceSelector, () => {})
         expect(s.get(presenceSelector)).toBe(true)
 
         window.dispatchEvent(new Event("blur"))
@@ -40,12 +41,14 @@ describe("presenceSelector", () => {
 
         window.dispatchEvent(new Event("focus"))
         expect(s.get(presenceSelector)).toBe(true)
+        unsub()
     })
 
     test("is false when tab becomes hidden", () => {
         setHasFocus(true)
         setVisibility("visible")
         const s = store()
+        const unsub = s.sub(presenceSelector, () => {})
         expect(s.get(presenceSelector)).toBe(true)
 
         setVisibility("hidden")
@@ -55,12 +58,14 @@ describe("presenceSelector", () => {
         setVisibility("visible")
         document.dispatchEvent(new Event("visibilitychange"))
         expect(s.get(presenceSelector)).toBe(true)
+        unsub()
     })
 
     test("is false when both visibility and focus are lost", () => {
         setHasFocus(true)
         setVisibility("visible")
         const s = store()
+        const unsub = s.sub(presenceSelector, () => {})
         expect(s.get(presenceSelector)).toBe(true)
 
         window.dispatchEvent(new Event("blur"))
@@ -74,5 +79,6 @@ describe("presenceSelector", () => {
         setVisibility("visible")
         document.dispatchEvent(new Event("visibilitychange"))
         expect(s.get(presenceSelector)).toBe(true)
+        unsub()
     })
 })

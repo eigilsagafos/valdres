@@ -1,3 +1,4 @@
+import type { AtomOnMount } from "./AtomOnMount"
 import type { EqualFunc } from "./EqualFunc"
 import type { GetValue } from "./GetValue"
 import type { SelectorFamily } from "./SelectorFamily"
@@ -16,5 +17,5 @@ export type Selector<
     name?: string
     family?: SelectorFamily<Value, FamilyArgs>
     familyArgs?: FamilyArgs
-    onMount?: () => void | (() => void)
+    onMount?: AtomOnMount
 }

@@ -20,5 +20,5 @@ const getInitial = (): ReducedMotion => {
 export const reducedMotionAtom = atom<ReducedMotion>(getInitial, {
     global: true,
     name: "@valdres/browser-reduced-motion/reducedMotion",
-    onInit: () => subscribe(),
+    onMount: () => subscribe(),
 })

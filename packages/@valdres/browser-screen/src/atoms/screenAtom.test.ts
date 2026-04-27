@@ -13,8 +13,7 @@ describe("screenAtom", () => {
 
     test("updates atom when window resize fires", () => {
         const s = store()
-        // touch atom so subscribe fires
-        s.get(screenAtom)
+        const unsub = s.sub(screenAtom, () => {})
 
         Object.defineProperty(window.screen, "width", {
             value: 3840,
@@ -29,5 +28,6 @@ describe("screenAtom", () => {
         const info = s.get(screenAtom)
         expect(info.width).toBe(3840)
         expect(info.height).toBe(2160)
+        unsub()
     })
 })
