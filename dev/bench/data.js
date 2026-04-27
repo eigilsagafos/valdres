@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1777100302897,
+  "lastUpdate": 1777313271337,
   "repoUrl": "https://github.com/eigilsagafos/valdres",
   "entries": {
     "valdres benchmarks": [
@@ -22196,6 +22196,390 @@ window.BENCHMARK_DATA = {
           {
             "name": "jotai set [Node]",
             "value": 1323,
+            "unit": "ns",
+            "extra": "baseline"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "eigil@sagafos.no",
+            "name": "Eigil Sagafos",
+            "username": "eigilsagafos"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "65451de03fe0147790fa96fb200dd2539f02c4cc",
+          "message": "Replace global-atom onInit with Jotai-style onMount lifecycle (#111)\n\n* Replace global-atom onInit with Jotai-style onMount lifecycle\n\nRemoves the user-facing options.onInit and consolidates atom lifecycle\non options.onMount, which fires on first subscriber and tears down on\nlast unsubscribe (matching the existing onMount on non-global atoms).\n\nFor global atoms, options.onMount is wrapped with a cross-store ref\ncounter so the user hook fires once globally on the first subscriber\nacross any store, and its cleanup fires when the last subscriber\nacross all stores detaches. resetSelf cycles the mount lifecycle:\nclean up listeners, clear value, then remount on stores that still\nhave subscribers — making it a safe \"full restart\" hook.\n\nThe previous onInit semantics (fire on any first read or write) had a\nre-entrancy bug when user code held a direct reference to the\nsubscribe function and invoked it manually: the framework would also\ncall it via the wrapper, double-firing user setup. The new model\nremoves that ambiguity entirely — reads no longer trigger setup.\n\nBehavior changes worth flagging:\n- store.get(atom) no longer wires up listeners; subscribe to get\n  reactivity. Browser-* tests that asserted listeners attached on get\n  are updated to subscribe instead.\n- resetSelf is now a full restart (cleanup + remount) rather than\n  cleanup-then-lazy-reinit-on-next-read.\n\nOther fixes in this commit:\n- resetSelf aggregates errors from per-store unmount/mount/propagate\n  rather than aborting on the first throw.\n- mountCount has an underflow guard against double-cleanup.\n- onMount wrapper forwards (store, state) args from mountAtom to the\n  user hook (matches non-global onMount signature).\n- Atom.onMount / Selector.onMount / AtomOptions.onMount typed with a\n  shared AtomOnMount type whose signature matches the runtime call.\n- Renamed public-ip's publicIpOnInit to subscribe to match the\n  pattern used by other browser-* packages.\n\n* Address Copilot review: transitive sub remount + onMount throw rollback\n\nTwo correctness bugs caught in PR review:\n\n1. resetSelf only checked direct subscribers when deciding which stores\n   to remount, missing stores that subscribe to the atom transitively\n   via a selector. The atom would unmount but never remount, leaving\n   onMount-installed listeners permanently detached. Now uses\n   isTransitivelySubscribed.\n\n2. The onMount wrapper incremented mountCount BEFORE calling\n   userOnMount. A throw left mountCount stuck at 1; the next sub would\n   bump it to 2 and skip the user hook. Wrap userOnMount in try/catch\n   and roll back mountCount + userCleanup on throw so a future mount\n   retries cleanly.\n\nBoth fixes have RED-first regression tests.\n\n* Lazy maxAge revalidation: re-eval cached value past freshness window\n\nAdds lazy revalidation for atoms with `maxAge` so that `store.get`\nreturns a fresh value once the freshness window has elapsed, even\nwhen no subscriber is keeping the cache live. Without this, an\nunmounted atom's cached value sits indefinitely; users had to\n`resetSelf()` or subscribe to force a refresh.\n\nImplementation:\n- StoreData gains `lastValueWriteAt: WeakMap<atom, number>`,\n  populated by `setValueInData` whenever an atom with `maxAge` is\n  written.\n- `storeFromStoreData.getDefault` calls a new `isCachedValueStale`\n  helper before returning cached values. If stale, the cache is\n  evicted and `getState` re-runs `defaultValue`.\n\nCrucially, the staleness check is suppressed when an active maxAge\ntimer is managing freshness (global atom with `maxAgeInterval`\nrunning, or non-global atom with subscribers). That keeps the\nexisting `staleWhileRevalidate` semantics intact — the timer-managed\nwindow where stale value remains visible during async revalidation\nshould not be undermined by lazy eviction.\n\nOne pre-existing test asserted post-cleanup behavior via\n`store.get`, which is now incompatible with lazy revalidation.\nUpdated it to read `data.values` directly so it still verifies the\ncleanup invariant (a cancelled in-flight promise's resolution must\nnot pollute the cache) without conflating it with the new on-read\nbehavior.\n\nBenchmarks show no measurable regression on macro tests\n(get/set 1000 atoms, selectors, transactions). Micro `valdres get`\nis +3ns from the maxAge undefined-check on every read — negligible\nabsolute cost and dwarfed by run-to-run noise on other metrics.\n\n* Address Copilot review on lazy revalidation + resetSelf\n\nThree concerns surfaced; two were real bugs.\n\n1. resetSelf used isTransitivelySubscribed to decide which stores get\n   installMaxAgeTimer. But subscribe.ts only installs the timer for\n   DIRECT subscriptions — transitive (selector-only) subscribers are\n   covered by lazy revalidation on read. Match subscribe.ts: gate the\n   timer install on direct sub count.\n\n2. initAtom's promise-default path lacked a stale-promise guard. With\n   lazy maxAge revalidation evicting and re-initializing, an in-flight\n   promise from before the eviction could resolve later and clobber\n   the newer value. Add the same guard pattern setAtom.handlePromise\n   uses: only commit the resolution if the promise is still the\n   cached value.\n\n3. Concern about globalStore being dropped from atom.stores after\n   resetSelf and never being re-added. Verified with a regression\n   test that the framework's atom.onInit cascade re-adds globalStore\n   on the next interaction (read or write). No bug — added the test\n   to lock in the behavior.\n\nAll three are accompanied by RED-first tests.\n\n* Fix CI flake: reset global atoms in tests that assert against live window\n\nscreenAtom.test.ts and windowSizeAtom.test.ts both assert that the\natom's value matches a live window-state property (e.g.\nwindow.devicePixelRatio, window.innerWidth). With the new\nsubscription-tied lifecycle, store.get no longer triggers a fresh\nsubscribe() call — the atom returns its cached value instead. When\nsibling test files in the same package mutate window state and\nexercise subscribe directly, the global atom's cache picks up those\nmutations and survives across files via the module-level singleton.\nThe next test asserting `info.x === window.x` then sees a\nstale-cached vs current-window mismatch.\n\nReset the relevant atom in beforeEach of the asserting tests so each\nstarts from a clean cache.",
+          "timestamp": "2026-04-27T11:03:40-07:00",
+          "tree_id": "4e19f90a706b95c32a00de231c9148456af27d6c",
+          "url": "https://github.com/eigilsagafos/valdres/commit/65451de03fe0147790fa96fb200dd2539f02c4cc"
+        },
+        "date": 1777313270880,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "atom(1)",
+            "value": 3,
+            "unit": "ns",
+            "extra": "jotai=57 ratio=0.0439 22.8x faster"
+          },
+          {
+            "name": "store.get(atom)",
+            "value": 40,
+            "unit": "ns",
+            "extra": "jotai=381 ratio=0.1050 9.5x faster"
+          },
+          {
+            "name": "set(atom, value)",
+            "value": 180,
+            "unit": "ns",
+            "extra": "jotai=2103 ratio=0.0856 11.7x faster"
+          },
+          {
+            "name": "set(atom, curr => curr+1)",
+            "value": 148,
+            "unit": "ns",
+            "extra": "jotai=2714 ratio=0.0544 18.4x faster"
+          },
+          {
+            "name": "set(atom) with 10 subs",
+            "value": 188,
+            "unit": "ns",
+            "extra": "jotai=3591 ratio=0.0523 19.1x faster"
+          },
+          {
+            "name": "atom lifecycle (create+100get+100set)",
+            "value": 17281,
+            "unit": "ns",
+            "extra": "jotai=282624 ratio=0.0611 16.4x faster"
+          },
+          {
+            "name": "atomFamily(id)",
+            "value": 393,
+            "unit": "ns",
+            "extra": "jotai=531 ratio=0.7413 1.3x faster"
+          },
+          {
+            "name": "atomFamily(id) cache hit",
+            "value": 31,
+            "unit": "ns",
+            "extra": "jotai=11 ratio=2.8140 2.8x slower"
+          },
+          {
+            "name": "selectorFamily(id)",
+            "value": 396,
+            "unit": "ns",
+            "extra": "jotai=540 ratio=0.7337 1.4x faster"
+          },
+          {
+            "name": "obj.value",
+            "value": 5,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "map.get(key)",
+            "value": 16,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "valdres get",
+            "value": 12,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "jotai get",
+            "value": 357,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "obj.value = n",
+            "value": 5,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "map.set(key, n)",
+            "value": 17,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "valdres set",
+            "value": 180,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "jotai set",
+            "value": 3256,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "selector(fn)",
+            "value": 6,
+            "unit": "ns",
+            "extra": "jotai=63 ratio=0.0998 10.0x faster"
+          },
+          {
+            "name": "set + read 10 selectors",
+            "value": 8510,
+            "unit": "ns",
+            "extra": "jotai=28123 ratio=0.3026 3.3x faster"
+          },
+          {
+            "name": "set + read 100 selectors",
+            "value": 75494,
+            "unit": "ns",
+            "extra": "jotai=332925 ratio=0.2268 4.4x faster"
+          },
+          {
+            "name": "set + read through 5 chained selectors",
+            "value": 7545,
+            "unit": "ns",
+            "extra": "jotai=17969 ratio=0.4199 2.4x faster"
+          },
+          {
+            "name": "createStore",
+            "value": 656,
+            "unit": "ns",
+            "extra": "jotai=6745 ratio=0.0972 10.3x faster"
+          },
+          {
+            "name": "set 1000 atoms",
+            "value": 71728,
+            "unit": "ns",
+            "extra": "jotai=1166311 ratio=0.0615 16.3x faster"
+          },
+          {
+            "name": "get 1000 atoms",
+            "value": 7196,
+            "unit": "ns",
+            "extra": "jotai=560972 ratio=0.0128 78.0x faster"
+          },
+          {
+            "name": "sub + unsub",
+            "value": 481,
+            "unit": "ns",
+            "extra": "jotai=2383 ratio=0.2018 5.0x faster"
+          },
+          {
+            "name": "txn: 10 atoms × 10 selectors, set + read",
+            "value": 77095,
+            "unit": "ns",
+            "extra": "jotai=305309 ratio=0.2525 4.0x faster"
+          },
+          {
+            "name": "txn: 10 atoms × 10 selectors, with subs",
+            "value": 138888,
+            "unit": "ns",
+            "extra": "jotai=607432 ratio=0.2286 4.4x faster"
+          },
+          {
+            "name": "txn: 10 atoms × 100 selectors, set + read",
+            "value": 768484,
+            "unit": "ns",
+            "extra": "jotai=3503184 ratio=0.2194 4.6x faster"
+          },
+          {
+            "name": "txn: cross-atom 1000 selectors, set + read",
+            "value": 933862,
+            "unit": "ns",
+            "extra": "jotai=4857919 ratio=0.1922 5.2x faster"
+          },
+          {
+            "name": "txn: cross-atom 1000 selectors, with subs",
+            "value": 1410503,
+            "unit": "ns",
+            "extra": "jotai=26719440 ratio=0.0528 18.9x faster"
+          },
+          {
+            "name": "txn: 10 atoms × 10 selectors, set + read [Node]",
+            "value": 68944,
+            "unit": "ns",
+            "extra": "jotai=136135 ratio=0.5064 2.0x faster"
+          },
+          {
+            "name": "txn: 10 atoms × 10 selectors, with subs [Node]",
+            "value": 71317,
+            "unit": "ns",
+            "extra": "jotai=240346 ratio=0.2967 3.4x faster"
+          },
+          {
+            "name": "txn: 10 atoms × 100 selectors, set + read [Node]",
+            "value": 774863,
+            "unit": "ns",
+            "extra": "jotai=1320893 ratio=0.5866 1.7x faster"
+          },
+          {
+            "name": "txn: cross-atom 1000 selectors, set + read [Node]",
+            "value": 991814,
+            "unit": "ns",
+            "extra": "jotai=1833152 ratio=0.5410 1.8x faster"
+          },
+          {
+            "name": "txn: cross-atom 1000 selectors, with subs [Node]",
+            "value": 961368,
+            "unit": "ns",
+            "extra": "jotai=13566917 ratio=0.0709 14.1x faster"
+          },
+          {
+            "name": "selector(fn) [Node]",
+            "value": 44,
+            "unit": "ns",
+            "extra": "jotai=52 ratio=0.8425 1.2x faster"
+          },
+          {
+            "name": "set + read 10 selectors [Node]",
+            "value": 8012,
+            "unit": "ns",
+            "extra": "jotai=20703 ratio=0.3870 2.6x faster"
+          },
+          {
+            "name": "set + read 100 selectors [Node]",
+            "value": 70275,
+            "unit": "ns",
+            "extra": "jotai=129194 ratio=0.5439 1.8x faster"
+          },
+          {
+            "name": "set + read through 5 chained selectors [Node]",
+            "value": 4624,
+            "unit": "ns",
+            "extra": "jotai=10291 ratio=0.4493 2.2x faster"
+          },
+          {
+            "name": "atom(1) [Node]",
+            "value": 27,
+            "unit": "ns",
+            "extra": "jotai=48 ratio=0.5586 1.8x faster"
+          },
+          {
+            "name": "store.get(atom) [Node]",
+            "value": 14,
+            "unit": "ns",
+            "extra": "jotai=162 ratio=0.0860 11.6x faster"
+          },
+          {
+            "name": "set(atom, value) [Node]",
+            "value": 256,
+            "unit": "ns",
+            "extra": "jotai=1174 ratio=0.2181 4.6x faster"
+          },
+          {
+            "name": "set(atom, curr => curr+1) [Node]",
+            "value": 255,
+            "unit": "ns",
+            "extra": "jotai=1461 ratio=0.1743 5.7x faster"
+          },
+          {
+            "name": "set(atom) with 10 subs [Node]",
+            "value": 302,
+            "unit": "ns",
+            "extra": "jotai=1735 ratio=0.1743 5.7x faster"
+          },
+          {
+            "name": "atom lifecycle (create+100get+100set) [Node]",
+            "value": 30295,
+            "unit": "ns",
+            "extra": "jotai=137978 ratio=0.2196 4.6x faster"
+          },
+          {
+            "name": "createStore [Node]",
+            "value": 158,
+            "unit": "ns",
+            "extra": "jotai=1372 ratio=0.1150 8.7x faster"
+          },
+          {
+            "name": "set 1000 atoms [Node]",
+            "value": 79199,
+            "unit": "ns",
+            "extra": "jotai=421543 ratio=0.1879 5.3x faster"
+          },
+          {
+            "name": "get 1000 atoms [Node]",
+            "value": 14481,
+            "unit": "ns",
+            "extra": "jotai=204617 ratio=0.0708 14.1x faster"
+          },
+          {
+            "name": "sub + unsub [Node]",
+            "value": 700,
+            "unit": "ns",
+            "extra": "jotai=2234 ratio=0.3132 3.2x faster"
+          },
+          {
+            "name": "atomFamily(id) [Node]",
+            "value": 572,
+            "unit": "ns",
+            "extra": "jotai=606 ratio=0.9450 1.1x faster"
+          },
+          {
+            "name": "atomFamily(id) cache hit [Node]",
+            "value": 22,
+            "unit": "ns",
+            "extra": "jotai=7 ratio=3.3409 3.3x slower"
+          },
+          {
+            "name": "selectorFamily(id) [Node]",
+            "value": 442,
+            "unit": "ns",
+            "extra": "jotai=433 ratio=1.0209 1.0x slower"
+          },
+          {
+            "name": "obj.value [Node]",
+            "value": 0,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "map.get(key) [Node]",
+            "value": 5,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "valdres get [Node]",
+            "value": 14,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "jotai get [Node]",
+            "value": 202,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "obj.value = n [Node]",
+            "value": 1,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "map.set(key, n) [Node]",
+            "value": 7,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "valdres set [Node]",
+            "value": 257,
+            "unit": "ns",
+            "extra": "baseline"
+          },
+          {
+            "name": "jotai set [Node]",
+            "value": 1333,
             "unit": "ns",
             "extra": "baseline"
           }
