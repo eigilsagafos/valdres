@@ -1,0 +1,54 @@
+import { afterEach, describe, expect, test } from "bun:test"
+import { store } from "valdres"
+import { colorSchemeAtom } from "./colorSchemeAtom"
+
+type MockMq = EventTarget & { matches: boolean; media: string }
+
+const installMatchMedia = (initialMatches: boolean) => {
+    const mqs: MockMq[] = []
+    let matches = initialMatches
+    window.matchMedia = ((query: string) => {
+        const mq = new EventTarget() as MockMq
+        mq.matches = matches
+        mq.media = query
+        mqs.push(mq)
+        return mq as unknown as MediaQueryList
+    }) as typeof window.matchMedia
+    return {
+        set: (next: boolean) => {
+            matches = next
+            for (const mq of mqs) {
+                mq.matches = next
+                mq.dispatchEvent(new Event("change"))
+            }
+        },
+    }
+}
+
+describe("colorSchemeAtom", () => {
+    const originalMatchMedia = window.matchMedia
+    afterEach(() => {
+        window.matchMedia = originalMatchMedia
+        colorSchemeAtom.resetSelf()
+    })
+
+    test("initial value reflects matchMedia at first read", () => {
+        installMatchMedia(true)
+        const s = store()
+        expect(s.get(colorSchemeAtom)).toBe("dark")
+    })
+
+    test("subscribing wires the media query listener and reflects changes", () => {
+        const mq = installMatchMedia(false)
+        const s = store()
+        const unsub = s.sub(colorSchemeAtom, () => {})
+        expect(s.get(colorSchemeAtom)).toBe("light")
+
+        mq.set(true)
+        expect(s.get(colorSchemeAtom)).toBe("dark")
+
+        mq.set(false)
+        expect(s.get(colorSchemeAtom)).toBe("light")
+        unsub()
+    })
+})
