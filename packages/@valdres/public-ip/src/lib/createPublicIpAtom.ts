@@ -27,6 +27,8 @@ export const createPublicIpAtom = ({
     errorAtom,
     valueAtom,
 }: Params): GlobalAtom<Promise<string> | string> => {
+    let latestPromise: Promise<string> | null = null
+
     const runFetch = (): Promise<string> => {
         if (
             staleWhileRevalidateAtom.getSelf() === 0 &&
@@ -38,13 +40,16 @@ export const createPublicIpAtom = ({
             valueAtom.getSelf() === null ? "loading" : "revalidating",
         )
         const promise = fetchPublicIp(endpointsAtom.getSelf(), validate)
+        latestPromise = promise
         promise.then(
             value => {
+                if (promise !== latestPromise) return
                 valueAtom.setSelf(value)
                 errorAtom.setSelf(null)
                 statusAtom.setSelf("ok")
             },
             err => {
+                if (promise !== latestPromise) return
                 statusAtom.setSelf("error")
                 errorAtom.setSelf(
                     err instanceof Error ? err : new Error(String(err)),
