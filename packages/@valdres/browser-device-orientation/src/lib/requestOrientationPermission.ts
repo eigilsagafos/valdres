@@ -29,7 +29,10 @@ export const requestOrientationPermission = async (): Promise<PermissionValue> =
         permissionAtom.setSelf(value)
         return value
     } catch {
-        permissionAtom.setSelf("denied")
-        return "denied"
+        // Rejection means the call could not run (insecure context, missing
+        // user gesture, NotAllowedError, etc.) — NOT a user denial. Preserve
+        // the current permission state so callers can retry from a real
+        // gesture instead of locking the UI into a "denied" branch.
+        return permissionAtom.getSelf()
     }
 }

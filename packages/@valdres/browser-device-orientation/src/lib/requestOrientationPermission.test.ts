@@ -67,13 +67,26 @@ describe("requestOrientationPermission", () => {
         await expect(requestOrientationPermission()).resolves.toBe("prompt")
     })
 
-    test("returns denied when iOS-style requestPermission rejects", async () => {
+    test("preserves the current state when requestPermission rejects (transient errors like missing user gesture)", async () => {
         const E = class {
             static requestPermission() {
                 return Promise.reject(new Error("user gesture required"))
             }
         }
         setDeviceOrientationEvent(E)
-        await expect(requestOrientationPermission()).resolves.toBe("denied")
+        permissionAtom.resetSelf()
+        await expect(requestOrientationPermission()).resolves.toBe("prompt")
+    })
+
+    test("does not flip permission to denied on rejection — caller can retry", async () => {
+        const E = class {
+            static requestPermission() {
+                return Promise.reject(new Error("not allowed"))
+            }
+        }
+        setDeviceOrientationEvent(E)
+        permissionAtom.resetSelf()
+        await requestOrientationPermission()
+        expect(permissionAtom.getSelf()).toBe("prompt")
     })
 })
