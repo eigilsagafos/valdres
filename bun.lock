@@ -178,6 +178,28 @@
         "valdres": "0.2.0-pre.28",
       },
     },
+    "packages/@valdres/browser-device-orientation": {
+      "name": "@valdres/browser-device-orientation",
+      "version": "0.2.0-pre.28",
+      "devDependencies": {
+        "@happy-dom/global-registrator": "20.0.5",
+        "@react-three/drei": "10.7.7",
+        "@react-three/fiber": "9.6.0",
+        "@types/react": "19.1.12",
+        "@types/react-dom": "19.1.9",
+        "@types/three": "0.184.0",
+        "happy-dom": "20.0.5",
+        "react": "19.1.1",
+        "react-dom": "19.1.1",
+        "three": "0.184.0",
+        "typescript": "5.9.2",
+        "valdres": "0.2.0-pre.28",
+        "valdres-react": "0.2.0-pre.28",
+      },
+      "peerDependencies": {
+        "valdres": "0.2.0-pre.28",
+      },
+    },
     "packages/@valdres/browser-focus": {
       "name": "@valdres/browser-focus",
       "version": "0.2.0-pre.28",
@@ -1254,6 +1276,8 @@
     "@valdres/browser-contrast": ["@valdres/browser-contrast@workspace:packages/@valdres/browser-contrast"],
 
     "@valdres/browser-device-motion": ["@valdres/browser-device-motion@workspace:packages/@valdres/browser-device-motion"],
+
+    "@valdres/browser-device-orientation": ["@valdres/browser-device-orientation@workspace:packages/@valdres/browser-device-orientation"],
 
     "@valdres/browser-focus": ["@valdres/browser-focus@workspace:packages/@valdres/browser-focus"],
 
@@ -3188,6 +3212,10 @@
     "@valdres/browser-device-motion/@happy-dom/global-registrator": ["@happy-dom/global-registrator@20.0.5", "", { "dependencies": { "@types/node": "^20.0.0", "happy-dom": "^20.0.5" } }, "sha512-RWQ85on4fiYKw5D1xk0nU2YGCYsJEJ5iXmZHTRyeYft4OCN4IRMFZ3uX91/Tncf/9K4tPOnU1HiEOtLs2Zxukw=="],
 
     "@valdres/browser-device-motion/happy-dom": ["happy-dom@20.0.5", "", { "dependencies": { "@types/node": "^20.0.0", "@types/whatwg-mimetype": "^3.0.2", "whatwg-mimetype": "^3.0.0" } }, "sha512-AiqA0rfS7WR1kihXt9W9aA5LFLaOKzwiL+QoI7BkOQ0r21C7VHTOf4k8QNlnWYaHLhpI2tZzJPLV1lY1obDTmw=="],
+
+    "@valdres/browser-device-orientation/@happy-dom/global-registrator": ["@happy-dom/global-registrator@20.0.5", "", { "dependencies": { "@types/node": "^20.0.0", "happy-dom": "^20.0.5" } }, "sha512-RWQ85on4fiYKw5D1xk0nU2YGCYsJEJ5iXmZHTRyeYft4OCN4IRMFZ3uX91/Tncf/9K4tPOnU1HiEOtLs2Zxukw=="],
+
+    "@valdres/browser-device-orientation/happy-dom": ["happy-dom@20.0.5", "", { "dependencies": { "@types/node": "^20.0.0", "@types/whatwg-mimetype": "^3.0.2", "whatwg-mimetype": "^3.0.0" } }, "sha512-AiqA0rfS7WR1kihXt9W9aA5LFLaOKzwiL+QoI7BkOQ0r21C7VHTOf4k8QNlnWYaHLhpI2tZzJPLV1lY1obDTmw=="],
 
     "@valdres/browser-focus/@happy-dom/global-registrator": ["@happy-dom/global-registrator@20.0.5", "", { "dependencies": { "@types/node": "^20.0.0", "happy-dom": "^20.0.5" } }, "sha512-RWQ85on4fiYKw5D1xk0nU2YGCYsJEJ5iXmZHTRyeYft4OCN4IRMFZ3uX91/Tncf/9K4tPOnU1HiEOtLs2Zxukw=="],
 
