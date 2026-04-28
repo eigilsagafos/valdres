@@ -67,13 +67,26 @@ describe("requestMotionPermission", () => {
         await expect(requestMotionPermission()).resolves.toBe("prompt")
     })
 
-    test("returns denied when iOS-style requestPermission rejects", async () => {
+    test("preserves the current state when requestPermission rejects (transient errors like missing user gesture)", async () => {
         const E = class {
             static requestPermission() {
                 return Promise.reject(new Error("user gesture required"))
             }
         }
         setDeviceMotionEvent(E)
-        await expect(requestMotionPermission()).resolves.toBe("denied")
+        permissionAtom.resetSelf()
+        await expect(requestMotionPermission()).resolves.toBe("prompt")
+    })
+
+    test("does not flip permission to denied on rejection — caller can retry", async () => {
+        const E = class {
+            static requestPermission() {
+                return Promise.reject(new Error("not allowed"))
+            }
+        }
+        setDeviceMotionEvent(E)
+        permissionAtom.resetSelf()
+        await requestMotionPermission()
+        expect(permissionAtom.getSelf()).toBe("prompt")
     })
 })
