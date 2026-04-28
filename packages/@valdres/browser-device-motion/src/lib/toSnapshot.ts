@@ -23,5 +23,5 @@ export const toSnapshot = (event: DeviceMotionEvent): MotionSnapshot => ({
     accelerationIncludingGravity: toVector3(event.accelerationIncludingGravity),
     rotationRate: toRotationRate(event.rotationRate),
     interval: event.interval,
-    timestamp: event.timeStamp,
+    timeStamp: event.timeStamp,
 })

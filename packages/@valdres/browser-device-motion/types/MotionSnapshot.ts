@@ -15,5 +15,5 @@ export type MotionSnapshot = {
     accelerationIncludingGravity: Vector3 | null
     rotationRate: RotationRateSnapshot | null
     interval: number
-    timestamp: number
+    timeStamp: number
 }

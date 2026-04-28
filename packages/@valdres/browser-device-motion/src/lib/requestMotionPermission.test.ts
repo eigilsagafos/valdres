@@ -57,6 +57,16 @@ describe("requestMotionPermission", () => {
         await expect(requestMotionPermission()).resolves.toBe("denied")
     })
 
+    test("preserves prompt when iOS-style requestPermission resolves prompt", async () => {
+        const E = class {
+            static requestPermission() {
+                return Promise.resolve("prompt" as PermissionState)
+            }
+        }
+        setDeviceMotionEvent(E)
+        await expect(requestMotionPermission()).resolves.toBe("prompt")
+    })
+
     test("returns denied when iOS-style requestPermission rejects", async () => {
         const E = class {
             static requestPermission() {
