@@ -1,1 +1,5 @@
-export type PermissionValue = "granted" | "denied" | "prompt" | "unsupported"
+export type PermissionValue =
+    | "granted"
+    | "denied"
+    | "prompt"
+    | "unsupported"

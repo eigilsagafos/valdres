@@ -86,7 +86,6 @@ const GyroRing = ({
 }) => {
     const meshRef = useRef<THREE.Mesh>(null!)
     const rotation = useValue(rotationRateSelector)
-    const idleSpin = useRef(0)
 
     useFrame((_, dt) => {
         if (!meshRef.current) return
@@ -94,7 +93,6 @@ const GyroRing = ({
         if (typeof rate === "number" && Math.abs(rate) > 0.5) {
             meshRef.current.rotation.z += deg(rate) * dt
         } else {
-            idleSpin.current += dt * 0.4
             meshRef.current.rotation.z += dt * 0.4
         }
     })

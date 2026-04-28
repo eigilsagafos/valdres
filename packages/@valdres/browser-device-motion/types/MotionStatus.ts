@@ -1,1 +1,5 @@
-export type MotionStatus = "unsupported" | "idle" | "active"
+export type MotionStatus =
+    | "unsupported"
+    | "idle"
+    | "active"
+
