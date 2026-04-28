@@ -14,6 +14,6 @@ export const toSnapshot = (event: DeviceOrientationEvent): OrientationSnapshot =
         absolute: event.absolute,
         webkitCompassHeading: e.webkitCompassHeading ?? null,
         webkitCompassAccuracy: e.webkitCompassAccuracy ?? null,
-        timestamp: event.timeStamp,
+        timeStamp: event.timeStamp,
     }
 }

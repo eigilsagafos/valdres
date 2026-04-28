@@ -57,6 +57,16 @@ describe("requestOrientationPermission", () => {
         await expect(requestOrientationPermission()).resolves.toBe("denied")
     })
 
+    test("preserves prompt when iOS-style requestPermission resolves prompt", async () => {
+        const E = class {
+            static requestPermission() {
+                return Promise.resolve("prompt" as PermissionState)
+            }
+        }
+        setDeviceOrientationEvent(E)
+        await expect(requestOrientationPermission()).resolves.toBe("prompt")
+    })
+
     test("returns denied when iOS-style requestPermission rejects", async () => {
         const E = class {
             static requestPermission() {

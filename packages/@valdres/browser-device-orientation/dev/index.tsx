@@ -1,4 +1,4 @@
-import { StrictMode, useRef } from "react"
+import { StrictMode, useEffect, useMemo, useRef } from "react"
 import { createRoot } from "react-dom/client"
 import { Canvas, useFrame } from "@react-three/fiber"
 import { Grid } from "@react-three/drei"
@@ -28,15 +28,25 @@ const Axis = ({
     direction: [number, number, number]
     color: string
 }) => {
-    const dir = new THREE.Vector3(...direction).normalize()
-    const arrow = new THREE.ArrowHelper(
-        dir,
-        new THREE.Vector3(0, 0, 0),
-        1.6,
-        color,
-        0.18,
-        0.09,
+    const arrow = useMemo(() => {
+        const dir = new THREE.Vector3(...direction).normalize()
+        return new THREE.ArrowHelper(
+            dir,
+            new THREE.Vector3(0, 0, 0),
+            1.6,
+            color,
+            0.18,
+            0.09,
+        )
+    }, [direction, color])
+
+    useEffect(
+        () => () => {
+            arrow.dispose()
+        },
+        [arrow],
     )
+
     return <primitive object={arrow} />
 }
 

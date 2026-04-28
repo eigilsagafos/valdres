@@ -20,7 +20,12 @@ export const requestOrientationPermission = async (): Promise<PermissionValue> =
     }
     try {
         const next = await E.requestPermission()
-        const value: PermissionValue = next === "granted" ? "granted" : "denied"
+        const value: PermissionValue =
+            next === "granted"
+                ? "granted"
+                : next === "prompt"
+                  ? "prompt"
+                  : "denied"
         permissionAtom.setSelf(value)
         return value
     } catch {

@@ -5,5 +5,5 @@ export type OrientationSnapshot = {
     absolute: boolean
     webkitCompassHeading: number | null
     webkitCompassAccuracy: number | null
-    timestamp: number
+    timeStamp: number
 }
