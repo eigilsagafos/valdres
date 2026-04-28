@@ -1,0 +1,49 @@
+{
+    "name": "@valdres/browser-device-motion",
+    "version": "0.2.0-pre.28",
+    "license": "MIT",
+    "author": {
+        "name": "Eigil Sagafos"
+    },
+    "homepage": "https://valdres.dev",
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/eigilsagafos/valdres.git"
+    },
+    "type": "module",
+    "exports": {
+        ".": "./src/index.ts"
+    },
+    "files": [
+        "dist"
+    ],
+    "scripts": {
+        "build": "NODE_ENV=production bun build src/index.ts --outdir ./dist --packages external",
+        "build:types": "rm -rf dist/types && bun run tsc",
+        "dev": "bun run dev/server.ts",
+        "test": "bun test",
+        "test:ci": "bun test"
+    },
+    "devDependencies": {
+        "@happy-dom/global-registrator": "20.0.5",
+        "@react-three/drei": "10.7.7",
+        "@react-three/fiber": "9.6.0",
+        "@types/react": "19.1.12",
+        "@types/react-dom": "19.1.9",
+        "@types/three": "0.184.0",
+        "happy-dom": "20.0.5",
+        "react": "19.1.1",
+        "react-dom": "19.1.1",
+        "three": "0.184.0",
+        "typescript": "5.9.2",
+        "valdres": "0.2.0-pre.28",
+        "valdres-react": "0.2.0-pre.28"
+    },
+    "peerDependencies": {
+        "valdres": "0.2.0-pre.28"
+    },
+    "publishConfig": {
+        "access": "public",
+        "registry": "https://registry.npmjs.org/"
+    }
+}
