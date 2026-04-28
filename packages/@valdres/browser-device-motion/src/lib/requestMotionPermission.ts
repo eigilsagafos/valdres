@@ -30,9 +30,10 @@ export const requestMotionPermission = async (): Promise<PermissionValue> => {
         return value
     } catch {
         // Rejection means the call could not run (insecure context, missing
-        // user gesture, NotAllowedError, etc.) — NOT a user denial. Preserve
-        // the current permission state so callers can retry from a real
-        // gesture instead of locking the UI into a "denied" branch.
-        return permissionAtom.getSelf()
+        // user gesture, NotAllowedError, etc.) — NOT a user denial. Reset to
+        // "prompt" so callers can retry from a real gesture instead of
+        // locking the UI into a "denied" branch.
+        permissionAtom.setSelf("prompt")
+        return "prompt"
     }
 }
