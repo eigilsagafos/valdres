@@ -32,6 +32,7 @@ Object.defineProperties(lazyProto, {
 
 export type CreateStoreDataOptions = {
     batchUpdates?: boolean
+    schemaValidation?: boolean
 }
 
 export function createStoreData(id?: string, parent?: undefined, options?: CreateStoreDataOptions): StoreData
@@ -44,6 +45,9 @@ export function createStoreData(id?: string, parent?: StoreData, options?: Creat
     data.scopeValueIndex = new WeakMap()
     if (options?.batchUpdates) {
         data.batchUpdates = true
+    }
+    if (options?.schemaValidation !== undefined) {
+        data.schemaValidation = options.schemaValidation
     }
     if (parent) {
         data.parent = parent

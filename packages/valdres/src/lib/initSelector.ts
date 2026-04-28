@@ -20,6 +20,7 @@ import {
     propagateUpdatedAtoms,
 } from "./propagateUpdatedAtoms"
 import { setValueInData } from "./setValueInData"
+import { validateSchema } from "./validateSchema"
 
 export { isSuspendError } from "./asyncDependencyTracking"
 
@@ -275,6 +276,7 @@ export const handleSelectorResult = <Value>(
                 }
             }
 
+            resolved = validateSchema(selector.schema, resolved, data)
             // @ts-ignore
             setValueInData(selector, resolved, data)
             const dependents = data.stateDependents.get(selector)
@@ -300,7 +302,7 @@ export const handleSelectorResult = <Value>(
         // Sync result — mark as known-sync so subsequent evaluations
         // skip AbortController allocation on the hot path.
         data.abortControllers.set(selector, false)
-        return value
+        return validateSchema(selector.schema, value, data)
     }
 }
 

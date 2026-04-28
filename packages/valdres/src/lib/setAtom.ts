@@ -6,6 +6,7 @@ import { getState } from "./getState"
 import { propagateUpdatedAtoms } from "./propagateUpdatedAtoms"
 import { isFunction } from "./isFunction"
 import { setValueInData } from "./setValueInData"
+import { validateSchema } from "./validateSchema"
 
 const handlePromise = <Value>(
     atom: Atom<Value>,
@@ -28,6 +29,7 @@ const handlePromise = <Value>(
         .then(resolvedValue => {
             // Stale promise guard: if another set() overwrote us, bail
             if (data.values.get(atom) !== promise) return
+            resolvedValue = validateSchema(atom.schema, resolvedValue, data)
             setValueInData(atom, resolvedValue, data)
             if (atom.onSet && !skipOnSet) atom.onSet(resolvedValue, data)
             if (emptyAtomPromise) {
@@ -85,6 +87,7 @@ export const setAtom = <Value = any>(
     // Past the isPromiseLike branch newValue is guaranteed to be a plain
     // Value (TypeScript can't narrow out PromiseLike fully, so we restate it).
     let syncValue = newValue as Value
+    syncValue = validateSchema(atom.schema, syncValue, data)
     const areEqual = isPromiseLike(currentValue)
         ? currentValue === syncValue
         : atom.equal(currentValue, syncValue)
