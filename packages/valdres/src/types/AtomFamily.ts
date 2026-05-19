@@ -1,4 +1,5 @@
 import type { FamilyKey } from "../lib/familyKey"
+import type { IndexDescriptor } from "../lib/IndexDescriptor"
 import type { AtomFamilyAtom } from "./AtomFamilyAtom"
 import type { EqualFunc } from "./EqualFunc"
 
@@ -12,4 +13,5 @@ export type AtomFamily<
     name?: string
     mutable?: boolean
     __valdresAtomFamilyMap: Map<FamilyKey, AtomFamilyAtom<Value, Args>>
+    __valdresIndexes?: Set<IndexDescriptor>
 }

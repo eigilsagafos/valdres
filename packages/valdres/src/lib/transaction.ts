@@ -57,6 +57,12 @@ export class Transaction {
     private _selectorDependencies: any
     private _selectorCache: any
     private _atomMap: Map<any, any>
+    /** Families whose stored rendered array is stale because at least one
+     *  set/del touched the family during the txn but we deferred the
+     *  re-render. Flushed lazily on read and on commit. Per-set rendering
+     *  is O(N log N) and accumulates to O(N² log N) over a bulk-insert
+     *  transaction — deferring collapses it to O(N log N) total. */
+    private _dirtyFamilies: Set<AtomFamily<any, any>> | undefined
     constructor(
         data: StoreData,
         parentTransaction?: Transaction,
@@ -82,6 +88,14 @@ export class Transaction {
 
     private valueFromTxnOrData: GetValue = (state: State) => {
         if (this._atomMap.has(state)) {
+            if (
+                this._dirtyFamilies?.has(state as AtomFamily<any, any>)
+            ) {
+                const fresh = this.renderDirtyFamily(
+                    state as AtomFamily<any, any>,
+                )
+                if (fresh !== undefined) return fresh
+            }
             return this._atomMap.get(state)
         }
         if (this.data.values.has(state)) {
@@ -90,6 +104,22 @@ export class Transaction {
         if (this.parentTransaction) {
             return this.parentTransaction.valueFromTxnOrData(state)
         }
+    }
+
+    /** Render the freshly-current array for a dirty family, store it back
+     *  in `_atomMap`, and clear the dirty flag. Each txn owns its own
+     *  index caches; we invalidate them here right before re-render so
+     *  the rest of the codebase never has to reach across txn boundaries
+     *  to clear a child's stale state. */
+    private renderDirtyFamily(family: AtomFamily<any, any>): any {
+        const stored = this._atomMap.get(family)
+        if (!stored?.__index) return undefined
+        stored.__index.rendered = null
+        stored.__index.renderedArray = null
+        const fresh = renderAtomFamilyIndex(stored.__index)
+        this._atomMap.set(family, fresh)
+        this._dirtyFamilies?.delete(family)
+        return fresh
     }
 
     get: GetValue = (state: State<any>) => {
@@ -144,11 +174,15 @@ export class Transaction {
                 this.cloneFamilyIntoTxn(atom.family)
             }
             const index = this._atomMap.get(atom.family).__index
+            // Map.set on an existing key preserves insertion order. We want
+            // re-sets to move the atom to the end of the rendered list
+            // (matches the old timestamp-sort contract), so delete first.
+            if (index.created.has(atom)) index.created.delete(atom)
             index.created.set(atom, performance.now())
             index.deleted.delete(atom)
             index.rendered = null
             index.renderedArray = null
-            this.recursivelyUpdateAtomFamilyIndexes(atom.family)
+            this.recursivelyMarkFamilyDirty(atom.family)
         }
         return value
     }
@@ -164,13 +198,14 @@ export class Transaction {
             if (atom.family !== family) {
                 throw new Error("Atom does not belong to the provided family")
             }
+            if (index.created.has(atom)) index.created.delete(atom)
             index.created.set(atom, performance.now())
             if (index.deleted.has(atom)) index.deleted.delete(atom)
             this._atomMap.set(atom, value)
         }
         index.rendered = null
         index.renderedArray = null
-        this.recursivelyUpdateAtomFamilyIndexes(family)
+        this.recursivelyMarkFamilyDirty(family)
     }
 
     del = (atom: AtomFamilyAtom<any, any>) => {
@@ -183,8 +218,7 @@ export class Transaction {
         index.deleted.set(atom, performance.now())
         index.rendered = null
         index.renderedArray = null
-        this._atomMap.set(atom.family, renderAtomFamilyIndex(index))
-        this.recursivelyUpdateAtomFamilyIndexes(atom.family)
+        this.recursivelyMarkFamilyDirty(atom.family)
         if (this.data.values.has(atom)) {
             this.deleteSet.add(atom)
         }
@@ -241,6 +275,11 @@ export class Transaction {
     }
 
     commit = () => {
+        // Flush deferred family renders so setAtoms sees fresh arrays
+        // (the equality check in setAtoms compares against data.values
+        // — a stale array would falsely report no-change and skip
+        // propagation entirely).
+        this.flushDirtyFamilies()
         const initializedAtomsSet = new Set<Atom>()
         setAtoms(this._atomMap, this.data, initializedAtomsSet)
         if (this.deleteSet?.size) {
@@ -252,6 +291,14 @@ export class Transaction {
                 scopedTxn.commit()
             }
         }
+    }
+
+    private flushDirtyFamilies() {
+        if (!this._dirtyFamilies || this._dirtyFamilies.size === 0) return
+        // Snapshot keys because `renderDirtyFamily` deletes from
+        // `_dirtyFamilies` as it goes.
+        const families = [...this._dirtyFamilies]
+        for (const family of families) this.renderDirtyFamily(family)
     }
 
     private get selectorCache() {
@@ -309,18 +356,18 @@ export class Transaction {
         this._atomMap.set(family, renderAtomFamilyIndex(clonedIndex))
     }
 
-    private recursivelyUpdateAtomFamilyIndexes(
+    /** Mark a family's stored array stale in this txn and every scoped
+     *  child txn. The actual re-render is deferred until someone reads
+     *  the family (`renderDirtyFamily` via `valueFromTxnOrData`) or
+     *  commits (`flushDirtyFamilies`). */
+    private recursivelyMarkFamilyDirty(
         atomFamily: AtomFamily<any, any>,
     ) {
-        const currentIndex = this._atomMap.get(atomFamily).__index
-        currentIndex.rendered = null
-        currentIndex.renderedArray = null
-        const updatedValue = renderAtomFamilyIndex(currentIndex)
-        this._atomMap.set(atomFamily, updatedValue)
-
+        if (!this._dirtyFamilies) this._dirtyFamilies = new Set()
+        this._dirtyFamilies.add(atomFamily)
         if (this._scopedTransactions?.size) {
             for (const [, scopedTxn] of this._scopedTransactions) {
-                scopedTxn.recursivelyUpdateAtomFamilyIndexes(atomFamily)
+                scopedTxn.recursivelyMarkFamilyDirty(atomFamily)
             }
         }
     }
