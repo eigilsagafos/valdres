@@ -1,5 +1,11 @@
 import { isPromiseLike } from "../utils/isPromiseLike"
 
+/** Sentinel returned when the recursive stringify blows the stack — most
+ *  commonly a cyclic reference graph. Two distinct cyclic objects collide
+ *  to the same sentinel; if you need to distinguish them, give them
+ *  distinguishing primitive fields outside the cycle. */
+const CIRCULAR = "__CIRCULAR__"
+
 const stableStringifyRecurse = (x: any, key?: string): string => {
     // A optimization to avoid the more expensive JSON.stringify() for simple strings
     // This may lose protection for u2028 and u2029, though.
@@ -55,11 +61,11 @@ const stableStringifyRecurse = (x: any, key?: string): string => {
     // For built-in Maps, sort the keys in a stable order instead of the
     // default insertion order.  Support non-string keys.
     if (x instanceof Map) {
-        const obj = {}
+        const obj: Record<string, unknown> = {}
         for (const [k, v] of x) {
-            // Stringify will escape any nested quotes
-            // @ts-ignore
-            obj[typeof k === "string" ? k : stringify(k, opt)] = v
+            const objKey =
+                typeof k === "string" ? k : stableStringifyRecurse(k)
+            obj[objKey] = v
         }
         return stableStringifyRecurse(obj, key)
     }
@@ -102,6 +108,7 @@ const stableStringifyRecurse = (x: any, key?: string): string => {
         )
         .join(",")}}`
 }
+
 export const stableStringify = (x: any): string | number | boolean => {
     if (
         typeof x === "string" ||
@@ -110,5 +117,23 @@ export const stableStringify = (x: any): string | number | boolean => {
     )
         return x
 
-    return stableStringifyRecurse(x)
+    try {
+        return stableStringifyRecurse(x)
+    } catch (error) {
+        // Mirrors the cycle-handling in `equal()`: stack-overflow from a
+        // cyclic reference graph blows up the recursion. Catch and fall
+        // back to a sentinel so callers (family keying, index term keys)
+        // don't crash. Engines name the error differently:
+        //   chrome/safari: RangeError "Maximum call stack size exceeded"
+        //   firefox:       InternalError "too much recursion"
+        //   edge:          Error "Out of stack space"
+        // — so match on message rather than constructor.
+        if (
+            error instanceof Error &&
+            /stack|recursion/i.test(error.message)
+        ) {
+            return CIRCULAR
+        }
+        throw error
+    }
 }

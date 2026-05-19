@@ -11,6 +11,7 @@ import { isAtom } from "../utils/isAtom"
 import { isGlobalAtom } from "../utils/isGlobalAtom"
 import { isSelector } from "../utils/isSelector"
 import { resolveReactive } from "../utils/resolveReactive"
+import { materializeDirtyFamily } from "./atomFamilyIndex"
 import { createStoreData } from "./createStoreData"
 import { deleteFamilyAtom } from "./deleteFamilyAtom"
 import { getState } from "./getState"
@@ -100,6 +101,9 @@ export function storeFromStoreData(
     // --- get ---
     const getDefault: GetValue = (state: State) => {
         if (data.values.has(state)) {
+            if (data.dirtyFamilies?.has(state as WeakKey)) {
+                return materializeDirtyFamily(state as WeakKey, data)
+            }
             if (!isCachedValueStale(state, data)) {
                 return data.values.get(state)
             }

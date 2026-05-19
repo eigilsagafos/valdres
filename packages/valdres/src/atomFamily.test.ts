@@ -414,6 +414,168 @@ describe("atomFamily", () => {
         ])
     })
 
+    test("re-setting an existing atom moves it to the end of the rendered list", () => {
+        const s = store()
+        const userFamily = atomFamily<string, [number]>()
+        const a = userFamily(1)
+        const b = userFamily(2)
+        const c = userFamily(3)
+
+        s.set(a, "Alice")
+        s.set(b, "Bob")
+        s.set(c, "Charlie")
+        expect(s.get(userFamily)).toStrictEqual([a, b, c])
+
+        // Re-set `a`: same atom reference, new value. The contract is
+        // last-touched-last, so `a` should move to the end.
+        s.set(a, "Alice v2")
+        expect(s.get(userFamily)).toStrictEqual([b, c, a])
+
+        // Re-setting in the middle again pushes that one to the end too.
+        s.set(b, "Bob v2")
+        expect(s.get(userFamily)).toStrictEqual([c, a, b])
+    })
+
+    test("del then set behaves like a fresh insert (atom lands at end)", () => {
+        const s = store()
+        const userFamily = atomFamily<string, [number]>()
+        const a = userFamily(1)
+        const b = userFamily(2)
+        const c = userFamily(3)
+
+        s.set(a, "Alice")
+        s.set(b, "Bob")
+        s.set(c, "Charlie")
+
+        s.del(a)
+        expect(s.get(userFamily)).toStrictEqual([b, c])
+
+        s.set(a, "Alice again")
+        expect(s.get(userFamily)).toStrictEqual([b, c, a])
+    })
+
+    test("re-set inside a transaction moves the atom to the end at commit", () => {
+        const s = store()
+        const userFamily = atomFamily<string, [number]>()
+        const a = userFamily(1)
+        const b = userFamily(2)
+        const c = userFamily(3)
+
+        s.set(a, "Alice")
+        s.set(b, "Bob")
+        s.set(c, "Charlie")
+
+        s.txn(({ set }) => {
+            set(a, "Alice v2")
+        })
+        expect(s.get(userFamily)).toStrictEqual([b, c, a])
+    })
+
+    test("re-set inside a transaction is visible to a same-txn read", () => {
+        // Pins the lazy-render path in `valueFromTxnOrData`: when set marks
+        // the family dirty and a subsequent get within the same txn must
+        // re-render and see the new order.
+        const s = store()
+        const userFamily = atomFamily<string, [number]>()
+        const a = userFamily(1)
+        const b = userFamily(2)
+        const c = userFamily(3)
+
+        s.set(a, "Alice")
+        s.set(b, "Bob")
+        s.set(c, "Charlie")
+
+        let midTxnOrder: any[] = []
+        s.txn(txn => {
+            txn.set(a, "Alice v2")
+            midTxnOrder = txn.get(userFamily) as any[]
+        })
+        expect(midTxnOrder).toStrictEqual([b, c, a])
+        expect(s.get(userFamily)).toStrictEqual([b, c, a])
+    })
+
+    test("mixed set/del inside a transaction renders correctly on read and commit", () => {
+        const s = store()
+        const userFamily = atomFamily<string, [number]>()
+        const a = userFamily(1)
+        const b = userFamily(2)
+        const c = userFamily(3)
+
+        s.set(a, "Alice")
+        s.set(b, "Bob")
+        s.set(c, "Charlie")
+
+        let midTxnOrder: any[] = []
+        s.txn(txn => {
+            txn.del(a)
+            txn.set(c, "Charlie v2")
+            midTxnOrder = txn.get(userFamily) as any[]
+        })
+        expect(midTxnOrder).toStrictEqual([b, c])
+        expect(s.get(userFamily)).toStrictEqual([b, c])
+    })
+
+    test("scoped store sees parent re-set ordering reflected in its rendered view", () => {
+        const root = store()
+        const child = root.scope("child")
+        const userFamily = atomFamily<string, [number]>()
+        const a = userFamily(1)
+        const b = userFamily(2)
+        const c = userFamily(3)
+
+        root.set(a, "Alice")
+        root.set(b, "Bob")
+        root.set(c, "Charlie")
+        expect(child.get(userFamily)).toStrictEqual([a, b, c])
+
+        // Re-set in root — the child's view (a sorted merge of parent +
+        // local) must reflect the new order too.
+        root.set(a, "Alice v2")
+        expect(root.get(userFamily)).toStrictEqual([b, c, a])
+        expect(child.get(userFamily)).toStrictEqual([b, c, a])
+    })
+
+    test("scoped txn read sees parent-modified family ordering", () => {
+        // Pins the scope branch of the lazy render: parent txn writes
+        // mark the family dirty in BOTH the parent and the child txn
+        // (via recursivelyMarkFamilyDirty), and a mid-txn read from
+        // the scoped txn must observe the live order.
+        const root = store("root")
+        root.scope("child")
+        const userFamily = atomFamily<string, [number]>()
+        const a = userFamily(1)
+        const b = userFamily(2)
+
+        let childMidTxn: any[] = []
+        root.txn(rootTxn => {
+            rootTxn.set(a, "Alice")
+            rootTxn.set(b, "Bob")
+            rootTxn.scope("child", childTxn => {
+                childMidTxn = childTxn.get(userFamily) as any[]
+            })
+        })
+        expect(childMidTxn).toStrictEqual([a, b])
+        expect(root.scope("child").get(userFamily)).toStrictEqual([a, b])
+    })
+
+    test("txn flushes deferred render at commit so post-commit subscribers see changes", () => {
+        // Pins the commit-time flushDirtyFamilies path: without flushing
+        // the stale rendered array would equal-compare to data.values
+        // and skip propagation, leaving subscribers silent.
+        const s = store()
+        const userFamily = atomFamily<string, [number]>()
+        const a = userFamily(1)
+
+        const cb = mock(() => {})
+        s.sub(userFamily, cb)
+
+        s.txn(({ set }) => {
+            set(a, "Alice")
+        })
+        // family subscriber fires for each affected familyArg
+        expect(cb).toHaveBeenCalledTimes(1)
+    })
+
     test("delete in nested store handled correctly", () => {
         const rootStore = store()
         const nestedStore = rootStore.scope("nested")
@@ -442,6 +604,51 @@ describe("atomFamily", () => {
         expect(rootStore.get(userFamily)).toStrictEqual([])
         expect(nestedStore.get(userFamily)).toStrictEqual([user1atom])
         expect(nestedNestedStore.get(userFamily)).toStrictEqual([user1atom])
+    })
+
+    describe("root-level delete cleans up the index for GC", () => {
+        test("store.del removes the atom from index.created (no tombstone leak)", () => {
+            // Pre-fix: deleted atoms stayed in BOTH `index.created` and
+            // `index.deleted` (tombstone). At root that's pure leak —
+            // `index.created` already holds a strong ref via the Map key
+            // and there's no parent chain to shadow against.
+            const s = store()
+            const userFamily = atomFamily<{ id: number }, [number]>()
+            const a = userFamily(1)
+            s.set(a, { id: 1 })
+
+            const index = s.data.values.get(userFamily).__index
+            expect(index.created.has(a)).toBe(true)
+
+            s.del(a)
+            // After root-level delete the atom should be gone from
+            // `index.created` entirely (not just shadowed by `deleted`),
+            // so nothing pins it on the family side.
+            expect(index.created.has(a)).toBe(false)
+            // And the rendered view is empty.
+            expect(s.get(userFamily)).toEqual([])
+        })
+
+        test("scope-level delete keeps the tombstone (it shadows the parent)", () => {
+            // The tombstone is load-bearing in a scope — it's the only
+            // way to filter out an atom the parent still has. Don't
+            // optimize it away here.
+            const root = store("root")
+            const child = root.scope("child")
+            const userFamily = atomFamily<{ id: number }, [number]>()
+            const a = userFamily(1)
+            root.set(a, { id: 1 })
+
+            // Materialize the child's index so we can inspect it
+            child.get(userFamily)
+            child.del(a)
+            expect(child.get(userFamily)).toEqual([])
+            expect(root.get(userFamily)).toEqual([a])
+
+            // Scope's deleted set still has the tombstone to shadow root.
+            const childIndex = child.data.values.get(userFamily).__index
+            expect(childIndex.deleted.has(a)).toBe(true)
+        })
     })
 
     test("all family atom subscribers are notified even if one throws", () => {

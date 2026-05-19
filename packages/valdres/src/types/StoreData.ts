@@ -14,6 +14,10 @@ export type RootStoreData = {
      *  maxAge revalidation when the atom is unmounted (no active timer
      *  to keep the cache fresh). Only populated for atoms with `maxAge`. */
     lastValueWriteAt: WeakMap<WeakKey, number>
+    /** Families whose stored rendered array is stale because writes have
+     *  mutated the underlying index since the last render. Materialized
+     *  lazily on read so bulk no-txn writes stay O(N) instead of O(N²). */
+    dirtyFamilies?: Set<WeakKey>
     storeRef?: Store
     scopes: Map<string, ScopedStoreData>
     batchUpdates?: boolean

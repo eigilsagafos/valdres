@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>atomFamilySearch demo</title>
+        <style>
+            :root {
+                color-scheme: light dark;
+                --bg: #fafafa;
+                --fg: #111;
+                --muted: #888;
+                --border: #8884;
+                --accent: #5b8def;
+                --mark: #fce16a;
+                --score: #5b8def;
+                font-family:
+                    system-ui,
+                    -apple-system,
+                    "Segoe UI",
+                    Roboto,
+                    sans-serif;
+            }
+            @media (prefers-color-scheme: dark) {
+                :root {
+                    --bg: #15161a;
+                    --fg: #e8e8e8;
+                    --muted: #999;
+                    --mark: #806413;
+                }
+            }
+            * {
+                box-sizing: border-box;
+            }
+            body {
+                background: var(--bg);
+                color: var(--fg);
+                max-width: 760px;
+                margin: 2rem auto;
+                padding: 0 1rem 4rem;
+                line-height: 1.55;
+            }
+            h1 {
+                margin: 0 0 0.25rem;
+                font-size: 1.6rem;
+                letter-spacing: -0.02em;
+            }
+            .lede {
+                color: var(--muted);
+                margin: 0 0 1.5rem;
+                font-size: 0.95rem;
+            }
+            .search-row {
+                display: flex;
+                gap: 0.5rem;
+                align-items: center;
+                margin-bottom: 1rem;
+            }
+            .search-row input {
+                flex: 1;
+                font: inherit;
+                padding: 0.65rem 0.9rem;
+                border-radius: 8px;
+                border: 1px solid var(--border);
+                background: transparent;
+                color: inherit;
+                outline: none;
+            }
+            .search-row input:focus {
+                border-color: var(--accent);
+            }
+            .clear-btn {
+                font: inherit;
+                background: transparent;
+                color: var(--muted);
+                border: 1px solid var(--border);
+                border-radius: 8px;
+                padding: 0.55rem 0.8rem;
+                cursor: pointer;
+            }
+            .clear-btn:hover {
+                color: var(--fg);
+            }
+            .config {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 0.5rem 1rem;
+                font-size: 0.9rem;
+                margin-bottom: 1rem;
+                padding: 0.75rem 1rem;
+                border: 1px solid var(--border);
+                border-radius: 8px;
+            }
+            .config-group {
+                display: flex;
+                align-items: center;
+                gap: 0.5rem;
+            }
+            .config label {
+                user-select: none;
+                cursor: pointer;
+            }
+            .config label.disabled {
+                opacity: 0.5;
+                cursor: not-allowed;
+            }
+            .meta {
+                color: var(--muted);
+                font-size: 0.85rem;
+                margin: 0.5rem 0 1rem;
+            }
+            .result {
+                border-top: 1px solid var(--border);
+                padding: 0.9rem 0;
+            }
+            .result-head {
+                display: flex;
+                align-items: baseline;
+                gap: 0.75rem;
+                margin-bottom: 0.2rem;
+            }
+            .title {
+                font-weight: 600;
+                font-size: 1.05rem;
+            }
+            .score {
+                font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+                font-size: 0.8rem;
+                color: var(--score);
+            }
+            .matched {
+                font-size: 0.8rem;
+                color: var(--muted);
+                margin-left: auto;
+            }
+            .matched code {
+                background: var(--border);
+                padding: 0.05rem 0.4rem;
+                border-radius: 4px;
+                font-size: 0.75rem;
+                margin-left: 0.25rem;
+            }
+            .body {
+                font-size: 0.92rem;
+                color: var(--fg);
+                opacity: 0.9;
+                margin: 0;
+            }
+            mark {
+                background: var(--mark);
+                color: inherit;
+                padding: 0 0.1rem;
+                border-radius: 2px;
+            }
+            .empty {
+                color: var(--muted);
+                padding: 1rem 0;
+                font-style: italic;
+            }
+        </style>
+    </head>
+    <body>
+        <h1>atomFamilySearch</h1>
+        <p class="lede">
+            Reactive inverted-index search over a valdres
+            <code>atomFamily</code>. Try typos like
+            <code>javascrpit</code>, prefixes like <code>typ</code>, or
+            multi-word phrases like <code>memory safe</code>.
+        </p>
+        <div id="root"></div>
+
+        <script>
+            // Skip valdres' dev-mode deepFreeze for snappier demo
+            // performance without forcing the bundler into prod mode
+            // (which conflicts with HMR / React Refresh).
+            globalThis.__valdres_dev_skip_freeze__ = true
+            window.process = window.process || { env: { VALDRES_VERSION: "demo" } }
+        </script>
+        <script type="module" src="./index.tsx"></script>
+    </body>
+</html>

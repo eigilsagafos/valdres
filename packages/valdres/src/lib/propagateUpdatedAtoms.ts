@@ -13,6 +13,7 @@ import {
     addFamilyAtomsToSet,
     deleteFamilyAtomsFromSet,
 } from "./atomFamilyIndex"
+import type { IndexHookResult } from "./IndexDescriptor"
 import {
     evaluateSelector,
     handleSelectorResult,
@@ -152,6 +153,7 @@ export const propagateDeletedAtoms = (
             families.get(atom.family).add(atom)
         }
     }
+    const indexAccum: IndexHookResult = {}
     if (families.size > 0) {
         for (const [family, familyAtoms] of families) {
             addSetToSet(data.stateDependents.get(family), selectors)
@@ -159,10 +161,37 @@ export const propagateDeletedAtoms = (
             if (familyAtoms.size === 0)
                 throw new Error("Should not be possible")
 
-            deleteFamilyAtomsFromSet(family, familyAtoms, data, timestamp)
+            deleteFamilyAtomsFromSet(
+                family,
+                familyAtoms,
+                data,
+                timestamp,
+                indexAccum,
+            )
+        }
+        if (indexAccum.local) {
+            for (const dirtyAtom of indexAccum.local) {
+                addSetToSet(data.stateDependents.get(dirtyAtom), selectors)
+                addSetToSet(data.subscriptions.get(dirtyAtom), subscriptions)
+            }
         }
     }
     propagateDirtySelectors(atoms, selectors, data, subscriptions, families)
+    if (indexAccum.cross) {
+        for (const [scopeData, scopeAtoms] of indexAccum.cross) {
+            propagateUpdatedAtoms(
+                [...scopeAtoms],
+                scopeData,
+                undefined,
+                undefined,
+                false,
+                timestamp,
+                false,
+                false,
+                true,
+            )
+        }
+    }
     // Propagate family changes into child scopes. deleteFamilyAtomsFromSet
     // already updated the scope's family index via recursivelyUpdateIndexes,
     // but selectors in those scopes that depend on the family still need to
@@ -205,6 +234,7 @@ export const propagateUpdatedAtoms = (
     timestamp = performance.now(),
     selectorsOnly = false,
     isInitOnly = false,
+    skipScopeRecurse = false,
 ) => {
     // Fast path: single non-family atom with no dependent selectors and no
     // scopes can skip the full graph walk entirely and just notify subscribers.
@@ -252,6 +282,7 @@ export const propagateUpdatedAtoms = (
         }
     }
 
+    const indexAccum: IndexHookResult = {}
     if (families.size > 0) {
         for (const [family, familyAtoms] of families) {
             addSetToSet(data.stateDependents.get(family), selectors)
@@ -259,13 +290,40 @@ export const propagateUpdatedAtoms = (
             if (familyAtoms.size === 0)
                 throw new Error("Should not be possible")
 
-            addFamilyAtomsToSet(family, familyAtoms, data, timestamp)
+            addFamilyAtomsToSet(
+                family,
+                familyAtoms,
+                data,
+                timestamp,
+                indexAccum,
+            )
+        }
+        if (indexAccum.local) {
+            for (const dirtyAtom of indexAccum.local) {
+                addSetToSet(data.stateDependents.get(dirtyAtom), selectors)
+                addSetToSet(data.subscriptions.get(dirtyAtom), subscriptions)
+            }
         }
     }
 
     if (!isRecursive) {
         propagateDirtySelectors(atoms, selectors, data, subscriptions, families, isInitOnly)
-        if (data.scopes && data.scopes.size > 0) {
+        if (indexAccum.cross) {
+            for (const [scopeData, scopeAtoms] of indexAccum.cross) {
+                propagateUpdatedAtoms(
+                    [...scopeAtoms],
+                    scopeData,
+                    undefined,
+                    undefined,
+                    false,
+                    timestamp,
+                    false,
+                    false,
+                    true,
+                )
+            }
+        }
+        if (!skipScopeRecurse && data.scopes && data.scopes.size > 0) {
             if (atoms.length === 1) {
                 // Fast path for single-atom updates (most common case)
                 const atom = atoms[0]
