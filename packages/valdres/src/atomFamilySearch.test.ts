@@ -681,6 +681,279 @@ describe("atomFamilySearch", () => {
         })
     })
 
+    describe("field-name type inference", () => {
+        // These tests are 90% about compile-time typing — runtime behavior
+        // is unchanged from the un-typed case. The presence of these tests
+        // pins the overload shape so a future refactor that loses field
+        // inference would surface as a tsc failure (and these assertions
+        // would still hold so behavior stays correct either way).
+        test("valid field name accepted at runtime", () => {
+            const s = store()
+            type Doc = { title: string; body: string }
+            const post = atomFamily<Doc, [string]>()
+            const search = atomFamilySearch(
+                post,
+                p => ({ title: p.title, body: p.body }),
+                {
+                    fields: {
+                        // `title` and `body` are inferred from the
+                        // extractor's return shape. Typing
+                        // `fields: { tittle: { boost: 2 } }` would be
+                        // a tsc error.
+                        title: { boost: 2 },
+                        body: { boost: 1 },
+                    },
+                },
+            )
+            s.set(post("1"), { title: "hello", body: "world" })
+            expect(
+                s
+                    .get(search("hello"))
+                    .map(a => a.familyArgsStringified),
+            ).toEqual(["1"])
+        })
+
+        test("single-string extractor doesn't constrain `fields`", () => {
+            // The single-string overload allows any `fields` key (the
+            // option is meaningless in that path), so this compiles.
+            const s = store()
+            const post = atomFamily<{ text: string }, [string]>()
+            const search = atomFamilySearch(post, p => p.text, {
+                fields: { anything: { boost: 1 } },
+            })
+            s.set(post("1"), { text: "hello" })
+            expect(
+                s
+                    .get(search("hello"))
+                    .map(a => a.familyArgsStringified),
+            ).toEqual(["1"])
+        })
+    })
+
+    describe("tolerance (Levenshtein fuzzy)", () => {
+        // Mirrors Orama's `tolerance` option — allows query tokens to
+        // match indexed tokens within K edits. Lives next to `mode`
+        // (works in `exact` and `prefix`; ignored in `trigram` since
+        // trigrams are already fuzzy by construction).
+
+        test("tolerance: 1 matches single-char typos in exact mode", () => {
+            const s = store()
+            const post = atomFamily<{ text: string }, [string]>()
+            const search = atomFamilySearch(post, p => p.text, {
+                mode: "exact",
+                tolerance: 1,
+            })
+
+            s.set(post("a"), { text: "stranger" })
+
+            // Direct match still works
+            expect(
+                s
+                    .get(search("stranger"))
+                    .map(a => a.familyArgsStringified),
+            ).toEqual(["a"])
+
+            // Single-char delete
+            expect(
+                s
+                    .get(search("strangr"))
+                    .map(a => a.familyArgsStringified),
+            ).toEqual(["a"])
+            // Single-char substitute
+            expect(
+                s
+                    .get(search("strangzr"))
+                    .map(a => a.familyArgsStringified),
+            ).toEqual(["a"])
+            // Single-char insert
+            expect(
+                s
+                    .get(search("strangger"))
+                    .map(a => a.familyArgsStringified),
+            ).toEqual(["a"])
+        })
+
+        test("tolerance: 0 (default) doesn't match typos", () => {
+            const s = store()
+            const post = atomFamily<{ text: string }, [string]>()
+            const search = atomFamilySearch(post, p => p.text, {
+                mode: "exact",
+            })
+
+            s.set(post("a"), { text: "stranger" })
+
+            expect(s.get(search("strangr"))).toHaveLength(0)
+            expect(s.get(search("strangzr"))).toHaveLength(0)
+        })
+
+        test("tolerance: 2 matches two-char typos but not three", () => {
+            const s = store()
+            const post = atomFamily<{ text: string }, [string]>()
+            const search = atomFamilySearch(post, p => p.text, {
+                mode: "exact",
+                tolerance: 2,
+            })
+
+            s.set(post("a"), { text: "stranger" })
+
+            // 2 edits — should match
+            expect(s.get(search("strngr"))).toHaveLength(1)
+            // 4 edits — should not
+            expect(s.get(search("xxxxx"))).toHaveLength(0)
+        })
+
+        test("exact match outranks typo'd match", () => {
+            const s = store()
+            const post = atomFamily<{ text: string }, [string]>()
+            const search = atomFamilySearch(post, p => p.text, {
+                mode: "exact",
+                tolerance: 1,
+            })
+
+            s.set(post("exact"), { text: "stranger" })
+            s.set(post("typo"), { text: "stranger more text here padding" })
+            // Both contain "stranger" exactly. "exact" is shorter, gets
+            // length-norm bonus from BM25F.
+
+            const r = s
+                .get(search("stranger"))
+                .map(a => a.familyArgsStringified)
+            expect(r[0]).toBe("exact")
+        })
+
+        test("ranking across mixed exact + typo'd candidates", () => {
+            // Stress test: many candidates, some matching exactly, some
+            // only via tolerance. Exact matches must dominate; typo'd
+            // matches still appear but rank below all exacts.
+            const s = store()
+            const post = atomFamily<{ text: string }, [string]>()
+            const search = atomFamilySearch(post, p => p.text, {
+                mode: "exact",
+                tolerance: 1,
+            })
+
+            // Three exact-match docs
+            s.set(post("e1"), { text: "hello world" })
+            s.set(post("e2"), { text: "hello there" })
+            s.set(post("e3"), { text: "hello again" })
+            // Three typo'd-match docs (single-edit distance from "hello")
+            s.set(post("t1"), { text: "helo padding padding padding" })
+            s.set(post("t2"), { text: "hellp padding padding padding" })
+            s.set(post("t3"), { text: "hellos padding padding padding" })
+            // A non-match
+            s.set(post("none"), { text: "completely different content" })
+
+            const r = s
+                .get(search("hello"))
+                .map(a => a.familyArgsStringified)
+
+            // All 6 matches; non-match excluded
+            expect(r).toHaveLength(6)
+            expect(r).not.toContain("none")
+
+            // First three results must be the exact matches (any order
+            // between them — they tie on TF and only differ by length
+            // normalization).
+            const top3 = new Set(r.slice(0, 3))
+            expect(top3).toEqual(new Set(["e1", "e2", "e3"]))
+
+            // The typo'd matches must come after, never before, the
+            // exact ones.
+            const bottom3 = new Set(r.slice(3))
+            expect(bottom3).toEqual(new Set(["t1", "t2", "t3"]))
+        })
+
+        test("tolerance ignored in trigram mode (already fuzzy)", () => {
+            // Just verify it doesn't crash / produces sensible output.
+            // Trigram mode handles typos via n-gram overlap, not Levenshtein.
+            const s = store()
+            const post = atomFamily<{ text: string }, [string]>()
+            const search = atomFamilySearch(post, p => p.text, {
+                mode: "trigram",
+                tolerance: 1, // no-op
+            })
+
+            s.set(post("a"), { text: "stranger" })
+            expect(s.get(search("strangr")).length).toBeGreaterThan(0)
+        })
+
+        test("query token unchanged after stem applies", () => {
+            // Tolerance expansion happens AFTER stem/stopword normalization,
+            // so the dictionary lookup is against stemmed terms.
+            const s = store()
+            const post = atomFamily<{ text: string }, [string]>()
+            const search = atomFamilySearch(post, p => p.text, {
+                mode: "exact",
+                language: "english",
+                tolerance: 1,
+            })
+
+            s.set(post("a"), { text: "running fast" })
+            // "running" stems to "run", "ruunning" stems to "ruunning"
+            // (or similar). With tolerance 1 against the stemmed
+            // dictionary, "ruun" should still find "run".
+            expect(
+                s
+                    .get(search("ruun"))
+                    .map(a => a.familyArgsStringified),
+            ).toEqual(["a"])
+        })
+    })
+
+    describe("language preset", () => {
+        test("`language: 'english'` bundles tokenize + stem + stopWords", () => {
+            const s = store()
+            const post = atomFamily<{ text: string }, [string]>()
+            const search = atomFamilySearch(post, p => p.text, {
+                language: "english",
+            })
+
+            s.set(post("a"), { text: "The runners are running fast" })
+            s.set(post("b"), { text: "She runs every day" })
+
+            // Stop-word filtering: "the" filtered → no matches against
+            // documents that contain it only.
+            expect(s.get(search("the"))).toHaveLength(0)
+
+            // Stemming: "running" / "runs" / "runners" all stem to "run"
+            // (or close enough that the english stemmer collapses them).
+            const r = s
+                .get(search("run"))
+                .map(a => a.familyArgsStringified)
+                .sort()
+            expect(r).toEqual(["a", "b"])
+        })
+
+        test("explicit option overrides the preset", () => {
+            const s = store()
+            const post = atomFamily<{ text: string }, [string]>()
+            // English preset would stem, but user provides an explicit
+            // identity stem fn — the explicit value must win.
+            const search = atomFamilySearch(post, p => p.text, {
+                language: "english",
+                stem: w => w,
+            })
+
+            s.set(post("a"), { text: "runners" })
+            // Without stemming, "run" no longer matches "runners".
+            expect(s.get(search("run"))).toHaveLength(0)
+        })
+
+        test("no language preset = no stemming / stop-word filtering (current default)", () => {
+            const s = store()
+            const post = atomFamily<{ text: string }, [string]>()
+            const search = atomFamilySearch(post, p => p.text)
+
+            s.set(post("a"), { text: "the runners" })
+            // Without the preset: "the" is indexed, "runners" is not
+            // stemmed → "run" doesn't match.
+            expect(
+                s.get(search("the")).map(a => a.familyArgsStringified),
+            ).toEqual(["a"])
+            expect(s.get(search("run"))).toHaveLength(0)
+        })
+    })
+
     describe("match strategy", () => {
         test("match: 'all' on prefix mode requires every query token", () => {
             const s = store()

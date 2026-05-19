@@ -127,13 +127,27 @@ const time = async (
     return { name, ms: median }
 }
 
+// Use the field-aware extractor so BM25F has per-field stats to work
+// with — title and body each contribute their own TF and length to the
+// score, with title boosted 2× (mirroring the Orama / MiniSearch defaults
+// the head-to-head compares against).
+const valdresFieldExtract = (d: Doc) => ({
+    title: d.title,
+    body: d.body,
+})
+const valdresFields = {
+    title: { boost: 2 },
+    body: { boost: 1 },
+}
+
 const buildValdresTrigram = (docs: Doc[]) => {
     const s = store()
     const post = atomFamily<Doc, [string]>(null, { name: "doc" })
-    atomFamilySearch(post, d => `${d.title} ${d.body}`, {
+    atomFamilySearch(post, valdresFieldExtract, {
         mode: "trigram",
         minMatch: 0.4,
         limit: 25,
+        fields: valdresFields,
     })
     s.txn(({ set }) => {
         for (const d of docs) set(post(d.id), d)
@@ -143,10 +157,11 @@ const buildValdresTrigram = (docs: Doc[]) => {
 const buildValdresTrigramNoTxn = (docs: Doc[]) => {
     const s = store()
     const post = atomFamily<Doc, [string]>(null, { name: "doc" })
-    atomFamilySearch(post, d => `${d.title} ${d.body}`, {
+    atomFamilySearch(post, valdresFieldExtract, {
         mode: "trigram",
         minMatch: 0.4,
         limit: 25,
+        fields: valdresFields,
     })
     for (const d of docs) s.set(post(d.id), d)
 }
@@ -154,7 +169,7 @@ const buildValdresTrigramNoTxn = (docs: Doc[]) => {
 const buildValdresExact = (docs: Doc[]) => {
     const s = store()
     const post = atomFamily<Doc, [string]>(null, { name: "doc" })
-    atomFamilySearch(post, d => `${d.title} ${d.body}`)
+    atomFamilySearch(post, valdresFieldExtract, { fields: valdresFields })
     s.txn(({ set }) => {
         for (const d of docs) set(post(d.id), d)
     })

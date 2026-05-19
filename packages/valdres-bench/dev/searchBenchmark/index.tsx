@@ -169,23 +169,37 @@ const valdresLib: BenchLib = {
     build(docs) {
         const s = store()
         const doc = atomFamily<Doc, [string]>(null, { name: "bench-doc" })
+        // Field-aware extractor so BM25F has per-field stats. Title is
+        // boosted 2× to match how MiniSearch / Orama configure their
+        // defaults for movie-corpus queries.
+        //
+        // `mode: "prefix"` matches the algorithm class Orama / MiniSearch
+        // use — index whole tokens with their prefixes, so `"str"` finds
+        // "stranger" cleanly. Trigram mode tolerates typos but ranks
+        // worse on prefix-style queries (length norm dominates the
+        // small boost from extra n-gram matches) and is markedly slower
+        // because each query token expands to ~5–10 trigram lookups.
+        // For typo tolerance, swap to `mode: "trigram"` and accept the
+        // ranking + speed trade-off.
         const search = atomFamilySearch(
             doc,
-            d => `${d.title} ${d.body}`,
+            d => ({ title: d.title, body: d.body }),
             {
-                mode: "trigram",
-                // Match the other libraries' defaults: no stopword
-                // filtering, no stemming. This keeps "the" / "of"
-                // searchable (other libs index them; we should too for
-                // an apples-to-apples comparison).
-                // minMatch caps trigram fuzzy looseness so a query like
-                // "aaaa" doesn't return every doc whose words start with
-                // 'a' (boundary trigrams are very common).
-                minMatch: 0.4,
-                // Top-K cap, mirrors FlexSearch's default 25 and Orama's
-                // limit: 25 below — without it, short queries return long
-                // tails of low-score trigram-overlap matches.
-                limit: 25,
+                mode: "prefix",
+                // `tolerance: 1` enables Levenshtein-style typo
+                // tolerance (mirrors Orama's `tolerance` parameter).
+                // A query like `"strangr"` finds "Stranger"; a query
+                // like `"eternl"` finds "Eternal". Per-query token
+                // walks the term dictionary, so this adds a few ms of
+                // query latency.
+                tolerance: 1,
+                // No `limit` — valdres' `limit` caps the result count
+                // (not just returned rows); we want apples-to-apples
+                // match counts with Orama / MiniSearch.
+                fields: {
+                    title: { boost: 2 },
+                    body: { boost: 1 },
+                },
                 name: "bench",
             },
         )
@@ -209,7 +223,7 @@ const valdresLib: BenchLib = {
         return {
             time,
             count: results.length,
-            results: results.slice(0, 5).map(r => {
+            results: results.slice(0, 50).map(r => {
                 const v = inst.store.get(r.atom) as Doc | null
                 return {
                     id: String(r.atom.familyArgs[0]),
@@ -244,7 +258,7 @@ const minisearchLib: BenchLib = {
         return {
             time,
             count: results.length,
-            results: results.slice(0, 5).map(r => ({
+            results: results.slice(0, 50).map(r => ({
                 id: String(r.id),
                 score: r.score,
                 title: (r as { title?: string }).title,
@@ -282,7 +296,7 @@ const flexsearchLib: BenchLib = {
             docsMap: Map<string, Doc>
         }
         const t0 = performance.now()
-        const results = inst.fx.search(q, 25)
+        const results = inst.fx.search(q, 50)
         const time = performance.now() - t0
         const ids = new Set<string>()
         for (const r of results) {
@@ -291,7 +305,7 @@ const flexsearchLib: BenchLib = {
         return {
             time,
             count: ids.size,
-            results: [...ids].slice(0, 5).map(id => {
+            results: [...ids].slice(0, 50).map(id => {
                 const d = inst.docsMap.get(id)
                 return {
                     id,
@@ -325,7 +339,7 @@ const fuseLib: BenchLib = {
         return {
             time,
             count: results.length,
-            results: results.slice(0, 5).map(r => ({
+            results: results.slice(0, 50).map(r => ({
                 id: r.item.id,
                 // Fuse uses 0 = perfect → invert for display intuition
                 score: r.score !== undefined ? 1 - r.score : undefined,
@@ -364,7 +378,7 @@ const oramaLib: BenchLib = {
         const result = (await oramaSearch(db, {
             term: q,
             properties: ["title", "body"],
-            limit: 25,
+            limit: 50,
         })) as {
             count: number
             hits: Array<{
@@ -377,7 +391,7 @@ const oramaLib: BenchLib = {
         return {
             time,
             count: result.count,
-            results: result.hits.slice(0, 5).map(h => ({
+            results: result.hits.slice(0, 50).map(h => ({
                 id: String(h.id),
                 score: h.score,
                 title: h.document.title,
@@ -390,10 +404,10 @@ const oramaLib: BenchLib = {
 
 const LIBS: BenchLib[] = [
     valdresLib,
+    oramaLib,
     minisearchLib,
     flexsearchLib,
     fuseLib,
-    oramaLib,
 ]
 
 // ─── Timing classification for badges ──────────────────────────────────
@@ -473,7 +487,7 @@ const useDebounced = <T,>(value: T, delay: number): T => {
 }
 
 const Bench = () => {
-    const [corpusSize, setCorpusSize] = useState(1000)
+    const [corpusSize, setCorpusSize] = useState(5000)
     const [query, setQuery] = useState("")
     const debouncedQuery = useDebounced(query, 200)
     const [libs, setLibs] = useState<LibState[]>([])
