@@ -123,17 +123,23 @@ export const stableStringify = (x: any): string | number | boolean => {
         // Mirrors the cycle-handling in `equal()`: stack-overflow from a
         // cyclic reference graph blows up the recursion. Catch and fall
         // back to a sentinel so callers (family keying, index term keys)
-        // don't crash. Engines name the error differently:
-        //   chrome/safari: RangeError "Maximum call stack size exceeded"
-        //   firefox:       InternalError "too much recursion"
-        //   edge:          Error "Out of stack space"
-        // — so match on message rather than constructor.
-        if (
-            error instanceof Error &&
-            /stack|recursion/i.test(error.message)
-        ) {
-            return CIRCULAR
-        }
+        // don't crash. Engines surface this differently:
+        //   chrome/safari/edge: RangeError "Maximum call stack size exceeded"
+        //   firefox:            InternalError "too much recursion"
+        // We match by constructor / `.name` so we don't accidentally
+        // swallow user-thrown errors whose message happens to contain
+        // "stack" or "recursion" (e.g. a toJSON handler that throws
+        // `new Error("stack frame parsing failed")`).
+        if (isOverflowLike(error)) return CIRCULAR
         throw error
     }
+}
+
+/** True for engine-thrown stack-overflow errors. Structured check
+ *  (constructor + `.name`) avoids false positives from user errors
+ *  whose `.message` happens to contain "stack" or "recursion". */
+const isOverflowLike = (error: unknown): boolean => {
+    if (error instanceof RangeError) return true
+    if (error instanceof Error && error.name === "InternalError") return true
+    return false
 }

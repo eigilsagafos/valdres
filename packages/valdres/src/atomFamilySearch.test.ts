@@ -96,6 +96,33 @@ describe("atomFamilySearch", () => {
         expect(extractor).toHaveBeenCalledTimes(1)
     })
 
+    test("bulk-write transaction calls extractor exactly once per atom (S1)", () => {
+        // Two descriptors fire on every atomFamilySearch write — the
+        // tokenIndex (set-membership) and the BM25 (per-field stats).
+        // In a transaction, descriptors iterate atoms in two passes
+        // (one descriptor at a time), so the single-slot memo was
+        // overwritten between passes and missed every time. Result:
+        // user's extractor ran 2N times for N atoms.
+        //
+        // After the fix (per-pass WeakMap memo), extractor runs exactly
+        // N times.
+        const s = store()
+        const post = atomFamily<{ text: string }, [string]>(null, {
+            name: "posts",
+        })
+        const extractor = mock((p: { text: string }) => p.text)
+        atomFamilySearch(post, extractor)
+
+        const N = 50
+        s.txn(({ set }) => {
+            for (let i = 0; i < N; i++) {
+                set(post(`${i}`), { text: `body ${i}` })
+            }
+        })
+
+        expect(extractor).toHaveBeenCalledTimes(N)
+    })
+
     test("store.del clears atom from all posting lists", () => {
         const s = store()
         const post = atomFamily<{ text: string }, [string]>(null, {
@@ -897,6 +924,85 @@ describe("atomFamilySearch", () => {
                     .get(search("ruun"))
                     .map(a => a.familyArgsStringified),
             ).toEqual(["a"])
+        })
+
+        test("termDictionary doesn't leak across rewrites or deletes (N2)", () => {
+            // Regression: previously the dictionary grew monotonically as
+            // atoms were rewritten with new terms — old terms were never
+            // removed. For an editor-style app (post saved repeatedly)
+            // the dictionary's working set is N×K (atom count × vocab
+            // per atom) but actual size grew toward N×M×K (× edits).
+            // Fix: per-term refcounts, drop on detach when count hits 0.
+            const s = store()
+            const post = atomFamily<{ text: string }, [string]>()
+            const search = atomFamilySearch(post, p => p.text, {
+                mode: "exact",
+                tolerance: 1,
+            })
+            // Internal-only inspector. Not in the public type — only the
+            // search instance has it at runtime, exposed for this test.
+            const dictSize = () =>
+                (search as unknown as { __dictionarySize: () => number })
+                    .__dictionarySize()
+
+            // 1. Initial corpus
+            s.set(post("a"), { text: "alpha beta" })
+            s.set(post("b"), { text: "gamma delta" })
+            expect(dictSize()).toBe(4)
+
+            // 2. Rewriting an atom with new terms should drop the old ones
+            s.set(post("a"), { text: "epsilon zeta" })
+            // dictionary should now contain: gamma delta epsilon zeta (4)
+            // NOT: alpha beta gamma delta epsilon zeta (6)
+            expect(dictSize()).toBe(4)
+
+            // 3. Many rewrites of the same atom should keep size bounded
+            for (let i = 0; i < 50; i++) {
+                s.set(post("c"), { text: `term${i} word${i}` })
+            }
+            // Final state of c: term49 word49 (2 terms unique to c)
+            // Plus b's gamma + delta, and a's epsilon + zeta = 6 total
+            expect(dictSize()).toBe(6)
+
+            // 4. Delete should also drop terms
+            s.del(post("a"))
+            // Removes epsilon + zeta → 4 remaining
+            expect(dictSize()).toBe(4)
+
+            s.del(post("b"))
+            s.del(post("c"))
+            expect(dictSize()).toBe(0)
+        })
+
+        test("shared terms across atoms survive single-atom delete (refcount > 1)", () => {
+            // Refcount sanity: two atoms share the term "shared"; deleting
+            // one should keep "shared" in the dictionary because the other
+            // still uses it.
+            const s = store()
+            const post = atomFamily<{ text: string }, [string]>()
+            const search = atomFamilySearch(post, p => p.text, {
+                mode: "exact",
+                tolerance: 1,
+            })
+            const dictSize = () =>
+                (search as unknown as { __dictionarySize: () => number })
+                    .__dictionarySize()
+
+            s.set(post("a"), { text: "shared unique-a" })
+            s.set(post("b"), { text: "shared unique-b" })
+            // Tokenizer drops hyphens — terms are: shared, unique, a, b
+            // (4 distinct after dedup of "shared"; the splits of
+            // "unique-a"/"unique-b" yield "unique","a","b")
+            const sizeBeforeDelete = dictSize()
+            expect(sizeBeforeDelete).toBeGreaterThan(0)
+
+            s.del(post("a"))
+            // "shared" and "unique" still appear in b → must remain
+            expect(s.get(search("shared")).length).toBe(1)
+            expect(s.get(search("unique")).length).toBe(1)
+            // Dictionary should have shrunk by exactly the terms unique
+            // to atom a (which is just "a"). "shared" and "unique" stay.
+            expect(dictSize()).toBe(sizeBeforeDelete - 1)
         })
     })
 

@@ -31,12 +31,13 @@ Stop-word lists (src/stopwords/*.ts)
 
 Sourced per-language from two upstreams:
 
-  - Snowball — https://snowballstem.org/algorithms/<lang>/stop.txt
+  - Snowball — snowballstem/snowball-website (BSD-3-Clause), pinned to
+    commit ea94bd3f at path `algorithms/<lang>/stop.txt`.
     (15 languages: danish, dutch, english, finnish, french, german,
     hungarian, indonesian, irish, italian, norwegian, portuguese,
     russian, spanish, swedish).
-    License: BSD-3-Clause. Same project as the stemmers above; lists
-    are designed to pair with the matching Snowball stemmer.
+    Same project family as the stemmers above; lists are designed to
+    pair with the matching Snowball stemmer.
 
   - stopwords-iso — https://github.com/stopwords-iso/stopwords-iso
     pinned to v0.4.0 (stopwords-iso.json)

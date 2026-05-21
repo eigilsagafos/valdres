@@ -74,5 +74,30 @@ describe("stableStringify", () => {
             expect(stableStringify(a)).toBe(stableStringify(b))
             expect(stableStringify(a)).toBe("__CIRCULAR__")
         })
+
+        test("S3: doesn't swallow user-thrown Error whose message contains 'stack'", () => {
+            // Previously matched on /stack|recursion/i which silently
+            // swallowed any user error containing those substrings.
+            // After fix: only catch RangeError (Chrome/Safari/Edge) and
+            // Firefox's InternalError; everything else propagates.
+            const userError = new Error("stack frame parsing failed")
+            const x = {
+                toJSON() {
+                    throw userError
+                },
+            }
+            expect(() => stableStringify(x)).toThrow(userError)
+        })
+
+        test("S3: catches a RangeError with an opaque message", () => {
+            // Defensive: even a RangeError whose message doesn't match
+            // the legacy regex must still be caught via `instanceof`.
+            const x = {
+                toJSON() {
+                    throw new RangeError("opaque engine message")
+                },
+            }
+            expect(stableStringify(x)).toBe("__CIRCULAR__")
+        })
     })
 })

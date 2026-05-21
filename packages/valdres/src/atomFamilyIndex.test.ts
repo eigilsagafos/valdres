@@ -666,6 +666,69 @@ describe("atomFamilyIndex", () => {
             ).toEqual(["1"])
         })
 
+        test("S5: release(term) clears scoped-store data.values when scope wrote locally", () => {
+            // Pins the contract for read+release across scopes.
+            //
+            // Scoped reads of the termAtom WITHOUT a local write don't
+            // cache in the scope's data.values (the scope walks the
+            // parent chain on read), so there's nothing to clean up
+            // locally. Scoped writes DO cache: the descriptor's onWrite
+            // fires for the scoped data, getStorage(scopeData) runs and
+            // registers the scope in `knownStores`, and the scope's
+            // own data.values gets a copy of the term atom.
+            //
+            // release(term) must walk the scope and clear that entry.
+            // (Without proper knownStores registration on writes, the
+            // scope's entry would be orphaned.)
+            const root = store("root")
+            const child = root.scope("child")
+            const post = atomFamily<{ tags: string[] }, [string]>(null, {
+                name: "posts",
+            })
+            const postsByTag = atomFamilyIndex(post, p => p.tags)
+
+            root.set(post("1"), { tags: ["foo"] })
+            child.set(post("2"), { tags: ["foo"] })
+            const fooTerm = postsByTag("foo")
+
+            // Read in both stores so both have local caches.
+            expect(root.get(fooTerm).map(a => a.familyArgsStringified)).toEqual(
+                ["1"],
+            )
+            expect(
+                child.get(fooTerm).map(a => a.familyArgsStringified).sort(),
+            ).toEqual(["1", "2"])
+            expect(root.data.values.has(fooTerm)).toBe(true)
+            expect(child.data.values.has(fooTerm)).toBe(true)
+
+            const released = postsByTag.release("foo")
+            expect(released).toBe(true)
+            // BOTH the root cache and the scoped-write cache get cleared.
+            expect(root.data.values.has(fooTerm)).toBe(false)
+            expect(child.data.values.has(fooTerm)).toBe(false)
+        })
+
+        test("S5: scoped reads-without-overrides don't pollute scope cache", () => {
+            // Companion contract: a scope reading a parent-only term
+            // walks the parent chain instead of caching locally, so
+            // there's nothing release(term) needs to clean in the scope.
+            // Pins the behavior so a future "always cache locally" change
+            // would surface here and prompt revisiting release semantics.
+            const root = store("root")
+            const child = root.scope("child")
+            const post = atomFamily<{ tags: string[] }, [string]>(null, {
+                name: "posts",
+            })
+            const postsByTag = atomFamilyIndex(post, p => p.tags)
+
+            root.set(post("1"), { tags: ["foo"] })
+            const fooTerm = postsByTag("foo")
+
+            expect(child.get(fooTerm)).toHaveLength(1)
+            // Scope walked the parent — no local cache entry was created.
+            expect(child.data.values.has(fooTerm)).toBe(false)
+        })
+
         test("release(term) returns false for an unknown term", () => {
             const post = atomFamily<{ tags: string[] }, [string]>(null)
             const postsByTag = atomFamilyIndex(post, p => p.tags)

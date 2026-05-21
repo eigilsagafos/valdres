@@ -26,7 +26,12 @@ import { fileURLToPath } from "node:url"
 
 const STOPWORDS_ISO_VERSION = "v0.4.0"
 const STOPWORDS_ISO_URL = `https://raw.githubusercontent.com/stopwords-iso/stopwords-iso/${STOPWORDS_ISO_VERSION}/stopwords-iso.json`
-const SNOWBALL_BASE = "https://snowballstem.org/algorithms"
+/** Snowball stopword lists live on the snowball-website repo, not the
+ *  compiler repo. Pin by commit SHA — `snowballstem.org/algorithms/...`
+ *  serves the live website and has no version in the URL, so the same
+ *  URL could return different content between regenerations. */
+const SNOWBALL_WEBSITE_COMMIT = "ea94bd3f31367ba6a3d04dfb336af4994b4b511f"
+const SNOWBALL_BASE = `https://raw.githubusercontent.com/snowballstem/snowball-website/${SNOWBALL_WEBSITE_COMMIT}/algorithms`
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const PKG_ROOT = join(HERE, "..")
@@ -116,7 +121,7 @@ const headerFor = (
     ]
     if (source.kind === "snowball") {
         lines.push(
-            `// Source: Snowball stopword list — ${SNOWBALL_BASE}/${source.lang}/stop.txt`,
+            `// Source: snowballstem/snowball-website @ ${SNOWBALL_WEBSITE_COMMIT.slice(0, 8)} — algorithms/${source.lang}/stop.txt`,
             `// License: BSD-3-Clause. See NOTICE for attribution.`,
         )
     } else {

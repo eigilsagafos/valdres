@@ -341,4 +341,50 @@ describe("atomFamilySort", () => {
             unsub2()
         })
     })
+
+    describe("tiebreak under desc direction (S7)", () => {
+        test("equal keys tiebreak ascending under desc", () => {
+            // Regression: previously the whole compare result was negated
+            // under `desc`, including the familyArgsStringified tiebreak.
+            // Two atoms with the same key came back in reverse-ID order.
+            // The direction should only apply to the key comparison; the
+            // deterministic tiebreak is always ascending so identical-key
+            // sets stay stable across renders and across directions.
+            const s = store()
+            const post = atomFamily<{ date: number }, [string]>(null, {
+                name: "posts",
+            })
+            const byDate = atomFamilySort(post, p => p.date, {
+                direction: "desc",
+            })
+
+            s.set(post("a"), { date: 100 })
+            s.set(post("b"), { date: 100 })
+            s.set(post("c"), { date: 200 })
+
+            // c (200) first under desc; for the (a, b) tie, expect ASC ID
+            // tiebreak → [a, b], not [b, a].
+            expect(
+                s.get(byDate).map(a => a.familyArgsStringified),
+            ).toEqual(["c", "a", "b"])
+        })
+
+        test("equal keys tiebreak ascending under asc (regression guard)", () => {
+            const s = store()
+            const post = atomFamily<{ date: number }, [string]>(null, {
+                name: "posts",
+            })
+            const byDate = atomFamilySort(post, p => p.date, {
+                direction: "asc",
+            })
+
+            s.set(post("a"), { date: 100 })
+            s.set(post("b"), { date: 100 })
+            s.set(post("c"), { date: 50 })
+
+            expect(
+                s.get(byDate).map(a => a.familyArgsStringified),
+            ).toEqual(["c", "a", "b"])
+        })
+    })
 })

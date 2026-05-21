@@ -23,7 +23,11 @@ import { join, dirname } from "node:path"
 import { fileURLToPath } from "node:url"
 import { $ } from "bun"
 
+/** Pinned to the commit SHA at v3.0.1 (tag is mutable; SHA is not).
+ *  Update via `git ls-remote https://github.com/snowballstem/snowball
+ *  refs/tags/<tag>^{}` when refreshing. */
 const SNOWBALL_VERSION = "v3.0.1"
+const SNOWBALL_COMMIT = "e4b3efb449ccb994d39230eb6e8440d267471f4a"
 const SNOWBALL_REPO = "https://github.com/snowballstem/snowball"
 
 const HERE = dirname(fileURLToPath(import.meta.url))
@@ -128,8 +132,9 @@ const cloneSnowball = async (): Promise<string> => {
     if (existsSync(WORK_DIR)) rmSync(WORK_DIR, { recursive: true, force: true })
     mkdirSync(WORK_DIR, { recursive: true })
     const repoDir = join(WORK_DIR, "snowball")
-    await $`git clone --depth 1 --branch ${SNOWBALL_VERSION} ${SNOWBALL_REPO} ${repoDir}`
-        .quiet()
+    // Pin by SHA, not tag — tags are mutable.
+    await $`git clone --no-checkout ${SNOWBALL_REPO} ${repoDir}`.quiet()
+    await $`git -C ${repoDir} checkout ${SNOWBALL_COMMIT}`.quiet()
     return repoDir
 }
 

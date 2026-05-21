@@ -356,14 +356,27 @@ export function atomFamilySearch<
      *  Object returns keep their keys; empty/missing field values are
      *  dropped.
      *
-     *  Memoized on the latest input value reference: both the tokenIndex
-     *  descriptor and the bm25Descriptor receive the same `value` from
-     *  `data.values.get(atom)` within one propagation pass, so the second
-     *  call hits the cache and the user's `extractor` runs once per
-     *  write, not twice. Cache holds one entry — no leak. */
-    let memoLast: { value: Value; result: Map<string, string[]> } | null = null
+     *  Memoized by value reference: both the tokenIndex descriptor and
+     *  the bm25Descriptor receive the same `value` from
+     *  `data.values.get(atom)` within one propagation pass, so the
+     *  second call hits the cache and the user's `extractor` runs once
+     *  per write, not twice. WeakMap-keyed by value so entries are
+     *  reclaimed when the atom's value reference is replaced — bulk
+     *  transaction writes (atom1, atom2, …, atomN) cache N distinct
+     *  values during pass 1, then hit them during pass 2 without
+     *  re-running the extractor.
+     *
+     *  Note: primitive value types (string, number) can't be WeakMap
+     *  keys, so for those the cache is skipped and the extractor runs
+     *  per descriptor as before — but that's the cheap case anyway. */
+    const memo = new WeakMap<object, Map<string, string[]>>()
+    const isObjectLike = (v: unknown): v is object =>
+        v !== null && (typeof v === "object" || typeof v === "function")
     const extractFieldTerms = (value: Value): Map<string, string[]> => {
-        if (memoLast && memoLast.value === value) return memoLast.result
+        if (isObjectLike(value)) {
+            const cached = memo.get(value)
+            if (cached) return cached
+        }
         const raw = extractor(value)
         const out = new Map<string, string[]>()
         if (typeof raw === "string") {
@@ -379,7 +392,7 @@ export function atomFamilySearch<
                 if (terms.length > 0) out.set(field, terms)
             }
         }
-        memoLast = { value, result: out }
+        if (isObjectLike(value)) memo.set(value, out)
         return out
     }
 
@@ -484,9 +497,10 @@ export function atomFamilySearch<
         return { totalLength, docCount }
     }
 
-    /** Subtract one atom's field stats from `fieldTotals`. Used both on
-     *  delete and on re-write (where we tear down the old contribution
-     *  before applying the new). */
+    /** Subtract one atom's field stats from `fieldTotals` and decrement
+     *  its term refcounts in `termDictionary`. Used both on delete and
+     *  on re-write (where we tear down the old contribution before
+     *  applying the new). */
     const detachAtomStats = (
         storage: BM25Storage,
         atom: AtomFamilyAtom<any, any>,
@@ -494,6 +508,20 @@ export function atomFamilySearch<
         const stats = storage.perAtom.get(atom)
         if (!stats) return false
         for (const [field, fs] of stats) {
+            // Decrement term refcounts and drop entries that hit zero,
+            // so the dictionary doesn't grow monotonically across
+            // rewrites. Only relevant when tolerance > 0 (otherwise we
+            // never populated the dictionary in the first place).
+            if (tolerance > 0) {
+                for (const [term, count] of fs.termCounts) {
+                    const remaining = (termDictionary.get(term) ?? 0) - count
+                    if (remaining <= 0) {
+                        termDictionary.delete(term)
+                    } else {
+                        termDictionary.set(term, remaining)
+                    }
+                }
+            }
             const tot = storage.fieldTotals.get(field)
             if (!tot) continue
             tot.totalLength -= fs.length
@@ -532,11 +560,16 @@ export function atomFamilySearch<
                 const termCounts = new Map<string, number>()
                 for (const t of terms) {
                     termCounts.set(t, (termCounts.get(t) ?? 0) + 1)
-                    // Populate the shared dictionary for tolerance
-                    // lookups. We don't track per-term refcounts, so
-                    // deletes never shrink the dictionary — acceptable
-                    // for v1 (slight false-positive expansion at worst).
-                    if (tolerance > 0) termDictionary.add(t)
+                    // Refcounted: dictionary entry's value is the total
+                    // occurrence count across all atoms. `detachAtomStats`
+                    // decrements by this atom's contribution on delete /
+                    // re-write so the dictionary doesn't leak.
+                    if (tolerance > 0) {
+                        termDictionary.set(
+                            t,
+                            (termDictionary.get(t) ?? 0) + 1,
+                        )
+                    }
                 }
                 atomStats.set(field, { length: terms.length, termCounts })
 
@@ -630,13 +663,19 @@ export function atomFamilySearch<
             ? 0
             : Math.max(0, Math.floor(options?.tolerance ?? 0))
 
-    /** Per-instance term dictionary. Populated by the BM25 descriptor's
-     *  write hook (every term seen across all atoms / fields). Used by
+    /** Per-instance term dictionary with refcounts. Populated by the BM25
+     *  descriptor's write hook; entries are decremented by
+     *  `detachAtomStats` and removed when the count hits zero. Used by
      *  `expandSingleToken` when `tolerance > 0` to find indexed terms
      *  within edit distance K of the query token. One shared dictionary
-     *  across scopes for simplicity — terms-as-data are the same
-     *  regardless of which scope wrote them. */
-    const termDictionary = new Set<string>()
+     *  across scopes — terms-as-data are the same regardless of which
+     *  scope wrote them.
+     *
+     *  The refcount is the total occurrence count across every atom
+     *  that holds this term (i.e. sum of per-(atom, field) `termCounts`
+     *  entries for this term). Rewriting an atom subtracts its old
+     *  contribution before adding the new — see `detachAtomStats`. */
+    const termDictionary = new Map<string, number>()
 
     /** One indexed term + a relevance multiplier (1.0 for exact match,
      *  < 1 for typo'd matches). Plain BM25F values rare terms — without
@@ -660,7 +699,7 @@ export function atomFamilySearch<
     const expandToleranceMatches = (token: string): ExpandedTerm[] => {
         if (tolerance === 0) return [{ term: token, penalty: 1 }]
         const matches: ExpandedTerm[] = [{ term: token, penalty: 1 }]
-        for (const term of termDictionary) {
+        for (const term of termDictionary.keys()) {
             if (term === token) continue
             const d = levenshtein(token, term, tolerance)
             if (d <= tolerance) {
@@ -891,5 +930,10 @@ export function atomFamilySearch<
         scoredCache.clear()
         atomsCache.clear()
     }
+    // Internal: test-only inspector for `termDictionary` size. Not in
+    // the AtomFamilySearch type — tests reach via cast. Useful for
+    // verifying the refcount-based cleanup contract (N2).
+    ;(result as unknown as { __dictionarySize: () => number }).__dictionarySize =
+        () => termDictionary.size
     return result
 }

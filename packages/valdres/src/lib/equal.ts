@@ -145,13 +145,15 @@ export const equal = (a: any, b: any, updatedAtomsSet?: Set<any>) => {
     try {
         return deepEqualFn(a, b, updatedAtomsSet)
     } catch (error) {
-        // @ts-ignore
-        if ((error.message || "").match(/stack|recursion/i)) {
-            // warn on circular references, don't crash
-            // browsers give this different errors name and messages:
-            // chrome/safari: "RangeError", "Maximum call stack size exceeded"
-            // firefox: "InternalError", too much recursion"
-            // edge: "Error", "Out of stack space"
+        // Engine-thrown stack overflow on cyclic graphs:
+        //   chrome/safari/edge: RangeError "Maximum call stack size exceeded"
+        //   firefox:            InternalError "too much recursion"
+        // Match by constructor / `.name` so we don't swallow user-thrown
+        // errors whose message happens to contain "stack" or "recursion".
+        if (
+            error instanceof RangeError ||
+            (error instanceof Error && error.name === "InternalError")
+        ) {
             console.warn("react-fast-compare cannot handle circular refs")
             return false
         }

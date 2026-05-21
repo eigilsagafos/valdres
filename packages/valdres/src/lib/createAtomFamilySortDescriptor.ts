@@ -57,17 +57,16 @@ const compareKeys = (
     b: AtomFamilyAtom<any>,
     direction: "asc" | "desc",
 ): number => {
-    let cmp = 0
-    if (aKey < bKey) cmp = -1
-    else if (aKey > bKey) cmp = 1
-    else {
-        // Stable tiebreak on equal keys: by serialized family args so
-        // ordering is deterministic across stores/renders.
-        const sa = String(a.familyArgsStringified)
-        const sb = String(b.familyArgsStringified)
-        cmp = sa < sb ? -1 : sa > sb ? 1 : 0
-    }
-    return direction === "desc" ? -cmp : cmp
+    // Direction applies only to the key comparison. The tiebreak by
+    // `familyArgsStringified` is ALWAYS ascending so equal-key subsets
+    // are stable across renders AND across asc/desc — users sorting
+    // `desc` by date and expecting `[id-a, id-b]` for two same-date
+    // items shouldn't see `[id-b, id-a]`.
+    if (aKey < bKey) return direction === "desc" ? 1 : -1
+    if (aKey > bKey) return direction === "desc" ? -1 : 1
+    const sa = String(a.familyArgsStringified)
+    const sb = String(b.familyArgsStringified)
+    return sa < sb ? -1 : sa > sb ? 1 : 0
 }
 
 /** Binary-search the position where `atom` (with `atomKey`) should be
@@ -207,7 +206,16 @@ export const createAtomFamilySortDescriptor = <Value, Key>(
      *  the OLD effective key (for finding the existing position) and the
      *  NEW key. Either may be null/undefined for insertion/removal cases.
      *  Mutates `storage.rendered` and `storage.localKeys` to reflect the
-     *  new state. */
+     *  new state.
+     *
+     *  Cost: **O(N) per write**. Binary search locates the old/new
+     *  positions in O(log N), but `splice` is O(N) because of the array
+     *  shift. A true O(log N) maintained sort would require an order-
+     *  statistics tree or skip list — not worth the implementation cost
+     *  for typical sort-view sizes (where N is small relative to write
+     *  volume, or writes are bursty inside transactions and the
+     *  amortized cost is fine). Pre-this-PR there was no incremental
+     *  path at all: every write triggered a full O(N log N) re-sort. */
     const applyRootIncremental = (
         storage: SortStorage,
         atom: AtomFamilyAtom<any>,
