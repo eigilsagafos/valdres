@@ -147,4 +147,4 @@ jobs:
                   bun run scripts/update-bench-readme.ts
                   git add README.md BENCHMARKS.md
                   git diff --staged --quiet || git commit -m "Update benchmark results in README"
-                  git push
+                  git push origin HEAD:main
