@@ -42,7 +42,7 @@ Each `@valdres/browser-*` package wraps one browser API as global atoms. Canonic
 
 ## Releasing
 
-Changesets. Any PR touching a publishable package needs `bunx changeset` committed alongside it. Don't hand-edit `version` fields or CHANGELOGs — the Version Packages bot does that on merge. Repo is in `beta` prerelease mode.
+Changesets. Any PR touching a publishable package needs `bunx changeset` committed alongside it — CI enforces this via `bunx changeset status --since=origin/main`. For PRs that change publishable code but intentionally don't release (refactors, internal cleanup), run `bunx changeset --empty` to satisfy the check. Don't hand-edit `version` fields or CHANGELOGs — the Version Packages bot does that on merge. Repo is in `beta` prerelease mode.
 
 ## Benchmarks
 
