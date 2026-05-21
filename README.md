@@ -22,7 +22,7 @@ For PRs that touch publishable code but intentionally don't trigger a release (r
 bunx changeset --empty
 ```
 
-The `Require changeset` check on each PR enforces that any change to a publishable package ships with a changeset (empty or otherwise).
+This still generates a `.changeset/*.md` file — commit it like a regular changeset. The `Require changeset` check on each PR enforces that any change to a publishable package ships with a changeset (empty or otherwise).
 
 When the PR merges to `main`, the `Publish` workflow opens (or updates) a **Version Packages** PR that applies the pending changesets, bumps versions, and updates CHANGELOGs. Merging that PR publishes the affected packages to npm.
 
