@@ -31,7 +31,9 @@ jobs:
 
       - name: Build types
         run: bun run build:types
-        continue-on-error: true
+
+      - name: Verify publish pipeline
+        run: bun run verify-publish
 
       - name: Create .npmrc
         run: echo "//registry.npmjs.org/:_authToken=${{ secrets.NPM_TOKEN }}" > .npmrc
