@@ -46,7 +46,7 @@ for dir in "${PUBLIC_PACKAGES[@]}"; do
 done
 
 # Publish packages with new versions to npm
-changeset publish
+bunx changeset publish
 
 # Restore package.json files
 for dir in "${PUBLIC_PACKAGES[@]}"; do
