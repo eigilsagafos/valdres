@@ -431,6 +431,17 @@
         "valdres": "0.2.0-pre.28",
       },
     },
+    "packages/@valdres/search-languages": {
+      "name": "@valdres/search-languages",
+      "version": "0.2.0-pre.28",
+      "devDependencies": {
+        "typescript": "5.9.2",
+        "valdres": "0.2.0-pre.28",
+      },
+      "peerDependencies": {
+        "valdres": "0.2.0-pre.28",
+      },
+    },
     "packages/documentation": {
       "name": "@valdres/documentation",
       "version": "0.2.0-pre.28",
@@ -1327,6 +1338,8 @@
     "@valdres/hotkeys": ["@valdres/hotkeys@workspace:packages/@valdres/hotkeys"],
 
     "@valdres/public-ip": ["@valdres/public-ip@workspace:packages/@valdres/public-ip"],
+
+    "@valdres/search-languages": ["@valdres/search-languages@workspace:packages/@valdres/search-languages"],
 
     "@valdres/test": ["@valdres/test@workspace:packages/test"],
 

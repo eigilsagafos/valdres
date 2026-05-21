@@ -1,0 +1,51 @@
+@valdres/search-languages
+
+This package vendors generated and curated content from two upstream
+projects. Run `bun run build:stemmers` and `bun run build:stopwords` to
+regenerate from source.
+
+---
+
+Snowball stemmers (src/stemmers/*.ts)
+
+Generated from the Snowball algorithm source files at
+https://github.com/snowballstem/snowball, pinned to v3.0.1, using the
+Snowball compiler's `-js` target. Languages: arabic, armenian, danish,
+dutch, english, finnish, french, german, greek, hindi, hungarian,
+indonesian, irish, italian, lithuanian, nepali, norwegian, portuguese,
+romanian, russian, serbian, spanish, swedish, tamil, turkish.
+
+Per-language splitter regexes were derived from Orama's SPLITTERS table
+(Apache-2.0, https://github.com/oramasearch/orama).
+
+License: BSD-3-Clause. Original copyright:
+  Copyright (c) 2001, Dr Martin Porter
+  Copyright (c) 2004, Richard Boulton
+  Copyright (c) 2013, Yoshiki Shibukawa
+  Copyright (c) 2006-2024 by the Snowball project (BSD-3 contributors)
+  See https://snowballstem.org/license.html
+
+---
+
+Stop-word lists (src/stopwords/*.ts)
+
+Sourced per-language from two upstreams:
+
+  - Snowball — https://snowballstem.org/algorithms/<lang>/stop.txt
+    (15 languages: danish, dutch, english, finnish, french, german,
+    hungarian, indonesian, irish, italian, norwegian, portuguese,
+    russian, spanish, swedish).
+    License: BSD-3-Clause. Same project as the stemmers above; lists
+    are designed to pair with the matching Snowball stemmer.
+
+  - stopwords-iso — https://github.com/stopwords-iso/stopwords-iso
+    pinned to v0.4.0 (stopwords-iso.json)
+    (10 languages: arabic, armenian, greek, hindi, lithuanian, nepali,
+    romanian, serbian, tamil, turkish).
+    License: MIT. Per-language lists are aggregated from multiple
+    upstream sources by the stopwords-iso maintainers.
+
+Snowball's English stop list (174 words) is the canonical reference
+used by Lucene, Solr, lunr-languages, and others. It deliberately
+excludes content words — see `scripts/fetch-stopwords.ts` for the
+per-language source assignment.

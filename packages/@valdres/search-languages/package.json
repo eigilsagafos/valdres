@@ -1,0 +1,67 @@
+{
+    "name": "@valdres/search-languages",
+    "version": "0.2.0-pre.28",
+    "description": "Language presets (tokenizer + stemmer + stop words) for atomFamilySearch. 25 languages, Snowball stemmers, no runtime dependencies.",
+    "license": "MIT",
+    "author": {
+        "name": "Eigil Sagafos"
+    },
+    "homepage": "https://valdres.dev",
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/eigilsagafos/valdres.git"
+    },
+    "type": "module",
+    "exports": {
+        ".": "./src/index.ts",
+        "./arabic": "./src/arabic.ts",
+        "./armenian": "./src/armenian.ts",
+        "./danish": "./src/danish.ts",
+        "./dutch": "./src/dutch.ts",
+        "./english": "./src/english.ts",
+        "./finnish": "./src/finnish.ts",
+        "./french": "./src/french.ts",
+        "./german": "./src/german.ts",
+        "./greek": "./src/greek.ts",
+        "./hindi": "./src/hindi.ts",
+        "./hungarian": "./src/hungarian.ts",
+        "./indonesian": "./src/indonesian.ts",
+        "./irish": "./src/irish.ts",
+        "./italian": "./src/italian.ts",
+        "./lithuanian": "./src/lithuanian.ts",
+        "./nepali": "./src/nepali.ts",
+        "./norwegian": "./src/norwegian.ts",
+        "./portuguese": "./src/portuguese.ts",
+        "./romanian": "./src/romanian.ts",
+        "./russian": "./src/russian.ts",
+        "./serbian": "./src/serbian.ts",
+        "./spanish": "./src/spanish.ts",
+        "./swedish": "./src/swedish.ts",
+        "./tamil": "./src/tamil.ts",
+        "./turkish": "./src/turkish.ts"
+    },
+    "files": [
+        "dist",
+        "NOTICE"
+    ],
+    "scripts": {
+        "build": "NODE_ENV=production bun build src/index.ts --outdir ./dist --packages external",
+        "build:types": "rm -rf dist/types && bun run tsc",
+        "build:stemmers": "bun run scripts/build-stemmers.ts",
+        "build:stopwords": "bun run scripts/fetch-stopwords.ts",
+        "build:fixtures": "bun run scripts/fetch-test-vectors.ts",
+        "test": "bun test",
+        "test:ci": "bun test"
+    },
+    "devDependencies": {
+        "typescript": "5.9.2",
+        "valdres": "0.2.0-pre.28"
+    },
+    "peerDependencies": {
+        "valdres": "0.2.0-pre.28"
+    },
+    "publishConfig": {
+        "access": "public",
+        "registry": "https://registry.npmjs.org/"
+    }
+}

@@ -1202,4 +1202,140 @@ describe("atomFamilySearch", () => {
             ).toEqual(["c", "r"])
         })
     })
+
+    describe("null / undefined extractor return — skip indexing", () => {
+        test("single-string extractor returning null skips the atom", () => {
+            const s = store()
+            const post = atomFamily<
+                { text: string | null },
+                [string]
+            >(null, { name: "posts" })
+            const search = atomFamilySearch(
+                post,
+                p => p.text,
+            )
+
+            s.set(post("a"), { text: "hello world" })
+            s.set(post("b"), { text: null })
+            s.set(post("c"), { text: "hello there" })
+
+            expect(
+                s
+                    .get(search("hello"))
+                    .map(a => a.familyArgsStringified)
+                    .sort(),
+            ).toEqual(["a", "c"])
+        })
+
+        test("single-string extractor returning undefined skips the atom", () => {
+            const s = store()
+            const post = atomFamily<
+                { text: string | undefined },
+                [string]
+            >(null, { name: "posts" })
+            const search = atomFamilySearch(post, p => p.text)
+
+            s.set(post("a"), { text: "hello" })
+            s.set(post("b"), { text: undefined })
+
+            expect(
+                s.get(search("hello")).map(a => a.familyArgsStringified),
+            ).toEqual(["a"])
+        })
+
+        test("single-string extractor returning empty string skips the atom", () => {
+            const s = store()
+            const post = atomFamily<{ text: string }, [string]>(null, {
+                name: "posts",
+            })
+            const search = atomFamilySearch(post, p => p.text)
+
+            s.set(post("a"), { text: "hello" })
+            s.set(post("b"), { text: "" })
+
+            expect(
+                s.get(search("hello")).map(a => a.familyArgsStringified),
+            ).toEqual(["a"])
+        })
+
+        test("field-map extractor: null/undefined per-field values are skipped", () => {
+            const s = store()
+            const post = atomFamily<
+                { title: string | null; body: string | undefined },
+                [string]
+            >(null, { name: "posts" })
+            const search = atomFamilySearch(
+                post,
+                p => ({ title: p.title, body: p.body }),
+                { fields: { title: { boost: 2 }, body: { boost: 1 } } },
+            )
+
+            s.set(post("a"), { title: "hello", body: undefined })
+            s.set(post("b"), { title: null, body: "hello world" })
+            s.set(post("c"), { title: null, body: undefined })
+
+            expect(
+                s
+                    .get(search("hello"))
+                    .map(a => a.familyArgsStringified)
+                    .sort(),
+            ).toEqual(["a", "b"])
+        })
+
+        test("field-map extractor returning null/undefined skips the whole atom", () => {
+            const s = store()
+            const post = atomFamily<
+                { title: string; body: string } | null,
+                [string]
+            >(null, { name: "posts" })
+            const search = atomFamilySearch(post, p =>
+                p ? { title: p.title, body: p.body } : null,
+            )
+
+            s.set(post("a"), { title: "hello", body: "world" })
+            s.set(post("b"), null)
+
+            expect(
+                s.get(search("hello")).map(a => a.familyArgsStringified),
+            ).toEqual(["a"])
+        })
+
+        test("re-write from non-null to null detaches prior terms", () => {
+            const s = store()
+            const post = atomFamily<
+                { text: string | null },
+                [string]
+            >(null, { name: "posts" })
+            const search = atomFamilySearch(post, p => p.text)
+
+            s.set(post("a"), { text: "hello" })
+            expect(
+                s.get(search("hello")).map(a => a.familyArgsStringified),
+            ).toEqual(["a"])
+
+            s.set(post("a"), { text: null })
+            expect(
+                s.get(search("hello")).map(a => a.familyArgsStringified),
+            ).toEqual([])
+        })
+
+        test("re-write from null to non-null indexes the atom", () => {
+            const s = store()
+            const post = atomFamily<
+                { text: string | null },
+                [string]
+            >(null, { name: "posts" })
+            const search = atomFamilySearch(post, p => p.text)
+
+            s.set(post("a"), { text: null })
+            expect(
+                s.get(search("hello")).map(a => a.familyArgsStringified),
+            ).toEqual([])
+
+            s.set(post("a"), { text: "hello" })
+            expect(
+                s.get(search("hello")).map(a => a.familyArgsStringified),
+            ).toEqual(["a"])
+        })
+    })
 })

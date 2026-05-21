@@ -45,13 +45,19 @@ export type SearchMode = "exact" | "prefix" | "trigram"
  */
 export type MatchStrategy = "all" | "ranked"
 
-/** Language preset name. Each preset bundles a sensible default for
- *  `tokenize`, `stem` and `stopWords`. Add new presets to
- *  `LANGUAGE_PRESETS` below — keep them small / self-contained, or
- *  delegate to user-supplied utility functions for heavier corpora. */
+/** Built-in language preset name. Only English ships in core (it's the
+ *  zero-install default); other languages are imported as
+ *  `LanguagePreset` objects from `@valdres/search-languages` and passed
+ *  directly via `language: french`. */
 export type SearchLanguage = "english"
 
-type LanguagePreset = {
+/** A bundle of language-specific text-processing functions.
+ *
+ *  `@valdres/search-languages` exports one of these per supported
+ *  language. Users can also hand-craft a preset to plug in a custom
+ *  tokenizer / stemmer / stop-word list (e.g. a domain-specific
+ *  stemmer for medical or legal text). */
+export type LanguagePreset = {
     tokenize: (text: string) => string[]
     stem: (word: string) => string
     stopWords: ReadonlySet<string>
@@ -114,14 +120,17 @@ export type AtomFamilySearchOptions<Fields extends string = string> = {
      *  modest corpus sizes. */
     tolerance?: number
     /** Language preset — bundles a sensible `tokenize` + `stem` +
-     *  `stopWords` for the given language. Explicit options below still
-     *  win if you pass them alongside `language`. Currently supports
-     *  `"english"`; the escape hatch (custom `tokenize` / `stem` /
-     *  `stopWords`) covers everything else.
+     *  `stopWords`. Accepts either the built-in string `"english"` (no
+     *  extra install) or a `LanguagePreset` object imported from
+     *  `@valdres/search-languages`:
      *
-     *  Inspired by Orama's `language: "english"`, where stemming and
-     *  stop-word filtering come for free with one well-named option. */
-    language?: SearchLanguage
+     *      import { french } from "@valdres/search-languages"
+     *      atomFamilySearch(family, extract, { language: french })
+     *
+     *  Explicit `tokenize` / `stem` / `stopWords` options still win when
+     *  passed alongside `language`, so users can swap any single piece
+     *  while keeping the rest of the preset. */
+    language?: SearchLanguage | LanguagePreset
     /** BM25 tuning knobs. Defaults match Orama's defaults (`k1: 1.2`,
      *  `b: 0.75`, `d: 0.5`) — the BM25+ recommendations. Most apps never
      *  touch this. */
@@ -260,25 +269,30 @@ const resolveStopWords = (
  *   })
  */
 // Overload: single-string extractor — no field-name inference needed,
-// `fields` keys (if passed) accept any string.
+// `fields` keys (if passed) accept any string. Returning `null`,
+// `undefined`, or `""` skips indexing for that atom.
 export function atomFamilySearch<
     Value,
     Args extends [any, ...any[]] = [any, ...any[]],
 >(
     family: AtomFamily<Value, Args>,
-    extractor: (value: Value) => string,
+    extractor: (value: Value) => string | null | undefined,
     options?: AtomFamilySearchOptions<string>,
 ): AtomFamilySearch<Value, Args>
 
 // Overload: field-map extractor — `Fields` infers from the extractor's
-// return shape, so `options.fields` keys are type-checked.
+// return shape, so `options.fields` keys are type-checked. Per-field
+// values of `null`/`undefined`/`""` are skipped; returning `null` or
+// `undefined` for the whole record skips the atom entirely.
 export function atomFamilySearch<
     Value,
     Args extends [any, ...any[]],
     Fields extends string,
 >(
     family: AtomFamily<Value, Args>,
-    extractor: (value: Value) => Record<Fields, string>,
+    extractor: (
+        value: Value,
+    ) => Record<Fields, string | null | undefined> | null | undefined,
     options?: AtomFamilySearchOptions<Fields>,
 ): AtomFamilySearch<Value, Args>
 
@@ -287,7 +301,13 @@ export function atomFamilySearch<
     Args extends [any, ...any[]] = [any, ...any[]],
 >(
     family: AtomFamily<Value, Args>,
-    extractor: (value: Value) => string | Record<string, string>,
+    extractor: (
+        value: Value,
+    ) =>
+        | string
+        | Record<string, string | null | undefined>
+        | null
+        | undefined,
     options?: AtomFamilySearchOptions<string>,
 ): AtomFamilySearch<Value, Args> {
     const mode: SearchMode = options?.mode ?? "exact"
@@ -296,9 +316,12 @@ export function atomFamilySearch<
     // Language preset fills in defaults for tokenize / stem / stopWords;
     // explicit options always win. `stopWords: true` still resolves to
     // englishStopWords via `resolveStopWords` regardless of preset.
-    const preset = options?.language
-        ? LANGUAGE_PRESETS[options.language]
-        : undefined
+    // The preset can be either a built-in name (`"english"`) or a
+    // LanguagePreset object imported from `@valdres/search-languages`.
+    const preset: LanguagePreset | undefined =
+        typeof options?.language === "string"
+            ? LANGUAGE_PRESETS[options.language]
+            : options?.language
     const baseTokenize =
         options?.tokenize ?? preset?.tokenize ?? defaultTokenize
     const stem = options?.stem ?? preset?.stem

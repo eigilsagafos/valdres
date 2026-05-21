@@ -38,6 +38,15 @@ export { isSelectorFamily } from "./utils/isSelectorFamily"
 export { isSuspendError } from "./lib/initSelector"
 export { Transaction } from "./lib/transaction"
 
+export type {
+    AtomFamilySearch,
+    AtomFamilySearchOptions,
+    LanguagePreset,
+    MatchStrategy,
+    ScoredResult,
+    SearchLanguage,
+    SearchMode,
+} from "./atomFamilySearch"
 export type { CacheMeta } from "./cacheMeta"
 export type { Atom } from "./types/Atom"
 export type { AtomFamily } from "./types/AtomFamily"
