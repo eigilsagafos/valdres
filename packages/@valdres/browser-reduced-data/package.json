@@ -1,6 +1,6 @@
 {
     "name": "@valdres/browser-reduced-data",
-    "version": "0.2.0-pre.28",
+    "version": "1.0.0-beta.0",
     "license": "MIT",
     "author": {
         "name": "Eigil Sagafos"
@@ -19,7 +19,7 @@
     ],
     "scripts": {
         "build": "NODE_ENV=production bun build src/index.ts --outdir ./dist --packages external",
-        "build:types": "rm -rf dist/types && bun run tsc",
+        "build:types": "rm -rf dist/types && bunx tsgo",
         "dev": "bun run dev/server.ts",
         "test": "bun test",
         "test:ci": "bun test"
@@ -32,11 +32,11 @@
         "react": "19.1.1",
         "react-dom": "19.1.1",
         "typescript": "5.9.2",
-        "valdres": "0.2.0-pre.28",
-        "valdres-react": "0.2.0-pre.28"
+        "valdres": "workspace:^",
+        "valdres-react": "workspace:^"
     },
     "peerDependencies": {
-        "valdres": "0.2.0-pre.28"
+        "valdres": "workspace:^"
     },
     "publishConfig": {
         "access": "public",

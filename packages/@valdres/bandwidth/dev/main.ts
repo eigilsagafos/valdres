@@ -9,7 +9,7 @@ import {
     invalidateOnAtom,
 } from "../src/index"
 import { publicIpAtom } from "@valdres/public-ip"
-import type { MeasurementStatus } from "../types/MeasurementStatus"
+import type { MeasurementStatus } from "../src/types/MeasurementStatus"
 
 const s = store()
 

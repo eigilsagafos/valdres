@@ -1,5 +1,5 @@
 import { atom } from "valdres"
-import type { PermissionValue } from "../../types/PermissionValue"
+import type { PermissionValue } from "../types/PermissionValue"
 
 const getInitial = (): PermissionValue => {
     if (

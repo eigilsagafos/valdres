@@ -1,4 +1,4 @@
-import type { ScreenDetail } from "../../types/ScreenDetail"
+import type { ScreenDetail } from "../types/ScreenDetail"
 
 interface DetailsState {
     request: Promise<ScreenDetail[] | null> | null

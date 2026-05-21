@@ -3,6 +3,7 @@
     "include": ["src/index.ts"],
     "exclude": ["dist", "src/**/*.test.ts"],
     "compilerOptions": {
+        "rootDir": "src",
         "declaration": true,
         "noEmit": false,
         "emitDeclarationOnly": true,

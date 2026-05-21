@@ -1,7 +1,7 @@
 import { selector } from "valdres"
 import { systemColorModeAtom } from "./systemColorModeAtom"
 import { userSelectedColorModeAtom } from "./userSelectedColorModeAtom"
-import type { ColorMode } from "../types/ColorMode"
+import type { ColorMode } from "./types/ColorMode"
 
 export const colorModeSelector = selector<ColorMode>(
     get => {

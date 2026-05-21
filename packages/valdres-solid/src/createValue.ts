@@ -29,5 +29,5 @@ export const createValue = <
             },
             false,
         )
-    })
+    }) as Accessor<Value>
 }

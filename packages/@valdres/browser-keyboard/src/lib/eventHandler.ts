@@ -1,7 +1,7 @@
 import { pressedKeysAtom } from "../atoms/pressedKeysAtom"
 import { toggleKeyAtom } from "../atoms/toggleKeyAtom"
-import type { ToggleKey } from "../../types/ToggleKey"
-import type { PressedKey } from "../../types/PressedKey"
+import type { ToggleKey } from "../types/ToggleKey"
+import type { PressedKey } from "../types/PressedKey"
 import { isAppleLike } from "./isAppleLike"
 import { locksState } from "./locksState"
 

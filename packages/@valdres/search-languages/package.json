@@ -1,6 +1,6 @@
 {
     "name": "@valdres/search-languages",
-    "version": "0.2.0-pre.28",
+    "version": "1.0.0-beta.0",
     "description": "Language presets (tokenizer + stemmer + stop words) for atomFamilySearch. 25 languages, Snowball stemmers, no runtime dependencies.",
     "license": "MIT",
     "author": {
@@ -55,10 +55,10 @@
     },
     "devDependencies": {
         "typescript": "5.9.2",
-        "valdres": "0.2.0-pre.28"
+        "valdres": "workspace:^"
     },
     "peerDependencies": {
-        "valdres": "0.2.0-pre.28"
+        "valdres": "workspace:^"
     },
     "publishConfig": {
         "access": "public",

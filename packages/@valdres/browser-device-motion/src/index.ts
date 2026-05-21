@@ -12,6 +12,6 @@ export type {
     MotionSnapshot,
     Vector3,
     RotationRateSnapshot,
-} from "../types/MotionSnapshot"
-export type { MotionStatus } from "../types/MotionStatus"
-export type { PermissionValue } from "../types/PermissionValue"
+} from "./types/MotionSnapshot"
+export type { MotionStatus } from "./types/MotionStatus"
+export type { PermissionValue } from "./types/PermissionValue"

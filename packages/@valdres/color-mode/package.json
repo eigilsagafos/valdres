@@ -19,16 +19,16 @@
     ],
     "scripts": {
         "build": "NODE_ENV=production bun build src/index.ts --outdir ./dist --packages external",
-        "build:types": "rm -rf dist/types && bun run tsc",
+        "build:types": "rm -rf dist/types && bunx tsgo",
         "test": "bun test --reporter=dots --parallel"
     },
     "devDependencies": {
         "happy-dom": "18.0.1",
         "typescript": "5.9.2",
-        "valdres": "0.2.0-pre.28"
+        "valdres": "workspace:^"
     },
     "peerDependencies": {
-        "valdres": "0.2.0-pre.28"
+        "valdres": "workspace:^"
     },
     "publishConfig": {
         "access": "public",

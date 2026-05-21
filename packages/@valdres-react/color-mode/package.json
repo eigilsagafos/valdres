@@ -19,18 +19,18 @@
     ],
     "scripts": {
         "build": "NODE_ENV=production bun build src/index.ts --outdir ./dist --packages external",
-        "build:types": "rm -rf dist/types && bun run tsc",
+        "build:types": "rm -rf dist/types && bunx tsgo",
         "test": "echo 'no tests'"
     },
     "dependencies": {
-        "@valdres/color-mode": "0.2.0-pre.28"
+        "@valdres/color-mode": "workspace:^"
     },
     "devDependencies": {
         "typescript": "5.9.2",
-        "valdres-react": "0.2.0-pre.28"
+        "valdres-react": "workspace:^"
     },
     "peerDependencies": {
-        "valdres-react": "0.2.0-pre.28"
+        "valdres-react": "workspace:^"
     },
     "publishConfig": {
         "access": "public",

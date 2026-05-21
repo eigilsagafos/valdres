@@ -1,5 +1,5 @@
 import { atom } from "valdres"
-import type { OrientationStatus } from "../../types/OrientationStatus"
+import type { OrientationStatus } from "../types/OrientationStatus"
 
 const getInitial = (): OrientationStatus => {
     if (

@@ -19,17 +19,17 @@
     ],
     "scripts": {
         "build": "NODE_ENV=production bun build src/index.ts --outdir ./dist --packages external",
-        "build:types": "rm -rf dist/types && bun run tsc",
+        "build:types": "rm -rf dist/types && bunx tsgo",
         "test": "echo 'no tests'"
     },
     "devDependencies": {
-        "@valdres/browser-keyboard": "0.2.0-pre.28",
+        "@valdres/browser-keyboard": "workspace:^",
         "typescript": "5.9.2",
-        "valdres": "0.2.0-pre.28"
+        "valdres": "workspace:^"
     },
     "peerDependencies": {
-        "@valdres/browser-keyboard": "0.2.0-pre.28",
-        "valdres": "0.2.0-pre.28"
+        "@valdres/browser-keyboard": "workspace:^",
+        "valdres": "workspace:^"
     },
     "publishConfig": {
         "access": "public",

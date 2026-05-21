@@ -1,5 +1,5 @@
 import type { GlobalAtom } from "valdres"
-import type { OrientationSnapshot } from "../../types/OrientationSnapshot"
+import type { OrientationSnapshot } from "../types/OrientationSnapshot"
 import { orientationStatusAtom } from "../atoms/orientationStatusAtom"
 import { toSnapshot } from "./toSnapshot"
 

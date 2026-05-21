@@ -1,0 +1,23 @@
+{
+  "mode": "pre",
+  "tag": "beta",
+  "initialVersions": {
+    "@valdres-react/color-mode": "0.2.0-pre.28",
+    "@valdres-react/draggable": "0.2.0-pre.28",
+    "@valdres-react/hotkeys": "0.2.0-pre.28",
+    "@valdres-react/jotai": "0.2.0-pre.28",
+    "@valdres-react/panable": "0.2.0-pre.28",
+    "@valdres-react/recoil": "0.2.0-pre.28",
+    "@valdres/color-mode": "0.2.0-pre.28",
+    "@valdres/hotkeys": "0.2.0-pre.28",
+    "@valdres/documentation": "0.2.0-pre.28",
+    "@valdres/test": "0.2.0-pre.28",
+    "valdres": "0.2.0-pre.28",
+    "valdres-angular": "0.2.0-pre.28",
+    "valdres-react": "0.2.0-pre.28",
+    "valdres-solid": "0.2.0-pre.28",
+    "valdres-svelte": "0.2.0-pre.28",
+    "valdres-vue": "0.2.0-pre.28"
+  },
+  "changesets": []
+}

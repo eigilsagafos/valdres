@@ -1,7 +1,7 @@
 import { measurementCache } from "../lib/measurementCache"
 import { startCachedMeasurement } from "../lib/startCachedMeasurement"
-import type { BandwidthResult } from "../../types/BandwidthResult"
-import type { MeasureBandwidthOptions } from "../../types/MeasureBandwidthOptions"
+import type { BandwidthResult } from "../types/BandwidthResult"
+import type { MeasureBandwidthOptions } from "../types/MeasureBandwidthOptions"
 
 export const measureBandwidth = (
     options: MeasureBandwidthOptions = {},

@@ -1,4 +1,4 @@
-import type { OrientationSnapshot } from "../../types/OrientationSnapshot"
+import type { OrientationSnapshot } from "../types/OrientationSnapshot"
 
 type WebkitOrientationEvent = DeviceOrientationEvent & {
     webkitCompassHeading?: number | null

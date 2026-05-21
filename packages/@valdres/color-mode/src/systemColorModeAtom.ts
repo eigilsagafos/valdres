@@ -1,7 +1,7 @@
 import { atom } from "valdres"
 import { getSystemColorMode } from "./getSystemColorMode"
 import { prefersColorSchemeDark } from "./prefersColorSchemeDark"
-import type { ColorMode } from "../types/ColorMode"
+import type { ColorMode } from "./types/ColorMode"
 
 export const systemColorModeAtom = atom<ColorMode>(getSystemColorMode, {
     global: true,
