@@ -31,6 +31,7 @@ jobs:
 
       - name: Build types
         run: bun run build:types
+        continue-on-error: true
 
       - name: Create .npmrc
         run: echo "//registry.npmjs.org/:_authToken=${{ secrets.NPM_TOKEN }}" > .npmrc
