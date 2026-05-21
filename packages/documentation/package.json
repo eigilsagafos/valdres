@@ -16,9 +16,9 @@
         "react-dom": "19.1.1",
         "recoil": "0.7.7",
         "typescript": "5.9.2",
-        "valdres": "0.2.0-pre.28",
-        "valdres-react": "0.2.0-pre.28",
+        "valdres": "workspace:^",
+        "valdres-react": "workspace:^",
         "vocs": "1.0.13"
     },
-    "version": "0.2.0-pre.28"
+    "version": "1.0.0-beta.0"
 }

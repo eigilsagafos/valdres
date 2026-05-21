@@ -24,10 +24,10 @@
     },
     "devDependencies": {
         "typescript": "5.9.2",
-        "valdres-react": "0.2.0-pre.28"
+        "valdres-react": "workspace:^"
     },
     "peerDependencies": {
-        "valdres-react": "0.2.0-pre.28"
+        "valdres-react": "workspace:^"
     },
     "publishConfig": {
         "access": "public",

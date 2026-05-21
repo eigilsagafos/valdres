@@ -24,11 +24,11 @@
     },
     "devDependencies": {
         "typescript": "5.9.2",
-        "valdres-react": "0.2.0-pre.28"
+        "valdres-react": "workspace:^"
     },
     "peerDependencies": {
-        "@valdres-react/draggable": "0.2.0-pre.28",
-        "valdres-react": "0.2.0-pre.28"
+        "@valdres-react/draggable": "workspace:^",
+        "valdres-react": "workspace:^"
     },
     "peerDependenciesMeta": {
         "@valdres-react/draggable": {
