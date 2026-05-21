@@ -35,8 +35,11 @@ jobs:
       - name: Verify publish pipeline
         run: bun run verify-publish
 
-      - name: Create .npmrc
-        run: echo "//registry.npmjs.org/:_authToken=${{ secrets.NPM_TOKEN }}" > .npmrc
+      - name: Configure npm auth
+        # Write the token to $HOME/.npmrc, not the workspace, so it can never
+        # be swept into a commit by `git add .` (which is what changesets/action
+        # does when opening the Version Packages PR — see PR #123 fallout).
+        run: echo "//registry.npmjs.org/:_authToken=${{ secrets.NPM_TOKEN }}" > "$HOME/.npmrc"
 
       - name: Create Release Pull Request or Publish
         uses: changesets/action@v1
