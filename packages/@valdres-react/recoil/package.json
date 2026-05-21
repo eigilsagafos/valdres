@@ -1,6 +1,6 @@
 {
     "name": "@valdres-react/recoil",
-    "version": "1.0.0-beta.0",
+    "version": "1.0.0-beta.1",
     "license": "MIT",
     "author": {
         "name": "Eigil Sagafos"
@@ -23,7 +23,7 @@
         "test": "bun test --parallel"
     },
     "dependencies": {
-        "valdres-react": "^1.0.0-beta.0"
+        "valdres-react": "^1.0.0-beta.1"
     },
     "devDependencies": {
         "@happy-dom/global-registrator": "18.0.1",

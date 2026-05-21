@@ -17,7 +17,28 @@
     "valdres-react": "0.2.0-pre.28",
     "valdres-solid": "0.2.0-pre.28",
     "valdres-svelte": "0.2.0-pre.28",
-    "valdres-vue": "0.2.0-pre.28"
+    "valdres-vue": "0.2.0-pre.28",
+    "@valdres/bandwidth": "1.0.0-beta.0",
+    "@valdres/browser-color-scheme": "1.0.0-beta.0",
+    "@valdres/browser-contrast": "1.0.0-beta.0",
+    "@valdres/browser-device-motion": "1.0.0-beta.0",
+    "@valdres/browser-device-orientation": "1.0.0-beta.0",
+    "@valdres/browser-focus": "1.0.0-beta.0",
+    "@valdres/browser-geolocation": "1.0.0-beta.0",
+    "@valdres/browser-keyboard": "1.0.0-beta.0",
+    "@valdres/browser-online": "1.0.0-beta.0",
+    "@valdres/browser-presence": "1.0.0-beta.0",
+    "@valdres/browser-reduced-data": "1.0.0-beta.0",
+    "@valdres/browser-reduced-motion": "1.0.0-beta.0",
+    "@valdres/browser-reduced-transparency": "1.0.0-beta.0",
+    "@valdres/browser-screen": "1.0.0-beta.0",
+    "@valdres/browser-screen-details": "1.0.0-beta.0",
+    "@valdres/browser-visibility": "1.0.0-beta.0",
+    "@valdres/browser-window": "1.0.0-beta.0",
+    "@valdres/public-ip": "1.0.0-beta.0"
   },
-  "changesets": []
+  "changesets": [
+    "empty-aliens-accept",
+    "fix-workspace-protocol-publish"
+  ]
 }

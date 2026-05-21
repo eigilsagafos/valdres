@@ -1,6 +1,6 @@
 {
     "name": "@valdres-react/panable",
-    "version": "0.2.0-pre.28",
+    "version": "1.0.0-beta.29",
     "license": "MIT",
     "author": {
         "name": "Eigil Sagafos"
@@ -27,8 +27,8 @@
         "valdres-react": "workspace:^"
     },
     "peerDependencies": {
-        "@valdres-react/draggable": "^0.2.0-pre.28",
-        "valdres-react": "^1.0.0-beta.0"
+        "@valdres-react/draggable": "^0.2.0-beta.29",
+        "valdres-react": "^1.0.0-beta.1"
     },
     "peerDependenciesMeta": {
         "@valdres-react/draggable": {
