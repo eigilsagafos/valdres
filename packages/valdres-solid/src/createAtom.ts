@@ -28,7 +28,7 @@ export const createAtom = <V>(
             },
             false,
         )
-    })
+    }) as Accessor<V>
 
     // @ts-ignore
     const setter: SetterFn<V> = (val: SetAtomValue<V>) => currentStore.set(atom, val)

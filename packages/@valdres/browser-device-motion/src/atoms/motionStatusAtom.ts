@@ -1,5 +1,5 @@
 import { atom } from "valdres"
-import type { MotionStatus } from "../../types/MotionStatus"
+import type { MotionStatus } from "../types/MotionStatus"
 
 const getInitial = (): MotionStatus => {
     if (

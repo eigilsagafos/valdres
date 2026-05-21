@@ -57,13 +57,13 @@ export const installMaxAgeTimer = (state: Atom<any>, data: StoreData) => {
         return
     }
 
-    const pendingTimeouts = new Set<Timer>()
+    const pendingTimeouts = new Set<ReturnType<typeof setTimeout>>()
     let revalidating = false
     let cancelled = false
     let lastSuccessTime = Date.now()
     const NO_VALUE = Symbol()
     let lastGoodValue: any = NO_VALUE
-    let currentInterval: Timer
+    let currentInterval: ReturnType<typeof setInterval>
 
     const getMaxAge = (): number => resolveReactive(state.maxAge!, data)
     const getSWR = (): number =>
@@ -167,7 +167,7 @@ export const installMaxAgeTimer = (state: Atom<any>, data: StoreData) => {
                 // Finite swr enforces a window: if the request is still
                 // in flight when it expires, flip to the pending promise
                 // (loading state).
-                let timeoutRef: Timer | undefined
+                let timeoutRef: ReturnType<typeof setTimeout> | undefined
                 if (Number.isFinite(swr)) {
                     timeoutRef = setTimeout(() => {
                         pendingTimeouts.delete(timeoutRef!)

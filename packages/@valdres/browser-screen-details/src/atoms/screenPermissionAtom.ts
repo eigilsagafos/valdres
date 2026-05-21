@@ -1,5 +1,5 @@
 import { atom } from "valdres"
-import type { ScreenPermissionState } from "../../types/ScreenPermissionState"
+import type { ScreenPermissionState } from "../types/ScreenPermissionState"
 import { subscribe } from "../lib/subscribe"
 
 const getInitial = (): ScreenPermissionState => {

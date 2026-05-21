@@ -1,4 +1,4 @@
-import type { GeolocationSnapshot } from "../../types/GeolocationSnapshot"
+import type { GeolocationSnapshot } from "../types/GeolocationSnapshot"
 
 export const toSnapshot = (
     position: GeolocationPosition,

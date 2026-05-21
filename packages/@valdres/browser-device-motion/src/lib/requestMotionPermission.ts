@@ -1,4 +1,4 @@
-import type { PermissionValue } from "../../types/PermissionValue"
+import type { PermissionValue } from "../types/PermissionValue"
 import { permissionAtom } from "../atoms/permissionAtom"
 
 type IOSDeviceMotionEvent = {

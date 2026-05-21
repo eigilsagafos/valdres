@@ -1,3 +1,3 @@
 export { windowSizeAtom } from "./atoms/windowSizeAtom"
 
-export type { WindowSize } from "../types/WindowSize"
+export type { WindowSize } from "./types/WindowSize"

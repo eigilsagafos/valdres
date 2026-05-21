@@ -2,7 +2,7 @@ import type {
     MotionSnapshot,
     RotationRateSnapshot,
     Vector3,
-} from "../../types/MotionSnapshot"
+} from "../types/MotionSnapshot"
 
 const toVector3 = (
     acc: DeviceMotionEventAcceleration | null,

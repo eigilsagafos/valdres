@@ -1,6 +1,6 @@
 import { atom } from "valdres"
 import type { GlobalAtom } from "valdres"
-import type { OrientationSnapshot } from "../../types/OrientationSnapshot"
+import type { OrientationSnapshot } from "../types/OrientationSnapshot"
 import { subscribe } from "../lib/subscribe"
 
 export const orientationAtom: GlobalAtom<OrientationSnapshot | null> =

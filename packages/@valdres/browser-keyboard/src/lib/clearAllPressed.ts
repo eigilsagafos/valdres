@@ -1,6 +1,6 @@
 import { pressedKeysAtom } from "../atoms/pressedKeysAtom"
 import { toggleKeyAtom } from "../atoms/toggleKeyAtom"
-import type { ToggleKey } from "../../types/ToggleKey"
+import type { ToggleKey } from "../types/ToggleKey"
 import { locksState } from "./locksState"
 
 const toggleKeys: ToggleKey[] = ["CapsLock", "NumLock", "ScrollLock"]

@@ -1,5 +1,5 @@
 import type { GlobalAtom } from "valdres"
-import type { MotionSnapshot } from "../../types/MotionSnapshot"
+import type { MotionSnapshot } from "../types/MotionSnapshot"
 import { motionStatusAtom } from "../atoms/motionStatusAtom"
 import { toSnapshot } from "./toSnapshot"
 

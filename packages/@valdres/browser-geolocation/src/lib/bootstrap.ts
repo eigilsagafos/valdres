@@ -1,6 +1,6 @@
 import { globalStore } from "valdres"
 import type { GlobalAtom } from "valdres"
-import type { GeolocationSnapshot } from "../../types/GeolocationSnapshot"
+import type { GeolocationSnapshot } from "../types/GeolocationSnapshot"
 import { geolocationErrorAtom } from "../atoms/geolocationErrorAtom"
 import { geolocationOptionsAtom } from "../atoms/geolocationOptionsAtom"
 import { geolocationStatusAtom } from "../atoms/geolocationStatusAtom"

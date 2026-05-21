@@ -99,12 +99,14 @@ if (buildResult.exitCode !== 0) {
 }
 
 console.log("Building types...")
-// Some packages have pre-existing TS errors, so we don't fail on exit code.
-// The per-package verification below checks if types files actually exist.
-Bun.spawnSync(["bun", "run", "build:types"], {
+const typesResult = Bun.spawnSync(["bun", "run", "build:types"], {
     cwd: rootDir,
     stdio: ["inherit", "inherit", "inherit"],
 })
+if (typesResult.exitCode !== 0) {
+    console.error("Type build failed!")
+    process.exit(1)
+}
 
 // Step 2: For each package: resolve workspace refs → prepack → verify → restore
 for (const pkg of PUBLIC_PACKAGES) {

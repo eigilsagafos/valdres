@@ -54,12 +54,12 @@ export const setAtom = <Value = any>(
     data: StoreData,
     skipOnSet = false,
 ) => {
-    let initializedAtomsSet: Set<Atom> | undefined
+    let initializedAtomsSet: Set<Atom<any>> | undefined
     let currentValue: Value
     if (data.values.has(atom)) {
         currentValue = data.values.get(atom)
     } else {
-        initializedAtomsSet = new Set<Atom>()
+        initializedAtomsSet = new Set<Atom<any>>()
         currentValue = getState(atom, data, initializedAtomsSet)
     }
     if (isFunction(newValue)) {

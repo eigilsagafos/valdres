@@ -37,7 +37,7 @@ const reEvaluteSelector = (
     selector: Selector,
     data: StoreData,
     updatedAtoms: Set<Atom>,
-) => {
+): [boolean, boolean, unknown, Set<State>, Set<State>] => {
     const existingValue = data.values.get(selector)
     const addedDeps = new Set<State>()
     const removedDeps = new Set<State>()
@@ -168,7 +168,7 @@ export const propagateDeletedAtoms = (
     // but selectors in those scopes that depend on the family still need to
     // be re-evaluated so their subscribers get notified.
     if (families.size > 0 && data.scopes && data.scopes.size > 0) {
-        const scopeFamilies = new Map<StoreData, Family<any>[]>()
+        const scopeFamilies = new Map<StoreData, AtomFamily<any>[]>()
         for (const family of families.keys()) {
             const scopesWithFamily = data.scopeValueIndex.get(family)
             if (scopesWithFamily) {

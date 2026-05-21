@@ -11,9 +11,9 @@ export { subscribeToCommand } from "./subscribeToCommand"
 export { subscribeToHotkey } from "./subscribeToHotkey"
 export { subscribeToKey } from "./subscribeToKey"
 
-export type { KeyboardCode } from "../types/KeyboardCode"
-export type { KeyboardCommand } from "../types/KeyboardCommand"
-export type { Options } from "../types/Options"
+export type { KeyboardCode } from "./types/KeyboardCode"
+export type { KeyboardCommand } from "./types/KeyboardCommand"
+export type { Options } from "./types/Options"
 
 export const registerListeners = () => {
     document.addEventListener("keydown", eventHandler)

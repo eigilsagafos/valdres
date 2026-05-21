@@ -10,3 +10,8 @@ bench-results-node.ndjson
 bench-results.json
 bench-history-entry.json
 junit*.xml
+# .d.ts files never belong in src/ — only emitted as side-effects when
+# --noCheck builds (draggable, panable) cross workspace boundaries.
+packages/*/src/**/*.d.ts
+packages/@valdres/*/src/**/*.d.ts
+packages/@valdres-react/*/src/**/*.d.ts

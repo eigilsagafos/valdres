@@ -7,6 +7,6 @@ await Bun.build({
     external: ["./package.json"],
     packages: "external",
     define: {
-        "process.env.VALDRES_VERSION": JSON.stringify(version), // Define the version as a constant
+        "process.env.VALDRES_VERSION": JSON.stringify(version),
     },
 })

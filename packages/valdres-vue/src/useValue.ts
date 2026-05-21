@@ -1,4 +1,4 @@
-import { shallowRef, onScopeDispose, type Readonly, type Ref } from "vue"
+import { shallowRef, onScopeDispose, type Ref } from "vue"
 import { isPromiseLike, type Atom, type Selector, type Store } from "valdres"
 import { useStore } from "./useStore"
 

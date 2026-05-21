@@ -21,6 +21,8 @@ jobs:
               run: bun install
             - name: Build
               run: bun run build
+            - name: Build types
+              run: bun run build:types
             - name: Verify publish (dry-run)
               run: DRY_RUN=1 bash scripts/ci-publish.sh
             - name: Test

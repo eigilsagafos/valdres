@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useRef } from "react"
 import { useStore, useTransaction } from "valdres-react"
 import { setIsDragging } from "./setIsDragging"
-import type { EventCallbackFn } from "../types/EventCallbackFn"
-import type { Point } from "../types/Point"
-import type { Size } from "../types/Size"
+import type { EventCallbackFn } from "./types/EventCallbackFn"
+import type { Point } from "./types/Point"
+import type { Size } from "./types/Size"
 import type { Selector } from "../../../valdres/src/types/Selector"
 
 export const useDraggable = ({

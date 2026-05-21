@@ -1,6 +1,10 @@
 declare global {
     var __valdres__: string
 }
+// `process.env.VALDRES_VERSION` is statically replaced at build time by
+// Bun.build's define option. Declared at module scope (not global) so we
+// don't conflict with consumers' @types/node or bun-types.
+declare const process: { env: { VALDRES_VERSION?: string } }
 if (globalThis.__valdres__) {
     throw new Error(
         `Error! An instance of valdres is already loaded. Loaded: ${globalThis.__valdres__}. Attempted to load: ${process.env.VALDRES_VERSION}`,
@@ -37,12 +41,16 @@ export type { AtomFamily } from "./types/AtomFamily"
 export type { FamilyKey } from "./types/FamilyKey"
 export type { GetValue } from "./types/GetValue"
 export type { Reactive } from "./types/Reactive"
-export type { GlobalAtom } from "./types/GlobalAtom"
+export type { GlobalAtom, MaxAgeInterval } from "./types/GlobalAtom"
+export type { GlobalAtomGetSelfFunc } from "./types/GlobalAtomGetSelfFunc"
+export type { GlobalAtomResetSelfFunc } from "./types/GlobalAtomResetSelfFunc"
+export type { GlobalAtomSetSelfFunc } from "./types/GlobalAtomSetSelfFunc"
 export type { ResetAtom } from "./types/ResetAtom"
 export type { Selector, SelectorGetOptions } from "./types/Selector"
 export type { SelectorFamily } from "./types/SelectorFamily"
 export type { SetAtom } from "./types/SetAtom"
 export type { SetAtomValue } from "./types/SetAtomValue"
+export type { SyncSetAtom } from "./types/SyncSetAtom"
 export type { State } from "./types/State"
 export type { Store } from "./types/Store"
 export type { StoreData } from "./types/StoreData"
