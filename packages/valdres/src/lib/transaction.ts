@@ -2,6 +2,7 @@ import type { Atom } from "../types/Atom"
 import type { AtomFamily } from "../types/AtomFamily"
 import type { AtomFamilyAtom } from "../types/AtomFamilyAtom"
 import type { GetValue } from "../types/GetValue"
+import type { SetAtomValue } from "../types/SetAtomValue"
 import type { State } from "../types/State"
 import type { StoreData } from "../types/StoreData"
 import type { TransactionFn } from "../types/TransactionFn"
@@ -123,19 +124,22 @@ export class Transaction {
         }
     }
 
-    set = <V>(atom: Atom<V>, value: V | ((currentValue: V) => V)) => {
+    set = <V>(atom: Atom<V>, value: SetAtomValue<V>): V => {
         if (!isAtom(atom)) throw new Error("Not an atom")
+        let resolved: V
         if (isFunction(value)) {
             const currentValue = this.get(atom) as V
-            value = value(currentValue)
+            resolved = (value as (current: V) => V)(currentValue)
+        } else {
+            resolved = value as V
         }
 
         // Freeze non-primitives so values are immutable within the transaction.
         // Respect atom.mutable and production mode, matching setValueInData behavior.
-        if (!atom.mutable && !isProd() && value !== null && (typeof value === "object" || typeof value === "function")) {
-            value = deepFreeze(value)
+        if (!atom.mutable && !isProd() && resolved !== null && (typeof resolved === "object" || typeof resolved === "function")) {
+            resolved = deepFreeze(resolved) as V
         }
-        this._atomMap.set(atom, value)
+        this._atomMap.set(atom, resolved)
         if (!this.dirty) this.dirty = true
 
         if (isFamilyAtom(atom)) {
@@ -150,7 +154,7 @@ export class Transaction {
             index.renderedArray = null
             this.recursivelyUpdateAtomFamilyIndexes(atom.family)
         }
-        return value
+        return resolved
     }
 
     // @ts-ignore
