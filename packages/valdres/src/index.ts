@@ -1,5 +1,6 @@
 declare global {
     var __valdres__: string
+    var process: { env: Record<string, string | undefined> }
 }
 if (globalThis.__valdres__) {
     throw new Error(

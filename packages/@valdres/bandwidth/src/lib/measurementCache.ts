@@ -1,4 +1,4 @@
-import type { BandwidthResult } from "../../types/BandwidthResult"
+import type { BandwidthResult } from "../types/BandwidthResult"
 
 export const measurementCache: {
     promise: Promise<BandwidthResult> | null

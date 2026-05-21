@@ -1,8 +1,8 @@
 import { measurementCache } from "./measurementCache"
 import { measurementStatusAtom } from "../atoms/measurementStatusAtom"
 import { runMeasurement } from "./runMeasurement"
-import type { BandwidthResult } from "../../types/BandwidthResult"
-import type { MeasureBandwidthOptions } from "../../types/MeasureBandwidthOptions"
+import type { BandwidthResult } from "../types/BandwidthResult"
+import type { MeasureBandwidthOptions } from "../types/MeasureBandwidthOptions"
 
 export const startCachedMeasurement = (
     options: Omit<MeasureBandwidthOptions, "fresh" | "signal">,

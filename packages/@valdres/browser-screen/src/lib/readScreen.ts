@@ -1,4 +1,4 @@
-import type { ScreenInfo } from "../../types/ScreenInfo"
+import type { ScreenInfo } from "../types/ScreenInfo"
 
 const EMPTY: ScreenInfo = Object.freeze({
     width: 0,

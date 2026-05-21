@@ -9,8 +9,8 @@ import { measureDownload } from "./measureDownload"
 import { measureUpload } from "./measureUpload"
 import { median } from "./median"
 import { stdDev } from "./stdDev"
-import type { BandwidthResult } from "../../types/BandwidthResult"
-import type { MeasureBandwidthOptions } from "../../types/MeasureBandwidthOptions"
+import type { BandwidthResult } from "../types/BandwidthResult"
+import type { MeasureBandwidthOptions } from "../types/MeasureBandwidthOptions"
 
 export const runMeasurement = async (
     options: MeasureBandwidthOptions = {},

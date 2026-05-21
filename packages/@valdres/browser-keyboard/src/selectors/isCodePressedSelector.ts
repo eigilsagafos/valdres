@@ -1,6 +1,6 @@
 import { selectorFamily } from "valdres"
 import { pressedKeysAtom } from "../atoms/pressedKeysAtom"
-import type { KeyboardCode } from "../../types/KeyboardCode"
+import type { KeyboardCode } from "../types/KeyboardCode"
 
 export const isCodePressedSelector = selectorFamily<boolean, [KeyboardCode]>(
     (code: KeyboardCode) => get => {

@@ -1,6 +1,6 @@
 import { measurementCache } from "./measurementCache"
 import { startCachedMeasurement } from "./startCachedMeasurement"
-import type { BandwidthResult } from "../../types/BandwidthResult"
+import type { BandwidthResult } from "../types/BandwidthResult"
 
 export const ensureMeasurement = (): Promise<BandwidthResult> => {
     if (measurementCache.promise) return measurementCache.promise

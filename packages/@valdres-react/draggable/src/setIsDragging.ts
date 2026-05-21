@@ -4,9 +4,9 @@ import {
     type EventId,
 } from "@valdres-react/panable"
 import type { Selector, Transaction } from "valdres"
-import type { EventCallbackFn } from "../types/EventCallbackFn"
-import type { Point } from "../types/Point"
-import type { Size } from "../types/Size"
+import type { EventCallbackFn } from "./types/EventCallbackFn"
+import type { Point } from "./types/Point"
+import type { Size } from "./types/Size"
 
 export const setIsDragging = (
     txn: Transaction,

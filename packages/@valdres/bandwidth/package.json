@@ -19,7 +19,7 @@
     ],
     "scripts": {
         "build": "NODE_ENV=production bun build src/index.ts --outdir ./dist --packages external",
-        "build:types": "rm -rf dist/types && bun run tsc",
+        "build:types": "rm -rf dist/types && bunx tsgo",
         "dev": "PORT=3010 bun --hot dev/index.html",
         "test": "bun test",
         "test:ci": "bun test"
