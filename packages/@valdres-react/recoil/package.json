@@ -23,7 +23,7 @@
         "test": "bun test --parallel"
     },
     "dependencies": {
-        "valdres-react": "workspace:^"
+        "valdres-react": "^1.0.0-beta.0"
     },
     "devDependencies": {
         "@happy-dom/global-registrator": "18.0.1",

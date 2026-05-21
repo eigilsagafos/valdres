@@ -36,7 +36,7 @@
         "valdres-react": "workspace:^"
     },
     "peerDependencies": {
-        "valdres": "workspace:^"
+        "valdres": "^1.0.0-beta.0"
     },
     "publishConfig": {
         "access": "public",

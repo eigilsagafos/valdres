@@ -28,8 +28,8 @@
         "valdres": "workspace:^"
     },
     "peerDependencies": {
-        "@valdres/browser-keyboard": "workspace:^",
-        "valdres": "workspace:^"
+        "@valdres/browser-keyboard": "^1.0.0-beta.0",
+        "valdres": "^1.0.0-beta.0"
     },
     "publishConfig": {
         "access": "public",
