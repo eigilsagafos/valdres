@@ -1,7 +1,10 @@
 declare global {
     var __valdres__: string
-    var process: { env: Record<string, string | undefined> }
 }
+// `process.env.VALDRES_VERSION` is statically replaced at build time by
+// Bun.build's define option. Declared at module scope (not global) so we
+// don't conflict with consumers' @types/node or bun-types.
+declare const process: { env: { VALDRES_VERSION?: string } }
 if (globalThis.__valdres__) {
     throw new Error(
         `Error! An instance of valdres is already loaded. Loaded: ${globalThis.__valdres__}. Attempted to load: ${process.env.VALDRES_VERSION}`,
@@ -47,6 +50,7 @@ export type { Selector, SelectorGetOptions } from "./types/Selector"
 export type { SelectorFamily } from "./types/SelectorFamily"
 export type { SetAtom } from "./types/SetAtom"
 export type { SetAtomValue } from "./types/SetAtomValue"
+export type { SyncSetAtom } from "./types/SyncSetAtom"
 export type { State } from "./types/State"
 export type { Store } from "./types/Store"
 export type { StoreData } from "./types/StoreData"

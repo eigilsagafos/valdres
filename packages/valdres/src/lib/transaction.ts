@@ -2,7 +2,6 @@ import type { Atom } from "../types/Atom"
 import type { AtomFamily } from "../types/AtomFamily"
 import type { AtomFamilyAtom } from "../types/AtomFamilyAtom"
 import type { GetValue } from "../types/GetValue"
-import type { SetAtomValue } from "../types/SetAtomValue"
 import type { State } from "../types/State"
 import type { StoreData } from "../types/StoreData"
 import type { TransactionFn } from "../types/TransactionFn"
@@ -124,14 +123,14 @@ export class Transaction {
         }
     }
 
-    set = <V>(atom: Atom<V>, value: SetAtomValue<V>): V => {
+    set = <V>(atom: Atom<V>, value: V | ((currentValue: V) => V)): V => {
         if (!isAtom(atom)) throw new Error("Not an atom")
         let resolved: V
         if (isFunction(value)) {
             const currentValue = this.get(atom) as V
             resolved = (value as (current: V) => V)(currentValue)
         } else {
-            resolved = value as V
+            resolved = value
         }
 
         // Freeze non-primitives so values are immutable within the transaction.

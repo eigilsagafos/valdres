@@ -8,7 +8,7 @@
         "@changesets/changelog-github": "^0.6.0",
         "@changesets/cli": "^2.30.0",
         "@types/bun": "1.2.2",
-        "@typescript/native-preview": "^7.0.0-dev.20260521.1",
+        "@typescript/native-preview": "7.0.0-dev.20260521.1",
         "eslint": "9.20.1",
         "eslint-config-prettier": "10.0.1",
         "prettier": "3.5.3",
