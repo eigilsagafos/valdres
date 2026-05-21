@@ -1,6 +1,6 @@
 {
     "name": "@valdres/browser-online",
-    "version": "0.2.0-pre.28",
+    "version": "1.0.0-beta.0",
     "license": "MIT",
     "author": {
         "name": "Eigil Sagafos"
@@ -27,10 +27,10 @@
         "@happy-dom/global-registrator": "20.0.5",
         "happy-dom": "20.0.5",
         "typescript": "5.9.2",
-        "valdres": "0.2.0-pre.28"
+        "valdres": "workspace:^"
     },
     "peerDependencies": {
-        "valdres": "0.2.0-pre.28"
+        "valdres": "workspace:^"
     },
     "publishConfig": {
         "access": "public",

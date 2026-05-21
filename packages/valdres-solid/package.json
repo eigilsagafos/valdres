@@ -1,6 +1,6 @@
 {
     "name": "valdres-solid",
-    "version": "0.2.0-pre.28",
+    "version": "0.1.0-beta.0",
     "license": "MIT",
     "author": {
         "name": "Eigil Sagafos"
@@ -24,11 +24,11 @@
     },
     "devDependencies": {
         "typescript": "5.9.2",
-        "valdres": "0.2.0-pre.28",
+        "valdres": "workspace:^",
         "solid-js": "1.9.5"
     },
     "peerDependencies": {
-        "valdres": ">=0.2.0-pre.28",
+        "valdres": "workspace:^",
         "solid-js": ">=1.8"
     },
     "publishConfig": {

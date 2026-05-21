@@ -4,6 +4,28 @@
 bun install
 ```
 
+## Releasing
+
+Versioning and publishing is handled by [Changesets](https://github.com/changesets/changesets). Each package versions independently.
+
+**When you open a PR that changes a publishable package:**
+
+```bash
+bunx changeset
+```
+
+Pick the affected packages, the bump type (patch/minor/major), and write a short summary. Commit the generated `.changeset/*.md` file with your PR.
+
+When the PR merges to `main`, the `Publish` workflow opens (or updates) a **Version Packages** PR that applies the pending changesets, bumps versions, and updates CHANGELOGs. Merging that PR publishes the affected packages to npm.
+
+To preview what publishing would do locally:
+
+```bash
+bun run verify-publish
+```
+
+The repo is currently in `beta` prerelease mode (`bunx changeset pre exit` to graduate to stable).
+
 ## Benchmarks
 
 <!-- BENCH:START -->

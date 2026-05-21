@@ -1,6 +1,6 @@
 {
     "name": "@valdres/bandwidth",
-    "version": "0.2.0-pre.28",
+    "version": "1.0.0-beta.0",
     "license": "MIT",
     "author": {
         "name": "Eigil Sagafos"
@@ -25,12 +25,12 @@
         "test:ci": "bun test"
     },
     "devDependencies": {
-        "@valdres/public-ip": "0.2.0-pre.28",
+        "@valdres/public-ip": "workspace:^",
         "typescript": "5.9.2",
-        "valdres": "0.2.0-pre.28"
+        "valdres": "workspace:^"
     },
     "peerDependencies": {
-        "valdres": "0.2.0-pre.28"
+        "valdres": "workspace:^"
     },
     "publishConfig": {
         "access": "public",

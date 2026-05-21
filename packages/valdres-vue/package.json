@@ -1,6 +1,6 @@
 {
     "name": "valdres-vue",
-    "version": "0.2.0-pre.28",
+    "version": "0.1.0-beta.0",
     "license": "MIT",
     "author": {
         "name": "Eigil Sagafos"
@@ -27,11 +27,11 @@
         "@vue/test-utils": "2.4.6",
         "happy-dom": "20.0.5",
         "typescript": "5.9.2",
-        "valdres": "0.2.0-pre.28",
+        "valdres": "workspace:^",
         "vue": "3.5.13"
     },
     "peerDependencies": {
-        "valdres": ">=0.2.0-pre.28",
+        "valdres": "workspace:^",
         "vue": ">=3.3"
     },
     "publishConfig": {
