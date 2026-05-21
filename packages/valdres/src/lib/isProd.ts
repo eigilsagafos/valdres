@@ -1,3 +1,7 @@
+// Module-scope shim so we don't pull in @types/node for `process.env`.
+// Matches the pattern used in `src/index.ts` for `VALDRES_VERSION`.
+declare const process: { env: { NODE_ENV?: string } }
+
 /**
  * Whether valdres is running in production mode. Honored by paths that
  * skip dev-mode safety checks — currently `setValueInData`'s `deepFreeze`
