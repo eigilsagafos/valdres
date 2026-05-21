@@ -22,7 +22,7 @@ export const RecoilRoot: typeof RecoilRoot_original = ({
             if (isSelector(state)) {
                 return (state as any).set(store.set, store.get, store.reset, ...args)
             }
-            return originalSet(state, ...args)
+            return (originalSet as (...a: any[]) => any)(state, ...args)
         }) as any
         ;(store.data as any).storeRef = store
 
