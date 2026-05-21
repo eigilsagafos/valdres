@@ -22,14 +22,14 @@
 "@valdres/browser-screen-details": patch
 "@valdres/browser-visibility": patch
 "@valdres/browser-window": patch
-"@valdres/color-mode": patch
-"@valdres/hotkeys": patch
+"@valdres/color-mode": minor
+"@valdres/hotkeys": minor
 "@valdres/public-ip": patch
-"@valdres-react/color-mode": patch
-"@valdres-react/draggable": patch
-"@valdres-react/hotkeys": patch
+"@valdres-react/color-mode": minor
+"@valdres-react/draggable": minor
+"@valdres-react/hotkeys": minor
 "@valdres-react/jotai": patch
-"@valdres-react/panable": patch
+"@valdres-react/panable": minor
 "@valdres-react/recoil": patch
 ---
 
@@ -41,3 +41,9 @@ which doesn't understand the workspace protocol — so the bare shortcut got
 published verbatim. Publishable packages now use plain semver ranges for
 inter-package deps; changesets keeps them in lockstep on every bump, and
 `verify-publish` fails CI if any `workspace:` reference sneaks back in.
+
+The six Lerna-era packages still on the `pre` dist-tag (`@valdres/color-mode`,
+`@valdres/hotkeys`, `@valdres-react/color-mode`, `@valdres-react/draggable`,
+`@valdres-react/hotkeys`, `@valdres-react/panable`) get a `minor` bump so
+they land on `0.3.0-beta.0` — a clean transition from the old `0.2.0-pre.28`
+line to the unified `beta` dist-tag.
