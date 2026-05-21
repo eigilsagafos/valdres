@@ -23,7 +23,7 @@
         "test": "bun test --reporter=dots --parallel"
     },
     "dependencies": {
-        "valdres": "workspace:^"
+        "valdres": "^1.0.0-beta.0"
     },
     "devDependencies": {
         "@happy-dom/global-registrator": "20.0.5",

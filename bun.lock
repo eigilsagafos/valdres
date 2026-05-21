@@ -19,14 +19,14 @@
       "name": "@valdres-react/color-mode",
       "version": "0.2.0-pre.28",
       "dependencies": {
-        "@valdres/color-mode": "workspace:^",
+        "@valdres/color-mode": "^0.2.0-pre.28",
       },
       "devDependencies": {
         "typescript": "5.9.2",
         "valdres-react": "workspace:^",
       },
       "peerDependencies": {
-        "valdres-react": "workspace:^",
+        "valdres-react": "^1.0.0-beta.0",
       },
     },
     "packages/@valdres-react/draggable": {
@@ -37,14 +37,14 @@
         "valdres-react": "workspace:^",
       },
       "peerDependencies": {
-        "valdres-react": "workspace:^",
+        "valdres-react": "^1.0.0-beta.0",
       },
     },
     "packages/@valdres-react/hotkeys": {
       "name": "@valdres-react/hotkeys",
       "version": "0.2.0-pre.28",
       "dependencies": {
-        "@valdres/hotkeys": "workspace:^",
+        "@valdres/hotkeys": "^0.2.0-pre.28",
       },
       "devDependencies": {
         "@testing-library/react": "16.3.0",
@@ -55,8 +55,8 @@
       },
       "peerDependencies": {
         "react": ">=18",
-        "valdres": "workspace:^",
-        "valdres-react": "workspace:^",
+        "valdres": "^1.0.0-beta.0",
+        "valdres-react": "^1.0.0-beta.0",
       },
     },
     "packages/@valdres-react/jotai": {
@@ -84,8 +84,8 @@
         "valdres-react": "workspace:^",
       },
       "peerDependencies": {
-        "@valdres-react/draggable": "workspace:^",
-        "valdres-react": "workspace:^",
+        "@valdres-react/draggable": "^0.2.0-pre.28",
+        "valdres-react": "^1.0.0-beta.0",
       },
       "optionalPeers": [
         "@valdres-react/draggable",
@@ -115,7 +115,7 @@
         "valdres": "workspace:^",
       },
       "peerDependencies": {
-        "valdres": "workspace:^",
+        "valdres": "^1.0.0-beta.0",
       },
     },
     "packages/@valdres/browser-color-scheme": {
@@ -133,7 +133,7 @@
         "valdres-react": "workspace:^",
       },
       "peerDependencies": {
-        "valdres": "workspace:^",
+        "valdres": "^1.0.0-beta.0",
       },
     },
     "packages/@valdres/browser-contrast": {
@@ -151,7 +151,7 @@
         "valdres-react": "workspace:^",
       },
       "peerDependencies": {
-        "valdres": "workspace:^",
+        "valdres": "^1.0.0-beta.0",
       },
     },
     "packages/@valdres/browser-device-motion": {
@@ -173,7 +173,7 @@
         "valdres-react": "workspace:^",
       },
       "peerDependencies": {
-        "valdres": "workspace:^",
+        "valdres": "^1.0.0-beta.0",
       },
     },
     "packages/@valdres/browser-device-orientation": {
@@ -195,7 +195,7 @@
         "valdres-react": "workspace:^",
       },
       "peerDependencies": {
-        "valdres": "workspace:^",
+        "valdres": "^1.0.0-beta.0",
       },
     },
     "packages/@valdres/browser-focus": {
@@ -213,7 +213,7 @@
         "valdres-react": "workspace:^",
       },
       "peerDependencies": {
-        "valdres": "workspace:^",
+        "valdres": "^1.0.0-beta.0",
       },
     },
     "packages/@valdres/browser-geolocation": {
@@ -226,7 +226,7 @@
         "valdres": "workspace:^",
       },
       "peerDependencies": {
-        "valdres": "workspace:^",
+        "valdres": "^1.0.0-beta.0",
       },
     },
     "packages/@valdres/browser-keyboard": {
@@ -237,7 +237,7 @@
         "valdres": "workspace:^",
       },
       "peerDependencies": {
-        "valdres": "workspace:^",
+        "valdres": "^1.0.0-beta.0",
       },
     },
     "packages/@valdres/browser-online": {
@@ -250,15 +250,15 @@
         "valdres": "workspace:^",
       },
       "peerDependencies": {
-        "valdres": "workspace:^",
+        "valdres": "^1.0.0-beta.0",
       },
     },
     "packages/@valdres/browser-presence": {
       "name": "@valdres/browser-presence",
       "version": "1.0.0-beta.0",
       "dependencies": {
-        "@valdres/browser-focus": "workspace:^",
-        "@valdres/browser-visibility": "workspace:^",
+        "@valdres/browser-focus": "^1.0.0-beta.0",
+        "@valdres/browser-visibility": "^1.0.0-beta.0",
       },
       "devDependencies": {
         "@happy-dom/global-registrator": "20.0.5",
@@ -272,7 +272,7 @@
         "valdres-react": "workspace:^",
       },
       "peerDependencies": {
-        "valdres": "workspace:^",
+        "valdres": "^1.0.0-beta.0",
       },
     },
     "packages/@valdres/browser-reduced-data": {
@@ -290,7 +290,7 @@
         "valdres-react": "workspace:^",
       },
       "peerDependencies": {
-        "valdres": "workspace:^",
+        "valdres": "^1.0.0-beta.0",
       },
     },
     "packages/@valdres/browser-reduced-motion": {
@@ -308,7 +308,7 @@
         "valdres-react": "workspace:^",
       },
       "peerDependencies": {
-        "valdres": "workspace:^",
+        "valdres": "^1.0.0-beta.0",
       },
     },
     "packages/@valdres/browser-reduced-transparency": {
@@ -326,7 +326,7 @@
         "valdres-react": "workspace:^",
       },
       "peerDependencies": {
-        "valdres": "workspace:^",
+        "valdres": "^1.0.0-beta.0",
       },
     },
     "packages/@valdres/browser-screen": {
@@ -339,7 +339,7 @@
         "valdres": "workspace:^",
       },
       "peerDependencies": {
-        "valdres": "workspace:^",
+        "valdres": "^1.0.0-beta.0",
       },
     },
     "packages/@valdres/browser-screen-details": {
@@ -352,7 +352,7 @@
         "valdres": "workspace:^",
       },
       "peerDependencies": {
-        "valdres": "workspace:^",
+        "valdres": "^1.0.0-beta.0",
       },
     },
     "packages/@valdres/browser-visibility": {
@@ -370,7 +370,7 @@
         "valdres-react": "workspace:^",
       },
       "peerDependencies": {
-        "valdres": "workspace:^",
+        "valdres": "^1.0.0-beta.0",
       },
     },
     "packages/@valdres/browser-window": {
@@ -383,7 +383,7 @@
         "valdres": "workspace:^",
       },
       "peerDependencies": {
-        "valdres": "workspace:^",
+        "valdres": "^1.0.0-beta.0",
       },
     },
     "packages/@valdres/color-mode": {
@@ -395,7 +395,7 @@
         "valdres": "workspace:^",
       },
       "peerDependencies": {
-        "valdres": "workspace:^",
+        "valdres": "^1.0.0-beta.0",
       },
     },
     "packages/@valdres/hotkeys": {
@@ -407,8 +407,8 @@
         "valdres": "workspace:^",
       },
       "peerDependencies": {
-        "@valdres/browser-keyboard": "workspace:^",
-        "valdres": "workspace:^",
+        "@valdres/browser-keyboard": "^1.0.0-beta.0",
+        "valdres": "^1.0.0-beta.0",
       },
     },
     "packages/@valdres/public-ip": {
@@ -426,7 +426,7 @@
         "valdres-react": "workspace:^",
       },
       "peerDependencies": {
-        "valdres": "workspace:^",
+        "valdres": "^1.0.0-beta.0",
       },
     },
     "packages/documentation": {
@@ -474,14 +474,14 @@
       },
       "peerDependencies": {
         "@angular/core": ">=17",
-        "valdres": "workspace:^",
+        "valdres": "^1.0.0-beta.0",
       },
     },
     "packages/valdres-react": {
       "name": "valdres-react",
       "version": "1.0.0-beta.0",
       "dependencies": {
-        "valdres": "workspace:^",
+        "valdres": "^1.0.0-beta.0",
       },
       "devDependencies": {
         "@happy-dom/global-registrator": "20.0.5",
@@ -510,7 +510,7 @@
       },
       "peerDependencies": {
         "solid-js": ">=1.8",
-        "valdres": "workspace:^",
+        "valdres": "^1.0.0-beta.0",
       },
     },
     "packages/valdres-svelte": {
@@ -524,7 +524,7 @@
       },
       "peerDependencies": {
         "svelte": ">=5",
-        "valdres": "workspace:^",
+        "valdres": "^1.0.0-beta.0",
       },
     },
     "packages/valdres-vue": {
@@ -539,7 +539,7 @@
         "vue": "3.5.13",
       },
       "peerDependencies": {
-        "valdres": "workspace:^",
+        "valdres": "^1.0.0-beta.0",
         "vue": ">=3.3",
       },
     },

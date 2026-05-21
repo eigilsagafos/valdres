@@ -27,8 +27,8 @@
         "valdres-react": "workspace:^"
     },
     "peerDependencies": {
-        "@valdres-react/draggable": "workspace:^",
-        "valdres-react": "workspace:^"
+        "@valdres-react/draggable": "^0.2.0-pre.28",
+        "valdres-react": "^1.0.0-beta.0"
     },
     "peerDependenciesMeta": {
         "@valdres-react/draggable": {
