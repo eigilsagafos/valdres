@@ -13,6 +13,7 @@ permissions:
 jobs:
   publish:
     runs-on: ubuntu-22.04
+    environment: npm-publish
     steps:
       - uses: actions/checkout@v6
         with:
