@@ -66,17 +66,20 @@ describe("atomFamily bulk no-txn insert", () => {
         expect(timeRatio).toBeLessThan(20)
     })
 
-    test("absolute throughput stays under 50ms for 10k items", () => {
+    test("absolute throughput stays under 250ms for 10k items", () => {
         // Backup assertion in case the ratio test gives a false positive
         // (e.g. if 1k itself is already slow, the ratio stays small while
-        // both are bad). 50ms / 10k = 5µs per write — generous but
-        // catches the current O(N²) regime which sits at 30–60ms range.
+        // both are bad). 250ms / 10k = 25µs per write. Pre-fix this test
+        // sat at 2,648ms+ (O(N²) regime), so even with generous CI
+        // headroom we still catch the regression by an order of magnitude.
+        // Threshold sized for shared GitHub Actions runners which clock
+        // 50–100ms vs ~10–20ms on fast dev machines for this workload.
         measureNoTxnBulk(100) // warmup
         const samples: number[] = []
         for (let i = 0; i < 5; i++) samples.push(measureNoTxnBulk(10_000))
         const m = median(samples)
         console.log(`[bulk no-txn] 10k absolute: ${m.toFixed(1)}ms`)
-        expect(m).toBeLessThan(50)
+        expect(m).toBeLessThan(250)
     })
 })
 
