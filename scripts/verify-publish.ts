@@ -98,8 +98,10 @@ for (const pkg of PUBLIC_PACKAGES) {
 
     console.log(`\nVerifying ${pkgName}...`)
 
-    // Save original so we can restore after prepack — prepack itself is now
-    // responsible for resolving any workspace: refs to concrete versions.
+    // Save original so we can restore after prepack writes its dist-shaped
+    // package.json. Publishable packages must already use plain semver for
+    // inter-package deps — prepack only rewrites `exports` and strips
+    // scripts/devDependencies; the `workspace:` check below is the gate.
     const originalContent = await Bun.file(pkgJsonPath).text()
 
     // Run prepack
