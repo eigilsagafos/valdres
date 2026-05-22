@@ -745,12 +745,15 @@ describe("async selector", () => {
 
         test("chains beyond stack capacity throw, matching jotai", () => {
             // Discover a chain depth that the JS stack genuinely can't hold,
-            // by finding the trivial-call ceiling and scaling well past it.
-            // Selector init burns far more frames per level than a trivial
-            // recursive call, so 2x the trivial ceiling is a comfortable
-            // overshoot. The exact error class doesn't matter (raw RangeError
-            // vs SelectorEvaluationError wrap) — the contract is just that
-            // we throw rather than silently truncating or hanging.
+            // by finding the trivial-call ceiling and scaling past it. Selector
+            // init burns far more frames per level than a trivial recursive
+            // call, so 2x trivial ceiling is a comfortable overshoot. The cap
+            // keeps the test cheap on engines with segmented stacks (e.g. JSC
+            // can hit 50k+); 10k selectors is still well past selector init's
+            // overflow point on every engine we care about. The exact error
+            // class doesn't matter (raw RangeError vs SelectorEvaluationError
+            // wrap) — the contract is that we throw rather than silently
+            // truncating or hanging.
             const getMaxDepth = (): number => {
                 let depth = 0
                 const d = (): number => {
@@ -759,7 +762,7 @@ describe("async selector", () => {
                 }
                 return d()
             }
-            const overflowDepth = getMaxDepth() * 2
+            const overflowDepth = Math.min(getMaxDepth() * 2, 10_000)
             const store1 = store()
             const base = atom(0)
             const chain: any[] = [base]

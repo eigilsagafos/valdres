@@ -16,7 +16,7 @@ Valdres notifies listeners at different points in the write cycle:
 
 ### Deep recursion / stack overflow (1)
 Deeply nested or circular selector graphs blow the stack:
-- [ ] `processes deep atom a graph beyond maxDepth` — skipped; valdres now matches jotai's behavior here (plain recursion, JS stack ceiling applies). Removed iterative trampoline removed a 26x perf cliff at depth >100.
+- [ ] `processes deep atom a graph beyond maxDepth` — skipped; valdres now matches jotai's behavior here (plain recursion, JS stack ceiling applies). Removing the iterative trampoline eliminated a 26x perf cliff at depth >100.
 - [x] `should not inf on subscribe or unsubscribe`
 
 ### Error resilience in listeners (1)
