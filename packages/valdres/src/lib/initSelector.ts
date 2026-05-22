@@ -82,10 +82,11 @@ export const evaluateSelector = <V>(
     circularDependencySet.add(selector)
 
     try {
-        // Abort signal support: on first eval we allocate an AbortController and
-        // pass its signal to the selector. After eval, handleSelectorResult marks
-        // the entry as `false` for sync results, so subsequent sync evaluations
-        // skip allocation entirely (~140ns saved per eval on the hot path).
+        // Abort signal support: `options.signal` is a lazy getter that only
+        // allocates an AbortController when the selector body reads it. Most
+        // selectors don't, so first eval pays nothing extra. After eval,
+        // handleSelectorResult marks the entry as `false` for sync results,
+        // letting subsequent evaluations reuse a shared cached options object.
         // For async results the controller stays, and re-evaluation aborts it.
         const prev = data.abortControllers.get(selector)
         let options: { signal: AbortSignal; storeId: string }
@@ -99,9 +100,26 @@ export const evaluateSelector = <V>(
             options = cached
         } else {
             if (prev) prev.abort()
-            const abortController = new AbortController()
-            data.abortControllers.set(selector, abortController)
-            options = { signal: abortController.signal, storeId: data.id }
+            let controller: AbortController | undefined
+            // Capture this eval's context so that if `signal` is read after
+            // the selector has already been superseded by a re-eval, we
+            // return a pre-aborted signal. This preserves abort semantics
+            // for selectors that touch `opts.signal` only after an await.
+            const myEvalCtx = evalCtx
+            options = {
+                storeId: data.id,
+                get signal() {
+                    if (!controller) {
+                        controller = new AbortController()
+                        if (myEvalCtx.revoked) {
+                            controller.abort()
+                        } else {
+                            data.abortControllers.set(selector, controller)
+                        }
+                    }
+                    return controller.signal
+                },
+            }
         }
 
         // Lazily populated: tracks ALL deps read during this evaluation (sync +
