@@ -14,7 +14,7 @@ import { resolveReactive } from "../utils/resolveReactive"
 import { createStoreData } from "./createStoreData"
 import { deleteFamilyAtom } from "./deleteFamilyAtom"
 import { getState } from "./getState"
-import { propagateUpdatedAtoms } from "./propagateUpdatedAtoms"
+import { propagateAtomUpdate } from "./propagateUpdatedAtoms"
 import { resetAtom } from "./resetAtom"
 import { setAtom } from "./setAtom"
 import { subscribe } from "./subscribe"
@@ -113,7 +113,7 @@ export function storeFromStoreData(
             if (_initSet.size) {
                 const atoms = [..._initSet]
                 _initSet.clear()
-                propagateUpdatedAtoms(atoms, data, undefined, undefined, false, undefined, false, true)
+                propagateAtomUpdate(atoms, data, true)
             }
         }
         return res

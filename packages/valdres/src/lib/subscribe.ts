@@ -15,7 +15,7 @@ import type { CacheMeta } from "../types/Atom"
 import { equal } from "./equal"
 import { initAtom } from "./initAtom"
 import { initSelector } from "./initSelector"
-import { propagateUpdatedAtoms } from "./propagateUpdatedAtoms"
+import { propagateAtomUpdate } from "./propagateUpdatedAtoms"
 import { setValueInData } from "./setValueInData"
 import { setMaxAgeCleanup } from "./maxAgeCleanups"
 import { mountTransitiveDeps } from "./mountAtom"
@@ -40,7 +40,7 @@ export const installMaxAgeTimer = (state: Atom<any>, data: StoreData) => {
         for (const s of globalState!.stores) {
             if (s !== data && s.values.has(metaAtom)) {
                 setValueInData(metaAtom, s.values.get(metaAtom), data)
-                propagateUpdatedAtoms([metaAtom], data)
+                propagateAtomUpdate([metaAtom], data)
                 break
             }
         }
@@ -87,11 +87,11 @@ export const installMaxAgeTimer = (state: Atom<any>, data: StoreData) => {
         if (globalState) {
             for (const store of globalState.stores) {
                 setValueInData(metaAtom, meta, store)
-                propagateUpdatedAtoms([metaAtom], store)
+                propagateAtomUpdate([metaAtom], store)
             }
         } else {
             setValueInData(metaAtom, meta, data)
-            propagateUpdatedAtoms([metaAtom], data)
+            propagateAtomUpdate([metaAtom], data)
         }
     }
 
@@ -104,11 +104,11 @@ export const installMaxAgeTimer = (state: Atom<any>, data: StoreData) => {
         if (globalState) {
             for (const store of globalState.stores) {
                 setValueInData(atom, val, store)
-                propagateUpdatedAtoms([atom], store)
+                propagateAtomUpdate([atom], store)
             }
         } else {
             setValueInData(atom, val, data)
-            propagateUpdatedAtoms([atom], data)
+            propagateAtomUpdate([atom], data)
         }
     }
 

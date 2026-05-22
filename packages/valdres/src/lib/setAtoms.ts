@@ -2,7 +2,7 @@ import type { Atom } from "../types/Atom"
 import type { StoreData } from "../types/StoreData"
 import { isPromiseLike } from "../utils/isPromiseLike"
 import { getState } from "./getState"
-import { propagateUpdatedAtoms } from "./propagateUpdatedAtoms"
+import { propagateAtomUpdate } from "./propagateUpdatedAtoms"
 import { setValueInData } from "./setValueInData"
 
 export const setAtoms = (
@@ -32,6 +32,6 @@ export const setAtoms = (
         }
     }
     if (updatedAtoms.length > 0) {
-        propagateUpdatedAtoms(updatedAtoms, data)
+        propagateAtomUpdate(updatedAtoms, data)
     }
 }

@@ -3,7 +3,7 @@ import type { SetAtomValue } from "../types/SetAtomValue"
 import type { StoreData } from "../types/StoreData"
 import { isPromiseLike } from "../utils/isPromiseLike"
 import { getState } from "./getState"
-import { propagateUpdatedAtoms } from "./propagateUpdatedAtoms"
+import { propagateAtomUpdate } from "./propagateUpdatedAtoms"
 import { isFunction } from "./isFunction"
 import { setValueInData } from "./setValueInData"
 
@@ -34,7 +34,7 @@ const handlePromise = <Value>(
                 // @ts-ignore
                 emptyAtomPromise.__resolveEmptyAtomPromise__(resolvedValue)
             }
-            propagateUpdatedAtoms([atom], data)
+            propagateAtomUpdate([atom], data)
         })
         // Chained .catch so errors thrown inside the fulfilled handler
         // (e.g. from atom.onSet) don't surface as unhandled rejections.
@@ -44,7 +44,7 @@ const handlePromise = <Value>(
             // lets us avoid clobbering it.
             if (data.values.get(atom) !== promise) return
             setValueInData(atom, currentValue, data)
-            propagateUpdatedAtoms([atom], data)
+            propagateAtomUpdate([atom], data)
         })
 }
 
@@ -76,9 +76,9 @@ export const setAtom = <Value = any>(
         handlePromise(atom, promise, currentValue, data, skipOnSet)
         if (initializedAtomsSet && initializedAtomsSet.size > 0) {
             initializedAtomsSet.add(atom)
-            propagateUpdatedAtoms([...initializedAtomsSet], data)
+            propagateAtomUpdate([...initializedAtomsSet], data)
         } else {
-            propagateUpdatedAtoms([atom], data)
+            propagateAtomUpdate([atom], data)
         }
         return promise as Value
     }
@@ -98,9 +98,9 @@ export const setAtom = <Value = any>(
     }
     if (initializedAtomsSet && initializedAtomsSet.size > 0) {
         initializedAtomsSet.add(atom)
-        propagateUpdatedAtoms([...initializedAtomsSet], data)
+        propagateAtomUpdate([...initializedAtomsSet], data)
     } else {
-        propagateUpdatedAtoms([atom], data)
+        propagateAtomUpdate([atom], data)
     }
     return syncValue
 }

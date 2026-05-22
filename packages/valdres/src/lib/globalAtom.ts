@@ -8,7 +8,7 @@ import type { AtomOptions } from "./../types/AtomOptions"
 import type { GlobalAtom } from "./../types/GlobalAtom"
 import type { StoreData } from "./../types/StoreData"
 import { isTransitivelySubscribed, mountAtom, unmountAtom } from "./mountAtom"
-import { propagateUpdatedAtoms } from "./propagateUpdatedAtoms"
+import { propagateAtomUpdate } from "./propagateUpdatedAtoms"
 import { setAtom } from "./setAtom"
 import { installMaxAgeTimer } from "./subscribe"
 import { globalStore } from "../globalStore"
@@ -120,7 +120,7 @@ export const globalAtom = <Value = unknown>(
             stores.delete(store)
             store.values.delete(atom)
             try {
-                propagateUpdatedAtoms([atom], store)
+                propagateAtomUpdate([atom], store)
             } catch (e) {
                 recordError(e)
             }
