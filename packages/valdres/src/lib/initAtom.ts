@@ -14,14 +14,11 @@ export const getAtomInitValue = <V = any>(
     initializedAtomsSet: Set<Atom>,
 ) => {
     if (atom.defaultValue === undefined) {
-        let promiseResolve: (value: any) => void
-        const promise = new Promise(resolve => {
-            promiseResolve = resolve
+        let resolve!: (value: any) => void
+        const promise = new Promise(r => {
+            resolve = r
         })
-        // @ts-ignore @ts-todo
-        promise.__isEmptyAtomPromise__ = true
-        // @ts-ignore @ts-todo
-        promise.__resolveEmptyAtomPromise__ = promiseResolve
+        data.pendingDefaults.set(atom, { promise, resolve })
         return promise
     } else if (typeof atom.defaultValue === "function") {
         // @ts-ignore @ts-todo

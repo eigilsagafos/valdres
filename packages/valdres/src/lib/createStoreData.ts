@@ -29,6 +29,7 @@ Object.defineProperties(lazyProto, {
     liveDependentCount: makeLazyGetter("liveDependentCount"),
     abortControllers: makeLazyGetter("abortControllers"),
     lastValueWriteAt: makeLazyGetter("lastValueWriteAt"),
+    pendingDefaults: makeLazyGetter("pendingDefaults"),
 })
 
 export type CreateStoreDataOptions = {
