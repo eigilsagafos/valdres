@@ -39,6 +39,8 @@
   },
   "changesets": [
     "empty-aliens-accept",
-    "fix-workspace-protocol-publish"
+    "fix-selector-cycle-leak",
+    "fix-workspace-protocol-publish",
+    "young-symbols-sing"
   ]
 }
