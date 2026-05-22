@@ -744,4 +744,44 @@ describe("globalAtom", () => {
 
         expect(callCount).toBe(countAfterReset)
     })
+
+    test("user-provided onSet fires alongside cross-store sync", () => {
+        const store1 = store()
+        const store2 = store()
+        const onSet = mock(() => {})
+        const numberAtom = atom(0, { global: true, onSet })
+
+        store1.set(numberAtom, 1)
+
+        // Cross-store sync still works
+        expect(store1.get(numberAtom)).toBe(1)
+        expect(store2.get(numberAtom)).toBe(1)
+
+        // User hook fires once, in the originating store, with the new value
+        expect(onSet).toHaveBeenCalledTimes(1)
+        expect(onSet).toHaveBeenCalledWith(1, store1.data)
+
+        store2.set(numberAtom, 2)
+        expect(onSet).toHaveBeenCalledTimes(2)
+        expect(onSet).toHaveBeenLastCalledWith(2, store2.data)
+    })
+
+    test("user-provided onSet fires once on setSelf with globalStore as originator", async () => {
+        const { globalStore } = await import("../globalStore")
+        const store1 = store()
+        const store2 = store()
+        const onSet = mock(() => {})
+        const numberAtom = atom(0, { global: true, onSet })
+
+        // Touch the atom from peer stores so they're registered for sync.
+        store1.get(numberAtom)
+        store2.get(numberAtom)
+
+        numberAtom.setSelf(7)
+
+        expect(store1.get(numberAtom)).toBe(7)
+        expect(store2.get(numberAtom)).toBe(7)
+        expect(onSet).toHaveBeenCalledTimes(1)
+        expect(onSet).toHaveBeenCalledWith(7, globalStore.data)
+    })
 })
