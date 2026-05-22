@@ -17,4 +17,9 @@ if (typeof Bun !== "undefined") {
     _expect = vitest.expect
 }
 
+export const nanoseconds: () => number =
+    typeof Bun !== "undefined"
+        ? () => Bun.nanoseconds()
+        : () => Math.round(performance.now() * 1_000_000)
+
 export { _describe as describe, _test as test, _expect as expect }

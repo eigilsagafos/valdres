@@ -54,9 +54,9 @@ jobs:
               run: bun run test:bench
 
             # Node benchmarks are informational only — not used for regression
-            # detection. Run on main pushes to track V8 performance trends.
+            # detection. Run on PRs too so portability breakage (e.g. Bun-only
+            # APIs in .bench.ts files) is caught before merge.
             - name: Run benchmarks (Node)
-              if: github.ref == 'refs/heads/main'
               working-directory: packages/valdres
               run: npx vitest run --config vitest.bench.config.ts
 

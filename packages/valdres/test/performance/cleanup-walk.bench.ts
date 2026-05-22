@@ -1,4 +1,4 @@
-import { describe, test, expect } from "./test-compat"
+import { describe, test, expect, nanoseconds } from "./test-compat"
 import { atom as valdresAtom } from "../../src/atom"
 import { selector as valdresSelector } from "../../src/selector"
 import { store as valdresCreateStore } from "../../src/store"
@@ -53,10 +53,10 @@ describe("cleanup-walk", () => {
             const ITERS = 30
             for (let i = 0; i < ITERS; i++) {
                 const { store, base } = buildChain(N)
-                const t0 = Bun.nanoseconds()
+                const t0 = nanoseconds()
                 const u = store.sub(base, () => {})
                 u()
-                const t1 = Bun.nanoseconds()
+                const t1 = nanoseconds()
                 samples.push(t1 - t0)
             }
             const m = median(samples)
