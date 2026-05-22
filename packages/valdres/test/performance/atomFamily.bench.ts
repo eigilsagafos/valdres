@@ -49,6 +49,30 @@ describe("atomFamily cache hit", () => {
             8.0,
         )
     })
+
+    test("atomFamily cache hit with object key", async () => {
+        const vFamily = valdresAtomFamily<string, [{ id: number; type: string }]>(
+            ({ id }) => `user-${id}`,
+        )
+        const jFamily = jotaiAtomFamily(
+            (arg: { id: number; type: string }) => jotaiAtom(`user-${arg.id}`),
+        )
+
+        const arg = { id: 1, type: "user" }
+        vFamily(arg)
+        jFamily(arg)
+
+        // Object-keyed families used to pay full stableStringify on every
+        // cache hit (~280ns for a 2-key object, ~1.6µs for a moderate nested
+        // filter). The WeakMap canonicalization in familyKey.ts drops that
+        // to ~5ns. Guard against regressing into the slow path.
+        await assertFaster(
+            "atomFamily({id}) cache hit",
+            () => { sink = vFamily(arg) },
+            () => { sink = jFamily(arg) },
+            8.0,
+        )
+    })
 })
 
 describe("selectorFamily", () => {
