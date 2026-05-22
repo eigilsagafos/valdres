@@ -35,6 +35,8 @@ export {
     renderAtomFamilyIndex,
 } from "./atomFamilyIndex"
 
+type AtomInput = Atom<any> | AtomFamilyAtom<any, any> | AtomFamily<any, any>
+
 const reEvaluteSelector = (
     selector: Selector,
     data: StoreData,
@@ -145,11 +147,9 @@ export const propagateDeletedAtoms = (
         addSetToSet(data.subscriptions.get(atom), subscriptions)
 
         if (isFamilyAtom(atom)) {
-            // atom.family
             if (!families.has(atom.family)) {
                 families.set(atom.family, new Set())
             }
-
             // @ts-ignore
             families.get(atom.family).add(atom)
         }
@@ -166,9 +166,9 @@ export const propagateDeletedAtoms = (
     }
     propagateDirtySelectors(atoms, selectors, data, subscriptions, families)
     // Propagate family changes into child scopes. deleteFamilyAtomsFromSet
-    // already updated the scope's family index via recursivelyUpdateIndexes,
-    // but selectors in those scopes that depend on the family still need to
-    // be re-evaluated so their subscribers get notified.
+    // already updated each scope's family index via recursivelyUpdateIndexes;
+    // selectors in those scopes that depend on the family still need to be
+    // re-evaluated so their subscribers get notified.
     if (families.size > 0 && data.scopes && data.scopes.size > 0) {
         const scopeFamilies = new Map<StoreData, AtomFamily<any>[]>()
         for (const family of families.keys()) {
@@ -185,36 +185,21 @@ export const propagateDeletedAtoms = (
             }
         }
         for (const [scope, familiesInScope] of scopeFamilies) {
-            propagateUpdatedAtoms(
-                familiesInScope,
-                scope,
-                undefined,
-                undefined,
-                false,
-                timestamp,
-                true,
-            )
+            propagateInScope(familiesInScope, scope)
         }
     }
 }
 
-export const propagateUpdatedAtoms = (
-    atoms: (Atom<any> | AtomFamilyAtom<any, any> | AtomFamily<any, any>)[],
+// Top-level entry: notify direct atom subscribers, walk dependent selectors,
+// then cross-propagate into scopes.
+export const propagateAtomUpdate = (
+    atoms: AtomInput[],
     data: StoreData,
-    subscriptions?: Set<Subscription>,
-    families?: Map<AtomFamily<any>, Set<AtomFamilyAtom<any>>>,
-    isRecursive = false,
-    timestamp = performance.now(),
-    selectorsOnly = false,
     isInitOnly = false,
 ) => {
     // Fast path: single non-family atom with no dependent selectors and no
     // scopes can skip the full graph walk entirely and just notify subscribers.
-    if (
-        atoms.length === 1 &&
-        !isRecursive &&
-        !selectorsOnly
-    ) {
+    if (atoms.length === 1) {
         const atom = atoms[0]
         if (!isFamilyAtom(atom) && !isAtomFamily(atom)) {
             const dependents = data.stateDependents.get(atom)
@@ -231,125 +216,123 @@ export const propagateUpdatedAtoms = (
         }
     }
 
-    if (!subscriptions) subscriptions = new Set()
-    if (!families) families = new Map()
-
+    const subscriptions = new Set<Subscription>()
+    const families = new Map<AtomFamily<any>, Set<AtomFamilyAtom<any>>>()
     const selectors = new Set<Selector>()
+
     for (const atom of atoms) {
         addSetToSet(data.stateDependents.get(atom), selectors)
-        if (!selectorsOnly) {
-            //**
-            // This check was added to make the test in selector.test.ts named
-            // "selector in scope dependent on atom not set in scope but in parent scope works correctly"
-            // pass. This was a quick fix to make it work. */
-            addSetToSet(data.subscriptions.get(atom), subscriptions)
-            if (isFamilyAtom(atom)) {
-                if (!families.has(atom.family)) {
-                    families.set(atom.family, new Set())
-                }
-
-                // @ts-ignore
-                families.get(atom.family).add(atom)
+        addSetToSet(data.subscriptions.get(atom), subscriptions)
+        if (isFamilyAtom(atom)) {
+            if (!families.has(atom.family)) {
+                families.set(atom.family, new Set())
             }
+            // @ts-ignore
+            families.get(atom.family).add(atom)
         }
     }
 
     if (families.size > 0) {
+        const timestamp = performance.now()
         for (const [family, familyAtoms] of families) {
             addSetToSet(data.stateDependents.get(family), selectors)
             addSetToSet(data.subscriptions.get(family), subscriptions)
             if (familyAtoms.size === 0)
                 throw new Error("Should not be possible")
-
             addFamilyAtomsToSet(family, familyAtoms, data, timestamp)
         }
     }
 
-    if (!isRecursive) {
-        propagateDirtySelectors(atoms, selectors, data, subscriptions, families, isInitOnly)
-        if (data.scopes && data.scopes.size > 0) {
-            if (atoms.length === 1) {
-                // Fast path for single-atom updates (most common case)
-                const atom = atoms[0]
-                const shadowingScopes = isAtomFamily(atom)
-                    ? undefined
-                    : data.scopeValueIndex.get(atom)
-                for (const [, scope] of data.scopes) {
-                    if (!shadowingScopes || !shadowingScopes.has(scope)) {
-                        propagateUpdatedAtoms(
-                            atoms,
-                            scope,
-                            undefined,
-                            undefined,
-                            false,
-                            timestamp,
-                            true,
-                            isInitOnly,
-                        )
-                    }
-                }
-            } else {
-                // Multi-atom path: precompute shadow sets once
-                let anyShadowed = false
-                let atomShadows: Map<any, Set<any>> | undefined
-                for (const atom of atoms) {
-                    if (!isAtomFamily(atom)) {
-                        const s = data.scopeValueIndex.get(atom)
-                        if (s && s.size > 0) {
-                            if (!atomShadows) atomShadows = new Map()
-                            atomShadows.set(atom, s)
-                            anyShadowed = true
-                        }
-                    }
-                }
+    propagateDirtySelectors(atoms, selectors, data, subscriptions, families, isInitOnly)
 
-                if (!anyShadowed) {
-                    // No atom is shadowed, propagate all to every scope
-                    for (const [, scope] of data.scopes) {
-                        propagateUpdatedAtoms(
-                            atoms,
-                            scope,
-                            undefined,
-                            undefined,
-                            false,
-                            timestamp,
-                            true,
-                            isInitOnly,
-                        )
-                    }
-                } else {
-                    // Some atoms are shadowed, filter per scope
-                    for (const [, scope] of data.scopes) {
-                        const atomsToUpdateInScope = []
-                        for (const atom of atoms) {
-                            if (isAtomFamily(atom)) {
-                                // The scope has its own family index, but the parent
-                                // index may have changed (e.g. a member was deleted
-                                // from root). Re-evaluate dependent selectors in the
-                                // scope so subscribers get notified.
-                                atomsToUpdateInScope.push(atom)
-                            } else {
-                                const s = atomShadows!.get(atom)
-                                if (!s || !s.has(scope)) {
-                                    atomsToUpdateInScope.push(atom)
-                                }
-                            }
-                        }
-                        if (atomsToUpdateInScope.length > 0) {
-                            propagateUpdatedAtoms(
-                                atomsToUpdateInScope,
-                                scope,
-                                undefined,
-                                undefined,
-                                false,
-                                timestamp,
-                                true,
-                                isInitOnly,
-                            )
-                        }
-                    }
+    if (data.scopes && data.scopes.size > 0) {
+        propagateToScopes(atoms, data, isInitOnly)
+    }
+}
+
+// Scope-recursive entry: re-evaluate selectors that depend on these atoms in
+// this scope and cross into nested scopes. Skips collecting direct atom and
+// family subscribers — the parent scope already notified those, and family
+// index bookkeeping has already cascaded via recursivelyUpdateIndexes.
+export const propagateInScope = (
+    atoms: AtomInput[],
+    data: StoreData,
+    isInitOnly = false,
+) => {
+    const subscriptions = new Set<Subscription>()
+    const families = new Map<AtomFamily<any>, Set<AtomFamilyAtom<any>>>()
+    const selectors = new Set<Selector>()
+
+    for (const atom of atoms) {
+        addSetToSet(data.stateDependents.get(atom), selectors)
+    }
+
+    propagateDirtySelectors(atoms, selectors, data, subscriptions, families, isInitOnly)
+
+    if (data.scopes && data.scopes.size > 0) {
+        propagateToScopes(atoms, data, isInitOnly)
+    }
+}
+
+const propagateToScopes = (
+    atoms: AtomInput[],
+    data: StoreData,
+    isInitOnly: boolean,
+) => {
+    if (atoms.length === 1) {
+        // Fast path for single-atom updates (most common case)
+        const atom = atoms[0]
+        const shadowingScopes = isAtomFamily(atom)
+            ? undefined
+            : data.scopeValueIndex.get(atom)
+        for (const [, scope] of data.scopes) {
+            if (!shadowingScopes || !shadowingScopes.has(scope)) {
+                propagateInScope(atoms, scope, isInitOnly)
+            }
+        }
+        return
+    }
+
+    // Multi-atom path: precompute shadow sets once
+    let anyShadowed = false
+    let atomShadows: Map<any, Set<any>> | undefined
+    for (const atom of atoms) {
+        if (!isAtomFamily(atom)) {
+            const s = data.scopeValueIndex.get(atom)
+            if (s && s.size > 0) {
+                if (!atomShadows) atomShadows = new Map()
+                atomShadows.set(atom, s)
+                anyShadowed = true
+            }
+        }
+    }
+
+    if (!anyShadowed) {
+        for (const [, scope] of data.scopes) {
+            propagateInScope(atoms, scope, isInitOnly)
+        }
+        return
+    }
+
+    // Some atoms are shadowed, filter per scope
+    for (const [, scope] of data.scopes) {
+        const atomsToUpdateInScope: AtomInput[] = []
+        for (const atom of atoms) {
+            if (isAtomFamily(atom)) {
+                // The scope has its own family index, but the parent
+                // index may have changed (e.g. a member was deleted
+                // from root). Re-evaluate dependent selectors in the
+                // scope so subscribers get notified.
+                atomsToUpdateInScope.push(atom)
+            } else {
+                const s = atomShadows!.get(atom)
+                if (!s || !s.has(scope)) {
+                    atomsToUpdateInScope.push(atom)
                 }
             }
+        }
+        if (atomsToUpdateInScope.length > 0) {
+            propagateInScope(atomsToUpdateInScope, scope, isInitOnly)
         }
     }
 }

@@ -16,8 +16,8 @@ import {
 import { getState } from "./getState"
 import { isLive, onLiveDependencyRemoved, unmountOrphanedDeps } from "./mountAtom"
 import {
+    propagateAtomUpdate,
     propagateDirtySelectors,
-    propagateUpdatedAtoms,
 } from "./propagateUpdatedAtoms"
 import { setValueInData } from "./setValueInData"
 
@@ -256,7 +256,7 @@ export const handleSelectorResult = <Value>(
             const initializedAtomsSet = new Set<Atom>()
             const res = initSelector(selector, data, initializedAtomsSet)
             if (initializedAtomsSet.size > 0) {
-                propagateUpdatedAtoms([...initializedAtomsSet], data)
+                propagateAtomUpdate([...initializedAtomsSet], data)
             }
             return res
         }).catch(() => {

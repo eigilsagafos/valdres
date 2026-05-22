@@ -4,7 +4,7 @@ import type { StoreData } from "../types/StoreData"
 import { isPromiseLike } from "../utils/isPromiseLike"
 import { isSelector } from "../utils/isSelector"
 import { getState } from "./getState"
-import { propagateUpdatedAtoms } from "./propagateUpdatedAtoms"
+import { propagateAtomUpdate } from "./propagateUpdatedAtoms"
 import { setAtom } from "./setAtom"
 import { setValueInData } from "./setValueInData"
 
@@ -36,7 +36,7 @@ export const getAtomInitValue = <V = any>(
                     if (data.values.get(atom) !== value) return
                     // @ts-ignore @ts-todo
                     setValueInData(atom, resolvedValue, data)
-                    propagateUpdatedAtoms([atom], data)
+                    propagateAtomUpdate([atom], data)
                 },
                 () => {
                     // On rejection, remove the rejected promise from the
