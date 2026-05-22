@@ -1,6 +1,6 @@
 # @valdres/hotkeys
 
-## 0.2.0-beta.29
+## 0.3.0-beta.0
 
 ### Minor Changes
 

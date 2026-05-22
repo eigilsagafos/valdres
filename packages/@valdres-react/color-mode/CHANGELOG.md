@@ -1,6 +1,6 @@
 # @valdres-react/color-mode
 
-## 0.2.0-beta.29
+## 0.3.0-beta.0
 
 ### Minor Changes
 
@@ -28,4 +28,4 @@
 - Updated dependencies
   [[`ca1f266`](https://github.com/eigilsagafos/valdres/commit/ca1f266b1af0970161584da3cc0c1271a2c97ba2)]:
     - valdres-react@1.0.0-beta.1
-    - @valdres/color-mode@0.2.0-beta.29
+    - @valdres/color-mode@0.3.0-beta.0

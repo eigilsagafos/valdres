@@ -1,6 +1,6 @@
 # @valdres-react/hotkeys
 
-## 0.2.0-beta.29
+## 0.3.0-beta.0
 
 ### Minor Changes
 
@@ -29,4 +29,4 @@
   [[`ca1f266`](https://github.com/eigilsagafos/valdres/commit/ca1f266b1af0970161584da3cc0c1271a2c97ba2)]:
     - valdres@1.0.0-beta.1
     - valdres-react@1.0.0-beta.1
-    - @valdres/hotkeys@0.2.0-beta.29
+    - @valdres/hotkeys@0.3.0-beta.0
