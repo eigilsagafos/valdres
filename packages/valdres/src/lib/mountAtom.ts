@@ -166,6 +166,13 @@ export const mountTransitiveDeps = (
     data: StoreData,
     visited: Set<State> = new Set(),
 ) => {
+    // Fast path: leaf state with no onMount means there is nothing to mount
+    // anywhere reachable from here. Skip the Set/Array allocation and walk.
+    // @ts-ignore
+    if (!state.__valdresOnMount && !state.onMount) {
+        const deps = data.stateDependencies.get(state)
+        if (!deps || deps.size === 0) return
+    }
     let firstError: { value: unknown } | null = null
     const stack: State[] = [state]
     while (stack.length > 0) {
@@ -203,6 +210,13 @@ export const unmountOrphanedDeps = (
     data: StoreData,
     visited: Set<State> = new Set(),
 ) => {
+    // Fast path: leaf state with no onMount can't have anything mounted
+    // beneath it. Skip the Set/Array allocation and walk.
+    // @ts-ignore
+    if (!state.__valdresOnMount && !state.onMount) {
+        const deps = data.stateDependencies.get(state)
+        if (!deps || deps.size === 0) return
+    }
     let firstError: { value: unknown } | null = null
     const stack: State[] = [state]
     while (stack.length > 0) {
