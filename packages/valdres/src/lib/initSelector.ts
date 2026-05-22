@@ -101,12 +101,21 @@ export const evaluateSelector = <V>(
         } else {
             if (prev) prev.abort()
             let controller: AbortController | undefined
+            // Capture this eval's context so that if `signal` is read after
+            // the selector has already been superseded by a re-eval, we
+            // return a pre-aborted signal. This preserves abort semantics
+            // for selectors that touch `opts.signal` only after an await.
+            const myEvalCtx = evalCtx
             options = {
                 storeId: data.id,
                 get signal() {
                     if (!controller) {
                         controller = new AbortController()
-                        data.abortControllers.set(selector, controller)
+                        if (myEvalCtx.revoked) {
+                            controller.abort()
+                        } else {
+                            data.abortControllers.set(selector, controller)
+                        }
                     }
                     return controller.signal
                 },
