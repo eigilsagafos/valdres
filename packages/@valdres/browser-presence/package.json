@@ -1,6 +1,6 @@
 {
     "name": "@valdres/browser-presence",
-    "version": "1.0.0-beta.0",
+    "version": "1.0.0-beta.1",
     "license": "MIT",
     "author": {
         "name": "Eigil Sagafos"
@@ -25,8 +25,8 @@
         "test:ci": "bun test"
     },
     "dependencies": {
-        "@valdres/browser-focus": "^1.0.0-beta.0",
-        "@valdres/browser-visibility": "^1.0.0-beta.0"
+        "@valdres/browser-focus": "^1.0.0-beta.1",
+        "@valdres/browser-visibility": "^1.0.0-beta.1"
     },
     "devDependencies": {
         "@happy-dom/global-registrator": "20.0.5",
@@ -40,7 +40,7 @@
         "valdres-react": "workspace:^"
     },
     "peerDependencies": {
-        "valdres": "^1.0.0-beta.0"
+        "valdres": "^1.0.0-beta.1"
     },
     "publishConfig": {
         "access": "public",
