@@ -43,6 +43,11 @@ export function createStoreData(id?: string, parent?: StoreData, options?: Creat
     data.values = new WeakMap()
     data.scopes = new Map()
     data.scopeValueIndex = new WeakMap()
+    // Eager (not lazy) because resolvePendingDefault in setAtom walks every
+    // store in the scope chain on every setAtom call. Lazy would still
+    // allocate on first setAtom — eager just makes that explicit and avoids
+    // touching the prototype getter on the hot path.
+    data.pendingDefaults = new WeakMap()
     if (options?.batchUpdates) {
         data.batchUpdates = true
     }

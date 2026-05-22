@@ -19,6 +19,13 @@ export type RootStoreData = {
      *  maxAge revalidation when the atom is unmounted (no active timer
      *  to keep the cache fresh). Only populated for atoms with `maxAge`. */
     lastValueWriteAt: WeakMap<WeakKey, number>
+    /** Per-atom suspense placeholder for atoms declared with no
+     *  `defaultValue`. The first read creates an unresolved promise that
+     *  external readers (Suspense, `await store.get(atom)`) hold; the
+     *  next `setAtom` resolves it with the eventual value. Keyed by atom
+     *  identity so the lifecycle is independent of the promise stored in
+     *  `values` (which may be replaced by user-supplied async sets). */
+    pendingDefaults: WeakMap<WeakKey, { promise: Promise<any>; resolve: (value: any) => void }>
     storeRef?: Store
     scopes: Map<string, ScopedStoreData>
     batchUpdates?: boolean

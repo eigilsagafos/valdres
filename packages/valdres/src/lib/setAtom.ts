@@ -7,6 +7,28 @@ import { propagateAtomUpdate } from "./propagateUpdatedAtoms"
 import { isFunction } from "./isFunction"
 import { setValueInData } from "./setValueInData"
 
+/** Resolve any outstanding pending-default suspense placeholder for `atom`
+ *  and remove it. The placeholder may have been registered in a parent
+ *  store (atoms with no `defaultValue` init in whichever scope first reads
+ *  them, which `getState` resolves by walking up to root), so we walk the
+ *  scope chain rather than only checking `data`. */
+const resolvePendingDefault = <Value>(
+    atom: Atom<Value>,
+    data: StoreData,
+    value: Value,
+) => {
+    let cur: StoreData | undefined = data
+    while (cur) {
+        const entry = cur.pendingDefaults.get(atom)
+        if (entry) {
+            entry.resolve(value)
+            cur.pendingDefaults.delete(atom)
+            return
+        }
+        cur = "parent" in cur ? cur.parent : undefined
+    }
+}
+
 const handlePromise = <Value>(
     atom: Atom<Value>,
     promise: Promise<Value>,
@@ -14,15 +36,6 @@ const handlePromise = <Value>(
     data: StoreData,
     skipOnSet: boolean,
 ) => {
-    // @ts-ignore
-    const emptyAtomPromise = currentValue?.__isEmptyAtomPromise__
-        ? currentValue
-        // @ts-ignore
-        : currentValue?.__emptyAtomPromiseOrigin__ ?? null
-    if (emptyAtomPromise) {
-        // @ts-ignore
-        promise.__emptyAtomPromiseOrigin__ = emptyAtomPromise
-    }
     setValueInData(atom, promise as Value, data)
     promise
         .then(resolvedValue => {
@@ -30,10 +43,7 @@ const handlePromise = <Value>(
             if (data.values.get(atom) !== promise) return
             setValueInData(atom, resolvedValue, data)
             if (atom.onSet && !skipOnSet) atom.onSet(resolvedValue, data)
-            if (emptyAtomPromise) {
-                // @ts-ignore
-                emptyAtomPromise.__resolveEmptyAtomPromise__(resolvedValue)
-            }
+            resolvePendingDefault(atom, data, resolvedValue)
             propagateAtomUpdate([atom], data)
         })
         // Chained .catch so errors thrown inside the fulfilled handler
@@ -91,11 +101,7 @@ export const setAtom = <Value = any>(
     if (areEqual) return syncValue
     syncValue = setValueInData(atom, syncValue, data)
     if (atom.onSet && !skipOnSet) atom.onSet(syncValue, data)
-    // @ts-ignore
-    if (currentValue?.__isEmptyAtomPromise__) {
-        // @ts-ignore
-        currentValue.__resolveEmptyAtomPromise__(syncValue)
-    }
+    resolvePendingDefault(atom, data, syncValue)
     if (initializedAtomsSet && initializedAtomsSet.size > 0) {
         initializedAtomsSet.add(atom)
         propagateAtomUpdate([...initializedAtomsSet], data)
