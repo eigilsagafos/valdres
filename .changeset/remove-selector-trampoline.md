@@ -11,4 +11,6 @@ exception-as-control-flow), and brings N=500 sub+unsub within parity of jotai.
 stack capacity (~thousands of levels in practice) will now throw a
 `RangeError` (possibly wrapped in `SelectorEvaluationError`) instead of
 falling back to iterative evaluation. This matches jotai's failure mode and
-applies only to chains far deeper than realistic application code.
+applies only to chains far deeper than realistic application code. The
+`processes deep atom a graph beyond maxDepth` jotai-compat test is now
+skipped since valdres no longer exceeds jotai's guarantees there.
