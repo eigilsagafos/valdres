@@ -41,6 +41,7 @@
     "empty-aliens-accept",
     "fix-selector-cycle-leak",
     "fix-workspace-protocol-publish",
+    "lazy-abort-controller",
     "young-symbols-sing"
   ]
 }
