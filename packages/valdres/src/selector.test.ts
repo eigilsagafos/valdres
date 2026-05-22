@@ -384,6 +384,73 @@ describe("selector", () => {
         // expect(onChangeDerived).toHaveBeenCalledTimes(1)
     })
 
+    test("selector that throws does not leak into circular-dep tracking", () => {
+        // Regression: a shared module-level WeakSet is used for circular
+        // dependency detection. Before this fix, an inner selector throwing
+        // a non-cycle error left both the inner and the outer in the set,
+        // so the next read of the outer falsely tripped the cycle check.
+        const store1 = store()
+        const atom1 = atom(0, { name: "atom1" })
+
+        let shouldThrow = true
+        const innerSelector = selector(
+            get => {
+                get(atom1)
+                if (shouldThrow) throw new Error("transient")
+                return "inner ok"
+            },
+            { name: "inner" },
+        )
+        const outerSelector = selector(get => get(innerSelector), {
+            name: "outer",
+        })
+
+        expect(() => store1.get(outerSelector)).toThrow(
+            "Selector eval crashed",
+        )
+
+        shouldThrow = false
+
+        // Must not throw SelectorCircularDependencyError — the dependency
+        // graph is statically acyclic.
+        expect(store1.get(outerSelector)).toBe("inner ok")
+    })
+
+    test("subscription propagation does not leak after selector throws", () => {
+        // Same leak, exercised via the reEvaluteSelector path
+        // (propagateUpdatedAtoms passes circularDependencySet=undefined,
+        //  which defaults to the shared set).
+        const store1 = store()
+        const atom1 = atom(0, { name: "atom1" })
+
+        let shouldThrow = false
+        const innerSelector = selector(
+            get => {
+                const v = get(atom1)
+                if (shouldThrow) throw new Error("transient")
+                return v + 1
+            },
+            { name: "inner" },
+        )
+        const outerSelector = selector(get => get(innerSelector) * 2, {
+            name: "outer",
+        })
+
+        const unsub = store1.sub(outerSelector, () => {})
+        expect(store1.get(outerSelector)).toBe(2)
+
+        // Atom change while inner throws — propagation should not corrupt
+        // the shared circular-dep set even though re-evaluation crashes.
+        shouldThrow = true
+        store1.set(atom1, 1)
+
+        shouldThrow = false
+        store1.set(atom1, 2)
+
+        expect(store1.get(outerSelector)).toBe(6)
+        unsub()
+    })
+
     test("store.get does not leak stale atoms after a selector throws", () => {
         const store1 = store()
         const atom1 = atom(1, { name: "atom1" })

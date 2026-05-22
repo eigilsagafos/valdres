@@ -81,135 +81,138 @@ export const evaluateSelector = <V>(
     }
     circularDependencySet.add(selector)
 
-    // Abort signal support: on first eval we allocate an AbortController and
-    // pass its signal to the selector. After eval, handleSelectorResult marks
-    // the entry as `false` for sync results, so subsequent sync evaluations
-    // skip allocation entirely (~140ns saved per eval on the hot path).
-    // For async results the controller stays, and re-evaluation aborts it.
-    const prev = data.abortControllers.get(selector)
-    let options: { signal: AbortSignal; storeId: string }
-    if (prev === false) {
-        // Known-sync selector — use cached options, no allocation
-        let cached = syncOptionsCache.get(data)
-        if (!cached) {
-            cached = { signal: neverAbortedSignal, storeId: data.id }
-            syncOptionsCache.set(data, cached)
-        }
-        options = cached
-    } else {
-        if (prev) prev.abort()
-        const abortController = new AbortController()
-        data.abortControllers.set(selector, abortController)
-        options = { signal: abortController.signal, storeId: data.id }
-    }
-
-    // Lazily populated: tracks ALL deps read during this evaluation (sync +
-    // async). Only allocated when the result turns out to be a promise.
-    let allDepsThisEval: Set<State> | undefined
-
-    let result
     try {
-        // @ts-ignore, @ts-todo
-        result = selector.get(state => {
-            // Deferred get calls (setTimeout, after await) use late binding
-            if (evaluationComplete) {
-                // Track for reconciliation (unless this is a stale closure)
-                if (!evalCtx.revoked && allDepsThisEval) {
-                    allDepsThisEval.add(state)
-                }
-                if (evalCtx.revoked) {
-                    // Stale closure — the selector has been re-evaluated since
-                    // this closure was created. Read the value without
-                    // registering deps or mounting.
-                    return getState(state, data, new Set<Atom>())
-                }
-                return lateGet(state, selector, data)
+        // Abort signal support: on first eval we allocate an AbortController and
+        // pass its signal to the selector. After eval, handleSelectorResult marks
+        // the entry as `false` for sync results, so subsequent sync evaluations
+        // skip allocation entirely (~140ns saved per eval on the hot path).
+        // For async results the controller stays, and re-evaluation aborts it.
+        const prev = data.abortControllers.get(selector)
+        let options: { signal: AbortSignal; storeId: string }
+        if (prev === false) {
+            // Known-sync selector — use cached options, no allocation
+            let cached = syncOptionsCache.get(data)
+            if (!cached) {
+                cached = { signal: neverAbortedSignal, storeId: data.id }
+                syncOptionsCache.set(data, cached)
             }
-            const value = getState(
-                state,
-                data,
-                initializedAtomsSet,
-                circularDependencySet,
-            )
-            updatedDepsArray.push(state)
-            if (!depsChanged && (!currentDependencies || !currentDependencies.has(state))) {
-                depsChanged = true
-            }
-            if (isPromiseLike(value))
-                throw new SuspendAndWaitForResolveError(value)
-
-            return value
-        }, options)
-    } catch (error) {
-        if (error instanceof NeedsInitError) {
-            // Clean up circular dependency tracking so retry works
-            circularDependencySet.delete(selector)
-            throw error
-        }
-        if (error instanceof SuspendAndWaitForResolveError) {
-            result = error
-        } else if (error instanceof SelectorEvaluationError) {
-            throw error
+            options = cached
         } else {
-            throw new SelectorEvaluationError(error)
+            if (prev) prev.abort()
+            const abortController = new AbortController()
+            data.abortControllers.set(selector, abortController)
+            options = { signal: abortController.signal, storeId: data.id }
         }
-    }
 
-    evaluationComplete = true
+        // Lazily populated: tracks ALL deps read during this evaluation (sync +
+        // async). Only allocated when the result turns out to be a promise.
+        let allDepsThisEval: Set<State> | undefined
 
-    const isAsyncResult =
-        result instanceof SuspendAndWaitForResolveError || isPromiseLike(result)
+        let result
+        try {
+            // @ts-ignore, @ts-todo
+            result = selector.get(state => {
+                // Deferred get calls (setTimeout, after await) use late binding
+                if (evaluationComplete) {
+                    // Track for reconciliation (unless this is a stale closure)
+                    if (!evalCtx.revoked && allDepsThisEval) {
+                        allDepsThisEval.add(state)
+                    }
+                    if (evalCtx.revoked) {
+                        // Stale closure — the selector has been re-evaluated since
+                        // this closure was created. Read the value without
+                        // registering deps or mounting.
+                        return getState(state, data, new Set<Atom>())
+                    }
+                    return lateGet(state, selector, data)
+                }
+                const value = getState(
+                    state,
+                    data,
+                    initializedAtomsSet,
+                    circularDependencySet,
+                )
+                updatedDepsArray.push(state)
+                if (!depsChanged && (!currentDependencies || !currentDependencies.has(state))) {
+                    depsChanged = true
+                }
+                if (isPromiseLike(value))
+                    throw new SuspendAndWaitForResolveError(value)
 
-    // For sync selectors, check if dep count changed (handles removed deps).
-    // For async selectors, skip — the dep count is incomplete until the
-    // promise resolves.
-    if (!isAsyncResult && !depsChanged && currentDependencies && currentDependencies.size !== updatedDepsArray.length) {
-        depsChanged = true
-    }
-
-    if (depsChanged || !currentDependencies) {
-        const updatedDependencies = new Set<State<any>>(updatedDepsArray)
-        // For async selectors, retain all previous deps so they aren't
-        // prematurely removed (and unmounted) before the continuation runs.
-        // Stale deps are cleaned up when the promise resolves (see
-        // the reconciliation logic in handleSelectorResult).
-        if (isAsyncResult && currentDependencies) {
-            for (const dep of currentDependencies) {
-                updatedDependencies.add(dep)
+                return value
+            }, options)
+        } catch (error) {
+            if (error instanceof NeedsInitError) throw error
+            if (error instanceof SuspendAndWaitForResolveError) {
+                result = error
+            } else if (error instanceof SelectorEvaluationError) {
+                throw error
+            } else {
+                throw new SelectorEvaluationError(error)
             }
         }
-        const prev = currentDependencies ?? new Set<State<any>>()
-        for (const state of updatedDependencies) {
-            if (!prev.has(state)) {
-                const set = getOrInitDependentsSet(state, data)
-                set.add(selector)
-                if (addedDepsOut) addedDepsOut.add(state)
-            }
+
+        evaluationComplete = true
+
+        const isAsyncResult =
+            result instanceof SuspendAndWaitForResolveError || isPromiseLike(result)
+
+        // For sync selectors, check if dep count changed (handles removed deps).
+        // For async selectors, skip — the dep count is incomplete until the
+        // promise resolves.
+        if (!isAsyncResult && !depsChanged && currentDependencies && currentDependencies.size !== updatedDepsArray.length) {
+            depsChanged = true
         }
-        if (!isAsyncResult) {
-            for (const state of prev) {
-                if (!updatedDependencies.has(state)) {
-                    const set = getOrInitDependentsSet(state, data)
-                    set.delete(selector)
-                    if (removedDepsOut) removedDepsOut.add(state)
+
+        if (depsChanged || !currentDependencies) {
+            const updatedDependencies = new Set<State<any>>(updatedDepsArray)
+            // For async selectors, retain all previous deps so they aren't
+            // prematurely removed (and unmounted) before the continuation runs.
+            // Stale deps are cleaned up when the promise resolves (see
+            // the reconciliation logic in handleSelectorResult).
+            if (isAsyncResult && currentDependencies) {
+                for (const dep of currentDependencies) {
+                    updatedDependencies.add(dep)
                 }
             }
+            const prev = currentDependencies ?? new Set<State<any>>()
+            for (const state of updatedDependencies) {
+                if (!prev.has(state)) {
+                    const set = getOrInitDependentsSet(state, data)
+                    set.add(selector)
+                    if (addedDepsOut) addedDepsOut.add(state)
+                }
+            }
+            if (!isAsyncResult) {
+                for (const state of prev) {
+                    if (!updatedDependencies.has(state)) {
+                        const set = getOrInitDependentsSet(state, data)
+                        set.delete(selector)
+                        if (removedDepsOut) removedDepsOut.add(state)
+                    }
+                }
+            }
+            data.stateDependencies.set(selector, updatedDependencies)
         }
-        data.stateDependencies.set(selector, updatedDependencies)
-    }
 
-    // Store tracking set so handleSelectorResult can reconcile when the
-    // promise resolves. Only needed for native-promise selectors —
-    // SuspendAndWaitForResolveError re-evaluates via initSelector instead.
-    if (isPromiseLike(result)) {
-        // Build the tracking set from sync deps discovered so far. Late
-        // `get` calls (after await) will add to this set dynamically.
-        allDepsThisEval = new Set<State>(updatedDepsArray)
-        pendingAsyncDeps.set(result, allDepsThisEval)
-    }
+        // Store tracking set so handleSelectorResult can reconcile when the
+        // promise resolves. Only needed for native-promise selectors —
+        // SuspendAndWaitForResolveError re-evaluates via initSelector instead.
+        if (isPromiseLike(result)) {
+            // Build the tracking set from sync deps discovered so far. Late
+            // `get` calls (after await) will add to this set dynamically.
+            allDepsThisEval = new Set<State>(updatedDepsArray)
+            pendingAsyncDeps.set(result, allDepsThisEval)
+        }
 
-    circularDependencySet.delete(selector)
-    return result
+        return result
+    } finally {
+        // sharedCircularDepSet is module-level, so cleanup must run on every
+        // exit path — including SelectorEvaluationError rethrows and any
+        // throw from the dep-tracking code above. Otherwise the selector
+        // leaks into the set and the next read trips a spurious cycle check.
+        circularDependencySet.delete(selector)
+    }
 }
 
 export const handleSelectorResult = <Value>(
