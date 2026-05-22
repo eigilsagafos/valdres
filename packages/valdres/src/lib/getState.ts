@@ -11,7 +11,7 @@ import { isSelector } from "../utils/isSelector"
 import { isSelectorFamily } from "../utils/isSelectorFamily"
 import { equal } from "./equal"
 import { initAtom } from "./initAtom"
-import { initSelector, NeedsInitError, _evalDepth, MAX_EVAL_DEPTH } from "./initSelector"
+import { initSelector } from "./initSelector"
 import {
     createAtomFamilyIndex,
     renderAtomFamilyIndex,
@@ -78,11 +78,6 @@ export function getState<
         return data.values.get(state)
     }
     if (isSelector<Value>(state)) {
-        if (_evalDepth >= MAX_EVAL_DEPTH) {
-            // Approaching stack limit — signal the trampoline to handle
-            // this dependency iteratively instead of recursing deeper.
-            throw new NeedsInitError(state)
-        }
         initSelector<Value>(
             state,
             data,

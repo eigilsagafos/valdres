@@ -23,29 +23,6 @@ import { setValueInData } from "./setValueInData"
 
 export { isSuspendError } from "./asyncDependencyTracking"
 
-/**
- * Thrown by getState when recursion depth exceeds MAX_EVAL_DEPTH and a selector
- * still needs initialization. The outermost initSelector catches this and
- * switches to an iterative trampoline to evaluate the dependency chain.
- */
-export class NeedsInitError {
-    selector: Selector
-    constructor(selector: Selector) {
-        this.selector = selector
-    }
-}
-
-/** Recursion depth for selector initialization. Exported for getState to check. */
-export let _evalDepth = 0
-
-/** Whether we're inside a trampoline loop (prevents nested trampolines). */
-let _inTrampoline = false
-
-/** Max selector init recursion depth before switching to trampoline mode.
- *  Each level uses ~8-10 JS stack frames, so 100 levels ≈ 800-1000 frames,
- *  safely under the typical ~10000 frame limit. */
-export const MAX_EVAL_DEPTH = 100
-
 // Shared WeakSet for circular dependency detection — safe to reuse because
 // evaluation is synchronous and each selector adds/deletes itself.
 const sharedCircularDepSet = new WeakSet()
@@ -160,7 +137,6 @@ export const evaluateSelector = <V>(
                 return value
             }, options)
         } catch (error) {
-            if (error instanceof NeedsInitError) throw error
             if (error instanceof SuspendAndWaitForResolveError) {
                 result = error
             } else if (error instanceof SelectorEvaluationError) {
@@ -329,11 +305,11 @@ export const handleSelectorResult = <Value>(
     }
 }
 
-const initSelectorDirect = <V>(
+export const initSelector = <V>(
     selector: Selector<V>,
     data: StoreData,
     initializedAtomsSet: Set<Atom>,
-    circularDependencySet: WeakSet<any>,
+    circularDependencySet: WeakSet<any> = sharedCircularDepSet,
 ): boolean => {
     const existingValue = data.values.get(selector)
     const updatedValue = evaluate(
@@ -354,83 +330,6 @@ const initSelectorDirect = <V>(
     } else {
         setValueInData<V>(selector, updatedValue as V, data)
         return true
-    }
-}
-
-/**
- * Iterative trampoline for initializing deeply nested selector chains.
- * Instead of recursing through getState → initSelector → evaluateSelector → getState,
- * getState throws NeedsInitError when it encounters an uninitialized selector
- * during trampoline mode. The trampoline catches this and evaluates deps first.
- */
-const initSelectorTrampoline = <V>(
-    selector: Selector<V>,
-    data: StoreData,
-    initializedAtomsSet: Set<Atom>,
-    circularDependencySet: WeakSet<any>,
-): void => {
-    const stack: Selector[] = [selector]
-    const inStack = new Set<Selector>([selector])
-
-    while (stack.length > 0) {
-        const current = stack[stack.length - 1]!
-        if (data.values.has(current)) {
-            stack.pop()
-            inStack.delete(current)
-            continue
-        }
-        try {
-            initSelectorDirect(
-                current,
-                data,
-                initializedAtomsSet,
-                circularDependencySet,
-            )
-            stack.pop()
-            inStack.delete(current)
-        } catch (e) {
-            if (e instanceof NeedsInitError) {
-                if (inStack.has(e.selector)) {
-                    throw new SelectorCircularDependencyError()
-                }
-                stack.push(e.selector)
-                inStack.add(e.selector)
-            } else {
-                throw e
-            }
-        }
-    }
-}
-
-export const initSelector = <V>(
-    selector: Selector<V>,
-    data: StoreData,
-    initializedAtomsSet: Set<Atom>,
-    circularDependencySet = sharedCircularDepSet,
-): boolean => {
-    const isTopLevel = _evalDepth === 0 && !_inTrampoline
-    _evalDepth++
-    const existingValue = data.values.get(selector)
-    try {
-        return initSelectorDirect(selector, data, initializedAtomsSet, circularDependencySet)
-    } catch (e) {
-        if (e instanceof NeedsInitError && isTopLevel) {
-            // Depth limit was hit — switch to iterative trampoline
-            _inTrampoline = true
-            try {
-                initSelectorTrampoline(selector, data, initializedAtomsSet, circularDependencySet)
-            } finally {
-                _inTrampoline = false
-            }
-            const newValue = data.values.get(selector)
-            const areEqual = isPromiseLike(existingValue) || isPromiseLike(newValue)
-                ? existingValue === newValue
-                : selector.equal(existingValue as V, newValue as V)
-            return !areEqual
-        }
-        throw e
-    } finally {
-        _evalDepth--
     }
 }
 
