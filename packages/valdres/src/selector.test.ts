@@ -708,56 +708,66 @@ describe("async selector", () => {
     })
 
     describe("deep selector chains", () => {
-        test("initializes a chain deeper than MAX_EVAL_DEPTH via get()", () => {
+        // 200 levels is the previous test depth (which exercised the old
+        // trampoline). It's deep enough to prove non-trivial chains work
+        // and shallow enough to fit comfortably inside the JS stack on all
+        // engines we care about.
+        const DEEP = 200
+
+        test("initializes a deep chain via get()", () => {
             const store1 = store()
             const base = atom(42)
             const chain: any[] = [base]
-            for (let i = 0; i < 200; i++) {
+            for (let i = 0; i < DEEP; i++) {
                 const prev = chain[i]
                 chain.push(selector(get => get(prev)))
             }
-            // get() triggers initSelector for the entire chain
-            expect(store1.get(chain[200])).toBe(42)
+            expect(store1.get(chain[DEEP])).toBe(42)
         })
 
         test("propagates updates through a deep chain via sub() and set()", () => {
             const store1 = store()
             const base = atom(0)
             const chain: any[] = [base]
-            for (let i = 0; i < 200; i++) {
+            for (let i = 0; i < DEEP; i++) {
                 const prev = chain[i]
                 chain.push(selector(get => get(prev)))
             }
             const callback = mock(() => {})
-            const unsub = store1.sub(chain[200], callback)
-            expect(store1.get(chain[200])).toBe(0)
+            const unsub = store1.sub(chain[DEEP], callback)
+            expect(store1.get(chain[DEEP])).toBe(0)
 
             store1.set(base, 7)
             expect(callback).toHaveBeenCalledTimes(1)
-            expect(store1.get(chain[200])).toBe(7)
+            expect(store1.get(chain[DEEP])).toBe(7)
             unsub()
         })
 
-        test("handles chain at JS stack limit without overflow", () => {
-            // Discover the actual max recursion depth for this runtime
-            function getMaxDepth() {
+        test("chains beyond stack capacity throw, matching jotai", () => {
+            // Discover a chain depth that the JS stack genuinely can't hold,
+            // by finding the trivial-call ceiling and scaling well past it.
+            // Selector init burns far more frames per level than a trivial
+            // recursive call, so 2x the trivial ceiling is a comfortable
+            // overshoot. The exact error class doesn't matter (raw RangeError
+            // vs SelectorEvaluationError wrap) — the contract is just that
+            // we throw rather than silently truncating or hanging.
+            const getMaxDepth = (): number => {
                 let depth = 0
-                function d(): number {
+                const d = (): number => {
                     ++depth
                     try { return d() } catch { return depth }
                 }
                 return d()
             }
-            const maxDepth = Math.min(getMaxDepth(), 5000)
+            const overflowDepth = getMaxDepth() * 2
             const store1 = store()
             const base = atom(0)
             const chain: any[] = [base]
-            for (let i = 0; i < maxDepth; i++) {
+            for (let i = 0; i < overflowDepth; i++) {
                 const prev = chain[i]
                 chain.push(selector(get => get(prev)))
             }
-            expect(() => store1.sub(chain[maxDepth], () => {})).not.toThrow()
-            expect(() => store1.set(base, 1)).not.toThrow()
+            expect(() => store1.get(chain[overflowDepth])).toThrow()
         }, 10_000)
     })
 })

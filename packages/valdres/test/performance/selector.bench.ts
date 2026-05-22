@@ -92,11 +92,7 @@ describe("selector", () => {
     // graph — O(N²) total. The cache makes each check O(1). Build cost is
     // paid equally by both sides because we rebuild each iteration (cleanup
     // destroys the chain).
-    // Both N values stay within the recursive-init path (MAX_EVAL_DEPTH=100),
-    // so the only thing varying across them is the cleanup walk cost. Beyond
-    // depth ~100 the build phase hits the exception-based trampoline and the
-    // signal we want to measure gets drowned out.
-    for (const N of [50, 100]) {
+    for (const N of [50, 100, 500]) {
         test(`sub+unsub on chain of ${N} unsubscribed derived deps`, async () => {
             await assertFaster(
                 `sub+unsub on chain of ${N} unsubscribed derived deps`,
