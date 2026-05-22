@@ -14,7 +14,7 @@ import {
     pendingAsyncDeps,
 } from "./asyncDependencyTracking"
 import { getState } from "./getState"
-import { unmountOrphanedDeps } from "./mountAtom"
+import { isLive, onLiveDependencyRemoved, unmountOrphanedDeps } from "./mountAtom"
 import {
     propagateDirtySelectors,
     propagateUpdatedAtoms,
@@ -267,11 +267,15 @@ export const handleSelectorResult = <Value>(
                 pendingAsyncDeps.delete(value)
                 const currentDeps = data.stateDependencies.get(selector)
                 if (currentDeps) {
+                    const selectorIsLive = isLive(selector, data)
                     for (const dep of currentDeps) {
                         if (!evalDeps.has(dep)) {
                             currentDeps.delete(dep)
                             const dependents = data.stateDependents.get(dep)
                             if (dependents) dependents.delete(selector)
+                            if (selectorIsLive) {
+                                onLiveDependencyRemoved(dep, data)
+                            }
                             unmountOrphanedDeps(dep, data)
                         }
                     }

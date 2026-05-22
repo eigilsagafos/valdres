@@ -3,7 +3,7 @@ import type { State } from "../types/State"
 import type { StoreData } from "../types/StoreData"
 import type { Subscription } from "../types/Subscription"
 import { getMaxAgeCleanup, deleteMaxAgeCleanup } from "./maxAgeCleanups"
-import { isTransitivelySubscribed, unmountOrphanedDeps } from "./mountAtom"
+import { isLive, onLastDirectSubscriber, unmountOrphanedDeps } from "./mountAtom"
 
 export const unsubscribe = <V>(
     state: State<V> | Family<V>,
@@ -32,6 +32,11 @@ export const unsubscribe = <V>(
                 deleteMaxAgeCleanup(data, state)
             }
             data.subscriptions.delete(state)
+            // Last direct subscriber removed: if there are no live dependents
+            // either, the state transitions to not-live and we propagate to
+            // its dependencies. Done before unmount/cleanup so subsequent
+            // isLive checks reflect the updated liveness.
+            onLastDirectSubscriber(state as State<V>, data)
             // Unmount this state and any transitive dependencies that are
             // no longer reachable from any subscriber.
             unmountOrphanedDeps(state as State<V>, data)
@@ -59,7 +64,7 @@ const cleanupOrphanedDeps = (
 ) => {
     if (visited.has(state)) return
     visited.add(state)
-    if (isTransitivelySubscribed(state, data)) return
+    if (isLive(state, data)) return
 
     // For selectors: remove from dependencies' stateDependents and clear cache
     const deps = data.stateDependencies.get(state)

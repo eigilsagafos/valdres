@@ -9,6 +9,11 @@ export type RootStoreData = {
     stateDependents: WeakMap<WeakKey, any>
     stateDependencies: WeakMap<WeakKey, any>
     mounts: WeakMap<WeakKey, { cleanup?: () => void }>
+    /** Count of dependents (selectors that read this state) that are
+     *  currently "live" (transitively subscribed). A state is live iff it
+     *  has direct subscribers OR this count is > 0. Maintained incrementally
+     *  on sub/unsub and on dep add/remove instead of walking the graph. */
+    liveDependentCount: WeakMap<WeakKey, number>
     abortControllers: WeakMap<WeakKey, AbortController | false>
     /** Per-atom timestamp of the last value write, used for lazy
      *  maxAge revalidation when the atom is unmounted (no active timer
