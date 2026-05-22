@@ -148,6 +148,9 @@ export const globalAtom = <Value = unknown>(
         stores.delete(storeData)
     }
 
+    // `stores` is a plain data property. A getter wasn't buying anything —
+    // the Set reference never changes, and accessor properties take a slower
+    // IC path than data properties at every read site in subscribe.ts.
     const atom: GlobalAtom<Value> = {
         equal,
         ...options,
@@ -159,9 +162,7 @@ export const globalAtom = <Value = unknown>(
         getSelf,
         resetSelf,
         detach,
-        get stores() {
-            return stores
-        },
+        stores,
         maxAgeInterval: undefined,
     }
     return atom
