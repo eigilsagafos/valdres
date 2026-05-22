@@ -18,8 +18,10 @@ import {
     handleSelectorResult,
 } from "./initSelector"
 import {
-    isTransitivelySubscribed,
+    isLive,
     mountTransitiveDeps,
+    onLiveDependencyAdded,
+    onLiveDependencyRemoved,
     unmountOrphanedDeps,
 } from "./mountAtom"
 import { setValueInData } from "./setValueInData"
@@ -393,15 +395,19 @@ const propagateSelectorUpdates = (
                 const [wasValueUpdated, didEvalCrash, error, addedDeps, removedDeps] =
                     reEvaluteSelector(selector, data, updatedInitializedAtoms)
                 // Mount/unmount dependencies that changed if this selector is
-                // transitively subscribed (i.e. someone is listening)
+                // live (i.e. someone is transitively listening). Also update
+                // liveness contributions on each added/removed dep BEFORE the
+                // mount/unmount so isLive reflects the new topology.
                 if (
                     (addedDeps.size > 0 || removedDeps.size > 0) &&
-                    isTransitivelySubscribed(selector, data)
+                    isLive(selector, data)
                 ) {
                     for (const dep of addedDeps) {
+                        onLiveDependencyAdded(dep, data)
                         mountTransitiveDeps(dep, data)
                     }
                     for (const dep of removedDeps) {
+                        onLiveDependencyRemoved(dep, data)
                         unmountOrphanedDeps(dep, data)
                     }
                 }

@@ -26,6 +26,7 @@ Object.defineProperties(lazyProto, {
     stateDependents: makeLazyGetter("stateDependents"),
     stateDependencies: makeLazyGetter("stateDependencies"),
     mounts: makeLazyGetter("mounts"),
+    liveDependentCount: makeLazyGetter("liveDependentCount"),
     abortControllers: makeLazyGetter("abortControllers"),
     lastValueWriteAt: makeLazyGetter("lastValueWriteAt"),
 })

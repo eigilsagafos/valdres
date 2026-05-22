@@ -18,7 +18,7 @@ import { initSelector } from "./initSelector"
 import { propagateAtomUpdate } from "./propagateUpdatedAtoms"
 import { setValueInData } from "./setValueInData"
 import { setMaxAgeCleanup } from "./maxAgeCleanups"
-import { mountTransitiveDeps } from "./mountAtom"
+import { mountTransitiveDeps, onFirstDirectSubscriber } from "./mountAtom"
 import { unsubscribe } from "./unsubscribe"
 
 const initSubscribers = <V>(state: State<V> | Family<V>, data: StoreData) => {
@@ -339,8 +339,10 @@ export const subscribe = <V>(
         if (isAtom(state) && state.maxAge) {
             installMaxAgeTimer(state, data)
         }
-        // Mount this state and all its transitive dependencies
+        // First direct subscriber: bump liveness through the dep graph.
+        // Selectors track this via stateDependencies; families have none.
         if (!isFamily(state)) {
+            onFirstDirectSubscriber(state as State, data)
             mountTransitiveDeps(state, data)
         }
     }

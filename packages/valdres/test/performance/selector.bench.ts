@@ -85,6 +85,50 @@ describe("selector", () => {
         )
     })
 
+    // sub+unsub on a chain of derived atoms that were initialized but never
+    // subscribed. The unsub path walks the dependent graph to clean up
+    // orphaned nodes. Before the liveness cache landed, each visited node
+    // ran isTransitivelySubscribed, which itself walked the remaining upper
+    // graph — O(N²) total. The cache makes each check O(1). Build cost is
+    // paid equally by both sides because we rebuild each iteration (cleanup
+    // destroys the chain).
+    // Both N values stay within the recursive-init path (MAX_EVAL_DEPTH=100),
+    // so the only thing varying across them is the cleanup walk cost. Beyond
+    // depth ~100 the build phase hits the exception-based trampoline and the
+    // signal we want to measure gets drowned out.
+    for (const N of [50, 100]) {
+        test(`sub+unsub on chain of ${N} unsubscribed derived deps`, async () => {
+            await assertFaster(
+                `sub+unsub on chain of ${N} unsubscribed derived deps`,
+                () => {
+                    const store = valdresCreateStore()
+                    const base = valdresAtom(0)
+                    let prev: any = base
+                    for (let i = 0; i < N; i++) {
+                        const dep = prev
+                        prev = valdresSelector(get => get(dep) + 1)
+                    }
+                    store.get(prev)
+                    const u = store.sub(base, () => {})
+                    u()
+                },
+                () => {
+                    const store = jotaiCreateStore()
+                    const base = jotaiAtom(0)
+                    let prev: any = base
+                    for (let i = 0; i < N; i++) {
+                        const dep = prev
+                        prev = jotaiAtom(get => get(dep) + 1)
+                    }
+                    store.get(prev)
+                    const u = store.sub(base, () => {})
+                    u()
+                },
+                2.0,
+            )
+        })
+    }
+
     test("chained selectors (depth 5)", async () => {
         const vStore = valdresCreateStore()
         const jStore = jotaiCreateStore()
