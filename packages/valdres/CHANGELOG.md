@@ -1,5 +1,19 @@
 # valdres
 
+## 1.0.0-beta.2
+
+### Patch Changes
+
+- [#128](https://github.com/eigilsagafos/valdres/pull/128)
+  [`6c3a33b`](https://github.com/eigilsagafos/valdres/commit/6c3a33be48a8024907bd995ff6162fd4c00f1f28)
+  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! - Fix spurious
+  `SelectorCircularDependencyError` for selectors with no real cycle.
+  `evaluateSelector` now runs its cleanup in a `finally` so the module-level
+  `sharedCircularDepSet` is always cleared on exit — including when an inner
+  selector throws a non-cycle error and the outer's `catch` re-raises a
+  `SelectorEvaluationError`. Previously the entry leaked, and the next read of
+  the outer selector tripped the cycle check on a stale entry.
+
 ## 1.0.0-beta.1
 
 ### Patch Changes
