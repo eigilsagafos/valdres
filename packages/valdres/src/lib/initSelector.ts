@@ -10,7 +10,6 @@ import {
     cleanUpRejectedPromise,
     getOrInitDependentsSet,
     lateGet,
-    latestEvalContext,
     pendingAsyncDeps,
 } from "./asyncDependencyTracking"
 import { getState } from "./getState"
@@ -23,10 +22,6 @@ import { setValueInData } from "./setValueInData"
 
 export { isSuspendError } from "./asyncDependencyTracking"
 
-// Shared WeakSet for circular dependency detection — safe to reuse because
-// evaluation is synchronous and each selector adds/deletes itself.
-const sharedCircularDepSet = new WeakSet()
-
 // Static signal for known-sync selectors — avoids AbortController allocation.
 const neverAbortedSignal = new AbortController().signal
 
@@ -37,7 +32,7 @@ export const evaluateSelector = <V>(
     selector: Selector<V>,
     data: StoreData,
     initializedAtomsSet: Set<Atom>,
-    circularDependencySet = sharedCircularDepSet,
+    circularDependencySet: WeakSet<any> = data.circularDepSet,
     addedDepsOut?: Set<State>,
     removedDepsOut?: Set<State>,
 ) => {
@@ -48,6 +43,7 @@ export const evaluateSelector = <V>(
 
     // Revoke any previous late-binding closure for this selector so that
     // deferred get calls from old evaluations become read-only.
+    const latestEvalContext = data.latestEvalContext
     const prevCtx = latestEvalContext.get(selector)
     if (prevCtx) prevCtx.revoked = true
     const evalCtx = { revoked: false }
@@ -201,10 +197,11 @@ export const evaluateSelector = <V>(
 
         return result
     } finally {
-        // sharedCircularDepSet is module-level, so cleanup must run on every
-        // exit path — including SelectorEvaluationError rethrows and any
-        // throw from the dep-tracking code above. Otherwise the selector
-        // leaks into the set and the next read trips a spurious cycle check.
+        // The set is reused across selector evaluations within the same
+        // store, so cleanup must run on every exit path — including
+        // SelectorEvaluationError rethrows and any throw from the
+        // dep-tracking code above. Otherwise the selector leaks into the
+        // set and the next read trips a spurious cycle check.
         circularDependencySet.delete(selector)
     }
 }
@@ -309,7 +306,7 @@ export const initSelector = <V>(
     selector: Selector<V>,
     data: StoreData,
     initializedAtomsSet: Set<Atom>,
-    circularDependencySet: WeakSet<any> = sharedCircularDepSet,
+    circularDependencySet: WeakSet<any> = data.circularDepSet,
 ): boolean => {
     const existingValue = data.values.get(selector)
     const updatedValue = evaluate(
