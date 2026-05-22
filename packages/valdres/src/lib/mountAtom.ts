@@ -2,31 +2,119 @@ import type { State } from "../types/State"
 import type { StoreData } from "../types/StoreData"
 import { storeFromStoreData } from "./storeFromStoreData"
 
+const hasDirectSubscribers = (state: State, data: StoreData): boolean => {
+    const subs = data.subscriptions.get(state)
+    return !!subs && subs.size > 0
+}
+
 /**
- * Checks if a state is transitively subscribed — meaning it either has direct
- * subscribers, or at least one of its dependents (selectors that read it) is
- * itself transitively subscribed.
+ * Cached liveness check. A state is "live" (transitively subscribed) iff it
+ * has direct subscribers OR at least one of its dependents (selectors that
+ * read it) is itself live. The "live dependent" contribution is tracked
+ * incrementally in `data.liveDependentCount`, so this is O(1).
  */
-export const isTransitivelySubscribed = (
-    state: State,
-    data: StoreData,
-    visited: Set<State> = new Set(),
-): boolean => {
-    const stack: State[] = [state]
+export const isLive = (state: State, data: StoreData): boolean => {
+    if (hasDirectSubscribers(state, data)) return true
+    const count = data.liveDependentCount.get(state)
+    return !!count && count > 0
+}
+
+/**
+ * Propagate a "just became live" transition through the state's dependency
+ * graph. For each dependency D of the state, the state itself counts as one
+ * more live dependent of D. If that flips D from not-live to live, recurse.
+ */
+const propagateLive = (root: State, data: StoreData) => {
+    const stack: State[] = [root]
     while (stack.length > 0) {
         const current = stack.pop()!
-        if (visited.has(current)) continue
-        visited.add(current)
-        const subs = data.subscriptions.get(current)
-        if (subs && subs.size > 0) return true
-        const dependents = data.stateDependents.get(current)
-        if (dependents) {
-            for (const dep of dependents) {
-                if (!visited.has(dep)) stack.push(dep)
+        const deps = data.stateDependencies.get(current)
+        if (!deps) continue
+        for (const dep of deps) {
+            const prev = data.liveDependentCount.get(dep) ?? 0
+            data.liveDependentCount.set(dep, prev + 1)
+            if (prev === 0 && !hasDirectSubscribers(dep, data)) {
+                stack.push(dep)
             }
         }
     }
-    return false
+}
+
+/**
+ * Propagate a "just became not-live" transition through the state's
+ * dependency graph. Mirror of propagateLive.
+ */
+const propagateNotLive = (root: State, data: StoreData) => {
+    const stack: State[] = [root]
+    while (stack.length > 0) {
+        const current = stack.pop()!
+        const deps = data.stateDependencies.get(current)
+        if (!deps) continue
+        for (const dep of deps) {
+            const prev = data.liveDependentCount.get(dep) ?? 0
+            const next = prev - 1
+            if (next <= 0) {
+                data.liveDependentCount.delete(dep)
+            } else {
+                data.liveDependentCount.set(dep, next)
+            }
+            if (prev === 1 && !hasDirectSubscribers(dep, data)) {
+                stack.push(dep)
+            }
+        }
+    }
+}
+
+/**
+ * Direct subscribers on `state` just transitioned from 0 → 1. If the state
+ * wasn't already live via dependents, mark it live and propagate.
+ */
+export const onFirstDirectSubscriber = (state: State, data: StoreData) => {
+    const liveDepCount = data.liveDependentCount.get(state) ?? 0
+    if (liveDepCount === 0) {
+        propagateLive(state, data)
+    }
+}
+
+/**
+ * Direct subscribers on `state` just transitioned from 1 → 0. If the state
+ * has no live dependents either, it transitions to not-live and we
+ * propagate.
+ */
+export const onLastDirectSubscriber = (state: State, data: StoreData) => {
+    const liveDepCount = data.liveDependentCount.get(state) ?? 0
+    if (liveDepCount === 0) {
+        propagateNotLive(state, data)
+    }
+}
+
+/**
+ * A live selector gained dependency `dep`. Register the contribution to
+ * dep's liveDependentCount; if dep transitions to live, propagate.
+ */
+export const onLiveDependencyAdded = (dep: State, data: StoreData) => {
+    const prev = data.liveDependentCount.get(dep) ?? 0
+    data.liveDependentCount.set(dep, prev + 1)
+    if (prev === 0 && !hasDirectSubscribers(dep, data)) {
+        propagateLive(dep, data)
+    }
+}
+
+/**
+ * A live selector lost dependency `dep`. Decrement and propagate not-live
+ * if the contribution was the last one keeping dep alive.
+ */
+export const onLiveDependencyRemoved = (dep: State, data: StoreData) => {
+    const prev = data.liveDependentCount.get(dep) ?? 0
+    const next = prev - 1
+    if (next <= 0) {
+        data.liveDependentCount.delete(dep)
+    } else {
+        data.liveDependentCount.set(dep, next)
+    }
+    if (prev === 1 && !hasDirectSubscribers(dep, data)) {
+        propagateNotLive(dep, data)
+    }
 }
 
 /**
@@ -123,7 +211,7 @@ export const unmountOrphanedDeps = (
         visited.add(current)
         // @ts-ignore
         if ((current.__valdresOnMount || current.onMount) && data.mounts.has(current)) {
-            if (!isTransitivelySubscribed(current, data)) {
+            if (!isLive(current, data)) {
                 try {
                     unmountAtom(current, data)
                 } catch (error) {

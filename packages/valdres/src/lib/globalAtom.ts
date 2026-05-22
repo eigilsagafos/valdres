@@ -7,7 +7,7 @@ import type { AtomOnSet } from "./../types/AtomOnSet"
 import type { AtomOptions } from "./../types/AtomOptions"
 import type { GlobalAtom } from "./../types/GlobalAtom"
 import type { StoreData } from "./../types/StoreData"
-import { isTransitivelySubscribed, mountAtom, unmountAtom } from "./mountAtom"
+import { isLive, mountAtom, unmountAtom } from "./mountAtom"
 import { propagateUpdatedAtoms } from "./propagateUpdatedAtoms"
 import { setAtom } from "./setAtom"
 import { installMaxAgeTimer } from "./subscribe"
@@ -92,7 +92,7 @@ export const globalAtom = <Value = unknown>(
             // Use transitive subscription so selector subscribers (which
             // mount the atom via mountTransitiveDeps) keep their listeners
             // alive across resetSelf.
-            if (isTransitivelySubscribed(atom, s)) {
+            if (isLive(atom, s)) {
                 subscribedStores.push(s)
             }
         }
