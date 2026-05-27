@@ -1,8 +1,9 @@
-import { describe, test, expect, mock } from "bun:test"
+import { describe, test, expect, mock, spyOn } from "bun:test"
 import { store } from "../store"
 import { atom } from "../atom"
 import { atomFamily } from "../atomFamily"
 import { selector } from "../selector"
+import { trackScopeValue } from "./setValueInData"
 
 const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
 
@@ -454,5 +455,60 @@ describe("batchUpdates and scopes", () => {
         expect(cb).toHaveBeenCalledTimes(1)
         B.set(a, 2)
         expect(cb).toHaveBeenCalledTimes(2)
+    })
+})
+
+describe("regression: contract guards", () => {
+    // Red against the pre-fix code, which used `data.parent!` and
+    // `data.scopeIndexKeys!` and would throw a generic TypeError
+    // ("Cannot read properties of undefined") instead of a clear,
+    // contract-naming error when called on a root store.
+    test("trackScopeValue throws a clear error when called on a root store", () => {
+        const rootStore = store()
+        const a = atom(1)
+        expect(() => trackScopeValue(a, rootStore.data)).toThrow(
+            "trackScopeValue called on a root store",
+        )
+    })
+})
+
+describe("regression: maxAge: 0 is a valid TTL", () => {
+    // The type is `Reactive<number>`, so 0 is well-formed. The pre-fix
+    // truthiness checks (`if (!state.maxAge) return`, `&& state.maxAge`,
+    // `if (atom.maxAge && ...)`) treated it as unset and skipped the
+    // timer install, breaking the only observable contract: subscribing
+    // to a maxAge atom installs a setInterval.
+
+    test("subscribe installs maxAge timer for a regular atom with maxAge: 0", () => {
+        const setIntervalSpy = spyOn(globalThis, "setInterval")
+        const before = setIntervalSpy.mock.calls.length
+        const a = atom(0, { maxAge: 0 })
+        const s = store()
+        const unsub = s.sub(a, () => {})
+        try {
+            expect(setIntervalSpy.mock.calls.length).toBe(before + 1)
+        } finally {
+            unsub()
+            setIntervalSpy.mockRestore()
+        }
+    })
+
+    test("attach installs maxAge timer for a global atom with maxAge: 0", () => {
+        const setIntervalSpy = spyOn(globalThis, "setInterval")
+        const before = setIntervalSpy.mock.calls.length
+        const a = atom(0, {
+            global: true,
+            maxAge: 0,
+            name: "@valdres/test/maxage-zero",
+        })
+        const s = store()
+        const unsub = s.sub(a, () => {})
+        try {
+            expect(setIntervalSpy.mock.calls.length).toBe(before + 1)
+        } finally {
+            unsub()
+            a.detach(s.data)
+            setIntervalSpy.mockRestore()
+        }
     })
 })

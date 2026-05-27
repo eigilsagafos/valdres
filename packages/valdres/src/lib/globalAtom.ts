@@ -133,7 +133,7 @@ export const globalAtom = <Value = unknown>(
             // Match subscribe.ts: maxAge timer is installed only when the
             // atom has a DIRECT subscriber. Transitive (selector-only)
             // subscribers go through the lazy-revalidation path on read.
-            if (atom.maxAge && (s.subscriptions.get(atom)?.size ?? 0) > 0) {
+            if (atom.maxAge !== undefined && (s.subscriptions.get(atom)?.size ?? 0) > 0) {
                 installMaxAgeTimer(atom, s)
             }
             try {
