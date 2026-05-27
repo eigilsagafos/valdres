@@ -72,6 +72,8 @@ interface HistoryBenchmark {
 interface HistoryEntry {
     date: string
     benchmarks: HistoryBenchmark[]
+    // Added later — older entries on benchmark-data may omit this.
+    nodeBenchmarks?: HistoryBenchmark[]
 }
 
 // Legacy format on gh-pages
@@ -187,13 +189,20 @@ interface HistoricalData {
     entryCount: number
 }
 
+interface LoadedHistory {
+    bun: HistoricalData
+    // Node history only exists on the benchmark-data branch and may be empty
+    // for older entries that pre-date V8 tracking.
+    node: HistoricalData | null
+}
+
 /**
  * Minimum entries needed before benchmark-data is trusted over gh-pages.
  * With fewer entries, CV is unreliable and thresholds would be too tight.
  */
 const MIN_ENTRIES_FOR_NEW_FORMAT = 5
 
-async function loadHistory(): Promise<HistoricalData | null> {
+async function loadHistory(): Promise<LoadedHistory | null> {
     // Try benchmark-data branch first (new compact format),
     // but only if it has enough entries for reliable CV computation
     const benchData = await gitShow("origin/benchmark-data:results.json")
@@ -213,7 +222,7 @@ async function loadHistory(): Promise<HistoricalData | null> {
         }
     }
 
-    // Fall back to gh-pages (legacy format)
+    // Fall back to gh-pages (legacy format) — Bun only.
     const ghPages = await gitShow("origin/gh-pages:dev/bench/data.js")
     if (ghPages) {
         try {
@@ -223,7 +232,7 @@ async function loadHistory(): Promise<HistoricalData | null> {
             const data: LegacyData = JSON.parse(json)
             const entries = data.entries?.["valdres benchmarks"]
             if (entries && entries.length > 0) {
-                return computeFromLegacy(entries)
+                return { bun: computeFromLegacy(entries), node: null }
             }
         } catch {
             console.warn("Failed to parse gh-pages data.js")
@@ -233,13 +242,14 @@ async function loadHistory(): Promise<HistoricalData | null> {
     return null
 }
 
-function computeFromBenchmarkData(entries: HistoryEntry[]): HistoricalData {
-    const recent = entries.slice(-WINDOW_SIZE)
+function computeSeriesData(
+    seriesPerEntry: HistoryBenchmark[][],
+): Pick<HistoricalData, "medianRatios" | "ratioCvByName" | "medianValdres"> {
     const ratiosByName = new Map<string, number[]>()
     const valdresByName = new Map<string, number[]>()
 
-    for (const entry of recent) {
-        for (const bench of entry.benchmarks) {
+    for (const benches of seriesPerEntry) {
+        for (const bench of benches) {
             if (!ratiosByName.has(bench.name)) ratiosByName.set(bench.name, [])
             ratiosByName.get(bench.name)!.push(bench.ratio)
             if (!valdresByName.has(bench.name)) valdresByName.set(bench.name, [])
@@ -259,13 +269,29 @@ function computeFromBenchmarkData(entries: HistoryEntry[]): HistoricalData {
         medianValdres.set(name, median(values))
     }
 
-    return {
-        medianRatios,
-        ratioCvByName,
-        medianValdres,
+    return { medianRatios, ratioCvByName, medianValdres }
+}
+
+function computeFromBenchmarkData(entries: HistoryEntry[]): LoadedHistory {
+    const recent = entries.slice(-WINDOW_SIZE)
+
+    const bun: HistoricalData = {
+        ...computeSeriesData(recent.map(e => e.benchmarks)),
         source: "benchmark-data",
         entryCount: entries.length,
     }
+
+    const nodeEntries = recent.filter(e => (e.nodeBenchmarks?.length ?? 0) > 0)
+    const node: HistoricalData | null =
+        nodeEntries.length > 0
+            ? {
+                  ...computeSeriesData(nodeEntries.map(e => e.nodeBenchmarks!)),
+                  source: "benchmark-data",
+                  entryCount: nodeEntries.length,
+              }
+            : null
+
+    return { bun, node }
 }
 
 function computeFromLegacy(entries: LegacyEntry[]): HistoricalData {
@@ -380,49 +406,68 @@ const STATUS_ICON: Record<Status, string> = {
     regression: "🚨",
 }
 
-function formatNodeSection(nodeResults: NdjsonResult[]): string {
-    const comparisons = nodeResults.filter(
-        r =>
-            r.tag !== "baseline" &&
-            (r.threshold ?? 0) < OPTIMIZATION_TARGET_THRESHOLD,
-    )
-    if (comparisons.length === 0) return ""
+function renderResultsBlock(
+    results: Comparison[],
+    title: string,
+    windowUsed: number,
+    showLegend: boolean,
+): string[] {
+    const hasHistory = windowUsed > 0
+    const historicalHeader = hasHistory
+        ? `Historical (${windowUsed}-run median)`
+        : ""
+    const headerRow = hasHistory
+        ? `| | Benchmark | Valdres | Jotai | vs Jotai | ${historicalHeader} | Δ |`
+        : `| | Benchmark | Valdres | Jotai | vs Jotai |`
+    const alignRow = hasHistory
+        ? "|:-|:----------|--------:|------:|--------:|--------:|:----------|"
+        : "|:-|:----------|--------:|------:|--------:|"
 
-    const headerRow = "| Benchmark | Valdres | Jotai | vs Jotai |"
-    const alignRow = "|:----------|--------:|------:|--------:|"
-    const renderRow = (r: NdjsonResult): string => {
-        const ratio = r.jotai > 0 ? r.valdres / r.jotai : 1
-        return `| ${r.name} | ${fmtNs(r.valdres)} | ${fmtNs(r.jotai)} | ${fmtRatio(ratio)} |`
+    const renderRow = (r: Comparison): string => {
+        const icon = STATUS_ICON[r.status]
+        const valdres = fmtNs(r.valdres)
+        const jotai = fmtNs(r.jotai)
+        const vsJotai = fmtRatio(r.currentRatio)
+        if (!hasHistory) {
+            return `| ${icon} | ${r.name} | ${valdres} | ${jotai} | ${vsJotai} |`
+        }
+        const historical = r.medianRatio != null ? fmtRatio(r.medianRatio) : "—"
+        const delta = fmtChange(r.ratioChange)
+        return `| ${icon} | ${r.name} | ${valdres} | ${jotai} | ${vsJotai} | ${historical} | ${delta} |`
     }
 
     const lines: string[] = [
-        "",
         "<details>",
-        `<summary>V8 (Chrome / Node.js) results — ${comparisons.length} benchmarks · informational only</summary>`,
-        "",
-        `<sub>V8 timings are tracked separately from the JSC/Bun regression check. No historical comparison — V8 uses \`performance.now()\` which has lower resolution than \`Bun.nanoseconds()\`, so trends are recorded for reference only.</sub>`,
+        `<summary>${title}</summary>`,
         "",
     ]
 
-    const grouped = groupByCategory(comparisons, r => r.name)
+    const grouped = groupByCategory(results, r => r.name)
     for (const [cat, benchmarks] of grouped) {
         lines.push(`**${cat}**`, "", headerRow, alignRow)
         for (const r of benchmarks) lines.push(renderRow(r))
         lines.push("")
     }
 
+    if (showLegend) {
+        lines.push(
+            "**Legend:** ✅ pass · 🚨 regression · ⏭️ skipped (opt target or below noise floor) · 🆕 new",
+            "",
+        )
+    }
+
     lines.push("</details>")
-    return lines.join("\n")
+    return lines
 }
 
 function formatTable(
-    results: Comparison[],
-    nodeResults: NdjsonResult[],
+    bunResults: Comparison[],
+    nodeResults: Comparison[] | null,
+    nodeWindowUsed: number,
     runNumber: number,
-    historySource: string,
-    windowUsed: number,
+    bunWindowUsed: number,
 ): string {
-    const regressions = results.filter(r => r.status === "regression")
+    const regressions = bunResults.filter(r => r.status === "regression")
 
     const lines: string[] = [
         "<!-- bench-regression-check -->",
@@ -441,54 +486,54 @@ function formatTable(
 
     lines.push(
         "",
-        `<sub>**How to read this:** _Valdres_ and _Jotai_ are this run's median timings. _vs Jotai_ is their ratio. _Historical_ is the median ratio from the last ${windowUsed} runs on \`main\`. _Δ_ compares this run's ratio against that historical median — 🟢 faster, 🔴 slower.</sub>`,
+        `<sub>**How to read this:** _Valdres_ and _Jotai_ are this run's median timings. _vs Jotai_ is their ratio. _Historical_ is the median ratio from the last ${bunWindowUsed} runs on \`main\`. _Δ_ compares this run's ratio against that historical median — 🟢 faster, 🔴 slower. Regression gating runs against JSC (Bun) only; V8 (Node.js) is tracked informationally.</sub>`,
     )
 
-    const historicalHeader = `Historical (${windowUsed}-run median)`
-    const headerRow = `| | Benchmark | Valdres | Jotai | vs Jotai | ${historicalHeader} | Δ |`
-    const alignRow = "|:-|:----------|--------:|------:|--------:|--------:|:----------|"
-
-    const renderRow = (r: Comparison): string => {
-        const icon = STATUS_ICON[r.status]
-        const valdres = fmtNs(r.valdres)
-        const jotai = fmtNs(r.jotai)
-        const vsJotai = fmtRatio(r.currentRatio)
-        const historical = r.medianRatio != null ? fmtRatio(r.medianRatio) : "—"
-        const delta = fmtChange(r.ratioChange)
-        return `| ${icon} | ${r.name} | ${valdres} | ${jotai} | ${vsJotai} | ${historical} | ${delta} |`
-    }
-
-    // ── Show flagged benchmarks inline (if any) ──
+    // ── Inline flagged regressions (Bun only) ──
     if (regressions.length > 0) {
-        lines.push("", headerRow, alignRow)
-        for (const r of regressions) lines.push(renderRow(r))
+        const historicalHeader = `Historical (${bunWindowUsed}-run median)`
+        lines.push(
+            "",
+            `| | Benchmark | Valdres | Jotai | vs Jotai | ${historicalHeader} | Δ |`,
+            "|:-|:----------|--------:|------:|--------:|--------:|:----------|",
+        )
+        for (const r of regressions) {
+            const icon = STATUS_ICON[r.status]
+            const historical =
+                r.medianRatio != null ? fmtRatio(r.medianRatio) : "—"
+            lines.push(
+                `| ${icon} | ${r.name} | ${fmtNs(r.valdres)} | ${fmtNs(r.jotai)} | ${fmtRatio(r.currentRatio)} | ${historical} | ${fmtChange(r.ratioChange)} |`,
+            )
+        }
     }
 
-    // ── Full results in collapsible section ──
+    // ── JSC (Bun) full results ──
+    lines.push("")
     lines.push(
-        "",
-        "<details>",
-        `<summary>Full results — ${results.length} benchmarks compared against last ${windowUsed} runs on <code>main</code></summary>`,
-        "",
+        ...renderResultsBlock(
+            bunResults,
+            `JSC (Bun / Safari) — ${bunResults.length} benchmarks vs last ${bunWindowUsed} runs on <code>main</code>`,
+            bunWindowUsed,
+            true,
+        ),
     )
 
-    // Group by category (deterministic order from BENCH_CATEGORIES)
-    const grouped = groupByCategory(results, r => r.name)
-
-    for (const [cat, benchmarks] of grouped) {
-        lines.push(`**${cat}**`, "", headerRow, alignRow)
-        for (const r of benchmarks) lines.push(renderRow(r))
+    // ── V8 (Node.js) full results ──
+    if (nodeResults && nodeResults.length > 0) {
+        const nodeTitle =
+            nodeWindowUsed > 0
+                ? `V8 (Node.js / Chrome) — ${nodeResults.length} benchmarks vs last ${nodeWindowUsed} runs on <code>main</code> · informational`
+                : `V8 (Node.js / Chrome) — ${nodeResults.length} benchmarks · informational (no historical baseline yet)`
         lines.push("")
+        lines.push(
+            ...renderResultsBlock(
+                nodeResults,
+                nodeTitle,
+                nodeWindowUsed,
+                false,
+            ),
+        )
     }
-
-    lines.push(
-        "**Legend:** ✅ pass · 🚨 regression · ⏭️ skipped (opt target or below noise floor) · 🆕 new",
-        "",
-        "</details>",
-    )
-
-    const nodeSection = formatNodeSection(nodeResults)
-    if (nodeSection) lines.push(nodeSection)
 
     if (runNumber > 0) {
         const now = new Date()
@@ -589,53 +634,86 @@ async function postOrUpdateComment(
 
 async function main() {
     const current = readBenchResults(BUN_NDJSON_PATH)
-    const nodeResults = readBenchResults(NODE_NDJSON_PATH)
+    const nodeCurrent = readBenchResults(NODE_NDJSON_PATH)
     const benchmarks = current.filter(r => r.tag !== "baseline")
     console.log(
         `Read ${current.length} Bun results (${benchmarks.length} comparison benchmarks, ${current.length - benchmarks.length} baselines skipped)`,
     )
-    if (nodeResults.length > 0) {
-        console.log(`Read ${nodeResults.length} Node/V8 results (informational)`)
+    if (nodeCurrent.length > 0) {
+        console.log(
+            `Read ${nodeCurrent.length} Node/V8 results (informational)`,
+        )
     }
 
     const history = await loadHistory()
     if (!history) {
-        console.log(
-            "No historical data found — skipping regression check.",
-        )
+        console.log("No historical data found — skipping regression check.")
         process.exit(0)
     }
 
-    if (history.medianRatios.size === 0) {
+    if (history.bun.medianRatios.size === 0) {
         console.log(
             "No historical ratio data found — skipping regression check.",
         )
         process.exit(0)
     }
 
-    const windowUsed = Math.min(history.entryCount, WINDOW_SIZE)
+    const bunWindowUsed = Math.min(history.bun.entryCount, WINDOW_SIZE)
     console.log(
-        `Found ${history.entryCount} historical runs on ${history.source} (using last ${windowUsed})`,
+        `Found ${history.bun.entryCount} historical runs on ${history.bun.source} (using last ${bunWindowUsed})`,
     )
 
-    // Log per-benchmark CV and dynamic thresholds
-    for (const [name, cv] of history.ratioCvByName) {
+    // Log per-benchmark CV and dynamic thresholds (Bun only — gates regressions)
+    for (const [name, cv] of history.bun.ratioCvByName) {
         const thresh = dynamicThreshold(cv)
         console.log(
             `  ${name}: ratio CV=${(cv * 100).toFixed(1)}% → threshold=${((thresh - 1) * 100).toFixed(0)}%`,
         )
     }
 
-    const results = compare(current, history)
+    const results = compare(current, history.bun)
+
+    // Compare V8 results against V8 history when available. If there's no V8
+    // history yet (older entries pre-date this tracking), still render the V8
+    // table — every entry just shows up as "new".
+    const nodeResults: Comparison[] | null =
+        nodeCurrent.length > 0
+            ? compare(
+                  nodeCurrent,
+                  history.node ?? {
+                      medianRatios: new Map(),
+                      ratioCvByName: new Map(),
+                      medianValdres: new Map(),
+                      source: "benchmark-data",
+                      entryCount: 0,
+                  },
+              )
+            : null
+    const nodeWindowUsed = history.node
+        ? Math.min(history.node.entryCount, WINDOW_SIZE)
+        : 0
+    if (history.node) {
+        console.log(
+            `Found ${history.node.entryCount} V8 historical runs (using last ${nodeWindowUsed})`,
+        )
+    } else if (nodeCurrent.length > 0) {
+        console.log("No V8 historical data yet — V8 section will show all as new")
+    }
 
     console.log(
         "\n" +
-            formatTable(results, nodeResults, 0, history.source, windowUsed) +
+            formatTable(results, nodeResults, nodeWindowUsed, 0, bunWindowUsed) +
             "\n",
     )
 
     await postOrUpdateComment(runNumber =>
-        formatTable(results, nodeResults, runNumber, history.source, windowUsed),
+        formatTable(
+            results,
+            nodeResults,
+            nodeWindowUsed,
+            runNumber,
+            bunWindowUsed,
+        ),
     )
 
     const regressions = results.filter(r => r.status === "regression")
