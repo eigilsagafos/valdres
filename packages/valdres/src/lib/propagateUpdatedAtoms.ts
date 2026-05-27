@@ -364,80 +364,23 @@ export const propagateDirtySelectors = (
 }
 
 
-// Re-evaluate dirty selectors topologically: each selector in the closure
-// reachable from the initial dirty set is evaluated at most once, after all
-// of its still-dirty parents have settled. This avoids the BFS-by-depth
-// pathology where a selector reachable through paths of different lengths
-// gets recomputed once per depth.
-//
-// Hot-path fast lane: when no initial selector has downstream selectors,
-// we run a plain linear loop (zero topo overhead). This is the common
-// flat-fan-out pattern — many leaf selectors all reading the same
-// updated atom — and pays nothing for the dedup machinery it doesn't need.
-const propagateSelectorUpdates = (
-    selectors: Set<Selector>,
+// Topological evaluation of a downstream subgraph. Each selector in
+// `seeds` (and everything transitively reachable from them) is re-evaluated
+// at most once, in dependency order. The seeds are direct dependents of
+// initial selectors whose values just changed in the first sweep — i.e.
+// "level-2" selectors. We only enter the topo path when there's actual
+// downstream work, since the bookkeeping (closure + pending count) is
+// material relative to a simple BFS pass.
+const propagateDownstreamTopo = (
+    seeds: Set<Selector>,
     data: StoreData,
     collectedSubscribers: Set<any>,
     updatedInitializedAtoms: Set<Atom>,
-    isInitOnly = false,
+    isInitOnly: boolean,
 ) => {
-    if (selectors.size === 0) return
-
-    // Fast lane: scan once to check if any initial selector has downstream.
-    // If none do, the propagation is purely flat — process inline and skip
-    // closure/pending allocation entirely. The pre-scan is one WeakMap.get
-    // per initial selector; for a 100-selector flat fan-out the overhead is
-    // a couple of microseconds.
-    let hasChain = false
-    for (const selector of selectors) {
-        const downstream = data.stateDependents.get(selector)
-        if (downstream && downstream.size > 0) {
-            hasChain = true
-            break
-        }
-    }
-
-    if (!hasChain) {
-        for (const selector of selectors) {
-            const currentValue = data.values.get(selector)
-            if (isPromiseLike(currentValue) && isInitOnly) continue
-            const subscribers = data.subscriptions.get(selector)
-            if (
-                !isPromiseLike(currentValue) &&
-                (!subscribers || subscribers.size === 0)
-            ) {
-                // No live consumer (downstream already known empty).
-                data.values.delete(selector)
-                continue
-            }
-            const [wasValueUpdated, , , addedDeps, removedDeps] =
-                reEvaluteSelector(selector, data, updatedInitializedAtoms)
-            if (
-                (addedDeps.size > 0 || removedDeps.size > 0) &&
-                isLive(selector, data)
-            ) {
-                for (const dep of addedDeps) {
-                    onLiveDependencyAdded(dep, data)
-                    mountTransitiveDeps(dep, data)
-                }
-                for (const dep of removedDeps) {
-                    onLiveDependencyRemoved(dep, data)
-                    unmountOrphanedDeps(dep, data)
-                }
-            }
-            if (wasValueUpdated && subscribers) {
-                addSetToSet(subscribers, collectedSubscribers)
-            }
-        }
-        return
-    }
-
-    // Topological path. Build the closure of all selectors reachable from
-    // the initial set, then evaluate in topo order — each selector exactly
-    // once, after its closure-internal dirty parents have been processed.
-    const closure = new Set<Selector>(selectors)
+    const closure = new Set<Selector>(seeds)
     {
-        const stack: Selector[] = [...selectors]
+        const stack: Selector[] = [...seeds]
         while (stack.length > 0) {
             const s = stack.pop() as Selector
             const downstream = data.stateDependents.get(s)
@@ -452,10 +395,10 @@ const propagateSelectorUpdates = (
         }
     }
 
-    // For each closure member, count its direct deps that are also in the
-    // closure (i.e. still-dirty parents). Members with count 0 are ready.
-    // Atoms and out-of-closure selectors count as already resolved (atoms
-    // were updated before propagation; outside selectors are stable).
+    // Pending: number of direct deps of `s` that are also in the closure
+    // (i.e. still-dirty parents). Count 0 → ready to evaluate. Atoms and
+    // out-of-closure selectors are already resolved (atoms were just
+    // updated; outside selectors are stable for this propagation).
     const pending = new Map<Selector, number>()
     const ready: Selector[] = []
     for (const s of closure) {
@@ -471,11 +414,10 @@ const propagateSelectorUpdates = (
     }
 
     // A closure member only needs re-evaluation if at least one of its
-    // upstream parents (atom or selector) actually changed value. Initial
-    // selectors are by definition dependents of just-updated atoms, so they
-    // start as needing eval. Downstream gets flagged as we propagate value
-    // changes through the topo pass.
-    const needsEval = new Set<Selector>(selectors)
+    // upstream parents actually changed value. Seeds reach here because
+    // a first-pass parent changed, so they start as needing eval. Pure
+    // downstream gets flagged as parents propagate change.
+    const needsEval = new Set<Selector>(seeds)
 
     const advance = (selector: Selector, propagateChange: boolean) => {
         const downstream = data.stateDependents.get(selector)
@@ -489,9 +431,8 @@ const propagateSelectorUpdates = (
         }
     }
 
-    // FIFO head pointer preserves sibling iteration order from the original
-    // BFS loop — some user code (notably nested writes that side-effect
-    // into peer selectors during eval) depends on this.
+    // FIFO head pointer preserves the original BFS sibling order — nested
+    // writes that side-effect into peer selectors during eval depend on it.
     let head = 0
     while (head < ready.length) {
         const selector = ready[head++]
@@ -544,5 +485,88 @@ const propagateSelectorUpdates = (
         if (wasValueUpdated && subscribers) {
             addSetToSet(subscribers, collectedSubscribers)
         }
+    }
+}
+
+// Re-evaluate the initial dirty selectors, then topologically evaluate
+// anything downstream of selectors whose values actually shifted. The topo
+// path guarantees each transitive selector evaluates at most once per
+// propagation even when reachable through paths of differing lengths — the
+// wide-DAG case where a pure BFS would recompute shared nodes once per
+// depth.
+//
+// The first sweep stays a plain linear loop (matching the legacy BFS first
+// iteration) so flat fan-out and init-only chain initialization — where
+// values often don't change at all — pay zero topo overhead. We only
+// allocate closure/pending state when at least one parent's value shift
+// produced live downstream work.
+//
+// Caveat: a selector that's both in the initial set AND a downstream of
+// another initial selector can be evaluated twice in this scheme (once in
+// the linear sweep with potentially stale upstream, once in the topo
+// settle). This matches the legacy BFS behavior and is a niche case in
+// practice; the wide-DAG payoff comes from intermediate (non-initial)
+// selectors which the topo path handles exactly once.
+const propagateSelectorUpdates = (
+    selectors: Set<Selector>,
+    data: StoreData,
+    collectedSubscribers: Set<any>,
+    updatedInitializedAtoms: Set<Atom>,
+    isInitOnly = false,
+) => {
+    if (selectors.size === 0) return
+
+    let downstreamSeeds: Set<Selector> | undefined
+
+    for (const selector of selectors) {
+        const currentValue = data.values.get(selector)
+        if (isPromiseLike(currentValue) && isInitOnly) continue
+        const dependents = data.stateDependents.get(selector)
+        const subscribers = data.subscriptions.get(selector)
+        if (
+            !isPromiseLike(currentValue) &&
+            (!dependents || dependents.size === 0) &&
+            (!subscribers || subscribers.size === 0)
+        ) {
+            // No live consumer — invalidate for lazy re-eval on next read.
+            data.values.delete(selector)
+            continue
+        }
+        const [wasValueUpdated, , , addedDeps, removedDeps] = reEvaluteSelector(
+            selector,
+            data,
+            updatedInitializedAtoms,
+        )
+        if (
+            (addedDeps.size > 0 || removedDeps.size > 0) &&
+            isLive(selector, data)
+        ) {
+            for (const dep of addedDeps) {
+                onLiveDependencyAdded(dep, data)
+                mountTransitiveDeps(dep, data)
+            }
+            for (const dep of removedDeps) {
+                onLiveDependencyRemoved(dep, data)
+                unmountOrphanedDeps(dep, data)
+            }
+        }
+        if (!wasValueUpdated) continue
+        if (subscribers) addSetToSet(subscribers, collectedSubscribers)
+        // Re-fetch dependents — eval may have changed them.
+        const downstream = data.stateDependents.get(selector)
+        if (downstream && downstream.size > 0) {
+            if (!downstreamSeeds) downstreamSeeds = new Set()
+            for (const d of downstream) downstreamSeeds.add(d)
+        }
+    }
+
+    if (downstreamSeeds && downstreamSeeds.size > 0) {
+        propagateDownstreamTopo(
+            downstreamSeeds,
+            data,
+            collectedSubscribers,
+            updatedInitializedAtoms,
+            isInitOnly,
+        )
     }
 }
