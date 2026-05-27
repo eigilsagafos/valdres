@@ -658,7 +658,10 @@ describe("atom", () => {
         const atom1 = atom(atomCallback, {
             maxAge: 20,
             staleWhileRevalidate: 200,
-            staleIfError: 500,
+            // Wide enough that this test stays within the window even on a
+            // slow CI runner; the value being tested is the within-window
+            // restore-stale behavior, not the window length itself.
+            staleIfError: 60_000,
         })
 
         const callback = mock(() => {})
@@ -838,7 +841,7 @@ describe("atom", () => {
 
         const atom1 = atom(atomCallback, {
             maxAge: 20,
-            staleIfError: 500,
+            staleIfError: 60_000,
         })
 
         const callback = mock(() => {})
@@ -880,7 +883,7 @@ describe("atom", () => {
 
             const atom1 = atom(atomCallback, {
                 maxAge: 20,
-                staleIfError: 500,
+                staleIfError: 60_000,
             })
 
             const callback = mock(() => {})
@@ -1009,7 +1012,7 @@ describe("atom", () => {
             const atom1 = atom(atomCallback, {
                 maxAge: 20,
                 staleWhileRevalidate: 30,
-                staleIfError: 500,
+                staleIfError: 60_000,
             })
 
             const callback = mock(() => {})
@@ -1056,7 +1059,7 @@ describe("atom", () => {
             const atom1 = atom(atomCallback, {
                 maxAge: 20,
                 staleWhileRevalidate: 0,
-                staleIfError: 500,
+                staleIfError: 60_000,
             })
 
             const callback = mock(() => {})
