@@ -1,4 +1,4 @@
-import { describe, test, expect, mock } from "bun:test"
+import { describe, test, expect, mock, spyOn } from "bun:test"
 import { store } from "../store"
 import { atom } from "../atom"
 import { selector } from "../selector"
@@ -504,55 +504,29 @@ describe("globalAtom", () => {
         expect(store3.get(testAtom)).toBe(0)
     })
 
-    test("global atom with maxAge only calls defaultValue once per interval across stores", async () => {
-        const MAX_AGE = 30
-        const DURATION = 200
+    test("global atom with maxAge shares one interval across stores", () => {
+        // The invariant: a second store subscribing to the same global atom
+        // must bump refCount on the existing interval rather than installing
+        // its own. Regressing this used to double the defaultValue call rate
+        // per extra store. Spy directly on setInterval — no timing involved.
+        const intervalSpy = spyOn(globalThis, "setInterval")
+        try {
+            const testAtom = atom(() => 0, { global: true, maxAge: 50 })
+            const store1 = store()
+            const store2 = store()
 
-        // Baseline: one subscriber. Establishes how many ticks this CI run
-        // produces in DURATION, so the assertion adapts to scheduler jitter.
-        let baselineCalls = 0
-        const baselineAtom = atom(
-            () => {
-                baselineCalls++
-                return baselineCalls
-            },
-            { global: true, maxAge: MAX_AGE },
-        )
-        const baselineStore = store()
-        const unsubBaseline = baselineStore.sub(baselineAtom, () => {})
-        const baselineStart = baselineCalls
-        await wait(DURATION)
-        const baselineRevalidations = baselineCalls - baselineStart
-        unsubBaseline()
+            const callsBefore = intervalSpy.mock.calls.length
+            const unsub1 = store1.sub(testAtom, () => {})
+            const unsub2 = store2.sub(testAtom, () => {})
+            const callsAfter = intervalSpy.mock.calls.length
 
-        // Two subscribers. The bug starts an independent interval per store,
-        // so call rate doubles. A correct impl matches the baseline rate.
-        let multiCalls = 0
-        const multiAtom = atom(
-            () => {
-                multiCalls++
-                return multiCalls
-            },
-            { global: true, maxAge: MAX_AGE },
-        )
-        const store1 = store()
-        const store2 = store()
-        const unsub1 = store1.sub(multiAtom, () => {})
-        const unsub2 = store2.sub(multiAtom, () => {})
-        const multiStart = multiCalls
-        await wait(DURATION)
-        const multiRevalidations = multiCalls - multiStart
+            expect(callsAfter - callsBefore).toBe(1)
 
-        expect(store1.get(multiAtom)).toBe(store2.get(multiAtom))
-        // Sanity check: enough ticks fired for the < 2× comparison to mean
-        // something. If this trips, increase DURATION or shrink MAX_AGE.
-        expect(baselineRevalidations).toBeGreaterThanOrEqual(3)
-        // The bug roughly doubles the call rate. Stay clearly below 2×
-        // baseline; scheduler jitter alone won't cross that gap.
-        expect(multiRevalidations).toBeLessThan(baselineRevalidations * 2)
-
-        unsub1()
-        unsub2()
+            unsub1()
+            unsub2()
+        } finally {
+            intervalSpy.mockRestore()
+        }
     })
 
     test("notifies subscribers that re-read synchronously across multiple resets", async () => {
