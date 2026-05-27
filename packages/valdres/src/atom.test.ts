@@ -1057,7 +1057,14 @@ describe("atom", () => {
             }
 
             const atom1 = atom(atomCallback, {
-                maxAge: 20,
+                // swr=0 means store flips to the pending promise during
+                // revalidation. After reject, handleReject restores stale,
+                // but setAndPropagate flushes via queueMicrotask — if the
+                // next setInterval tick fires before that flush commits,
+                // it overwrites the restored value with a new pending
+                // promise that never resolves. A long maxAge keeps the
+                // next tick far away so the assertion has time to land.
+                maxAge: 200,
                 staleWhileRevalidate: 0,
                 staleIfError: 60_000,
             })
