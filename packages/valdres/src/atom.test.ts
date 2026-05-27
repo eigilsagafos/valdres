@@ -1071,9 +1071,10 @@ describe("atom", () => {
             expect(store1.get(atom1)).toBeInstanceOf(Promise)
 
             resolvers[1].reject(new Error("network error"))
-            await wait(1)
-            // Within staleIfError window — stale should be restored
-            expect(store1.get(atom1)).toBe(100)
+            // Within staleIfError window — stale should be restored.
+            // Poll because the catch handler propagates over a few
+            // microtask ticks; a fixed wait(1) is racy on CI.
+            await waitFor(() => expect(store1.get(atom1)).toBe(100))
 
             unsubscribe()
         },
@@ -1115,12 +1116,15 @@ describe("atom", () => {
             for (let i = 1; i < resolvers.length; i++) {
                 resolvers[i].reject(new Error("network error"))
             }
-            await wait(1)
 
-            // Past staleIfError window — stale value should NOT be served
-            const val = store1.get(atom1)
-            expect(val).not.toBe(100)
-            expect(val).toBeInstanceOf(Promise)
+            // Past staleIfError window — stale value should NOT be served.
+            // Poll so the catch handler has time to settle.
+            let val: unknown
+            await waitFor(() => {
+                val = store1.get(atom1)
+                expect(val).not.toBe(100)
+                expect(val).toBeInstanceOf(Promise)
+            })
 
             unsubscribe()
         },
