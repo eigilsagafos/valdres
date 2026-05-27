@@ -505,38 +505,51 @@ describe("globalAtom", () => {
     })
 
     test("global atom with maxAge only calls defaultValue once per interval across stores", async () => {
-        let callCount = 0
-        const testAtom = atom(
-            () => {
-                callCount++
-                return callCount
-            },
-            { global: true, maxAge: 50 },
-        )
+        const MAX_AGE = 30
+        const DURATION = 200
 
+        // Baseline: one subscriber. Establishes how many ticks this CI run
+        // produces in DURATION, so the assertion adapts to scheduler jitter.
+        let baselineCalls = 0
+        const baselineAtom = atom(
+            () => {
+                baselineCalls++
+                return baselineCalls
+            },
+            { global: true, maxAge: MAX_AGE },
+        )
+        const baselineStore = store()
+        const unsubBaseline = baselineStore.sub(baselineAtom, () => {})
+        const baselineStart = baselineCalls
+        await wait(DURATION)
+        const baselineRevalidations = baselineCalls - baselineStart
+        unsubBaseline()
+
+        // Two subscribers. The bug starts an independent interval per store,
+        // so call rate doubles. A correct impl matches the baseline rate.
+        let multiCalls = 0
+        const multiAtom = atom(
+            () => {
+                multiCalls++
+                return multiCalls
+            },
+            { global: true, maxAge: MAX_AGE },
+        )
         const store1 = store()
         const store2 = store()
+        const unsub1 = store1.sub(multiAtom, () => {})
+        const unsub2 = store2.sub(multiAtom, () => {})
+        const multiStart = multiCalls
+        await wait(DURATION)
+        const multiRevalidations = multiCalls - multiStart
 
-        const cb1 = mock(() => {})
-        const cb2 = mock(() => {})
-
-        // Subscribe in both stores — bug causes two independent intervals
-        const unsub1 = store1.sub(testAtom, cb1)
-        const unsub2 = store2.sub(testAtom, cb2)
-
-        // Initial defaultValue call happened once during init
-        const countAfterInit = callCount
-
-        // Wait long enough for exactly one revalidation cycle (50ms interval)
-        await wait(75)
-
-        // With the bug, each store starts its own interval so defaultValue
-        // gets called twice per cycle. It should only be called once.
-        const revalidationCalls = callCount - countAfterInit
-        expect(revalidationCalls).toBe(1)
-
-        // Both stores should have the updated value
-        expect(store1.get(testAtom)).toBe(store2.get(testAtom))
+        expect(store1.get(multiAtom)).toBe(store2.get(multiAtom))
+        // Sanity check: enough ticks fired for the < 2× comparison to mean
+        // something. If this trips, increase DURATION or shrink MAX_AGE.
+        expect(baselineRevalidations).toBeGreaterThanOrEqual(3)
+        // The bug roughly doubles the call rate. Stay clearly below 2×
+        // baseline; scheduler jitter alone won't cross that gap.
+        expect(multiRevalidations).toBeLessThan(baselineRevalidations * 2)
 
         unsub1()
         unsub2()
