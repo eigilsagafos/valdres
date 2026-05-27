@@ -277,6 +277,124 @@ describe("scopeValueIndex", () => {
         expect(A.get(a)).toBe(10)
     })
 
+    test("diamond DAG: each selector evaluates once per atom update", () => {
+        const rootStore = store()
+        const a = atom(0)
+
+        const counts = { b: 0, c: 0, d: 0 }
+        const b = selector(get => {
+            counts.b++
+            return get(a) + 1
+        })
+        const c = selector(get => {
+            counts.c++
+            return get(a) + 2
+        })
+        const d = selector(get => {
+            counts.d++
+            return get(b) + get(c)
+        })
+
+        rootStore.sub(d, () => {})
+        // Reset after initial materialization
+        counts.b = 0
+        counts.c = 0
+        counts.d = 0
+
+        rootStore.set(a, 1)
+        expect(counts.b).toBe(1)
+        expect(counts.c).toBe(1)
+        expect(counts.d).toBe(1)
+
+        counts.b = 0
+        counts.c = 0
+        counts.d = 0
+        rootStore.set(a, 2)
+        expect(counts.b).toBe(1)
+        expect(counts.c).toBe(1)
+        expect(counts.d).toBe(1)
+    })
+
+    test("diamond-of-diamonds: each selector evaluates at most once per propagation", () => {
+        const rootStore = store()
+        const a = atom(0)
+
+        const counts = {
+            b: 0, c: 0,
+            d: 0, e: 0, f: 0, g: 0,
+            h: 0, i: 0,
+            j: 0,
+        }
+        // Layer 1: b, c both read a
+        const b = selector(get => { counts.b++; return get(a) + 1 })
+        const c = selector(get => { counts.c++; return get(a) + 2 })
+        // Layer 2: d/e read b, f/g read c
+        const d = selector(get => { counts.d++; return get(b) + 10 })
+        const e = selector(get => { counts.e++; return get(b) + 20 })
+        const f = selector(get => { counts.f++; return get(c) + 30 })
+        const g = selector(get => { counts.g++; return get(c) + 40 })
+        // Layer 3: h merges d+f (one diamond), i merges e+g (another)
+        const h = selector(get => { counts.h++; return get(d) + get(f) })
+        const i = selector(get => { counts.i++; return get(e) + get(g) })
+        // Apex
+        const j = selector(get => { counts.j++; return get(h) + get(i) })
+
+        rootStore.sub(j, () => {})
+
+        // Reset counts after initial materialization
+        for (const k of Object.keys(counts) as (keyof typeof counts)[]) counts[k] = 0
+
+        rootStore.set(a, 5)
+
+        for (const [name, count] of Object.entries(counts)) {
+            expect(count, `selector ${name} evaluated ${count} times`).toBe(1)
+        }
+    })
+
+    test("asymmetric depth: D is reachable via B and via E→D, evaluated once", () => {
+        // a → b
+        // b → d (depth 2)
+        // b → e → d (depth 3, would cause BFS to re-evaluate d)
+        const rootStore = store()
+        const a = atom(0)
+
+        const counts = { b: 0, e: 0, d: 0 }
+        const b = selector(get => { counts.b++; return get(a) + 1 })
+        const e = selector(get => { counts.e++; return get(b) + 10 })
+        const d = selector(get => { counts.d++; return get(b) + get(e) })
+
+        rootStore.sub(d, () => {})
+        counts.b = 0
+        counts.e = 0
+        counts.d = 0
+
+        rootStore.set(a, 7)
+        expect(counts.b).toBe(1)
+        expect(counts.e).toBe(1)
+        expect(counts.d).toBe(1)
+        // And d sees the post-update value of e, not a stale value.
+        expect(rootStore.get(d)).toBe((7 + 1) + (7 + 1 + 10))
+    })
+
+    test("leaf reads atom and chain link: final value is correct", () => {
+        // Both `chain1` and `leaf` are in the initial dirty set (both read
+        // the atom directly), AND `leaf` also reads `chain1`. The hybrid
+        // first-sweep + topo-on-downstream scheduler may evaluate `leaf`
+        // up to twice in this case (once in the linear sweep with a
+        // possibly stale `chain1`, once in the topo settle). Whatever the
+        // intermediate state, the *final* value the subscriber observes
+        // must be correct.
+        const rootStore = store()
+        const a = atom(0)
+        const chain1 = selector(get => get(a) + 1)
+        const leaf = selector(get => get(a) + get(chain1))
+
+        rootStore.sub(leaf, () => {})
+
+        rootStore.set(a, 5)
+        expect(rootStore.get(leaf)).toBe(5 + 5 + 1)
+    })
+
     test("selectors evaluated in scopes do not pollute scopeValueIndex", () => {
         const rootStore = store()
         const atom1 = atom(1)
