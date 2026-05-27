@@ -28,7 +28,7 @@ const initSubscribers = <V>(state: State<V> | Family<V>, data: StoreData) => {
 }
 
 export const installMaxAgeTimer = (state: Atom<any>, data: StoreData) => {
-    if (!state.maxAge) return
+    if (state.maxAge === undefined) return
     const globalState = isGlobalAtom(state) ? state : undefined
     const existing = globalState?.maxAgeInterval
 
@@ -340,7 +340,7 @@ export const subscribe = <V>(
         // overwrite the shadow on the next tick and double the work for
         // non-global maxAge atoms (which lack the refCount sharing that
         // installMaxAgeTimer uses for global atoms).
-        if (isAtom(state) && state.maxAge && !data.parent) {
+        if (isAtom(state) && state.maxAge !== undefined && !data.parent) {
             installMaxAgeTimer(state, data)
         }
         // First direct subscriber: bump liveness through the dep graph.

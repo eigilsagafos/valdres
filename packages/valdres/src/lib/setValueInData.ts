@@ -4,17 +4,22 @@ import type { StoreData } from "../types/StoreData"
 import { deepFreeze } from "../utils/deepFreeze"
 import { isProd } from "./isProd"
 
-/** Register `key` in the parent's scopeValueIndex. Caller MUST ensure
- *  `data` is a scoped store (has a parent). */
+/** Register `key` in the parent's scopeValueIndex. Throws if called on
+ *  a root store — `parent` and `scopeIndexKeys` are only populated for
+ *  scoped stores (see createStoreData). */
 export const trackScopeValue = (key: WeakKey, data: StoreData) => {
-    const parent = data.parent!
+    const parent = data.parent
+    const indexKeys = data.scopeIndexKeys
+    if (!parent || !indexKeys) {
+        throw new Error("trackScopeValue called on a root store")
+    }
     let set = parent.scopeValueIndex.get(key)
     if (!set) {
         set = new Set()
         parent.scopeValueIndex.set(key, set)
     }
     set.add(data)
-    data.scopeIndexKeys!.add(key)
+    indexKeys.add(key)
 }
 
 export const setValueInData = <Value extends unknown>(
