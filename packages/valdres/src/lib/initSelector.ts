@@ -32,7 +32,7 @@ export const evaluateSelector = <V>(
     selector: Selector<V>,
     data: StoreData,
     initializedAtomsSet: Set<Atom>,
-    circularDependencySet: WeakSet<any> = data.circularDepSet,
+    circularDependencySet: WeakSet<Selector> = data.circularDepSet,
     addedDepsOut?: Set<State>,
     removedDepsOut?: Set<State>,
 ) => {
@@ -306,7 +306,7 @@ export const initSelector = <V>(
     selector: Selector<V>,
     data: StoreData,
     initializedAtomsSet: Set<Atom>,
-    circularDependencySet: WeakSet<any> = data.circularDepSet,
+    circularDependencySet: WeakSet<Selector> = data.circularDepSet,
 ): boolean => {
     const existingValue = data.values.get(selector)
     const updatedValue = evaluate(
@@ -334,7 +334,7 @@ const evaluate = <V>(
     selector: Selector<V>,
     data: StoreData,
     initializedAtomsSet: Set<Atom>,
-    circularDependencySet: WeakSet<any>,
+    circularDependencySet: WeakSet<Selector>,
 ) => {
     let tmpValue
     try {
