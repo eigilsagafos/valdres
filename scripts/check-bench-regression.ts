@@ -8,10 +8,10 @@
  * - Per-benchmark dynamic thresholds based on historical coefficient of
  *   variation (CV). Stable benchmarks get tight thresholds; noisy ones
  *   get lenient thresholds.
- * - Dual-check gating: CI only fails when BOTH ratio (vs Jotai) AND
- *   absolute (self-vs-self) checks flag a regression. A single check
- *   flagging produces a warning but doesn't block. This eliminates
- *   false positives from Jotai reference noise.
+ * - Single-check gating on the paired ratio (valdres / jotai). Both are
+ *   measured in the same run on the same hardware, so the ratio cancels
+ *   out runner-level slowdowns that affect both libraries equally — only
+ *   a change in valdres's performance relative to Jotai trips the check.
  * - Noise floor: benchmarks with median < 500ns are auto-skipped from
  *   gating — nanosecond-scale measurements are dominated by CI noise.
  * - Optimization-target benchmarks (threshold >= 10) are tracked but
@@ -99,7 +99,7 @@ interface LegacyData {
     entries: Record<string, LegacyEntry[]>
 }
 
-type Status = "ok" | "skip" | "new" | "regression" | "warning"
+type Status = "ok" | "skip" | "new" | "regression"
 
 interface Comparison {
     name: string
@@ -109,11 +109,6 @@ interface Comparison {
     medianRatio: number | null
     ratioChange: number | null
     threshold: number | null
-    // Self-vs-self absolute timing comparison
-    medianValdres: number | null
-    absChange: number | null // >1 means slower, <1 means faster
-    absThreshold: number | null
-    absStatus: Status
     status: Status
 }
 
@@ -199,9 +194,8 @@ async function gitShow(ref: string): Promise<string | null> {
 interface HistoricalData {
     medianRatios: Map<string, number>
     ratioCvByName: Map<string, number>
-    // Self-vs-self: absolute valdres timings (noisier than ratios)
+    // Median absolute valdres timing — used only for the noise-floor check.
     medianValdres: Map<string, number>
-    valdresCvByName: Map<string, number>
     source: "benchmark-data" | "gh-pages"
     entryCount: number
 }
@@ -274,17 +268,14 @@ function computeFromBenchmarkData(entries: HistoryEntry[]): HistoricalData {
     }
 
     const medianValdres = new Map<string, number>()
-    const valdresCvByName = new Map<string, number>()
     for (const [name, values] of valdresByName) {
         medianValdres.set(name, median(values))
-        valdresCvByName.set(name, computeCV(values))
     }
 
     return {
         medianRatios,
         ratioCvByName,
         medianValdres,
-        valdresCvByName,
         source: "benchmark-data",
         entryCount: entries.length,
     }
@@ -315,17 +306,14 @@ function computeFromLegacy(entries: LegacyEntry[]): HistoricalData {
     }
 
     const medianValdres = new Map<string, number>()
-    const valdresCvByName = new Map<string, number>()
     for (const [name, values] of valdresByName) {
         medianValdres.set(name, median(values))
-        valdresCvByName.set(name, computeCV(values))
     }
 
     return {
         medianRatios,
         ratioCvByName,
         medianValdres,
-        valdresCvByName,
         source: "gh-pages",
         entryCount: entries.length,
     }
@@ -343,18 +331,7 @@ function compare(
         const currentRatio = bench.jotai > 0 ? bench.valdres / bench.jotai : 1
         const medRatio = history.medianRatios.get(bench.name)
         const ratioCV = history.ratioCvByName.get(bench.name) ?? 0
-
-        // Self-vs-self: compare absolute valdres timing against historical median
         const medVal = history.medianValdres.get(bench.name)
-        const valCV = history.valdresCvByName.get(bench.name) ?? 0
-        const absChange = medVal ? bench.valdres / medVal : null
-        const absThreshold = medVal ? dynamicThreshold(valCV) : null
-        const rawAbsStatus: Status =
-            absChange != null && absThreshold != null && absChange > absThreshold
-                ? "regression"
-                : medVal == null
-                  ? "new"
-                  : "ok"
 
         // Optimization targets are tracked but don't block PRs.
         // Also treat sub-microsecond benchmarks as opt targets — their
@@ -372,10 +349,6 @@ function compare(
                 medianRatio: medRatio ?? null,
                 ratioChange: medRatio ? currentRatio / medRatio : null,
                 threshold: null,
-                medianValdres: medVal ?? null,
-                absChange,
-                absThreshold,
-                absStatus: "skip" as Status,
                 status: "skip" as Status,
             }
         }
@@ -389,32 +362,14 @@ function compare(
                 medianRatio: null,
                 ratioChange: null,
                 threshold: null,
-                medianValdres: medVal ?? null,
-                absChange,
-                absThreshold,
-                absStatus: rawAbsStatus,
                 status: "new" as Status,
             }
         }
 
         const ratioChange = currentRatio / medRatio
         const threshold = dynamicThreshold(ratioCV)
-
-        const ratioRegressed = ratioChange > threshold
-        const absRegressed = rawAbsStatus === "regression"
-
-        // Require BOTH ratio and absolute checks to agree before failing.
-        // - Ratio-only regression = Jotai reference got faster, not valdres slower
-        // - Abs-only regression = ratio is fine, absolute noise on shared runner
-        // Only when both flag does it indicate a real valdres performance regression.
-        let status: Status
-        if (ratioRegressed && absRegressed) {
-            status = "regression"
-        } else if (ratioRegressed || absRegressed) {
-            status = "warning"
-        } else {
-            status = "ok"
-        }
+        const status: Status =
+            ratioChange > threshold ? "regression" : "ok"
 
         return {
             name: bench.name,
@@ -424,10 +379,6 @@ function compare(
             medianRatio: medRatio,
             ratioChange,
             threshold,
-            medianValdres: medVal ?? null,
-            absChange,
-            absThreshold,
-            absStatus: rawAbsStatus,
             status,
         }
     })
@@ -439,7 +390,6 @@ const STATUS_ICON: Record<Status, string> = {
     ok: "✅",
     skip: "⏭️",
     new: "🆕",
-    warning: "⚠️",
     regression: "🚨",
 }
 
@@ -450,10 +400,6 @@ function formatTable(
     windowUsed: number,
 ): string {
     const regressions = results.filter(r => r.status === "regression")
-    const warnings = results.filter(r => r.status === "warning")
-    const noteworthy = results.filter(
-        r => r.status === "regression" || r.status === "warning",
-    )
 
     const lines: string[] = [
         "<!-- bench-regression-check -->",
@@ -464,41 +410,35 @@ function formatTable(
     // ── Summary line (the only thing most reviewers need) ──
     if (regressions.length > 0) {
         lines.push(
-            `🚨 **${regressions.length} regression(s) detected** — both ratio and absolute checks agree.`,
+            `🚨 **${regressions.length} regression(s) detected** — paired ratio vs Jotai exceeded threshold.`,
         )
     } else {
         lines.push("✅ **No regressions detected.**")
     }
-    if (warnings.length > 0) {
-        lines.push(
-            "",
-            `⚠️ ${warnings.length} warning(s) — only one check flagged, not blocking CI.`,
-        )
-    }
 
     lines.push(
         "",
-        `<sub>**How to read this:** _Valdres_ and _Jotai_ are this run's median timings. _vs Jotai_ is their ratio. _Δ_ columns compare this run against the median of the last ${windowUsed} runs on \`main\` — 🟢 faster, 🔴 slower.</sub>`,
+        `<sub>**How to read this:** _Valdres_ and _Jotai_ are this run's median timings. _vs Jotai_ is their ratio. _Historical_ is the median ratio from the last ${windowUsed} runs on \`main\`. _Δ_ compares this run's ratio against that historical median — 🟢 faster, 🔴 slower.</sub>`,
     )
 
+    const historicalHeader = `Historical (${windowUsed}-run median)`
+    const headerRow = `| | Benchmark | Valdres | Jotai | vs Jotai | ${historicalHeader} | Δ |`
+    const alignRow = "|:-|:----------|--------:|------:|--------:|--------:|:----------|"
+
+    const renderRow = (r: Comparison): string => {
+        const icon = STATUS_ICON[r.status]
+        const valdres = fmtNs(r.valdres)
+        const jotai = fmtNs(r.jotai)
+        const vsJotai = fmtRatio(r.currentRatio)
+        const historical = r.medianRatio != null ? fmtRatio(r.medianRatio) : "—"
+        const delta = fmtChange(r.ratioChange)
+        return `| ${icon} | ${r.name} | ${valdres} | ${jotai} | ${vsJotai} | ${historical} | ${delta} |`
+    }
+
     // ── Show flagged benchmarks inline (if any) ──
-    if (noteworthy.length > 0) {
-        lines.push(
-            "",
-            "| | Benchmark | Valdres | Jotai | vs Jotai | Δ vs Jotai | Δ Valdres |",
-            "|:-|:----------|--------:|------:|--------:|:----------|:---------|",
-        )
-        for (const r of noteworthy) {
-            const icon = STATUS_ICON[r.status]
-            const valdres = fmtNs(r.valdres)
-            const jotai = fmtNs(r.jotai)
-            const vsJotai = fmtRatio(r.currentRatio)
-            const ratioChg = fmtChange(r.ratioChange)
-            const absChg = fmtChange(r.absChange)
-            lines.push(
-                `| ${icon} | ${r.name} | ${valdres} | ${jotai} | ${vsJotai} | ${ratioChg} | ${absChg} |`,
-            )
-        }
+    if (regressions.length > 0) {
+        lines.push("", headerRow, alignRow)
+        for (const r of regressions) lines.push(renderRow(r))
     }
 
     // ── Full results in collapsible section ──
@@ -513,30 +453,13 @@ function formatTable(
     const grouped = groupByCategory(results, r => r.name)
 
     for (const [cat, benchmarks] of grouped) {
-        lines.push(
-            `**${cat}**`,
-            "",
-            "| | Benchmark | Valdres | Jotai | vs Jotai | Δ vs Jotai | Δ Valdres |",
-            "|:-|:----------|--------:|------:|--------:|:----------|:---------|",
-        )
-
-        for (const r of benchmarks) {
-            const icon = STATUS_ICON[r.status]
-            const valdres = fmtNs(r.valdres)
-            const jotai = fmtNs(r.jotai)
-            const vsJotai = fmtRatio(r.currentRatio)
-            const ratioChg = fmtChange(r.ratioChange)
-            const absChg = fmtChange(r.absChange)
-            lines.push(
-                `| ${icon} | ${r.name} | ${valdres} | ${jotai} | ${vsJotai} | ${ratioChg} | ${absChg} |`,
-            )
-        }
-
+        lines.push(`**${cat}**`, "", headerRow, alignRow)
+        for (const r of benchmarks) lines.push(renderRow(r))
         lines.push("")
     }
 
     lines.push(
-        "**Legend:** ✅ pass · ⚠️ warning (one check flagged) · 🚨 regression (both checks agree) · ⏭️ skipped (opt target or below noise floor) · 🆕 new",
+        "**Legend:** ✅ pass · 🚨 regression · ⏭️ skipped (opt target or below noise floor) · 🆕 new",
         "",
         "</details>",
     )
@@ -668,10 +591,8 @@ async function main() {
     // Log per-benchmark CV and dynamic thresholds
     for (const [name, cv] of history.ratioCvByName) {
         const thresh = dynamicThreshold(cv)
-        const absCV = history.valdresCvByName.get(name)
-        const absPart = absCV != null ? ` | abs CV=${(absCV * 100).toFixed(1)}%` : ""
         console.log(
-            `  ${name}: ratio CV=${(cv * 100).toFixed(1)}% → threshold=${((thresh - 1) * 100).toFixed(0)}%${absPart}`,
+            `  ${name}: ratio CV=${(cv * 100).toFixed(1)}% → threshold=${((thresh - 1) * 100).toFixed(0)}%`,
         )
     }
 
