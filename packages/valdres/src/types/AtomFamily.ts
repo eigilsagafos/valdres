@@ -11,5 +11,9 @@ export type AtomFamily<
     equal: EqualFunc<Value>
     name?: string
     mutable?: boolean
+    /** AtomFamily itself is not mountable; these are declared `never` to keep
+     *  the State union's dynamic mount-check uniform without runtime casts. */
+    onMount?: never
+    __valdresOnMount?: never
     __valdresAtomFamilyMap: Map<FamilyKey, AtomFamilyAtom<Value, Args>>
 }

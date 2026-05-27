@@ -18,4 +18,6 @@ export type Selector<
     family?: SelectorFamily<Value, FamilyArgs>
     familyArgs?: FamilyArgs
     onMount?: AtomOnMount
+    /** Internal: compat-layer override for onMount. Not user-facing. */
+    __valdresOnMount?: AtomOnMount
 }
