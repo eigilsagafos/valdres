@@ -1,7 +1,7 @@
 import type { Store } from "./Store"
 import type { Subscription } from "./Subscription"
 
-export type RootStoreData = {
+export type StoreData = {
     id: string
     values: WeakMap<WeakKey, any>
     subscriptions: WeakMap<WeakKey, Set<Subscription>>
@@ -27,15 +27,15 @@ export type RootStoreData = {
      *  `values` (which may be replaced by user-supplied async sets). */
     pendingDefaults: WeakMap<WeakKey, { promise: Promise<any>; resolve: (value: any) => void }>
     storeRef?: Store
-    scopes: Map<string, ScopedStoreData>
+    scopes: Map<string, StoreData>
     batchUpdates?: boolean
-    scopeValueIndex: WeakMap<WeakKey, Set<ScopedStoreData>>
+    scopeValueIndex: WeakMap<WeakKey, Set<StoreData>>
+    /** Present iff this is a scoped store. Root stores have `parent: undefined`. */
+    parent?: StoreData
+    /** Present iff this is a scoped store. Tracks active scope consumers
+     *  so the scope can be detached when the last consumer leaves. */
+    scopeConsumers?: Set<(expectedToDestroy?: boolean) => boolean>
+    /** Present iff this is a scoped store. Records keys this scope registered
+     *  in its parent's `scopeValueIndex`, used for cleanup on detach. */
+    scopeIndexKeys?: Set<WeakKey>
 }
-
-export type ScopedStoreData = RootStoreData & {
-    parent: StoreData
-    scopeConsumers: Set<() => void>
-    scopeIndexKeys: Set<WeakKey>
-}
-
-export type StoreData = RootStoreData | ScopedStoreData

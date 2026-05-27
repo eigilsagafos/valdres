@@ -58,7 +58,7 @@ export function getState<
 ) {
     if (data.values.has(state)) return data.values.get(state)
     if (isAtom<Value>(state)) {
-        if ("parent" in data)
+        if (data.parent)
             return getState<Value, Args>(
                 state,
                 data.parent,
@@ -87,13 +87,8 @@ export function getState<
         return data.values.get(state)
     }
     if (isAtomFamily<Value, Args>(state)) {
-        if ("parent" in data) {
-            const closestData = findClosestStoreWithAtomInitialized<Set<Args>>(
-                // @ts-ignore @ts-todo
-                state,
-                data,
-            )
-            // @ts-ignore @ts-todo
+        if (data.parent) {
+            const closestData = findClosestStoreWithAtomInitialized(state, data)
             return getState<Value, Args>(
                 state,
                 closestData,
@@ -117,11 +112,11 @@ export function getState<
     throw new Error("Invalid object passed to get")
 }
 
-const findClosestStoreWithAtomInitialized = <V>(
-    atom: Atom<V>,
+const findClosestStoreWithAtomInitialized = (
+    atom: Atom | AtomFamily<any, any>,
     data: StoreData,
-) => {
-    if ("parent" in data === false) return data
+): StoreData => {
+    if (!data.parent) return data
     if (data.values.has(atom)) return data
     return findClosestStoreWithAtomInitialized(atom, data.parent)
 }

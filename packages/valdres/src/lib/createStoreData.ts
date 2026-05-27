@@ -1,4 +1,4 @@
-import type { ScopedStoreData, StoreData } from "../types/StoreData"
+import type { StoreData } from "../types/StoreData"
 
 let nextId = 0
 const generateId = () => "__valdres_store_" + nextId++
@@ -35,9 +35,11 @@ export type CreateStoreDataOptions = {
     batchUpdates?: boolean
 }
 
-export function createStoreData(id?: string, parent?: undefined, options?: CreateStoreDataOptions): StoreData
-export function createStoreData(id: string, parent: StoreData, options?: CreateStoreDataOptions): ScopedStoreData
-export function createStoreData(id?: string, parent?: StoreData, options?: CreateStoreDataOptions) {
+export function createStoreData(
+    id?: string,
+    parent?: StoreData,
+    options?: CreateStoreDataOptions,
+): StoreData {
     const data: any = Object.create(lazyProto)
     data.id = id ?? generateId()
     data.values = new WeakMap()

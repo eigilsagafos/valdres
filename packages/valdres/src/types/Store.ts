@@ -2,7 +2,7 @@ import type { Atom } from "./Atom"
 import type { AtomFamilyAtom } from "./AtomFamilyAtom"
 import type { GetValue } from "./GetValue"
 import type { ResetAtom } from "./ResetAtom"
-import type { ScopedStoreData, StoreData } from "./StoreData"
+import type { StoreData } from "./StoreData"
 import type { SetAtomValue } from "./SetAtomValue"
 import type { SubscribeFn } from "./SubscribeFn"
 import type { TransactionFn } from "./TransactionFn"
@@ -41,6 +41,6 @@ export type Store<T = StoreData> = {
     scope: ScopeFn
 }
 
-export type ScopedStore = Store<ScopedStoreData> & {
+export type ScopedStore = Store & {
     detach: (warnIfNotDestroyed?: boolean) => void
 }

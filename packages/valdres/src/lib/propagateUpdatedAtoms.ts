@@ -121,7 +121,7 @@ const findClosestStoreWithAtomInitialized = (
     atom: State | Family<any>,
     data: StoreData,
 ) => {
-    if ("parent" in data === false) return data
+    if (!data.parent) return data
     if (data.values.has(atom)) return data
     return findClosestStoreWithAtomInitialized(atom, data.parent)
 }

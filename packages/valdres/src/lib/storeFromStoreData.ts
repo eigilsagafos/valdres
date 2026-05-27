@@ -5,7 +5,7 @@ import type { GetValue } from "../types/GetValue"
 import type { SetAtom } from "../types/SetAtom"
 import type { State } from "../types/State"
 import type { ScopedStore, ScopeFn, Store } from "../types/Store"
-import type { ScopedStoreData, StoreData } from "../types/StoreData"
+import type { StoreData } from "../types/StoreData"
 import type { TransactionFn } from "../types/TransactionFn"
 import { isAtom } from "../utils/isAtom"
 import { isGlobalAtom } from "../utils/isGlobalAtom"
@@ -35,11 +35,18 @@ Only \`atom\` can be set.
  * stale-while-revalidate window that the timer relies on). When there's
  * no active timer, we drop a cached value past its freshness window so
  * the next read re-evaluates the default.
+ *
+ * Scope shadows are exempt: a value present in `data.values` for a scoped
+ * store is always a deliberate pin from `set()` — the scope never runs
+ * its own revalidation timer for maxAge atoms (see subscribe.ts). Evicting
+ * the shadow would silently fall back to the parent and defeat the
+ * user-visible override.
  */
 const isCachedValueStale = (state: State, data: StoreData): boolean => {
     const atom = state as Atom
     const maxAge = atom.maxAge
     if (maxAge === undefined) return false
+    if (data.parent) return false
     if (isGlobalAtom(atom)) {
         if (atom.maxAgeInterval !== undefined) return false
     } else {
@@ -54,12 +61,12 @@ const isCachedValueStale = (state: State, data: StoreData): boolean => {
 }
 
 export function storeFromStoreData(
-    data: ScopedStoreData,
+    data: StoreData,
     detach: () => void,
 ): ScopedStore
 export function storeFromStoreData(data: StoreData): Store
 export function storeFromStoreData(
-    data: ScopedStoreData | StoreData,
+    data: StoreData,
     detach?: () => void,
 ) {
     const _initSet = new Set<Atom>()
@@ -194,30 +201,32 @@ export function storeFromStoreData(
                 scopedStoreData = createStoreData(scopeId, data, data.batchUpdates ? { batchUpdates: true } : undefined)
                 data.scopes.set(scopeId, scopedStoreData)
             }
+            const consumers = scopedStoreData.scopeConsumers!
+            const indexKeys = scopedStoreData.scopeIndexKeys!
             const detach = (expectedToDestroy = false) => {
-                scopedStoreData.scopeConsumers.delete(detach)
-                if (scopedStoreData.scopeConsumers.size === 0) {
+                consumers.delete(detach)
+                if (consumers.size === 0) {
                     data.scopes.delete(scopeId)
                     // Clean up scopeValueIndex entries referencing this scope
-                    for (const key of scopedStoreData.scopeIndexKeys) {
+                    for (const key of indexKeys) {
                         const set = data.scopeValueIndex.get(key)
                         if (set) {
                             set.delete(scopedStoreData)
                             if (set.size === 0) data.scopeValueIndex.delete(key)
                         }
                     }
-                    scopedStoreData.scopeIndexKeys.clear()
+                    indexKeys.clear()
                     return true
                 }
                 if (expectedToDestroy) {
                     console.warn(
-                        `Scope ${scopeId} still has ${scopedStoreData.scopeConsumers.size} consumers, will not detach`,
+                        `Scope ${scopeId} still has ${consumers.size} consumers, will not detach`,
                     )
                 }
                 return false
             }
 
-            scopedStoreData.scopeConsumers.add(detach)
+            consumers.add(detach)
             const newStore = storeFromStoreData(data.scopes.get(scopeId)!, detach)
             return newStore
         }
