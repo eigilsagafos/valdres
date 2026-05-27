@@ -3,16 +3,16 @@ import type { StoreData } from "../types/StoreData"
 let nextId = 0
 const generateId = () => "__valdres_store_" + nextId++
 
-function makeLazyGetter(key: string) {
+function makeLazyGetter(key: string, factory: () => any = () => new WeakMap()) {
     return {
         get(this: any) {
-            const map = new WeakMap()
+            const value = factory()
             Object.defineProperty(this, key, {
-                value: map,
+                value,
                 writable: true,
                 configurable: true,
             })
-            return map
+            return value
         },
         configurable: true,
     }
@@ -29,6 +29,8 @@ Object.defineProperties(lazyProto, {
     liveDependentCount: makeLazyGetter("liveDependentCount"),
     abortControllers: makeLazyGetter("abortControllers"),
     lastValueWriteAt: makeLazyGetter("lastValueWriteAt"),
+    circularDepSet: makeLazyGetter("circularDepSet", () => new WeakSet()),
+    latestEvalContext: makeLazyGetter("latestEvalContext"),
 })
 
 export type CreateStoreDataOptions = {

@@ -10,11 +10,6 @@ import { isLive, mountTransitiveDeps, onLiveDependencyAdded } from "./mountAtom"
 // resolves, handleSelectorResult reads this to reconcile stale deps.
 export const pendingAsyncDeps = new WeakMap<Promise<any>, Set<State>>()
 
-// Tracks the latest evaluation context per selector so that stale closures
-// (from previous evaluations) can detect they are outdated and avoid
-// registering phantom dependencies.
-export const latestEvalContext = new WeakMap<Selector, { revoked: boolean }>()
-
 export class SuspendAndWaitForResolveError extends Error {
     promise: Promise<any>
     constructor(promise: Promise<any>) {
