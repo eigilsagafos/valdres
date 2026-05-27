@@ -131,13 +131,13 @@ function fmtRatio(ratio: number): string {
         : `${ratio.toFixed(1)}x slower`
 }
 
-function fmtChange(ratioChange: number | null): string {
-    if (ratioChange == null) return "—"
-    const pct = Math.abs((ratioChange - 1) * 100)
+function fmtChange(change: number | null): string {
+    if (change == null) return "—"
+    const pct = Math.abs((change - 1) * 100)
     if (pct < 1) return "~same"
-    return ratioChange >= 1
-        ? `+${pct.toFixed(0)}%`
-        : `-${pct.toFixed(0)}%`
+    return change < 1
+        ? `🟢 ${pct.toFixed(0)}% faster`
+        : `🔴 ${pct.toFixed(0)}% slower`
 }
 
 function median(values: number[]): number {
@@ -476,22 +476,27 @@ function formatTable(
         )
     }
 
+    lines.push(
+        "",
+        `<sub>**How to read this:** _Valdres_ and _Jotai_ are this run's median timings. _vs Jotai_ is their ratio. _Δ_ columns compare this run against the median of the last ${windowUsed} runs on \`main\` — 🟢 faster, 🔴 slower.</sub>`,
+    )
+
     // ── Show flagged benchmarks inline (if any) ──
     if (noteworthy.length > 0) {
         lines.push(
             "",
-            "| | Benchmark | vs Jotai | Baseline | Δ Ratio | Δ Absolute |",
-            "|:-|:----------|--------:|---------:|-------:|-----------:|",
+            "| | Benchmark | Valdres | Jotai | vs Jotai | Δ vs Jotai | Δ Valdres |",
+            "|:-|:----------|--------:|------:|--------:|:----------|:---------|",
         )
         for (const r of noteworthy) {
             const icon = STATUS_ICON[r.status]
+            const valdres = fmtNs(r.valdres)
+            const jotai = fmtNs(r.jotai)
             const vsJotai = fmtRatio(r.currentRatio)
-            const baseline =
-                r.medianRatio != null ? fmtRatio(r.medianRatio) : "—"
             const ratioChg = fmtChange(r.ratioChange)
             const absChg = fmtChange(r.absChange)
             lines.push(
-                `| ${icon} | ${r.name} | ${vsJotai} | ${baseline} | ${ratioChg} | ${absChg} |`,
+                `| ${icon} | ${r.name} | ${valdres} | ${jotai} | ${vsJotai} | ${ratioChg} | ${absChg} |`,
             )
         }
     }
@@ -511,20 +516,19 @@ function formatTable(
         lines.push(
             `**${cat}**`,
             "",
-            "| | Benchmark | Valdres | vs Jotai | Baseline | Δ Ratio | Δ Absolute |",
-            "|:-|:----------|--------:|--------:|---------:|-------:|-----------:|",
+            "| | Benchmark | Valdres | Jotai | vs Jotai | Δ vs Jotai | Δ Valdres |",
+            "|:-|:----------|--------:|------:|--------:|:----------|:---------|",
         )
 
         for (const r of benchmarks) {
             const icon = STATUS_ICON[r.status]
             const valdres = fmtNs(r.valdres)
+            const jotai = fmtNs(r.jotai)
             const vsJotai = fmtRatio(r.currentRatio)
-            const baseline =
-                r.medianRatio != null ? fmtRatio(r.medianRatio) : "—"
             const ratioChg = fmtChange(r.ratioChange)
             const absChg = fmtChange(r.absChange)
             lines.push(
-                `| ${icon} | ${r.name} | ${valdres} | ${vsJotai} | ${baseline} | ${ratioChg} | ${absChg} |`,
+                `| ${icon} | ${r.name} | ${valdres} | ${jotai} | ${vsJotai} | ${ratioChg} | ${absChg} |`,
             )
         }
 
