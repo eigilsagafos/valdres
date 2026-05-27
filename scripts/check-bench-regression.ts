@@ -23,6 +23,7 @@
 import { readFileSync } from "fs"
 import { join } from "path"
 import { groupByCategory } from "./lib/bench-categories"
+import { type BenchResult, readBenchResults } from "./lib/read-bench-results"
 
 // ── Configuration ──────────────────────────────────────────────────────────
 
@@ -56,15 +57,7 @@ const NOISE_FLOOR_NS = 500
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
-interface NdjsonResult {
-    name: string
-    valdres: number
-    jotai: number
-    ratio: number
-    tag: string
-    threshold?: number
-    cv?: number
-}
+type NdjsonResult = BenchResult
 
 // Our compact format on benchmark-data branch
 interface HistoryBenchmark {
@@ -167,15 +160,9 @@ function dynamicThreshold(historicalCV: number): number {
 // ── Data loading ──────────────────────────────────────────────────────────
 
 const ROOT = join(import.meta.dir, "..")
-const NDJSON_PATH = join(
-    ROOT,
-    "packages/valdres/test/performance/bench-results.ndjson",
-)
-
-function readCurrentResults(): NdjsonResult[] {
-    const ndjson = readFileSync(NDJSON_PATH, "utf-8").trim()
-    return ndjson.split("\n").map(line => JSON.parse(line))
-}
+const PERF_DIR = join(ROOT, "packages/valdres/test/performance")
+const BUN_NDJSON_PATH = join(PERF_DIR, "bench-results.ndjson")
+const NODE_NDJSON_PATH = join(PERF_DIR, "bench-results-node.ndjson")
 
 async function gitShow(ref: string): Promise<string | null> {
     try {
@@ -393,8 +380,44 @@ const STATUS_ICON: Record<Status, string> = {
     regression: "🚨",
 }
 
+function formatNodeSection(nodeResults: NdjsonResult[]): string {
+    const comparisons = nodeResults.filter(
+        r =>
+            r.tag !== "baseline" &&
+            (r.threshold ?? 0) < OPTIMIZATION_TARGET_THRESHOLD,
+    )
+    if (comparisons.length === 0) return ""
+
+    const headerRow = "| Benchmark | Valdres | Jotai | vs Jotai |"
+    const alignRow = "|:----------|--------:|------:|--------:|"
+    const renderRow = (r: NdjsonResult): string => {
+        const ratio = r.jotai > 0 ? r.valdres / r.jotai : 1
+        return `| ${r.name} | ${fmtNs(r.valdres)} | ${fmtNs(r.jotai)} | ${fmtRatio(ratio)} |`
+    }
+
+    const lines: string[] = [
+        "",
+        "<details>",
+        `<summary>V8 (Chrome / Node.js) results — ${comparisons.length} benchmarks · informational only</summary>`,
+        "",
+        `<sub>V8 timings are tracked separately from the JSC/Bun regression check. No historical comparison — V8 uses \`performance.now()\` which has lower resolution than \`Bun.nanoseconds()\`, so trends are recorded for reference only.</sub>`,
+        "",
+    ]
+
+    const grouped = groupByCategory(comparisons, r => r.name)
+    for (const [cat, benchmarks] of grouped) {
+        lines.push(`**${cat}**`, "", headerRow, alignRow)
+        for (const r of benchmarks) lines.push(renderRow(r))
+        lines.push("")
+    }
+
+    lines.push("</details>")
+    return lines.join("\n")
+}
+
 function formatTable(
     results: Comparison[],
+    nodeResults: NdjsonResult[],
     runNumber: number,
     historySource: string,
     windowUsed: number,
@@ -463,6 +486,9 @@ function formatTable(
         "",
         "</details>",
     )
+
+    const nodeSection = formatNodeSection(nodeResults)
+    if (nodeSection) lines.push(nodeSection)
 
     if (runNumber > 0) {
         const now = new Date()
@@ -562,11 +588,15 @@ async function postOrUpdateComment(
 // ── Main ───────────────────────────────────────────────────────────────────
 
 async function main() {
-    const current = readCurrentResults()
+    const current = readBenchResults(BUN_NDJSON_PATH)
+    const nodeResults = readBenchResults(NODE_NDJSON_PATH)
     const benchmarks = current.filter(r => r.tag !== "baseline")
     console.log(
-        `Read ${current.length} results (${benchmarks.length} comparison benchmarks, ${current.length - benchmarks.length} baselines skipped)`,
+        `Read ${current.length} Bun results (${benchmarks.length} comparison benchmarks, ${current.length - benchmarks.length} baselines skipped)`,
     )
+    if (nodeResults.length > 0) {
+        console.log(`Read ${nodeResults.length} Node/V8 results (informational)`)
+    }
 
     const history = await loadHistory()
     if (!history) {
@@ -599,11 +629,13 @@ async function main() {
     const results = compare(current, history)
 
     console.log(
-        "\n" + formatTable(results, 0, history.source, windowUsed) + "\n",
+        "\n" +
+            formatTable(results, nodeResults, 0, history.source, windowUsed) +
+            "\n",
     )
 
     await postOrUpdateComment(runNumber =>
-        formatTable(results, runNumber, history.source, windowUsed),
+        formatTable(results, nodeResults, runNumber, history.source, windowUsed),
     )
 
     const regressions = results.filter(r => r.status === "regression")
