@@ -48,8 +48,22 @@ jobs:
             - name: Build
               run: bun run build
 
-            - name: Run benchmarks (Bun)
-              # test:bench cleans stale results and runs files serially
+            # On PRs: fetch origin/main shallow so the A/B orchestrator can
+            # add it as a worktree at .bench-main/. Single-commit fetch is
+            # all the worktree needs.
+            - name: Fetch origin/main for A/B baseline
+              if: github.event_name == 'pull_request'
+              run: git fetch --depth=1 origin main
+
+            # On PRs: same-runner A/B against origin/main (preferred path —
+            # eliminates between-CI-run variance from the gate).
+            # On main pushes: single pass, feeds the historical baseline.
+            - name: Run benchmarks (Bun) — same-VM A/B vs main
+              if: github.event_name == 'pull_request'
+              run: bun run scripts/run-bench-ab.ts
+
+            - name: Run benchmarks (Bun) — single pass (main push)
+              if: github.event_name != 'pull_request'
               working-directory: packages/valdres
               run: bun run test:bench
 

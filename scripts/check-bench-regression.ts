@@ -166,6 +166,20 @@ const PERF_DIR = join(ROOT, "packages/valdres/test/performance")
 const BUN_NDJSON_PATH = join(PERF_DIR, "bench-results.ndjson")
 const NODE_NDJSON_PATH = join(PERF_DIR, "bench-results-node.ndjson")
 
+// Same-runner A/B: when scripts/run-bench-ab.ts has produced a parallel
+// main-checkout run, its bench-results.ndjson lives here. Presence of
+// this file flips the checker into A/B mode and disables the historical
+// baseline as the gating signal.
+const MAIN_BUN_NDJSON_PATH = join(
+    ROOT,
+    ".bench-main/packages/valdres/test/performance/bench-results.ndjson",
+)
+
+// A/B regression gate. Same VM, minutes apart — residual noise is small
+// enough that a flat threshold is honest. Tighten after observing a few
+// PRs if 15% turns out to be loose.
+const AB_REGRESSION_THRESHOLD = 1.15
+
 async function gitShow(ref: string): Promise<string | null> {
     try {
         const proc = Bun.spawn(["git", "show", ref], {
@@ -546,6 +560,253 @@ function formatTable(
     return lines.join("\n")
 }
 
+// ── Same-runner A/B mode ──────────────────────────────────────────────────
+//
+// Engaged when scripts/run-bench-ab.ts has produced a second ndjson from a
+// parallel run of the same bench suite against `origin/main` in the same
+// CI VM. Per-benchmark gate becomes valdres_PR / valdres_main on absolute
+// timings, with a flat threshold. The "vs Jotai" column survives for
+// orientation but no longer informs the gate.
+
+interface ABComparison {
+    name: string
+    valdresPr: number
+    valdresMain: number | null
+    jotaiPr: number
+    jotaiMain: number | null
+    /** valdres_PR / valdres_main; null when no main counterpart. */
+    deltaVsMain: number | null
+    /** valdres_PR / jotai_PR — purely for the orientation column. */
+    currentRatio: number
+    /** Threshold actually applied (or null when status is skip/new). */
+    threshold: number | null
+    status: Status
+}
+
+function compareAB(
+    prRaw: NdjsonResult[],
+    mainRaw: NdjsonResult[],
+): ABComparison[] {
+    const pr = prRaw.filter(r => r.tag !== "baseline")
+    const mainByName = new Map(
+        mainRaw.filter(r => r.tag !== "baseline").map(r => [r.name, r]),
+    )
+
+    return pr.map(prBench => {
+        const ratioPr =
+            prBench.jotai > 0 ? prBench.valdres / prBench.jotai : 1
+        const mainBench = mainByName.get(prBench.name)
+
+        if (!mainBench) {
+            // Bench file is new in this PR, or the main pass failed for
+            // this file. Either way: no baseline, nothing to gate against.
+            return {
+                name: prBench.name,
+                valdresPr: prBench.valdres,
+                valdresMain: null,
+                jotaiPr: prBench.jotai,
+                jotaiMain: null,
+                deltaVsMain: null,
+                currentRatio: ratioPr,
+                threshold: null,
+                status: "new" as Status,
+            }
+        }
+
+        const delta = prBench.valdres / mainBench.valdres
+
+        // Noise floor — sub-µs benches on shared CI bounce ±30% on
+        // measurement noise alone even on the same VM. Report them but
+        // don't gate. Apply to either side: if main was sub-µs the
+        // baseline is unreliable; if PR is sub-µs the new number is.
+        const belowNoise =
+            mainBench.valdres < NOISE_FLOOR_NS ||
+            prBench.valdres < NOISE_FLOOR_NS
+
+        if (belowNoise) {
+            return {
+                name: prBench.name,
+                valdresPr: prBench.valdres,
+                valdresMain: mainBench.valdres,
+                jotaiPr: prBench.jotai,
+                jotaiMain: mainBench.jotai,
+                deltaVsMain: delta,
+                currentRatio: ratioPr,
+                threshold: null,
+                status: "skip" as Status,
+            }
+        }
+
+        const status: Status =
+            delta > AB_REGRESSION_THRESHOLD ? "regression" : "ok"
+
+        return {
+            name: prBench.name,
+            valdresPr: prBench.valdres,
+            valdresMain: mainBench.valdres,
+            jotaiPr: prBench.jotai,
+            jotaiMain: mainBench.jotai,
+            deltaVsMain: delta,
+            currentRatio: ratioPr,
+            threshold: AB_REGRESSION_THRESHOLD,
+            status,
+        }
+    })
+}
+
+function fmtDelta(delta: number | null): string {
+    if (delta == null) return "—"
+    const pct = (delta - 1) * 100
+    if (Math.abs(pct) < 1) return "~same"
+    return pct < 0
+        ? `🟢 ${Math.abs(pct).toFixed(0)}% faster`
+        : `🔴 ${pct.toFixed(0)}% slower`
+}
+
+function renderABResultsBlock(
+    results: ABComparison[],
+    title: string,
+    showLegend: boolean,
+): string[] {
+    const headerRow =
+        "| | Benchmark | PR | Main | Δ vs Main | vs Jotai (PR) |"
+    const alignRow =
+        "|:-|:----------|---:|-----:|----------:|--------------:|"
+
+    const renderRow = (r: ABComparison): string => {
+        const icon = STATUS_ICON[r.status]
+        const pr = fmtNs(r.valdresPr)
+        const main = r.valdresMain != null ? fmtNs(r.valdresMain) : "—"
+        const delta = fmtDelta(r.deltaVsMain)
+        const vsJotai = fmtRatio(r.currentRatio)
+        return `| ${icon} | ${r.name} | ${pr} | ${main} | ${delta} | ${vsJotai} |`
+    }
+
+    const lines: string[] = [
+        "<details>",
+        `<summary>${title}</summary>`,
+        "",
+    ]
+
+    const grouped = groupByCategory(results, r => r.name)
+    for (const [cat, benchmarks] of grouped) {
+        lines.push(`**${cat}**`, "", headerRow, alignRow)
+        for (const r of benchmarks) lines.push(renderRow(r))
+        lines.push("")
+    }
+
+    if (showLegend) {
+        lines.push(
+            `**Legend:** ✅ pass · 🚨 regression (PR ≥${((AB_REGRESSION_THRESHOLD - 1) * 100).toFixed(0)}% slower than main) · ⏭️ skipped (below ${NOISE_FLOOR_NS}ns noise floor) · 🆕 new (no main counterpart)`,
+            "",
+        )
+    }
+
+    lines.push("</details>")
+    return lines
+}
+
+function renderInfoNodeBlock(
+    results: NdjsonResult[],
+    title: string,
+): string[] {
+    const benches = results.filter(r => r.tag !== "baseline")
+
+    const headerRow = "| Benchmark | Valdres | Jotai | vs Jotai |"
+    const alignRow = "|:----------|--------:|------:|---------:|"
+
+    const lines: string[] = [
+        "<details>",
+        `<summary>${title}</summary>`,
+        "",
+    ]
+
+    const grouped = groupByCategory(benches, r => r.name)
+    for (const [cat, bs] of grouped) {
+        lines.push(`**${cat}**`, "", headerRow, alignRow)
+        for (const r of bs) {
+            const ratio = r.jotai > 0 ? r.valdres / r.jotai : 1
+            lines.push(
+                `| ${r.name} | ${fmtNs(r.valdres)} | ${fmtNs(r.jotai)} | ${fmtRatio(ratio)} |`,
+            )
+        }
+        lines.push("")
+    }
+
+    lines.push("</details>")
+    return lines
+}
+
+function formatABTable(
+    abResults: ABComparison[],
+    nodeRaw: NdjsonResult[],
+    runNumber: number,
+): string {
+    const regressions = abResults.filter(r => r.status === "regression")
+
+    const lines: string[] = [
+        "<!-- bench-regression-check -->",
+        "## Benchmark Regression Report",
+        "",
+    ]
+
+    if (regressions.length > 0) {
+        lines.push(
+            `🚨 **${regressions.length} regression(s) detected** — PR is ≥${((AB_REGRESSION_THRESHOLD - 1) * 100).toFixed(0)}% slower than \`main\` on the same VM.`,
+        )
+    } else {
+        lines.push("✅ **No regressions detected.**")
+    }
+
+    lines.push(
+        "",
+        `<sub>**How to read this:** _PR_ and _Main_ are median timings from this run — both branches ran in the same CI VM minutes apart, so runner-level noise (CPU class, neighbours, frequency state) cancels. _Δ vs Main_ is the gating signal. _vs Jotai_ is shown for orientation only. Regression gating runs against JSC (Bun) only; V8 (Node.js) is informational and not A/B-compared.</sub>`,
+    )
+
+    if (regressions.length > 0) {
+        lines.push(
+            "",
+            "| | Benchmark | PR | Main | Δ vs Main |",
+            "|:-|:----------|---:|-----:|----------:|",
+        )
+        for (const r of regressions) {
+            lines.push(
+                `| ${STATUS_ICON[r.status]} | ${r.name} | ${fmtNs(r.valdresPr)} | ${r.valdresMain != null ? fmtNs(r.valdresMain) : "—"} | ${fmtDelta(r.deltaVsMain)} |`,
+            )
+        }
+    }
+
+    lines.push("")
+    lines.push(
+        ...renderABResultsBlock(
+            abResults,
+            `JSC (Bun / Safari) — ${abResults.length} benchmarks, PR vs <code>main</code> same-VM A/B`,
+            true,
+        ),
+    )
+
+    const nodeBenches = nodeRaw.filter(r => r.tag !== "baseline")
+    if (nodeBenches.length > 0) {
+        lines.push("")
+        lines.push(
+            ...renderInfoNodeBlock(
+                nodeRaw,
+                `V8 (Node.js / Chrome) — ${nodeBenches.length} benchmarks · informational, PR-only`,
+            ),
+        )
+    }
+
+    if (runNumber > 0) {
+        const now = new Date()
+            .toISOString()
+            .replace("T", " ")
+            .replace(/\.\d+Z$/, " UTC")
+        lines.push("", `<sub>Run #${runNumber} · Updated ${now}</sub>`)
+    }
+
+    return lines.join("\n")
+}
+
 async function postOrUpdateComment(
     formatBody: (runNumber: number) => string,
 ): Promise<void> {
@@ -632,6 +893,34 @@ async function postOrUpdateComment(
 
 // ── Main ───────────────────────────────────────────────────────────────────
 
+async function runABMode(
+    pr: NdjsonResult[],
+    main: NdjsonResult[],
+    node: NdjsonResult[],
+): Promise<void> {
+    const prBench = pr.filter(r => r.tag !== "baseline")
+    const mainBench = main.filter(r => r.tag !== "baseline")
+    console.log(
+        `A/B mode: ${prBench.length} PR benchmarks vs ${mainBench.length} main benchmarks`,
+    )
+
+    const abResults = compareAB(pr, main)
+    console.log("\n" + formatABTable(abResults, node, 0) + "\n")
+
+    await postOrUpdateComment(runNumber =>
+        formatABTable(abResults, node, runNumber),
+    )
+
+    const regressions = abResults.filter(r => r.status === "regression")
+    if (regressions.length > 0) {
+        console.error(
+            `❌ ${regressions.length} benchmark regression(s) detected vs main`,
+        )
+        process.exit(1)
+    }
+    console.log("✅ No benchmark regressions detected")
+}
+
 async function main() {
     const current = readBenchResults(BUN_NDJSON_PATH)
     const nodeCurrent = readBenchResults(NODE_NDJSON_PATH)
@@ -643,6 +932,18 @@ async function main() {
         console.log(
             `Read ${nodeCurrent.length} Node/V8 results (informational)`,
         )
+    }
+
+    // Same-runner A/B mode: when the orchestrator has produced a main-side
+    // ndjson, prefer it over the historical baseline. Falls through to the
+    // legacy path when running locally or on a `main` push.
+    const mainResults = readBenchResults(MAIN_BUN_NDJSON_PATH)
+    if (mainResults.length > 0) {
+        console.log(
+            `Found ${mainResults.length} main-side results at ${MAIN_BUN_NDJSON_PATH} — using A/B mode`,
+        )
+        await runABMode(current, mainResults, nodeCurrent)
+        return
     }
 
     const history = await loadHistory()
