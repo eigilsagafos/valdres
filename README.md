@@ -45,47 +45,47 @@ All benchmarks compare valdres against [Jotai](https://github.com/pmndrs/jotai) 
 
 | Benchmark | JSC (Safari) | V8 (Chrome) |
 |:----------|-----------:|-----------:|
-| atom(1) | 🟢 12.2x faster | 🟢 1.9x faster |
-| store.get(atom) | 🟢 26.9x faster | 🟢 7.3x faster |
-| set(atom, value) | 🟢 19.7x faster | 🟢 4.9x faster |
-| set(atom, curr => curr+1) | 🟢 26.7x faster | 🟢 6.2x faster |
-| set(atom) with 10 subs | 🟢 20.9x faster | 🟢 6.3x faster |
-| atom lifecycle (create+100get+100set) | 🟢 23.7x faster | 🟢 5.7x faster |
-| set 1000 atoms | 🟢 11.7x faster | 🟢 5.8x faster |
-| get 1000 atoms | 🟢 53.2x faster | 🟢 13.6x faster |
+| atom(1) | 🟢 11.6x faster | 🟢 1.9x faster |
+| store.get(atom) | 🟢 26.6x faster | 🟢 7.1x faster |
+| set(atom, value) | 🟢 19.2x faster | 🟢 5.2x faster |
+| set(atom, curr => curr+1) | 🟢 26.8x faster | 🟢 5.9x faster |
+| set(atom) with 10 subs | 🟢 21.9x faster | 🟢 6.4x faster |
+| atom lifecycle (create+100get+100set) | 🟢 23.9x faster | 🟢 5.5x faster |
+| set 1000 atoms | 🟢 11.9x faster | 🟢 5.7x faster |
+| get 1000 atoms | 🟢 44.5x faster | 🟢 13.6x faster |
 
 #### Selectors
 
 | Benchmark | JSC (Safari) | V8 (Chrome) |
 |:----------|-----------:|-----------:|
-| selector(fn) | 🟢 10.0x faster | 🟢 1.4x faster |
-| set + read 10 selectors | 🟢 5.1x faster | 🟢 2.0x faster |
-| set + read 100 selectors | 🟢 5.6x faster | 🟢 1.8x faster |
-| set + read through 5 chained selectors | 🟢 2.3x faster | 🟢 1.8x faster |
+| selector(fn) | 🟢 8.3x faster | 🟢 1.2x faster |
+| set + read 10 selectors | 🟢 4.9x faster | 🟢 2.0x faster |
+| set + read 100 selectors | 🟢 5.4x faster | 🟢 1.7x faster |
+| set + read through 5 chained selectors | 🟢 2.6x faster | 🟢 1.8x faster |
 
 #### Transactions
 
 | Benchmark | JSC (Safari) | V8 (Chrome) |
 |:----------|-----------:|-----------:|
-| txn: 10 atoms × 10 selectors, set + read | 🟢 5.2x faster | 🟢 2.2x faster |
-| txn: 10 atoms × 10 selectors, with subs | 🟢 5.0x faster | 🟢 2.8x faster |
-| txn: 10 atoms × 100 selectors, set + read | 🟢 3.8x faster | 🟢 1.5x faster |
-| txn: cross-atom 1000 selectors, set + read | 🟢 6.0x faster | 🟢 1.7x faster |
-| txn: cross-atom 1000 selectors, with subs | 🟢 16.3x faster | 🟢 9.0x faster |
+| txn: 10 atoms × 10 selectors, set + read | 🟢 5.0x faster | 🟢 2.1x faster |
+| txn: 10 atoms × 10 selectors, with subs | 🟢 4.9x faster | 🟢 2.8x faster |
+| txn: 10 atoms × 100 selectors, set + read | 🟢 3.9x faster | 🟢 1.6x faster |
+| txn: cross-atom 1000 selectors, set + read | 🟢 4.3x faster | 🟢 1.7x faster |
+| txn: cross-atom 1000 selectors, with subs | 🟢 14.9x faster | 🟢 9.4x faster |
 
 #### Families
 
 | Benchmark | JSC (Safari) | V8 (Chrome) |
 |:----------|-----------:|-----------:|
-| atomFamily(id) cache hit | 🔴 2.5x slower | 🔴 3.5x slower |
+| atomFamily(id) cache hit | 🔴 3.6x slower | 🔴 4.1x slower |
 
 #### Other
 
 | Benchmark | JSC (Safari) | V8 (Chrome) |
 |:----------|-----------:|-----------:|
-| sub+unsub on chain of 50 unsubscribed derived deps | 🟢 1.6x faster | 🟡 1.5x slower |
-| sub+unsub on chain of 100 unsubscribed derived deps | 🟢 1.2x faster | 🟡 1.5x slower |
-| sub+unsub on chain of 500 unsubscribed derived deps | 🟢 1.0x faster | 🟡 1.5x slower |
+| sub+unsub on chain of 50 unsubscribed derived deps | 🟢 1.6x faster | 🟡 1.6x slower |
+| sub+unsub on chain of 100 unsubscribed derived deps | 🟢 1.2x faster | 🟡 1.6x slower |
+| sub+unsub on chain of 500 unsubscribed derived deps | 🟢 1.1x faster | 🟡 1.5x slower |
 
 #### Not yet optimized
 
@@ -93,10 +93,10 @@ These operations are functional but not yet tuned for speed. Tracked for future 
 
 | Benchmark | JSC (Safari) | V8 (Chrome) |
 |:----------|-----------:|-----------:|
-| atomFamily(id) | 🟢 1.6x faster | 🟢 1.4x faster |
-| selectorFamily(id) | 🟢 1.4x faster | 🟢 1.5x faster |
-| createStore | 🟢 20.8x faster | 🟢 2.6x faster |
-| sub + unsub | 🟢 3.2x faster | 🟢 1.6x faster |
+| atomFamily(id) | 🟢 1.5x faster | 🟢 1.6x faster |
+| selectorFamily(id) | 🟢 1.2x faster | 🟢 1.4x faster |
+| createStore | 🟢 20.3x faster | 🟢 3.0x faster |
+| sub + unsub | 🟢 2.9x faster | 🟢 1.6x faster |
 
 > [Full timing details](./BENCHMARKS.md) — Last updated: 2026-05-27 — [Historical trends](https://eigilsagafos.github.io/valdres/dev/bench/)
 <!-- BENCH:END -->
