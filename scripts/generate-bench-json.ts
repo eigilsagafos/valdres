@@ -51,21 +51,28 @@ writeFileSync(GH_BENCH_PATH, JSON.stringify(ghBenchResults, null, 2))
 console.log("bench-results.json generated for github-action-benchmark")
 
 // 2. Compact history entry (for benchmark-data branch)
-//    Uses Bun results only (primary runtime for regression detection).
+//    `benchmarks` holds Bun/JSC results (primary, used for regression gating).
+//    `nodeBenchmarks` holds Node/V8 results (informational trend tracking).
 //    Original names without runtime suffix for backwards compatibility.
-const primaryResults = bunResults.length > 0 ? bunResults : nodeResults
+function toHistoryBench(r: BenchResult) {
+    return {
+        name: r.name,
+        valdres: Math.round(r.valdres),
+        jotai: Math.round(r.jotai),
+        ratio: parseFloat(r.ratio.toFixed(4)),
+        threshold: r.threshold ?? 1,
+        cv: parseFloat((r.cv ?? 0).toFixed(4)),
+    }
+}
+
 const historyEntry = {
     date: new Date().toISOString(),
-    benchmarks: primaryResults
+    benchmarks: bunResults
         .filter(r => r.tag !== "baseline")
-        .map(r => ({
-            name: r.name,
-            valdres: Math.round(r.valdres),
-            jotai: Math.round(r.jotai),
-            ratio: parseFloat(r.ratio.toFixed(4)),
-            threshold: r.threshold ?? 1,
-            cv: parseFloat((r.cv ?? 0).toFixed(4)),
-        })),
+        .map(toHistoryBench),
+    nodeBenchmarks: nodeResults
+        .filter(r => r.tag !== "baseline")
+        .map(toHistoryBench),
 }
 
 writeFileSync(HISTORY_ENTRY_PATH, JSON.stringify(historyEntry, null, 2))

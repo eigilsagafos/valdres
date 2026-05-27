@@ -55,6 +55,39 @@ describe("selectorFamily", () => {
         expect(store1.get(testFamily(selector1))).toEqual("Foo")
         expect(testFamily(selector1)).toStrictEqual(testFamily(selector1))
     })
+    test("factory runs once per cache entry, not per read", () => {
+        // The wrapper used to be `(get) => callback(...args)(get)`, which
+        // re-invoked the user's factory on every selector evaluation and
+        // allocated a fresh inner closure per read. The fix calls the
+        // factory once at cache-miss time and stores the inner getter
+        // directly. We assert that here by counting factory invocations.
+        let factoryCalls = 0
+        let innerCalls = 0
+        const store1 = store()
+        const baseAtom = atom(0)
+        const sf = selectorFamily((offset: number) => {
+            factoryCalls++
+            return get => {
+                innerCalls++
+                return get(baseAtom) + offset
+            }
+        })
+        const sel = sf(10)
+        // Factory called exactly once on cache miss.
+        expect(factoryCalls).toBe(1)
+        // Initial read + several re-evals via dep change.
+        for (let i = 0; i < 50; i++) {
+            store1.set(baseAtom, i)
+            store1.get(sel)
+        }
+        // Factory NEVER runs again — proves no per-read wrapper invocation.
+        expect(factoryCalls).toBe(1)
+        // Inner getter runs once per evaluation as expected.
+        expect(innerCalls).toBeGreaterThanOrEqual(50)
+        // sel.get is identity-stable across reads.
+        expect(sf(10).get).toBe(sel.get)
+    })
+
     test("mutli args", async () => {
         const store1 = store()
         const testFamily1 = selectorFamily(

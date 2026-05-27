@@ -1,7 +1,9 @@
 import { describe, test } from "./test-compat"
 import { createStore as jotaiCreateStore, atom as jotaiAtom } from "jotai"
+import { atomFamily as jotaiAtomFamily } from "jotai/utils"
 import { atom as valdresAtom } from "../../src/atom"
 import { selector as valdresSelector } from "../../src/selector"
+import { selectorFamily as valdresSelectorFamily } from "../../src/selectorFamily"
 import { store as valdresCreateStore } from "../../src/store"
 import { assertFaster } from "./bench-utils"
 
@@ -124,6 +126,41 @@ describe("selector", () => {
             )
         })
     }
+
+    test("set + read 100 selectorFamily entries", async () => {
+        const count = 100
+
+        const vStore = valdresCreateStore()
+        const vAtom = valdresAtom(0)
+        const vFamily = valdresSelectorFamily(
+            (offset: number) => get => get(vAtom) + offset,
+        )
+        const vSelectors = Array.from({ length: count }, (_, i) => vFamily(i))
+        vSelectors.forEach(s => vStore.get(s))
+
+        const jStore = jotaiCreateStore()
+        const jAtom = jotaiAtom(0)
+        const jFamily = jotaiAtomFamily((offset: number) =>
+            jotaiAtom(get => get(jAtom) + offset),
+        )
+        const jSelectors = Array.from({ length: count }, (_, i) => jFamily(i))
+        jSelectors.forEach(s => jStore.get(s))
+
+        let vInt = 0
+        let jInt = 0
+        await assertFaster(
+            "set + read 100 selectorFamily entries",
+            () => {
+                vStore.set(vAtom, ++vInt)
+                vSelectors.forEach(s => vStore.get(s))
+            },
+            () => {
+                jStore.set(jAtom, ++jInt)
+                jSelectors.forEach(s => jStore.get(s))
+            },
+            2.0,
+        )
+    })
 
     test("chained selectors (depth 5)", async () => {
         const vStore = valdresCreateStore()
