@@ -30,7 +30,15 @@
  *     orchestrator exits non-zero but still leaves both ndjsons in place
  *     so downstream tooling can produce a partial report.
  */
-import { existsSync, readdirSync, readFileSync, rmSync } from "fs"
+import {
+    existsSync,
+    lstatSync,
+    readdirSync,
+    readFileSync,
+    rmSync,
+    symlinkSync,
+    unlinkSync,
+} from "fs"
 import { join } from "path"
 
 const ROOT = join(import.meta.dir, "..")
@@ -62,6 +70,17 @@ async function sh(
 async function setupMainWorktree(): Promise<void> {
     // Remove any prior worktree (left over from a cancelled run).
     if (existsSync(MAIN_WORKTREE)) {
+        // CRITICAL: unlink the nested node_modules symlink first. It points
+        // at the *main checkout's* real node_modules; letting `git worktree
+        // remove` or rmSync recurse through it would delete the live deps.
+        // (Both tools treat a symlink as a leaf and unlink it rather than
+        // following it — but we remove it explicitly to be certain.)
+        const link = join(MAIN_PKG, "node_modules")
+        try {
+            if (lstatSync(link).isSymbolicLink()) unlinkSync(link)
+        } catch {
+            // not present — fine
+        }
         await sh(["git", "worktree", "remove", "--force", MAIN_WORKTREE], {
             allowFailure: true,
         })
@@ -70,6 +89,31 @@ async function setupMainWorktree(): Promise<void> {
         rmSync(MAIN_WORKTREE, { recursive: true, force: true })
     }
     await sh(["git", "worktree", "add", "--detach", MAIN_WORKTREE, BASE_REF])
+    linkNestedNodeModules()
+}
+
+/**
+ * `git worktree add` does not reproduce per-package (nested) node_modules,
+ * so the worktree's bench files would resolve their dependencies by walking
+ * up to the repo-root node_modules. When a dependency is nested in the main
+ * checkout (e.g. a version-pinned `jotai` that lost the hoist to a different
+ * version at the root), the worktree silently resolves a *different* version
+ * than the PR side — making any vs-jotai comparison meaningless and shifting
+ * shared-heap GC behaviour between the two passes.
+ *
+ * Symlink the main checkout's nested node_modules into the worktree so both
+ * sides resolve byte-identical dependencies. valdres itself still comes from
+ * each side's own `src/`; only third-party deps are shared. Root-level deps
+ * already resolve identically via walk-up (the worktree lives inside the
+ * repo), so only the bench package's nested modules need linking.
+ */
+function linkNestedNodeModules(): void {
+    const srcModules = join(PR_PKG, "node_modules")
+    if (!existsSync(srcModules)) return // fully hoisted install — nothing nested
+    const destModules = join(MAIN_PKG, "node_modules")
+    if (existsSync(destModules)) return // worktree somehow already has them
+    symlinkSync(srcModules, destModules)
+    console.log(`Linked ${srcModules} → ${destModules}`)
 }
 
 function listBenchFiles(dir: string): string[] {
