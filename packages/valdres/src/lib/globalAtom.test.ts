@@ -1,4 +1,4 @@
-import { describe, test, expect, mock } from "bun:test"
+import { describe, test, expect, mock, spyOn } from "bun:test"
 import { store } from "../store"
 import { atom } from "../atom"
 import { selector } from "../selector"
@@ -504,42 +504,29 @@ describe("globalAtom", () => {
         expect(store3.get(testAtom)).toBe(0)
     })
 
-    test("global atom with maxAge only calls defaultValue once per interval across stores", async () => {
-        let callCount = 0
-        const testAtom = atom(
-            () => {
-                callCount++
-                return callCount
-            },
-            { global: true, maxAge: 50 },
-        )
+    test("global atom with maxAge shares one interval across stores", () => {
+        // The invariant: a second store subscribing to the same global atom
+        // must bump refCount on the existing interval rather than installing
+        // its own. Regressing this used to double the defaultValue call rate
+        // per extra store. Spy directly on setInterval — no timing involved.
+        const intervalSpy = spyOn(globalThis, "setInterval")
+        try {
+            const testAtom = atom(() => 0, { global: true, maxAge: 50 })
+            const store1 = store()
+            const store2 = store()
 
-        const store1 = store()
-        const store2 = store()
+            const callsBefore = intervalSpy.mock.calls.length
+            const unsub1 = store1.sub(testAtom, () => {})
+            const unsub2 = store2.sub(testAtom, () => {})
+            const callsAfter = intervalSpy.mock.calls.length
 
-        const cb1 = mock(() => {})
-        const cb2 = mock(() => {})
+            expect(callsAfter - callsBefore).toBe(1)
 
-        // Subscribe in both stores — bug causes two independent intervals
-        const unsub1 = store1.sub(testAtom, cb1)
-        const unsub2 = store2.sub(testAtom, cb2)
-
-        // Initial defaultValue call happened once during init
-        const countAfterInit = callCount
-
-        // Wait long enough for exactly one revalidation cycle (50ms interval)
-        await wait(75)
-
-        // With the bug, each store starts its own interval so defaultValue
-        // gets called twice per cycle. It should only be called once.
-        const revalidationCalls = callCount - countAfterInit
-        expect(revalidationCalls).toBe(1)
-
-        // Both stores should have the updated value
-        expect(store1.get(testAtom)).toBe(store2.get(testAtom))
-
-        unsub1()
-        unsub2()
+            unsub1()
+            unsub2()
+        } finally {
+            intervalSpy.mockRestore()
+        }
     })
 
     test("notifies subscribers that re-read synchronously across multiple resets", async () => {

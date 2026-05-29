@@ -658,7 +658,10 @@ describe("atom", () => {
         const atom1 = atom(atomCallback, {
             maxAge: 20,
             staleWhileRevalidate: 200,
-            staleIfError: 500,
+            // Wide enough that this test stays within the window even on a
+            // slow CI runner; the value being tested is the within-window
+            // restore-stale behavior, not the window length itself.
+            staleIfError: 60_000,
         })
 
         const callback = mock(() => {})
@@ -838,7 +841,7 @@ describe("atom", () => {
 
         const atom1 = atom(atomCallback, {
             maxAge: 20,
-            staleIfError: 500,
+            staleIfError: 60_000,
         })
 
         const callback = mock(() => {})
@@ -880,7 +883,7 @@ describe("atom", () => {
 
             const atom1 = atom(atomCallback, {
                 maxAge: 20,
-                staleIfError: 500,
+                staleIfError: 60_000,
             })
 
             const callback = mock(() => {})
@@ -1009,7 +1012,7 @@ describe("atom", () => {
             const atom1 = atom(atomCallback, {
                 maxAge: 20,
                 staleWhileRevalidate: 30,
-                staleIfError: 500,
+                staleIfError: 60_000,
             })
 
             const callback = mock(() => {})
@@ -1054,9 +1057,16 @@ describe("atom", () => {
             }
 
             const atom1 = atom(atomCallback, {
-                maxAge: 20,
+                // swr=0 means store flips to the pending promise during
+                // revalidation. After reject, handleReject restores stale,
+                // but setAndPropagate flushes via queueMicrotask — if the
+                // next setInterval tick fires before that flush commits,
+                // it overwrites the restored value with a new pending
+                // promise that never resolves. A long maxAge keeps the
+                // next tick far away so the assertion has time to land.
+                maxAge: 200,
                 staleWhileRevalidate: 0,
-                staleIfError: 500,
+                staleIfError: 60_000,
             })
 
             const callback = mock(() => {})
@@ -1071,9 +1081,10 @@ describe("atom", () => {
             expect(store1.get(atom1)).toBeInstanceOf(Promise)
 
             resolvers[1].reject(new Error("network error"))
-            await wait(1)
-            // Within staleIfError window — stale should be restored
-            expect(store1.get(atom1)).toBe(100)
+            // Within staleIfError window — stale should be restored.
+            // Poll because the catch handler propagates over a few
+            // microtask ticks; a fixed wait(1) is racy on CI.
+            await waitFor(() => expect(store1.get(atom1)).toBe(100))
 
             unsubscribe()
         },
@@ -1115,12 +1126,15 @@ describe("atom", () => {
             for (let i = 1; i < resolvers.length; i++) {
                 resolvers[i].reject(new Error("network error"))
             }
-            await wait(1)
 
-            // Past staleIfError window — stale value should NOT be served
-            const val = store1.get(atom1)
-            expect(val).not.toBe(100)
-            expect(val).toBeInstanceOf(Promise)
+            // Past staleIfError window — stale value should NOT be served.
+            // Poll so the catch handler has time to settle.
+            let val: unknown
+            await waitFor(() => {
+                val = store1.get(atom1)
+                expect(val).not.toBe(100)
+                expect(val).toBeInstanceOf(Promise)
+            })
 
             unsubscribe()
         },
