@@ -1,0 +1,5397 @@
+[
+  {
+    "date": "2026-05-21T20:58:59.389Z",
+    "benchmarks": [
+      {
+        "name": "atom(1)",
+        "valdres": 5,
+        "jotai": 61,
+        "ratio": 0.0821,
+        "threshold": 2,
+        "cv": 0.5029
+      },
+      {
+        "name": "store.get(atom)",
+        "valdres": 13,
+        "jotai": 340,
+        "ratio": 0.0379,
+        "threshold": 1.5,
+        "cv": 0.0134
+      },
+      {
+        "name": "set(atom, value)",
+        "valdres": 332,
+        "jotai": 4292,
+        "ratio": 0.0767,
+        "threshold": 2,
+        "cv": 0.3437
+      },
+      {
+        "name": "set(atom, curr => curr+1)",
+        "valdres": 344,
+        "jotai": 6559,
+        "ratio": 0.0567,
+        "threshold": 2,
+        "cv": 0.2088
+      },
+      {
+        "name": "set(atom) with 10 subs",
+        "valdres": 206,
+        "jotai": 3441,
+        "ratio": 0.0616,
+        "threshold": 2,
+        "cv": 0.1647
+      },
+      {
+        "name": "atom lifecycle (create+100get+100set)",
+        "valdres": 17032,
+        "jotai": 262191,
+        "ratio": 0.0649,
+        "threshold": 2,
+        "cv": 0.0435
+      },
+      {
+        "name": "atomFamily(id)",
+        "valdres": 289,
+        "jotai": 405,
+        "ratio": 0.7027,
+        "threshold": 10,
+        "cv": 0.1707
+      },
+      {
+        "name": "atomFamily(id) cache hit",
+        "valdres": 28,
+        "jotai": 12,
+        "ratio": 2.3854,
+        "threshold": 5,
+        "cv": 0.0734
+      },
+      {
+        "name": "selectorFamily(id)",
+        "valdres": 304,
+        "jotai": 423,
+        "ratio": 0.7228,
+        "threshold": 10,
+        "cv": 0.3064
+      },
+      {
+        "name": "selector(fn)",
+        "valdres": 8,
+        "jotai": 67,
+        "ratio": 0.0968,
+        "threshold": 2,
+        "cv": 0.3672
+      },
+      {
+        "name": "set + read 10 selectors",
+        "valdres": 6658,
+        "jotai": 24406,
+        "ratio": 0.2731,
+        "threshold": 2,
+        "cv": 0.377
+      },
+      {
+        "name": "set + read 100 selectors",
+        "valdres": 59361,
+        "jotai": 247113,
+        "ratio": 0.2392,
+        "threshold": 2,
+        "cv": 0.0436
+      },
+      {
+        "name": "set + read through 5 chained selectors",
+        "valdres": 5967,
+        "jotai": 12999,
+        "ratio": 0.4529,
+        "threshold": 2,
+        "cv": 0.0887
+      },
+      {
+        "name": "createStore",
+        "valdres": 238,
+        "jotai": 5936,
+        "ratio": 0.0401,
+        "threshold": 50,
+        "cv": 0.1852
+      },
+      {
+        "name": "set 1000 atoms",
+        "valdres": 106539,
+        "jotai": 929484,
+        "ratio": 0.1151,
+        "threshold": 2,
+        "cv": 0.0196
+      },
+      {
+        "name": "get 1000 atoms",
+        "valdres": 9017,
+        "jotai": 385020,
+        "ratio": 0.0215,
+        "threshold": 1.5,
+        "cv": 0.4853
+      },
+      {
+        "name": "sub + unsub",
+        "valdres": 1184,
+        "jotai": 3680,
+        "ratio": 0.3114,
+        "threshold": 15,
+        "cv": 0.3384
+      },
+      {
+        "name": "txn: 10 atoms × 10 selectors, set + read",
+        "valdres": 86391,
+        "jotai": 291044,
+        "ratio": 0.292,
+        "threshold": 2,
+        "cv": 0.3541
+      },
+      {
+        "name": "txn: 10 atoms × 10 selectors, with subs",
+        "valdres": 135844,
+        "jotai": 546903,
+        "ratio": 0.2393,
+        "threshold": 2,
+        "cv": 0.3531
+      },
+      {
+        "name": "txn: 10 atoms × 100 selectors, set + read",
+        "valdres": 948093,
+        "jotai": 3388137,
+        "ratio": 0.2825,
+        "threshold": 2,
+        "cv": 0.0191
+      },
+      {
+        "name": "txn: cross-atom 1000 selectors, set + read",
+        "valdres": 882470,
+        "jotai": 3579976,
+        "ratio": 0.2463,
+        "threshold": 2,
+        "cv": 0.1058
+      },
+      {
+        "name": "txn: cross-atom 1000 selectors, with subs",
+        "valdres": 1361226,
+        "jotai": 18830237,
+        "ratio": 0.0722,
+        "threshold": 2,
+        "cv": 0.1106
+      }
+    ]
+  },
+  {
+    "date": "2026-05-21T21:04:44.590Z",
+    "benchmarks": [
+      {
+        "name": "atom(1)",
+        "valdres": 9,
+        "jotai": 76,
+        "ratio": 0.1362,
+        "threshold": 2,
+        "cv": 0.3788
+      },
+      {
+        "name": "store.get(atom)",
+        "valdres": 13,
+        "jotai": 341,
+        "ratio": 0.0371,
+        "threshold": 1.5,
+        "cv": 0.0035
+      },
+      {
+        "name": "set(atom, value)",
+        "valdres": 328,
+        "jotai": 4540,
+        "ratio": 0.0716,
+        "threshold": 2,
+        "cv": 0.2489
+      },
+      {
+        "name": "set(atom, curr => curr+1)",
+        "valdres": 371,
+        "jotai": 5339,
+        "ratio": 0.0663,
+        "threshold": 2,
+        "cv": 0.3934
+      },
+      {
+        "name": "set(atom) with 10 subs",
+        "valdres": 390,
+        "jotai": 6046,
+        "ratio": 0.0641,
+        "threshold": 2,
+        "cv": 0.3686
+      },
+      {
+        "name": "atom lifecycle (create+100get+100set)",
+        "valdres": 16526,
+        "jotai": 271881,
+        "ratio": 0.0609,
+        "threshold": 2,
+        "cv": 0.0561
+      },
+      {
+        "name": "atomFamily(id)",
+        "valdres": 323,
+        "jotai": 426,
+        "ratio": 0.7345,
+        "threshold": 10,
+        "cv": 0.2804
+      },
+      {
+        "name": "atomFamily(id) cache hit",
+        "valdres": 27,
+        "jotai": 12,
+        "ratio": 2.2501,
+        "threshold": 5,
+        "cv": 0.0095
+      },
+      {
+        "name": "selectorFamily(id)",
+        "valdres": 284,
+        "jotai": 383,
+        "ratio": 0.7418,
+        "threshold": 10,
+        "cv": 0.2856
+      },
+      {
+        "name": "selector(fn)",
+        "valdres": 7,
+        "jotai": 69,
+        "ratio": 0.0922,
+        "threshold": 2,
+        "cv": 0.3263
+      },
+      {
+        "name": "set + read 10 selectors",
+        "valdres": 8757,
+        "jotai": 40296,
+        "ratio": 0.2272,
+        "threshold": 2,
+        "cv": 0.1679
+      },
+      {
+        "name": "set + read 100 selectors",
+        "valdres": 63631,
+        "jotai": 204597,
+        "ratio": 0.3076,
+        "threshold": 2,
+        "cv": 0.0881
+      },
+      {
+        "name": "set + read through 5 chained selectors",
+        "valdres": 7858,
+        "jotai": 15466,
+        "ratio": 0.5075,
+        "threshold": 2,
+        "cv": 0.145
+      },
+      {
+        "name": "createStore",
+        "valdres": 246,
+        "jotai": 5944,
+        "ratio": 0.0408,
+        "threshold": 50,
+        "cv": 0.1605
+      },
+      {
+        "name": "set 1000 atoms",
+        "valdres": 109006,
+        "jotai": 967112,
+        "ratio": 0.1136,
+        "threshold": 2,
+        "cv": 0.0178
+      },
+      {
+        "name": "get 1000 atoms",
+        "valdres": 8987,
+        "jotai": 357137,
+        "ratio": 0.0252,
+        "threshold": 1.5,
+        "cv": 0.0857
+      },
+      {
+        "name": "sub + unsub",
+        "valdres": 1310,
+        "jotai": 3834,
+        "ratio": 0.3141,
+        "threshold": 15,
+        "cv": 0.3681
+      },
+      {
+        "name": "txn: 10 atoms × 10 selectors, set + read",
+        "valdres": 73790,
+        "jotai": 280682,
+        "ratio": 0.2537,
+        "threshold": 2,
+        "cv": 0.3552
+      },
+      {
+        "name": "txn: 10 atoms × 10 selectors, with subs",
+        "valdres": 136458,
+        "jotai": 597912,
+        "ratio": 0.205,
+        "threshold": 2,
+        "cv": 0.3347
+      },
+      {
+        "name": "txn: 10 atoms × 100 selectors, set + read",
+        "valdres": 925240,
+        "jotai": 2748512,
+        "ratio": 0.3291,
+        "threshold": 2,
+        "cv": 0.038
+      },
+      {
+        "name": "txn: cross-atom 1000 selectors, set + read",
+        "valdres": 843670,
+        "jotai": 3056855,
+        "ratio": 0.2762,
+        "threshold": 2,
+        "cv": 0.1087
+      },
+      {
+        "name": "txn: cross-atom 1000 selectors, with subs",
+        "valdres": 1104959,
+        "jotai": 18459931,
+        "ratio": 0.06,
+        "threshold": 2,
+        "cv": 0.0258
+      }
+    ]
+  },
+  {
+    "date": "2026-05-21T21:58:24.149Z",
+    "benchmarks": [
+      {
+        "name": "atom(1)",
+        "valdres": 7,
+        "jotai": 70,
+        "ratio": 0.1055,
+        "threshold": 2,
+        "cv": 0.3931
+      },
+      {
+        "name": "store.get(atom)",
+        "valdres": 13,
+        "jotai": 353,
+        "ratio": 0.0365,
+        "threshold": 1.5,
+        "cv": 0.005
+      },
+      {
+        "name": "set(atom, value)",
+        "valdres": 180,
+        "jotai": 2734,
+        "ratio": 0.0725,
+        "threshold": 2,
+        "cv": 0.3458
+      },
+      {
+        "name": "set(atom, curr => curr+1)",
+        "valdres": 329,
+        "jotai": 5284,
+        "ratio": 0.0623,
+        "threshold": 2,
+        "cv": 0.3493
+      },
+      {
+        "name": "set(atom) with 10 subs",
+        "valdres": 430,
+        "jotai": 6008,
+        "ratio": 0.0683,
+        "threshold": 2,
+        "cv": 0.2943
+      },
+      {
+        "name": "atom lifecycle (create+100get+100set)",
+        "valdres": 16019,
+        "jotai": 274231,
+        "ratio": 0.0585,
+        "threshold": 2,
+        "cv": 0.0442
+      },
+      {
+        "name": "atomFamily(id)",
+        "valdres": 351,
+        "jotai": 471,
+        "ratio": 0.7298,
+        "threshold": 10,
+        "cv": 0.1555
+      },
+      {
+        "name": "atomFamily(id) cache hit",
+        "valdres": 35,
+        "jotai": 13,
+        "ratio": 2.6004,
+        "threshold": 5,
+        "cv": 0.3014
+      },
+      {
+        "name": "selectorFamily(id)",
+        "valdres": 295,
+        "jotai": 345,
+        "ratio": 0.7852,
+        "threshold": 10,
+        "cv": 0.4229
+      },
+      {
+        "name": "selector(fn)",
+        "valdres": 9,
+        "jotai": 70,
+        "ratio": 0.1271,
+        "threshold": 2,
+        "cv": 0.3637
+      },
+      {
+        "name": "set + read 10 selectors",
+        "valdres": 8100,
+        "jotai": 28152,
+        "ratio": 0.2908,
+        "threshold": 2,
+        "cv": 0.39
+      },
+      {
+        "name": "set + read 100 selectors",
+        "valdres": 58852,
+        "jotai": 248658,
+        "ratio": 0.2396,
+        "threshold": 2,
+        "cv": 0.0597
+      },
+      {
+        "name": "set + read through 5 chained selectors",
+        "valdres": 5569,
+        "jotai": 12969,
+        "ratio": 0.4276,
+        "threshold": 2,
+        "cv": 0.0817
+      },
+      {
+        "name": "createStore",
+        "valdres": 269,
+        "jotai": 6108,
+        "ratio": 0.0436,
+        "threshold": 50,
+        "cv": 0.183
+      },
+      {
+        "name": "set 1000 atoms",
+        "valdres": 81145,
+        "jotai": 900770,
+        "ratio": 0.0896,
+        "threshold": 2,
+        "cv": 0.0485
+      },
+      {
+        "name": "get 1000 atoms",
+        "valdres": 8262,
+        "jotai": 362626,
+        "ratio": 0.0228,
+        "threshold": 1.5,
+        "cv": 0.0175
+      },
+      {
+        "name": "sub + unsub",
+        "valdres": 1389,
+        "jotai": 3991,
+        "ratio": 0.3154,
+        "threshold": 15,
+        "cv": 0.4711
+      },
+      {
+        "name": "txn: 10 atoms × 10 selectors, set + read",
+        "valdres": 63529,
+        "jotai": 270820,
+        "ratio": 0.2353,
+        "threshold": 2,
+        "cv": 0.0554
+      },
+      {
+        "name": "txn: 10 atoms × 10 selectors, with subs",
+        "valdres": 143783,
+        "jotai": 544033,
+        "ratio": 0.2377,
+        "threshold": 2,
+        "cv": 0.3136
+      },
+      {
+        "name": "txn: 10 atoms × 100 selectors, set + read",
+        "valdres": 911376,
+        "jotai": 3834153,
+        "ratio": 0.2456,
+        "threshold": 2,
+        "cv": 0.1003
+      },
+      {
+        "name": "txn: cross-atom 1000 selectors, set + read",
+        "valdres": 823066,
+        "jotai": 3776567,
+        "ratio": 0.2264,
+        "threshold": 2,
+        "cv": 0.0773
+      },
+      {
+        "name": "txn: cross-atom 1000 selectors, with subs",
+        "valdres": 1692140,
+        "jotai": 20377164,
+        "ratio": 0.0829,
+        "threshold": 2,
+        "cv": 0.1475
+      }
+    ]
+  },
+  {
+    "date": "2026-05-21T22:06:19.300Z",
+    "benchmarks": [
+      {
+        "name": "atom(1)",
+        "valdres": 5,
+        "jotai": 61,
+        "ratio": 0.0842,
+        "threshold": 2,
+        "cv": 0.4823
+      },
+      {
+        "name": "store.get(atom)",
+        "valdres": 13,
+        "jotai": 341,
+        "ratio": 0.0377,
+        "threshold": 1.5,
+        "cv": 0.0137
+      },
+      {
+        "name": "set(atom, value)",
+        "valdres": 179,
+        "jotai": 2729,
+        "ratio": 0.0659,
+        "threshold": 2,
+        "cv": 0.0932
+      },
+      {
+        "name": "set(atom, curr => curr+1)",
+        "valdres": 345,
+        "jotai": 5876,
+        "ratio": 0.0598,
+        "threshold": 2,
+        "cv": 0.4015
+      },
+      {
+        "name": "set(atom) with 10 subs",
+        "valdres": 268,
+        "jotai": 3323,
+        "ratio": 0.0796,
+        "threshold": 2,
+        "cv": 0.1359
+      },
+      {
+        "name": "atom lifecycle (create+100get+100set)",
+        "valdres": 16156,
+        "jotai": 266747,
+        "ratio": 0.0603,
+        "threshold": 2,
+        "cv": 0.0343
+      },
+      {
+        "name": "atomFamily(id)",
+        "valdres": 312,
+        "jotai": 429,
+        "ratio": 0.7134,
+        "threshold": 10,
+        "cv": 0.1826
+      },
+      {
+        "name": "atomFamily(id) cache hit",
+        "valdres": 28,
+        "jotai": 11,
+        "ratio": 2.4181,
+        "threshold": 8,
+        "cv": 0.347
+      },
+      {
+        "name": "selectorFamily(id)",
+        "valdres": 289,
+        "jotai": 390,
+        "ratio": 0.7211,
+        "threshold": 10,
+        "cv": 0.3379
+      },
+      {
+        "name": "selector(fn)",
+        "valdres": 6,
+        "jotai": 63,
+        "ratio": 0.1101,
+        "threshold": 2,
+        "cv": 0.3654
+      },
+      {
+        "name": "set + read 10 selectors",
+        "valdres": 6628,
+        "jotai": 24050,
+        "ratio": 0.2703,
+        "threshold": 2,
+        "cv": 0.0863
+      },
+      {
+        "name": "set + read 100 selectors",
+        "valdres": 57568,
+        "jotai": 241325,
+        "ratio": 0.2386,
+        "threshold": 2,
+        "cv": 0.1025
+      },
+      {
+        "name": "set + read through 5 chained selectors",
+        "valdres": 5901,
+        "jotai": 13115,
+        "ratio": 0.4498,
+        "threshold": 2,
+        "cv": 0.0818
+      },
+      {
+        "name": "createStore",
+        "valdres": 229,
+        "jotai": 5956,
+        "ratio": 0.0383,
+        "threshold": 50,
+        "cv": 0.1817
+      },
+      {
+        "name": "set 1000 atoms",
+        "valdres": 111353,
+        "jotai": 923240,
+        "ratio": 0.1207,
+        "threshold": 2,
+        "cv": 0.009
+      },
+      {
+        "name": "get 1000 atoms",
+        "valdres": 8871,
+        "jotai": 420874,
+        "ratio": 0.0187,
+        "threshold": 1.5,
+        "cv": 0.1762
+      },
+      {
+        "name": "sub + unsub",
+        "valdres": 1056,
+        "jotai": 3861,
+        "ratio": 0.2329,
+        "threshold": 15,
+        "cv": 0.3656
+      },
+      {
+        "name": "txn: 10 atoms × 10 selectors, set + read",
+        "valdres": 69690,
+        "jotai": 258777,
+        "ratio": 0.2789,
+        "threshold": 2,
+        "cv": 0.088
+      },
+      {
+        "name": "txn: 10 atoms × 10 selectors, with subs",
+        "valdres": 120033,
+        "jotai": 521141,
+        "ratio": 0.2323,
+        "threshold": 2,
+        "cv": 0.0832
+      },
+      {
+        "name": "txn: 10 atoms × 100 selectors, set + read",
+        "valdres": 832015,
+        "jotai": 3353966,
+        "ratio": 0.248,
+        "threshold": 2,
+        "cv": 0.0183
+      },
+      {
+        "name": "txn: cross-atom 1000 selectors, set + read",
+        "valdres": 799640,
+        "jotai": 3554561,
+        "ratio": 0.2287,
+        "threshold": 2,
+        "cv": 0.066
+      },
+      {
+        "name": "txn: cross-atom 1000 selectors, with subs",
+        "valdres": 1586635,
+        "jotai": 18541083,
+        "ratio": 0.0801,
+        "threshold": 2,
+        "cv": 0.1759
+      }
+    ]
+  },
+  {
+    "date": "2026-05-21T22:09:05.203Z",
+    "benchmarks": [
+      {
+        "name": "atom(1)",
+        "valdres": 7,
+        "jotai": 57,
+        "ratio": 0.1143,
+        "threshold": 2,
+        "cv": 0.3579
+      },
+      {
+        "name": "store.get(atom)",
+        "valdres": 13,
+        "jotai": 399,
+        "ratio": 0.0322,
+        "threshold": 1.5,
+        "cv": 0.0171
+      },
+      {
+        "name": "set(atom, value)",
+        "valdres": 345,
+        "jotai": 5764,
+        "ratio": 0.0634,
+        "threshold": 2,
+        "cv": 0.3248
+      },
+      {
+        "name": "set(atom, curr => curr+1)",
+        "valdres": 327,
+        "jotai": 5563,
+        "ratio": 0.0602,
+        "threshold": 2,
+        "cv": 0.3871
+      },
+      {
+        "name": "set(atom) with 10 subs",
+        "valdres": 488,
+        "jotai": 6316,
+        "ratio": 0.0756,
+        "threshold": 2,
+        "cv": 0.1338
+      },
+      {
+        "name": "atom lifecycle (create+100get+100set)",
+        "valdres": 17688,
+        "jotai": 285144,
+        "ratio": 0.0626,
+        "threshold": 2,
+        "cv": 0.3566
+      },
+      {
+        "name": "atomFamily(id)",
+        "valdres": 422,
+        "jotai": 620,
+        "ratio": 0.6902,
+        "threshold": 10,
+        "cv": 0.2445
+      },
+      {
+        "name": "atomFamily(id) cache hit",
+        "valdres": 28,
+        "jotai": 11,
+        "ratio": 2.3943,
+        "threshold": 8,
+        "cv": 0.0816
+      },
+      {
+        "name": "selectorFamily(id)",
+        "valdres": 343,
+        "jotai": 448,
+        "ratio": 0.7482,
+        "threshold": 10,
+        "cv": 0.281
+      },
+      {
+        "name": "selector(fn)",
+        "valdres": 8,
+        "jotai": 66,
+        "ratio": 0.1218,
+        "threshold": 2,
+        "cv": 0.2815
+      },
+      {
+        "name": "set + read 10 selectors",
+        "valdres": 7066,
+        "jotai": 24816,
+        "ratio": 0.2744,
+        "threshold": 2,
+        "cv": 0.448
+      },
+      {
+        "name": "set + read 100 selectors",
+        "valdres": 68388,
+        "jotai": 245408,
+        "ratio": 0.2679,
+        "threshold": 2,
+        "cv": 0.3595
+      },
+      {
+        "name": "set + read through 5 chained selectors",
+        "valdres": 5931,
+        "jotai": 13210,
+        "ratio": 0.4433,
+        "threshold": 2,
+        "cv": 0.2094
+      },
+      {
+        "name": "createStore",
+        "valdres": 248,
+        "jotai": 5999,
+        "ratio": 0.0409,
+        "threshold": 50,
+        "cv": 0.2
+      },
+      {
+        "name": "set 1000 atoms",
+        "valdres": 105256,
+        "jotai": 943512,
+        "ratio": 0.1113,
+        "threshold": 2,
+        "cv": 0.0158
+      },
+      {
+        "name": "get 1000 atoms",
+        "valdres": 9848,
+        "jotai": 435623,
+        "ratio": 0.0193,
+        "threshold": 1.5,
+        "cv": 0.1311
+      },
+      {
+        "name": "sub + unsub",
+        "valdres": 1119,
+        "jotai": 4060,
+        "ratio": 0.2567,
+        "threshold": 15,
+        "cv": 0.3547
+      },
+      {
+        "name": "txn: 10 atoms × 10 selectors, set + read",
+        "valdres": 72060,
+        "jotai": 271467,
+        "ratio": 0.2619,
+        "threshold": 2,
+        "cv": 0.0502
+      },
+      {
+        "name": "txn: 10 atoms × 10 selectors, with subs",
+        "valdres": 130103,
+        "jotai": 542062,
+        "ratio": 0.2434,
+        "threshold": 2,
+        "cv": 0.3613
+      },
+      {
+        "name": "txn: 10 atoms × 100 selectors, set + read",
+        "valdres": 833998,
+        "jotai": 3470929,
+        "ratio": 0.2417,
+        "threshold": 2,
+        "cv": 0.0267
+      },
+      {
+        "name": "txn: cross-atom 1000 selectors, set + read",
+        "valdres": 838156,
+        "jotai": 3618910,
+        "ratio": 0.2327,
+        "threshold": 2,
+        "cv": 0.0872
+      },
+      {
+        "name": "txn: cross-atom 1000 selectors, with subs",
+        "valdres": 1498559,
+        "jotai": 18866381,
+        "ratio": 0.0806,
+        "threshold": 2,
+        "cv": 0.1078
+      }
+    ]
+  },
+  {
+    "date": "2026-05-22T01:02:31.384Z",
+    "benchmarks": [
+      {
+        "name": "atom(1)",
+        "valdres": 8,
+        "jotai": 80,
+        "ratio": 0.1062,
+        "threshold": 2,
+        "cv": 0.3725
+      },
+      {
+        "name": "store.get(atom)",
+        "valdres": 25,
+        "jotai": 708,
+        "ratio": 0.0363,
+        "threshold": 1.5,
+        "cv": 0.3355
+      },
+      {
+        "name": "set(atom, value)",
+        "valdres": 304,
+        "jotai": 4746,
+        "ratio": 0.0649,
+        "threshold": 2,
+        "cv": 0.0578
+      },
+      {
+        "name": "set(atom, curr => curr+1)",
+        "valdres": 359,
+        "jotai": 5659,
+        "ratio": 0.0637,
+        "threshold": 2,
+        "cv": 0.2313
+      },
+      {
+        "name": "set(atom) with 10 subs",
+        "valdres": 435,
+        "jotai": 5940,
+        "ratio": 0.0723,
+        "threshold": 2,
+        "cv": 0.3271
+      },
+      {
+        "name": "atom lifecycle (create+100get+100set)",
+        "valdres": 16575,
+        "jotai": 278706,
+        "ratio": 0.0592,
+        "threshold": 2,
+        "cv": 0.0646
+      },
+      {
+        "name": "atomFamily(id)",
+        "valdres": 332,
+        "jotai": 449,
+        "ratio": 0.7327,
+        "threshold": 10,
+        "cv": 0.2057
+      },
+      {
+        "name": "atomFamily(id) cache hit",
+        "valdres": 32,
+        "jotai": 12,
+        "ratio": 2.5408,
+        "threshold": 8,
+        "cv": 0.0716
+      },
+      {
+        "name": "selectorFamily(id)",
+        "valdres": 334,
+        "jotai": 447,
+        "ratio": 0.7254,
+        "threshold": 10,
+        "cv": 0.3018
+      },
+      {
+        "name": "selector(fn)",
+        "valdres": 9,
+        "jotai": 71,
+        "ratio": 0.1203,
+        "threshold": 2,
+        "cv": 0.2818
+      },
+      {
+        "name": "set + read 10 selectors",
+        "valdres": 7041,
+        "jotai": 40439,
+        "ratio": 0.179,
+        "threshold": 2,
+        "cv": 0.3525
+      },
+      {
+        "name": "set + read 100 selectors",
+        "valdres": 55152,
+        "jotai": 207109,
+        "ratio": 0.2639,
+        "threshold": 2,
+        "cv": 0.0962
+      },
+      {
+        "name": "set + read through 5 chained selectors",
+        "valdres": 7154,
+        "jotai": 14915,
+        "ratio": 0.485,
+        "threshold": 2,
+        "cv": 0.2668
+      },
+      {
+        "name": "createStore",
+        "valdres": 258,
+        "jotai": 6071,
+        "ratio": 0.0421,
+        "threshold": 50,
+        "cv": 0.182
+      },
+      {
+        "name": "set 1000 atoms",
+        "valdres": 103703,
+        "jotai": 922738,
+        "ratio": 0.1109,
+        "threshold": 2,
+        "cv": 0.0535
+      },
+      {
+        "name": "get 1000 atoms",
+        "valdres": 8533,
+        "jotai": 368872,
+        "ratio": 0.023,
+        "threshold": 1.5,
+        "cv": 0.0258
+      },
+      {
+        "name": "sub + unsub",
+        "valdres": 1306,
+        "jotai": 4034,
+        "ratio": 0.3184,
+        "threshold": 15,
+        "cv": 0.37
+      },
+      {
+        "name": "txn: 10 atoms × 10 selectors, set + read",
+        "valdres": 68671,
+        "jotai": 239533,
+        "ratio": 0.2805,
+        "threshold": 2,
+        "cv": 0.3951
+      },
+      {
+        "name": "txn: 10 atoms × 10 selectors, with subs",
+        "valdres": 196590,
+        "jotai": 742598,
+        "ratio": 0.2388,
+        "threshold": 2,
+        "cv": 0.2846
+      },
+      {
+        "name": "txn: 10 atoms × 100 selectors, set + read",
+        "valdres": 947815,
+        "jotai": 2998894,
+        "ratio": 0.3091,
+        "threshold": 2,
+        "cv": 0.1153
+      },
+      {
+        "name": "txn: cross-atom 1000 selectors, set + read",
+        "valdres": 769082,
+        "jotai": 3088726,
+        "ratio": 0.2482,
+        "threshold": 2,
+        "cv": 0.1588
+      },
+      {
+        "name": "txn: cross-atom 1000 selectors, with subs",
+        "valdres": 1497399,
+        "jotai": 19252167,
+        "ratio": 0.0679,
+        "threshold": 2,
+        "cv": 0.1587
+      }
+    ]
+  },
+  {
+    "date": "2026-05-22T14:52:29.517Z",
+    "benchmarks": [
+      {
+        "name": "atom(1)",
+        "valdres": 13,
+        "jotai": 81,
+        "ratio": 0.1468,
+        "threshold": 2,
+        "cv": 0.3544
+      },
+      {
+        "name": "store.get(atom)",
+        "valdres": 13,
+        "jotai": 353,
+        "ratio": 0.0365,
+        "threshold": 1.5,
+        "cv": 0.0155
+      },
+      {
+        "name": "set(atom, value)",
+        "valdres": 312,
+        "jotai": 4201,
+        "ratio": 0.0736,
+        "threshold": 2,
+        "cv": 0.099
+      },
+      {
+        "name": "set(atom, curr => curr+1)",
+        "valdres": 331,
+        "jotai": 5237,
+        "ratio": 0.0605,
+        "threshold": 2,
+        "cv": 0.3469
+      },
+      {
+        "name": "set(atom) with 10 subs",
+        "valdres": 423,
+        "jotai": 6120,
+        "ratio": 0.0702,
+        "threshold": 2,
+        "cv": 0.1394
+      },
+      {
+        "name": "atom lifecycle (create+100get+100set)",
+        "valdres": 29264,
+        "jotai": 499186,
+        "ratio": 0.0583,
+        "threshold": 2,
+        "cv": 0.2724
+      },
+      {
+        "name": "atomFamily(id)",
+        "valdres": 409,
+        "jotai": 550,
+        "ratio": 0.7474,
+        "threshold": 10,
+        "cv": 0.2175
+      },
+      {
+        "name": "atomFamily(id) cache hit",
+        "valdres": 31,
+        "jotai": 12,
+        "ratio": 2.6365,
+        "threshold": 8,
+        "cv": 0.0257
+      },
+      {
+        "name": "selectorFamily(id)",
+        "valdres": 383,
+        "jotai": 494,
+        "ratio": 0.7867,
+        "threshold": 10,
+        "cv": 0.3067
+      },
+      {
+        "name": "selector(fn)",
+        "valdres": 10,
+        "jotai": 73,
+        "ratio": 0.1299,
+        "threshold": 2,
+        "cv": 0.2929
+      },
+      {
+        "name": "set + read 10 selectors",
+        "valdres": 10636,
+        "jotai": 56485,
+        "ratio": 0.1782,
+        "threshold": 2,
+        "cv": 0.341
+      },
+      {
+        "name": "set + read 100 selectors",
+        "valdres": 56269,
+        "jotai": 211641,
+        "ratio": 0.2599,
+        "threshold": 2,
+        "cv": 0.0906
+      },
+      {
+        "name": "set + read through 5 chained selectors",
+        "valdres": 5648,
+        "jotai": 11392,
+        "ratio": 0.495,
+        "threshold": 2,
+        "cv": 0.0932
+      },
+      {
+        "name": "createStore",
+        "valdres": 278,
+        "jotai": 6135,
+        "ratio": 0.0451,
+        "threshold": 50,
+        "cv": 0.2044
+      },
+      {
+        "name": "set 1000 atoms",
+        "valdres": 103064,
+        "jotai": 924071,
+        "ratio": 0.1116,
+        "threshold": 2,
+        "cv": 0.0494
+      },
+      {
+        "name": "get 1000 atoms",
+        "valdres": 8172,
+        "jotai": 375987,
+        "ratio": 0.022,
+        "threshold": 1.5,
+        "cv": 0.0556
+      },
+      {
+        "name": "sub + unsub",
+        "valdres": 1356,
+        "jotai": 4107,
+        "ratio": 0.3146,
+        "threshold": 15,
+        "cv": 0.3664
+      },
+      {
+        "name": "txn: 10 atoms × 10 selectors, set + read",
+        "valdres": 72498,
+        "jotai": 292657,
+        "ratio": 0.2428,
+        "threshold": 2,
+        "cv": 0.3427
+      },
+      {
+        "name": "txn: 10 atoms × 10 selectors, with subs",
+        "valdres": 207019,
+        "jotai": 639475,
+        "ratio": 0.239,
+        "threshold": 2,
+        "cv": 0.3037
+      },
+      {
+        "name": "txn: 10 atoms × 100 selectors, set + read",
+        "valdres": 993203,
+        "jotai": 2990376,
+        "ratio": 0.3264,
+        "threshold": 2,
+        "cv": 0.0385
+      },
+      {
+        "name": "txn: cross-atom 1000 selectors, set + read",
+        "valdres": 773736,
+        "jotai": 3144656,
+        "ratio": 0.2469,
+        "threshold": 2,
+        "cv": 0.0464
+      },
+      {
+        "name": "txn: cross-atom 1000 selectors, with subs",
+        "valdres": 1827289,
+        "jotai": 22580471,
+        "ratio": 0.0943,
+        "threshold": 2,
+        "cv": 0.2276
+      }
+    ]
+  },
+  {
+    "date": "2026-05-22T14:55:57.225Z",
+    "benchmarks": [
+      {
+        "name": "atom(1)",
+        "valdres": 8,
+        "jotai": 89,
+        "ratio": 0.0934,
+        "threshold": 2,
+        "cv": 0.3763
+      },
+      {
+        "name": "store.get(atom)",
+        "valdres": 12,
+        "jotai": 322,
+        "ratio": 0.0385,
+        "threshold": 1.5,
+        "cv": 0.0299
+      },
+      {
+        "name": "set(atom, value)",
+        "valdres": 343,
+        "jotai": 4113,
+        "ratio": 0.0799,
+        "threshold": 2,
+        "cv": 0.3268
+      },
+      {
+        "name": "set(atom, curr => curr+1)",
+        "valdres": 406,
+        "jotai": 5746,
+        "ratio": 0.073,
+        "threshold": 2,
+        "cv": 0.343
+      },
+      {
+        "name": "set(atom) with 10 subs",
+        "valdres": 301,
+        "jotai": 4271,
+        "ratio": 0.0755,
+        "threshold": 2,
+        "cv": 0.3811
+      },
+      {
+        "name": "atom lifecycle (create+100get+100set)",
+        "valdres": 16440,
+        "jotai": 276999,
+        "ratio": 0.0596,
+        "threshold": 2,
+        "cv": 0.0474
+      },
+      {
+        "name": "atomFamily(id)",
+        "valdres": 303,
+        "jotai": 403,
+        "ratio": 0.7402,
+        "threshold": 10,
+        "cv": 0.1391
+      },
+      {
+        "name": "atomFamily(id) cache hit",
+        "valdres": 31,
+        "jotai": 12,
+        "ratio": 2.5672,
+        "threshold": 8,
+        "cv": 0.0738
+      },
+      {
+        "name": "selectorFamily(id)",
+        "valdres": 281,
+        "jotai": 391,
+        "ratio": 0.7237,
+        "threshold": 10,
+        "cv": 0.2814
+      },
+      {
+        "name": "selector(fn)",
+        "valdres": 10,
+        "jotai": 81,
+        "ratio": 0.1378,
+        "threshold": 2,
+        "cv": 0.3193
+      },
+      {
+        "name": "set + read 10 selectors",
+        "valdres": 11297,
+        "jotai": 40034,
+        "ratio": 0.2751,
+        "threshold": 2,
+        "cv": 0.3872
+      },
+      {
+        "name": "set + read 100 selectors",
+        "valdres": 58829,
+        "jotai": 226024,
+        "ratio": 0.2617,
+        "threshold": 2,
+        "cv": 0.0617
+      },
+      {
+        "name": "set + read through 5 chained selectors",
+        "valdres": 5275,
+        "jotai": 12480,
+        "ratio": 0.418,
+        "threshold": 2,
+        "cv": 0.0687
+      },
+      {
+        "name": "createStore",
+        "valdres": 293,
+        "jotai": 6556,
+        "ratio": 0.0449,
+        "threshold": 50,
+        "cv": 0.1794
+      },
+      {
+        "name": "set 1000 atoms",
+        "valdres": 96808,
+        "jotai": 948925,
+        "ratio": 0.1024,
+        "threshold": 2,
+        "cv": 0.0215
+      },
+      {
+        "name": "get 1000 atoms",
+        "valdres": 8091,
+        "jotai": 337730,
+        "ratio": 0.0239,
+        "threshold": 1.5,
+        "cv": 0.0195
+      },
+      {
+        "name": "sub + unsub",
+        "valdres": 1042,
+        "jotai": 3280,
+        "ratio": 0.2865,
+        "threshold": 15,
+        "cv": 0.3751
+      },
+      {
+        "name": "txn: 10 atoms × 10 selectors, set + read",
+        "valdres": 69202,
+        "jotai": 255957,
+        "ratio": 0.2703,
+        "threshold": 2,
+        "cv": 0.0613
+      },
+      {
+        "name": "txn: 10 atoms × 10 selectors, with subs",
+        "valdres": 107527,
+        "jotai": 461889,
+        "ratio": 0.2317,
+        "threshold": 2,
+        "cv": 0.0714
+      },
+      {
+        "name": "txn: 10 atoms × 100 selectors, set + read",
+        "valdres": 795742,
+        "jotai": 2933746,
+        "ratio": 0.2861,
+        "threshold": 2,
+        "cv": 0.1538
+      },
+      {
+        "name": "txn: cross-atom 1000 selectors, set + read",
+        "valdres": 790835,
+        "jotai": 3385234,
+        "ratio": 0.2407,
+        "threshold": 2,
+        "cv": 0.0667
+      },
+      {
+        "name": "txn: cross-atom 1000 selectors, with subs",
+        "valdres": 1689467,
+        "jotai": 17898672,
+        "ratio": 0.0818,
+        "threshold": 2,
+        "cv": 0.1381
+      }
+    ]
+  },
+  {
+    "date": "2026-05-22T17:00:02.087Z",
+    "benchmarks": [
+      {
+        "name": "atom(1)",
+        "valdres": 8,
+        "jotai": 70,
+        "ratio": 0.1077,
+        "threshold": 2,
+        "cv": 0.2699
+      },
+      {
+        "name": "store.get(atom)",
+        "valdres": 25,
+        "jotai": 740,
+        "ratio": 0.0333,
+        "threshold": 1.5,
+        "cv": 0.0661
+      },
+      {
+        "name": "set(atom, value)",
+        "valdres": 196,
+        "jotai": 2688,
+        "ratio": 0.0795,
+        "threshold": 2,
+        "cv": 0.3738
+      },
+      {
+        "name": "set(atom, curr => curr+1)",
+        "valdres": 397,
+        "jotai": 5427,
+        "ratio": 0.0703,
+        "threshold": 2,
+        "cv": 0.2095
+      },
+      {
+        "name": "set(atom) with 10 subs",
+        "valdres": 486,
+        "jotai": 5796,
+        "ratio": 0.0809,
+        "threshold": 2,
+        "cv": 0.3331
+      },
+      {
+        "name": "atom lifecycle (create+100get+100set)",
+        "valdres": 15767,
+        "jotai": 272097,
+        "ratio": 0.0576,
+        "threshold": 2,
+        "cv": 0.0461
+      },
+      {
+        "name": "atomFamily(id)",
+        "valdres": 307,
+        "jotai": 394,
+        "ratio": 0.7419,
+        "threshold": 10,
+        "cv": 0.1624
+      },
+      {
+        "name": "atomFamily(id) cache hit",
+        "valdres": 31,
+        "jotai": 11,
+        "ratio": 2.6712,
+        "threshold": 8,
+        "cv": 0.0734
+      },
+      {
+        "name": "selectorFamily(id)",
+        "valdres": 311,
+        "jotai": 389,
+        "ratio": 0.7407,
+        "threshold": 10,
+        "cv": 0.2865
+      },
+      {
+        "name": "selector(fn)",
+        "valdres": 11,
+        "jotai": 83,
+        "ratio": 0.1384,
+        "threshold": 2,
+        "cv": 0.326
+      },
+      {
+        "name": "set + read 10 selectors",
+        "valdres": 8618,
+        "jotai": 25946,
+        "ratio": 0.3396,
+        "threshold": 2,
+        "cv": 0.3884
+      },
+      {
+        "name": "set + read 100 selectors",
+        "valdres": 62555,
+        "jotai": 229761,
+        "ratio": 0.2785,
+        "threshold": 2,
+        "cv": 0.054
+      },
+      {
+        "name": "set + read through 5 chained selectors",
+        "valdres": 5137,
+        "jotai": 12565,
+        "ratio": 0.4061,
+        "threshold": 2,
+        "cv": 0.0667
+      },
+      {
+        "name": "createStore",
+        "valdres": 513,
+        "jotai": 6973,
+        "ratio": 0.0732,
+        "threshold": 50,
+        "cv": 0.3908
+      },
+      {
+        "name": "set 1000 atoms",
+        "valdres": 80477,
+        "jotai": 942192,
+        "ratio": 0.0851,
+        "threshold": 2,
+        "cv": 0.0257
+      },
+      {
+        "name": "get 1000 atoms",
+        "valdres": 7883,
+        "jotai": 330950,
+        "ratio": 0.0239,
+        "threshold": 1.5,
+        "cv": 0.0191
+      },
+      {
+        "name": "sub + unsub",
+        "valdres": 1240,
+        "jotai": 3510,
+        "ratio": 0.3246,
+        "threshold": 15,
+        "cv": 0.3115
+      },
+      {
+        "name": "txn: 10 atoms × 10 selectors, set + read",
+        "valdres": 70518,
+        "jotai": 262296,
+        "ratio": 0.2725,
+        "threshold": 2,
+        "cv": 0.0596
+      },
+      {
+        "name": "txn: 10 atoms × 10 selectors, with subs",
+        "valdres": 129522,
+        "jotai": 494782,
+        "ratio": 0.2403,
+        "threshold": 2,
+        "cv": 0.3303
+      },
+      {
+        "name": "txn: 10 atoms × 100 selectors, set + read",
+        "valdres": 809401,
+        "jotai": 3046629,
+        "ratio": 0.281,
+        "threshold": 2,
+        "cv": 0.1289
+      },
+      {
+        "name": "txn: cross-atom 1000 selectors, set + read",
+        "valdres": 834779,
+        "jotai": 3506002,
+        "ratio": 0.2438,
+        "threshold": 2,
+        "cv": 0.0403
+      },
+      {
+        "name": "txn: cross-atom 1000 selectors, with subs",
+        "valdres": 1505130,
+        "jotai": 17786621,
+        "ratio": 0.0766,
+        "threshold": 2,
+        "cv": 0.1392
+      }
+    ]
+  },
+  {
+    "date": "2026-05-22T20:07:54.054Z",
+    "benchmarks": [
+      {
+        "name": "atom(1)",
+        "valdres": 4,
+        "jotai": 58,
+        "ratio": 0.0845,
+        "threshold": 2,
+        "cv": 0.5741
+      },
+      {
+        "name": "store.get(atom)",
+        "valdres": 13,
+        "jotai": 342,
+        "ratio": 0.0377,
+        "threshold": 1.5,
+        "cv": 0.0131
+      },
+      {
+        "name": "set(atom, value)",
+        "valdres": 305,
+        "jotai": 4211,
+        "ratio": 0.0741,
+        "threshold": 2,
+        "cv": 0.379
+      },
+      {
+        "name": "set(atom, curr => curr+1)",
+        "valdres": 402,
+        "jotai": 5700,
+        "ratio": 0.0676,
+        "threshold": 2,
+        "cv": 0.2841
+      },
+      {
+        "name": "set(atom) with 10 subs",
+        "valdres": 327,
+        "jotai": 5978,
+        "ratio": 0.0619,
+        "threshold": 2,
+        "cv": 0.3949
+      },
+      {
+        "name": "atom lifecycle (create+100get+100set)",
+        "valdres": 16471,
+        "jotai": 262970,
+        "ratio": 0.063,
+        "threshold": 2,
+        "cv": 0.0544
+      },
+      {
+        "name": "atomFamily(id)",
+        "valdres": 339,
+        "jotai": 504,
+        "ratio": 0.7203,
+        "threshold": 10,
+        "cv": 0.2767
+      },
+      {
+        "name": "atomFamily(id) cache hit",
+        "valdres": 28,
+        "jotai": 11,
+        "ratio": 2.4611,
+        "threshold": 8,
+        "cv": 0.0686
+      },
+      {
+        "name": "selectorFamily(id)",
+        "valdres": 304,
+        "jotai": 402,
+        "ratio": 0.7268,
+        "threshold": 10,
+        "cv": 0.2979
+      },
+      {
+        "name": "selector(fn)",
+        "valdres": 7,
+        "jotai": 66,
+        "ratio": 0.0985,
+        "threshold": 2,
+        "cv": 0.3509
+      },
+      {
+        "name": "set + read 10 selectors",
+        "valdres": 7344,
+        "jotai": 27492,
+        "ratio": 0.2727,
+        "threshold": 2,
+        "cv": 0.399
+      },
+      {
+        "name": "set + read 100 selectors",
+        "valdres": 62086,
+        "jotai": 245919,
+        "ratio": 0.2512,
+        "threshold": 2,
+        "cv": 0.152
+      },
+      {
+        "name": "set + read through 5 chained selectors",
+        "valdres": 5821,
+        "jotai": 13225,
+        "ratio": 0.4379,
+        "threshold": 2,
+        "cv": 0.1354
+      },
+      {
+        "name": "createStore",
+        "valdres": 229,
+        "jotai": 5959,
+        "ratio": 0.0378,
+        "threshold": 50,
+        "cv": 0.1959
+      },
+      {
+        "name": "set 1000 atoms",
+        "valdres": 104715,
+        "jotai": 918153,
+        "ratio": 0.1143,
+        "threshold": 2,
+        "cv": 0.0228
+      },
+      {
+        "name": "get 1000 atoms",
+        "valdres": 8681,
+        "jotai": 403983,
+        "ratio": 0.0191,
+        "threshold": 1.5,
+        "cv": 0.1504
+      },
+      {
+        "name": "sub + unsub",
+        "valdres": 1065,
+        "jotai": 3861,
+        "ratio": 0.232,
+        "threshold": 15,
+        "cv": 0.3602
+      },
+      {
+        "name": "txn: 10 atoms × 10 selectors, set + read",
+        "valdres": 74960,
+        "jotai": 259709,
+        "ratio": 0.2899,
+        "threshold": 2,
+        "cv": 0.1104
+      },
+      {
+        "name": "txn: 10 atoms × 10 selectors, with subs",
+        "valdres": 130844,
+        "jotai": 532719,
+        "ratio": 0.243,
+        "threshold": 2,
+        "cv": 0.3564
+      },
+      {
+        "name": "txn: 10 atoms × 100 selectors, set + read",
+        "valdres": 869461,
+        "jotai": 3368286,
+        "ratio": 0.2595,
+        "threshold": 2,
+        "cv": 0.0136
+      },
+      {
+        "name": "txn: cross-atom 1000 selectors, set + read",
+        "valdres": 841896,
+        "jotai": 3610514,
+        "ratio": 0.2376,
+        "threshold": 2,
+        "cv": 0.105
+      },
+      {
+        "name": "txn: cross-atom 1000 selectors, with subs",
+        "valdres": 1366343,
+        "jotai": 18411976,
+        "ratio": 0.0753,
+        "threshold": 2,
+        "cv": 0.0631
+      }
+    ]
+  },
+  {
+    "date": "2026-05-22T22:24:26.817Z",
+    "benchmarks": [
+      {
+        "name": "atom(1)",
+        "valdres": 6,
+        "jotai": 60,
+        "ratio": 0.0961,
+        "threshold": 2,
+        "cv": 0.6303
+      },
+      {
+        "name": "store.get(atom)",
+        "valdres": 13,
+        "jotai": 340,
+        "ratio": 0.0371,
+        "threshold": 1.5,
+        "cv": 0.0035
+      },
+      {
+        "name": "set(atom, value)",
+        "valdres": 292,
+        "jotai": 4690,
+        "ratio": 0.0604,
+        "threshold": 2,
+        "cv": 0.1104
+      },
+      {
+        "name": "set(atom, curr => curr+1)",
+        "valdres": 128,
+        "jotai": 2765,
+        "ratio": 0.0463,
+        "threshold": 2,
+        "cv": 0.0909
+      },
+      {
+        "name": "set(atom) with 10 subs",
+        "valdres": 215,
+        "jotai": 3439,
+        "ratio": 0.0618,
+        "threshold": 2,
+        "cv": 0.3888
+      },
+      {
+        "name": "atom lifecycle (create+100get+100set)",
+        "valdres": 12960,
+        "jotai": 272520,
+        "ratio": 0.0473,
+        "threshold": 2,
+        "cv": 0.0819
+      },
+      {
+        "name": "atomFamily(id)",
+        "valdres": 272,
+        "jotai": 386,
+        "ratio": 0.6927,
+        "threshold": 10,
+        "cv": 0.1824
+      },
+      {
+        "name": "atomFamily(id) cache hit",
+        "valdres": 29,
+        "jotai": 11,
+        "ratio": 2.5232,
+        "threshold": 8,
+        "cv": 0.0777
+      },
+      {
+        "name": "selectorFamily(id)",
+        "valdres": 311,
+        "jotai": 411,
+        "ratio": 0.7554,
+        "threshold": 10,
+        "cv": 0.328
+      },
+      {
+        "name": "selector(fn)",
+        "valdres": 6,
+        "jotai": 62,
+        "ratio": 0.1031,
+        "threshold": 2,
+        "cv": 0.45
+      },
+      {
+        "name": "set + read 10 selectors",
+        "valdres": 7063,
+        "jotai": 38823,
+        "ratio": 0.1926,
+        "threshold": 2,
+        "cv": 0.134
+      },
+      {
+        "name": "set + read 100 selectors",
+        "valdres": 65137,
+        "jotai": 271338,
+        "ratio": 0.2359,
+        "threshold": 2,
+        "cv": 0.0494
+      },
+      {
+        "name": "sub+unsub on chain of 50 unsubscribed derived deps",
+        "valdres": 86632,
+        "jotai": 118432,
+        "ratio": 0.6977,
+        "threshold": 2,
+        "cv": 0.2558
+      },
+      {
+        "name": "sub+unsub on chain of 100 unsubscribed derived deps",
+        "valdres": 194835,
+        "jotai": 226745,
+        "ratio": 0.8524,
+        "threshold": 2,
+        "cv": 0.2855
+      },
+      {
+        "name": "sub+unsub on chain of 500 unsubscribed derived deps",
+        "valdres": 736899,
+        "jotai": 678003,
+        "ratio": 0.8701,
+        "threshold": 2,
+        "cv": 0.2802
+      },
+      {
+        "name": "set + read through 5 chained selectors",
+        "valdres": 6984,
+        "jotai": 20431,
+        "ratio": 0.3477,
+        "threshold": 2,
+        "cv": 0.2397
+      },
+      {
+        "name": "createStore",
+        "valdres": 232,
+        "jotai": 5961,
+        "ratio": 0.0386,
+        "threshold": 50,
+        "cv": 0.1734
+      },
+      {
+        "name": "set 1000 atoms",
+        "valdres": 82575,
+        "jotai": 961795,
+        "ratio": 0.0857,
+        "threshold": 2,
+        "cv": 0.0141
+      },
+      {
+        "name": "get 1000 atoms",
+        "valdres": 8461,
+        "jotai": 358104,
+        "ratio": 0.0237,
+        "threshold": 1.5,
+        "cv": 0.0651
+      },
+      {
+        "name": "sub + unsub",
+        "valdres": 1278,
+        "jotai": 3629,
+        "ratio": 0.3496,
+        "threshold": 15,
+        "cv": 0.1865
+      },
+      {
+        "name": "txn: 10 atoms × 10 selectors, set + read",
+        "valdres": 73843,
+        "jotai": 394128,
+        "ratio": 0.1878,
+        "threshold": 2,
+        "cv": 0.1223
+      },
+      {
+        "name": "txn: 10 atoms × 10 selectors, with subs",
+        "valdres": 119544,
+        "jotai": 624458,
+        "ratio": 0.1919,
+        "threshold": 2,
+        "cv": 0.0764
+      },
+      {
+        "name": "txn: 10 atoms × 100 selectors, set + read",
+        "valdres": 904682,
+        "jotai": 3694587,
+        "ratio": 0.2452,
+        "threshold": 2,
+        "cv": 0.1098
+      },
+      {
+        "name": "txn: cross-atom 1000 selectors, set + read",
+        "valdres": 886333,
+        "jotai": 3828151,
+        "ratio": 0.2284,
+        "threshold": 2,
+        "cv": 0.1337
+      },
+      {
+        "name": "txn: cross-atom 1000 selectors, with subs",
+        "valdres": 1462475,
+        "jotai": 23068501,
+        "ratio": 0.0674,
+        "threshold": 2,
+        "cv": 0.1337
+      }
+    ]
+  },
+  {
+    "date": "2026-05-22T22:33:09.756Z",
+    "benchmarks": [
+      {
+        "name": "atom(1)",
+        "valdres": 6,
+        "jotai": 58,
+        "ratio": 0.1057,
+        "threshold": 2,
+        "cv": 0.2982
+      },
+      {
+        "name": "store.get(atom)",
+        "valdres": 13,
+        "jotai": 341,
+        "ratio": 0.0379,
+        "threshold": 1.5,
+        "cv": 0.0143
+      },
+      {
+        "name": "set(atom, value)",
+        "valdres": 155,
+        "jotai": 2733,
+        "ratio": 0.0617,
+        "threshold": 2,
+        "cv": 0.3797
+      },
+      {
+        "name": "set(atom, curr => curr+1)",
+        "valdres": 247,
+        "jotai": 5585,
+        "ratio": 0.0448,
+        "threshold": 2,
+        "cv": 0.3322
+      },
+      {
+        "name": "set(atom) with 10 subs",
+        "valdres": 211,
+        "jotai": 3686,
+        "ratio": 0.0588,
+        "threshold": 2,
+        "cv": 0.3646
+      },
+      {
+        "name": "atom lifecycle (create+100get+100set)",
+        "valdres": 12378,
+        "jotai": 268900,
+        "ratio": 0.0464,
+        "threshold": 2,
+        "cv": 0.0432
+      },
+      {
+        "name": "atomFamily(id)",
+        "valdres": 338,
+        "jotai": 461,
+        "ratio": 0.7236,
+        "threshold": 10,
+        "cv": 0.1178
+      },
+      {
+        "name": "atomFamily(id) cache hit",
+        "valdres": 30,
+        "jotai": 12,
+        "ratio": 2.5202,
+        "threshold": 8,
+        "cv": 0.4313
+      },
+      {
+        "name": "selectorFamily(id)",
+        "valdres": 301,
+        "jotai": 399,
+        "ratio": 0.7731,
+        "threshold": 10,
+        "cv": 0.2738
+      },
+      {
+        "name": "selector(fn)",
+        "valdres": 6,
+        "jotai": 62,
+        "ratio": 0.1096,
+        "threshold": 2,
+        "cv": 0.4595
+      },
+      {
+        "name": "set + read 10 selectors",
+        "valdres": 8766,
+        "jotai": 40010,
+        "ratio": 0.2344,
+        "threshold": 2,
+        "cv": 0.1368
+      },
+      {
+        "name": "set + read 100 selectors",
+        "valdres": 66815,
+        "jotai": 384400,
+        "ratio": 0.1828,
+        "threshold": 2,
+        "cv": 0.0548
+      },
+      {
+        "name": "sub+unsub on chain of 50 unsubscribed derived deps",
+        "valdres": 72325,
+        "jotai": 114574,
+        "ratio": 0.63,
+        "threshold": 2,
+        "cv": 0.0758
+      },
+      {
+        "name": "sub+unsub on chain of 100 unsubscribed derived deps",
+        "valdres": 149012,
+        "jotai": 165167,
+        "ratio": 0.8343,
+        "threshold": 2,
+        "cv": 0.2896
+      },
+      {
+        "name": "sub+unsub on chain of 500 unsubscribed derived deps",
+        "valdres": 978776,
+        "jotai": 1128841,
+        "ratio": 0.8774,
+        "threshold": 2,
+        "cv": 0.2616
+      },
+      {
+        "name": "set + read through 5 chained selectors",
+        "valdres": 7023,
+        "jotai": 19016,
+        "ratio": 0.3667,
+        "threshold": 2,
+        "cv": 0.083
+      },
+      {
+        "name": "createStore",
+        "valdres": 230,
+        "jotai": 5998,
+        "ratio": 0.038,
+        "threshold": 50,
+        "cv": 0.1922
+      },
+      {
+        "name": "set 1000 atoms",
+        "valdres": 104184,
+        "jotai": 998894,
+        "ratio": 0.106,
+        "threshold": 2,
+        "cv": 0.0159
+      },
+      {
+        "name": "get 1000 atoms",
+        "valdres": 8090,
+        "jotai": 359144,
+        "ratio": 0.0226,
+        "threshold": 1.5,
+        "cv": 0.0677
+      },
+      {
+        "name": "sub + unsub",
+        "valdres": 1308,
+        "jotai": 3736,
+        "ratio": 0.3453,
+        "threshold": 15,
+        "cv": 0.1745
+      },
+      {
+        "name": "txn: 10 atoms × 10 selectors, set + read",
+        "valdres": 76372,
+        "jotai": 394925,
+        "ratio": 0.1982,
+        "threshold": 2,
+        "cv": 0.1188
+      },
+      {
+        "name": "txn: 10 atoms × 10 selectors, with subs",
+        "valdres": 140277,
+        "jotai": 665288,
+        "ratio": 0.2081,
+        "threshold": 2,
+        "cv": 0.3325
+      },
+      {
+        "name": "txn: 10 atoms × 100 selectors, set + read",
+        "valdres": 943441,
+        "jotai": 3757342,
+        "ratio": 0.2488,
+        "threshold": 2,
+        "cv": 0.1107
+      },
+      {
+        "name": "txn: cross-atom 1000 selectors, set + read",
+        "valdres": 861914,
+        "jotai": 3781782,
+        "ratio": 0.2288,
+        "threshold": 2,
+        "cv": 0.0304
+      },
+      {
+        "name": "txn: cross-atom 1000 selectors, with subs",
+        "valdres": 1632844,
+        "jotai": 22328924,
+        "ratio": 0.0699,
+        "threshold": 2,
+        "cv": 0.1535
+      }
+    ]
+  },
+  {
+    "date": "2026-05-22T23:49:18.267Z",
+    "benchmarks": [
+      {
+        "name": "atom(1)",
+        "valdres": 4,
+        "jotai": 58,
+        "ratio": 0.09,
+        "threshold": 2,
+        "cv": 0.6429
+      },
+      {
+        "name": "store.get(atom)",
+        "valdres": 13,
+        "jotai": 340,
+        "ratio": 0.0379,
+        "threshold": 1.5,
+        "cv": 0.0136
+      },
+      {
+        "name": "set(atom, value)",
+        "valdres": 247,
+        "jotai": 4748,
+        "ratio": 0.0505,
+        "threshold": 2,
+        "cv": 0.1251
+      },
+      {
+        "name": "set(atom, curr => curr+1)",
+        "valdres": 105,
+        "jotai": 2870,
+        "ratio": 0.0369,
+        "threshold": 2,
+        "cv": 0.1407
+      },
+      {
+        "name": "set(atom) with 10 subs",
+        "valdres": 409,
+        "jotai": 6506,
+        "ratio": 0.0636,
+        "threshold": 2,
+        "cv": 0.3337
+      },
+      {
+        "name": "atom lifecycle (create+100get+100set)",
+        "valdres": 11136,
+        "jotai": 274232,
+        "ratio": 0.0406,
+        "threshold": 2,
+        "cv": 0.0481
+      },
+      {
+        "name": "atomFamily(id)",
+        "valdres": 277,
+        "jotai": 383,
+        "ratio": 0.7132,
+        "threshold": 10,
+        "cv": 0.1715
+      },
+      {
+        "name": "atomFamily(id) cache hit",
+        "valdres": 29,
+        "jotai": 11,
+        "ratio": 2.4701,
+        "threshold": 8,
+        "cv": 0.0708
+      },
+      {
+        "name": "selectorFamily(id)",
+        "valdres": 268,
+        "jotai": 376,
+        "ratio": 0.7661,
+        "threshold": 10,
+        "cv": 0.3274
+      },
+      {
+        "name": "selector(fn)",
+        "valdres": 7,
+        "jotai": 65,
+        "ratio": 0.1162,
+        "threshold": 2,
+        "cv": 0.448
+      },
+      {
+        "name": "set + read 10 selectors",
+        "valdres": 7985,
+        "jotai": 41858,
+        "ratio": 0.2015,
+        "threshold": 2,
+        "cv": 0.3926
+      },
+      {
+        "name": "set + read 100 selectors",
+        "valdres": 66374,
+        "jotai": 384536,
+        "ratio": 0.1759,
+        "threshold": 2,
+        "cv": 0.0373
+      },
+      {
+        "name": "sub+unsub on chain of 50 unsubscribed derived deps",
+        "valdres": 85906,
+        "jotai": 121416,
+        "ratio": 0.6977,
+        "threshold": 2,
+        "cv": 0.2548
+      },
+      {
+        "name": "sub+unsub on chain of 100 unsubscribed derived deps",
+        "valdres": 125174,
+        "jotai": 151822,
+        "ratio": 0.8373,
+        "threshold": 2,
+        "cv": 0.3198
+      },
+      {
+        "name": "sub+unsub on chain of 500 unsubscribed derived deps",
+        "valdres": 765421,
+        "jotai": 1126064,
+        "ratio": 0.8519,
+        "threshold": 2,
+        "cv": 0.2735
+      },
+      {
+        "name": "set + read through 5 chained selectors",
+        "valdres": 6838,
+        "jotai": 18525,
+        "ratio": 0.3681,
+        "threshold": 2,
+        "cv": 0.0826
+      },
+      {
+        "name": "createStore",
+        "valdres": 278,
+        "jotai": 6053,
+        "ratio": 0.0458,
+        "threshold": 50,
+        "cv": 0.1762
+      },
+      {
+        "name": "set 1000 atoms",
+        "valdres": 82563,
+        "jotai": 948398,
+        "ratio": 0.0858,
+        "threshold": 2,
+        "cv": 0.0145
+      },
+      {
+        "name": "get 1000 atoms",
+        "valdres": 7779,
+        "jotai": 356314,
+        "ratio": 0.0219,
+        "threshold": 1.5,
+        "cv": 0.0603
+      },
+      {
+        "name": "sub + unsub",
+        "valdres": 1312,
+        "jotai": 3751,
+        "ratio": 0.3432,
+        "threshold": 15,
+        "cv": 0.1878
+      },
+      {
+        "name": "txn: 10 atoms × 10 selectors, set + read",
+        "valdres": 74124,
+        "jotai": 342819,
+        "ratio": 0.2207,
+        "threshold": 2,
+        "cv": 0.1458
+      },
+      {
+        "name": "txn: 10 atoms × 10 selectors, with subs",
+        "valdres": 132016,
+        "jotai": 569181,
+        "ratio": 0.2234,
+        "threshold": 2,
+        "cv": 0.1029
+      },
+      {
+        "name": "txn: 10 atoms × 100 selectors, set + read",
+        "valdres": 929337,
+        "jotai": 3715946,
+        "ratio": 0.2454,
+        "threshold": 2,
+        "cv": 0.1382
+      },
+      {
+        "name": "txn: cross-atom 1000 selectors, set + read",
+        "valdres": 841318,
+        "jotai": 3852559,
+        "ratio": 0.2144,
+        "threshold": 2,
+        "cv": 0.0251
+      },
+      {
+        "name": "txn: cross-atom 1000 selectors, with subs",
+        "valdres": 1459340,
+        "jotai": 22929673,
+        "ratio": 0.0643,
+        "threshold": 2,
+        "cv": 0.1009
+      }
+    ]
+  },
+  {
+    "date": "2026-05-22T23:50:26.347Z",
+    "benchmarks": [
+      {
+        "name": "atom(1)",
+        "valdres": 5,
+        "jotai": 47,
+        "ratio": 0.1035,
+        "threshold": 2,
+        "cv": 0.4505
+      },
+      {
+        "name": "store.get(atom)",
+        "valdres": 10,
+        "jotai": 274,
+        "ratio": 0.0363,
+        "threshold": 1.5,
+        "cv": 0.0321
+      },
+      {
+        "name": "set(atom, value)",
+        "valdres": 169,
+        "jotai": 3354,
+        "ratio": 0.0482,
+        "threshold": 2,
+        "cv": 0.2207
+      },
+      {
+        "name": "set(atom, curr => curr+1)",
+        "valdres": 152,
+        "jotai": 4042,
+        "ratio": 0.038,
+        "threshold": 2,
+        "cv": 0.0864
+      },
+      {
+        "name": "set(atom) with 10 subs",
+        "valdres": 120,
+        "jotai": 2834,
+        "ratio": 0.0438,
+        "threshold": 2,
+        "cv": 0.3449
+      },
+      {
+        "name": "atom lifecycle (create+100get+100set)",
+        "valdres": 8964,
+        "jotai": 216772,
+        "ratio": 0.0407,
+        "threshold": 2,
+        "cv": 0.347
+      },
+      {
+        "name": "atomFamily(id)",
+        "valdres": 250,
+        "jotai": 357,
+        "ratio": 0.7026,
+        "threshold": 10,
+        "cv": 0.2256
+      },
+      {
+        "name": "atomFamily(id) cache hit",
+        "valdres": 23,
+        "jotai": 8,
+        "ratio": 2.7856,
+        "threshold": 8,
+        "cv": 0.2665
+      },
+      {
+        "name": "selectorFamily(id)",
+        "valdres": 249,
+        "jotai": 330,
+        "ratio": 0.7095,
+        "threshold": 10,
+        "cv": 0.3059
+      },
+      {
+        "name": "selector(fn)",
+        "valdres": 7,
+        "jotai": 53,
+        "ratio": 0.1349,
+        "threshold": 2,
+        "cv": 0.2464
+      },
+      {
+        "name": "set + read 10 selectors",
+        "valdres": 5701,
+        "jotai": 24837,
+        "ratio": 0.2235,
+        "threshold": 2,
+        "cv": 0.3405
+      },
+      {
+        "name": "set + read 100 selectors",
+        "valdres": 45929,
+        "jotai": 284869,
+        "ratio": 0.1608,
+        "threshold": 2,
+        "cv": 0.063
+      },
+      {
+        "name": "sub+unsub on chain of 50 unsubscribed derived deps",
+        "valdres": 52539,
+        "jotai": 60647,
+        "ratio": 0.8297,
+        "threshold": 2,
+        "cv": 0.3823
+      },
+      {
+        "name": "sub+unsub on chain of 100 unsubscribed derived deps",
+        "valdres": 106030,
+        "jotai": 117402,
+        "ratio": 0.9229,
+        "threshold": 2,
+        "cv": 0.3403
+      },
+      {
+        "name": "sub+unsub on chain of 500 unsubscribed derived deps",
+        "valdres": 437639,
+        "jotai": 460863,
+        "ratio": 0.9436,
+        "threshold": 2,
+        "cv": 0.0434
+      },
+      {
+        "name": "set + read through 5 chained selectors",
+        "valdres": 4253,
+        "jotai": 10719,
+        "ratio": 0.3962,
+        "threshold": 2,
+        "cv": 0.0841
+      },
+      {
+        "name": "createStore",
+        "valdres": 247,
+        "jotai": 4800,
+        "ratio": 0.0517,
+        "threshold": 50,
+        "cv": 0.1719
+      },
+      {
+        "name": "set 1000 atoms",
+        "valdres": 65208,
+        "jotai": 716058,
+        "ratio": 0.0902,
+        "threshold": 2,
+        "cv": 0.0438
+      },
+      {
+        "name": "get 1000 atoms",
+        "valdres": 6455,
+        "jotai": 323958,
+        "ratio": 0.0196,
+        "threshold": 1.5,
+        "cv": 0.19
+      },
+      {
+        "name": "sub + unsub",
+        "valdres": 1012,
+        "jotai": 3140,
+        "ratio": 0.2989,
+        "threshold": 15,
+        "cv": 0.4155
+      },
+      {
+        "name": "txn: 10 atoms × 10 selectors, set + read",
+        "valdres": 48212,
+        "jotai": 302871,
+        "ratio": 0.16,
+        "threshold": 2,
+        "cv": 0.0607
+      },
+      {
+        "name": "txn: 10 atoms × 10 selectors, with subs",
+        "valdres": 83606,
+        "jotai": 485030,
+        "ratio": 0.1726,
+        "threshold": 2,
+        "cv": 0.0785
+      },
+      {
+        "name": "txn: 10 atoms × 100 selectors, set + read",
+        "valdres": 690630,
+        "jotai": 2972378,
+        "ratio": 0.2293,
+        "threshold": 2,
+        "cv": 0.212
+      },
+      {
+        "name": "txn: cross-atom 1000 selectors, set + read",
+        "valdres": 628411,
+        "jotai": 4124215,
+        "ratio": 0.1959,
+        "threshold": 2,
+        "cv": 0.1439
+      },
+      {
+        "name": "txn: cross-atom 1000 selectors, with subs",
+        "valdres": 1208398,
+        "jotai": 20129133,
+        "ratio": 0.0591,
+        "threshold": 2,
+        "cv": 0.1622
+      }
+    ]
+  },
+  {
+    "date": "2026-05-27T09:12:37.779Z",
+    "benchmarks": [
+      {
+        "name": "atom(1)",
+        "valdres": 4,
+        "jotai": 56,
+        "ratio": 0.0913,
+        "threshold": 2,
+        "cv": 0.6503
+      },
+      {
+        "name": "store.get(atom)",
+        "valdres": 13,
+        "jotai": 372,
+        "ratio": 0.0352,
+        "threshold": 1.5,
+        "cv": 0.3722
+      },
+      {
+        "name": "set(atom, value)",
+        "valdres": 256,
+        "jotai": 4686,
+        "ratio": 0.0539,
+        "threshold": 2,
+        "cv": 0.1088
+      },
+      {
+        "name": "set(atom, curr => curr+1)",
+        "valdres": 110,
+        "jotai": 3045,
+        "ratio": 0.0382,
+        "threshold": 2,
+        "cv": 0.4135
+      },
+      {
+        "name": "set(atom) with 10 subs",
+        "valdres": 155,
+        "jotai": 3410,
+        "ratio": 0.0468,
+        "threshold": 2,
+        "cv": 0.2588
+      },
+      {
+        "name": "atom lifecycle (create+100get+100set)",
+        "valdres": 11171,
+        "jotai": 259168,
+        "ratio": 0.0428,
+        "threshold": 2,
+        "cv": 0.1041
+      },
+      {
+        "name": "atomFamily(id)",
+        "valdres": 289,
+        "jotai": 390,
+        "ratio": 0.7336,
+        "threshold": 10,
+        "cv": 0.1711
+      },
+      {
+        "name": "atomFamily(id) cache hit",
+        "valdres": 29,
+        "jotai": 11,
+        "ratio": 2.4805,
+        "threshold": 8,
+        "cv": 0.0682
+      },
+      {
+        "name": "selectorFamily(id)",
+        "valdres": 271,
+        "jotai": 370,
+        "ratio": 0.7258,
+        "threshold": 10,
+        "cv": 0.4059
+      },
+      {
+        "name": "selector(fn)",
+        "valdres": 6,
+        "jotai": 65,
+        "ratio": 0.0969,
+        "threshold": 2,
+        "cv": 0.3509
+      },
+      {
+        "name": "set + read 10 selectors",
+        "valdres": 6973,
+        "jotai": 38563,
+        "ratio": 0.1896,
+        "threshold": 2,
+        "cv": 0.1387
+      },
+      {
+        "name": "set + read 100 selectors",
+        "valdres": 66300,
+        "jotai": 360313,
+        "ratio": 0.2006,
+        "threshold": 2,
+        "cv": 0.1687
+      },
+      {
+        "name": "sub+unsub on chain of 50 unsubscribed derived deps",
+        "valdres": 69782,
+        "jotai": 113273,
+        "ratio": 0.6177,
+        "threshold": 2,
+        "cv": 0.0713
+      },
+      {
+        "name": "sub+unsub on chain of 100 unsubscribed derived deps",
+        "valdres": 136457,
+        "jotai": 166434,
+        "ratio": 0.8211,
+        "threshold": 2,
+        "cv": 0.2882
+      },
+      {
+        "name": "sub+unsub on chain of 500 unsubscribed derived deps",
+        "valdres": 633427,
+        "jotai": 667146,
+        "ratio": 0.8522,
+        "threshold": 2,
+        "cv": 0.289
+      },
+      {
+        "name": "set + read through 5 chained selectors",
+        "valdres": 6753,
+        "jotai": 18039,
+        "ratio": 0.3739,
+        "threshold": 2,
+        "cv": 0.1137
+      },
+      {
+        "name": "createStore",
+        "valdres": 278,
+        "jotai": 5905,
+        "ratio": 0.0464,
+        "threshold": 50,
+        "cv": 0.1997
+      },
+      {
+        "name": "set 1000 atoms",
+        "valdres": 82325,
+        "jotai": 953604,
+        "ratio": 0.0852,
+        "threshold": 2,
+        "cv": 0.0428
+      },
+      {
+        "name": "get 1000 atoms",
+        "valdres": 7930,
+        "jotai": 358405,
+        "ratio": 0.0224,
+        "threshold": 1.5,
+        "cv": 0.0744
+      },
+      {
+        "name": "sub + unsub",
+        "valdres": 1242,
+        "jotai": 3615,
+        "ratio": 0.3421,
+        "threshold": 15,
+        "cv": 0.1711
+      },
+      {
+        "name": "txn: 10 atoms × 10 selectors, set + read",
+        "valdres": 73529,
+        "jotai": 405463,
+        "ratio": 0.1855,
+        "threshold": 2,
+        "cv": 0.0798
+      },
+      {
+        "name": "txn: 10 atoms × 10 selectors, with subs",
+        "valdres": 140143,
+        "jotai": 661049,
+        "ratio": 0.2146,
+        "threshold": 2,
+        "cv": 0.3532
+      },
+      {
+        "name": "txn: 10 atoms × 100 selectors, set + read",
+        "valdres": 907136,
+        "jotai": 3675611,
+        "ratio": 0.2421,
+        "threshold": 2,
+        "cv": 0.1212
+      },
+      {
+        "name": "txn: cross-atom 1000 selectors, set + read",
+        "valdres": 853160,
+        "jotai": 3864912,
+        "ratio": 0.2197,
+        "threshold": 2,
+        "cv": 0.1505
+      },
+      {
+        "name": "txn: cross-atom 1000 selectors, with subs",
+        "valdres": 1428859,
+        "jotai": 22253296,
+        "ratio": 0.0645,
+        "threshold": 2,
+        "cv": 0.1132
+      }
+    ]
+  },
+  {
+    "date": "2026-05-27T10:03:13.500Z",
+    "benchmarks": [
+      {
+        "name": "atom(1)",
+        "valdres": 7,
+        "jotai": 65,
+        "ratio": 0.1108,
+        "threshold": 2,
+        "cv": 0.4921
+      },
+      {
+        "name": "store.get(atom)",
+        "valdres": 13,
+        "jotai": 355,
+        "ratio": 0.0366,
+        "threshold": 1.5,
+        "cv": 0.0057
+      },
+      {
+        "name": "set(atom, value)",
+        "valdres": 212,
+        "jotai": 4329,
+        "ratio": 0.0481,
+        "threshold": 2,
+        "cv": 0.2614
+      },
+      {
+        "name": "set(atom, curr => curr+1)",
+        "valdres": 183,
+        "jotai": 5037,
+        "ratio": 0.0357,
+        "threshold": 2,
+        "cv": 0.3277
+      },
+      {
+        "name": "set(atom) with 10 subs",
+        "valdres": 150,
+        "jotai": 3432,
+        "ratio": 0.0431,
+        "threshold": 2,
+        "cv": 0.1622
+      },
+      {
+        "name": "atom lifecycle (create+100get+100set)",
+        "valdres": 12008,
+        "jotai": 289586,
+        "ratio": 0.0404,
+        "threshold": 2,
+        "cv": 0.3503
+      },
+      {
+        "name": "atomFamily(id)",
+        "valdres": 317,
+        "jotai": 441,
+        "ratio": 0.7145,
+        "threshold": 10,
+        "cv": 0.1691
+      },
+      {
+        "name": "atomFamily(id) cache hit",
+        "valdres": 32,
+        "jotai": 12,
+        "ratio": 2.5561,
+        "threshold": 8,
+        "cv": 0.0793
+      },
+      {
+        "name": "selectorFamily(id)",
+        "valdres": 340,
+        "jotai": 456,
+        "ratio": 0.7405,
+        "threshold": 10,
+        "cv": 0.3732
+      },
+      {
+        "name": "selector(fn)",
+        "valdres": 10,
+        "jotai": 72,
+        "ratio": 0.1354,
+        "threshold": 2,
+        "cv": 0.1765
+      },
+      {
+        "name": "set + read 10 selectors",
+        "valdres": 7261,
+        "jotai": 40100,
+        "ratio": 0.1858,
+        "threshold": 2,
+        "cv": 0.354
+      },
+      {
+        "name": "set + read 100 selectors",
+        "valdres": 62554,
+        "jotai": 366681,
+        "ratio": 0.1821,
+        "threshold": 2,
+        "cv": 0.1794
+      },
+      {
+        "name": "sub+unsub on chain of 50 unsubscribed derived deps",
+        "valdres": 69725,
+        "jotai": 105449,
+        "ratio": 0.6609,
+        "threshold": 2,
+        "cv": 0.0681
+      },
+      {
+        "name": "sub+unsub on chain of 100 unsubscribed derived deps",
+        "valdres": 217497,
+        "jotai": 231528,
+        "ratio": 0.9342,
+        "threshold": 2,
+        "cv": 0.2827
+      },
+      {
+        "name": "sub+unsub on chain of 500 unsubscribed derived deps",
+        "valdres": 644088,
+        "jotai": 600563,
+        "ratio": 1.0187,
+        "threshold": 2,
+        "cv": 0.337
+      },
+      {
+        "name": "set + read through 5 chained selectors",
+        "valdres": 6155,
+        "jotai": 14289,
+        "ratio": 0.4335,
+        "threshold": 2,
+        "cv": 0.123
+      },
+      {
+        "name": "createStore",
+        "valdres": 312,
+        "jotai": 6076,
+        "ratio": 0.0514,
+        "threshold": 50,
+        "cv": 0.1942
+      },
+      {
+        "name": "set 1000 atoms",
+        "valdres": 82048,
+        "jotai": 935907,
+        "ratio": 0.0875,
+        "threshold": 2,
+        "cv": 0.035
+      },
+      {
+        "name": "get 1000 atoms",
+        "valdres": 8252,
+        "jotai": 420597,
+        "ratio": 0.0197,
+        "threshold": 1.5,
+        "cv": 0.1659
+      },
+      {
+        "name": "sub + unsub",
+        "valdres": 1388,
+        "jotai": 4096,
+        "ratio": 0.3238,
+        "threshold": 15,
+        "cv": 0.3168
+      },
+      {
+        "name": "txn: 10 atoms × 10 selectors, set + read",
+        "valdres": 64587,
+        "jotai": 385590,
+        "ratio": 0.1728,
+        "threshold": 2,
+        "cv": 0.1198
+      },
+      {
+        "name": "txn: 10 atoms × 10 selectors, with subs",
+        "valdres": 117727,
+        "jotai": 638430,
+        "ratio": 0.1857,
+        "threshold": 2,
+        "cv": 0.0829
+      },
+      {
+        "name": "txn: 10 atoms × 100 selectors, set + read",
+        "valdres": 951852,
+        "jotai": 3870658,
+        "ratio": 0.2411,
+        "threshold": 2,
+        "cv": 0.0311
+      },
+      {
+        "name": "txn: cross-atom 1000 selectors, set + read",
+        "valdres": 884529,
+        "jotai": 5344724,
+        "ratio": 0.1653,
+        "threshold": 2,
+        "cv": 0.1484
+      },
+      {
+        "name": "txn: cross-atom 1000 selectors, with subs",
+        "valdres": 1758313,
+        "jotai": 27713252,
+        "ratio": 0.0625,
+        "threshold": 2,
+        "cv": 0.1787
+      }
+    ]
+  },
+  {
+    "date": "2026-05-27T11:12:41.491Z",
+    "benchmarks": [
+      {
+        "name": "atom(1)",
+        "valdres": 7,
+        "jotai": 64,
+        "ratio": 0.1216,
+        "threshold": 2,
+        "cv": 0.2251
+      },
+      {
+        "name": "store.get(atom)",
+        "valdres": 13,
+        "jotai": 375,
+        "ratio": 0.0349,
+        "threshold": 1.5,
+        "cv": 0.0092
+      },
+      {
+        "name": "set(atom, value)",
+        "valdres": 213,
+        "jotai": 4967,
+        "ratio": 0.0428,
+        "threshold": 2,
+        "cv": 0.2291
+      },
+      {
+        "name": "set(atom, curr => curr+1)",
+        "valdres": 116,
+        "jotai": 3227,
+        "ratio": 0.0375,
+        "threshold": 2,
+        "cv": 0.4176
+      },
+      {
+        "name": "set(atom) with 10 subs",
+        "valdres": 158,
+        "jotai": 3628,
+        "ratio": 0.0447,
+        "threshold": 2,
+        "cv": 0.2894
+      },
+      {
+        "name": "atom lifecycle (create+100get+100set)",
+        "valdres": 11947,
+        "jotai": 271233,
+        "ratio": 0.0445,
+        "threshold": 2,
+        "cv": 0.0456
+      },
+      {
+        "name": "atomFamily(id)",
+        "valdres": 320,
+        "jotai": 429,
+        "ratio": 0.731,
+        "threshold": 10,
+        "cv": 0.1856
+      },
+      {
+        "name": "atomFamily(id) cache hit",
+        "valdres": 33,
+        "jotai": 13,
+        "ratio": 2.4164,
+        "threshold": 8,
+        "cv": 0.0436
+      },
+      {
+        "name": "selectorFamily(id)",
+        "valdres": 308,
+        "jotai": 412,
+        "ratio": 0.7412,
+        "threshold": 10,
+        "cv": 0.3677
+      },
+      {
+        "name": "selector(fn)",
+        "valdres": 11,
+        "jotai": 87,
+        "ratio": 0.1301,
+        "threshold": 2,
+        "cv": 0.3342
+      },
+      {
+        "name": "set + read 10 selectors",
+        "valdres": 6670,
+        "jotai": 38387,
+        "ratio": 0.1835,
+        "threshold": 2,
+        "cv": 0.1361
+      },
+      {
+        "name": "set + read 100 selectors",
+        "valdres": 61611,
+        "jotai": 374735,
+        "ratio": 0.1674,
+        "threshold": 2,
+        "cv": 0.1378
+      },
+      {
+        "name": "sub+unsub on chain of 50 unsubscribed derived deps",
+        "valdres": 74536,
+        "jotai": 112812,
+        "ratio": 0.6732,
+        "threshold": 2,
+        "cv": 0.3103
+      },
+      {
+        "name": "sub+unsub on chain of 100 unsubscribed derived deps",
+        "valdres": 131114,
+        "jotai": 150253,
+        "ratio": 0.8521,
+        "threshold": 2,
+        "cv": 0.3263
+      },
+      {
+        "name": "sub+unsub on chain of 500 unsubscribed derived deps",
+        "valdres": 1068182,
+        "jotai": 1051326,
+        "ratio": 0.8587,
+        "threshold": 2,
+        "cv": 0.298
+      },
+      {
+        "name": "set + read through 5 chained selectors",
+        "valdres": 6250,
+        "jotai": 18017,
+        "ratio": 0.3484,
+        "threshold": 2,
+        "cv": 0.0789
+      },
+      {
+        "name": "createStore",
+        "valdres": 346,
+        "jotai": 6420,
+        "ratio": 0.0536,
+        "threshold": 50,
+        "cv": 0.1749
+      },
+      {
+        "name": "set 1000 atoms",
+        "valdres": 85697,
+        "jotai": 960452,
+        "ratio": 0.0876,
+        "threshold": 2,
+        "cv": 0.0404
+      },
+      {
+        "name": "get 1000 atoms",
+        "valdres": 8052,
+        "jotai": 369182,
+        "ratio": 0.0217,
+        "threshold": 1.5,
+        "cv": 0.0302
+      },
+      {
+        "name": "sub + unsub",
+        "valdres": 1503,
+        "jotai": 3961,
+        "ratio": 0.3554,
+        "threshold": 15,
+        "cv": 0.2728
+      },
+      {
+        "name": "txn: 10 atoms × 10 selectors, set + read",
+        "valdres": 71085,
+        "jotai": 403037,
+        "ratio": 0.1876,
+        "threshold": 2,
+        "cv": 0.0982
+      },
+      {
+        "name": "txn: 10 atoms × 10 selectors, with subs",
+        "valdres": 134670,
+        "jotai": 562713,
+        "ratio": 0.2264,
+        "threshold": 2,
+        "cv": 0.3536
+      },
+      {
+        "name": "txn: 10 atoms × 100 selectors, set + read",
+        "valdres": 974983,
+        "jotai": 3949793,
+        "ratio": 0.2419,
+        "threshold": 2,
+        "cv": 0.1324
+      },
+      {
+        "name": "txn: cross-atom 1000 selectors, set + read",
+        "valdres": 883588,
+        "jotai": 5130832,
+        "ratio": 0.2136,
+        "threshold": 2,
+        "cv": 0.2132
+      },
+      {
+        "name": "txn: cross-atom 1000 selectors, with subs",
+        "valdres": 1654485,
+        "jotai": 24117963,
+        "ratio": 0.0653,
+        "threshold": 2,
+        "cv": 0.1104
+      }
+    ]
+  },
+  {
+    "date": "2026-05-27T11:15:31.396Z",
+    "benchmarks": [
+      {
+        "name": "atom(1)",
+        "valdres": 5,
+        "jotai": 60,
+        "ratio": 0.0819,
+        "threshold": 2,
+        "cv": 0.498
+      },
+      {
+        "name": "store.get(atom)",
+        "valdres": 13,
+        "jotai": 343,
+        "ratio": 0.0372,
+        "threshold": 1.5,
+        "cv": 0.0128
+      },
+      {
+        "name": "set(atom, value)",
+        "valdres": 223,
+        "jotai": 4283,
+        "ratio": 0.0508,
+        "threshold": 2,
+        "cv": 0.3355
+      },
+      {
+        "name": "set(atom, curr => curr+1)",
+        "valdres": 104,
+        "jotai": 2841,
+        "ratio": 0.0374,
+        "threshold": 2,
+        "cv": 0.4042
+      },
+      {
+        "name": "set(atom) with 10 subs",
+        "valdres": 160,
+        "jotai": 3234,
+        "ratio": 0.0479,
+        "threshold": 2,
+        "cv": 0.0982
+      },
+      {
+        "name": "atom lifecycle (create+100get+100set)",
+        "valdres": 11001,
+        "jotai": 260402,
+        "ratio": 0.0423,
+        "threshold": 2,
+        "cv": 0.0536
+      },
+      {
+        "name": "atomFamily(id)",
+        "valdres": 260,
+        "jotai": 416,
+        "ratio": 0.6191,
+        "threshold": 10,
+        "cv": 0.214
+      },
+      {
+        "name": "atomFamily(id) cache hit",
+        "valdres": 29,
+        "jotai": 11,
+        "ratio": 2.4971,
+        "threshold": 8,
+        "cv": 0.0704
+      },
+      {
+        "name": "selectorFamily(id)",
+        "valdres": 276,
+        "jotai": 390,
+        "ratio": 0.6986,
+        "threshold": 10,
+        "cv": 0.2979
+      },
+      {
+        "name": "selector(fn)",
+        "valdres": 6,
+        "jotai": 64,
+        "ratio": 0.1003,
+        "threshold": 2,
+        "cv": 0.4045
+      },
+      {
+        "name": "set + read 10 selectors",
+        "valdres": 7173,
+        "jotai": 39123,
+        "ratio": 0.1974,
+        "threshold": 2,
+        "cv": 0.1422
+      },
+      {
+        "name": "set + read 100 selectors",
+        "valdres": 66630,
+        "jotai": 377751,
+        "ratio": 0.1772,
+        "threshold": 2,
+        "cv": 0.0523
+      },
+      {
+        "name": "sub+unsub on chain of 50 unsubscribed derived deps",
+        "valdres": 72575,
+        "jotai": 114864,
+        "ratio": 0.6204,
+        "threshold": 2,
+        "cv": 0.0936
+      },
+      {
+        "name": "sub+unsub on chain of 100 unsubscribed derived deps",
+        "valdres": 206977,
+        "jotai": 225287,
+        "ratio": 0.8627,
+        "threshold": 2,
+        "cv": 0.2781
+      },
+      {
+        "name": "sub+unsub on chain of 500 unsubscribed derived deps",
+        "valdres": 621041,
+        "jotai": 643097,
+        "ratio": 0.9703,
+        "threshold": 2,
+        "cv": 0.3213
+      },
+      {
+        "name": "set + read through 5 chained selectors",
+        "valdres": 7699,
+        "jotai": 17863,
+        "ratio": 0.4303,
+        "threshold": 2,
+        "cv": 0.2627
+      },
+      {
+        "name": "createStore",
+        "valdres": 284,
+        "jotai": 5876,
+        "ratio": 0.048,
+        "threshold": 50,
+        "cv": 0.1684
+      },
+      {
+        "name": "set 1000 atoms",
+        "valdres": 82655,
+        "jotai": 954474,
+        "ratio": 0.0856,
+        "threshold": 2,
+        "cv": 0.0125
+      },
+      {
+        "name": "get 1000 atoms",
+        "valdres": 8681,
+        "jotai": 429052,
+        "ratio": 0.0188,
+        "threshold": 1.5,
+        "cv": 0.1642
+      },
+      {
+        "name": "sub + unsub",
+        "valdres": 1234,
+        "jotai": 3805,
+        "ratio": 0.3103,
+        "threshold": 15,
+        "cv": 0.203
+      },
+      {
+        "name": "txn: 10 atoms × 10 selectors, set + read",
+        "valdres": 73177,
+        "jotai": 384438,
+        "ratio": 0.1926,
+        "threshold": 2,
+        "cv": 0.1163
+      },
+      {
+        "name": "txn: 10 atoms × 10 selectors, with subs",
+        "valdres": 130825,
+        "jotai": 655014,
+        "ratio": 0.1994,
+        "threshold": 2,
+        "cv": 0.0681
+      },
+      {
+        "name": "txn: 10 atoms × 100 selectors, set + read",
+        "valdres": 935258,
+        "jotai": 3580382,
+        "ratio": 0.2615,
+        "threshold": 2,
+        "cv": 0.0152
+      },
+      {
+        "name": "txn: cross-atom 1000 selectors, set + read",
+        "valdres": 883431,
+        "jotai": 5255904,
+        "ratio": 0.166,
+        "threshold": 2,
+        "cv": 0.1185
+      },
+      {
+        "name": "txn: cross-atom 1000 selectors, with subs",
+        "valdres": 1446894,
+        "jotai": 25492248,
+        "ratio": 0.0613,
+        "threshold": 2,
+        "cv": 0.1121
+      }
+    ]
+  },
+  {
+    "date": "2026-05-27T12:53:38.186Z",
+    "benchmarks": [
+      {
+        "name": "atom(1)",
+        "valdres": 5,
+        "jotai": 61,
+        "ratio": 0.0859,
+        "threshold": 2,
+        "cv": 0.5033
+      },
+      {
+        "name": "store.get(atom)",
+        "valdres": 13,
+        "jotai": 341,
+        "ratio": 0.0376,
+        "threshold": 1.5,
+        "cv": 0.0135
+      },
+      {
+        "name": "set(atom, value)",
+        "valdres": 146,
+        "jotai": 3056,
+        "ratio": 0.052,
+        "threshold": 2,
+        "cv": 0.3623
+      },
+      {
+        "name": "set(atom, curr => curr+1)",
+        "valdres": 112,
+        "jotai": 3037,
+        "ratio": 0.0373,
+        "threshold": 2,
+        "cv": 0.4019
+      },
+      {
+        "name": "set(atom) with 10 subs",
+        "valdres": 162,
+        "jotai": 3554,
+        "ratio": 0.0457,
+        "threshold": 2,
+        "cv": 0.3937
+      },
+      {
+        "name": "atom lifecycle (create+100get+100set)",
+        "valdres": 11351,
+        "jotai": 269544,
+        "ratio": 0.0418,
+        "threshold": 2,
+        "cv": 0.0702
+      },
+      {
+        "name": "atomFamily(id)",
+        "valdres": 260,
+        "jotai": 380,
+        "ratio": 0.6723,
+        "threshold": 10,
+        "cv": 0.2121
+      },
+      {
+        "name": "atomFamily(id) cache hit",
+        "valdres": 48,
+        "jotai": 13,
+        "ratio": 3.6266,
+        "threshold": 8,
+        "cv": 0.0884
+      },
+      {
+        "name": "selectorFamily(id)",
+        "valdres": 208,
+        "jotai": 227,
+        "ratio": 0.8044,
+        "threshold": 10,
+        "cv": 0.4605
+      },
+      {
+        "name": "selector(fn)",
+        "valdres": 7,
+        "jotai": 62,
+        "ratio": 0.1207,
+        "threshold": 2,
+        "cv": 0.4656
+      },
+      {
+        "name": "set + read 10 selectors",
+        "valdres": 7474,
+        "jotai": 39034,
+        "ratio": 0.2043,
+        "threshold": 2,
+        "cv": 0.1493
+      },
+      {
+        "name": "set + read 100 selectors",
+        "valdres": 68360,
+        "jotai": 377074,
+        "ratio": 0.1838,
+        "threshold": 2,
+        "cv": 0.0649
+      },
+      {
+        "name": "sub+unsub on chain of 50 unsubscribed derived deps",
+        "valdres": 75182,
+        "jotai": 116581,
+        "ratio": 0.6266,
+        "threshold": 2,
+        "cv": 0.1691
+      },
+      {
+        "name": "sub+unsub on chain of 100 unsubscribed derived deps",
+        "valdres": 120037,
+        "jotai": 147149,
+        "ratio": 0.8219,
+        "threshold": 2,
+        "cv": 0.0759
+      },
+      {
+        "name": "sub+unsub on chain of 500 unsubscribed derived deps",
+        "valdres": 648002,
+        "jotai": 724121,
+        "ratio": 0.8771,
+        "threshold": 2,
+        "cv": 0.2947
+      },
+      {
+        "name": "set + read through 5 chained selectors",
+        "valdres": 7419,
+        "jotai": 19016,
+        "ratio": 0.3894,
+        "threshold": 2,
+        "cv": 0.0854
+      },
+      {
+        "name": "createStore",
+        "valdres": 299,
+        "jotai": 5991,
+        "ratio": 0.0494,
+        "threshold": 50,
+        "cv": 0.1956
+      },
+      {
+        "name": "set 1000 atoms",
+        "valdres": 80587,
+        "jotai": 957618,
+        "ratio": 0.0843,
+        "threshold": 2,
+        "cv": 0.0182
+      },
+      {
+        "name": "get 1000 atoms",
+        "valdres": 8055,
+        "jotai": 362636,
+        "ratio": 0.0225,
+        "threshold": 1.5,
+        "cv": 0.0466
+      },
+      {
+        "name": "sub + unsub",
+        "valdres": 1277,
+        "jotai": 3654,
+        "ratio": 0.3464,
+        "threshold": 15,
+        "cv": 0.1693
+      },
+      {
+        "name": "txn: 10 atoms × 10 selectors, set + read",
+        "valdres": 75653,
+        "jotai": 403925,
+        "ratio": 0.1995,
+        "threshold": 2,
+        "cv": 0.1141
+      },
+      {
+        "name": "txn: 10 atoms × 10 selectors, with subs",
+        "valdres": 131985,
+        "jotai": 653477,
+        "ratio": 0.2028,
+        "threshold": 2,
+        "cv": 0.0831
+      },
+      {
+        "name": "txn: 10 atoms × 100 selectors, set + read",
+        "valdres": 945670,
+        "jotai": 3672298,
+        "ratio": 0.2561,
+        "threshold": 2,
+        "cv": 0.138
+      },
+      {
+        "name": "txn: cross-atom 1000 selectors, set + read",
+        "valdres": 919000,
+        "jotai": 3926899,
+        "ratio": 0.2336,
+        "threshold": 2,
+        "cv": 0.1325
+      },
+      {
+        "name": "txn: cross-atom 1000 selectors, with subs",
+        "valdres": 1533910,
+        "jotai": 23223752,
+        "ratio": 0.0669,
+        "threshold": 2,
+        "cv": 0.1222
+      }
+    ]
+  },
+  {
+    "date": "2026-05-27T13:33:39.834Z",
+    "benchmarks": [
+      {
+        "name": "atom(1)",
+        "valdres": 8,
+        "jotai": 67,
+        "ratio": 0.1122,
+        "threshold": 2,
+        "cv": 0.4603
+      },
+      {
+        "name": "store.get(atom)",
+        "valdres": 14,
+        "jotai": 353,
+        "ratio": 0.039,
+        "threshold": 1.5,
+        "cv": 0.0072
+      },
+      {
+        "name": "set(atom, value)",
+        "valdres": 217,
+        "jotai": 4601,
+        "ratio": 0.0469,
+        "threshold": 2,
+        "cv": 0.1057
+      },
+      {
+        "name": "set(atom, curr => curr+1)",
+        "valdres": 103,
+        "jotai": 2950,
+        "ratio": 0.0354,
+        "threshold": 2,
+        "cv": 0.1379
+      },
+      {
+        "name": "set(atom) with 10 subs",
+        "valdres": 147,
+        "jotai": 3457,
+        "ratio": 0.0422,
+        "threshold": 2,
+        "cv": 0.141
+      },
+      {
+        "name": "atom lifecycle (create+100get+100set)",
+        "valdres": 11227,
+        "jotai": 282025,
+        "ratio": 0.0397,
+        "threshold": 2,
+        "cv": 0.0582
+      },
+      {
+        "name": "atomFamily(id)",
+        "valdres": 348,
+        "jotai": 480,
+        "ratio": 0.7201,
+        "threshold": 10,
+        "cv": 0.2021
+      },
+      {
+        "name": "atomFamily(id) cache hit",
+        "valdres": 33,
+        "jotai": 12,
+        "ratio": 2.6062,
+        "threshold": 8,
+        "cv": 0.0845
+      },
+      {
+        "name": "selectorFamily(id)",
+        "valdres": 343,
+        "jotai": 454,
+        "ratio": 0.7596,
+        "threshold": 10,
+        "cv": 0.366
+      },
+      {
+        "name": "selector(fn)",
+        "valdres": 10,
+        "jotai": 70,
+        "ratio": 0.1338,
+        "threshold": 2,
+        "cv": 0.1958
+      },
+      {
+        "name": "set + read 10 selectors",
+        "valdres": 6680,
+        "jotai": 38137,
+        "ratio": 0.188,
+        "threshold": 2,
+        "cv": 0.1459
+      },
+      {
+        "name": "set + read 100 selectors",
+        "valdres": 61928,
+        "jotai": 270668,
+        "ratio": 0.2253,
+        "threshold": 2,
+        "cv": 0.0531
+      },
+      {
+        "name": "sub+unsub on chain of 50 unsubscribed derived deps",
+        "valdres": 71618,
+        "jotai": 103456,
+        "ratio": 0.6904,
+        "threshold": 2,
+        "cv": 0.0822
+      },
+      {
+        "name": "sub+unsub on chain of 100 unsubscribed derived deps",
+        "valdres": 129114,
+        "jotai": 157498,
+        "ratio": 0.8545,
+        "threshold": 2,
+        "cv": 0.3647
+      },
+      {
+        "name": "sub+unsub on chain of 500 unsubscribed derived deps",
+        "valdres": 625399,
+        "jotai": 680006,
+        "ratio": 0.8751,
+        "threshold": 2,
+        "cv": 0.3422
+      },
+      {
+        "name": "set + read through 5 chained selectors",
+        "valdres": 6317,
+        "jotai": 18150,
+        "ratio": 0.3469,
+        "threshold": 2,
+        "cv": 0.2081
+      },
+      {
+        "name": "createStore",
+        "valdres": 319,
+        "jotai": 6075,
+        "ratio": 0.0526,
+        "threshold": 50,
+        "cv": 0.19
+      },
+      {
+        "name": "set 1000 atoms",
+        "valdres": 80857,
+        "jotai": 914019,
+        "ratio": 0.0869,
+        "threshold": 2,
+        "cv": 0.0336
+      },
+      {
+        "name": "get 1000 atoms",
+        "valdres": 8253,
+        "jotai": 374465,
+        "ratio": 0.022,
+        "threshold": 1.5,
+        "cv": 0.0179
+      },
+      {
+        "name": "sub + unsub",
+        "valdres": 1476,
+        "jotai": 3911,
+        "ratio": 0.3733,
+        "threshold": 15,
+        "cv": 0.1738
+      },
+      {
+        "name": "txn: 10 atoms × 10 selectors, set + read",
+        "valdres": 71118,
+        "jotai": 389999,
+        "ratio": 0.1904,
+        "threshold": 2,
+        "cv": 0.127
+      },
+      {
+        "name": "txn: 10 atoms × 10 selectors, with subs",
+        "valdres": 132029,
+        "jotai": 550260,
+        "ratio": 0.2258,
+        "threshold": 2,
+        "cv": 0.3842
+      },
+      {
+        "name": "txn: 10 atoms × 100 selectors, set + read",
+        "valdres": 984936,
+        "jotai": 3888867,
+        "ratio": 0.244,
+        "threshold": 2,
+        "cv": 0.1275
+      },
+      {
+        "name": "txn: cross-atom 1000 selectors, set + read",
+        "valdres": 885481,
+        "jotai": 3837509,
+        "ratio": 0.2272,
+        "threshold": 2,
+        "cv": 0.1574
+      },
+      {
+        "name": "txn: cross-atom 1000 selectors, with subs",
+        "valdres": 1791758,
+        "jotai": 23187954,
+        "ratio": 0.0701,
+        "threshold": 2,
+        "cv": 0.1742
+      }
+    ],
+    "nodeBenchmarks": [
+      {
+        "name": "txn: 10 atoms × 10 selectors, set + read",
+        "valdres": 131849,
+        "jotai": 330729,
+        "ratio": 0.4025,
+        "threshold": 2,
+        "cv": 0.259
+      },
+      {
+        "name": "txn: 10 atoms × 10 selectors, with subs",
+        "valdres": 92990,
+        "jotai": 274194,
+        "ratio": 0.3406,
+        "threshold": 2,
+        "cv": 0.1715
+      },
+      {
+        "name": "txn: 10 atoms × 100 selectors, set + read",
+        "valdres": 823863,
+        "jotai": 1373888,
+        "ratio": 0.6009,
+        "threshold": 2,
+        "cv": 0.0487
+      },
+      {
+        "name": "txn: cross-atom 1000 selectors, set + read",
+        "valdres": 1018151,
+        "jotai": 1858754,
+        "ratio": 0.5448,
+        "threshold": 2,
+        "cv": 0.047
+      },
+      {
+        "name": "txn: cross-atom 1000 selectors, with subs",
+        "valdres": 1326561,
+        "jotai": 13266735,
+        "ratio": 0.1115,
+        "threshold": 2,
+        "cv": 0.1786
+      },
+      {
+        "name": "selector(fn)",
+        "valdres": 48,
+        "jotai": 58,
+        "ratio": 0.8477,
+        "threshold": 2,
+        "cv": 0.1103
+      },
+      {
+        "name": "set + read 10 selectors",
+        "valdres": 6495,
+        "jotai": 14457,
+        "ratio": 0.4497,
+        "threshold": 2,
+        "cv": 0.0306
+      },
+      {
+        "name": "set + read 100 selectors",
+        "valdres": 67352,
+        "jotai": 130602,
+        "ratio": 0.5153,
+        "threshold": 2,
+        "cv": 0.0438
+      },
+      {
+        "name": "sub+unsub on chain of 50 unsubscribed derived deps",
+        "valdres": 88233,
+        "jotai": 56730,
+        "ratio": 1.5471,
+        "threshold": 2,
+        "cv": 0.0302
+      },
+      {
+        "name": "sub+unsub on chain of 100 unsubscribed derived deps",
+        "valdres": 177057,
+        "jotai": 110382,
+        "ratio": 1.5669,
+        "threshold": 2,
+        "cv": 0.277
+      },
+      {
+        "name": "sub+unsub on chain of 500 unsubscribed derived deps",
+        "valdres": 777433,
+        "jotai": 521217,
+        "ratio": 1.4849,
+        "threshold": 2,
+        "cv": 0.0225
+      },
+      {
+        "name": "set + read through 5 chained selectors",
+        "valdres": 3956,
+        "jotai": 7431,
+        "ratio": 0.5224,
+        "threshold": 2,
+        "cv": 0.3609
+      },
+      {
+        "name": "atom(1)",
+        "valdres": 29,
+        "jotai": 55,
+        "ratio": 0.5798,
+        "threshold": 2,
+        "cv": 0.1276
+      },
+      {
+        "name": "store.get(atom)",
+        "valdres": 23,
+        "jotai": 165,
+        "ratio": 0.1382,
+        "threshold": 1.5,
+        "cv": 0.0113
+      },
+      {
+        "name": "set(atom, value)",
+        "valdres": 223,
+        "jotai": 1241,
+        "ratio": 0.1784,
+        "threshold": 2,
+        "cv": 0.0236
+      },
+      {
+        "name": "set(atom, curr => curr+1)",
+        "valdres": 217,
+        "jotai": 1456,
+        "ratio": 0.1475,
+        "threshold": 2,
+        "cv": 0.0249
+      },
+      {
+        "name": "set(atom) with 10 subs",
+        "valdres": 257,
+        "jotai": 1716,
+        "ratio": 0.147,
+        "threshold": 2,
+        "cv": 0.0396
+      },
+      {
+        "name": "atom lifecycle (create+100get+100set)",
+        "valdres": 24847,
+        "jotai": 139260,
+        "ratio": 0.176,
+        "threshold": 2,
+        "cv": 0.0276
+      },
+      {
+        "name": "createStore",
+        "valdres": 192,
+        "jotai": 532,
+        "ratio": 0.3657,
+        "threshold": 50,
+        "cv": 0.0822
+      },
+      {
+        "name": "set 1000 atoms",
+        "valdres": 85590,
+        "jotai": 439173,
+        "ratio": 0.1955,
+        "threshold": 2,
+        "cv": 0.0156
+      },
+      {
+        "name": "get 1000 atoms",
+        "valdres": 14261,
+        "jotai": 206412,
+        "ratio": 0.0691,
+        "threshold": 1.5,
+        "cv": 0.024
+      },
+      {
+        "name": "sub + unsub",
+        "valdres": 786,
+        "jotai": 1392,
+        "ratio": 0.5637,
+        "threshold": 15,
+        "cv": 0.025
+      },
+      {
+        "name": "atomFamily(id)",
+        "valdres": 227,
+        "jotai": 216,
+        "ratio": 0.9437,
+        "threshold": 10,
+        "cv": 0.4187
+      },
+      {
+        "name": "atomFamily(id) cache hit",
+        "valdres": 31,
+        "jotai": 11,
+        "ratio": 2.3725,
+        "threshold": 8,
+        "cv": 0.2574
+      },
+      {
+        "name": "selectorFamily(id)",
+        "valdres": 175,
+        "jotai": 192,
+        "ratio": 0.9189,
+        "threshold": 10,
+        "cv": 0.1894
+      }
+    ]
+  },
+  {
+    "date": "2026-05-27T13:46:17.932Z",
+    "benchmarks": [
+      {
+        "name": "atom(1)",
+        "valdres": 6,
+        "jotai": 58,
+        "ratio": 0.1042,
+        "threshold": 2,
+        "cv": 0.324
+      },
+      {
+        "name": "store.get(atom)",
+        "valdres": 25,
+        "jotai": 679,
+        "ratio": 0.0359,
+        "threshold": 1.5,
+        "cv": 0.0504
+      },
+      {
+        "name": "set(atom, value)",
+        "valdres": 222,
+        "jotai": 4298,
+        "ratio": 0.0525,
+        "threshold": 2,
+        "cv": 0.3529
+      },
+      {
+        "name": "set(atom, curr => curr+1)",
+        "valdres": 107,
+        "jotai": 2975,
+        "ratio": 0.0373,
+        "threshold": 2,
+        "cv": 0.4176
+      },
+      {
+        "name": "set(atom) with 10 subs",
+        "valdres": 169,
+        "jotai": 3864,
+        "ratio": 0.0466,
+        "threshold": 2,
+        "cv": 0.4126
+      },
+      {
+        "name": "atom lifecycle (create+100get+100set)",
+        "valdres": 11611,
+        "jotai": 265205,
+        "ratio": 0.0436,
+        "threshold": 2,
+        "cv": 0.0523
+      },
+      {
+        "name": "atomFamily(id)",
+        "valdres": 302,
+        "jotai": 428,
+        "ratio": 0.6925,
+        "threshold": 10,
+        "cv": 0.1898
+      },
+      {
+        "name": "atomFamily(id) cache hit",
+        "valdres": 29,
+        "jotai": 11,
+        "ratio": 2.4521,
+        "threshold": 8,
+        "cv": 0.0666
+      },
+      {
+        "name": "selectorFamily(id)",
+        "valdres": 332,
+        "jotai": 341,
+        "ratio": 0.9049,
+        "threshold": 10,
+        "cv": 0.2215
+      },
+      {
+        "name": "selector(fn)",
+        "valdres": 10,
+        "jotai": 102,
+        "ratio": 0.1268,
+        "threshold": 2,
+        "cv": 0.4042
+      },
+      {
+        "name": "set + read 10 selectors",
+        "valdres": 12464,
+        "jotai": 48631,
+        "ratio": 0.2591,
+        "threshold": 2,
+        "cv": 0.3802
+      },
+      {
+        "name": "set + read 100 selectors",
+        "valdres": 70502,
+        "jotai": 377235,
+        "ratio": 0.1949,
+        "threshold": 2,
+        "cv": 0.1072
+      },
+      {
+        "name": "sub+unsub on chain of 50 unsubscribed derived deps",
+        "valdres": 114494,
+        "jotai": 130995,
+        "ratio": 0.8696,
+        "threshold": 2,
+        "cv": 0.271
+      },
+      {
+        "name": "sub+unsub on chain of 100 unsubscribed derived deps",
+        "valdres": 202393,
+        "jotai": 233336,
+        "ratio": 0.8292,
+        "threshold": 2,
+        "cv": 0.2949
+      },
+      {
+        "name": "sub+unsub on chain of 500 unsubscribed derived deps",
+        "valdres": 570897,
+        "jotai": 659804,
+        "ratio": 0.8587,
+        "threshold": 2,
+        "cv": 0.0444
+      },
+      {
+        "name": "set + read 100 selectorFamily entries",
+        "valdres": 77440,
+        "jotai": 377606,
+        "ratio": 0.2136,
+        "threshold": 2,
+        "cv": 0.0663
+      },
+      {
+        "name": "set + read through 5 chained selectors",
+        "valdres": 7214,
+        "jotai": 14255,
+        "ratio": 0.4886,
+        "threshold": 2,
+        "cv": 0.394
+      },
+      {
+        "name": "createStore",
+        "valdres": 334,
+        "jotai": 6018,
+        "ratio": 0.0555,
+        "threshold": 50,
+        "cv": 0.166
+      },
+      {
+        "name": "set 1000 atoms",
+        "valdres": 109480,
+        "jotai": 977717,
+        "ratio": 0.1139,
+        "threshold": 2,
+        "cv": 0.03
+      },
+      {
+        "name": "get 1000 atoms",
+        "valdres": 8465,
+        "jotai": 395264,
+        "ratio": 0.0217,
+        "threshold": 1.5,
+        "cv": 0.129
+      },
+      {
+        "name": "sub + unsub",
+        "valdres": 1210,
+        "jotai": 3625,
+        "ratio": 0.3338,
+        "threshold": 15,
+        "cv": 0.2748
+      },
+      {
+        "name": "txn: 10 atoms × 10 selectors, set + read",
+        "valdres": 79143,
+        "jotai": 264865,
+        "ratio": 0.2971,
+        "threshold": 2,
+        "cv": 0.0337
+      },
+      {
+        "name": "txn: 10 atoms × 10 selectors, with subs",
+        "valdres": 129061,
+        "jotai": 511756,
+        "ratio": 0.2491,
+        "threshold": 2,
+        "cv": 0.137
+      },
+      {
+        "name": "txn: 10 atoms × 100 selectors, set + read",
+        "valdres": 946193,
+        "jotai": 3356872,
+        "ratio": 0.2836,
+        "threshold": 2,
+        "cv": 0.0216
+      },
+      {
+        "name": "txn: cross-atom 1000 selectors, set + read",
+        "valdres": 904470,
+        "jotai": 3560753,
+        "ratio": 0.2632,
+        "threshold": 2,
+        "cv": 0.0731
+      },
+      {
+        "name": "txn: cross-atom 1000 selectors, with subs",
+        "valdres": 1633347,
+        "jotai": 18630674,
+        "ratio": 0.0901,
+        "threshold": 2,
+        "cv": 0.1379
+      }
+    ],
+    "nodeBenchmarks": [
+      {
+        "name": "txn: 10 atoms × 10 selectors, set + read",
+        "valdres": 139581,
+        "jotai": 288288,
+        "ratio": 0.4806,
+        "threshold": 2,
+        "cv": 0.0794
+      },
+      {
+        "name": "txn: 10 atoms × 10 selectors, with subs",
+        "valdres": 110466,
+        "jotai": 276797,
+        "ratio": 0.3787,
+        "threshold": 2,
+        "cv": 0.25
+      },
+      {
+        "name": "txn: 10 atoms × 100 selectors, set + read",
+        "valdres": 900702,
+        "jotai": 1405324,
+        "ratio": 0.6468,
+        "threshold": 2,
+        "cv": 0.0322
+      },
+      {
+        "name": "txn: cross-atom 1000 selectors, set + read",
+        "valdres": 1043268,
+        "jotai": 1824848,
+        "ratio": 0.5634,
+        "threshold": 2,
+        "cv": 0.0572
+      },
+      {
+        "name": "txn: cross-atom 1000 selectors, with subs",
+        "valdres": 1548743,
+        "jotai": 13078873,
+        "ratio": 0.1229,
+        "threshold": 2,
+        "cv": 0.1711
+      },
+      {
+        "name": "selector(fn)",
+        "valdres": 42,
+        "jotai": 57,
+        "ratio": 0.7972,
+        "threshold": 2,
+        "cv": 0.181
+      },
+      {
+        "name": "set + read 10 selectors",
+        "valdres": 7099,
+        "jotai": 14267,
+        "ratio": 0.4967,
+        "threshold": 2,
+        "cv": 0.0232
+      },
+      {
+        "name": "set + read 100 selectors",
+        "valdres": 73337,
+        "jotai": 133409,
+        "ratio": 0.5461,
+        "threshold": 2,
+        "cv": 0.0369
+      },
+      {
+        "name": "sub+unsub on chain of 50 unsubscribed derived deps",
+        "valdres": 92463,
+        "jotai": 59181,
+        "ratio": 1.5732,
+        "threshold": 2,
+        "cv": 0.0406
+      },
+      {
+        "name": "sub+unsub on chain of 100 unsubscribed derived deps",
+        "valdres": 174300,
+        "jotai": 111108,
+        "ratio": 1.57,
+        "threshold": 2,
+        "cv": 0.0511
+      },
+      {
+        "name": "sub+unsub on chain of 500 unsubscribed derived deps",
+        "valdres": 784140,
+        "jotai": 537589,
+        "ratio": 1.4664,
+        "threshold": 2,
+        "cv": 0.0273
+      },
+      {
+        "name": "set + read 100 selectorFamily entries",
+        "valdres": 76042,
+        "jotai": 132558,
+        "ratio": 0.5717,
+        "threshold": 2,
+        "cv": 0.026
+      },
+      {
+        "name": "set + read through 5 chained selectors",
+        "valdres": 4205,
+        "jotai": 7191,
+        "ratio": 0.5822,
+        "threshold": 2,
+        "cv": 0.0293
+      },
+      {
+        "name": "atom(1)",
+        "valdres": 32,
+        "jotai": 61,
+        "ratio": 0.5903,
+        "threshold": 2,
+        "cv": 0.207
+      },
+      {
+        "name": "store.get(atom)",
+        "valdres": 14,
+        "jotai": 157,
+        "ratio": 0.092,
+        "threshold": 1.5,
+        "cv": 0.2839
+      },
+      {
+        "name": "set(atom, value)",
+        "valdres": 222,
+        "jotai": 1236,
+        "ratio": 0.1765,
+        "threshold": 2,
+        "cv": 0.0329
+      },
+      {
+        "name": "set(atom, curr => curr+1)",
+        "valdres": 232,
+        "jotai": 1462,
+        "ratio": 0.156,
+        "threshold": 2,
+        "cv": 0.0262
+      },
+      {
+        "name": "set(atom) with 10 subs",
+        "valdres": 258,
+        "jotai": 1718,
+        "ratio": 0.1502,
+        "threshold": 2,
+        "cv": 0.0292
+      },
+      {
+        "name": "atom lifecycle (create+100get+100set)",
+        "valdres": 25017,
+        "jotai": 143253,
+        "ratio": 0.1735,
+        "threshold": 2,
+        "cv": 0.0344
+      },
+      {
+        "name": "createStore",
+        "valdres": 196,
+        "jotai": 495,
+        "ratio": 0.3961,
+        "threshold": 50,
+        "cv": 0.0513
+      },
+      {
+        "name": "set 1000 atoms",
+        "valdres": 81623,
+        "jotai": 487300,
+        "ratio": 0.1675,
+        "threshold": 2,
+        "cv": 0.0175
+      },
+      {
+        "name": "get 1000 atoms",
+        "valdres": 16140,
+        "jotai": 207257,
+        "ratio": 0.0764,
+        "threshold": 1.5,
+        "cv": 0.0344
+      },
+      {
+        "name": "sub + unsub",
+        "valdres": 860,
+        "jotai": 1415,
+        "ratio": 0.6074,
+        "threshold": 15,
+        "cv": 0.012
+      },
+      {
+        "name": "atomFamily(id)",
+        "valdres": 137,
+        "jotai": 217,
+        "ratio": 0.6688,
+        "threshold": 10,
+        "cv": 0.2748
+      },
+      {
+        "name": "atomFamily(id) cache hit",
+        "valdres": 71,
+        "jotai": 32,
+        "ratio": 3.1371,
+        "threshold": 8,
+        "cv": 0.3391
+      },
+      {
+        "name": "selectorFamily(id)",
+        "valdres": 164,
+        "jotai": 180,
+        "ratio": 0.8687,
+        "threshold": 10,
+        "cv": 0.3027
+      }
+    ]
+  },
+  {
+    "date": "2026-05-27T14:28:50.052Z",
+    "benchmarks": [
+      {
+        "name": "atom(1)",
+        "valdres": 6,
+        "jotai": 74,
+        "ratio": 0.1013,
+        "threshold": 2,
+        "cv": 0.4378
+      },
+      {
+        "name": "store.get(atom)",
+        "valdres": 13,
+        "jotai": 358,
+        "ratio": 0.0358,
+        "threshold": 1.5,
+        "cv": 0.0134
+      },
+      {
+        "name": "set(atom, value)",
+        "valdres": 250,
+        "jotai": 4674,
+        "ratio": 0.0519,
+        "threshold": 2,
+        "cv": 0.1012
+      },
+      {
+        "name": "set(atom, curr => curr+1)",
+        "valdres": 109,
+        "jotai": 3038,
+        "ratio": 0.0367,
+        "threshold": 2,
+        "cv": 0.4048
+      },
+      {
+        "name": "set(atom) with 10 subs",
+        "valdres": 193,
+        "jotai": 3243,
+        "ratio": 0.0591,
+        "threshold": 2,
+        "cv": 0.0777
+      },
+      {
+        "name": "atom lifecycle (create+100get+100set)",
+        "valdres": 10099,
+        "jotai": 277910,
+        "ratio": 0.0365,
+        "threshold": 2,
+        "cv": 0.0618
+      },
+      {
+        "name": "atomFamily(id)",
+        "valdres": 263,
+        "jotai": 394,
+        "ratio": 0.6505,
+        "threshold": 10,
+        "cv": 0.217
+      },
+      {
+        "name": "atomFamily(id) cache hit",
+        "valdres": 29,
+        "jotai": 11,
+        "ratio": 2.509,
+        "threshold": 8,
+        "cv": 0.0733
+      },
+      {
+        "name": "selectorFamily(id)",
+        "valdres": 294,
+        "jotai": 296,
+        "ratio": 0.9875,
+        "threshold": 10,
+        "cv": 0.3234
+      },
+      {
+        "name": "selector(fn)",
+        "valdres": 8,
+        "jotai": 66,
+        "ratio": 0.127,
+        "threshold": 2,
+        "cv": 0.236
+      },
+      {
+        "name": "set + read 10 selectors",
+        "valdres": 7022,
+        "jotai": 39564,
+        "ratio": 0.1875,
+        "threshold": 2,
+        "cv": 0.1364
+      },
+      {
+        "name": "set + read 100 selectors",
+        "valdres": 64060,
+        "jotai": 368138,
+        "ratio": 0.1775,
+        "threshold": 2,
+        "cv": 0.1397
+      },
+      {
+        "name": "sub+unsub on chain of 50 unsubscribed derived deps",
+        "valdres": 106084,
+        "jotai": 122890,
+        "ratio": 0.8895,
+        "threshold": 2,
+        "cv": 0.2517
+      },
+      {
+        "name": "sub+unsub on chain of 100 unsubscribed derived deps",
+        "valdres": 208640,
+        "jotai": 231548,
+        "ratio": 0.8799,
+        "threshold": 2,
+        "cv": 0.2789
+      },
+      {
+        "name": "sub+unsub on chain of 500 unsubscribed derived deps",
+        "valdres": 602177,
+        "jotai": 643124,
+        "ratio": 0.929,
+        "threshold": 2,
+        "cv": 0.0518
+      },
+      {
+        "name": "set + read 100 selectorFamily entries",
+        "valdres": 74074,
+        "jotai": 376680,
+        "ratio": 0.1996,
+        "threshold": 2,
+        "cv": 0.0428
+      },
+      {
+        "name": "set + read through 5 chained selectors",
+        "valdres": 6549,
+        "jotai": 18468,
+        "ratio": 0.4197,
+        "threshold": 2,
+        "cv": 0.3505
+      },
+      {
+        "name": "createStore",
+        "valdres": 287,
+        "jotai": 5933,
+        "ratio": 0.0474,
+        "threshold": 50,
+        "cv": 0.1724
+      },
+      {
+        "name": "set 1000 atoms",
+        "valdres": 77891,
+        "jotai": 985785,
+        "ratio": 0.0774,
+        "threshold": 2,
+        "cv": 0.0178
+      },
+      {
+        "name": "get 1000 atoms",
+        "valdres": 7854,
+        "jotai": 377887,
+        "ratio": 0.021,
+        "threshold": 1.5,
+        "cv": 0.0787
+      },
+      {
+        "name": "sub + unsub",
+        "valdres": 1286,
+        "jotai": 3687,
+        "ratio": 0.3362,
+        "threshold": 15,
+        "cv": 0.2049
+      },
+      {
+        "name": "txn: 10 atoms × 10 selectors, set + read",
+        "valdres": 77405,
+        "jotai": 232736,
+        "ratio": 0.3295,
+        "threshold": 2,
+        "cv": 0.0509
+      },
+      {
+        "name": "txn: 10 atoms × 10 selectors, with subs",
+        "valdres": 135839,
+        "jotai": 516792,
+        "ratio": 0.2577,
+        "threshold": 2,
+        "cv": 0.0762
+      },
+      {
+        "name": "txn: 10 atoms × 100 selectors, set + read",
+        "valdres": 960176,
+        "jotai": 2796081,
+        "ratio": 0.3399,
+        "threshold": 2,
+        "cv": 0.0255
+      },
+      {
+        "name": "txn: cross-atom 1000 selectors, set + read",
+        "valdres": 890847,
+        "jotai": 3062149,
+        "ratio": 0.2915,
+        "threshold": 2,
+        "cv": 0.0125
+      },
+      {
+        "name": "txn: asymmetric DAG shared sink",
+        "valdres": 32120,
+        "jotai": 109104,
+        "ratio": 0.2928,
+        "threshold": 2,
+        "cv": 0.0968
+      },
+      {
+        "name": "txn: large asymmetric DAG (1000 leaves × 50 chain)",
+        "valdres": 5629371,
+        "jotai": 14620629,
+        "ratio": 0.3982,
+        "threshold": 2,
+        "cv": 0.1155
+      },
+      {
+        "name": "txn: cross-atom 1000 selectors, with subs",
+        "valdres": 1611891,
+        "jotai": 18373583,
+        "ratio": 0.0886,
+        "threshold": 2,
+        "cv": 0.1168
+      }
+    ],
+    "nodeBenchmarks": [
+      {
+        "name": "txn: 10 atoms × 10 selectors, set + read",
+        "valdres": 132133,
+        "jotai": 289150,
+        "ratio": 0.4513,
+        "threshold": 2,
+        "cv": 0.0818
+      },
+      {
+        "name": "txn: 10 atoms × 10 selectors, with subs",
+        "valdres": 101620,
+        "jotai": 289091,
+        "ratio": 0.3523,
+        "threshold": 2,
+        "cv": 0.2508
+      },
+      {
+        "name": "txn: 10 atoms × 100 selectors, set + read",
+        "valdres": 851192,
+        "jotai": 1363171,
+        "ratio": 0.6248,
+        "threshold": 2,
+        "cv": 0.0229
+      },
+      {
+        "name": "txn: cross-atom 1000 selectors, set + read",
+        "valdres": 1037336,
+        "jotai": 1836797,
+        "ratio": 0.5578,
+        "threshold": 2,
+        "cv": 0.0242
+      },
+      {
+        "name": "txn: asymmetric DAG shared sink",
+        "valdres": 28683,
+        "jotai": 58329,
+        "ratio": 0.4846,
+        "threshold": 2,
+        "cv": 0.0648
+      },
+      {
+        "name": "txn: large asymmetric DAG (1000 leaves × 50 chain)",
+        "valdres": 4173313,
+        "jotai": 9174694,
+        "ratio": 0.4496,
+        "threshold": 2,
+        "cv": 0.1264
+      },
+      {
+        "name": "txn: cross-atom 1000 selectors, with subs",
+        "valdres": 1180694,
+        "jotai": 11953833,
+        "ratio": 0.1124,
+        "threshold": 2,
+        "cv": 0.1557
+      },
+      {
+        "name": "selector(fn)",
+        "valdres": 47,
+        "jotai": 59,
+        "ratio": 0.8618,
+        "threshold": 2,
+        "cv": 0.1523
+      },
+      {
+        "name": "set + read 10 selectors",
+        "valdres": 7148,
+        "jotai": 14242,
+        "ratio": 0.5013,
+        "threshold": 2,
+        "cv": 0.0216
+      },
+      {
+        "name": "set + read 100 selectors",
+        "valdres": 72280,
+        "jotai": 132318,
+        "ratio": 0.5455,
+        "threshold": 2,
+        "cv": 0.0225
+      },
+      {
+        "name": "sub+unsub on chain of 50 unsubscribed derived deps",
+        "valdres": 92073,
+        "jotai": 57489,
+        "ratio": 1.5963,
+        "threshold": 2,
+        "cv": 0.0366
+      },
+      {
+        "name": "sub+unsub on chain of 100 unsubscribed derived deps",
+        "valdres": 172974,
+        "jotai": 109505,
+        "ratio": 1.5874,
+        "threshold": 2,
+        "cv": 0.0491
+      },
+      {
+        "name": "sub+unsub on chain of 500 unsubscribed derived deps",
+        "valdres": 793705,
+        "jotai": 527202,
+        "ratio": 1.5077,
+        "threshold": 2,
+        "cv": 0.0255
+      },
+      {
+        "name": "set + read 100 selectorFamily entries",
+        "valdres": 73788,
+        "jotai": 130469,
+        "ratio": 0.5653,
+        "threshold": 2,
+        "cv": 0.0277
+      },
+      {
+        "name": "set + read through 5 chained selectors",
+        "valdres": 4769,
+        "jotai": 7108,
+        "ratio": 0.6682,
+        "threshold": 2,
+        "cv": 0.0278
+      },
+      {
+        "name": "atom(1)",
+        "valdres": 25,
+        "jotai": 52,
+        "ratio": 0.5299,
+        "threshold": 2,
+        "cv": 0.189
+      },
+      {
+        "name": "store.get(atom)",
+        "valdres": 24,
+        "jotai": 235,
+        "ratio": 0.1381,
+        "threshold": 1.5,
+        "cv": 0.406
+      },
+      {
+        "name": "set(atom, value)",
+        "valdres": 246,
+        "jotai": 1244,
+        "ratio": 0.1955,
+        "threshold": 2,
+        "cv": 0.016
+      },
+      {
+        "name": "set(atom, curr => curr+1)",
+        "valdres": 267,
+        "jotai": 1468,
+        "ratio": 0.1801,
+        "threshold": 2,
+        "cv": 0.0175
+      },
+      {
+        "name": "set(atom) with 10 subs",
+        "valdres": 297,
+        "jotai": 1703,
+        "ratio": 0.1744,
+        "threshold": 2,
+        "cv": 0.0209
+      },
+      {
+        "name": "atom lifecycle (create+100get+100set)",
+        "valdres": 27321,
+        "jotai": 140934,
+        "ratio": 0.1928,
+        "threshold": 2,
+        "cv": 0.0255
+      },
+      {
+        "name": "createStore",
+        "valdres": 188,
+        "jotai": 497,
+        "ratio": 0.3788,
+        "threshold": 50,
+        "cv": 0.0618
+      },
+      {
+        "name": "set 1000 atoms",
+        "valdres": 82419,
+        "jotai": 477023,
+        "ratio": 0.1736,
+        "threshold": 2,
+        "cv": 0.0265
+      },
+      {
+        "name": "get 1000 atoms",
+        "valdres": 15939,
+        "jotai": 211977,
+        "ratio": 0.0738,
+        "threshold": 1.5,
+        "cv": 0.0254
+      },
+      {
+        "name": "sub + unsub",
+        "valdres": 884,
+        "jotai": 1417,
+        "ratio": 0.6215,
+        "threshold": 15,
+        "cv": 0.0164
+      },
+      {
+        "name": "atomFamily(id)",
+        "valdres": 212,
+        "jotai": 231,
+        "ratio": 0.8697,
+        "threshold": 10,
+        "cv": 0.1922
+      },
+      {
+        "name": "atomFamily(id) cache hit",
+        "valdres": 77,
+        "jotai": 16,
+        "ratio": 4.7061,
+        "threshold": 8,
+        "cv": 0.3468
+      },
+      {
+        "name": "selectorFamily(id)",
+        "valdres": 148,
+        "jotai": 172,
+        "ratio": 0.8115,
+        "threshold": 10,
+        "cv": 0.3319
+      }
+    ]
+  },
+  {
+    "date": "2026-05-29T18:51:04.129Z",
+    "benchmarks": [
+      {
+        "name": "atom(1)",
+        "valdres": 9,
+        "jotai": 79,
+        "ratio": 0.122,
+        "threshold": 2,
+        "cv": 0.3987
+      },
+      {
+        "name": "store.get(atom)",
+        "valdres": 13,
+        "jotai": 355,
+        "ratio": 0.0368,
+        "threshold": 1.5,
+        "cv": 0.0047
+      },
+      {
+        "name": "set(atom, value)",
+        "valdres": 210,
+        "jotai": 4395,
+        "ratio": 0.0466,
+        "threshold": 2,
+        "cv": 0.2632
+      },
+      {
+        "name": "set(atom, curr => curr+1)",
+        "valdres": 119,
+        "jotai": 3206,
+        "ratio": 0.0348,
+        "threshold": 2,
+        "cv": 0.3961
+      },
+      {
+        "name": "set(atom) with 10 subs",
+        "valdres": 157,
+        "jotai": 3744,
+        "ratio": 0.0424,
+        "threshold": 2,
+        "cv": 0.3588
+      },
+      {
+        "name": "atom lifecycle (create+100get+100set)",
+        "valdres": 11307,
+        "jotai": 284314,
+        "ratio": 0.0393,
+        "threshold": 2,
+        "cv": 0.058
+      },
+      {
+        "name": "atomFamily(id)",
+        "valdres": 411,
+        "jotai": 553,
+        "ratio": 0.7396,
+        "threshold": 10,
+        "cv": 0.1457
+      },
+      {
+        "name": "atomFamily(id) cache hit",
+        "valdres": 32,
+        "jotai": 12,
+        "ratio": 2.5456,
+        "threshold": 8,
+        "cv": 0.0738
+      },
+      {
+        "name": "selectorFamily(id)",
+        "valdres": 388,
+        "jotai": 416,
+        "ratio": 0.8936,
+        "threshold": 10,
+        "cv": 0.2994
+      },
+      {
+        "name": "selector(fn)",
+        "valdres": 10,
+        "jotai": 74,
+        "ratio": 0.1433,
+        "threshold": 2,
+        "cv": 0.2
+      },
+      {
+        "name": "set + read 10 selectors",
+        "valdres": 6610,
+        "jotai": 38767,
+        "ratio": 0.1803,
+        "threshold": 2,
+        "cv": 0.1372
+      },
+      {
+        "name": "set + read 100 selectors",
+        "valdres": 64580,
+        "jotai": 362890,
+        "ratio": 0.1963,
+        "threshold": 2,
+        "cv": 0.1886
+      },
+      {
+        "name": "sub+unsub on chain of 50 unsubscribed derived deps",
+        "valdres": 76628,
+        "jotai": 117959,
+        "ratio": 0.6766,
+        "threshold": 2,
+        "cv": 0.2902
+      },
+      {
+        "name": "sub+unsub on chain of 100 unsubscribed derived deps",
+        "valdres": 134167,
+        "jotai": 157993,
+        "ratio": 0.8422,
+        "threshold": 2,
+        "cv": 0.3234
+      },
+      {
+        "name": "sub+unsub on chain of 500 unsubscribed derived deps",
+        "valdres": 893347,
+        "jotai": 898665,
+        "ratio": 0.8317,
+        "threshold": 2,
+        "cv": 0.3101
+      },
+      {
+        "name": "set + read 100 selectorFamily entries",
+        "valdres": 65006,
+        "jotai": 364127,
+        "ratio": 0.1803,
+        "threshold": 2,
+        "cv": 0.0552
+      },
+      {
+        "name": "set + read through 5 chained selectors",
+        "valdres": 5515,
+        "jotai": 13874,
+        "ratio": 0.3888,
+        "threshold": 2,
+        "cv": 0.307
+      },
+      {
+        "name": "createStore",
+        "valdres": 326,
+        "jotai": 6295,
+        "ratio": 0.0515,
+        "threshold": 50,
+        "cv": 0.2252
+      },
+      {
+        "name": "set 1000 atoms",
+        "valdres": 76323,
+        "jotai": 919926,
+        "ratio": 0.0827,
+        "threshold": 2,
+        "cv": 0.0356
+      },
+      {
+        "name": "get 1000 atoms",
+        "valdres": 8718,
+        "jotai": 476612,
+        "ratio": 0.0183,
+        "threshold": 1.5,
+        "cv": 0.0859
+      },
+      {
+        "name": "sub + unsub",
+        "valdres": 1409,
+        "jotai": 3976,
+        "ratio": 0.3543,
+        "threshold": 15,
+        "cv": 0.2372
+      },
+      {
+        "name": "txn: 10 atoms × 10 selectors, set + read",
+        "valdres": 76683,
+        "jotai": 243694,
+        "ratio": 0.317,
+        "threshold": 2,
+        "cv": 0.1058
+      },
+      {
+        "name": "txn: 10 atoms × 10 selectors, with subs",
+        "valdres": 119847,
+        "jotai": 507919,
+        "ratio": 0.2362,
+        "threshold": 2,
+        "cv": 0.0659
+      },
+      {
+        "name": "txn: 10 atoms × 100 selectors, set + read",
+        "valdres": 944552,
+        "jotai": 3054243,
+        "ratio": 0.3048,
+        "threshold": 2,
+        "cv": 0.0819
+      },
+      {
+        "name": "txn: cross-atom 1000 selectors, set + read",
+        "valdres": 854790,
+        "jotai": 3170884,
+        "ratio": 0.2619,
+        "threshold": 2,
+        "cv": 0.0887
+      },
+      {
+        "name": "txn: asymmetric DAG shared sink",
+        "valdres": 53724,
+        "jotai": 199133,
+        "ratio": 0.2737,
+        "threshold": 2,
+        "cv": 0.0772
+      },
+      {
+        "name": "txn: large asymmetric DAG (1000 leaves × 50 chain)",
+        "valdres": 5538214,
+        "jotai": 16594925,
+        "ratio": 0.353,
+        "threshold": 2,
+        "cv": 0.1598
+      },
+      {
+        "name": "txn: cross-atom 1000 selectors, with subs",
+        "valdres": 1844545,
+        "jotai": 21674122,
+        "ratio": 0.083,
+        "threshold": 2,
+        "cv": 0.2079
+      }
+    ],
+    "nodeBenchmarks": [
+      {
+        "name": "txn: 10 atoms × 10 selectors, set + read",
+        "valdres": 127979,
+        "jotai": 314689,
+        "ratio": 0.4054,
+        "threshold": 2,
+        "cv": 0.0627
+      },
+      {
+        "name": "txn: 10 atoms × 10 selectors, with subs",
+        "valdres": 97399,
+        "jotai": 288375,
+        "ratio": 0.3347,
+        "threshold": 2,
+        "cv": 0.3374
+      },
+      {
+        "name": "txn: 10 atoms × 100 selectors, set + read",
+        "valdres": 978943,
+        "jotai": 1445220,
+        "ratio": 0.6627,
+        "threshold": 2,
+        "cv": 0.1647
+      },
+      {
+        "name": "txn: cross-atom 1000 selectors, set + read",
+        "valdres": 1174577,
+        "jotai": 2144502,
+        "ratio": 0.5426,
+        "threshold": 2,
+        "cv": 0.3489
+      },
+      {
+        "name": "txn: asymmetric DAG shared sink",
+        "valdres": 27611,
+        "jotai": 60009,
+        "ratio": 0.4648,
+        "threshold": 2,
+        "cv": 0.0504
+      },
+      {
+        "name": "txn: large asymmetric DAG (1000 leaves × 50 chain)",
+        "valdres": 4264366,
+        "jotai": 10645694,
+        "ratio": 0.4161,
+        "threshold": 2,
+        "cv": 0.1417
+      },
+      {
+        "name": "txn: cross-atom 1000 selectors, with subs",
+        "valdres": 1587501,
+        "jotai": 14544783,
+        "ratio": 0.1128,
+        "threshold": 2,
+        "cv": 0.2816
+      },
+      {
+        "name": "selector(fn)",
+        "valdres": 52,
+        "jotai": 64,
+        "ratio": 0.8284,
+        "threshold": 2,
+        "cv": 0.4102
+      },
+      {
+        "name": "set + read 10 selectors",
+        "valdres": 6415,
+        "jotai": 14381,
+        "ratio": 0.4454,
+        "threshold": 2,
+        "cv": 0.0268
+      },
+      {
+        "name": "set + read 100 selectors",
+        "valdres": 66173,
+        "jotai": 137373,
+        "ratio": 0.4882,
+        "threshold": 2,
+        "cv": 0.0541
+      },
+      {
+        "name": "sub+unsub on chain of 50 unsubscribed derived deps",
+        "valdres": 88756,
+        "jotai": 57395,
+        "ratio": 1.5373,
+        "threshold": 2,
+        "cv": 0.0446
+      },
+      {
+        "name": "sub+unsub on chain of 100 unsubscribed derived deps",
+        "valdres": 168258,
+        "jotai": 108089,
+        "ratio": 1.5562,
+        "threshold": 2,
+        "cv": 0.0449
+      },
+      {
+        "name": "sub+unsub on chain of 500 unsubscribed derived deps",
+        "valdres": 761998,
+        "jotai": 518830,
+        "ratio": 1.4645,
+        "threshold": 2,
+        "cv": 0.0326
+      },
+      {
+        "name": "set + read 100 selectorFamily entries",
+        "valdres": 67009,
+        "jotai": 130863,
+        "ratio": 0.5088,
+        "threshold": 2,
+        "cv": 0.0538
+      },
+      {
+        "name": "set + read through 5 chained selectors",
+        "valdres": 4507,
+        "jotai": 7331,
+        "ratio": 0.611,
+        "threshold": 2,
+        "cv": 0.0353
+      },
+      {
+        "name": "atom(1)",
+        "valdres": 28,
+        "jotai": 55,
+        "ratio": 0.5581,
+        "threshold": 2,
+        "cv": 0.1273
+      },
+      {
+        "name": "store.get(atom)",
+        "valdres": 23,
+        "jotai": 165,
+        "ratio": 0.1376,
+        "threshold": 1.5,
+        "cv": 0.3622
+      },
+      {
+        "name": "set(atom, value)",
+        "valdres": 212,
+        "jotai": 1191,
+        "ratio": 0.1748,
+        "threshold": 2,
+        "cv": 0.0243
+      },
+      {
+        "name": "set(atom, curr => curr+1)",
+        "valdres": 215,
+        "jotai": 1446,
+        "ratio": 0.1461,
+        "threshold": 2,
+        "cv": 0.0271
+      },
+      {
+        "name": "set(atom) with 10 subs",
+        "valdres": 263,
+        "jotai": 1710,
+        "ratio": 0.1527,
+        "threshold": 2,
+        "cv": 0.0284
+      },
+      {
+        "name": "atom lifecycle (create+100get+100set)",
+        "valdres": 24166,
+        "jotai": 137873,
+        "ratio": 0.173,
+        "threshold": 2,
+        "cv": 0.0336
+      },
+      {
+        "name": "createStore",
+        "valdres": 193,
+        "jotai": 569,
+        "ratio": 0.3398,
+        "threshold": 50,
+        "cv": 0.0837
+      },
+      {
+        "name": "set 1000 atoms",
+        "valdres": 80899,
+        "jotai": 427280,
+        "ratio": 0.1896,
+        "threshold": 2,
+        "cv": 0.0144
+      },
+      {
+        "name": "get 1000 atoms",
+        "valdres": 14511,
+        "jotai": 206304,
+        "ratio": 0.0703,
+        "threshold": 1.5,
+        "cv": 0.0267
+      },
+      {
+        "name": "sub + unsub",
+        "valdres": 796,
+        "jotai": 1439,
+        "ratio": 0.5527,
+        "threshold": 15,
+        "cv": 0.0277
+      },
+      {
+        "name": "atomFamily(id)",
+        "valdres": 301,
+        "jotai": 323,
+        "ratio": 0.9187,
+        "threshold": 10,
+        "cv": 0.3257
+      },
+      {
+        "name": "atomFamily(id) cache hit",
+        "valdres": 27,
+        "jotai": 11,
+        "ratio": 2.4562,
+        "threshold": 8,
+        "cv": 0.1748
+      },
+      {
+        "name": "selectorFamily(id)",
+        "valdres": 297,
+        "jotai": 325,
+        "ratio": 0.9484,
+        "threshold": 10,
+        "cv": 0.3355
+      }
+    ]
+  }
+]
