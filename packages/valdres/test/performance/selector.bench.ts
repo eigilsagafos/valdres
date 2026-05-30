@@ -162,6 +162,79 @@ describe("selector", () => {
         )
     })
 
+    // Companion to "set + read 100 selectorFamily entries" — distributes
+    // the 100 entries across families with varied options so members come
+    // from multiple option-mix lineages. Pre-refactor, each family's
+    // members had a distinct hidden class derived from the options
+    // spread; reads on family members across this population hit a
+    // megamorphic IC in the core. Post-refactor, all options-bearing
+    // selectors share one shape.
+    test("set + read 100 selectorFamily entries with varied family options", async () => {
+        const count = 100
+        const customEqual = (a: any, b: any) => a === b
+
+        const vStore = valdresCreateStore()
+        const vAtom = valdresAtom(0)
+        const vFamilies = [
+            valdresSelectorFamily((o: number) => get => get(vAtom) + o),
+            valdresSelectorFamily(
+                (o: number) => get => get(vAtom) + o,
+                { name: "named" },
+            ),
+            valdresSelectorFamily(
+                (o: number) => get => get(vAtom) + o,
+                { equal: customEqual },
+            ),
+            valdresSelectorFamily(
+                (o: number) => get => get(vAtom) + o,
+                { name: "both", equal: customEqual },
+            ),
+        ]
+        const vSelectors = Array.from({ length: count }, (_, i) =>
+            vFamilies[i & 3](i),
+        )
+        vSelectors.forEach(s => vStore.get(s))
+
+        // Jotai equivalent: 4 families that diversify their members via
+        // post-construction debugLabel mutation, mirroring the 4-way
+        // shape split on the valdres side.
+        const jStore = jotaiCreateStore()
+        const jAtom = jotaiAtom(0)
+        const jFamilies = [
+            jotaiAtomFamily((o: number) => jotaiAtom(get => get(jAtom) + o)),
+            jotaiAtomFamily((o: number) => {
+                const a: any = jotaiAtom(get => get(jAtom) + o)
+                a.debugLabel = `named${o}`
+                return a
+            }),
+            jotaiAtomFamily((o: number) => jotaiAtom(get => get(jAtom) + o)),
+            jotaiAtomFamily((o: number) => {
+                const a: any = jotaiAtom(get => get(jAtom) + o)
+                a.debugLabel = `both${o}`
+                return a
+            }),
+        ]
+        const jSelectors = Array.from({ length: count }, (_, i) =>
+            jFamilies[i & 3](i),
+        )
+        jSelectors.forEach(s => jStore.get(s))
+
+        let vInt = 0
+        let jInt = 0
+        await assertFaster(
+            "set + read 100 selectorFamily entries with varied family options",
+            () => {
+                vStore.set(vAtom, ++vInt)
+                vSelectors.forEach(s => vStore.get(s))
+            },
+            () => {
+                jStore.set(jAtom, ++jInt)
+                jSelectors.forEach(s => jStore.get(s))
+            },
+            2.0,
+        )
+    })
+
     test("chained selectors (depth 5)", async () => {
         const vStore = valdresCreateStore()
         const jStore = jotaiCreateStore()

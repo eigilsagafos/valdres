@@ -81,6 +81,61 @@ describe("atom", () => {
         )
     })
 
+    // Hot reads in valdres core (atom.equal, atom.onSet, atom.maxAge, …)
+    // used to hit a megamorphic IC across atoms built from varied option
+    // combinations because each spread produced a distinct hidden class.
+    // After the shape-stability refactor, options-bearing atoms share one
+    // shape — this bench exercises that exact pattern by cycling through
+    // 8 distinct option combos and measuring set+read across all of them.
+    test("set + read 100 atoms with varied options", async () => {
+        const count = 100
+        const valdresOptionsRing = [
+            { name: "v0" },
+            { name: "v1", mutable: true },
+            { name: "v2", onSet: () => {} },
+            { name: "v3", onMount: () => () => {} },
+            { name: "v4", mutable: true, onSet: () => {} },
+            { name: "v5", mutable: true, onMount: () => () => {} },
+            { name: "v6", onSet: () => {}, onMount: () => () => {} },
+            { name: "v7", mutable: true, onSet: () => {}, onMount: () => () => {} },
+        ]
+
+        const vStore = valdresCreateStore()
+        const vAtoms = Array.from({ length: count }, (_, i) =>
+            valdresAtom(0, valdresOptionsRing[i & 7]),
+        )
+        vAtoms.forEach(a => vStore.get(a))
+
+        // Jotai equivalent: post-construction mutation of debugLabel and
+        // onMount, which similarly diversifies its hidden classes. Same
+        // 8-cycle pattern so both sides hit comparable shape variance.
+        const jStore = jotaiCreateStore()
+        const jAtoms = Array.from({ length: count }, (_, i) => {
+            const a: any = jotaiAtom(0)
+            a.debugLabel = `j${i & 7}`
+            if (i & 1) a.onMount = (setSelf: any) => () => {}
+            return a
+        })
+        jAtoms.forEach(a => jStore.get(a))
+
+        let vInt = 0
+        let jInt = 0
+        await assertFaster(
+            "set + read 100 atoms with varied options",
+            () => {
+                vInt++
+                for (let i = 0; i < count; i++) vStore.set(vAtoms[i], vInt)
+                for (let i = 0; i < count; i++) sink = vStore.get(vAtoms[i])
+            },
+            () => {
+                jInt++
+                for (let i = 0; i < count; i++) jStore.set(jAtoms[i], jInt)
+                for (let i = 0; i < count; i++) sink = jStore.get(jAtoms[i])
+            },
+            2.0,
+        )
+    })
+
     test("lifecycle: create + 100 get + 100 set", async () => {
         const vStore = valdresCreateStore()
         const jStore = jotaiCreateStore()

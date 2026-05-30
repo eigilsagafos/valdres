@@ -2,6 +2,7 @@ import type { AtomFamily } from "../types/AtomFamily"
 import type { AtomFamilyDefaultValue } from "../types/AtomFamilyDefaultValue"
 import type { AtomOptions } from "../types/AtomOptions"
 import { isSelectorFamily } from "../utils/isSelectorFamily"
+import { createAtom } from "./atomShape"
 import { equal } from "./equal"
 import { familyKey } from "./familyKey"
 import { globalAtom } from "./globalAtom"
@@ -48,20 +49,22 @@ export const createAtomFamily = <
                 ...options,
                 name: memberName,
             })
+            familyAtom.family = atomFamily
+            familyAtom.familyArgs = args
+            familyAtom.familyArgsStringified = key
         } else {
-            // Build atom in a single allocation — no intermediate objects
-            familyAtom = {
-                equal,
-                ...options,
-                defaultValue: dv,
-                name: memberName,
-            }
+            // Same hidden class as a plain atom — family metadata is wired
+            // into the literal so V8 doesn't have to add the fields
+            // post-hoc.
+            familyAtom = createAtom<Value>(
+                dv,
+                options,
+                memberName,
+                atomFamily as any,
+                args,
+                key,
+            )
         }
-
-        // @ts-ignore @ts-todo
-        familyAtom.family = atomFamily
-        familyAtom.familyArgs = args
-        familyAtom.familyArgsStringified = key
 
         map.set(key, familyAtom)
         return familyAtom

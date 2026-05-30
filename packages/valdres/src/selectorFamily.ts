@@ -1,4 +1,4 @@
-import { equal } from "./lib/equal"
+import { createSelector } from "./lib/selectorShape"
 import { familyKey } from "./lib/familyKey"
 import type { GetValue } from "./types/GetValue"
 import type { SelectorFamily } from "./types/SelectorFamily"
@@ -22,20 +22,18 @@ export const selectorFamily = <
         if (cached !== undefined) return cached
 
         // Call the user's factory once at cache-miss time and store the
-        // inner getter directly. The previous implementation wrapped it in
-        // a closure that re-invoked `callback(...args)` on every evaluation,
-        // allocating a new inner getter per read.
-        const newSelector = {
-            equal,
-            ...options,
-            get: callback(...args),
-            family: selectorFamily,
-            familyArgs: args,
-            familyArgsStringified: key,
-            name: hasName
-                ? options!.name + "_" + key
-                : undefined,
-        }
+        // inner getter directly — no per-read wrapper closure.
+        const memberName = hasName
+            ? options!.name + "_" + key
+            : undefined
+        const newSelector = createSelector<Value, Args>(
+            callback(...args) as any,
+            options,
+            memberName,
+            selectorFamily as any,
+            args,
+            key,
+        )
 
         map.set(key, newSelector)
         return newSelector

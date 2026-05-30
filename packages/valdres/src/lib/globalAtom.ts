@@ -1,4 +1,4 @@
-import { equal } from "./equal"
+import { createGlobalAtom } from "./atomShape"
 import type { AtomDefaultValue } from "../types/AtomDefaultValue"
 import type { AtomOnInit } from "../types/AtomOnInit"
 import type { GlobalAtomResetSelfFunc } from "../types/GlobalAtomResetSelfFunc"
@@ -16,7 +16,7 @@ import { globalStore } from "../globalStore"
 export const globalAtom = <Value = unknown>(
     defaultValue: AtomDefaultValue<Value>,
     options: AtomOptions<Value>,
-) => {
+): GlobalAtom<Value> => {
     const stores = new Set<StoreData>()
     const userOnSet = options.onSet
 
@@ -150,13 +150,13 @@ export const globalAtom = <Value = unknown>(
         stores.delete(storeData)
     }
 
-    // `stores` is a plain data property. A getter wasn't buying anything —
-    // the Set reference never changes, and accessor properties take a slower
-    // IC path than data properties at every read site in subscribe.ts.
-    const atom: GlobalAtom<Value> = {
-        equal,
-        ...options,
+    // All globals share createGlobalAtom's hidden class; the leading
+    // AtomImpl-shaped subset (equal, defaultValue, maxAge, …) sits in the
+    // same slot order as regular atoms so the core's hot reads stay
+    // monomorphic across both shapes.
+    const atom: GlobalAtom<Value> = createGlobalAtom<Value>(
         defaultValue,
+        options,
         onInit,
         onSet,
         onMount,
@@ -165,7 +165,6 @@ export const globalAtom = <Value = unknown>(
         resetSelf,
         detach,
         stores,
-        maxAgeInterval: undefined,
-    }
+    )
     return atom
 }

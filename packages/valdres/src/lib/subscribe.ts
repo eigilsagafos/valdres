@@ -12,7 +12,7 @@ import { isSelector } from "../utils/isSelector"
 import { isSelectorFamily } from "../utils/isSelectorFamily"
 import { isReactive, resolveReactive } from "../utils/resolveReactive"
 import type { CacheMeta } from "../types/Atom"
-import { equal } from "./equal"
+import { createCacheMetaAtom } from "./atomShape"
 import { initAtom } from "./initAtom"
 import { initSelector } from "./initSelector"
 import { propagateAtomUpdate } from "./propagateUpdatedAtoms"
@@ -36,7 +36,7 @@ export const installMaxAgeTimer = (state: Atom<any>, data: StoreData) => {
         // Another store already owns the interval — just bump refCount
         existing.refCount++
         // Seed the cache meta in this store from an existing store
-        const metaAtom = (state.__cacheMeta ??= { equal, defaultValue: null })
+        const metaAtom = (state.__cacheMeta ??= createCacheMetaAtom())
         for (const s of globalState!.stores) {
             if (s !== data && s.values.has(metaAtom)) {
                 setValueInData(metaAtom, s.values.get(metaAtom), data)
@@ -75,7 +75,7 @@ export const installMaxAgeTimer = (state: Atom<any>, data: StoreData) => {
             ? resolveReactive(state.staleIfError, data)
             : Infinity
 
-    const metaAtom = (state.__cacheMeta ??= { equal, defaultValue: null })
+    const metaAtom = (state.__cacheMeta ??= createCacheMetaAtom())
     const updateMeta = () => {
         const meta: CacheMeta = {
             isRevalidating: revalidating,
