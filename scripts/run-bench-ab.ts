@@ -51,6 +51,15 @@ const MAIN_BENCH_DIR = join(MAIN_PKG, "test/performance")
 
 const BASE_REF = process.env.BENCH_BASE_REF ?? "origin/main"
 
+// Number of measurement rounds per side. Each round is a full `bun test`
+// of the file in its own process; all rounds accumulate into the side's
+// ndjson. The regression checker reduces the K rows per benchmark to their
+// MINIMUM — the fastest (least-contended) run best approximates the true
+// CPU floor, which is far more stable across the noisy shared CI runner
+// than any single run or even the median. K=3 reliably catches a clean
+// window for each side at ~3× bench cost.
+const ROUNDS = Math.max(1, Number(process.env.BENCH_AB_ROUNDS ?? 3))
+
 async function sh(
     cmd: string[],
     opts: { cwd?: string; allowFailure?: boolean } = {},
@@ -134,8 +143,9 @@ async function runPass(
     label: "pr" | "main",
     pkgDir: string,
     file: string,
+    round: number,
 ): Promise<{ exitCode: number; rowsAdded: number }> {
-    console.log(`\n── ${label.toUpperCase()} · ${file} ──`)
+    console.log(`\n── ${label.toUpperCase()} · ${file} · round ${round}/${ROUNDS} ──`)
     const ndjsonPath = join(pkgDir, "test/performance/bench-results.ndjson")
     const before = countNdjsonRows(ndjsonPath)
     const exitCode = await sh(
@@ -155,6 +165,9 @@ async function runPass(
 }
 
 async function main(): Promise<void> {
+    console.log(
+        `Same-VM A/B vs ${BASE_REF} · ${ROUNDS} round(s)/side · gating on per-bench minima`,
+    )
     await setupMainWorktree()
 
     // Clean any stale results from a previous run on either side.
@@ -166,41 +179,62 @@ async function main(): Promise<void> {
     const prFiles = listBenchFiles(PR_BENCH_DIR)
     const mainFiles = new Set(listBenchFiles(MAIN_BENCH_DIR))
 
-    // Classify each pass:
-    //   - fatal: non-zero exit AND zero rows added → the bench file crashed.
-    //   - soft: non-zero exit with rows added → `expect(ratio <= maxSlowerRatio)`
-    //     inside assertFaster fired on a noisy jotai measurement. The A/B
-    //     delta gate (check-bench-regression.ts) is the real signal.
-    //   - info: exit 0 with zero rows → informational bench (e.g. scope or
-    //     cleanup-walk that only logs). Nothing to gate.
+    // Classify each (file, side) after all K rounds:
+    //   - fatal: zero rows across every round AND some round exited non-zero
+    //     → the bench file crashed before measuring anything.
+    //   - soft: rows produced but some round exited non-zero → the in-bench
+    //     `expect(ratio <= maxSlowerRatio)` assertion fired on a noisy round.
+    //     The min-of-K A/B gate (check-bench-regression.ts) is the real signal.
+    //   - info: zero rows, all rounds exited cleanly → informational bench
+    //     (e.g. scope / cleanup-walk that only logs). Nothing to gate.
     const fatal: { label: string; file: string }[] = []
     const soft: { label: string; file: string }[] = []
     const info: { label: string; file: string }[] = []
     const newOnPr: string[] = []
 
-    const classify = (
+    // Accumulate rows + exit status across the K rounds of each (file, side).
+    const acc = new Map<string, { rows: number; nonZero: boolean }>()
+    const key = (label: string, file: string) => `${label}/${file}`
+    const accumulate = (
         label: "pr" | "main",
         file: string,
         r: { exitCode: number; rowsAdded: number },
     ) => {
-        if (r.exitCode !== 0 && r.rowsAdded === 0) {
-            fatal.push({ label, file })
-        } else if (r.exitCode !== 0) {
-            soft.push({ label, file })
-        } else if (r.rowsAdded === 0) {
-            info.push({ label, file })
-        }
+        const k = key(label, file)
+        const a = acc.get(k) ?? { rows: 0, nonZero: false }
+        a.rows += r.rowsAdded
+        if (r.exitCode !== 0) a.nonZero = true
+        acc.set(k, a)
+    }
+    const finalize = (label: "pr" | "main", file: string) => {
+        const a = acc.get(key(label, file)) ?? { rows: 0, nonZero: false }
+        if (a.rows === 0 && a.nonZero) fatal.push({ label, file })
+        else if (a.nonZero) soft.push({ label, file })
+        else if (a.rows === 0) info.push({ label, file })
     }
 
+    // Interleave PR/main round-by-round per file so both sides sample the
+    // same span of runner conditions — neither side is systematically the
+    // "first (cold) runner". The checker takes the min per side, cancelling
+    // whichever rounds happened to land in a noisy window.
     for (const file of prFiles) {
-        classify("pr", file, await runPass("pr", PR_PKG, file))
-
-        if (mainFiles.has(file)) {
-            classify("main", file, await runPass("main", MAIN_PKG, file))
-        } else {
+        const hasMain = mainFiles.has(file)
+        if (!hasMain) {
             console.log(`   (no counterpart in ${BASE_REF} — new bench file)`)
             newOnPr.push(file)
         }
+        for (let round = 1; round <= ROUNDS; round++) {
+            accumulate("pr", file, await runPass("pr", PR_PKG, file, round))
+            if (hasMain) {
+                accumulate(
+                    "main",
+                    file,
+                    await runPass("main", MAIN_PKG, file, round),
+                )
+            }
+        }
+        finalize("pr", file)
+        if (hasMain) finalize("main", file)
     }
 
     console.log("\n=== A/B summary ===")

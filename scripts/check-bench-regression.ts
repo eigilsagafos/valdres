@@ -175,10 +175,13 @@ const MAIN_BUN_NDJSON_PATH = join(
     ".bench-main/packages/valdres/test/performance/bench-results.ndjson",
 )
 
-// A/B regression gate. Same VM, minutes apart — residual noise is small
-// enough that a flat threshold is honest. Tighten after observing a few
-// PRs if 15% turns out to be loose.
-const AB_REGRESSION_THRESHOLD = 1.15
+// A/B regression gate. The orchestrator runs each side K times; we gate on
+// min(valdres_PR) / min(valdres_main). The minimum is the least-contended
+// run — the CPU floor — which is far stabler than any single run's median,
+// so a tight-ish flat threshold is honest. 20% leaves headroom for residual
+// floor jitter on shared CI runners while still catching real regressions
+// (a genuine slowdown moves the floor too). Tune after a few PRs.
+const AB_REGRESSION_THRESHOLD = 1.2
 
 async function gitShow(ref: string): Promise<string | null> {
     try {
@@ -760,7 +763,7 @@ function formatABTable(
 
     lines.push(
         "",
-        `<sub>**How to read this:** _PR_ and _Main_ are median timings from this run — both branches ran in the same CI VM minutes apart, so runner-level noise (CPU class, neighbours, frequency state) cancels. _Δ vs Main_ is the gating signal. _vs Jotai_ is shown for orientation only. Regression gating runs against JSC (Bun) only; V8 (Node.js) is informational and not A/B-compared.</sub>`,
+        `<sub>**How to read this:** _PR_ and _Main_ are the **fastest of several rounds** for each side — the least-contended run, which approximates the true CPU floor and is far stabler than a single run. Both branches ran in the same CI VM, so runner-level noise (CPU class, neighbours, frequency state) cancels. _Δ vs Main_ is the gating signal. _vs Jotai_ is shown for orientation only. Regression gating runs against JSC (Bun) only; V8 (Node.js) is informational and not A/B-compared.</sub>`,
     )
 
     if (regressions.length > 0) {
@@ -893,18 +896,47 @@ async function postOrUpdateComment(
 
 // ── Main ───────────────────────────────────────────────────────────────────
 
+/**
+ * Reduce the K rounds the orchestrator produced per benchmark down to one
+ * row holding the MINIMUM valdres and minimum jotai timing across rounds.
+ * The fastest run is the least-contended — closest to the true CPU floor —
+ * and the floor is far stabler across noisy shared CI runners than any
+ * single run or the median. valdres and jotai minima are taken independently
+ * (the gate only uses valdres; jotai is the orientation column).
+ */
+function minByName(rows: NdjsonResult[]): NdjsonResult[] {
+    const byName = new Map<string, NdjsonResult>()
+    for (const r of rows) {
+        const cur = byName.get(r.name)
+        if (!cur) {
+            byName.set(r.name, { ...r })
+            continue
+        }
+        cur.valdres = Math.min(cur.valdres, r.valdres)
+        if (r.jotai > 0) {
+            cur.jotai = cur.jotai > 0 ? Math.min(cur.jotai, r.jotai) : r.jotai
+        }
+    }
+    return [...byName.values()]
+}
+
 async function runABMode(
     pr: NdjsonResult[],
     main: NdjsonResult[],
     node: NdjsonResult[],
 ): Promise<void> {
-    const prBench = pr.filter(r => r.tag !== "baseline")
-    const mainBench = main.filter(r => r.tag !== "baseline")
+    // Collapse the K measurement rounds per side to per-benchmark minima.
+    const prMin = minByName(pr)
+    const mainMin = minByName(main)
+    const prBench = prMin.filter(r => r.tag !== "baseline")
+    const mainBench = mainMin.filter(r => r.tag !== "baseline")
+    const roundsPr = pr.length / Math.max(1, prMin.length)
     console.log(
-        `A/B mode: ${prBench.length} PR benchmarks vs ${mainBench.length} main benchmarks`,
+        `A/B mode: ${prBench.length} PR benchmarks vs ${mainBench.length} main benchmarks` +
+            ` (~${roundsPr.toFixed(0)} rounds/side, gating on per-bench minima)`,
     )
 
-    const abResults = compareAB(pr, main)
+    const abResults = compareAB(prMin, mainMin)
     console.log("\n" + formatABTable(abResults, node, 0) + "\n")
 
     await postOrUpdateComment(runNumber =>
