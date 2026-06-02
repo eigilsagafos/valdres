@@ -1,0 +1,88 @@
+# Bencher PR lane — runs the suite on a PR, compares each benchmark against
+# main's baseline using the cloned Threshold, posts a sticky PR comment, and
+# fails the check only when a benchmark's `latency` regresses past the boundary (--err).
+#
+# Same-repo PRs only (the `if` guard): fork PRs get no secrets, so the project
+# key would be empty. To cover external contributors, upgrade to Bencher's
+# fork-safe 3-workflow pattern (run on pull_request -> artifact -> upload on
+# workflow_run): https://bencher.dev/docs/how-to/github-actions/
+name: Bencher (PR)
+
+on:
+    pull_request:
+        branches: [main]
+
+permissions:
+    pull-requests: write
+    checks: write
+
+concurrency:
+    group: bencher-pr-${{ github.ref }}
+    cancel-in-progress: true
+
+jobs:
+    benchmark_pr:
+        if: github.event.pull_request.head.repo.full_name == github.repository
+        runs-on: ubuntu-22.04
+        # BENCHER_API_TOKEN lives in the `Bencher.dev` GitHub Environment, so the
+        # job must target that environment to read it. (Environment has no branch
+        # policy, so PR-branch jobs can still access the secret.)
+        environment: Bencher.dev
+        env:
+            BENCHER_PROJECT: valdres
+            # bencher_run_* is a PROJECT-scoped API key -> BENCHER_API_KEY / --key
+            # (NOT BENCHER_API_TOKEN / --token, which only accepts a user JWT).
+            # Reuses the existing secret value; optionally rename it to BENCHER_API_KEY.
+            BENCHER_API_KEY: ${{ secrets.BENCHER_API_TOKEN }}
+        steps:
+            - uses: actions/checkout@v6
+            - uses: oven-sh/setup-bun@v2
+              with:
+                  bun-version: 1.3.13
+            - uses: actions/setup-node@v6
+              with:
+                  node-version: "22.17"
+            - uses: bencherdev/bencher@v0.6.6
+
+            - name: Install
+              run: bun install --frozen-lockfile
+
+            - name: Run benchmarks (Bun)
+              working-directory: packages/valdres
+              run: bun run test:bench
+            - name: Run benchmarks (Node)
+              working-directory: packages/valdres
+              run: bun run test:bench:node
+
+            - name: Convert NDJSON -> Bencher Metric Format
+              run: bun run scripts/bench-to-bmf.ts
+
+            # --start-point-clone-thresholds copies main's Threshold onto this PR
+            # branch so it's gated by the same model; --err fails CI on an alert.
+            - name: Track Bun PR results
+              run: |
+                  bencher run \
+                    --branch '${{ github.head_ref }}' \
+                    --start-point '${{ github.base_ref }}' \
+                    --start-point-hash '${{ github.event.pull_request.base.sha }}' \
+                    --start-point-clone-thresholds \
+                    --start-point-reset \
+                    --testbed ubuntu-2204-bun \
+                    --err \
+                    --adapter json \
+                    --github-actions '${{ secrets.GITHUB_TOKEN }}' \
+                    --file packages/valdres/bun_results.json
+
+            - name: Track Node PR results
+              run: |
+                  bencher run \
+                    --branch '${{ github.head_ref }}' \
+                    --start-point '${{ github.base_ref }}' \
+                    --start-point-hash '${{ github.event.pull_request.base.sha }}' \
+                    --start-point-clone-thresholds \
+                    --start-point-reset \
+                    --testbed ubuntu-2204-node \
+                    --err \
+                    --adapter json \
+                    --github-actions '${{ secrets.GITHUB_TOKEN }}' \
+                    --file packages/valdres/node_results.json

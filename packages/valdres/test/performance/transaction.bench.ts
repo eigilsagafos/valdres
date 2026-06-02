@@ -1,9 +1,10 @@
 import { describe, test } from "./test-compat"
+import { do_not_optimize } from "mitata"
 import { createStore as jotaiCreateStore, atom as jotaiAtom } from "jotai"
 import { atom as valdresAtom } from "../../src/atom"
 import { selector as valdresSelector } from "../../src/selector"
 import { store as valdresCreateStore } from "../../src/store"
-import { assertFaster } from "./bench-utils"
+import { compare } from "./bench-utils"
 
 describe("transaction", () => {
     test("10 atoms × 10 selectors each, batch set + read all", async () => {
@@ -37,21 +38,20 @@ describe("transaction", () => {
         let vInt = 0
         let jInt = 0
 
-        await assertFaster(
+        await compare(
             "txn: 10 atoms × 10 selectors, set + read",
             () => {
                 const val = ++vInt
                 vStore.txn(txn => {
                     for (const a of vAtoms) txn.set(a, val)
                 })
-                for (const s of vSelectors) vStore.get(s)
+                for (const s of vSelectors) do_not_optimize(vStore.get(s))
             },
             () => {
                 const val = ++jInt
                 for (const a of jAtoms) jStore.set(a, val)
-                for (const s of jSelectors) jStore.get(s)
+                for (const s of jSelectors) do_not_optimize(jStore.get(s))
             },
-            2.0,
         )
     })
 
@@ -86,7 +86,7 @@ describe("transaction", () => {
         let vInt = 0
         let jInt = 0
 
-        await assertFaster(
+        await compare(
             "txn: 10 atoms × 10 selectors, with subs",
             () => {
                 const val = ++vInt
@@ -98,7 +98,6 @@ describe("transaction", () => {
                 const val = ++jInt
                 for (const a of jAtoms) jStore.set(a, val)
             },
-            2.0,
         )
     })
 
@@ -133,21 +132,20 @@ describe("transaction", () => {
         let vInt = 0
         let jInt = 0
 
-        await assertFaster(
+        await compare(
             "txn: 10 atoms × 100 selectors, set + read",
             () => {
                 const val = ++vInt
                 vStore.txn(txn => {
                     for (const a of vAtoms) txn.set(a, val)
                 })
-                for (const s of vSelectors) vStore.get(s)
+                for (const s of vSelectors) do_not_optimize(vStore.get(s))
             },
             () => {
                 const val = ++jInt
                 for (const a of jAtoms) jStore.set(a, val)
-                for (const s of jSelectors) jStore.get(s)
+                for (const s of jSelectors) do_not_optimize(jStore.get(s))
             },
-            2.0,
         )
     })
 
@@ -184,21 +182,20 @@ describe("transaction", () => {
         let vInt = 0
         let jInt = 0
 
-        await assertFaster(
+        await compare(
             "txn: cross-atom 1000 selectors, set + read",
             () => {
                 const val = ++vInt
                 vStore.txn(txn => {
                     for (const a of vAtoms) txn.set(a, val)
                 })
-                for (const s of vSelectors) vStore.get(s)
+                for (const s of vSelectors) do_not_optimize(vStore.get(s))
             },
             () => {
                 const val = ++jInt
                 for (const a of jAtoms) jStore.set(a, val)
-                for (const s of jSelectors) jStore.get(s)
+                for (const s of jSelectors) do_not_optimize(jStore.get(s))
             },
-            2.0,
         )
     })
 
@@ -253,7 +250,7 @@ describe("transaction", () => {
         let vInt = 0
         let jInt = 0
 
-        await assertFaster(
+        await compare(
             "txn: asymmetric DAG shared sink",
             () => {
                 vStore.set(vAtom, ++vInt)
@@ -261,7 +258,6 @@ describe("transaction", () => {
             () => {
                 jStore.set(jAtom, ++jInt)
             },
-            2.0,
         )
     })
 
@@ -323,7 +319,7 @@ describe("transaction", () => {
         let vInt = 0
         let jInt = 0
 
-        await assertFaster(
+        await compare(
             "txn: large asymmetric DAG (1000 leaves × 50 chain)",
             () => {
                 vStore.set(vAtom, ++vInt)
@@ -331,7 +327,6 @@ describe("transaction", () => {
             () => {
                 jStore.set(jAtom, ++jInt)
             },
-            2.0,
         )
     })
 
@@ -367,7 +362,7 @@ describe("transaction", () => {
         let vInt = 0
         let jInt = 0
 
-        await assertFaster(
+        await compare(
             "txn: cross-atom 1000 selectors, with subs",
             () => {
                 const val = ++vInt
@@ -379,7 +374,6 @@ describe("transaction", () => {
                 const val = ++jInt
                 for (const a of jAtoms) jStore.set(a, val)
             },
-            2.0,
         )
     })
 })
