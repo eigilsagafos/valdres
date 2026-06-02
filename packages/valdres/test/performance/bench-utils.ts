@@ -105,6 +105,7 @@ export async function assertFaster(
     valdresFn: () => void,
     competitorFn: () => void,
     maxSlowerRatio: number = 1.0,
+    refName: string = "jotai",
 ) {
     // Probe — short mitata measurement on each side to estimate per-op time.
     // The probe pays its own warmup cost so the main loop can use static
@@ -208,20 +209,20 @@ export async function assertFaster(
     const spreadInfo = ` [pair p10–p90 ${p10.toFixed(2)}–${p90.toFixed(2)}, n=${pairedSamples}, batch=${batchSize}]`
 
     console.log(
-        `  ${name}: valdres=${fmtNs(valdres.median)} jotai=${fmtNs(competitor.median)} (${tag})${spreadInfo}`,
+        `  ${name}: valdres=${fmtNs(valdres.median)} ${refName}=${fmtNs(competitor.median)} (${tag})${spreadInfo}`,
     )
 
     const result = {
-        name,
-        valdres: valdres.median,
-        jotai: competitor.median,
+        kind: "compare",
+        op: name,
+        ref: refName,
+        valdresNs: valdres.median,
+        refNs: competitor.median,
         ratio,
-        tag,
-        threshold: maxSlowerRatio,
+        ratioP10: p10,
+        ratioP90: p90,
         cv: Math.max(valdres.cv, competitor.cv),
-        pairRatioP10: p10,
-        pairRatioP90: p90,
-        batchSize,
+        threshold: maxSlowerRatio,
     }
 
     appendFileSync(RESULTS_PATH, JSON.stringify(result) + "\n")
@@ -250,11 +251,9 @@ export async function measureOne(name: string, fn: () => void) {
     console.log(`  ${name}: ${fmtNs(trimmed.median)}${trimInfo}`)
 
     const result = {
+        kind: "latency",
         name,
-        valdres: trimmed.median,
-        jotai: 0,
-        ratio: 0,
-        tag: "baseline",
+        ns: trimmed.median,
         cv: trimmed.cv,
     }
 

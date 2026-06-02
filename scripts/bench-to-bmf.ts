@@ -1,36 +1,27 @@
 /**
- * Converts the benchmark NDJSON produced by the measurement layer
- * (packages/valdres/test/performance/bench-utils.ts) into Bencher Metric
- * Format (BMF) JSON — one file per runtime, uploaded to its own Bencher testbed.
+ * Converts the benchmark NDJSON (from bench-utils.ts) into Bencher Metric
+ * Format (BMF), one file per runtime/testbed. Two measures only:
  *
- *   bench-results.ndjson       -> packages/valdres/bun_results.json   (testbed: ubuntu-latest-bun)
- *   bench-results-node.ndjson  -> packages/valdres/node_results.json  (testbed: ubuntu-latest-node)
+ *   ratio    — valdres / reference (jotai or map). The GATED metric; lower =
+ *              valdres faster. Runner noise that hits both sides cancels in the
+ *              quotient, so this is stable enough to gate on shared CI runners.
+ *   latency  — Bencher's BUILT-IN measure (nanoseconds; units are set
+ *              automatically). Absolute per-implementation timings; tracked for
+ *              trend, never gated (absolute ns on shared runners is noisy).
  *
- * Each head-to-head benchmark emits three measures:
- *   - ratio           valdres_ns / jotai_ns  — the GATE metric (lower = valdres faster);
- *                     runner noise that hits both libs cancels in the quotient.
- *   - valdres-latency ns — informational (powers the website plot / debugging)
- *   - jotai-latency   ns — informational
- * Single-side baseline entries (measureOne) emit only valdres-latency.
+ * `compare` results (assertFaster) -> one `ratio` benchmark
+ *   ("<op> · valdres vs <ref>") plus a `latency` benchmark for each side
+ *   ("<op> / valdres", "<op> / <ref>").
+ * `latency` results (measureOne) -> a single `latency` benchmark ("<name>").
+ * Latency benchmark names are deduped — an implementation (e.g. valdres.get)
+ * is measured in several comparisons; the first reading wins.
  *
- * Bencher gates on Thresholds configured in CI (on the `ratio` measure), NOT on
- * the values here; lower_value/upper_value are display-only spread for the plots.
+ *   bench-results.ndjson       -> packages/valdres/bun_results.json   (testbed ubuntu-latest-bun)
+ *   bench-results-node.ndjson  -> packages/valdres/node_results.json  (testbed ubuntu-latest-node)
  */
 import { writeFileSync } from "fs"
 import { join } from "path"
-import { readBenchResults } from "./lib/read-bench-results"
-
-// bench-utils writes extra fields beyond the typed BenchResult; surface them.
-interface RichResult {
-    name: string
-    valdres: number
-    jotai: number
-    ratio: number
-    tag: string
-    cv?: number
-    pairRatioP10?: number
-    pairRatioP90?: number
-}
+import { type BenchResult, readBenchResults } from "./lib/read-bench-results"
 
 type Metric = { value: number; lower_value?: number; upper_value?: number }
 type Bmf = Record<string, Record<string, Metric>>
@@ -44,31 +35,29 @@ function band(value: number, cv: number | undefined): Partial<Metric> {
     return { lower_value: value * (1 - cv), upper_value: value * (1 + cv) }
 }
 
-function toBmf(results: RichResult[]): Bmf {
+function toBmf(results: BenchResult[]): Bmf {
     const bmf: Bmf = {}
+
+    // First non-empty reading for a given implementation wins (the same impl
+    // is measured across several comparisons — readings are equivalent).
+    const setLatency = (name: string, ns: number, cv?: number) => {
+        if (bmf[name]?.latency) return
+        bmf[name] = { latency: { value: ns, ...band(ns, cv) } }
+    }
+
     for (const r of results) {
-        const isBaseline = r.tag === "baseline" || !r.jotai
-        if (isBaseline) {
-            // Single-side reference points (measureOne): raw Map/object yardsticks
-            // and valdres/jotai measured in isolation. Tracked under a neutral
-            // `latency` measure — so they overlay on one plot and aren't mislabeled
-            // as valdres (measureOne stores its one value in the `valdres` field
-            // regardless of what it measures). Not gated; visible trend only.
-            bmf[r.name] = {
-                latency: { value: r.valdres, ...band(r.valdres, r.cv) },
-            }
-        } else {
-            // Head-to-head (assertFaster): the gated `ratio` plus both absolute sides.
-            bmf[r.name] = {
+        if (r.kind === "compare") {
+            bmf[`${r.op} · valdres vs ${r.ref}`] = {
                 ratio: {
                     value: r.ratio,
-                    // p10/p90 of the paired ratios when present — a real measured band.
-                    lower_value: r.pairRatioP10,
-                    upper_value: r.pairRatioP90,
+                    lower_value: r.ratioP10,
+                    upper_value: r.ratioP90,
                 },
-                "valdres-latency": { value: r.valdres, ...band(r.valdres, r.cv) },
-                "jotai-latency": { value: r.jotai, ...band(r.jotai, r.cv) },
             }
+            setLatency(`${r.op} / valdres`, r.valdresNs, r.cv)
+            setLatency(`${r.op} / ${r.ref}`, r.refNs, r.cv)
+        } else {
+            setLatency(r.name, r.ns, r.cv)
         }
     }
     return bmf
@@ -86,7 +75,7 @@ const lanes = [
 ]
 
 for (const lane of lanes) {
-    const results = readBenchResults(lane.ndjson) as unknown as RichResult[]
+    const results = readBenchResults(lane.ndjson)
     if (results.length === 0) {
         console.warn(`No results in ${lane.ndjson} — skipping ${lane.out}`)
         continue
