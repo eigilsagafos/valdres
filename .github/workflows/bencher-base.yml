@@ -1,13 +1,9 @@
-# Bencher SPIKE — base lane. Runs on pushes to main to (1) record the baseline
-# series for each runtime and (2) create/update the regression Threshold that PRs
-# are gated against. Runs ALONGSIDE the existing benchmark.yaml (nothing removed
-# yet) so the two approaches can be compared on real history.
+# Bencher base lane — the benchmark CI for this repo. On pushes to main it
+# records the baseline latency series for each runtime and creates/updates the
+# regression Threshold that PRs are gated against.
 #
-# Setup checklist (things only a human can do):
-#   - Bencher project exists with slug `valdres` (confirm at bencher.dev/perf/valdres;
-#     if the slug differs, change BENCHER_PROJECT below).
-#   - Repo secret BENCHER_API_TOKEN is set (already done).
-#   - Project visibility = public (for embeddable perf plots + external PR comments).
+# Project slug is `valdres` (BENCHER_PROJECT below); the project is public, so
+# its perf page and plots are viewable at bencher.dev/perf/valdres.
 name: Bencher (base)
 
 on:
@@ -60,13 +56,16 @@ jobs:
 
             # Gate the built-in `latency` measure with a t-test against main's
             # history (auto-scales tolerance to each benchmark's own variance —
-            # noisy benchmarks get a wider band). Reference benchmarks (jotai/map)
-            # are stable so they self-pass; only valdres regressions trip it.
+            # noisy benchmarks get a wider band). NOTE: a Bencher threshold is
+            # per-measure, so the jotai/map reference benchmarks are gated too;
+            # they're stable enough to usually self-pass (upper-boundary only),
+            # but a jotai bump or a noise spike on a reference can trip a PR.
+            # Move references to their own measure if that proves flaky.
             - name: Track Bun baseline
               run: |
                   bencher run \
                     --branch main \
-                    --testbed ubuntu-latest-bun \
+                    --testbed ubuntu-2204-bun \
                     --threshold-measure latency \
                     --threshold-test t_test \
                     --threshold-max-sample-size 64 \
@@ -80,7 +79,7 @@ jobs:
               run: |
                   bencher run \
                     --branch main \
-                    --testbed ubuntu-latest-node \
+                    --testbed ubuntu-2204-node \
                     --threshold-measure latency \
                     --threshold-test t_test \
                     --threshold-max-sample-size 64 \

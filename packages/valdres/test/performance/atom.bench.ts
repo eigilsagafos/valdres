@@ -3,16 +3,15 @@ import { createStore as jotaiCreateStore, atom as jotaiAtom } from "jotai"
 import { atom as valdresAtom } from "../../src/atom"
 import { store as valdresCreateStore } from "../../src/store"
 import { compare } from "./bench-utils"
-
-// Prevent dead-code elimination by the JIT
-let sink: any
+import { do_not_optimize } from "mitata"
 
 describe("atom", () => {
     test("creation", async () => {
         await compare(
             "atom(1)",
-            () => { sink = valdresAtom(1) },
-            () => { sink = jotaiAtom(1) },        )
+            () => do_not_optimize(valdresAtom(1)),
+            () => do_not_optimize(jotaiAtom(1)),
+        )
     })
 
     test("get", async () => {
@@ -23,8 +22,9 @@ describe("atom", () => {
 
         await compare(
             "store.get(atom)",
-            () => { sink = vStore.get(vAtom) },
-            () => { sink = jStore.get(jAtom) },        )
+            () => do_not_optimize(vStore.get(vAtom)),
+            () => do_not_optimize(jStore.get(jAtom)),
+        )
     })
 
     test("set (new value)", async () => {
@@ -38,7 +38,8 @@ describe("atom", () => {
         await compare(
             "set(atom, value)",
             () => vStore.set(vAtom, ++vInt),
-            () => jStore.set(jAtom, ++jInt),        )
+            () => jStore.set(jAtom, ++jInt),
+        )
     })
 
     test("set (updater function)", async () => {
@@ -50,7 +51,8 @@ describe("atom", () => {
         await compare(
             "set(atom, curr => curr+1)",
             () => vStore.set(vAtom, (c: number) => c + 1),
-            () => jStore.set(jAtom, (c: number) => c + 1),        )
+            () => jStore.set(jAtom, (c: number) => c + 1),
+        )
     })
 
     test("set with 10 subscribers", async () => {
@@ -68,7 +70,8 @@ describe("atom", () => {
         await compare(
             "set(atom) with 10 subs",
             () => vStore.set(vAtom, ++vInt),
-            () => jStore.set(jAtom, ++jInt),        )
+            () => jStore.set(jAtom, ++jInt),
+        )
     })
 
     test("lifecycle: create + 100 get + 100 set", async () => {
@@ -79,13 +82,14 @@ describe("atom", () => {
             "atom lifecycle (create+100get+100set)",
             () => {
                 const a = valdresAtom(0)
-                for (let i = 0; i < 100; i++) sink = vStore.get(a)
+                for (let i = 0; i < 100; i++) do_not_optimize(vStore.get(a))
                 for (let i = 0; i < 100; i++) vStore.set(a, i)
             },
             () => {
                 const a = jotaiAtom(0)
-                for (let i = 0; i < 100; i++) sink = jStore.get(a)
+                for (let i = 0; i < 100; i++) do_not_optimize(jStore.get(a))
                 for (let i = 0; i < 100; i++) jStore.set(a, i)
-            },        )
+            },
+        )
     })
 })

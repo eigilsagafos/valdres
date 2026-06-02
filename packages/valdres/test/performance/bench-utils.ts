@@ -12,92 +12,35 @@ const RESULTS_FILE =
     RUNTIME === "bun" ? "bench-results.ndjson" : "bench-results-node.ndjson"
 const RESULTS_PATH = join(__dir, RESULTS_FILE)
 
-// ── IQR-based outlier removal ─────────────────────────────────────────────
-// Mitata only trims 1 sample from each end. For sub-microsecond benchmarks on
-// shared CI runners, GC pauses and CPU throttling create fat tails that
-// contaminate even the median. IQR filtering removes those before we report.
-interface TrimmedResult {
-    median: number
-    cv: number // coefficient of variation (stddev / mean)
-    kept: number // samples kept after filtering
-    total: number // total samples before filtering
-}
-
-function iqrTrimmed(rawSamples: number[]): TrimmedResult {
-    if (rawSamples.length === 0) {
-        throw new Error("iqrTrimmed: received empty samples array")
-    }
-
-    const sorted = [...rawSamples].sort((a, b) => a - b)
-    const n = sorted.length
-
-    if (n < 4) {
-        // Too few samples for IQR — return plain median
-        const mid = Math.floor(n / 2)
-        const median =
-            n % 2 !== 0 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2
-        return { median, cv: 0, kept: n, total: n }
-    }
-
-    const q1 = sorted[Math.floor(n * 0.25)]
-    const q3 = sorted[Math.floor(n * 0.75)]
-    const iqr = q3 - q1
-    const lower = q1 - 1.5 * iqr
-    const upper = q3 + 1.5 * iqr
-    let filtered = sorted.filter(s => s >= lower && s <= upper)
-    if (filtered.length === 0) filtered = sorted // fall back if IQR nukes everything
-
-    const mid = Math.floor(filtered.length / 2)
-    const median =
-        filtered.length % 2 !== 0
-            ? filtered[mid]
-            : (filtered[mid - 1] + filtered[mid]) / 2
-
-    const mean = filtered.reduce((a, b) => a + b, 0) / filtered.length
-    const variance =
-        filtered.reduce((a, b) => a + (b - mean) ** 2, 0) / filtered.length
-    const cv = mean > 0 ? Math.sqrt(variance) / mean : 0
-
-    return { median, cv, kept: filtered.length, total: n }
-}
-
-// Single-side absolute latency (nanoseconds) for one implementation. Each call
-// records one `latency` benchmark — the value Bencher tracks and gates against
-// the base branch. Runner noise is handled by Bencher's statistical threshold,
-// not by a same-window ratio here.
+// Measurement budget. 200ms keeps the full suite under the CI step budget;
+// Bencher's per-benchmark t-test absorbs the extra per-point variance across
+// commits, so we don't need mitata's heavier default (642ms) here.
+//
+// NOTE: every result is appended to one shared NDJSON file, so the suite MUST
+// run serially — bun via `--concurrency 1`, vitest via pool=forks + singleFork.
 const MEASURE_ONE_OPTS = {
-    min_samples: 10,
+    min_samples: 12,
     min_cpu_time: 200 * 1e6,
     warmup_samples: 2,
 }
 
+// Record one absolute latency (ns) for a benchmark. mitata's measure() already
+// returns a robust, tail-trimmed p50; Bencher's t-test owns cross-run noise, so
+// we report p50 directly with no extra outlier filtering.
 export async function measureOne(name: string, fn: () => void) {
     const stats = await measure(fn, MEASURE_ONE_OPTS)
-    const trimmed = iqrTrimmed(stats.samples)
+    console.log(`  ${name}: ${fmtNs(stats.p50)}`)
 
-    const trimInfo =
-        trimmed.kept < trimmed.total
-            ? ` [trimmed ${trimmed.total - trimmed.kept} outliers]`
-            : ""
-
-    console.log(`  ${name}: ${fmtNs(trimmed.median)}${trimInfo}`)
-
-    const result = {
-        kind: "latency",
-        name,
-        ns: trimmed.median,
-        cv: trimmed.cv,
-    }
-
+    const result = { kind: "latency", name, ns: stats.p50 }
     appendFileSync(RESULTS_PATH, JSON.stringify(result) + "\n")
     return stats
 }
 
 // Measure valdres and a reference implementation for the same operation as two
 // separate `latency` benchmarks — "<op> / valdres" and "<op> / <ref>". The
-// competitor / native-floor comparison is read off a Bencher plot (overlaid
-// lines); regression gating is per-benchmark against the base branch. No
-// in-process ratio or assertion: Bencher owns the gate now.
+// comparison is read off an overlaid Bencher plot; each series is gated against
+// its own history. The two sides are measured in independent windows on purpose
+// (no in-process ratio) — Bencher is the gate.
 export async function compare(
     op: string,
     valdresFn: () => void,

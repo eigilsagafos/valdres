@@ -1,11 +1,11 @@
-# Bencher SPIKE — PR lane. Runs the same suite on a PR, compares each benchmark
-# against main's baseline using the cloned Threshold, posts a sticky PR comment,
-# and fails the check only when a benchmark's `latency` regresses past the boundary (--err).
+# Bencher PR lane — runs the suite on a PR, compares each benchmark against
+# main's baseline using the cloned Threshold, posts a sticky PR comment, and
+# fails the check only when a benchmark's `latency` regresses past the boundary (--err).
 #
-# SPIKE SCOPE: same-repo PRs only (the `if` guard). Fork PRs get no secrets, so
-# BENCHER_API_TOKEN would be empty. To cover external contributors later, upgrade
-# to Bencher's fork-safe 3-workflow pattern (run on pull_request -> artifact ->
-# upload on workflow_run): https://bencher.dev/docs/how-to/github-actions/
+# Same-repo PRs only (the `if` guard): fork PRs get no secrets, so the project
+# key would be empty. To cover external contributors, upgrade to Bencher's
+# fork-safe 3-workflow pattern (run on pull_request -> artifact -> upload on
+# workflow_run): https://bencher.dev/docs/how-to/github-actions/
 name: Bencher (PR)
 
 on:
@@ -67,7 +67,7 @@ jobs:
                     --start-point-hash '${{ github.event.pull_request.base.sha }}' \
                     --start-point-clone-thresholds \
                     --start-point-reset \
-                    --testbed ubuntu-latest-bun \
+                    --testbed ubuntu-2204-bun \
                     --err \
                     --adapter json \
                     --github-actions '${{ secrets.GITHUB_TOKEN }}' \
@@ -81,7 +81,7 @@ jobs:
                     --start-point-hash '${{ github.event.pull_request.base.sha }}' \
                     --start-point-clone-thresholds \
                     --start-point-reset \
-                    --testbed ubuntu-latest-node \
+                    --testbed ubuntu-2204-node \
                     --err \
                     --adapter json \
                     --github-actions '${{ secrets.GITHUB_TOKEN }}' \

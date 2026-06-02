@@ -8,8 +8,6 @@ todo.md
 .npmrc
 bench-results.ndjson
 bench-results-node.ndjson
-bench-results.json
-bench-history-entry.json
 bun_results.json
 node_results.json
 junit*.xml

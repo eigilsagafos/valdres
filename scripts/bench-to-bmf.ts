@@ -24,17 +24,20 @@ type Bmf = Record<string, Record<string, Metric>>
 const ROOT = join(import.meta.dir, "..")
 const PERF_DIR = join(ROOT, "packages/valdres/test/performance")
 
-// A symmetric ±CV band around a value, for the plot's confidence interval.
-function band(value: number, cv: number | undefined): Partial<Metric> {
-    if (!cv || cv <= 0) return {}
-    return { lower_value: value * (1 - cv), upper_value: value * (1 + cv) }
-}
-
 function toBmf(results: BenchResult[]): Bmf {
     const bmf: Bmf = {}
     for (const r of results) {
-        if (bmf[r.name]) continue // dedupe: first reading of an impl wins
-        bmf[r.name] = { latency: { value: r.ns, ...band(r.ns, r.cv) } }
+        if (bmf[r.name]) {
+            // Each "<op> / <impl>" name should be produced by exactly one bench
+            // file. A collision means two files emit the same name with
+            // different values — warn so a silent first-wins drop can't hide
+            // which reading is gated.
+            console.warn(
+                `bench-to-bmf: duplicate benchmark "${r.name}" — keeping first reading, ignoring the rest`,
+            )
+            continue
+        }
+        bmf[r.name] = { latency: { value: r.ns } }
     }
     return bmf
 }

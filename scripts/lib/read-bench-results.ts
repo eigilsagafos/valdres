@@ -5,7 +5,6 @@ export interface LatencyResult {
     kind: "latency"
     name: string
     ns: number
-    cv?: number
 }
 
 export type BenchResult = LatencyResult

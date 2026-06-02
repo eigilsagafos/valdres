@@ -1,4 +1,5 @@
 import { describe, test } from "./test-compat"
+import { do_not_optimize } from "mitata"
 import { createStore as jotaiCreateStore, atom as jotaiAtom } from "jotai"
 import { atom as valdresAtom } from "../../src/atom"
 import { selector as valdresSelector } from "../../src/selector"
@@ -44,13 +45,14 @@ describe("transaction", () => {
                 vStore.txn(txn => {
                     for (const a of vAtoms) txn.set(a, val)
                 })
-                for (const s of vSelectors) vStore.get(s)
+                for (const s of vSelectors) do_not_optimize(vStore.get(s))
             },
             () => {
                 const val = ++jInt
                 for (const a of jAtoms) jStore.set(a, val)
-                for (const s of jSelectors) jStore.get(s)
-            },        )
+                for (const s of jSelectors) do_not_optimize(jStore.get(s))
+            },
+        )
     })
 
     test("10 atoms × 10 selectors each, with subscribers", async () => {
@@ -95,7 +97,8 @@ describe("transaction", () => {
             () => {
                 const val = ++jInt
                 for (const a of jAtoms) jStore.set(a, val)
-            },        )
+            },
+        )
     })
 
     test("10 atoms × 100 selectors each, batch set + read all", async () => {
@@ -136,13 +139,14 @@ describe("transaction", () => {
                 vStore.txn(txn => {
                     for (const a of vAtoms) txn.set(a, val)
                 })
-                for (const s of vSelectors) vStore.get(s)
+                for (const s of vSelectors) do_not_optimize(vStore.get(s))
             },
             () => {
                 const val = ++jInt
                 for (const a of jAtoms) jStore.set(a, val)
-                for (const s of jSelectors) jStore.get(s)
-            },        )
+                for (const s of jSelectors) do_not_optimize(jStore.get(s))
+            },
+        )
     })
 
     test("cross-atom selectors: 10 atoms, 100 selectors each reading 3 atoms", async () => {
@@ -185,13 +189,14 @@ describe("transaction", () => {
                 vStore.txn(txn => {
                     for (const a of vAtoms) txn.set(a, val)
                 })
-                for (const s of vSelectors) vStore.get(s)
+                for (const s of vSelectors) do_not_optimize(vStore.get(s))
             },
             () => {
                 const val = ++jInt
                 for (const a of jAtoms) jStore.set(a, val)
-                for (const s of jSelectors) jStore.get(s)
-            },        )
+                for (const s of jSelectors) do_not_optimize(jStore.get(s))
+            },
+        )
     })
 
     test("asymmetric DAG: shared sink reachable through paths of different depth", async () => {
@@ -252,7 +257,8 @@ describe("transaction", () => {
             },
             () => {
                 jStore.set(jAtom, ++jInt)
-            },        )
+            },
+        )
     })
 
     test("large asymmetric DAG: 1000 leaves over a 50-link chain", async () => {
@@ -320,7 +326,8 @@ describe("transaction", () => {
             },
             () => {
                 jStore.set(jAtom, ++jInt)
-            },        )
+            },
+        )
     })
 
     test("cross-atom selectors with subscribers", async () => {
@@ -366,6 +373,7 @@ describe("transaction", () => {
             () => {
                 const val = ++jInt
                 for (const a of jAtoms) jStore.set(a, val)
-            },        )
+            },
+        )
     })
 })

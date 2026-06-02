@@ -1,4 +1,5 @@
 import { describe, test } from "./test-compat"
+import { do_not_optimize } from "mitata"
 import { createStore as jotaiCreateStore, atom as jotaiAtom } from "jotai"
 import { atomFamily as jotaiAtomFamily } from "jotai/utils"
 import { atom as valdresAtom } from "../../src/atom"
@@ -7,16 +8,15 @@ import { selectorFamily as valdresSelectorFamily } from "../../src/selectorFamil
 import { store as valdresCreateStore } from "../../src/store"
 import { compare } from "./bench-utils"
 
-let sink: any
-
 describe("selector", () => {
     test("creation", async () => {
         const vAtom = valdresAtom(0)
         const jAtom = jotaiAtom(0)
         await compare(
             "selector(fn)",
-            () => { sink = valdresSelector(get => get(vAtom) + 1) },
-            () => { sink = jotaiAtom(get => get(jAtom) + 1) },        )
+            () => do_not_optimize(valdresSelector(get => get(vAtom) + 1)),
+            () => do_not_optimize(jotaiAtom(get => get(jAtom) + 1)),
+        )
     })
 
     test("set + read with 10 subscribers", async () => {
@@ -42,12 +42,13 @@ describe("selector", () => {
             "set + read 10 selectors",
             () => {
                 vStore.set(vAtom, ++vInt)
-                vSelectors.forEach(s => vStore.get(s))
+                vSelectors.forEach(s => do_not_optimize(vStore.get(s)))
             },
             () => {
                 jStore.set(jAtom, ++jInt)
-                jSelectors.forEach(s => jStore.get(s))
-            },        )
+                jSelectors.forEach(s => do_not_optimize(jStore.get(s)))
+            },
+        )
     })
 
     test("set + read with 100 subscribers", async () => {
@@ -73,12 +74,13 @@ describe("selector", () => {
             "set + read 100 selectors",
             () => {
                 vStore.set(vAtom, ++vInt)
-                vSelectors.forEach(s => vStore.get(s))
+                vSelectors.forEach(s => do_not_optimize(vStore.get(s)))
             },
             () => {
                 jStore.set(jAtom, ++jInt)
-                jSelectors.forEach(s => jStore.get(s))
-            },        )
+                jSelectors.forEach(s => do_not_optimize(jStore.get(s)))
+            },
+        )
     })
 
     // sub+unsub on a chain of derived atoms that were initialized but never
@@ -100,7 +102,7 @@ describe("selector", () => {
                         const dep = prev
                         prev = valdresSelector(get => get(dep) + 1)
                     }
-                    store.get(prev)
+                    do_not_optimize(store.get(prev))
                     const u = store.sub(base, () => {})
                     u()
                 },
@@ -112,10 +114,11 @@ describe("selector", () => {
                         const dep = prev
                         prev = jotaiAtom(get => get(dep) + 1)
                     }
-                    store.get(prev)
+                    do_not_optimize(store.get(prev))
                     const u = store.sub(base, () => {})
                     u()
-                },            )
+                },
+            )
         })
     }
 
@@ -144,12 +147,13 @@ describe("selector", () => {
             "set + read 100 selectorFamily entries",
             () => {
                 vStore.set(vAtom, ++vInt)
-                vSelectors.forEach(s => vStore.get(s))
+                vSelectors.forEach(s => do_not_optimize(vStore.get(s)))
             },
             () => {
                 jStore.set(jAtom, ++jInt)
-                jSelectors.forEach(s => jStore.get(s))
-            },        )
+                jSelectors.forEach(s => do_not_optimize(jStore.get(s)))
+            },
+        )
     })
 
     test("chained selectors (depth 5)", async () => {
@@ -180,11 +184,12 @@ describe("selector", () => {
             "set + read through 5 chained selectors",
             () => {
                 vStore.set(vBase, ++vInt)
-                vStore.get(vFinal)
+                do_not_optimize(vStore.get(vFinal))
             },
             () => {
                 jStore.set(jBase, ++jInt)
-                jStore.get(jFinal)
-            },        )
+                do_not_optimize(jStore.get(jFinal))
+            },
+        )
     })
 })

@@ -3,16 +3,16 @@ import { createStore as jotaiCreateStore, atom as jotaiAtom } from "jotai"
 import { atom as valdresAtom } from "../../src/atom"
 import { store as valdresCreateStore } from "../../src/store"
 import { compare } from "./bench-utils"
-
-let sink: any
+import { do_not_optimize } from "mitata"
 
 describe("store", () => {
     test("creation", async () => {
         // TODO: valdres store creation is heavy — optimization target
         await compare(
             "createStore",
-            () => { sink = valdresCreateStore() },
-            () => { sink = jotaiCreateStore() },        )
+            () => do_not_optimize(valdresCreateStore()),
+            () => do_not_optimize(jotaiCreateStore()),
+        )
     })
 
     test("bulk set: 1000 atoms", async () => {
@@ -29,7 +29,8 @@ describe("store", () => {
             },
             () => {
                 for (let i = 0; i < 1000; i++) jStore.set(jAtoms[i], i)
-            },        )
+            },
+        )
     })
 
     test("bulk get: 1000 atoms", async () => {
@@ -50,11 +51,12 @@ describe("store", () => {
         await compare(
             "get 1000 atoms",
             () => {
-                for (let i = 0; i < 1000; i++) sink = vStore.get(vAtoms[i])
+                for (let i = 0; i < 1000; i++) do_not_optimize(vStore.get(vAtoms[i]))
             },
             () => {
-                for (let i = 0; i < 1000; i++) sink = jStore.get(jAtoms[i])
-            },        )
+                for (let i = 0; i < 1000; i++) do_not_optimize(jStore.get(jAtoms[i]))
+            },
+        )
     })
 
     test("subscribe + unsubscribe", async () => {
@@ -74,6 +76,7 @@ describe("store", () => {
             () => {
                 const unsub = jStore.sub(jAtom, noop)
                 unsub()
-            },        )
+            },
+        )
     })
 })
