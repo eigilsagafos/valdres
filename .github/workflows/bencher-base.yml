@@ -46,8 +46,8 @@ jobs:
             - name: Install
               run: bun install --frozen-lockfile
 
-            # Reuse the existing measurement layer unchanged — it writes the NDJSON
-            # we convert to BMF. (bench-utils.ts paired-ratio + IQR.)
+            # Measurement layer writes per-implementation latency NDJSON
+            # (bench-utils.ts: measureOne / compare) which we convert to BMF.
             - name: Run benchmarks (Bun)
               working-directory: packages/valdres
               run: bun run test:bench
@@ -58,18 +58,19 @@ jobs:
             - name: Convert NDJSON -> Bencher Metric Format
               run: bun run scripts/bench-to-bmf.ts
 
-            # Gate metric is `ratio` (valdres/jotai). Percentage test, upper-boundary
-            # 0.50 => only flag a >=50% relative slowdown — deliberately loose so
-            # GitHub-runner noise never trips it. Tighten toward 0.25 once trusted.
+            # Gate the built-in `latency` measure with a t-test against main's
+            # history (auto-scales tolerance to each benchmark's own variance —
+            # noisy benchmarks get a wider band). Reference benchmarks (jotai/map)
+            # are stable so they self-pass; only valdres regressions trip it.
             - name: Track Bun baseline
               run: |
                   bencher run \
                     --branch main \
                     --testbed ubuntu-latest-bun \
-                    --threshold-measure ratio \
-                    --threshold-test percentage \
-                    --threshold-upper-boundary 0.50 \
-                    --threshold-max-sample-size 40 \
+                    --threshold-measure latency \
+                    --threshold-test t_test \
+                    --threshold-max-sample-size 64 \
+                    --threshold-upper-boundary 0.99 \
                     --thresholds-reset \
                     --adapter json \
                     --github-actions '${{ secrets.GITHUB_TOKEN }}' \
@@ -80,10 +81,10 @@ jobs:
                   bencher run \
                     --branch main \
                     --testbed ubuntu-latest-node \
-                    --threshold-measure ratio \
-                    --threshold-test percentage \
-                    --threshold-upper-boundary 0.50 \
-                    --threshold-max-sample-size 40 \
+                    --threshold-measure latency \
+                    --threshold-test t_test \
+                    --threshold-max-sample-size 64 \
+                    --threshold-upper-boundary 0.99 \
                     --thresholds-reset \
                     --adapter json \
                     --github-actions '${{ secrets.GITHUB_TOKEN }}' \

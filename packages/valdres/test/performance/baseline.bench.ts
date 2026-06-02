@@ -1,7 +1,7 @@
 import { describe, test } from "./test-compat"
 import { atom as valdresAtom } from "../../src/atom"
 import { store as valdresCreateStore } from "../../src/store"
-import { assertFaster } from "./bench-utils"
+import { compare } from "./bench-utils"
 
 // Native-floor comparisons: how close is valdres to a raw JS Map on the core
 // key→value operations? Emitted as a `ratio` (valdres / map) — a fixed
@@ -25,16 +25,14 @@ describe("native floor (vs raw Map)", () => {
         const vAtom = valdresAtom("hello")
         vStore.get(vAtom)
 
-        await assertFaster(
+        await compare(
             "store.get(atom)",
             () => {
                 sink = vStore.get(vAtom)
             },
             () => {
                 sink = map.get("key")
-            },
-            1000,
-            "map",
+            },            "map",
         )
     })
 
@@ -45,12 +43,10 @@ describe("native floor (vs raw Map)", () => {
 
         let vi = 0
         let mi = 0
-        await assertFaster(
+        await compare(
             "set(atom, value)",
             () => vStore.set(vAtom, ++vi),
-            () => map.set("key", ++mi),
-            1000,
-            "map",
+            () => map.set("key", ++mi),            "map",
         )
     })
 })

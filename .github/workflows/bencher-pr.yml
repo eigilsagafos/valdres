@@ -1,6 +1,6 @@
 # Bencher SPIKE — PR lane. Runs the same suite on a PR, compares each benchmark
 # against main's baseline using the cloned Threshold, posts a sticky PR comment,
-# and fails the check only when the `ratio` regresses past the boundary (--err).
+# and fails the check only when a benchmark's `latency` regresses past the boundary (--err).
 #
 # SPIKE SCOPE: same-repo PRs only (the `if` guard). Fork PRs get no secrets, so
 # BENCHER_API_TOKEN would be empty. To cover external contributors later, upgrade

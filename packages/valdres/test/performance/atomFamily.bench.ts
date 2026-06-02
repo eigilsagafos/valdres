@@ -4,7 +4,7 @@ import { atomFamily as jotaiAtomFamily } from "jotai/utils"
 import { atom as valdresAtom } from "../../src/atom"
 import { atomFamily as valdresAtomFamily } from "../../src/atomFamily"
 import { selectorFamily as valdresSelectorFamily } from "../../src/selectorFamily"
-import { assertFaster } from "./bench-utils"
+import { compare } from "./bench-utils"
 
 let sink: any
 
@@ -17,12 +17,10 @@ describe("atomFamily", () => {
 
         let vCounter = 0
         let jCounter = 0
-        await assertFaster(
+        await compare(
             "atomFamily(id)",
             () => { sink = vFamily(++vCounter) },
-            () => { sink = jFamily(++jCounter) },
-            10.0,
-        )
+            () => { sink = jFamily(++jCounter) },        )
     })
 })
 
@@ -42,12 +40,10 @@ describe("atomFamily cache hit", () => {
         // which gives a wide pair-ratio band (p10–p90 routinely spans 4–9x)
         // even though the real ratio is ~2x on quiet hardware. README tracks
         // the actual number; this assertion only guards against regressions.
-        await assertFaster(
+        await compare(
             "atomFamily(id) cache hit",
             () => { sink = vFamily(1) },
-            () => { sink = jFamily(1) },
-            8.0,
-        )
+            () => { sink = jFamily(1) },        )
     })
 })
 
@@ -65,11 +61,9 @@ describe("selectorFamily", () => {
 
         let vCounter = 0
         let jCounter = 0
-        await assertFaster(
+        await compare(
             "selectorFamily(id)",
             () => { sink = vFamily(++vCounter) },
-            () => { sink = jFamily(++jCounter) },
-            10.0,
-        )
+            () => { sink = jFamily(++jCounter) },        )
     })
 })

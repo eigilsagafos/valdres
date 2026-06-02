@@ -1,20 +1,15 @@
 /**
  * Converts the benchmark NDJSON (from bench-utils.ts) into Bencher Metric
- * Format (BMF), one file per runtime/testbed. Two measures only:
+ * Format (BMF), one file per runtime/testbed. A SINGLE measure: the built-in
+ * `latency` (nanoseconds — units are set automatically by Bencher).
  *
- *   ratio    — valdres / reference (jotai or map). The GATED metric; lower =
- *              valdres faster. Runner noise that hits both sides cancels in the
- *              quotient, so this is stable enough to gate on shared CI runners.
- *   latency  — Bencher's BUILT-IN measure (nanoseconds; units are set
- *              automatically). Absolute per-implementation timings; tracked for
- *              trend, never gated (absolute ns on shared runners is noisy).
- *
- * `compare` results (assertFaster) -> one `ratio` benchmark
- *   ("<op> · valdres vs <ref>") plus a `latency` benchmark for each side
- *   ("<op> / valdres", "<op> / <ref>").
- * `latency` results (measureOne) -> a single `latency` benchmark ("<name>").
- * Latency benchmark names are deduped — an implementation (e.g. valdres.get)
- * is measured in several comparisons; the first reading wins.
+ * Each benchmark is one implementation of an operation, named "<op> / <impl>"
+ * (e.g. "store.get(atom) / valdres", "store.get(atom) / jotai",
+ * "store.get(atom) / map"). The competitor / native-floor comparison is read
+ * off a Bencher plot by overlaying the sibling benchmarks; regression gating is
+ * per-benchmark against the base branch. Names are deduped — an implementation
+ * can be measured in more than one comparison (e.g. valdres.get appears in both
+ * the vs-jotai and vs-map comparisons).
  *
  *   bench-results.ndjson       -> packages/valdres/bun_results.json   (testbed ubuntu-latest-bun)
  *   bench-results-node.ndjson  -> packages/valdres/node_results.json  (testbed ubuntu-latest-node)
@@ -37,28 +32,9 @@ function band(value: number, cv: number | undefined): Partial<Metric> {
 
 function toBmf(results: BenchResult[]): Bmf {
     const bmf: Bmf = {}
-
-    // First non-empty reading for a given implementation wins (the same impl
-    // is measured across several comparisons — readings are equivalent).
-    const setLatency = (name: string, ns: number, cv?: number) => {
-        if (bmf[name]?.latency) return
-        bmf[name] = { latency: { value: ns, ...band(ns, cv) } }
-    }
-
     for (const r of results) {
-        if (r.kind === "compare") {
-            bmf[`${r.op} · valdres vs ${r.ref}`] = {
-                ratio: {
-                    value: r.ratio,
-                    lower_value: r.ratioP10,
-                    upper_value: r.ratioP90,
-                },
-            }
-            setLatency(`${r.op} / valdres`, r.valdresNs, r.cv)
-            setLatency(`${r.op} / ${r.ref}`, r.refNs, r.cv)
-        } else {
-            setLatency(r.name, r.ns, r.cv)
-        }
+        if (bmf[r.name]) continue // dedupe: first reading of an impl wins
+        bmf[r.name] = { latency: { value: r.ns, ...band(r.ns, r.cv) } }
     }
     return bmf
 }

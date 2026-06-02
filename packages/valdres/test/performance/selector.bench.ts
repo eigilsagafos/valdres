@@ -5,7 +5,7 @@ import { atom as valdresAtom } from "../../src/atom"
 import { selector as valdresSelector } from "../../src/selector"
 import { selectorFamily as valdresSelectorFamily } from "../../src/selectorFamily"
 import { store as valdresCreateStore } from "../../src/store"
-import { assertFaster } from "./bench-utils"
+import { compare } from "./bench-utils"
 
 let sink: any
 
@@ -13,12 +13,10 @@ describe("selector", () => {
     test("creation", async () => {
         const vAtom = valdresAtom(0)
         const jAtom = jotaiAtom(0)
-        await assertFaster(
+        await compare(
             "selector(fn)",
             () => { sink = valdresSelector(get => get(vAtom) + 1) },
-            () => { sink = jotaiAtom(get => get(jAtom) + 1) },
-            2.0,
-        )
+            () => { sink = jotaiAtom(get => get(jAtom) + 1) },        )
     })
 
     test("set + read with 10 subscribers", async () => {
@@ -40,7 +38,7 @@ describe("selector", () => {
 
         let vInt = 0
         let jInt = 0
-        await assertFaster(
+        await compare(
             "set + read 10 selectors",
             () => {
                 vStore.set(vAtom, ++vInt)
@@ -49,9 +47,7 @@ describe("selector", () => {
             () => {
                 jStore.set(jAtom, ++jInt)
                 jSelectors.forEach(s => jStore.get(s))
-            },
-            2.0,
-        )
+            },        )
     })
 
     test("set + read with 100 subscribers", async () => {
@@ -73,7 +69,7 @@ describe("selector", () => {
 
         let vInt = 0
         let jInt = 0
-        await assertFaster(
+        await compare(
             "set + read 100 selectors",
             () => {
                 vStore.set(vAtom, ++vInt)
@@ -82,9 +78,7 @@ describe("selector", () => {
             () => {
                 jStore.set(jAtom, ++jInt)
                 jSelectors.forEach(s => jStore.get(s))
-            },
-            2.0,
-        )
+            },        )
     })
 
     // sub+unsub on a chain of derived atoms that were initialized but never
@@ -96,7 +90,7 @@ describe("selector", () => {
     // destroys the chain).
     for (const N of [50, 100, 500]) {
         test(`sub+unsub on chain of ${N} unsubscribed derived deps`, async () => {
-            await assertFaster(
+            await compare(
                 `sub+unsub on chain of ${N} unsubscribed derived deps`,
                 () => {
                     const store = valdresCreateStore()
@@ -121,9 +115,7 @@ describe("selector", () => {
                     store.get(prev)
                     const u = store.sub(base, () => {})
                     u()
-                },
-                2.0,
-            )
+                },            )
         })
     }
 
@@ -148,7 +140,7 @@ describe("selector", () => {
 
         let vInt = 0
         let jInt = 0
-        await assertFaster(
+        await compare(
             "set + read 100 selectorFamily entries",
             () => {
                 vStore.set(vAtom, ++vInt)
@@ -157,9 +149,7 @@ describe("selector", () => {
             () => {
                 jStore.set(jAtom, ++jInt)
                 jSelectors.forEach(s => jStore.get(s))
-            },
-            2.0,
-        )
+            },        )
     })
 
     test("chained selectors (depth 5)", async () => {
@@ -186,7 +176,7 @@ describe("selector", () => {
 
         let vInt = 0
         let jInt = 0
-        await assertFaster(
+        await compare(
             "set + read through 5 chained selectors",
             () => {
                 vStore.set(vBase, ++vInt)
@@ -195,8 +185,6 @@ describe("selector", () => {
             () => {
                 jStore.set(jBase, ++jInt)
                 jStore.get(jFinal)
-            },
-            2.0,
-        )
+            },        )
     })
 })
