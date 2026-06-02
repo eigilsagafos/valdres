@@ -1,0 +1,84 @@
+# Bencher SPIKE — base lane. Runs on pushes to main to (1) record the baseline
+# series for each runtime and (2) create/update the regression Threshold that PRs
+# are gated against. Runs ALONGSIDE the existing benchmark.yaml (nothing removed
+# yet) so the two approaches can be compared on real history.
+#
+# Setup checklist (things only a human can do):
+#   - Bencher project exists with slug `valdres` (confirm at bencher.dev/perf/valdres;
+#     if the slug differs, change BENCHER_PROJECT below).
+#   - Repo secret BENCHER_API_TOKEN is set (already done).
+#   - Project visibility = public (for embeddable perf plots + external PR comments).
+name: Bencher (base)
+
+on:
+    push:
+        branches: [main]
+
+permissions:
+    checks: write
+
+concurrency:
+    group: bencher-base-${{ github.ref }}
+    cancel-in-progress: false
+
+jobs:
+    benchmark_base:
+        runs-on: ubuntu-22.04
+        env:
+            BENCHER_PROJECT: valdres
+            BENCHER_API_TOKEN: ${{ secrets.BENCHER_API_TOKEN }}
+        steps:
+            - uses: actions/checkout@v6
+            - uses: oven-sh/setup-bun@v2
+              with:
+                  bun-version: 1.3.13
+            - uses: actions/setup-node@v6
+              with:
+                  node-version: "22.17"
+            - uses: bencherdev/bencher@v0.6.6
+
+            - name: Install
+              run: bun install --frozen-lockfile
+
+            # Reuse the existing measurement layer unchanged — it writes the NDJSON
+            # we convert to BMF. (bench-utils.ts paired-ratio + IQR.)
+            - name: Run benchmarks (Bun)
+              working-directory: packages/valdres
+              run: bun run test:bench
+            - name: Run benchmarks (Node)
+              working-directory: packages/valdres
+              run: bun run test:bench:node
+
+            - name: Convert NDJSON -> Bencher Metric Format
+              run: bun run scripts/bench-to-bmf.ts
+
+            # Gate metric is `ratio` (valdres/jotai). Percentage test, upper-boundary
+            # 0.50 => only flag a >=50% relative slowdown — deliberately loose so
+            # GitHub-runner noise never trips it. Tighten toward 0.25 once trusted.
+            - name: Track Bun baseline
+              run: |
+                  bencher run \
+                    --branch main \
+                    --testbed ubuntu-latest-bun \
+                    --threshold-measure ratio \
+                    --threshold-test percentage \
+                    --threshold-upper-boundary 0.50 \
+                    --threshold-max-sample-size 40 \
+                    --thresholds-reset \
+                    --adapter json \
+                    --github-actions '${{ secrets.GITHUB_TOKEN }}' \
+                    --file packages/valdres/bun_results.json
+
+            - name: Track Node baseline
+              run: |
+                  bencher run \
+                    --branch main \
+                    --testbed ubuntu-latest-node \
+                    --threshold-measure ratio \
+                    --threshold-test percentage \
+                    --threshold-upper-boundary 0.50 \
+                    --threshold-max-sample-size 40 \
+                    --thresholds-reset \
+                    --adapter json \
+                    --github-actions '${{ secrets.GITHUB_TOKEN }}' \
+                    --file packages/valdres/node_results.json
