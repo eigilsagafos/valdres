@@ -24,6 +24,9 @@ concurrency:
 jobs:
     benchmark_base:
         runs-on: ubuntu-22.04
+        # BENCHER_API_TOKEN lives in the `Bencher.dev` GitHub Environment, so the
+        # job must target that environment to read it.
+        environment: Bencher.dev
         env:
             BENCHER_PROJECT: valdres
             # bencher_run_* is a PROJECT-scoped API key -> BENCHER_API_KEY / --key
