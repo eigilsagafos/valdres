@@ -47,19 +47,29 @@ function band(value: number, cv: number | undefined): Partial<Metric> {
 function toBmf(results: RichResult[]): Bmf {
     const bmf: Bmf = {}
     for (const r of results) {
-        const measures: Record<string, Metric> = {}
         const isBaseline = r.tag === "baseline" || !r.jotai
-        if (!isBaseline) {
-            measures["ratio"] = {
-                value: r.ratio,
-                // p10/p90 of the paired ratios when present — a real measured band.
-                lower_value: r.pairRatioP10,
-                upper_value: r.pairRatioP90,
+        if (isBaseline) {
+            // Single-side reference points (measureOne): raw Map/object yardsticks
+            // and valdres/jotai measured in isolation. Tracked under a neutral
+            // `latency` measure — so they overlay on one plot and aren't mislabeled
+            // as valdres (measureOne stores its one value in the `valdres` field
+            // regardless of what it measures). Not gated; visible trend only.
+            bmf[r.name] = {
+                latency: { value: r.valdres, ...band(r.valdres, r.cv) },
             }
-            measures["jotai-latency"] = { value: r.jotai, ...band(r.jotai, r.cv) }
+        } else {
+            // Head-to-head (assertFaster): the gated `ratio` plus both absolute sides.
+            bmf[r.name] = {
+                ratio: {
+                    value: r.ratio,
+                    // p10/p90 of the paired ratios when present — a real measured band.
+                    lower_value: r.pairRatioP10,
+                    upper_value: r.pairRatioP90,
+                },
+                "valdres-latency": { value: r.valdres, ...band(r.valdres, r.cv) },
+                "jotai-latency": { value: r.jotai, ...band(r.jotai, r.cv) },
+            }
         }
-        measures["valdres-latency"] = { value: r.valdres, ...band(r.valdres, r.cv) }
-        bmf[r.name] = measures
     }
     return bmf
 }
