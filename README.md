@@ -42,4 +42,4 @@ valdres is benchmarked against [Jotai](https://github.com/pmndrs/jotai) (and a r
 
 **→ [bencher.dev/perf/valdres](https://bencher.dev/perf/valdres)**
 
-Every PR gets a comment flagging any latency regression vs `main`.
+Every PR from the repo gets a comment flagging any latency regression vs `main` (fork PRs are skipped — they can't read the upload key).

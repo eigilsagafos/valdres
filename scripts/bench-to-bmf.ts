@@ -11,8 +11,8 @@
  * can be measured in more than one comparison (e.g. valdres.get appears in both
  * the vs-jotai and vs-map comparisons).
  *
- *   bench-results.ndjson       -> packages/valdres/bun_results.json   (testbed ubuntu-latest-bun)
- *   bench-results-node.ndjson  -> packages/valdres/node_results.json  (testbed ubuntu-latest-node)
+ *   bench-results.ndjson       -> packages/valdres/bun_results.json   (testbed ubuntu-2204-bun)
+ *   bench-results-node.ndjson  -> packages/valdres/node_results.json  (testbed ubuntu-2204-node)
  */
 import { writeFileSync } from "fs"
 import { join } from "path"
@@ -28,14 +28,13 @@ function toBmf(results: BenchResult[]): Bmf {
     const bmf: Bmf = {}
     for (const r of results) {
         if (bmf[r.name]) {
-            // Each "<op> / <impl>" name should be produced by exactly one bench
-            // file. A collision means two files emit the same name with
-            // different values — warn so a silent first-wins drop can't hide
-            // which reading is gated.
-            console.warn(
-                `bench-to-bmf: duplicate benchmark "${r.name}" — keeping first reading, ignoring the rest`,
+            // Each "<op> / <impl>" name must be produced by exactly one bench
+            // file. A collision means two files emit the same name (likely a
+            // copy-paste), and Bencher would gate an arbitrary first-wins
+            // reading — fail loudly instead of uploading ambiguous data.
+            throw new Error(
+                `bench-to-bmf: duplicate benchmark name "${r.name}" — benchmark names must be unique across bench files`,
             )
-            continue
         }
         bmf[r.name] = { latency: { value: r.ns } }
     }
