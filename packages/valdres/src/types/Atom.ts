@@ -22,6 +22,9 @@ export type Atom<Value = unknown> = {
     onInit?: AtomOnInit<Value>
     onSet?: AtomOnSet<Value>
     onMount?: AtomOnMount
+    /** Internal: compat-layer override for onMount (set by adapters that need
+     *  to wrap the user-supplied onMount signature). Not user-facing. */
+    __valdresOnMount?: AtomOnMount
     maxAge?: Reactive<number>
     mutable?: boolean
     staleWhileRevalidate?: Reactive<number>

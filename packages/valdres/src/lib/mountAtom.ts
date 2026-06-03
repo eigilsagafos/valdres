@@ -125,7 +125,6 @@ export const onLiveDependencyRemoved = (dep: State, data: StoreData) => {
  * the onMount signature), then falls back to `onMount`.
  */
 export const mountAtom = (state: State, data: StoreData) => {
-    // @ts-ignore
     const onMountFn = state.__valdresOnMount ?? state.onMount
     if (!onMountFn || data.mounts.has(state)) return
     // Mark as mounted BEFORE calling onMountFn to prevent reentrant mounts
@@ -134,7 +133,8 @@ export const mountAtom = (state: State, data: StoreData) => {
     data.mounts.set(state, mountEntry)
     const store = data.storeRef ?? storeFromStoreData(data)
     try {
-        mountEntry.cleanup = onMountFn(store, state)
+        const result = onMountFn(store, state)
+        if (typeof result === "function") mountEntry.cleanup = result
     } catch (error) {
         data.mounts.delete(state)
         throw error
@@ -164,15 +164,21 @@ export const unmountAtom = (state: State, data: StoreData) => {
 export const mountTransitiveDeps = (
     state: State,
     data: StoreData,
-    visited: Set<State> = new Set(),
+    visited?: Set<State>,
 ) => {
+    // Fast path: leaf state with no onMount means there is nothing to mount
+    // anywhere reachable from here. Skip the Set/Array allocation and walk.
+    if (!state.__valdresOnMount && !state.onMount) {
+        const deps = data.stateDependencies.get(state)
+        if (!deps || deps.size === 0) return
+    }
+    const seen = visited ?? new Set<State>()
     let firstError: { value: unknown } | null = null
     const stack: State[] = [state]
     while (stack.length > 0) {
         const current = stack.pop()!
-        if (visited.has(current)) continue
-        visited.add(current)
-        // @ts-ignore
+        if (seen.has(current)) continue
+        seen.add(current)
         if (current.__valdresOnMount || current.onMount) {
             try {
                 mountAtom(current, data)
@@ -183,7 +189,7 @@ export const mountTransitiveDeps = (
         const deps = data.stateDependencies.get(current)
         if (deps) {
             for (const dep of deps) {
-                if (!visited.has(dep)) stack.push(dep)
+                if (!seen.has(dep)) stack.push(dep)
             }
         }
     }
@@ -201,15 +207,21 @@ export const mountTransitiveDeps = (
 export const unmountOrphanedDeps = (
     state: State,
     data: StoreData,
-    visited: Set<State> = new Set(),
+    visited?: Set<State>,
 ) => {
+    // Fast path: leaf state with no onMount can't have anything mounted
+    // beneath it. Skip the Set/Array allocation and walk.
+    if (!state.__valdresOnMount && !state.onMount) {
+        const deps = data.stateDependencies.get(state)
+        if (!deps || deps.size === 0) return
+    }
+    const seen = visited ?? new Set<State>()
     let firstError: { value: unknown } | null = null
     const stack: State[] = [state]
     while (stack.length > 0) {
         const current = stack.pop()!
-        if (visited.has(current)) continue
-        visited.add(current)
-        // @ts-ignore
+        if (seen.has(current)) continue
+        seen.add(current)
         if ((current.__valdresOnMount || current.onMount) && data.mounts.has(current)) {
             if (!isLive(current, data)) {
                 try {
@@ -222,7 +234,7 @@ export const unmountOrphanedDeps = (
         const deps = data.stateDependencies.get(current)
         if (deps) {
             for (const dep of deps) {
-                if (!visited.has(dep)) stack.push(dep)
+                if (!seen.has(dep)) stack.push(dep)
             }
         }
     }
