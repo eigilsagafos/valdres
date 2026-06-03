@@ -38,10 +38,30 @@
     "@valdres/public-ip": "1.0.0-beta.0"
   },
   "changesets": [
+    "atomfamily-cachehit-fast-path",
+    "cache-selector-live-flag",
+    "dedupe-propagation",
     "empty-aliens-accept",
+    "fast-path-leaf-mount-walk",
+    "fast-path-sync-selector-options",
     "fix-selector-cycle-leak",
     "fix-workspace-protocol-publish",
+    "fluffy-bobcats-throw",
+    "global-atom-on-set",
     "lazy-abort-controller",
+    "lazy-deps-change-holder",
+    "loud-pandas-press",
+    "pending-default-on-store",
+    "per-store-selector-eval-state",
+    "remove-selector-trampoline",
+    "ripe-wasps-tie",
+    "scope-maxage-and-type-unify",
+    "selector-zero-alloc-reads",
+    "six-cups-grin",
+    "spicy-sheep-bet",
+    "split-propagate-updated-atoms",
+    "strong-maps-attack",
+    "tough-cats-accept",
     "young-symbols-sing"
   ]
 }
