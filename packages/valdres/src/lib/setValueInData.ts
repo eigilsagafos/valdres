@@ -22,21 +22,6 @@ export const trackScopeValue = (key: WeakKey, data: StoreData) => {
     indexKeys.add(key)
 }
 
-declare global {
-    /** Dev-only escape hatch for skipping deepFreeze on every write. Set
-     *  `globalThis.__valdres_dev_skip_freeze__ = true` from a browser
-     *  shim or Node bootstrap script to bypass freezing without setting
-     *  `NODE_ENV=production` (which has other consequences in bundlers
-     *  and dev tooling like React Refresh). Only use when you trust all
-     *  consumers not to mutate atom values in place. */
-    // eslint-disable-next-line no-var
-    var __valdres_dev_skip_freeze__: boolean | undefined
-}
-
-const skipFreezeOverride = (): boolean =>
-    typeof globalThis !== "undefined" &&
-    globalThis.__valdres_dev_skip_freeze__ === true
-
 export const setValueInData = <Value extends unknown>(
     atom: Atom<Value> | AtomFamily<any, any>,
     value: Value,
@@ -48,7 +33,7 @@ export const setValueInData = <Value extends unknown>(
     const isNewAtomInScope =
         data.parent && Object.hasOwn(atom, "defaultValue") && !data.values.has(atom)
     let written: Value
-    if (atom.mutable || isProd() || skipFreezeOverride()) {
+    if (atom.mutable || isProd()) {
         data.values.set(atom, value)
         written = value
     } else {

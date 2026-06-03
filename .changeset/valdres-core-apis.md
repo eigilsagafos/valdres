@@ -30,22 +30,7 @@ Bulk no-txn writes drop from O(N²) to O(N). Writes mark the family dirty; the f
 - no-txn per-call set 10k: 2,648ms → 8.4ms (**315×**)
 - Single set into populated family: 424µs → 14µs (**30×**)
 
-**⚠️ Behavior change — `isProd()` (NODE_ENV=production handling)**
-
-`isProd()` previously hardcoded `return false`, so `setValueInData`'s `deepFreeze` pass ran in every build regardless of `NODE_ENV`. This release honors `NODE_ENV=production` correctly: production builds skip the freeze for performance, dev/test builds still freeze.
-
-**Silent state corruption risk for upgraders.** Apps that mutate atom values in place were previously caught with a `TypeError` in dev *and* prod. After upgrading, in prod they will *silently corrupt state* (mutations are no longer caught; the freeze that was masking the bug is gone). Symptoms typically look like flaky reactivity, not a clear crash.
-
-**Audit checklist before deploying to production:**
-
-1. Search your codebase for direct mutation of values returned from `store.get(atom)`: `arr.push(...)`, `obj.key = ...`, `set.add(...)`, etc.
-2. Replace with immutable updates (`[...arr, x]`, `{ ...obj, key: x }`, etc.), or
-3. Mark the affected atoms with `{ mutable: true }` to opt into mutation (which is then your responsibility to make safe).
-4. Run your app under dev mode (without `NODE_ENV=production`) — the freeze will still catch in-place mutations there as a `TypeError`, so any path that was silently relying on the old behavior surfaces immediately.
-
-There is no flag to restore prod-time freezing. The dev escape hatch `globalThis.__valdres_dev_skip_freeze__` only *disables* freezing in dev; it cannot re-enable freezing in prod. To keep freeze-on-write in a non-dev environment, build without `NODE_ENV=production`.
-
-**Other behavioral notes**
+**Behavioral notes**
 
 - `data.values.get(family)` is no longer guaranteed-fresh after a write (lazy-render). Internal callers only read `.__index` (always fresh). External code reaching directly into `data.values` should go through `store.get(family)`.
 - Root-level `store.del(familyAtom)` now removes the atom from `index.created` entirely (previously left a tombstone in `index.deleted`, leaking the atom).
