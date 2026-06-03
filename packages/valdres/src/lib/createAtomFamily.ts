@@ -1,9 +1,10 @@
 import type { AtomFamily } from "../types/AtomFamily"
+import type { AtomFamilyAtom } from "../types/AtomFamilyAtom"
 import type { AtomFamilyDefaultValue } from "../types/AtomFamilyDefaultValue"
 import type { AtomOptions } from "../types/AtomOptions"
 import { isSelectorFamily } from "../utils/isSelectorFamily"
 import { equal } from "./equal"
-import { familyKey } from "./familyKey"
+import { familyKey, type FamilyKey } from "./familyKey"
 import { globalAtom } from "./globalAtom"
 
 export const createAtomFamily = <
@@ -13,7 +14,7 @@ export const createAtomFamily = <
     defaultValue: AtomFamilyDefaultValue<Value, Args>,
     options?: AtomOptions<Value>,
 ) => {
-    const map = new Map()
+    const map = new Map<FamilyKey, AtomFamilyAtom<Value, Args>>()
     // Hoist type checks to family creation time — avoid per-call overhead
     const isSelectorFamilyDefault = isSelectorFamily(defaultValue)
     const isFunctionDefault =
@@ -21,11 +22,9 @@ export const createAtomFamily = <
     const hasName = !!options?.name
     const isGlobal = !!options?.global
 
-    const atomFamily = (...args: Args) => {
-        const key = familyKey(args)
-        const cached = map.get(key)
-        if (cached !== undefined) return cached
-
+    // Cold path: resolve default, build the atom, cache it. Only runs on a cache
+    // miss, so the per-call hot path (cache hit) never pays for any of this.
+    const build = (args: any[], key: any) => {
         // Resolve default value — inlined to avoid intermediate closures
         let dv: any
         if (isSelectorFamilyDefault) {
@@ -38,9 +37,7 @@ export const createAtomFamily = <
             dv = defaultValue
         }
 
-        const memberName = hasName
-            ? options!.name + "_" + key
-            : undefined
+        const memberName = hasName ? options!.name + "_" + key : undefined
 
         let familyAtom: any
         if (isGlobal) {
@@ -67,15 +64,48 @@ export const createAtomFamily = <
         return familyAtom
     }
 
+    // Hot path is the cache hit. Declaring a single positional param and reading
+    // only `arguments.length` (never indexing `arguments`) lets JSC skip
+    // materializing the arguments object and skip the rest-parameter array
+    // allocation that `(...args)` forces on every call. The key for a single
+    // primitive arg IS that primitive (see familyKey), so we look it up directly —
+    // no cross-module familyKey() call on the hot path either.
+    function atomFamily(a0?: any) {
+        if (arguments.length === 1) {
+            const t = typeof a0
+            if (t === "string" || t === "number" || t === "boolean") {
+                const cached = map.get(a0)
+                if (cached !== undefined) return cached
+                return build([a0], a0)
+            }
+        }
+        // Cold/variadic path: object/multi args need a stable stringified key.
+        const args = Array.prototype.slice.call(arguments)
+        const key = familyKey(args)
+        const cached = map.get(key)
+        if (cached !== undefined) return cached
+        return build(args, key)
+    }
+
     if (hasName)
         Object.defineProperty(atomFamily, "name", {
             value: options!.name,
             writable: false,
         })
 
-    return Object.assign(atomFamily, {
+    // The single-positional-param + `arguments` shape isn't structurally a
+    // `(...args: Args)` signature, so the callable needs an unchecked assertion.
+    // Narrow that `unknown` cast to *only* the call signature so the assembled
+    // object's properties below still get checked against AtomFamily.
+    const callable = atomFamily as unknown as (
+        ...args: Args
+    ) => AtomFamilyAtom<Value, Args>
+
+    return Object.assign(callable, {
         __valdresAtomFamilyMap: map,
-        release: (...args: Args) => map.delete(familyKey(args)),
+        release: (...args: Args) => {
+            map.delete(familyKey(args))
+        },
         equal,
     }) as AtomFamily<Value, Args>
 }
