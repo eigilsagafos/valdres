@@ -394,7 +394,20 @@ describe("maxAge interaction with scopes", () => {
         await wait(100)
         aUnsub()
 
-        expect(B.get(a)).toBe(A.get(a))
+        // Settle the root read FIRST. With no subscriber the timer is stopped,
+        // so reading A runs the lazy TTL revalidation (isCachedValueStale) and
+        // pins A's freshest value. The scope then walks up and must observe
+        // that exact value. Reading A first avoids an evaluation-order race:
+        // if `B.get(a)` were evaluated before `A.get(a)`, the scope would read
+        // A's still-cached value while the subsequent root read straddled a
+        // revalidation tick — an off-by-one that has nothing to do with the
+        // inherited-read invariant this test asserts.
+        const rootValue = A.get(a)
+        const countAfterRoot = count
+        expect(B.get(a)).toBe(rootValue)
+        // The scope read inherited the parent's value — it did NOT re-evaluate
+        // the default in its own context (that would bump count and diverge).
+        expect(count).toBe(countAfterRoot)
         expect(count).toBeGreaterThan(1)
     })
 })
