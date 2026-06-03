@@ -24,16 +24,16 @@ jobs:
     benchmark_pr:
         if: github.event.pull_request.head.repo.full_name == github.repository
         runs-on: ubuntu-22.04
-        # BENCHER_API_TOKEN lives in the `Bencher.dev` GitHub Environment, so the
+        # BENCHER_API_KEY lives in the `Bencher.dev` GitHub Environment, so the
         # job must target that environment to read it. (Environment has no branch
         # policy, so PR-branch jobs can still access the secret.)
         environment: Bencher.dev
         env:
             BENCHER_PROJECT: valdres
             # bencher_run_* is a PROJECT-scoped API key -> BENCHER_API_KEY / --key
-            # (NOT BENCHER_API_TOKEN / --token, which only accepts a user JWT).
-            # Reuses the existing secret value; optionally rename it to BENCHER_API_KEY.
-            BENCHER_API_KEY: ${{ secrets.BENCHER_API_TOKEN }}
+            # (NOT --token, which only accepts a user JWT). Stored as the
+            # BENCHER_API_KEY secret in the `Bencher.dev` GitHub Environment.
+            BENCHER_API_KEY: ${{ secrets.BENCHER_API_KEY }}
         steps:
             - uses: actions/checkout@v6
             - uses: oven-sh/setup-bun@v2
