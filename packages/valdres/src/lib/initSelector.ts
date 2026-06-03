@@ -25,8 +25,20 @@ export { isSuspendError } from "./asyncDependencyTracking"
 // Static signal for known-sync selectors — avoids AbortController allocation.
 const neverAbortedSignal = new AbortController().signal
 
-// Cache the sync options object per store to avoid allocation on the hot path.
+// Per-store options object reused whenever a selector evaluation needs no
+// live AbortController — i.e. known-sync selectors and selectors that don't
+// declare the options parameter. Carries the real `storeId` and a permanently
+// non-aborted `signal`. Cached per store so reuse costs one WeakMap lookup
+// instead of an allocation.
 const syncOptionsCache = new WeakMap<StoreData, { signal: AbortSignal; storeId: string }>()
+const getSyncOptions = (data: StoreData) => {
+    let cached = syncOptionsCache.get(data)
+    if (!cached) {
+        cached = { signal: neverAbortedSignal, storeId: data.id }
+        syncOptionsCache.set(data, cached)
+    }
+    return cached
+}
 
 /**
  * Holder for dep-change tracking during propagation. The Sets inside are
@@ -71,37 +83,48 @@ export const evaluateSelector = <V>(
         // handleSelectorResult marks the entry as `false` for sync results,
         // letting subsequent evaluations reuse a shared cached options object.
         // For async results the controller stays, and re-evaluation aborts it.
-        const prev = data.abortControllers.get(selector)
         let options: { signal: AbortSignal; storeId: string }
-        if (prev === false) {
-            // Known-sync selector — use cached options, no allocation
-            let cached = syncOptionsCache.get(data)
-            if (!cached) {
-                cached = { signal: neverAbortedSignal, storeId: data.id }
-                syncOptionsCache.set(data, cached)
-            }
-            options = cached
+        // Fast path for selectors that don't declare a second (options)
+        // parameter. `get.length < 2` is a heuristic for "doesn't use options",
+        // not a guarantee: it's true for `(get) => …`, but NOT for an options
+        // param written with a default value (`(get, opts = {})`) or as a rest
+        // param, and it can't see a body that reaches `arguments[1]`. In every
+        // such case the selector still receives a valid options object with the
+        // correct `storeId` — only `signal` is a permanently non-abortable
+        // placeholder. Selectors that need a live abort signal must declare
+        // options positionally or via destructuring (`(get, opts)`,
+        // `(get, { signal })`), which is arity 2 and takes the full path below.
+        // The fast path avoids the per-eval accessor-object allocation and the
+        // abortControllers WeakMap traffic for the common case.
+        if ((selector.get as (...args: any[]) => any).length < 2) {
+            options = getSyncOptions(data)
         } else {
-            if (prev) prev.abort()
-            let controller: AbortController | undefined
-            // Capture this eval's context so that if `signal` is read after
-            // the selector has already been superseded by a re-eval, we
-            // return a pre-aborted signal. This preserves abort semantics
-            // for selectors that touch `opts.signal` only after an await.
-            const myEvalCtx = evalCtx
-            options = {
-                storeId: data.id,
-                get signal() {
-                    if (!controller) {
-                        controller = new AbortController()
-                        if (myEvalCtx.revoked) {
-                            controller.abort()
-                        } else {
-                            data.abortControllers.set(selector, controller)
+            const prev = data.abortControllers.get(selector)
+            if (prev === false) {
+                // Known-sync selector — use cached options, no allocation
+                options = getSyncOptions(data)
+            } else {
+                if (prev) prev.abort()
+                let controller: AbortController | undefined
+                // Capture this eval's context so that if `signal` is read after
+                // the selector has already been superseded by a re-eval, we
+                // return a pre-aborted signal. This preserves abort semantics
+                // for selectors that touch `opts.signal` only after an await.
+                const myEvalCtx = evalCtx
+                options = {
+                    storeId: data.id,
+                    get signal() {
+                        if (!controller) {
+                            controller = new AbortController()
+                            if (myEvalCtx.revoked) {
+                                controller.abort()
+                            } else {
+                                data.abortControllers.set(selector, controller)
+                            }
                         }
-                    }
-                    return controller.signal
-                },
+                        return controller.signal
+                    },
+                }
             }
         }
 
@@ -311,9 +334,13 @@ export const handleSelectorResult = <Value>(
         })
         return value
     } else {
-        // Sync result — mark as known-sync so subsequent evaluations
-        // skip AbortController allocation on the hot path.
-        data.abortControllers.set(selector, false)
+        // Sync result — mark as known-sync so subsequent evaluations skip
+        // AbortController allocation on the hot path. Only meaningful for
+        // selectors that read options (arity >= 2); arity-<2 selectors bypass
+        // the abortControllers path entirely, so don't pollute the map.
+        if ((selector.get as (...args: any[]) => any).length >= 2) {
+            data.abortControllers.set(selector, false)
+        }
         return value
     }
 }
