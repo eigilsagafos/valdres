@@ -28,13 +28,23 @@ const neverAbortedSignal = new AbortController().signal
 // Cache the sync options object per store to avoid allocation on the hot path.
 const syncOptionsCache = new WeakMap<StoreData, { signal: AbortSignal; storeId: string }>()
 
+/**
+ * Holder for dep-change tracking during propagation. The Sets inside are
+ * allocated lazily by `evaluateSelector` only when deps actually changed —
+ * the steady-state case (same deps re-evaluated) does no allocation here.
+ * Callers should clear `added` / `removed` to `undefined` before reuse.
+ */
+export type DepsChange = {
+    added?: Set<State>
+    removed?: Set<State>
+}
+
 export const evaluateSelector = <V>(
     selector: Selector<V>,
     data: StoreData,
     initializedAtomsSet: Set<Atom>,
     circularDependencySet: WeakSet<Selector> = data.circularDepSet,
-    addedDepsOut?: Set<State>,
-    removedDepsOut?: Set<State>,
+    depsChangeOut?: DepsChange,
 ) => {
     const currentDependencies = data.stateDependencies.get(selector)
     const updatedDepsArray: State<any>[] = []
@@ -170,7 +180,10 @@ export const evaluateSelector = <V>(
                 if (!prev.has(state)) {
                     const set = getOrInitDependentsSet(state, data)
                     set.add(selector)
-                    if (addedDepsOut) addedDepsOut.add(state)
+                    if (depsChangeOut) {
+                        if (!depsChangeOut.added) depsChangeOut.added = new Set()
+                        depsChangeOut.added.add(state)
+                    }
                 }
             }
             if (!isAsyncResult) {
@@ -178,7 +191,10 @@ export const evaluateSelector = <V>(
                     if (!updatedDependencies.has(state)) {
                         const set = getOrInitDependentsSet(state, data)
                         set.delete(selector)
-                        if (removedDepsOut) removedDepsOut.add(state)
+                        if (depsChangeOut) {
+                            if (!depsChangeOut.removed) depsChangeOut.removed = new Set()
+                            depsChangeOut.removed.add(state)
+                        }
                     }
                 }
             }

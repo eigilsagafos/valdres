@@ -13,6 +13,7 @@ import {
     addFamilyAtomsToSet,
     deleteFamilyAtomsFromSet,
 } from "./atomFamilyIndex"
+import type { DepsChange } from "./initSelector"
 import {
     evaluateSelector,
     handleSelectorResult,
@@ -41,18 +42,16 @@ const reEvaluteSelector = (
     selector: Selector,
     data: StoreData,
     updatedAtoms: Set<Atom>,
-): [boolean, boolean, unknown, Set<State>, Set<State>] => {
-    const existingValue = data.values.get(selector)
-    const addedDeps = new Set<State>()
-    const removedDeps = new Set<State>()
+    depsChange: DepsChange,
+    existingValue: unknown,
+): boolean => {
     try {
         const rawValue = evaluateSelector(
             selector,
             data,
             updatedAtoms,
             undefined,
-            addedDeps,
-            removedDeps,
+            depsChange,
         )
         const udpatedValue = handleSelectorResult(rawValue, selector, data)
 
@@ -62,15 +61,12 @@ const reEvaluteSelector = (
             isPromiseLike(existingValue) || isPromiseLike(udpatedValue)
                 ? existingValue === udpatedValue
                 : selector.equal(existingValue, udpatedValue, updatedAtoms)
-        if (areEqual) {
-            return [false, false, undefined, addedDeps, removedDeps]
-        } else {
-            setValueInData(selector, udpatedValue, data)
-            return [true, false, undefined, addedDeps, removedDeps]
-        }
-    } catch (error) {
+        if (areEqual) return false
+        setValueInData(selector, udpatedValue, data)
+        return true
+    } catch {
         data.values.delete(selector)
-        return [true, true, error, addedDeps, removedDeps]
+        return true
     }
 }
 
@@ -433,6 +429,10 @@ const propagateDownstreamTopo = (
 
     // FIFO head pointer preserves the original BFS sibling order — nested
     // writes that side-effect into peer selectors during eval depend on it.
+    // Reused across every re-evaluated selector. evaluateSelector only
+    // allocates the inner Sets when deps actually changed, so steady-state
+    // settling does zero allocation here.
+    const depsChange: DepsChange = {}
     let head = 0
     while (head < ready.length) {
         const selector = ready[head++]
@@ -462,22 +462,31 @@ const propagateDownstreamTopo = (
             continue
         }
 
-        const [wasValueUpdated, , , addedDeps, removedDeps] = reEvaluteSelector(
+        depsChange.added = undefined
+        depsChange.removed = undefined
+        const wasValueUpdated = reEvaluteSelector(
             selector,
             data,
             updatedInitializedAtoms,
+            depsChange,
+            currentValue,
         )
-        if (
-            (addedDeps.size > 0 || removedDeps.size > 0) &&
-            isLive(selector, data)
-        ) {
-            for (const dep of addedDeps) {
-                onLiveDependencyAdded(dep, data)
-                mountTransitiveDeps(dep, data)
+        // Casts work around a tsgo control-flow narrowing quirk where
+        // property accesses lose their narrowing after a function call.
+        const added = depsChange.added as Set<State> | undefined
+        const removed = depsChange.removed as Set<State> | undefined
+        if ((added || removed) && isLive(selector, data)) {
+            if (added) {
+                for (const dep of added) {
+                    onLiveDependencyAdded(dep, data)
+                    mountTransitiveDeps(dep, data)
+                }
             }
-            for (const dep of removedDeps) {
-                onLiveDependencyRemoved(dep, data)
-                unmountOrphanedDeps(dep, data)
+            if (removed) {
+                for (const dep of removed) {
+                    onLiveDependencyRemoved(dep, data)
+                    unmountOrphanedDeps(dep, data)
+                }
             }
         }
 
@@ -518,6 +527,8 @@ const propagateSelectorUpdates = (
 
     let downstreamSeeds: Set<Selector> | undefined
 
+    // Reused across every re-evaluated selector — see propagateDownstreamTopo.
+    const depsChange: DepsChange = {}
     for (const selector of selectors) {
         const currentValue = data.values.get(selector)
         if (isPromiseLike(currentValue) && isInitOnly) continue
@@ -532,22 +543,31 @@ const propagateSelectorUpdates = (
             data.values.delete(selector)
             continue
         }
-        const [wasValueUpdated, , , addedDeps, removedDeps] = reEvaluteSelector(
+        depsChange.added = undefined
+        depsChange.removed = undefined
+        const wasValueUpdated = reEvaluteSelector(
             selector,
             data,
             updatedInitializedAtoms,
+            depsChange,
+            currentValue,
         )
-        if (
-            (addedDeps.size > 0 || removedDeps.size > 0) &&
-            isLive(selector, data)
-        ) {
-            for (const dep of addedDeps) {
-                onLiveDependencyAdded(dep, data)
-                mountTransitiveDeps(dep, data)
+        // Casts work around a tsgo control-flow narrowing quirk where
+        // property accesses lose their narrowing after a function call.
+        const added = depsChange.added as Set<State> | undefined
+        const removed = depsChange.removed as Set<State> | undefined
+        if ((added || removed) && isLive(selector, data)) {
+            if (added) {
+                for (const dep of added) {
+                    onLiveDependencyAdded(dep, data)
+                    mountTransitiveDeps(dep, data)
+                }
             }
-            for (const dep of removedDeps) {
-                onLiveDependencyRemoved(dep, data)
-                unmountOrphanedDeps(dep, data)
+            if (removed) {
+                for (const dep of removed) {
+                    onLiveDependencyRemoved(dep, data)
+                    unmountOrphanedDeps(dep, data)
+                }
             }
         }
         if (!wasValueUpdated) continue
