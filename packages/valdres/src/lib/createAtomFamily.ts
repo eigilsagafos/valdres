@@ -1,9 +1,10 @@
 import type { AtomFamily } from "../types/AtomFamily"
+import type { AtomFamilyAtom } from "../types/AtomFamilyAtom"
 import type { AtomFamilyDefaultValue } from "../types/AtomFamilyDefaultValue"
 import type { AtomOptions } from "../types/AtomOptions"
 import { isSelectorFamily } from "../utils/isSelectorFamily"
 import { equal } from "./equal"
-import { familyKey } from "./familyKey"
+import { familyKey, type FamilyKey } from "./familyKey"
 import { globalAtom } from "./globalAtom"
 
 export const createAtomFamily = <
@@ -13,7 +14,7 @@ export const createAtomFamily = <
     defaultValue: AtomFamilyDefaultValue<Value, Args>,
     options?: AtomOptions<Value>,
 ) => {
-    const map = new Map()
+    const map = new Map<FamilyKey, AtomFamilyAtom<Value, Args>>()
     // Hoist type checks to family creation time — avoid per-call overhead
     const isSelectorFamilyDefault = isSelectorFamily(defaultValue)
     const isFunctionDefault =
@@ -92,12 +93,19 @@ export const createAtomFamily = <
             writable: false,
         })
 
-    return Object.assign(atomFamily, {
+    // The single-positional-param + `arguments` shape isn't structurally a
+    // `(...args: Args)` signature, so the callable needs an unchecked assertion.
+    // Narrow that `unknown` cast to *only* the call signature so the assembled
+    // object's properties below still get checked against AtomFamily.
+    const callable = atomFamily as unknown as (
+        ...args: Args
+    ) => AtomFamilyAtom<Value, Args>
+
+    return Object.assign(callable, {
         __valdresAtomFamilyMap: map,
-        release: (...args: Args) => map.delete(familyKey(args)),
+        release: (...args: Args) => {
+            map.delete(familyKey(args))
+        },
         equal,
-        // atomFamily uses a single positional param + `arguments` to dodge the
-        // rest-array allocation on the hot path; cast through unknown since that
-        // shape isn't structurally a (...args: Args) signature.
-    }) as unknown as AtomFamily<Value, Args>
+    }) as AtomFamily<Value, Args>
 }

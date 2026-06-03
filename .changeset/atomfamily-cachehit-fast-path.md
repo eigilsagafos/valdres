@@ -2,8 +2,8 @@
 "valdres": patch
 ---
 
-Fix the `atomFamily(id)` cache-hit slow path — the only benchmark where valdres
-trailed Jotai on Bun/JSC (~15ns vs 6ns). The hot path used a rest parameter
+Speed up the `atomFamily(id)` cache-hit hot path — the only benchmark where
+valdres trailed Jotai on Bun/JSC (~15ns vs 6ns). The hot path used a rest parameter
 (`(...args)`), which forces a fresh array allocation on every call, plus a
 cross-module `familyKey()` call that acts as an inlining barrier. Ablation showed
 the rest-array allocation was the dominant cost (~7ns) and the call a minor one
