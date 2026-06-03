@@ -417,7 +417,7 @@ describe("selector", () => {
     })
 
     test("subscription propagation does not leak after selector throws", () => {
-        // Same leak, exercised via the reEvaluteSelector path
+        // Same leak, exercised via the reEvaluateSelector path
         // (propagateUpdatedAtoms passes circularDependencySet=undefined,
         //  which defaults to the shared set).
         const store1 = store()
