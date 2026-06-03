@@ -181,7 +181,7 @@ export const evaluateSelector = <V>(
                     const set = getOrInitDependentsSet(state, data)
                     set.add(selector)
                     if (depsChangeOut) {
-                        if (!depsChangeOut.added) depsChangeOut.added = new Set()
+                        if (!depsChangeOut.added) depsChangeOut.added = new Set<State>()
                         depsChangeOut.added.add(state)
                     }
                 }
@@ -192,7 +192,7 @@ export const evaluateSelector = <V>(
                         const set = getOrInitDependentsSet(state, data)
                         set.delete(selector)
                         if (depsChangeOut) {
-                            if (!depsChangeOut.removed) depsChangeOut.removed = new Set()
+                            if (!depsChangeOut.removed) depsChangeOut.removed = new Set<State>()
                             depsChangeOut.removed.add(state)
                         }
                     }

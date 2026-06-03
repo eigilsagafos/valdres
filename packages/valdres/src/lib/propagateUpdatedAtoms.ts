@@ -38,7 +38,7 @@ export {
 
 type AtomInput = Atom<any> | AtomFamilyAtom<any, any> | AtomFamily<any, any>
 
-const reEvaluteSelector = (
+const reEvaluateSelector = (
     selector: Selector,
     data: StoreData,
     updatedAtoms: Set<Atom>,
@@ -53,16 +53,16 @@ const reEvaluteSelector = (
             undefined,
             depsChange,
         )
-        const udpatedValue = handleSelectorResult(rawValue, selector, data)
+        const updatedValue = handleSelectorResult(rawValue, selector, data)
 
         // Use reference equality for promises — deep equal treats all
         // promises as structurally identical (both have zero own keys).
         const areEqual =
-            isPromiseLike(existingValue) || isPromiseLike(udpatedValue)
-                ? existingValue === udpatedValue
-                : selector.equal(existingValue, udpatedValue, updatedAtoms)
+            isPromiseLike(existingValue) || isPromiseLike(updatedValue)
+                ? existingValue === updatedValue
+                : selector.equal(existingValue, updatedValue, updatedAtoms)
         if (areEqual) return false
-        setValueInData(selector, udpatedValue, data)
+        setValueInData(selector, updatedValue, data)
         return true
     } catch {
         data.values.delete(selector)
@@ -464,7 +464,7 @@ const propagateDownstreamTopo = (
 
         depsChange.added = undefined
         depsChange.removed = undefined
-        const wasValueUpdated = reEvaluteSelector(
+        const wasValueUpdated = reEvaluateSelector(
             selector,
             data,
             updatedInitializedAtoms,
@@ -545,7 +545,7 @@ const propagateSelectorUpdates = (
         }
         depsChange.added = undefined
         depsChange.removed = undefined
-        const wasValueUpdated = reEvaluteSelector(
+        const wasValueUpdated = reEvaluateSelector(
             selector,
             data,
             updatedInitializedAtoms,

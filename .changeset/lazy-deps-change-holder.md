@@ -2,12 +2,11 @@
 "valdres": patch
 ---
 
-Internal cleanup: reduce per-dirty-selector allocations during propagation.
-`reEvaluteSelector` previously allocated two empty `Set<State>` plus a 5-tuple
-for every dirty selector — both Sets stayed empty in the steady-state case
-(same deps re-evaluated). They're now nested under a single `DepsChange` holder
-reused across each propagation loop (the linear first sweep and the topological
-settle); `evaluateSelector` only allocates the inner Sets when a dep is actually
-added or removed. Also drops the unused `didEvalCrash` / `error` return slots.
-Measures ~2–5% faster on allocation-heavy propagation microbenchmarks (within
-noise on the largest fan-outs); no behavior change.
+Internal cleanup: reduce allocations during selector propagation. Re-evaluating
+a dirty selector previously allocated two empty tracking Sets (for added/removed
+dependencies) on every pass, even though both stay empty in the common case
+where a selector's dependencies don't change. Those Sets are now allocated
+lazily — only when a dependency is actually added or removed — and the tracking
+state is reused across each propagation pass. Measures ~2–5% faster on
+allocation-heavy propagation microbenchmarks (within noise on the largest
+fan-outs); no behavior change.
