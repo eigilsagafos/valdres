@@ -153,9 +153,11 @@ export const propagateDeletedAtoms = (
     }
     // Descriptor hooks (atomFamilyIndex/Sort/Search) record dirty atoms
     // in `indexAccum`: `.local` for the writing scope, `.cross` per other
-    // affected scope. See IndexDescriptor.ts.
-    const indexAccum: IndexHookResult = {}
+    // affected scope. See IndexDescriptor.ts. Allocated lazily — only
+    // family deletes can trigger descriptors.
+    let indexAccum: IndexHookResult | undefined
     if (families.size > 0) {
+        indexAccum = {}
         for (const [family, familyAtoms] of families) {
             addSetToSet(data.stateDependents.get(family), selectors)
             addSetToSet(data.subscriptions.get(family), subscriptions)
@@ -178,7 +180,7 @@ export const propagateDeletedAtoms = (
         }
     }
     propagateDirtySelectors(atoms, selectors, data, subscriptions, families)
-    if (indexAccum.cross) propagateCrossScopes(indexAccum.cross)
+    if (indexAccum?.cross) propagateCrossScopes(indexAccum.cross)
     // Propagate family changes into child scopes. deleteFamilyAtomsFromSet
     // already updated each scope's family index via recursivelyUpdateIndexes;
     // selectors in those scopes that depend on the family still need to be
@@ -248,9 +250,12 @@ export const propagateAtomUpdate = (
 
     // Descriptor hooks (atomFamilyIndex/Sort/Search) record dirty atoms
     // in `indexAccum`: `.local` for this scope, `.cross` per other
-    // affected scope. See IndexDescriptor.ts.
-    const indexAccum: IndexHookResult = {}
+    // affected scope. See IndexDescriptor.ts. Allocated lazily — only
+    // family writes can trigger descriptors, so plain-atom writes (the
+    // hot path) pay zero allocation here.
+    let indexAccum: IndexHookResult | undefined
     if (families.size > 0) {
+        indexAccum = {}
         const timestamp = performance.now()
         for (const [family, familyAtoms] of families) {
             addSetToSet(data.stateDependents.get(family), selectors)
@@ -275,7 +280,7 @@ export const propagateAtomUpdate = (
 
     propagateDirtySelectors(atoms, selectors, data, subscriptions, families, isInitOnly)
 
-    if (indexAccum.cross) propagateCrossScopes(indexAccum.cross, isInitOnly)
+    if (indexAccum?.cross) propagateCrossScopes(indexAccum.cross, isInitOnly)
 
     if (data.scopes && data.scopes.size > 0) {
         propagateToScopes(atoms, data, isInitOnly)
