@@ -1,6 +1,6 @@
 {
     "name": "@valdres/browser-online",
-    "version": "1.0.0-beta.1",
+    "version": "1.0.0-beta.2",
     "license": "MIT",
     "author": {
         "name": "Eigil Sagafos"
@@ -30,7 +30,7 @@
         "valdres": "workspace:^"
     },
     "peerDependencies": {
-        "valdres": "^1.0.0-beta.1"
+        "valdres": "^1.0.0-beta.4"
     },
     "publishConfig": {
         "access": "public",
