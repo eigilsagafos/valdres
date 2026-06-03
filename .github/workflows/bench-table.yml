@@ -1,0 +1,50 @@
+# Refreshes the README's benchmark table from Bencher's public API after each
+# push/merge to main re-benchmarks. Triggered by the "Bencher (base)" workflow
+# completing (rather than on: push) so the base lane has finished uploading the
+# new numbers first — the table then reflects the just-merged commit instead of
+# lagging one behind. Also runnable on demand.
+#
+# The live, always-current view is bencher.dev/perf/valdres; this is a committed
+# snapshot. The generator only READS the public API, so no token / Bencher.dev
+# environment is needed.
+name: Refresh benchmark table
+
+on:
+    workflow_run:
+        workflows: ["Bencher (base)"]
+        types: [completed]
+    workflow_dispatch:
+
+permissions:
+    contents: write
+
+concurrency:
+    group: bench-table
+    cancel-in-progress: false
+
+jobs:
+    refresh:
+        # Manual runs always proceed; workflow_run only after a successful base
+        # run (don't refresh off a failed/partial upload).
+        if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+        runs-on: ubuntu-22.04
+        steps:
+            - uses: actions/checkout@v6
+              with:
+                  ref: main
+            - uses: oven-sh/setup-bun@v2
+              with:
+                  bun-version: 1.3.13
+            - name: Regenerate README benchmark table
+              run: bun run scripts/gen-bench-table.ts
+            - name: Commit if changed
+              run: |
+                  if git diff --quiet README.md; then
+                      echo "Benchmark table unchanged."
+                  else
+                      git config user.name "github-actions[bot]"
+                      git config user.email "github-actions[bot]@users.noreply.github.com"
+                      git add README.md
+                      git commit -m "docs: refresh Bencher benchmark table [skip ci]"
+                      git push origin HEAD:main
+                  fi

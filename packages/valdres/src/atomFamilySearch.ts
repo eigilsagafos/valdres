@@ -446,8 +446,9 @@ export function atomFamilySearch<
     const ensureBM25Storage = (data: StoreData): BM25Storage => {
         let s = data.values.get(bm25Atom) as BM25Storage | undefined
         if (s) return s
-        const parent =
-            "parent" in data ? ensureBM25Storage(data.parent) : undefined
+        const parent = data.parent
+            ? ensureBM25Storage(data.parent)
+            : undefined
         s = {
             perAtom: new Map(),
             fieldTotals: new Map(),

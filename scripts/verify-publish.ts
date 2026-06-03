@@ -4,15 +4,20 @@
  * Runs: build → build:types → prepack for each public package, then checks:
  *   1. Exports point to real files in dist/
  *   2. Types files exist for each export
- *   3. No workspace:^ references remain in dependencies (after prepack)
+ *   3. No workspace: references remain in dependencies (after prepack)
  *   4. No scripts or devDependencies in prepacked package.json
  *   5. version field is present
  *
  * Always restores original package.json via postpublish, even on failure.
  *
- * Note: In the real publish flow, `changeset version` converts workspace:^
- * to real semver ranges BEFORE prepack runs. This script simulates that by
- * temporarily rewriting workspace:^ refs to the current version.
+ * Publishable packages must not use the `workspace:` protocol in
+ * dependencies / peerDependencies / optionalDependencies — changesets doesn't
+ * rewrite the bare `workspace:^` shortcut, and `changeset publish` shells out
+ * to `npm publish` which doesn't understand the protocol, so any leftover
+ * `workspace:` would ship verbatim and break consumers. The check below is
+ * the regression gate. (devDependencies are stripped by prepack, so they're
+ * allowed to use `workspace:^` for ergonomics with non-publishable packages
+ * like @valdres/test.)
  */
 
 const PUBLIC_PACKAGES = [
@@ -64,29 +69,6 @@ function warn(pkg: string, msg: string) {
 const rootDir = import.meta.dir + "/.."
 const prepackScript = `${import.meta.dir}/prepack.ts`
 
-// Build a map of package name → version for workspace: resolution
-const packageVersions: Record<string, string> = {}
-for (const pkg of PUBLIC_PACKAGES) {
-    const json = await Bun.file(`${rootDir}/${pkg}/package.json`).json()
-    packageVersions[json.name] = json.version
-}
-
-/** Replace workspace:^ refs with real ^version ranges (simulates changeset version) */
-function resolveWorkspaceRefs(json: any) {
-    for (const depField of ["dependencies", "peerDependencies", "devDependencies"]) {
-        const deps = json[depField]
-        if (!deps) continue
-        for (const [dep, version] of Object.entries(deps)) {
-            if (typeof version === "string" && version.startsWith("workspace:")) {
-                const realVersion = packageVersions[dep]
-                if (realVersion) {
-                    deps[dep] = version === "workspace:*" ? realVersion : `^${realVersion}`
-                }
-            }
-        }
-    }
-}
-
 // Step 1: Build all packages
 console.log("Building all packages...")
 const buildResult = Bun.spawnSync(["bun", "run", "build"], {
@@ -116,11 +98,11 @@ for (const pkg of PUBLIC_PACKAGES) {
 
     console.log(`\nVerifying ${pkgName}...`)
 
-    // Save original and write workspace-resolved version
+    // Save original so we can restore after prepack writes its dist-shaped
+    // package.json. Publishable packages must already use plain semver for
+    // inter-package deps — prepack only rewrites `exports` and strips
+    // scripts/devDependencies; the `workspace:` check below is the gate.
     const originalContent = await Bun.file(pkgJsonPath).text()
-    const json = JSON.parse(originalContent)
-    resolveWorkspaceRefs(json)
-    await Bun.write(pkgJsonPath, JSON.stringify(json, null, 4))
 
     // Run prepack
     const prepackResult = Bun.spawnSync(["bun", "run", prepackScript], {
@@ -155,7 +137,7 @@ for (const pkg of PUBLIC_PACKAGES) {
         }
 
         // Check: no workspace: references in any dependency field
-        for (const depField of ["dependencies", "peerDependencies"]) {
+        for (const depField of ["dependencies", "peerDependencies", "optionalDependencies"]) {
             const deps = packageJson[depField]
             if (!deps) continue
             for (const [dep, version] of Object.entries(deps)) {

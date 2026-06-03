@@ -15,10 +15,10 @@ import type { CacheMeta } from "../types/Atom"
 import { equal } from "./equal"
 import { initAtom } from "./initAtom"
 import { initSelector } from "./initSelector"
-import { propagateUpdatedAtoms } from "./propagateUpdatedAtoms"
+import { propagateAtomUpdate } from "./propagateUpdatedAtoms"
 import { setValueInData } from "./setValueInData"
 import { setMaxAgeCleanup } from "./maxAgeCleanups"
-import { mountTransitiveDeps } from "./mountAtom"
+import { mountTransitiveDeps, onFirstDirectSubscriber } from "./mountAtom"
 import { unsubscribe } from "./unsubscribe"
 
 const initSubscribers = <V>(state: State<V> | Family<V>, data: StoreData) => {
@@ -28,7 +28,7 @@ const initSubscribers = <V>(state: State<V> | Family<V>, data: StoreData) => {
 }
 
 export const installMaxAgeTimer = (state: Atom<any>, data: StoreData) => {
-    if (!state.maxAge) return
+    if (state.maxAge === undefined) return
     const globalState = isGlobalAtom(state) ? state : undefined
     const existing = globalState?.maxAgeInterval
 
@@ -40,7 +40,7 @@ export const installMaxAgeTimer = (state: Atom<any>, data: StoreData) => {
         for (const s of globalState!.stores) {
             if (s !== data && s.values.has(metaAtom)) {
                 setValueInData(metaAtom, s.values.get(metaAtom), data)
-                propagateUpdatedAtoms([metaAtom], data)
+                propagateAtomUpdate([metaAtom], data)
                 break
             }
         }
@@ -87,11 +87,11 @@ export const installMaxAgeTimer = (state: Atom<any>, data: StoreData) => {
         if (globalState) {
             for (const store of globalState.stores) {
                 setValueInData(metaAtom, meta, store)
-                propagateUpdatedAtoms([metaAtom], store)
+                propagateAtomUpdate([metaAtom], store)
             }
         } else {
             setValueInData(metaAtom, meta, data)
-            propagateUpdatedAtoms([metaAtom], data)
+            propagateAtomUpdate([metaAtom], data)
         }
     }
 
@@ -104,11 +104,11 @@ export const installMaxAgeTimer = (state: Atom<any>, data: StoreData) => {
         if (globalState) {
             for (const store of globalState.stores) {
                 setValueInData(atom, val, store)
-                propagateUpdatedAtoms([atom], store)
+                propagateAtomUpdate([atom], store)
             }
         } else {
             setValueInData(atom, val, data)
-            propagateUpdatedAtoms([atom], data)
+            propagateAtomUpdate([atom], data)
         }
     }
 
@@ -273,12 +273,12 @@ export const subscribe = <V>(
 ) => {
     let parentUnsubscribe: undefined | (() => void)
     if (
-        "parent" in data &&
+        data.parent &&
         ((!data.values.has(state) && isAtom(state)) || isAtomFamily(state))
     ) {
         /**
          * Getting here means that we are within a scope and that the current
-         * atom is not set in the current scope. Therfore we pass the subscription
+         * atom is not set in the current scope. Therefore we pass the subscription
          * up the tree and modify the callback to unsubscribe to the parent store
          * in the case that it is set in this scope.
          */
@@ -291,11 +291,9 @@ export const subscribe = <V>(
         )
         callback = arg => {
             if (parentUnsubscribe) {
-                /**
-                 * TODO: Find way to test this. Maybe use onMount?
-                 * Here we ensure that the unsubscribe happens only once.
-                 * This is not yet covered in tests.
-                 */
+                // Idempotent: once the scope re-roots the subscription, the
+                // parent-side delegate must drop on the first scope-local
+                // propagation so we don't double-notify on later writes.
                 parentUnsubscribe()
                 parentUnsubscribe = undefined
             }
@@ -336,11 +334,19 @@ export const subscribe = <V>(
     }
     subscribers.add(subscription)
     if (subscribers.size === 1) {
-        if (isAtom(state) && state.maxAge) {
+        // Skip scope-local timer installation: reaching the non-delegating
+        // branch in a scope means the atom was shadowed via `set()`, which
+        // we treat as a deliberate pin. Running an extra timer here would
+        // overwrite the shadow on the next tick and double the work for
+        // non-global maxAge atoms (which lack the refCount sharing that
+        // installMaxAgeTimer uses for global atoms).
+        if (isAtom(state) && state.maxAge !== undefined && !data.parent) {
             installMaxAgeTimer(state, data)
         }
-        // Mount this state and all its transitive dependencies
+        // First direct subscriber: bump liveness through the dep graph.
+        // Selectors track this via stateDependencies; families have none.
         if (!isFamily(state)) {
+            onFirstDirectSubscriber(state as State, data)
             mountTransitiveDeps(state, data)
         }
     }
@@ -354,7 +360,6 @@ export const subscribe = <V>(
 
     return () => {
         if (parentUnsubscribe) {
-            // TODO: Test this scenario
             parentUnsubscribe()
         }
         unsubscribe(state, subscription, data)

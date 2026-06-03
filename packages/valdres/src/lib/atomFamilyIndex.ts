@@ -1,7 +1,7 @@
 import type { AtomFamily } from "../types/AtomFamily"
 import type { AtomFamilyAtom } from "../types/AtomFamilyAtom"
 import type { Family } from "../types/Family"
-import type { ScopedStoreData, StoreData } from "../types/StoreData"
+import type { StoreData } from "../types/StoreData"
 import type {
     IndexDescriptor,
     IndexHookResult,
@@ -157,14 +157,14 @@ export const deleteFamilyAtomsFromSet = (
 const initFamilyIndex = (family: Family<any>, data: StoreData) => {
     if (data.values.has(family)) return data.values.get(family).__index
     let parentIndex
-    if ("parent" in data) {
+    if (data.parent) {
         parentIndex = initFamilyIndex(family, data.parent)
         if (!parentIndex) throw new Error("Parent index is missing")
     }
     const index = createAtomFamilyIndex(parentIndex)
     data.values.set(family, renderAtomFamilyIndex(index))
-    if ("parent" in data) {
-        trackScopeValue(family, data as ScopedStoreData)
+    if (data.parent) {
+        trackScopeValue(family, data)
     }
     return index
 }

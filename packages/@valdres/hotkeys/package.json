@@ -1,6 +1,6 @@
 {
     "name": "@valdres/hotkeys",
-    "version": "0.2.0-pre.28",
+    "version": "0.3.0-beta.0",
     "license": "MIT",
     "author": {
         "name": "Eigil Sagafos"
@@ -28,8 +28,8 @@
         "valdres": "workspace:^"
     },
     "peerDependencies": {
-        "@valdres/browser-keyboard": "workspace:^",
-        "valdres": "workspace:^"
+        "@valdres/browser-keyboard": "^1.0.0-beta.1",
+        "valdres": "^1.0.0-beta.1"
     },
     "publishConfig": {
         "access": "public",

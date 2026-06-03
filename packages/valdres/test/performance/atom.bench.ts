@@ -2,18 +2,15 @@ import { describe, test } from "./test-compat"
 import { createStore as jotaiCreateStore, atom as jotaiAtom } from "jotai"
 import { atom as valdresAtom } from "../../src/atom"
 import { store as valdresCreateStore } from "../../src/store"
-import { assertFaster } from "./bench-utils"
-
-// Prevent dead-code elimination by the JIT
-let sink: any
+import { compare } from "./bench-utils"
+import { do_not_optimize } from "mitata"
 
 describe("atom", () => {
     test("creation", async () => {
-        await assertFaster(
+        await compare(
             "atom(1)",
-            () => { sink = valdresAtom(1) },
-            () => { sink = jotaiAtom(1) },
-            2.0,
+            () => do_not_optimize(valdresAtom(1)),
+            () => do_not_optimize(jotaiAtom(1)),
         )
     })
 
@@ -23,11 +20,10 @@ describe("atom", () => {
         const vAtom = valdresAtom("hello")
         const jAtom = jotaiAtom("hello")
 
-        await assertFaster(
+        await compare(
             "store.get(atom)",
-            () => { sink = vStore.get(vAtom) },
-            () => { sink = jStore.get(jAtom) },
-            1.5,
+            () => do_not_optimize(vStore.get(vAtom)),
+            () => do_not_optimize(jStore.get(jAtom)),
         )
     })
 
@@ -39,11 +35,10 @@ describe("atom", () => {
 
         let vInt = 0
         let jInt = 0
-        await assertFaster(
+        await compare(
             "set(atom, value)",
             () => vStore.set(vAtom, ++vInt),
             () => jStore.set(jAtom, ++jInt),
-            2.0,
         )
     })
 
@@ -53,11 +48,10 @@ describe("atom", () => {
         const vAtom = valdresAtom(0)
         const jAtom = jotaiAtom(0)
 
-        await assertFaster(
+        await compare(
             "set(atom, curr => curr+1)",
             () => vStore.set(vAtom, (c: number) => c + 1),
             () => jStore.set(jAtom, (c: number) => c + 1),
-            2.0,
         )
     })
 
@@ -73,11 +67,10 @@ describe("atom", () => {
 
         let vInt = 0
         let jInt = 0
-        await assertFaster(
+        await compare(
             "set(atom) with 10 subs",
             () => vStore.set(vAtom, ++vInt),
             () => jStore.set(jAtom, ++jInt),
-            2.0,
         )
     })
 
@@ -85,19 +78,18 @@ describe("atom", () => {
         const vStore = valdresCreateStore()
         const jStore = jotaiCreateStore()
 
-        await assertFaster(
+        await compare(
             "atom lifecycle (create+100get+100set)",
             () => {
                 const a = valdresAtom(0)
-                for (let i = 0; i < 100; i++) sink = vStore.get(a)
+                for (let i = 0; i < 100; i++) do_not_optimize(vStore.get(a))
                 for (let i = 0; i < 100; i++) vStore.set(a, i)
             },
             () => {
                 const a = jotaiAtom(0)
-                for (let i = 0; i < 100; i++) sink = jStore.get(a)
+                for (let i = 0; i < 100; i++) do_not_optimize(jStore.get(a))
                 for (let i = 0; i < 100; i++) jStore.set(a, i)
             },
-            2.0,
         )
     })
 })

@@ -5,10 +5,11 @@ dist
 dist-tarball
 todo.md
 .env.local
+.npmrc
 bench-results.ndjson
 bench-results-node.ndjson
-bench-results.json
-bench-history-entry.json
+bun_results.json
+node_results.json
 junit*.xml
 # .d.ts files never belong in src/ — only emitted as side-effects when
 # --noCheck builds (draggable, panable) cross workspace boundaries.

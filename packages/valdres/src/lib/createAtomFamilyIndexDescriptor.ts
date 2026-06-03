@@ -1,6 +1,6 @@
 import type { Atom } from "../types/Atom"
 import type { AtomFamilyAtom } from "../types/AtomFamilyAtom"
-import type { ScopedStoreData, StoreData } from "../types/StoreData"
+import type { StoreData } from "../types/StoreData"
 import { equal } from "./equal"
 import type { FamilyKey } from "./familyKey"
 import type {
@@ -159,8 +159,9 @@ export const createAtomFamilyIndexDescriptor = <Value, Term>(
     const getStorage = (data: StoreData): IndexStorage => {
         let storage = data.values.get(descriptor) as IndexStorage | undefined
         if (storage) return storage
-        const parentIndex =
-            "parent" in data ? getStorage(data.parent) : undefined
+        const parentIndex = data.parent
+            ? getStorage(data.parent)
+            : undefined
         storage = {
             bucketsLocal: new Map(),
             bucketsRemoved: new Map(),
@@ -170,8 +171,8 @@ export const createAtomFamilyIndexDescriptor = <Value, Term>(
         }
         data.values.set(descriptor, storage)
         knownStores.add(new WeakRef(data))
-        if ("parent" in data) {
-            trackScopeValue(descriptor, data as ScopedStoreData)
+        if (data.parent) {
+            trackScopeValue(descriptor, data)
         }
         return storage
     }
@@ -473,7 +474,7 @@ export const createAtomFamilyIndexDescriptor = <Value, Term>(
             // For scope-level del, the atom remains in parent storage and
             // the scope's own bucketsRemoved entry was just added on
             // purpose — must not be undone here.
-            if (!("parent" in data)) {
+            if (!data.parent) {
                 cleanupDescendantBucketsRemoved(data, atom)
             }
         },

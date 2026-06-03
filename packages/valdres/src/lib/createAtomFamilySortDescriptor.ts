@@ -1,6 +1,6 @@
 import type { Atom } from "../types/Atom"
 import type { AtomFamilyAtom } from "../types/AtomFamilyAtom"
-import type { ScopedStoreData, StoreData } from "../types/StoreData"
+import type { StoreData } from "../types/StoreData"
 import { equal } from "./equal"
 import type {
     IndexDescriptor,
@@ -159,8 +159,9 @@ export const createAtomFamilySortDescriptor = <Value, Key>(
     const getStorage = (data: StoreData): SortStorage => {
         let storage = data.values.get(descriptor) as SortStorage | undefined
         if (storage) return storage
-        const parentIndex =
-            "parent" in data ? getStorage(data.parent) : undefined
+        const parentIndex = data.parent
+            ? getStorage(data.parent)
+            : undefined
         storage = {
             localKeys: new Map(),
             removedFromParent: new Set(),
@@ -170,8 +171,8 @@ export const createAtomFamilySortDescriptor = <Value, Key>(
             parentIndex,
         }
         data.values.set(descriptor, storage)
-        if ("parent" in data) {
-            trackScopeValue(descriptor, data as ScopedStoreData)
+        if (data.parent) {
+            trackScopeValue(descriptor, data)
         }
         return storage
     }
@@ -407,7 +408,7 @@ export const createAtomFamilySortDescriptor = <Value, Key>(
             // Root-level delete: drop any lingering removedFromParent
             // entries pointing at this atom so it can be GC'd. (Symmetric
             // to the cleanup in createAtomFamilyIndexDescriptor.)
-            if (!("parent" in data)) {
+            if (!data.parent) {
                 cleanupDescendantStorage(data, atom)
             }
         },

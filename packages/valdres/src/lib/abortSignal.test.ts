@@ -160,6 +160,43 @@ describe("abort signal support for async selectors", () => {
         expect(store1.get(derived)).toBe(84)
     })
 
+    test("signal accessed only after await still aborts on re-evaluation", async () => {
+        const store1 = store()
+        const countAtom = atom(1)
+        const signals: AbortSignal[] = []
+        let resolveFirst!: () => void
+        const firstStarted = new Promise<void>(r => {
+            resolveFirst = r
+        })
+
+        const asyncSelector = selector((get, opts) => {
+            const count = get(countAtom)
+            return new Promise<number>(resolve => {
+                resolveFirst()
+                setTimeout(() => {
+                    // signal is read ONLY here — the selector body returned a
+                    // promise before any access happened
+                    signals.push(opts.signal)
+                    resolve(count)
+                }, 5)
+            })
+        })
+
+        store1.sub(asyncSelector, () => {})
+        await firstStarted
+
+        // Re-evaluate while the first promise is still awaiting
+        store1.set(countAtom, 2)
+
+        // Let both promises complete
+        await new Promise(r => setTimeout(r, 20))
+
+        expect(signals).toHaveLength(2)
+        // The first eval's signal must be aborted because count changed
+        expect(signals[0]!.aborted).toBe(true)
+        expect(signals[1]!.aborted).toBe(false)
+    })
+
     test("rejected async selector does not cause unhandled promise rejection", async () => {
         const store1 = store()
         const countAtom = atom(1)

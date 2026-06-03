@@ -1,47 +1,26 @@
 import { describe, test } from "./test-compat"
-import { createStore as jotaiCreateStore, atom as jotaiAtom } from "jotai"
-import { atom as valdresAtom } from "../../src/atom"
-import { store as valdresCreateStore } from "../../src/store"
+import { do_not_optimize } from "mitata"
 import { measureOne } from "./bench-utils"
 
-let sink: any
-
-describe("baseline: plain object vs state management", () => {
-    test("get: object vs valdres vs jotai", async () => {
-        const obj = { value: "hello" }
+// Native floor: raw JS Map for the core key→value ops. The valdres and jotai
+// series for these ops are emitted by atom.bench.ts; here we add ONLY the
+// "<op> / map" reference so the Bencher plot overlays valdres / jotai / map on
+// one latency axis. Each series is gated against its own history; the floor is
+// read off the plot, not asserted. (Emitting "<op> / valdres" here too would
+// collide with atom.bench.ts's series.)
+describe("native floor (raw Map)", () => {
+    test("store.get(atom) vs map.get", async () => {
         const map = new Map([["key", "hello"]])
-
-        const vStore = valdresCreateStore()
-        const vAtom = valdresAtom("hello")
-        vStore.get(vAtom)
-
-        const jStore = jotaiCreateStore()
-        const jAtom = jotaiAtom("hello")
-        jStore.get(jAtom)
-
-        await measureOne("obj.value", () => { sink = obj.value })
-        await measureOne("map.get(key)", () => { sink = map.get("key") })
-        await measureOne("valdres get", () => { sink = vStore.get(vAtom) })
-        await measureOne("jotai get", () => { sink = jStore.get(jAtom) })
+        await measureOne("store.get(atom) / map", () =>
+            do_not_optimize(map.get("key")),
+        )
     })
 
-    test("set: object vs valdres vs jotai", async () => {
-        const obj = { value: 0 }
-        const map = new Map([["key", 0]])
-
-        const vStore = valdresCreateStore()
-        const vAtom = valdresAtom(0)
-
-        const jStore = jotaiCreateStore()
-        const jAtom = jotaiAtom(0)
-
+    test("set(atom, value) vs map.set", async () => {
+        const map = new Map<string, number>([["key", 0]])
         let i = 0
-        await measureOne("obj.value = n", () => { obj.value = ++i })
-        i = 0
-        await measureOne("map.set(key, n)", () => { map.set("key", ++i) })
-        i = 0
-        await measureOne("valdres set", () => { vStore.set(vAtom, ++i) })
-        i = 0
-        await measureOne("jotai set", () => { jStore.set(jAtom, ++i) })
+        await measureOne("set(atom, value) / map", () =>
+            do_not_optimize(map.set("key", ++i)),
+        )
     })
 })

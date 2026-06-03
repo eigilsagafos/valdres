@@ -13,9 +13,10 @@ import type { StoreData } from "../types/StoreData"
  *   stateDependents and subscriptions get merged into the in-progress
  *   propagation pass.
  * - `cross` collects dirty atoms per descendant scope. After
- *   `propagateDirtySelectors` runs locally, the caller dispatches a fresh
- *   `propagateUpdatedAtoms` per scope to fire scope-local subscribers and
- *   selectors.
+ *   `propagateDirtySelectors` runs locally, the caller fires each target
+ *   scope's selectors + subscribers for those atoms (without cascading
+ *   further into that scope's children — the descriptor already emits a
+ *   separate `cross` entry per affected scope).
  *
  * Both fields are lazily allocated — descriptors that produce no dirty
  * atoms pay zero allocation cost.

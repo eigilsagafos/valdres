@@ -11,7 +11,7 @@ import { isSelector } from "../utils/isSelector"
 import { isSelectorFamily } from "../utils/isSelectorFamily"
 import { equal } from "./equal"
 import { initAtom } from "./initAtom"
-import { initSelector, NeedsInitError, _evalDepth, MAX_EVAL_DEPTH } from "./initSelector"
+import { initSelector } from "./initSelector"
 import {
     createAtomFamilyIndex,
     materializeDirtyFamily,
@@ -68,7 +68,7 @@ export function getState<
         return data.values.get(state)
     }
     if (isAtom<Value>(state)) {
-        if ("parent" in data)
+        if (data.parent)
             return getState<Value, Args>(
                 state,
                 data.parent,
@@ -88,11 +88,6 @@ export function getState<
         return data.values.get(state)
     }
     if (isSelector<Value>(state)) {
-        if (_evalDepth >= MAX_EVAL_DEPTH) {
-            // Approaching stack limit — signal the trampoline to handle
-            // this dependency iteratively instead of recursing deeper.
-            throw new NeedsInitError(state)
-        }
         initSelector<Value>(
             state,
             data,
@@ -102,13 +97,8 @@ export function getState<
         return data.values.get(state)
     }
     if (isAtomFamily<Value, Args>(state)) {
-        if ("parent" in data) {
-            const closestData = findClosestStoreWithAtomInitialized<Set<Args>>(
-                // @ts-ignore @ts-todo
-                state,
-                data,
-            )
-            // @ts-ignore @ts-todo
+        if (data.parent) {
+            const closestData = findClosestStoreWithAtomInitialized(state, data)
             return getState<Value, Args>(
                 state,
                 closestData,
@@ -132,11 +122,11 @@ export function getState<
     throw new Error("Invalid object passed to get")
 }
 
-const findClosestStoreWithAtomInitialized = <V>(
-    atom: Atom<V>,
+const findClosestStoreWithAtomInitialized = (
+    atom: Atom | AtomFamily<any, any>,
     data: StoreData,
-) => {
-    if ("parent" in data === false) return data
+): StoreData => {
+    if (!data.parent) return data
     if (data.values.has(atom)) return data
     return findClosestStoreWithAtomInitialized(atom, data.parent)
 }

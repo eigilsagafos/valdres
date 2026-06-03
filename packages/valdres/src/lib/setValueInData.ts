@@ -1,20 +1,25 @@
 import type { Atom } from "../types/Atom"
 import type { AtomFamily } from "../types/AtomFamily"
-import type { ScopedStoreData, StoreData } from "../types/StoreData"
+import type { StoreData } from "../types/StoreData"
 import { deepFreeze } from "../utils/deepFreeze"
 import { isProd } from "./isProd"
 
-/** Register `key` in the parent's scopeValueIndex. Caller MUST ensure
- *  `data` is a ScopedStoreData (has a parent). */
-export const trackScopeValue = (key: WeakKey, data: ScopedStoreData) => {
+/** Register `key` in the parent's scopeValueIndex. Throws if called on
+ *  a root store — `parent` and `scopeIndexKeys` are only populated for
+ *  scoped stores (see createStoreData). */
+export const trackScopeValue = (key: WeakKey, data: StoreData) => {
     const parent = data.parent
+    const indexKeys = data.scopeIndexKeys
+    if (!parent || !indexKeys) {
+        throw new Error("trackScopeValue called on a root store")
+    }
     let set = parent.scopeValueIndex.get(key)
     if (!set) {
         set = new Set()
         parent.scopeValueIndex.set(key, set)
     }
     set.add(data)
-    data.scopeIndexKeys.add(key)
+    indexKeys.add(key)
 }
 
 declare global {
@@ -41,7 +46,7 @@ export const setValueInData = <Value extends unknown>(
     // also passed here via loose typing but should not pollute the index.
     // Family tracking is handled separately in initFamilyIndex.
     const isNewAtomInScope =
-        "parent" in data && Object.hasOwn(atom, "defaultValue") && !data.values.has(atom)
+        data.parent && Object.hasOwn(atom, "defaultValue") && !data.values.has(atom)
     let written: Value
     if (atom.mutable || isProd() || skipFreezeOverride()) {
         data.values.set(atom, value)
@@ -54,7 +59,7 @@ export const setValueInData = <Value extends unknown>(
         data.values.set(atom, frozenValue)
         written = frozenValue
     }
-    if (isNewAtomInScope) trackScopeValue(atom, data as ScopedStoreData)
+    if (isNewAtomInScope) trackScopeValue(atom, data)
     // Record the write timestamp for atoms with maxAge so unmounted reads
     // can lazily revalidate once the freshness window has elapsed.
     if ((atom as Atom<Value>).maxAge !== undefined) {

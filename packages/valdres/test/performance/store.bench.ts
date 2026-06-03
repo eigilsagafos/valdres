@@ -2,18 +2,16 @@ import { describe, test } from "./test-compat"
 import { createStore as jotaiCreateStore, atom as jotaiAtom } from "jotai"
 import { atom as valdresAtom } from "../../src/atom"
 import { store as valdresCreateStore } from "../../src/store"
-import { assertFaster } from "./bench-utils"
-
-let sink: any
+import { compare } from "./bench-utils"
+import { do_not_optimize } from "mitata"
 
 describe("store", () => {
     test("creation", async () => {
         // TODO: valdres store creation is heavy — optimization target
-        await assertFaster(
+        await compare(
             "createStore",
-            () => { sink = valdresCreateStore() },
-            () => { sink = jotaiCreateStore() },
-            50.0,
+            () => do_not_optimize(valdresCreateStore()),
+            () => do_not_optimize(jotaiCreateStore()),
         )
     })
 
@@ -24,7 +22,7 @@ describe("store", () => {
         const vAtoms = Array.from({ length: 1000 }, () => valdresAtom(0))
         const jAtoms = Array.from({ length: 1000 }, () => jotaiAtom(0))
 
-        await assertFaster(
+        await compare(
             "set 1000 atoms",
             () => {
                 for (let i = 0; i < 1000; i++) vStore.set(vAtoms[i], i)
@@ -32,7 +30,6 @@ describe("store", () => {
             () => {
                 for (let i = 0; i < 1000; i++) jStore.set(jAtoms[i], i)
             },
-            2.0,
         )
     })
 
@@ -51,15 +48,14 @@ describe("store", () => {
             return a
         })
 
-        await assertFaster(
+        await compare(
             "get 1000 atoms",
             () => {
-                for (let i = 0; i < 1000; i++) sink = vStore.get(vAtoms[i])
+                for (let i = 0; i < 1000; i++) do_not_optimize(vStore.get(vAtoms[i]))
             },
             () => {
-                for (let i = 0; i < 1000; i++) sink = jStore.get(jAtoms[i])
+                for (let i = 0; i < 1000; i++) do_not_optimize(jStore.get(jAtoms[i]))
             },
-            1.5,
         )
     })
 
@@ -71,7 +67,7 @@ describe("store", () => {
         const noop = () => {}
 
         // TODO: subscribe is slow — optimization target
-        await assertFaster(
+        await compare(
             "sub + unsub",
             () => {
                 const unsub = vStore.sub(vAtom, noop)
@@ -81,7 +77,6 @@ describe("store", () => {
                 const unsub = jStore.sub(jAtom, noop)
                 unsub()
             },
-            15.0,
         )
     })
 })

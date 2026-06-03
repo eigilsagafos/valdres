@@ -243,8 +243,10 @@ export class Transaction {
 
     parentScope = (callback: (txn: Transaction) => any) => {
         if (!this.parentTransaction) {
+            if (!this.data.parent) {
+                throw new Error("Cannot access parentScope on root store")
+            }
             this.parentTransaction = new Transaction(
-                // @ts-ignore
                 this.data.parent,
                 undefined,
                 this,
