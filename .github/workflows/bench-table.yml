@@ -1,0 +1,40 @@
+# Refreshes the README's benchmark table from Bencher's public API.
+# Runs nightly (and on demand) rather than on every main push, to avoid commit
+# churn — the live, always-current view is bencher.dev/perf/valdres; this is a
+# committed snapshot. The generator only READS the public API, so no token /
+# Bencher.dev environment is needed.
+name: Refresh benchmark table
+
+on:
+    schedule:
+        - cron: "17 6 * * *" # daily, off-peak UTC
+    workflow_dispatch:
+
+permissions:
+    contents: write
+
+concurrency:
+    group: bench-table
+    cancel-in-progress: false
+
+jobs:
+    refresh:
+        runs-on: ubuntu-22.04
+        steps:
+            - uses: actions/checkout@v6
+            - uses: oven-sh/setup-bun@v2
+              with:
+                  bun-version: 1.3.13
+            - name: Regenerate README benchmark table
+              run: bun run scripts/gen-bench-table.ts
+            - name: Commit if changed
+              run: |
+                  if git diff --quiet README.md; then
+                      echo "Benchmark table unchanged."
+                  else
+                      git config user.name "github-actions[bot]"
+                      git config user.email "github-actions[bot]@users.noreply.github.com"
+                      git add README.md
+                      git commit -m "docs: refresh Bencher benchmark table [skip ci]"
+                      git push
+                  fi
