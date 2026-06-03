@@ -55,12 +55,15 @@ jobs:
               run: bun run scripts/bench-to-bmf.ts
 
             # Gate the built-in `latency` measure with a t-test against main's
-            # history (auto-scales tolerance to each benchmark's own variance —
-            # noisy benchmarks get a wider band). NOTE: a Bencher threshold is
-            # per-measure, so the jotai/map reference benchmarks are gated too;
-            # they're stable enough to usually self-pass (upper-boundary only),
-            # but a jotai bump or a noise spike on a reference can trip a PR.
-            # Move references to their own measure if that proves flaky.
+            # history (auto-scales tolerance to each benchmark's own variance).
+            # Tuned for noisy shared runners: min-sample-size 6 means a benchmark
+            # isn't gated until it has enough history (kills early-life false
+            # alerts on a thin baseline), and a wide 0.9999 upper boundary
+            # tolerates the ~1.5x wobble heavy/allocation benches show on a loaded
+            # runner while still catching genuine large regressions. NOTE:
+            # thresholds are per-measure, so the jotai/map reference benches are
+            # gated too — stable enough to self-pass; move them to their own
+            # measure if that ever flakes.
             - name: Track Bun baseline
               run: |
                   bencher run \
@@ -68,8 +71,9 @@ jobs:
                     --testbed ubuntu-2204-bun \
                     --threshold-measure latency \
                     --threshold-test t_test \
+                    --threshold-min-sample-size 6 \
                     --threshold-max-sample-size 64 \
-                    --threshold-upper-boundary 0.99 \
+                    --threshold-upper-boundary 0.9999 \
                     --thresholds-reset \
                     --adapter json \
                     --github-actions '${{ secrets.GITHUB_TOKEN }}' \
@@ -82,8 +86,9 @@ jobs:
                     --testbed ubuntu-2204-node \
                     --threshold-measure latency \
                     --threshold-test t_test \
+                    --threshold-min-sample-size 6 \
                     --threshold-max-sample-size 64 \
-                    --threshold-upper-boundary 0.99 \
+                    --threshold-upper-boundary 0.9999 \
                     --thresholds-reset \
                     --adapter json \
                     --github-actions '${{ secrets.GITHUB_TOKEN }}' \
