@@ -446,11 +446,36 @@ const propagateDownstreamTopo = (
     // downstream gets flagged as parents propagate change.
     const needsEval = new Set<Selector>(seeds)
 
+    // Set when the dependency graph changes during the walk (a selector's deps
+    // were added/removed, or an out-of-closure dependent was pulled in). Only
+    // then can a node be left stranded with an undrained `pending`, so the
+    // settle scan below is skipped entirely on the steady-state path.
+    let graphMutated = false
+
     const advance = (selector: Selector, propagateChange: boolean) => {
         const downstream = data.stateDependents.get(selector)
         if (!downstream) return
         for (const d of downstream) {
-            if (!closure.has(d)) continue
+            if (!closure.has(d)) {
+                // `d` is downstream of a just-changed selector but absent from
+                // the static closure, which means it was materialized AFTER the
+                // closure was built — e.g. an orphaned selector whose value was
+                // dropped by unsubscribe GC and then lazily re-initialized when
+                // a closure selector read it mid-propagation. Such a node may
+                // have read a not-yet-settled (stale) value of `selector`, and
+                // because it's untracked, a later change here would never reach
+                // it. Pull it into the closure so the topo walk re-evaluates it
+                // once `selector` settles. (Only when there is an actual change
+                // to propagate; an unchanged parent needs no re-eval.)
+                if (propagateChange) {
+                    graphMutated = true
+                    closure.add(d)
+                    pending.set(d, 0)
+                    needsEval.add(d)
+                    ready.push(d)
+                }
+                continue
+            }
             const c = (pending.get(d) ?? 0) - 1
             pending.set(d, c)
             if (propagateChange) needsEval.add(d)
@@ -516,17 +541,21 @@ const propagateDownstreamTopo = (
         // property accesses lose their narrowing after a function call.
         const added = depsChange.added as Set<State> | undefined
         const removed = depsChange.removed as Set<State> | undefined
-        if ((added || removed) && isLive(selector, data)) {
-            if (added) {
-                for (const dep of added) {
-                    onLiveDependencyAdded(dep, data)
-                    mountTransitiveDeps(dep, data)
+        if (added || removed) {
+            // The graph changed under the walk — a node may now be stranded.
+            graphMutated = true
+            if (isLive(selector, data)) {
+                if (added) {
+                    for (const dep of added) {
+                        onLiveDependencyAdded(dep, data)
+                        mountTransitiveDeps(dep, data)
+                    }
                 }
-            }
-            if (removed) {
-                for (const dep of removed) {
-                    onLiveDependencyRemoved(dep, data)
-                    unmountOrphanedDeps(dep, data)
+                if (removed) {
+                    for (const dep of removed) {
+                        onLiveDependencyRemoved(dep, data)
+                        unmountOrphanedDeps(dep, data)
+                    }
                 }
             }
         }
@@ -535,6 +564,84 @@ const propagateDownstreamTopo = (
         if (wasValueUpdated && subscribers) {
             addSetToSet(subscribers, collectedSubscribers)
         }
+    }
+
+    // Settle stranded nodes. The `pending` counts are a snapshot taken before
+    // the walk; they assume the dependency graph is fixed for its duration. But
+    // a selector can be re-evaluated out-of-band DURING the walk — most commonly
+    // lazily re-initialized via getState when another selector reads it (after
+    // its value was dropped by an earlier orphan-invalidation/unsubscribe). If
+    // that re-eval drops a dependency it was snapshotted with, the dropped
+    // parent's reverse edge is gone, so it never decrements this node's
+    // `pending`, which then stalls above 0 and the node is never processed —
+    // even though one of its surviving dependencies changed. Such a node is left
+    // stale, and so is anything that read it. Re-settle the stranded set (and
+    // whatever depends on it) with a fixpoint that re-fetches dependents each
+    // pass, which is inherently robust to a graph that changed under us. Guarded
+    // by `graphMutated`, so the steady-state fast path skips it entirely.
+    if (!graphMutated) return
+
+    let stranded: Set<Selector> | undefined
+    for (const s of closure) {
+        if (needsEval.has(s) && (pending.get(s) ?? 0) > 0) {
+            if (!stranded) stranded = new Set()
+            stranded.add(s)
+        }
+    }
+    if (!stranded) return
+
+    let work = stranded
+    while (work.size > 0) {
+        const next = new Set<Selector>()
+        for (const selector of work) {
+            const currentValue = data.values.get(selector)
+            if (isPromiseLike(currentValue) && isInitOnly) continue
+            const dependents = data.stateDependents.get(selector)
+            const subscribers = data.subscriptions.get(selector)
+            if (
+                !isPromiseLike(currentValue) &&
+                (!dependents || dependents.size === 0) &&
+                (!subscribers || subscribers.size === 0)
+            ) {
+                data.values.delete(selector)
+                continue
+            }
+            depsChange.added = undefined
+            depsChange.removed = undefined
+            const wasValueUpdated = reEvaluateSelector(
+                selector,
+                data,
+                updatedInitializedAtoms,
+                depsChange,
+                currentValue,
+            )
+            if (evaluatedSelectors !== undefined) evaluatedSelectors.add(selector)
+            const added = depsChange.added as Set<State> | undefined
+            const removed = depsChange.removed as Set<State> | undefined
+            if ((added || removed) && isLive(selector, data)) {
+                if (added) {
+                    for (const dep of added) {
+                        onLiveDependencyAdded(dep, data)
+                        mountTransitiveDeps(dep, data)
+                    }
+                }
+                if (removed) {
+                    for (const dep of removed) {
+                        onLiveDependencyRemoved(dep, data)
+                        unmountOrphanedDeps(dep, data)
+                    }
+                }
+            }
+            if (wasValueUpdated) {
+                if (subscribers) addSetToSet(subscribers, collectedSubscribers)
+                // Re-fetch dependents — eval may have changed them.
+                const downstream = data.stateDependents.get(selector)
+                if (downstream) {
+                    for (const d of downstream) next.add(d)
+                }
+            }
+        }
+        work = next
     }
 }
 
