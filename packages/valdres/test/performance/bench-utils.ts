@@ -50,6 +50,11 @@ export async function compare(
     refName: string = "jotai",
 ) {
     await measureOne(`${op} / valdres`, valdresFn)
+    // BENCH_VALDRES_ONLY skips the reference measurement. The PR gate sets it
+    // because reference benches can't regress from a valdres change and are
+    // excluded from the gate anyway — skipping them ~halves PR bench time. The
+    // base lane leaves it unset so the head-to-head perf page stays populated.
+    if (process.env.BENCH_VALDRES_ONLY) return
     await measureOne(`${op} / ${refName}`, refFn)
 }
 

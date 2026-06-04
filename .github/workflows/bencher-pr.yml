@@ -81,8 +81,16 @@ jobs:
             # doubles it); min-of-3 filters those spikes so a tight gate is
             # trustworthy. The npm scripts rm + rewrite their NDJSON each run, so
             # we concatenate each run's output into a per-side accumulator.
+            #
+            # BENCH_VALDRES_ONLY skips the jotai/map reference measurements — the
+            # gate is valdres-only, so measuring them here is wasted time. (The
+            # base worktree honors this only once a PR's base SHA includes the
+            # flag support; older base SHAs just measure them and bench-to-bmf
+            # drops them via BENCH_EXCLUDE_REFS below.)
             - name: Run benchmarks — base (Bun + Node, 3×)
               working-directory: /tmp/base/packages/valdres
+              env:
+                  BENCH_VALDRES_ONLY: "1"
               run: |
                   rm -f /tmp/base_bun.ndjson /tmp/base_node.ndjson
                   for i in 1 2 3; do
@@ -95,6 +103,8 @@ jobs:
             # --- Measure the PR head on this runner, back-to-back ---
             - name: Run benchmarks — PR (Bun + Node, 3×)
               working-directory: packages/valdres
+              env:
+                  BENCH_VALDRES_ONLY: "1"
               run: |
                   rm -f /tmp/pr_bun.ndjson /tmp/pr_node.ndjson
                   for i in 1 2 3; do
