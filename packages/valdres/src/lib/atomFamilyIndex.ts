@@ -131,11 +131,23 @@ const findFamilyIndex = (family: Family<any>, data: StoreData) => {
     return value.__index
 }
 
-const recursivelyUpdateIndexes = (data: StoreData, family: Family<any>) => {
+export const recursivelyUpdateIndexes = (
+    data: StoreData,
+    family: Family<any>,
+) => {
     const childScopesWithFamily = data.scopeValueIndex.get(family)
     if (!childScopesWithFamily || childScopesWithFamily.size === 0) return
+    // The parent's family index object can be REPLACED, not just mutated: `del`
+    // and `set` inside a transaction clone the family index, and the clone
+    // becomes the parent's committed index. A child scope that shadows the
+    // family still points its `parentIndex` at the old object, so its rendered
+    // members would reflect the pre-transaction parent. Re-link to the parent's
+    // current index before re-rendering. Outside a txn the parent index is
+    // mutated in place, so `parentIndex` is already correct and this is a no-op.
+    const parentIndex = data.values.get(family).__index
     for (const scopedData of childScopesWithFamily) {
         const index = scopedData.values.get(family).__index
+        index.parentIndex = parentIndex
         index.rendered = null
         index.renderedArray = null
         scopedData.values.set(family, renderAtomFamilyIndex(index))
