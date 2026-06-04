@@ -6,7 +6,15 @@
 //
 // Evaluated once at module load (not per call): the write path reads a boolean
 // instead of doing a `process.env` lookup + string compare on every set, and
-// bundlers that inline `process.env.NODE_ENV` can fold this to `true`/`false`
-// and dead-code-eliminate the freeze branch. The env must therefore be set
+// it's fold-friendly — bundlers that inline `process.env.NODE_ENV` can collapse
+// it to `true`/`false` (the `typeof process` guard may leave a small residual
+// check, but the freeze branch still largely drops out). The env must be set
 // before this module is first imported (the bench scripts and prod builds do).
-export const IS_PROD = process.env.NODE_ENV === "production"
+//
+// The `typeof process` guard matters: valdres's own build does NOT replace
+// `process.env.NODE_ENV` (only `VALDRES_VERSION`), so this expression ships as-is
+// and is resolved by the consumer. Without the guard, importing valdres in an
+// environment with no `process` global (raw browser ESM, some Deno/edge setups)
+// throws at module load and takes the whole library down.
+export const IS_PROD =
+    typeof process !== "undefined" && process.env.NODE_ENV === "production"
