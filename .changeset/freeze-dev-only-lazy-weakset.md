@@ -8,8 +8,9 @@ Valdres deep-freezes every object atom value on write so accidental in-place
 mutation (`state.foo = x`, `arr.push(...)`) throws a `TypeError` instead of
 silently corrupting state. Until now this ran in *every* build because
 `isProd()` was hardcoded to `false`. It now honors `process.env.NODE_ENV`, so
-production builds skip the freeze entirely — reclaiming ~15–20% of write-path
-time. This matches how Recoil (`__DEV__`-gated freeze) and Redux Toolkit
+production builds skip the freeze entirely — worth up to ~15–20% on write-heavy
+workloads (e.g. bulk inserts of object values); a single small write saves less.
+This matches how Recoil (`__DEV__`-gated freeze) and Redux Toolkit
 (dev-only immutability checks) treat the same safety net: a dev-time aid, not a
 prod cost.
 

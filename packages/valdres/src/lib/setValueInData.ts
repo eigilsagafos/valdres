@@ -32,6 +32,9 @@ export const setValueInData = <Value extends unknown>(
     // Family tracking is handled separately in initFamilyIndex.
     const isNewAtomInScope =
         data.parent && Object.hasOwn(atom, "defaultValue") && !data.values.has(atom)
+    // Dev-only freeze decision. Kept inline (not a shared helper) because the
+    // extra call frame measurably regresses the hot primitive-set path; if you
+    // change this policy, keep Transaction.set in transaction.ts in sync.
     let written: Value
     if (atom.mutable || IS_PROD) {
         data.values.set(atom, value)

@@ -134,7 +134,9 @@ export class Transaction {
         }
 
         // Freeze non-primitives so values are immutable within the transaction.
-        // Respect atom.mutable and production mode, matching setValueInData behavior.
+        // Respect atom.mutable and production mode. Kept in sync with the inline
+        // freeze decision in setValueInData.ts (not shared, to avoid a call on the
+        // write hot path) — change both together.
         if (!atom.mutable && !IS_PROD && resolved !== null && (typeof resolved === "object" || typeof resolved === "function")) {
             resolved = deepFreeze(resolved) as V
         }
