@@ -16,5 +16,9 @@
 // and is resolved by the consumer. Without the guard, importing valdres in an
 // environment with no `process` global (raw browser ESM, some Deno/edge setups)
 // throws at module load and takes the whole library down.
+//
+// `process` is declared at module scope (not global) so we don't conflict with
+// consumers' @types/node or bun-types — mirroring src/index.ts.
+declare const process: { env: { NODE_ENV?: string } }
 export const IS_PROD =
     typeof process !== "undefined" && process.env.NODE_ENV === "production"
