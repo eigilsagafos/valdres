@@ -11,14 +11,19 @@
 // check, but the freeze branch still largely drops out). The env must be set
 // before this module is first imported (the bench scripts and prod builds do).
 //
-// The `typeof process` guard matters: valdres's own build does NOT replace
-// `process.env.NODE_ENV` (only `VALDRES_VERSION`), so this expression ships as-is
-// and is resolved by the consumer. Without the guard, importing valdres in an
-// environment with no `process` global (raw browser ESM, some Deno/edge setups)
-// throws at module load and takes the whole library down.
+// The guards matter: valdres's own build does NOT replace `process.env.NODE_ENV`
+// (only `VALDRES_VERSION`), so this expression ships as-is and is resolved by the
+// consumer. We guard both `process` (missing in raw browser ESM / some Deno/edge
+// runtimes) and `process.env` (a minimal polyfill may set `process` to `{}`
+// without an `env`); either would otherwise throw at module load and take the
+// whole library down. This is the React/Redux idiom. Plain member access (no
+// optional chaining) keeps `process.env.NODE_ENV` matchable by consumer bundlers
+// for dead-code elimination.
 //
 // `process` is declared at module scope (not global) so we don't conflict with
 // consumers' @types/node or bun-types — mirroring src/index.ts.
-declare const process: { env: { NODE_ENV?: string } }
+declare const process: { env?: { NODE_ENV?: string } }
 export const IS_PROD =
-    typeof process !== "undefined" && process.env.NODE_ENV === "production"
+    typeof process !== "undefined" &&
+    process.env != null &&
+    process.env.NODE_ENV === "production"
