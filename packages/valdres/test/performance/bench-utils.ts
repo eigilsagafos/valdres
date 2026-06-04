@@ -12,15 +12,17 @@ const RESULTS_FILE =
     RUNTIME === "bun" ? "bench-results.ndjson" : "bench-results-node.ndjson"
 const RESULTS_PATH = join(__dir, RESULTS_FILE)
 
-// Measurement budget. 200ms keeps the full suite under the CI step budget;
-// Bencher's per-benchmark t-test absorbs the extra per-point variance across
-// commits, so we don't need mitata's heavier default (642ms) here.
+// Measurement budget. 100ms per benchmark keeps the suite cheap enough to run
+// 3× per side in the relative-CB gate (bencher-pr.yml), where bench-to-bmf takes
+// the MIN p50 across the repeats — interference (GC, scheduler) only ever adds
+// time, so the minimum is the clean signal and tames the heavy-tailed single-run
+// jitter on the Node/vitest lane far better than one longer run would.
 //
 // NOTE: every result is appended to one shared NDJSON file, so the suite MUST
 // run serially — bun via `--concurrency 1`, vitest via pool=forks + singleFork.
 const MEASURE_ONE_OPTS = {
     min_samples: 12,
-    min_cpu_time: 200 * 1e6,
+    min_cpu_time: 100 * 1e6,
     warmup_samples: 2,
 }
 
