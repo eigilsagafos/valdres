@@ -483,66 +483,12 @@ const propagateDownstreamTopo = (
         }
     }
 
-    const depsChange: DepsChange = {}
-
-    // Re-evaluate one selector and reconcile its side effects: orphan-invalidate
-    // when it has no live consumer, otherwise re-evaluate, mount/unmount any
-    // changed dependencies, and collect its subscribers. Returns whether the
-    // value actually changed. Shared by the topo walk and the settle pass below.
-    const evaluateNode = (selector: Selector, currentValue: unknown): boolean => {
-        const dependents = data.stateDependents.get(selector)
-        const subscribers = data.subscriptions.get(selector)
-        if (
-            !isPromiseLike(currentValue) &&
-            (!dependents || dependents.size === 0) &&
-            (!subscribers || subscribers.size === 0)
-        ) {
-            // No live consumer — invalidate for lazy re-eval on next read.
-            data.values.delete(selector)
-            return false
-        }
-        depsChange.added = undefined
-        depsChange.removed = undefined
-        const wasValueUpdated = reEvaluateSelector(
-            selector,
-            data,
-            updatedInitializedAtoms,
-            depsChange,
-            currentValue,
-        )
-        if (evaluatedSelectors !== undefined) evaluatedSelectors.add(selector)
-        // Casts work around a tsgo control-flow narrowing quirk where
-        // property accesses lose their narrowing after a function call.
-        const added = depsChange.added as Set<State> | undefined
-        const removed = depsChange.removed as Set<State> | undefined
-        if (added || removed) {
-            graphMutated = true
-            if (isLive(selector, data)) {
-                if (added) {
-                    for (const dep of added) {
-                        onLiveDependencyAdded(dep, data)
-                        mountTransitiveDeps(dep, data)
-                    }
-                }
-                if (removed) {
-                    for (const dep of removed) {
-                        onLiveDependencyRemoved(dep, data)
-                        unmountOrphanedDeps(dep, data)
-                    }
-                }
-            }
-        }
-        if (wasValueUpdated && subscribers) {
-            addSetToSet(subscribers, collectedSubscribers)
-        }
-        return wasValueUpdated
-    }
-
     // FIFO head pointer preserves the original BFS sibling order — nested
     // writes that side-effect into peer selectors during eval depend on it.
     // Reused across every re-evaluated selector. evaluateSelector only
     // allocates the inner Sets when deps actually changed, so steady-state
     // settling does zero allocation here.
+    const depsChange: DepsChange = {}
     let head = 0
     while (head < ready.length) {
         const selector = ready[head++]
@@ -567,7 +513,57 @@ const propagateDownstreamTopo = (
             continue
         }
 
-        advance(selector, evaluateNode(selector, currentValue))
+        const dependents = data.stateDependents.get(selector)
+        const subscribers = data.subscriptions.get(selector)
+
+        if (
+            !isPromiseLike(currentValue) &&
+            (!dependents || dependents.size === 0) &&
+            (!subscribers || subscribers.size === 0)
+        ) {
+            // No live consumer — invalidate for lazy re-eval on next read.
+            data.values.delete(selector)
+            advance(selector, false)
+            continue
+        }
+
+        depsChange.added = undefined
+        depsChange.removed = undefined
+        const wasValueUpdated = reEvaluateSelector(
+            selector,
+            data,
+            updatedInitializedAtoms,
+            depsChange,
+            currentValue,
+        )
+        if (evaluatedSelectors !== undefined) evaluatedSelectors.add(selector)
+        // Casts work around a tsgo control-flow narrowing quirk where
+        // property accesses lose their narrowing after a function call.
+        const added = depsChange.added as Set<State> | undefined
+        const removed = depsChange.removed as Set<State> | undefined
+        if (added || removed) {
+            // The graph changed under the walk — a node may now be stranded.
+            graphMutated = true
+            if (isLive(selector, data)) {
+                if (added) {
+                    for (const dep of added) {
+                        onLiveDependencyAdded(dep, data)
+                        mountTransitiveDeps(dep, data)
+                    }
+                }
+                if (removed) {
+                    for (const dep of removed) {
+                        onLiveDependencyRemoved(dep, data)
+                        unmountOrphanedDeps(dep, data)
+                    }
+                }
+            }
+        }
+
+        advance(selector, wasValueUpdated)
+        if (wasValueUpdated && subscribers) {
+            addSetToSet(subscribers, collectedSubscribers)
+        }
     }
 
     // Settle stranded nodes. The `pending` counts are a snapshot taken before
@@ -581,34 +577,71 @@ const propagateDownstreamTopo = (
     // even though one of its surviving dependencies changed. Such a node is left
     // stale, and so is anything that read it. Re-settle the stranded set (and
     // whatever depends on it) with a fixpoint that re-fetches dependents each
-    // pass, which is inherently robust to a graph that changed under us. This
-    // only runs when a stall is actually detected, so the steady-state fast path
-    // is unaffected.
+    // pass, which is inherently robust to a graph that changed under us. Guarded
+    // by `graphMutated`, so the steady-state fast path skips it entirely.
+    if (!graphMutated) return
+
     let stranded: Set<Selector> | undefined
-    if (graphMutated) {
-        for (const s of closure) {
-            if (needsEval.has(s) && (pending.get(s) ?? 0) > 0) {
-                if (!stranded) stranded = new Set()
-                stranded.add(s)
-            }
+    for (const s of closure) {
+        if (needsEval.has(s) && (pending.get(s) ?? 0) > 0) {
+            if (!stranded) stranded = new Set()
+            stranded.add(s)
         }
     }
-    if (stranded) {
-        let work = stranded
-        while (work.size > 0) {
-            const next = new Set<Selector>()
-            for (const selector of work) {
-                const currentValue = data.values.get(selector)
-                if (isPromiseLike(currentValue) && isInitOnly) continue
-                if (evaluateNode(selector, currentValue)) {
-                    const downstream = data.stateDependents.get(selector)
-                    if (downstream) {
-                        for (const d of downstream) next.add(d)
+    if (!stranded) return
+
+    let work = stranded
+    while (work.size > 0) {
+        const next = new Set<Selector>()
+        for (const selector of work) {
+            const currentValue = data.values.get(selector)
+            if (isPromiseLike(currentValue) && isInitOnly) continue
+            const dependents = data.stateDependents.get(selector)
+            const subscribers = data.subscriptions.get(selector)
+            if (
+                !isPromiseLike(currentValue) &&
+                (!dependents || dependents.size === 0) &&
+                (!subscribers || subscribers.size === 0)
+            ) {
+                data.values.delete(selector)
+                continue
+            }
+            depsChange.added = undefined
+            depsChange.removed = undefined
+            const wasValueUpdated = reEvaluateSelector(
+                selector,
+                data,
+                updatedInitializedAtoms,
+                depsChange,
+                currentValue,
+            )
+            if (evaluatedSelectors !== undefined) evaluatedSelectors.add(selector)
+            const added = depsChange.added as Set<State> | undefined
+            const removed = depsChange.removed as Set<State> | undefined
+            if ((added || removed) && isLive(selector, data)) {
+                if (added) {
+                    for (const dep of added) {
+                        onLiveDependencyAdded(dep, data)
+                        mountTransitiveDeps(dep, data)
+                    }
+                }
+                if (removed) {
+                    for (const dep of removed) {
+                        onLiveDependencyRemoved(dep, data)
+                        unmountOrphanedDeps(dep, data)
                     }
                 }
             }
-            work = next
+            if (wasValueUpdated) {
+                if (subscribers) addSetToSet(subscribers, collectedSubscribers)
+                // Re-fetch dependents — eval may have changed them.
+                const downstream = data.stateDependents.get(selector)
+                if (downstream) {
+                    for (const d of downstream) next.add(d)
+                }
+            }
         }
+        work = next
     }
 }
 
@@ -674,7 +707,6 @@ const propagateSelectorUpdates = (
             depsChange,
             currentValue,
         )
-        if ((globalThis as any).__TRACE) console.log(`[${data.id}] eval ${(selector as any).name}: ${currentValue} -> ${data.values.get(selector)} changed=${wasValueUpdated} added=[${[...(depsChange.added??[])].map((x:any)=>x.name)}] removed=[${[...(depsChange.removed??[])].map((x:any)=>x.name)}]`)
         if (evaluatedSelectors !== undefined) evaluatedSelectors.add(selector)
         // Casts work around a tsgo control-flow narrowing quirk where
         // property accesses lose their narrowing after a function call.
