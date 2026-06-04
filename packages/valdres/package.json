@@ -21,8 +21,8 @@
         "build": "NODE_ENV=production bun run build.ts",
         "build:types": "rm -rf dist/types && bunx tsgo",
         "test": "bun test --reporter=dots --parallel",
-        "test:bench": "rm -f test/performance/bench-results.ndjson && bun test --timeout 60000 --concurrency 1 ./test/performance/*.bench.ts",
-        "test:bench:node": "rm -f test/performance/bench-results-node.ndjson && npx vitest run --config vitest.bench.config.ts"
+        "test:bench": "rm -f test/performance/bench-results.ndjson && NODE_ENV=production bun test --timeout 60000 --concurrency 1 ./test/performance/*.bench.ts",
+        "test:bench:node": "rm -f test/performance/bench-results-node.ndjson && NODE_ENV=production npx vitest run --config vitest.bench.config.ts"
     },
     "devDependencies": {
         "@testing-library/react": "16.3.0",
