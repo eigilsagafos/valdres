@@ -44,7 +44,21 @@ export const setValueInData = <Value extends unknown>(
         data.values.set(atom, frozenValue)
         written = frozenValue
     }
-    if (isNewAtomInScope) trackScopeValue(atom, data)
+    if (isNewAtomInScope) {
+        trackScopeValue(atom, data)
+        // This scope now shadows `atom`, so any subscription here that was
+        // delegating to an ancestor must stop delegating now — otherwise an
+        // ancestor write in the same transaction commit would notify it in
+        // addition to this scope's own notification. subscribe() also drops the
+        // delegate lazily on the first scope-local callback, but in a single
+        // cross-scope commit the ancestor's notify pass can run first; dropping
+        // it here (during the write phase, before any notification) keeps the
+        // subscriber single-fire. Idempotent with the lazy path.
+        const subs = data.subscriptions.get(atom)
+        if (subs) {
+            for (const sub of subs) sub.reRoot?.()
+        }
+    }
     // Record the write timestamp for atoms with maxAge so unmounted reads
     // can lazily revalidate once the freshness window has elapsed.
     if ((atom as Atom<Value>).maxAge !== undefined) {

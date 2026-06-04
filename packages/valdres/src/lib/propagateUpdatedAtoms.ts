@@ -12,6 +12,7 @@ import { isPromiseLike } from "../utils/isPromiseLike"
 import {
     addFamilyAtomsToSet,
     deleteFamilyAtomsFromSet,
+    recursivelyUpdateIndexes,
 } from "./atomFamilyIndex"
 import type { DepsChange } from "./initSelector"
 import {
@@ -136,6 +137,7 @@ export const propagateDeletedAtoms = (
     subscriptions: Set<Subscription> = new Set(),
     families: Map<AtomFamily<any>, Set<AtomFamilyAtom<any>>> = new Map(),
     timestamp = performance.now(),
+    evaluatedSelectors?: Set<Selector>,
 ) => {
     const selectors = new Set<Selector>()
     for (const atom of atoms) {
@@ -160,7 +162,7 @@ export const propagateDeletedAtoms = (
             deleteFamilyAtomsFromSet(family, familyAtoms, data, timestamp)
         }
     }
-    propagateDirtySelectors(atoms, selectors, data, subscriptions, families)
+    propagateDirtySelectors(atoms, selectors, data, subscriptions, families, false, evaluatedSelectors)
     // Propagate family changes into child scopes. deleteFamilyAtomsFromSet
     // already updated each scope's family index via recursivelyUpdateIndexes;
     // selectors in those scopes that depend on the family still need to be
@@ -181,17 +183,26 @@ export const propagateDeletedAtoms = (
             }
         }
         for (const [scope, familiesInScope] of scopeFamilies) {
-            propagateInScope(familiesInScope, scope)
+            propagateInScope(familiesInScope, scope, false, evaluatedSelectors)
         }
     }
 }
 
 // Top-level entry: notify direct atom subscribers, walk dependent selectors,
 // then cross-propagate into scopes.
+//
+// `evaluatedSelectors` (cross-scope commit only): a per-commit guard set. A
+// selector lives in one store but can be reached twice in a single cross-scope
+// commit — once via an ancestor's propagateToScopes, once via its own store's
+// pass. Since every value is written before any propagation runs, whichever
+// pass reaches a selector first computes its final value; the guard skips the
+// redundant second evaluation. Left undefined on the single-store / non-scoped
+// hot path, so that path is unchanged.
 export const propagateAtomUpdate = (
     atoms: AtomInput[],
     data: StoreData,
     isInitOnly = false,
+    evaluatedSelectors?: Set<Selector>,
 ) => {
     // Fast path: single non-family atom with no dependent selectors and no
     // scopes can skip the full graph walk entirely and just notify subscribers.
@@ -239,10 +250,25 @@ export const propagateAtomUpdate = (
         }
     }
 
-    propagateDirtySelectors(atoms, selectors, data, subscriptions, families, isInitOnly)
+    // A family OBJECT in `atoms` whose value changed without a corresponding
+    // family-atom update (the txn delete case: the rendered list shrank but the
+    // deleted member flows through propagateDeletedAtoms, not `families`) means
+    // the parent's committed family index may be a freshly cloned object. Re-link
+    // shadowing child scopes so their dependent selectors read the new index
+    // before they are evaluated below. Family-atom adds already did this via
+    // addFamilyAtomsToSet, so skip families handled there.
+    if (data.scopes && data.scopes.size > 0) {
+        for (const atom of atoms) {
+            if (isAtomFamily(atom) && !families.has(atom)) {
+                recursivelyUpdateIndexes(data, atom)
+            }
+        }
+    }
+
+    propagateDirtySelectors(atoms, selectors, data, subscriptions, families, isInitOnly, evaluatedSelectors)
 
     if (data.scopes && data.scopes.size > 0) {
-        propagateToScopes(atoms, data, isInitOnly)
+        propagateToScopes(atoms, data, isInitOnly, evaluatedSelectors)
     }
 }
 
@@ -254,6 +280,7 @@ export const propagateInScope = (
     atoms: AtomInput[],
     data: StoreData,
     isInitOnly = false,
+    evaluatedSelectors?: Set<Selector>,
 ) => {
     const subscriptions = new Set<Subscription>()
     const families = new Map<AtomFamily<any>, Set<AtomFamilyAtom<any>>>()
@@ -263,10 +290,10 @@ export const propagateInScope = (
         addSetToSet(data.stateDependents.get(atom), selectors)
     }
 
-    propagateDirtySelectors(atoms, selectors, data, subscriptions, families, isInitOnly)
+    propagateDirtySelectors(atoms, selectors, data, subscriptions, families, isInitOnly, evaluatedSelectors)
 
     if (data.scopes && data.scopes.size > 0) {
-        propagateToScopes(atoms, data, isInitOnly)
+        propagateToScopes(atoms, data, isInitOnly, evaluatedSelectors)
     }
 }
 
@@ -274,6 +301,7 @@ const propagateToScopes = (
     atoms: AtomInput[],
     data: StoreData,
     isInitOnly: boolean,
+    evaluatedSelectors?: Set<Selector>,
 ) => {
     if (atoms.length === 1) {
         // Fast path for single-atom updates (most common case)
@@ -283,7 +311,7 @@ const propagateToScopes = (
             : data.scopeValueIndex.get(atom)
         for (const [, scope] of data.scopes) {
             if (!shadowingScopes || !shadowingScopes.has(scope)) {
-                propagateInScope(atoms, scope, isInitOnly)
+                propagateInScope(atoms, scope, isInitOnly, evaluatedSelectors)
             }
         }
         return
@@ -305,7 +333,7 @@ const propagateToScopes = (
 
     if (!anyShadowed) {
         for (const [, scope] of data.scopes) {
-            propagateInScope(atoms, scope, isInitOnly)
+            propagateInScope(atoms, scope, isInitOnly, evaluatedSelectors)
         }
         return
     }
@@ -328,7 +356,7 @@ const propagateToScopes = (
             }
         }
         if (atomsToUpdateInScope.length > 0) {
-            propagateInScope(atomsToUpdateInScope, scope, isInitOnly)
+            propagateInScope(atomsToUpdateInScope, scope, isInitOnly, evaluatedSelectors)
         }
     }
 }
@@ -340,6 +368,7 @@ export const propagateDirtySelectors = (
     subscriptions: Set<Subscription>,
     families: Map<AtomFamily<any>, Set<AtomFamilyAtom<any>>>,
     isInitOnly = false,
+    evaluatedSelectors?: Set<Selector>,
 ) => {
     const updatedInitializedAtoms = new Set<Atom>(updatedAtoms)
     if (selectors.size > 0) {
@@ -352,6 +381,7 @@ export const propagateDirtySelectors = (
             subscriptions,
             updatedInitializedAtoms,
             isInitOnly,
+            evaluatedSelectors,
         )
     }
     if (subscriptions.size > 0) {
@@ -373,6 +403,7 @@ const propagateDownstreamTopo = (
     collectedSubscribers: Set<any>,
     updatedInitializedAtoms: Set<Atom>,
     isInitOnly: boolean,
+    evaluatedSelectors?: Set<Selector>,
 ) => {
     const closure = new Set<Selector>(seeds)
     {
@@ -436,6 +467,15 @@ const propagateDownstreamTopo = (
     let head = 0
     while (head < ready.length) {
         const selector = ready[head++]
+
+        // Cross-scope commit dedup: already evaluated (with final values) by an
+        // earlier store-pass this commit. Its value won't change here, so drain
+        // its pending edges without re-evaluating or re-propagating change.
+        if (evaluatedSelectors !== undefined && evaluatedSelectors.has(selector)) {
+            advance(selector, false)
+            continue
+        }
+
         const currentValue = data.values.get(selector)
 
         if (isPromiseLike(currentValue) && isInitOnly) {
@@ -471,6 +511,7 @@ const propagateDownstreamTopo = (
             depsChange,
             currentValue,
         )
+        if (evaluatedSelectors !== undefined) evaluatedSelectors.add(selector)
         // Casts work around a tsgo control-flow narrowing quirk where
         // property accesses lose their narrowing after a function call.
         const added = depsChange.added as Set<State> | undefined
@@ -522,6 +563,7 @@ const propagateSelectorUpdates = (
     collectedSubscribers: Set<any>,
     updatedInitializedAtoms: Set<Atom>,
     isInitOnly = false,
+    evaluatedSelectors?: Set<Selector>,
 ) => {
     if (selectors.size === 0) return
 
@@ -530,6 +572,12 @@ const propagateSelectorUpdates = (
     // Reused across every re-evaluated selector — see propagateDownstreamTopo.
     const depsChange: DepsChange = {}
     for (const selector of selectors) {
+        // Cross-scope commit dedup: an earlier store-pass this commit already
+        // evaluated this selector with final values, fired its subscribers, and
+        // walked its downstream. Skip it entirely.
+        if (evaluatedSelectors !== undefined && evaluatedSelectors.has(selector)) {
+            continue
+        }
         const currentValue = data.values.get(selector)
         if (isPromiseLike(currentValue) && isInitOnly) continue
         const dependents = data.stateDependents.get(selector)
@@ -552,6 +600,7 @@ const propagateSelectorUpdates = (
             depsChange,
             currentValue,
         )
+        if (evaluatedSelectors !== undefined) evaluatedSelectors.add(selector)
         // Casts work around a tsgo control-flow narrowing quirk where
         // property accesses lose their narrowing after a function call.
         const added = depsChange.added as Set<State> | undefined
@@ -587,6 +636,7 @@ const propagateSelectorUpdates = (
             collectedSubscribers,
             updatedInitializedAtoms,
             isInitOnly,
+            evaluatedSelectors,
         )
     }
 }

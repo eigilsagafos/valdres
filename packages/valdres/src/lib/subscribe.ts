@@ -272,6 +272,7 @@ export const subscribe = <V>(
     data: StoreData,
 ) => {
     let parentUnsubscribe: undefined | (() => void)
+    let dropDelegate: undefined | (() => void)
     if (
         data.parent &&
         ((!data.values.has(state) && isAtom(state)) || isAtomFamily(state))
@@ -289,14 +290,19 @@ export const subscribe = <V>(
             requireDeepEqualCheckBeforeCallback,
             data.parent,
         )
-        callback = arg => {
+        // Idempotent: once the scope re-roots the subscription, the parent-side
+        // delegate must drop so we don't double-notify on later writes. This
+        // fires either lazily (first scope-local propagation, below) or eagerly
+        // (when the scope shadows the state — see setValueInData), whichever
+        // comes first.
+        dropDelegate = () => {
             if (parentUnsubscribe) {
-                // Idempotent: once the scope re-roots the subscription, the
-                // parent-side delegate must drop on the first scope-local
-                // propagation so we don't double-notify on later writes.
                 parentUnsubscribe()
                 parentUnsubscribe = undefined
             }
+        }
+        callback = arg => {
+            dropDelegate!()
             originalCallback(arg)
         }
     } else if (!data.values.has(state) && isAtom(state)) {
@@ -325,11 +331,13 @@ export const subscribe = <V>(
             callback,
             state,
             requireDeepEqualCheckBeforeCallback,
+            reRoot: dropDelegate,
         }
     } else {
         subscription = {
             callback,
             requireDeepEqualCheckBeforeCallback,
+            reRoot: dropDelegate,
         }
     }
     subscribers.add(subscription)

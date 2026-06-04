@@ -2,6 +2,7 @@ import type { Atom } from "../types/Atom"
 import type { AtomFamily } from "../types/AtomFamily"
 import type { AtomFamilyAtom } from "../types/AtomFamilyAtom"
 import type { GetValue } from "../types/GetValue"
+import type { Selector } from "../types/Selector"
 import type { State } from "../types/State"
 import type { StoreData } from "../types/StoreData"
 import type { TransactionFn } from "../types/TransactionFn"
@@ -18,8 +19,22 @@ import {
     cloneAtomFamilyIndex,
     renderAtomFamilyIndex,
 } from "./atomFamilyIndex"
-import { propagateDeletedAtoms } from "./propagateUpdatedAtoms"
+import {
+    propagateAtomUpdate,
+    propagateDeletedAtoms,
+} from "./propagateUpdatedAtoms"
 import { setAtoms } from "./setAtoms"
+import { writeAtoms, type DeferredOnSet } from "./writeAtoms"
+
+/** One store's slot in a cross-scope commit. Collected root-first; written
+ *  leaf-first (see commit) but notified root-first. */
+type CommitWrite = {
+    txn: Transaction
+    data: StoreData
+    updatedAtoms: Atom[]
+    deleted: AtomFamilyAtom<any, any>[] | undefined
+    onSets: DeferredOnSet[]
+}
 
 // const findDependencies = (
 //     state: State,
@@ -246,15 +261,145 @@ export class Transaction {
     }
 
     commit = () => {
-        const initializedAtomsSet = new Set<Atom>()
-        setAtoms(this._atomMap, this.data, initializedAtomsSet)
-        if (this.deleteSet?.size) {
-            deleteAtomFamilyAtoms(this.deleteSet, this.data)
-            propagateDeletedAtoms([...this.deleteSet], this.data)
+        // Single-store fast path: no scoped transactions to coordinate, so
+        // write-and-notify in one pass exactly as before. This keeps the
+        // non-scoped txn hot path (the Bencher-gated one) unchanged in both
+        // behavior and cost — onSet fires inline during the write loop here.
+        if (!this._scopedTransactions) {
+            const initializedAtomsSet = new Set<Atom>()
+            if (this._deleteSet?.size) {
+                // Updates and a delete in one single-store txn: a selector that
+                // depends on both an updated atom and the deleted family is
+                // reachable by the update pass (propagateAtomUpdate) and the
+                // delete pass (propagateDeletedAtoms). Share a guard so it
+                // evaluates once. (Splitting setAtoms into writeAtoms + propagate
+                // lets the same guard span both passes.)
+                const evaluatedSelectors = new Set<Selector>()
+                const updatedAtoms = writeAtoms(
+                    this._atomMap,
+                    this.data,
+                    initializedAtomsSet,
+                )
+                if (updatedAtoms.length > 0) {
+                    propagateAtomUpdate(
+                        updatedAtoms,
+                        this.data,
+                        false,
+                        evaluatedSelectors,
+                    )
+                }
+                deleteAtomFamilyAtoms(this._deleteSet, this.data)
+                propagateDeletedAtoms(
+                    [...this._deleteSet],
+                    this.data,
+                    undefined,
+                    undefined,
+                    undefined,
+                    evaluatedSelectors,
+                )
+            } else {
+                setAtoms(this._atomMap, this.data, initializedAtomsSet)
+            }
+            return
         }
+
+        // Cross-scope path: write the whole tree (root + every nested scope)
+        // first, then run a single notification pass per store. This guarantees
+        // no subscriber, onSet hook, or selector ever observes a half-applied
+        // transaction — root written while a scope isn't, or scope A written
+        // while scope B isn't. The final committed state is identical to the
+        // old sequential model; only the observation point moves.
+        const plan: CommitWrite[] = []
+        this.collectStores(plan)
+
+        // Write leaf-first (descendants before ancestors — the reverse of the
+        // root-first plan). A scope's equality check reads through the chain via
+        // getState; writing the parent first would let the parent's new value
+        // mask a scope's own change. Concretely: a scope that newly shadows a
+        // root atom with the same value the root is simultaneously set to would
+        // see "no change" (its getState already returns the parent's new value)
+        // AND be skipped by the root's propagateToScopes (its shadow is now
+        // tracked), so its selectors would never recompute. Leaf-first makes
+        // each store decide against its genuine pre-transaction value.
+        for (let i = plan.length - 1; i >= 0; i--) {
+            const entry = plan[i]
+            const txn = entry.txn
+            entry.updatedAtoms = writeAtoms(
+                txn._atomMap,
+                entry.data,
+                new Set<Atom>(),
+                false,
+                entry.onSets,
+            )
+            if (txn._deleteSet?.size) {
+                deleteAtomFamilyAtoms(txn._deleteSet, entry.data)
+                entry.deleted = [...txn._deleteSet]
+            }
+        }
+
+        // Every value across the tree is now applied. onSet hooks fire here, in
+        // the notify phase, so a hook reading any atom — root or scope — sees
+        // the fully-applied transaction. Fired root-first (matching the old
+        // model's order) and before any subscriber, preserving the
+        // long-standing onSet-before-subscribers ordering. (Deliberate
+        // placement: in the old model onSet fired mid-write-loop and a
+        // cross-scope hook could read a not-yet-written scope value. Deferring
+        // to here is the only placement consistent with atomicity.)
+        for (const entry of plan) {
+            for (const [atom, value, data] of entry.onSets) {
+                atom.onSet!(value, data)
+            }
+        }
+
+        // One propagation pass per store, root-first (ancestors before
+        // descendants). Order matters for correctness with the dedup guard: an
+        // ancestor's pass cross-propagates its atom changes into descendant
+        // scopes (propagateToScopes), so a scope selector that transitively
+        // depends on an ancestor atom is recomputed with final upstream values
+        // before the scope's own pass runs. Running leaf-first instead could
+        // evaluate such a selector against a still-stale upstream scope selector
+        // and the guard would then skip its correcting re-eval.
+        //
+        // `evaluatedSelectors` is a per-commit guard so a selector reachable by
+        // more than one store-pass (e.g. spanning an ancestor atom and a scope
+        // atom, or an updated atom and a deleted family) evaluates exactly once:
+        // whichever pass reaches it first computes its final value (all writes
+        // are already applied, and root-first guarantees upstream selectors are
+        // settled first), and later passes skip it. Without the guard the result
+        // is still correct — the equality check discards the redundant recompute
+        // — but the body would run once per reaching pass.
+        const evaluatedSelectors = new Set<Selector>()
+        for (const { data, updatedAtoms, deleted } of plan) {
+            if (updatedAtoms.length > 0) {
+                propagateAtomUpdate(updatedAtoms, data, false, evaluatedSelectors)
+            }
+            if (deleted) {
+                propagateDeletedAtoms(
+                    deleted,
+                    data,
+                    undefined,
+                    undefined,
+                    undefined,
+                    evaluatedSelectors,
+                )
+            }
+        }
+    }
+
+    // Depth-first pre-order: this store, then each nested scope. Produces a
+    // root-first plan used directly for the notify pass and reversed for the
+    // write pass (so descendants are written before their ancestors).
+    private collectStores = (plan: CommitWrite[]) => {
+        plan.push({
+            txn: this,
+            data: this.data,
+            updatedAtoms: [],
+            deleted: undefined,
+            onSets: [],
+        })
         if (this._scopedTransactions) {
             for (const [, scopedTxn] of this._scopedTransactions) {
-                scopedTxn.commit()
+                scopedTxn.collectStores(plan)
             }
         }
     }
