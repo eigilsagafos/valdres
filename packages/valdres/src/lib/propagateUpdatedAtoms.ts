@@ -145,6 +145,28 @@ export const notifyDeferred = (notify: NotifyTarget) => {
     }
 }
 
+// Record a pass's changed family members into the deferred notify target, so
+// callSubscribers can resolve family-atom subscriptions once at commit end.
+// This is the NOTIFICATION side only. The per-pass map handed in here is the
+// SAME data a pass uses to drive index bookkeeping (add/deleteFamilyAtomsFromSet)
+// — but those two roles must NOT share one mutable map across passes: the
+// bookkeeping map has to contain only THIS pass's atoms (a delete pass that saw
+// an earlier pass's added atoms would delete them). So each pass keeps its
+// bookkeeping map local and merges it here for notification.
+const collectFamilyAtomsForNotify = (
+    notify: NotifyTarget,
+    changedByFamily: Map<AtomFamily<any>, Set<AtomFamilyAtom<any>>>,
+) => {
+    for (const [family, atoms] of changedByFamily) {
+        let target = notify.families.get(family)
+        if (target === undefined) {
+            target = new Set()
+            notify.families.set(family, target)
+        }
+        for (const atom of atoms) target.add(atom)
+    }
+}
+
 const addSetToSet = (fromSet: Set<any> | undefined, toSet: Set<any>) => {
     if (fromSet && fromSet.size > 0) {
         for (const item of fromSet) {
@@ -174,16 +196,20 @@ export const propagateDeletedAtoms = (
     atoms: AtomFamilyAtom<any, any>[],
     data: StoreData,
     subscriptions: Set<Subscription> = new Set(),
-    families: Map<AtomFamily<any>, Set<AtomFamilyAtom<any>>> = new Map(),
+    // Per-call ONLY (never a cross-pass accumulator): the family atoms deleted
+    // in THIS call. Drives deletion bookkeeping (deleteFamilyAtomsFromSet) and
+    // is merged into notify.families afterwards for deferred notification. See
+    // collectFamilyAtomsForNotify for why bookkeeping and notification must not
+    // share one map across passes.
+    deletedFamilyAtoms: Map<
+        AtomFamily<any>,
+        Set<AtomFamilyAtom<any>>
+    > = new Map(),
     timestamp = performance.now(),
     notify?: NotifyTarget,
 ) => {
-    // When deferring, accumulate subscribers into the commit-level notify
-    // target so the delete pass's subscribers fire once, with the update
-    // pass's. NOTE: `families` here is also the deletion-bookkeeping set
-    // (deleteFamilyAtomsFromSet), which must contain ONLY the atoms deleted in
-    // THIS call — so it stays local; we merge it into notify.families (for
-    // family-subscriber notification) only after the bookkeeping is done.
+    // When deferring, subscribers accumulate into the commit-level notify
+    // target so this pass fires once, together with the others.
     if (notify) {
         subscriptions = notify.subscriptions
     }
@@ -193,15 +219,15 @@ export const propagateDeletedAtoms = (
         addSetToSet(data.subscriptions.get(atom), subscriptions)
 
         if (isFamilyAtom(atom)) {
-            if (!families.has(atom.family)) {
-                families.set(atom.family, new Set())
+            if (!deletedFamilyAtoms.has(atom.family)) {
+                deletedFamilyAtoms.set(atom.family, new Set())
             }
             // @ts-ignore
-            families.get(atom.family).add(atom)
+            deletedFamilyAtoms.get(atom.family).add(atom)
         }
     }
-    if (families.size > 0) {
-        for (const [family, familyAtoms] of families) {
+    if (deletedFamilyAtoms.size > 0) {
+        for (const [family, familyAtoms] of deletedFamilyAtoms) {
             addSetToSet(data.stateDependents.get(family), selectors)
             addSetToSet(data.subscriptions.get(family), subscriptions)
             if (familyAtoms.size === 0)
@@ -210,28 +236,15 @@ export const propagateDeletedAtoms = (
             deleteFamilyAtomsFromSet(family, familyAtoms, data, timestamp)
         }
     }
-    propagateDirtySelectors(atoms, selectors, data, subscriptions, families, false, notify)
-    // Deferred: merge this call's deleted family atoms into the commit-level
-    // notify target so callSubscribers can resolve family-atom subscriptions at
-    // the end (the local `families` was needed deleted-only for the bookkeeping
-    // above; firing was skipped by propagateDirtySelectors under defer).
-    if (notify && families.size > 0) {
-        for (const [family, familyAtoms] of families) {
-            let target = notify.families.get(family)
-            if (!target) {
-                target = new Set()
-                notify.families.set(family, target)
-            }
-            for (const a of familyAtoms) target.add(a)
-        }
-    }
+    propagateDirtySelectors(atoms, selectors, data, subscriptions, deletedFamilyAtoms, false, notify)
+    if (notify) collectFamilyAtomsForNotify(notify, deletedFamilyAtoms)
     // Propagate family changes into child scopes. deleteFamilyAtomsFromSet
     // already updated each scope's family index via recursivelyUpdateIndexes;
     // selectors in those scopes that depend on the family still need to be
     // re-evaluated so their subscribers get notified.
-    if (families.size > 0 && data.scopes && data.scopes.size > 0) {
+    if (deletedFamilyAtoms.size > 0 && data.scopes && data.scopes.size > 0) {
         const scopeFamilies = new Map<StoreData, AtomFamily<any>[]>()
-        for (const family of families.keys()) {
+        for (const family of deletedFamilyAtoms.keys()) {
             const scopesWithFamily = data.scopeValueIndex.get(family)
             if (scopesWithFamily) {
                 for (const scope of scopesWithFamily) {
@@ -284,28 +297,33 @@ export const propagateAtomUpdate = (
     }
 
     const subscriptions = notify ? notify.subscriptions : new Set<Subscription>()
-    // `families` is local: it feeds addFamilyAtomsToSet (index bookkeeping),
-    // which must see only THIS call's family atoms — not those another store's
-    // pass left in a shared map. Merged into notify.families after, for
-    // deferred family-subscriber notification.
-    const families = new Map<AtomFamily<any>, Set<AtomFamilyAtom<any>>>()
+    // Per-call ONLY (never a cross-pass accumulator): the family atoms updated
+    // in THIS call. Drives index bookkeeping (addFamilyAtomsToSet), and is
+    // merged into notify.families afterwards for deferred notification — two
+    // roles, kept in one local map because within a single pass they are the
+    // same data. See collectFamilyAtomsForNotify for why they must not share a
+    // map across passes.
+    const updatedFamilyAtoms = new Map<
+        AtomFamily<any>,
+        Set<AtomFamilyAtom<any>>
+    >()
     const selectors = new Set<Selector>()
 
     for (const atom of atoms) {
         addSetToSet(data.stateDependents.get(atom), selectors)
         addSetToSet(data.subscriptions.get(atom), subscriptions)
         if (isFamilyAtom(atom)) {
-            if (!families.has(atom.family)) {
-                families.set(atom.family, new Set())
+            if (!updatedFamilyAtoms.has(atom.family)) {
+                updatedFamilyAtoms.set(atom.family, new Set())
             }
             // @ts-ignore
-            families.get(atom.family).add(atom)
+            updatedFamilyAtoms.get(atom.family).add(atom)
         }
     }
 
-    if (families.size > 0) {
+    if (updatedFamilyAtoms.size > 0) {
         const timestamp = performance.now()
-        for (const [family, familyAtoms] of families) {
+        for (const [family, familyAtoms] of updatedFamilyAtoms) {
             addSetToSet(data.stateDependents.get(family), selectors)
             addSetToSet(data.subscriptions.get(family), subscriptions)
             if (familyAtoms.size === 0)
@@ -323,23 +341,14 @@ export const propagateAtomUpdate = (
     // addFamilyAtomsToSet, so skip families handled there.
     if (data.scopes && data.scopes.size > 0) {
         for (const atom of atoms) {
-            if (isAtomFamily(atom) && !families.has(atom)) {
+            if (isAtomFamily(atom) && !updatedFamilyAtoms.has(atom)) {
                 recursivelyUpdateIndexes(data, atom)
             }
         }
     }
 
-    propagateDirtySelectors(atoms, selectors, data, subscriptions, families, isInitOnly, notify)
-    if (notify && families.size > 0) {
-        for (const [family, familyAtoms] of families) {
-            let target = notify.families.get(family)
-            if (!target) {
-                target = new Set()
-                notify.families.set(family, target)
-            }
-            for (const a of familyAtoms) target.add(a)
-        }
-    }
+    propagateDirtySelectors(atoms, selectors, data, subscriptions, updatedFamilyAtoms, isInitOnly, notify)
+    if (notify) collectFamilyAtomsForNotify(notify, updatedFamilyAtoms)
 
     if (data.scopes && data.scopes.size > 0) {
         propagateToScopes(atoms, data, isInitOnly, notify)
