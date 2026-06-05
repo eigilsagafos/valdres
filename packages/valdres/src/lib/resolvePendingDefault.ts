@@ -2,17 +2,30 @@ import type { Atom } from "../types/Atom"
 import type { StoreData } from "../types/StoreData"
 
 /** Resolve any outstanding pending-default suspense placeholder for `atom`
- *  and remove it. The placeholder may have been registered in a parent
- *  store (atoms with no `defaultValue` init in whichever scope first reads
- *  them, which `getState` resolves by walking up to root), so we walk the
- *  scope chain rather than only checking `data`.
+ *  with `value` and remove it. The placeholder may have been registered in a
+ *  parent store (atoms with no `defaultValue` init in whichever scope first
+ *  reads them, which `getState` resolves by walking up to root), so we walk
+ *  the scope chain rather than only checking `data`.
  *
- *  Every write path that lands a real value on an atom that may have a
- *  suspense placeholder must call this — `setAtom` (sync + async resolve)
- *  and `writeAtoms` (the transaction path). Callers should gate on
- *  `isPromiseLike(currentValue)`: a placeholder is always stored as a
- *  promise, so a non-promise current value means there is nothing to
- *  resolve and the chain walk can be skipped. */
+ *  Called by every write path that lands a value on an atom that may carry a
+ *  placeholder — `setAtom` (sync + async resolve) and `writeAtoms` (the
+ *  transaction path). Caller contract:
+ *
+ *   - Pass a SETTLED value, never a promise. The placeholder must resolve to
+ *     the eventual real value, so an in-flight promise stored mid-sequence
+ *     must not consume it — a later settled write still has to find the entry
+ *     here. `setAtom` guarantees this by routing promises through
+ *     `handlePromise` instead; `writeAtoms` by gating on `!isPromiseLike(value)`.
+ *   - Gate the call on `isPromiseLike(currentValue)`: a placeholder is always
+ *     stored as a promise, so a non-promise prior value can't have one and the
+ *     chain walk is skippable (keeps the write hot path off this function).
+ *
+ *  Idempotent and commit-safe: the entry is deleted on first resolve and a
+ *  settled promise ignores later `resolve` calls, so calling this from more
+ *  than one store pass in a single cross-scope commit is harmless. `resolve`
+ *  only schedules the placeholder's `.then` microtasks — it runs no subscriber
+ *  code synchronously — so calling it during a transaction's write phase
+ *  cannot expose a half-applied commit. */
 export const resolvePendingDefault = <Value>(
     atom: Atom<Value>,
     data: StoreData,

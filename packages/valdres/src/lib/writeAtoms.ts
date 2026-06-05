@@ -45,18 +45,25 @@ export const writeAtoms = (
                 if (onSetQueue) onSetQueue.push([atom, value, data])
                 else atom.onSet(value, data)
             }
-            // Landing a real value over a suspense placeholder must resolve
-            // the held promise, exactly as setAtom does. setAtom only ever
-            // resolves with a settled (non-promise) value, so mirror that:
-            // resolve only when replacing a promise (a placeholder is always
-            // stored as one) with a non-promise. The `currentIsPromise` gate
-            // also keeps the common non-promise txn write off the chain walk.
+            // Landing a settled value over a suspense placeholder must resolve
+            // the held promise, exactly as setAtom does. Two gates, both load-
+            // bearing (see resolvePendingDefault's contract):
+            //   currentIsPromise   — a placeholder is always a promise, so a
+            //     non-promise prior value can't have one; skips the chain walk
+            //     on the common (non-promise) write, i.e. the benchmark hot path.
+            //   !isPromiseLike(value) — only resolve with a settled value;
+            //     storing an in-flight promise must not consume the placeholder,
+            //     so a later settled write can still resolve it.
             if (currentIsPromise && !isPromiseLike(value)) {
                 resolvePendingDefault(atom, data, value)
             }
         } else {
             // We do this to ensure that if an atom was set in a scoped transaction but was the same we still override it in that scope
             setValueInData(atom, value, data)
+            // No placeholder to resolve here: areEqual with a settled value
+            // means there was none (a placeholder is a promise, never equal to
+            // a settled value), and equal promises are the same reference — a
+            // no-op set, not a value landing.
         }
     }
     // Merge updatedAtoms and initializedAtomsSet without extra Set+spread
