@@ -169,11 +169,27 @@ const callSubscribers = (
 // changed family members, so a family subscription never fires for a member
 // that changed in a different store.
 export const notifyDeferred = (notify: NotifyTarget) => {
+    // Fire EVERY store's subscribers even if one throws, then rethrow the first
+    // error — the same "fire all, surface the first error" contract that
+    // callSubscribers applies within a set, extended across stores. Without the
+    // try/catch, a throwing subscriber in an earlier (root) entry would abort the
+    // loop and silently drop a later (scope) entry's notification for writes that
+    // were already committed in the same atomic transaction.
+    let firstError: unknown
+    let hasError = false
     for (const entry of notify.values()) {
         if (entry.subscriptions.size > 0) {
-            callSubscribers(entry.subscriptions, entry.families)
+            try {
+                callSubscribers(entry.subscriptions, entry.families)
+            } catch (error) {
+                if (!hasError) {
+                    firstError = error
+                    hasError = true
+                }
+            }
         }
     }
+    if (hasError) throw firstError
 }
 
 // Record a pass's changed family members into its store's notify entry, so

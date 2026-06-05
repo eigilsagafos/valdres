@@ -5,12 +5,12 @@ import { store } from "../store"
 
 // Serializable observation: a transaction is atomic, so every observation point
 // (any subscriber fire, any read from within a subscriber callback) must see
-// the fully-applied final state — never a half-settled intermediate. The
-// per-store guard fix makes the FINAL STORED values correct, but a subscriber
-// for a selector evaluated early in one pass and recomputed in a later pass
-// still fires once with the stale intermediate and once with the final value.
-// These tests pin the stronger guarantee (fire only the final value); they are
-// expected to FAIL until notification is deferred to commit-end.
+// the fully-applied final state — never a half-settled intermediate. A subscriber
+// for a (synchronous) selector reached by more than one store-pass must therefore
+// fire exactly once, with the final value — never once with a stale intermediate
+// and again with the final value. These tests pin that guarantee, which holds
+// because subscriber notification is deferred to commit-end (see NotifyTarget /
+// notifyDeferred in propagateUpdatedAtoms.ts).
 
 const mulberry32 = (seed: number) => () => {
     seed |= 0
