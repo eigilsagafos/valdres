@@ -9,16 +9,20 @@ import type { StoreData } from "../types/StoreData"
  *
  *  Called by every write path that lands a value on an atom that may carry a
  *  placeholder — `setAtom` (sync + async resolve) and `writeAtoms` (the
- *  transaction path). Caller contract:
+ *  transaction path).
  *
- *   - Pass a SETTLED value, never a promise. The placeholder must resolve to
- *     the eventual real value, so an in-flight promise stored mid-sequence
- *     must not consume it — a later settled write still has to find the entry
- *     here. `setAtom` guarantees this by routing promises through
- *     `handlePromise` instead; `writeAtoms` by gating on `!isPromiseLike(value)`.
- *   - Gate the call on `isPromiseLike(currentValue)`: a placeholder is always
- *     stored as a promise, so a non-promise prior value can't have one and the
- *     chain walk is skippable (keeps the write hot path off this function).
+ *  Caller contract: pass a SETTLED value, never a promise. The placeholder must
+ *  resolve to the eventual real value, so an in-flight promise stored
+ *  mid-sequence must not consume it — a later settled write still has to find
+ *  the entry here. `setAtom` guarantees this by routing promises through
+ *  `handlePromise` instead; `writeAtoms` by gating on `!isPromiseLike(value)`.
+ *
+ *  Optional optimization (not required): a caller that already knows the prior
+ *  value may skip the call when it isn't promise-like — a placeholder is always
+ *  stored as a promise, so a non-promise prior value can't have one. `writeAtoms`
+ *  does this (gating on `isPromiseLike(currentValue)`) to keep the write hot
+ *  path off this function. `setAtom` calls unconditionally; the walk is a couple
+ *  of WeakMap lookups that bail immediately when there's nothing to resolve.
  *
  *  Idempotent and commit-safe: the entry is deleted on first resolve and a
  *  settled promise ignores later `resolve` calls, so calling this from more

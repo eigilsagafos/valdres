@@ -6,6 +6,24 @@ import { store } from "../store"
 import { transaction } from "./transaction"
 import { index } from "../indexConstructor"
 
+/** Resolve to a promise's value if it settles within `ms`, else report it
+ *  still pending — a bounded race so a hung suspense promise fails fast
+ *  instead of timing out the test. Clears the timer in `finally` so a won
+ *  race never leaves a dangling timeout holding the event loop open. */
+const settleWithin = async <T>(promise: Promise<T>, ms = 50) => {
+    let timer: ReturnType<typeof setTimeout>
+    try {
+        return await Promise.race([
+            promise.then(value => ({ kind: "resolved" as const, value })),
+            new Promise<{ kind: "pending" }>(resolve => {
+                timer = setTimeout(() => resolve({ kind: "pending" }), ms)
+            }),
+        ])
+    } finally {
+        clearTimeout(timer!)
+    }
+}
+
 describe("transaction", () => {
     test("txn set direct", () => {
         const store1 = store()
@@ -675,12 +693,7 @@ describe("transaction", () => {
         // ...but the suspense promise must also resolve, exactly as it does for
         // a plain `store.set`. Bounded race so the gap fails fast instead of
         // hanging until the test timeout.
-        const settled = await Promise.race([
-            suspense.then(v => ({ kind: "resolved" as const, value: v })),
-            new Promise<{ kind: "pending" }>(r =>
-                setTimeout(() => r({ kind: "pending" }), 50),
-            ),
-        ])
+        const settled = await settleWithin(suspense)
         expect(settled).toEqual({ kind: "resolved", value: "hello" })
     })
 
@@ -698,12 +711,7 @@ describe("transaction", () => {
             txn.set(emptyAtom, "hello")
         })
 
-        const settled = await Promise.race([
-            suspense.then(v => ({ kind: "resolved" as const, value: v })),
-            new Promise<{ kind: "pending" }>(r =>
-                setTimeout(() => r({ kind: "pending" }), 50),
-            ),
-        ])
+        const settled = await settleWithin(suspense)
         expect(settled).toEqual({ kind: "resolved", value: "hello" })
     })
 
@@ -731,12 +739,7 @@ describe("transaction", () => {
             txn.set(emptyAtom, "done")
         })
 
-        const settled = await Promise.race([
-            suspense.then(v => ({ kind: "resolved" as const, value: v })),
-            new Promise<{ kind: "pending" }>(r =>
-                setTimeout(() => r({ kind: "pending" }), 50),
-            ),
-        ])
+        const settled = await settleWithin(suspense)
         expect(settled).toEqual({ kind: "resolved", value: "done" })
         expect(store1.get(emptyAtom)).toBe("done")
     })
