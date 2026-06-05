@@ -651,4 +651,59 @@ describe("transaction", () => {
         expect(rootStore.get(nameAtom)).toBe("Bar")
         expect(nestedStore.get(nameAtom)).toBe("Foo")
     })
+
+    // Regression guard: plain `store.set` on a no-default atom resolves the
+    // pending-default suspense promise (see lib/setAtom.test.ts). The
+    // transaction write path goes through writeAtoms, which previously wrote
+    // the value but never resolved the placeholder — so a reader suspended on
+    // it hung forever even though the value was set. writeAtoms now calls
+    // resolvePendingDefault, matching `set`.
+    test("txn set resolves pending-default suspense promise", async () => {
+        const store1 = store()
+        const emptyAtom = atom<string>()
+
+        // Reading the empty atom gives us the suspense placeholder promise.
+        const suspense = store1.get(emptyAtom) as Promise<string>
+
+        store1.txn(txn => {
+            txn.set(emptyAtom, "hello")
+        })
+
+        // Value is written correctly...
+        expect(store1.get(emptyAtom)).toBe("hello")
+
+        // ...but the suspense promise must also resolve, exactly as it does for
+        // a plain `store.set`. Bounded race so the gap fails fast instead of
+        // hanging until the test timeout.
+        const settled = await Promise.race([
+            suspense.then(v => ({ kind: "resolved" as const, value: v })),
+            new Promise<{ kind: "pending" }>(r =>
+                setTimeout(() => r({ kind: "pending" }), 50),
+            ),
+        ])
+        expect(settled).toEqual({ kind: "resolved", value: "hello" })
+    })
+
+    // The placeholder is registered in root (the scoped read falls through),
+    // so resolving it from a scoped txn write must walk up the scope chain —
+    // mirrors the supported `set` case in lib/setAtom.test.ts.
+    test("scoped txn set resolves suspense promise inited in root", async () => {
+        const root = store()
+        const scoped = root.scope("s1")
+        const emptyAtom = atom<string>()
+
+        const suspense = scoped.get(emptyAtom) as Promise<string>
+
+        scoped.txn(txn => {
+            txn.set(emptyAtom, "hello")
+        })
+
+        const settled = await Promise.race([
+            suspense.then(v => ({ kind: "resolved" as const, value: v })),
+            new Promise<{ kind: "pending" }>(r =>
+                setTimeout(() => r({ kind: "pending" }), 50),
+            ),
+        ])
+        expect(settled).toEqual({ kind: "resolved", value: "hello" })
+    })
 })

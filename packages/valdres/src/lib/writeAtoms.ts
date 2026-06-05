@@ -2,6 +2,7 @@ import type { Atom } from "../types/Atom"
 import type { StoreData } from "../types/StoreData"
 import { isPromiseLike } from "../utils/isPromiseLike"
 import { getState } from "./getState"
+import { resolvePendingDefault } from "./resolvePendingDefault"
 import { setValueInData } from "./setValueInData"
 
 /** A deferred onSet invocation: the hook, the written value, and the store it
@@ -33,7 +34,8 @@ export const writeAtoms = (
     const updatedAtoms: Atom[] = []
     for (let [atom, value] of pairs) {
         const currentValue = getState(atom, data, initializedAtomsSet)
-        const areEqual = isPromiseLike(currentValue) || isPromiseLike(value)
+        const currentIsPromise = isPromiseLike(currentValue)
+        const areEqual = currentIsPromise || isPromiseLike(value)
             ? currentValue === value
             : atom.equal(currentValue, value)
         if (!areEqual) {
@@ -42,6 +44,15 @@ export const writeAtoms = (
             if (atom.onSet && !skipOnSet) {
                 if (onSetQueue) onSetQueue.push([atom, value, data])
                 else atom.onSet(value, data)
+            }
+            // Landing a real value over a suspense placeholder must resolve
+            // the held promise, exactly as setAtom does. setAtom only ever
+            // resolves with a settled (non-promise) value, so mirror that:
+            // resolve only when replacing a promise (a placeholder is always
+            // stored as one) with a non-promise. The `currentIsPromise` gate
+            // also keeps the common non-promise txn write off the chain walk.
+            if (currentIsPromise && !isPromiseLike(value)) {
+                resolvePendingDefault(atom, data, value)
             }
         } else {
             // We do this to ensure that if an atom was set in a scoped transaction but was the same we still override it in that scope
