@@ -2,7 +2,6 @@ import type { Atom } from "../types/Atom"
 import type { AtomFamily } from "../types/AtomFamily"
 import type { AtomFamilyAtom } from "../types/AtomFamilyAtom"
 import type { GetValue } from "../types/GetValue"
-import type { Selector } from "../types/Selector"
 import type { State } from "../types/State"
 import type { StoreData } from "../types/StoreData"
 import type { TransactionFn } from "../types/TransactionFn"
@@ -22,6 +21,7 @@ import {
 import {
     propagateAtomUpdate,
     propagateDeletedAtoms,
+    type EvaluatedSelectors,
 } from "./propagateUpdatedAtoms"
 import { setAtoms } from "./setAtoms"
 import { writeAtoms, type DeferredOnSet } from "./writeAtoms"
@@ -276,7 +276,7 @@ export class Transaction {
                 // delete pass (propagateDeletedAtoms). Share a guard so it
                 // evaluates once. (Splitting setAtoms into writeAtoms + propagate
                 // lets the same guard span both passes.)
-                const evaluatedSelectors = new Set<Selector>()
+                const evaluatedSelectors: EvaluatedSelectors = new Map()
                 const updatedAtoms = writeAtoms(
                     this._atomMap,
                     this.data,
@@ -370,7 +370,7 @@ export class Transaction {
         // settled first), and later passes skip it. Without the guard the result
         // is still correct — the equality check discards the redundant recompute
         // — but the body would run once per reaching pass.
-        const evaluatedSelectors = new Set<Selector>()
+        const evaluatedSelectors: EvaluatedSelectors = new Map()
         for (const { data, updatedAtoms, deleted } of plan) {
             if (updatedAtoms.length > 0) {
                 propagateAtomUpdate(updatedAtoms, data, false, evaluatedSelectors)

@@ -39,6 +39,30 @@ export {
 
 type AtomInput = Atom<any> | AtomFamilyAtom<any, any> | AtomFamily<any, any>
 
+// Per-commit selector dedup guard, keyed PER STORE. A single cross-scope (or
+// update+delete) commit propagates once per store; the same selector object
+// can be reached more than once within one store (an ancestor's
+// propagateToScopes plus that store's own pass), and we want to evaluate it
+// only once there. But the SAME selector object also lives — with a different
+// value — in the root and in every scope, so the guard must NOT be shared
+// across stores. Keying by StoreData keeps the intra-store dedup while letting
+// each store evaluate its own copy. Left undefined on the single-store /
+// non-scoped hot path, so that path allocates nothing and is unchanged.
+export type EvaluatedSelectors = Map<StoreData, Set<Selector>>
+
+const evaluatedSetFor = (
+    evaluatedSelectors: EvaluatedSelectors | undefined,
+    data: StoreData,
+): Set<Selector> | undefined => {
+    if (evaluatedSelectors === undefined) return undefined
+    let set = evaluatedSelectors.get(data)
+    if (set === undefined) {
+        set = new Set<Selector>()
+        evaluatedSelectors.set(data, set)
+    }
+    return set
+}
+
 const reEvaluateSelector = (
     selector: Selector,
     data: StoreData,
@@ -137,7 +161,7 @@ export const propagateDeletedAtoms = (
     subscriptions: Set<Subscription> = new Set(),
     families: Map<AtomFamily<any>, Set<AtomFamilyAtom<any>>> = new Map(),
     timestamp = performance.now(),
-    evaluatedSelectors?: Set<Selector>,
+    evaluatedSelectors?: EvaluatedSelectors,
 ) => {
     const selectors = new Set<Selector>()
     for (const atom of atoms) {
@@ -191,18 +215,20 @@ export const propagateDeletedAtoms = (
 // Top-level entry: notify direct atom subscribers, walk dependent selectors,
 // then cross-propagate into scopes.
 //
-// `evaluatedSelectors` (cross-scope commit only): a per-commit guard set. A
-// selector lives in one store but can be reached twice in a single cross-scope
+// `evaluatedSelectors` (cross-scope / update+delete commit only): a per-commit
+// guard set. A selector lives in one store but can be reached twice in a single
 // commit — once via an ancestor's propagateToScopes, once via its own store's
-// pass. Since every value is written before any propagation runs, whichever
-// pass reaches a selector first computes its final value; the guard skips the
-// redundant second evaluation. Left undefined on the single-store / non-scoped
-// hot path, so that path is unchanged.
+// pass (or via the update pass and the delete pass). Since every value is
+// written before any propagation runs, the redundant reach is skipped — UNLESS
+// a SELECTOR dependency of the already-evaluated selector changed value in the
+// later pass (the earlier evaluation then read a stale intermediate), in which
+// case it is recomputed. See the guard inside propagateDownstreamTopo. Left
+// undefined on the single-store / non-scoped hot path, so that path is unchanged.
 export const propagateAtomUpdate = (
     atoms: AtomInput[],
     data: StoreData,
     isInitOnly = false,
-    evaluatedSelectors?: Set<Selector>,
+    evaluatedSelectors?: EvaluatedSelectors,
 ) => {
     // Fast path: single non-family atom with no dependent selectors and no
     // scopes can skip the full graph walk entirely and just notify subscribers.
@@ -280,7 +306,7 @@ export const propagateInScope = (
     atoms: AtomInput[],
     data: StoreData,
     isInitOnly = false,
-    evaluatedSelectors?: Set<Selector>,
+    evaluatedSelectors?: EvaluatedSelectors,
 ) => {
     const subscriptions = new Set<Subscription>()
     const families = new Map<AtomFamily<any>, Set<AtomFamilyAtom<any>>>()
@@ -301,7 +327,7 @@ const propagateToScopes = (
     atoms: AtomInput[],
     data: StoreData,
     isInitOnly: boolean,
-    evaluatedSelectors?: Set<Selector>,
+    evaluatedSelectors?: EvaluatedSelectors,
 ) => {
     if (atoms.length === 1) {
         // Fast path for single-atom updates (most common case)
@@ -368,7 +394,7 @@ export const propagateDirtySelectors = (
     subscriptions: Set<Subscription>,
     families: Map<AtomFamily<any>, Set<AtomFamilyAtom<any>>>,
     isInitOnly = false,
-    evaluatedSelectors?: Set<Selector>,
+    evaluatedSelectors?: EvaluatedSelectors,
 ) => {
     const updatedInitializedAtoms = new Set<Atom>(updatedAtoms)
     if (selectors.size > 0) {
@@ -403,7 +429,9 @@ const propagateDownstreamTopo = (
     collectedSubscribers: Set<any>,
     updatedInitializedAtoms: Set<Atom>,
     isInitOnly: boolean,
-    evaluatedSelectors?: Set<Selector>,
+    // The per-store set already resolved by propagateSelectorUpdates (this
+    // walk only ever touches this one store's `data`).
+    evaluatedSelectors?: Set<Selector>, // resolved per-store
 ) => {
     const closure = new Set<Selector>(seeds)
     {
@@ -493,10 +521,21 @@ const propagateDownstreamTopo = (
     while (head < ready.length) {
         const selector = ready[head++]
 
-        // Cross-scope commit dedup: already evaluated (with final values) by an
-        // earlier store-pass this commit. Its value won't change here, so drain
-        // its pending edges without re-evaluating or re-propagating change.
-        if (evaluatedSelectors !== undefined && evaluatedSelectors.has(selector)) {
+        // Cross-scope / update+delete commit dedup: already evaluated by an
+        // earlier store-pass this commit. The earlier pass read final ATOM
+        // values (all writes precede propagation), but it may have read a stale
+        // SELECTOR dependency that only settles in a later pass — e.g. a scope
+        // selector reached via a root atom in the root pass's propagateToScopes,
+        // whose sibling scope selector is recomputed in the scope's own pass.
+        // `needsEval.has(selector)` is set only when a dependency actually
+        // CHANGED VALUE this commit (seeds, or `advance` from a changed parent);
+        // when it's set, the earlier evaluation is stale and must be recomputed.
+        // When it's clear, no dependency moved, so we just drain the edges.
+        if (
+            evaluatedSelectors !== undefined &&
+            evaluatedSelectors.has(selector) &&
+            !needsEval.has(selector)
+        ) {
             advance(selector, false)
             continue
         }
@@ -670,19 +709,26 @@ const propagateSelectorUpdates = (
     collectedSubscribers: Set<any>,
     updatedInitializedAtoms: Set<Atom>,
     isInitOnly = false,
-    evaluatedSelectors?: Set<Selector>,
+    evaluatedSelectors?: EvaluatedSelectors,
 ) => {
     if (selectors.size === 0) return
+
+    // The dedup guard is keyed PER STORE: the same selector object has an
+    // independent value in the root and in each scope, so an evaluation in one
+    // store must not mask the evaluation owed to another. (Before this, a
+    // selector subscribed in both the root and a scope was evaluated in the
+    // root pass, marked done, and the scope's copy was skipped — left stale.)
+    const evaluated = evaluatedSetFor(evaluatedSelectors, data)
 
     let downstreamSeeds: Set<Selector> | undefined
 
     // Reused across every re-evaluated selector — see propagateDownstreamTopo.
     const depsChange: DepsChange = {}
     for (const selector of selectors) {
-        // Cross-scope commit dedup: an earlier store-pass this commit already
+        // Cross-scope commit dedup: an earlier pass over THIS store already
         // evaluated this selector with final values, fired its subscribers, and
         // walked its downstream. Skip it entirely.
-        if (evaluatedSelectors !== undefined && evaluatedSelectors.has(selector)) {
+        if (evaluated !== undefined && evaluated.has(selector)) {
             continue
         }
         const currentValue = data.values.get(selector)
@@ -707,7 +753,7 @@ const propagateSelectorUpdates = (
             depsChange,
             currentValue,
         )
-        if (evaluatedSelectors !== undefined) evaluatedSelectors.add(selector)
+        if (evaluated !== undefined) evaluated.add(selector)
         // Casts work around a tsgo control-flow narrowing quirk where
         // property accesses lose their narrowing after a function call.
         const added = depsChange.added as Set<State> | undefined
@@ -743,7 +789,7 @@ const propagateSelectorUpdates = (
             collectedSubscribers,
             updatedInitializedAtoms,
             isInitOnly,
-            evaluatedSelectors,
+            evaluated,
         )
     }
 }
