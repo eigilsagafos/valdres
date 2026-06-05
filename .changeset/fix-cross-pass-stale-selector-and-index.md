@@ -23,12 +23,18 @@ a connector line rendering stale geometry:
 The dedup guard is **removed**. Multi-pass commits now (1) write every value
 across every store first, (2) let each store re-derive its own selectors against
 that final state — a selector reachable by two passes is simply recomputed in
-each, and the equality check prunes the redundant result — and (3) **defer all
-subscriber notification to the end of the commit**, firing each subscriber once.
-This makes a transaction *serializable to observe*: no subscriber, and nothing a
-subscriber reads, ever sees a half-applied intermediate. A selector reachable by
-multiple passes now has its body run once per reaching pass (the dropped
-optimization); the single-store / non-scoped hot path is untouched.
+each, and the equality check prunes the redundant result — and (3) **defer
+subscriber notification to the end of the commit**, partitioned **per store**,
+firing each store's subscribers once against the members that changed in that
+store. This makes a transaction *serializable to observe*: no subscriber, and
+nothing a **synchronous** selector a subscriber reads, ever sees a half-applied
+intermediate. (An async/Promise selector still notifies again when its promise
+resolves — a separate, later microtask — so the "exactly once with the final
+value" guarantee is for synchronous selectors.) Per-store partitioning also
+keeps an atomFamily subscriber in one store from firing for members that only
+changed in another store. A selector reachable by multiple passes now has its
+body run once per reaching pass (the dropped optimization); the single-store /
+non-scoped hot path is untouched.
 
 **`index()` crash / desync across stores.** `index()` kept a mutable Set + Map
 of current members in closure scope and mutated them from inside a selector
@@ -39,8 +45,9 @@ filtered selector could iterate a member whose predicate-selector entry had been
 deleted by the other store's evaluation — throwing
 `Cannot convert undefined or null to object`. `index()` now derives membership
 from `get(family)` on every evaluation (correct per store) and caches per-atom
-predicate selectors in a grow-only, store-agnostic map (a lookup is never
-undefined).
+predicate selectors in a store-agnostic `WeakMap` keyed by the family-atom (a
+lookup is never undefined for a live member, and a deleted member's entry
+becomes GC-eligible rather than leaking on create/delete/recreate churn).
 
 `isAtom` and `isGlobalAtom` also gained the `state && …` null-guard the other
 `is*` helpers already have, so a stale read degrades gracefully instead of

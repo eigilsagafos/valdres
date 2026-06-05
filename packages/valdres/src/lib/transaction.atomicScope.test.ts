@@ -844,4 +844,57 @@ describe("cross-scope transactions are atomically observable", () => {
             expect(S.get(count)).toBe(2)
         })
     })
+
+    // Regression: deferred notification must be partitioned PER STORE. A flat,
+    // store-agnostic notify map made a root family subscriber fire for members
+    // that only changed in a nested scope, and fired a scope's delegated+local
+    // family subscriptions against the merged member set (duplicated).
+    describe("cross-scope family-atom subscriptions fire per store", () => {
+        test("root sub fires only for root-changed members; scope sub once per member", () => {
+            const fam = atomFamily<{ v: number } | null, [string]>(null, {
+                name: "csfam",
+            })
+            const root = store()
+            const S = root.scope("S")
+            root.set(fam("a"), { v: 1 }) // pre-existing root member
+
+            const rootFires: string[][] = []
+            const scopeFires: string[][] = []
+            root.sub(fam, (...args: any[]) => rootFires.push(args))
+            S.sub(fam, (...args: any[]) => scopeFires.push(args))
+
+            // one cross-scope txn: root deletes "a", scope adds "b"
+            root.txn(t => {
+                t.del(fam("a"))
+                t.scope("S", st => st.set(fam("b"), { v: 2 }))
+            })
+
+            // root subscriber: only the member that changed at root (NOT the
+            // scope-only "b").
+            expect(rootFires).toEqual([["a"]])
+            // scope subscriber: "a" left its read-through view + it added "b" —
+            // each exactly once (no delegated/local duplication).
+            expect(scopeFires).toEqual([["a"], ["b"]])
+        })
+
+        test("members added in different stores don't leak across", () => {
+            const fam = atomFamily<{ v: number } | null, [string]>(null, {
+                name: "csfam2",
+            })
+            const root = store()
+            const S = root.scope("S")
+            const rootFires: string[][] = []
+            const scopeFires: string[][] = []
+            root.sub(fam, (...a: any[]) => rootFires.push(a))
+            S.sub(fam, (...a: any[]) => scopeFires.push(a))
+
+            root.txn(t => {
+                t.set(fam("c"), { v: 1 }) // root add
+                t.scope("S", st => st.set(fam("d"), { v: 2 })) // scope add
+            })
+
+            expect(rootFires).toEqual([["c"]]) // never ["d"]
+            expect(scopeFires).toEqual([["c"], ["d"]]) // sees root "c" (read-through) + own "d", once each
+        })
+    })
 })

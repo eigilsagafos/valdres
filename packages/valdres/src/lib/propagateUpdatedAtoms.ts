@@ -40,12 +40,25 @@ export {
 type AtomInput = Atom<any> | AtomFamilyAtom<any, any> | AtomFamily<any, any>
 
 // Deferred-notification target for a multi-pass commit (a cross-scope txn, or a
-// single-store update+delete txn). Each store-pass collects subscribers here
-// (deduped by the Set) instead of firing them; the commit fires them ONCE at
-// the very end — after every value across every store is final. That is what
-// makes a transaction *serializable to observe*: no subscriber, and nothing a
-// subscriber reads, ever sees a half-applied intermediate. Left undefined on
-// the single-store / non-scoped hot path, where firing stays inline.
+// single-store update+delete txn). Each store-pass collects its subscribers here
+// instead of firing them; the commit fires them ONCE at the very end — after
+// every value across every store is final. That is what makes a transaction
+// *serializable to observe*: no subscriber, and nothing a SYNCHRONOUS selector a
+// subscriber reads, ever sees a half-applied intermediate. (Scope: an async /
+// Promise-returning selector still notifies again when its promise resolves — a
+// separate, later microtask, outside the commit — so "fires exactly once with
+// the final value" is the guarantee for synchronous selectors.) Left undefined
+// on the single-store / non-scoped hot path, where firing stays inline.
+//
+// PARTITIONED PER STORE. The same selector/family lives — with different values
+// and different changed members — in the root and in each scope, and a single
+// family subscription is registered in exactly one store (a scope's read-through
+// family subscription is *delegated* into the parent's store AND kept in the
+// scope's store, as two distinct objects). So we collect per StoreData and fire
+// each store's subscriptions only against the family members that changed in
+// THAT store. A flat, store-agnostic map regressed this: a root family
+// subscriber fired for members that only changed in a nested scope, and a
+// scope's delegated+local subscriptions both fired against the merged member set.
 //
 // ⚠️ DO NOT reintroduce a per-commit "evaluate each selector at most once across
 // passes" dedup guard. We shipped one (an `evaluatedSelectors` set, #168) and it
@@ -65,9 +78,22 @@ type AtomInput = Atom<any> | AtomFamilyAtom<any, any> | AtomFamily<any, any>
 // optimization *behind* this guarantee: keyed per (store, selector), skipping
 // only a re-eval that is provably value-identical — never as a correctness
 // shortcut that suppresses a needed recompute.
-export type NotifyTarget = {
+type NotifyStoreEntry = {
     subscriptions: Set<Subscription>
     families: Map<AtomFamily<any>, Set<AtomFamilyAtom<any>>>
+}
+export type NotifyTarget = Map<StoreData, NotifyStoreEntry>
+
+const notifyEntryFor = (
+    notify: NotifyTarget,
+    data: StoreData,
+): NotifyStoreEntry => {
+    let entry = notify.get(data)
+    if (entry === undefined) {
+        entry = { subscriptions: new Set(), families: new Map() }
+        notify.set(data, entry)
+    }
+    return entry
 }
 
 const reEvaluateSelector = (
@@ -138,30 +164,35 @@ const callSubscribers = (
 }
 
 // Fire the subscribers accumulated by a deferred (multi-pass) commit, once,
-// after every pass has run and every value is final.
+// after every pass has run and every value is final. Per store (root-first, by
+// insertion order): each store's subscriptions fire against only that store's
+// changed family members, so a family subscription never fires for a member
+// that changed in a different store.
 export const notifyDeferred = (notify: NotifyTarget) => {
-    if (notify.subscriptions.size > 0) {
-        callSubscribers(notify.subscriptions, notify.families)
+    for (const entry of notify.values()) {
+        if (entry.subscriptions.size > 0) {
+            callSubscribers(entry.subscriptions, entry.families)
+        }
     }
 }
 
-// Record a pass's changed family members into the deferred notify target, so
-// callSubscribers can resolve family-atom subscriptions once at commit end.
-// This is the NOTIFICATION side only. The per-pass map handed in here is the
-// SAME data a pass uses to drive index bookkeeping (add/deleteFamilyAtomsFromSet)
-// — but those two roles must NOT share one mutable map across passes: the
-// bookkeeping map has to contain only THIS pass's atoms (a delete pass that saw
-// an earlier pass's added atoms would delete them). So each pass keeps its
-// bookkeeping map local and merges it here for notification.
+// Record a pass's changed family members into its store's notify entry, so
+// callSubscribers can resolve that store's family-atom subscriptions once at
+// commit end. This is the NOTIFICATION side only. The per-pass map handed in
+// here is the SAME data a pass uses to drive index bookkeeping
+// (add/deleteFamilyAtomsFromSet) — but those two roles must NOT share one
+// mutable map across passes: the bookkeeping map has to contain only THIS pass's
+// atoms (a delete pass that saw an earlier pass's added atoms would delete them).
+// So each pass keeps its bookkeeping map local and merges it here for notification.
 const collectFamilyAtomsForNotify = (
-    notify: NotifyTarget,
+    entry: NotifyStoreEntry,
     changedByFamily: Map<AtomFamily<any>, Set<AtomFamilyAtom<any>>>,
 ) => {
     for (const [family, atoms] of changedByFamily) {
-        let target = notify.families.get(family)
+        let target = entry.families.get(family)
         if (target === undefined) {
             target = new Set()
-            notify.families.set(family, target)
+            entry.families.set(family, target)
         }
         for (const atom of atoms) target.add(atom)
     }
@@ -208,10 +239,11 @@ export const propagateDeletedAtoms = (
     timestamp = performance.now(),
     notify?: NotifyTarget,
 ) => {
-    // When deferring, subscribers accumulate into the commit-level notify
-    // target so this pass fires once, together with the others.
-    if (notify) {
-        subscriptions = notify.subscriptions
+    // When deferring, subscribers accumulate into THIS store's notify entry so
+    // they fire once, at commit end, against this store's changed members.
+    const notifyEntry = notify ? notifyEntryFor(notify, data) : undefined
+    if (notifyEntry) {
+        subscriptions = notifyEntry.subscriptions
     }
     const selectors = new Set<Selector>()
     for (const atom of atoms) {
@@ -237,7 +269,7 @@ export const propagateDeletedAtoms = (
         }
     }
     propagateDirtySelectors(atoms, selectors, data, subscriptions, deletedFamilyAtoms, false, notify)
-    if (notify) collectFamilyAtomsForNotify(notify, deletedFamilyAtoms)
+    if (notifyEntry) collectFamilyAtomsForNotify(notifyEntry, deletedFamilyAtoms)
     // Propagate family changes into child scopes. deleteFamilyAtomsFromSet
     // already updated each scope's family index via recursivelyUpdateIndexes;
     // selectors in those scopes that depend on the family still need to be
@@ -288,7 +320,7 @@ export const propagateAtomUpdate = (
             ) {
                 const subs = data.subscriptions.get(atom)
                 if (subs && subs.size > 0) {
-                    if (notify) addSetToSet(subs, notify.subscriptions)
+                    if (notify) addSetToSet(subs, notifyEntryFor(notify, data).subscriptions)
                     else callSubscribers(subs)
                 }
                 return
@@ -296,7 +328,8 @@ export const propagateAtomUpdate = (
         }
     }
 
-    const subscriptions = notify ? notify.subscriptions : new Set<Subscription>()
+    const notifyEntry = notify ? notifyEntryFor(notify, data) : undefined
+    const subscriptions = notifyEntry ? notifyEntry.subscriptions : new Set<Subscription>()
     // Per-call ONLY (never a cross-pass accumulator): the family atoms updated
     // in THIS call. Drives index bookkeeping (addFamilyAtomsToSet), and is
     // merged into notify.families afterwards for deferred notification — two
@@ -348,7 +381,7 @@ export const propagateAtomUpdate = (
     }
 
     propagateDirtySelectors(atoms, selectors, data, subscriptions, updatedFamilyAtoms, isInitOnly, notify)
-    if (notify) collectFamilyAtomsForNotify(notify, updatedFamilyAtoms)
+    if (notifyEntry) collectFamilyAtomsForNotify(notifyEntry, updatedFamilyAtoms)
 
     if (data.scopes && data.scopes.size > 0) {
         propagateToScopes(atoms, data, isInitOnly, notify)
@@ -365,10 +398,12 @@ export const propagateInScope = (
     isInitOnly = false,
     notify?: NotifyTarget,
 ) => {
-    // Selector subscribers must accumulate into the commit-level set (so they
-    // fire once at the end); `families` is unused here (this entry skips direct
-    // atom/family subscribers — the parent pass collected those).
-    const subscriptions = notify ? notify.subscriptions : new Set<Subscription>()
+    // Selector subscribers must accumulate into THIS store's notify entry (so
+    // they fire once at the end); `families` is unused here (this entry skips
+    // direct atom/family subscribers — the parent pass collected those).
+    const subscriptions = notify
+        ? notifyEntryFor(notify, data).subscriptions
+        : new Set<Subscription>()
     const families = new Map<AtomFamily<any>, Set<AtomFamilyAtom<any>>>()
     const selectors = new Set<Selector>()
 

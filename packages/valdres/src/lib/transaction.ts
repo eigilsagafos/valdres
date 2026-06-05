@@ -281,10 +281,7 @@ export class Transaction {
                 // re-derives its selectors against the fully-written state, so
                 // the later pass corrects any value the earlier one computed
                 // from a not-yet-final selector input. (See NotifyTarget.)
-                const notify: NotifyTarget = {
-                    subscriptions: new Set(),
-                    families: new Map(),
-                }
+                const notify: NotifyTarget = new Map()
                 const updatedAtoms = writeAtoms(
                     this._atomMap,
                     this.data,
@@ -373,10 +370,7 @@ export class Transaction {
         // (the equality check prunes the redundant result), and the deferred
         // notification fires its subscriber exactly once. See the warning on
         // NotifyTarget for why a dedup guard must not come back.
-        const notify: NotifyTarget = {
-            subscriptions: new Set(),
-            families: new Map(),
-        }
+        const notify: NotifyTarget = new Map()
         for (const { data, updatedAtoms, deleted } of plan) {
             if (updatedAtoms.length > 0) {
                 propagateAtomUpdate(updatedAtoms, data, false, notify)

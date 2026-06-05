@@ -25,21 +25,27 @@ export const index = <
         // Per-atom predicate selectors, cached so we don't recreate them on
         // every membership change.
         //
-        // This cache is GROW-ONLY and store-agnostic on purpose. A selector is
-        // a pure definition that valdres evaluates independently per store, so
-        // the same `termSelector` here runs once in the root and once in every
-        // scope that reads it. The previous design kept a mutable Set + Map of
-        // "current members" in this closure and mutated them from inside a
-        // `termIndexSelector` evaluation. Because that evaluation runs per store
-        // — and a scope can have a different family membership than the root
-        // (publish moves members between a scope and the root) — the two stores
-        // clobbered the shared state: `termSelector` in one store could iterate
-        // a snapshot set that still held a member whose predicate-selector entry
-        // had already been deleted by the other store's evaluation, and
-        // `get(undefined)` threw. Deriving membership from `get(family)` on every
-        // evaluation makes each store read its own correct membership, and never
-        // deleting from the predicate cache means a lookup is never undefined.
-        const predicateSelectors = new Map<
+        // Store-agnostic on purpose: a selector is a pure definition that valdres
+        // evaluates independently per store, so the same predicate selector is
+        // correct in the root and in every scope. The previous index() design
+        // kept a mutable Set + Map of "current members" in this closure and
+        // mutated them from inside a `termIndexSelector` evaluation. Because that
+        // evaluation runs per store — and a scope can have a different family
+        // membership than the root (publish moves members between a scope and the
+        // root) — the two stores clobbered the shared state: `termSelector` in
+        // one store could iterate a snapshot set that still held a member whose
+        // predicate-selector entry had already been deleted by the other store's
+        // evaluation, and `get(undefined)` threw. Deriving membership from
+        // `get(family)` on every evaluation makes each store read its own correct
+        // membership, and the cache lookup is never undefined for a live member.
+        //
+        // A WeakMap (not a Map) keyed by the family-atom object: deleting a
+        // member calls family.release(...), so a deleted-and-recreated key mints
+        // a fresh atom identity; a strong Map would retain one dead entry per
+        // create/delete/recreate cycle (unbounded under churn). The WeakMap lets
+        // a released member's entry (and its predicate selector) become
+        // GC-eligible, bounding the cache by live membership.
+        const predicateSelectors = new WeakMap<
             AtomFamilyAtom<Value, FamilyArgs>,
             Selector<boolean>
         >()
