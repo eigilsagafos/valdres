@@ -1,4 +1,4 @@
-import { jest, setSystemTime } from "bun:test"
+import { jest } from "bun:test"
 
 /** Drain the microtask queue so promise (`.then`) chains scheduled by a timer
  *  or a manual resolve settle before the next assertion. A few passes cover the
@@ -16,15 +16,23 @@ export type FakeClock = {
     /** Parity shim for jest/vitest's not-yet-implemented (oven-sh/bun#16142)
      *  async timer API. Identical to `advance`. */
     advanceTimersByTimeAsync: (ms: number) => Promise<void>
-    /** Restore real timers and system time. Must run after every test that
-     *  installed the clock, or fake timers leak into sibling tests. */
+    /** Restore real timers (and the real `Date.now()`). Must run after every
+     *  test that installed the clock, or fake timers leak into sibling tests. */
     restore: () => void
 }
 
 /** Install a deterministic clock for maxAge / SWR / interval tests, removing
  *  real wall-clock dependence so tick-count and freshness-window assertions
- *  never race CI scheduling. `jest.useFakeTimers()` also fakes `Date.now()`, so
- *  the maxAge interval and its time-window math advance in lockstep.
+ *  never race CI scheduling. `jest.useFakeTimers()` also fakes `Date.now()`, and
+ *  `advanceTimersByTime` advances it in lockstep with the timer queue — which is
+ *  what the maxAge code's `Date.now() - lastWrite` freshness math relies on.
+ *
+ *  Do NOT add `setSystemTime()` to anchor an absolute start time. Verified in
+ *  Bun 1.3.13: `setSystemTime` before `useFakeTimers` is overwritten (no-op);
+ *  `setSystemTime` after `useFakeTimers` pins `Date.now()` so that
+ *  `advanceTimersByTime` no longer moves it, which breaks the freshness windows.
+ *  The tests only need relative advancement, so plain `useFakeTimers` is correct
+ *  and `useRealTimers` fully restores the real clock on its own.
  *
  *  Bun's `advanceTimersByTime` already drains microtasks between timer firings
  *  (unlike jest's sync version), so timer→`.then`→timer chains resolve on their
@@ -33,8 +41,7 @@ export type FakeClock = {
  *  (oven-sh/bun#16142), hence the shim above.
  *
  *  Prefer `withFakeClock` so restoration is automatic. */
-export const useFakeClock = (start = new Date("2020-01-01T00:00:00Z")): FakeClock => {
-    setSystemTime(start)
+export const useFakeClock = (): FakeClock => {
     jest.useFakeTimers()
     const advance = async (ms: number) => {
         jest.advanceTimersByTime(ms)
@@ -46,7 +53,6 @@ export const useFakeClock = (start = new Date("2020-01-01T00:00:00Z")): FakeCloc
         advanceTimersByTimeAsync: advance,
         restore: () => {
             jest.useRealTimers()
-            setSystemTime()
         },
     }
 }
@@ -58,9 +64,8 @@ export const useFakeClock = (start = new Date("2020-01-01T00:00:00Z")): FakeCloc
  */
 export const withFakeClock = async (
     body: (clock: FakeClock) => Promise<void> | void,
-    start?: Date,
 ) => {
-    const clock = useFakeClock(start)
+    const clock = useFakeClock()
     try {
         await body(clock)
     } finally {
