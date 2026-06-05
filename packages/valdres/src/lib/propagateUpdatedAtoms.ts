@@ -27,6 +27,10 @@ import {
     unmountOrphanedDeps,
 } from "./mountAtom"
 import { setValueInData } from "./setValueInData"
+import {
+    _devListenerState,
+    notifyStoreChangeListeners,
+} from "./storeChangeListeners"
 
 export type {
     AtomFamilyIndex,
@@ -204,6 +208,12 @@ export const propagateAtomUpdate = (
     isInitOnly = false,
     evaluatedSelectors?: Set<Selector>,
 ) => {
+    // Observation hook (devtools, logging, persistence). Guarded by a single
+    // module-singleton read so stores with no listeners pay no cost. Runs
+    // before the fast path so it never misses the common single-atom case.
+    if (_devListenerState.count > 0) {
+        notifyStoreChangeListeners(atoms, data, isInitOnly)
+    }
     // Fast path: single non-family atom with no dependent selectors and no
     // scopes can skip the full graph walk entirely and just notify subscribers.
     if (atoms.length === 1) {

@@ -16,11 +16,13 @@ if (globalThis.__valdres__) {
 export { atom } from "./atom"
 export { atomFamily } from "./atomFamily"
 export { cacheMeta } from "./cacheMeta"
+export { getRegisteredAtoms } from "./getRegisteredAtoms"
 export { globalStore } from "./globalStore"
 export { index } from "./indexConstructor"
 export { selector } from "./selector"
 export { selectorFamily } from "./selectorFamily"
 export { store } from "./store"
+export { subscribeStore } from "./subscribeStore"
 
 export { deepFreeze } from "./utils/deepFreeze"
 export { isAtom } from "./utils/isAtom"
@@ -54,5 +56,9 @@ export type { SyncSetAtom } from "./types/SyncSetAtom"
 export type { State } from "./types/State"
 export type { Store } from "./types/Store"
 export type { StoreData } from "./types/StoreData"
+export type {
+    ChangedAtom,
+    StoreChangeListener,
+} from "./lib/storeChangeListeners"
 export type { TransactionFn } from "./types/TransactionFn"
 export type { TransactionInterface } from "./types/TransactionInterface"
