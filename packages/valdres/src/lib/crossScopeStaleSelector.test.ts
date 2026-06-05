@@ -11,24 +11,23 @@ const mulberry32 = (seed: number) => () => {
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296
 }
 
-// Regression for the "stale position / stale connector line" bug (beta.4 topo
-// propagation + beta.5 cross-scope `evaluatedSelectors` guard).
+// Regression for the "stale position / stale connector line" bug.
 //
 // A cross-scope commit (and the single-store update+delete commit) runs one
-// propagation pass per store and shares a per-commit `evaluatedSelectors` guard
-// so a selector reachable by more than one pass evaluates once. The guard
-// assumed the first reaching pass computes the final value — true when the
-// selector depends only on ATOMS (all writes precede propagation), but FALSE
-// when it depends on an intermediate SELECTOR that is only recomputed in a
-// later pass. The first pass then read a stale intermediate value and the guard
-// locked it in, leaving the selector (and its whole subtree) stale. The app
-// symptom: drag a node and drop it back outside any dropzone (a pure revert) —
-// the dragged subtree settles one row too low because a layout selector kept a
-// value derived from a now-stale input.
+// propagation pass per store. The original cross-scope work (beta.5 #168) added
+// a per-commit dedup guard so a selector reachable by more than one pass
+// evaluated once — but it (a) keyed by selector object, skipping a scope's copy
+// of a selector also live in the root, and (b) locked in a value an early pass
+// computed from an intermediate selector a later pass corrected. Either way the
+// selector (and its whole subtree) was left stale — e.g. drag a node and drop
+// it back outside any dropzone (a pure revert) and the subtree settles one row
+// too low because a layout selector kept a value derived from a now-stale input.
 //
-// The fix: a guarded selector is recomputed when one of its dependencies
-// actually changed value later in the commit (tracked by the topo `needsEval`
-// set); only when nothing it depends on moved is the redundant pass skipped.
+// The fix removed the cross-pass dedup guard entirely: every value is written
+// first, then each store re-derives its OWN selectors against that final state
+// (a selector reachable by two passes is recomputed in each — the equality
+// check prunes the redundant result), and subscribers are notified once at the
+// end. So each store's copy of a selector ends on its correct final value.
 
 describe("cross-scope stale intermediate selector", () => {
     test("scope selector spanning a root atom + an intermediate scope selector stays fresh", () => {
@@ -80,11 +79,11 @@ describe("cross-scope stale intermediate selector", () => {
     })
 
     test("a selector live in BOTH root and scope is fresh in each after a cross-scope txn", () => {
-        // The per-commit dedup guard used to be keyed by selector object, not
-        // by store. The same selector subscribed in the root AND a scope was
-        // evaluated in the root pass, marked done, and the scope's (differently
-        // valued) copy was skipped — left stale. The guard is now keyed per
-        // store, so each store evaluates its own copy.
+        // The old per-commit dedup guard was keyed by selector object: the same
+        // selector subscribed in the root AND a scope was evaluated in the root
+        // pass, marked done, and the scope's (differently valued) copy was
+        // skipped — left stale. With no guard, each store re-derives its own
+        // copy against the final state, so both land on their correct values.
         const X = atom(1, { name: "ps-X" }) // root atom, read through in scope
         const Y = atom(2, { name: "ps-Y" }) // shadowed in scope
         const s0 = selector(get => get(X) + get(Y), { name: "ps-s0" })
@@ -114,7 +113,7 @@ describe("cross-scope stale intermediate selector", () => {
         expect(S.get(s1)).toBe(65)
     })
 
-    test("final observed value is correct (subscriber ends on the fresh value)", () => {
+    test("subscriber is notified once with the final value (serializable)", () => {
         const R = atom(1, { name: "csx3-R" })
         const A = atom(10, { name: "csx3-A" })
         const N = selector(get => get(A) * 1000, { name: "csx3-N" })
@@ -132,11 +131,9 @@ describe("cross-scope stale intermediate selector", () => {
             t.scope("S", st => st.set(A, 20))
         })
 
-        // The subscriber must end on the fully-applied value. (It may also
-        // observe the transient intermediate first; synchronous re-renders are
-        // batched by framework bindings, so the only user-visible value is the
-        // last one — which must be correct.)
-        expect(observed.at(-1)).toBe(20002)
+        // Notification is deferred to commit end, so the subscriber fires
+        // exactly once, with the fully-applied value — never the intermediate.
+        expect(observed).toEqual([20002])
         expect(S.get(M)).toBe(20002)
     })
 
