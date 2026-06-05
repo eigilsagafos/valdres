@@ -1,5 +1,83 @@
 # valdres
 
+## 1.0.0-beta.6
+
+### Patch Changes
+
+- [#172](https://github.com/eigilsagafos/valdres/pull/172)
+  [`6ad0ccc`](https://github.com/eigilsagafos/valdres/commit/6ad0ccc5b0a78968636c6f37a5552edc4685276f)
+  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! - Fix stale
+  cross-scope/cross-pass selectors and a related `index()` crash (regressions
+  exposed by the beta.4 topological propagation and the beta.5 cross-scope
+  atomic commit).
+
+    **Stale selector across commit passes + non-atomic observation.** A
+    cross-scope transaction (and the single-store update+delete transaction)
+    propagates in one pass per store and shared a per-commit
+    `evaluatedSelectors` dedup guard so a selector reachable by more than one
+    pass evaluated once. That guard caused two correctness regressions — a
+    selector (and its whole subtree) left stale, e.g. a node dragged and dropped
+    back outside any dropzone settling one row too low, or a connector line
+    rendering stale geometry:
+
+    - Keyed by selector _object_, it skipped a scope's copy of a selector that
+      was also live in the root (the same object has a different value per
+      store).
+    - It locked in a value an early pass computed from an intermediate
+      _selector_ that a later pass corrected (e.g. a scope selector reached via
+      a root atom before its sibling scope selector settled).
+
+    The dedup guard is **removed**. Multi-pass commits now (1) write every value
+    across every store first, (2) let each store re-derive its own selectors
+    against that final state — a selector reachable by two passes is simply
+    recomputed in each, and the equality check prunes the redundant result — and
+    (3) **defer subscriber notification to the end of the commit**, partitioned
+    **per store**, firing each store's subscribers once against the members that
+    changed in that store. This makes a transaction _serializable to observe_:
+    no subscriber, and nothing a **synchronous** selector a subscriber reads,
+    ever sees a half-applied intermediate. (An async/Promise selector still
+    notifies again when its promise resolves — a separate, later microtask — so
+    the "exactly once with the final value" guarantee is for synchronous
+    selectors.) Per-store partitioning also keeps an atomFamily subscriber in
+    one store from firing for members that only changed in another store. A
+    selector reachable by multiple passes now has its body run once per reaching
+    pass (the dropped optimization); the single-store / non-scoped hot path is
+    untouched.
+
+    **`index()` crash / desync across stores.** `index()` kept a mutable Set +
+    Map of current members in closure scope and mutated them from inside a
+    selector evaluation. Because selectors evaluate independently per store,
+    reading the same index in both a root and a scope with divergent family
+    membership (e.g. publish moving members between a scope and the root)
+    clobbered the shared state, and the filtered selector could iterate a member
+    whose predicate-selector entry had been deleted by the other store's
+    evaluation — throwing `Cannot convert undefined or null to object`.
+    `index()` now derives membership from `get(family)` on every evaluation
+    (correct per store) and caches per-atom predicate selectors in a
+    store-agnostic `WeakMap` keyed by the family-atom (a lookup is never
+    undefined for a live member, and a deleted member's entry becomes
+    GC-eligible rather than leaking on create/delete/recreate churn).
+
+    `isAtom` and `isGlobalAtom` also gained the `state && …` null-guard the
+    other `is*` helpers already have, so a stale read degrades gracefully
+    instead of crashing in `Object.hasOwn(undefined, …)`.
+
+- [#171](https://github.com/eigilsagafos/valdres/pull/171)
+  [`9913633`](https://github.com/eigilsagafos/valdres/commit/991363340a9b626c818f58e1945727f850fa48f6)
+  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! - Fix: setting a
+  no-default ("suspense") atom inside a transaction now resolves the
+  pending-default placeholder promise, matching plain `store.set`. Previously
+  the transaction write path (`writeAtoms`) wrote the value but never called
+  `resolvePendingDefault`, so a reader suspended on the placeholder hung forever
+  even though the value was set — same intent as `set`, silently different
+  result.
+
+    `resolvePendingDefault` is extracted from `setAtom` into `lib/` so every
+    write path can share it. The new call in `writeAtoms` is gated on the prior
+    value being a promise (a placeholder is always stored as one), so the common
+    non-promise transaction write skips the scope-chain walk and the
+    benchmark-gated txn hot path is unaffected.
+
 ## 1.0.0-beta.5
 
 ### Minor Changes
