@@ -122,7 +122,7 @@ export const globalAtom = <Value = unknown>(
             stores.delete(store)
             store.values.delete(atom)
             try {
-                propagateAtomUpdate([atom], store)
+                propagateAtomUpdate([atom], store, false, undefined, "reset")
             } catch (e) {
                 recordError(e)
             }

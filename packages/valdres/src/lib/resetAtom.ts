@@ -13,7 +13,7 @@ export const resetAtom = <V>(
     let value = getAtomInitValue(atom, data, initializedAtomsSet)
     setValueInData(atom, value, data)
     if (!isPromiseLike(value)) {
-        propagateAtomUpdate([atom], data)
+        propagateAtomUpdate([atom], data, false, undefined, "reset")
     }
     if (initializedAtomsSet.size > 0) {
         throw new Error("Todo - propagateAtomUpdate on reset")

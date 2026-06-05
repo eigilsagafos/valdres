@@ -5,6 +5,7 @@ import type { GetValue } from "../types/GetValue"
 import type { SetAtom } from "../types/SetAtom"
 import type { State } from "../types/State"
 import type { ScopedStore, ScopeFn, Store } from "../types/Store"
+import type { StoreChangeCallback } from "../types/StoreChangeCallback"
 import type { StoreData } from "../types/StoreData"
 import type { TransactionFn } from "../types/TransactionFn"
 import { isAtom } from "../utils/isAtom"
@@ -14,6 +15,7 @@ import { resolveReactive } from "../utils/resolveReactive"
 import { createStoreData } from "./createStoreData"
 import { deleteFamilyAtom } from "./deleteFamilyAtom"
 import { getState } from "./getState"
+import { onStoreChange } from "./onStoreChange"
 import { propagateAtomUpdate } from "./propagateUpdatedAtoms"
 import { resetAtom } from "./resetAtom"
 import { setAtom } from "./setAtom"
@@ -177,10 +179,13 @@ export function storeFromStoreData(
         deepEqualCheckBeforeCallback: boolean = true,
     ) => subscribe(state, callback, deepEqualCheckBeforeCallback, data)
 
-    const txn = (callback: TransactionFn) => {
+    const txn = (callback: TransactionFn, name?: string) => {
         if (data.batchUpdates) flushPendingTxn()
-        return transaction(callback, data)
+        return transaction(callback, data, name)
     }
+
+    const onChange = (callback: StoreChangeCallback) =>
+        onStoreChange(callback, data)
 
     const scope: ScopeFn = ((scopeId: string, callback?: any) => {
         if (callback) {
@@ -242,6 +247,7 @@ export function storeFromStoreData(
             del,
             data,
             scope,
+            onChange,
             detach,
         } as ScopedStore
     } else {
@@ -254,6 +260,7 @@ export function storeFromStoreData(
             del,
             data,
             scope,
+            onChange,
         } as Store
     }
 }

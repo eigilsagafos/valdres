@@ -36,11 +36,11 @@ export const installMaxAgeTimer = (state: Atom<any>, data: StoreData) => {
         // Another store already owns the interval — just bump refCount
         existing.refCount++
         // Seed the cache meta in this store from an existing store
-        const metaAtom = (state.__cacheMeta ??= { equal, defaultValue: null })
+        const metaAtom = (state.__cacheMeta ??= { equal, defaultValue: null, __valdresInternal: true })
         for (const s of globalState!.stores) {
             if (s !== data && s.values.has(metaAtom)) {
                 setValueInData(metaAtom, s.values.get(metaAtom), data)
-                propagateAtomUpdate([metaAtom], data)
+                propagateAtomUpdate([metaAtom], data, false, undefined, "revalidate")
                 break
             }
         }
@@ -75,7 +75,7 @@ export const installMaxAgeTimer = (state: Atom<any>, data: StoreData) => {
             ? resolveReactive(state.staleIfError, data)
             : Infinity
 
-    const metaAtom = (state.__cacheMeta ??= { equal, defaultValue: null })
+    const metaAtom = (state.__cacheMeta ??= { equal, defaultValue: null, __valdresInternal: true })
     const updateMeta = () => {
         const meta: CacheMeta = {
             isRevalidating: revalidating,
@@ -87,11 +87,11 @@ export const installMaxAgeTimer = (state: Atom<any>, data: StoreData) => {
         if (globalState) {
             for (const store of globalState.stores) {
                 setValueInData(metaAtom, meta, store)
-                propagateAtomUpdate([metaAtom], store)
+                propagateAtomUpdate([metaAtom], store, false, undefined, "revalidate")
             }
         } else {
             setValueInData(metaAtom, meta, data)
-            propagateAtomUpdate([metaAtom], data)
+            propagateAtomUpdate([metaAtom], data, false, undefined, "revalidate")
         }
     }
 
@@ -104,11 +104,11 @@ export const installMaxAgeTimer = (state: Atom<any>, data: StoreData) => {
         if (globalState) {
             for (const store of globalState.stores) {
                 setValueInData(atom, val, store)
-                propagateAtomUpdate([atom], store)
+                propagateAtomUpdate([atom], store, false, undefined, "revalidate")
             }
         } else {
             setValueInData(atom, val, data)
-            propagateAtomUpdate([atom], data)
+            propagateAtomUpdate([atom], data, false, undefined, "revalidate")
         }
     }
 
