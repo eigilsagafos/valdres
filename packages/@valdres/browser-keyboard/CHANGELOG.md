@@ -1,5 +1,15 @@
 # @valdres/browser-keyboard
 
+## 1.0.0-beta.3
+
+### Patch Changes
+
+- Updated dependencies
+  [[`fde2ec1`](https://github.com/eigilsagafos/valdres/commit/fde2ec1aa4da44a9f3fddddd5b7c7c03eeaba796),
+  [`6fef9c9`](https://github.com/eigilsagafos/valdres/commit/6fef9c9fc8a8a481dbacce2768bc09e413f80bdf),
+  [`f32eb3e`](https://github.com/eigilsagafos/valdres/commit/f32eb3ef0092e7756e89eb5b3944f091726401e4)]:
+    - valdres@1.0.0-beta.5
+
 ## 1.0.0-beta.2
 
 ### Patch Changes

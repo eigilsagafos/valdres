@@ -1,5 +1,104 @@
 # valdres
 
+## 1.0.0-beta.5
+
+### Minor Changes
+
+- [#165](https://github.com/eigilsagafos/valdres/pull/165)
+  [`6fef9c9`](https://github.com/eigilsagafos/valdres/commit/6fef9c9fc8a8a481dbacce2768bc09e413f80bdf)
+  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! - **Atom values are
+  now deep-frozen in development/test only, not in production.**
+
+    Valdres deep-freezes every object atom value on write so accidental in-place
+    mutation (`state.foo = x`, `arr.push(...)`) throws a `TypeError` instead of
+    silently corrupting state. Until now this ran in _every_ build because
+    `isProd()` was hardcoded to `false`. It now honors `process.env.NODE_ENV`,
+    so production builds skip the freeze entirely — worth up to ~15–20% on
+    write-heavy workloads (e.g. bulk inserts of object values); a single small
+    write saves less. This matches how Recoil (`__DEV__`-gated freeze) and Redux
+    Toolkit (dev-only immutability checks) treat the same safety net: a dev-time
+    aid, not a prod cost.
+
+    **⚠️ Migration — read before upgrading.** If your app mutates atom values in
+    place, that bug was previously caught by a thrown `TypeError` in both dev
+    and prod. After this change it is still caught in dev/test, but in
+    **production it will silently corrupt state** (symptoms look like flaky
+    reactivity, not a clear error). Before shipping:
+
+    - Audit for in-place mutation of values read from `store.get(...)` — e.g.
+      `value.push(...)`, `value.x = ...`, `Object.assign(value, ...)`,
+      `value.sort()`/`splice()`.
+    - Replace them with immutable updates (return a new object/array), or mark
+      the atom `{ mutable: true }` if mutation is intentional.
+    - Run your test suite under `NODE_ENV !== "production"`, where the freeze
+      still throws and surfaces these bugs for you.
+
+    Also: `deepFreeze` now allocates its cycle-guard `WeakSet` lazily — flat
+    values (the common case, e.g. `{ title, body }`) no longer allocate one at
+    all, making the dev/test freeze itself ~20% cheaper. Cycle and nested-graph
+    behavior is unchanged.
+
+### Patch Changes
+
+- [#168](https://github.com/eigilsagafos/valdres/pull/168)
+  [`fde2ec1`](https://github.com/eigilsagafos/valdres/commit/fde2ec1aa4da44a9f3fddddd5b7c7c03eeaba796)
+  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! - Make `store.txn()`
+  atomically observable across scopes. A single transaction that writes to the
+  root and to one or more scopes (via `t.scope(...)` / `t.parentScope(...)`) is
+  now committed as write-everything-then-notify-everything: all values across
+  the whole store tree are applied first, then a single notification pass runs.
+  Previously each store committed and propagated in sequence, so a root
+  subscriber, `onSet` hook, or a selector spanning root + scope could observe a
+  half-applied transaction (root = new while a scope was still old, or scope A
+  applied before scope B's writes landed). The final committed state was always
+  consistent — only the observation was non-atomic.
+
+    `atom.onSet` now fires in the notify phase (after all writes) for the
+    cross-scope path, so a hook reading any atom sees the fully-applied
+    transaction; it still fires before subscribers, preserving the prior
+    relative ordering. The single-store / non-scoped-txn fast path is unchanged
+    in both behavior (onSet fires inline during the write loop) and performance.
+
+    Two related fixes fall out of the coordinated commit:
+
+    - A direct subscription created in a scope before the scope shadows an atom
+      is now correctly re-rooted when one transaction both writes that atom at
+      the root and shadows it in the scope — the subscriber fires once (it
+      previously fired twice), matching the non-transaction `set()` path.
+    - A selector reachable by more than one store's propagation pass in a single
+      cross-scope commit (one spanning an ancestor atom and a scope atom, or an
+      updated atom and a deleted family) is now evaluated exactly once per
+      commit instead of once per reaching pass.
+    - Adding or deleting a family member at the root inside a transaction now
+      cascades into scopes that already shadow that family (their dependent
+      selectors and subscribers see the change). Previously the transaction
+      cloned a new root family index and the shadowing scope kept pointing at
+      the old one, so it never observed the add/delete — the non-transaction
+      `del`/`set` path was already correct.
+
+- [#169](https://github.com/eigilsagafos/valdres/pull/169)
+  [`f32eb3e`](https://github.com/eigilsagafos/valdres/commit/f32eb3ef0092e7756e89eb5b3944f091726401e4)
+  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! - Fix stale selectors
+  after dynamic-dependency changes (regression in 1.0.0-beta.4).
+
+    The topological selector-update propagation introduced in beta.4 builds a
+    static closure and per-node `pending` counts before the walk, assuming the
+    dependency graph is fixed for its duration. A selector re-evaluated
+    out-of-band during the walk — most commonly lazily re-initialized via `get`
+    when another selector reads it after its value was dropped by
+    orphan-invalidation/unsubscribe — mutates the graph mid-walk. That left two
+    classes of node permanently stale: nodes materialized after the closure was
+    built ("escaped"), and nodes that dropped a snapshotted dependency so their
+    `pending` never drained ("stranded").
+
+    This surfaced in apps with conditional ("dragging" vs "settled") selector
+    branches that swap dependencies on interaction: after toggling a branch and
+    back, derived selectors could return values computed from inputs that no
+    longer applied. `advance()` now pulls escaped dependents into the closure,
+    and a fixpoint settle pass re-evaluates stranded nodes (and their
+    dependents). The steady-state fast path is unaffected — the settle only runs
+    when a stall is actually detected.
+
 ## 1.0.0-beta.4
 
 ### Minor Changes
