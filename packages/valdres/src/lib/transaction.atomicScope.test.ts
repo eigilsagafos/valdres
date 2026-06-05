@@ -561,14 +561,16 @@ describe("cross-scope transactions are atomically observable", () => {
         })
     })
 
-    describe("deduped union-propagation", () => {
-        test("a root+scope spanning selector evaluates its body once per commit", () => {
+    describe("union-propagation: serializable single notification", () => {
+        test("a root+scope spanning selector is notified once with the final value", () => {
             // The selector is reachable both via the root's propagateToScopes
-            // and via the scope's own propagation pass. The per-commit
-            // `evaluatedSelectors` guard makes it evaluate exactly once —
-            // whichever pass reaches it first computes the final value (all
-            // writes are applied before any propagation), and the other is
-            // skipped rather than recomputed-then-discarded.
+            // and via the scope's own propagation pass. With no cross-pass dedup
+            // guard it is recomputed in each reaching pass (the later pass
+            // reading the now-final inputs), but notification is deferred to the
+            // end of the commit — so the subscriber fires exactly once, with the
+            // fully-applied value. (The body running once per pass is the cost
+            // of dropping the dedup; the guarantee that matters is the single,
+            // final-valued notification.)
             const root = store()
             const S = root.scope("S")
             const r = atom(1, { name: "dd-r" })
@@ -594,14 +596,13 @@ describe("cross-scope transactions are atomically observable", () => {
             })
 
             expect(S.get(sum)).toBe(22)
-            expect(evals - before).toBe(1) // single body evaluation
-            expect(cb).toHaveBeenCalledTimes(1) // single notification
+            expect(evals - before).toBe(2) // recomputed once per reaching pass
+            expect(cb).toHaveBeenCalledTimes(1) // single, final-valued notification
         })
 
-        test("deeper spanning chain: each selector body runs once", () => {
+        test("deeper spanning chain: each selector is notified once with its final value", () => {
             // r (root) and s (scope) feed a → b. Both a and b span the two
-            // stores; both must evaluate exactly once across the commit's two
-            // store-passes.
+            // stores; each is recomputed in both passes but observed once, final.
             const root = store()
             const S = root.scope("S")
             const r = atom(1, { name: "dd2-r" })
@@ -636,16 +637,17 @@ describe("cross-scope transactions are atomically observable", () => {
 
             expect(S.get(a)).toBe(22)
             expect(S.get(b)).toBe(42)
-            expect(aEvals - aBefore).toBe(1)
-            expect(bEvals - bBefore).toBe(1)
+            // Final values are correct; bodies recompute per reaching pass.
+            expect(aEvals - aBefore).toBe(2)
+            expect(bEvals - bBefore).toBe(2)
         })
 
-        test("single-store update + delete: spanning selector body runs once", () => {
+        test("single-store update + delete: spanning selector is notified once with its final value", () => {
             // A selector depending on both an updated atom AND a deleted family
             // is reachable by the commit's update pass (propagateAtomUpdate) and
-            // its delete pass (propagateDeletedAtoms). The shared guard makes it
-            // evaluate once. (This double-eval predates the cross-scope work — it
-            // lives in the single-store fast path too.)
+            // its delete pass (propagateDeletedAtoms). It recomputes in each, but
+            // deferred notification fires its subscriber once, with the final
+            // value.
             const root = store()
             const fam = atomFamily<string>(undefined, { name: "ud-fam" })
             const m1 = fam("1")
@@ -673,8 +675,8 @@ describe("cross-scope transactions are atomically observable", () => {
             })
 
             expect(root.get(span)).toBe("1:9")
-            expect(evals - before).toBe(1)
-            expect(cb).toHaveBeenCalledTimes(1)
+            expect(evals - before).toBe(2) // recomputed in the update and delete passes
+            expect(cb).toHaveBeenCalledTimes(1) // single, final-valued notification
         })
 
         test("cross-scope: scope selector spanning a root atom + a root-deleted family runs once", () => {
@@ -840,6 +842,59 @@ describe("cross-scope transactions are atomically observable", () => {
             const { root, m2, S, count } = buildShadowedFamily("fn-fam")
             root.del(m2)
             expect(S.get(count)).toBe(2)
+        })
+    })
+
+    // Regression: deferred notification must be partitioned PER STORE. A flat,
+    // store-agnostic notify map made a root family subscriber fire for members
+    // that only changed in a nested scope, and fired a scope's delegated+local
+    // family subscriptions against the merged member set (duplicated).
+    describe("cross-scope family-atom subscriptions fire per store", () => {
+        test("root sub fires only for root-changed members; scope sub once per member", () => {
+            const fam = atomFamily<{ v: number } | null, [string]>(null, {
+                name: "csfam",
+            })
+            const root = store()
+            const S = root.scope("S")
+            root.set(fam("a"), { v: 1 }) // pre-existing root member
+
+            const rootFires: string[][] = []
+            const scopeFires: string[][] = []
+            root.sub(fam, (...args: any[]) => rootFires.push(args))
+            S.sub(fam, (...args: any[]) => scopeFires.push(args))
+
+            // one cross-scope txn: root deletes "a", scope adds "b"
+            root.txn(t => {
+                t.del(fam("a"))
+                t.scope("S", st => st.set(fam("b"), { v: 2 }))
+            })
+
+            // root subscriber: only the member that changed at root (NOT the
+            // scope-only "b").
+            expect(rootFires).toEqual([["a"]])
+            // scope subscriber: "a" left its read-through view + it added "b" —
+            // each exactly once (no delegated/local duplication).
+            expect(scopeFires).toEqual([["a"], ["b"]])
+        })
+
+        test("members added in different stores don't leak across", () => {
+            const fam = atomFamily<{ v: number } | null, [string]>(null, {
+                name: "csfam2",
+            })
+            const root = store()
+            const S = root.scope("S")
+            const rootFires: string[][] = []
+            const scopeFires: string[][] = []
+            root.sub(fam, (...a: any[]) => rootFires.push(a))
+            S.sub(fam, (...a: any[]) => scopeFires.push(a))
+
+            root.txn(t => {
+                t.set(fam("c"), { v: 1 }) // root add
+                t.scope("S", st => st.set(fam("d"), { v: 2 })) // scope add
+            })
+
+            expect(rootFires).toEqual([["c"]]) // never ["d"]
+            expect(scopeFires).toEqual([["c"], ["d"]]) // sees root "c" (read-through) + own "d", once each
         })
     })
 })

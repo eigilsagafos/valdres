@@ -2,7 +2,6 @@ import type { Atom } from "../types/Atom"
 import type { AtomFamily } from "../types/AtomFamily"
 import type { AtomFamilyAtom } from "../types/AtomFamilyAtom"
 import type { GetValue } from "../types/GetValue"
-import type { Selector } from "../types/Selector"
 import type { State } from "../types/State"
 import type { StoreData } from "../types/StoreData"
 import type { TransactionFn } from "../types/TransactionFn"
@@ -20,8 +19,10 @@ import {
     renderAtomFamilyIndex,
 } from "./atomFamilyIndex"
 import {
+    notifyDeferred,
     propagateAtomUpdate,
     propagateDeletedAtoms,
+    type NotifyTarget,
 } from "./propagateUpdatedAtoms"
 import { setAtoms } from "./setAtoms"
 import { writeAtoms, type DeferredOnSet } from "./writeAtoms"
@@ -273,22 +274,21 @@ export class Transaction {
                 // Updates and a delete in one single-store txn: a selector that
                 // depends on both an updated atom and the deleted family is
                 // reachable by the update pass (propagateAtomUpdate) and the
-                // delete pass (propagateDeletedAtoms). Share a guard so it
-                // evaluates once. (Splitting setAtoms into writeAtoms + propagate
-                // lets the same guard span both passes.)
-                const evaluatedSelectors = new Set<Selector>()
+                // delete pass (propagateDeletedAtoms). Defer subscriber
+                // notification across both passes so an observer never sees the
+                // update pass's value of a selector the delete pass recomputes
+                // (and vice versa). No cross-pass dedup guard: each pass
+                // re-derives its selectors against the fully-written state, so
+                // the later pass corrects any value the earlier one computed
+                // from a not-yet-final selector input. (See NotifyTarget.)
+                const notify: NotifyTarget = new Map()
                 const updatedAtoms = writeAtoms(
                     this._atomMap,
                     this.data,
                     initializedAtomsSet,
                 )
                 if (updatedAtoms.length > 0) {
-                    propagateAtomUpdate(
-                        updatedAtoms,
-                        this.data,
-                        false,
-                        evaluatedSelectors,
-                    )
+                    propagateAtomUpdate(updatedAtoms, this.data, false, notify)
                 }
                 deleteAtomFamilyAtoms(this._deleteSet, this.data)
                 propagateDeletedAtoms(
@@ -297,8 +297,9 @@ export class Transaction {
                     undefined,
                     undefined,
                     undefined,
-                    evaluatedSelectors,
+                    notify,
                 )
+                notifyDeferred(notify)
             } else {
                 setAtoms(this._atomMap, this.data, initializedAtomsSet)
             }
@@ -354,26 +355,25 @@ export class Transaction {
         }
 
         // One propagation pass per store, root-first (ancestors before
-        // descendants). Order matters for correctness with the dedup guard: an
-        // ancestor's pass cross-propagates its atom changes into descendant
-        // scopes (propagateToScopes), so a scope selector that transitively
-        // depends on an ancestor atom is recomputed with final upstream values
-        // before the scope's own pass runs. Running leaf-first instead could
-        // evaluate such a selector against a still-stale upstream scope selector
-        // and the guard would then skip its correcting re-eval.
+        // descendants). Order matters: an ancestor's pass cross-propagates its
+        // atom changes into descendant scopes (propagateToScopes), so a scope
+        // selector that transitively depends on an ancestor atom is recomputed
+        // with final upstream values before — or again in — the scope's own pass.
         //
-        // `evaluatedSelectors` is a per-commit guard so a selector reachable by
-        // more than one store-pass (e.g. spanning an ancestor atom and a scope
-        // atom, or an updated atom and a deleted family) evaluates exactly once:
-        // whichever pass reaches it first computes its final value (all writes
-        // are already applied, and root-first guarantees upstream selectors are
-        // settled first), and later passes skip it. Without the guard the result
-        // is still correct — the equality check discards the redundant recompute
-        // — but the body would run once per reaching pass.
-        const evaluatedSelectors = new Set<Selector>()
+        // Defer all subscriber notification to the end of the commit. Each
+        // store's pass settles its own selectors against the fully-written
+        // state (root-first, so read-through ancestor values are final); firing
+        // only after every pass has run means every observer reads the final,
+        // consistent snapshot — never a value a later pass still corrects
+        // (serializable observation). There is deliberately NO cross-pass dedup
+        // guard: a selector reachable by two passes is simply recomputed in each
+        // (the equality check prunes the redundant result), and the deferred
+        // notification fires its subscriber exactly once. See the warning on
+        // NotifyTarget for why a dedup guard must not come back.
+        const notify: NotifyTarget = new Map()
         for (const { data, updatedAtoms, deleted } of plan) {
             if (updatedAtoms.length > 0) {
-                propagateAtomUpdate(updatedAtoms, data, false, evaluatedSelectors)
+                propagateAtomUpdate(updatedAtoms, data, false, notify)
             }
             if (deleted) {
                 propagateDeletedAtoms(
@@ -382,10 +382,11 @@ export class Transaction {
                     undefined,
                     undefined,
                     undefined,
-                    evaluatedSelectors,
+                    notify,
                 )
             }
         }
+        notifyDeferred(notify)
     }
 
     // Depth-first pre-order: this store, then each nested scope. Produces a
