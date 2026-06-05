@@ -12,11 +12,12 @@ stale-while-revalidate refreshes** and **async default resolutions**.
 
 The callback receives `(changes, meta)`:
 
-- `changes` — an array of `{ atom, value, scope, deleted? }`. A direct
-  `set`/`reset` (or an async atom resolving) delivers a one-element array; a
-  transaction delivers a single callback with all of its changes. Family-atom
-  deletions (`store.del` / `txn.del`) are reported with `deleted: true` and
-  `value: undefined`.
+- `changes` — an array of `StoreChange`, a discriminated union on `kind`:
+  `{ kind: "set", atom, value, scope }` for a value change, or
+  `{ kind: "delete", atom, scope }` for a family-atom deletion (`store.del` /
+  `txn.del`) — a deletion carries no `value`. A direct `set`/`reset` (or an async
+  atom resolving) delivers a one-element array; a transaction delivers a single
+  callback with all of its changes.
 - `scope` — the chain of scope ids from the outermost scope down to where the
   change occurred (the ids you'd pass to `.scope()` to reach it), empty (`[]`)
   for a root store. Unambiguous for nested scopes that share a leaf name. A

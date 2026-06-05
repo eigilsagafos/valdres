@@ -30,7 +30,7 @@ describe("store.onChange", () => {
         store1.set(atom1, 2)
 
         expect(calls.length).toBe(1)
-        expect(calls[0]).toEqual([{ atom: atom1, value: 2, scope: [] }])
+        expect(calls[0]).toEqual([{ kind: "set", atom: atom1, value: 2, scope: [] }])
         unsub()
     })
 
@@ -55,7 +55,7 @@ describe("store.onChange", () => {
 
         store1.reset(atom1)
 
-        expect(calls).toEqual([[{ atom: atom1, value: 1, scope: [] }]])
+        expect(calls).toEqual([[{ kind: "set", atom: atom1, value: 1, scope: [] }]])
         unsub()
     })
 
@@ -73,8 +73,8 @@ describe("store.onChange", () => {
 
         expect(calls.length).toBe(1)
         expect(calls[0]).toEqual([
-            { atom: atom1, value: 2, scope: [] },
-            { atom: atom2, value: "b", scope: [] },
+            { kind: "set", atom: atom1, value: 2, scope: [] },
+            { kind: "set", atom: atom2, value: "b", scope: [] },
         ])
         unsub()
     })
@@ -93,7 +93,7 @@ describe("store.onChange", () => {
         })
 
         expect(calls.length).toBe(1)
-        expect(calls[0]).toEqual([{ atom: atom2, value: 3, scope: [] }])
+        expect(calls[0]).toEqual([{ kind: "set", atom: atom2, value: 3, scope: [] }])
         unsub()
     })
 
@@ -181,8 +181,7 @@ describe("store.onChange", () => {
         await Promise.resolve()
 
         const change = calls.flat().find(c => c.atom === asyncAtom)
-        expect(change).toBeDefined()
-        expect(change!.value).toBe(42)
+        expect(change).toMatchObject({ kind: "set", value: 42 })
         unsub()
     })
 
@@ -201,7 +200,9 @@ describe("store.onChange", () => {
         // onChange entirely.
         await waitFor(() => {
             const reported = changes.filter(c => c.atom === atom1)
-            expect(reported.some(c => (c.value as number) >= 2)).toBe(true)
+            expect(
+                reported.some(c => c.kind === "set" && (c.value as number) >= 2),
+            ).toBe(true)
         })
 
         // The cacheMeta atom updates on every tick but must never surface.
@@ -271,7 +272,7 @@ describe("store.onChange", () => {
         child.set(atom1, "scoped")
 
         expect(calls).toEqual([
-            [{ atom: atom1, value: "scoped", scope: ["child"] }],
+            [{ kind: "set", atom: atom1, value: "scoped", scope: ["child"] }],
         ])
         unsub()
     })
@@ -288,8 +289,15 @@ describe("store.onChange", () => {
         nested.set(atom1, "nested-value")
 
         expect(calls).toEqual([
-            [{ atom: atom1, value: "root-value", scope: [] }],
-            [{ atom: atom1, value: "nested-value", scope: ["child", "nested"] }],
+            [{ kind: "set", atom: atom1, value: "root-value", scope: [] }],
+            [
+                {
+                    kind: "set",
+                    atom: atom1,
+                    value: "nested-value",
+                    scope: ["child", "nested"],
+                },
+            ],
         ])
         unsub()
     })
@@ -306,7 +314,9 @@ describe("store.onChange", () => {
         childB.set(atom1, "b") // sibling — not seen
         childA.set(atom1, "a") // in the subtree — seen
 
-        expect(aCalls).toEqual([[{ atom: atom1, value: "a", scope: ["a"] }]])
+        expect(aCalls).toEqual([
+            [{ kind: "set", atom: atom1, value: "a", scope: ["a"] }],
+        ])
         unsub()
     })
 
@@ -327,8 +337,8 @@ describe("store.onChange", () => {
 
         expect(calls.length).toBe(1)
         expect(calls[0]).toEqual([
-            { atom: atom1, value: 1, scope: [] },
-            { atom: atom2, value: 2, scope: ["child"] },
+            { kind: "set", atom: atom1, value: 1, scope: [] },
+            { kind: "set", atom: atom2, value: 2, scope: ["child"] },
         ])
         unsub()
     })
@@ -344,15 +354,18 @@ describe("store.onChange", () => {
 
         // The pending set is reported immediately with the promise as value.
         expect(calls.length).toBe(1)
-        expect(calls[0][0].atom).toBe(atom1)
-        expect(calls[0][0].value).toBe(promise)
+        expect(calls[0][0]).toMatchObject({
+            kind: "set",
+            atom: atom1,
+            value: promise,
+        })
 
         await promise
         await Promise.resolve()
 
         // The resolution is reported as a separate change.
         expect(calls.length).toBe(2)
-        expect(calls[1]).toEqual([{ atom: atom1, value: 42, scope: [] }])
+        expect(calls[1]).toEqual([{ kind: "set", atom: atom1, value: 42, scope: [] }])
         unsub()
     })
 
@@ -366,8 +379,7 @@ describe("store.onChange", () => {
 
         const familyAtom = family("x")
         const reported = calls.flat().find(c => c.atom === familyAtom)
-        expect(reported).toBeDefined()
-        expect(reported!.value).toBe("custom")
+        expect(reported).toMatchObject({ kind: "set", value: "custom" })
         unsub()
     })
 
@@ -383,9 +395,8 @@ describe("store.onChange", () => {
 
         expect(calls.length).toBe(1)
         const change = calls[0].find(c => c.atom === familyAtom)
-        expect(change).toBeDefined()
-        expect(change!.deleted).toBe(true)
-        expect(change!.value).toBeUndefined()
+        expect(change).toEqual({ kind: "delete", atom: familyAtom, scope: [] })
+        expect(change).not.toHaveProperty("value")
         unsub()
     })
 
@@ -405,8 +416,8 @@ describe("store.onChange", () => {
 
         expect(calls.length).toBe(1)
         const valueChange = calls[0].find(c => c.atom === atom1)
-        expect(valueChange).toEqual({ atom: atom1, value: 2, scope: [] })
-        const deletion = calls[0].find(c => c.deleted)
+        expect(valueChange).toEqual({ kind: "set", atom: atom1, value: 2, scope: [] })
+        const deletion = calls[0].find(c => c.kind === "delete")
         expect(deletion).toBeDefined()
         expect(deletion!.atom).toBe(familyAtom)
         unsub()
@@ -442,8 +453,8 @@ describe("store.onChange", () => {
 
         expect(calls.length).toBe(1)
         expect(calls[0]).toEqual([
-            { atom: atom1, value: 10, scope: [] },
-            { atom: atom2, value: 20, scope: [] },
+            { kind: "set", atom: atom1, value: 10, scope: [] },
+            { kind: "set", atom: atom2, value: 20, scope: [] },
         ])
         unsub()
     })

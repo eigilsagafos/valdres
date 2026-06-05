@@ -137,13 +137,13 @@ const buildChangeGroup = (
             if (atom.__valdresInternal || isAtomFamily(atom)) continue
             if (seen?.has(atom)) continue
             ;(seen ??= new Set()).add(atom)
-            changes.push({ atom, value: data.values.get(atom), scope })
+            changes.push({ kind: "set", atom, value: data.values.get(atom), scope })
         }
     }
     if (deletedAtoms) {
         for (const atom of deletedAtoms) {
             if (atom.__valdresInternal || isAtomFamily(atom)) continue
-            changes.push({ atom, value: undefined, scope, deleted: true })
+            changes.push({ kind: "delete", atom, scope })
         }
     }
     return { data, changes }
