@@ -45,6 +45,7 @@
     "empty-aliens-accept",
     "fast-path-leaf-mount-walk",
     "fast-path-sync-selector-options",
+    "fix-cross-pass-stale-selector-and-index",
     "fix-selector-cycle-leak",
     "fix-workspace-protocol-publish",
     "fluffy-bobcats-throw",
@@ -63,9 +64,11 @@
     "six-cups-grin",
     "spicy-sheep-bet",
     "split-propagate-updated-atoms",
+    "stabilize-maxage-tests-fake-clock",
     "stale-selector-dynamic-deps",
     "strong-maps-attack",
     "tough-cats-accept",
+    "txn-resolves-pending-default",
     "young-symbols-sing"
   ]
 }
