@@ -5,29 +5,8 @@ import { isPromiseLike } from "../utils/isPromiseLike"
 import { getState } from "./getState"
 import { propagateAtomUpdate } from "./propagateUpdatedAtoms"
 import { isFunction } from "./isFunction"
+import { resolvePendingDefault } from "./resolvePendingDefault"
 import { setValueInData } from "./setValueInData"
-
-/** Resolve any outstanding pending-default suspense placeholder for `atom`
- *  and remove it. The placeholder may have been registered in a parent
- *  store (atoms with no `defaultValue` init in whichever scope first reads
- *  them, which `getState` resolves by walking up to root), so we walk the
- *  scope chain rather than only checking `data`. */
-const resolvePendingDefault = <Value>(
-    atom: Atom<Value>,
-    data: StoreData,
-    value: Value,
-) => {
-    let cur: StoreData | undefined = data
-    while (cur) {
-        const entry = cur.pendingDefaults.get(atom)
-        if (entry) {
-            entry.resolve(value)
-            cur.pendingDefaults.delete(atom)
-            return
-        }
-        cur = "parent" in cur ? cur.parent : undefined
-    }
-}
 
 const handlePromise = <Value>(
     atom: Atom<Value>,
