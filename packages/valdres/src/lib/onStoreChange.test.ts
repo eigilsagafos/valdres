@@ -170,6 +170,36 @@ describe("store.onChange", () => {
         unsub()
     })
 
+    test("a global atom set in a txn: origin gets 'transaction', each peer gets a separate 'set' (peer fires first)", () => {
+        const store1 = store()
+        const store2 = store()
+        const g = atom(0, { global: true })
+        // Initialize in both stores (joining the global sync set) before
+        // subscribing, so init-seeding doesn't muddy the assertions.
+        store1.get(g)
+        store2.get(g)
+
+        const order: string[] = []
+        const originMetas: any[] = []
+        const peerMetas: any[] = []
+        const unsub1 = store1.onChange((_c, meta) => {
+            order.push("origin")
+            originMetas.push(meta)
+        })
+        const unsub2 = store2.onChange((_c, meta) => {
+            order.push("peer")
+            peerMetas.push(meta)
+        })
+
+        store1.txn(({ set }) => set(g, 1), "bump")
+
+        expect(originMetas).toEqual([{ source: "transaction", name: "bump" }])
+        expect(peerMetas).toEqual([{ source: "set" }])
+        expect(order).toEqual(["peer", "origin"]) // peer fires mid-commit, first
+        unsub1()
+        unsub2()
+    })
+
     test("reports a previously-bypassing change: async default resolution", async () => {
         const store1 = store()
         const asyncAtom = atom(() => Promise.resolve(42))

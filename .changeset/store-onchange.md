@@ -31,6 +31,12 @@ The callback receives `(changes, meta)`:
 Internal valdres atoms (the cacheMeta atom backing maxAge/stale-while-revalidate)
 are excluded so dev tools aren't flooded with implementation-detail churn.
 
+Setting a **global atom inside a transaction** yields one callback per affected
+store: the origin store gets a single `"transaction"` callback, and each watched
+peer store gets a separate `"set"` callback (cross-store sync is a plain set on
+each peer, not part of the origin's transaction). The peer callbacks fire first,
+during the commit, before the origin's transaction callback.
+
 `onChange` returns an unsubscribe function. A global listener count gates every
 emit site, so when nothing anywhere is watching the propagation hot path does a
 single property read — no walk, no allocation.
