@@ -24,7 +24,7 @@ describe("store.onChange", () => {
     test("fires on a direct set with the atom, new value and empty scope", () => {
         const store1 = store()
         const atom1 = atom(1)
-        const calls: StoreChange[][] = []
+        const calls: (readonly StoreChange[])[] = []
         const unsub = store1.onChange(changes => calls.push(changes))
 
         store1.set(atom1, 2)
@@ -50,7 +50,7 @@ describe("store.onChange", () => {
         const store1 = store()
         const atom1 = atom(1)
         store1.set(atom1, 5)
-        const calls: StoreChange[][] = []
+        const calls: (readonly StoreChange[])[] = []
         const unsub = store1.onChange(changes => calls.push(changes))
 
         store1.reset(atom1)
@@ -63,7 +63,7 @@ describe("store.onChange", () => {
         const store1 = store()
         const atom1 = atom(1)
         const atom2 = atom("a")
-        const calls: StoreChange[][] = []
+        const calls: (readonly StoreChange[])[] = []
         const unsub = store1.onChange(changes => calls.push(changes))
 
         store1.txn(({ set }) => {
@@ -84,7 +84,7 @@ describe("store.onChange", () => {
         const atom1 = atom(1)
         const atom2 = atom(2)
         store1.get(atom1) // initialize so the unchanged set is a true no-op
-        const calls: StoreChange[][] = []
+        const calls: (readonly StoreChange[])[] = []
         const unsub = store1.onChange(changes => calls.push(changes))
 
         store1.txn(({ set }) => {
@@ -203,7 +203,7 @@ describe("store.onChange", () => {
     test("reports a previously-bypassing change: async default resolution", async () => {
         const store1 = store()
         const asyncAtom = atom(() => Promise.resolve(42))
-        const calls: StoreChange[][] = []
+        const calls: (readonly StoreChange[])[] = []
         const unsub = store1.onChange(changes => calls.push(changes))
 
         store1.get(asyncAtom) // triggers init; value is a pending promise
@@ -296,7 +296,7 @@ describe("store.onChange", () => {
         const root = store("root")
         const child = root.scope("child")
         const atom1 = atom("default")
-        const calls: StoreChange[][] = []
+        const calls: (readonly StoreChange[])[] = []
         const unsub = root.onChange(changes => calls.push(changes))
 
         child.set(atom1, "scoped")
@@ -312,7 +312,7 @@ describe("store.onChange", () => {
         const child = root.scope("child")
         const nested = child.scope("nested")
         const atom1 = atom("default")
-        const calls: StoreChange[][] = []
+        const calls: (readonly StoreChange[])[] = []
         const unsub = root.onChange(changes => calls.push(changes))
 
         root.set(atom1, "root-value")
@@ -337,7 +337,7 @@ describe("store.onChange", () => {
         const childA = root.scope("a")
         const childB = root.scope("b")
         const atom1 = atom("default")
-        const aCalls: StoreChange[][] = []
+        const aCalls: (readonly StoreChange[])[] = []
         const unsub = childA.onChange(changes => aCalls.push(changes))
 
         root.set(atom1, "root") // above the scope — not seen
@@ -355,7 +355,7 @@ describe("store.onChange", () => {
         root.scope("child")
         const atom1 = atom(0)
         const atom2 = atom(0)
-        const calls: StoreChange[][] = []
+        const calls: (readonly StoreChange[])[] = []
         const unsub = root.onChange(changes => calls.push(changes))
 
         root.txn(txn => {
@@ -376,7 +376,7 @@ describe("store.onChange", () => {
     test("reports async atom resolution as a follow-up change", async () => {
         const store1 = store()
         const atom1 = atom(0)
-        const calls: StoreChange[][] = []
+        const calls: (readonly StoreChange[])[] = []
         const unsub = store1.onChange(changes => calls.push(changes))
 
         const promise = Promise.resolve(42)
@@ -402,7 +402,7 @@ describe("store.onChange", () => {
     test("reports family atom changes", () => {
         const store1 = store()
         const family = atomFamily((id: string) => `default-${id}`)
-        const calls: StoreChange[][] = []
+        const calls: (readonly StoreChange[])[] = []
         const unsub = store1.onChange(changes => calls.push(changes))
 
         store1.set(family("x"), "custom")
@@ -418,7 +418,7 @@ describe("store.onChange", () => {
         const family = atomFamily((id: string) => `default-${id}`)
         const familyAtom = family("x") // capture before del releases it
         store1.set(familyAtom, "custom")
-        const calls: StoreChange[][] = []
+        const calls: (readonly StoreChange[])[] = []
         const unsub = store1.onChange(changes => calls.push(changes))
 
         store1.del(familyAtom)
@@ -436,7 +436,7 @@ describe("store.onChange", () => {
         const atom1 = atom(1)
         const familyAtom = family("x") // capture before del releases it
         store1.set(familyAtom, "custom")
-        const calls: StoreChange[][] = []
+        const calls: (readonly StoreChange[])[] = []
         const unsub = store1.onChange(changes => calls.push(changes))
 
         store1.txn(txn => {
@@ -468,11 +468,56 @@ describe("store.onChange", () => {
         unsubB()
     })
 
+    test("a listener that unsubscribes another store's listeners mid-dispatch does not crash", () => {
+        // root + child scope both watched; a change in child buckets both
+        // (child is dispatched first). The child listener tears down the root
+        // listener, so the root bucket's listener set is already gone by the
+        // time dispatch reaches it — must not throw.
+        const root = store("root")
+        const child = root.scope("child")
+        const atom1 = atom("x")
+        let rootUnsub = () => {}
+        const childUnsub = child.onChange(() => {
+            rootUnsub()
+        })
+        rootUnsub = root.onChange(() => {})
+
+        expect(() => child.set(atom1, "y")).not.toThrow()
+        childUnsub()
+    })
+
+    test("a throwing onChange listener does not mask a commit error", () => {
+        // A cross-scope txn defers subscribers (notifyDeferred) until after the
+        // onChange groups are buffered. If a subscriber throws AND an onChange
+        // listener throws on flush, the original (subscriber) error must win —
+        // the flush must not mask it.
+        const root = store("root")
+        root.scope("child")
+        const atom1 = atom(1)
+        const atom2 = atom(2)
+        const unsubSub = root.sub(atom1, () => {
+            throw new Error("subscriber boom")
+        })
+        const unsubChange = root.onChange(() => {
+            throw new Error("onchange boom")
+        })
+
+        expect(() =>
+            root.txn(t => {
+                t.set(atom1, 9)
+                t.scope("child", s => s.set(atom2, 9))
+            }),
+        ).toThrow("subscriber boom")
+
+        unsubSub()
+        unsubChange()
+    })
+
     test("works in batchUpdates mode, batching a microtask of sets", async () => {
         const store1 = store({ batchUpdates: true })
         const atom1 = atom(1)
         const atom2 = atom(2)
-        const calls: StoreChange[][] = []
+        const calls: (readonly StoreChange[])[] = []
         const unsub = store1.onChange(changes => calls.push(changes))
 
         store1.set(atom1, 10)

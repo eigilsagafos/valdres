@@ -291,9 +291,17 @@ export class Transaction {
         const sink = createChangeSink(this.name)
         try {
             this.commitWork(sink)
-        } finally {
-            flushChangeSink(sink)
+        } catch (error) {
+            // The commit failed (e.g. a subscriber threw), but its writes were
+            // already applied, so still flush onChange — best-effort, never
+            // letting an onChange-listener error mask the original failure.
+            try {
+                flushChangeSink(sink)
+            } catch {}
+            throw error
         }
+        // Commit succeeded: onChange-listener errors propagate normally.
+        flushChangeSink(sink)
     }
 
     private commitWork = (sink: ChangeSink | undefined) => {

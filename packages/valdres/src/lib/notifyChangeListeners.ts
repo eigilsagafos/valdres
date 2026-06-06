@@ -95,11 +95,16 @@ export const notifyChangeListeners = (
     }
     if (!buckets) return
     for (const [store, changes] of buckets) {
+        // Re-read per store: a listener fired for an earlier bucket may have
+        // unsubscribed every listener on this one (clearing changeListeners),
+        // so this store's set can be gone by the time we reach it.
+        const listeners = store.changeListeners
+        if (listeners === undefined || listeners.size === 0) continue
         // Snapshot so a listener that unsubscribes mid-dispatch doesn't skip a
         // sibling, and capture errors so one listener can't starve the rest.
         let firstError: unknown
         let hasError = false
-        for (const listener of [...store.changeListeners!]) {
+        for (const listener of [...listeners]) {
             try {
                 listener(changes, meta)
             } catch (error) {
@@ -114,9 +119,9 @@ export const notifyChangeListeners = (
 }
 
 /** Build one store's change group from the atoms that changed and/or were
- *  deleted in it. Changed atoms' values are read back out of `data.values`
- *  (values are always written before propagation runs); deleted atoms report
- *  `value: undefined` and `deleted: true`.
+ *  deleted in it. Changed atoms become `{ kind: "set", value }` (value read back
+ *  out of `data.values` — values are always written before propagation runs);
+ *  deleted atoms become `{ kind: "delete" }` with no value.
  *
  *  Skipped: valdres-internal atoms (`__valdresInternal`, e.g. cacheMeta) and
  *  atom-family container objects (an `AtomFamily` flows through propagation when
