@@ -26,6 +26,12 @@ import {
     onLiveDependencyRemoved,
     unmountOrphanedDeps,
 } from "./mountAtom"
+import {
+    changeListenerRegistry,
+    reportAtomChanges,
+    reportDeletedAtoms,
+    type ChangeReport,
+} from "./notifyChangeListeners"
 import { setValueInData } from "./setValueInData"
 
 export type {
@@ -254,6 +260,7 @@ export const propagateDeletedAtoms = (
     > = new Map(),
     timestamp = performance.now(),
     notify?: NotifyTarget,
+    report?: ChangeReport,
 ) => {
     // When deferring, subscribers accumulate into THIS store's notify entry so
     // they fire once, at commit end, against this store's changed members.
@@ -309,6 +316,10 @@ export const propagateDeletedAtoms = (
             propagateInScope(familiesInScope, scope, false, notify)
         }
     }
+
+    if (report !== undefined && changeListenerRegistry.count !== 0) {
+        reportDeletedAtoms(atoms, data, report)
+    }
 }
 
 // Top-level entry: notify direct atom subscribers, walk dependent selectors,
@@ -323,6 +334,7 @@ export const propagateAtomUpdate = (
     data: StoreData,
     isInitOnly = false,
     notify?: NotifyTarget,
+    report?: ChangeReport,
 ) => {
     // Fast path: single non-family atom with no dependent selectors and no
     // scopes can skip the full graph walk entirely and just notify subscribers.
@@ -338,6 +350,9 @@ export const propagateAtomUpdate = (
                 if (subs && subs.size > 0) {
                     if (notify) addSetToSet(subs, notifyEntryFor(notify, data).subscriptions)
                     else callSubscribers(subs)
+                }
+                if (report !== undefined && changeListenerRegistry.count !== 0 && !isInitOnly) {
+                    reportAtomChanges(atoms, data, report)
                 }
                 return
             }
@@ -401,6 +416,10 @@ export const propagateAtomUpdate = (
 
     if (data.scopes && data.scopes.size > 0) {
         propagateToScopes(atoms, data, isInitOnly, notify)
+    }
+
+    if (report !== undefined && changeListenerRegistry.count !== 0 && !isInitOnly) {
+        reportAtomChanges(atoms, data, report)
     }
 }
 

@@ -13,5 +13,5 @@ export const deleteFamilyAtom = <
     if (atom.family) {
         atom.family.release(...atom.familyArgs)
     }
-    propagateDeletedAtoms([atom], data)
+    propagateDeletedAtoms([atom], data, undefined, undefined, undefined, undefined, "delete")
 }

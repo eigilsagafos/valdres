@@ -33,7 +33,7 @@ export const getAtomInitValue = <V = any>(
                     if (data.values.get(atom) !== value) return
                     // @ts-ignore @ts-todo
                     setValueInData(atom, resolvedValue, data)
-                    propagateAtomUpdate([atom], data)
+                    propagateAtomUpdate([atom], data, false, undefined, "async-set")
                 },
                 () => {
                     // On rejection, remove the rejected promise from the

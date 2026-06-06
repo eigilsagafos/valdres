@@ -1,5 +1,6 @@
 import type { Selector } from "./Selector"
 import type { Store } from "./Store"
+import type { StoreChangeCallback } from "./StoreChangeCallback"
 import type { Subscription } from "./Subscription"
 
 export type StoreData = {
@@ -49,4 +50,9 @@ export type StoreData = {
     /** Present iff this is a scoped store. Records keys this scope registered
      *  in its parent's `scopeValueIndex`, used for cleanup on detach. */
     scopeIndexKeys?: Set<WeakKey>
+    /** Store-wide change listeners registered via `store.onChange`. Absent
+     *  (undefined) until the first listener is added and reset to undefined
+     *  when the last one leaves, so the write hot path stays allocation-free
+     *  when nobody is watching. */
+    changeListeners?: Set<StoreChangeCallback>
 }

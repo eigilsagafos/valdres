@@ -13,6 +13,12 @@ import { isSelector } from "../utils/isSelector"
 import { getState } from "./getState"
 import { getAtomInitValue } from "./initAtom"
 import { isFunction } from "./isFunction"
+import {
+    changeListenerRegistry,
+    createChangeSink,
+    flushChangeSink,
+    type ChangeSink,
+} from "./notifyChangeListeners"
 import { IS_PROD } from "./IS_PROD"
 import {
     cloneAtomFamilyIndex,
@@ -67,6 +73,10 @@ export class Transaction {
     data: StoreData
     parentTransaction: Transaction | undefined
     dirty: boolean
+    /** Optional name from `store.txn(callback, name)`, surfaced on the
+     *  `store.onChange` meta for this commit. Only meaningful on the root
+     *  transaction (the one that commits). */
+    name: string | undefined
     private _scopedTransactions: undefined | Map<string, Transaction>
     private _initializedAtomsSet: any
     private _deleteSet: any
@@ -81,6 +91,7 @@ export class Transaction {
         this.data = data
         this.parentTransaction = parentTransaction
         this.dirty = false
+        this.name = undefined
         this._atomMap = new Map()
         if (childTransaction) {
             this._scopedTransactions = new Map([
@@ -264,10 +275,38 @@ export class Transaction {
     }
 
     commit = () => {
+        // When nothing is watching, commit directly — no sink allocation, so the
+        // Bencher-gated txn hot path is unchanged.
+        if (changeListenerRegistry.count === 0) {
+            this.commitWork(undefined)
+            return
+        }
+        // Otherwise thread a change sink through the commit's per-store
+        // propagation passes so they collapse into a single store.onChange
+        // callback, tagged "transaction" with this txn's name. The sink is a
+        // local (not global state), so a transaction started inside an onSet hook
+        // simply owns its own sink — no save/restore. Flush in `finally` so
+        // observers still see the (already-applied) changes if a subscriber
+        // throws during commit.
+        const sink = createChangeSink(this.name)
+        try {
+            this.commitWork(sink)
+        } catch (error) {
+            // The commit failed (e.g. a subscriber threw), but its writes were
+            // already applied, so still flush onChange — best-effort, never
+            // letting an onChange-listener error mask the original failure.
+            try {
+                flushChangeSink(sink)
+            } catch {}
+            throw error
+        }
+        // Commit succeeded: onChange-listener errors propagate normally.
+        flushChangeSink(sink)
+    }
+
+    private commitWork = (sink: ChangeSink | undefined) => {
         // Single-store fast path: no scoped transactions to coordinate, so
-        // write-and-notify in one pass exactly as before. This keeps the
-        // non-scoped txn hot path (the Bencher-gated one) unchanged in both
-        // behavior and cost — onSet fires inline during the write loop here.
+        // write-and-notify in one pass. onSet fires inline during the write loop.
         if (!this._scopedTransactions) {
             const initializedAtomsSet = new Set<Atom>()
             if (this._deleteSet?.size) {
@@ -288,7 +327,7 @@ export class Transaction {
                     initializedAtomsSet,
                 )
                 if (updatedAtoms.length > 0) {
-                    propagateAtomUpdate(updatedAtoms, this.data, false, notify)
+                    propagateAtomUpdate(updatedAtoms, this.data, false, notify, sink)
                 }
                 deleteAtomFamilyAtoms(this._deleteSet, this.data)
                 propagateDeletedAtoms(
@@ -298,10 +337,11 @@ export class Transaction {
                     undefined,
                     undefined,
                     notify,
+                    sink,
                 )
                 notifyDeferred(notify)
             } else {
-                setAtoms(this._atomMap, this.data, initializedAtomsSet)
+                setAtoms(this._atomMap, this.data, initializedAtomsSet, false, sink)
             }
             return
         }
@@ -373,7 +413,7 @@ export class Transaction {
         const notify: NotifyTarget = new Map()
         for (const { data, updatedAtoms, deleted } of plan) {
             if (updatedAtoms.length > 0) {
-                propagateAtomUpdate(updatedAtoms, data, false, notify)
+                propagateAtomUpdate(updatedAtoms, data, false, notify, sink)
             }
             if (deleted) {
                 propagateDeletedAtoms(
@@ -383,6 +423,7 @@ export class Transaction {
                     undefined,
                     undefined,
                     notify,
+                    sink,
                 )
             }
         }
@@ -479,7 +520,12 @@ export class Transaction {
     }
 }
 
-export const transaction = (callback: TransactionFn, data: StoreData) => {
+export const transaction = (
+    callback: TransactionFn,
+    data: StoreData,
+    name?: string,
+) => {
     const txn = new Transaction(data)
+    txn.name = name
     return txn.execute(callback)
 }

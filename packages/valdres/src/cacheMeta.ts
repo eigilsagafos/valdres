@@ -10,7 +10,7 @@ export const cacheMeta = (
 ): Selector<CacheMeta | null> => {
     if (sourceAtom.__cacheMetaSelector) return sourceAtom.__cacheMetaSelector
     if (!sourceAtom.__cacheMeta) {
-        sourceAtom.__cacheMeta = { equal, defaultValue: null }
+        sourceAtom.__cacheMeta = { equal, defaultValue: null, __valdresInternal: true }
     }
     sourceAtom.__cacheMetaSelector = selector(get => get(sourceAtom.__cacheMeta!))
     return sourceAtom.__cacheMetaSelector

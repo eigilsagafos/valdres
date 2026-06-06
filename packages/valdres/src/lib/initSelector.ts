@@ -268,7 +268,7 @@ export const handleSelectorResult = <Value>(
             const initializedAtomsSet = new Set<Atom>()
             const res = initSelector(selector, data, initializedAtomsSet)
             if (initializedAtomsSet.size > 0) {
-                propagateAtomUpdate([...initializedAtomsSet], data)
+                propagateAtomUpdate([...initializedAtomsSet], data, false, undefined, "async-set")
             }
             return res
         }).catch(() => {
