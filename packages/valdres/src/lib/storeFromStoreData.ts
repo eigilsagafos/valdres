@@ -12,6 +12,7 @@ import { isAtom } from "../utils/isAtom"
 import { isGlobalAtom } from "../utils/isGlobalAtom"
 import { isSelector } from "../utils/isSelector"
 import { resolveReactive } from "../utils/resolveReactive"
+import { unsetScopeValue } from "./unsetScopeValue"
 import { createStoreData } from "./createStoreData"
 import { deleteFamilyAtom } from "./deleteFamilyAtom"
 import { getState } from "./getState"
@@ -173,6 +174,16 @@ export function storeFromStoreData(
         return deleteFamilyAtom(atom, data)
     }
 
+    // --- unset ---
+    // Scoped stores only: drop this scope's own value for `atom` so it
+    // re-inherits the parent. The natural inverse of `set`. Throws on a root
+    // store. Distinct from `reset` (which writes the atom's default) and `del`
+    // (which removes a family member).
+    const unset = <V>(atom: Atom<V>) => {
+        if (data.batchUpdates) flushPendingTxn()
+        return unsetScopeValue(atom, data)
+    }
+
     const sub = <V>(
         state: State<V> | Family<V, any>,
         callback: () => void,
@@ -245,6 +256,7 @@ export function storeFromStoreData(
             txn,
             reset,
             del,
+            unset,
             data,
             scope,
             onChange,
@@ -258,6 +270,7 @@ export function storeFromStoreData(
             txn,
             reset,
             del,
+            unset,
             data,
             scope,
             onChange,

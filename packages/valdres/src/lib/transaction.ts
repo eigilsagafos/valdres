@@ -10,6 +10,10 @@ import { isAtom } from "../utils/isAtom"
 import { isAtomFamily } from "../utils/isAtomFamily"
 import { isFamilyAtom } from "../utils/isFamilyAtom"
 import { isSelector } from "../utils/isSelector"
+import {
+    detachScopeValue,
+    reDelegateScopeSubscriptions,
+} from "./unsetScopeValue"
 import { getState } from "./getState"
 import { getAtomInitValue } from "./initAtom"
 import { isFunction } from "./isFunction"
@@ -17,6 +21,7 @@ import {
     changeListenerRegistry,
     createChangeSink,
     flushChangeSink,
+    reportUnsetAtom,
     type ChangeSink,
 } from "./notifyChangeListeners"
 import { IS_PROD } from "./IS_PROD"
@@ -40,6 +45,7 @@ type CommitWrite = {
     data: StoreData
     updatedAtoms: Atom[]
     deleted: AtomFamilyAtom<any, any>[] | undefined
+    unsetAtoms: Atom[] | undefined
     onSets: DeferredOnSet[]
 }
 
@@ -80,6 +86,7 @@ export class Transaction {
     private _scopedTransactions: undefined | Map<string, Transaction>
     private _initializedAtomsSet: any
     private _deleteSet: any
+    private _unsetSet: Set<Atom> | undefined
     private _selectorDependencies: any
     private _selectorCache: any
     private _atomMap: Map<any, any>
@@ -102,6 +109,16 @@ export class Transaction {
 
     private hasTxnOrData = (state: State): boolean => {
         if (this._atomMap.has(state)) return true
+        // An unset buffered at this level (and not superseded by a later set)
+        // makes this scope provide no value: the committed shadow still sits in
+        // this.data.values until commit, so we must NOT read it — fall through
+        // to a parent transaction, or report "not here" so `get` reads through
+        // the committed parent chain.
+        if (this._unsetSet?.has(state)) {
+            return this.parentTransaction
+                ? this.parentTransaction.hasTxnOrData(state)
+                : false
+        }
         if (this.data.values.has(state)) return true
         if (this.parentTransaction) return this.parentTransaction.hasTxnOrData(state)
         return false
@@ -110,6 +127,11 @@ export class Transaction {
     private valueFromTxnOrData: GetValue = (state: State) => {
         if (this._atomMap.has(state)) {
             return this._atomMap.get(state)
+        }
+        if (this._unsetSet?.has(state)) {
+            return this.parentTransaction
+                ? this.parentTransaction.valueFromTxnOrData(state)
+                : undefined
         }
         if (this.data.values.has(state)) {
             return this.data.values.get(state)
@@ -124,7 +146,12 @@ export class Transaction {
             if (this.hasTxnOrData(state)) {
                 return this.valueFromTxnOrData(state)
             }
-            return getState(state, this.data, this.initializedAtomsSet)
+            // No txn level provides a value. If this level unset the atom, its
+            // committed shadow is still in this.data.values until commit, so read
+            // through the parent chain rather than this scope. (parent is always
+            // defined here — unset() throws on a root store.)
+            const data = this._unsetSet?.has(state) ? this.data.parent! : this.data
+            return getState(state, data, this.initializedAtomsSet)
         } else if (isSelector(state)) {
             if (this.dirty) {
                 this.selectorCache.clear()
@@ -168,6 +195,10 @@ export class Transaction {
             resolved = deepFreeze(resolved) as V
         }
         this._atomMap.set(atom, resolved)
+        // A set supersedes an unset of the same atom buffered earlier in this txn
+        // (last write wins, regardless of order). Symmetric to `unset` dropping
+        // any buffered set.
+        this._unsetSet?.delete(atom)
         if (!this.dirty) this.dirty = true
 
         if (isFamilyAtom(atom)) {
@@ -199,6 +230,7 @@ export class Transaction {
             index.created.set(atom, performance.now())
             if (index.deleted.has(atom)) index.deleted.delete(atom)
             this._atomMap.set(atom, value)
+            this._unsetSet?.delete(atom)
         }
         index.rendered = null
         index.renderedArray = null
@@ -223,6 +255,32 @@ export class Transaction {
         if (this._atomMap.has(atom)) {
             this._atomMap.delete(atom)
         }
+    }
+
+    unset = (atom: Atom) => {
+        if (!isAtom(atom)) throw new Error("unset() expects an atom.")
+        if (!this.data.parent) {
+            throw new Error(
+                "unset() can only be called on a scoped store — a root store has no parent to re-inherit from.",
+            )
+        }
+        // An unset in the same txn supersedes a set of the same atom — drop any
+        // buffered write so the atom re-inherits rather than being re-shadowed.
+        this._atomMap.delete(atom)
+        if (!this._unsetSet) this._unsetSet = new Set()
+        this._unsetSet.add(atom)
+    }
+
+    // Detach the shadow + bookkeeping for each unset atom that actually had a
+    // shadow; returns those atoms so the commit can propagate and report them.
+    // Called in the write phase so every store's values are final before any
+    // propagation pass runs.
+    private applyUnsets = (unsetSet: Set<Atom>, data: StoreData): Atom[] => {
+        const unsetAtoms: Atom[] = []
+        for (const atom of unsetSet) {
+            if (detachScopeValue(atom, data)) unsetAtoms.push(atom)
+        }
+        return unsetAtoms
     }
 
     scope = (scopeId: string, callback: (txn: Transaction) => any) => {
@@ -257,6 +315,8 @@ export class Transaction {
             this.initializedAtomsSet,
         )
         this._atomMap.set(atom, value)
+        // reset writes the default; it supersedes a buffered unset of the atom.
+        this._unsetSet?.delete(atom)
         return value
     }
 
@@ -309,7 +369,54 @@ export class Transaction {
         // write-and-notify in one pass. onSet fires inline during the write loop.
         if (!this._scopedTransactions) {
             const initializedAtomsSet = new Set<Atom>()
-            if (this._deleteSet?.size) {
+            if (this._unsetSet?.size) {
+                // An unset empties this scope value, so it can't share the
+                // single-pass setAtoms path (which reports out of data.values).
+                // Write any set atoms, then detach + propagate the unsets into the
+                // same deferred notify so subscribers fire once with final state.
+                const notify: NotifyTarget = new Map()
+                const updatedAtoms = writeAtoms(
+                    this._atomMap,
+                    this.data,
+                    initializedAtomsSet,
+                )
+                if (updatedAtoms.length > 0) {
+                    propagateAtomUpdate(updatedAtoms, this.data, false, notify, sink)
+                }
+                if (this._deleteSet?.size) {
+                    deleteAtomFamilyAtoms(this._deleteSet, this.data)
+                    propagateDeletedAtoms(
+                        [...this._deleteSet],
+                        this.data,
+                        undefined,
+                        undefined,
+                        undefined,
+                        notify,
+                        sink,
+                    )
+                }
+                const unsetAtoms = this.applyUnsets(this._unsetSet, this.data)
+                if (unsetAtoms.length > 0) {
+                    propagateAtomUpdate(unsetAtoms, this.data, false, notify, undefined)
+                    if (sink) {
+                        for (const atom of unsetAtoms) {
+                            reportUnsetAtom(
+                                atom,
+                                this.data,
+                                getState(atom, this.data.parent!, new Set()),
+                                sink,
+                            )
+                        }
+                    }
+                }
+                notifyDeferred(notify)
+                // Re-delegate AFTER firing: the deferred notify fires the
+                // scope-local callback (which idempotently drops the delegate),
+                // so re-establishing the parent delegate must come last.
+                for (const atom of unsetAtoms) {
+                    reDelegateScopeSubscriptions(atom, this.data)
+                }
+            } else if (this._deleteSet?.size) {
                 // Updates and a delete in one single-store txn: a selector that
                 // depends on both an updated atom and the deleted family is
                 // reachable by the update pass (propagateAtomUpdate) and the
@@ -378,6 +485,11 @@ export class Transaction {
                 deleteAtomFamilyAtoms(txn._deleteSet, entry.data)
                 entry.deleted = [...txn._deleteSet]
             }
+            if (txn._unsetSet?.size) {
+                // Detach shadows in the write phase so every store's values are
+                // final before any propagation pass reads through the chain.
+                entry.unsetAtoms = txn.applyUnsets(txn._unsetSet, entry.data)
+            }
         }
 
         // Every value across the tree is now applied. onSet hooks fire here, in
@@ -411,7 +523,7 @@ export class Transaction {
         // notification fires its subscriber exactly once. See the warning on
         // NotifyTarget for why a dedup guard must not come back.
         const notify: NotifyTarget = new Map()
-        for (const { data, updatedAtoms, deleted } of plan) {
+        for (const { data, updatedAtoms, deleted, unsetAtoms } of plan) {
             if (updatedAtoms.length > 0) {
                 propagateAtomUpdate(updatedAtoms, data, false, notify, sink)
             }
@@ -426,8 +538,33 @@ export class Transaction {
                     sink,
                 )
             }
+            if (unsetAtoms && unsetAtoms.length > 0) {
+                // report undefined: the unset atom value is gone from
+                // data.values; emit the inherited value via reportUnsetAtom.
+                propagateAtomUpdate(unsetAtoms, data, false, notify, undefined)
+                if (sink) {
+                    for (const atom of unsetAtoms) {
+                        reportUnsetAtom(
+                            atom,
+                            data,
+                            getState(atom, data.parent!, new Set()),
+                            sink,
+                        )
+                    }
+                }
+            }
         }
         notifyDeferred(notify)
+        // Re-delegate AFTER firing (notifyDeferred): the scope-local callback
+        // idempotently drops its delegate when it fires, so the fresh parent
+        // delegate must be (re)established last.
+        for (const { data, unsetAtoms } of plan) {
+            if (unsetAtoms) {
+                for (const atom of unsetAtoms) {
+                    reDelegateScopeSubscriptions(atom, data)
+                }
+            }
+        }
     }
 
     // Depth-first pre-order: this store, then each nested scope. Produces a
@@ -439,6 +576,7 @@ export class Transaction {
             data: this.data,
             updatedAtoms: [],
             deleted: undefined,
+            unsetAtoms: undefined,
             onSets: [],
         })
         if (this._scopedTransactions) {
