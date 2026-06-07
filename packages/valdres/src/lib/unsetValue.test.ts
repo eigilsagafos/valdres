@@ -270,7 +270,7 @@ describe("unset — root store", () => {
         expect(calls.length).toBe(1)
         expect(calls[0]!.meta.source).toBe("unset")
         expect(calls[0]!.changes).toEqual([
-            { kind: "set", atom: a, value: 1, scope: [] },
+            { kind: "unset", atom: a, value: 1, scope: [] },
         ])
         expect(root.get(a)).toBe(1)
     })
@@ -389,7 +389,7 @@ describe("scope.unset — nested scopes", () => {
 })
 
 describe("scope.unset — onChange", () => {
-    test("emits a 'set' change with the inherited value and source 'unset'", () => {
+    test("emits an 'unset' change carrying the inherited value, source 'unset'", () => {
         const root = store()
         const scoped = root.scope("child")
         const a = atom(1)
@@ -404,7 +404,7 @@ describe("scope.unset — onChange", () => {
         expect(calls.length).toBe(1)
         expect(calls[0]!.meta.source).toBe("unset")
         expect(calls[0]!.changes).toEqual([
-            { kind: "set", atom: a, value: 10, scope: ["child"] },
+            { kind: "unset", atom: a, value: 10, scope: ["child"] },
         ])
     })
 
@@ -423,14 +423,14 @@ describe("scope.unset — onChange", () => {
         expect(calls.length).toBe(1)
         expect(calls[0]!.meta.source).toBe("unset")
         expect(calls[0]!.changes[0]).toEqual({
-            kind: "set",
+            kind: "unset",
             atom: a,
             value: 10,
             scope: ["child"],
         })
     })
 
-    test("the unset change uses kind 'set', never 'delete'", () => {
+    test("the unset change uses kind 'unset', never 'set' or 'delete'", () => {
         const root = store()
         const scoped = root.scope("child")
         const a = atom(1)
@@ -440,7 +440,7 @@ describe("scope.unset — onChange", () => {
         let received: readonly StoreChange[] = []
         scoped.onChange(changes => (received = changes))
         scoped.unset(a)
-        expect(received[0]!.kind).toBe("set")
+        expect(received[0]!.kind).toBe("unset")
     })
 })
 
@@ -459,6 +459,45 @@ describe("scope.unset — transaction form", () => {
         expect(scoped.get(a)).toBe(10)
         expect(scoped.data.values.has(a)).toBe(false)
         expect(root.data.scopeValueIndex.get(a)).toBeUndefined()
+    })
+
+    test("a unset inside a txn reports kind 'unset' per-change (source stays 'transaction')", () => {
+        const root = store()
+        const scoped = root.scope("child")
+        const a = atom(1)
+        const b = atom(1)
+        root.set(a, 10)
+        scoped.set(a, 99)
+
+        const calls: { changes: readonly StoreChange[]; meta: any }[] = []
+        scoped.onChange((changes, meta) => calls.push({ changes, meta }))
+
+        // A mixed txn: a real set of `b` alongside an unset of `a`. The batch
+        // source is "transaction", so the per-change kind is the only signal
+        // that distinguishes the unset (drop the override) from the set.
+        root.txn(t => {
+            t.scope("child", st => {
+                st.set(b, 5)
+                st.unset(a)
+            })
+        })
+
+        expect(calls.length).toBe(1)
+        expect(calls[0]!.meta.source).toBe("transaction")
+        const aChange = calls[0]!.changes.find(c => c.atom === a)
+        const bChange = calls[0]!.changes.find(c => c.atom === b)
+        expect(aChange).toEqual({
+            kind: "unset",
+            atom: a,
+            value: 10,
+            scope: ["child"],
+        })
+        expect(bChange).toEqual({
+            kind: "set",
+            atom: b,
+            value: 5,
+            scope: ["child"],
+        })
     })
 
     test("a scoped subscriber fires once when a transaction unsets its shadow", () => {
