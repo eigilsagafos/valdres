@@ -338,7 +338,7 @@ describe("scope.unset — invalid input", () => {
 })
 
 describe("scope.unset — nested scopes", () => {
-    test("inner scope inherits through a unset outer scope", () => {
+    test("inner scope inherits through an unset outer scope", () => {
         const root = store()
         const outer = root.scope("outer")
         const inner = outer.scope("inner")
@@ -461,7 +461,7 @@ describe("scope.unset — transaction form", () => {
         expect(root.data.scopeValueIndex.get(a)).toBeUndefined()
     })
 
-    test("a unset inside a txn reports kind 'unset' per-change (source stays 'transaction')", () => {
+    test("an unset inside a txn reports kind 'unset' per-change (source stays 'transaction')", () => {
         const root = store()
         const scoped = root.scope("child")
         const a = atom(1)
@@ -516,7 +516,7 @@ describe("scope.unset — transaction form", () => {
         expect(scoped.get(a)).toBe(10)
     })
 
-    test("a set after a unset in the same txn wins (re-shadows)", () => {
+    test("a set after an unset in the same txn wins (re-shadows)", () => {
         const root = store()
         const scoped = root.scope("child")
         const a = atom(1)
@@ -534,7 +534,7 @@ describe("scope.unset — transaction form", () => {
         expect(scoped.data.values.get(a)).toBe(5)
     })
 
-    test("a unset after a set in the same txn wins (re-inherits)", () => {
+    test("an unset after a set in the same txn wins (re-inherits)", () => {
         const root = store()
         const scoped = root.scope("child")
         const a = atom(1)
@@ -551,7 +551,7 @@ describe("scope.unset — transaction form", () => {
         expect(scoped.data.values.has(a)).toBe(false)
     })
 
-    test("reading a unset atom mid-txn returns the inherited value, not the stale shadow", () => {
+    test("reading an unset atom mid-txn returns the inherited value, not the stale shadow", () => {
         const root = store()
         const scoped = root.scope("child")
         const a = atom(1)
@@ -568,7 +568,7 @@ describe("scope.unset — transaction form", () => {
         expect(readInside).toBe(10)
     })
 
-    test("a functional set after a unset uses the inherited value as its base", () => {
+    test("a functional set after an unset uses the inherited value as its base", () => {
         const root = store()
         const scoped = root.scope("child")
         const a = atom(1)
@@ -584,7 +584,7 @@ describe("scope.unset — transaction form", () => {
         expect(scoped.get(a)).toBe(11)
     })
 
-    test("an inner scope reads through a unset outer scope mid-txn", () => {
+    test("an inner scope reads through an unset outer scope mid-txn", () => {
         const root = store()
         const outer = root.scope("outer")
         const inner = outer.scope("inner")
@@ -606,7 +606,7 @@ describe("scope.unset — transaction form", () => {
         expect(inner.get(a)).toBe(10)
     })
 
-    test("a single-store scoped transaction reads a unset atom as inherited", () => {
+    test("a single-store scoped transaction reads an unset atom as inherited", () => {
         const root = store()
         const scoped = root.scope("child")
         const a = atom(1)
