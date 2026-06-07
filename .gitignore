@@ -16,3 +16,4 @@ junit*.xml
 packages/*/src/**/*.d.ts
 packages/@valdres/*/src/**/*.d.ts
 packages/@valdres-react/*/src/**/*.d.ts
+.gstack/
