@@ -273,23 +273,29 @@ export const subscribe = <V>(
 ) => {
     let parentUnsubscribe: undefined | (() => void)
     let dropDelegate: undefined | (() => void)
-    if (
-        data.parent &&
-        ((!data.values.has(state) && isAtom(state)) || isAtomFamily(state))
-    ) {
+    let reDelegate: undefined | (() => void)
+    if (data.parent && (isAtom(state) || isAtomFamily(state))) {
         /**
-         * Getting here means that we are within a scope and that the current
-         * atom is not set in the current scope. Therefore we pass the subscription
-         * up the tree and modify the callback to unsubscribe to the parent store
-         * in the case that it is set in this scope.
+         * Getting here means that we are within a scope subscribing to an atom
+         * (or a family, which always reads through). While the scope does not
+         * shadow the atom we delegate the subscription up the tree, modifying
+         * the callback to drop the delegate if the scope later shadows it. We
+         * keep the delegation machinery even when the atom is currently shadowed
+         * so `unset` can re-establish the delegate when the shadow is dropped.
          */
         const originalCallback = callback
-        parentUnsubscribe = subscribe(
-            state,
-            originalCallback,
-            requireDeepEqualCheckBeforeCallback,
-            data.parent,
-        )
+        const delegateToParent = () =>
+            subscribe(
+                state,
+                originalCallback,
+                requireDeepEqualCheckBeforeCallback,
+                data.parent!,
+            )
+        // A family always reads through (no own value); an atom delegates only
+        // while this scope does not shadow it.
+        if (isAtomFamily(state) || !data.values.has(state)) {
+            parentUnsubscribe = delegateToParent()
+        }
         // Idempotent: once the scope re-roots the subscription, the parent-side
         // delegate must drop so we don't double-notify on later writes. This
         // fires either lazily (first scope-local propagation, below) or eagerly
@@ -299,6 +305,15 @@ export const subscribe = <V>(
             if (parentUnsubscribe) {
                 parentUnsubscribe()
                 parentUnsubscribe = undefined
+            }
+        }
+        // Inverse of dropDelegate: re-establish the parent delegate. Idempotent.
+        // Mutates the same `parentUnsubscribe` cell that the returned unsubscribe
+        // closure reads, so a re-delegated subscription is still torn down
+        // correctly on unsubscribe.
+        reDelegate = () => {
+            if (!parentUnsubscribe) {
+                parentUnsubscribe = delegateToParent()
             }
         }
         callback = arg => {
@@ -332,12 +347,14 @@ export const subscribe = <V>(
             state,
             requireDeepEqualCheckBeforeCallback,
             reRoot: dropDelegate,
+            reDelegate,
         }
     } else {
         subscription = {
             callback,
             requireDeepEqualCheckBeforeCallback,
             reRoot: dropDelegate,
+            reDelegate,
         }
     }
     subscribers.add(subscription)

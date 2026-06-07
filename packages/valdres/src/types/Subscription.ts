@@ -12,6 +12,11 @@ export type AtomFamilySubscription<
      *  shadows the state so an ancestor write in the same transaction commit
      *  does not also notify this subscription. */
     reRoot?: () => void
+    /** Inverse of `reRoot`: re-establishes the ancestor delegate (idempotent).
+     *  Present on scope atom/family subscriptions; called by `unset` when the
+     *  scope drops its own value so the subscription tracks ancestor changes
+     *  again. */
+    reDelegate?: () => void
 }
 
 export type SimpleSubscription = {
@@ -19,6 +24,8 @@ export type SimpleSubscription = {
     callback: () => void
     /** See AtomFamilySubscription.reRoot. */
     reRoot?: () => void
+    /** See AtomFamilySubscription.reDelegate. */
+    reDelegate?: () => void
 }
 
 export type Subscription = SimpleSubscription | AtomFamilySubscription
