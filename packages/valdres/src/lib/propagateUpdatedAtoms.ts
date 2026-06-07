@@ -28,9 +28,14 @@ import {
 } from "./mountAtom"
 import {
     changeListenerRegistry,
+    createChangeSink,
+    flushChangeSink,
+    hasSelectorChangeListener,
     reportAtomChanges,
     reportDeletedAtoms,
+    reportSelectorChanges,
     type ChangeReport,
+    type ChangeSink,
 } from "./notifyChangeListeners"
 import { setValueInData } from "./setValueInData"
 
@@ -291,31 +296,60 @@ export const propagateDeletedAtoms = (
             deleteFamilyAtomsFromSet(family, familyAtoms, data, timestamp)
         }
     }
-    propagateDirtySelectors(atoms, selectors, data, subscriptions, deletedFamilyAtoms, false, notify)
+    // `selectorCount` is the cheap global short-circuit; `hasSelectorChangeListener`
+    // then confirms a selector listener actually exists on THIS store's ancestor
+    // chain, so an unrelated root store with a selector listener doesn't make this
+    // one pay for selector collection.
+    const selectorActive =
+        report !== undefined &&
+        changeListenerRegistry.selectorCount !== 0 &&
+        hasSelectorChangeListener(data)
+    const changedSelectors = selectorActive ? new Set<Selector>() : undefined
+    propagateDirtySelectors(atoms, selectors, data, subscriptions, deletedFamilyAtoms, false, notify, changedSelectors)
     if (notifyEntry) collectFamilyAtomsForNotify(notifyEntry, deletedFamilyAtoms)
+    const hasScopeCascade = !!data.scopes && data.scopes.size > 0
+    const watching = report !== undefined && changeListenerRegistry.count !== 0
+
+    // When a selector listener is active and this delete cascades into scopes,
+    // the origin group + each scope's selector group must coalesce into one
+    // callback. On the immediate path (string report) buffer them into a
+    // transient sink tagged with the real source; the txn path already passes a
+    // sink. (Mirror of the wrap in propagateAtomUpdate.)
+    let localSink: ChangeSink | undefined
+    let effectiveReport: ChangeReport | undefined = report
+    if (selectorActive && hasScopeCascade && typeof report === "string") {
+        localSink = createChangeSink(undefined, report)
+        effectiveReport = localSink
+    }
+    // When buffering into a sink, report the origin deletes BEFORE cascading so
+    // they precede descendant-scope selectors in the single callback (the sink
+    // flushes at the end, so this only orders the batch). A bare string report
+    // fires immediately and stays AFTER the cascade to keep onChange last.
+    const reportIsSink =
+        effectiveReport !== undefined && typeof effectiveReport !== "string"
+    if (watching && reportIsSink)
+        reportDeletedAtoms(atoms, data, effectiveReport as ChangeReport, changedSelectors)
+
     // Cross-propagate the deletion into descendant scopes, mirroring the update
-    // path (propagateAtomUpdate → propagateToScopes). deleteFamilyAtomsFromSet
-    // already re-rendered each shadowing scope's family index via
-    // recursivelyUpdateIndexes; this re-evaluates the dependent selectors so
-    // their subscribers fire. Two kinds of scope dependent must be reached, and
-    // the old family-only cascade (keyed on scopeValueIndex.get(family)) missed
-    // both: a scope that merely INHERITS the deleted member (no family shadow)
-    // and reads it directly — e.g. get(family("a")) — and a non-shadowing scope
-    // whose selector reads the family list get(family). Walking the full scope
-    // tree with both the deleted member atoms and their families covers both:
-    // members skip scopes that shadow them (their visible value is unchanged),
-    // families always propagate (their rendered list shrank everywhere).
-    if (data.scopes && data.scopes.size > 0) {
+    // path (propagateAtomUpdate → propagateToScopes), and thread `effectiveReport`
+    // so the scoped selector recomputes are reported too. deleteFamilyAtomsFromSet
+    // already re-rendered each shadowing scope's family index; this re-evaluates
+    // the dependent selectors so their subscribers fire. Two kinds of scope
+    // dependent are reached: a scope that merely INHERITS the deleted member and
+    // reads it directly (get(family("a"))), and a non-shadowing scope whose
+    // selector reads the family list (get(family)). Members skip scopes that
+    // shadow them (visible value unchanged); families always propagate.
+    if (hasScopeCascade) {
         const scopeAtoms: AtomInput[] = atoms.slice()
         for (const family of deletedFamilyAtoms.keys()) {
             scopeAtoms.push(family)
         }
-        propagateToScopes(scopeAtoms, data, false, notify)
+        propagateToScopes(scopeAtoms, data, false, notify, effectiveReport)
     }
 
-    if (report !== undefined && changeListenerRegistry.count !== 0) {
-        reportDeletedAtoms(atoms, data, report)
-    }
+    if (watching && !reportIsSink)
+        reportDeletedAtoms(atoms, data, effectiveReport as ChangeReport, changedSelectors)
+    if (localSink) flushChangeSink(localSink)
 }
 
 // Top-level entry: notify direct atom subscribers, walk dependent selectors,
@@ -337,6 +371,11 @@ export const propagateAtomUpdate = (
     // value must reach dependents, but re-adding the member to the index would
     // resurrect a deleted member.
     skipFamilyIndexUpdate = false,
+    // When false, the trigger `atoms` are NOT reported to onChange here — only
+    // the selectors they cause to recompute are. The caller reports the atoms
+    // itself (the `unset` path emits them as `kind: "unset"` via reportUnsetAtom,
+    // so they must not also surface as a `"set"`).
+    reportAtoms = true,
 ) => {
     // Fast path: single non-family atom with no dependent selectors and no
     // scopes can skip the full graph walk entirely and just notify subscribers.
@@ -353,7 +392,9 @@ export const propagateAtomUpdate = (
                     if (notify) addSetToSet(subs, notifyEntryFor(notify, data).subscriptions)
                     else callSubscribers(subs)
                 }
-                if (report !== undefined && changeListenerRegistry.count !== 0 && !isInitOnly) {
+                // No dependents here, so there are no selectors to report; only
+                // the atom would be, and only when reportAtoms is set.
+                if (reportAtoms && report !== undefined && changeListenerRegistry.count !== 0 && !isInitOnly) {
                     reportAtomChanges(atoms, data, report)
                 }
                 return
@@ -413,16 +454,59 @@ export const propagateAtomUpdate = (
         }
     }
 
-    propagateDirtySelectors(atoms, selectors, data, subscriptions, updatedFamilyAtoms, isInitOnly, notify)
+    // selectorCount is the O(1) global gate; hasSelectorChangeListener then
+    // confirms a selector listener exists on this store's ancestor chain, so a
+    // selector listener on an unrelated root store adds no overhead here.
+    const selectorActive =
+        report !== undefined &&
+        !isInitOnly &&
+        changeListenerRegistry.selectorCount !== 0 &&
+        hasSelectorChangeListener(data)
+    const changedSelectors = selectorActive ? new Set<Selector>() : undefined
+    propagateDirtySelectors(atoms, selectors, data, subscriptions, updatedFamilyAtoms, isInitOnly, notify, changedSelectors)
     if (notifyEntry) collectFamilyAtomsForNotify(notifyEntry, updatedFamilyAtoms)
 
-    if (data.scopes && data.scopes.size > 0) {
-        propagateToScopes(atoms, data, isInitOnly, notify)
-    }
+    const hasScopes = !!data.scopes && data.scopes.size > 0
+    const watching =
+        report !== undefined && changeListenerRegistry.count !== 0 && !isInitOnly
 
-    if (report !== undefined && changeListenerRegistry.count !== 0 && !isInitOnly) {
-        reportAtomChanges(atoms, data, report)
+    // When a selector listener is active and this update cascades into scopes,
+    // the origin group (atoms + its selectors) and each descendant scope's
+    // selector group must coalesce into a single onChange callback. On the
+    // immediate path (string report) that means buffering into a transient sink
+    // tagged with the real source and flushing once; the txn path already passes
+    // a sink. With no selector listener there's only ever the one origin group,
+    // so the string report fires it inline exactly as before.
+    let localSink: ChangeSink | undefined
+    let effectiveReport: ChangeReport | undefined = report
+    if (selectorActive && hasScopes && typeof report === "string") {
+        localSink = createChangeSink(undefined, report)
+        effectiveReport = localSink
     }
+    // When buffering into a sink (the txn sink, or the transient localSink
+    // above), buffer the origin group BEFORE cascading into scopes so the origin
+    // atoms precede descendant-scope selectors in the single callback. The sink
+    // flushes at the end regardless, so this only orders the batch — it does not
+    // change when onChange fires. A bare string report (no sink) fires
+    // immediately, so it stays AFTER the scope cascade to keep onChange last
+    // (after subscribers); that path never carries selector entries anyway.
+    const reportIsSink =
+        effectiveReport !== undefined && typeof effectiveReport !== "string"
+    // reportAtoms=false: emit only the recomputed selectors (the caller reports
+    // the trigger atoms — e.g. as `kind: "unset"`).
+    const emitOrigin = (rpt: ChangeReport) => {
+        if (reportAtoms) {
+            reportAtomChanges(atoms, data, rpt, changedSelectors)
+        } else if (changedSelectors && changedSelectors.size > 0) {
+            reportSelectorChanges(changedSelectors, data, rpt)
+        }
+    }
+    if (watching && reportIsSink) emitOrigin(effectiveReport as ChangeReport)
+    if (hasScopes) {
+        propagateToScopes(atoms, data, isInitOnly, notify, effectiveReport)
+    }
+    if (watching && !reportIsSink) emitOrigin(effectiveReport as ChangeReport)
+    if (localSink) flushChangeSink(localSink)
 }
 
 // Scope-recursive entry: re-evaluate selectors that depend on these atoms in
@@ -434,6 +518,7 @@ export const propagateInScope = (
     data: StoreData,
     isInitOnly = false,
     notify?: NotifyTarget,
+    report?: ChangeReport,
 ) => {
     // Selector subscribers must accumulate into THIS store's notify entry (so
     // they fire once at the end); `families` is unused here (this entry skips
@@ -448,10 +533,25 @@ export const propagateInScope = (
         addSetToSet(data.stateDependents.get(atom), selectors)
     }
 
-    propagateDirtySelectors(atoms, selectors, data, subscriptions, families, isInitOnly, notify)
+    // No atom value changes in a cascaded scope (the atom is inherited) — only
+    // dependent selectors recompute, so we report just those as this scope's own
+    // selector-only group (carrying its scope path) into the same report/sink.
+    const changedSelectors =
+        report !== undefined &&
+        !isInitOnly &&
+        changeListenerRegistry.selectorCount !== 0 &&
+        hasSelectorChangeListener(data)
+            ? new Set<Selector>()
+            : undefined
+
+    propagateDirtySelectors(atoms, selectors, data, subscriptions, families, isInitOnly, notify, changedSelectors)
+
+    if (changedSelectors && changedSelectors.size > 0) {
+        reportSelectorChanges(changedSelectors, data, report as ChangeReport)
+    }
 
     if (data.scopes && data.scopes.size > 0) {
-        propagateToScopes(atoms, data, isInitOnly, notify)
+        propagateToScopes(atoms, data, isInitOnly, notify, report)
     }
 }
 
@@ -460,6 +560,7 @@ const propagateToScopes = (
     data: StoreData,
     isInitOnly: boolean,
     notify?: NotifyTarget,
+    report?: ChangeReport,
 ) => {
     if (atoms.length === 1) {
         // Fast path for single-atom updates (most common case)
@@ -469,7 +570,7 @@ const propagateToScopes = (
             : data.scopeValueIndex.get(atom)
         for (const [, scope] of data.scopes) {
             if (!shadowingScopes || !shadowingScopes.has(scope)) {
-                propagateInScope(atoms, scope, isInitOnly, notify)
+                propagateInScope(atoms, scope, isInitOnly, notify, report)
             }
         }
         return
@@ -491,7 +592,7 @@ const propagateToScopes = (
 
     if (!anyShadowed) {
         for (const [, scope] of data.scopes) {
-            propagateInScope(atoms, scope, isInitOnly, notify)
+            propagateInScope(atoms, scope, isInitOnly, notify, report)
         }
         return
     }
@@ -514,7 +615,7 @@ const propagateToScopes = (
             }
         }
         if (atomsToUpdateInScope.length > 0) {
-            propagateInScope(atomsToUpdateInScope, scope, isInitOnly, notify)
+            propagateInScope(atomsToUpdateInScope, scope, isInitOnly, notify, report)
         }
     }
 }
@@ -527,6 +628,10 @@ export const propagateDirtySelectors = (
     families: Map<AtomFamily<any>, Set<AtomFamilyAtom<any>>>,
     isInitOnly = false,
     notify?: NotifyTarget,
+    // When a selector listener is active, collects every selector whose value
+    // actually changed this pass, so the caller can report it via onChange.
+    // Undefined on the hot path (no selector listener) — zero overhead.
+    changedSelectors?: Set<Selector>,
 ) => {
     const updatedInitializedAtoms = new Set<Atom>(updatedAtoms)
     if (selectors.size > 0) {
@@ -539,6 +644,7 @@ export const propagateDirtySelectors = (
             subscriptions,
             updatedInitializedAtoms,
             isInitOnly,
+            changedSelectors,
         )
     }
     // When deferring (multi-pass commit), the caller owns `subscriptions` /
@@ -562,6 +668,7 @@ const propagateDownstreamTopo = (
     collectedSubscribers: Set<any>,
     updatedInitializedAtoms: Set<Atom>,
     isInitOnly: boolean,
+    changedSelectors?: Set<Selector>,
 ) => {
     const closure = new Set<Selector>(seeds)
     {
@@ -710,8 +817,9 @@ const propagateDownstreamTopo = (
         }
 
         advance(selector, wasValueUpdated)
-        if (wasValueUpdated && subscribers) {
-            addSetToSet(subscribers, collectedSubscribers)
+        if (wasValueUpdated) {
+            if (changedSelectors) changedSelectors.add(selector)
+            if (subscribers) addSetToSet(subscribers, collectedSubscribers)
         }
     }
 
@@ -781,6 +889,7 @@ const propagateDownstreamTopo = (
                 }
             }
             if (wasValueUpdated) {
+                if (changedSelectors) changedSelectors.add(selector)
                 if (subscribers) addSetToSet(subscribers, collectedSubscribers)
                 // Re-fetch dependents — eval may have changed them.
                 const downstream = data.stateDependents.get(selector)
@@ -818,6 +927,7 @@ const propagateSelectorUpdates = (
     collectedSubscribers: Set<any>,
     updatedInitializedAtoms: Set<Atom>,
     isInitOnly = false,
+    changedSelectors?: Set<Selector>,
 ) => {
     if (selectors.size === 0) return
 
@@ -867,6 +977,7 @@ const propagateSelectorUpdates = (
             }
         }
         if (!wasValueUpdated) continue
+        if (changedSelectors) changedSelectors.add(selector)
         if (subscribers) addSetToSet(subscribers, collectedSubscribers)
         // Re-fetch dependents — eval may have changed them.
         const downstream = data.stateDependents.get(selector)
@@ -883,6 +994,7 @@ const propagateSelectorUpdates = (
             collectedSubscribers,
             updatedInitializedAtoms,
             isInitOnly,
+            changedSelectors,
         )
     }
 }

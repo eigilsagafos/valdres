@@ -3,7 +3,12 @@ import type { StoreData } from "../types/StoreData"
 import { isAtom } from "../utils/isAtom"
 import { getState } from "./getState"
 import { getAtomInitValue } from "./initAtom"
-import { hasChangeListener, reportUnsetAtom } from "./notifyChangeListeners"
+import {
+    createChangeSink,
+    flushChangeSink,
+    hasChangeListener,
+    reportUnsetAtom,
+} from "./notifyChangeListeners"
 import { propagateAtomUpdate } from "./propagateUpdatedAtoms"
 
 const InvalidStateError = "unset() expects an atom."
@@ -108,17 +113,22 @@ export const unsetValue = <V>(atom: Atom<V>, data: StoreData): void => {
     // dropped value IS the event a dev-tools `onChange` observer needs to see:
     // suppressing it on value-equality would lose the very signal `source:
     // "unset"` exists to carry.
-    //
-    // `report` is left undefined here: the standard reporter reads `data.values`
-    // (now empty for this atom) — the unset change, with the reverted value, is
-    // emitted separately below.
-    propagateAtomUpdate([atom], data, false)
-
-    // Resume parent delegation AFTER the on-unset notification, so the callback's
-    // own (idempotent, now no-op) delegate drop doesn't undo the fresh delegate.
-    reDelegateScopeSubscriptions(atom, data)
-
     if (hasChangeListener(data)) {
-        reportUnsetAtom(atom, data, effectiveValueAfterUnset(atom, data), "unset")
+        // Coalesce the atom unset and any dependent-selector recomputes into one
+        // onChange callback. Buffer the atom first (atoms precede selectors), then
+        // propagate with reportAtoms=false: the propagation reports only the
+        // selectors it recomputes, never the atom (already emitted as "unset").
+        const sink = createChangeSink(undefined, "unset")
+        reportUnsetAtom(atom, data, effectiveValueAfterUnset(atom, data), sink)
+        // skipFamilyIndexUpdate=false (default), reportAtoms=false (atom already
+        // emitted as "unset"; only report the selectors it recomputes).
+        propagateAtomUpdate([atom], data, false, undefined, sink, false, false)
+        // Resume parent delegation AFTER subscribers fire (during propagation),
+        // so a scope subscriber's idempotent delegate drop doesn't undo it.
+        reDelegateScopeSubscriptions(atom, data)
+        flushChangeSink(sink)
+    } else {
+        propagateAtomUpdate([atom], data, false)
+        reDelegateScopeSubscriptions(atom, data)
     }
 }

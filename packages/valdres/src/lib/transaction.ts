@@ -402,7 +402,10 @@ export class Transaction {
                 }
                 const unsetAtoms = this.applyUnsets(this._unsetSet, this.data)
                 if (unsetAtoms.length > 0) {
-                    propagateAtomUpdate(unsetAtoms, this.data, false, notify, undefined)
+                    // Atoms first (emitted as "unset"), then propagate with
+                    // reportAtoms=false so dependent-selector recomputes are
+                    // reported too (the atom value is gone from data.values, so it
+                    // must not also surface as a "set").
                     if (sink) {
                         for (const atom of unsetAtoms) {
                             reportUnsetAtom(
@@ -413,6 +416,7 @@ export class Transaction {
                             )
                         }
                     }
+                    propagateAtomUpdate(unsetAtoms, this.data, false, notify, sink, false, false)
                 }
                 notifyDeferred(notify)
                 // Re-delegate AFTER firing: the deferred notify fires the
@@ -544,9 +548,10 @@ export class Transaction {
                 )
             }
             if (unsetAtoms && unsetAtoms.length > 0) {
-                // report undefined: the unset atom value is gone from
-                // data.values; emit the reverted value via reportUnsetAtom.
-                propagateAtomUpdate(unsetAtoms, data, false, notify, undefined)
+                // Atoms first (emitted as "unset" via reportUnsetAtom), then
+                // propagate with reportAtoms=false so dependent-selector recomputes
+                // are reported too — without re-surfacing the atom (its value is
+                // gone from data.values) as a "set".
                 if (sink) {
                     for (const atom of unsetAtoms) {
                         reportUnsetAtom(
@@ -557,6 +562,7 @@ export class Transaction {
                         )
                     }
                 }
+                propagateAtomUpdate(unsetAtoms, data, false, notify, sink, false, false)
             }
         }
         notifyDeferred(notify)
