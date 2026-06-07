@@ -23,9 +23,13 @@ override that was inherited at the target point).
   subscriptions resume tracking parent changes again.
 - No-op (no notification) when the store holds no own value for the atom.
 - Throws for non-atoms.
-- Surfaces on `store.onChange` as a `kind: "set"` change carrying the reverted
-  value, tagged with the new `StoreChangeMeta.source` `"unset"` — so a consumer
-  can tell the value was dropped without overloading the `"delete"` kind.
+- Surfaces on `store.onChange` as a new `kind: "unset"` change carrying the
+  reverted value, tagged with the new `StoreChangeMeta.source` `"unset"` — so a
+  consumer can tell the value was dropped (and decide whether to drop its own
+  override or apply the reverted value) without overloading the `"set"` or
+  `"delete"` kinds. The per-change `kind` is `"unset"` even inside a transaction
+  (where `meta.source` is `"transaction"`), so an unset stays distinguishable
+  from a set within a mixed transaction batch.
 - Transaction form: `txn.unset(atom)` (and `t.scope(id, st => st.unset(atom))`),
   collapsed into the transaction's single `onChange` callback. Within a
   transaction, a later `set`/`reset` of the same atom supersedes a buffered

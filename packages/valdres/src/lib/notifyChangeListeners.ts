@@ -181,10 +181,13 @@ export const reportAtomChanges = (
 /** Report that `data`'s own value for `atom` was unset (called from unsetValue,
  *  after the value and its bookkeeping have been removed). The store now reads
  *  `revertedValue` — the inherited parent value on a scope, or the default on a
- *  root — so the change is a `kind: "set"` carrying that value, NOT a `"delete"`
- *  (the atom still exists, only this store's own value is gone). The originating
- *  `source` ("unset", or "transaction" when buffered into a txn) lives on the
- *  change batch's meta. */
+ *  root — carried as the change's `value`. The change is a `kind: "unset"`, NOT
+ *  a `"set"` (so a consumer can drop the override rather than treat the reverted
+ *  value as a new write) and NOT a `"delete"` (the atom still exists, only this
+ *  store's own value is gone). The batch's `meta.source` is "unset" for a
+ *  standalone unset, or "transaction" when buffered into a txn — but the
+ *  per-change kind stays "unset" either way, so it's distinguishable even inside
+ *  a mixed transaction. */
 export const reportUnsetAtom = (
     atom: Atom<any>,
     data: StoreData,
@@ -195,7 +198,7 @@ export const reportUnsetAtom = (
     const group: ChangeGroup = {
         data,
         changes: [
-            { kind: "set", atom, value: revertedValue, scope: scopePath(data) },
+            { kind: "unset", atom, value: revertedValue, scope: scopePath(data) },
         ],
     }
     emitGroup(group, report)

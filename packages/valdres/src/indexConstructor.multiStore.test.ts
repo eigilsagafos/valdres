@@ -128,7 +128,11 @@ describe("index() across root + scope", () => {
             }
             void members
         }
-    })
+        // 1500 seeded iterations run in <1s locally but sit near the default
+        // 5000ms bun-test timeout on a loaded CI runner (observed 5029/5055ms).
+        // Give this deterministic no-crash sweep headroom so runner variance
+        // can't flake it; the workload (and thus coverage) is unchanged.
+    }, 20_000)
 
     test("publish-style: move members from scope to root in a cross-scope txn", () => {
         const fam = atomFamily<{ kind: string } | null, [string]>(null, {

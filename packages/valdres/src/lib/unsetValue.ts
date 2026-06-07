@@ -95,8 +95,8 @@ export const effectiveValueAfterUnset = (
  *  store has no own value for `atom`. Otherwise removes the value + bookkeeping,
  *  notifies subscribers, dependent selectors, and nested scopes of the reverted
  *  value, re-delegates scope subscriptions so future parent changes are observed
- *  again, and reports the change on `store.onChange` as a `kind: "set"` (the
- *  reverted value) with `meta.source === "unset"`. */
+ *  again, and reports the change on `store.onChange` as a `kind: "unset"` (carrying
+ *  the reverted value) with `meta.source === "unset"`. */
 export const unsetValue = <V>(atom: Atom<V>, data: StoreData): void => {
     if (!isAtom(atom)) throw new Error(InvalidStateError)
 
