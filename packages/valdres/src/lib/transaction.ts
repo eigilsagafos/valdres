@@ -11,9 +11,10 @@ import { isAtomFamily } from "../utils/isAtomFamily"
 import { isFamilyAtom } from "../utils/isFamilyAtom"
 import { isSelector } from "../utils/isSelector"
 import {
-    detachScopeValue,
+    detachOwnValue,
+    effectiveValueAfterUnset,
     reDelegateScopeSubscriptions,
-} from "./unsetScopeValue"
+} from "./unsetValue"
 import { getState } from "./getState"
 import { getAtomInitValue } from "./initAtom"
 import { isFunction } from "./isFunction"
@@ -147,11 +148,19 @@ export class Transaction {
                 return this.valueFromTxnOrData(state)
             }
             // No txn level provides a value. If this level unset the atom, its
-            // committed shadow is still in this.data.values until commit, so read
-            // through the parent chain rather than this scope. (parent is always
-            // defined here — unset() throws on a root store.)
-            const data = this._unsetSet?.has(state) ? this.data.parent! : this.data
-            return getState(state, data, this.initializedAtomsSet)
+            // committed value is still in this.data.values until commit, so we
+            // must NOT read it: read through the parent chain (scope) or compute
+            // the atom's default (root) instead.
+            if (this._unsetSet?.has(state)) {
+                return this.data.parent
+                    ? getState(state, this.data.parent, this.initializedAtomsSet)
+                    : getAtomInitValue(
+                          state as Atom,
+                          this.data,
+                          this.initializedAtomsSet,
+                      )
+            }
+            return getState(state, this.data, this.initializedAtomsSet)
         } else if (isSelector(state)) {
             if (this.dirty) {
                 this.selectorCache.clear()
@@ -259,26 +268,22 @@ export class Transaction {
 
     unset = (atom: Atom) => {
         if (!isAtom(atom)) throw new Error("unset() expects an atom.")
-        if (!this.data.parent) {
-            throw new Error(
-                "unset() can only be called on a scoped store — a root store has no parent to re-inherit from.",
-            )
-        }
         // An unset in the same txn supersedes a set of the same atom — drop any
-        // buffered write so the atom re-inherits rather than being re-shadowed.
+        // buffered write so the atom reverts (re-inherits on a scope / reverts to
+        // its default on a root) rather than being re-written.
         this._atomMap.delete(atom)
         if (!this._unsetSet) this._unsetSet = new Set()
         this._unsetSet.add(atom)
     }
 
-    // Detach the shadow + bookkeeping for each unset atom that actually had a
-    // shadow; returns those atoms so the commit can propagate and report them.
+    // Detach the own value + bookkeeping for each unset atom that actually had
+    // one; returns those atoms so the commit can propagate and report them.
     // Called in the write phase so every store's values are final before any
     // propagation pass runs.
     private applyUnsets = (unsetSet: Set<Atom>, data: StoreData): Atom[] => {
         const unsetAtoms: Atom[] = []
         for (const atom of unsetSet) {
-            if (detachScopeValue(atom, data)) unsetAtoms.push(atom)
+            if (detachOwnValue(atom, data)) unsetAtoms.push(atom)
         }
         return unsetAtoms
     }
@@ -403,7 +408,7 @@ export class Transaction {
                             reportUnsetAtom(
                                 atom,
                                 this.data,
-                                getState(atom, this.data.parent!, new Set()),
+                                effectiveValueAfterUnset(atom, this.data),
                                 sink,
                             )
                         }
@@ -540,14 +545,14 @@ export class Transaction {
             }
             if (unsetAtoms && unsetAtoms.length > 0) {
                 // report undefined: the unset atom value is gone from
-                // data.values; emit the inherited value via reportUnsetAtom.
+                // data.values; emit the reverted value via reportUnsetAtom.
                 propagateAtomUpdate(unsetAtoms, data, false, notify, undefined)
                 if (sink) {
                     for (const atom of unsetAtoms) {
                         reportUnsetAtom(
                             atom,
                             data,
-                            getState(atom, data.parent!, new Set()),
+                            effectiveValueAfterUnset(atom, data),
                             sink,
                         )
                     }

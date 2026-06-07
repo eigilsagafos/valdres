@@ -223,12 +223,108 @@ describe("scope.unset — no-op semantics", () => {
     })
 })
 
-describe("scope.unset — root store", () => {
-    test("calling unset on a root store throws", () => {
+describe("unset — root store", () => {
+    test("unset reverts the atom to its default", () => {
         const root = store()
         const a = atom(1)
         root.set(a, 5)
-        expect(() => root.unset(a)).toThrow()
+        expect(root.get(a)).toBe(5)
+
+        root.unset(a)
+        expect(root.get(a)).toBe(1)
+    })
+
+    test("unset removes the stored value (de-materializes)", () => {
+        const root = store()
+        const a = atom<object>({ d: true })
+        root.set(a, { v: 1 })
+        expect(root.data.values.has(a)).toBe(true)
+
+        root.unset(a)
+        expect(root.data.values.has(a)).toBe(false)
+    })
+
+    test("unset is a no-op when the atom has no stored value", () => {
+        const root = store()
+        const a = atom(1)
+        const cb = mock(() => {})
+        root.onChange(cb)
+        root.unset(a) // never set or read
+        expect(cb).toHaveBeenCalledTimes(0)
+        expect(root.data.values.has(a)).toBe(false)
+    })
+
+    test("a subscriber fires on unset and onChange reports the default with source 'unset'", () => {
+        const root = store()
+        const a = atom(1)
+        root.set(a, 5)
+
+        const sub = mock(() => {})
+        root.sub(a, sub)
+        const calls: { changes: readonly StoreChange[]; meta: any }[] = []
+        root.onChange((changes, meta) => calls.push({ changes, meta }))
+
+        root.unset(a)
+
+        expect(sub).toHaveBeenCalledTimes(1)
+        expect(calls.length).toBe(1)
+        expect(calls[0]!.meta.source).toBe("unset")
+        expect(calls[0]!.changes).toEqual([
+            { kind: "set", atom: a, value: 1, scope: [] },
+        ])
+        expect(root.get(a)).toBe(1)
+    })
+
+    test("a dependent selector re-evaluates after a root atom is unset", () => {
+        const root = store()
+        const a = atom(2)
+        const doubled = selector(get => get(a) * 2)
+        root.set(a, 5)
+
+        const cb = mock(() => {})
+        root.sub(doubled, cb)
+        expect(root.get(doubled)).toBe(10)
+
+        root.unset(a)
+        expect(cb).toHaveBeenCalledTimes(1)
+        expect(root.get(doubled)).toBe(4) // default 2 * 2
+    })
+
+    test("unset in a transaction reverts a root atom to its default", () => {
+        const root = store()
+        const a = atom(1)
+        root.set(a, 5)
+
+        root.txn(t => t.unset(a))
+        // De-materialized first (a read would re-initialize it), then reverts.
+        expect(root.data.values.has(a)).toBe(false)
+        expect(root.get(a)).toBe(1)
+    })
+
+    test("reading a root atom mid-transaction after unset returns the default", () => {
+        const root = store()
+        const a = atom(7)
+        root.set(a, 5)
+
+        let readInside: number | undefined
+        root.txn(t => {
+            t.unset(a)
+            readInside = t.get(a) as number
+        })
+        expect(readInside).toBe(7)
+    })
+
+    test("a set after an unset in the same root transaction wins", () => {
+        const root = store()
+        const a = atom(1)
+        root.set(a, 5)
+
+        root.txn(t => {
+            t.unset(a)
+            t.set(a, 9)
+        })
+        expect(root.get(a)).toBe(9)
+        expect(root.data.values.get(a)).toBe(9)
     })
 })
 

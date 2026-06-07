@@ -178,23 +178,24 @@ export const reportAtomChanges = (
     emitGroup(buildChangeGroup(data, atoms), report)
 }
 
-/** Report that `atom`'s own value in scope `data` was unset (called from
- *  unsetScopeValue, after the shadow and its bookkeeping have been removed). The
- *  scope now inherits `inheritedValue` from its parent chain, so the change is a
- *  `kind: "set"` carrying that value — NOT a `"delete"` (the atom still exists,
- *  only the scope override is gone). The originating `source` ("unset", or
- *  "transaction" when buffered into a txn) lives on the change batch's meta. */
+/** Report that `data`'s own value for `atom` was unset (called from unsetValue,
+ *  after the value and its bookkeeping have been removed). The store now reads
+ *  `revertedValue` — the inherited parent value on a scope, or the default on a
+ *  root — so the change is a `kind: "set"` carrying that value, NOT a `"delete"`
+ *  (the atom still exists, only this store's own value is gone). The originating
+ *  `source` ("unset", or "transaction" when buffered into a txn) lives on the
+ *  change batch's meta. */
 export const reportUnsetAtom = (
     atom: Atom<any>,
     data: StoreData,
-    inheritedValue: unknown,
+    revertedValue: unknown,
     report: ChangeReport,
 ) => {
     if (!hasChangeListener(data)) return
     const group: ChangeGroup = {
         data,
         changes: [
-            { kind: "set", atom, value: inheritedValue, scope: scopePath(data) },
+            { kind: "set", atom, value: revertedValue, scope: scopePath(data) },
         ],
     }
     emitGroup(group, report)
