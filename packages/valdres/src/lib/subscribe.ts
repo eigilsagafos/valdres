@@ -281,7 +281,7 @@ export const subscribe = <V>(
          * shadow the atom we delegate the subscription up the tree, modifying
          * the callback to drop the delegate if the scope later shadows it. We
          * keep the delegation machinery even when the atom is currently shadowed
-         * so `clear` can re-establish the delegate when the shadow is dropped.
+         * so `unset` can re-establish the delegate when the shadow is dropped.
          */
         const originalCallback = callback
         const delegateToParent = () =>
