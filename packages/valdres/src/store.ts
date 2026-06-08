@@ -12,11 +12,16 @@ export function store(
     idOrOptions?: string | StoreOptions,
     maybeOptions?: CreateStoreDataOptions,
 ) {
-    const id = typeof idOrOptions === "string" ? idOrOptions : idOrOptions?.id
-    const options =
-        typeof idOrOptions === "string"
-            ? maybeOptions
-            : (idOrOptions as StoreOptions | undefined)
+    // First arg is the options object only when it's actually an object; a
+    // string id or an omitted/undefined first arg means options (if any) come
+    // from the second arg — so `store(undefined, { enumerable: true })` works.
+    const optionsObject =
+        typeof idOrOptions === "object" && idOrOptions !== null
+            ? idOrOptions
+            : undefined
+    const id =
+        typeof idOrOptions === "string" ? idOrOptions : optionsObject?.id
+    const options = optionsObject ?? maybeOptions
     const data = createStoreData(id, undefined, options)
     return storeFromStoreData(data)
 }

@@ -183,3 +183,46 @@ describe("store.snapshot (default / non-enumerable mode)", () => {
         expect(Array.isArray(snap)).toBe(true)
     })
 })
+
+describe("store() enumerable option dispatch", () => {
+    const set = (s: ReturnType<typeof store>) => {
+        const a = atom(1)
+        s.set(a, 2)
+        return a
+    }
+
+    test("store(id, { enumerable: true }) is enumerable", () => {
+        const s = store("my-store", { enumerable: true })
+        const a = set(s)
+        expect(s.snapshot()).toContainEqual({
+            type: "atom",
+            state: a,
+            value: 2,
+            scope: [],
+        })
+    })
+
+    test("store(undefined, { enumerable: true }) still honors the options", () => {
+        // `id` may be an optional/undefined value at the call site; the second
+        // arg must not be dropped.
+        const s = store(undefined, { enumerable: true })
+        const a = set(s)
+        expect(s.snapshot()).toContainEqual({
+            type: "atom",
+            state: a,
+            value: 2,
+            scope: [],
+        })
+    })
+
+    test("store({ enumerable: true }) is enumerable", () => {
+        const s = store({ enumerable: true })
+        const a = set(s)
+        expect(s.snapshot()).toContainEqual({
+            type: "atom",
+            state: a,
+            value: 2,
+            scope: [],
+        })
+    })
+})

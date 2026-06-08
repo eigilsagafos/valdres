@@ -45,8 +45,8 @@ export const snapshot = (data: StoreData): SnapshotEntry[] => {
             warnedStores.add(data)
             console.warn(
                 "store.snapshot() requires an enumerable store. Create it with " +
-                    "`store(id, { enumerable: true })` to retain state enumerably. " +
-                    "Returning [].",
+                    "`store({ enumerable: true })` or `store(id, { enumerable: true })` " +
+                    "to retain state enumerably. Returning [].",
             )
         }
         return []
