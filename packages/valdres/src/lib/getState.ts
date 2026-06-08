@@ -6,6 +6,7 @@ import type { Selector } from "../types/Selector"
 import type { StoreData } from "../types/StoreData"
 import { isAtom } from "../utils/isAtom"
 import { isAtomFamily } from "../utils/isAtomFamily"
+import { isPromiseLike } from "../utils/isPromiseLike"
 import { isFamilyAtom } from "../utils/isFamilyAtom"
 import { isSelector } from "../utils/isSelector"
 import { isSelectorFamily } from "../utils/isSelectorFamily"
@@ -84,7 +85,28 @@ export function getState<
                         data,
                         initializedAtomsSet,
                     )
-                    return setValueInData(state, value, data) as Value
+                    const cached = setValueInData(state, value, data)
+                    // Async default: mirror getAtomInitValue and swap the cached
+                    // promise for its resolved value once it settles, so later
+                    // reads return the value rather than a forever-pending
+                    // promise. Stale-guard against a concurrent re-set/re-delete,
+                    // and drop the entry on rejection. Unlike getAtomInitValue we
+                    // skip propagateAtomUpdate — notifying here would re-register
+                    // the member in the family index, resurrecting it.
+                    if (isPromiseLike(cached)) {
+                        cached.then(
+                            resolvedValue => {
+                                if (data.values.get(state) !== cached) return
+                                setValueInData(state, resolvedValue, data)
+                            },
+                            () => {
+                                if (data.values.get(state) === cached) {
+                                    data.values.delete(state)
+                                }
+                            },
+                        )
+                    }
+                    return cached as Value
                 }
             }
         }

@@ -318,6 +318,20 @@ describe("atomFamily", () => {
         expect(await a).toBe("v:x")
     })
 
+    test("a deleted family member's async default unwraps to its value on later reads", async () => {
+        const store1 = store()
+        const family = atomFamily((id: string) => wait(1).then(() => "v:" + id))
+        const x = family("x")
+        await store1.get(x)
+        store1.del(x)
+        // Trigger + settle the cached default promise.
+        await store1.get(x)
+        await wait(2)
+        // Like an alive async atom, a later read returns the unwrapped value,
+        // not a forever-pending promise.
+        expect(store1.get(x)).toBe("v:x")
+    })
+
     test("subscribe to atom family keys", () => {
         const store1 = store()
         const testAtomFamily = atomFamily<string>(0)
