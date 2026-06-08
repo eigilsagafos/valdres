@@ -335,6 +335,12 @@ export const propagateAtomUpdate = (
     isInitOnly = false,
     notify?: NotifyTarget,
     report?: ChangeReport,
+    // When true, family-atom members in `atoms` are propagated to their
+    // dependent selectors/subscribers but NOT registered in the family index.
+    // Used by the deleted-member async-default swap (see getState): the resolved
+    // value must reach dependents, but re-adding the member to the index would
+    // resurrect a deleted member.
+    skipFamilyIndexUpdate = false,
 ) => {
     // Fast path: single non-family atom with no dependent selectors and no
     // scopes can skip the full graph walk entirely and just notify subscribers.
@@ -376,7 +382,7 @@ export const propagateAtomUpdate = (
     for (const atom of atoms) {
         addSetToSet(data.stateDependents.get(atom), selectors)
         addSetToSet(data.subscriptions.get(atom), subscriptions)
-        if (isFamilyAtom(atom)) {
+        if (isFamilyAtom(atom) && !skipFamilyIndexUpdate) {
             if (!updatedFamilyAtoms.has(atom.family)) {
                 updatedFamilyAtoms.set(atom.family, new Set())
             }
