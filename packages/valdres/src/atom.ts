@@ -1,4 +1,5 @@
 import { equal } from "./lib/equal"
+import { registerNamedAtom } from "./lib/atomRegistry"
 import { globalAtom } from "./lib/globalAtom"
 import type { Atom } from "./types/Atom"
 import type { AtomDefaultValue } from "./types/AtomDefaultValue"
@@ -29,11 +30,15 @@ export function atom<V>(
 ) {
     if (!options) return { equal, defaultValue }
     if (options.global) {
-        return globalAtom(defaultValue, options)
+        const globalAtomInstance = globalAtom(defaultValue, options)
+        registerNamedAtom(globalAtomInstance)
+        return globalAtomInstance
     }
-    return {
+    const atomInstance = {
         equal,
         defaultValue,
         ...options,
     } as Atom<V>
+    registerNamedAtom(atomInstance)
+    return atomInstance
 }
