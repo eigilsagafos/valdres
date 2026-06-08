@@ -13,6 +13,7 @@ import { isSelectorFamily } from "../utils/isSelectorFamily"
 import { equal } from "./equal"
 import { initAtom } from "./initAtom"
 import { initSelector } from "./initSelector"
+import { propagateAtomUpdate } from "./propagateUpdatedAtoms"
 import { resolveAtomDefaultValue } from "./resolveAtomDefaultValue"
 import { setValueInData } from "./setValueInData"
 import {
@@ -90,14 +91,23 @@ export function getState<
                     // promise for its resolved value once it settles, so later
                     // reads return the value rather than a forever-pending
                     // promise. Stale-guard against a concurrent re-set/re-delete,
-                    // and drop the entry on rejection. Unlike getAtomInitValue we
-                    // skip propagateAtomUpdate — notifying here would re-register
-                    // the member in the family index, resurrecting it.
+                    // and drop the entry on rejection. Propagate with
+                    // skipFamilyIndexUpdate so dependent selectors/subscribers see
+                    // the resolved value WITHOUT re-registering (resurrecting) the
+                    // deleted member in the family index.
                     if (isPromiseLike(cached)) {
                         cached.then(
                             resolvedValue => {
                                 if (data.values.get(state) !== cached) return
                                 setValueInData(state, resolvedValue, data)
+                                propagateAtomUpdate(
+                                    [state],
+                                    data,
+                                    false,
+                                    undefined,
+                                    undefined,
+                                    true,
+                                )
                             },
                             () => {
                                 if (data.values.get(state) === cached) {
