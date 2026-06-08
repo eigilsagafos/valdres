@@ -11,8 +11,9 @@ read yielded `[Function]` rather than `0` — and a selector reading it
 (`get(member) * 2`) produced `NaN`.
 
 The deleted-member read path now resolves the default the same way a fresh init
-does (run a function default, evaluate a selector default, otherwise return the
-plain value) via a new side-effect-free `resolveAtomDefaultValue` helper, and
+does (suspend with a placeholder promise when there is no default, run a function
+default, evaluate a selector default, otherwise return the plain value) via a new
+`resolveAtomDefaultValue` helper, and
 caches the resolved default so repeated reads are stable (same reference) and
 never re-invoke a function/async factory — re-running it on every read would
 repeat its side effects (e.g. a `fetch`). For an async default the cached promise

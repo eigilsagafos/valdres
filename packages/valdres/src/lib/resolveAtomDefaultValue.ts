@@ -3,18 +3,31 @@ import type { StoreData } from "../types/StoreData"
 import { isSelector } from "../utils/isSelector"
 import { getState } from "./getState"
 
-// Resolve an atom's default WITHOUT the init-time side effects of
-// getAtomInitValue (no pendingDefaults registration, no async propagation).
-// Used for read-only fallbacks — e.g. reading a family member that has been
-// deleted from the store: it should yield the default value, not resurrect the
-// member, and crucially must run a function default rather than return the raw
-// factory. Mirrors the resolution order of getAtomInitValue.
+// Resolve an atom's default for a deleted-member read, mirroring
+// getAtomInitValue's resolution order: no-default → suspense placeholder,
+// function → call, selector → evaluate, else the plain value. It does NOT do
+// getAtomInitValue's async propagation — the caller (getState) owns that via a
+// skipFamilyIndexUpdate propagate, so notifying never resurrects the member.
+//
+// The no-default case must suspend exactly like a fresh member (return a pending
+// promise and register a pending-default placeholder so a later set() resolves
+// it) rather than returning undefined; and a function default must be run, not
+// returned raw. The placeholder registration is a WeakMap entry consumed only by
+// resolvePendingDefault on set — it does not register the member in the family
+// index, so it never resurrects a deleted member.
 export const resolveAtomDefaultValue = <V = any>(
     atom: Atom<V>,
     data: StoreData,
     initializedAtomsSet: Set<Atom>,
 ) => {
-    if (typeof atom.defaultValue === "function") {
+    if (atom.defaultValue === undefined) {
+        let resolve!: (value: any) => void
+        const promise = new Promise(r => {
+            resolve = r
+        })
+        data.pendingDefaults.set(atom, { promise, resolve })
+        return promise
+    } else if (typeof atom.defaultValue === "function") {
         // @ts-ignore @ts-todo
         return atom.defaultValue()
     } else if (isSelector(atom.defaultValue)) {

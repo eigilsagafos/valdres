@@ -358,6 +358,22 @@ describe("atomFamily", () => {
         expect(store1.get(family)).toStrictEqual([])
     })
 
+    test("a deleted family member with no default suspends, and a later set resolves it", async () => {
+        const store1 = store()
+        const family = atomFamily<number, [string]>()
+        const x = family("x")
+        store1.set(x, 5)
+        store1.del(x)
+        // No default → reading suspends with a placeholder promise (like a fresh
+        // no-default member, per "no defaultValue suspends"), not undefined.
+        const pending = store1.get(x)
+        expect(pending).toBeInstanceOf(Promise)
+        // …and a later set resolves that placeholder.
+        store1.set(x, 9)
+        expect(await pending).toBe(9)
+        expect(store1.get(x)).toBe(9)
+    })
+
     test("subscribe to atom family keys", () => {
         const store1 = store()
         const testAtomFamily = atomFamily<string>(0)
