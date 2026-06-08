@@ -5,7 +5,14 @@ import type { Subscription } from "./Subscription"
 
 export type StoreData = {
     id: string
-    values: WeakMap<WeakKey, any>
+    /** The store's materialized values, keyed by state identity. A `WeakMap` by
+     *  default so unreferenced atoms/selectors are collected (guarded by
+     *  test/memoryleaks.test.ts); a `Map` when the store was created with
+     *  `{ enumerable: true }`, which retains entries for the store's lifetime so
+     *  `store.snapshot()` can enumerate them. The two share the get/set/has/delete
+     *  surface every call site uses, so the mode is a drop-in chosen once at
+     *  creation — no per-call branch on the hot path. */
+    values: WeakMap<WeakKey, any> | Map<WeakKey, any>
     subscriptions: WeakMap<WeakKey, Set<Subscription>>
     subscriptionsRequireEqualCheck: WeakMap<WeakKey, boolean>
     stateDependents: WeakMap<WeakKey, any>
@@ -39,6 +46,10 @@ export type StoreData = {
      *  `values` (which may be replaced by user-supplied async sets). */
     pendingDefaults: WeakMap<WeakKey, { promise: Promise<any>; resolve: (value: any) => void }>
     storeRef?: Store
+    /** True when this store was created with `{ enumerable: true }`: `values` is
+     *  a `Map` (not a `WeakMap`) so `store.snapshot()` can list current state.
+     *  Set once at creation and inherited by every (nested) scope. */
+    enumerable?: boolean
     scopes: Map<string, StoreData>
     batchUpdates?: boolean
     scopeValueIndex: WeakMap<WeakKey, Set<StoreData>>

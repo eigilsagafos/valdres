@@ -19,6 +19,7 @@ import { onStoreChange } from "./onStoreChange"
 import { propagateAtomUpdate } from "./propagateUpdatedAtoms"
 import { resetAtom } from "./resetAtom"
 import { setAtom } from "./setAtom"
+import { snapshot } from "./snapshot"
 import { subscribe } from "./subscribe"
 import { Transaction, transaction } from "./transaction"
 
@@ -203,6 +204,8 @@ export function storeFromStoreData(
         options?: { atoms?: boolean; selectors?: boolean },
     ) => onStoreChange(callback, data, options)) as Store["onChange"]
 
+    const storeSnapshot = () => snapshot(data)
+
     const scope: ScopeFn = ((scopeId: string, callback?: any) => {
         if (callback) {
             if (!data.scopes.has(scopeId)) {
@@ -265,6 +268,7 @@ export function storeFromStoreData(
             data,
             scope,
             onChange,
+            snapshot: storeSnapshot,
             detach,
         } as ScopedStore
     } else {
@@ -279,6 +283,7 @@ export function storeFromStoreData(
             data,
             scope,
             onChange,
+            snapshot: storeSnapshot,
         } as Store
     }
 }
