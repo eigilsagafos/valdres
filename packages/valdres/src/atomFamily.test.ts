@@ -332,6 +332,37 @@ describe("atomFamily", () => {
         expect(store1.get(x)).toBe("v:x")
     })
 
+    // KNOWN CAVEAT (documented as test.failing so CI stays green but flips if
+    // ever fixed): the deleted-member async swap in getState deliberately skips
+    // propagateAtomUpdate to avoid resurrecting the member in the family index.
+    // The trade-off is that a subscriber to a SELECTOR depending on a deleted
+    // member is not reactively notified when that member's async default
+    // resolves — the selector recomputes correctly on the next read, but no
+    // notification fires. (A direct sub(member) mounts via the normal init path
+    // instead, so it IS notified and resurrects the member.) Flip to `test` if
+    // propagation-without-resurrection is ever implemented.
+    test.failing(
+        "CAVEAT: selector subscriber is notified when a deleted member's async default resolves",
+        async () => {
+            const store1 = store()
+            const family = atomFamily((id: string) =>
+                wait(1).then(() => "v:" + id),
+            )
+            const x = family("x")
+            await store1.get(x)
+            store1.del(x)
+            const len = selector(get => {
+                const v = get(x)
+                return typeof v === "string" ? v.length : -1
+            })
+            const callback = mock(() => {})
+            store1.sub(len, callback)
+            store1.get(len) // read x -> caches the default promise + swaps on resolve
+            await wait(5)
+            expect(callback).toHaveBeenCalled()
+        },
+    )
+
     test("subscribe to atom family keys", () => {
         const store1 = store()
         const testAtomFamily = atomFamily<string>(0)
