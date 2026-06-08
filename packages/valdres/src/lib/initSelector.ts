@@ -15,6 +15,11 @@ import {
 import { getState } from "./getState"
 import { isLive, onLiveDependencyRemoved, unmountOrphanedDeps } from "./mountAtom"
 import {
+    changeListenerRegistry,
+    hasSelectorChangeListener,
+    reportSelectorChanges,
+} from "./notifyChangeListeners"
+import {
     propagateAtomUpdate,
     propagateDirtySelectors,
 } from "./propagateUpdatedAtoms"
@@ -320,13 +325,32 @@ export const handleSelectorResult = <Value>(
                 (subs && subs.size > 0) ||
                 (dependents && dependents.size > 0)
             ) {
+                // Collect downstream selectors that recompute as a result, so a
+                // `{ selectors: true }` listener sees them alongside this
+                // selector. Off the hot path unless a selector listener exists on
+                // this store's chain (not merely some unrelated root store).
+                const changedSelectors =
+                    changeListenerRegistry.selectorCount !== 0 &&
+                    hasSelectorChangeListener(data)
+                        ? new Set<Selector>()
+                        : undefined
                 propagateDirtySelectors(
                     [],
                     new Set(dependents),
                     data,
                     new Set(subs),
                     new Map(),
+                    false,
+                    undefined,
+                    changedSelectors,
                 )
+                if (changedSelectors) {
+                    // This selector itself just resolved from a pending promise
+                    // to `resolved` — a genuine value change. Report it (and the
+                    // downstream it triggered) as an "async-set" batch.
+                    changedSelectors.add(selector)
+                    reportSelectorChanges(changedSelectors, data, "async-set")
+                }
             }
         }).catch(() => {
             pendingAsyncDeps.delete(value as Promise<any>)

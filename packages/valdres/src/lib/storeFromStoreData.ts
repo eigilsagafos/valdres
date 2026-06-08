@@ -5,7 +5,6 @@ import type { GetValue } from "../types/GetValue"
 import type { SetAtom } from "../types/SetAtom"
 import type { State } from "../types/State"
 import type { ScopedStore, ScopeFn, Store } from "../types/Store"
-import type { StoreChangeCallback } from "../types/StoreChangeCallback"
 import type { StoreData } from "../types/StoreData"
 import type { TransactionFn } from "../types/TransactionFn"
 import { isAtom } from "../utils/isAtom"
@@ -197,8 +196,12 @@ export function storeFromStoreData(
         return transaction(callback, data, name)
     }
 
-    const onChange = (callback: StoreChangeCallback) =>
-        onStoreChange(callback, data)
+    // Implementation signature is permissive; the precise per-option callback
+    // types live on the overloaded `Store["onChange"]`, which this satisfies.
+    const onChange = ((
+        callback: any,
+        options?: { atoms?: boolean; selectors?: boolean },
+    ) => onStoreChange(callback, data, options)) as Store["onChange"]
 
     const scope: ScopeFn = ((scopeId: string, callback?: any) => {
         if (callback) {

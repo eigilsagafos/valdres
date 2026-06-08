@@ -53,7 +53,11 @@ export type { SetAtomValue } from "./types/SetAtomValue"
 export type { SyncSetAtom } from "./types/SyncSetAtom"
 export type { State } from "./types/State"
 export type { Store } from "./types/Store"
-export type { StoreChange } from "./types/StoreChange"
+export type {
+    AtomChange,
+    SelectorChange,
+    StoreChange,
+} from "./types/StoreChange"
 export type { StoreChangeCallback } from "./types/StoreChangeCallback"
 export type { StoreChangeMeta } from "./types/StoreChangeMeta"
 export type { StoreChangeSource } from "./types/StoreChangeSource"

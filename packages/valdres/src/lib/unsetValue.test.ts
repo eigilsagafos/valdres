@@ -270,7 +270,7 @@ describe("unset — root store", () => {
         expect(calls.length).toBe(1)
         expect(calls[0]!.meta.source).toBe("unset")
         expect(calls[0]!.changes).toEqual([
-            { kind: "unset", atom: a, value: 1, scope: [] },
+            { type: "atom", kind: "unset", state: a, value: 1, scope: [] },
         ])
         expect(root.get(a)).toBe(1)
     })
@@ -404,7 +404,7 @@ describe("scope.unset — onChange", () => {
         expect(calls.length).toBe(1)
         expect(calls[0]!.meta.source).toBe("unset")
         expect(calls[0]!.changes).toEqual([
-            { kind: "unset", atom: a, value: 10, scope: ["child"] },
+            { type: "atom", kind: "unset", state: a, value: 10, scope: ["child"] },
         ])
     })
 
@@ -423,8 +423,9 @@ describe("scope.unset — onChange", () => {
         expect(calls.length).toBe(1)
         expect(calls[0]!.meta.source).toBe("unset")
         expect(calls[0]!.changes[0]).toEqual({
+            type: "atom",
             kind: "unset",
-            atom: a,
+            state: a,
             value: 10,
             scope: ["child"],
         })
@@ -440,7 +441,7 @@ describe("scope.unset — onChange", () => {
         let received: readonly StoreChange[] = []
         scoped.onChange(changes => (received = changes))
         scoped.unset(a)
-        expect(received[0]!.kind).toBe("unset")
+        expect(received[0]).toMatchObject({ type: "atom", kind: "unset" })
     })
 })
 
@@ -484,17 +485,19 @@ describe("scope.unset — transaction form", () => {
 
         expect(calls.length).toBe(1)
         expect(calls[0]!.meta.source).toBe("transaction")
-        const aChange = calls[0]!.changes.find(c => c.atom === a)
-        const bChange = calls[0]!.changes.find(c => c.atom === b)
+        const aChange = calls[0]!.changes.find(c => c.state === a)
+        const bChange = calls[0]!.changes.find(c => c.state === b)
         expect(aChange).toEqual({
+            type: "atom",
             kind: "unset",
-            atom: a,
+            state: a,
             value: 10,
             scope: ["child"],
         })
         expect(bChange).toEqual({
+            type: "atom",
             kind: "set",
-            atom: b,
+            state: b,
             value: 5,
             scope: ["child"],
         })

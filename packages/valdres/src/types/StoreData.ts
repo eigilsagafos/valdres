@@ -50,9 +50,13 @@ export type StoreData = {
     /** Present iff this is a scoped store. Records keys this scope registered
      *  in its parent's `scopeValueIndex`, used for cleanup on detach. */
     scopeIndexKeys?: Set<WeakKey>
-    /** Store-wide change listeners registered via `store.onChange`. Absent
-     *  (undefined) until the first listener is added and reset to undefined
-     *  when the last one leaves, so the write hot path stays allocation-free
-     *  when nobody is watching. */
-    changeListeners?: Set<StoreChangeCallback>
+    /** Store-wide change listeners registered via `store.onChange`, each mapped
+     *  to the kinds of change it opted into: `atoms` (default true) and
+     *  `selectors` (default false). Absent (undefined) until the first listener
+     *  is added and reset to undefined when the last one leaves, so the write hot
+     *  path stays allocation-free when nobody is watching. */
+    changeListeners?: Map<
+        StoreChangeCallback,
+        { atoms: boolean; selectors: boolean }
+    >
 }
