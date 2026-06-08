@@ -264,6 +264,27 @@ describe("atomFamily", () => {
         ).toStrictEqual(["2", "3"])
     })
 
+    test("reading a deleted family member resolves the default factory, not the raw function", () => {
+        const store1 = store()
+        const family = atomFamily((_id: string) => 0)
+        const x = family("x")
+        store1.set(x, 5)
+        expect(store1.get(x)).toBe(5)
+        store1.del(x)
+        expect(store1.get(x)).toBe(0)
+    })
+
+    test("a selector reading a deleted family member sees the default value", () => {
+        const store1 = store()
+        const family = atomFamily((_id: string) => 0)
+        const x = family("x")
+        const doubled = selector(get => get(x) * 2)
+        store1.set(x, 5)
+        expect(store1.get(doubled)).toBe(10)
+        store1.del(x)
+        expect(store1.get(doubled)).toBe(0)
+    })
+
     test("subscribe to atom family keys", () => {
         const store1 = store()
         const testAtomFamily = atomFamily<string>(0)

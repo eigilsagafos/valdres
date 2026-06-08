@@ -12,6 +12,7 @@ import { isSelectorFamily } from "../utils/isSelectorFamily"
 import { equal } from "./equal"
 import { initAtom } from "./initAtom"
 import { initSelector } from "./initSelector"
+import { resolveAtomDefaultValue } from "./resolveAtomDefaultValue"
 import {
     createAtomFamilyIndex,
     renderAtomFamilyIndex,
@@ -69,7 +70,11 @@ export function getState<
             const familyValue = data.values.get(state.family)
             if (familyValue?.__index) {
                 if (isAtomDeletedInFamilyIndex(state, familyValue.__index)) {
-                    return state.defaultValue as Value
+                    return resolveAtomDefaultValue(
+                        state,
+                        data,
+                        initializedAtomsSet,
+                    ) as Value
                 }
             }
         }
