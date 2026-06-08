@@ -679,11 +679,17 @@ describe("cross-scope transactions are atomically observable", () => {
             expect(cb).toHaveBeenCalledTimes(1) // single, final-valued notification
         })
 
-        test("cross-scope: scope selector spanning a root atom + a root-deleted family runs once", () => {
+        test("cross-scope: scope selector spanning a root atom + a root-deleted family recomputes per reaching pass, notified once", () => {
             // A selector in S depends on a root atom (updated) and a root family
-            // (member deleted), with S NOT shadowing the family. Both reach S in
-            // a single propagateToScopes pass, so the selector evaluates once and
-            // ends at the fully-applied state.
+            // (member deleted), with S NOT shadowing the family. Both the update
+            // pass (propagateAtomUpdate, via the root atom) and the delete pass
+            // (propagateDeletedAtoms, via the family) cross-propagate into S, so
+            // the selector recomputes once per reaching pass — the same
+            // recompute-in-each-pass behavior the single-store root case above
+            // exhibits. Both passes read the fully-written state (writeAtoms has
+            // already rendered the deleted member out), so each lands on the
+            // final value and the equality check prunes the redundant result;
+            // deferred notification fires the subscriber exactly once.
             const root = store()
             const fam = atomFamily<string>(undefined, { name: "cud-fam" })
             const m1 = fam("1")
@@ -712,8 +718,8 @@ describe("cross-scope transactions are atomically observable", () => {
             })
 
             expect(S.get(span)).toBe("1:9")
-            expect(evals - before).toBe(1)
-            expect(cb).toHaveBeenCalledTimes(1)
+            expect(evals - before).toBe(2) // recomputed in the update and delete passes
+            expect(cb).toHaveBeenCalledTimes(1) // single, final-valued notification
         })
     })
 

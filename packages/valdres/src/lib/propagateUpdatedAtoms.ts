@@ -293,28 +293,24 @@ export const propagateDeletedAtoms = (
     }
     propagateDirtySelectors(atoms, selectors, data, subscriptions, deletedFamilyAtoms, false, notify)
     if (notifyEntry) collectFamilyAtomsForNotify(notifyEntry, deletedFamilyAtoms)
-    // Propagate family changes into child scopes. deleteFamilyAtomsFromSet
-    // already updated each scope's family index via recursivelyUpdateIndexes;
-    // selectors in those scopes that depend on the family still need to be
-    // re-evaluated so their subscribers get notified.
-    if (deletedFamilyAtoms.size > 0 && data.scopes && data.scopes.size > 0) {
-        const scopeFamilies = new Map<StoreData, AtomFamily<any>[]>()
+    // Cross-propagate the deletion into descendant scopes, mirroring the update
+    // path (propagateAtomUpdate → propagateToScopes). deleteFamilyAtomsFromSet
+    // already re-rendered each shadowing scope's family index via
+    // recursivelyUpdateIndexes; this re-evaluates the dependent selectors so
+    // their subscribers fire. Two kinds of scope dependent must be reached, and
+    // the old family-only cascade (keyed on scopeValueIndex.get(family)) missed
+    // both: a scope that merely INHERITS the deleted member (no family shadow)
+    // and reads it directly — e.g. get(family("a")) — and a non-shadowing scope
+    // whose selector reads the family list get(family). Walking the full scope
+    // tree with both the deleted member atoms and their families covers both:
+    // members skip scopes that shadow them (their visible value is unchanged),
+    // families always propagate (their rendered list shrank everywhere).
+    if (data.scopes && data.scopes.size > 0) {
+        const scopeAtoms: AtomInput[] = atoms.slice()
         for (const family of deletedFamilyAtoms.keys()) {
-            const scopesWithFamily = data.scopeValueIndex.get(family)
-            if (scopesWithFamily) {
-                for (const scope of scopesWithFamily) {
-                    let list = scopeFamilies.get(scope)
-                    if (!list) {
-                        list = []
-                        scopeFamilies.set(scope, list)
-                    }
-                    list.push(family)
-                }
-            }
+            scopeAtoms.push(family)
         }
-        for (const [scope, familiesInScope] of scopeFamilies) {
-            propagateInScope(familiesInScope, scope, false, notify)
-        }
+        propagateToScopes(scopeAtoms, data, false, notify)
     }
 
     if (report !== undefined && changeListenerRegistry.count !== 0) {
