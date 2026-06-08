@@ -285,6 +285,39 @@ describe("atomFamily", () => {
         expect(store1.get(doubled)).toBe(0)
     })
 
+    test("repeated reads of a deleted family member don't re-invoke the default factory", () => {
+        const store1 = store()
+        const factory = mock((id: string) => ({ id }))
+        const family = atomFamily(factory)
+        const x = family("x")
+        store1.get(x)
+        store1.del(x)
+        const a = store1.get(x)
+        const callsAfterFirstRead = factory.mock.calls.length
+        const b = store1.get(x)
+        const c = store1.get(x)
+        // Further reads must reuse the resolved default, not re-run the factory…
+        expect(factory.mock.calls.length).toBe(callsAfterFirstRead)
+        // …and return a stable reference.
+        expect(a).toBe(b)
+        expect(b).toBe(c)
+    })
+
+    test("reading a deleted family member with an async default is stable across reads", async () => {
+        const store1 = store()
+        const factory = mock((id: string) => wait(1).then(() => "v:" + id))
+        const family = atomFamily(factory)
+        const x = family("x")
+        await store1.get(x)
+        store1.del(x)
+        const a = store1.get(x)
+        const callsAfterFirstRead = factory.mock.calls.length
+        const b = store1.get(x)
+        expect(b).toBe(a)
+        expect(factory.mock.calls.length).toBe(callsAfterFirstRead)
+        expect(await a).toBe("v:x")
+    })
+
     test("subscribe to atom family keys", () => {
         const store1 = store()
         const testAtomFamily = atomFamily<string>(0)

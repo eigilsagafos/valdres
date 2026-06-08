@@ -12,5 +12,8 @@ read yielded `[Function]` rather than `0` — and a selector reading it
 
 The deleted-member read path now resolves the default the same way a fresh init
 does (run a function default, evaluate a selector default, otherwise return the
-plain value) via a new side-effect-free `resolveAtomDefaultValue` helper, without
-resurrecting the member in the family index.
+plain value) via a new side-effect-free `resolveAtomDefaultValue` helper, and
+caches the resolved default so repeated reads are stable (same reference) and
+never re-invoke a function/async factory — re-running it on every read would
+repeat its side effects (e.g. a `fetch`). The member still stays absent from
+`get(family)`; only its direct read is memoized.

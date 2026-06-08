@@ -13,6 +13,7 @@ import { equal } from "./equal"
 import { initAtom } from "./initAtom"
 import { initSelector } from "./initSelector"
 import { resolveAtomDefaultValue } from "./resolveAtomDefaultValue"
+import { setValueInData } from "./setValueInData"
 import {
     createAtomFamilyIndex,
     renderAtomFamilyIndex,
@@ -70,11 +71,20 @@ export function getState<
             const familyValue = data.values.get(state.family)
             if (familyValue?.__index) {
                 if (isAtomDeletedInFamilyIndex(state, familyValue.__index)) {
-                    return resolveAtomDefaultValue(
+                    // Resolve the default once and cache it so repeated reads
+                    // are stable (same reference) and never re-invoke a
+                    // function/async default factory — re-running it on every
+                    // read would repeat its side effects (e.g. a fetch). We
+                    // deliberately DON'T add `state` to initializedAtomsSet, so
+                    // the get-time propagation that re-registers a member in the
+                    // family index never runs: the member stays deleted (absent
+                    // from get(family)); only its direct read is memoized.
+                    const value = resolveAtomDefaultValue(
                         state,
                         data,
                         initializedAtomsSet,
-                    ) as Value
+                    )
+                    return setValueInData(state, value, data) as Value
                 }
             }
         }
