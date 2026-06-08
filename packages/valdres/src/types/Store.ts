@@ -2,6 +2,7 @@ import type { Atom } from "./Atom"
 import type { AtomFamilyAtom } from "./AtomFamilyAtom"
 import type { GetValue } from "./GetValue"
 import type { ResetAtom } from "./ResetAtom"
+import type { SnapshotEntry } from "./SnapshotEntry"
 import type { AtomChange, SelectorChange, StoreChange } from "./StoreChange"
 import type { StoreChangeMeta } from "./StoreChangeMeta"
 import type { StoreData } from "./StoreData"
@@ -99,6 +100,17 @@ export type Store<T = StoreData> = {
             options?: { atoms?: true; selectors?: false },
         ): () => void
     }
+    /** List the store's current materialized state — every atom (root and
+     *  scope), live evaluated selector, and family member — as a flat array of
+     *  `SnapshotEntry`. Where `onChange` reports changes going forward, this is
+     *  the state that already exists, for a dev-tools consumer connecting late.
+     *
+     *  Opt-in: only a store created with `store(id, { enumerable: true })`
+     *  retains its values enumerably. On a default store the values live in a
+     *  `WeakMap` and can't be listed, so `snapshot()` returns `[]` and warns
+     *  once. Internal states and family containers are excluded; entries carry
+     *  the same `scope` id path as `onChange`. */
+    snapshot: () => SnapshotEntry[]
 }
 
 export type ScopedStore = Store & {
