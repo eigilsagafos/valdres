@@ -274,6 +274,50 @@ describe("atomFamilySearch", () => {
             expect(ranked[0]).toBe("rare")
         })
 
+        test("an UNSUBSCRIBED prefix query reflects newly-added vocabulary on re-read", () => {
+            // Regression: in whole-word prefix mode a query tracks the buckets
+            // of the words it currently matches, not the prefix itself. A new
+            // word under the same prefix changes none of those buckets, so a
+            // pull-based (unsubscribed) re-read must still pick it up — it
+            // depends on the vocabulary signal.
+            const s = store()
+            const post = atomFamily<{ text: string }, [string]>(null, {
+                name: "posts",
+            })
+            const search = atomFamilySearch(post, p => p.text, {
+                mode: "prefix",
+            })
+            s.set(post("1"), { text: "apple" })
+            expect(
+                s.get(search("app")).map(a => a.familyArgsStringified).sort(),
+            ).toEqual(["1"])
+            // "application" is a genuine completion of "app" — but it changes
+            // the bucket of a word ("application") the cached "app" query did
+            // not yet track, so a pull re-read must rebuild to see it.
+            s.set(post("2"), { text: "application" })
+            expect(
+                s.get(search("app")).map(a => a.familyArgsStringified).sort(),
+            ).toEqual(["1", "2"])
+        })
+
+        test("an UNSUBSCRIBED fuzzy query reflects newly-added vocabulary on re-read", () => {
+            const s = store()
+            const post = atomFamily<{ text: string }, [string]>(null, {
+                name: "posts",
+            })
+            const search = atomFamilySearch(post, p => p.text, {
+                mode: "exact",
+                tolerance: 1,
+            })
+            s.set(post("far"), { text: "xylophone" })
+            // "wanderer" matches nothing within 1 edit yet
+            expect(s.get(search("wanderer"))).toHaveLength(0)
+            s.set(post("near"), { text: "wanderers" }) // 1 edit from "wanderer"
+            expect(
+                s.get(search("wanderer")).map(a => a.familyArgsStringified),
+            ).toEqual(["near"])
+        })
+
         test("prefix vocabulary holds whole words, not exploded prefixes", () => {
             // White-box: in prefix mode the refcounted vocabulary tracks whole
             // words (it powers the prefix scan). Indexing one 5-char word adds
