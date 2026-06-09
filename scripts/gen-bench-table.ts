@@ -12,13 +12,9 @@
  */
 import { readFileSync, writeFileSync } from "fs"
 import { join } from "path"
+import { TESTBEDS, latestLatencies, pairByOp } from "./lib/bencher"
 
-const API = "https://api.bencher.dev/v0"
-const PROJECT = "valdres"
-const TESTBEDS = [
-    { slug: "ubuntu-2204-bun", label: "Bun (JavaScriptCore)" },
-    { slug: "ubuntu-2204-node", label: "Node.js (V8)" },
-]
+const TABLE_TESTBEDS = [TESTBEDS.jsc, TESTBEDS.v8]
 const README = join(import.meta.dir, "..", "README.md")
 const START = "<!-- BENCH:START -->"
 const END = "<!-- BENCH:END -->"
@@ -34,40 +30,6 @@ function speedup(valdres: number, jotai: number): string {
     return ratio >= 1
         ? `🟢 ${ratio.toFixed(1)}× faster`
         : `🔴 ${(1 / ratio).toFixed(1)}× slower`
-}
-
-// Latest `main` report for a testbed → { "<op> / <impl>": latency_ns }.
-async function latestLatencies(testbed: string): Promise<Map<string, number>> {
-    const url = `${API}/projects/${PROJECT}/reports?branch=main&testbed=${testbed}&per_page=1&direction=desc`
-    const res = await fetch(url)
-    if (!res.ok) throw new Error(`Bencher reports (${testbed}): HTTP ${res.status}`)
-    const reports = await res.json()
-    const out = new Map<string, number>()
-    if (!Array.isArray(reports) || reports.length === 0) return out
-    for (const arm of reports[0].results ?? []) {
-        for (const item of arm) {
-            const lat = item.measures?.find(
-                (m: { measure: { slug: string } }) => m.measure.slug === "latency",
-            )
-            if (lat) out.set(item.benchmark.name, lat.metric.value)
-        }
-    }
-    return out
-}
-
-// Pair "<op> / valdres" with "<op> / jotai" (ignores map floor + valdres-only benches).
-function pairByOp(
-    lat: Map<string, number>,
-): Map<string, { valdres?: number; jotai?: number }> {
-    const ops = new Map<string, { valdres?: number; jotai?: number }>()
-    for (const [name, value] of lat) {
-        const m = name.match(/^(.*) \/ (valdres|jotai)$/)
-        if (!m) continue
-        const entry = ops.get(m[1]) ?? {}
-        entry[m[2] as "valdres" | "jotai"] = value
-        ops.set(m[1], entry)
-    }
-    return ops
 }
 
 async function renderTestbed(tb: {
@@ -94,7 +56,7 @@ async function renderTestbed(tb: {
     ].join("\n")
 }
 
-const sections = await Promise.all(TESTBEDS.map(renderTestbed))
+const sections = await Promise.all(TABLE_TESTBEDS.map(renderTestbed))
 
 const block = [
     START,

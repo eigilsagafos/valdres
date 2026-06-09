@@ -1,13 +1,17 @@
-# Refreshes the README's benchmark table from Bencher's public API after each
-# push/merge to main re-benchmarks. Triggered by the "Bencher (base)" workflow
-# completing (rather than on: push) so the base lane has finished uploading the
-# new numbers first — the table then reflects the just-merged commit instead of
-# lagging one behind. Also runnable on demand.
+# Refreshes the committed benchmark snapshots from Bencher's public API after
+# each push/merge to main re-benchmarks:
+#   - README.md comparison table          (scripts/gen-bench-table.ts)
+#   - docs/content/bench-summary.json      (scripts/gen-bench-summary.ts)
+# Triggered by the "Bencher (base)" workflow completing (rather than on: push)
+# so the base lane has finished uploading the new numbers first — the snapshots
+# then reflect the just-merged commit instead of lagging one behind. Also
+# runnable on demand.
 #
-# The live, always-current view is bencher.dev/perf/valdres; this is a committed
-# snapshot. The generator only READS the public API, so no token / Bencher.dev
-# environment is needed.
-name: Refresh benchmark table
+# The live, always-current view is bencher.dev/perf/valdres; these are committed
+# snapshots. The generators only READ the public API, so no token / Bencher.dev
+# environment is needed. (The docs summary step no-ops on branches without the
+# docs site, so it's harmless until the docs land on main.)
+name: Refresh benchmark snapshots
 
 on:
     workflow_run:
@@ -37,14 +41,17 @@ jobs:
                   bun-version: 1.3.13
             - name: Regenerate README benchmark table
               run: bun run scripts/gen-bench-table.ts
+            - name: Regenerate docs benchmark summary
+              run: bun run scripts/gen-bench-summary.ts
             - name: Commit if changed
               run: |
-                  if git diff --quiet README.md; then
-                      echo "Benchmark table unchanged."
+                  git add README.md
+                  [ -f docs/content/bench-summary.json ] && git add docs/content/bench-summary.json
+                  if git diff --cached --quiet; then
+                      echo "Benchmark snapshots unchanged."
                   else
                       git config user.name "github-actions[bot]"
                       git config user.email "github-actions[bot]@users.noreply.github.com"
-                      git add README.md
-                      git commit -m "docs: refresh Bencher benchmark table [skip ci]"
+                      git commit -m "docs: refresh Bencher benchmark snapshots [skip ci]"
                       git push origin HEAD:main
                   fi

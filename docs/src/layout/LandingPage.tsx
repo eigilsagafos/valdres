@@ -6,10 +6,10 @@ type BenchProps = {
 }
 
 export function LandingPage({ bench }: { bench?: BenchProps }) {
-    const jscAvg = bench?.jscAverage ?? 9.5
-    const v8Avg = bench?.v8Average ?? 4.1
+    const jscAvg = bench?.jscAverage ?? 6.3
+    const v8Avg = bench?.v8Average ?? 2.8
     const jotaiVer = bench?.jotaiVersion ?? "2.19.0"
-    const benchCount = bench?.benchmarkCount ?? 18
+    const benchCount = bench?.benchmarkCount ?? 28
     return (
         <html lang="en" className="dark">
             <head>

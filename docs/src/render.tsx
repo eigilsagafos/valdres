@@ -118,7 +118,7 @@ export async function renderPages(docs: CompiledDoc[], distDir: string) {
     }))
 
     // Landing page — read benchmark summary for dynamic stats
-    let benchData = { jscAverage: null as number | null, v8Average: null as number | null, jotaiVersion: "2.19.0", benchmarkCount: 18 }
+    let benchData = { jscAverage: null as number | null, v8Average: null as number | null, jotaiVersion: "2.19.0", benchmarkCount: 28 }
     try {
         const benchFile = await Bun.file(`${distDir}/../content/bench-summary.json`).text()
         const parsed = JSON.parse(benchFile)
