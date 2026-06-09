@@ -1,0 +1,49 @@
+# Refreshes each publishable package's README.md from its co-located docs MDX
+# (scripts/gen-readmes.ts) after docs or descriptions change on main. Generated
+# content lives between <!-- DOCS:START --> / <!-- DOCS:END --> markers, so any
+# hand-written prose outside them is preserved. Mirrors bench-table.yml: commits
+# the refreshed snapshot back to main with [skip ci]. Also runnable on demand.
+name: Refresh package READMEs
+
+on:
+    push:
+        branches: [main]
+        paths:
+            - "packages/**/*.mdx"
+            - "packages/**/package.json"
+            - "scripts/gen-readmes.ts"
+            - "scripts/lib/readme-sources.ts"
+            - "scripts/lib/mdx-to-markdown.ts"
+    workflow_dispatch:
+
+permissions:
+    contents: write
+
+concurrency:
+    group: gen-readmes
+    cancel-in-progress: false
+
+jobs:
+    refresh:
+        runs-on: ubuntu-22.04
+        steps:
+            - uses: actions/checkout@v6
+              with:
+                  ref: main
+            - uses: oven-sh/setup-bun@v2
+              with:
+                  bun-version: 1.3.13
+            - run: bun install --frozen-lockfile
+            - name: Regenerate package READMEs
+              run: bun run scripts/gen-readmes.ts
+            - name: Commit if changed
+              run: |
+                  git add packages/*/README.md packages/@valdres/*/README.md packages/@valdres-react/*/README.md 2>/dev/null || true
+                  if git diff --cached --quiet; then
+                      echo "READMEs unchanged."
+                  else
+                      git config user.name "github-actions[bot]"
+                      git config user.email "github-actions[bot]@users.noreply.github.com"
+                      git commit -m "docs: refresh package READMEs [skip ci]"
+                      git push origin HEAD:main
+                  fi

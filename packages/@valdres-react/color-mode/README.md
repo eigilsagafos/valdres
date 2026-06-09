@@ -1,13 +1,13 @@
 <!-- DOCS:START -->
 
-# valdres-react
+# @valdres-react/color-mode
 
-React bindings for Valdres state management
+React color mode hooks powered by Valdres
 
 ## Installation
 
 ```bash
-npm install valdres-react react
+npm install @valdres-react/color-mode valdres-react
 ```
 
 Part of [Valdres](https://valdres.dev) — reactive state management for React, Vue, Svelte, Solid, and Angular.

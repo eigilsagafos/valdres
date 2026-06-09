@@ -19,6 +19,7 @@
         "version-packages": "changeset version",
         "release": "bash scripts/ci-publish.sh",
         "verify-publish": "bun run scripts/verify-publish.ts",
+        "gen-readmes": "bun run scripts/gen-readmes.ts",
         "docs:build": "bun run docs/build.ts",
         "docs:dev": "bun run docs/dev.ts"
     },
@@ -55,12 +56,17 @@
         "rehype-slug": "^6.0.0",
         "remark-frontmatter": "^5.0.0",
         "remark-gfm": "^4.0.1",
+        "remark-mdx": "^3.1.0",
         "remark-mdx-frontmatter": "^5.2.0",
+        "remark-parse": "^11.0.0",
+        "remark-stringify": "^11.0.0",
         "shiki": "^4.0.2",
         "solid-js": "^1.9.12",
         "tailwind-merge": "^3.5.0",
         "tailwindcss": "^4.2.2",
-        "topojson-client": "^3.1.0"
+        "topojson-client": "^3.1.0",
+        "unified": "^11.0.5",
+        "unist-util-visit": "^5.0.0"
     },
     "version": "1.0.0-beta.0",
     "dependencies": {

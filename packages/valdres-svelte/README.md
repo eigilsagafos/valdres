@@ -1,13 +1,13 @@
 <!-- DOCS:START -->
 
-# valdres-react
+# valdres-svelte
 
-React bindings for Valdres state management
+Svelte 5 bindings for Valdres state management
 
 ## Installation
 
 ```bash
-npm install valdres-react react
+npm install valdres-svelte svelte valdres
 ```
 
 Part of [Valdres](https://valdres.dev) — reactive state management for React, Vue, Svelte, Solid, and Angular.

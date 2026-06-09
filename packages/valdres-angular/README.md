@@ -1,13 +1,13 @@
 <!-- DOCS:START -->
 
-# valdres-react
+# valdres-angular
 
-React bindings for Valdres state management
+Angular bindings for Valdres state management
 
 ## Installation
 
 ```bash
-npm install valdres-react react
+npm install valdres-angular @angular/core valdres
 ```
 
 Part of [Valdres](https://valdres.dev) — reactive state management for React, Vue, Svelte, Solid, and Angular.
