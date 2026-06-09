@@ -802,6 +802,10 @@ export function atomFamilySearch<
     // limit. `releaseQuery(q)` / `releaseAllQueries()` still drop entries
     // explicitly; eviction or release just means the next read re-allocates.
     const queryCacheSize = options?.queryCacheSize ?? 500
+    // Three LRU caches with an explicit dependency chain:
+    //   atomsCache → scoredCache → fullScoredCache
+    // Each evicts independently; a missing entry is recomputed from the one
+    // below it on next access (getAtoms → getScored → getFullScored).
     // Full ranking per query (the expensive part), keyed by query string.
     const fullScoredCache = createLRU<
         string,
@@ -1267,10 +1271,18 @@ export function atomFamilySearch<
     const resolvePage = (
         page?: SearchPage,
     ): { offset: number; limit: number } => {
-        const offset = Math.max(0, Math.floor(page?.offset ?? 0))
+        const rawOffset = page?.offset
+        // Guard NaN explicitly — `Math.max(0, Math.floor(NaN))` is NaN, which
+        // would slice to an empty page. Non-finite / negative → 0.
+        const offset =
+            typeof rawOffset === "number" && Number.isFinite(rawOffset)
+                ? Math.max(0, Math.floor(rawOffset))
+                : 0
         const rawLimit = page?.limit
         const limit =
-            rawLimit !== undefined && rawLimit > 0
+            typeof rawLimit === "number" &&
+            Number.isFinite(rawLimit) &&
+            rawLimit > 0
                 ? Math.floor(rawLimit)
                 : resultLimit
         return { offset, limit }
@@ -1289,7 +1301,13 @@ export function atomFamilySearch<
     const getScored = (query: string, page?: SearchPage) => {
         const key = pageKey(query, page)
         const cached = scoredCache.get(key)
-        if (cached) return cached
+        if (cached) {
+            // Keep the full ranking warm while any window of it is read, so it
+            // isn't evicted out from under a still-live page view (which would
+            // force a re-score on the next cache miss).
+            getFullScored(query)
+            return cached
+        }
         const full = getFullScored(query)
         const { offset, limit } = resolvePage(page)
         // No window → the full ranking IS the view (avoid a wrapper selector).

@@ -1994,6 +1994,30 @@ describe("atomFamilySearch", () => {
             expect(page).toEqual(["b", "c"])
         })
 
+        test("tolerates odd offset/limit values", () => {
+            const s = store()
+            const search = seed(s)
+            const all = ids(s.get(search("x")))
+            // NaN / negative / undefined offset → treated as 0.
+            expect(ids(s.get(search("x", { offset: NaN })))).toEqual(all)
+            expect(ids(s.get(search("x", { offset: -5, limit: 2 })))).toEqual([
+                "a",
+                "b",
+            ])
+            // Fractional values floored.
+            expect(
+                ids(s.get(search("x", { offset: 1.9, limit: 2.9 }))),
+            ).toEqual(["b", "c"])
+            // Offset past the end → empty page.
+            expect(ids(s.get(search("x", { offset: 99, limit: 5 })))).toEqual(
+                [],
+            )
+            // limit 0 falls back to "no cap" (whole ranking from offset).
+            expect(ids(s.get(search("x", { offset: 0, limit: 0 })))).toEqual(
+                all,
+            )
+        })
+
         test("a paginated query does not re-score (shares the full ranking)", () => {
             const s = store()
             const search = seed(s)
