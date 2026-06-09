@@ -173,12 +173,20 @@ export type AtomFamilySearchOptions<Fields extends string = string> = {
  *  (the one-field shape). Never user-facing. */
 const DEFAULT_FIELD = "__default__"
 
-/** Per-(atom, field) stats: term frequency map and field length, both in
- *  the same units as the index mode (tokens for exact/prefix, trigrams
- *  for trigram). */
+/** Per-(atom, field) stats. `termCounts` is keyed by the mode-expanded
+ *  vocabulary (prefixes / trigrams / tokens); `length` is the BM25
+ *  document length in RAW WORDS (not expanded units) so length
+ *  normalization isn't biased by word length — see `fieldEntry`. */
 type FieldStats = {
     length: number
     termCounts: Map<string, number>
+}
+
+/** Output of the extractor normalization, per field: the mode-expanded
+ *  match vocabulary plus the raw word count for length normalization. */
+type FieldTerms = {
+    terms: string[]
+    length: number
 }
 
 /** Per-scope BM25F storage. Lives as the *value* of `bm25Atom` so the
@@ -391,27 +399,42 @@ export function atomFamilySearch<
      *  Note: primitive value types (string, number) can't be WeakMap
      *  keys, so for those the cache is skipped and the extractor runs
      *  per descriptor as before — but that's the cheap case anyway. */
-    const memo = new WeakMap<object, Map<string, string[]>>()
+    const memo = new WeakMap<object, Map<string, FieldTerms>>()
     const isObjectLike = (v: unknown): v is object =>
         v !== null && (typeof v === "object" || typeof v === "function")
-    const extractFieldTerms = (value: Value): Map<string, string[]> => {
+    // Build the per-field entry: `terms` is the matched-against, mode-
+    // expanded vocabulary (prefixes / trigrams / whole tokens); `length`
+    // is the BM25 document length and is ALWAYS the raw word count, never
+    // the expanded count. In prefix/trigram mode the expansion size scales
+    // with word length, so using it as `length` would penalize docs that
+    // contain longer words ("Stranger" → 8 prefixes vs "City" → 4) purely
+    // for word length — distorting length normalization. Orama (and
+    // standard BM25) normalize by word count; we match that.
+    const fieldEntry = (text: string): FieldTerms | null => {
+        const tokens = normalize(text)
+        if (tokens.length === 0) return null
+        const terms = expandForWrite(tokens, mode)
+        if (terms.length === 0) return null
+        return { terms, length: tokens.length }
+    }
+    const extractFieldTerms = (value: Value): Map<string, FieldTerms> => {
         if (isObjectLike(value)) {
             const cached = memo.get(value)
             if (cached) return cached
         }
         const raw = extractor(value)
-        const out = new Map<string, string[]>()
+        const out = new Map<string, FieldTerms>()
         if (typeof raw === "string") {
             if (raw.length > 0) {
-                const terms = expandForWrite(normalize(raw), mode)
-                if (terms.length > 0) out.set(DEFAULT_FIELD, terms)
+                const e = fieldEntry(raw)
+                if (e) out.set(DEFAULT_FIELD, e)
             }
         } else if (raw && typeof raw === "object") {
             for (const field in raw) {
                 const text = raw[field]
                 if (typeof text !== "string" || text.length === 0) continue
-                const terms = expandForWrite(normalize(text), mode)
-                if (terms.length > 0) out.set(field, terms)
+                const e = fieldEntry(text)
+                if (e) out.set(field, e)
             }
         }
         if (isObjectLike(value)) memo.set(value, out)
@@ -430,10 +453,10 @@ export function atomFamilySearch<
             // Single field — return its terms directly to avoid an array
             // copy. Multi-field — concatenate.
             if (fieldTerms.size === 1) {
-                for (const terms of fieldTerms.values()) return terms
+                for (const { terms } of fieldTerms.values()) return terms
             }
             const flat: string[] = []
-            for (const terms of fieldTerms.values()) {
+            for (const { terms } of fieldTerms.values()) {
                 for (const t of terms) flat.push(t)
             }
             return flat
@@ -579,7 +602,7 @@ export function atomFamilySearch<
             }
 
             const atomStats = new Map<string, FieldStats>()
-            for (const [field, terms] of fieldTerms) {
+            for (const [field, { terms, length }] of fieldTerms) {
                 const termCounts = new Map<string, number>()
                 for (const t of terms) {
                     termCounts.set(t, (termCounts.get(t) ?? 0) + 1)
@@ -594,14 +617,16 @@ export function atomFamilySearch<
                         )
                     }
                 }
-                atomStats.set(field, { length: terms.length, termCounts })
+                // `length` is the raw word count (not the expanded term
+                // count) so BM25 length-norm isn't biased by word length.
+                atomStats.set(field, { length, termCounts })
 
                 let tot = storage.fieldTotals.get(field)
                 if (!tot) {
                     tot = { totalLength: 0, docCount: 0 }
                     storage.fieldTotals.set(field, tot)
                 }
-                tot.totalLength += terms.length
+                tot.totalLength += length
                 tot.docCount += 1
             }
             storage.perAtom.set(atom, atomStats)

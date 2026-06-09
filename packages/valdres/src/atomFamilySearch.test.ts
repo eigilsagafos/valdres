@@ -1613,4 +1613,63 @@ describe("atomFamilySearch", () => {
             expect(ranked).toEqual(["a", "b"])
         })
     })
+
+    describe("length normalization uses word count (not expanded terms)", () => {
+        // BM25 document length must be the raw word count, not the
+        // mode-expanded term count. In prefix/trigram mode the expansion
+        // size scales with word length, so using it as `length` would
+        // penalize docs that merely contain longer words. Orama / standard
+        // BM25 normalize by word count; this pins that.
+        test("prefix mode: a longer sibling word doesn't penalize the shared term", () => {
+            const s = store()
+            const post = atomFamily<{ text: string }, [string]>(null, {
+                name: "posts",
+            })
+            const search = atomFamilySearch(post, p => p.text, {
+                mode: "prefix",
+                match: "ranked",
+            })
+            // Both docs are 2 words and share "alpha". "long" has a much
+            // longer second word (22 prefixes vs 2) — pre-fix that inflated
+            // its field length and dragged its "alpha" score below "short".
+            s.set(post("short"), { text: "alpha bb" })
+            s.set(post("long"), { text: "alpha electroencephalography" })
+            const scored = s.get(search.scored("alpha"))
+            const score = new Map(
+                scored.map(r => [
+                    String(r.atom.familyArgsStringified),
+                    r.score,
+                ]),
+            )
+            expect(score.get("short")).toBeCloseTo(score.get("long")!, 5)
+        })
+
+        test("prefix mode: title match outranks body-only match for a partial query", () => {
+            // The "the eternal str" case in miniature: a doc with the term
+            // in the boosted title beats one with it only in the body, once
+            // length-norm stops penalizing the longer title word.
+            const s = store()
+            const post = atomFamily<{ title: string; body: string }, [string]>(
+                null,
+                { name: "posts" },
+            )
+            const search = atomFamilySearch(
+                post,
+                p => ({ title: p.title, body: p.body }),
+                { mode: "prefix", fields: { title: { boost: 2 }, body: { boost: 1 } } },
+            )
+            s.set(post("title"), {
+                title: "The Eternal Stranger",
+                body: "a quiet life by the sea",
+            })
+            s.set(post("body"), {
+                title: "The Eternal City",
+                body: "a stranger arrives one evening",
+            })
+            const ranked = s
+                .get(search("eternal str"))
+                .map(a => a.familyArgsStringified)
+            expect(ranked[0]).toBe("title")
+        })
+    })
 })
