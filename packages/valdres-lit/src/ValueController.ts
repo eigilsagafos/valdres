@@ -110,6 +110,18 @@ export class ValueController<
         }
     }
 
+    /**
+     * Re-read the current state and update value/status now. The store batches
+     * subscriber notifications and, for an atom written to a Promise, only
+     * notifies on *resolution* — so a controller that triggers its own async
+     * write (e.g. AtomController.reset/set into an async default) would never
+     * reflect the intervening `pending` state. Calling this right after such a
+     * write surfaces it synchronously.
+     */
+    protected _refresh() {
+        if (this._store) this._ingest(this._store, this._store.get(this._state))
+    }
+
     private _detach() {
         this._unsubscribe?.()
         this._unsubscribe = undefined

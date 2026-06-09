@@ -17,6 +17,7 @@ export class AtomController<Value = unknown> extends ValueController<Value> {
             )
         }
         store.set(this._state as Atom<Value>, value)
+        this._refresh()
     }
 
     reset() {
@@ -27,5 +28,6 @@ export class AtomController<Value = unknown> extends ValueController<Value> {
             )
         }
         store.reset(this._state as Atom<Value>)
+        this._refresh()
     }
 }

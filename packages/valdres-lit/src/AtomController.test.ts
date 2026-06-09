@@ -144,4 +144,58 @@ describe("AtomController", () => {
         const ctrl = new AtomController(el, a)
         expect(() => ctrl.set(1)).toThrow(/before store was attached/)
     })
+
+    test("set(promise) re-enters pending synchronously then resolves", async () => {
+        const a = atom<string>("idle")
+        const s = createStore({ batchUpdates: true })
+        const el = document.createElement("ac-count-host") as CountHost
+        const ctrl = new AtomController<string>(el, a as any, s)
+        ;(el as any).ctrl = ctrl
+        document.body.appendChild(el)
+        await el.updateComplete
+        expect(ctrl.status).toBe("ready")
+        expect(ctrl.value).toBe("idle")
+
+        ctrl.set(
+            new Promise<string>(res =>
+                setTimeout(() => res("loaded"), 15),
+            ) as any,
+        )
+        // The controller reflects its own async write immediately, before the
+        // promise resolves — this is the "Next dog shows loading" guarantee.
+        expect(ctrl.status).toBe("pending")
+        await new Promise(r => setTimeout(r, 30))
+        await el.updateComplete
+        expect(ctrl.status).toBe("ready")
+        expect(ctrl.value).toBe("loaded")
+        el.remove()
+    })
+
+    test("reset into an async default re-enters pending then refetches", async () => {
+        let n = 0
+        const a = atom<string>(
+            (() =>
+                new Promise<string>(res =>
+                    setTimeout(() => res(`v${++n}`), 15),
+                )) as unknown as string,
+        )
+        const s = createStore({ batchUpdates: true })
+        const el = document.createElement("ac-count-host") as CountHost
+        const ctrl = new AtomController<string>(el, a as any, s)
+        ;(el as any).ctrl = ctrl
+        document.body.appendChild(el)
+        await el.updateComplete
+        expect(ctrl.status).toBe("pending")
+        await new Promise(r => setTimeout(r, 30))
+        await el.updateComplete
+        expect(ctrl.value).toBe("v1")
+
+        ctrl.reset()
+        expect(ctrl.status).toBe("pending") // synchronous, not stuck on ready
+        await new Promise(r => setTimeout(r, 30))
+        await el.updateComplete
+        expect(ctrl.status).toBe("ready")
+        expect(ctrl.value).toBe("v2")
+        el.remove()
+    })
 })

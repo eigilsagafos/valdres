@@ -69,12 +69,17 @@ const currentDisplayNameSelector = selector(
     { name: "currentDisplayName" },
 )
 
-// RandomDog (async atom — the canonical valdres async example)
+// RandomDog (async atom — the canonical valdres async example).
+// A small deliberate delay after the response keeps the loading state
+// perceptible in the demo; without it a cached/fast reply resolves before the
+// spinner ever paints.
+const delay = <T>(v: T, ms: number) =>
+    new Promise<T>(res => setTimeout(() => res(v), ms))
 const randomDogAtom = atom<string>(
     (() =>
         fetch("https://random.dog/woof.json")
             .then(r => r.json())
-            .then(b => b.url)) as unknown as string,
+            .then(b => delay(b.url as string, 650))) as unknown as string,
     { name: "randomDog" },
 )
 
