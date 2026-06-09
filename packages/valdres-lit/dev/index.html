@@ -3,96 +3,60 @@
     <head>
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <title>Front Row — built on valdres-lit</title>
+        <title>valdres-lit — capabilities</title>
         <style>
-            /* Theme tokens live on :root so they pierce every component's
-               shadow DOM. Dark-first neon-gig-poster palette, with a light
-               override. */
+            /* Theme tokens on :root pierce shadow DOM. Calm docs-site aesthetic. */
             :root {
-                color-scheme: dark light;
+                color-scheme: light dark;
 
-                --fr-bg: #0b0b14;
-                --fr-bg-2: #11111d;
-                --fr-surface: #15151f;
-                --fr-ink: #f2f0fb;
-                --fr-muted: color-mix(in oklch, var(--fr-ink) 55%, transparent);
-                --fr-line: color-mix(in oklch, var(--fr-ink) 14%, transparent);
-
-                --fr-accent-1: #ff4d8d;
-                --fr-accent-2: #7c5cff;
-                --fr-accent: linear-gradient(
-                    135deg,
-                    var(--fr-accent-1),
-                    var(--fr-accent-2)
-                );
-                --fr-glow: #ffba49;
-                --fr-available: color-mix(
+                --vl-bg: #fbfbfd;
+                --vl-surface: #ffffff;
+                --vl-ink: #1c1b22;
+                --vl-muted: color-mix(in oklch, var(--vl-ink) 55%, transparent);
+                --vl-line: color-mix(in oklch, var(--vl-ink) 13%, transparent);
+                --vl-accent: #6366f1;
+                --vl-accent-soft: color-mix(
                     in oklch,
-                    var(--fr-ink) 22%,
+                    var(--vl-accent) 14%,
                     transparent
                 );
-                --fr-sold: color-mix(in oklch, var(--fr-ink) 10%, transparent);
-                --fr-success: #3ddc97;
-                --fr-error: #f5614b;
+                --vl-code-bg: #f4f4fa;
+                --vl-ok: #1aa179;
+                --vl-err: #d4452f;
 
-                --fr-radius: 16px;
-                --fr-shadow: 0 18px 50px -24px rgb(0 0 0 / 0.7);
-                --fr-font:
+                --vl-radius: 12px;
+                --vl-font:
                     system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-                --fr-display:
-                    "Archivo", "Oswald", system-ui, sans-serif;
-                --fr-mono: ui-monospace, "SF Mono", Menlo, monospace;
+                --vl-mono:
+                    ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace;
             }
-
-            @media (prefers-color-scheme: light) {
+            @media (prefers-color-scheme: dark) {
                 :root {
-                    --fr-bg: #f5f4fb;
-                    --fr-bg-2: #ffffff;
-                    --fr-surface: #ffffff;
-                    --fr-ink: #1a1726;
-                    --fr-line: color-mix(
-                        in oklch,
-                        var(--fr-ink) 12%,
-                        transparent
-                    );
-                    --fr-glow: #e8930c;
-                    --fr-available: color-mix(
-                        in oklch,
-                        var(--fr-ink) 20%,
-                        transparent
-                    );
-                    --fr-sold: color-mix(
-                        in oklch,
-                        var(--fr-ink) 8%,
-                        transparent
-                    );
-                    --fr-shadow: 0 18px 50px -28px rgb(40 20 80 / 0.35);
+                    --vl-bg: #0e0e13;
+                    --vl-surface: #16161e;
+                    --vl-ink: #ecebf4;
+                    --vl-line: color-mix(in oklch, var(--vl-ink) 15%, transparent);
+                    --vl-accent: #8b8cf9;
+                    --vl-code-bg: #11111a;
                 }
             }
 
             html,
             body {
                 margin: 0;
-                background:
-                    radial-gradient(
-                        1200px 600px at 50% -10%,
-                        color-mix(in oklch, var(--fr-accent-2) 22%, transparent),
-                        transparent 60%
-                    ),
-                    var(--fr-bg);
-                color: var(--fr-ink);
-                font-family: var(--fr-font);
-                line-height: 1.5;
+                background: var(--vl-bg);
+                color: var(--vl-ink);
+                font-family: var(--vl-font);
+                line-height: 1.6;
                 -webkit-font-smoothing: antialiased;
             }
-            front-row-app {
+            valdres-lit-docs {
                 display: block;
-                min-height: 100vh;
             }
         </style>
     </head>
     <body>
-        <front-row-app></front-row-app>
+        <valdres-lit-docs></valdres-lit-docs>
 
         <script>
             window.process = { env: { NODE_ENV: "development" } }
