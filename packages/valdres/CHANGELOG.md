@@ -1,5 +1,240 @@
 # valdres
 
+## 1.0.0-beta.7
+
+### Minor Changes
+
+- [#179](https://github.com/eigilsagafos/valdres/pull/179)
+  [`231e59d`](https://github.com/eigilsagafos/valdres/commit/231e59d15dabb8fd822e0803e93ffad0f0d0138a)
+  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! - `store.onChange`
+  can now also report **selector** (derived state) changes, gated by an options
+  object, and the `StoreChange` shape is reworked around `type` + `state`.
+
+    **Options — two independent toggles:**
+
+    - `atoms` (default `true`) — atom `set` / `unset` / `delete` changes.
+    - `selectors` (default `false`) — selectors that recomputed to a new value.
+
+    ```ts
+    store.onChange((changes, meta) => {
+      for (const c of changes) {
+        if (c.type === "selector") console.log("derived", c.state, "→", c.value)
+        else if (c.kind === "delete") console.log("deleted", c.state)
+        else console.log("atom", c.state, "→", c.value) // set | unset
+      }
+    }, { selectors: true })
+
+    // selectors only:
+    store.onChange(cs => …, { atoms: false, selectors: true })
+    ```
+
+    A `{ selectors: true }` listener additionally receives
+    `{ type: "selector", state, value, scope }` for selectors that recomputed as
+    a consequence of an operation — in the same single callback as the atom
+    changes. Within a store's changes, atom entries precede that store's
+    selector entries; descendant-scope recomputes carry their scope path.
+
+    Only **live** selectors (those with a subscriber or a downstream dependent,
+    i.e. already recomputed this pass) and only **genuine value changes**
+    (respecting the selector's `equal`) are reported — so selector reporting
+    forces no extra evaluation, and an orphaned selector whose cache is merely
+    dropped is not reported. An async selector resolving surfaces as a
+    `type: "selector"` change with `meta.source === "async-set"`. When no
+    selector listener is active the propagation hot path is unchanged (gated on
+    a global counter, no allocation).
+
+    The callback's `changes` type follows the options: `AtomChange[]` by
+    default, `StoreChange[]` with `{ selectors: true }`, `SelectorChange[]` with
+    `{ atoms: false, selectors: true }`.
+
+    **`StoreChange` shape.** `store.onChange` is unreleased, so this is its
+    initial public shape (no migration from a prior release):
+
+    - Each change has a `type` (`"atom" | "selector"`) and a `state` field — the
+      changed atom or selector. (`state` matches valdres's `State` type and the
+      `store.get`/`store.sub` parameter, so `store.get(change.state)` reads
+      naturally.)
+    - Atom changes carry a `kind`: `"set" | "unset" | "delete"`. Selector
+      changes have **no `kind`** — a selector has no operation, only a
+      recomputed value. Discriminate selector-vs-atom on `type`; switch on
+      `kind` only after narrowing to `type: "atom"`.
+    - New exported types: `AtomChange`, `SelectorChange` (with
+      `StoreChange = AtomChange | SelectorChange`).
+
+- [#177](https://github.com/eigilsagafos/valdres/pull/177)
+  [`b76cdc2`](https://github.com/eigilsagafos/valdres/commit/b76cdc27414abf4c55bb6dfbc9c1c5d370af8f1d)
+  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! - Add
+  `store.unset(atom)` — drop a store's own value for an atom so it reverts to
+  what it would otherwise read. The natural inverse of `set` (cf.
+  `git config --unset`).
+
+    - On a **scoped store**, the atom re-inherits its parent's current value.
+    - On a **root store**, the atom reverts to its default; the stored value is
+      removed (de-materialized) and re-initialized lazily on the next read —
+      unlike `reset`, which eagerly writes the default back in.
+
+    Previously there was no public way to do either: `reset` eagerly pins to the
+    atom's default, and `del` removes a family member. `unset` fills the gap
+    (notably for dev-tools time-travel, which needs to faithfully restore an
+    override that was inherited at the target point).
+
+    - `store.unset(atom)` removes the store's own value and all its bookkeeping
+      (the value, any `maxAge` write timestamp, and on a scope the parent's
+      `scopeValueIndex` entry + the scope's index keys), then notifies
+      subscribers, dependent selectors, and nested scopes of the reverted value.
+      Scope subscriptions resume tracking parent changes again.
+    - No-op (no notification) when the store holds no own value for the atom.
+    - Throws for non-atoms.
+    - Surfaces on `store.onChange` as a new `kind: "unset"` change carrying the
+      reverted value, tagged with the new `StoreChangeMeta.source` `"unset"` —
+      so a consumer can tell the value was dropped (and decide whether to drop
+      its own override or apply the reverted value) without overloading the
+      `"set"` or `"delete"` kinds. The per-change `kind` is `"unset"` even
+      inside a transaction (where `meta.source` is `"transaction"`), so an unset
+      stays distinguishable from a set within a mixed transaction batch.
+    - Transaction form: `txn.unset(atom)` (and
+      `t.scope(id, st => st.unset(atom))`), collapsed into the transaction's
+      single `onChange` callback. Within a transaction, a later `set`/`reset` of
+      the same atom supersedes a buffered `unset` (and vice versa), and a
+      mid-transaction read of an unset atom returns the reverted value
+      (inherited on a scope, the default on a root).
+
+- [#175](https://github.com/eigilsagafos/valdres/pull/175)
+  [`2776bff`](https://github.com/eigilsagafos/valdres/commit/2776bffa8deee3f2bc651c757aa19e788339fbfc)
+  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! - Add
+  `store.onChange(callback)` — subscribe to every atom change in a store and its
+  descendant scopes. Intended for dev tools and debugging.
+
+    Emission happens at the propagation choke point (`propagateAtomUpdate` /
+    `propagateDeletedAtoms`), so `onChange` mirrors what a subscriber would see
+    — including changes that don't go through `set`/`txn`, such as **maxAge
+    stale-while-revalidate refreshes** and **async default resolutions**.
+
+    The callback receives `(changes, meta)`:
+
+    - `changes` — an array of `StoreChange`, discriminated on `type`
+      (`"atom" | "selector"`). Atom changes additionally carry a `kind`:
+      `{ type: "atom", kind: "set", state, value, scope }` for a value change,
+      `{ type: "atom", kind: "delete", state, scope }` for a family-atom
+      deletion (`store.del` / `txn.del`, no `value`), or `kind: "unset"` when a
+      store drops its own value. (Selector changes have no `kind` — see the
+      selector-reporting changeset.) A direct `set`/`reset` (or an async atom
+      resolving) delivers the change(s) from that operation; a transaction
+      delivers a single callback with all of its changes.
+    - `scope` — the chain of scope ids from the outermost scope down to where
+      the change occurred (the ids you'd pass to `.scope()` to reach it), empty
+      (`[]`) for a root store. Unambiguous for nested scopes that share a leaf
+      name. A cross-scope transaction delivers one callback whose changes are
+      individually scope-tagged.
+    - `meta` — `{ source, name? }`. `source` is what produced the batch:
+      `"set" | "reset" | "delete" | "transaction" | "revalidate" | "async-set"`.
+      `store.txn(callback, name)` accepts an optional name, surfaced as
+      `meta.name` alongside `source: "transaction"`.
+
+    Internal valdres atoms (the cacheMeta atom backing
+    maxAge/stale-while-revalidate) are excluded so dev tools aren't flooded with
+    implementation-detail churn.
+
+    Setting a **global atom inside a transaction** yields one callback per
+    affected store: the origin store gets a single `"transaction"` callback, and
+    each watched peer store gets a separate `"set"` callback (cross-store sync
+    is a plain set on each peer, not part of the origin's transaction). The peer
+    callbacks fire first, during the commit, before the origin's transaction
+    callback.
+
+    `onChange` returns an unsubscribe function. A global listener count gates
+    every emit site, so when nothing anywhere is watching the propagation hot
+    path does a single property read — no walk, no allocation.
+
+- [#182](https://github.com/eigilsagafos/valdres/pull/182)
+  [`68b124d`](https://github.com/eigilsagafos/valdres/commit/68b124d4f191431cd608ff04ba5c5fb15429f205)
+  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! - Add
+  `store.snapshot()` — enumerate a store's current materialized state, for a
+  dev-tools consumer that connects after state already exists. Where
+  `store.onChange` reports changes going forward, `snapshot()` lists what's
+  there now: every set atom, every default-valued atom that's been read, every
+  live (evaluated) selector, and every family member — across the root and all
+  nested scopes.
+
+    It's **opt-in at store creation**:
+
+    ```ts
+    const s = store(id, { enumerable: true })
+    // or store({ enumerable: true })
+    s.snapshot() // SnapshotEntry[]
+    ```
+
+    Each entry is `{ type: "atom" | "selector", state, value, scope }`, reusing
+    `onChange`'s exact shape and filtering: internal (`__valdresInternal`)
+    states (e.g. the cacheMeta atom) and family container objects are excluded,
+    atoms vs selectors are classified via `isSelector`, and `scope` is the same
+    id path from the outermost scope down (`[]` for the root).
+
+    As part of this, the cacheMeta selector (the public counterpart to the
+    internal maxAge/stale-while-revalidate cacheMeta atom) is now flagged
+    `__valdresInternal`, so a _live_ cacheMeta selector is excluded from both
+    `store.snapshot()` and `store.onChange({ selectors: true })` — matching the
+    already-excluded cacheMeta atom.
+
+    A store's values normally live in a `WeakMap`, so unreferenced
+    atoms/selectors are garbage-collected and can't be enumerated retroactively.
+    `{ enumerable: true }` switches that one structure to a `Map` (propagated to
+    every nested scope), which retains entries for the store's lifetime — the
+    deliberate cost of enumerability, fine for the dev/inspection context it's
+    meant for. The mode is chosen once at creation, so the `get`/`set` hot paths
+    are byte-identical to a default store and the default (WeakMap, GC-friendly)
+    behavior is unchanged. Calling `snapshot()` on a default store returns `[]`
+    and warns once.
+
+### Patch Changes
+
+- [#181](https://github.com/eigilsagafos/valdres/pull/181)
+  [`affd12b`](https://github.com/eigilsagafos/valdres/commit/affd12b3845e355b71739cd7d577f5e2af5af74a)
+  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! - Fix
+  `store.del(familyMember)` (and `txn.del`) not re-evaluating dependent
+  selectors in descendant scopes. When a family member was made live in both the
+  root and a child scope — the scope inheriting the member rather than shadowing
+  it — deleting it at the root fired the root's subscriber and updated the
+  root's selector, but the child scope's subscriber never fired and its selector
+  stayed stale.
+
+    The delete-time scope cascade only re-evaluated scopes that _shadowed_ the
+    family (keyed on `scopeValueIndex.get(family)`), so it missed two kinds of
+    descendant dependent: a scope that merely inherits the deleted member and
+    reads it directly (e.g. `get(family("a"))`), and a non-shadowing scope whose
+    selector reads the family list (`get(family)`). `propagateDeletedAtoms` now
+    cross-propagates the deleted member atoms _and_ their families through the
+    full scope tree via the same `propagateToScopes` path the `set`/update flow
+    already uses — members skip scopes that shadow them (their visible value is
+    unchanged), families always propagate (their rendered list shrank
+    everywhere) — so descendant-scope dependents re-evaluate and their
+    subscribers fire, matching the update path.
+
+- [#180](https://github.com/eigilsagafos/valdres/pull/180)
+  [`4ccd1af`](https://github.com/eigilsagafos/valdres/commit/4ccd1af8b24c69f725677222d99d055421352822)
+  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! - Fix `store.get()`
+  on a deleted family member returning the default-value factory function
+  instead of its resolved value. After `store.del(member)`, reading the member
+  hit the deleted-in-family-index branch in `getState`, which returned the
+  atom's raw `defaultValue`. For a family created with a function default
+  (`atomFamily((id) => 0)`), member `defaultValue` is the factory itself, so the
+  read yielded `[Function]` rather than `0` — and a selector reading it
+  (`get(member) * 2`) produced `NaN`.
+
+    The deleted-member read path now resolves the default the same way a fresh
+    init does (suspend with a placeholder promise when there is no default, run
+    a function default, evaluate a selector default, otherwise return the plain
+    value) via a new `resolveAtomDefaultValue` helper, and caches the resolved
+    default so repeated reads are stable (same reference) and never re-invoke a
+    function/async factory — re-running it on every read would repeat its side
+    effects (e.g. a `fetch`). For an async default the cached promise is swapped
+    for its resolved value once it settles (mirroring `getAtomInitValue`), so
+    later reads return the value rather than a forever-pending promise, and the
+    resolved value is propagated to dependent selectors/subscribers (via a new
+    `skipFamilyIndexUpdate` path in `propagateAtomUpdate`) so they react to it.
+    The member still stays absent from `get(family)` — none of this re-registers
+    (resurrects) it in the family index.
+
 ## 1.0.0-beta.6
 
 ### Patch Changes

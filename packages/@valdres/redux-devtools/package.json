@@ -1,6 +1,6 @@
 {
     "name": "@valdres/redux-devtools",
-    "version": "1.0.0-beta.0",
+    "version": "1.0.0-beta.1",
     "license": "MIT",
     "author": {
         "name": "Eigil Sagafos"
@@ -31,7 +31,7 @@
         "valdres": "workspace:^"
     },
     "peerDependencies": {
-        "valdres": "^1.0.0-beta.6"
+        "valdres": "^1.0.0-beta.7"
     },
     "publishConfig": {
         "access": "public",
