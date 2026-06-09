@@ -226,9 +226,33 @@ describe("atomFamilySearch — differential fuzzer (incremental index vs brute f
         { mode: "exact" as const, tolerance: 0, coordination: 0, limit: 5 },
         { mode: "prefix" as const, tolerance: 0, coordination: 0.5, limit: 6 },
         { mode: "exact" as const, tolerance: 1, coordination: 0.5, limit: 8 },
+        // #13: query-time weights must keep WAND's maxImpact bound valid — the
+        // weighted score is still ≤ Σ (weight × bm25), so the pruning stays
+        // exact. Both paths get the SAME weights; output must be identical.
+        {
+            mode: "exact" as const,
+            tolerance: 0,
+            coordination: 0.5,
+            limit: 7,
+            weights: { title: 5, body: 0.5 } as Record<string, number>,
+        },
+        {
+            mode: "prefix" as const,
+            tolerance: 0,
+            coordination: 0,
+            limit: 6,
+            weights: { body: 3 } as Record<string, number>,
+        },
     ]) {
-        test(`WAND path == naive path (${variant.mode}, tol ${variant.tolerance}, coord ${variant.coordination})`, () => {
-            const rnd = lcg(0x5eed ^ variant.limit ^ (variant.tolerance << 4))
+        const weights = (variant as { weights?: Record<string, number> })
+            .weights
+        test(`WAND path == naive path (${variant.mode}, tol ${variant.tolerance}, coord ${variant.coordination}${weights ? ", weighted" : ""})`, () => {
+            const rnd = lcg(
+                0x5eed ^
+                    variant.limit ^
+                    (variant.tolerance << 4) ^
+                    (weights ? 0x1357 : 0),
+            )
             const pick = <T,>(xs: T[]) => xs[Math.floor(rnd() * xs.length)]
             const words = (n: number) =>
                 Array.from({ length: n }, () => pick(VOCAB)).join(" ")
@@ -255,11 +279,12 @@ describe("atomFamilySearch — differential fuzzer (incremental index vs brute f
                     r => `${String(r.atom.familyArgsStringified)}:${r.score.toFixed(6)}`,
                 )
 
+            const page = weights ? { weights } : undefined
             const compare = () => {
                 for (let q = 0; q < 5; q++) {
                     const query = words(1 + Math.floor(rnd() * 3))
-                    const got = repr(ws.get(wand.scored(query)))
-                    const want = repr(ns.get(naive.scored(query)))
+                    const got = repr(ws.get(wand.scored(query, page)))
+                    const want = repr(ns.get(naive.scored(query, page)))
                     expect(got).toEqual(want)
                 }
             }

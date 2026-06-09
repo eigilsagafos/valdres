@@ -222,10 +222,17 @@ export type ScoredResult<Value, Args extends [any, ...any[]]> = {
     matched: string[]
 }
 
-/** Per-call result windowing for pagination. `offset` skips the first N
- *  ranked results; `limit` caps the page size (overriding the instance-level
- *  `limit` for this call). Omit both for the default view. */
-export type SearchPage = { offset?: number; limit?: number }
+/** Per-call query options. `offset` / `limit` window the ranked results
+ *  (overriding the instance-level `limit`); `weights` overrides per-field
+ *  boosts for THIS query (one index can then serve different ranking needs —
+ *  e.g. weight `title` heavily for one search, `body` for another). Fields
+ *  absent from `weights` keep their construction boost. Omit all for the
+ *  default view. */
+export type SearchPage = {
+    offset?: number
+    limit?: number
+    weights?: Record<string, number>
+}
 
 /** A snapshot of index statistics (per store), resolved reactively. */
 export type SearchStats = {
@@ -755,7 +762,14 @@ export function atomFamilySearch<
         return out
     }
 
-    const computeScored = (query: string) => {
+    const computeScored = (
+        query: string,
+        weights?: Record<string, number>,
+    ) => {
+        // Per-query effective field boost: weights override construction
+        // boosts for this query (#13); absent fields keep their boost.
+        const boostOf = (field: string): number =>
+            weights?.[field] ?? fieldBoost(field)
         const queryTokens = normalize(query)
         // Denominator for the coordination factor: distinct normalized
         // query terms. A doc that matched all of them gets full score; one
@@ -858,7 +872,7 @@ export function atomFamilySearch<
                                 // ranking. Always 1 for non-tolerance.
                                 termScore +=
                                     penalty *
-                                    fieldBoost(field) *
+                                    boostOf(field) *
                                     bm25ScoreWithIdf(
                                         idf,
                                         tf,
@@ -1006,7 +1020,12 @@ export function atomFamilySearch<
         (mode === "exact" || mode === "prefix")
     const kBd = bm25Params.k1 + 1 + bm25Params.d
 
-    const computeTopK = (query: string) => {
+    const computeTopK = (
+        query: string,
+        weights?: Record<string, number>,
+    ) => {
+        const boostOf = (field: string): number =>
+            weights?.[field] ?? fieldBoost(field)
         const queryTokens = normalize(query)
         const distinctQueryTerms = new Set(queryTokens).size
         let hasPhrase = false
@@ -1031,7 +1050,7 @@ export function atomFamilySearch<
                 // Runtime-ineligible (scoped store / phrase) → naive, sliced.
                 if (hasPhrase || storage.parent !== undefined) {
                     const full = typedGet(
-                        getFullScored(query) as unknown as Atom<
+                        getFullScored(query, weights) as unknown as Atom<
                             ScoredResult<Value, Args>[]
                         >,
                     )
@@ -1053,7 +1072,7 @@ export function atomFamilySearch<
                 }
                 let sumFieldBoost = 0
                 for (const f of sd.collectFieldNames(storage))
-                    sumFieldBoost += fieldBoost(f)
+                    sumFieldBoost += boostOf(f)
                 if (sumFieldBoost === 0) sumFieldBoost = 1
 
                 // Expand each query token → its indexed terms (+ bucket, idf,
@@ -1103,7 +1122,7 @@ export function atomFamilySearch<
                                 if (avgdl < 0) continue
                                 termScore +=
                                     penalty *
-                                    fieldBoost(field) *
+                                    boostOf(field) *
                                     bm25ScoreWithIdf(
                                         idf,
                                         tf,
@@ -1199,11 +1218,28 @@ export function atomFamilySearch<
         )
     }
 
-    const getFullScored = (query: string) => {
-        const cached = fullScoredCache.get(query)
+    // Stable key fragment for a query-time weight override. Empty/absent →
+    // "" (the unweighted default keys on the bare query). Keys are sorted so
+    // `{title:3, body:1}` and `{body:1, title:3}` collapse to one cache slot.
+    const weightKey = (weights?: Record<string, number>): string => {
+        if (!weights) return ""
+        const keys = Object.keys(weights).sort()
+        if (keys.length === 0) return ""
+        return keys.map(k => `${k}=${weights[k]}`).join(",")
+    }
+
+    const getFullScored = (
+        query: string,
+        weights?: Record<string, number>,
+    ) => {
+        const wk = weightKey(weights)
+        // Weighted views append after a NUL so releaseQuery(query) still
+        // reclaims them (its match prefix is the bare query + NUL).
+        const cacheKey = wk ? `${query}\u0000w\u0000${wk}` : query
+        const cached = fullScoredCache.get(cacheKey)
         if (cached) return cached
-        const sel = computeScored(query)
-        fullScoredCache.set(query, sel)
+        const sel = computeScored(query, weights)
+        fullScoredCache.set(cacheKey, sel)
         return sel
     }
 
@@ -1230,13 +1266,15 @@ export function atomFamilySearch<
     }
     const pageKey = (query: string, page?: SearchPage): string => {
         const { offset, limit } = resolvePage(page)
-        // Unwindowed view keys on the bare query (stable identity; matched
-        // by releaseQuery). Windowed views append offset/limit after a NUL —
-        // a separator real queries don't contain — so releaseQuery("foo")
+        const wk = weightKey(page?.weights)
+        // Unwindowed, unweighted view keys on the bare query (stable identity;
+        // matched by releaseQuery). Windowed / weighted views append after a
+        // NUL — a separator real queries don't contain — so releaseQuery("foo")
         // cannot accidentally match the query "foo bar".
-        if (offset === 0 && !Number.isFinite(limit)) return query
+        if (offset === 0 && !Number.isFinite(limit) && !wk) return query
         const lim = Number.isFinite(limit) ? String(limit) : "inf"
-        return `${query}\u0000${offset}\u0000${lim}`
+        const base = `${query}\u0000${offset}\u0000${lim}`
+        return wk ? `${base}\u0000w\u0000${wk}` : base
     }
 
     const getScored = (query: string, page?: SearchPage) => {
@@ -1244,18 +1282,19 @@ export function atomFamilySearch<
         const cached = scoredCache.get(key)
         if (cached) return cached
         const { offset, limit } = resolvePage(page)
+        const weights = page?.weights
         let sel: Selector<ScoredResult<Value, Args>[]>
         if (offset === 0 && limit === resultLimit && wandEligibleStatic) {
             // Default ranked + limited view → WAND top-K (it falls back to the
             // naive ranking at eval time when scoped / phrase-constrained).
             // Does NOT build the full ranking, so it stays sublinear.
-            sel = computeTopK(query)
+            sel = computeTopK(query, weights)
         } else if (offset === 0 && !Number.isFinite(limit)) {
             // Unbounded view → the full ranking IS the view.
-            sel = getFullScored(query)
+            sel = getFullScored(query, weights)
         } else {
             // Windowed (or non-WAND limited) view → slice the full ranking.
-            const full = getFullScored(query)
+            const full = getFullScored(query, weights)
             sel = selector<ScoredResult<Value, Args>[]>(
                 get => {
                     const all = get(full)
