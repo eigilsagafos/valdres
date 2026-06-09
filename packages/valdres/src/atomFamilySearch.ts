@@ -1,6 +1,7 @@
 import { atomFamilyIndex } from "./atomFamilyIndex"
 import { createBKTree, type BKTree } from "./lib/BKTree"
 import { bm25Score, DEFAULT_BM25, type BM25Params } from "./lib/bm25"
+import { createLRU } from "./lib/createLRU"
 import { equal } from "./lib/equal"
 import type {
     IndexDescriptor,
@@ -120,6 +121,17 @@ export type AtomFamilySearchOptions<Fields extends string = string> = {
      *  No effect on single-term queries or `match: "all"` (coverage is
      *  always 1 there). Tolerance-matched terms count toward coverage. */
     coordination?: number
+    /** Upper bound on how many distinct query strings keep cached selectors
+     *  (one entry each for the atoms view and the scored view). The
+     *  least-recently-used query is evicted past this. Default `500`. Pass
+     *  `0` or `Infinity` for an unbounded cache (the previous behavior, with
+     *  `releaseQuery` as the only reclaim).
+     *
+     *  Sized for search-as-you-type, where every keystroke is a distinct
+     *  query: the cache used to grow without limit. Eviction only drops the
+     *  cache entry — a selector still subscribed elsewhere keeps working;
+     *  the next read of an evicted query re-allocates. */
+    queryCacheSize?: number
     /** Cap returned results to the top-N by score. Mirrors what most JS
      *  search libraries do by default — `MiniSearch.search()` does not
      *  cap, FlexSearch defaults to 100, Orama defaults to 10. Without a
@@ -718,21 +730,20 @@ export function atomFamilySearch<
         return set
     }
 
-    // Per-query selector caches, keyed by query string. These grow
-    // monotonically for the lifetime of the search instance — one entry
-    // per distinct query ever issued. For search-as-you-type / unbounded
-    // distinct queries this is a deliberate leak with an escape hatch:
-    // call `releaseQuery(q)` to drop one, or `releaseAllQueries()` to
-    // clear all (next read re-allocates). Bounded-query apps never need
-    // either. A future LRU cap could automate this if it bites.
-    const scoredCache = new Map<
+    // Per-query selector caches, keyed by query string. Bounded by an LRU
+    // (default 500, configurable via `queryCacheSize`) so a search-as-you-
+    // type UI — one distinct query per keystroke — doesn't grow them without
+    // limit. `releaseQuery(q)` / `releaseAllQueries()` still drop entries
+    // explicitly; eviction or release just means the next read re-allocates.
+    const queryCacheSize = options?.queryCacheSize ?? 500
+    const scoredCache = createLRU<
         string,
         Selector<ScoredResult<Value, Args>[]>
-    >()
-    const atomsCache = new Map<
+    >(queryCacheSize)
+    const atomsCache = createLRU<
         string,
         Selector<AtomFamilyAtom<Value, Args>[]>
-    >()
+    >(queryCacheSize)
 
     const expandSingleToken = (token: string): ExpandedTerm[] => {
         if (mode === "trigram") {

@@ -611,6 +611,40 @@ describe("atomFamilySearch", () => {
 
             expect(after).toEqual(before)
         })
+
+        test("queryCacheSize bounds the cache with LRU eviction", () => {
+            const s = store()
+            const post = atomFamily<{ text: string }, [string]>()
+            const search = atomFamilySearch(post, p => p.text, {
+                queryCacheSize: 2,
+            })
+            s.set(post("1"), { text: "alpha beta gamma" })
+
+            const a1 = search.scored("alpha")
+            search.scored("beta") // cache: [alpha, beta]
+            // Re-touch alpha so beta is the least-recently-used.
+            expect(search.scored("alpha")).toBe(a1)
+            search.scored("gamma") // over capacity → evict beta (LRU)
+
+            // alpha was refreshed → still cached (same selector).
+            expect(search.scored("alpha")).toBe(a1)
+            // beta was evicted → a fresh selector, but still correct results.
+            expect(
+                s.get(search("beta")).map(a => a.familyArgsStringified),
+            ).toEqual(["1"])
+        })
+
+        test("queryCacheSize: 0 keeps the cache unbounded", () => {
+            const post = atomFamily<{ text: string }, [string]>()
+            const search = atomFamilySearch(post, p => p.text, {
+                queryCacheSize: 0,
+            })
+            const sels = Array.from({ length: 1000 }, (_, i) =>
+                search.scored(`q${i}`),
+            )
+            // First query's selector is still cached after 1000 distinct ones.
+            expect(search.scored("q0")).toBe(sels[0])
+        })
     })
 
     describe("IDF ranking", () => {
