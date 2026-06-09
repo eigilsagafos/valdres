@@ -763,6 +763,72 @@ describe("atomFamilySearch", () => {
         // (works in `exact` and `prefix`; ignored in `trigram` since
         // trigrams are already fuzzy by construction).
 
+        describe("minimum-length guard (short tokens aren't fuzzed)", () => {
+            // Edit-distance-1 on a very short token matches a huge
+            // neighborhood — and in prefix mode the term dictionary is
+            // full of short prefixes, so a 3-char query like "str" would
+            // fuzz into "sto" (→ storm), "sta", etc., matching most of the
+            // corpus and drowning the real prefix match. Tokens at or below
+            // `tolerance + 2` chars are matched exactly / by prefix only.
+
+            test("a short prefix is NOT fuzzed into substitution-neighbors (prefix mode)", () => {
+                const s = store()
+                const post = atomFamily<{ text: string }, [string]>(null, {
+                    name: "posts",
+                })
+                const search = atomFamilySearch(post, p => p.text, {
+                    mode: "prefix",
+                    tolerance: 1,
+                })
+                s.set(post("strong"), { text: "strong" })
+                s.set(post("storm"), { text: "storm" })
+                // "str" is a real prefix of "strong" → matches. "storm" only
+                // matches via the fuzz str→sto, which the guard suppresses.
+                const hits = s
+                    .get(search("str"))
+                    .map(a => a.familyArgsStringified)
+                expect(hits).toContain("strong")
+                expect(hits).not.toContain("storm")
+            })
+
+            test("a long typo'd token IS still fuzzed (typo correction preserved)", () => {
+                const s = store()
+                const post = atomFamily<{ text: string }, [string]>(null, {
+                    name: "posts",
+                })
+                const search = atomFamilySearch(post, p => p.text, {
+                    mode: "prefix",
+                    tolerance: 1,
+                })
+                s.set(post("a"), { text: "stranger" })
+                // "strangr" (7 chars, one deletion) is well above the guard,
+                // so it still fuzz-matches "stranger".
+                expect(
+                    s.get(search("strangr")).map(a => a.familyArgsStringified),
+                ).toEqual(["a"])
+            })
+
+            test("short exact-mode typo is not fuzzed either", () => {
+                const s = store()
+                const post = atomFamily<{ text: string }, [string]>(null, {
+                    name: "posts",
+                })
+                const search = atomFamilySearch(post, p => p.text, {
+                    mode: "exact",
+                    tolerance: 1,
+                })
+                s.set(post("cat"), { text: "cat" })
+                s.set(post("cot"), { text: "cot" })
+                // "bat" is 1 edit from "cat" but only 3 chars → guard means
+                // exact-only, so it matches neither.
+                expect(s.get(search("bat"))).toHaveLength(0)
+                // The exact token still matches.
+                expect(
+                    s.get(search("cat")).map(a => a.familyArgsStringified),
+                ).toEqual(["cat"])
+            })
+        })
+
         test("tolerance: 1 matches single-char typos in exact mode", () => {
             const s = store()
             const post = atomFamily<{ text: string }, [string]>()

@@ -728,7 +728,17 @@ export function atomFamilySearch<
      *  but ~80 lines more code; revisit if vocabs of 100k+ become
      *  common. */
     const expandToleranceMatches = (token: string): ExpandedTerm[] => {
-        if (tolerance === 0) return [{ term: token, penalty: 1 }]
+        // Minimum-length guard. Edit-distance-`tolerance` on a very short
+        // token matches an enormous neighborhood, and in `prefix` mode the
+        // dictionary is full of short prefixes — so a 3-char query like
+        // "str" would fuzz into "sto" (→ storm), "sta", "ste"… and match
+        // most of the corpus, drowning the genuine prefix match and making
+        // the term worthless (near-zero IDF). Require the token to be
+        // longer than `tolerance + 2` before fuzzing; shorter tokens match
+        // exactly / by prefix only. A real typo lives in a longer word
+        // ("strangr", "wittness"), which clears the bar and still corrects.
+        if (tolerance === 0 || token.length <= tolerance + 2)
+            return [{ term: token, penalty: 1 }]
         const matches: ExpandedTerm[] = [{ term: token, penalty: 1 }]
         for (const term of termDictionary.keys()) {
             if (term === token) continue
