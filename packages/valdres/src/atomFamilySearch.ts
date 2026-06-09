@@ -237,19 +237,13 @@ const expandForWrite = (
     tokens: string[],
     mode: SearchMode,
 ): string[] => {
-    if (mode === "exact") return tokens
-    if (mode === "prefix") {
-        // Inline equivalent of `tokens.flatMap(prefixesOf)` — for bulk
-        // inserts this saves an intermediate sub-array per token plus the
-        // flat-map walk. Identical output.
-        const out: string[] = []
-        for (let ti = 0; ti < tokens.length; ti++) {
-            const tok = tokens[ti]
-            const len = tok.length
-            for (let i = 1; i <= len; i++) out.push(tok.slice(0, i))
-        }
-        return out
-    }
+    // exact AND prefix both index whole words. Prefix MATCHING happens at
+    // query time: the query token resolves to every indexed word it prefixes
+    // via the vocabulary scan (Lucene-style prefix → OR of term queries).
+    // Indexing whole words keeps a prefix index the same size as an exact
+    // index — no per-word-length explosion — and lets each matched word
+    // carry its own df / TF into BM25 ranking. Only trigram expands on write.
+    if (mode === "exact" || mode === "prefix") return tokens
     // Inline trigram emission, matches `tokens.flatMap(trigramsOf)`.
     // Each token produces `tok.length + 2` trigrams with the two-char
     // boundary marker.
@@ -554,18 +548,13 @@ export function atomFamilySearch<
         const stats = storage.perAtom.get(atom)
         if (!stats) return false
         for (const [field, fs] of stats) {
-            // Decrement term refcounts and drop entries that hit zero,
-            // so the dictionary doesn't grow monotonically across
-            // rewrites. Only relevant when tolerance > 0 (otherwise we
-            // never populated the dictionary in the first place).
-            if (tolerance > 0) {
+            // Decrement word refcounts and drop entries that hit zero, so the
+            // vocabulary doesn't grow monotonically across rewrites. Only
+            // relevant when the vocabulary is tracked (prefix mode or
+            // tolerance > 0); otherwise it was never populated.
+            if (trackVocabulary) {
                 for (const [term, count] of fs.termCounts) {
-                    const remaining = (termDictionary.get(term) ?? 0) - count
-                    if (remaining <= 0) {
-                        termDictionary.delete(term)
-                    } else {
-                        termDictionary.set(term, remaining)
-                    }
+                    decVocab(term, count)
                 }
             }
             const tot = storage.fieldTotals.get(field)
@@ -606,16 +595,11 @@ export function atomFamilySearch<
                 const termCounts = new Map<string, number>()
                 for (const t of terms) {
                     termCounts.set(t, (termCounts.get(t) ?? 0) + 1)
-                    // Refcounted: dictionary entry's value is the total
+                    // Refcounted vocabulary: the entry's value is the total
                     // occurrence count across all atoms. `detachAtomStats`
                     // decrements by this atom's contribution on delete /
-                    // re-write so the dictionary doesn't leak.
-                    if (tolerance > 0) {
-                        termDictionary.set(
-                            t,
-                            (termDictionary.get(t) ?? 0) + 1,
-                        )
-                    }
+                    // re-write so the vocabulary doesn't leak.
+                    if (trackVocabulary) incVocab(t)
                 }
                 // `length` is the raw word count (not the expanded term
                 // count) so BM25 length-norm isn't biased by word length.
@@ -701,7 +685,8 @@ export function atomFamilySearch<
             }
             return out
         }
-        // exact / prefix: optionally expand to tolerance-neighbors
+        if (mode === "prefix") return expandPrefixMatches(token)
+        // exact: optionally expand to tolerance-neighbors
         return expandToleranceMatches(token)
     }
 
@@ -719,6 +704,12 @@ export function atomFamilySearch<
             ? 0
             : Math.max(0, Math.floor(options?.tolerance ?? 0))
 
+    // The whole-word vocabulary (`termDictionary` + its derived sorted view)
+    // is maintained when prefix mode needs it for the prefix scan, or when
+    // `tolerance` needs it for fuzzy expansion. Trigram mode never needs it
+    // (it matches via n-gram overlap, not whole words).
+    const trackVocabulary = mode === "prefix" || tolerance > 0
+
     /** Per-instance term dictionary with refcounts. Populated by the BM25
      *  descriptor's write hook; entries are decremented by
      *  `detachAtomStats` and removed when the count hits zero. Used by
@@ -733,6 +724,69 @@ export function atomFamilySearch<
      *  contribution before adding the new — see `detachAtomStats`. */
     const termDictionary = new Map<string, number>()
 
+    /** Bumped whenever a DISTINCT word enters or leaves `termDictionary`
+     *  (a refcount 0→1 or 1→0 edge). The prefix scan caches a sorted view of
+     *  the vocabulary keyed on this version, so it rebuilds only when
+     *  membership actually changes — not on every occurrence-count tick. */
+    let vocabVersion = 0
+    let sortedVocabCache: { version: number; words: string[] } | null = null
+
+    /** Refcount helpers for the whole-word vocabulary. `incVocab` adds one
+     *  occurrence (and the word itself on the 0→1 edge); `decVocab` subtracts
+     *  `count` and removes the word on the →0 edge. Both bump `vocabVersion`
+     *  on a membership change so the sorted prefix cache invalidates. */
+    const incVocab = (term: string) => {
+        const prev = termDictionary.get(term) ?? 0
+        termDictionary.set(term, prev + 1)
+        if (prev === 0) vocabVersion++
+    }
+    const decVocab = (term: string, count: number) => {
+        const remaining = (termDictionary.get(term) ?? 0) - count
+        if (remaining <= 0) {
+            termDictionary.delete(term)
+            vocabVersion++
+        } else {
+            termDictionary.set(term, remaining)
+        }
+    }
+
+    /** Sorted snapshot of the vocabulary for binary-search prefix lookups,
+     *  rebuilt lazily when membership changes. Prefix matches form a
+     *  contiguous run in sorted order, so we binary-search the lower bound
+     *  then walk while the prefix holds: O(V log V) to (re)sort on a
+     *  vocabulary change, O(log V + matches) per lookup otherwise — in line
+     *  with the "modest corpus" contract `tolerance` already documents. A
+     *  trie would make maintenance incremental (no resort); revisit if it
+     *  bites. */
+    const getSortedVocab = (): string[] => {
+        if (sortedVocabCache && sortedVocabCache.version === vocabVersion) {
+            return sortedVocabCache.words
+        }
+        const words = [...termDictionary.keys()]
+        words.sort()
+        sortedVocabCache = { version: vocabVersion, words }
+        return words
+    }
+    const vocabWordsWithPrefix = (prefix: string): string[] => {
+        const words = getSortedVocab()
+        let lo = 0
+        let hi = words.length
+        while (lo < hi) {
+            const mid = (lo + hi) >>> 1
+            if (words[mid] < prefix) lo = mid + 1
+            else hi = mid
+        }
+        const out: string[] = []
+        for (
+            let i = lo;
+            i < words.length && words[i].startsWith(prefix);
+            i++
+        ) {
+            out.push(words[i])
+        }
+        return out
+    }
+
     /** One indexed term + a relevance multiplier (1.0 for exact match,
      *  < 1 for typo'd matches). Plain BM25F values rare terms — without
      *  a penalty, a one-doc typo'd match with df=1 can outrank a much
@@ -745,26 +799,23 @@ export function atomFamilySearch<
      *  `weights.fuzzy` default is 0.45). */
     type ExpandedTerm = { term: string; penalty: number }
 
-    /** Expand a query token to all indexed terms within `tolerance`
-     *  edits, each tagged with a distance-based penalty. The original
-     *  token is always included with penalty 1.0 (so exact matches
-     *  still hit even if the token isn't in the dictionary).
-     *  Cost: O(|dictionary|) — naive walk. BK-tree would be sublinear
-     *  but ~80 lines more code; revisit if vocabs of 100k+ become
-     *  common. */
-    const expandToleranceMatches = (token: string): ExpandedTerm[] => {
-        // Minimum-length guard. Edit-distance-`tolerance` on a very short
-        // token matches an enormous neighborhood, and in `prefix` mode the
-        // dictionary is full of short prefixes — so a 3-char query like
-        // "str" would fuzz into "sto" (→ storm), "sta", "ste"… and match
-        // most of the corpus, drowning the genuine prefix match and making
-        // the term worthless (near-zero IDF). Require the token to be
-        // longer than `tolerance + 2` before fuzzing; shorter tokens match
-        // exactly / by prefix only. A real typo lives in a longer word
-        // ("strangr", "wittness"), which clears the bar and still corrects.
-        if (tolerance === 0 || token.length <= tolerance + 2)
-            return [{ term: token, penalty: 1 }]
-        const matches: ExpandedTerm[] = [{ term: token, penalty: 1 }]
+    /** True when a query token is long enough to fuzz. Edit-distance-
+     *  `tolerance` on a very short token matches an enormous neighborhood
+     *  (a 3-char "str" at distance 1 reaches "sto", "sta", "ste"…), so it
+     *  drowns the genuine match and the fuzzed term carries near-zero IDF.
+     *  Require length > `tolerance + 2`; shorter tokens match exactly / by
+     *  prefix only. A real typo lives in a longer word ("strangr"), which
+     *  clears the bar and still corrects. */
+    const clearsFuzzGuard = (token: string): boolean =>
+        tolerance > 0 && token.length > tolerance + 2
+
+    /** Walk the vocabulary for indexed words within `tolerance` edits of
+     *  `token`, each tagged with a distance-based penalty. Excludes `token`
+     *  itself; the caller decides whether the token clears the length guard.
+     *  Cost: O(|vocabulary|) — naive walk; #2 replaces this with a BK-tree
+     *  for sublinear lookup. */
+    const fuzzyMatches = (token: string): ExpandedTerm[] => {
+        const matches: ExpandedTerm[] = []
         for (const term of termDictionary.keys()) {
             if (term === token) continue
             const d = levenshtein(token, term, tolerance)
@@ -773,6 +824,37 @@ export function atomFamilySearch<
             }
         }
         return matches
+    }
+
+    /** exact-mode token expansion: the token itself (penalty 1, always — so
+     *  an exact match hits even for an unindexed token) plus, when it clears
+     *  the length guard, fuzzy neighbors. */
+    const expandToleranceMatches = (token: string): ExpandedTerm[] => {
+        if (!clearsFuzzGuard(token)) return [{ term: token, penalty: 1 }]
+        return [{ term: token, penalty: 1 }, ...fuzzyMatches(token)]
+    }
+
+    /** prefix-mode token expansion: every indexed word the token prefixes
+     *  (penalty 1 — a true prefix hit), plus, when `tolerance > 0` and the
+     *  token clears the length guard, fuzzy whole-word matches (penalty < 1)
+     *  so typo'd partials still correct. A prefix hit always wins the dedup
+     *  over a fuzzy hit for the same word. */
+    const expandPrefixMatches = (token: string): ExpandedTerm[] => {
+        const out: ExpandedTerm[] = []
+        const seen = new Set<string>()
+        for (const word of vocabWordsWithPrefix(token)) {
+            if (seen.has(word)) continue
+            seen.add(word)
+            out.push({ term: word, penalty: 1 })
+        }
+        if (clearsFuzzGuard(token)) {
+            for (const m of fuzzyMatches(token)) {
+                if (seen.has(m.term)) continue
+                seen.add(m.term)
+                out.push(m)
+            }
+        }
+        return out
     }
 
     const computeScored = (query: string) => {

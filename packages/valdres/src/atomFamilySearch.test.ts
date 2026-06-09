@@ -241,6 +241,59 @@ describe("atomFamilySearch", () => {
         })
     })
 
+    describe("prefix mode — whole-word indexing (per-word df)", () => {
+        // #1: prefix mode indexes whole words and resolves a query token to
+        // the matching words at query time (Lucene-style prefix → OR of term
+        // queries), instead of exploding every prefix into the inverted
+        // index. Consequence: a prefix query scores each matched word with
+        // ITS OWN document frequency, so a rare completion outranks a common
+        // one (and indexing no longer scales with word length).
+        test("a rare completion outranks a common completion for the same prefix", () => {
+            const s = store()
+            const post = atomFamily<{ text: string }, [string]>(null, {
+                name: "posts",
+            })
+            const search = atomFamilySearch(post, p => p.text, {
+                mode: "prefix",
+            })
+            // "apple" is a common completion of "app" (30 docs); "apparatus"
+            // is a rare completion (one doc). Both are single-word docs so
+            // length normalization is identical — only df differs.
+            for (let i = 0; i < 30; i++) {
+                s.set(post(`c${i}`), { text: "apple" })
+            }
+            s.set(post("rare"), { text: "apparatus" })
+
+            const ranked = s
+                .get(search("app"))
+                .map(a => a.familyArgsStringified)
+            // The rare completion's high IDF floats it to the top. Under the
+            // old prefix-explosion model "app" was a single indexed term with
+            // one df, so the rare doc tied with the 30 common ones and lost
+            // the tiebreak.
+            expect(ranked[0]).toBe("rare")
+        })
+
+        test("prefix vocabulary holds whole words, not exploded prefixes", () => {
+            // White-box: in prefix mode the refcounted vocabulary tracks whole
+            // words (it powers the prefix scan). Indexing one 5-char word adds
+            // exactly one vocabulary entry, not five.
+            const s = store()
+            const post = atomFamily<{ text: string }, [string]>()
+            const search = atomFamilySearch(post, p => p.text, {
+                mode: "prefix",
+            })
+            const dictSize = () =>
+                (search as unknown as { __dictionarySize: () => number })
+                    .__dictionarySize()
+            s.set(post("a"), { text: "apple" })
+            expect(dictSize()).toBe(1)
+            s.set(post("b"), { text: "apricot apple" })
+            // apple (shared) + apricot = 2 distinct whole words
+            expect(dictSize()).toBe(2)
+        })
+    })
+
     describe("trigram mode", () => {
         test("typo-tolerant match", () => {
             const s = store()
