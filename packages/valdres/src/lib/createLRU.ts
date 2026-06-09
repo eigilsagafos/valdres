@@ -18,6 +18,7 @@ export type LRU<K, V> = {
     has: (key: K) => boolean
     delete: (key: K) => boolean
     clear: () => void
+    keys: () => IterableIterator<K>
     readonly size: number
 }
 
@@ -46,6 +47,7 @@ export const createLRU = <K, V>(capacity: number): LRU<K, V> => {
         has: key => map.has(key),
         delete: key => map.delete(key),
         clear: () => map.clear(),
+        keys: () => map.keys(),
         get size() {
             return map.size
         },

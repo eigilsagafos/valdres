@@ -61,6 +61,8 @@ export type {
     ScoredResult,
     SearchLanguage,
     SearchMode,
+    SearchPage,
+    SearchStats,
 } from "./atomFamilySearch"
 export type { CacheMeta } from "./cacheMeta"
 export type { Atom } from "./types/Atom"

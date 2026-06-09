@@ -23,6 +23,10 @@ import type { Selector } from "./types/Selector"
 import type { StoreData } from "./types/StoreData"
 import { defaultTokenize } from "./utils/defaultTokenize"
 import { englishStopWords } from "./utils/englishStopWords"
+import {
+    highlightMatches,
+    type HighlightRange,
+} from "./utils/highlightMatches"
 import { simpleEnglishStem } from "./utils/simpleEnglishStem"
 
 /**
@@ -253,13 +257,49 @@ export type ScoredResult<Value, Args extends [any, ...any[]]> = {
     matched: string[]
 }
 
+/** Per-call result windowing for pagination. `offset` skips the first N
+ *  ranked results; `limit` caps the page size (overriding the instance-level
+ *  `limit` for this call). Omit both for the default view. */
+export type SearchPage = { offset?: number; limit?: number }
+
+/** A snapshot of index statistics (per store), resolved reactively. */
+export type SearchStats = {
+    /** Distinct documents (atoms) currently indexed in this store. */
+    documentCount: number
+    /** Per-field document count and average length (in words). */
+    fields: Record<string, { documentCount: number; averageLength: number }>
+}
+
 export type AtomFamilySearch<Value, Args extends [any, ...any[]]> = {
     /** Returns a selector resolving to matching atoms, in ranking order
-     *  for `match: "ranked"` strategies. */
-    (query: string): Selector<AtomFamilyAtom<Value, Args>[]>
+     *  for `match: "ranked"` strategies. Pass `{ offset, limit }` to
+     *  paginate a single query without re-scoring (the full ranking is
+     *  computed once and sliced). */
+    (query: string, page?: SearchPage): Selector<AtomFamilyAtom<Value, Args>[]>
     /** Returns a selector resolving to `{ atom, score }` pairs in ranking
-     *  order. Score is the BM25F relevance (× coordination factor). */
-    scored(query: string): Selector<ScoredResult<Value, Args>[]>
+     *  order. Score is the BM25F relevance (× coordination factor).
+     *  Accepts the same `{ offset, limit }` pagination window. */
+    scored(
+        query: string,
+        page?: SearchPage,
+    ): Selector<ScoredResult<Value, Args>[]>
+    /** Term completions for an autocomplete `prefix`, ranked by document
+     *  frequency (most common first). Reads the instance vocabulary, so it
+     *  returns results in `prefix` mode or when `tolerance > 0` (the modes
+     *  that track a whole-word vocabulary), otherwise `[]`. Synchronous and
+     *  store-independent — fine to call on every keystroke. */
+    suggest(prefix: string, limit?: number): string[]
+    /** Character ranges in `text` that match `query`, for highlighting a
+     *  result. Binds this instance's tokenizer config (stem / stop words /
+     *  prefix-vs-exact) to `highlightMatches`, so highlights line up with
+     *  what actually matched. */
+    highlight(
+        query: string,
+        text: string,
+        options?: { merge?: boolean },
+    ): HighlightRange[]
+    /** Reactive index statistics for the reading store. */
+    stats: Selector<SearchStats>
     /** Drop the cached selectors for one query string. The next call
      *  with the same query allocates fresh selectors — useful when an
      *  app issues many distinct queries (e.g. search-as-you-type) and
@@ -624,6 +664,18 @@ export function atomFamilySearch<
         return { totalLength, docCount }
     }
 
+    /** All field names with documents anywhere in the scope chain — for the
+     *  `stats` selector. */
+    const collectFieldNames = (storage: BM25Storage): Set<string> => {
+        const out = new Set<string>()
+        let s: BM25Storage | undefined = storage
+        while (s) {
+            for (const field of s.fieldTotals.keys()) out.add(field)
+            s = s.parent
+        }
+        return out
+    }
+
     /** Subtract one atom's field stats from `fieldTotals` and decrement
      *  its term refcounts in `termDictionary`. Used both on delete and
      *  on re-write (where we tear down the old contribution before
@@ -750,6 +802,13 @@ export function atomFamilySearch<
     // limit. `releaseQuery(q)` / `releaseAllQueries()` still drop entries
     // explicitly; eviction or release just means the next read re-allocates.
     const queryCacheSize = options?.queryCacheSize ?? 500
+    // Full ranking per query (the expensive part), keyed by query string.
+    const fullScoredCache = createLRU<
+        string,
+        Selector<ScoredResult<Value, Args>[]>
+    >(queryCacheSize)
+    // Sliced views, keyed by query + pagination window — cheap wrappers over
+    // the full ranking, so paginating a query never re-scores.
     const scoredCache = createLRU<
         string,
         Selector<ScoredResult<Value, Args>[]>
@@ -1186,33 +1245,79 @@ export function atomFamilySearch<
                     const sb = String(b.atom.familyArgsStringified)
                     return sa < sb ? -1 : sa > sb ? 1 : 0
                 })
-                if (
-                    Number.isFinite(resultLimit) &&
-                    entries.length > resultLimit
-                ) {
-                    entries.length = resultLimit
-                }
+                // Full ranking — the `limit` / `offset` window is applied by
+                // the view wrappers (`getScored` / `getAtoms`) so a query can
+                // be paginated without re-scoring.
                 return entries
             },
             queryName ? { name: queryName } : undefined,
         )
     }
 
-    const getScored = (query: string) => {
-        const cached = scoredCache.get(query)
+    const getFullScored = (query: string) => {
+        const cached = fullScoredCache.get(query)
         if (cached) return cached
         const sel = computeScored(query)
-        scoredCache.set(query, sel)
+        fullScoredCache.set(query, sel)
         return sel
     }
 
-    const getAtoms = (query: string) => {
-        const cached = atomsCache.get(query)
+    /** Resolve a pagination window: `offset` defaults to 0, `limit` to the
+     *  instance-level `limit` (Infinity if unset). */
+    const resolvePage = (
+        page?: SearchPage,
+    ): { offset: number; limit: number } => {
+        const offset = Math.max(0, Math.floor(page?.offset ?? 0))
+        const rawLimit = page?.limit
+        const limit =
+            rawLimit !== undefined && rawLimit > 0
+                ? Math.floor(rawLimit)
+                : resultLimit
+        return { offset, limit }
+    }
+    const pageKey = (query: string, page?: SearchPage): string => {
+        const { offset, limit } = resolvePage(page)
+        // Unwindowed view keys on the bare query (stable identity; matched
+        // by releaseQuery). Windowed views append offset/limit after a NUL —
+        // a separator real queries don't contain — so releaseQuery("foo")
+        // cannot accidentally match the query "foo bar".
+        if (offset === 0 && !Number.isFinite(limit)) return query
+        const lim = Number.isFinite(limit) ? String(limit) : "inf"
+        return `${query}\u0000${offset}\u0000${lim}`
+    }
+
+    const getScored = (query: string, page?: SearchPage) => {
+        const key = pageKey(query, page)
+        const cached = scoredCache.get(key)
         if (cached) return cached
-        const scoredSel = getScored(query)
-        const queryName = options?.name
-            ? `${options.name}:${query}`
-            : undefined
+        const full = getFullScored(query)
+        const { offset, limit } = resolvePage(page)
+        // No window → the full ranking IS the view (avoid a wrapper selector).
+        const sel: Selector<ScoredResult<Value, Args>[]> =
+            offset === 0 && !Number.isFinite(limit)
+                ? full
+                : selector<ScoredResult<Value, Args>[]>(
+                      get => {
+                          const all = get(full)
+                          const end = Number.isFinite(limit)
+                              ? offset + limit
+                              : all.length
+                          if (offset === 0 && end >= all.length) return all
+                          return all.slice(offset, end)
+                      },
+                      options?.name
+                          ? { name: `${options.name}:scored:${key}` }
+                          : undefined,
+                  )
+        scoredCache.set(key, sel)
+        return sel
+    }
+
+    const getAtoms = (query: string, page?: SearchPage) => {
+        const key = pageKey(query, page)
+        const cached = atomsCache.get(key)
+        if (cached) return cached
+        const scoredSel = getScored(query, page)
         const sel = selector<AtomFamilyAtom<Value, Args>[]>(
             get => {
                 const scored = get(scoredSel)
@@ -1220,21 +1325,94 @@ export function atomFamilySearch<
                 for (let i = 0; i < scored.length; i++) out[i] = scored[i].atom
                 return out
             },
-            queryName ? { name: queryName } : undefined,
+            options?.name ? { name: `${options.name}:${key}` } : undefined,
         )
-        atomsCache.set(query, sel)
+        atomsCache.set(key, sel)
         return sel
     }
 
-    const result: AtomFamilySearch<Value, Args> = ((query: string) =>
-        getAtoms(query)) as AtomFamilySearch<Value, Args>
+    const result: AtomFamilySearch<Value, Args> = ((
+        query: string,
+        page?: SearchPage,
+    ) => getAtoms(query, page)) as AtomFamilySearch<Value, Args>
     result.scored = getScored
+
+    result.suggest = (prefix: string, limit = 10): string[] => {
+        // Lowercase/split via the configured tokenizer; complete the LAST
+        // token. No stemming — the user is typing a partial word. Reads the
+        // refcounted vocabulary, so it only yields results when a vocabulary
+        // is tracked (prefix mode or tolerance > 0).
+        const toks = baseTokenize(prefix)
+        if (toks.length === 0) return []
+        const words = vocabWordsWithPrefix(toks[toks.length - 1])
+        if (words.length === 0) return []
+        // Rank by document frequency (most common completion first), then
+        // alphabetically for stability.
+        words.sort((a, b) => {
+            const fb = termDictionary.get(b) ?? 0
+            const fa = termDictionary.get(a) ?? 0
+            if (fb !== fa) return fb - fa
+            return a < b ? -1 : a > b ? 1 : 0
+        })
+        return limit > 0 && words.length > limit
+            ? words.slice(0, limit)
+            : words
+    }
+
+    result.highlight = (
+        query: string,
+        text: string,
+        opts?: { merge?: boolean },
+    ): HighlightRange[] =>
+        highlightMatches(text, query, {
+            stem,
+            stopWords: stopWords ?? undefined,
+            mode: mode === "prefix" ? "prefix" : "exact",
+            merge: opts?.merge,
+        })
+
+    result.stats = selector<SearchStats>(
+        get => {
+            const storage = (get as <V>(s: Atom<V>) => V)(bm25Atom)
+            const fields: SearchStats["fields"] = {}
+            // Per-field totals, summed across the scope chain (matches scoring).
+            for (const field of collectFieldNames(storage)) {
+                const tot = getFieldTotal(storage, field)
+                if (tot.docCount === 0) continue
+                fields[field] = {
+                    documentCount: tot.docCount,
+                    averageLength: tot.totalLength / tot.docCount,
+                }
+            }
+            // Distinct indexed atoms across the chain (a doc may populate only
+            // some fields, so this is not just the max per-field count).
+            const docs = new Set<AtomFamilyAtom<any, any>>()
+            for (
+                let st: BM25Storage | undefined = storage;
+                st;
+                st = st.parent
+            ) {
+                for (const atom of st.perAtom.keys()) docs.add(atom)
+            }
+            return { documentCount: docs.size, fields }
+        },
+        options?.name ? { name: `${options.name}:stats` } : undefined,
+    )
+
     result.releaseQuery = (query: string): boolean => {
-        const hadScored = scoredCache.delete(query)
-        const hadAtoms = atomsCache.delete(query)
-        return hadScored || hadAtoms
+        const prefix = `${query}\u0000`
+        let had = false
+        for (const cache of [fullScoredCache, scoredCache, atomsCache]) {
+            for (const k of [...cache.keys()]) {
+                if (k === query || k.startsWith(prefix)) {
+                    if (cache.delete(k)) had = true
+                }
+            }
+        }
+        return had
     }
     result.releaseAllQueries = (): void => {
+        fullScoredCache.clear()
         scoredCache.clear()
         atomsCache.clear()
     }

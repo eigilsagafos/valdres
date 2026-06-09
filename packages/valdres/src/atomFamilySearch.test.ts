@@ -1916,4 +1916,165 @@ describe("atomFamilySearch", () => {
             expect(hits).toEqual(["split"])
         })
     })
+
+    describe("suggest (autocomplete)", () => {
+        test("ranks completions by document frequency", () => {
+            const s = store()
+            const post = atomFamily<{ text: string }, [string]>(null, {
+                name: "posts",
+            })
+            const search = atomFamilySearch(post, p => p.text, {
+                mode: "prefix",
+            })
+            s.set(post("1"), { text: "apple" })
+            s.set(post("2"), { text: "apple" })
+            s.set(post("3"), { text: "apple" })
+            s.set(post("4"), { text: "application" })
+            s.set(post("5"), { text: "apricot grape" }) // apricot is a-p-r
+            // "apple" (df 3) ranks above "application" (df 1); "apricot" is
+            // not a completion of "app".
+            expect(search.suggest("app")).toEqual(["apple", "application"])
+            expect(search.suggest("app", 1)).toEqual(["apple"])
+            expect(search.suggest("xyz")).toEqual([])
+            expect(search.suggest("")).toEqual([])
+        })
+
+        test("returns [] when no vocabulary is tracked (exact, no tolerance)", () => {
+            const s = store()
+            const post = atomFamily<{ text: string }, [string]>(null, {
+                name: "posts",
+            })
+            const search = atomFamilySearch(post, p => p.text, {
+                mode: "exact",
+            })
+            s.set(post("1"), { text: "apple" })
+            expect(search.suggest("app")).toEqual([])
+        })
+    })
+
+    describe("pagination (offset / limit)", () => {
+        const seed = (s: ReturnType<typeof store>) => {
+            const post = atomFamily<{ text: string }, [string]>(null, {
+                name: "posts",
+            })
+            const search = atomFamilySearch(post, p => p.text, {
+                mode: "exact",
+                match: "ranked",
+            })
+            // All share "x" → equal score → deterministic tiebreak by
+            // familyArgsStringified (a, b, c, d, e).
+            for (const id of ["a", "b", "c", "d", "e"]) {
+                s.set(post(id), { text: "x" })
+            }
+            return search
+        }
+        const ids = (xs: { familyArgsStringified: unknown }[]) =>
+            xs.map(a => String(a.familyArgsStringified))
+
+        test("offset/limit slice the full ranking; pages tile it exactly", () => {
+            const s = store()
+            const search = seed(s)
+            const all = ids(s.get(search("x")))
+            expect(all).toEqual(["a", "b", "c", "d", "e"])
+            const p1 = ids(s.get(search("x", { offset: 0, limit: 2 })))
+            const p2 = ids(s.get(search("x", { offset: 2, limit: 2 })))
+            const p3 = ids(s.get(search("x", { offset: 4, limit: 2 })))
+            expect(p1).toEqual(["a", "b"])
+            expect(p2).toEqual(["c", "d"])
+            expect(p3).toEqual(["e"])
+            expect([...p1, ...p2, ...p3]).toEqual(all)
+        })
+
+        test("scored() paginates too", () => {
+            const s = store()
+            const search = seed(s)
+            const page = s
+                .get(search.scored("x", { offset: 1, limit: 2 }))
+                .map(r => String(r.atom.familyArgsStringified))
+            expect(page).toEqual(["b", "c"])
+        })
+
+        test("a paginated query does not re-score (shares the full ranking)", () => {
+            const s = store()
+            const search = seed(s)
+            // Same (query, page) returns the same cached selector.
+            expect(search.scored("x", { offset: 2, limit: 2 })).toBe(
+                search.scored("x", { offset: 2, limit: 2 }),
+            )
+            // No-window call is identity-stable with the bare query view.
+            expect(search.scored("x")).toBe(search.scored("x"))
+        })
+    })
+
+    describe("highlight (bound to instance config)", () => {
+        test("uses the instance tokenizer/stemmer config", () => {
+            const s = store()
+            const post = atomFamily<{ text: string }, [string]>(null, {
+                name: "posts",
+            })
+            const search = atomFamilySearch(post, p => p.text, {
+                language: "english", // stems
+            })
+            const text = "running runs run"
+            const ranges = search.highlight("run", text)
+            // All three stem to "run" → all highlighted.
+            expect(ranges.map(r => text.slice(r.start, r.end))).toEqual([
+                "running",
+                "runs",
+                "run",
+            ])
+        })
+
+        test("prefix-mode search highlights by prefix", () => {
+            const s = store()
+            const post = atomFamily<{ text: string }, [string]>(null, {
+                name: "posts",
+            })
+            const search = atomFamilySearch(post, p => p.text, {
+                mode: "prefix",
+            })
+            const text = "apple applesauce apricot"
+            const ranges = search.highlight("app", text)
+            expect(ranges.map(r => text.slice(r.start, r.end))).toEqual([
+                "apple",
+                "applesauce",
+            ])
+        })
+    })
+
+    describe("stats (reactive introspection)", () => {
+        test("reports distinct doc count and per-field average length", () => {
+            const s = store()
+            const post = atomFamily<
+                { title: string; body: string },
+                [string]
+            >(null, { name: "posts" })
+            const search = atomFamilySearch(
+                post,
+                p => ({ title: p.title, body: p.body }),
+                { fields: { title: { boost: 2 }, body: { boost: 1 } } },
+            )
+            s.set(post("1"), { title: "a b", body: "c d e" })
+            s.set(post("2"), { title: "f", body: "g h" })
+            const st = s.get(search.stats)
+            expect(st.documentCount).toBe(2)
+            expect(st.fields.title.documentCount).toBe(2)
+            expect(st.fields.title.averageLength).toBeCloseTo(1.5, 5) // (2+1)/2
+            expect(st.fields.body.averageLength).toBeCloseTo(2.5, 5) // (3+2)/2
+        })
+
+        test("stats updates reactively as documents are added", () => {
+            const s = store()
+            const post = atomFamily<{ text: string }, [string]>(null, {
+                name: "posts",
+            })
+            const search = atomFamilySearch(post, p => p.text, {
+                mode: "exact",
+            })
+            s.set(post("1"), { text: "alpha beta" })
+            expect(s.get(search.stats).documentCount).toBe(1)
+            s.set(post("2"), { text: "gamma" })
+            expect(s.get(search.stats).documentCount).toBe(2)
+        })
+    })
 })
