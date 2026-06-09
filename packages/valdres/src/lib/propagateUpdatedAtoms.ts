@@ -428,6 +428,12 @@ export const propagateAtomUpdate = (
         }
     }
 
+    // Families whose MEMBERSHIP changed this pass (a member added/un-deleted, not
+    // just an existing member's value re-set). Only these need the family OBJECT
+    // propagated into scopes below — a pure value update reaches scope selectors
+    // via the member atom, so propagating the family then would be wasted work
+    // across every scope (the "family update, 100 scopes" hot path).
+    let membershipChanged: Set<AtomFamily<any>> | undefined
     if (updatedFamilyAtoms.size > 0) {
         const timestamp = performance.now()
         for (const [family, familyAtoms] of updatedFamilyAtoms) {
@@ -435,7 +441,10 @@ export const propagateAtomUpdate = (
             addSetToSet(data.subscriptions.get(family), subscriptions)
             if (familyAtoms.size === 0)
                 throw new Error("Should not be possible")
-            addFamilyAtomsToSet(family, familyAtoms, data, timestamp)
+            if (addFamilyAtomsToSet(family, familyAtoms, data, timestamp)) {
+                if (!membershipChanged) membershipChanged = new Set()
+                membershipChanged.add(family)
+            }
         }
     }
 
@@ -503,7 +512,25 @@ export const propagateAtomUpdate = (
     }
     if (watching && reportIsSink) emitOrigin(effectiveReport as ChangeReport)
     if (hasScopes) {
-        propagateToScopes(atoms, data, isInitOnly, notify, effectiveReport)
+        // A scope selector that reads get(family) depends on the FAMILY object,
+        // not the individual member atoms. When the parent's MEMBERSHIP changes (a
+        // member added/removed), propagating only the changed members into scopes
+        // (as `atoms` holds) re-renders each scope's family index via
+        // recursivelyUpdateIndexes above but never re-evaluates those selectors —
+        // leaving them stale. So mirror the delete path (propagateDeletedAtoms
+        // pushes the family onto its scopeAtoms): also propagate each family whose
+        // membership changed. A pure member VALUE-update (membership unchanged) is
+        // deliberately NOT included — its scope-side effect reaches selectors via
+        // the member atom already in `atoms`, so it keeps the single-atom scope
+        // fast path. That gate is `membershipChanged`.
+        let scopeAtoms: AtomInput[] = atoms
+        if (membershipChanged) {
+            scopeAtoms = atoms.slice()
+            for (const family of membershipChanged) {
+                if (!scopeAtoms.includes(family)) scopeAtoms.push(family)
+            }
+        }
+        propagateToScopes(scopeAtoms, data, isInitOnly, notify, effectiveReport)
     }
     if (watching && !reportIsSink) emitOrigin(effectiveReport as ChangeReport)
     if (localSink) flushChangeSink(localSink)
