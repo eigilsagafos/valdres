@@ -5,8 +5,8 @@ import {
 } from "valdres"
 import { getStoreById } from "./storeRegistry"
 
-const addSetToSelector = (selector, set) => {
-    selector.set = (valdresSet, valdresGet, reset, ...args) => {
+const addSetToSelector = (selector: any, set: any) => {
+    selector.set = (valdresSet: any, valdresGet: any, _reset: any, ...args: any[]) => {
         return set(valdresGet, valdresSet, ...args)
     }
 }
@@ -68,16 +68,16 @@ const wrapAsync = (fn: Function) => {
     }
 }
 
-export const atom = (get, set?: any) => {
+export const atom = (get: any, set?: any) => {
     if (typeof get === "function") {
         const wrapped = wrapAsync(get)
-        const selector = valdresSelector(wrapped.get, { equal: Object.is })
+        const selector: any = valdresSelector(wrapped.get as any, { equal: Object.is })
         if (set) {
             addSetToSelector(selector, set)
             // Replace .get to supply jotai-style { setSelf } as the second
             // argument to the read function. `selector` is already defined
             // at this point, so the closure reference is safe.
-            selector.get = (coreGet: any, coreOptions: any) => {
+            ;(selector as any).get = (coreGet: any, coreOptions: any) => {
                 const store = getStoreById(coreOptions?.storeId ?? coreOptions)
                 const options: any = {}
                 if (coreOptions?.signal) {
@@ -105,10 +105,10 @@ export const atom = (get, set?: any) => {
         // Uses a backing valdres atom for mutable storage, with a selector that reads
         // from it. Self-sets (set(thisAtom, val)) are redirected to the backing atom.
         const backingAtom = valdresAtom(get, { equal: Object.is })
-        const selector = valdresSelector(g => g(backingAtom), {
+        const selector: any = valdresSelector((g: any) => g(backingAtom), {
             equal: Object.is,
         })
-        selector.set = (valdresSet, valdresGet, _reset, ...args) => {
+        selector.set = (valdresSet: any, valdresGet: any, _reset: any, ...args: any[]) => {
             const wrappedSet = (target: any, ...setArgs: any[]) => {
                 if (target === selector) {
                     return valdresSet(backingAtom, ...setArgs)

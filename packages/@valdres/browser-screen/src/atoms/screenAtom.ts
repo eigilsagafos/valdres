@@ -1,5 +1,5 @@
 import { atom } from "valdres"
-import type { ScreenInfo } from "../../types/ScreenInfo"
+import type { ScreenInfo } from "../types/ScreenInfo"
 import { readScreen } from "../lib/readScreen"
 import { subscribe } from "../lib/subscribe"
 

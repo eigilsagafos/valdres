@@ -1,18 +1,18 @@
-import type { ScopedStoreData, StoreData } from "../types/StoreData"
+import type { StoreData } from "../types/StoreData"
 
 let nextId = 0
 const generateId = () => "__valdres_store_" + nextId++
 
-function makeLazyGetter(key: string) {
+function makeLazyGetter(key: string, factory: () => any = () => new WeakMap()) {
     return {
         get(this: any) {
-            const map = new WeakMap()
+            const value = factory()
             Object.defineProperty(this, key, {
-                value: map,
+                value,
                 writable: true,
                 configurable: true,
             })
-            return map
+            return value
         },
         configurable: true,
     }
@@ -26,22 +26,40 @@ Object.defineProperties(lazyProto, {
     stateDependents: makeLazyGetter("stateDependents"),
     stateDependencies: makeLazyGetter("stateDependencies"),
     mounts: makeLazyGetter("mounts"),
+    liveDependentCount: makeLazyGetter("liveDependentCount"),
     abortControllers: makeLazyGetter("abortControllers"),
     lastValueWriteAt: makeLazyGetter("lastValueWriteAt"),
+    circularDepSet: makeLazyGetter("circularDepSet", () => new WeakSet()),
+    latestEvalContext: makeLazyGetter("latestEvalContext"),
 })
 
 export type CreateStoreDataOptions = {
     batchUpdates?: boolean
+    /** Retain values enumerably (a `Map`, not a `WeakMap`) so `store.snapshot()`
+     *  can list the store's current state. Off by default; see `Store.snapshot`.
+     *  Scopes inherit it from their parent. */
+    enumerable?: boolean
 }
 
-export function createStoreData(id?: string, parent?: undefined, options?: CreateStoreDataOptions): StoreData
-export function createStoreData(id: string, parent: StoreData, options?: CreateStoreDataOptions): ScopedStoreData
-export function createStoreData(id?: string, parent?: StoreData, options?: CreateStoreDataOptions) {
+export function createStoreData(
+    id?: string,
+    parent?: StoreData,
+    options?: CreateStoreDataOptions,
+): StoreData {
     const data: any = Object.create(lazyProto)
     data.id = id ?? generateId()
-    data.values = new WeakMap()
+    // Chosen once, here — never re-checked on get/set. A scope inherits its
+    // parent's mode so an enumerable store is enumerable all the way down.
+    const enumerable = options?.enumerable ?? parent?.enumerable ?? false
+    if (enumerable) data.enumerable = true
+    data.values = enumerable ? new Map() : new WeakMap()
     data.scopes = new Map()
     data.scopeValueIndex = new WeakMap()
+    // Eager (not lazy) because resolvePendingDefault in setAtom walks every
+    // store in the scope chain on every setAtom call. Lazy would still
+    // allocate on first setAtom — eager just makes that explicit and avoids
+    // touching the prototype getter on the hot path.
+    data.pendingDefaults = new WeakMap()
     if (options?.batchUpdates) {
         data.batchUpdates = true
     }

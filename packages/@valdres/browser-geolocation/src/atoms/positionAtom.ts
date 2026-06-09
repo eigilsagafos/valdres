@@ -1,6 +1,6 @@
 import { atom } from "valdres"
 import type { GlobalAtom } from "valdres"
-import type { GeolocationSnapshot } from "../../types/GeolocationSnapshot"
+import type { GeolocationSnapshot } from "../types/GeolocationSnapshot"
 import { bootstrap } from "../lib/bootstrap"
 
 // Starts navigator.geolocation.watchPosition on first subscription. The

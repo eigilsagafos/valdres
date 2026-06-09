@@ -3,17 +3,12 @@ import type { Selector } from "../types/Selector"
 import type { State } from "../types/State"
 import type { StoreData } from "../types/StoreData"
 import { getState } from "./getState"
-import { isTransitivelySubscribed, mountTransitiveDeps } from "./mountAtom"
+import { isLive, mountTransitiveDeps, onLiveDependencyAdded } from "./mountAtom"
 
 // Tracks all deps (sync + async) for each pending async selector evaluation.
 // Keyed by the Promise returned by the async selector. When the promise
 // resolves, handleSelectorResult reads this to reconcile stale deps.
 export const pendingAsyncDeps = new WeakMap<Promise<any>, Set<State>>()
-
-// Tracks the latest evaluation context per selector so that stale closures
-// (from previous evaluations) can detect they are outdated and avoid
-// registering phantom dependencies.
-export const latestEvalContext = new WeakMap<Selector, { revoked: boolean }>()
 
 export class SuspendAndWaitForResolveError extends Error {
     promise: Promise<any>
@@ -73,8 +68,9 @@ export const lateGet = (
     try {
         return getState(state, data, lateInitSet)
     } finally {
-        // Mount new dependencies if the selector is subscribed
-        if (isNewDep && isTransitivelySubscribed(selector, data)) {
+        // Mount new dependencies if the selector is live
+        if (isNewDep && isLive(selector, data)) {
+            onLiveDependencyAdded(state, data)
             mountTransitiveDeps(state, data)
         }
     }

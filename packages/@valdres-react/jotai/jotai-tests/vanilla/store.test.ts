@@ -988,7 +988,13 @@ test("should call subscribers after setAtom updates atom value on mount but not 
     expect(listener).toHaveBeenCalledTimes(0)
 })
 
-test("processes deep atom a graph beyond maxDepth", () => {
+// Valdres previously used an iterative trampoline to handle arbitrarily
+// deep selector chains, which let it pass this test where jotai itself
+// throws. The trampoline was removed in favor of plain recursion (matching
+// jotai's strategy and removing a 26x perf cliff at depth >100); the
+// failure mode at extreme depths is now the JS engine's stack limit, the
+// same as jotai.
+test.skip("processes deep atom a graph beyond maxDepth", () => {
     function getMaxDepth() {
         let depth = 0
         function d(): number {

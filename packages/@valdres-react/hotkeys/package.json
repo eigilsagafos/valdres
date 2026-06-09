@@ -1,7 +1,7 @@
 {
     "name": "@valdres-react/hotkeys",
     "description": "React hotkey hooks powered by Valdres",
-    "version": "0.2.0-pre.28",
+    "version": "1.0.0-beta.3",
     "license": "MIT",
     "author": {
         "name": "Eigil Sagafos"
@@ -20,23 +20,23 @@
     ],
     "scripts": {
         "build": "NODE_ENV=production bun build src/index.ts --outdir ./dist --packages external",
-        "build:types": "rm -rf dist/types && bun run tsc",
+        "build:types": "rm -rf dist/types && bunx tsgo",
         "test": "echo 'no tests'"
     },
     "dependencies": {
-        "@valdres/hotkeys": "0.2.0-pre.28"
+        "@valdres/hotkeys": "^1.0.0-beta.3"
     },
     "devDependencies": {
         "@testing-library/react": "16.3.0",
         "react": "19.1.1",
         "react-dom": "19.1.1",
         "typescript": "5.9.2",
-        "valdres-react": "0.2.0-pre.28"
+        "valdres-react": "workspace:^"
     },
     "peerDependencies": {
         "react": ">=18",
-        "valdres": "0.2.0-pre.28",
-        "valdres-react": "0.2.0-pre.28"
+        "valdres": "^1.0.0-beta.7",
+        "valdres-react": "^1.0.0-beta.1"
     },
     "publishConfig": {
         "access": "public",

@@ -1,7 +1,7 @@
 import type { AtomFamilyAtom } from "../types/AtomFamilyAtom"
 import type { Family } from "../types/Family"
-import type { ScopedStoreData, StoreData } from "../types/StoreData"
-import { trackScopeValue } from "./setValueInData"
+import type { StoreData } from "../types/StoreData"
+import { trackScopeValue } from "./trackScopeValue"
 
 // @ts-ignore
 const getAtomFamilyRenderedMap = (
@@ -104,17 +104,17 @@ export const deleteFamilyAtomsFromSet = (
 // recursivelyUpdateIndexes relies on this: it only recurses into child scopes
 // that appear in scopeValueIndex, trusting that intermediate scopes without
 // the family have no descendants with it either.
-const initFamilyIndex = (family: Family<any>, data: StoreData) => {
+export const initFamilyIndex = (family: Family<any>, data: StoreData) => {
     if (data.values.has(family)) return data.values.get(family).__index
     let parentIndex
-    if ("parent" in data) {
+    if (data.parent) {
         parentIndex = initFamilyIndex(family, data.parent)
         if (!parentIndex) throw new Error("Parent index is missing")
     }
     const index = createAtomFamilyIndex(parentIndex)
     data.values.set(family, renderAtomFamilyIndex(index))
-    if ("parent" in data) {
-        trackScopeValue(family, data as ScopedStoreData)
+    if (data.parent) {
+        trackScopeValue(family, data)
     }
     return index
 }
@@ -131,11 +131,23 @@ const findFamilyIndex = (family: Family<any>, data: StoreData) => {
     return value.__index
 }
 
-const recursivelyUpdateIndexes = (data: StoreData, family: Family<any>) => {
+export const recursivelyUpdateIndexes = (
+    data: StoreData,
+    family: Family<any>,
+) => {
     const childScopesWithFamily = data.scopeValueIndex.get(family)
     if (!childScopesWithFamily || childScopesWithFamily.size === 0) return
+    // The parent's family index object can be REPLACED, not just mutated: `del`
+    // and `set` inside a transaction clone the family index, and the clone
+    // becomes the parent's committed index. A child scope that shadows the
+    // family still points its `parentIndex` at the old object, so its rendered
+    // members would reflect the pre-transaction parent. Re-link to the parent's
+    // current index before re-rendering. Outside a txn the parent index is
+    // mutated in place, so `parentIndex` is already correct and this is a no-op.
+    const parentIndex = data.values.get(family).__index
     for (const scopedData of childScopesWithFamily) {
         const index = scopedData.values.get(family).__index
+        index.parentIndex = parentIndex
         index.rendered = null
         index.renderedArray = null
         scopedData.values.set(family, renderAtomFamilyIndex(index))
@@ -143,16 +155,57 @@ const recursivelyUpdateIndexes = (data: StoreData, family: Family<any>) => {
     }
 }
 
+// A scope can materialize its OWN family index through a path that did NOT walk
+// the ancestor chain — specifically a transaction commit, which writes a flat
+// rendered index whose parentIndex points at the nearest ANCESTOR that happened
+// to already have an index, skipping any intermediate scopes. That violates the
+// initFamilyIndex invariant ("a scope at depth N has an index ⇒ all ancestors
+// do, each registered in its parent's scopeValueIndex"), so recursivelyUpdateIndexes
+// can't reach the scope and it goes stale on a later parent membership change.
+//
+// This reuses initFamilyIndex (the single source of truth for the chain walk) to
+// materialize + register every intermediate ancestor, then re-links this scope's
+// index to its IMMEDIATE parent so inheritance and reachability flow level by
+// level. Idempotent: a no-op once the chain already links up (the common
+// direct-child-of-root case never relinks).
+export const ensureFamilyAncestorChain = (
+    family: Family<any>,
+    data: StoreData,
+) => {
+    if (!data.parent) return
+    const parentIndex = initFamilyIndex(family, data.parent)
+    const own = data.values.get(family).__index
+    if (own.parentIndex !== parentIndex) {
+        own.parentIndex = parentIndex
+        own.rendered = null
+        own.renderedArray = null
+        data.values.set(family, renderAtomFamilyIndex(own))
+        recursivelyUpdateIndexes(data, family)
+    }
+}
+
+// Returns whether this store's family MEMBERSHIP changed (a member was newly
+// added or un-deleted) — as opposed to an existing member's value being
+// re-set. Callers use this to skip propagating the family OBJECT into scopes on
+// a pure value update: scope selectors that read a member's value recompute via
+// the member atom, so only a membership change needs the family-list dependents
+// re-evaluated. `created.has(atom) && !deleted.has(atom)` is exact for a root
+// index (members = created − deleted); for a scope it can only OVER-report
+// "changed" (an inherited-but-not-locally-created member), which is safe — it
+// never suppresses a needed propagation.
 export const addFamilyAtomsToSet = (
     family: Family<any>,
     familyAtoms: Set<AtomFamilyAtom<any>>,
     data: StoreData,
     timestamp: number,
-) => {
-    if (familyAtoms.size === 0) return
+): boolean => {
+    if (familyAtoms.size === 0) return false
     const index = findFamilyIndex(family, data)
     if (!index) throw new Error("index not found")
+    let membershipChanged = false
     for (const atom of familyAtoms) {
+        if (!(index.created.has(atom) && !index.deleted.has(atom)))
+            membershipChanged = true
         index.created.set(atom, timestamp)
         index.deleted.delete(atom)
     }
@@ -160,4 +213,5 @@ export const addFamilyAtomsToSet = (
     index.renderedArray = null
     data.values.set(family, renderAtomFamilyIndex(index))
     recursivelyUpdateIndexes(data, family)
+    return membershipChanged
 }

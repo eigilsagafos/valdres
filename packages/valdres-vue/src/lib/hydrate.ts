@@ -1,6 +1,6 @@
-import type { Atom, SetAtom } from "valdres"
+import type { Atom, SyncSetAtom } from "valdres"
 
-export const hydrate = (set: SetAtom, state: [Atom, any][]) => {
+export const hydrate = (set: SyncSetAtom, state: [Atom, any][]) => {
     for (const [atom, value] of state) {
         set(atom, value)
     }

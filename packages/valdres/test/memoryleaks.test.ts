@@ -346,6 +346,19 @@ describe("memory leaks (scoped stores)", () => {
         expect(await detector.isLeaking()).toBe(false)
     })
 
+    test("unset scope value is collected", async () => {
+        const detector = (() => {
+            const s = store()
+            const a = atom<object>({})
+            const scoped = s.scope("child")
+            scoped.set(a, { scoped: true })
+            const d = new LeakDetector(scoped.get(a))
+            scoped.unset(a)
+            return d
+        })()
+        expect(await detector.isLeaking()).toBe(false)
+    })
+
     test("parent releases scope reference after all consumers detach", () => {
         const store1 = store()
         const scoped1: any = store1.scope("shared")

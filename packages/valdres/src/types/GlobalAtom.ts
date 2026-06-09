@@ -14,6 +14,9 @@ export type GlobalAtom<Value = unknown> = Atom<Value> & {
     resetSelf: GlobalAtomResetSelfFunc
     getSelf: GlobalAtomGetSelfFunc<Value>
     detach: (storeData: StoreData) => void
-    stores: Set<StoreData>
+    // Reference is fixed at construction; the Set contents are mutated
+    // internally. `readonly` prevents consumers from reassigning the
+    // property and silently desyncing from the closure-captured Set.
+    readonly stores: Set<StoreData>
     maxAgeInterval?: MaxAgeInterval
 }

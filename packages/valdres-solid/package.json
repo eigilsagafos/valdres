@@ -1,7 +1,7 @@
 {
     "name": "valdres-solid",
     "description": "Solid.js bindings for Valdres state management",
-    "version": "0.2.0-pre.28",
+    "version": "1.0.0-beta.4",
     "license": "MIT",
     "author": {
         "name": "Eigil Sagafos"
@@ -20,16 +20,16 @@
     ],
     "scripts": {
         "build": "NODE_ENV=production bun build src/index.ts --outdir ./dist --packages external",
-        "build:types": "rm -rf dist/types && bun run tsc",
+        "build:types": "rm -rf dist/types && bunx tsgo",
         "test": "bun test --parallel"
     },
     "devDependencies": {
         "typescript": "5.9.2",
-        "valdres": "0.2.0-pre.28",
+        "valdres": "workspace:^",
         "solid-js": "1.9.5"
     },
     "peerDependencies": {
-        "valdres": ">=0.2.0-pre.28",
+        "valdres": "^1.0.0-beta.7",
         "solid-js": ">=1.8"
     },
     "publishConfig": {

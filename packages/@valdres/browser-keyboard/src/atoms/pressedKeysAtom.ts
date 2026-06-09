@@ -1,5 +1,5 @@
 import { atom } from "valdres"
-import type { PressedKey } from "../../types/PressedKey"
+import type { PressedKey } from "../types/PressedKey"
 import { bootstrap } from "../lib/bootstrap"
 
 export const pressedKeysAtom = atom<PressedKey[]>([], {

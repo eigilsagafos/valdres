@@ -44,9 +44,9 @@ export const createStore = (id?: string) => {
         }
         const wrappedSet = (target: any, ...setArgs: any[]) => {
             hasWrites = true
-            return store.set(target, ...setArgs)
+            return (store.set as (...a: any[]) => any)(target, ...setArgs)
         }
-        return selector.set(wrappedSet, wrappedGet, store.reset, ...args)
+        return (selector.set as (...a: any[]) => any)(wrappedSet, wrappedGet, store.reset, ...args)
     }
 
     // Commit deferred transactions that accumulated during propagation
@@ -74,13 +74,13 @@ export const createStore = (id?: string) => {
 
     // Jotai's store.get() returns a Promise for async atoms even after
     // resolution. Valdres unwraps resolved values, so we re-wrap them.
-    store.get = (state: any) => {
+    store.get = ((state: any) => {
         const value = rawGet(state)
         if (state.__jotaiAsync && !isPromiseLike(value)) {
             return Promise.resolve(value)
         }
         return value
-    }
+    }) as typeof store.get
 
     // For async atoms, suppress subscription notifications while the value
     // is still a Promise (i.e., during promise-to-promise transitions). Jotai
@@ -147,12 +147,12 @@ export const createStore = (id?: string) => {
         // selectors. Track propagation state so those are deferred.
         if (activeTxn) {
             // Inside a write-atom or sub txn — route to the txn
-            return activeTxn.set(state, ...args)
+            return (activeTxn.set as (...a: any[]) => any)(state, ...args)
         }
         const wasPropagating = isPropagating
         isPropagating = true
         try {
-            return originalSet(state, ...args)
+            return (originalSet as (...a: any[]) => any)(state, ...args)
         } finally {
             if (!wasPropagating) {
                 isPropagating = false

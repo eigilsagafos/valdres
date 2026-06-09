@@ -6,12 +6,16 @@ import type { Selector } from "../types/Selector"
 import type { StoreData } from "../types/StoreData"
 import { isAtom } from "../utils/isAtom"
 import { isAtomFamily } from "../utils/isAtomFamily"
+import { isPromiseLike } from "../utils/isPromiseLike"
 import { isFamilyAtom } from "../utils/isFamilyAtom"
 import { isSelector } from "../utils/isSelector"
 import { isSelectorFamily } from "../utils/isSelectorFamily"
 import { equal } from "./equal"
 import { initAtom } from "./initAtom"
-import { initSelector, NeedsInitError, _evalDepth, MAX_EVAL_DEPTH } from "./initSelector"
+import { initSelector } from "./initSelector"
+import { propagateAtomUpdate } from "./propagateUpdatedAtoms"
+import { resolveAtomDefaultValue } from "./resolveAtomDefaultValue"
+import { setValueInData } from "./setValueInData"
 import {
     createAtomFamilyIndex,
     renderAtomFamilyIndex,
@@ -58,7 +62,7 @@ export function getState<
 ) {
     if (data.values.has(state)) return data.values.get(state)
     if (isAtom<Value>(state)) {
-        if ("parent" in data)
+        if (data.parent)
             return getState<Value, Args>(
                 state,
                 data.parent,
@@ -69,7 +73,50 @@ export function getState<
             const familyValue = data.values.get(state.family)
             if (familyValue?.__index) {
                 if (isAtomDeletedInFamilyIndex(state, familyValue.__index)) {
-                    return state.defaultValue as Value
+                    // Resolve the default once and cache it so repeated reads
+                    // are stable (same reference) and never re-invoke a
+                    // function/async default factory — re-running it on every
+                    // read would repeat its side effects (e.g. a fetch). We
+                    // deliberately DON'T add `state` to initializedAtomsSet, so
+                    // the get-time propagation that re-registers a member in the
+                    // family index never runs: the member stays deleted (absent
+                    // from get(family)); only its direct read is memoized.
+                    const value = resolveAtomDefaultValue(
+                        state,
+                        data,
+                        initializedAtomsSet,
+                    )
+                    const cached = setValueInData(state, value, data)
+                    // Async default: mirror getAtomInitValue and swap the cached
+                    // promise for its resolved value once it settles, so later
+                    // reads return the value rather than a forever-pending
+                    // promise. Stale-guard against a concurrent re-set/re-delete,
+                    // and drop the entry on rejection. Propagate with
+                    // skipFamilyIndexUpdate so dependent selectors/subscribers see
+                    // the resolved value WITHOUT re-registering (resurrecting) the
+                    // deleted member in the family index.
+                    if (isPromiseLike(cached)) {
+                        cached.then(
+                            resolvedValue => {
+                                if (data.values.get(state) !== cached) return
+                                setValueInData(state, resolvedValue, data)
+                                propagateAtomUpdate(
+                                    [state],
+                                    data,
+                                    false,
+                                    undefined,
+                                    undefined,
+                                    true,
+                                )
+                            },
+                            () => {
+                                if (data.values.get(state) === cached) {
+                                    data.values.delete(state)
+                                }
+                            },
+                        )
+                    }
+                    return cached as Value
                 }
             }
         }
@@ -78,11 +125,6 @@ export function getState<
         return data.values.get(state)
     }
     if (isSelector<Value>(state)) {
-        if (_evalDepth >= MAX_EVAL_DEPTH) {
-            // Approaching stack limit — signal the trampoline to handle
-            // this dependency iteratively instead of recursing deeper.
-            throw new NeedsInitError(state)
-        }
         initSelector<Value>(
             state,
             data,
@@ -92,13 +134,8 @@ export function getState<
         return data.values.get(state)
     }
     if (isAtomFamily<Value, Args>(state)) {
-        if ("parent" in data) {
-            const closestData = findClosestStoreWithAtomInitialized<Set<Args>>(
-                // @ts-ignore @ts-todo
-                state,
-                data,
-            )
-            // @ts-ignore @ts-todo
+        if (data.parent) {
+            const closestData = findClosestStoreWithAtomInitialized(state, data)
             return getState<Value, Args>(
                 state,
                 closestData,
@@ -122,11 +159,11 @@ export function getState<
     throw new Error("Invalid object passed to get")
 }
 
-const findClosestStoreWithAtomInitialized = <V>(
-    atom: Atom<V>,
+const findClosestStoreWithAtomInitialized = (
+    atom: Atom | AtomFamily<any, any>,
     data: StoreData,
-) => {
-    if ("parent" in data === false) return data
+): StoreData => {
+    if (!data.parent) return data
     if (data.values.has(atom)) return data
     return findClosestStoreWithAtomInitialized(atom, data.parent)
 }

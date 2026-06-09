@@ -1,4 +1,4 @@
-import type { ScreenDetail } from "../../types/ScreenDetail"
+import type { ScreenDetail } from "../types/ScreenDetail"
 import { currentScreenAtom } from "../atoms/currentScreenAtom"
 import { screenPermissionAtom } from "../atoms/screenPermissionAtom"
 import { screensAtom } from "../atoms/screensAtom"

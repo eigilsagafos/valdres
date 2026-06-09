@@ -1,4 +1,4 @@
-import type { ColorMode } from "../types/ColorMode"
+import type { ColorMode } from "./types/ColorMode"
 import { prefersColorSchemeDark } from "./prefersColorSchemeDark"
 
 export const getSystemColorMode = (): ColorMode => {

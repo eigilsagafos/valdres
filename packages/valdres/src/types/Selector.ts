@@ -18,4 +18,11 @@ export type Selector<
     family?: SelectorFamily<Value, FamilyArgs>
     familyArgs?: FamilyArgs
     onMount?: AtomOnMount
+    /** Internal: compat-layer override for onMount. Not user-facing. */
+    __valdresOnMount?: AtomOnMount
+    /** Internal: marks selectors created by valdres itself (e.g. the cacheMeta
+     *  selector backing maxAge/stale-while-revalidate). Excluded by
+     *  `store.onChange` and `store.snapshot` so dev tools don't surface
+     *  implementation-detail churn. */
+    __valdresInternal?: boolean
 }

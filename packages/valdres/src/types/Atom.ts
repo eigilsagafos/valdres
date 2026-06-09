@@ -22,10 +22,19 @@ export type Atom<Value = unknown> = {
     onInit?: AtomOnInit<Value>
     onSet?: AtomOnSet<Value>
     onMount?: AtomOnMount
+    /** Internal: compat-layer override for onMount (set by adapters that need
+     *  to wrap the user-supplied onMount signature). Not user-facing. */
+    __valdresOnMount?: AtomOnMount
     maxAge?: Reactive<number>
     mutable?: boolean
     staleWhileRevalidate?: Reactive<number>
     staleIfError?: Reactive<number>
     __cacheMeta?: Atom<CacheMeta | null>
     __cacheMetaSelector?: Selector<CacheMeta | null>
+    /** Internal: marks atoms created by valdres itself (e.g. the cacheMeta atom
+     *  backing maxAge/stale-while-revalidate). These propagate to subscribers
+     *  like any atom, so `store.onChange` excludes them to keep dev tools free
+     *  of implementation-detail churn (the cacheMeta atom updates on every
+     *  revalidation tick). */
+    __valdresInternal?: boolean
 }

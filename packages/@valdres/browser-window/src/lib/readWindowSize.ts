@@ -1,4 +1,4 @@
-import type { WindowSize } from "../../types/WindowSize"
+import type { WindowSize } from "../types/WindowSize"
 
 const EMPTY: WindowSize = Object.freeze({
     innerWidth: 0,

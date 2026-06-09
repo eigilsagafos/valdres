@@ -1,5 +1,5 @@
 import { atom } from "valdres"
-import type { WindowSize } from "../../types/WindowSize"
+import type { WindowSize } from "../types/WindowSize"
 import { readWindowSize } from "../lib/readWindowSize"
 import { subscribe } from "../lib/subscribe"
 

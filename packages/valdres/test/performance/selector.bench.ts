@@ -1,21 +1,21 @@
 import { describe, test } from "./test-compat"
+import { do_not_optimize } from "mitata"
 import { createStore as jotaiCreateStore, atom as jotaiAtom } from "jotai"
+import { atomFamily as jotaiAtomFamily } from "jotai/utils"
 import { atom as valdresAtom } from "../../src/atom"
 import { selector as valdresSelector } from "../../src/selector"
+import { selectorFamily as valdresSelectorFamily } from "../../src/selectorFamily"
 import { store as valdresCreateStore } from "../../src/store"
-import { assertFaster } from "./bench-utils"
-
-let sink: any
+import { compare } from "./bench-utils"
 
 describe("selector", () => {
     test("creation", async () => {
         const vAtom = valdresAtom(0)
         const jAtom = jotaiAtom(0)
-        await assertFaster(
+        await compare(
             "selector(fn)",
-            () => { sink = valdresSelector(get => get(vAtom) + 1) },
-            () => { sink = jotaiAtom(get => get(jAtom) + 1) },
-            2.0,
+            () => do_not_optimize(valdresSelector(get => get(vAtom) + 1)),
+            () => do_not_optimize(jotaiAtom(get => get(jAtom) + 1)),
         )
     })
 
@@ -38,17 +38,16 @@ describe("selector", () => {
 
         let vInt = 0
         let jInt = 0
-        await assertFaster(
+        await compare(
             "set + read 10 selectors",
             () => {
                 vStore.set(vAtom, ++vInt)
-                vSelectors.forEach(s => vStore.get(s))
+                vSelectors.forEach(s => do_not_optimize(vStore.get(s)))
             },
             () => {
                 jStore.set(jAtom, ++jInt)
-                jSelectors.forEach(s => jStore.get(s))
+                jSelectors.forEach(s => do_not_optimize(jStore.get(s)))
             },
-            2.0,
         )
     })
 
@@ -71,17 +70,89 @@ describe("selector", () => {
 
         let vInt = 0
         let jInt = 0
-        await assertFaster(
+        await compare(
             "set + read 100 selectors",
             () => {
                 vStore.set(vAtom, ++vInt)
-                vSelectors.forEach(s => vStore.get(s))
+                vSelectors.forEach(s => do_not_optimize(vStore.get(s)))
             },
             () => {
                 jStore.set(jAtom, ++jInt)
-                jSelectors.forEach(s => jStore.get(s))
+                jSelectors.forEach(s => do_not_optimize(jStore.get(s)))
             },
-            2.0,
+        )
+    })
+
+    // sub+unsub on a chain of derived atoms that were initialized but never
+    // subscribed. The unsub path walks the dependent graph to clean up
+    // orphaned nodes. Before the liveness cache landed, each visited node
+    // ran isTransitivelySubscribed, which itself walked the remaining upper
+    // graph — O(N²) total. The cache makes each check O(1). Build cost is
+    // paid equally by both sides because we rebuild each iteration (cleanup
+    // destroys the chain).
+    for (const N of [50, 100, 500]) {
+        test(`sub+unsub on chain of ${N} unsubscribed derived deps`, async () => {
+            await compare(
+                `sub+unsub on chain of ${N} unsubscribed derived deps`,
+                () => {
+                    const store = valdresCreateStore()
+                    const base = valdresAtom(0)
+                    let prev: any = base
+                    for (let i = 0; i < N; i++) {
+                        const dep = prev
+                        prev = valdresSelector(get => get(dep) + 1)
+                    }
+                    do_not_optimize(store.get(prev))
+                    const u = store.sub(base, () => {})
+                    u()
+                },
+                () => {
+                    const store = jotaiCreateStore()
+                    const base = jotaiAtom(0)
+                    let prev: any = base
+                    for (let i = 0; i < N; i++) {
+                        const dep = prev
+                        prev = jotaiAtom(get => get(dep) + 1)
+                    }
+                    do_not_optimize(store.get(prev))
+                    const u = store.sub(base, () => {})
+                    u()
+                },
+            )
+        })
+    }
+
+    test("set + read 100 selectorFamily entries", async () => {
+        const count = 100
+
+        const vStore = valdresCreateStore()
+        const vAtom = valdresAtom(0)
+        const vFamily = valdresSelectorFamily(
+            (offset: number) => get => get(vAtom) + offset,
+        )
+        const vSelectors = Array.from({ length: count }, (_, i) => vFamily(i))
+        vSelectors.forEach(s => vStore.get(s))
+
+        const jStore = jotaiCreateStore()
+        const jAtom = jotaiAtom(0)
+        const jFamily = jotaiAtomFamily((offset: number) =>
+            jotaiAtom(get => get(jAtom) + offset),
+        )
+        const jSelectors = Array.from({ length: count }, (_, i) => jFamily(i))
+        jSelectors.forEach(s => jStore.get(s))
+
+        let vInt = 0
+        let jInt = 0
+        await compare(
+            "set + read 100 selectorFamily entries",
+            () => {
+                vStore.set(vAtom, ++vInt)
+                vSelectors.forEach(s => do_not_optimize(vStore.get(s)))
+            },
+            () => {
+                jStore.set(jAtom, ++jInt)
+                jSelectors.forEach(s => do_not_optimize(jStore.get(s)))
+            },
         )
     })
 
@@ -109,17 +180,16 @@ describe("selector", () => {
 
         let vInt = 0
         let jInt = 0
-        await assertFaster(
+        await compare(
             "set + read through 5 chained selectors",
             () => {
                 vStore.set(vBase, ++vInt)
-                vStore.get(vFinal)
+                do_not_optimize(vStore.get(vFinal))
             },
             () => {
                 jStore.set(jBase, ++jInt)
-                jStore.get(jFinal)
+                do_not_optimize(jStore.get(jFinal))
             },
-            2.0,
         )
     })
 })

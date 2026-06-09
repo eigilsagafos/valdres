@@ -1,5 +1,5 @@
 import { atom } from "valdres"
-import type { GeolocationStatus } from "../../types/GeolocationStatus"
+import type { GeolocationStatus } from "../types/GeolocationStatus"
 
 const getInitial = (): GeolocationStatus => {
     if (typeof navigator === "undefined" || !navigator.geolocation) {

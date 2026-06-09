@@ -7,8 +7,8 @@ import type { AtomOnSet } from "./../types/AtomOnSet"
 import type { AtomOptions } from "./../types/AtomOptions"
 import type { GlobalAtom } from "./../types/GlobalAtom"
 import type { StoreData } from "./../types/StoreData"
-import { isTransitivelySubscribed, mountAtom, unmountAtom } from "./mountAtom"
-import { propagateUpdatedAtoms } from "./propagateUpdatedAtoms"
+import { isLive, mountAtom, unmountAtom } from "./mountAtom"
+import { propagateAtomUpdate } from "./propagateUpdatedAtoms"
 import { setAtom } from "./setAtom"
 import { installMaxAgeTimer } from "./subscribe"
 import { globalStore } from "../globalStore"
@@ -18,8 +18,7 @@ export const globalAtom = <Value = unknown>(
     options: AtomOptions<Value>,
 ) => {
     const stores = new Set<StoreData>()
-    if (options.onSet)
-        throw new Error("onSet on globalAtom is currently not supported")
+    const userOnSet = options.onSet
 
     // Sync the atom's current value into a store on first access. Called by
     // initAtom whenever a store touches this atom for the first time.
@@ -28,6 +27,8 @@ export const globalAtom = <Value = unknown>(
         stores.add(data)
     }
 
+    // Cross-store sync propagates to peers with skipOnSet=true, so the user
+    // hook fires exactly once per set — in the originating store.
     const onSet: AtomOnSet<Value> = (newValue, currentStore) => {
         if (stores.size > 1) {
             for (const store of stores) {
@@ -36,6 +37,7 @@ export const globalAtom = <Value = unknown>(
                 }
             }
         }
+        userOnSet?.(newValue, currentStore)
     }
 
     // For global atoms, options.onMount fires when the FIRST subscriber across
@@ -92,7 +94,7 @@ export const globalAtom = <Value = unknown>(
             // Use transitive subscription so selector subscribers (which
             // mount the atom via mountTransitiveDeps) keep their listeners
             // alive across resetSelf.
-            if (isTransitivelySubscribed(atom, s)) {
+            if (isLive(atom, s)) {
                 subscribedStores.push(s)
             }
         }
@@ -120,7 +122,7 @@ export const globalAtom = <Value = unknown>(
             stores.delete(store)
             store.values.delete(atom)
             try {
-                propagateUpdatedAtoms([atom], store)
+                propagateAtomUpdate([atom], store, false, undefined, "reset")
             } catch (e) {
                 recordError(e)
             }
@@ -131,7 +133,7 @@ export const globalAtom = <Value = unknown>(
             // Match subscribe.ts: maxAge timer is installed only when the
             // atom has a DIRECT subscriber. Transitive (selector-only)
             // subscribers go through the lazy-revalidation path on read.
-            if (atom.maxAge && (s.subscriptions.get(atom)?.size ?? 0) > 0) {
+            if (atom.maxAge !== undefined && (s.subscriptions.get(atom)?.size ?? 0) > 0) {
                 installMaxAgeTimer(atom, s)
             }
             try {
@@ -148,6 +150,9 @@ export const globalAtom = <Value = unknown>(
         stores.delete(storeData)
     }
 
+    // `stores` is a plain data property. A getter wasn't buying anything —
+    // the Set reference never changes, and accessor properties take a slower
+    // IC path than data properties at every read site in subscribe.ts.
     const atom: GlobalAtom<Value> = {
         equal,
         ...options,
@@ -159,9 +164,7 @@ export const globalAtom = <Value = unknown>(
         getSelf,
         resetSelf,
         detach,
-        get stores() {
-            return stores
-        },
+        stores,
         maxAgeInterval: undefined,
     }
     return atom

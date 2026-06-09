@@ -1,0 +1,95 @@
+# Bencher base lane — the benchmark CI for this repo. On pushes to main it
+# records the baseline latency series for each runtime and creates/updates the
+# regression Threshold that PRs are gated against.
+#
+# Project slug is `valdres` (BENCHER_PROJECT below); the project is public, so
+# its perf page and plots are viewable at bencher.dev/perf/valdres.
+name: Bencher (base)
+
+on:
+    push:
+        branches: [main]
+
+permissions:
+    checks: write
+
+concurrency:
+    group: bencher-base-${{ github.ref }}
+    cancel-in-progress: false
+
+jobs:
+    benchmark_base:
+        runs-on: ubuntu-22.04
+        # BENCHER_API_KEY lives in the `Bencher.dev` GitHub Environment, so the
+        # job must target that environment to read it.
+        environment: Bencher.dev
+        env:
+            BENCHER_PROJECT: valdres
+            # bencher_run_* is a PROJECT-scoped API key -> BENCHER_API_KEY / --key
+            # (NOT --token, which only accepts a user JWT). Stored as the
+            # BENCHER_API_KEY secret in the `Bencher.dev` GitHub Environment.
+            BENCHER_API_KEY: ${{ secrets.BENCHER_API_KEY }}
+        steps:
+            - uses: actions/checkout@v6
+            - uses: oven-sh/setup-bun@v2
+              with:
+                  bun-version: 1.3.13
+            - uses: actions/setup-node@v6
+              with:
+                  node-version: "22.17"
+            - uses: bencherdev/bencher@v0.6.6
+
+            - name: Install
+              run: bun install --frozen-lockfile
+
+            # Measurement layer writes per-implementation latency NDJSON
+            # (bench-utils.ts: measureOne / compare) which we convert to BMF.
+            - name: Run benchmarks (Bun)
+              working-directory: packages/valdres
+              run: bun run test:bench
+            - name: Run benchmarks (Node)
+              working-directory: packages/valdres
+              run: bun run test:bench:node
+
+            - name: Convert NDJSON -> Bencher Metric Format
+              run: bun run scripts/bench-to-bmf.ts
+
+            # Gate the built-in `latency` measure with a t-test against main's
+            # history (auto-scales tolerance to each benchmark's own variance).
+            # Tuned for noisy shared runners: min-sample-size 6 means a benchmark
+            # isn't gated until it has enough history (kills early-life false
+            # alerts on a thin baseline), and a wide 0.9999 upper boundary
+            # tolerates the ~1.5x wobble heavy/allocation benches show on a loaded
+            # runner while still catching genuine large regressions. NOTE:
+            # thresholds are per-measure, so the jotai/map reference benches are
+            # gated too — stable enough to self-pass; move them to their own
+            # measure if that ever flakes.
+            - name: Track Bun baseline
+              run: |
+                  bencher run \
+                    --branch main \
+                    --testbed ubuntu-2204-bun \
+                    --threshold-measure latency \
+                    --threshold-test t_test \
+                    --threshold-min-sample-size 6 \
+                    --threshold-max-sample-size 64 \
+                    --threshold-upper-boundary 0.9999 \
+                    --thresholds-reset \
+                    --adapter json \
+                    --github-actions '${{ secrets.GITHUB_TOKEN }}' \
+                    --file packages/valdres/bun_results.json
+
+            - name: Track Node baseline
+              run: |
+                  bencher run \
+                    --branch main \
+                    --testbed ubuntu-2204-node \
+                    --threshold-measure latency \
+                    --threshold-test t_test \
+                    --threshold-min-sample-size 6 \
+                    --threshold-max-sample-size 64 \
+                    --threshold-upper-boundary 0.9999 \
+                    --thresholds-reset \
+                    --adapter json \
+                    --github-actions '${{ secrets.GITHUB_TOKEN }}' \
+                    --file packages/valdres/node_results.json

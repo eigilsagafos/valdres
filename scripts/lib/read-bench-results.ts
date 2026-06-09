@@ -1,14 +1,13 @@
 import { readFileSync, existsSync } from "fs"
 
-export interface BenchResult {
+// One absolute latency (ns) reading for a benchmark (from measureOne / compare).
+export interface LatencyResult {
+    kind: "latency"
     name: string
-    valdres: number
-    jotai: number
-    ratio: number
-    tag: string
-    threshold?: number
-    cv?: number
+    ns: number
 }
+
+export type BenchResult = LatencyResult
 
 export function readBenchResults(path: string): BenchResult[] {
     if (!existsSync(path)) return []

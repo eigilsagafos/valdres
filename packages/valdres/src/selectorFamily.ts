@@ -21,11 +21,14 @@ export const selectorFamily = <
         const cached = map.get(key)
         if (cached !== undefined) return cached
 
-        const get = (selectorArgs: GetValue) => callback(...args)(selectorArgs)
+        // Call the user's factory once at cache-miss time and store the
+        // inner getter directly. The previous implementation wrapped it in
+        // a closure that re-invoked `callback(...args)` on every evaluation,
+        // allocating a new inner getter per read.
         const newSelector = {
             equal,
             ...options,
-            get,
+            get: callback(...args),
             family: selectorFamily,
             familyArgs: args,
             familyArgsStringified: key,

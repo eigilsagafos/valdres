@@ -1,7 +1,7 @@
 {
     "name": "@valdres-react/jotai",
     "description": "Jotai API compatibility layer for Valdres",
-    "version": "0.2.0-pre.28",
+    "version": "1.0.0-beta.1",
     "license": "MIT",
     "author": {
         "name": "Eigil Sagafos"
@@ -20,11 +20,11 @@
     ],
     "scripts": {
         "build": "NODE_ENV=production bun build src/index.ts --outdir ./dist --packages external",
-        "build:types": "rm -rf dist/types && bun run tsc",
+        "build:types": "rm -rf dist/types && bunx tsgo",
         "test": "bun test --reporter=dots"
     },
     "dependencies": {
-        "valdres-react": "0.2.0-pre.28"
+        "valdres-react": "^1.0.0-beta.1"
     },
     "devDependencies": {
         "@happy-dom/global-registrator": "18.0.1",

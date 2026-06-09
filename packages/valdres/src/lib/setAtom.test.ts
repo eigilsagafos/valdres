@@ -195,7 +195,7 @@ describe("setAtom", () => {
         expect(onSetMock).toHaveBeenCalledWith("updated", store1.data)
     })
 
-    test("async updater resolves __isEmptyAtomPromise__", async () => {
+    test("async updater resolves pending-default suspense promise", async () => {
         const store1 = store()
         const emptyAtom = atom<string>()
 
@@ -254,6 +254,41 @@ describe("setAtom", () => {
         const suspenseResult = await suspensePromise
         expect(suspenseResult).toBe("second")
         expect(store1.get(emptyAtom)).toBe("second")
+    })
+
+    test("sync set after in-flight async set on empty atom resolves suspense promise", async () => {
+        const store1 = store()
+        const emptyAtom = atom<string>()
+
+        // Reading gives us the suspense placeholder
+        const suspensePromise = store1.get(emptyAtom) as Promise<string>
+
+        // In-flight async set overwrites the placeholder in values with a
+        // user-supplied promise that never resolves.
+        const pending = new Promise<string>(() => {})
+        setAtom(emptyAtom, () => pending, store1.data)
+
+        // Sync set lands a real value. The placeholder must still resolve,
+        // even though currentValue is now the user promise, not the placeholder.
+        setAtom(emptyAtom, "done", store1.data)
+
+        const suspenseResult = await suspensePromise
+        expect(suspenseResult).toBe("done")
+        expect(store1.get(emptyAtom)).toBe("done")
+    })
+
+    test("set in scoped store resolves suspense promise inited in root", async () => {
+        const root = store()
+        const scoped = root.scope("s1")
+        const emptyAtom = atom<string>()
+
+        // Reading from the scope falls through to root, where the
+        // pending-default placeholder is registered.
+        const suspense = scoped.get(emptyAtom) as Promise<string>
+        scoped.set(emptyAtom, "hello")
+
+        const resolved = await suspense
+        expect(resolved).toBe("hello")
     })
 
     test("async updater onSet throwing does not escape as unhandled rejection", async () => {

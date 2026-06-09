@@ -1,0 +1,34 @@
+import { measurementCache } from "./measurementCache"
+import { measurementStatusAtom } from "../atoms/measurementStatusAtom"
+import { runMeasurement } from "./runMeasurement"
+import type { BandwidthResult } from "../types/BandwidthResult"
+import type { MeasureBandwidthOptions } from "../types/MeasureBandwidthOptions"
+
+export const startCachedMeasurement = (
+    options: Omit<MeasureBandwidthOptions, "fresh" | "signal">,
+    controller: AbortController,
+): Promise<BandwidthResult> => {
+    measurementCache.controller = controller
+    return runMeasurement({ ...options, signal: controller.signal }).catch(
+        err => {
+            if (measurementCache.controller === controller) {
+                measurementCache.promise = null
+                measurementCache.controller = null
+                // We were aborted and no successor measurement took over —
+                // reset a stuck "measuring-*" status so consumers don't
+                // appear to be permanently in-flight.
+                if (controller.signal.aborted) {
+                    const status = measurementStatusAtom.getSelf()
+                    if (
+                        status === "measuring-latency" ||
+                        status === "measuring-download" ||
+                        status === "measuring-upload"
+                    ) {
+                        measurementStatusAtom.setSelf("idle")
+                    }
+                }
+            }
+            throw err
+        },
+    )
+}

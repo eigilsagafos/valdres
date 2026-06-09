@@ -5,18 +5,21 @@ import type { GetValue } from "../types/GetValue"
 import type { SetAtom } from "../types/SetAtom"
 import type { State } from "../types/State"
 import type { ScopedStore, ScopeFn, Store } from "../types/Store"
-import type { ScopedStoreData, StoreData } from "../types/StoreData"
+import type { StoreData } from "../types/StoreData"
 import type { TransactionFn } from "../types/TransactionFn"
 import { isAtom } from "../utils/isAtom"
 import { isGlobalAtom } from "../utils/isGlobalAtom"
 import { isSelector } from "../utils/isSelector"
 import { resolveReactive } from "../utils/resolveReactive"
+import { unsetValue } from "./unsetValue"
 import { createStoreData } from "./createStoreData"
 import { deleteFamilyAtom } from "./deleteFamilyAtom"
 import { getState } from "./getState"
-import { propagateUpdatedAtoms } from "./propagateUpdatedAtoms"
+import { onStoreChange } from "./onStoreChange"
+import { propagateAtomUpdate } from "./propagateUpdatedAtoms"
 import { resetAtom } from "./resetAtom"
 import { setAtom } from "./setAtom"
+import { snapshot } from "./snapshot"
 import { subscribe } from "./subscribe"
 import { Transaction, transaction } from "./transaction"
 
@@ -35,11 +38,18 @@ Only \`atom\` can be set.
  * stale-while-revalidate window that the timer relies on). When there's
  * no active timer, we drop a cached value past its freshness window so
  * the next read re-evaluates the default.
+ *
+ * Scope shadows are exempt: a value present in `data.values` for a scoped
+ * store is always a deliberate pin from `set()` — the scope never runs
+ * its own revalidation timer for maxAge atoms (see subscribe.ts). Evicting
+ * the shadow would silently fall back to the parent and defeat the
+ * user-visible override.
  */
 const isCachedValueStale = (state: State, data: StoreData): boolean => {
     const atom = state as Atom
     const maxAge = atom.maxAge
     if (maxAge === undefined) return false
+    if (data.parent) return false
     if (isGlobalAtom(atom)) {
         if (atom.maxAgeInterval !== undefined) return false
     } else {
@@ -54,12 +64,12 @@ const isCachedValueStale = (state: State, data: StoreData): boolean => {
 }
 
 export function storeFromStoreData(
-    data: ScopedStoreData,
+    data: StoreData,
     detach: () => void,
 ): ScopedStore
 export function storeFromStoreData(data: StoreData): Store
 export function storeFromStoreData(
-    data: ScopedStoreData | StoreData,
+    data: StoreData,
     detach?: () => void,
 ) {
     const _initSet = new Set<Atom>()
@@ -113,7 +123,7 @@ export function storeFromStoreData(
             if (_initSet.size) {
                 const atoms = [..._initSet]
                 _initSet.clear()
-                propagateUpdatedAtoms(atoms, data, undefined, undefined, false, undefined, false, true)
+                propagateAtomUpdate(atoms, data, true)
             }
         }
         return res
@@ -164,16 +174,37 @@ export function storeFromStoreData(
         return deleteFamilyAtom(atom, data)
     }
 
+    // --- unset ---
+    // Drop this store's own value for `atom` so it reverts to what it would
+    // otherwise read — the natural inverse of `set`. On a scope the atom
+    // re-inherits the parent; on a root it reverts to its default (and is
+    // de-materialized, re-initialized lazily on next read — unlike `reset`,
+    // which eagerly writes the default back). Distinct from `del` (removes a
+    // family member).
+    const unset = <V>(atom: Atom<V>) => {
+        if (data.batchUpdates) flushPendingTxn()
+        return unsetValue(atom, data)
+    }
+
     const sub = <V>(
         state: State<V> | Family<V, any>,
         callback: () => void,
         deepEqualCheckBeforeCallback: boolean = true,
     ) => subscribe(state, callback, deepEqualCheckBeforeCallback, data)
 
-    const txn = (callback: TransactionFn) => {
+    const txn = (callback: TransactionFn, name?: string) => {
         if (data.batchUpdates) flushPendingTxn()
-        return transaction(callback, data)
+        return transaction(callback, data, name)
     }
+
+    // Implementation signature is permissive; the precise per-option callback
+    // types live on the overloaded `Store["onChange"]`, which this satisfies.
+    const onChange = ((
+        callback: any,
+        options?: { atoms?: boolean; selectors?: boolean },
+    ) => onStoreChange(callback, data, options)) as Store["onChange"]
+
+    const storeSnapshot = () => snapshot(data)
 
     const scope: ScopeFn = ((scopeId: string, callback?: any) => {
         if (callback) {
@@ -194,30 +225,32 @@ export function storeFromStoreData(
                 scopedStoreData = createStoreData(scopeId, data, data.batchUpdates ? { batchUpdates: true } : undefined)
                 data.scopes.set(scopeId, scopedStoreData)
             }
+            const consumers = scopedStoreData.scopeConsumers!
+            const indexKeys = scopedStoreData.scopeIndexKeys!
             const detach = (expectedToDestroy = false) => {
-                scopedStoreData.scopeConsumers.delete(detach)
-                if (scopedStoreData.scopeConsumers.size === 0) {
+                consumers.delete(detach)
+                if (consumers.size === 0) {
                     data.scopes.delete(scopeId)
                     // Clean up scopeValueIndex entries referencing this scope
-                    for (const key of scopedStoreData.scopeIndexKeys) {
+                    for (const key of indexKeys) {
                         const set = data.scopeValueIndex.get(key)
                         if (set) {
                             set.delete(scopedStoreData)
                             if (set.size === 0) data.scopeValueIndex.delete(key)
                         }
                     }
-                    scopedStoreData.scopeIndexKeys.clear()
+                    indexKeys.clear()
                     return true
                 }
                 if (expectedToDestroy) {
                     console.warn(
-                        `Scope ${scopeId} still has ${scopedStoreData.scopeConsumers.size} consumers, will not detach`,
+                        `Scope ${scopeId} still has ${consumers.size} consumers, will not detach`,
                     )
                 }
                 return false
             }
 
-            scopedStoreData.scopeConsumers.add(detach)
+            consumers.add(detach)
             const newStore = storeFromStoreData(data.scopes.get(scopeId)!, detach)
             return newStore
         }
@@ -231,8 +264,11 @@ export function storeFromStoreData(
             txn,
             reset,
             del,
+            unset,
             data,
             scope,
+            onChange,
+            snapshot: storeSnapshot,
             detach,
         } as ScopedStore
     } else {
@@ -243,8 +279,11 @@ export function storeFromStoreData(
             txn,
             reset,
             del,
+            unset,
             data,
             scope,
+            onChange,
+            snapshot: storeSnapshot,
         } as Store
     }
 }

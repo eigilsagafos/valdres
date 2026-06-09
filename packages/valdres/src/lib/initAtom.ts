@@ -4,7 +4,7 @@ import type { StoreData } from "../types/StoreData"
 import { isPromiseLike } from "../utils/isPromiseLike"
 import { isSelector } from "../utils/isSelector"
 import { getState } from "./getState"
-import { propagateUpdatedAtoms } from "./propagateUpdatedAtoms"
+import { propagateAtomUpdate } from "./propagateUpdatedAtoms"
 import { setAtom } from "./setAtom"
 import { setValueInData } from "./setValueInData"
 
@@ -14,14 +14,11 @@ export const getAtomInitValue = <V = any>(
     initializedAtomsSet: Set<Atom>,
 ) => {
     if (atom.defaultValue === undefined) {
-        let promiseResolve: (value: any) => void
-        const promise = new Promise(resolve => {
-            promiseResolve = resolve
+        let resolve!: (value: any) => void
+        const promise = new Promise(r => {
+            resolve = r
         })
-        // @ts-ignore @ts-todo
-        promise.__isEmptyAtomPromise__ = true
-        // @ts-ignore @ts-todo
-        promise.__resolveEmptyAtomPromise__ = promiseResolve
+        data.pendingDefaults.set(atom, { promise, resolve })
         return promise
     } else if (typeof atom.defaultValue === "function") {
         // @ts-ignore @ts-todo
@@ -36,7 +33,7 @@ export const getAtomInitValue = <V = any>(
                     if (data.values.get(atom) !== value) return
                     // @ts-ignore @ts-todo
                     setValueInData(atom, resolvedValue, data)
-                    propagateUpdatedAtoms([atom], data)
+                    propagateAtomUpdate([atom], data, false, undefined, "async-set")
                 },
                 () => {
                     // On rejection, remove the rejected promise from the

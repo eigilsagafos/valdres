@@ -1,0 +1,39 @@
+{
+    "name": "@valdres/bandwidth",
+    "version": "1.0.0-beta.4",
+    "license": "MIT",
+    "author": {
+        "name": "Eigil Sagafos"
+    },
+    "homepage": "https://valdres.dev",
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/eigilsagafos/valdres.git"
+    },
+    "type": "module",
+    "exports": {
+        ".": "./src/index.ts"
+    },
+    "files": [
+        "dist"
+    ],
+    "scripts": {
+        "build": "NODE_ENV=production bun build src/index.ts --outdir ./dist --packages external",
+        "build:types": "rm -rf dist/types && bunx tsgo",
+        "dev": "PORT=3010 bun --hot dev/index.html",
+        "test": "bun test",
+        "test:ci": "bun test"
+    },
+    "devDependencies": {
+        "@valdres/public-ip": "workspace:^",
+        "typescript": "5.9.2",
+        "valdres": "workspace:^"
+    },
+    "peerDependencies": {
+        "valdres": "^1.0.0-beta.7"
+    },
+    "publishConfig": {
+        "access": "public",
+        "registry": "https://registry.npmjs.org/"
+    }
+}

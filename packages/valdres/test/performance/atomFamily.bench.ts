@@ -4,9 +4,8 @@ import { atomFamily as jotaiAtomFamily } from "jotai/utils"
 import { atom as valdresAtom } from "../../src/atom"
 import { atomFamily as valdresAtomFamily } from "../../src/atomFamily"
 import { selectorFamily as valdresSelectorFamily } from "../../src/selectorFamily"
-import { assertFaster } from "./bench-utils"
-
-let sink: any
+import { compare } from "./bench-utils"
+import { do_not_optimize } from "mitata"
 
 describe("atomFamily", () => {
     test("create atoms from family", async () => {
@@ -17,11 +16,10 @@ describe("atomFamily", () => {
 
         let vCounter = 0
         let jCounter = 0
-        await assertFaster(
+        await compare(
             "atomFamily(id)",
-            () => { sink = vFamily(++vCounter) },
-            () => { sink = jFamily(++jCounter) },
-            10.0,
+            () => do_not_optimize(vFamily(++vCounter)),
+            () => do_not_optimize(jFamily(++jCounter)),
         )
     })
 })
@@ -37,11 +35,14 @@ describe("atomFamily cache hit", () => {
         vFamily(1)
         jFamily(1)
 
-        await assertFaster(
+        // valdres's atomFamily cache hit is ~2x slower than jotai's on quiet
+        // hardware (a known optimization target). It sits near the timer-
+        // resolution floor (~16ns), so its absolute latency is noisy; Bencher's
+        // t-test widens the band accordingly — tracked, not tightly gated.
+        await compare(
             "atomFamily(id) cache hit",
-            () => { sink = vFamily(1) },
-            () => { sink = jFamily(1) },
-            5.0,
+            () => do_not_optimize(vFamily(1)),
+            () => do_not_optimize(jFamily(1)),
         )
     })
 })
@@ -60,11 +61,10 @@ describe("selectorFamily", () => {
 
         let vCounter = 0
         let jCounter = 0
-        await assertFaster(
+        await compare(
             "selectorFamily(id)",
-            () => { sink = vFamily(++vCounter) },
-            () => { sink = jFamily(++jCounter) },
-            10.0,
+            () => do_not_optimize(vFamily(++vCounter)),
+            () => do_not_optimize(jFamily(++jCounter)),
         )
     })
 })
