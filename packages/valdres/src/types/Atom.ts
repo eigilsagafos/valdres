@@ -31,4 +31,10 @@ export type Atom<Value = unknown> = {
     staleIfError?: Reactive<number>
     __cacheMeta?: Atom<CacheMeta | null>
     __cacheMetaSelector?: Selector<CacheMeta | null>
+    /** Internal: marks atoms created by valdres itself (e.g. the cacheMeta atom
+     *  backing maxAge/stale-while-revalidate). These propagate to subscribers
+     *  like any atom, so `store.onChange` excludes them to keep dev tools free
+     *  of implementation-detail churn (the cacheMeta atom updates on every
+     *  revalidation tick). */
+    __valdresInternal?: boolean
 }

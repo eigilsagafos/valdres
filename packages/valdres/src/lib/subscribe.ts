@@ -36,11 +36,11 @@ export const installMaxAgeTimer = (state: Atom<any>, data: StoreData) => {
         // Another store already owns the interval — just bump refCount
         existing.refCount++
         // Seed the cache meta in this store from an existing store
-        const metaAtom = (state.__cacheMeta ??= { equal, defaultValue: null })
+        const metaAtom = (state.__cacheMeta ??= { equal, defaultValue: null, __valdresInternal: true })
         for (const s of globalState!.stores) {
             if (s !== data && s.values.has(metaAtom)) {
                 setValueInData(metaAtom, s.values.get(metaAtom), data)
-                propagateAtomUpdate([metaAtom], data)
+                propagateAtomUpdate([metaAtom], data, false, undefined, "revalidate")
                 break
             }
         }
@@ -75,7 +75,7 @@ export const installMaxAgeTimer = (state: Atom<any>, data: StoreData) => {
             ? resolveReactive(state.staleIfError, data)
             : Infinity
 
-    const metaAtom = (state.__cacheMeta ??= { equal, defaultValue: null })
+    const metaAtom = (state.__cacheMeta ??= { equal, defaultValue: null, __valdresInternal: true })
     const updateMeta = () => {
         const meta: CacheMeta = {
             isRevalidating: revalidating,
@@ -87,11 +87,11 @@ export const installMaxAgeTimer = (state: Atom<any>, data: StoreData) => {
         if (globalState) {
             for (const store of globalState.stores) {
                 setValueInData(metaAtom, meta, store)
-                propagateAtomUpdate([metaAtom], store)
+                propagateAtomUpdate([metaAtom], store, false, undefined, "revalidate")
             }
         } else {
             setValueInData(metaAtom, meta, data)
-            propagateAtomUpdate([metaAtom], data)
+            propagateAtomUpdate([metaAtom], data, false, undefined, "revalidate")
         }
     }
 
@@ -104,11 +104,11 @@ export const installMaxAgeTimer = (state: Atom<any>, data: StoreData) => {
         if (globalState) {
             for (const store of globalState.stores) {
                 setValueInData(atom, val, store)
-                propagateAtomUpdate([atom], store)
+                propagateAtomUpdate([atom], store, false, undefined, "revalidate")
             }
         } else {
             setValueInData(atom, val, data)
-            propagateAtomUpdate([atom], data)
+            propagateAtomUpdate([atom], data, false, undefined, "revalidate")
         }
     }
 
@@ -272,31 +272,52 @@ export const subscribe = <V>(
     data: StoreData,
 ) => {
     let parentUnsubscribe: undefined | (() => void)
-    if (
-        data.parent &&
-        ((!data.values.has(state) && isAtom(state)) || isAtomFamily(state))
-    ) {
+    let dropDelegate: undefined | (() => void)
+    let reDelegate: undefined | (() => void)
+    if (data.parent && (isAtom(state) || isAtomFamily(state))) {
         /**
-         * Getting here means that we are within a scope and that the current
-         * atom is not set in the current scope. Therefore we pass the subscription
-         * up the tree and modify the callback to unsubscribe to the parent store
-         * in the case that it is set in this scope.
+         * Getting here means that we are within a scope subscribing to an atom
+         * (or a family, which always reads through). While the scope does not
+         * shadow the atom we delegate the subscription up the tree, modifying
+         * the callback to drop the delegate if the scope later shadows it. We
+         * keep the delegation machinery even when the atom is currently shadowed
+         * so `unset` can re-establish the delegate when the shadow is dropped.
          */
         const originalCallback = callback
-        parentUnsubscribe = subscribe(
-            state,
-            originalCallback,
-            requireDeepEqualCheckBeforeCallback,
-            data.parent,
-        )
-        callback = arg => {
+        const delegateToParent = () =>
+            subscribe(
+                state,
+                originalCallback,
+                requireDeepEqualCheckBeforeCallback,
+                data.parent!,
+            )
+        // A family always reads through (no own value); an atom delegates only
+        // while this scope does not shadow it.
+        if (isAtomFamily(state) || !data.values.has(state)) {
+            parentUnsubscribe = delegateToParent()
+        }
+        // Idempotent: once the scope re-roots the subscription, the parent-side
+        // delegate must drop so we don't double-notify on later writes. This
+        // fires either lazily (first scope-local propagation, below) or eagerly
+        // (when the scope shadows the state — see setValueInData), whichever
+        // comes first.
+        dropDelegate = () => {
             if (parentUnsubscribe) {
-                // Idempotent: once the scope re-roots the subscription, the
-                // parent-side delegate must drop on the first scope-local
-                // propagation so we don't double-notify on later writes.
                 parentUnsubscribe()
                 parentUnsubscribe = undefined
             }
+        }
+        // Inverse of dropDelegate: re-establish the parent delegate. Idempotent.
+        // Mutates the same `parentUnsubscribe` cell that the returned unsubscribe
+        // closure reads, so a re-delegated subscription is still torn down
+        // correctly on unsubscribe.
+        reDelegate = () => {
+            if (!parentUnsubscribe) {
+                parentUnsubscribe = delegateToParent()
+            }
+        }
+        callback = arg => {
+            dropDelegate!()
             originalCallback(arg)
         }
     } else if (!data.values.has(state) && isAtom(state)) {
@@ -325,11 +346,15 @@ export const subscribe = <V>(
             callback,
             state,
             requireDeepEqualCheckBeforeCallback,
+            reRoot: dropDelegate,
+            reDelegate,
         }
     } else {
         subscription = {
             callback,
             requireDeepEqualCheckBeforeCallback,
+            reRoot: dropDelegate,
+            reDelegate,
         }
     }
     subscribers.add(subscription)

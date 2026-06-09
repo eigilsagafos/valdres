@@ -6,6 +6,24 @@ import { store } from "../store"
 import { transaction } from "./transaction"
 import { index } from "../indexConstructor"
 
+/** Resolve to a promise's value if it settles within `ms`, else report it
+ *  still pending — a bounded race so a hung suspense promise fails fast
+ *  instead of timing out the test. Clears the timer in `finally` so a won
+ *  race never leaves a dangling timeout holding the event loop open. */
+const settleWithin = async <T>(promise: Promise<T>, ms = 50) => {
+    let timer: ReturnType<typeof setTimeout>
+    try {
+        return await Promise.race([
+            promise.then(value => ({ kind: "resolved" as const, value })),
+            new Promise<{ kind: "pending" }>(resolve => {
+                timer = setTimeout(() => resolve({ kind: "pending" }), ms)
+            }),
+        ])
+    } finally {
+        clearTimeout(timer!)
+    }
+}
+
 describe("transaction", () => {
     test("txn set direct", () => {
         const store1 = store()
@@ -655,5 +673,79 @@ describe("transaction", () => {
         rootStore.set(nameAtom, "Bar")
         expect(rootStore.get(nameAtom)).toBe("Bar")
         expect(nestedStore.get(nameAtom)).toBe("Foo")
+    })
+
+    // Regression guard: plain `store.set` on a no-default atom resolves the
+    // pending-default suspense promise (see lib/setAtom.test.ts). The
+    // transaction write path goes through writeAtoms, which previously wrote
+    // the value but never resolved the placeholder — so a reader suspended on
+    // it hung forever even though the value was set. writeAtoms now calls
+    // resolvePendingDefault, matching `set`.
+    test("txn set resolves pending-default suspense promise", async () => {
+        const store1 = store()
+        const emptyAtom = atom<string>()
+
+        // Reading the empty atom gives us the suspense placeholder promise.
+        const suspense = store1.get(emptyAtom) as Promise<string>
+
+        store1.txn(txn => {
+            txn.set(emptyAtom, "hello")
+        })
+
+        // Value is written correctly...
+        expect(store1.get(emptyAtom)).toBe("hello")
+
+        // ...but the suspense promise must also resolve, exactly as it does for
+        // a plain `store.set`. Bounded race so the gap fails fast instead of
+        // hanging until the test timeout.
+        const settled = await settleWithin(suspense)
+        expect(settled).toEqual({ kind: "resolved", value: "hello" })
+    })
+
+    // The placeholder is registered in root (the scoped read falls through),
+    // so resolving it from a scoped txn write must walk up the scope chain —
+    // mirrors the supported `set` case in lib/setAtom.test.ts.
+    test("scoped txn set resolves suspense promise inited in root", async () => {
+        const root = store()
+        const scoped = root.scope("s1")
+        const emptyAtom = atom<string>()
+
+        const suspense = scoped.get(emptyAtom) as Promise<string>
+
+        scoped.txn(txn => {
+            txn.set(emptyAtom, "hello")
+        })
+
+        const settled = await settleWithin(suspense)
+        expect(settled).toEqual({ kind: "resolved", value: "hello" })
+    })
+
+    // Demonstrates the `!isPromiseLike(value)` half of the writeAtoms gate.
+    // The txn path does no async resolution, so storing an in-flight promise
+    // must NOT resolve the placeholder by adoption — that would consume it and
+    // strand it on a promise that never settles, so a later settled write
+    // could never resolve it. The placeholder must survive until a settled
+    // value lands. Mirrors lib/setAtom.test.ts "sync set after in-flight async
+    // set on empty atom resolves suspense promise" for the transaction path.
+    test("txn set: in-flight promise does not consume the suspense placeholder", async () => {
+        const store1 = store()
+        const emptyAtom = atom<string>()
+
+        const suspense = store1.get(emptyAtom) as Promise<string>
+
+        // Store a never-resolving promise via txn — placeholder must survive.
+        const pending = new Promise<string>(() => {})
+        store1.txn(txn => {
+            txn.set(emptyAtom, pending)
+        })
+
+        // A later settled value lands and resolves the still-live placeholder.
+        store1.txn(txn => {
+            txn.set(emptyAtom, "done")
+        })
+
+        const settled = await settleWithin(suspense)
+        expect(settled).toEqual({ kind: "resolved", value: "done" })
+        expect(store1.get(emptyAtom)).toBe("done")
     })
 })

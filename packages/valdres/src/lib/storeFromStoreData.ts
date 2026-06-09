@@ -12,12 +12,15 @@ import { isGlobalAtom } from "../utils/isGlobalAtom"
 import { isSelector } from "../utils/isSelector"
 import { resolveReactive } from "../utils/resolveReactive"
 import { materializeDirtyFamily } from "./atomFamilyIndex"
+import { unsetValue } from "./unsetValue"
 import { createStoreData } from "./createStoreData"
 import { deleteFamilyAtom } from "./deleteFamilyAtom"
 import { getState } from "./getState"
+import { onStoreChange } from "./onStoreChange"
 import { propagateAtomUpdate } from "./propagateUpdatedAtoms"
 import { resetAtom } from "./resetAtom"
 import { setAtom } from "./setAtom"
+import { snapshot } from "./snapshot"
 import { subscribe } from "./subscribe"
 import { Transaction, transaction } from "./transaction"
 
@@ -175,16 +178,37 @@ export function storeFromStoreData(
         return deleteFamilyAtom(atom, data)
     }
 
+    // --- unset ---
+    // Drop this store's own value for `atom` so it reverts to what it would
+    // otherwise read — the natural inverse of `set`. On a scope the atom
+    // re-inherits the parent; on a root it reverts to its default (and is
+    // de-materialized, re-initialized lazily on next read — unlike `reset`,
+    // which eagerly writes the default back). Distinct from `del` (removes a
+    // family member).
+    const unset = <V>(atom: Atom<V>) => {
+        if (data.batchUpdates) flushPendingTxn()
+        return unsetValue(atom, data)
+    }
+
     const sub = <V>(
         state: State<V> | Family<V, any>,
         callback: () => void,
         deepEqualCheckBeforeCallback: boolean = true,
     ) => subscribe(state, callback, deepEqualCheckBeforeCallback, data)
 
-    const txn = (callback: TransactionFn) => {
+    const txn = (callback: TransactionFn, name?: string) => {
         if (data.batchUpdates) flushPendingTxn()
-        return transaction(callback, data)
+        return transaction(callback, data, name)
     }
+
+    // Implementation signature is permissive; the precise per-option callback
+    // types live on the overloaded `Store["onChange"]`, which this satisfies.
+    const onChange = ((
+        callback: any,
+        options?: { atoms?: boolean; selectors?: boolean },
+    ) => onStoreChange(callback, data, options)) as Store["onChange"]
+
+    const storeSnapshot = () => snapshot(data)
 
     const scope: ScopeFn = ((scopeId: string, callback?: any) => {
         if (callback) {
@@ -244,8 +268,11 @@ export function storeFromStoreData(
             txn,
             reset,
             del,
+            unset,
             data,
             scope,
+            onChange,
+            snapshot: storeSnapshot,
             detach,
         } as ScopedStore
     } else {
@@ -256,8 +283,11 @@ export function storeFromStoreData(
             txn,
             reset,
             del,
+            unset,
             data,
             scope,
+            onChange,
+            snapshot: storeSnapshot,
         } as Store
     }
 }

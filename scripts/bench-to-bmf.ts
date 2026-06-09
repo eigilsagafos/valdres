@@ -24,31 +24,53 @@ type Bmf = Record<string, Record<string, Metric>>
 const ROOT = join(import.meta.dir, "..")
 const PERF_DIR = join(ROOT, "packages/valdres/test/performance")
 
+// A compare() benchmark is named "<op> / <impl>"; the reference sides are any
+// impl other than valdres (jotai, map, recoil, …). Standalone valdres benches
+// (e.g. "scope: set atom, …") have no " / <impl>" suffix.
+function isReference(name: string): boolean {
+    const m = name.match(/ \/ ([^/]+)$/)
+    return m !== null && m[1] !== "valdres"
+}
+
 function toBmf(results: BenchResult[]): Bmf {
+    // The relative-CB gate runs the suite multiple times and concatenates the
+    // NDJSON, so a benchmark name legitimately appears once per repeat. Keep the
+    // MIN latency across repeats: interference (GC, scheduler, contention) only
+    // ever adds time, so the minimum is the cleanest, most reproducible reading.
+    // (A single run — e.g. the base lane — simply yields min-of-one.)
+    //
+    // BENCH_EXCLUDE_REFS drops the competitor/native-floor sides. The PR gate
+    // sets it because those benches can't regress from a valdres change (jotai
+    // is pinned, map is native) — gating them only adds noise. They're still
+    // measured and plotted via the base lane (bencher-base.yml) for the
+    // head-to-head perf page.
+    const excludeRefs = !!process.env.BENCH_EXCLUDE_REFS
     const bmf: Bmf = {}
     for (const r of results) {
-        if (bmf[r.name]) {
-            // Each "<op> / <impl>" name must be produced by exactly one bench
-            // file. A collision means two files emit the same name (likely a
-            // copy-paste), and Bencher would gate an arbitrary first-wins
-            // reading — fail loudly instead of uploading ambiguous data.
-            throw new Error(
-                `bench-to-bmf: duplicate benchmark name "${r.name}" — benchmark names must be unique across bench files`,
-            )
+        if (excludeRefs && isReference(r.name)) continue
+        const prev = bmf[r.name]?.latency.value
+        if (prev === undefined || r.ns < prev) {
+            bmf[r.name] = { latency: { value: r.ns } }
         }
-        bmf[r.name] = { latency: { value: r.ns } }
     }
     return bmf
 }
 
+// Input NDJSON and output BMF paths are overridable via env so the relative-CB
+// gate can run THIS (PR-checkout) script against the base worktree's results —
+// the base SHA ships an older bench-to-bmf that would reject the repeated names.
 const lanes = [
     {
-        ndjson: join(PERF_DIR, "bench-results.ndjson"),
-        out: join(ROOT, "packages/valdres/bun_results.json"),
+        ndjson: process.env.BENCH_NDJSON_BUN ?? join(PERF_DIR, "bench-results.ndjson"),
+        out: process.env.BENCH_OUT_BUN ?? join(ROOT, "packages/valdres/bun_results.json"),
     },
     {
-        ndjson: join(PERF_DIR, "bench-results-node.ndjson"),
-        out: join(ROOT, "packages/valdres/node_results.json"),
+        ndjson:
+            process.env.BENCH_NDJSON_NODE ??
+            join(PERF_DIR, "bench-results-node.ndjson"),
+        out:
+            process.env.BENCH_OUT_NODE ??
+            join(ROOT, "packages/valdres/node_results.json"),
     },
 ]
 

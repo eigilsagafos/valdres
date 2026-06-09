@@ -186,6 +186,120 @@ describe("family deletion across scope levels", () => {
         expect(bCallback).toHaveBeenCalledTimes(0)
     })
 
+    test("root del of a member re-evaluates a descendant scope's selector that reads the member directly", () => {
+        const A = store("A")
+        const family = atomFamily<string, [string]>("DEFAULT", {
+            name: "memberFam",
+        })
+        const member = family("a")
+        A.set(member, "root-val")
+
+        const B = A.scope("B")
+
+        // The selector reads the FAMILY MEMBER directly (not get(family)).
+        const sel = selector(get => `sel:${get(member)}`, { name: "memberSel" })
+
+        const aCb = mock(() => {})
+        const bCb = mock(() => {})
+        A.sub(sel, aCb)
+        B.sub(sel, bCb) // B inherits member from A — no shadow
+
+        expect(A.get(sel)).toBe("sel:root-val")
+        expect(B.get(sel)).toBe("sel:root-val")
+
+        A.del(member)
+
+        // Root subscriber fires and its value updates.
+        expect(aCb).toHaveBeenCalledTimes(1)
+        expect(A.get(sel)).toBe("sel:DEFAULT")
+
+        // Descendant scope: its selector must re-evaluate and its subscriber fire.
+        expect(bCb).toHaveBeenCalledTimes(1)
+        expect(B.get(sel)).toBe("sel:DEFAULT")
+    })
+
+    test("txn del of a member re-evaluates a descendant scope's selector that reads the member directly", () => {
+        const A = store("A")
+        const family = atomFamily<string, [string]>("DEFAULT", {
+            name: "memberFamTxn",
+        })
+        const member = family("a")
+        A.set(member, "root-val")
+
+        const B = A.scope("B")
+
+        const sel = selector(get => `sel:${get(member)}`, {
+            name: "memberSelTxn",
+        })
+
+        const aCb = mock(() => {})
+        const bCb = mock(() => {})
+        A.sub(sel, aCb)
+        B.sub(sel, bCb)
+
+        expect(A.get(sel)).toBe("sel:root-val")
+        expect(B.get(sel)).toBe("sel:root-val")
+
+        A.txn(({ del }) => del(member))
+
+        expect(aCb).toHaveBeenCalledTimes(1)
+        expect(A.get(sel)).toBe("sel:DEFAULT")
+        expect(bCb).toHaveBeenCalledTimes(1)
+        expect(B.get(sel)).toBe("sel:DEFAULT")
+    })
+
+    test("root del of a member re-evaluates an inheriting selector 3 scopes deep", () => {
+        const A = store("A")
+        const family = atomFamily<string, [string]>("DEFAULT", {
+            name: "deepMemberFam",
+        })
+        const member = family("a")
+        A.set(member, "root-val")
+
+        const B = A.scope("B")
+        const C = B.scope("C")
+        const D = C.scope("D")
+
+        const sel = selector(get => `sel:${get(member)}`, {
+            name: "deepMemberSel",
+        })
+        const dCb = mock(() => {})
+        D.sub(sel, dCb) // D inherits member through B and C — no shadow anywhere
+
+        expect(D.get(sel)).toBe("sel:root-val")
+
+        A.del(member)
+
+        expect(dCb).toHaveBeenCalledTimes(1)
+        expect(D.get(sel)).toBe("sel:DEFAULT")
+    })
+
+    test("member shadowed at an intermediate scope masks a root del from deeper scopes", () => {
+        const A = store("A")
+        const family = atomFamily<string, [string]>("DEFAULT", {
+            name: "maskMemberFam",
+        })
+        const member = family("a")
+        A.set(member, "root-val")
+
+        const B = A.scope("B")
+        const C = B.scope("C")
+        B.set(member, "B-val") // B shadows — C reads B's value, not root's
+
+        const sel = selector(get => `sel:${get(member)}`, {
+            name: "maskMemberSel",
+        })
+        const cCb = mock(() => {})
+        C.sub(sel, cCb)
+        expect(C.get(sel)).toBe("sel:B-val")
+
+        A.del(member)
+
+        // C's visible value comes from B's shadow, unchanged — no notification.
+        expect(cCb).toHaveBeenCalledTimes(0)
+        expect(C.get(sel)).toBe("sel:B-val")
+    })
+
     test("delete from mid-scope does not affect siblings", () => {
         const A = store("A")
         const family = atomFamily<string>(undefined, { name: "sibFam" })

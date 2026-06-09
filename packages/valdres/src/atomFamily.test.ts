@@ -264,6 +264,116 @@ describe("atomFamily", () => {
         ).toStrictEqual(["2", "3"])
     })
 
+    test("reading a deleted family member resolves the default factory, not the raw function", () => {
+        const store1 = store()
+        const family = atomFamily((_id: string) => 0)
+        const x = family("x")
+        store1.set(x, 5)
+        expect(store1.get(x)).toBe(5)
+        store1.del(x)
+        expect(store1.get(x)).toBe(0)
+    })
+
+    test("a selector reading a deleted family member sees the default value", () => {
+        const store1 = store()
+        const family = atomFamily((_id: string) => 0)
+        const x = family("x")
+        const doubled = selector(get => get(x) * 2)
+        store1.set(x, 5)
+        expect(store1.get(doubled)).toBe(10)
+        store1.del(x)
+        expect(store1.get(doubled)).toBe(0)
+    })
+
+    test("repeated reads of a deleted family member don't re-invoke the default factory", () => {
+        const store1 = store()
+        const factory = mock((id: string) => ({ id }))
+        const family = atomFamily(factory)
+        const x = family("x")
+        store1.get(x)
+        store1.del(x)
+        const a = store1.get(x)
+        const callsAfterFirstRead = factory.mock.calls.length
+        const b = store1.get(x)
+        const c = store1.get(x)
+        // Further reads must reuse the resolved default, not re-run the factory…
+        expect(factory.mock.calls.length).toBe(callsAfterFirstRead)
+        // …and return a stable reference.
+        expect(a).toBe(b)
+        expect(b).toBe(c)
+    })
+
+    test("reading a deleted family member with an async default is stable across reads", async () => {
+        const store1 = store()
+        const factory = mock((id: string) => wait(1).then(() => "v:" + id))
+        const family = atomFamily(factory)
+        const x = family("x")
+        await store1.get(x)
+        store1.del(x)
+        const a = store1.get(x)
+        const callsAfterFirstRead = factory.mock.calls.length
+        const b = store1.get(x)
+        expect(b).toBe(a)
+        expect(factory.mock.calls.length).toBe(callsAfterFirstRead)
+        expect(await a).toBe("v:x")
+    })
+
+    test("a deleted family member's async default unwraps to its value on later reads", async () => {
+        const store1 = store()
+        const family = atomFamily((id: string) => wait(1).then(() => "v:" + id))
+        const x = family("x")
+        await store1.get(x)
+        store1.del(x)
+        // Trigger + settle the cached default promise.
+        await store1.get(x)
+        await wait(2)
+        // Like an alive async atom, a later read returns the unwrapped value,
+        // not a forever-pending promise.
+        expect(store1.get(x)).toBe("v:x")
+    })
+
+    // When a deleted member's async default resolves, the swap in getState
+    // propagates the resolved value to dependent selectors/subscribers (via
+    // propagateAtomUpdate's skipFamilyIndexUpdate) WITHOUT re-registering the
+    // member in the family index — so a subscriber to a selector that depends on
+    // the deleted member is notified, yet the member stays absent from
+    // get(family).
+    test("selector subscriber is notified when a deleted member's async default resolves", async () => {
+        const store1 = store()
+        const family = atomFamily((id: string) => wait(1).then(() => "v:" + id))
+        const x = family("x")
+        await store1.get(x)
+        store1.del(x)
+        const len = selector(get => {
+            const v = get(x)
+            return typeof v === "string" ? v.length : -1
+        })
+        const callback = mock(() => {})
+        store1.sub(len, callback)
+        store1.get(len) // read x -> caches the default promise + swaps on resolve
+        await wait(5)
+        expect(callback).toHaveBeenCalled()
+        expect(store1.get(len)).toBe(3) // "v:x".length
+        // …and the member is NOT resurrected into the family index.
+        expect(store1.get(family)).toStrictEqual([])
+    })
+
+    test("a deleted family member with no default suspends, and a later set resolves it", async () => {
+        const store1 = store()
+        const family = atomFamily<number, [string]>()
+        const x = family("x")
+        store1.set(x, 5)
+        store1.del(x)
+        // No default → reading suspends with a placeholder promise (like a fresh
+        // no-default member, per "no defaultValue suspends"), not undefined.
+        const pending = store1.get(x)
+        expect(pending).toBeInstanceOf(Promise)
+        // …and a later set resolves that placeholder.
+        store1.set(x, 9)
+        expect(await pending).toBe(9)
+        expect(store1.get(x)).toBe(9)
+    })
+
     test("subscribe to atom family keys", () => {
         const store1 = store()
         const testAtomFamily = atomFamily<string>(0)
@@ -606,12 +716,13 @@ describe("atomFamily", () => {
         expect(nestedNestedStore.get(userFamily)).toStrictEqual([user1atom])
     })
 
-    describe("root-level delete cleans up the index for GC", () => {
-        test("store.del removes the atom from index.created (no tombstone leak)", () => {
-            // Pre-fix: deleted atoms stayed in BOTH `index.created` and
-            // `index.deleted` (tombstone). At root that's pure leak —
-            // `index.created` already holds a strong ref via the Map key
-            // and there's no parent chain to shadow against.
+    describe("root-level delete tombstones the member", () => {
+        test("store.del leaves a `deleted` tombstone and empties the view", () => {
+            // Root delete records a tombstone in `index.deleted` (same as a
+            // scope delete). The root render subtracts `deleted`, so the
+            // member is absent from get(family). The tombstone is load-
+            // bearing: reading a deleted member re-resolves its default
+            // (isAtomDeletedInFamilyIndex) instead of resurrecting it.
             const s = store()
             const userFamily = atomFamily<{ id: number }, [number]>()
             const a = userFamily(1)
@@ -621,12 +732,14 @@ describe("atomFamily", () => {
             expect(index.created.has(a)).toBe(true)
 
             s.del(a)
-            // After root-level delete the atom should be gone from
-            // `index.created` entirely (not just shadowed by `deleted`),
-            // so nothing pins it on the family side.
-            expect(index.created.has(a)).toBe(false)
-            // And the rendered view is empty.
+            expect(index.deleted.has(a)).toBe(true)
+            // Rendered view excludes the tombstoned member.
             expect(s.get(userFamily)).toEqual([])
+
+            // A re-set clears the tombstone and revives the member.
+            s.set(a, { id: 1 })
+            expect(index.deleted.has(a)).toBe(false)
+            expect(s.get(userFamily)).toEqual([a])
         })
 
         test("scope-level delete keeps the tombstone (it shadows the parent)", () => {

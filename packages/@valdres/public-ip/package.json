@@ -1,6 +1,6 @@
 {
     "name": "@valdres/public-ip",
-    "version": "1.0.0-beta.1",
+    "version": "1.0.0-beta.3",
     "license": "MIT",
     "author": {
         "name": "Eigil Sagafos"
@@ -36,7 +36,7 @@
         "valdres-react": "workspace:^"
     },
     "peerDependencies": {
-        "valdres": "^1.0.0-beta.1"
+        "valdres": "^1.0.0-beta.5"
     },
     "publishConfig": {
         "access": "public",

@@ -5,29 +5,8 @@ import { isPromiseLike } from "../utils/isPromiseLike"
 import { getState } from "./getState"
 import { propagateAtomUpdate } from "./propagateUpdatedAtoms"
 import { isFunction } from "./isFunction"
+import { resolvePendingDefault } from "./resolvePendingDefault"
 import { setValueInData } from "./setValueInData"
-
-/** Resolve any outstanding pending-default suspense placeholder for `atom`
- *  and remove it. The placeholder may have been registered in a parent
- *  store (atoms with no `defaultValue` init in whichever scope first reads
- *  them, which `getState` resolves by walking up to root), so we walk the
- *  scope chain rather than only checking `data`. */
-const resolvePendingDefault = <Value>(
-    atom: Atom<Value>,
-    data: StoreData,
-    value: Value,
-) => {
-    let cur: StoreData | undefined = data
-    while (cur) {
-        const entry = cur.pendingDefaults.get(atom)
-        if (entry) {
-            entry.resolve(value)
-            cur.pendingDefaults.delete(atom)
-            return
-        }
-        cur = "parent" in cur ? cur.parent : undefined
-    }
-}
 
 const handlePromise = <Value>(
     atom: Atom<Value>,
@@ -44,7 +23,7 @@ const handlePromise = <Value>(
             setValueInData(atom, resolvedValue, data)
             if (atom.onSet && !skipOnSet) atom.onSet(resolvedValue, data)
             resolvePendingDefault(atom, data, resolvedValue)
-            propagateAtomUpdate([atom], data)
+            propagateAtomUpdate([atom], data, false, undefined, "async-set")
         })
         // Chained .catch so errors thrown inside the fulfilled handler
         // (e.g. from atom.onSet) don't surface as unhandled rejections.
@@ -54,7 +33,7 @@ const handlePromise = <Value>(
             // lets us avoid clobbering it.
             if (data.values.get(atom) !== promise) return
             setValueInData(atom, currentValue, data)
-            propagateAtomUpdate([atom], data)
+            propagateAtomUpdate([atom], data, false, undefined, "async-set")
         })
 }
 
@@ -86,9 +65,9 @@ export const setAtom = <Value = any>(
         handlePromise(atom, promise, currentValue, data, skipOnSet)
         if (initializedAtomsSet && initializedAtomsSet.size > 0) {
             initializedAtomsSet.add(atom)
-            propagateAtomUpdate([...initializedAtomsSet], data)
+            propagateAtomUpdate([...initializedAtomsSet], data, false, undefined, "set")
         } else {
-            propagateAtomUpdate([atom], data)
+            propagateAtomUpdate([atom], data, false, undefined, "set")
         }
         return promise as Value
     }
@@ -104,9 +83,9 @@ export const setAtom = <Value = any>(
     resolvePendingDefault(atom, data, syncValue)
     if (initializedAtomsSet && initializedAtomsSet.size > 0) {
         initializedAtomsSet.add(atom)
-        propagateAtomUpdate([...initializedAtomsSet], data)
+        propagateAtomUpdate([...initializedAtomsSet], data, false, undefined, "set")
     } else {
-        propagateAtomUpdate([atom], data)
+        propagateAtomUpdate([atom], data, false, undefined, "set")
     }
     return syncValue
 }

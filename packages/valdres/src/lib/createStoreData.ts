@@ -35,6 +35,10 @@ Object.defineProperties(lazyProto, {
 
 export type CreateStoreDataOptions = {
     batchUpdates?: boolean
+    /** Retain values enumerably (a `Map`, not a `WeakMap`) so `store.snapshot()`
+     *  can list the store's current state. Off by default; see `Store.snapshot`.
+     *  Scopes inherit it from their parent. */
+    enumerable?: boolean
 }
 
 export function createStoreData(
@@ -44,7 +48,11 @@ export function createStoreData(
 ): StoreData {
     const data: any = Object.create(lazyProto)
     data.id = id ?? generateId()
-    data.values = new WeakMap()
+    // Chosen once, here — never re-checked on get/set. A scope inherits its
+    // parent's mode so an enumerable store is enumerable all the way down.
+    const enumerable = options?.enumerable ?? parent?.enumerable ?? false
+    if (enumerable) data.enumerable = true
+    data.values = enumerable ? new Map() : new WeakMap()
     data.scopes = new Map()
     data.scopeValueIndex = new WeakMap()
     // Eager (not lazy) because resolvePendingDefault in setAtom walks every

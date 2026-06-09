@@ -1,10 +1,18 @@
 import type { Selector } from "./Selector"
 import type { Store } from "./Store"
+import type { StoreChangeCallback } from "./StoreChangeCallback"
 import type { Subscription } from "./Subscription"
 
 export type StoreData = {
     id: string
-    values: WeakMap<WeakKey, any>
+    /** The store's materialized values, keyed by state identity. A `WeakMap` by
+     *  default so unreferenced atoms/selectors are collected (guarded by
+     *  test/memoryleaks.test.ts); a `Map` when the store was created with
+     *  `{ enumerable: true }`, which retains entries for the store's lifetime so
+     *  `store.snapshot()` can enumerate them. The two share the get/set/has/delete
+     *  surface every call site uses, so the mode is a drop-in chosen once at
+     *  creation — no per-call branch on the hot path. */
+    values: WeakMap<WeakKey, any> | Map<WeakKey, any>
     subscriptions: WeakMap<WeakKey, Set<Subscription>>
     subscriptionsRequireEqualCheck: WeakMap<WeakKey, boolean>
     stateDependents: WeakMap<WeakKey, any>
@@ -42,6 +50,10 @@ export type StoreData = {
      *  `values` (which may be replaced by user-supplied async sets). */
     pendingDefaults: WeakMap<WeakKey, { promise: Promise<any>; resolve: (value: any) => void }>
     storeRef?: Store
+    /** True when this store was created with `{ enumerable: true }`: `values` is
+     *  a `Map` (not a `WeakMap`) so `store.snapshot()` can list current state.
+     *  Set once at creation and inherited by every (nested) scope. */
+    enumerable?: boolean
     scopes: Map<string, StoreData>
     batchUpdates?: boolean
     scopeValueIndex: WeakMap<WeakKey, Set<StoreData>>
@@ -53,4 +65,13 @@ export type StoreData = {
     /** Present iff this is a scoped store. Records keys this scope registered
      *  in its parent's `scopeValueIndex`, used for cleanup on detach. */
     scopeIndexKeys?: Set<WeakKey>
+    /** Store-wide change listeners registered via `store.onChange`, each mapped
+     *  to the kinds of change it opted into: `atoms` (default true) and
+     *  `selectors` (default false). Absent (undefined) until the first listener
+     *  is added and reset to undefined when the last one leaves, so the write hot
+     *  path stays allocation-free when nobody is watching. */
+    changeListeners?: Map<
+        StoreChangeCallback,
+        { atoms: boolean; selectors: boolean }
+    >
 }

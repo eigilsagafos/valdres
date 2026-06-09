@@ -1,6 +1,6 @@
 {
     "name": "valdres-angular",
-    "version": "0.1.0-beta.1",
+    "version": "1.0.0-beta.3",
     "license": "MIT",
     "author": {
         "name": "Eigil Sagafos"
@@ -29,7 +29,7 @@
     },
     "peerDependencies": {
         "@angular/core": ">=17",
-        "valdres": "^1.0.0-beta.1"
+        "valdres": "^1.0.0-beta.5"
     },
     "publishConfig": {
         "access": "public",

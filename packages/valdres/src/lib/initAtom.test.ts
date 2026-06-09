@@ -55,4 +55,23 @@ describe("initAtom", () => {
         unsubscribe()
         expect(store1.data.subscriptions.get(callbackAtom)).toBeUndefined()
     })
+
+    // onSet means "on set" — a user write. An async default resolving its own
+    // initial value is initialization, not a set, so onSet must stay silent.
+    // (The set path fires onSet on async resolve; see lib/setAtom.test.ts
+    // "async updater calls onSet after resolution" — the deliberate inverse.)
+    test("async default resolving does not fire onSet", async () => {
+        const store1 = store()
+        const onSet = mock(() => {})
+        const callbackAtom = atom<string>(() => wait(10).then(() => "Bar"), {
+            onSet,
+        })
+        const value = store1.get(callbackAtom)
+        expect(value).toBeInstanceOf(Promise)
+        const res = await value
+        expect(res).toBe("Bar")
+        expect(store1.get(callbackAtom)).toBe("Bar")
+        // Initialization resolved the value but is not a "set".
+        expect(onSet).toHaveBeenCalledTimes(0)
+    })
 })

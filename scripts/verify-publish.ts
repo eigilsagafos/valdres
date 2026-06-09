@@ -47,6 +47,7 @@ const PUBLIC_PACKAGES = [
     "packages/@valdres/color-mode",
     "packages/@valdres/hotkeys",
     "packages/@valdres/public-ip",
+    "packages/@valdres/redux-devtools",
     "packages/@valdres-react/color-mode",
     "packages/@valdres-react/draggable",
     "packages/@valdres-react/hotkeys",

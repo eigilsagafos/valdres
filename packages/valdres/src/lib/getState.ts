@@ -6,12 +6,16 @@ import type { Selector } from "../types/Selector"
 import type { StoreData } from "../types/StoreData"
 import { isAtom } from "../utils/isAtom"
 import { isAtomFamily } from "../utils/isAtomFamily"
+import { isPromiseLike } from "../utils/isPromiseLike"
 import { isFamilyAtom } from "../utils/isFamilyAtom"
 import { isSelector } from "../utils/isSelector"
 import { isSelectorFamily } from "../utils/isSelectorFamily"
 import { equal } from "./equal"
 import { initAtom } from "./initAtom"
 import { initSelector } from "./initSelector"
+import { propagateAtomUpdate } from "./propagateUpdatedAtoms"
+import { resolveAtomDefaultValue } from "./resolveAtomDefaultValue"
+import { setValueInData } from "./setValueInData"
 import {
     createAtomFamilyIndex,
     materializeDirtyFamily,
@@ -79,7 +83,50 @@ export function getState<
             const familyValue = data.values.get(state.family)
             if (familyValue?.__index) {
                 if (isAtomDeletedInFamilyIndex(state, familyValue.__index)) {
-                    return state.defaultValue as Value
+                    // Resolve the default once and cache it so repeated reads
+                    // are stable (same reference) and never re-invoke a
+                    // function/async default factory — re-running it on every
+                    // read would repeat its side effects (e.g. a fetch). We
+                    // deliberately DON'T add `state` to initializedAtomsSet, so
+                    // the get-time propagation that re-registers a member in the
+                    // family index never runs: the member stays deleted (absent
+                    // from get(family)); only its direct read is memoized.
+                    const value = resolveAtomDefaultValue(
+                        state,
+                        data,
+                        initializedAtomsSet,
+                    )
+                    const cached = setValueInData(state, value, data)
+                    // Async default: mirror getAtomInitValue and swap the cached
+                    // promise for its resolved value once it settles, so later
+                    // reads return the value rather than a forever-pending
+                    // promise. Stale-guard against a concurrent re-set/re-delete,
+                    // and drop the entry on rejection. Propagate with
+                    // skipFamilyIndexUpdate so dependent selectors/subscribers see
+                    // the resolved value WITHOUT re-registering (resurrecting) the
+                    // deleted member in the family index.
+                    if (isPromiseLike(cached)) {
+                        cached.then(
+                            resolvedValue => {
+                                if (data.values.get(state) !== cached) return
+                                setValueInData(state, resolvedValue, data)
+                                propagateAtomUpdate(
+                                    [state],
+                                    data,
+                                    false,
+                                    undefined,
+                                    undefined,
+                                    true,
+                                )
+                            },
+                            () => {
+                                if (data.values.get(state) === cached) {
+                                    data.values.delete(state)
+                                }
+                            },
+                        )
+                    }
+                    return cached as Value
                 }
             }
         }

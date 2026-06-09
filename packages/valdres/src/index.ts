@@ -65,10 +65,19 @@ export type { ResetAtom } from "./types/ResetAtom"
 export type { Selector, SelectorGetOptions } from "./types/Selector"
 export type { SelectorFamily } from "./types/SelectorFamily"
 export type { SetAtom } from "./types/SetAtom"
+export type { SnapshotEntry } from "./types/SnapshotEntry"
 export type { SetAtomValue } from "./types/SetAtomValue"
 export type { SyncSetAtom } from "./types/SyncSetAtom"
 export type { State } from "./types/State"
 export type { Store } from "./types/Store"
+export type {
+    AtomChange,
+    SelectorChange,
+    StoreChange,
+} from "./types/StoreChange"
+export type { StoreChangeCallback } from "./types/StoreChangeCallback"
+export type { StoreChangeMeta } from "./types/StoreChangeMeta"
+export type { StoreChangeSource } from "./types/StoreChangeSource"
 export type { StoreData } from "./types/StoreData"
 export type { TransactionFn } from "./types/TransactionFn"
 export type { TransactionInterface } from "./types/TransactionInterface"

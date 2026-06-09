@@ -1,6 +1,18 @@
-# Bencher PR lane — runs the suite on a PR, compares each benchmark against
-# main's baseline using the cloned Threshold, posts a sticky PR comment, and
-# fails the check only when a benchmark's `latency` regresses past the boundary (--err).
+# Bencher PR lane — Relative Continuous Benchmarking.
+#
+# Instead of comparing the PR against main's HISTORICAL latency (measured on
+# other, possibly faster/slower runners — the source of the whole-board
+# false-positive regressions), this lane measures BOTH the base SHA and the PR
+# head on the SAME runner in the SAME job, then gates the PR against that
+# same-runner baseline. A loaded/slow runner slows base and PR equally, so the
+# global-slowdown noise cancels out and only a genuine per-benchmark regression
+# trips the gate. This is Bencher's documented approach for noisy shared CI
+# runners: https://bencher.dev/docs/how-to/track-benchmarks/ ("Relative
+# Continuous Benchmarking").
+#
+# The historical trend for main is still recorded separately by bencher-base.yml
+# on push; this lane never touches the `main` branch's data — it seeds the base
+# measurement onto the PR branch and resets that scratch branch every run.
 #
 # Same-repo PRs only (the `if` guard): fork PRs get no secrets, so the project
 # key would be empty. To cover external contributors, upgrade to Bencher's
@@ -35,7 +47,10 @@ jobs:
             # BENCHER_API_KEY secret in the `Bencher.dev` GitHub Environment.
             BENCHER_API_KEY: ${{ secrets.BENCHER_API_KEY }}
         steps:
+            # fetch-depth: 0 so we can build the PR's base SHA in a worktree.
             - uses: actions/checkout@v6
+              with:
+                  fetch-depth: 0
             - uses: oven-sh/setup-bun@v2
               with:
                   bun-version: 1.3.13
@@ -44,45 +59,133 @@ jobs:
                   node-version: "22.17"
             - uses: bencherdev/bencher@v0.6.6
 
-            - name: Install
+            # Install both checkouts up front so the PR and base benchmark runs
+            # happen back-to-back (no heavy install between them to skew timing).
+            - name: Install (PR)
               run: bun install --frozen-lockfile
+            - name: Build base SHA in a worktree
+              run: |
+                  git worktree add --detach /tmp/base '${{ github.event.pull_request.base.sha }}'
+                  cd /tmp/base && bun install --frozen-lockfile
 
-            - name: Run benchmarks (Bun)
+            # --- Measure the base SHA FIRST on this runner ---
+            # Order matters: the first benchmark pass runs on a hotter/just-loaded
+            # runner (right after the worktree install) and measures slower. We
+            # measure base first so that systematic first-pass penalty lands on
+            # base, not the PR — the gate is upper-boundary only, so a PR that
+            # looks faster never alerts. (Matches Bencher's documented order:
+            # bench main, then bench the feature branch.)
+            #
+            # Each side runs 3× and bench-to-bmf takes the MIN p50 per benchmark.
+            # The Node/vitest lane's single-run p50 is heavy-tailed (one GC pause
+            # doubles it); min-of-3 filters those spikes so a tight gate is
+            # trustworthy. The npm scripts rm + rewrite their NDJSON each run, so
+            # we concatenate each run's output into a per-side accumulator.
+            #
+            # BENCH_VALDRES_ONLY skips the jotai/map reference measurements — the
+            # gate is valdres-only, so measuring them here is wasted time. (The
+            # base worktree honors this only once a PR's base SHA includes the
+            # flag support; older base SHAs just measure them and bench-to-bmf
+            # drops them via BENCH_EXCLUDE_REFS below.)
+            - name: Run benchmarks — base (Bun + Node, 3×)
+              working-directory: /tmp/base/packages/valdres
+              env:
+                  BENCH_VALDRES_ONLY: "1"
+              run: |
+                  rm -f /tmp/base_bun.ndjson /tmp/base_node.ndjson
+                  for i in 1 2 3; do
+                    bun run test:bench
+                    cat test/performance/bench-results.ndjson >> /tmp/base_bun.ndjson
+                    bun run test:bench:node
+                    cat test/performance/bench-results-node.ndjson >> /tmp/base_node.ndjson
+                  done
+
+            # --- Measure the PR head on this runner, back-to-back ---
+            - name: Run benchmarks — PR (Bun + Node, 3×)
               working-directory: packages/valdres
-              run: bun run test:bench
-            - name: Run benchmarks (Node)
-              working-directory: packages/valdres
-              run: bun run test:bench:node
+              env:
+                  BENCH_VALDRES_ONLY: "1"
+              run: |
+                  rm -f /tmp/pr_bun.ndjson /tmp/pr_node.ndjson
+                  for i in 1 2 3; do
+                    bun run test:bench
+                    cat test/performance/bench-results.ndjson >> /tmp/pr_bun.ndjson
+                    bun run test:bench:node
+                    cat test/performance/bench-results-node.ndjson >> /tmp/pr_node.ndjson
+                  done
 
-            - name: Convert NDJSON -> Bencher Metric Format
-              run: bun run scripts/bench-to-bmf.ts
+            # Convert both sides with the PR-checkout script (the base worktree's
+            # older bench-to-bmf rejects the repeated names). MIN across repeats,
+            # and BENCH_EXCLUDE_REFS drops the jotai/map reference sides: they
+            # can't regress from a valdres change, so gating them only adds noise
+            # (every false positive we saw was a reference bench). They're still
+            # measured + plotted via the base lane for the head-to-head perf page.
+            - name: Convert base + PR results -> BMF (valdres-only, min)
+              env:
+                  BENCH_EXCLUDE_REFS: "1"
+              run: |
+                  BENCH_NDJSON_BUN=/tmp/base_bun.ndjson \
+                  BENCH_NDJSON_NODE=/tmp/base_node.ndjson \
+                  BENCH_OUT_BUN=/tmp/base_bun_results.json \
+                  BENCH_OUT_NODE=/tmp/base_node_results.json \
+                    bun run scripts/bench-to-bmf.ts
+                  BENCH_NDJSON_BUN=/tmp/pr_bun.ndjson \
+                  BENCH_NDJSON_NODE=/tmp/pr_node.ndjson \
+                  BENCH_OUT_BUN=/tmp/pr_bun_results.json \
+                  BENCH_OUT_NODE=/tmp/pr_node_results.json \
+                    bun run scripts/bench-to-bmf.ts
 
-            # --start-point-clone-thresholds copies main's Threshold onto this PR
-            # branch so it's gated by the same model; --err fails CI on an alert.
-            - name: Track Bun PR results
+            # --- Seed the same-runner baseline onto the PR branch ---
+            # --start-point-reset wipes the PR branch's prior data so each run is
+            # self-contained, then the base measurement becomes its only history.
+            # Reset happens ONCE (on the first upload); the branch Head is shared
+            # across testbeds, so the Node base must NOT reset again or it would
+            # wipe the Bun base point.
+            - name: Seed relative baseline (base measurement)
               run: |
                   bencher run \
                     --branch '${{ github.head_ref }}' \
-                    --start-point '${{ github.base_ref }}' \
-                    --start-point-hash '${{ github.event.pull_request.base.sha }}' \
-                    --start-point-clone-thresholds \
                     --start-point-reset \
                     --testbed ubuntu-2204-bun \
-                    --err \
                     --adapter json \
-                    --github-actions '${{ secrets.GITHUB_TOKEN }}' \
-                    --file packages/valdres/bun_results.json
+                    --file /tmp/base_bun_results.json
+                  bencher run \
+                    --branch '${{ github.head_ref }}' \
+                    --testbed ubuntu-2204-node \
+                    --adapter json \
+                    --file /tmp/base_node_results.json
 
-            - name: Track Node PR results
+            # --- Gate the PR against the same-runner baseline ---
+            # Percentage test: alert if a benchmark is >50% slower than the base
+            # measurement on THIS runner. Variance-independent and immune to the
+            # cross-runner global-slowdown that flaked the old t-test gate. The
+            # min-of-3 measurement above filters the GC/scheduler spikes that made
+            # single-shot p50s swing ~2x, so +50% is a trustworthy boundary on
+            # both lanes — a real same-runner regression is a large, consistent
+            # shift well within reach. --err fails on any per-benchmark alert.
+            - name: Gate Bun PR vs base
               run: |
                   bencher run \
                     --branch '${{ github.head_ref }}' \
-                    --start-point '${{ github.base_ref }}' \
-                    --start-point-hash '${{ github.event.pull_request.base.sha }}' \
-                    --start-point-clone-thresholds \
-                    --start-point-reset \
-                    --testbed ubuntu-2204-node \
+                    --testbed ubuntu-2204-bun \
+                    --threshold-measure latency \
+                    --threshold-test percentage \
+                    --threshold-upper-boundary 0.5 \
+                    --thresholds-reset \
                     --err \
                     --adapter json \
                     --github-actions '${{ secrets.GITHUB_TOKEN }}' \
-                    --file packages/valdres/node_results.json
+                    --file /tmp/pr_bun_results.json
+            - name: Gate Node PR vs base
+              run: |
+                  bencher run \
+                    --branch '${{ github.head_ref }}' \
+                    --testbed ubuntu-2204-node \
+                    --threshold-measure latency \
+                    --threshold-test percentage \
+                    --threshold-upper-boundary 0.5 \
+                    --thresholds-reset \
+                    --err \
+                    --adapter json \
+                    --github-actions '${{ secrets.GITHUB_TOKEN }}' \
+                    --file /tmp/pr_node_results.json
