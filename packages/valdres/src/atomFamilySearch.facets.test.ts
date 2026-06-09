@@ -138,6 +138,26 @@ describe("atomFamilySearch — facet filter + counts (#12)", () => {
         })
     })
 
+    test("facets() counts each value once per document (deduped within a doc)", () => {
+        const { s, post, search } = mk()
+        // Doc a lists "x" twice — it's still one document for the count.
+        s.set(post("a"), {
+            id: "a",
+            text: "alpha",
+            category: "books",
+            tags: ["x", "x", "y"],
+        })
+        s.set(post("b"), {
+            id: "b",
+            text: "alpha",
+            category: "books",
+            tags: ["x"],
+        })
+        expect(s.get(search.facets("alpha", ["tags"]))).toEqual({
+            tags: { x: 2, y: 1 },
+        })
+    })
+
     test("facets() restricts to requested fields", () => {
         const { s, post, search } = mk()
         s.set(post("a"), {

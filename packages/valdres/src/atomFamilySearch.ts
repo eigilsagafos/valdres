@@ -1550,9 +1550,15 @@ export function atomFamilySearch<
                         const vals = Array.isArray(v) ? v : [v]
                         let bucket = out[field]
                         if (!bucket) out[field] = bucket = {}
+                        // Count each value at most once per document — a doc
+                        // listing a value twice (e.g. tags ["x", "x"]) is one
+                        // document in that value's facet count.
+                        const seen = new Set<string>()
                         for (const x of vals) {
                             if (x == null) continue
                             const vk = String(x)
+                            if (seen.has(vk)) continue
+                            seen.add(vk)
                             bucket[vk] = (bucket[vk] ?? 0) + 1
                         }
                     }
