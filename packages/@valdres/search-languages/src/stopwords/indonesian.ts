@@ -1,0 +1,5 @@
+// AUTO-GENERATED — DO NOT EDIT. Regenerate via `bun run scripts/fetch-stopwords.ts`.
+// Source: snowballstem/snowball-website @ ea94bd3f — algorithms/indonesian/stop.txt
+// License: BSD-3-Clause. See NOTICE for attribution.
+
+export const stopwords: readonly string[] = ["yang","dan","di","dari","ini","pada","ada","dengan","untuk","dalam","oleh","sebagai","juga","ke","atau","tidak","itu","sebuah","tersebut","dapat","ia","telah","satu","memiliki","mereka","bahwa","lebih","karena","seorang","akan","seperti","secara","kemudian","beberapa","banyak","antara","setelah","yaitu","hanya","hingga","serta","sama","dia","tetapi","namun","melalui","bisa","sehingga","ketika","suatu","sendiri","bagi","semua","harus","setiap","maka","maupun","tanpa","saja","jika","bukan","belum","sedangkan","yakni","meskipun","hampir","kita","demikian","daripada","apa","ialah","sana","begitu","seseorang","selain","terlalu","ataupun","saya","bila","bagaimana","tapi","apabila","kalau","kami","melainkan","boleh","aku","anda","kamu","beliau","kalian"]

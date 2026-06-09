@@ -197,11 +197,14 @@ describe("transaction", () => {
         const user4atom = user(4)
         rootStore.set(user1atom, { id: 1, name: "Foo" })
         rootStore.set(user2atom, { id: 2, name: "Bar" })
+        // `data.values` is intentionally stale until something reads
+        // through `store.get` (lazy family render) — assert via the
+        // public API, then confirm the internal cache is fresh.
+        expect(rootStore.get(user)).toStrictEqual([user1atom, user2atom])
         expect(rootStore.data.values.get(user)).toStrictEqual([
             user1atom,
             user2atom,
         ])
-        expect(rootStore.get(user)).toStrictEqual([user1atom, user2atom])
         rootStore.txn(({ set, get, del }) => {
             expect(get(user)).toStrictEqual([user1atom, user2atom])
             set(user3atom, { id: 3, name: "Baz" })
@@ -218,6 +221,8 @@ describe("transaction", () => {
             del(user3atom)
             expect(get(user)).toStrictEqual([user2atom, user4atom])
         })
+        // Same as above: materialize via the public API first.
+        expect(rootStore.get(user)).toStrictEqual([user2atom, user4atom])
         expect(rootStore.data.values.get(user)).toStrictEqual([
             user2atom,
             user4atom,

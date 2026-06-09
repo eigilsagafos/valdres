@@ -22,7 +22,8 @@
         "build:types": "rm -rf dist/types && bunx tsgo",
         "test": "bun test --reporter=dots --parallel",
         "test:bench": "rm -f test/performance/bench-results.ndjson && NODE_ENV=production bun test --timeout 60000 --concurrency 1 ./test/performance/*.bench.ts",
-        "test:bench:node": "rm -f test/performance/bench-results-node.ndjson && NODE_ENV=production npx vitest run --config vitest.bench.config.ts"
+        "test:bench:node": "rm -f test/performance/bench-results-node.ndjson && NODE_ENV=production npx vitest run --config vitest.bench.config.ts",
+        "dev:search": "bun run dev/atomFamilySearch/server.ts"
     },
     "devDependencies": {
         "@testing-library/react": "16.3.0",
@@ -32,7 +33,8 @@
         "react": "19.1.1",
         "react-dom": "19.1.1",
         "recoil": "0.7.7",
-        "typescript": "5.9.2"
+        "typescript": "5.9.2",
+        "valdres-react": "0.2.0-pre.28"
     },
     "publishConfig": {
         "access": "public",

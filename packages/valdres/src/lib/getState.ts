@@ -18,6 +18,7 @@ import { resolveAtomDefaultValue } from "./resolveAtomDefaultValue"
 import { setValueInData } from "./setValueInData"
 import {
     createAtomFamilyIndex,
+    materializeDirtyFamily,
     renderAtomFamilyIndex,
 } from "./atomFamilyIndex"
 
@@ -60,7 +61,16 @@ export function getState<
     initializedAtomsSet: Set<Atom<any>>,
     circularDependencySet?: WeakSet<Selector>,
 ) {
-    if (data.values.has(state)) return data.values.get(state)
+    if (data.values.has(state)) {
+        // Lazy family-array materialization: writes mark the family
+        // dirty without rebuilding the rendered array, so bulk no-txn
+        // inserts stay O(N). The first read after a write pays the O(M)
+        // render and caches it.
+        if (data.dirtyFamilies?.has(state as WeakKey)) {
+            return materializeDirtyFamily(state as WeakKey, data)
+        }
+        return data.values.get(state)
+    }
     if (isAtom<Value>(state)) {
         if (data.parent)
             return getState<Value, Args>(

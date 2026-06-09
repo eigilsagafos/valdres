@@ -38,6 +38,10 @@ export type StoreData = {
      *  maxAge revalidation when the atom is unmounted (no active timer
      *  to keep the cache fresh). Only populated for atoms with `maxAge`. */
     lastValueWriteAt: WeakMap<WeakKey, number>
+    /** Families whose stored rendered array is stale because writes have
+     *  mutated the underlying index since the last render. Materialized
+     *  lazily on read so bulk no-txn writes stay O(N) instead of O(N²). */
+    dirtyFamilies?: Set<WeakKey>
     /** Per-atom suspense placeholder for atoms declared with no
      *  `defaultValue`. The first read creates an unresolved promise that
      *  external readers (Suspense, `await store.get(atom)`) hold; the

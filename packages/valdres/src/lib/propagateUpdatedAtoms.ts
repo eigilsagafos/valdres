@@ -14,6 +14,7 @@ import {
     deleteFamilyAtomsFromSet,
     recursivelyUpdateIndexes,
 } from "./atomFamilyIndex"
+import type { IndexHookResult } from "./IndexDescriptor"
 import type { DepsChange } from "./initSelector"
 import {
     evaluateSelector,
@@ -286,14 +287,31 @@ export const propagateDeletedAtoms = (
             deletedFamilyAtoms.get(atom.family).add(atom)
         }
     }
+    // Descriptor hooks (atomFamilyIndex/Sort/Search) record dirty atoms in
+    // `indexAccum`: `.local` for this scope, `.cross` per other affected
+    // scope. Allocated lazily — only family deletes can trigger descriptors.
+    let indexAccum: IndexHookResult | undefined
     if (deletedFamilyAtoms.size > 0) {
+        indexAccum = {}
         for (const [family, familyAtoms] of deletedFamilyAtoms) {
             addSetToSet(data.stateDependents.get(family), selectors)
             addSetToSet(data.subscriptions.get(family), subscriptions)
             if (familyAtoms.size === 0)
                 throw new Error("Should not be possible")
 
-            deleteFamilyAtomsFromSet(family, familyAtoms, data, timestamp)
+            deleteFamilyAtomsFromSet(
+                family,
+                familyAtoms,
+                data,
+                timestamp,
+                indexAccum,
+            )
+        }
+        if (indexAccum.local) {
+            for (const dirtyAtom of indexAccum.local) {
+                addSetToSet(data.stateDependents.get(dirtyAtom), selectors)
+                addSetToSet(data.subscriptions.get(dirtyAtom), subscriptions)
+            }
         }
     }
     // `selectorCount` is the cheap global short-circuit; `hasSelectorChangeListener`
@@ -306,6 +324,7 @@ export const propagateDeletedAtoms = (
         hasSelectorChangeListener(data)
     const changedSelectors = selectorActive ? new Set<Selector>() : undefined
     propagateDirtySelectors(atoms, selectors, data, subscriptions, deletedFamilyAtoms, false, notify, changedSelectors)
+    if (indexAccum?.cross) propagateCrossScopes(indexAccum.cross)
     if (notifyEntry) collectFamilyAtomsForNotify(notifyEntry, deletedFamilyAtoms)
     const hasScopeCascade = !!data.scopes && data.scopes.size > 0
     const watching = report !== undefined && changeListenerRegistry.count !== 0
@@ -428,14 +447,32 @@ export const propagateAtomUpdate = (
         }
     }
 
+    // Descriptor hooks (atomFamilyIndex/Sort/Search) record dirty atoms in
+    // `indexAccum`: `.local` for this scope, `.cross` per other affected
+    // scope. Allocated lazily — only family writes can trigger descriptors,
+    // so plain-atom writes (the hot path) pay zero allocation here.
+    let indexAccum: IndexHookResult | undefined
     if (updatedFamilyAtoms.size > 0) {
+        indexAccum = {}
         const timestamp = performance.now()
         for (const [family, familyAtoms] of updatedFamilyAtoms) {
             addSetToSet(data.stateDependents.get(family), selectors)
             addSetToSet(data.subscriptions.get(family), subscriptions)
             if (familyAtoms.size === 0)
                 throw new Error("Should not be possible")
-            addFamilyAtomsToSet(family, familyAtoms, data, timestamp)
+            addFamilyAtomsToSet(
+                family,
+                familyAtoms,
+                data,
+                timestamp,
+                indexAccum,
+            )
+        }
+        if (indexAccum.local) {
+            for (const dirtyAtom of indexAccum.local) {
+                addSetToSet(data.stateDependents.get(dirtyAtom), selectors)
+                addSetToSet(data.subscriptions.get(dirtyAtom), subscriptions)
+            }
         }
     }
 
@@ -464,6 +501,7 @@ export const propagateAtomUpdate = (
         hasSelectorChangeListener(data)
     const changedSelectors = selectorActive ? new Set<Selector>() : undefined
     propagateDirtySelectors(atoms, selectors, data, subscriptions, updatedFamilyAtoms, isInitOnly, notify, changedSelectors)
+    if (indexAccum?.cross) propagateCrossScopes(indexAccum.cross)
     if (notifyEntry) collectFamilyAtomsForNotify(notifyEntry, updatedFamilyAtoms)
 
     const hasScopes = !!data.scopes && data.scopes.size > 0
@@ -552,6 +590,35 @@ export const propagateInScope = (
 
     if (data.scopes && data.scopes.size > 0) {
         propagateToScopes(atoms, data, isInitOnly, notify, report)
+    }
+}
+
+/** Fire each target scope's selectors + subscribers for a descriptor's
+ *  cross-scope dirty atoms (`IndexHookResult.cross`) — e.g. a parent-scope
+ *  write that dirties a term/bm25 atom another scope renders. Does NOT
+ *  cascade into the scope's own children: the descriptor already emits a
+ *  separate `cross` entry per affected scope, so a child cascade would
+ *  double-notify. These are internal index atoms, so they're fired
+ *  directly (not threaded through onChange `report` / deferred `notify`). */
+const propagateCrossScopes = (
+    cross: NonNullable<IndexHookResult["cross"]>,
+) => {
+    for (const [scopeData, scopeAtoms] of cross) {
+        const crossAtoms = [...scopeAtoms]
+        const crossSelectors = new Set<Selector>()
+        const crossSubs = new Set<Subscription>()
+        for (const atom of crossAtoms) {
+            addSetToSet(scopeData.stateDependents.get(atom), crossSelectors)
+            addSetToSet(scopeData.subscriptions.get(atom), crossSubs)
+        }
+        propagateDirtySelectors(
+            crossAtoms,
+            crossSelectors,
+            scopeData,
+            crossSubs,
+            new Map(),
+            false,
+        )
     }
 }
 

@@ -1,0 +1,24 @@
+{
+    "name": "valdres-bench",
+    "version": "0.0.0",
+    "private": true,
+    "license": "MIT",
+    "author": {
+        "name": "Eigil Sagafos"
+    },
+    "type": "module",
+    "scripts": {
+        "dev:bench": "bun run dev/searchBenchmark/server.ts",
+        "bench:insertion": "bun run test/searchInsertion.compare.ts"
+    },
+    "devDependencies": {
+        "@orama/orama": "^3.1.0",
+        "flexsearch": "^0.7.43",
+        "fuse.js": "^7.0.0",
+        "minisearch": "^7.1.0",
+        "react": "19.1.1",
+        "react-dom": "19.1.1",
+        "typescript": "5.9.2",
+        "valdres": "workspace:*"
+    }
+}

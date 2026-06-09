@@ -15,6 +15,9 @@ if (globalThis.__valdres__) {
 
 export { atom } from "./atom"
 export { atomFamily } from "./atomFamily"
+export { atomFamilyIndex } from "./atomFamilyIndex"
+export { atomFamilySearch } from "./atomFamilySearch"
+export { atomFamilySort } from "./atomFamilySort"
 export { cacheMeta } from "./cacheMeta"
 export { globalStore } from "./globalStore"
 export { index } from "./indexConstructor"
@@ -22,7 +25,16 @@ export { selector } from "./selector"
 export { selectorFamily } from "./selectorFamily"
 export { store } from "./store"
 
+export { defaultTokenize } from "./utils/defaultTokenize"
 export { deepFreeze } from "./utils/deepFreeze"
+export { englishStopWords } from "./utils/englishStopWords"
+export { foldAccents } from "./utils/foldAccents"
+export {
+    highlightMatches,
+    type HighlightOptions,
+    type HighlightRange,
+} from "./utils/highlightMatches"
+export { simpleEnglishStem } from "./utils/simpleEnglishStem"
 export { isAtom } from "./utils/isAtom"
 export { isAtomFamily } from "./utils/isAtomFamily"
 export { isFamily } from "./utils/isFamily"
@@ -34,7 +46,22 @@ export { isSelector } from "./utils/isSelector"
 export { isSelectorFamily } from "./utils/isSelectorFamily"
 export { isSuspendError } from "./lib/initSelector"
 export { Transaction } from "./lib/transaction"
+// Search internals exposed as public utilities (used by atomFamilySearch,
+// useful standalone). Exported from lib/ alongside the existing
+// isSuspendError / Transaction precedent.
+export { bm25Score, DEFAULT_BM25 } from "./lib/bm25"
+export { levenshtein } from "./lib/levenshtein"
 
+export type { BM25Params } from "./lib/bm25"
+export type {
+    AtomFamilySearch,
+    AtomFamilySearchOptions,
+    LanguagePreset,
+    MatchStrategy,
+    ScoredResult,
+    SearchLanguage,
+    SearchMode,
+} from "./atomFamilySearch"
 export type { CacheMeta } from "./cacheMeta"
 export type { Atom } from "./types/Atom"
 export type { AtomFamily } from "./types/AtomFamily"
