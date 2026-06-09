@@ -192,6 +192,15 @@ export const createAtomFamilySortDescriptor = <Value, Key>(
         // Symmetric with atomFamilyIndex: last-subscriber cleanup drops
         // the per-store cached array so the resultAtom isn't kept alive
         // by data.values once nobody's listening.
+        //
+        // We deliberately do NOT delete the SortStorage (data.values.get
+        // (descriptor)) here. That is *index state* — the accumulated
+        // localKeys / removedFromParent built incrementally by onWrite —
+        // not a rebuildable cache. Dropping it on unmount would lose the
+        // sort and rebuild empty on re-subscribe (the members were already
+        // written; onWrite won't replay). It's one object per descriptor
+        // per store (O(1), not a growing leak) and is reclaimed when the
+        // store's data or the descriptor itself is GC'd.
         onMount: (store: unknown) => {
             const data = (store as { data?: StoreData })?.data
             if (!data) return

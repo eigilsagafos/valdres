@@ -41,7 +41,13 @@ export { isSelector } from "./utils/isSelector"
 export { isSelectorFamily } from "./utils/isSelectorFamily"
 export { isSuspendError } from "./lib/initSelector"
 export { Transaction } from "./lib/transaction"
+// Search internals exposed as public utilities (used by atomFamilySearch,
+// useful standalone). Exported from lib/ alongside the existing
+// isSuspendError / Transaction precedent.
+export { bm25Score, DEFAULT_BM25 } from "./lib/bm25"
+export { levenshtein } from "./lib/levenshtein"
 
+export type { BM25Params } from "./lib/bm25"
 export type {
     AtomFamilySearch,
     AtomFamilySearchOptions,

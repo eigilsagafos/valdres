@@ -32,6 +32,7 @@ PUBLIC_PACKAGES=(
   packages/@valdres/hotkeys
   packages/@valdres/public-ip
   packages/@valdres/redux-devtools
+  packages/@valdres/search-languages
   packages/@valdres-react/color-mode
   packages/@valdres-react/draggable
   packages/@valdres-react/hotkeys

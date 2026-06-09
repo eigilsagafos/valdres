@@ -627,6 +627,13 @@ export function atomFamilySearch<
         return set
     }
 
+    // Per-query selector caches, keyed by query string. These grow
+    // monotonically for the lifetime of the search instance — one entry
+    // per distinct query ever issued. For search-as-you-type / unbounded
+    // distinct queries this is a deliberate leak with an escape hatch:
+    // call `releaseQuery(q)` to drop one, or `releaseAllQueries()` to
+    // clear all (next read re-allocates). Bounded-query apps never need
+    // either. A future LRU cap could automate this if it bites.
     const scoredCache = new Map<
         string,
         Selector<ScoredResult<Value, Args>[]>
@@ -931,9 +938,11 @@ export function atomFamilySearch<
         scoredCache.clear()
         atomsCache.clear()
     }
-    // Internal: test-only inspector for `termDictionary` size. Not in
-    // the AtomFamilySearch type — tests reach via cast. Useful for
-    // verifying the refcount-based cleanup contract (N2).
+    // Test-only backdoor — DELIBERATELY not on the public AtomFamilySearch
+    // type, reached only via cast from `atomFamilySearch.test.ts`'s
+    // tolerance/termDictionary refcount tests to assert the dictionary
+    // shrinks on delete/rewrite (it has no observable effect otherwise).
+    // Not part of the public API; do not rely on it.
     ;(result as unknown as { __dictionarySize: () => number }).__dictionarySize =
         () => termDictionary.size
     return result
