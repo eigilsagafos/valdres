@@ -1,5 +1,47 @@
 # valdres
 
+## 1.0.0-beta.8
+
+### Patch Changes
+
+- [#185](https://github.com/eigilsagafos/valdres/pull/185)
+  [`fbfb348`](https://github.com/eigilsagafos/valdres/commit/fbfb348412ecd3e1124cf1b6525fbda4dce1e219)
+  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! - Fix two scope ×
+  atom-family × transaction propagation-soundness bugs found by a differential
+  soundness fuzzer.
+
+    1. A parent family-member add never recomputed a scope's selectors that read
+       `get(family)`. `propagateAtomUpdate` propagated only the changed member
+       atoms into scopes, not the family object the selectors actually depend on
+       — so the scope's `get(family)` membership refreshed but the dependent
+       selector/`index()` stayed stale. The add path now propagates a family
+       into scopes when its membership changes (a member added/removed); a pure
+       value-update of an existing member still reaches scope selectors via the
+       member atom, so it keeps the single-atom fast path. (Reproduces with a
+       plain `set`, no transaction.)
+    2. A scope whose family index was first materialized inside a transaction
+       was severed from its parent index. `Transaction.cloneFamilyIntoTxn`
+       flat-cloned the parent's rendered index into the scope's own `created`
+       map and never registered the scope in `scopeValueIndex`, so later parent
+       member adds never appeared in the scope and parent deletes never removed
+       the inherited member. It now builds a proper child index
+       (`createAtomFamilyIndex(parentIndex)`) and registers via
+       `trackScopeValue`, exactly like the non-transaction `initFamilyIndex`
+       path.
+
+    The transaction family-index path now reuses the non-transaction
+    `initFamilyIndex` chain walk (via a shared `ensureFamilyAncestorChain` run
+    at commit) instead of authoring a flat index that could skip intermediate
+    scopes. This consolidation also fixes a deeper-nesting case: a grandchild
+    scope that first materialized its family index inside a scope-only
+    transaction is now wired into the full ancestor `scopeValueIndex` chain, so
+    later parent membership changes reach it.
+
+    The core topological selector engine (`propagateDownstreamTopo` + liveness
+    counting) was exercised by the same fuzzer across 30k+ random acyclic graphs
+    with dynamic dependencies, scopes, and batched/cross-scope transactions with
+    no soundness violations.
+
 ## 1.0.0-beta.7
 
 ### Minor Changes
