@@ -1,4 +1,5 @@
 import { atomFamilyIndex } from "./atomFamilyIndex"
+import { createBKTree, type BKTree } from "./lib/BKTree"
 import { bm25Score, DEFAULT_BM25, type BM25Params } from "./lib/bm25"
 import { equal } from "./lib/equal"
 import type {
@@ -731,20 +732,31 @@ export function atomFamilySearch<
     let vocabVersion = 0
     let sortedVocabCache: { version: number; words: string[] } | null = null
 
+    /** BK-tree over the vocabulary for sublinear fuzzy lookup. Only built
+     *  when `tolerance > 0` (prefix-only instances never fuzz). Maintained on
+     *  the same 0→1 / →0 membership edges as the sorted-prefix cache. */
+    const bkTree: BKTree | null =
+        tolerance > 0 ? createBKTree(levenshtein) : null
+
     /** Refcount helpers for the whole-word vocabulary. `incVocab` adds one
      *  occurrence (and the word itself on the 0→1 edge); `decVocab` subtracts
-     *  `count` and removes the word on the →0 edge. Both bump `vocabVersion`
-     *  on a membership change so the sorted prefix cache invalidates. */
+     *  `count` and removes the word on the →0 edge. On a membership change
+     *  both bump `vocabVersion` (invalidating the sorted prefix cache) and
+     *  add/remove the word from the BK-tree. */
     const incVocab = (term: string) => {
         const prev = termDictionary.get(term) ?? 0
         termDictionary.set(term, prev + 1)
-        if (prev === 0) vocabVersion++
+        if (prev === 0) {
+            vocabVersion++
+            bkTree?.add(term)
+        }
     }
     const decVocab = (term: string, count: number) => {
         const remaining = (termDictionary.get(term) ?? 0) - count
         if (remaining <= 0) {
             termDictionary.delete(term)
             vocabVersion++
+            bkTree?.remove(term)
         } else {
             termDictionary.set(term, remaining)
         }
@@ -809,18 +821,19 @@ export function atomFamilySearch<
     const clearsFuzzGuard = (token: string): boolean =>
         tolerance > 0 && token.length > tolerance + 2
 
-    /** Walk the vocabulary for indexed words within `tolerance` edits of
-     *  `token`, each tagged with a distance-based penalty. Excludes `token`
-     *  itself; the caller decides whether the token clears the length guard.
-     *  Cost: O(|vocabulary|) — naive walk; #2 replaces this with a BK-tree
-     *  for sublinear lookup. */
+    /** Indexed words within `tolerance` edits of `token`, each tagged with a
+     *  distance-based penalty. Excludes `token` itself; the caller decides
+     *  whether the token clears the length guard. Resolved via the BK-tree
+     *  (sublinear, triangle-inequality pruning) rather than a linear walk of
+     *  the whole vocabulary. */
     const fuzzyMatches = (token: string): ExpandedTerm[] => {
-        const matches: ExpandedTerm[] = []
-        for (const term of termDictionary.keys()) {
-            if (term === token) continue
-            const d = levenshtein(token, term, tolerance)
-            if (d <= tolerance) {
-                matches.push({ term, penalty: 1 / (1 + d) })
+        if (!bkTree) return []
+        const hits = bkTree.search(token, tolerance)
+        const matches: ExpandedTerm[] = new Array(hits.length)
+        for (let i = 0; i < hits.length; i++) {
+            matches[i] = {
+                term: hits[i].word,
+                penalty: 1 / (1 + hits[i].distance),
             }
         }
         return matches
