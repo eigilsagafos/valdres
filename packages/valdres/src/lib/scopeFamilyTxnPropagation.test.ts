@@ -191,6 +191,30 @@ describe("scope × family × txn propagation soundness", () => {
         expect(S.get(count)).toBe(1) // membership-only selector unchanged
     })
 
+    // Perf-regression guard (deterministic, no benchmark needed): a value-update
+    // of an existing member must NOT re-evaluate a scope selector that depends
+    // only on family MEMBERSHIP — otherwise the family was propagated into every
+    // scope on every member write (the +74% "family update, 100 scopes"
+    // regression). A membership change MUST re-evaluate it. Counts selector-body
+    // executions in a scope; reverting the membership gate makes the value-update
+    // assertion fail.
+    test("value-update does not re-evaluate a scope membership selector; a membership change does", () => {
+        const fam = atomFamily<number, [string]>(() => 0, { name: "fp" })
+        let evals = 0
+        const famCount = selector(get => { evals++; return (get(fam) as any[]).length }, { name: "famCount" })
+        const root = store()
+        const S = root.scope("c")
+        root.set(fam("a"), 5)
+        S.sub(famCount, () => {}) // materializes famCount in the scope (depends on the family object)
+        const base = evals
+        root.set(fam("a"), 6) // value-updates of an existing member
+        root.set(fam("a"), 7)
+        root.set(fam("a"), 8)
+        expect(evals).toBe(base) // membership unchanged ⇒ scope selector not re-run
+        root.set(fam("b"), 1) // membership change (new member)
+        expect(evals).toBe(base + 1) // re-run exactly once
+    })
+
     // BUG 2: a scope selector that reads get(family) recomputes on a parent add.
     test("scope selector reading get(family) recomputes when the parent adds a member", () => {
         for (const makeScopeMember of [
