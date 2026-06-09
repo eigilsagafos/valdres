@@ -49,11 +49,15 @@ gating eligibility so the WAND path is provably identical to the naive path.
 
 **Doc evaluation.** `wandTopK` currently sums per-term `score()`. Coordination
 is a per-**doc** post-multiplier, so the integration needs a doc-level eval
-instead: add a `scoreDoc(ordinal) => number | null` variant (null = fails
-`minMatch`, skip). `scoreDoc` does exactly what the naive inner loop does for
-one doc — sum `penalty × boost × bm25ScoreWithIdf` across present terms, then
-`× coordFactor(coverage)`. The `Σ maxImpact` pivot gate stays valid because
-`coordFactor ≤ 1`.
+instead: **refactor `wandTopK` to take `scoreDoc(ordinal) => number | null`**
+(null = fails `minMatch`, skip) instead of per-term `score`, and update its
+tests. `scoreDoc` does exactly what the naive inner loop does for one doc — sum
+`penalty × boost × bm25ScoreWithIdf` across present terms (looked up by mapping
+the ordinal back to its atom → `getFieldStats`), then `× coordFactor(coverage)`.
+The `Σ maxImpact` pivot gate stays valid because `coordFactor ≤ 1` and
+`penalty ≤ 1`. Postings: build per-query sorted `Int32Array` from each
+expanded term's bucket via `sd.ordinalOf` (+ a local `Map<ordinal, atom>` for
+that query's `scoreDoc` / result mapping — leak-free, GC'd with the query).
 
 **Eligibility** (else fall back to the naive path — unchanged):
 
@@ -108,9 +112,20 @@ Round 1's shared-term-frequency change already took the easy part, but the
 two-pass overhead remaining is worth ~⅓ of insertion. Conclusion: #6 is
 worth doing — gated on the differential fuzzer below.
 
-**Ordinal map (the shared foundation, also used by #8/#12 and #9):**
-`Map<atom, int>` + `atom[]` reverse, assigned on first index, in the BM25
-storage. Cheap to maintain; lets postings be `Int32Array` of ordinals.
+**Refinement (learned while building #6):** columnar postings do NOT require
+swapping the reactive `Set` storage. Keep the Set buckets exactly as-is (zero
+reactivity risk) and build the sorted `Int32Array` columnar form **on demand**
+for the WAND path, addressed by `ordinalOf`. This sidesteps the
+ordinal-lifecycle / leak trap of a *persistent* `atom→ordinal` + reverse map
+(a child-only atom deleted in its scope would leak its ordinal). So #10 (the
+query-side win) and #9 (WAND) collapse into one consumer; the persistent
+Set→Int32Array *storage* swap (a memory win only) becomes an optional,
+separate optimization.
+
+**Shipped:** `ordinalOf` (assign-on-demand `WeakMap<atom, int>`, leak-free) on
+`createSearchDescriptor` + test. WAND builds sorted `Int32Array` postings by
+mapping a bucket's atoms through it. (`#8 serialize` will want a separate
+*enumerable* persistent map — `WeakMap` can't be iterated.)
 
 **Columnar postings:** `Map<term, Int32Array>` (sorted ordinals) replaces
 `Set<atom>`. Wins: ~constant-factor smaller memory, sorted-merge intersection

@@ -164,6 +164,26 @@ describe("createSearchDescriptor", () => {
         expect(ids(child, "shared")).toEqual(["a", "b", "c"])
     })
 
+    test("ordinalOf assigns stable, distinct, monotonic ordinals", () => {
+        const { family, sd } = setup()
+        const s = store()
+        s.set(family("a"), { id: "a", title: "alpha", body: "x" })
+        s.set(family("b"), { id: "b", title: "beta", body: "y" })
+        const oa = sd.ordinalOf(family("a"))
+        const ob = sd.ordinalOf(family("b"))
+        // Stable on repeat.
+        expect(sd.ordinalOf(family("a"))).toBe(oa)
+        expect(sd.ordinalOf(family("b"))).toBe(ob)
+        // Distinct.
+        expect(oa).not.toBe(ob)
+        // A bucket → sorted Int32Array of ordinals (the on-demand columnar
+        // form WAND will consume) round-trips back to the right atoms.
+        const bucket = s.get(sd.termAtom("alpha"))
+        const postings = Int32Array.from(bucket.map(a => sd.ordinalOf(a))).sort()
+        expect(postings.length).toBe(1)
+        expect(postings[0]).toBe(oa)
+    })
+
     test("vocab hooks fire on distinct-term edges", () => {
         const { family, sd, vocabLog } = setup()
         const s = store()

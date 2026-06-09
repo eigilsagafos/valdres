@@ -82,6 +82,25 @@ export const createSearchDescriptor = <Value>(
     const vocab = options?.vocab
     const knownStores = new Set<WeakRef<StoreData>>()
 
+    // Stable integer ordinal per atom — the addressing scheme for columnar
+    // (Int32Array) postings. The reactive Set buckets are left untouched;
+    // WAND / #10 build sorted Int32Array postings ON DEMAND by mapping a
+    // bucket's atoms through this. A WeakMap is leak-free (no lifecycle
+    // hooks needed — an ordinal vanishes with its atom) and assign-on-demand
+    // is all the on-demand-postings path needs. Not enumerable, so #8
+    // serialize will want a separate persistent map; documented in
+    // dev/search-engine-v2.md.
+    let nextOrdinal = 0
+    const ordinals = new WeakMap<AtomFamilyAtom<any>, number>()
+    const ordinalOf = (atom: AtomFamilyAtom<any>): number => {
+        let o = ordinals.get(atom)
+        if (o === undefined) {
+            o = nextOrdinal++
+            ordinals.set(atom, o)
+        }
+        return o
+    }
+
     // eslint-disable-next-line prefer-const
     let descriptor: IndexDescriptor
 
@@ -501,6 +520,10 @@ export const createSearchDescriptor = <Value>(
          *  when `vocab` hooks are passed. The wrapper uses it for the prefix
          *  scan, `suggest` ranking, and `__dictionarySize`. */
         termRefs,
+        /** Stable integer ordinal for an atom (assign-on-demand). The
+         *  addressing scheme for on-demand columnar (Int32Array) postings —
+         *  WAND maps a bucket's atoms through this to build sorted postings. */
+        ordinalOf,
         /** Per-(atom) field stats, walking the scope chain (closest wins). */
         getFieldStats: getEffectiveFields,
         /** Sum field totals across the chain (approximate under shadowing, as
