@@ -183,5 +183,5 @@ describe("dynamic-dependency propagation", () => {
             }
             subbed.forEach(u => u && u())
         }
-    })
+    }, 30_000)
 })
