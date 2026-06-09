@@ -16,9 +16,12 @@ export const setValueInData = <Value extends unknown>(
     value: Value,
     data: StoreData,
 ): Value => {
-    // Only track atoms (not selectors) in scopeValueIndex. Selectors are
-    // also passed here via loose typing but should not pollute the index.
-    // Family tracking is handled separately in initFamilyIndex.
+    // Track scope-shadowing in scopeValueIndex for atoms (below) and, in the
+    // `isNewFamilyInScope` branch further down, for families whose index is first
+    // materialized by a transaction commit (the non-txn path tracks families in
+    // initFamilyIndex instead). Selectors are also passed here via loose typing
+    // but must NOT be tracked — `Object.hasOwn(atom, "defaultValue")` admits only
+    // atoms, and `isAtomFamily` only families, so selectors fall through both.
     const isNewAtomInScope =
         data.parent && Object.hasOwn(atom, "defaultValue") && !data.values.has(atom)
     // A scope that materializes its OWN family index for the first time must be
