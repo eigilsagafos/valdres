@@ -16,7 +16,6 @@ export class AtomController<Value = unknown> extends ValueController<Value> {
                 "valdres-lit: AtomController.set called before store was attached.",
             )
         }
-        // @ts-expect-error valdres SetAtom overload typing
         store.set(this._state as Atom<Value>, value)
     }
 

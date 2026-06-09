@@ -74,7 +74,6 @@ export class ValueController<
         this._detach()
         this._store = store
         this._ingest(store, store.get(this._state))
-        // @ts-expect-error valdres SubscribeFn overload typing
         this._unsubscribe = store.sub(
             this._state,
             () => this._ingest(store, store.get(this._state)),

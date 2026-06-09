@@ -1,9 +1,12 @@
-import type { ReactiveController, ReactiveElement } from "lit"
+import type { ReactiveElement } from "lit"
 import { ContextProvider } from "@lit/context"
 import { store as createStore, type Store } from "valdres"
 import { valdresContext } from "./lib/valdresContext"
 
-export class StoreProvider implements ReactiveController {
+// Not a ReactiveController itself: the ContextProvider it creates self-registers
+// on the host and owns the context lifecycle. StoreProvider is a thin factory
+// that resolves the store and holds it.
+export class StoreProvider {
     private _store: Store
     private _provider: ContextProvider<typeof valdresContext>
 
@@ -20,7 +23,6 @@ export class StoreProvider implements ReactiveController {
             )
         }
         this._store = store ?? createStore({ batchUpdates: true })
-        host.addController(this)
         this._provider = new ContextProvider(host, {
             context: valdresContext,
             initialValue: this._store,
