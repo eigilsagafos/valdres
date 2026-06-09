@@ -2,6 +2,7 @@ import type { Atom } from "../types/Atom"
 import type { AtomFamily } from "../types/AtomFamily"
 import type { StoreData } from "../types/StoreData"
 import { deepFreeze } from "../utils/deepFreeze"
+import { isAtomFamily } from "../utils/isAtomFamily"
 import { IS_PROD } from "./IS_PROD"
 
 /** Register `key` in the parent's scopeValueIndex. Throws if called on
@@ -32,6 +33,15 @@ export const setValueInData = <Value extends unknown>(
     // Family tracking is handled separately in initFamilyIndex.
     const isNewAtomInScope =
         data.parent && Object.hasOwn(atom, "defaultValue") && !data.values.has(atom)
+    // A scope that materializes its OWN family index for the first time must be
+    // registered in the parent's scopeValueIndex so recursivelyUpdateIndexes can
+    // reach it when the parent's membership later changes. The non-txn path does
+    // this in initFamilyIndex; the txn path lands the index here via writeAtoms.
+    // Doing it at this WRITE (commit) — not in the transaction body — means a
+    // transaction that throws registers nothing (valdres has no rollback), so a
+    // later parent family write can't deref a scope that never got its index.
+    const isNewFamilyInScope =
+        !!data.parent && !data.values.has(atom) && isAtomFamily(atom)
     // Dev-only freeze decision. Kept inline (not a shared helper) because the
     // extra call frame measurably regresses the hot primitive-set path; if you
     // change this policy, keep Transaction.set in transaction.ts in sync.
@@ -61,6 +71,8 @@ export const setValueInData = <Value extends unknown>(
         if (subs) {
             for (const sub of subs) sub.reRoot?.()
         }
+    } else if (isNewFamilyInScope) {
+        trackScopeValue(atom, data)
     }
     // Record the write timestamp for atoms with maxAge so unmounted reads
     // can lazily revalidate once the freshness window has elapsed.

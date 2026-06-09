@@ -28,6 +28,7 @@ import {
 import { IS_PROD } from "./IS_PROD"
 import {
     cloneAtomFamilyIndex,
+    createAtomFamilyIndex,
     renderAtomFamilyIndex,
 } from "./atomFamilyIndex"
 import {
@@ -639,11 +640,53 @@ export class Transaction {
                 moveUpIfParent,
             )
         const currentFamilyList = this.get(family)
-        const clonedIndex = cloneAtomFamilyIndex(
-            // @ts-ignore
-            currentFamilyList.__index,
-            parentIndex,
-        )
+        // A scope that first materializes its OWN family index inside a txn must
+        // build a CHILD index — empty created/deleted, linked to the parent via
+        // parentIndex — exactly as the non-txn path does in initFamilyIndex. The
+        // previous code flat-cloned `this.get(family)`, which for a read-through
+        // scope is the PARENT's rendered index: that snapshots every inherited
+        // member into the scope's OWN `created` map and drops the parent link, so
+        //   (a) recursivelyUpdateIndexes can't reach the scope (it isn't tracked),
+        //       and
+        //   (b) a later parent delete can't remove the member — the scope's own
+        //       `created` copy shadows the parent's tombstone.
+        // Both leave the scope's get(family) — and every selector/index() reading
+        // it — permanently stale. Registering in scopeValueIndex (trackScopeValue)
+        // and keeping the parentIndex link mirrors initFamilyIndex exactly.
+        // TRUE first materialization: the scope has no working index for this
+        // family yet — neither in this txn (_atomMap) nor committed (data.values).
+        // The `!_atomMap.has` guard is essential: cloneFamilyIntoTxn is re-invoked
+        // on a scoped txn via the recursion below whenever an ancestor re-clones,
+        // and at that point the scope may already hold its own accumulated
+        // created/deleted in _atomMap — which must be preserved (cloned), not
+        // reset to an empty child index.
+        const scopeFirstMaterialization =
+            this.data.parent &&
+            !this._atomMap.has(family) &&
+            !this.data.values.has(family)
+        let clonedIndex
+        if (scopeFirstMaterialization) {
+            // parentIndex is the parent transaction's working clone in a
+            // cross-scope txn; for a scope-only txn it's the parent store's
+            // committed index, read through via this.get(family).__index.
+            // NOTE: the scope is registered in the parent's scopeValueIndex at
+            // COMMIT time (setValueInData, when this index is actually written
+            // into data.values) — NOT here. Registering during the txn body would
+            // leave a dangling scopeValueIndex entry if the txn throws (valdres
+            // does not roll back): the scope never gets its index, but the parent
+            // would think it shadows the family, and the next parent family write
+            // would deref `undefined` in recursivelyUpdateIndexes.
+            clonedIndex = createAtomFamilyIndex(
+                // @ts-ignore
+                parentIndex ?? currentFamilyList.__index,
+            )
+        } else {
+            clonedIndex = cloneAtomFamilyIndex(
+                // @ts-ignore
+                currentFamilyList.__index,
+                parentIndex,
+            )
+        }
         if (this._scopedTransactions?.size) {
             for (const [, scopedTxn] of this._scopedTransactions) {
                 scopedTxn.cloneFamilyIntoTxn(family, clonedIndex, false)

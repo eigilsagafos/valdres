@@ -503,7 +503,22 @@ export const propagateAtomUpdate = (
     }
     if (watching && reportIsSink) emitOrigin(effectiveReport as ChangeReport)
     if (hasScopes) {
-        propagateToScopes(atoms, data, isInitOnly, notify, effectiveReport)
+        // A scope selector that reads get(family) depends on the FAMILY object,
+        // not the individual member atoms. Propagating only the changed members
+        // into scopes (as `atoms` holds) re-renders each scope's family index via
+        // recursivelyUpdateIndexes above, but never re-evaluates those selectors —
+        // leaving them stale on a parent member add/update. Mirror the delete path
+        // (propagateDeletedAtoms pushes the family onto its scopeAtoms): also
+        // propagate each family whose membership changed so scope family-dependent
+        // selectors recompute against the freshly rendered index.
+        let scopeAtoms: AtomInput[] = atoms
+        if (updatedFamilyAtoms.size > 0) {
+            scopeAtoms = atoms.slice()
+            for (const family of updatedFamilyAtoms.keys()) {
+                if (!scopeAtoms.includes(family)) scopeAtoms.push(family)
+            }
+        }
+        propagateToScopes(scopeAtoms, data, isInitOnly, notify, effectiveReport)
     }
     if (watching && !reportIsSink) emitOrigin(effectiveReport as ChangeReport)
     if (localSink) flushChangeSink(localSink)
