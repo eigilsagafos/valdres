@@ -77,7 +77,10 @@ const LANGUAGE_PRESETS: Record<SearchLanguage, LanguagePreset> = {
     },
 }
 
-export type AtomFamilySearchOptions<Fields extends string = string> = {
+export type AtomFamilySearchOptions<
+    Fields extends string = string,
+    Value = any,
+> = {
     /** Search strategy. Default: `"exact"`. */
     mode?: SearchMode
     /** AND vs ranked-OR combining. Default depends on `mode`:
@@ -193,6 +196,23 @@ export type AtomFamilySearchOptions<Fields extends string = string> = {
      *  passing `fields: { tittle: { boost: 2 } }` (typo) is a compile
      *  error. Inspired by Orama's schema-first field typing. */
     fields?: { [K in Fields]?: { boost?: number } }
+    /** Maps a document to its facet assignments — a record of facet field
+     *  name → value (or values). Enables `search(query, { filter })` to
+     *  restrict results by facet value, and `search.facets(query, fields?)`
+     *  to count matches per value. Separate from the search-text `extractor`:
+     *  facets are exact categorical values (category, tags, author), not
+     *  tokenized text. Return `null` / `undefined` (or omit a field) to give
+     *  a document no value for that facet.
+     *
+     *      atomFamilySearch(posts, p => p.body, {
+     *          facets: p => ({ category: p.category, tags: p.tags }),
+     *      })
+     *      s.get(search("query", { filter: { category: "books" } }))
+     *      s.get(search.facets("query", ["category"]))  // { category: {...} }
+     */
+    facets?: (
+        value: Value,
+    ) => Record<string, string | string[]> | null | undefined
     name?: string
 }
 
@@ -226,12 +246,15 @@ export type ScoredResult<Value, Args extends [any, ...any[]]> = {
  *  (overriding the instance-level `limit`); `weights` overrides per-field
  *  boosts for THIS query (one index can then serve different ranking needs —
  *  e.g. weight `title` heavily for one search, `body` for another). Fields
- *  absent from `weights` keep their construction boost. Omit all for the
- *  default view. */
+ *  absent from `weights` keep their construction boost. `filter` restricts
+ *  results to documents whose `facets` assignment matches (AND across facet
+ *  fields, OR within a field's listed values) — requires the `facets` option.
+ *  Omit all for the default view. */
 export type SearchPage = {
     offset?: number
     limit?: number
     weights?: Record<string, number>
+    filter?: Record<string, string | string[]>
 }
 
 /** A snapshot of index statistics (per store), resolved reactively. */
@@ -272,6 +295,16 @@ export type AtomFamilySearch<Value, Args extends [any, ...any[]]> = {
     ): HighlightRange[]
     /** Reactive index statistics for the reading store. */
     stats: Selector<SearchStats>
+    /** Reactive facet counts over the documents matching `query` — for each
+     *  facet field, how many matches carry each value: `{ category: { books:
+     *  3, film: 1 } }`. Pass `fields` to count only some facets (default: all
+     *  fields the `facets` option yields). Counts are over the full match set
+     *  (before any `limit`) and ignore `filter`, so a UI can show available
+     *  drill-downs. Requires the `facets` option; otherwise resolves to `{}`. */
+    facets(
+        query: string,
+        fields?: string[],
+    ): Selector<Record<string, Record<string, number>>>
     /** Drop the cached selectors for one query string. The next call
      *  with the same query allocates fresh selectors — useful when an
      *  app issues many distinct queries (e.g. search-as-you-type) and
@@ -351,7 +384,7 @@ export function atomFamilySearch<
 >(
     family: AtomFamily<Value, Args>,
     extractor: (value: Value) => string | null | undefined,
-    options?: AtomFamilySearchOptions<string>,
+    options?: AtomFamilySearchOptions<string, Value>,
 ): AtomFamilySearch<Value, Args>
 
 // Overload: field-map extractor — `Fields` infers from the extractor's
@@ -367,7 +400,7 @@ export function atomFamilySearch<
     extractor: (
         value: Value,
     ) => Record<Fields, string | null | undefined> | null | undefined,
-    options?: AtomFamilySearchOptions<Fields>,
+    options?: AtomFamilySearchOptions<Fields, Value>,
 ): AtomFamilySearch<Value, Args>
 
 export function atomFamilySearch<
@@ -410,6 +443,66 @@ export function atomFamilySearch<
     }
     const fieldBoost = (field: string): number =>
         options?.fields?.[field]?.boost ?? 1
+
+    // ── Facets / filtering (#12) ─────────────────────────────────────────
+    // The facet extractor maps a document to its categorical values. It is
+    // read reactively at QUERY time (per candidate / result atom), so filter
+    // and facet counts stay scope-correct and update when a doc's facet
+    // value changes — no separate index to keep in sync.
+    const facetsExtractor = options?.facets
+
+    type ParsedFilter = { field: string; values: Set<string> }[]
+    /** Normalize a SearchPage `filter` into field → allowed-value-set.
+     *  Empty fields are dropped. */
+    const parseFilter = (
+        filter: Record<string, string | string[]> | undefined,
+    ): ParsedFilter => {
+        const out: ParsedFilter = []
+        if (!filter) return out
+        for (const field in filter) {
+            const raw = filter[field]
+            const values = new Set(
+                (Array.isArray(raw) ? raw : [raw])
+                    .filter(v => v != null)
+                    .map(String),
+            )
+            if (values.size > 0) out.push({ field, values })
+        }
+        return out
+    }
+    /** A document's value passes the filter when, for EVERY filtered field,
+     *  at least one of the doc's facet values for that field is allowed
+     *  (AND across fields, OR within a field). */
+    const docPassesFilter = (value: Value, parsed: ParsedFilter): boolean => {
+        if (!facetsExtractor) return false
+        const raw = facetsExtractor(value)
+        if (!raw) return false
+        for (const { field, values } of parsed) {
+            const dv = raw[field]
+            if (dv == null) return false
+            const docVals = Array.isArray(dv) ? dv : [dv]
+            let hit = false
+            for (const x of docVals)
+                if (x != null && values.has(String(x))) {
+                    hit = true
+                    break
+                }
+            if (!hit) return false
+        }
+        return true
+    }
+    /** Stable cache-key fragment for a filter. Fields and values sorted so
+     *  logically-equal filters share a cache slot. */
+    const filterKey = (
+        filter: Record<string, string | string[]> | undefined,
+    ): string => {
+        const parsed = parseFilter(filter)
+        if (parsed.length === 0) return ""
+        return parsed
+            .map(p => `${p.field}=${[...p.values].sort().join("|")}`)
+            .sort()
+            .join(",")
+    }
 
     const normalize = (text: string): string[] => {
         let tokens = baseTokenize(text)
@@ -533,6 +626,12 @@ export function atomFamilySearch<
     const atomsCache = createLRU<
         string,
         Selector<AtomFamilyAtom<Value, Args>[]>
+    >(queryCacheSize)
+    // Facet-count selectors, keyed by query + requested-fields (#12). Reclaimed
+    // by releaseQuery on the bare-query prefix like the other caches.
+    const facetsCache = createLRU<
+        string,
+        Selector<Record<string, Record<string, number>>>
     >(queryCacheSize)
 
     const expandSingleToken = (token: string): ExpandedTerm[] => {
@@ -765,11 +864,17 @@ export function atomFamilySearch<
     const computeScored = (
         query: string,
         weights?: Record<string, number>,
+        filter?: Record<string, string | string[]>,
     ) => {
         // Per-query effective field boost: weights override construction
         // boosts for this query (#13); absent fields keep their boost.
         const boostOf = (field: string): number =>
             weights?.[field] ?? fieldBoost(field)
+        // Parse the facet filter (#12) once per query; applied as a per-
+        // candidate predicate inside the selector (reads each candidate's
+        // value, so it stays reactive + scope-correct).
+        const parsedFilter = parseFilter(filter)
+        const hasFilter = parsedFilter.length > 0
         const queryTokens = normalize(query)
         // Denominator for the coordination factor: distinct normalized
         // query terms. A doc that matched all of them gets full score; one
@@ -949,6 +1054,17 @@ export function atomFamilySearch<
 
                 const entries: ScoredResult<Value, Args>[] = []
                 for (const atom of candidates) {
+                    // Facet filter (#12): drop candidates whose facet values
+                    // don't satisfy the filter. Reads the doc value via
+                    // `typedGet` so the result stays reactive to facet edits
+                    // and resolves in the reading store's scope. Checked
+                    // before scoring so filtered-out docs cost nothing more.
+                    if (hasFilter) {
+                        const value = typedGet(
+                            atom as unknown as Atom<Value>,
+                        )
+                        if (!docPassesFilter(value, parsedFilter)) continue
+                    }
                     // Phrase constraint: every quoted phrase must appear as an
                     // adjacent, in-order run in some field. A hard filter —
                     // quotes mean "this exact phrase", regardless of match
@@ -1231,14 +1347,18 @@ export function atomFamilySearch<
     const getFullScored = (
         query: string,
         weights?: Record<string, number>,
+        filter?: Record<string, string | string[]>,
     ) => {
         const wk = weightKey(weights)
-        // Weighted views append after a NUL so releaseQuery(query) still
-        // reclaims them (its match prefix is the bare query + NUL).
-        const cacheKey = wk ? `${query}\u0000w\u0000${wk}` : query
+        const fk = filterKey(filter)
+        // Weighted / filtered views append after a NUL so
+        // releaseQuery(query) still reclaims them (its match prefix is
+        // the bare query + NUL).
+        const cacheKey =
+            wk || fk ? `${query}\u0000w\u0000${wk}\u0000f\u0000${fk}` : query
         const cached = fullScoredCache.get(cacheKey)
         if (cached) return cached
-        const sel = computeScored(query, weights)
+        const sel = computeScored(query, weights, filter)
         fullScoredCache.set(cacheKey, sel)
         return sel
     }
@@ -1267,14 +1387,16 @@ export function atomFamilySearch<
     const pageKey = (query: string, page?: SearchPage): string => {
         const { offset, limit } = resolvePage(page)
         const wk = weightKey(page?.weights)
-        // Unwindowed, unweighted view keys on the bare query (stable identity;
-        // matched by releaseQuery). Windowed / weighted views append after a
-        // NUL — a separator real queries don't contain — so releaseQuery("foo")
-        // cannot accidentally match the query "foo bar".
-        if (offset === 0 && !Number.isFinite(limit) && !wk) return query
+        const fk = filterKey(page?.filter)
+        // Unwindowed, unweighted, unfiltered view keys on the bare query
+        // (stable identity; matched by releaseQuery). Windowed / weighted /
+        // filtered views append after a NUL — a separator real queries don't
+        // contain — so releaseQuery("foo") cannot accidentally match "foo bar".
+        if (offset === 0 && !Number.isFinite(limit) && !wk && !fk)
+            return query
         const lim = Number.isFinite(limit) ? String(limit) : "inf"
         const base = `${query}\u0000${offset}\u0000${lim}`
-        return wk ? `${base}\u0000w\u0000${wk}` : base
+        return wk || fk ? `${base}\u0000w\u0000${wk}\u0000f\u0000${fk}` : base
     }
 
     const getScored = (query: string, page?: SearchPage) => {
@@ -1283,18 +1405,27 @@ export function atomFamilySearch<
         if (cached) return cached
         const { offset, limit } = resolvePage(page)
         const weights = page?.weights
+        const filter = page?.filter
+        const hasFilter = parseFilter(filter).length > 0
         let sel: Selector<ScoredResult<Value, Args>[]>
-        if (offset === 0 && limit === resultLimit && wandEligibleStatic) {
+        if (
+            offset === 0 &&
+            limit === resultLimit &&
+            wandEligibleStatic &&
+            !hasFilter
+        ) {
             // Default ranked + limited view → WAND top-K (it falls back to the
             // naive ranking at eval time when scoped / phrase-constrained).
-            // Does NOT build the full ranking, so it stays sublinear.
+            // Does NOT build the full ranking, so it stays sublinear. A facet
+            // filter routes to the full naive ranking instead — WAND's
+            // ordinal-only path can't apply the per-doc filter predicate.
             sel = computeTopK(query, weights)
         } else if (offset === 0 && !Number.isFinite(limit)) {
             // Unbounded view → the full ranking IS the view.
-            sel = getFullScored(query, weights)
+            sel = getFullScored(query, weights, filter)
         } else {
             // Windowed (or non-WAND limited) view → slice the full ranking.
-            const full = getFullScored(query, weights)
+            const full = getFullScored(query, weights, filter)
             sel = selector<ScoredResult<Value, Args>[]>(
                 get => {
                     const all = get(full)
@@ -1387,10 +1518,64 @@ export function atomFamilySearch<
         options?.name ? { name: `${options.name}:stats` } : undefined,
     )
 
+    result.facets = (
+        query: string,
+        fields?: string[],
+    ): Selector<Record<string, Record<string, number>>> => {
+        const fieldsKey =
+            fields && fields.length > 0 ? [...fields].sort().join("|") : "*"
+        // Keyed under the bare-query prefix so releaseQuery reclaims it.
+        const key = `${query}\u0000facets\u0000${fieldsKey}`
+        const cached = facetsCache.get(key)
+        if (cached) return cached
+        const want =
+            fields && fields.length > 0 ? new Set(fields) : null
+        // Count over the FULL match set (unweighted, unfiltered) so the
+        // counts reflect every document matching `query`, independent of
+        // the page window and of any active filter (available drill-downs).
+        const full = getFullScored(query)
+        const sel = selector<Record<string, Record<string, number>>>(
+            get => {
+                const out: Record<string, Record<string, number>> = {}
+                if (!facetsExtractor) return out
+                const typedGet = get as <V>(s: Atom<V>) => V
+                for (const { atom } of get(full)) {
+                    const raw = facetsExtractor(
+                        typedGet(atom as unknown as Atom<Value>),
+                    )
+                    if (!raw) continue
+                    for (const field in raw) {
+                        if (want && !want.has(field)) continue
+                        const v = raw[field]
+                        const vals = Array.isArray(v) ? v : [v]
+                        let bucket = out[field]
+                        if (!bucket) out[field] = bucket = {}
+                        for (const x of vals) {
+                            if (x == null) continue
+                            const vk = String(x)
+                            bucket[vk] = (bucket[vk] ?? 0) + 1
+                        }
+                    }
+                }
+                return out
+            },
+            options?.name
+                ? { name: `${options.name}:facets:${query}\u0000${fieldsKey}` }
+                : undefined,
+        )
+        facetsCache.set(key, sel)
+        return sel
+    }
+
     result.releaseQuery = (query: string): boolean => {
         const prefix = `${query}\u0000`
         let had = false
-        for (const cache of [fullScoredCache, scoredCache, atomsCache]) {
+        for (const cache of [
+            fullScoredCache,
+            scoredCache,
+            atomsCache,
+            facetsCache,
+        ]) {
             for (const k of [...cache.keys()]) {
                 if (k === query || k.startsWith(prefix)) {
                     if (cache.delete(k)) had = true
@@ -1403,6 +1588,7 @@ export function atomFamilySearch<
         fullScoredCache.clear()
         scoredCache.clear()
         atomsCache.clear()
+        facetsCache.clear()
     }
     // Test-only backdoor — DELIBERATELY not on the public AtomFamilySearch
     // type, reached only via cast from `atomFamilySearch.test.ts`'s

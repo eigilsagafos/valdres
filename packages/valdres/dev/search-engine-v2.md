@@ -174,20 +174,43 @@ choice. Not worth shipping silently.
 
 ---
 
+## Round 3 — shipped
+
+- **#13 query-time field weights** — `search(q, { weights: { title: 3 } })`
+  (and `scored`). Threads a per-call weight map into `computeScored` /
+  `computeTopK` (overrides `fieldBoost` via a local `boostOf`), folded into the
+  page/cache key (`weightKey`). No storage change. WAND's per-term `maxImpact`
+  bound stays valid under non-negative weights (the weighted per-doc score is
+  still ≤ Σ weight×bm25), so top-K pruning is still exact — guarded by an added
+  weighted WAND-vs-naive parity variant in the fuzzer.
+
+- **#12 filter + facets** — a `facets` option maps a doc to categorical values.
+  Realized NOT as a second scope-aware index (the high-risk path the §below
+  warns about) but as a **query-time predicate**: `search(q, { filter })`
+  reads each candidate's value via `get` and applies the filter inside the
+  `computeScored` candidate loop (AND across fields, OR within a field), and
+  `search.facets(q, fields?)` counts facet values over the match set the same
+  way. Reading the doc value through `get` makes both scope-correct and
+  reactive to facet edits for free, and writes pay nothing (no index). A facet
+  filter routes off the WAND path (its ordinal-only loop can't run the per-doc
+  predicate) to the full naive ranking + slice. Folded into the cache key
+  (`filterKey`). Verified by a 400-mutation differential test (filtered ==
+  unfiltered-then-predicate). The index/`Int32Array`-merge form below remains a
+  possible optimization if a very selective filter over a huge candidate set
+  ever shows up as hot — the predicate is O(candidates), same order as scoring.
+
 ## Foundation for the rest (later)
 
-- **#13 query-time field weights** — `search(q, { fields: { title: 3 } })`.
-  Smallest lift: thread a per-call weight map into `computeScored` (override
-  `fieldBoost`), fold the weights into the page/cache key. No storage change.
-  Good "next cheap win."
 - **#8 serialize / hydrate** — needs the ordinal map + a stable term order;
   serialize `{ ordinals, postings, fieldStats, fieldTotals }`, rebuild the
   derived structures (trie/BK-tree) on hydrate. Biggest real-world win for web
   apps (skips re-indexing on reload). Build after the ordinal map exists.
-- **#12 filter + facet** — equality filters compose with `atomFamilyIndex`
-  (intersect a filter bucket with the candidate set); facet counts are bucket
-  sizes. The ordinal map makes the intersections `Int32Array` merges. This is
-  the change that turns the ranker into a search backend.
+  (Explicitly out of scope for the round-3 PR.)
+- **#12 filter — index form (optional optimization)** — equality filters could
+  also compose with `atomFamilyIndex` (intersect a filter bucket with the
+  candidate set), facet counts being bucket sizes, with the ordinal map turning
+  intersections into `Int32Array` merges. Only worth it if the query-time
+  predicate (shipped above) becomes a measured bottleneck.
 - **#7 bulk-load** — `search.bulkLoad(entries)`: one build pass (sort postings,
   compute stats) instead of N incremental writes. Needs columnar postings to
   pay off; pairs with #8.
