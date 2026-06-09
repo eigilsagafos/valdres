@@ -1,0 +1,245 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>@valdres/redux-devtools playground</title>
+        <style>
+            :root {
+                color-scheme: light dark;
+                font-family: ui-sans-serif, system-ui, sans-serif;
+            }
+            body {
+                max-width: 56rem;
+                margin: 2.5rem auto;
+                padding: 0 1rem;
+                line-height: 1.5;
+            }
+            h1 {
+                margin-bottom: 0.25rem;
+            }
+            .sub {
+                color: color-mix(in srgb, currentColor 60%, transparent);
+                margin-top: 0;
+            }
+            .banner {
+                border: 1px solid color-mix(in srgb, #eab308 50%, transparent);
+                background: color-mix(in srgb, #eab308 12%, transparent);
+                border-radius: 0.5rem;
+                padding: 0.75rem 1rem;
+                margin: 1rem 0;
+                font-size: 0.9rem;
+            }
+            .banner.ok {
+                border-color: color-mix(in srgb, #22c55e 50%, transparent);
+                background: color-mix(in srgb, #22c55e 12%, transparent);
+            }
+            .grid {
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                gap: 1rem;
+            }
+            @media (max-width: 48rem) {
+                .grid {
+                    grid-template-columns: 1fr;
+                }
+            }
+            .card {
+                border: 1px solid
+                    color-mix(in srgb, currentColor 20%, transparent);
+                border-radius: 0.5rem;
+                padding: 1rem 1.25rem;
+            }
+            .card h2 {
+                margin: 0 0 0.5rem;
+                font-size: 1rem;
+            }
+            button {
+                font: inherit;
+                padding: 0.4rem 0.8rem;
+                margin: 0.2rem 0.3rem 0.2rem 0;
+                border: 1px solid color-mix(in srgb, currentColor 25%, transparent);
+                border-radius: 0.4rem;
+                background: color-mix(in srgb, currentColor 6%, transparent);
+                color: inherit;
+                cursor: pointer;
+            }
+            button:hover {
+                background: color-mix(in srgb, currentColor 14%, transparent);
+            }
+            input[type="text"] {
+                font: inherit;
+                padding: 0.35rem 0.5rem;
+                border: 1px solid
+                    color-mix(in srgb, currentColor 25%, transparent);
+                border-radius: 0.3rem;
+                background: transparent;
+                color: inherit;
+            }
+            .big {
+                font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+                font-size: 1.4rem;
+            }
+            pre {
+                font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+                font-size: 0.85rem;
+                white-space: pre-wrap;
+                word-break: break-all;
+                margin: 0;
+            }
+            code {
+                font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+                background: color-mix(in srgb, currentColor 10%, transparent);
+                padding: 0.05rem 0.3rem;
+                border-radius: 0.25rem;
+            }
+            .pill {
+                display: inline-block;
+                padding: 0.1rem 0.55rem;
+                border-radius: 999px;
+                font-size: 0.75rem;
+                margin-top: 0.4rem;
+                background: color-mix(in srgb, currentColor 12%, transparent);
+            }
+            .pill.own {
+                background: color-mix(in srgb, #3b82f6 28%, transparent);
+            }
+        </style>
+    </head>
+    <body>
+        <h1>@valdres/redux-devtools</h1>
+        <p class="sub">
+            Drive a valdres store and watch every change flow into the Redux
+            DevTools extension — including scopes and time-travel.
+        </p>
+
+        <div id="status" class="banner">Checking for the Redux DevTools extension…</div>
+
+        <p class="sub" style="font-size: 0.85rem">
+            Open the <strong>Redux DevTools</strong> panel (browser devtools →
+            Redux tab), pick the <code>valdres-playground</code> instance, then
+            click around. Use the panel's slider / "Jump" to time-travel — the
+            page reflects the restored state live. The store is
+            <code>enumerable</code>, so the timeline opens already seeded with
+            the initial state (<code>count: 3</code>, a message, a todo) rather
+            than empty.
+        </p>
+
+        <div class="grid">
+            <div class="card">
+                <h2>counter <span class="sub">(root, named)</span></h2>
+                <div class="big" id="count">0</div>
+                <button id="inc">+1</button>
+                <button id="dec">−1</button>
+                <button id="reset-count">reset</button>
+                <p class="sub" style="font-size: 0.8rem; margin: 0.4rem 0 0">
+                    Drives several selectors (see “derived state” below).
+                </p>
+            </div>
+
+            <div class="card">
+                <h2>message <span class="sub">(root, named)</span></h2>
+                <input id="msg" type="text" placeholder="type something…" />
+            </div>
+
+            <div class="card">
+                <h2>todos <span class="sub">(root, named)</span></h2>
+                <button id="add-todo">add todo</button>
+                <button id="clear-todos">clear</button>
+                <pre id="todos">[]</pre>
+            </div>
+
+            <div class="card">
+                <h2>user/theme <span class="sub">(root, named)</span></h2>
+                <div class="big" id="theme-root">light</div>
+                <button id="toggle-theme-root">toggle root theme</button>
+                <p class="sub" style="font-size: 0.8rem; margin: 0.4rem 0 0">
+                    The scope below inherits this until it's written.
+                </p>
+            </div>
+
+            <div class="card">
+                <h2>user/theme <span class="sub">(scope: sessionA)</span></h2>
+                <div class="big" id="theme-scope">light</div>
+                <div id="theme-scope-badge" class="pill inherited">
+                    inherited from root
+                </div>
+                <div style="margin-top: 0.5rem">
+                    <button id="toggle-theme-scope">toggle (copy-on-write)</button>
+                    <button id="unset-theme-scope">unset → re-inherit</button>
+                </div>
+                <p class="sub" style="font-size: 0.8rem; margin: 0.4rem 0 0">
+                    The first scope write copies-on-write into
+                    <code>@scopes.sessionA</code>; after that, root changes no
+                    longer affect it. <code>unset</code> drops the override so it
+                    re-inherits the root's current value again.
+                </p>
+            </div>
+
+            <div class="card">
+                <h2>anonymous <span class="sub">(no name)</span></h2>
+                <button id="bump-anon">bump anonymous atom</button>
+                <p class="sub" style="font-size: 0.8rem; margin: 0.4rem 0 0">
+                    Appears as <code>unnamed_atom_N</code> (one-time console
+                    hint). Stable this session, but name it for reload-safe
+                    time-travel.
+                </p>
+            </div>
+
+            <div class="card">
+                <h2>transaction <span class="sub">(named commit)</span></h2>
+                <button id="run-txn">run transaction</button>
+                <p class="sub" style="font-size: 0.8rem; margin: 0.4rem 0 0">
+                    Sets <code>count</code>, <code>message</code> and
+                    <code>todos</code> in one named
+                    <code>store.txn(fn, "seed demo data")</code> — DevTools shows
+                    a <strong>single</strong> action labelled
+                    <code>seed demo data</code>, and time-travel jumps all three
+                    together.
+                </p>
+            </div>
+
+            <div class="card">
+                <h2>cross-scope txn <span class="sub">(root + scope)</span></h2>
+                <button id="run-xscope-txn">run cross-scope transaction</button>
+                <p class="sub" style="font-size: 0.8rem; margin: 0.4rem 0 0">
+                    One <code>store.txn()</code> writing root atoms
+                    <em>and</em> <code>sessionA</code>. It coalesces into a
+                    <strong>single</strong> action —
+                    <code>txn (3 atoms · root, sessionA)</code> — and
+                    time-travel jumps the whole thing at once.
+                </p>
+            </div>
+
+            <div class="card">
+                <h2>derived state <span class="sub">(selectors)</span></h2>
+                <pre id="computed">{}</pre>
+                <p class="sub" style="font-size: 0.8rem; margin: 0.4rem 0 0">
+                    <code>doubleCount</code>, <code>countParity</code>,
+                    <code>todoCount</code>, <code>messageLength</code>, and
+                    <code>summary</code> are <strong>selectors</strong> — pure
+                    values derived from the atoms above. They recompute
+                    automatically (no setter) and appear under
+                    <code>@computed</code> in DevTools. <code>summary</code>
+                    derives from other selectors, so changing
+                    <code>count</code> cascades through both.
+                    <code>user/isDark</code> is subscribed inside
+                    <code>sessionA</code>, so it lands under that scope:
+                    <code>@scopes.sessionA.@computed.user/isDark</code>
+                    (root selectors stay in the top-level <code>@computed</code>).
+                    Display-only — selectors aren't restored by time-travel.
+                </p>
+            </div>
+        </div>
+
+        <div class="card" style="margin-top: 1rem">
+            <h2>live snapshot</h2>
+            <pre id="snapshot">{}</pre>
+        </div>
+
+        <script>
+            window.process = { env: { NODE_ENV: "development" } }
+        </script>
+        <script type="module" src="./main.ts"></script>
+    </body>
+</html>
