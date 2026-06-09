@@ -1,12 +1,19 @@
 # atomFamilySearch — engine v2 design notes
 
 Status after round 2. **Shipped** (this branch): IDF/avgdl hoist, `suggest()`,
-`highlight()`, pagination, `stats`, and the tested **WAND top-K core**
-(`lib/wandTopK.ts`). **Specced here** (deferred — touch the scope-aware
-reactivity core, want review): #6 descriptor unification, #9 WAND wiring,
+`highlight()`, pagination, `stats`, the tested **WAND top-K core**
+(`lib/wandTopK.ts`), and — now — **#6 descriptor unification**
+(`lib/createSearchDescriptor.ts`, wired into `atomFamilySearch`, ~20% faster
+insertion, verified equivalent by the differential fuzzer; legacy two-
+descriptor backend deleted). **Specced here** (still deferred): #9 WAND wiring,
 #10 columnar postings, #11 finer-grained invalidation. Plus foundation notes
 for the later items (#7 bulk-load, #8 serialize, #12 filter/facet, #13
 query-time weights).
+
+With #6 done, the single `createSearchDescriptor` is the place #10 (columnar
+postings / ordinal map) and #9 (WAND) now plug into — no second backend to
+reconcile. The differential fuzzer (`atomFamilySearch.fuzz.test.ts` +
+`createSearchDescriptor.test.ts`) is the gate for those next changes.
 
 The recurring constraint behind every deferred item: search reactivity rides
 on `atomFamilyIndex`'s term atoms + scope chain (`createAtomFamilyIndexDescriptor`),
