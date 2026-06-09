@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>valdres-lit demo</title>
+        <style>
+            :root {
+                color-scheme: light dark;
+                font-family: ui-sans-serif, system-ui, sans-serif;
+            }
+            body {
+                max-width: 52rem;
+                margin: 3rem auto;
+                padding: 0 1rem;
+                line-height: 1.5;
+            }
+            h1 {
+                margin-bottom: 0.25rem;
+            }
+            .sub {
+                color: color-mix(in srgb, currentColor 60%, transparent);
+                margin-top: 0;
+            }
+            code {
+                font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+                background: color-mix(in srgb, currentColor 10%, transparent);
+                padding: 0.05rem 0.35rem;
+                border-radius: 0.25rem;
+            }
+        </style>
+    </head>
+    <body>
+        <h1>valdres-lit</h1>
+        <p class="sub">
+            Real Lit components driven by valdres atoms/selectors through
+            <code>AtomController</code>, <code>ValueController</code>,
+            <code>StoreProvider</code> and <code>ScopeController</code>.
+        </p>
+
+        <vl-app></vl-app>
+
+        <script>
+            window.process = { env: { NODE_ENV: "development" } }
+        </script>
+        <script type="module" src="./main.ts"></script>
+    </body>
+</html>

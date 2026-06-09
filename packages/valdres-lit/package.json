@@ -20,7 +20,8 @@
     "scripts": {
         "build": "NODE_ENV=production bun build src/index.ts --outdir ./dist --packages external",
         "build:types": "rm -rf dist/types && bunx tsgo",
-        "test": "bun test --parallel"
+        "test": "bun test --parallel",
+        "dev": "PORT=3030 bun --hot dev/index.html"
     },
     "devDependencies": {
         "@happy-dom/global-registrator": "20.0.5",
