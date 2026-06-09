@@ -13,24 +13,33 @@
  * contribution to a document. It is search-agnostic (no BM25 specifics) so it
  * can be unit-tested against a brute-force scorer.
  *
- * Correctness contract: `maxImpact` MUST be ≥ `score(d)` for every `d` in the
- * term's postings. With a valid bound the result is identical to scoring all
- * documents and taking the top-K (ties broken by the supplied comparator).
+ * Correctness contract: for every document `d`, `scoreDoc(d)` MUST be ≤ the
+ * sum of `maxImpact` over the terms whose postings contain `d`. (Equivalently:
+ * each term's `maxImpact` upper-bounds that term's contribution to any doc's
+ * `scoreDoc`.) With valid bounds the result is identical to scoring every doc
+ * via `scoreDoc` and taking the top-K (ties broken by the supplied comparator).
+ *
+ * `scoreDoc` is doc-level (not per-term) so the caller can apply per-document
+ * factors a per-term sum can't express — e.g. a coordination multiplier or a
+ * `minMatch` filter (return `null` to drop the doc). `maxImpact ≤`-summing
+ * stays valid as long as those factors only ever lower the score.
  */
 export type WandTerm = {
     /** Document ordinals containing this term, ASCENDING. */
     postings: Int32Array
-    /** Upper bound on `score(d)` across this term's postings (≥ every actual). */
+    /** Upper bound on this term's contribution to any doc's `scoreDoc`. */
     maxImpact: number
-    /** This term's contribution to document `ordinal` (0 if not present). */
-    score: (ordinal: number) => number
 }
 
 export type WandHit = { ordinal: number; score: number }
 
 /**
- * @param terms   one cursor per query term
- * @param k       max results (top-K by total score)
+ * @param terms    one cursor per query term
+ * @param k        max results (top-K by total score)
+ * @param scoreDoc the FINAL score of a document (ordinal) across all query
+ *                 terms — including any coordination factor; return `null` to
+ *                 drop the doc (e.g. it fails `minMatch`). Called only for the
+ *                 (few) docs WAND can't prune.
  * @param tieBreak comparator for EQUAL total scores — return <0 if `a` should
  *                 rank before `b`. Applied both for the final ordering and for
  *                 deciding heap eviction at the threshold, so the output
@@ -39,6 +48,7 @@ export type WandHit = { ordinal: number; score: number }
 export const wandTopK = (
     terms: WandTerm[],
     k: number,
+    scoreDoc: (ordinal: number) => number | null,
     tieBreak: (a: number, b: number) => number,
 ): WandHit[] => {
     if (k <= 0 || terms.length === 0) return []
@@ -114,13 +124,10 @@ export const wandTopK = (
 
         const pivotDoc = curDoc(order[pivotIdx])
         if (curDoc(order[first]) === pivotDoc) {
-            // All cursors before the pivot are already at pivotDoc → score it
-            // fully across every term, then advance those cursors past it.
-            let total = 0
-            for (let i = 0; i < terms.length; i++) {
-                if (curDoc(i) === pivotDoc) total += terms[i].score(pivotDoc)
-            }
-            consider(pivotDoc, total)
+            // All cursors before the pivot are already at pivotDoc → evaluate
+            // its final score, then advance those cursors past it.
+            const total = scoreDoc(pivotDoc)
+            if (total !== null) consider(pivotDoc, total)
             for (let i = 0; i < terms.length; i++) {
                 if (curDoc(i) === pivotDoc) pos[i]++
             }
