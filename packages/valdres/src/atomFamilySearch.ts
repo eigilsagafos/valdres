@@ -23,17 +23,18 @@ import { simpleEnglishStem } from "./utils/simpleEnglishStem"
 /**
  * Search strategy.
  *
- *  - `"exact"` (default): the indexed term is the token itself. Defaults
- *    to AND intersection — every query token must appear. Backward
- *    compatible.
- *  - `"prefix"`: index every prefix of each token. Query tokens act as
- *    prefix lookups. Defaults to ranked-OR.
+ *  - `"exact"` (default): the indexed term is the whole token. Defaults to
+ *    AND intersection — every query token must appear.
+ *  - `"prefix"`: indexes whole words (same as exact); a query token matches
+ *    every indexed word it prefixes, resolved at query time via the
+ *    vocabulary scan (Lucene-style prefix → OR of term queries). Defaults
+ *    to ranked-OR.
  *  - `"trigram"`: index 3-char n-grams with boundary markers. Typo-
  *    tolerant and partial-word friendly. Defaults to ranked-OR.
  *
- * The default scoring (for ranked-OR) is summed IDF over matched
- * query terms: rare terms contribute more, common terms less, mirroring
- * the IDF half of BM25 without per-document term-frequency tracking.
+ * Scoring is BM25F across all modes — per-field term frequency, length
+ * normalization, and field boosts — with a coordination factor that rewards
+ * query-term coverage. See `atomFamilySearchOptions.bm25` / `coordination`.
  */
 export type SearchMode = "exact" | "prefix" | "trigram"
 
@@ -42,7 +43,7 @@ export type SearchMode = "exact" | "prefix" | "trigram"
  *
  *  - `"all"`: every query term must be present (AND intersection).
  *  - `"ranked"`: any matched term contributes to the score; results
- *    ordered by IDF-weighted relevance. Tie-broken deterministically by
+ *    ordered by BM25F relevance. Tie-broken deterministically by
  *    `familyArgsStringified` for stable output across writes.
  */
 export type MatchStrategy = "all" | "ranked"
@@ -210,10 +211,13 @@ type FieldStats = {
 }
 
 /** Output of the extractor normalization, per field: the mode-expanded
- *  match vocabulary, the raw word count for length normalization, and
- *  (when enabled) the per-word positions for phrase queries. */
+ *  term frequencies (term → occurrence count), the raw word count for length
+ *  normalization, and (when enabled) the per-word positions for phrase
+ *  queries. Computed once per write (memoized) and shared by BOTH descriptors
+ *  — the token index reads the term keys, the BM25 descriptor reuses the
+ *  counts as the field's `termCounts` directly. */
 type FieldTerms = {
-    terms: string[]
+    termCounts: Map<string, number>
     length: number
     positions?: Map<string, number[]>
 }
@@ -249,7 +253,7 @@ export type AtomFamilySearch<Value, Args extends [any, ...any[]]> = {
      *  for `match: "ranked"` strategies. */
     (query: string): Selector<AtomFamilyAtom<Value, Args>[]>
     /** Returns a selector resolving to `{ atom, score }` pairs in ranking
-     *  order. Score is summed IDF over matched query terms. */
+     *  order. Score is the BM25F relevance (× coordination factor). */
     scored(query: string): Selector<ScoredResult<Value, Args>[]>
     /** Drop the cached selectors for one query string. The next call
      *  with the same query allocates fresh selectors — useful when an
@@ -303,7 +307,7 @@ const resolveStopWords = (
  *  - Three modes (`exact`, `prefix`, `trigram`) for strict / autocomplete
  *    / typo-tolerant matching.
  *  - Plug-in tokenizer, stemmer, and stop-word list.
- *  - AND or ranked-OR combining; ranked-OR uses IDF-weighted scoring.
+ *  - AND or ranked-OR combining; ranking is BM25F (field-weighted).
  *  - `searchInstance.scored(query)` exposes per-result scores for
  *    relevance display.
  *  - Scope-aware (cross-scope propagation inherited from
@@ -438,6 +442,10 @@ export function atomFamilySearch<
         if (tokens.length === 0) return null
         const terms = expandForWrite(tokens, mode)
         if (terms.length === 0) return null
+        // Count occurrences once, here — both descriptors consume this map
+        // (token index → keys, BM25 → the counts) so neither re-walks terms.
+        const termCounts = new Map<string, number>()
+        for (const t of terms) termCounts.set(t, (termCounts.get(t) ?? 0) + 1)
         let positions: Map<string, number[]> | undefined
         if (positionsEnabled) {
             // Positions are word indices in the normalized stream — the same
@@ -450,7 +458,7 @@ export function atomFamilySearch<
                 else positions.set(tokens[i], [i])
             }
         }
-        return { terms, length: tokens.length, positions }
+        return { termCounts, length: tokens.length, positions }
     }
     const extractFieldTerms = (value: Value): Map<string, FieldTerms> => {
         if (isObjectLike(value)) {
@@ -485,14 +493,16 @@ export function atomFamilySearch<
         value => {
             const fieldTerms = extractFieldTerms(value)
             if (fieldTerms.size === 0) return []
-            // Single field — return its terms directly to avoid an array
-            // copy. Multi-field — concatenate.
+            // The distinct terms (termCounts keys) are all the index needs —
+            // it dedups into a Set anyway. Single field returns its keys;
+            // multi-field concatenates (cross-field dupes collapse in the Set).
             if (fieldTerms.size === 1) {
-                for (const { terms } of fieldTerms.values()) return terms
+                for (const { termCounts } of fieldTerms.values())
+                    return [...termCounts.keys()]
             }
             const flat: string[] = []
-            for (const { terms } of fieldTerms.values()) {
-                for (const t of terms) flat.push(t)
+            for (const { termCounts } of fieldTerms.values()) {
+                for (const t of termCounts.keys()) flat.push(t)
             }
             return flat
         },
@@ -663,15 +673,14 @@ export function atomFamilySearch<
             }
 
             const atomStats = new Map<string, FieldStats>()
-            for (const [field, { terms, length, positions }] of fieldTerms) {
-                const termCounts = new Map<string, number>()
-                for (const t of terms) {
-                    termCounts.set(t, (termCounts.get(t) ?? 0) + 1)
-                    // Refcounted vocabulary: the entry's value is the total
-                    // occurrence count across all atoms. `detachAtomStats`
-                    // decrements by this atom's contribution on delete /
-                    // re-write so the vocabulary doesn't leak.
-                    if (trackVocabulary) incVocab(t)
+            for (const [field, { termCounts, length, positions }] of fieldTerms) {
+                // `termCounts` was computed once in `fieldEntry` and is shared
+                // (read-only downstream) — reuse it as the field's stats
+                // instead of re-counting. Refcount the vocabulary by the
+                // occurrence totals; `detachAtomStats` decrements them on
+                // delete / re-write so the vocabulary doesn't leak.
+                if (trackVocabulary) {
+                    for (const [t, c] of termCounts) incVocab(t, c)
                 }
                 // `length` is the raw word count (not the expanded term
                 // count) so BM25 length-norm isn't biased by word length.
@@ -819,9 +828,9 @@ export function atomFamilySearch<
      *  `count` and removes the word on the →0 edge. On a membership change
      *  both bump `vocabVersion` (invalidating the sorted prefix cache) and
      *  add/remove the word from the BK-tree. */
-    const incVocab = (term: string) => {
+    const incVocab = (term: string, count: number) => {
         const prev = termDictionary.get(term) ?? 0
-        termDictionary.set(term, prev + 1)
+        termDictionary.set(term, prev + count)
         if (prev === 0) {
             vocabVersion++
             bkTree?.add(term)
