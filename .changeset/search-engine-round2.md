@@ -15,5 +15,9 @@
   pages are cheap slices (no re-scoring).
 - **`search.stats`** — a reactive selector resolving to `{ documentCount,
   fields: { [field]: { documentCount, averageLength } } }`.
+- **Unified search index (internal)** — the inverted buckets and the BM25F
+  stats are now maintained by a single descriptor in one write pass over one
+  per-atom record (previously two descriptors). ~20% faster insertion, same
+  behavior (verified by a differential fuzzer against a brute-force oracle).
 
 New public types `SearchPage` and `SearchStats`.

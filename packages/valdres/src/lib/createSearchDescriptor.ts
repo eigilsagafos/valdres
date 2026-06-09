@@ -85,19 +85,24 @@ export const createSearchDescriptor = <Value>(
     // eslint-disable-next-line prefer-const
     let descriptor: IndexDescriptor
 
-    /** Instance-wide term refcounts (occurrence totals across all atoms), so
-     *  vocab hooks fire on the 0↔1 distinct-term edges. */
+    /** Instance-wide term refcounts (occurrence totals across all atoms),
+     *  maintained only when a vocabulary is tracked (prefix mode / tolerance —
+     *  signalled by passing `vocab`). Doubles as the wrapper's term dictionary
+     *  (keys = vocabulary, value = document/occurrence frequency) and fires
+     *  the vocab hooks on the 0↔1 distinct-term edges. */
     const termRefs = new Map<string, number>()
     const incRef = (term: string, n: number) => {
+        if (!vocab) return
         const prev = termRefs.get(term) ?? 0
         termRefs.set(term, prev + n)
-        if (prev === 0 && n > 0) vocab?.onTermAdded?.(term)
+        if (prev === 0 && n > 0) vocab.onTermAdded?.(term)
     }
     const decRef = (term: string, n: number) => {
+        if (!vocab) return
         const next = (termRefs.get(term) ?? 0) - n
         if (next <= 0) {
             termRefs.delete(term)
-            vocab?.onTermRemoved?.(term)
+            vocab.onTermRemoved?.(term)
         } else {
             termRefs.set(term, next)
         }
@@ -492,6 +497,10 @@ export const createSearchDescriptor = <Value>(
         statsAtom,
         termAtom: ensureTermAtom,
         renderBucket,
+        /** Occurrence-refcounted vocabulary (term → frequency), populated only
+         *  when `vocab` hooks are passed. The wrapper uses it for the prefix
+         *  scan, `suggest` ranking, and `__dictionarySize`. */
+        termRefs,
         /** Per-(atom) field stats, walking the scope chain (closest wins). */
         getFieldStats: getEffectiveFields,
         /** Sum field totals across the chain (approximate under shadowing, as
@@ -521,6 +530,17 @@ export const createSearchDescriptor = <Value>(
                 s = s.parent
             }
             return out
+        },
+        /** Distinct indexed atoms across the scope chain (a doc may populate
+         *  only some fields, so not just the max per-field count). */
+        documentCount: (storage: SearchStorage): number => {
+            const seen = new Set<AtomFamilyAtom<any>>()
+            let s: SearchStorage | undefined = storage
+            while (s) {
+                for (const atom of s.perAtom.keys()) seen.add(atom)
+                s = s.parent
+            }
+            return seen.size
         },
     }
 }

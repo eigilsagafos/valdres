@@ -1,4 +1,3 @@
-import { atomFamilyIndex } from "./atomFamilyIndex"
 import { createBKTree, type BKTree } from "./lib/BKTree"
 import {
     bm25Idf,
@@ -7,20 +6,14 @@ import {
     type BM25Params,
 } from "./lib/bm25"
 import { createLRU } from "./lib/createLRU"
-import { equal } from "./lib/equal"
-import type {
-    IndexDescriptor,
-    IndexHookResult,
-} from "./lib/IndexDescriptor"
+import { createSearchDescriptor } from "./lib/createSearchDescriptor"
 import { levenshtein } from "./lib/levenshtein"
-import { setValueInData } from "./lib/setValueInData"
 import { trigramsOf } from "./lib/trigramsOf"
 import { selector } from "./selector"
 import type { Atom } from "./types/Atom"
 import type { AtomFamily } from "./types/AtomFamily"
 import type { AtomFamilyAtom } from "./types/AtomFamilyAtom"
 import type { Selector } from "./types/Selector"
-import type { StoreData } from "./types/StoreData"
 import { defaultTokenize } from "./utils/defaultTokenize"
 import { englishStopWords } from "./utils/englishStopWords"
 import {
@@ -206,45 +199,16 @@ export type AtomFamilySearchOptions<Fields extends string = string> = {
  *  (the one-field shape). Never user-facing. */
 const DEFAULT_FIELD = "__default__"
 
-/** Per-(atom, field) stats. `termCounts` is keyed by the mode-expanded
- *  vocabulary (prefixes / trigrams / tokens); `length` is the BM25
- *  document length in RAW WORDS (not expanded units) so length
- *  normalization isn't biased by word length — see `fieldEntry`. */
-type FieldStats = {
-    length: number
-    termCounts: Map<string, number>
-    /** Word → ascending positions within this field's normalized token
-     *  stream. Present only when `positions` is enabled; powers phrase
-     *  (adjacency) queries. */
-    positions?: Map<string, number[]>
-}
-
 /** Output of the extractor normalization, per field: the mode-expanded
  *  term frequencies (term → occurrence count), the raw word count for length
  *  normalization, and (when enabled) the per-word positions for phrase
- *  queries. Computed once per write (memoized) and shared by BOTH descriptors
- *  — the token index reads the term keys, the BM25 descriptor reuses the
- *  counts as the field's `termCounts` directly. */
+ *  queries. Fed to `createSearchDescriptor` as the per-(atom, field) record —
+ *  the descriptor buckets by the term keys and reuses the counts as the
+ *  field's BM25 `termCounts` directly (structurally its `FieldStats`). */
 type FieldTerms = {
     termCounts: Map<string, number>
     length: number
     positions?: Map<string, number[]>
-}
-
-/** Per-scope BM25F storage. Lives as the *value* of `bm25Atom` so the
- *  scoring selector can `get(bm25Atom)` to access it without needing
- *  direct `data` access. Mutated in place; `epoch` is bumped on every
- *  change so atom-equality treats the mutation as a real value change.
- *
- *  `parent` points at the parent scope's storage (undefined at root).
- *  Scoring walks the chain to find an atom's stats — local stats
- *  override parent stats (the scope-shadowing case), missing local
- *  stats fall through to the parent (the unshadowed-inheritance case). */
-type BM25Storage = {
-    perAtom: Map<AtomFamilyAtom<any, any>, Map<string, FieldStats>>
-    fieldTotals: Map<string, { totalLength: number; docCount: number }>
-    epoch: number
-    parent: BM25Storage | undefined
 }
 
 export type ScoredResult<Value, Args extends [any, ...any[]]> = {
@@ -453,27 +417,12 @@ export function atomFamilySearch<
         return tokens
     }
 
-    /** Normalize the extractor's return value into a flat `Map<field,
-     *  term[]>`. Single-string returns get the `DEFAULT_FIELD` name.
-     *  Object returns keep their keys; empty/missing field values are
-     *  dropped.
-     *
-     *  Memoized by value reference: both the tokenIndex descriptor and
-     *  the bm25Descriptor receive the same `value` from
-     *  `data.values.get(atom)` within one propagation pass, so the
-     *  second call hits the cache and the user's `extractor` runs once
-     *  per write, not twice. WeakMap-keyed by value so entries are
-     *  reclaimed when the atom's value reference is replaced — bulk
-     *  transaction writes (atom1, atom2, …, atomN) cache N distinct
-     *  values during pass 1, then hit them during pass 2 without
-     *  re-running the extractor.
-     *
-     *  Note: primitive value types (string, number) can't be WeakMap
-     *  keys, so for those the cache is skipped and the extractor runs
-     *  per descriptor as before — but that's the cheap case anyway. */
-    const memo = new WeakMap<object, Map<string, FieldTerms>>()
-    const isObjectLike = (v: unknown): v is object =>
-        v !== null && (typeof v === "object" || typeof v === "function")
+    /** Normalize the extractor's return value into `Map<field, FieldTerms>`.
+     *  Single-string returns get the `DEFAULT_FIELD` name; object returns keep
+     *  their keys; empty/missing field values are dropped. Called once per
+     *  write by the single search descriptor (no memo needed — the old
+     *  two-descriptor design memoized to run the user extractor once across
+     *  both passes; with one descriptor it's naturally once). */
     // Build the per-field entry: `terms` is the matched-against, mode-
     // expanded vocabulary (prefixes / trigrams / whole tokens); `length`
     // is the BM25 document length and is ALWAYS the raw word count, never
@@ -506,10 +455,6 @@ export function atomFamilySearch<
         return { termCounts, length: tokens.length, positions }
     }
     const extractFieldTerms = (value: Value): Map<string, FieldTerms> => {
-        if (isObjectLike(value)) {
-            const cached = memo.get(value)
-            if (cached) return cached
-        }
         const raw = extractor(value)
         const out = new Map<string, FieldTerms>()
         if (typeof raw === "string") {
@@ -525,258 +470,12 @@ export function atomFamilySearch<
                 if (e) out.set(field, e)
             }
         }
-        if (isObjectLike(value)) memo.set(value, out)
         return out
     }
 
-    /** Token index — set membership across all fields, used to filter
-     *  the candidate set before scoring. Built on the existing
-     *  `atomFamilyIndex` primitive: extractor flattens all fields'
-     *  terms into one Set. */
-    const tokenIndex = atomFamilyIndex(
-        family,
-        value => {
-            const fieldTerms = extractFieldTerms(value)
-            if (fieldTerms.size === 0) return []
-            // The distinct terms (termCounts keys) are all the index needs —
-            // it dedups into a Set anyway. Single field returns its keys;
-            // multi-field concatenates (cross-field dupes collapse in the Set).
-            if (fieldTerms.size === 1) {
-                for (const { termCounts } of fieldTerms.values())
-                    return [...termCounts.keys()]
-            }
-            const flat: string[] = []
-            for (const { termCounts } of fieldTerms.values()) {
-                for (const t of termCounts.keys()) flat.push(t)
-            }
-            return flat
-        },
-        { name: options?.name },
-    )
-
-    /** Per-instance BM25F storage atom. Its *value* is the mutable
-     *  storage object (one per store via initAtom/setValueInData). The
-     *  scoring selector reads via `get(bm25Atom)`; the descriptor below
-     *  mutates the storage in place and bumps `epoch` to invalidate. */
-    const bm25Atom: Atom<BM25Storage> = {
-        equal: (a, b) => a.epoch === b.epoch,
-        defaultValue: () => ({
-            perAtom: new Map(),
-            fieldTotals: new Map(),
-            epoch: 0,
-            parent: undefined,
-        }),
-        name: options?.name ? `${options.name}:bm25` : undefined,
-        // Mutable storage — we mutate `perAtom` / `fieldTotals` / `epoch`
-        // in place on every write to avoid the cost of cloning a possibly-
-        // huge stats map. `equal()` uses the `epoch` field to detect change
-        // even though the reference is stable.
-        mutable: true,
-    }
-
-    /** Lazily initialize the BM25 storage chain for a given store data.
-     *  Recurses up: if `data` is a scope, the storage's `parent` points
-     *  at the parent scope's storage (initialized if it doesn't exist).
-     *  Storage is held as the value of `bm25Atom` in `data.values`. */
-    const ensureBM25Storage = (data: StoreData): BM25Storage => {
-        let s = data.values.get(bm25Atom) as BM25Storage | undefined
-        if (s) return s
-        const parent = data.parent
-            ? ensureBM25Storage(data.parent)
-            : undefined
-        s = {
-            perAtom: new Map(),
-            fieldTotals: new Map(),
-            epoch: 0,
-            parent,
-        }
-        setValueInData(bm25Atom, s, data)
-        return s
-    }
-
-    /** Walk the parent chain looking for the atom's stats. Local stats
-     *  override parent stats — this is how scope shadowing works:
-     *  `scope.set(a, ...)` puts a's new stats in the scope; subsequent
-     *  scope reads stop at the local entry, not the root one. */
-    const findAtomFieldStats = (
-        storage: BM25Storage,
-        atom: AtomFamilyAtom<Value, Args>,
-    ): Map<string, FieldStats> | undefined => {
-        let s: BM25Storage | undefined = storage
-        while (s) {
-            const stats = s.perAtom.get(atom)
-            if (stats) return stats
-            s = s.parent
-        }
-        return undefined
-    }
-
-    /** True if `phraseTokens` appear at consecutive, in-order positions
-     *  within a SINGLE field of `atom` (i.e. an exact phrase match). Uses
-     *  the positional index; positions per word/field are few, so the
-     *  `indexOf` membership probes stay cheap. */
-    const atomMatchesPhrase = (
-        atom: AtomFamilyAtom<Value, Args>,
-        phraseTokens: string[],
-        storage: BM25Storage,
-    ): boolean => {
-        const fields = findAtomFieldStats(storage, atom)
-        if (!fields) return false
-        for (const fs of fields.values()) {
-            const positions = fs.positions
-            if (!positions) continue
-            const starts = positions.get(phraseTokens[0])
-            if (!starts) continue
-            for (const start of starts) {
-                let ok = true
-                for (let k = 1; k < phraseTokens.length; k++) {
-                    const at = positions.get(phraseTokens[k])
-                    if (!at || at.indexOf(start + k) === -1) {
-                        ok = false
-                        break
-                    }
-                }
-                if (ok) return true
-            }
-        }
-        return false
-    }
-
-    /** Sum field totals across the chain. Approximate when atoms are
-     *  shadowed (the deeper-scope stats are counted alongside the
-     *  outer ones), but BM25's length-normalization tolerates small
-     *  drift in `avgdl` without breaking ranking. Good-enough for v1. */
-    const getFieldTotal = (
-        storage: BM25Storage,
-        field: string,
-    ): { totalLength: number; docCount: number } => {
-        let totalLength = 0
-        let docCount = 0
-        let s: BM25Storage | undefined = storage
-        while (s) {
-            const t = s.fieldTotals.get(field)
-            if (t) {
-                totalLength += t.totalLength
-                docCount += t.docCount
-            }
-            s = s.parent
-        }
-        return { totalLength, docCount }
-    }
-
-    /** All field names with documents anywhere in the scope chain — for the
-     *  `stats` selector. */
-    const collectFieldNames = (storage: BM25Storage): Set<string> => {
-        const out = new Set<string>()
-        let s: BM25Storage | undefined = storage
-        while (s) {
-            for (const field of s.fieldTotals.keys()) out.add(field)
-            s = s.parent
-        }
-        return out
-    }
-
-    /** Subtract one atom's field stats from `fieldTotals` and decrement
-     *  its term refcounts in `termDictionary`. Used both on delete and
-     *  on re-write (where we tear down the old contribution before
-     *  applying the new). */
-    const detachAtomStats = (
-        storage: BM25Storage,
-        atom: AtomFamilyAtom<any, any>,
-    ): boolean => {
-        const stats = storage.perAtom.get(atom)
-        if (!stats) return false
-        for (const [field, fs] of stats) {
-            // Decrement word refcounts and drop entries that hit zero, so the
-            // vocabulary doesn't grow monotonically across rewrites. Only
-            // relevant when the vocabulary is tracked (prefix mode or
-            // tolerance > 0); otherwise it was never populated.
-            if (trackVocabulary) {
-                for (const [term, count] of fs.termCounts) {
-                    decVocab(term, count)
-                }
-            }
-            const tot = storage.fieldTotals.get(field)
-            if (!tot) continue
-            tot.totalLength -= fs.length
-            tot.docCount -= 1
-            if (tot.docCount <= 0) {
-                storage.fieldTotals.delete(field)
-            }
-        }
-        storage.perAtom.delete(atom)
-        return true
-    }
-
-    /** Descriptor that maintains the BM25F stats — sits alongside the
-     *  `tokenIndex` descriptor on `family.__valdresIndexes`. Both fire
-     *  on every write; the tokenIndex handles set-membership, this one
-     *  handles per-field TF + length stats. */
-    const bm25Descriptor: IndexDescriptor = {
-        onWrite: (_family, atom, data, accum) => {
-            // Storage is per-scope, with a parent chain for inheritance.
-            // Writing in a scope updates *that* scope's stats — root and
-            // sibling scopes are unaffected. Reads walk the chain.
-            const storage = ensureBM25Storage(data)
-            // Tear down old contribution in THIS scope first so
-            // re-writes within the scope don't double-count.
-            detachAtomStats(storage, atom)
-
-            const value = data.values.get(atom) as Value
-            const fieldTerms = extractFieldTerms(value)
-            if (fieldTerms.size === 0) {
-                bumpBM25Epoch(storage, data, accum)
-                return
-            }
-
-            const atomStats = new Map<string, FieldStats>()
-            for (const [field, { termCounts, length, positions }] of fieldTerms) {
-                // `termCounts` was computed once in `fieldEntry` and is shared
-                // (read-only downstream) — reuse it as the field's stats
-                // instead of re-counting. Refcount the vocabulary by the
-                // occurrence totals; `detachAtomStats` decrements them on
-                // delete / re-write so the vocabulary doesn't leak.
-                if (trackVocabulary) {
-                    for (const [t, c] of termCounts) incVocab(t, c)
-                }
-                // `length` is the raw word count (not the expanded term
-                // count) so BM25 length-norm isn't biased by word length.
-                atomStats.set(field, { length, termCounts, positions })
-
-                let tot = storage.fieldTotals.get(field)
-                if (!tot) {
-                    tot = { totalLength: 0, docCount: 0 }
-                    storage.fieldTotals.set(field, tot)
-                }
-                tot.totalLength += length
-                tot.docCount += 1
-            }
-            storage.perAtom.set(atom, atomStats)
-            bumpBM25Epoch(storage, data, accum)
-        },
-        onDelete: (_family, atom, data, accum) => {
-            const storage = data.values.get(bm25Atom) as
-                | BM25Storage
-                | undefined
-            if (!storage) return
-            const removed = detachAtomStats(storage, atom)
-            if (removed) bumpBM25Epoch(storage, data, accum)
-        },
-    }
-
-    const bumpBM25Epoch = (
-        storage: BM25Storage,
-        data: StoreData,
-        accum: IndexHookResult,
-    ) => {
-        storage.epoch++
-        setValueInData(bm25Atom, storage, data)
-        if (!accum.local) accum.local = new Set()
-        accum.local.add(bm25Atom)
-    }
-
-    if (!family.__valdresIndexes) family.__valdresIndexes = new Set()
-    family.__valdresIndexes.add(bm25Descriptor)
+    // The unified search index (buckets + reactive term atoms + BM25 stats
+    // in one pass) is created below, after the vocab/bkTree declarations it
+    // wires its hooks to — see `createSearchDescriptor`.
 
     type TokenSetEntry = {
         array: AtomFamilyAtom<Value, Args>[]
@@ -788,7 +487,13 @@ export function atomFamilySearch<
         token: string,
         get: <V>(state: Atom<V>) => V,
     ): Set<AtomFamilyAtom<Value, Args>> => {
-        const arr = get(tokenIndex(token))
+        // The descriptor stores heterogeneous `AtomFamilyAtom<any>`; narrow
+        // back to this family's atom type (same object at runtime).
+        const arr = get(
+            sd.termAtom(token) as unknown as Atom<
+                AtomFamilyAtom<Value, Args>[]
+            >,
+        )
         const cached = tokenSetCache.get(token)
         if (cached && cached.array === arr) return cached.set
         const set = new Set(arr)
@@ -864,55 +569,81 @@ export function atomFamilySearch<
         options?.positions === true &&
         (mode === "exact" || mode === "prefix")
 
-    /** Per-instance term dictionary with refcounts. Populated by the BM25
-     *  descriptor's write hook; entries are decremented by
-     *  `detachAtomStats` and removed when the count hits zero. Used by
-     *  `expandSingleToken` when `tolerance > 0` to find indexed terms
-     *  within edit distance K of the query token. One shared dictionary
-     *  across scopes — terms-as-data are the same regardless of which
-     *  scope wrote them.
-     *
-     *  The refcount is the total occurrence count across every atom
-     *  that holds this term (i.e. sum of per-(atom, field) `termCounts`
-     *  entries for this term). Rewriting an atom subtracts its old
-     *  contribution before adding the new — see `detachAtomStats`. */
-    const termDictionary = new Map<string, number>()
-
-    /** Bumped whenever a DISTINCT word enters or leaves `termDictionary`
-     *  (a refcount 0→1 or 1→0 edge). The prefix scan caches a sorted view of
-     *  the vocabulary keyed on this version, so it rebuilds only when
-     *  membership actually changes — not on every occurrence-count tick. */
+    /** Bumped whenever a DISTINCT word enters or leaves the vocabulary
+     *  (a 0↔1 membership edge, signalled by the descriptor's vocab hooks).
+     *  The prefix scan caches a sorted view keyed on this version, so it
+     *  rebuilds only when membership actually changes. */
     let vocabVersion = 0
     let sortedVocabCache: { version: number; words: string[] } | null = null
 
     /** BK-tree over the vocabulary for sublinear fuzzy lookup. Only built
      *  when `tolerance > 0` (prefix-only instances never fuzz). Maintained on
-     *  the same 0→1 / →0 membership edges as the sorted-prefix cache. */
+     *  the same 0↔1 membership edges as the sorted-prefix cache. */
     const bkTree: BKTree | null =
         tolerance > 0 ? createBKTree(levenshtein) : null
 
-    /** Refcount helpers for the whole-word vocabulary. `incVocab` adds one
-     *  occurrence (and the word itself on the 0→1 edge); `decVocab` subtracts
-     *  `count` and removes the word on the →0 edge. On a membership change
-     *  both bump `vocabVersion` (invalidating the sorted prefix cache) and
-     *  add/remove the word from the BK-tree. */
-    const incVocab = (term: string, count: number) => {
-        const prev = termDictionary.get(term) ?? 0
-        termDictionary.set(term, prev + count)
-        if (prev === 0) {
-            vocabVersion++
-            bkTree?.add(term)
+    /** The unified search index (#6): ONE descriptor maintaining inverted
+     *  buckets + reactive term atoms (the query candidate/subscription
+     *  surface) AND per-(atom, field) BM25 stats + fieldTotals, in a single
+     *  write pass over a single per-atom record. The vocabulary structures
+     *  above are driven by its distinct-term edge hooks; the descriptor owns
+     *  the occurrence refcounts (`termRefs`). */
+    const sd = createSearchDescriptor<Value>(extractFieldTerms, {
+        name: options?.name,
+        vocab: trackVocabulary
+            ? {
+                  onTermAdded: term => {
+                      vocabVersion++
+                      bkTree?.add(term)
+                  },
+                  onTermRemoved: term => {
+                      vocabVersion++
+                      bkTree?.remove(term)
+                  },
+              }
+            : undefined,
+    })
+    if (!family.__valdresIndexes) family.__valdresIndexes = new Set()
+    family.__valdresIndexes.add(sd.descriptor)
+
+    /** Occurrence-refcounted vocabulary, owned by the descriptor — keys are
+     *  the vocabulary (for the prefix scan / suggest), values the frequency
+     *  (suggest ranking). Empty unless a vocabulary is tracked. */
+    const termDictionary = sd.termRefs
+
+    type SearchStorageRef = Parameters<typeof sd.getFieldStats>[0]
+
+    /** True if `phraseTokens` appear at consecutive, in-order positions within
+     *  a single field of `atom` (an exact phrase match), via the positional
+     *  index. */
+    const atomMatchesPhrase = (
+        atom: AtomFamilyAtom<Value, Args>,
+        phraseTokens: string[],
+        storage: SearchStorageRef,
+    ): boolean => {
+        const fields = sd.getFieldStats(
+            storage,
+            atom as unknown as AtomFamilyAtom<any>,
+        )
+        if (!fields) return false
+        for (const fs of fields.values()) {
+            const positions = fs.positions
+            if (!positions) continue
+            const starts = positions.get(phraseTokens[0])
+            if (!starts) continue
+            for (const start of starts) {
+                let ok = true
+                for (let k = 1; k < phraseTokens.length; k++) {
+                    const at = positions.get(phraseTokens[k])
+                    if (!at || at.indexOf(start + k) === -1) {
+                        ok = false
+                        break
+                    }
+                }
+                if (ok) return true
+            }
         }
-    }
-    const decVocab = (term: string, count: number) => {
-        const remaining = (termDictionary.get(term) ?? 0) - count
-        if (remaining <= 0) {
-            termDictionary.delete(term)
-            vocabVersion++
-            bkTree?.remove(term)
-        } else {
-            termDictionary.set(term, remaining)
-        }
+        return false
     }
 
     /** Sorted snapshot of the vocabulary for binary-search prefix lookups,
@@ -1053,10 +784,9 @@ export function atomFamilySearch<
                 const typedGet = get as <V>(s: Atom<V>) => V
                 const N = Math.max(family.__valdresAtomFamilyMap.size, 1)
 
-                // Subscribe to BM25 storage updates and grab the current
-                // mutable storage object. Stats are read freshly inside
-                // the scoring loop below.
-                const bm25Storage = typedGet(bm25Atom)
+                // Subscribe to stats updates and grab the current (mutable)
+                // storage object. Stats are read freshly in the loop below.
+                const bm25Storage = typedGet(sd.statsAtom)
 
                 // Per-query-token aggregation. The BM25F contribution per
                 // (atom, field, term) is summed into `scores`. The
@@ -1089,7 +819,7 @@ export function atomFamilySearch<
                 const avgdlFor = (field: string): number => {
                     const cached = avgdlCache.get(field)
                     if (cached !== undefined) return cached
-                    const tot = getFieldTotal(bm25Storage, field)
+                    const tot = sd.getFieldTotal(bm25Storage, field)
                     const a =
                         tot.docCount > 0 ? tot.totalLength / tot.docCount : -1
                     avgdlCache.set(field, a)
@@ -1111,9 +841,9 @@ export function atomFamilySearch<
                             // Sum BM25F contributions across the atom's
                             // fields. Walk the parent chain: closest
                             // scope's stats win (scope shadowing).
-                            const atomFields = findAtomFieldStats(
+                            const atomFields = sd.getFieldStats(
                                 bm25Storage,
-                                atom,
+                                atom as unknown as AtomFamilyAtom<any>,
                             )
                             if (!atomFields) continue
                             let termScore = 0
@@ -1391,28 +1121,18 @@ export function atomFamilySearch<
 
     result.stats = selector<SearchStats>(
         get => {
-            const storage = (get as <V>(s: Atom<V>) => V)(bm25Atom)
+            const storage = (get as <V>(s: Atom<V>) => V)(sd.statsAtom)
             const fields: SearchStats["fields"] = {}
             // Per-field totals, summed across the scope chain (matches scoring).
-            for (const field of collectFieldNames(storage)) {
-                const tot = getFieldTotal(storage, field)
+            for (const field of sd.collectFieldNames(storage)) {
+                const tot = sd.getFieldTotal(storage, field)
                 if (tot.docCount === 0) continue
                 fields[field] = {
                     documentCount: tot.docCount,
                     averageLength: tot.totalLength / tot.docCount,
                 }
             }
-            // Distinct indexed atoms across the chain (a doc may populate only
-            // some fields, so this is not just the max per-field count).
-            const docs = new Set<AtomFamilyAtom<any, any>>()
-            for (
-                let st: BM25Storage | undefined = storage;
-                st;
-                st = st.parent
-            ) {
-                for (const atom of st.perAtom.keys()) docs.add(atom)
-            }
-            return { documentCount: docs.size, fields }
+            return { documentCount: sd.documentCount(storage), fields }
         },
         options?.name ? { name: `${options.name}:stats` } : undefined,
     )
