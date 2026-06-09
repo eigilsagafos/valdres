@@ -8,7 +8,7 @@ Three new insertion-time primitives for `atomFamily`, sharing one `IndexDescript
 
 - `atomFamilyIndex(family, extractor)` — equality-bucket index (`postsByTag("foo")` resolves to the atom list).
 - `atomFamilySort(family, keyFn, { direction })` — incrementally maintained sorted view (O(N) per write for splice, see source comment for the actual contract).
-- `atomFamilySearch(family, extractor, options)` — full-text search with **BM25F ranking** (single algorithm, opinionated, no toggle — matches Orama's design), three modes (`exact` / `prefix` / `trigram`), Levenshtein typo tolerance, field-aware extractor, per-field boost, language preset (string `"english"` or `LanguagePreset` object), stemming, stop words, accent folding, and a `scored(query)` API for relevance metadata.
+- `atomFamilySearch(family, extractor, options)` — full-text search with **BM25F ranking** (single algorithm, opinionated, no toggle — matches Orama's design), three modes (`exact` / `prefix` / `trigram`), Levenshtein typo tolerance, field-aware extractor, per-field boost, a **coordination factor** (`coordination`, default `0.5`) that rewards docs matching more of the distinct query terms so multi-word relevance doesn't get dominated by a single rare term, language preset (string `"english"` or `LanguagePreset` object), stemming, stop words, accent folding, and a `scored(query)` API for relevance metadata.
 - Extractor signature accepts `null | undefined` (returns or per-field values) to skip indexing.
 
 **New public utilities** (all in `valdres`)

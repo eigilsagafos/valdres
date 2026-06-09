@@ -193,6 +193,16 @@ const valdresLib: BenchLib = {
                 // walks the term dictionary, so this adds a few ms of
                 // query latency.
                 tolerance: 1,
+                // Drop "the"/"a"/etc. from the query and index — otherwise
+                // a query like "the eternal stranger" indexes "the" (which
+                // matches every doc, df = corpus size) as a query term and
+                // even expands it under `tolerance`, drowning the signal
+                // terms. Stopwords keep the query to "eternal"/"stranger".
+                stopWords: true,
+                // `coordination` (default 0.5) rewards docs that match MORE
+                // of the distinct query terms, so "The Eternal Stranger"
+                // (matches both) outranks "The Eternal Thief" (matches only
+                // the rare "eternal"). Left at the default here.
                 // No `limit` — valdres' `limit` caps the result count
                 // (not just returned rows); we want apples-to-apples
                 // match counts with Orama / MiniSearch.

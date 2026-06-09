@@ -1444,4 +1444,107 @@ describe("atomFamilySearch", () => {
             ).toEqual(["a"])
         })
     })
+
+    describe("coordination (query-term coverage)", () => {
+        // Reproduces the "The Eternal Stranger" pathology: when one query
+        // term is rare (high IDF) and another is common (low IDF), pure
+        // additive BM25F + length normalization can let a doc matching ONLY
+        // the rare term outrank a doc matching BOTH — because the rare
+        // term's per-doc score swings with document length and the common
+        // term adds almost nothing. The coordination factor rewards
+        // matching more distinct query terms, restoring "matched more of
+        // the query wins".
+        const buildCorpus = (coordination?: number) => {
+            const s = store()
+            const post = atomFamily<{ text: string }, [string]>(null, {
+                name: "posts",
+            })
+            const search = atomFamilySearch(post, p => p.text, {
+                match: "ranked",
+                ...(coordination !== undefined ? { coordination } : {}),
+            })
+            // "rare" appears in only 2 docs (high IDF). "common" is sprayed
+            // across many docs (low IDF). The doc matching BOTH is slightly
+            // longer so length-norm modestly penalizes its "rare" term; the
+            // doc matching ONLY "rare" is short so its "rare" term scores a
+            // touch higher. Under pure BM25F that edge is enough for the
+            // rare-only doc to win — the exact pathology coordination fixes.
+            s.set(post("both"), { text: "rare common filler" })
+            s.set(post("rareonly"), { text: "rare" })
+            for (let i = 0; i < 25; i++) {
+                s.set(post(`c${i}`), { text: `common doc number ${i}` })
+            }
+            return { s, search }
+        }
+
+        test("default: doc matching ALL query terms outranks rare-term-only", () => {
+            const { s, search } = buildCorpus()
+            const ranked = s
+                .get(search("rare common"))
+                .map(a => a.familyArgsStringified)
+            expect(ranked[0]).toBe("both")
+        })
+
+        test("coordination: 0 disables the factor (pure BM25F — rare term can win)", () => {
+            // Backward-compat / proof the lever is what flips it: with no
+            // coordination, the short rare-only doc beats the long both doc.
+            const { s, search } = buildCorpus(0)
+            const ranked = s
+                .get(search("rare common"))
+                .map(a => a.familyArgsStringified)
+            expect(ranked[0]).toBe("rareonly")
+        })
+
+        test("coordination: 1 is strict coverage weighting", () => {
+            const { s, search } = buildCorpus(1)
+            const ranked = s
+                .get(search("rare common"))
+                .map(a => a.familyArgsStringified)
+            // 2/2 coverage doc must beat any 1/2 coverage doc.
+            expect(ranked[0]).toBe("both")
+            const bothIdx = ranked.indexOf("both")
+            const rareIdx = ranked.indexOf("rareonly")
+            expect(bothIdx).toBeLessThan(rareIdx)
+        })
+
+        test("single-token query is unaffected by coordination", () => {
+            // coverage is always 1/1 for a single query term, so ranking
+            // matches whatever pure BM25F produces regardless of the factor.
+            const s = store()
+            const post = atomFamily<{ text: string }, [string]>(null, {
+                name: "posts",
+            })
+            const on = atomFamilySearch(post, p => p.text, {
+                match: "ranked",
+            })
+            const off = atomFamilySearch(post, p => p.text, {
+                match: "ranked",
+                coordination: 0,
+            })
+            s.set(post("a"), { text: "alpha beta" })
+            s.set(post("b"), { text: "alpha alpha gamma" })
+            expect(
+                s.get(on("alpha")).map(a => a.familyArgsStringified),
+            ).toEqual(s.get(off("alpha")).map(a => a.familyArgsStringified))
+        })
+
+        test("match: 'all' is unaffected (every result covers every term)", () => {
+            const s = store()
+            const post = atomFamily<{ text: string }, [string]>(null, {
+                name: "posts",
+            })
+            const search = atomFamilySearch(post, p => p.text, {
+                match: "all",
+            })
+            s.set(post("a"), { text: "hello world" })
+            s.set(post("b"), { text: "hello there world" })
+            // Both match all query terms → coordination is 1 for both →
+            // ordering is pure BM25F, no error/empty.
+            const ranked = s
+                .get(search("hello world"))
+                .map(a => a.familyArgsStringified)
+                .sort()
+            expect(ranked).toEqual(["a", "b"])
+        })
+    })
 })

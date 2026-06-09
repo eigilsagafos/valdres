@@ -97,6 +97,28 @@ export type AtomFamilySearchOptions<Fields extends string = string> = {
      *  A value around `0.3`–`0.5` filters out documents with only
      *  incidental overlap while still tolerating typos. */
     minMatch?: number
+    /** Coordination factor — how strongly to reward documents that match
+     *  MORE of the distinct query terms. Range [0, 1]; default `0.5`.
+     *
+     *  Pure BM25F sums each query term's score independently, so a query
+     *  like `"eternal stranger"` can rank a doc matching only the rare,
+     *  high-IDF term (`eternal`) above a doc matching BOTH — the common
+     *  term (`stranger`) adds too little to compensate, and per-document
+     *  length normalization swings the rare term's score. Coordination
+     *  fixes that "matched more of the query should win" intuition (the
+     *  same role as Lucene's `coord`).
+     *
+     *  The summed score is multiplied by
+     *  `(1 - coordination) + coordination * (matchedTerms / queryTerms)`:
+     *   - `0` → off (pure additive BM25F; previous behavior).
+     *   - `1` → strict coverage weighting (a doc covering 2/2 query terms
+     *     is scaled ×1, one covering 1/2 is scaled ×0.5).
+     *   - `0.5` (default) → a gentle blend that reliably floats
+     *     full-coverage matches to the top without zeroing partial ones.
+     *
+     *  No effect on single-term queries or `match: "all"` (coverage is
+     *  always 1 there). Tolerance-matched terms count toward coverage. */
+    coordination?: number
     /** Cap returned results to the top-N by score. Mirrors what most JS
      *  search libraries do by default — `MiniSearch.search()` does not
      *  cap, FlexSearch defaults to 100, Orama defaults to 10. Without a
@@ -659,6 +681,7 @@ export function atomFamilySearch<
     }
 
     const minMatchFraction = Math.max(0, Math.min(1, options?.minMatch ?? 0))
+    const coordination = Math.max(0, Math.min(1, options?.coordination ?? 0.5))
     const resultLimit =
         options?.limit !== undefined && options.limit > 0
             ? Math.floor(options.limit)
@@ -719,6 +742,10 @@ export function atomFamilySearch<
 
     const computeScored = (query: string) => {
         const queryTokens = normalize(query)
+        // Denominator for the coordination factor: distinct normalized
+        // query terms. A doc that matched all of them gets full score; one
+        // matching a subset is scaled down toward `1 - coordination`.
+        const distinctQueryTerms = new Set(queryTokens).size
         const queryName = options?.name
             ? `${options.name}:scored:${query}`
             : undefined
@@ -873,10 +900,22 @@ export function atomFamilySearch<
                         const c = termMatchCount.get(atom) ?? 0
                         if (c < minMatchCount) continue
                     }
+                    const matchedTerms = matched.get(atom)
+                    // Coordination: scale the summed BM25F score by how many
+                    // distinct query terms this doc covered. Skipped when
+                    // off (coordination 0) or trivially full coverage, so
+                    // single-term / match:"all" queries pay nothing and are
+                    // unchanged.
+                    let score = scores.get(atom) ?? 0
+                    if (coordination > 0 && distinctQueryTerms > 0) {
+                        const coverage =
+                            (matchedTerms?.size ?? 0) / distinctQueryTerms
+                        score *= 1 - coordination + coordination * coverage
+                    }
                     entries.push({
                         atom,
-                        score: scores.get(atom) ?? 0,
-                        matched: [...(matched.get(atom) ?? [])],
+                        score,
+                        matched: [...(matchedTerms ?? [])],
                     })
                 }
                 if (entries.length === 0) return entries
