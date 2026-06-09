@@ -80,7 +80,26 @@ across modes/options. This is the parity burden that makes it review-worthy.
 Today search runs **two** descriptors over each write: `tokenIndex`
 (`atomFamilyIndex` → `Set<atom>` buckets + reactivity) and the BM25 descriptor
 (`perAtom` field stats). They each store a per-atom term association — the
-redundancy #6 targets (~40% of search-specific insertion in profiling).
+redundancy #6 targets.
+
+**Measured (flagged spike, 5k docs, exact, root).** A faithful one-pass
+unified descriptor (buckets + per-field stats + fieldTotals, single per-atom
+record, no separate `atomTerms`) ran the same corpus through the real store:
+
+```
+current (two descriptors): 21.2ms
+unified (one pass):        14.0ms     → 34% faster total insertion
+```
+
+Notably the unified figure (~14ms, buckets AND stats) ≈ the current
+`tokenIndex`-alone pass (~12.7ms) — i.e. the BM25 stats are nearly free once
+fused into the bucket pass, so the second descriptor's ~8.7ms marginal cost is
+mostly two-pass overhead (dispatch, the WeakMap memo round-trip, the duplicate
+`atomTerms` record, `new Set(termKeys)` + flatten), not the stats. Search-
+specific overhead drops ~52% (≈13.9ms → ≈6.7ms over a plain family write).
+Round 1's shared-term-frequency change already took the easy part, but the
+two-pass overhead remaining is worth ~⅓ of insertion. Conclusion: #6 is
+worth doing — gated on the differential fuzzer below.
 
 **Ordinal map (the shared foundation, also used by #8/#12 and #9):**
 `Map<atom, int>` + `atom[]` reverse, assigned on first index, in the BM25
