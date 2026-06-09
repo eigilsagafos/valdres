@@ -154,6 +154,16 @@ export type AtomFamilySearchOptions<Fields extends string = string> = {
      *  passed alongside `language`, so users can swap any single piece
      *  while keeping the rest of the preset. */
     language?: SearchLanguage | LanguagePreset
+    /** Maintain a positional index — the position of each word within each
+     *  field — so double-quoted phrases in a query become adjacency
+     *  constraints (`"exact phrase"` matches only docs where those words
+     *  appear consecutively, in order, within one field).
+     *
+     *  Default `false` (positions cost extra memory). Only meaningful in
+     *  `exact` / `prefix` mode (phrases are whole-word; trigram has no whole
+     *  words). Without it, double quotes are treated as punctuation and the
+     *  quoted words are matched independently. */
+    positions?: boolean
     /** BM25 tuning knobs. Defaults match Orama's defaults (`k1: 1.2`,
      *  `b: 0.75`, `d: 0.5`) — the BM25+ recommendations. Most apps never
      *  touch this. */
@@ -181,13 +191,19 @@ const DEFAULT_FIELD = "__default__"
 type FieldStats = {
     length: number
     termCounts: Map<string, number>
+    /** Word → ascending positions within this field's normalized token
+     *  stream. Present only when `positions` is enabled; powers phrase
+     *  (adjacency) queries. */
+    positions?: Map<string, number[]>
 }
 
 /** Output of the extractor normalization, per field: the mode-expanded
- *  match vocabulary plus the raw word count for length normalization. */
+ *  match vocabulary, the raw word count for length normalization, and
+ *  (when enabled) the per-word positions for phrase queries. */
 type FieldTerms = {
     terms: string[]
     length: number
+    positions?: Map<string, number[]>
 }
 
 /** Per-scope BM25F storage. Lives as the *value* of `bm25Atom` so the
@@ -410,7 +426,19 @@ export function atomFamilySearch<
         if (tokens.length === 0) return null
         const terms = expandForWrite(tokens, mode)
         if (terms.length === 0) return null
-        return { terms, length: tokens.length }
+        let positions: Map<string, number[]> | undefined
+        if (positionsEnabled) {
+            // Positions are word indices in the normalized stream — the same
+            // space phrase queries normalize into, so adjacency lines up
+            // across stopword removal and stemming.
+            positions = new Map()
+            for (let i = 0; i < tokens.length; i++) {
+                const arr = positions.get(tokens[i])
+                if (arr) arr.push(i)
+                else positions.set(tokens[i], [i])
+            }
+        }
+        return { terms, length: tokens.length, positions }
     }
     const extractFieldTerms = (value: Value): Map<string, FieldTerms> => {
         if (isObjectLike(value)) {
@@ -516,6 +544,37 @@ export function atomFamilySearch<
         return undefined
     }
 
+    /** True if `phraseTokens` appear at consecutive, in-order positions
+     *  within a SINGLE field of `atom` (i.e. an exact phrase match). Uses
+     *  the positional index; positions per word/field are few, so the
+     *  `indexOf` membership probes stay cheap. */
+    const atomMatchesPhrase = (
+        atom: AtomFamilyAtom<Value, Args>,
+        phraseTokens: string[],
+        storage: BM25Storage,
+    ): boolean => {
+        const fields = findAtomFieldStats(storage, atom)
+        if (!fields) return false
+        for (const fs of fields.values()) {
+            const positions = fs.positions
+            if (!positions) continue
+            const starts = positions.get(phraseTokens[0])
+            if (!starts) continue
+            for (const start of starts) {
+                let ok = true
+                for (let k = 1; k < phraseTokens.length; k++) {
+                    const at = positions.get(phraseTokens[k])
+                    if (!at || at.indexOf(start + k) === -1) {
+                        ok = false
+                        break
+                    }
+                }
+                if (ok) return true
+            }
+        }
+        return false
+    }
+
     /** Sum field totals across the chain. Approximate when atoms are
      *  shadowed (the deeper-scope stats are counted alongside the
      *  outer ones), but BM25's length-normalization tolerates small
@@ -592,7 +651,7 @@ export function atomFamilySearch<
             }
 
             const atomStats = new Map<string, FieldStats>()
-            for (const [field, { terms, length }] of fieldTerms) {
+            for (const [field, { terms, length, positions }] of fieldTerms) {
                 const termCounts = new Map<string, number>()
                 for (const t of terms) {
                     termCounts.set(t, (termCounts.get(t) ?? 0) + 1)
@@ -604,7 +663,7 @@ export function atomFamilySearch<
                 }
                 // `length` is the raw word count (not the expanded term
                 // count) so BM25 length-norm isn't biased by word length.
-                atomStats.set(field, { length, termCounts })
+                atomStats.set(field, { length, termCounts, positions })
 
                 let tot = storage.fieldTotals.get(field)
                 if (!tot) {
@@ -710,6 +769,12 @@ export function atomFamilySearch<
     // `tolerance` needs it for fuzzy expansion. Trigram mode never needs it
     // (it matches via n-gram overlap, not whole words).
     const trackVocabulary = mode === "prefix" || tolerance > 0
+
+    // Positional index for phrase queries. Whole-word only — trigram mode
+    // has no whole words to position, so the flag is a no-op there.
+    const positionsEnabled =
+        options?.positions === true &&
+        (mode === "exact" || mode === "prefix")
 
     /** Per-instance term dictionary with refcounts. Populated by the BM25
      *  descriptor's write hook; entries are decremented by
@@ -876,6 +941,20 @@ export function atomFamilySearch<
         // query terms. A doc that matched all of them gets full score; one
         // matching a subset is scaled down toward `1 - coordination`.
         const distinctQueryTerms = new Set(queryTokens).size
+        // Double-quoted runs are phrase (adjacency) constraints, applied as a
+        // hard filter on candidates. Only with the positional index — the
+        // tokenizer strips quotes otherwise, so the words just flow through
+        // `queryTokens` and contribute to the base score / coverage as usual.
+        // A single-word quote imposes no adjacency, so it's left as a term.
+        const phrases: string[][] = []
+        if (positionsEnabled) {
+            const re = /"([^"]+)"/g
+            let m: RegExpExecArray | null
+            while ((m = re.exec(query)) !== null) {
+                const toks = normalize(m[1])
+                if (toks.length >= 2) phrases.push(toks)
+            }
+        }
         const queryName = options?.name
             ? `${options.name}:scored:${query}`
             : undefined
@@ -1026,6 +1105,22 @@ export function atomFamilySearch<
 
                 const entries: ScoredResult<Value, Args>[] = []
                 for (const atom of candidates) {
+                    // Phrase constraint: every quoted phrase must appear as an
+                    // adjacent, in-order run in some field. A hard filter —
+                    // quotes mean "this exact phrase", regardless of match
+                    // strategy.
+                    if (phrases.length > 0) {
+                        let ok = true
+                        for (const phrase of phrases) {
+                            if (
+                                !atomMatchesPhrase(atom, phrase, bm25Storage)
+                            ) {
+                                ok = false
+                                break
+                            }
+                        }
+                        if (!ok) continue
+                    }
                     if (minMatchCount > 0) {
                         const c = termMatchCount.get(atom) ?? 0
                         if (c < minMatchCount) continue

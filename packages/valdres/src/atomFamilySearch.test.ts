@@ -1725,4 +1725,117 @@ describe("atomFamilySearch", () => {
             expect(ranked[0]).toBe("title")
         })
     })
+
+    describe("phrase search (positional index)", () => {
+        // #3: with `positions: true`, a double-quoted run in the query is a
+        // phrase constraint — the words must appear at consecutive positions
+        // within a single field. Standard "exact phrase" search semantics.
+        const mkSearch = (s: ReturnType<typeof store>) => {
+            const post = atomFamily<{ text: string }, [string]>(null, {
+                name: "posts",
+            })
+            const search = atomFamilySearch(post, p => p.text, {
+                mode: "exact",
+                match: "ranked",
+                positions: true,
+            })
+            return { post, search }
+        }
+
+        test("a quoted phrase matches only adjacent, in-order occurrences", () => {
+            const s = store()
+            const { post, search } = mkSearch(s)
+            s.set(post("adj"), { text: "the eternal stranger" })
+            s.set(post("split"), {
+                text: "the eternal city and then a stranger",
+            })
+            const hits = s
+                .get(search('"eternal stranger"'))
+                .map(a => a.familyArgsStringified)
+            expect(hits).toEqual(["adj"])
+        })
+
+        test("phrase word order matters", () => {
+            const s = store()
+            const { post, search } = mkSearch(s)
+            s.set(post("fwd"), { text: "eternal stranger" })
+            s.set(post("rev"), { text: "stranger eternal" })
+            const hits = s
+                .get(search('"eternal stranger"'))
+                .map(a => a.familyArgsStringified)
+            expect(hits).toEqual(["fwd"])
+        })
+
+        test("a phrase must not span fields", () => {
+            const s = store()
+            const post = atomFamily<
+                { title: string; body: string },
+                [string]
+            >(null, { name: "posts" })
+            const search = atomFamilySearch(
+                post,
+                p => ({ title: p.title, body: p.body }),
+                { mode: "exact", match: "ranked", positions: true },
+            )
+            // "eternal" ends the title, "stranger" starts the body — adjacent
+            // across the field boundary, but a phrase must stay within one
+            // field.
+            s.set(post("cross"), {
+                title: "the eternal",
+                body: "stranger walks in",
+            })
+            s.set(post("within"), {
+                title: "a tale",
+                body: "the eternal stranger walks in",
+            })
+            const hits = s
+                .get(search('"eternal stranger"'))
+                .map(a => a.familyArgsStringified)
+            expect(hits).toEqual(["within"])
+        })
+
+        test("phrase requires every word present", () => {
+            const s = store()
+            const { post, search } = mkSearch(s)
+            s.set(post("a"), { text: "the eternal stranger" })
+            expect(s.get(search('"eternal dragon"'))).toHaveLength(0)
+        })
+
+        test("phrase plus a bare term: phrase filters, bare term ranks", () => {
+            const s = store()
+            const { post, search } = mkSearch(s)
+            s.set(post("both"), {
+                text: "the eternal stranger the detective",
+            })
+            s.set(post("phraseonly"), { text: "the eternal stranger" })
+            s.set(post("neither"), { text: "a quiet afternoon" })
+            const ranked = s
+                .get(search('"eternal stranger" detective'))
+                .map(a => a.familyArgsStringified)
+            // Both phrase-matching docs returned; the one that also has
+            // "detective" ranks first (coordination over query terms).
+            expect(ranked).toEqual(["both", "phraseonly"])
+        })
+
+        test("without positions enabled, a quoted phrase degrades to its words", () => {
+            // Quotes are punctuation to the tokenizer, so without the
+            // positional index there is no adjacency to enforce — the words
+            // are matched independently (documented degradation).
+            const s = store()
+            const post = atomFamily<{ text: string }, [string]>(null, {
+                name: "posts",
+            })
+            const search = atomFamilySearch(post, p => p.text, {
+                mode: "exact",
+                match: "ranked",
+            })
+            s.set(post("split"), {
+                text: "the eternal city and then a stranger",
+            })
+            const hits = s
+                .get(search('"eternal stranger"'))
+                .map(a => a.familyArgsStringified)
+            expect(hits).toEqual(["split"])
+        })
+    })
 })
