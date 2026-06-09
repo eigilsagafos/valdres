@@ -29,6 +29,11 @@ export { defaultTokenize } from "./utils/defaultTokenize"
 export { deepFreeze } from "./utils/deepFreeze"
 export { englishStopWords } from "./utils/englishStopWords"
 export { foldAccents } from "./utils/foldAccents"
+export {
+    highlightMatches,
+    type HighlightOptions,
+    type HighlightRange,
+} from "./utils/highlightMatches"
 export { simpleEnglishStem } from "./utils/simpleEnglishStem"
 export { isAtom } from "./utils/isAtom"
 export { isAtomFamily } from "./utils/isAtomFamily"
