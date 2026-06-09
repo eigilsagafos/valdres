@@ -7,6 +7,10 @@ const rootDir = import.meta.dir.replace("/docs", "")
 const docsDir = import.meta.dir
 const distDir = `${docsDir}/dist`
 
+const valdresVersion: string = (
+    await Bun.file(`${rootDir}/packages/valdres/package.json`).json()
+).version
+
 type BuildKind = "mdx" | "layout" | "bundles"
 
 const RELOAD_SCRIPT = `<script>
@@ -63,7 +67,7 @@ const sveltePlugin: import("bun").BunPlugin = {
 
 const defineDev = {
     "process.env.NODE_ENV": '"development"',
-    "process.env.VALDRES_VERSION": '"0.2.0"',
+    "process.env.VALDRES_VERSION": JSON.stringify(valdresVersion),
 }
 
 async function bundleClient() {

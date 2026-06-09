@@ -9,6 +9,10 @@ const rootDir = import.meta.dir.replace("/docs", "")
 const distDir = `${import.meta.dir}/dist`
 const siteUrl = "https://valdres.dev"
 
+const valdresVersion: string = (
+    await Bun.file(`${rootDir}/packages/valdres/package.json`).json()
+).version
+
 console.log("🔍 Discovering MDX files...")
 const entries = await discover(rootDir)
 console.log(`   Found ${entries.length} pages`)
@@ -54,7 +58,7 @@ const demosBuild = await Bun.build({
     plugins: [reactDedup],
     define: {
         "process.env.NODE_ENV": '"production"',
-        "process.env.VALDRES_VERSION": '"0.2.0"',
+        "process.env.VALDRES_VERSION": JSON.stringify(valdresVersion),
     },
 })
 if (!demosBuild.success) {
@@ -103,7 +107,7 @@ const landingBuild = await Bun.build({
     plugins: [reactDedup, sveltePlugin],
     define: {
         "process.env.NODE_ENV": '"production"',
-        "process.env.VALDRES_VERSION": '"0.2.0"',
+        "process.env.VALDRES_VERSION": JSON.stringify(valdresVersion),
     },
 })
 if (!landingBuild.success) {

@@ -60,8 +60,12 @@ function App() {
 
 ## When to use a Provider
 
-- **Without Provider**: A default global store is used. Fine for most apps. You can access it outside React with `getDefaultStore()`.
-- **With Provider**: Gives you control over store lifecycle and isolation. Useful for testing, micro-frontends, or when you need independent state trees.
+A `<Provider>` is required — `useAtom`, `useValue`, and the other hooks throw `No <Provider> found` if there isn't one above them in the tree.
+
+- **Without a `store` prop**: `<Provider>` creates a store for you (with `batchUpdates` enabled). Fine for most apps.
+- **With a `store` prop**: you pass a store you created yourself, giving you control over its lifecycle and isolation — useful for testing, micro-frontends, SSR, or independent state trees.
+
+For state access outside React (scripts, tests, cross-framework code), use the `globalStore` exported from `valdres`.
 
 ## See also
 

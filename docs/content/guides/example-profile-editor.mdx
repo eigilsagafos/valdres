@@ -7,7 +7,7 @@ description: Edit-and-cancel pattern using scoped stores
 
 An edit form that uses scoped stores for a "save or cancel" pattern. The edit form opens in a scope that inherits the current profile — edits stay isolated until the user saves.
 
-This pattern is unique to Valdres. No other state management library makes this so clean.
+Scoped stores make this pattern unusually low-boilerplate — other libraries can do it too, but typically require manually cloning the form state and diffing it back on save.
 
 ## Shared state
 
@@ -323,4 +323,4 @@ export class ProfileEditForm {
 - **Scoped stores** — edits are isolated in a child store. The parent state is untouched until you explicitly save.
 - **No copying** — you don't need to manually clone state into local form state. The scope inherits everything automatically.
 - **Cancel is free** — just unmount the scope. No cleanup, no reset logic.
-- **Unique to Valdres** — this pattern isn't possible with Jotai, Zustand, or Redux without manual state management.
+- **Less boilerplate** — with Jotai, Zustand, or Redux you'd reach the same result by manually cloning form state and writing it back; scoped stores handle the inherit-and-commit for you.

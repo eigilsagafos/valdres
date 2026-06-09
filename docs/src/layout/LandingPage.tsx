@@ -21,7 +21,7 @@ export function LandingPage({ bench }: { bench?: BenchProps }) {
                 <title>Valdres — Reactive State Management</title>
                 <meta
                     name="description"
-                    content="Fast, reactive state management for JavaScript and React. Inspired by Recoil, built for performance."
+                    content="Reactive state management for React, Vue, Svelte, Solid, and Angular. One store, shared across frameworks. Inspired by Recoil and Jotai."
                 />
                 <meta property="og:type" content="website" />
                 <meta property="og:site_name" content="Valdres" />
@@ -31,7 +31,7 @@ export function LandingPage({ bench }: { bench?: BenchProps }) {
                 />
                 <meta
                     property="og:description"
-                    content="Fast, reactive state management for JavaScript and React. Inspired by Recoil, built for performance."
+                    content="Reactive state management for React, Vue, Svelte, Solid, and Angular. One store, shared across frameworks. Inspired by Recoil and Jotai."
                 />
                 <meta property="og:url" content="https://valdres.dev" />
                 <meta name="twitter:card" content="summary" />
@@ -41,7 +41,7 @@ export function LandingPage({ bench }: { bench?: BenchProps }) {
                 />
                 <meta
                     name="twitter:description"
-                    content="Fast, reactive state management for JavaScript and React. Inspired by Recoil, built for performance."
+                    content="Reactive state management for React, Vue, Svelte, Solid, and Angular. One store, shared across frameworks. Inspired by Recoil and Jotai."
                 />
                 <link rel="stylesheet" href="/styles.css" />
                 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg width='48' height='48' viewBox='0 0 48 48' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Crect width='48' height='48' rx='12' fill='oklch(0.7 0.18 80)'/%3E%3Cpath d='M13 13L24 35' stroke='white' stroke-width='4' stroke-linecap='round' opacity='0.9'/%3E%3Cpath d='M35 13L24 35' stroke='white' stroke-width='4' stroke-linecap='round' opacity='0.6'/%3E%3C/svg%3E" />
@@ -371,8 +371,8 @@ export function LandingPage({ bench }: { bench?: BenchProps }) {
                                 }
                             />
                             <FeatureCard
-                                title="Blazing fast"
-                                description="Built on useSyncExternalStore for optimal React integration and minimal re-renders."
+                                title="Minimal re-renders"
+                                description="Fine-grained subscriptions update only what changed — via useSyncExternalStore in React, and each framework's native reactivity everywhere else."
                                 icon={
                                     <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"/></svg>
                                 }
@@ -413,11 +413,12 @@ export function LandingPage({ bench }: { bench?: BenchProps }) {
                         <div className="max-w-5xl mx-auto">
                             <div className="text-center mb-12">
                                 <h2 className="text-2xl sm:text-3xl font-bold tracking-tight mb-3">
-                                    Built for performance
+                                    A fast core engine
                                 </h2>
                                 <p className="text-zinc-500 dark:text-zinc-400 max-w-xl mx-auto">
-                                    Valdres is designed from the ground up with performance as the top priority.
-                                    Benchmarked against Jotai across two JavaScript engines.
+                                    The framework-agnostic core is benchmarked head-to-head against Jotai
+                                    across two JavaScript engines. These measure the shared engine itself —
+                                    the framework adapters build on each framework's own reactivity.
                                 </p>
                             </div>
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-2xl mx-auto mb-8">
@@ -429,7 +430,7 @@ export function LandingPage({ bench }: { bench?: BenchProps }) {
                                         {jscAvg}x
                                     </div>
                                     <div className="text-sm text-zinc-500 dark:text-zinc-400">
-                                        faster on average
+                                        faster than Jotai
                                     </div>
                                 </div>
                                 <div className="rounded-xl border border-border dark:border-border-dark p-8 text-center">
@@ -440,12 +441,12 @@ export function LandingPage({ bench }: { bench?: BenchProps }) {
                                         {v8Avg}x
                                     </div>
                                     <div className="text-sm text-zinc-500 dark:text-zinc-400">
-                                        faster on average
+                                        faster than Jotai
                                     </div>
                                 </div>
                             </div>
                             <p className="text-center text-xs text-zinc-400 dark:text-zinc-500">
-                                Geometric mean across {benchCount} benchmarks vs Jotai {jotaiVer}. {" "}
+Core-engine geometric mean across {benchCount} JS micro-benchmarks vs Jotai {jotaiVer}. {" "}
                                 <a href="/guides/performance" className="text-accent-500 hover:underline">
                                     View detailed benchmarks
                                 </a>

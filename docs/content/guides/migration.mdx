@@ -25,11 +25,11 @@ Install the package:
 npm install @valdres-react/recoil
 ```
 
-That's it. Your existing Recoil code will work with Valdres under the hood. You get Valdres performance without any code changes.
+That's it. Most existing Recoil code keeps working — now backed by Valdres under the hood — so you can migrate the import first and adopt the native API at your own pace.
 
 <div className="callout callout-tip">
   <div className="callout-title">Why migrate from Recoil?</div>
-  Recoil is no longer actively maintained. Valdres is actively developed, has a smaller bundle size, and doesn't require string keys for atoms.
+  Recoil is no longer actively maintained. Valdres is actively developed, has a zero-dependency core, and doesn't require string keys for atoms.
 </div>
 
 ## From Jotai
@@ -73,7 +73,7 @@ import { useAtom } from "valdres-react"
 | Feature | Recoil | Valdres |
 |---------|--------|---------|
 | Atom keys | Required string keys | No keys needed (identified by reference) |
-| Bundle size | ~80KB | ~5KB |
+| Dependencies | Several | Zero (core) |
 | Maintenance | Abandoned | Actively developed |
 | Families | Utility | First-class primitive |
 | Framework support | React only | React, Vue, Svelte, Solid, Angular |

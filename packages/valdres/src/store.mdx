@@ -69,9 +69,18 @@ myStore.txn(set => {
   Selectors that depend on atoms updated in a transaction will only recompute once, after all updates are applied. This is the intended behavior for performance.
 </div>
 
-## Default global store
+## The global store
 
-If you don't use a `<Provider>` in React, a default global store is used automatically. You can access it with `getDefaultStore()` from `valdres-react`.
+`valdres` exports a shared `globalStore` — the store that global atoms synchronize through. Import it when you need store access outside of a component (scripts, tests, workers, cross-framework code):
+
+```ts
+import { globalStore } from "valdres"
+
+globalStore.get(myAtom)
+globalStore.set(myAtom, 1)
+```
+
+Inside a component you normally read and write through your framework's provider/context instead — see [Provider](/react/Provider).
 
 ## See also
 

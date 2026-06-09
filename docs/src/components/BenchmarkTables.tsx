@@ -61,13 +61,22 @@ export function BenchmarkTables({ summary }: { summary: BenchSummary }) {
     return (
         <>
             <p>
-                Every operation is benchmarked head-to-head against{" "}
+                These benchmark the framework-agnostic{" "}
+                <strong>core engine</strong> (atoms, selectors, families,
+                transactions) head-to-head against{" "}
                 <a href="https://github.com/pmndrs/jotai">Jotai</a> v
                 {summary.jotaiVersion} on the same CI runner, across two
                 JavaScript engines: Bun (JavaScriptCore / Safari) and Node.js
                 (V8 / Chrome). The figures below are the latest{" "}
                 <code>main</code> run — refreshed automatically, nothing is
                 excluded.
+            </p>
+            <p>
+                They measure the shared engine, not framework rendering. The
+                React, Vue, Svelte, Solid, and Angular adapters build on each
+                framework's own reactivity — Valdres rides on top of it rather
+                than trying to outrun it, so adapter performance is bounded by
+                the framework itself.
             </p>
 
             {summary.categories.map(cat => (
