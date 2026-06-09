@@ -19,7 +19,21 @@ import Fuse from "fuse.js"
 import MiniSearch from "minisearch"
 import { useEffect, useMemo, useRef, useState } from "react"
 import { createRoot } from "react-dom/client"
-import { atomFamily, atomFamilySearch, store } from "valdres"
+import {
+    atomFamily,
+    atomFamilySearch,
+    englishStopWords,
+    store,
+} from "valdres"
+
+// Shared stop-word list so every engine that supports stopwords filters
+// the SAME terms — keeps the toggle apples-to-apples. Sourced from
+// valdres' built-in english list.
+const STOPWORDS: string[] = [...englishStopWords]
+const STOPWORD_SET = new Set(STOPWORDS)
+
+/** Per-build options threaded from the UI controls into each adapter. */
+type BuildOpts = { stopWords: boolean }
 
 // ─── Types ─────────────────────────────────────────────────────────────
 type Doc = {
@@ -45,7 +59,11 @@ type QueryOutcome = {
 
 interface BenchLib {
     name: string
-    build(docs: Doc[]): BuildOutcome | Promise<BuildOutcome>
+    /** True if this engine can filter stop words (the toggle is a no-op
+     *  otherwise). Fuse.js is a fuzzy substring matcher with no
+     *  tokenization/stopword model, so it's `false`. */
+    supportsStopWords: boolean
+    build(docs: Doc[], opts: BuildOpts): BuildOutcome | Promise<BuildOutcome>
     query(
         instance: unknown,
         q: string,
@@ -166,7 +184,8 @@ const generateDocs = (n: number): Doc[] => {
 // ─── Library adapters ──────────────────────────────────────────────────
 const valdresLib: BenchLib = {
     name: "valdres",
-    build(docs) {
+    supportsStopWords: true,
+    build(docs, opts) {
         const s = store()
         const doc = atomFamily<Doc, [string]>(null, { name: "bench-doc" })
         // Field-aware extractor so BM25F has per-field stats. Title is
@@ -193,16 +212,11 @@ const valdresLib: BenchLib = {
                 // walks the term dictionary, so this adds a few ms of
                 // query latency.
                 tolerance: 1,
-                // No stopwords — matches the other engines here (none use
-                // them), so a bare query like "the" returns results instead
-                // of an empty set. Multi-word relevance is handled by the
-                // `coordination` factor (default 0.5) rather than by
-                // dropping common terms: it rewards docs matching MORE of
-                // the distinct query terms, so for "the eternal stranger"
-                // the docs matching all three float to the top and "The
-                // Eternal Thief" (matches only the rare "eternal") sinks —
-                // the modern-search approach (keep stopwords, score them
-                // down via IDF) rather than the classic drop-them approach.
+                // Stop words toggled from the UI. OFF (default) keeps
+                // common terms and leans on the `coordination` factor for
+                // multi-word relevance (modern-search approach), so a bare
+                // "the" still returns results. ON drops them (classic IR).
+                stopWords: opts.stopWords ? englishStopWords : undefined,
                 // No `limit` — valdres' `limit` caps the result count
                 // (not just returned rows); we want apples-to-apples
                 // match counts with Orama / MiniSearch.
@@ -249,11 +263,23 @@ const valdresLib: BenchLib = {
 
 const minisearchLib: BenchLib = {
     name: "MiniSearch",
-    build(docs) {
+    supportsStopWords: true,
+    build(docs, opts) {
         const ms = new MiniSearch({
             fields: ["title", "body"],
             storeFields: ["id", "title", "year", "genre"],
             searchOptions: { fuzzy: 0.2, prefix: true, boost: { title: 2 } },
+            // `processTerm` runs at both index and query time. It overrides
+            // MiniSearch's default (lowercasing), so we lowercase here too,
+            // then drop stop words by returning null.
+            ...(opts.stopWords
+                ? {
+                      processTerm: (term: string) => {
+                          const t = term.toLowerCase()
+                          return STOPWORD_SET.has(t) ? null : t
+                      },
+                  }
+                : {}),
         })
         const t0 = performance.now()
         ms.addAll(docs)
@@ -283,9 +309,13 @@ type FlexDocumentInstance = InstanceType<typeof FlexDocument>
 
 const flexsearchLib: BenchLib = {
     name: "FlexSearch",
-    build(docs) {
+    supportsStopWords: true,
+    build(docs, opts) {
         const fx = new FlexDocument({
             tokenize: "forward",
+            // FlexSearch's `filter` is its stop-word list (terms dropped at
+            // index + query time).
+            ...(opts.stopWords ? { filter: STOPWORDS } : {}),
             document: {
                 id: "id",
                 index: ["title", "body"],
@@ -330,6 +360,9 @@ const flexsearchLib: BenchLib = {
 
 const fuseLib: BenchLib = {
     name: "Fuse.js",
+    // Fuse is a fuzzy substring matcher with no tokenization / inverted
+    // index, so it has no stop-word concept — the toggle is a no-op here.
+    supportsStopWords: false,
     build(docs) {
         const t0 = performance.now()
         const fuse = new Fuse(docs, {
@@ -363,7 +396,8 @@ const fuseLib: BenchLib = {
 
 const oramaLib: BenchLib = {
     name: "Orama",
-    async build(docs) {
+    supportsStopWords: true,
+    async build(docs, opts) {
         // create() is async; schema setup is configuration only, not
         // indexing — keep it outside the timed block to match the other
         // adapters which time only the insert phase.
@@ -374,6 +408,10 @@ const oramaLib: BenchLib = {
                 year: "number",
                 genre: "string",
             },
+            // Orama takes its stop-word list on the tokenizer component.
+            ...(opts.stopWords
+                ? { components: { tokenizer: { stopWords: STOPWORDS } } }
+                : {}),
         })
         const t0 = performance.now()
         await oramaInsertMultiple(db, docs)
@@ -498,6 +536,7 @@ const useDebounced = <T,>(value: T, delay: number): T => {
 
 const Bench = () => {
     const [corpusSize, setCorpusSize] = useState(5000)
+    const [stopWords, setStopWords] = useState(false)
     const [query, setQuery] = useState("")
     const debouncedQuery = useDebounced(query, 200)
     const [libs, setLibs] = useState<LibState[]>([])
@@ -534,7 +573,7 @@ const Bench = () => {
             const built: LibState[] = []
             for (const lib of LIBS) {
                 if (cancelled) return
-                const out = await lib.build(docs)
+                const out = await lib.build(docs, { stopWords })
                 if (cancelled) return
                 built.push({
                     name: lib.name,
@@ -555,7 +594,7 @@ const Bench = () => {
         return () => {
             cancelled = true
         }
-    }, [docs])
+    }, [docs, stopWords])
 
     // Re-query when the debounced query (or libs) changes
     useEffect(() => {
@@ -619,6 +658,15 @@ const Bench = () => {
                         <option value={5000}>5,000 docs</option>
                         <option value={10000}>10,000 docs</option>
                     </select>
+                </label>
+                <label title="Filter a shared English stop-word list at index + query time. Fuse.js has no stop-word model, so it's unaffected.">
+                    <input
+                        type="checkbox"
+                        checked={stopWords}
+                        onChange={e => setStopWords(e.target.checked)}
+                        disabled={building}
+                    />
+                    Stop words
                 </label>
                 <button
                     className="btn"
