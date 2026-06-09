@@ -89,7 +89,12 @@ function getApiGroup(
 
     const fwEntries = fw !== "vanilla"
         ? entries
-            .filter(e => e.framework === fw && !coreApiNames.includes(e.route.split("/").pop() || ""))
+            .filter(e =>
+                e.framework === fw &&
+                e.type === "api" &&
+                !e.route.includes("/plugins/") &&
+                !coreApiNames.includes(e.route.split("/").pop() || ""),
+            )
             .map(e => ({
                 title: e.frontmatter.title,
                 route: e.route,
@@ -106,16 +111,33 @@ function getApiGroup(
     }
 }
 
+function getPluginsGroup(
+    fw: Framework,
+    entries: DocEntry[],
+): NavGroup | null {
+    const items = entries
+        .filter(e => e.framework === fw && e.type === "plugin")
+        .map(e => ({ title: e.frontmatter.title, route: e.route }))
+        .sort((a, b) => a.title.localeCompare(b.title))
+
+    if (items.length === 0) return null
+
+    return { title: "Plugins", items, framework: fw }
+}
+
 export function getNav(
     framework: Framework,
     entries: DocEntry[],
 ): NavGroup[] {
-    return [
+    const groups: NavGroup[] = [
         introduction,
         getGettingStartedGroup(framework),
         getApiGroup(framework, entries),
-        examples,
     ]
+    const plugins = getPluginsGroup(framework, entries)
+    if (plugins) groups.push(plugins)
+    groups.push(examples)
+    return groups
 }
 
 export function getNavAllFrameworks(
@@ -127,6 +149,8 @@ export function getNavAllFrameworks(
         if (fw === "vanilla") continue
         groups.push(getGettingStartedGroup(fw))
         groups.push(getApiGroup(fw, entries))
+        const plugins = getPluginsGroup(fw, entries)
+        if (plugins) groups.push(plugins)
     }
 
     groups.push(examples)

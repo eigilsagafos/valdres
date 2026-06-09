@@ -1,0 +1,88 @@
+---
+title: browser-window
+description: Reactive window inner size, tracked through resize events
+---
+
+# browser-window
+
+Tracks the browser window's inner size, updating on every `resize`. Exposed as a single global atom.
+
+## Install
+
+```bash
+bun add @valdres/browser-window
+```
+
+## Live example
+
+<PluginDemo plugin="browser-window" />
+
+## Usage
+
+<FrameworkBlock fw="react">
+
+```tsx
+import { useValue } from "valdres-react"
+import { windowSizeAtom } from "@valdres/browser-window"
+
+function Size() {
+    const { innerWidth, innerHeight } = useValue(windowSizeAtom)
+    return <span>{innerWidth} × {innerHeight}</span>
+}
+```
+
+</FrameworkBlock>
+
+<FrameworkBlock fw="vue">
+
+```ts
+import { useValue } from "valdres-vue"
+import { windowSizeAtom } from "@valdres/browser-window"
+
+const size = useValue(windowSizeAtom) // Ref<{ width, height }>
+```
+
+</FrameworkBlock>
+
+<FrameworkBlock fw="svelte">
+
+```ts
+import { watch } from "valdres-svelte"
+import { windowSizeAtom } from "@valdres/browser-window"
+
+const size = watch(windowSizeAtom) // size.value.width / size.value.height
+```
+
+</FrameworkBlock>
+
+<FrameworkBlock fw="solid">
+
+```ts
+import { createValue } from "valdres-solid"
+import { windowSizeAtom } from "@valdres/browser-window"
+
+const size = createValue(windowSizeAtom) // size().width / size().height
+```
+
+</FrameworkBlock>
+
+<FrameworkBlock fw="angular">
+
+```ts
+import { injectValue } from "valdres-angular"
+import { windowSizeAtom } from "@valdres/browser-window"
+
+size = injectValue(windowSizeAtom) // Signal<{ width, height }>
+```
+
+</FrameworkBlock>
+
+## Exports
+
+| Export | Kind | Type |
+|--------|------|------|
+| `windowSizeAtom` | atom (read-only) | `{ innerWidth, innerHeight, outerWidth, outerHeight }` |
+
+## Cross-framework
+
+A global atom — works in every framework, with the resize listener attached only while something is subscribed.

@@ -8,6 +8,7 @@ import { mountValueDisplayDemo } from "./demos/value-display"
 import { mountTodoListDemo } from "./demos/todo-list"
 import { mountFamilyDemo } from "./demos/family"
 import { CacheDemo } from "./demos/cache-demo"
+import { pluginDemos } from "./plugins/registry"
 
 // Demos mounted into inline MDX elements (by element ID)
 const inlineDemos: Record<string, (el: HTMLElement) => void> = {
@@ -57,6 +58,13 @@ function mountDemos() {
             el.innerHTML = ""
             mountFn(el)
         }
+    }
+
+    // Mount plugin demos into <div data-plugin-demo="<plugin>"> placeholders
+    for (const el of document.querySelectorAll<HTMLElement>("[data-plugin-demo]")) {
+        const name = el.getAttribute("data-plugin-demo")
+        const mountFn = name && pluginDemos[name]
+        if (mountFn) mountFn(el)
     }
 
     // Mount generic demo at #api-demo

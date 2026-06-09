@@ -1,0 +1,108 @@
+---
+title: browser-online
+description: Reactive online/offline status from navigator.onLine
+---
+
+# browser-online
+
+Reactive online/offline status. Wraps `navigator.onLine` and the `online` / `offline` events as a single global atom that any framework can read.
+
+## Install
+
+```bash
+bun add @valdres/browser-online
+```
+
+## Live example
+
+<PluginDemo plugin="browser-online" />
+
+## Usage
+
+<FrameworkBlock fw="react">
+
+```tsx
+import { useValue } from "valdres-react"
+import { onlineAtom } from "@valdres/browser-online"
+
+function ConnectionBadge() {
+    const online = useValue(onlineAtom)
+    return <span>{online ? "Online" : "Offline"}</span>
+}
+```
+
+</FrameworkBlock>
+
+<FrameworkBlock fw="vue">
+
+```vue
+<script setup>
+import { useValue } from "valdres-vue"
+import { onlineAtom } from "@valdres/browser-online"
+
+const online = useValue(onlineAtom) // Ref<boolean>
+</script>
+
+<template>{{ online ? "Online" : "Offline" }}</template>
+```
+
+</FrameworkBlock>
+
+<FrameworkBlock fw="svelte">
+
+```svelte
+<script>
+import { watch } from "valdres-svelte"
+import { onlineAtom } from "@valdres/browser-online"
+
+const online = watch(onlineAtom)
+</script>
+
+{online.value ? "Online" : "Offline"}
+```
+
+</FrameworkBlock>
+
+<FrameworkBlock fw="solid">
+
+```tsx
+import { createValue } from "valdres-solid"
+import { onlineAtom } from "@valdres/browser-online"
+
+function ConnectionBadge() {
+    const online = createValue(onlineAtom) // () => boolean
+    return <span>{online() ? "Online" : "Offline"}</span>
+}
+```
+
+</FrameworkBlock>
+
+<FrameworkBlock fw="angular">
+
+```ts
+import { Component } from "@angular/core"
+import { injectValue } from "valdres-angular"
+import { onlineAtom } from "@valdres/browser-online"
+
+@Component({
+    selector: "connection-badge",
+    template: `{{ online() ? "Online" : "Offline" }}`,
+})
+export class ConnectionBadge {
+    online = injectValue(onlineAtom) // Signal<boolean>
+}
+```
+
+</FrameworkBlock>
+
+The hook reads from the store provided by your app (see [Provider](/react/Provider)); the atom's value is kept in sync across every store automatically.
+
+## Exports
+
+| Export | Kind | Type |
+|--------|------|------|
+| `onlineAtom` | atom (read-only) | `boolean` |
+
+## Cross-framework
+
+`onlineAtom` is a global atom, so it works identically in every framework — only the read primitive's name changes (`useValue`, `createValue`, `injectValue`, `watch`, or `store.get` / `store.sub` in plain JavaScript). The browser subscription starts on the first subscriber across all stores and stops when the last one leaves.

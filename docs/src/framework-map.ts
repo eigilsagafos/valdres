@@ -54,6 +54,14 @@ const apiRoles: Record<string, ApiMapping> = {
         angular: "provideValdres",
         vanilla: null,
     },
+    scope: {
+        react: "Scope",
+        vue: "ValdresScope",
+        svelte: "scope",
+        solid: "ValdresScope",
+        angular: "provideValdresScope",
+        vanilla: null,
+    },
 }
 
 // Core valdres API pages exist at /<fw>/atom, /<fw>/selector, etc.
@@ -73,6 +81,11 @@ export function getEquivalentRoute(
 
     // Core API pages: same name across all frameworks
     if (coreApiNames.includes(currentApi)) {
+        return `/${targetFramework}/${currentApi}`
+    }
+
+    // Plugin pages: the plugin name is framework-invariant
+    if (currentApi.startsWith("plugins/")) {
         return `/${targetFramework}/${currentApi}`
     }
 
@@ -110,6 +123,16 @@ export function getFrameworkMap(
 
     // Core API pages: same name across all frameworks
     if (coreApiNames.includes(currentApi)) {
+        for (const fw of Object.keys(result) as Framework[]) {
+            if (fw !== "vanilla") {
+                result[fw] = `/${fw}/${currentApi}`
+            }
+        }
+        return result
+    }
+
+    // Plugin pages: the plugin name is framework-invariant
+    if (currentApi.startsWith("plugins/")) {
         for (const fw of Object.keys(result) as Framework[]) {
             if (fw !== "vanilla") {
                 result[fw] = `/${fw}/${currentApi}`

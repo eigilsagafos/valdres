@@ -122,6 +122,22 @@ export async function renderPages(docs: CompiledDoc[], distDir: string) {
 
         const BenchmarkTablesBound = () => <BenchmarkTables summary={benchSummary} />
 
+        // Renders its children only on the matching framework's variant of the
+        // page. Since each plugin/core page is a distinct per-framework route,
+        // the other frameworks' blocks are never shipped in this route's HTML.
+        const FrameworkBlock = ({ fw, children }: { fw: string; children?: any }) =>
+            fw === framework ? <>{children}</> : null
+
+        // Placeholder for an interactive plugin demo, hydrated by demos.ts.
+        const PluginDemo = ({ plugin }: { plugin: string }) => (
+            <div
+                data-plugin-demo={plugin}
+                className="not-prose my-6 min-h-[3rem] text-sm text-zinc-500 dark:text-zinc-400"
+            >
+                Loading demo…
+            </div>
+        )
+
         const mdxComponents = framework
             ? {
                   a: (props: any) => {
@@ -132,8 +148,10 @@ export async function renderPages(docs: CompiledDoc[], distDir: string) {
                   },
                   Playground,
                   BenchmarkTables: BenchmarkTablesBound,
+                  FrameworkBlock,
+                  PluginDemo,
               }
-            : { Playground, BenchmarkTables: BenchmarkTablesBound }
+            : { Playground, BenchmarkTables: BenchmarkTablesBound, FrameworkBlock, PluginDemo }
 
         const headings =
             doc.route === PERFORMANCE_ROUTE

@@ -1,0 +1,97 @@
+---
+title: browser-keyboard
+description: Reactive pressed-key state from keydown / keyup
+---
+
+# browser-keyboard
+
+Tracks which keys are currently held down, from the document's `keydown` / `keyup` events. Exposes the raw pressed keys plus selectors for codes, modifiers, and per-key checks.
+
+## Live example
+
+<PluginDemo plugin="browser-keyboard" />
+
+Press and hold keys — the on-screen keyboard reflects `pressedCodesSelector` live.
+
+## Install
+
+```bash
+bun add @valdres/browser-keyboard
+```
+
+## Usage
+
+<FrameworkBlock fw="react">
+
+```tsx
+import { useValue } from "valdres-react"
+import { pressedCodesSelector, isCodePressedSelector } from "@valdres/browser-keyboard"
+
+function Keys() {
+    const codes = useValue(pressedCodesSelector) // KeyboardCode[]
+    const shift = useValue(isCodePressedSelector("ShiftLeft"))
+    return <span>{codes.join(" + ")}</span>
+}
+```
+
+</FrameworkBlock>
+
+<FrameworkBlock fw="vue">
+
+```ts
+import { useValue } from "valdres-vue"
+import { pressedCodesSelector } from "@valdres/browser-keyboard"
+
+const codes = useValue(pressedCodesSelector) // Ref<KeyboardCode[]>
+```
+
+</FrameworkBlock>
+
+<FrameworkBlock fw="svelte">
+
+```ts
+import { watch } from "valdres-svelte"
+import { pressedCodesSelector } from "@valdres/browser-keyboard"
+
+const codes = watch(pressedCodesSelector) // codes.value
+```
+
+</FrameworkBlock>
+
+<FrameworkBlock fw="solid">
+
+```ts
+import { createValue } from "valdres-solid"
+import { pressedCodesSelector } from "@valdres/browser-keyboard"
+
+const codes = createValue(pressedCodesSelector) // codes()
+```
+
+</FrameworkBlock>
+
+<FrameworkBlock fw="angular">
+
+```ts
+import { injectValue } from "valdres-angular"
+import { pressedCodesSelector } from "@valdres/browser-keyboard"
+
+codes = injectValue(pressedCodesSelector) // Signal<KeyboardCode[]>
+```
+
+</FrameworkBlock>
+
+## Exports
+
+| Export | Kind | Type |
+|--------|------|------|
+| `pressedKeysAtom` | atom (read-only) | `PressedKey[]` |
+| `pressedCodesSelector` | selector | `KeyboardCode[]` |
+| `pressedKeyValuesSelector` | selector | `string[]` |
+| `modifierSelector` | selector | `Modifier[]` |
+| `isCodePressedSelector(code)` | selector family | `boolean` |
+| `isKeyPressedSelector(key)` | selector family | `boolean` |
+| `toggleKeyAtom(key)` | atom family (settable) | `boolean` |
+
+## Cross-framework
+
+Global atoms and selectors — works in every framework. For higher-level "press this combination → run this callback" hotkeys (rather than raw key state), use `@valdres/hotkeys`.

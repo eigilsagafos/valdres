@@ -11,7 +11,7 @@ export type DocEntry = {
     route: string
     mdxPath: string
     packageName: string
-    type: "api" | "guide"
+    type: "api" | "guide" | "plugin"
     framework?: Framework
     frontmatter: {
         title: string
@@ -97,6 +97,26 @@ export async function discover(rootDir: string): Promise<DocEntry[]> {
                         framework: fw,
                         frontmatter: {
                             title: data.title || filePath,
+                            description: data.description,
+                        },
+                    })
+                }
+            } else if (packageName.startsWith("@valdres/")) {
+                // Plugin docs (framework-agnostic feature packages): one MDX
+                // source → one page per non-vanilla framework at
+                // /<fw>/plugins/<plugin>. The plugin name comes from the package
+                // dir, so a plugin needs exactly one co-located *.mdx.
+                const pluginName = packageName.slice("@valdres/".length)
+                for (const fw of frameworkList) {
+                    if (fw === "vanilla") continue
+                    entries.push({
+                        route: `/${fw}/plugins/${pluginName}`,
+                        mdxPath: fullPath,
+                        packageName,
+                        type: "plugin",
+                        framework: fw,
+                        frontmatter: {
+                            title: data.title || pluginName,
                             description: data.description,
                         },
                     })
