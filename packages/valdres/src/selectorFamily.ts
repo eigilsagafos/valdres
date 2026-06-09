@@ -42,6 +42,10 @@ export const selectorFamily = <
     }
     selectorFamily.__valdresSelectorFamilyMap = map
     selectorFamily.release = (...args: Args) => map.delete(familyKey(args))
+    // Exposed on the family object too (members carry them via ...options) so
+    // a consumer can read a family's schema without materializing a member.
+    selectorFamily.schema = options?.schema
+    selectorFamily.schemaValidation = options?.schemaValidation
     if (hasName)
         Object.defineProperty(selectorFamily, "name", {
             value: options!.name,

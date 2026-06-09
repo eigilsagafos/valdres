@@ -22,6 +22,7 @@ export { selector } from "./selector"
 export { selectorFamily } from "./selectorFamily"
 export { store } from "./store"
 
+export { SchemaValidationError } from "./errors/SchemaValidationError"
 export { deepFreeze } from "./utils/deepFreeze"
 export { isAtom } from "./utils/isAtom"
 export { isAtomFamily } from "./utils/isAtomFamily"
@@ -53,6 +54,8 @@ export type { SnapshotEntry } from "./types/SnapshotEntry"
 export type { SetAtomValue } from "./types/SetAtomValue"
 export type { SyncSetAtom } from "./types/SyncSetAtom"
 export type { State } from "./types/State"
+export type { Schema } from "./types/Schema"
+export type { StandardSchemaV1 } from "./types/StandardSchemaV1"
 export type { Store } from "./types/Store"
 export type {
     AtomChange,

@@ -32,6 +32,8 @@ jobs:
               run: bun run build
             - name: Build types
               run: bun run build:types
+            - name: Typecheck type-level tests
+              run: bun --filter 'valdres' typecheck:types
             - name: Verify publish (dry-run)
               run: DRY_RUN=1 bash scripts/ci-publish.sh
             - name: Test
