@@ -1,6 +1,11 @@
 import { atomFamilyIndex } from "./atomFamilyIndex"
 import { createBKTree, type BKTree } from "./lib/BKTree"
-import { bm25Score, DEFAULT_BM25, type BM25Params } from "./lib/bm25"
+import {
+    bm25Idf,
+    bm25ScoreWithIdf,
+    DEFAULT_BM25,
+    type BM25Params,
+} from "./lib/bm25"
 import { createLRU } from "./lib/createLRU"
 import { equal } from "./lib/equal"
 import type {
@@ -1014,6 +1019,20 @@ export function atomFamilySearch<
                 >()
                 let totalQueryTerms = 0
 
+                // `avgdl` is per-field and stable for the whole query — cache
+                // it so we don't walk the scope chain once per (atom, field).
+                // `-1` marks a field with no documents (skip it).
+                const avgdlCache = new Map<string, number>()
+                const avgdlFor = (field: string): number => {
+                    const cached = avgdlCache.get(field)
+                    if (cached !== undefined) return cached
+                    const tot = getFieldTotal(bm25Storage, field)
+                    const a =
+                        tot.docCount > 0 ? tot.totalLength / tot.docCount : -1
+                    avgdlCache.set(field, a)
+                    return a
+                }
+
                 for (const queryToken of queryTokens) {
                     const terms = expandSingleToken(queryToken)
                     totalQueryTerms += terms.length
@@ -1022,6 +1041,9 @@ export function atomFamilySearch<
                         const bucket = getTokenSet(term, typedGet)
                         if (bucket.size === 0) continue
                         const df = bucket.size
+                        // `idf` depends only on (df, N) — compute once per term
+                        // instead of once per matching document.
+                        const idf = bm25Idf(df, N)
                         for (const atom of bucket) {
                             // Sum BM25F contributions across the atom's
                             // fields. Walk the parent chain: closest
@@ -1035,23 +1057,17 @@ export function atomFamilySearch<
                             for (const [field, fs] of atomFields) {
                                 const tf = fs.termCounts.get(term) ?? 0
                                 if (tf === 0) continue
-                                const tot = getFieldTotal(
-                                    bm25Storage,
-                                    field,
-                                )
-                                if (tot.docCount === 0) continue
-                                const avgdl =
-                                    tot.totalLength / tot.docCount
+                                const avgdl = avgdlFor(field)
+                                if (avgdl < 0) continue
                                 // `penalty` < 1 for typo'd matches —
                                 // restores intuitive "exact > fuzzy"
                                 // ranking. Always 1 for non-tolerance.
                                 termScore +=
                                     penalty *
                                     fieldBoost(field) *
-                                    bm25Score(
+                                    bm25ScoreWithIdf(
+                                        idf,
                                         tf,
-                                        df,
-                                        N,
                                         fs.length,
                                         avgdl,
                                         bm25Params,

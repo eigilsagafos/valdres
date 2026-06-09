@@ -43,6 +43,34 @@ export const DEFAULT_BM25: BM25Params = {
  * @param avgdl  average document/field length across the corpus
  * @param p      `{ k1, b, d }` tuning knobs
  */
+/**
+ * Inverse document frequency for a term. Depends only on `(df, N)`, so when
+ * scoring a whole posting list for one term it should be computed ONCE and
+ * reused across every matching document — see `bm25ScoreWithIdf`.
+ */
+export const bm25Idf = (df: number, N: number): number =>
+    Math.log(1 + (N - df + 0.5) / (df + 0.5))
+
+/**
+ * The BM25(+) score given a pre-computed `idf`. Hoisting `idf` (and `avgdl`,
+ * which is per-field) out of the per-document loop avoids recomputing a
+ * `Math.log` for every doc in a high-frequency term's posting list.
+ */
+export const bm25ScoreWithIdf = (
+    idf: number,
+    tf: number,
+    dl: number,
+    avgdl: number,
+    p: BM25Params,
+): number => {
+    if (tf <= 0) return 0
+    const normalizedLength = avgdl > 0 ? dl / avgdl : 1
+    return (
+        (idf * (p.d + tf * (p.k1 + 1))) /
+        (tf + p.k1 * (1 - p.b + p.b * normalizedLength))
+    )
+}
+
 export const bm25Score = (
     tf: number,
     df: number,
@@ -50,12 +78,4 @@ export const bm25Score = (
     dl: number,
     avgdl: number,
     p: BM25Params,
-): number => {
-    if (tf <= 0) return 0
-    const idf = Math.log(1 + (N - df + 0.5) / (df + 0.5))
-    const normalizedLength = avgdl > 0 ? dl / avgdl : 1
-    return (
-        (idf * (p.d + tf * (p.k1 + 1))) /
-        (tf + p.k1 * (1 - p.b + p.b * normalizedLength))
-    )
-}
+): number => bm25ScoreWithIdf(bm25Idf(df, N), tf, dl, avgdl, p)
