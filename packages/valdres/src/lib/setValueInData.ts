@@ -3,25 +3,13 @@ import type { AtomFamily } from "../types/AtomFamily"
 import type { StoreData } from "../types/StoreData"
 import { deepFreeze } from "../utils/deepFreeze"
 import { isAtomFamily } from "../utils/isAtomFamily"
+import { ensureFamilyAncestorChain } from "./atomFamilyIndex"
 import { IS_PROD } from "./IS_PROD"
+import { trackScopeValue } from "./trackScopeValue"
 
-/** Register `key` in the parent's scopeValueIndex. Throws if called on
- *  a root store — `parent` and `scopeIndexKeys` are only populated for
- *  scoped stores (see createStoreData). */
-export const trackScopeValue = (key: WeakKey, data: StoreData) => {
-    const parent = data.parent
-    const indexKeys = data.scopeIndexKeys
-    if (!parent || !indexKeys) {
-        throw new Error("trackScopeValue called on a root store")
-    }
-    let set = parent.scopeValueIndex.get(key)
-    if (!set) {
-        set = new Set()
-        parent.scopeValueIndex.set(key, set)
-    }
-    set.add(data)
-    indexKeys.add(key)
-}
+// Re-exported for existing importers; the definition lives in ./trackScopeValue
+// so the family-index module can depend on it without an import cycle.
+export { trackScopeValue }
 
 export const setValueInData = <Value extends unknown>(
     atom: Atom<Value> | AtomFamily<any, any>,
@@ -72,7 +60,13 @@ export const setValueInData = <Value extends unknown>(
             for (const sub of subs) sub.reRoot?.()
         }
     } else if (isNewFamilyInScope) {
+        // Register this scope under its parent, then make sure every intermediate
+        // ancestor scope also has the family index and is registered — the txn
+        // commit lands a flat index here that can skip intermediate scopes, and
+        // ensureFamilyAncestorChain reuses initFamilyIndex's chain walk to repair
+        // that (and re-link this scope's parentIndex to its immediate parent).
         trackScopeValue(atom, data)
+        ensureFamilyAncestorChain(atom as AtomFamily<any, any>, data)
     }
     // Record the write timestamp for atoms with maxAge so unmounted reads
     // can lazily revalidate once the freshness window has elapsed.

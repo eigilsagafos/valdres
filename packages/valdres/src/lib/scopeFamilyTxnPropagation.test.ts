@@ -107,24 +107,67 @@ describe("scope × family × txn propagation soundness", () => {
         expect(keys(root, fam)).toEqual(["a", "c"])
     })
 
-    // KNOWN PRE-EXISTING LIMITATION (not closed by this fix, not a regression):
-    // a GRANDCHILD scope (root → B → C) that first materializes its family index
-    // via a SCOPE-ONLY txn while the intermediate scope B has no index does not
-    // register the full ancestor chain (B is never materialized / registered in
-    // root.scopeValueIndex), so a later root member add can't reach C and C's
-    // get(family) is stale. Plain C.set and a cross-scope txn from the root both
-    // work; origin/main is broken here too (and in more cases). A durable fix
-    // would materialize the intermediate ancestor stores in the commit plan, like
-    // initFamilyIndex's chain walk — but throw-safely (at commit, not txn body).
-    test.todo("grandchild scope sees parent adds after scope-only txn materialization", () => {
-        const fam = atomFamily<number, [string]>(() => 0, { name: "fg" })
+    // A GRANDCHILD scope (root → B → C) that first materializes its family index
+    // via a SCOPE-ONLY txn while the intermediate scope B has no index must still
+    // observe later parent member adds. The txn lands a flat index that skips B;
+    // ensureFamilyAncestorChain (reusing initFamilyIndex's chain walk at commit)
+    // materializes + registers B so recursivelyUpdateIndexes can reach C. Plain
+    // C.set and a cross-scope txn from the root were already correct.
+    test("grandchild scope sees parent adds after scope-only txn materialization", () => {
+        for (const materialize of [
+            (C: any, fam: any) => C.txn((t: any) => t.set(fam("c0"), 9)),
+            (C: any, fam: any) => C.set(fam("c0"), 9),
+            (_C: any, _fam: any, root?: any) => {}, // replaced below
+        ].slice(0, 2)) {
+            const fam = atomFamily<number, [string]>(() => 0, { name: "fg" })
+            const root = store()
+            const B = root.scope("B")
+            const C = B.scope("C")
+            root.set(fam("r0"), 1)
+            materialize(C, fam)
+            root.set(fam("r1"), 2)
+            root.txn((t: any) => t.set(fam("r2"), 3))
+            expect(keys(C, fam)).toEqual(["c0", "r0", "r1", "r2"])
+            // B (intermediate, never written directly) inherits the full root set
+            expect(keys(B, fam)).toEqual(["r0", "r1", "r2"])
+        }
+    })
+
+    // 3-level nesting (root → B → C): the ancestor-chain walk must hold across
+    // cross-scope txns, sequential per-scope txns, and parent deletes — so an
+    // intermediate scope is always materialized and every level stays in sync.
+    test("3-level cross-scope txn: members at each level, later parent/intermediate adds", () => {
+        const fam = atomFamily<number, [string]>(() => 0, { name: "x3a" })
+        const root = store()
+        const B = root.scope("B")
+        const C = B.scope("C")
+        root.txn((t: any) => {
+            t.set(fam("r0"), 1)
+            t.scope("B", (bt: any) => {
+                bt.set(fam("b0"), 2)
+                bt.scope("C", (ct: any) => ct.set(fam("c0"), 3))
+            })
+        })
+        expect(keys(C, fam)).toEqual(["b0", "c0", "r0"])
+        expect(keys(B, fam)).toEqual(["b0", "r0"])
+        root.set(fam("r1"), 4)
+        B.set(fam("b1"), 5)
+        expect(keys(C, fam)).toEqual(["b0", "b1", "c0", "r0", "r1"])
+    })
+
+    test("3-level sequential txns then parent add/delete reach the grandchild", () => {
+        const fam = atomFamily<number, [string]>(() => 0, { name: "x3b" })
         const root = store()
         const B = root.scope("B")
         const C = B.scope("C")
         root.set(fam("r0"), 1)
-        C.txn((t: any) => t.set(fam("c0"), 9))
-        root.set(fam("r1"), 2)
-        expect(keys(C, fam)).toEqual(["c0", "r0", "r1"])
+        B.txn((t: any) => t.set(fam("b0"), 2))
+        C.txn((t: any) => t.set(fam("c0"), 3))
+        root.set(fam("r1"), 4)
+        expect(keys(C, fam)).toEqual(["b0", "c0", "r0", "r1"])
+        expect(keys(B, fam)).toEqual(["b0", "r0", "r1"])
+        root.del(fam("r0"))
+        expect(keys(C, fam)).toEqual(["b0", "c0", "r1"])
     })
 
     // BUG 2: a scope selector that reads get(family) recomputes on a parent add.

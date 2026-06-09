@@ -19,6 +19,14 @@ differential soundness fuzzer.
    proper child index (`createAtomFamilyIndex(parentIndex)`) and registers via
    `trackScopeValue`, exactly like the non-transaction `initFamilyIndex` path.
 
+The transaction family-index path now reuses the non-transaction
+`initFamilyIndex` chain walk (via a shared `ensureFamilyAncestorChain` run at
+commit) instead of authoring a flat index that could skip intermediate scopes.
+This consolidation also fixes a deeper-nesting case: a grandchild scope that
+first materialized its family index inside a scope-only transaction is now wired
+into the full ancestor `scopeValueIndex` chain, so later parent membership
+changes reach it.
+
 The core topological selector engine (`propagateDownstreamTopo` + liveness
 counting) was exercised by the same fuzzer across 30k+ random acyclic graphs with
 dynamic dependencies, scopes, and batched/cross-scope transactions with no
