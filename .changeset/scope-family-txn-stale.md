@@ -8,8 +8,10 @@ differential soundness fuzzer.
    `get(family)`. `propagateAtomUpdate` propagated only the changed member atoms
    into scopes, not the family object the selectors actually depend on — so the
    scope's `get(family)` membership refreshed but the dependent selector/`index()`
-   stayed stale. The add path now propagates the changed families into scopes,
-   mirroring the delete path. (Reproduces with a plain `set`, no transaction.)
+   stayed stale. The add path now propagates a family into scopes when its
+   membership changes (a member added/removed); a pure value-update of an
+   existing member still reaches scope selectors via the member atom, so it keeps
+   the single-atom fast path. (Reproduces with a plain `set`, no transaction.)
 
 2. A scope whose family index was first materialized inside a transaction was
    severed from its parent index. `Transaction.cloneFamilyIntoTxn` flat-cloned the

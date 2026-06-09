@@ -170,6 +170,27 @@ describe("scope × family × txn propagation soundness", () => {
         expect(keys(C, fam)).toEqual(["b0", "c0", "r1"])
     })
 
+    // Propagating the family OBJECT into scopes is gated on a MEMBERSHIP change
+    // (perf: a value-update of an existing member otherwise re-evaluated every
+    // scope). This guards that the gate didn't break value-update propagation: a
+    // scope selector reading a member's value still recomputes (via the member
+    // atom), while a membership-only selector correctly does NOT change.
+    test("value-update of an existing member recomputes scope selectors via the member", () => {
+        const fam = atomFamily<number, [string]>(() => 0, { name: "fv" })
+        const sum = selector(get => (get(fam) as any[]).reduce((a, m) => a + (get(m) as number), 0), { name: "vsum" })
+        const count = selector(get => (get(fam) as any[]).length, { name: "vcount" })
+        const root = store()
+        const S = root.scope("c")
+        root.set(fam("a"), 5)
+        S.sub(sum, () => {})
+        S.sub(count, () => {})
+        expect(S.get(sum)).toBe(5)
+        expect(S.get(count)).toBe(1)
+        root.set(fam("a"), 9) // value update, membership unchanged
+        expect(S.get(sum)).toBe(9) // recomputes via the member atom
+        expect(S.get(count)).toBe(1) // membership-only selector unchanged
+    })
+
     // BUG 2: a scope selector that reads get(family) recomputes on a parent add.
     test("scope selector reading get(family) recomputes when the parent adds a member", () => {
         for (const makeScopeMember of [

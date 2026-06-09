@@ -184,16 +184,28 @@ export const ensureFamilyAncestorChain = (
     }
 }
 
+// Returns whether this store's family MEMBERSHIP changed (a member was newly
+// added or un-deleted) — as opposed to an existing member's value being
+// re-set. Callers use this to skip propagating the family OBJECT into scopes on
+// a pure value update: scope selectors that read a member's value recompute via
+// the member atom, so only a membership change needs the family-list dependents
+// re-evaluated. `created.has(atom) && !deleted.has(atom)` is exact for a root
+// index (members = created − deleted); for a scope it can only OVER-report
+// "changed" (an inherited-but-not-locally-created member), which is safe — it
+// never suppresses a needed propagation.
 export const addFamilyAtomsToSet = (
     family: Family<any>,
     familyAtoms: Set<AtomFamilyAtom<any>>,
     data: StoreData,
     timestamp: number,
-) => {
-    if (familyAtoms.size === 0) return
+): boolean => {
+    if (familyAtoms.size === 0) return false
     const index = findFamilyIndex(family, data)
     if (!index) throw new Error("index not found")
+    let membershipChanged = false
     for (const atom of familyAtoms) {
+        if (!(index.created.has(atom) && !index.deleted.has(atom)))
+            membershipChanged = true
         index.created.set(atom, timestamp)
         index.deleted.delete(atom)
     }
@@ -201,4 +213,5 @@ export const addFamilyAtomsToSet = (
     index.renderedArray = null
     data.values.set(family, renderAtomFamilyIndex(index))
     recursivelyUpdateIndexes(data, family)
+    return membershipChanged
 }

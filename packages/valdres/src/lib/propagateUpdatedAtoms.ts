@@ -428,6 +428,12 @@ export const propagateAtomUpdate = (
         }
     }
 
+    // Families whose MEMBERSHIP changed this pass (a member added/un-deleted, not
+    // just an existing member's value re-set). Only these need the family OBJECT
+    // propagated into scopes below — a pure value update reaches scope selectors
+    // via the member atom, so propagating the family then would be wasted work
+    // across every scope (the "family update, 100 scopes" hot path).
+    let membershipChanged: Set<AtomFamily<any>> | undefined
     if (updatedFamilyAtoms.size > 0) {
         const timestamp = performance.now()
         for (const [family, familyAtoms] of updatedFamilyAtoms) {
@@ -435,7 +441,10 @@ export const propagateAtomUpdate = (
             addSetToSet(data.subscriptions.get(family), subscriptions)
             if (familyAtoms.size === 0)
                 throw new Error("Should not be possible")
-            addFamilyAtomsToSet(family, familyAtoms, data, timestamp)
+            if (addFamilyAtomsToSet(family, familyAtoms, data, timestamp)) {
+                if (!membershipChanged) membershipChanged = new Set()
+                membershipChanged.add(family)
+            }
         }
     }
 
@@ -510,11 +519,14 @@ export const propagateAtomUpdate = (
         // leaving them stale on a parent member add/update. Mirror the delete path
         // (propagateDeletedAtoms pushes the family onto its scopeAtoms): also
         // propagate each family whose membership changed so scope family-dependent
-        // selectors recompute against the freshly rendered index.
+        // selectors recompute against the freshly rendered index. Gated on
+        // membershipChanged: a pure member value-update keeps the single-atom
+        // scope fast path (the family isn't appended), since scope selectors
+        // reading that member recompute via the member atom already in `atoms`.
         let scopeAtoms: AtomInput[] = atoms
-        if (updatedFamilyAtoms.size > 0) {
+        if (membershipChanged) {
             scopeAtoms = atoms.slice()
-            for (const family of updatedFamilyAtoms.keys()) {
+            for (const family of membershipChanged) {
                 if (!scopeAtoms.includes(family)) scopeAtoms.push(family)
             }
         }
