@@ -73,7 +73,7 @@ const visible = createValue(isVisibleSelector) // visible()
 import { injectValue } from "valdres-angular"
 import { isVisibleSelector } from "@valdres/browser-visibility"
 
-visible = injectValue(isVisibleSelector) // Signal<boolean>
+visible = injectValue(isVisibleSelector) // ValueState<boolean> — read visible.value()
 ```
 
 </FrameworkBlock>

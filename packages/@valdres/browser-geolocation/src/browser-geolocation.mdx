@@ -79,7 +79,7 @@ const coords = createValue(coordsSelector) // coords()
 import { injectValue } from "valdres-angular"
 import { coordsSelector } from "@valdres/browser-geolocation"
 
-coords = injectValue(coordsSelector) // Signal<{ latitude, longitude } | null>
+coords = injectValue(coordsSelector) // ValueState<{ latitude, longitude } | null> — read coords.value()
 ```
 
 </FrameworkBlock>

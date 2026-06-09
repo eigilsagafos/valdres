@@ -72,7 +72,7 @@ const size = createValue(windowSizeAtom) // size().width / size().height
 import { injectValue } from "valdres-angular"
 import { windowSizeAtom } from "@valdres/browser-window"
 
-size = injectValue(windowSizeAtom) // Signal<{ width, height }>
+size = injectValue(windowSizeAtom) // ValueState<WindowSize> — read size.value()
 ```
 
 </FrameworkBlock>

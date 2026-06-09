@@ -86,10 +86,10 @@ import { onlineAtom } from "@valdres/browser-online"
 
 @Component({
     selector: "connection-badge",
-    template: `{{ online() ? "Online" : "Offline" }}`,
+    template: `{{ online.value() ? "Online" : "Offline" }}`,
 })
 export class ConnectionBadge {
-    online = injectValue(onlineAtom) // Signal<boolean>
+    online = injectValue(onlineAtom) // ValueState<boolean> — read online.value()
 }
 ```
 

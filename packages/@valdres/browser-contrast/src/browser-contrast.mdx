@@ -1,0 +1,110 @@
+---
+title: browser-contrast
+description: Reactive prefers-contrast preference from the OS
+---
+
+# browser-contrast
+
+Wraps the `prefers-contrast` media query as a global atom (`"no-preference" | "more" | "less" | "custom"`), plus boolean selectors for the `more`/`less` cases.
+
+## Install
+
+```bash
+bun add @valdres/browser-contrast
+```
+
+## Live example
+
+<PluginDemo plugin="browser-contrast" />
+
+## Usage
+
+<FrameworkBlock fw="react">
+
+```tsx
+import { useValue } from "valdres-react"
+import { contrastAtom, prefersMoreContrastSelector } from "@valdres/browser-contrast"
+
+function ContrastBadge() {
+    const contrast = useValue(contrastAtom)
+    const more = useValue(prefersMoreContrastSelector)
+    return <span data-high-contrast={more}>{contrast}</span>
+}
+```
+
+</FrameworkBlock>
+
+<FrameworkBlock fw="vue">
+
+```vue
+<script setup>
+import { useValue } from "valdres-vue"
+import { contrastAtom } from "@valdres/browser-contrast"
+
+const contrast = useValue(contrastAtom) // Ref<Contrast>
+</script>
+
+<template>{{ contrast }}</template>
+```
+
+</FrameworkBlock>
+
+<FrameworkBlock fw="svelte">
+
+```svelte
+<script>
+import { watch } from "valdres-svelte"
+import { contrastAtom } from "@valdres/browser-contrast"
+
+const contrast = watch(contrastAtom)
+</script>
+
+{contrast.value}
+```
+
+</FrameworkBlock>
+
+<FrameworkBlock fw="solid">
+
+```tsx
+import { createValue } from "valdres-solid"
+import { contrastAtom } from "@valdres/browser-contrast"
+
+function ContrastBadge() {
+    const contrast = createValue(contrastAtom) // () => Contrast
+    return <span>{contrast()}</span>
+}
+```
+
+</FrameworkBlock>
+
+<FrameworkBlock fw="angular">
+
+```ts
+import { Component } from "@angular/core"
+import { injectValue } from "valdres-angular"
+import { contrastAtom } from "@valdres/browser-contrast"
+
+@Component({
+    selector: "contrast-badge",
+    template: `{{ contrast() }}`,
+})
+export class ContrastBadge {
+    contrast = injectValue(contrastAtom) // Signal<Contrast>
+}
+```
+
+</FrameworkBlock>
+
+## Exports
+
+| Export | Kind | Type |
+|--------|------|------|
+| `contrastAtom` | atom (read-only) | `Contrast` |
+| `prefersMoreContrastSelector` | selector | `boolean` |
+| `prefersLessContrastSelector` | selector | `boolean` |
+| `Contrast` | type | `"no-preference" \| "more" \| "less" \| "custom"` |
+
+## Cross-framework
+
+`contrastAtom` is global: identical in every framework, only the read primitive's name changes (`useValue`, `createValue`, `injectValue`, `watch`, or `store.get` / `store.sub` in plain JS). The browser subscription starts on the first subscriber across all stores and stops when the last leaves.

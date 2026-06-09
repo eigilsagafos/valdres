@@ -75,7 +75,7 @@ const codes = createValue(pressedCodesSelector) // codes()
 import { injectValue } from "valdres-angular"
 import { pressedCodesSelector } from "@valdres/browser-keyboard"
 
-codes = injectValue(pressedCodesSelector) // Signal<KeyboardCode[]>
+codes = injectValue(pressedCodesSelector) // ValueState<KeyboardCode[]> — read codes.value()
 ```
 
 </FrameworkBlock>

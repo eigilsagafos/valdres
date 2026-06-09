@@ -1,0 +1,108 @@
+---
+title: browser-reduced-data
+description: Reactive prefers-reduced-data media query
+---
+
+# browser-reduced-data
+
+Wraps the `(prefers-reduced-data: reduce)` media query as a global atom, with a boolean selector.
+
+## Install
+
+```bash
+bun add @valdres/browser-reduced-data
+```
+
+## Live example
+
+<PluginDemo plugin="browser-reduced-data" />
+
+## Usage
+
+<FrameworkBlock fw="react">
+
+```tsx
+import { useValue } from "valdres-react"
+import { prefersReducedDataSelector } from "@valdres/browser-reduced-data"
+
+function Hero() {
+    const reduced = useValue(prefersReducedDataSelector)
+    return reduced ? <Poster /> : <Video />
+}
+```
+
+</FrameworkBlock>
+
+<FrameworkBlock fw="vue">
+
+```vue
+<script setup>
+import { useValue } from "valdres-vue"
+import { prefersReducedDataSelector } from "@valdres/browser-reduced-data"
+
+const reduced = useValue(prefersReducedDataSelector) // Ref<boolean>
+</script>
+
+<template>{{ reduced ? "Reduced" : "Full" }}</template>
+```
+
+</FrameworkBlock>
+
+<FrameworkBlock fw="svelte">
+
+```svelte
+<script>
+import { watch } from "valdres-svelte"
+import { prefersReducedDataSelector } from "@valdres/browser-reduced-data"
+
+const reduced = watch(prefersReducedDataSelector)
+</script>
+
+{reduced.value ? "Reduced" : "Full"}
+```
+
+</FrameworkBlock>
+
+<FrameworkBlock fw="solid">
+
+```tsx
+import { createValue } from "valdres-solid"
+import { prefersReducedDataSelector } from "@valdres/browser-reduced-data"
+
+function Hero() {
+    const reduced = createValue(prefersReducedDataSelector) // () => boolean
+    return reduced() ? <Poster /> : <Video />
+}
+```
+
+</FrameworkBlock>
+
+<FrameworkBlock fw="angular">
+
+```ts
+import { Component } from "@angular/core"
+import { injectValue } from "valdres-angular"
+import { prefersReducedDataSelector } from "@valdres/browser-reduced-data"
+
+@Component({
+    selector: "app-hero",
+    template: `{{ reduced() ? "Reduced" : "Full" }}`,
+})
+export class Hero {
+    reduced = injectValue(prefersReducedDataSelector) // Signal<boolean>
+}
+```
+
+</FrameworkBlock>
+
+## Exports
+
+| Export | Kind | Type |
+|--------|------|------|
+| `reducedDataAtom` | atom (read-only) | `ReducedData` (`"no-preference" \| "reduce"`) |
+| `prefersReducedDataSelector` | selector | `boolean` |
+| `ReducedData` | type | `"no-preference" \| "reduce"` |
+
+## Cross-framework
+
+`reducedDataAtom` is a global atom; only the read primitive changes per framework (`useValue`, `createValue`, `injectValue`, `watch`, or `store.get` / `store.sub`). The browser subscription starts on the first subscriber and stops when the last leaves.

@@ -1,0 +1,106 @@
+---
+title: browser-presence
+description: Whether the user is present — tab visible and window focused
+---
+
+# browser-presence
+
+Read-only boolean for "is the user actually here": `true` when the tab is visible **and** the window is focused. Composes [`browser-visibility`](/plugins/browser-visibility) and [`browser-focus`](/plugins/browser-focus).
+
+## Install
+
+```bash
+bun add @valdres/browser-presence
+```
+
+## Live example
+
+<PluginDemo plugin="browser-presence" />
+
+## Usage
+
+<FrameworkBlock fw="react">
+
+```tsx
+import { useValue } from "valdres-react"
+import { presenceSelector } from "@valdres/browser-presence"
+
+function PresenceDot() {
+    const present = useValue(presenceSelector)
+    return <span>{present ? "Active" : "Away"}</span>
+}
+```
+
+</FrameworkBlock>
+
+<FrameworkBlock fw="vue">
+
+```vue
+<script setup>
+import { useValue } from "valdres-vue"
+import { presenceSelector } from "@valdres/browser-presence"
+
+const present = useValue(presenceSelector) // Ref<boolean>
+</script>
+
+<template>{{ present ? "Active" : "Away" }}</template>
+```
+
+</FrameworkBlock>
+
+<FrameworkBlock fw="svelte">
+
+```svelte
+<script>
+import { watch } from "valdres-svelte"
+import { presenceSelector } from "@valdres/browser-presence"
+
+const present = watch(presenceSelector)
+</script>
+
+{present.value ? "Active" : "Away"}
+```
+
+</FrameworkBlock>
+
+<FrameworkBlock fw="solid">
+
+```tsx
+import { createValue } from "valdres-solid"
+import { presenceSelector } from "@valdres/browser-presence"
+
+function PresenceDot() {
+    const present = createValue(presenceSelector) // () => boolean
+    return <span>{present() ? "Active" : "Away"}</span>
+}
+```
+
+</FrameworkBlock>
+
+<FrameworkBlock fw="angular">
+
+```ts
+import { Component } from "@angular/core"
+import { injectValue } from "valdres-angular"
+import { presenceSelector } from "@valdres/browser-presence"
+
+@Component({
+    selector: "presence-dot",
+    template: `{{ present() ? "Active" : "Away" }}`,
+})
+export class PresenceDot {
+    present = injectValue(presenceSelector) // Signal<boolean>
+}
+```
+
+</FrameworkBlock>
+
+## Exports
+
+| Export | Kind | Type |
+|--------|------|------|
+| `presenceSelector` | selector (read-only) | `boolean` |
+
+## Cross-framework
+
+`presenceSelector` is a global selector — read it with `store.get` / `store.sub` in plain JS. It recomputes whenever the visibility or focus subscription fires.

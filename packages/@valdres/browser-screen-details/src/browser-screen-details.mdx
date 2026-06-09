@@ -1,0 +1,130 @@
+---
+title: browser-screen-details
+description: Reactive multi-screen layout from the Window Management API
+---
+
+# browser-screen-details
+
+Wraps the [Window Management API](https://developer.mozilla.org/en-US/docs/Web/API/Window_Management_API) (`window.getScreenDetails()`) as global atoms exposing the current screen, all connected screens, and the permission state.
+
+<div className="callout callout-note">
+  <div className="callout-title">Permission required</div>
+  Screen details are empty until you call `requestScreenDetails()`, which prompts for the `window-management` permission. Requires a secure context.
+</div>
+
+## Install
+
+```bash
+bun add @valdres/browser-screen-details
+```
+
+## Live example
+
+<PluginDemo plugin="browser-screen-details" />
+
+## Usage
+
+<FrameworkBlock fw="react">
+
+```tsx
+import { useValue } from "valdres-react"
+import {
+    currentScreenAtom,
+    screensAtom,
+    screenPermissionAtom,
+    requestScreenDetails,
+} from "@valdres/browser-screen-details"
+
+function Screens() {
+    const permission = useValue(screenPermissionAtom)
+    const current = useValue(currentScreenAtom)
+    const screens = useValue(screensAtom)
+
+    if (permission !== "granted")
+        return <button onClick={() => requestScreenDetails()}>Allow screens</button>
+    return (
+        <div>
+            {current?.label}: {current?.width} × {current?.height} ({screens.length} screens)
+        </div>
+    )
+}
+```
+
+</FrameworkBlock>
+
+<FrameworkBlock fw="vue">
+
+```vue
+<script setup>
+import { useValue } from "valdres-vue"
+import { currentScreenAtom } from "@valdres/browser-screen-details"
+
+const current = useValue(currentScreenAtom) // Ref<ScreenDetail | null>
+</script>
+
+<template>{{ current?.label }}: {{ current?.width }} × {{ current?.height }}</template>
+```
+
+</FrameworkBlock>
+
+<FrameworkBlock fw="svelte">
+
+```svelte
+<script>
+import { watch } from "valdres-svelte"
+import { currentScreenAtom } from "@valdres/browser-screen-details"
+
+const current = watch(currentScreenAtom)
+</script>
+
+{current.value?.label}: {current.value?.width} × {current.value?.height}
+```
+
+</FrameworkBlock>
+
+<FrameworkBlock fw="solid">
+
+```tsx
+import { createValue } from "valdres-solid"
+import { currentScreenAtom } from "@valdres/browser-screen-details"
+
+function Screen() {
+    const current = createValue(currentScreenAtom) // () => ScreenDetail | null
+    return <span>{current()?.label}: {current()?.width} × {current()?.height}</span>
+}
+```
+
+</FrameworkBlock>
+
+<FrameworkBlock fw="angular">
+
+```ts
+import { Component } from "@angular/core"
+import { injectValue } from "valdres-angular"
+import { currentScreenAtom } from "@valdres/browser-screen-details"
+
+@Component({
+    selector: "current-screen",
+    template: `{{ current()?.label }}: {{ current()?.width }} × {{ current()?.height }}`,
+})
+export class CurrentScreen {
+    current = injectValue(currentScreenAtom) // Signal<ScreenDetail | null>
+}
+```
+
+</FrameworkBlock>
+
+## Exports
+
+| Export | Kind | Type |
+|--------|------|------|
+| `currentScreenAtom` | atom (read-only) | `ScreenDetail \| null` |
+| `screensAtom` | atom (read-only) | `ScreenDetail[]` |
+| `screenPermissionAtom` | atom (read-only) | `ScreenPermissionState` |
+| `requestScreenDetails` | util fn | `() => Promise<ScreenDetail[] \| null>` |
+| `ScreenDetail` | type | `{ label, left, top, width, height, availLeft, availTop, availWidth, availHeight, colorDepth, pixelDepth, devicePixelRatio, orientationType, orientationAngle, isPrimary, isInternal }` |
+| `ScreenPermissionState` | type | `"prompt" \| "granted" \| "denied" \| "unsupported"` |
+
+## Cross-framework
+
+All state is global atoms, so it works in every framework — only the read primitive differs. The atoms stay empty until `requestScreenDetails()` resolves; call it once from anywhere.

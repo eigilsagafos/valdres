@@ -1,0 +1,130 @@
+---
+title: browser-device-orientation
+description: Reactive device tilt and compass heading from DeviceOrientationEvent
+---
+
+# browser-device-orientation
+
+Wraps `DeviceOrientationEvent` as global atoms, exposing the raw tilt snapshot plus `alpha` / `beta` / `gamma` and a compass-heading selector.
+
+<div className="callout callout-note">
+  <div className="callout-title">Permission</div>
+  iOS requires a user gesture: call `requestOrientationPermission()` from a click handler before subscribing. Other browsers grant on subscribe.
+</div>
+
+## Install
+
+```bash
+bun add @valdres/browser-device-orientation
+```
+
+## Live example
+
+<PluginDemo plugin="browser-device-orientation" />
+
+## Usage
+
+<FrameworkBlock fw="react">
+
+```tsx
+import { useValue } from "valdres-react"
+import {
+    compassHeadingSelector,
+    requestOrientationPermission,
+} from "@valdres/browser-device-orientation"
+
+function Compass() {
+    const heading = useValue(compassHeadingSelector)
+    return (
+        <>
+            <button onClick={() => requestOrientationPermission()}>Enable</button>
+            <span>{heading == null ? "—" : `${Math.round(heading)}°`}</span>
+        </>
+    )
+}
+```
+
+</FrameworkBlock>
+
+<FrameworkBlock fw="vue">
+
+```vue
+<script setup>
+import { useValue } from "valdres-vue"
+import { compassHeadingSelector } from "@valdres/browser-device-orientation"
+
+const heading = useValue(compassHeadingSelector) // Ref<number | null>
+</script>
+
+<template>{{ heading == null ? "—" : Math.round(heading) + "°" }}</template>
+```
+
+</FrameworkBlock>
+
+<FrameworkBlock fw="svelte">
+
+```svelte
+<script>
+import { watch } from "valdres-svelte"
+import { compassHeadingSelector } from "@valdres/browser-device-orientation"
+
+const heading = watch(compassHeadingSelector)
+</script>
+
+{heading.value == null ? "—" : Math.round(heading.value) + "°"}
+```
+
+</FrameworkBlock>
+
+<FrameworkBlock fw="solid">
+
+```tsx
+import { createValue } from "valdres-solid"
+import { compassHeadingSelector } from "@valdres/browser-device-orientation"
+
+function Compass() {
+    const heading = createValue(compassHeadingSelector) // () => number | null
+    return <span>{heading() == null ? "—" : `${Math.round(heading()!)}°`}</span>
+}
+```
+
+</FrameworkBlock>
+
+<FrameworkBlock fw="angular">
+
+```ts
+import { Component } from "@angular/core"
+import { injectValue } from "valdres-angular"
+import { compassHeadingSelector } from "@valdres/browser-device-orientation"
+
+@Component({
+    selector: "compass-view",
+    template: `{{ heading() == null ? "—" : (heading() | number: "1.0-0") + "°" }}`,
+})
+export class CompassView {
+    heading = injectValue(compassHeadingSelector) // Signal<number | null>
+}
+```
+
+</FrameworkBlock>
+
+## Exports
+
+| Export | Kind | Type |
+|--------|------|------|
+| `orientationAtom` | atom (read-only) | `OrientationSnapshot \| null` |
+| `permissionAtom` | atom (settable) | `PermissionValue` |
+| `orientationStatusAtom` | atom (read-only) | `OrientationStatus` |
+| `alphaSelector` | selector | `number \| null` |
+| `betaSelector` | selector | `number \| null` |
+| `gammaSelector` | selector | `number \| null` |
+| `absoluteSelector` | selector | `boolean \| null` |
+| `compassHeadingSelector` | selector | `number \| null` |
+| `requestOrientationPermission` | util fn | `() => Promise<PermissionValue>` |
+| `OrientationSnapshot` | type | `{ alpha, beta, gamma: number \| null; absolute: boolean; webkitCompassHeading, webkitCompassAccuracy: number \| null; timeStamp: number }` |
+| `OrientationStatus` | type | `"unsupported" \| "idle" \| "active"` |
+| `PermissionValue` | type | `"granted" \| "denied" \| "prompt" \| "unsupported"` |
+
+## Cross-framework
+
+Global atoms/selectors — works in every framework, only the read primitive differs. The `deviceorientation` listener starts on the first subscriber and stops on the last.

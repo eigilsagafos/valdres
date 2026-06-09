@@ -73,7 +73,7 @@ const scheme = createValue(colorSchemeAtom) // scheme()
 import { injectValue } from "valdres-angular"
 import { colorSchemeAtom } from "@valdres/browser-color-scheme"
 
-scheme = injectValue(colorSchemeAtom) // Signal<"dark" | "light">
+scheme = injectValue(colorSchemeAtom) // ValueState<"dark" | "light"> — read scheme.value()
 ```
 
 </FrameworkBlock>

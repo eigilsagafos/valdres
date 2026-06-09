@@ -1,0 +1,122 @@
+---
+title: color-mode
+description: System + user-selected color mode as reactive global atoms
+---
+
+# color-mode
+
+Resolves the active color mode from the OS preference (`prefers-color-scheme`) and a user override. `userSelectedColorModeAtom` is settable (`"light" | "dark" | "system"`); `colorModeSelector` returns the resolved `"light" | "dark"`.
+
+## Install
+
+```bash
+bun add @valdres/color-mode
+```
+
+## Live example
+
+<PluginDemo plugin="color-mode" />
+
+## Usage
+
+<FrameworkBlock fw="react">
+
+```tsx
+import { useValue, useSetAtom } from "valdres-react"
+import { colorModeSelector, userSelectedColorModeAtom } from "@valdres/color-mode"
+
+function ThemeToggle() {
+    const mode = useValue(colorModeSelector) // "light" | "dark"
+    const setMode = useSetAtom(userSelectedColorModeAtom)
+    return (
+        <select value={mode} onChange={e => setMode(e.target.value as any)}>
+            <option value="system">System</option>
+            <option value="light">Light</option>
+            <option value="dark">Dark</option>
+        </select>
+    )
+}
+```
+
+Or use the convenience hooks from [`@valdres-react/color-mode`](https://www.npmjs.com/package/@valdres-react/color-mode): `useColorMode()`, `useIsDarkMode()`, `useIsLightMode()`.
+
+</FrameworkBlock>
+
+<FrameworkBlock fw="vue">
+
+```vue
+<script setup>
+import { useValue } from "valdres-vue"
+import { colorModeSelector } from "@valdres/color-mode"
+
+const mode = useValue(colorModeSelector) // Ref<"light" | "dark">
+</script>
+
+<template>{{ mode }}</template>
+```
+
+</FrameworkBlock>
+
+<FrameworkBlock fw="svelte">
+
+```svelte
+<script>
+import { watch } from "valdres-svelte"
+import { colorModeSelector } from "@valdres/color-mode"
+
+const mode = watch(colorModeSelector)
+</script>
+
+{mode.value}
+```
+
+</FrameworkBlock>
+
+<FrameworkBlock fw="solid">
+
+```tsx
+import { createValue } from "valdres-solid"
+import { colorModeSelector } from "@valdres/color-mode"
+
+function Theme() {
+    const mode = createValue(colorModeSelector) // () => "light" | "dark"
+    return <span>{mode()}</span>
+}
+```
+
+</FrameworkBlock>
+
+<FrameworkBlock fw="angular">
+
+```ts
+import { Component } from "@angular/core"
+import { injectValue } from "valdres-angular"
+import { colorModeSelector } from "@valdres/color-mode"
+
+@Component({
+    selector: "theme-label",
+    template: `{{ mode() }}`,
+})
+export class ThemeLabel {
+    mode = injectValue(colorModeSelector) // Signal<"light" | "dark">
+}
+```
+
+</FrameworkBlock>
+
+## Exports
+
+| Export | Kind | Type |
+|--------|------|------|
+| `colorModeSelector` | selector | `"light" \| "dark"` |
+| `isDarkModeSelector` | selector | `boolean` |
+| `isLightModeSelector` | selector | `boolean` |
+| `systemColorModeAtom` | atom (read-only) | `"light" \| "dark"` |
+| `userSelectedColorModeAtom` | atom (settable) | `"light" \| "dark" \| "system"` |
+| `getSystemColorMode` | util fn | `() => "light" \| "dark"` |
+| `ColorMode` | type | `"light" \| "dark"` |
+| `UserSelectedColorMode` | type | `"light" \| "dark" \| "system"` |
+
+## Cross-framework
+
+Global atoms and selectors — only the read primitive's name changes per framework. The `prefers-color-scheme` listener starts on the first subscriber and stops when the last one leaves.
