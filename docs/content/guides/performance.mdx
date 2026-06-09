@@ -5,55 +5,12 @@ description: Detailed benchmark results comparing Valdres to Jotai
 
 # Performance
 
-All benchmarks compare Valdres against [Jotai](https://github.com/pmndrs/jotai) v2.19.0 on the same CI runner using two JavaScript engines: Bun (JavaScriptCore / Safari) and Node.js (V8 / Chrome).
-
 <div className="callout callout-tip">
   <div className="callout-title">Continuously verified</div>
   These benchmarks run on every commit. If a regression is detected, the PR is blocked until performance is restored.
 </div>
 
-## Atoms
-
-| Benchmark | Safari (JSC) | Chrome (V8) |
-|:----------|------------:|------------:|
-| atom(1) | 17.3x faster | 2.5x faster |
-| store.get(atom) | 13.2x faster | 14.4x faster |
-| set(atom, value) | 13.7x faster | 5.3x faster |
-| set(atom, curr => curr+1) | 13.9x faster | 5.8x faster |
-| set(atom) with 10 subs | 18.8x faster | 6.6x faster |
-| atom lifecycle (create+100get+100set) | 18.0x faster | 5.2x faster |
-| set 1000 atoms | 16.0x faster | 5.2x faster |
-| get 1000 atoms | 129.2x faster | 13.7x faster |
-
-## Selectors
-
-| Benchmark | Safari (JSC) | Chrome (V8) |
-|:----------|------------:|------------:|
-| selector(fn) | 9.7x faster | 1.5x faster |
-| set + read 10 selectors | 3.1x faster | 2.4x faster |
-| set + read 100 selectors | 4.1x faster | 1.9x faster |
-| set + read through 5 chained selectors | 2.3x faster | 2.2x faster |
-
-## Transactions
-
-| Benchmark | Safari (JSC) | Chrome (V8) |
-|:----------|------------:|------------:|
-| txn: 10 atoms × 10 selectors, set + read | 3.8x faster | 2.1x faster |
-| txn: 10 atoms × 10 selectors, with subs | 4.3x faster | 3.4x faster |
-| txn: 10 atoms × 100 selectors, set + read | 4.2x faster | 2.0x faster |
-| txn: cross-atom 1000 selectors, set + read | 5.2x faster | 2.0x faster |
-| txn: cross-atom 1000 selectors, with subs | 16.5x faster | 12.4x faster |
-
-## Families
-
-| Benchmark | Safari (JSC) | Chrome (V8) |
-|:----------|------------:|------------:|
-| atomFamily(id) cache hit | 3.8x slower | 2.1x slower |
-
-<div className="callout callout-warning">
-  <div className="callout-title">Known limitation</div>
-  atomFamily cache lookups are slower than Jotai. This is a known optimization target — tracked for improvement in a future release.
-</div>
+<BenchmarkTables />
 
 ## Why Valdres is faster
 
@@ -77,4 +34,4 @@ bun run --cwd packages/valdres test:bench:node
 
 ## Historical trends
 
-Performance is tracked over time. View the full history at [eigilsagafos.github.io/valdres/dev/bench](https://eigilsagafos.github.io/valdres/dev/bench/).
+Performance is tracked over time on every push to `main`. View the live, always-current numbers and history at [bencher.dev/perf/valdres](https://bencher.dev/perf/valdres).

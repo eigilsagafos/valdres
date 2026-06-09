@@ -8,8 +8,15 @@ import { BrandTestPage2 } from "./layout/BrandTestPage2"
 import { renderThemeTestPage } from "./layout/ThemeTestPage"
 import { getNav, getNavAllFrameworks } from "../content/nav"
 import { getFrameworkMap, getEquivalentRoute } from "./framework-map"
+import {
+    BenchmarkTables,
+    categorySlug,
+    type BenchSummary,
+} from "./components/BenchmarkTables"
 import type { CompiledDoc } from "./compile-mdx"
 import type { Framework } from "./frameworks"
+
+const PERFORMANCE_ROUTE = "/guides/performance"
 
 const coreApiNames = ["atom", "selector", "atomFamily", "selectorFamily", "store"]
 
@@ -39,6 +46,33 @@ function rewriteLink(href: string, framework: Framework): { href: string; apiNam
 }
 
 export async function renderPages(docs: CompiledDoc[], distDir: string) {
+
+    // Benchmark summary (generated from Bencher by scripts/gen-bench-summary.ts).
+    // Read once: drives both the landing-page stats and the performance tables.
+    let benchSummary: BenchSummary & {
+        jscAverage: number | null
+        v8Average: number | null
+        benchmarkCount: number
+    } = {
+        jscAverage: null,
+        v8Average: null,
+        jotaiVersion: "2.19.0",
+        date: "",
+        benchmarkCount: 28,
+        categories: [],
+    }
+    try {
+        const benchFile = await Bun.file(`${distDir}/../content/bench-summary.json`).text()
+        benchSummary = { ...benchSummary, ...JSON.parse(benchFile) }
+    } catch {}
+
+    // Category headings for the performance page's table of contents — the
+    // tables are rendered dynamically, so their <h2>s aren't in the MDX source.
+    const benchHeadings = benchSummary.categories.map(c => ({
+        id: categorySlug(c.name),
+        text: c.name,
+        level: 2 as const,
+    }))
 
     // Collect all routes that actually exist so framework maps only reference real pages
     const allRoutes = new Set(docs.map(d => d.route))
@@ -86,6 +120,8 @@ export async function renderPages(docs: CompiledDoc[], distDir: string) {
             </div>
         )
 
+        const BenchmarkTablesBound = () => <BenchmarkTables summary={benchSummary} />
+
         const mdxComponents = framework
             ? {
                   a: (props: any) => {
@@ -95,8 +131,14 @@ export async function renderPages(docs: CompiledDoc[], distDir: string) {
                       return <a {...props} href={result.href}>{children}</a>
                   },
                   Playground,
+                  BenchmarkTables: BenchmarkTablesBound,
               }
-            : { Playground }
+            : { Playground, BenchmarkTables: BenchmarkTablesBound }
+
+        const headings =
+            doc.route === PERFORMANCE_ROUTE
+                ? [...benchHeadings, ...doc.headings]
+                : doc.headings
 
         const html = renderToString(
             <RootLayout
@@ -104,7 +146,7 @@ export async function renderPages(docs: CompiledDoc[], distDir: string) {
                 description={doc.frontmatter.description}
                 currentRoute={doc.route}
                 nav={nav}
-                headings={doc.headings}
+                headings={headings}
                 framework={framework}
                 frameworkMap={frameworkMap}
             >
@@ -117,14 +159,17 @@ export async function renderPages(docs: CompiledDoc[], distDir: string) {
         await Bun.write(outPath, fullHtml)
     }))
 
-    // Landing page — read benchmark summary for dynamic stats
-    let benchData = { jscAverage: null as number | null, v8Average: null as number | null, jotaiVersion: "2.19.0", benchmarkCount: 28 }
-    try {
-        const benchFile = await Bun.file(`${distDir}/../content/bench-summary.json`).text()
-        const parsed = JSON.parse(benchFile)
-        benchData = { jscAverage: parsed.jscAverage, v8Average: parsed.v8Average, jotaiVersion: parsed.jotaiVersion, benchmarkCount: parsed.benchmarkCount }
-    } catch {}
-    const landingHtml = renderToString(<LandingPage bench={benchData} />)
+    // Landing page — reuse the benchmark summary read above for dynamic stats
+    const landingHtml = renderToString(
+        <LandingPage
+            bench={{
+                jscAverage: benchSummary.jscAverage,
+                v8Average: benchSummary.v8Average,
+                jotaiVersion: benchSummary.jotaiVersion,
+                benchmarkCount: benchSummary.benchmarkCount,
+            }}
+        />,
+    )
     await Bun.write(
         `${distDir}/index.html`,
         `<!DOCTYPE html>\n${landingHtml}`,
