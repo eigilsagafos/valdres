@@ -19,5 +19,11 @@
   stats are now maintained by a single descriptor in one write pass over one
   per-atom record (previously two descriptors). ~20% faster insertion, same
   behavior (verified by a differential fuzzer against a brute-force oracle).
+- **WAND top-K retrieval (internal)** — ranked queries with a `limit` skip
+  scoring documents that can't enter the top-K (per-term max-impact pruning).
+  ~2.8× faster on a high-frequency query over 8k docs; identical results
+  (verified WAND-vs-naive by the differential fuzzer). Applies to ranked,
+  limited, `exact`/`prefix`, non-phrase queries at the root store; everything
+  else uses the full ranking unchanged.
 
 New public types `SearchPage` and `SearchStats`.

@@ -2,11 +2,15 @@
 
 Status after round 2. **Shipped** (this branch): IDF/avgdl hoist, `suggest()`,
 `highlight()`, pagination, `stats`, the tested **WAND top-K core**
-(`lib/wandTopK.ts`), and — now — **#6 descriptor unification**
+(`lib/wandTopK.ts`), **#6 descriptor unification**
 (`lib/createSearchDescriptor.ts`, wired into `atomFamilySearch`, ~20% faster
-insertion, verified equivalent by the differential fuzzer; legacy two-
-descriptor backend deleted). **Specced here** (still deferred): #9 WAND wiring,
-#10 columnar postings, #11 finer-grained invalidation. Plus foundation notes
+insertion, verified equivalent; legacy two-descriptor backend deleted), and —
+now — **#9 WAND wiring + #10 on-demand columnar postings** (ranked+limit
+queries use `wandTopK` over per-query sorted `Int32Array` postings built via
+`ordinalOf`; ~2.8× faster top-K on a high-df query, byte-identical to naive
+per the WAND-vs-naive parity fuzzer). **Specced here** (still deferred): #11
+finer-grained invalidation; the optional persistent Set→Int32Array storage
+swap (memory only). Plus foundation notes
 for the later items (#7 bulk-load, #8 serialize, #12 filter/facet, #13
 query-time weights).
 

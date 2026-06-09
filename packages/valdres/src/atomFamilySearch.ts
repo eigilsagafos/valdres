@@ -7,6 +7,7 @@ import {
 } from "./lib/bm25"
 import { createLRU } from "./lib/createLRU"
 import { createSearchDescriptor } from "./lib/createSearchDescriptor"
+import { wandTopK, type WandTerm } from "./lib/wandTopK"
 import { levenshtein } from "./lib/levenshtein"
 import { trigramsOf } from "./lib/trigramsOf"
 import { selector } from "./selector"
@@ -988,6 +989,216 @@ export function atomFamilySearch<
         )
     }
 
+    // ── WAND top-K path (#9) ─────────────────────────────────────────────
+    // For ranked, `limit`-bounded queries, skip scoring documents that can't
+    // enter the top-K (per-term max-impact pivoting). Eligible only where it
+    // can reproduce the naive ranking exactly: ranked match, no minMatch,
+    // finite limit, exact/prefix mode, root store (runtime), no phrases. Any
+    // ineligible case falls back to the naive full ranking, sliced. Verified
+    // identical to naive by the differential fuzzer (force `__wand: false`).
+    const wandEnabled =
+        (options as { __wand?: boolean } | undefined)?.__wand !== false
+    const wandEligibleStatic =
+        wandEnabled &&
+        matchStrategy === "ranked" &&
+        minMatchFraction === 0 &&
+        Number.isFinite(resultLimit) &&
+        (mode === "exact" || mode === "prefix")
+    const kBd = bm25Params.k1 + 1 + bm25Params.d
+
+    const computeTopK = (query: string) => {
+        const queryTokens = normalize(query)
+        const distinctQueryTerms = new Set(queryTokens).size
+        let hasPhrase = false
+        if (positionsEnabled) {
+            const re = /"([^"]+)"/g
+            let m: RegExpExecArray | null
+            while ((m = re.exec(query)) !== null) {
+                if (normalize(m[1]).length >= 2) {
+                    hasPhrase = true
+                    break
+                }
+            }
+        }
+        const queryName = options?.name
+            ? `${options.name}:topk:${query}`
+            : undefined
+        return selector<ScoredResult<Value, Args>[]>(
+            get => {
+                if (queryTokens.length === 0) return []
+                const typedGet = get as <V>(s: Atom<V>) => V
+                const storage = typedGet(sd.statsAtom)
+                // Runtime-ineligible (scoped store / phrase) → naive, sliced.
+                if (hasPhrase || storage.parent !== undefined) {
+                    const full = typedGet(
+                        getFullScored(query) as unknown as Atom<
+                            ScoredResult<Value, Args>[]
+                        >,
+                    )
+                    return Number.isFinite(resultLimit) &&
+                        full.length > resultLimit
+                        ? full.slice(0, resultLimit)
+                        : full
+                }
+                const N = Math.max(family.__valdresAtomFamilyMap.size, 1)
+                const avgdlCache = new Map<string, number>()
+                const avgdlFor = (field: string): number => {
+                    const c = avgdlCache.get(field)
+                    if (c !== undefined) return c
+                    const tot = sd.getFieldTotal(storage, field)
+                    const a =
+                        tot.docCount > 0 ? tot.totalLength / tot.docCount : -1
+                    avgdlCache.set(field, a)
+                    return a
+                }
+                let sumFieldBoost = 0
+                for (const f of sd.collectFieldNames(storage))
+                    sumFieldBoost += fieldBoost(f)
+                if (sumFieldBoost === 0) sumFieldBoost = 1
+
+                // Expand each query token → its indexed terms (+ bucket, idf,
+                // penalty), exactly as the naive path does.
+                type Exp = {
+                    term: string
+                    penalty: number
+                    idf: number
+                    bucket: Set<AtomFamilyAtom<Value, Args>>
+                }
+                const perToken: Exp[][] = []
+                for (const qt of queryTokens) {
+                    const exps: Exp[] = []
+                    for (const { term, penalty } of expandSingleToken(qt)) {
+                        const bucket = getTokenSet(term, typedGet)
+                        if (bucket.size === 0) continue
+                        exps.push({
+                            term,
+                            penalty,
+                            idf: bm25Idf(bucket.size, N),
+                            bucket,
+                        })
+                    }
+                    perToken.push(exps)
+                }
+
+                // Per-atom score — MUST mirror computeScored's accumulation so
+                // WAND's output is identical to the naive ranking.
+                const scoreAtom = (
+                    atom: AtomFamilyAtom<Value, Args>,
+                ): { score: number; matched: string[] } => {
+                    const fields = sd.getFieldStats(
+                        storage,
+                        atom as unknown as AtomFamilyAtom<any>,
+                    )
+                    if (!fields) return { score: 0, matched: [] }
+                    let score = 0
+                    const matched: string[] = []
+                    for (let t = 0; t < queryTokens.length; t++) {
+                        let hit = false
+                        for (const { term, penalty, idf } of perToken[t]) {
+                            let termScore = 0
+                            for (const [field, fs] of fields) {
+                                const tf = fs.termCounts.get(term) ?? 0
+                                if (tf === 0) continue
+                                const avgdl = avgdlFor(field)
+                                if (avgdl < 0) continue
+                                termScore +=
+                                    penalty *
+                                    fieldBoost(field) *
+                                    bm25ScoreWithIdf(
+                                        idf,
+                                        tf,
+                                        fs.length,
+                                        avgdl,
+                                        bm25Params,
+                                    )
+                            }
+                            if (termScore > 0) {
+                                score += termScore
+                                hit = true
+                            }
+                        }
+                        if (hit) matched.push(queryTokens[t])
+                    }
+                    if (score > 0 && coordination > 0 && distinctQueryTerms > 0) {
+                        const coverage =
+                            new Set(matched).size / distinctQueryTerms
+                        score *= 1 - coordination + coordination * coverage
+                    }
+                    return { score, matched }
+                }
+
+                // Build cursors (one per (token, term)) + ordinal→atom map.
+                const localMap = new Map<number, AtomFamilyAtom<Value, Args>>()
+                const cursors: WandTerm[] = []
+                for (const exps of perToken) {
+                    for (const { penalty, idf, bucket } of exps) {
+                        const ords = new Int32Array(bucket.size)
+                        let i = 0
+                        for (const a of bucket) {
+                            const o = sd.ordinalOf(
+                                a as unknown as AtomFamilyAtom<any>,
+                            )
+                            ords[i++] = o
+                            if (!localMap.has(o)) localMap.set(o, a)
+                        }
+                        ords.sort()
+                        cursors.push({
+                            postings: ords,
+                            maxImpact: penalty * sumFieldBoost * idf * kBd,
+                        })
+                    }
+                }
+                if (cursors.length === 0) return []
+                const cache = new Map<
+                    number,
+                    { score: number; matched: string[] }
+                >()
+                const evalOrd = (o: number) => {
+                    let r = cache.get(o)
+                    if (!r) {
+                        r = scoreAtom(
+                            localMap.get(o) as AtomFamilyAtom<Value, Args>,
+                        )
+                        cache.set(o, r)
+                    }
+                    return r
+                }
+                const hits = wandTopK(
+                    cursors,
+                    resultLimit,
+                    o => {
+                        const s = evalOrd(o).score
+                        return s > 0 ? s : null
+                    },
+                    (a, b) => {
+                        const sa = String(
+                            (localMap.get(a) as AtomFamilyAtom<Value, Args>)
+                                .familyArgsStringified,
+                        )
+                        const sb = String(
+                            (localMap.get(b) as AtomFamilyAtom<Value, Args>)
+                                .familyArgsStringified,
+                        )
+                        return sa < sb ? -1 : sa > sb ? 1 : 0
+                    },
+                )
+                const out = new Array<ScoredResult<Value, Args>>(hits.length)
+                for (let i = 0; i < hits.length; i++) {
+                    const atom = localMap.get(
+                        hits[i].ordinal,
+                    ) as AtomFamilyAtom<Value, Args>
+                    out[i] = {
+                        atom,
+                        score: hits[i].score,
+                        matched: [...new Set(evalOrd(hits[i].ordinal).matched)],
+                    }
+                }
+                return out
+            },
+            queryName ? { name: queryName } : undefined,
+        )
+    }
+
     const getFullScored = (query: string) => {
         const cached = fullScoredCache.get(query)
         if (cached) return cached
@@ -1031,32 +1242,32 @@ export function atomFamilySearch<
     const getScored = (query: string, page?: SearchPage) => {
         const key = pageKey(query, page)
         const cached = scoredCache.get(key)
-        if (cached) {
-            // Keep the full ranking warm while any window of it is read, so it
-            // isn't evicted out from under a still-live page view (which would
-            // force a re-score on the next cache miss).
-            getFullScored(query)
-            return cached
-        }
-        const full = getFullScored(query)
+        if (cached) return cached
         const { offset, limit } = resolvePage(page)
-        // No window → the full ranking IS the view (avoid a wrapper selector).
-        const sel: Selector<ScoredResult<Value, Args>[]> =
-            offset === 0 && !Number.isFinite(limit)
-                ? full
-                : selector<ScoredResult<Value, Args>[]>(
-                      get => {
-                          const all = get(full)
-                          const end = Number.isFinite(limit)
-                              ? offset + limit
-                              : all.length
-                          if (offset === 0 && end >= all.length) return all
-                          return all.slice(offset, end)
-                      },
-                      options?.name
-                          ? { name: `${options.name}:scored:${key}` }
-                          : undefined,
-                  )
+        let sel: Selector<ScoredResult<Value, Args>[]>
+        if (offset === 0 && limit === resultLimit && wandEligibleStatic) {
+            // Default ranked + limited view → WAND top-K (it falls back to the
+            // naive ranking at eval time when scoped / phrase-constrained).
+            // Does NOT build the full ranking, so it stays sublinear.
+            sel = computeTopK(query)
+        } else if (offset === 0 && !Number.isFinite(limit)) {
+            // Unbounded view → the full ranking IS the view.
+            sel = getFullScored(query)
+        } else {
+            // Windowed (or non-WAND limited) view → slice the full ranking.
+            const full = getFullScored(query)
+            sel = selector<ScoredResult<Value, Args>[]>(
+                get => {
+                    const all = get(full)
+                    const end = Number.isFinite(limit) ? offset + limit : all.length
+                    if (offset === 0 && end >= all.length) return all
+                    return all.slice(offset, end)
+                },
+                options?.name
+                    ? { name: `${options.name}:scored:${key}` }
+                    : undefined,
+            )
+        }
         scoredCache.set(key, sel)
         return sel
     }

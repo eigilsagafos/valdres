@@ -217,6 +217,73 @@ describe("atomFamilySearch — differential fuzzer (incremental index vs brute f
         })
     }
 
+    // WAND top-K path must be byte-identical to the naive ranking on the same
+    // data. Run the SAME random mutations through two independent instances —
+    // one forced naive (`__wand: false`), one auto (WAND for eligible ranked +
+    // limited queries) — and compare scored() output (ids, scores, order).
+    for (const variant of [
+        { mode: "exact" as const, tolerance: 0, coordination: 0.5, limit: 7 },
+        { mode: "exact" as const, tolerance: 0, coordination: 0, limit: 5 },
+        { mode: "prefix" as const, tolerance: 0, coordination: 0.5, limit: 6 },
+        { mode: "exact" as const, tolerance: 1, coordination: 0.5, limit: 8 },
+    ]) {
+        test(`WAND path == naive path (${variant.mode}, tol ${variant.tolerance}, coord ${variant.coordination})`, () => {
+            const rnd = lcg(0x5eed ^ variant.limit ^ (variant.tolerance << 4))
+            const pick = <T,>(xs: T[]) => xs[Math.floor(rnd() * xs.length)]
+            const words = (n: number) =>
+                Array.from({ length: n }, () => pick(VOCAB)).join(" ")
+            const opts = {
+                mode: variant.mode,
+                match: "ranked" as const,
+                coordination: variant.coordination,
+                tolerance: variant.tolerance,
+                limit: variant.limit,
+                fields: { title: { boost: 2 }, body: { boost: 1 } },
+            }
+            const nf = atomFamily<Doc, [string]>(null, { name: "wn" })
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const naive = atomFamilySearch(nf, (d: Doc) => ({ title: d.title, body: d.body }), { ...opts, __wand: false } as any)
+            const ns = store()
+            const wf = atomFamily<Doc, [string]>(null, { name: "ww" })
+            const wand = atomFamilySearch(wf, (d: Doc) => ({ title: d.title, body: d.body }), opts)
+            const ws = store()
+
+            const repr = (
+                rows: { atom: { familyArgsStringified: unknown }; score: number }[],
+            ) =>
+                rows.map(
+                    r => `${String(r.atom.familyArgsStringified)}:${r.score.toFixed(6)}`,
+                )
+
+            const compare = () => {
+                for (let q = 0; q < 5; q++) {
+                    const query = words(1 + Math.floor(rnd() * 3))
+                    const got = repr(ws.get(wand.scored(query)))
+                    const want = repr(ns.get(naive.scored(query)))
+                    expect(got).toEqual(want)
+                }
+            }
+
+            for (let step = 0; step < 500; step++) {
+                const id = `d${Math.floor(rnd() * 40)}`
+                if (rnd() < 0.65) {
+                    const doc: Doc = {
+                        id,
+                        title: words(1 + Math.floor(rnd() * 3)),
+                        body: words(1 + Math.floor(rnd() * 6)),
+                    }
+                    ns.set(nf(id), doc)
+                    ws.set(wf(id), doc)
+                } else {
+                    ns.del(nf(id))
+                    ws.del(wf(id))
+                }
+                if (step % 20 === 0) compare()
+            }
+            compare()
+        })
+    }
+
     test("child scope sees inherited + overridden docs (set membership)", () => {
         const s = store()
         const post = atomFamily<Doc, [string]>(null, { name: "p" })
