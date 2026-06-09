@@ -1,0 +1,13 @@
+---
+"valdres-lit": minor
+---
+
+Add `valdres-lit` — a Lit binding for valdres, built on `ReactiveController` and `@lit/context` (like `@lit/task`, it's controller-first).
+
+- `AtomController(host, atom, store?)` — read/write an atom; `.value`, `.set(value | updater)`, `.reset()`.
+- `ValueController(host, state, store?)` — read any atom or selector; `.value`, plus `.status` (`"pending" | "ready" | "error"`) and `.error` for async state, so templates branch instead of catching a throw.
+- `StoreProvider(host, store?)` — provide a store to descendants via context; auto-creates a `{ batchUpdates: true }` store when none is passed (matching the React/Solid/Vue/Angular providers), and warns only when an explicit non-batched store is supplied.
+- `ScopeController(host, scopeId?)` — derive and provide a scoped store to a subtree.
+- `valdresContext` — the raw `@lit/context` token for interop.
+
+All controllers subscribe on connect and tear down on disconnect, and correctly re-subscribe / re-acquire across disconnect→reconnect (DOM re-parenting). A standard-decorator API (`@atom` etc.) was prototyped but deferred until oven-sh/bun#28316 (which mismaps decorator metadata across classes in one file) is fixed.

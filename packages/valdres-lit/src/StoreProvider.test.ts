@@ -62,7 +62,7 @@ describe("StoreProvider", () => {
         app.remove()
     })
 
-    test("warns when store lacks batchUpdates", () => {
+    test("warns when an explicit store lacks batchUpdates", () => {
         const warn = mock(() => {})
         const original = console.warn
         console.warn = warn
@@ -80,6 +80,55 @@ describe("StoreProvider", () => {
         document.body.appendChild(document.createElement("sp-warn-app"))
         console.warn = original
         expect(warn).toHaveBeenCalledTimes(1)
+    })
+
+    test("auto-creates a batched store and does not warn when none is passed", async () => {
+        const warn = mock(() => {})
+        const original = console.warn
+        console.warn = warn
+        class AutoApp extends LitElement {
+            provider: StoreProvider
+            constructor() {
+                super()
+                this.provider = new StoreProvider(this)
+            }
+            render() {
+                return html`<slot></slot>`
+            }
+        }
+        customElements.define("sp-auto-app", AutoApp)
+        const app = document.createElement("sp-auto-app") as AutoApp
+        document.body.appendChild(app)
+        await app.updateComplete
+        console.warn = original
+        expect(warn).not.toHaveBeenCalled()
+        expect(app.provider.store).toBeDefined()
+        expect(app.provider.store.data.batchUpdates).toBe(true)
+
+        // The auto-created store is actually provided to descendants.
+        const a = atom(3)
+        const reader = document.createElement("sp-reader") as Reader
+        app.appendChild(reader)
+        await reader.updateComplete
+        expect(reader.seen).toBe(app.provider.store)
+        expect(reader.seen!.get(a)).toBe(3)
+        app.remove()
+    })
+
+    test("store getter returns the provided store", async () => {
+        const s = createStore({ id: "getter", batchUpdates: true })
+        class GetterApp extends LitElement {
+            provider = new StoreProvider(this, s)
+            render() {
+                return html``
+            }
+        }
+        customElements.define("sp-getter-app", GetterApp)
+        const app = document.createElement("sp-getter-app") as GetterApp
+        document.body.appendChild(app)
+        await app.updateComplete
+        expect(app.provider.store).toBe(s)
+        app.remove()
     })
 
     test("setStore replaces the provided store", async () => {

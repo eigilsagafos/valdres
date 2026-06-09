@@ -4,7 +4,7 @@ import type { Store } from "valdres"
 import { valdresContext } from "./lib/valdresContext"
 
 type ScopedStore = Store & {
-    detach?: (warnIfNotDestroyed?: boolean) => void
+    detach: (warnIfNotDestroyed?: boolean) => void
 }
 
 let scopeIdCounter = 0
@@ -26,9 +26,14 @@ export class ScopeController implements ReactiveController {
             context: valdresContext,
         })
 
+        // subscribe:true so the callback re-fires on every (re)connect. A
+        // subscribe:false consumer is one-shot, which combined with the scope
+        // teardown in hostDisconnected would leave the scope unacquired (and
+        // `get store()` throwing) after a disconnect→reconnect cycle. The
+        // `_scopedStore` guard keeps this idempotent while connected.
         new ContextConsumer(host, {
             context: valdresContext,
-            subscribe: false,
+            subscribe: true,
             callback: parent => {
                 if (!parent || this._scopedStore) return
                 this._wasCreated = !parent.data.scopes?.has(this._scopeId)
@@ -39,10 +44,8 @@ export class ScopeController implements ReactiveController {
         })
     }
 
-    hostConnected() {}
-
     hostDisconnected() {
-        this._scopedStore?.detach?.(this._wasCreated)
+        this._scopedStore?.detach(this._wasCreated)
         this._scopedStore = undefined
     }
 

@@ -99,4 +99,26 @@ describe("ScopeController", () => {
         expect(rootStore.data.scopes?.has("disposable")).toBe(false)
         app.remove()
     })
+
+    test("re-acquires the scope after disconnect → reconnect", async () => {
+        const a = atom(0)
+        const { app, page } = await mount("re-scope")
+        expect(page.scope!.store.data.id).toBe("re-scope")
+
+        // Re-parent the page within the same provider.
+        page.remove()
+        app.appendChild(page)
+        await page.updateComplete
+
+        // The scope must resolve again (not throw) and be re-registered, and a
+        // freshly attached reader must see it.
+        expect(() => page.scope!.store).not.toThrow()
+        expect(page.scope!.store.data.id).toBe("re-scope")
+        page.scope!.store.set(a, 11)
+        const reader = document.createElement("sc-reader") as Reader
+        page.appendChild(reader)
+        await reader.updateComplete
+        expect(reader.seen!.get(a)).toBe(11)
+        app.remove()
+    })
 })

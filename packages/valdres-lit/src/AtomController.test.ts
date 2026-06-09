@@ -7,14 +7,9 @@ import { StoreProvider } from "./StoreProvider"
 const counterAtom = atom(0)
 
 class App extends LitElement {
-    private _provider = new StoreProvider(
-        this,
-        createStore({ batchUpdates: true }),
-    )
+    private _provider = new StoreProvider(this)
     get store() {
-        return (this._provider as any)._provider.value as ReturnType<
-            typeof createStore
-        >
+        return this._provider.store
     }
     render() {
         return html`<slot></slot>`
@@ -116,6 +111,30 @@ describe("AtomController", () => {
         host.ctrl.set(60)
         await host.updateComplete
         expect(host.ctrl.value).toBe(60)
+        app.remove()
+    })
+
+    test("keeps reacting after disconnect → reconnect under a provider", async () => {
+        const reconnectAtom = atom(0)
+        const app = document.createElement("ac-app") as App
+        document.body.appendChild(app)
+        await app.updateComplete
+        const host = document.createElement("ac-count-host") as CountHost
+        host.ctrl = new AtomController(host, reconnectAtom)
+        app.appendChild(host)
+        await host.updateComplete
+        host.ctrl.set(1)
+        await host.updateComplete
+        expect(host.ctrl.value).toBe(1)
+
+        // Re-parent within the same provider, then mutate.
+        host.remove()
+        app.appendChild(host)
+        await host.updateComplete
+        host.ctrl.set(2)
+        await host.updateComplete
+        expect(host.ctrl.value).toBe(2)
+        expect(app.store.get(reconnectAtom)).toBe(2)
         app.remove()
     })
 
