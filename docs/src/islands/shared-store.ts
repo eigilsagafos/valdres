@@ -5,7 +5,14 @@ import {
     userSelectedColorModeAtom,
     getSystemColorMode,
 } from "@valdres/color-mode"
-// Single shared store for the entire docs site
+// Single shared store for the entire docs site.
+//
+// Deliberately NOT created with { batchUpdates: true }: valdres-react's
+// <Provider> logs a benign perf hint when a store lacks it, but enabling it
+// here makes useValue's useSyncExternalStore getSnapshot return unstable values
+// in the demo islands — React then errors "getSnapshot should be cached to
+// avoid an infinite loop". A console warning is the lesser evil than a React
+// error on every page, so we leave it off. (Verified A/B in the browser.)
 export const docsStore = store("docs")
 
 // Initialize system color mode from actual preference
