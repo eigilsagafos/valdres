@@ -2,6 +2,7 @@ import type { ReactiveController, ReactiveControllerHost } from "lit"
 import { ContextConsumer } from "@lit/context"
 import { isPromiseLike, type State, type Store } from "valdres"
 import { valdresContext } from "./lib/valdresContext"
+import { isServer } from "./lib/isServer"
 
 type Host = ReactiveControllerHost & HTMLElement
 
@@ -50,11 +51,12 @@ export class ValueController<
     }
 
     /**
-     * The current value, or `undefined` while a store is not yet attached or an
-     * async state is still pending. Mirrors `@lit/context`'s `ContextConsumer`,
-     * whose `value` is also `undefined` until provided — so templates can use
-     * `${ctrl.value ?? fallback}` instead of guarding a throw. Branch on
-     * `status`/`error` for explicit loading and error states.
+     * The current value — `undefined` until a store attaches and the first
+     * value resolves. During later pending transitions the last value stays
+     * readable (branch on `status` for loading UI). Mirrors `@lit/context`'s
+     * `ContextConsumer`, whose `value` is also `undefined` until provided —
+     * so templates can use `${ctrl.value ?? fallback}` instead of guarding a
+     * throw.
      */
     get value(): Value | undefined {
         return this._hasValue ? this._value : undefined
@@ -74,6 +76,9 @@ export class ValueController<
         this._detach()
         this._store = store
         this._ingest(store, store.get(this._state))
+        // Server-side the value above is all a render needs; never start a
+        // live subscription without a DOM to clean it up against.
+        if (isServer) return
         this._unsubscribe = store.sub(
             this._state,
             () => this._ingest(store, store.get(this._state)),

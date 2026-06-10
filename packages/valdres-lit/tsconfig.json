@@ -1,6 +1,11 @@
 {
     "extends": "../../tsconfig.json",
-    "include": ["src/index.ts"],
+    "include": [
+        "src/index.ts",
+        "src/decorators/index.ts",
+        "src/watch/index.ts",
+        "src/signals/index.ts"
+    ],
     "exclude": ["test", "dist", "src/**/*.test.ts"],
     "compilerOptions": {
         "rootDir": "src",

@@ -24,6 +24,7 @@ const PUBLIC_PACKAGES = [
     "packages/valdres",
     "packages/valdres-react",
     "packages/valdres-angular",
+    "packages/valdres-lit",
     "packages/valdres-solid",
     "packages/valdres-svelte",
     "packages/valdres-vue",

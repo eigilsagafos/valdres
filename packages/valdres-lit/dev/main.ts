@@ -7,6 +7,7 @@ import {
     store as createStore,
 } from "valdres"
 import { AtomController, ValueController, StoreProvider } from "../src"
+import { watch } from "../src/watch"
 
 // ===========================================================================
 // valdres-lit — a capabilities tour.
@@ -465,6 +466,30 @@ class ScopeCell extends LitElement {
 customElements.define("vl-scope-cell", ScopeCell)
 
 // ---------------------------------------------------------------------------
+// §6 Fine-grained bindings — the watch() directive
+// ---------------------------------------------------------------------------
+
+class WatchDemo extends LitElement {
+    static styles = base
+    private renders = 0
+    render() {
+        this.renders++
+        return html`<div class="row">
+            <button
+                @click=${() => rootStore.set(countAtom, c => c + 1)}
+            >
+                Increment
+            </button>
+            <span>count = <strong class="num">${watch(countAtom)}</strong></span>
+            <span class="num" style="opacity:0.6"
+                >host renders: ${this.renders}</span
+            >
+        </div>`
+    }
+}
+customElements.define("vl-watch-demo", WatchDemo)
+
+// ---------------------------------------------------------------------------
 // <valdres-lit-docs> — the page shell (StoreProvider + sections)
 // ---------------------------------------------------------------------------
 
@@ -510,6 +535,13 @@ project.unset(counter)    // unset → inherit from the parent again
 
 // (In components, ScopeController provides a scope to a subtree via
 //  @lit/context; here the chain is explicit so the nesting is clear.)`,
+    watch: `import { watch } from "valdres-lit/watch.js"
+
+render() {
+    // updates ONLY this binding via setValue() — the host's render()
+    // does not re-run on changes
+    return html\`<span>\${watch(countAtom)}</span>\`
+}`,
 }
 
 class Docs extends LitElement {
@@ -726,6 +758,20 @@ class Docs extends LitElement {
                             ></vl-scope-cell>
                         </vl-scope-cell>
                     </vl-scope-cell>`,
+                )}
+
+                ${this._section(
+                    6,
+                    "Fine-grained bindings",
+                    "watch() directive",
+                    html`The <code>watch()</code> directive binds one template
+                    position to an atom or selector — updates go through
+                    <code>setValue()</code>, so the host component never
+                    re-renders. It shares §1's <code>countAtom</code>: click
+                    either button and both update, but here
+                    <em>host renders</em> stays at 1.`,
+                    CODE.watch,
+                    html`<vl-watch-demo></vl-watch-demo>`,
                 )}
 
                 <footer>
