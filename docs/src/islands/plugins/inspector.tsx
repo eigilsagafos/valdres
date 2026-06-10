@@ -55,15 +55,27 @@ function defaultFormat(value: any): ReactNode {
     return String(value)
 }
 
-function Row({ label, state, format }: InspectorRow) {
+function RowValue({ state, format }: Omit<InspectorRow, "label">) {
     const value = useValue(state as any)
+    return <>{(format ?? defaultFormat)(value)}</>
+}
+
+function Row({ label, state, format }: InspectorRow) {
     return (
         <div className="flex items-start justify-between gap-6 py-2 border-b border-border dark:border-border-dark last:border-0">
             <code className="text-xs text-zinc-500 dark:text-zinc-400 shrink-0">
                 {label}
             </code>
             <div className="text-sm font-mono tabular-nums text-right min-w-0">
-                {(format ?? defaultFormat)(value)}
+                {/* Per-row boundary: a suspending (async) value shows its own
+                    spinner without blanking the sync rows next to it. */}
+                <Suspense
+                    fallback={
+                        <span className="text-zinc-400 dark:text-zinc-500">…</span>
+                    }
+                >
+                    <RowValue state={state} format={format} />
+                </Suspense>
             </div>
         </div>
     )
@@ -95,20 +107,16 @@ function Inspector({ config }: { config: InspectorConfig }) {
                 )}
             </div>
             {started ? (
-                <Suspense
-                    fallback={
-                        <div className="rounded-lg border border-border dark:border-border-dark px-4 py-3 text-sm text-zinc-400 dark:text-zinc-500">
-                            Loading…
-                        </div>
-                    }
-                >
-                    <Rows rows={config.rows} />
-                </Suspense>
+                <Rows rows={config.rows} />
             ) : (
                 <button
-                    onClick={async () => {
-                        await config.gated?.request?.()
+                    onClick={() => {
+                        // Render the rows immediately, then kick off the request
+                        // (measurement/permission) — don't await it, or nothing
+                        // shows until it finishes. Per-row Suspense handles the
+                        // pending async values.
                         setStarted(true)
+                        Promise.resolve(config.gated?.request?.()).catch(() => {})
                     }}
                     className="text-sm font-medium px-3 py-1.5 rounded-md border border-zinc-300 dark:border-zinc-700 hover:border-accent-500 hover:text-accent-500 transition-colors"
                 >
