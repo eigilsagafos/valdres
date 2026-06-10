@@ -30,6 +30,12 @@ export type InspectorConfig = {
      * omitted.
      */
     gated?: { buttonLabel: string; request?: () => void | Promise<unknown> }
+    /**
+     * An action button shown next to the live rows once started, e.g.
+     * "Re-measure" → invalidateMeasurement(). Fired without awaiting; the rows
+     * reflect whatever it changes.
+     */
+    action?: { label: string; run: () => void | Promise<unknown> }
 }
 
 function defaultFormat(value: any): ReactNode {
@@ -110,6 +116,16 @@ function Inspector({ config }: { config: InspectorConfig }) {
                     <span className="text-xs text-zinc-500 dark:text-zinc-400">
                         {config.hint}
                     </span>
+                )}
+                {started && config.action && (
+                    <button
+                        onClick={() =>
+                            Promise.resolve(config.action!.run()).catch(() => {})
+                        }
+                        className="ml-auto shrink-0 text-xs font-medium px-2.5 py-1 rounded-md border border-zinc-300 dark:border-zinc-700 hover:border-accent-500 hover:text-accent-500 transition-colors"
+                    >
+                        {config.action.label}
+                    </button>
                 )}
             </div>
             {started ? (

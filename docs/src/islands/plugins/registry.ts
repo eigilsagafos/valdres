@@ -26,6 +26,7 @@ import {
     latencyAtom,
     measurementStatusAtom,
     measureBandwidth,
+    invalidateMeasurement,
 } from "@valdres/bandwidth"
 import {
     contrastAtom,
@@ -137,6 +138,7 @@ export const pluginDemos: Record<string, (el: HTMLElement) => void> = {
 
     bandwidth: inspector({
         gated: { buttonLabel: "Measure", request: () => measureBandwidth() },
+        action: { label: "Re-measure", run: () => invalidateMeasurement() },
         hint: "Run a live throughput test against your connection",
         rows: [
             {
