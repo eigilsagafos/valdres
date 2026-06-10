@@ -42,8 +42,14 @@ export function ScreenPlacement() {
                 placement
             </div>
             <div
-                className="relative w-full rounded-lg border border-border dark:border-border-dark bg-surface-sunken dark:bg-surface-raised-dark"
-                style={{ aspectRatio: `${totalW} / ${totalH}`, maxHeight: "14rem" }}
+                className="relative w-full mx-auto rounded-lg border border-border dark:border-border-dark bg-surface-sunken dark:bg-surface-raised-dark"
+                style={{
+                    aspectRatio: `${totalW} / ${totalH}`,
+                    // Bound height to ~14rem via max-WIDTH (= height × ratio) so
+                    // the aspect ratio is preserved at any size — a max-height
+                    // would clamp height while width stayed full, distorting it.
+                    maxWidth: `${(14 * totalW) / totalH}rem`,
+                }}
             >
                 {screens.map((s, i) => (
                     <div
