@@ -48,6 +48,8 @@ export type InspectorConfig = {
      * visibility flips exactly when you switch tabs.
      */
     log?: { state: unknown; label?: string; format?: (value: any) => ReactNode }
+    /** Custom content rendered below the rows once started (e.g. a diagram). */
+    extra?: () => ReactNode
 }
 
 function defaultFormat(value: any): ReactNode {
@@ -165,6 +167,7 @@ function EventLog({
 
 function Inspector({ config }: { config: InspectorConfig }) {
     const [started, setStarted] = useState(!config.gated)
+    const Extra = config.extra
     return (
         <div className="not-prose my-6">
             <div className="mb-2 flex items-center gap-2">
@@ -192,6 +195,7 @@ function Inspector({ config }: { config: InspectorConfig }) {
                 <>
                     <Rows rows={config.rows} />
                     {config.log && <EventLog {...config.log} />}
+                    {Extra && <Extra />}
                 </>
             ) : (
                 <button

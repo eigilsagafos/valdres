@@ -5,6 +5,7 @@
 // without an entry (e.g. redux-devtools) simply renders no demo — its page just
 // shows code.
 import { inspector } from "./inspector"
+import { ScreenPlacement } from "./ScreenPlacement"
 import { mountKeyboardDemo } from "../landing-keyboard"
 
 import { onlineAtom } from "@valdres/browser-online"
@@ -269,13 +270,13 @@ export const pluginDemos: Record<string, (el: HTMLElement) => void> = {
             buttonLabel: "Allow screen access",
             request: () => requestScreenDetails(),
         },
-        hint: "Window Management API — requires permission; move the window between displays",
+        hint: "Window Management API — requires permission; multi-screen shows the layout",
         rows: [
             {
                 label: "currentScreenAtom",
                 state: currentScreenAtom,
                 format: (s: { label: string; width: number; height: number } | null) =>
-                    s ? `${s.label}: ${s.width} × ${s.height}` : "—",
+                    s ? `${s.label || "current"}: ${s.width} × ${s.height}` : "—",
             },
             {
                 label: "screensAtom",
@@ -284,6 +285,7 @@ export const pluginDemos: Record<string, (el: HTMLElement) => void> = {
             },
             { label: "screenPermissionAtom", state: screenPermissionAtom },
         ],
+        extra: ScreenPlacement,
     }),
 
     "color-mode": inspector({
