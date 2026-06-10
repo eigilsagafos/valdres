@@ -450,10 +450,12 @@ class ScopeCell extends LitElement {
             onUnset: this.root
                 ? undefined
                 : () => {
-                      // del drops this scope's own value → it falls back to
-                      // shadowing its parent. (reset() returns it to the atom's
-                      // default instead.)
-                      ;(this.store as any).del(scopeCounter)
+                      // unset() is the inverse of set(): it drops this scope's
+                      // own value so the atom re-inherits the parent (and tracks
+                      // the parent's future changes again). reset() differs — it
+                      // writes the atom's default back; del() removes a family
+                      // member.
+                      this.store.unset(scopeCounter)
                       this.requestUpdate()
                   },
             unsetDisabled: !owns,
@@ -502,9 +504,9 @@ const currentName = selector(get =>
 const team = rootStore.scope("team")
 const project = team.scope("project")
 
-project.get(counter)    // inherited: root → team → project
-project.set(counter, n) // copy-on-write: shadows for this subtree only
-project.del(counter)    // unset → inherit from the parent again
+project.get(counter)      // inherited: root → team → project
+project.set(counter, n)   // copy-on-write: shadows for this subtree only
+project.unset(counter)    // unset → inherit from the parent again
 
 // (In components, ScopeController provides a scope to a subtree via
 //  @lit/context; here the chain is explicit so the nesting is clear.)`,
