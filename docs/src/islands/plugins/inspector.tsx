@@ -3,7 +3,13 @@
 // in real time as the underlying browser API changes. Reused across most
 // @valdres/browser-* plugin pages so every plugin can show a working demo with
 // minimal per-plugin code.
-import { useState, useSyncExternalStore, type ReactNode } from "react"
+import {
+    useEffect,
+    useRef,
+    useState,
+    useSyncExternalStore,
+    type ReactNode,
+} from "react"
 import { createRoot } from "react-dom/client"
 import { Provider, useStore } from "valdres-react"
 import { isPromiseLike } from "valdres"
@@ -36,6 +42,12 @@ export type InspectorConfig = {
      * reflect whatever it changes.
      */
     action?: { label: string; run: () => void | Promise<unknown> }
+    /**
+     * A timestamped history of an atom/selector's changes. Useful when the
+     * interesting moment happens while you're not looking at the page — e.g.
+     * visibility flips exactly when you switch tabs.
+     */
+    log?: { state: unknown; label?: string; format?: (value: any) => ReactNode }
 }
 
 function defaultFormat(value: any): ReactNode {
@@ -103,6 +115,54 @@ function Rows({ rows }: { rows: InspectorRow[] }) {
     )
 }
 
+function EventLog({
+    state,
+    label,
+    format,
+}: NonNullable<InspectorConfig["log"]>) {
+    const store = useStore()
+    const nextId = useRef(0)
+    const [entries, setEntries] = useState<
+        { id: number; time: string; value: unknown }[]
+    >([])
+
+    useEffect(() => {
+        const add = (value: unknown) => {
+            if (isPromiseLike(value)) return
+            setEntries(prev =>
+                [
+                    { id: nextId.current++, time: new Date().toLocaleTimeString(), value },
+                    ...prev,
+                ].slice(0, 8),
+            )
+        }
+        add(store.get(state as any))
+        return store.sub(state as any, () => add(store.get(state as any)))
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [])
+
+    return (
+        <div className="mt-3">
+            <div className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500 mb-1">
+                {label ?? "Log"}
+            </div>
+            <div className="rounded-lg border border-border dark:border-border-dark bg-surface-sunken dark:bg-surface-raised-dark divide-y divide-border dark:divide-border-dark max-h-40 overflow-auto">
+                {entries.map(entry => (
+                    <div
+                        key={entry.id}
+                        className="flex items-center justify-between gap-4 px-4 py-1.5 text-xs font-mono"
+                    >
+                        <span className="text-zinc-400 dark:text-zinc-500 tabular-nums">
+                            {entry.time}
+                        </span>
+                        <span>{(format ?? defaultFormat)(entry.value)}</span>
+                    </div>
+                ))}
+            </div>
+        </div>
+    )
+}
+
 function Inspector({ config }: { config: InspectorConfig }) {
     const [started, setStarted] = useState(!config.gated)
     return (
@@ -129,7 +189,10 @@ function Inspector({ config }: { config: InspectorConfig }) {
                 )}
             </div>
             {started ? (
-                <Rows rows={config.rows} />
+                <>
+                    <Rows rows={config.rows} />
+                    {config.log && <EventLog {...config.log} />}
+                </>
             ) : (
                 <button
                     onClick={() => {

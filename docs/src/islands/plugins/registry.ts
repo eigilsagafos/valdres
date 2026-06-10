@@ -108,11 +108,12 @@ export const pluginDemos: Record<string, (el: HTMLElement) => void> = {
     }),
 
     "browser-visibility": inspector({
-        hint: "Switch to another tab and back",
+        hint: "Switch to another tab and back, then return here",
         rows: [
             { label: "visibilityAtom", state: visibilityAtom },
             { label: "isVisibleSelector", state: isVisibleSelector },
         ],
+        log: { state: visibilityAtom, label: "visibility changes" },
     }),
 
     "browser-geolocation": inspector({
