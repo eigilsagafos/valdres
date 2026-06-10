@@ -3,9 +3,10 @@
 // in real time as the underlying browser API changes. Reused across most
 // @valdres/browser-* plugin pages so every plugin can show a working demo with
 // minimal per-plugin code.
-import { Suspense, useState, type ReactNode } from "react"
+import { useState, useSyncExternalStore, type ReactNode } from "react"
 import { createRoot } from "react-dom/client"
-import { Provider, useValue } from "valdres-react"
+import { Provider, useStore } from "valdres-react"
+import { isPromiseLike } from "valdres"
 import { docsStore } from "../shared-store"
 
 export type InspectorRow = {
@@ -56,7 +57,20 @@ function defaultFormat(value: any): ReactNode {
 }
 
 function RowValue({ state, format }: Omit<InspectorRow, "label">) {
-    const value = useValue(state as any)
+    const store = useStore()
+    // Read without suspending: useValue would throw an async atom's pending
+    // promise to React and not re-render until it resolves, hiding the live
+    // setSelf() updates a measurement emits while running. Subscribing to the
+    // store instead surfaces every intermediate value; a still-pending promise
+    // just shows "…".
+    const value = useSyncExternalStore(
+        cb => store.sub(state as any, cb),
+        () => store.get(state as any),
+        () => store.get(state as any),
+    )
+    if (isPromiseLike(value)) {
+        return <span className="text-zinc-400 dark:text-zinc-500">…</span>
+    }
     return <>{(format ?? defaultFormat)(value)}</>
 }
 
@@ -67,15 +81,7 @@ function Row({ label, state, format }: InspectorRow) {
                 {label}
             </code>
             <div className="text-sm font-mono tabular-nums text-right min-w-0">
-                {/* Per-row boundary: a suspending (async) value shows its own
-                    spinner without blanking the sync rows next to it. */}
-                <Suspense
-                    fallback={
-                        <span className="text-zinc-400 dark:text-zinc-500">…</span>
-                    }
-                >
-                    <RowValue state={state} format={format} />
-                </Suspense>
+                <RowValue state={state} format={format} />
             </div>
         </div>
     )
@@ -113,8 +119,8 @@ function Inspector({ config }: { config: InspectorConfig }) {
                     onClick={() => {
                         // Render the rows immediately, then kick off the request
                         // (measurement/permission) — don't await it, or nothing
-                        // shows until it finishes. Per-row Suspense handles the
-                        // pending async values.
+                        // shows until it finishes. Rows read the store directly,
+                        // so live setSelf() updates appear as they happen.
                         setStarted(true)
                         Promise.resolve(config.gated?.request?.()).catch(() => {})
                     }}
