@@ -13,7 +13,10 @@
 import type { Movie } from "./data"
 
 export type FacetState = {
-    genres: string[] // OR within, disjunctive
+    genres: string[]
+    /** "or" → a movie matches ANY selected genre (disjunctive). "and" → a
+     *  movie must have ALL selected genres (conjunctive). */
+    genresMode: "or" | "and"
     decades: number[] // OR within, disjunctive
     directors: string[] // OR within, disjunctive
     ratingMin: number // range (>= ); 0 = no constraint
@@ -21,6 +24,7 @@ export type FacetState = {
 
 export const emptyFacetState = (): FacetState => ({
     genres: [],
+    genresMode: "or",
     decades: [],
     directors: [],
     ratingMin: 0,
@@ -31,7 +35,10 @@ export const emptyFacetState = (): FacetState => ({
  *  clause — exactly the shape disjunctive faceting is defined over. */
 const clauses = (f: FacetState): Record<string, (m: Movie) => boolean> => ({
     genres: m =>
-        f.genres.length === 0 || m.genres.some(g => f.genres.includes(g)),
+        f.genres.length === 0 ||
+        (f.genresMode === "and"
+            ? f.genres.every(g => m.genres.includes(g))
+            : m.genres.some(g => f.genres.includes(g))),
     decades: m => f.decades.length === 0 || f.decades.includes(m.decade),
     directors: m => f.directors.length === 0 || f.directors.includes(m.director),
     rating: m => f.ratingMin <= 0 || m.rating >= f.ratingMin,
@@ -87,8 +94,15 @@ export const computeFacets = (
     const cl = clauses(f)
     const hits = baseExcluding(candidates, cl, null)
 
-    // Each facet field counted over the base with its OWN clause removed.
-    const gBase = baseExcluding(candidates, cl, "genres")
+    // Genre counts depend on the mode:
+    //  - "or"  (disjunctive): drop the genre clause, so picking one genre keeps
+    //    the others' counts live (multi-select OR).
+    //  - "and" (conjunctive): keep the genre clause — count over the fully
+    //    filtered hits, so each value shows "how many results ALSO have this
+    //    genre" (selected genres show the full hit count). Conjunctive counting
+    //    MUST pair with conjunctive filtering, which clauses() now does.
+    const gBase =
+        f.genresMode === "and" ? hits : baseExcluding(candidates, cl, "genres")
     const dBase = baseExcluding(candidates, cl, "decades")
     const dirBase = baseExcluding(candidates, cl, "directors")
     const rBase = baseExcluding(candidates, cl, "rating")

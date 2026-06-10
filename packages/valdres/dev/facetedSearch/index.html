@@ -90,12 +90,40 @@
                 border-radius: 12px;
                 padding: 0.85rem 1rem;
             }
+            .facet-head {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                margin-bottom: 0.6rem;
+            }
+            .facet-head h3 {
+                margin: 0;
+            }
             .facet h3 {
                 margin: 0 0 0.6rem;
                 font-size: 0.72rem;
                 letter-spacing: 0.08em;
                 text-transform: uppercase;
                 color: var(--muted);
+            }
+            .seg {
+                display: inline-flex;
+                border: 1px solid var(--border);
+                border-radius: 7px;
+                overflow: hidden;
+            }
+            .seg button {
+                font: inherit;
+                font-size: 0.72rem;
+                padding: 0.1rem 0.5rem;
+                border: none;
+                background: var(--panel);
+                color: var(--muted);
+                cursor: pointer;
+            }
+            .seg button.on {
+                background: var(--accent);
+                color: var(--accent-fg);
             }
             .facet-search {
                 width: 100%;

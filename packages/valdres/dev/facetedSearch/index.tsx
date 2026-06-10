@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useState, type ReactNode } from "react"
 import { createRoot } from "react-dom/client"
-import { Provider, useStore, useValue } from "valdres-react"
+import { Provider, useValue } from "valdres-react"
 import { atomFamily } from "../../src/atomFamily"
 import { atomFamilySearch } from "../../src/atomFamilySearch"
+import { store as createStore } from "../../src/store"
 import { GENRES, MOVIES, MOVIES_BY_ID, type Movie } from "./data"
 import {
     computeFacets,
@@ -23,6 +24,18 @@ const search = atomFamilySearch(
         fields: { title: { boost: 3 }, cast: { boost: 1 }, director: { boost: 1 } },
     },
 )
+
+// One valdres instance: build the store from the SAME source as the atoms and
+// search (../../src), seed it once, and hand it to <Provider>. If we imported
+// the core from ../../src but let valdres-react create its own store, the
+// bundler splits valdres into two module instances — atoms/descriptors in one,
+// the store in the other — and the search index never builds in the store the
+// UI reads (values land, but search returns nothing). Owning the store here
+// keeps everything in one instance.
+const appStore = createStore({ batchUpdates: true })
+appStore.txn(txn => {
+    for (const m of MOVIES) txn.set(movie(m.id), m)
+})
 
 const PAGE_SIZE = 18
 const DIRECTOR_PREVIEW = 8
@@ -72,6 +85,7 @@ const RefinementList = ({
     searchable,
     previewCount,
     formatLabel,
+    headerRight,
 }: {
     title: string
     items: { value: string; count: number }[]
@@ -80,6 +94,7 @@ const RefinementList = ({
     searchable?: boolean
     previewCount?: number
     formatLabel?: (value: string) => string
+    headerRight?: ReactNode
 }) => {
     const [filter, setFilter] = useState("")
     const [expanded, setExpanded] = useState(false)
@@ -96,7 +111,10 @@ const RefinementList = ({
 
     return (
         <section className="facet">
-            <h3>{title}</h3>
+            <div className="facet-head">
+                <h3>{title}</h3>
+                {headerRight}
+            </div>
             {searchable && (
                 <input
                     className="facet-search"
@@ -212,20 +230,10 @@ const MovieCard = ({ m, query }: { m: Movie; query: string }) => (
 )
 
 const Demo = () => {
-    const store = useStore()
-    const [seeded, setSeeded] = useState(false)
     const [query, setQuery] = useState("")
     const [facet, setFacet] = useState<FacetState>(emptyFacetState)
     const [sortKey, setSortKey] = useState<SortKey>("rating")
     const [page, setPage] = useState(0)
-
-    // Seed all 5,000 movies in a single transaction (one descriptor batch).
-    useEffect(() => {
-        store.txn(txn => {
-            for (const m of MOVIES) txn.set(movie(m.id), m)
-        })
-        setSeeded(true)
-    }, [store])
 
     const trimmed = query.trim()
     const hasQuery = trimmed.length >= 2
@@ -238,11 +246,11 @@ const Demo = () => {
     const scored = useValue(scoredSel)
 
     const candidates = useMemo(() => {
-        if (!seeded || !hasQuery) return MOVIES
+        if (!hasQuery) return MOVIES
         return scored
             .map(r => MOVIES_BY_ID.get(String(r.atom.familyArgsStringified)))
             .filter((m): m is Movie => m != null)
-    }, [seeded, hasQuery, scored])
+    }, [hasQuery, scored])
 
     const result = useMemo(
         () => computeFacets(candidates, facet),
@@ -305,6 +313,24 @@ const Demo = () => {
                         selected={facet.genres}
                         onToggle={v => set({ genres: toggle(facet.genres, v) })}
                         previewCount={GENRES.length}
+                        headerRight={
+                            <div
+                                className="seg"
+                                title="OR = match any selected genre; AND = must have all"
+                            >
+                                {(["or", "and"] as const).map(m => (
+                                    <button
+                                        key={m}
+                                        className={
+                                            facet.genresMode === m ? "on" : ""
+                                        }
+                                        onClick={() => set({ genresMode: m })}
+                                    >
+                                        {m === "or" ? "Any" : "All"}
+                                    </button>
+                                ))}
+                            </div>
+                        }
                     />
                     <RatingFacet
                         items={result.facets.rating}
@@ -459,7 +485,7 @@ const Demo = () => {
 
 const root = createRoot(document.getElementById("root")!)
 root.render(
-    <Provider>
+    <Provider store={appStore}>
         <Demo />
     </Provider>,
 )
