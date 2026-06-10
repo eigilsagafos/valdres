@@ -6,12 +6,7 @@ import {
     selectorFamily,
     store as createStore,
 } from "valdres"
-import {
-    AtomController,
-    ValueController,
-    ScopeController,
-    StoreProvider,
-} from "../src"
+import { AtomController, ValueController, StoreProvider } from "../src"
 
 // ===========================================================================
 // valdres-lit — a capabilities tour.
@@ -341,63 +336,100 @@ customElements.define("vl-random-dog", RandomDog)
 
 const scopeCounter = atom(0, { name: "scopeCounter" })
 
-// A single level's UI, bound to an explicitly-passed store (root or scoped).
+const cellStyles = css`
+    .cell {
+        border: 1px solid var(--vl-line);
+        border-left: 3px solid
+            color-mix(in oklch, var(--vl-accent) 60%, transparent);
+        border-radius: 10px;
+        padding: 0.7rem 0.9rem;
+        background: var(--vl-surface);
+    }
+    .head {
+        display: flex;
+        align-items: center;
+        gap: 0.6rem;
+    }
+    .label {
+        font:
+            600 0.78rem var(--vl-mono);
+        color: var(--vl-muted);
+    }
+    .val {
+        font-family: var(--vl-mono);
+        font-size: 1.25rem;
+        font-weight: 700;
+        margin-left: auto;
+    }
+    .src {
+        font-size: 0.72rem;
+        color: var(--vl-muted);
+        margin-left: 0.4rem;
+    }
+    .controls {
+        margin-top: 0.5rem;
+        display: flex;
+        gap: 0.4rem;
+    }
+    button {
+        padding: 0.3rem 0.7rem;
+        font-size: 0.85rem;
+    }
+    .nest {
+        margin-top: 0.7rem;
+    }
+    ::slotted(*) {
+        display: block;
+    }
+`
+
+const renderCell = (opts: {
+    label: string
+    value: number
+    srcText: string
+    onInc: () => void
+    onUnset?: () => void
+    unsetDisabled?: boolean
+}) => html`<div class="cell">
+    <div class="head">
+        <span class="label">${opts.label}</span>
+        <span class="val">${opts.value}</span>
+        <span class="src">${opts.srcText}</span>
+    </div>
+    <div class="controls">
+        <button @click=${opts.onInc}>increment</button>
+        ${opts.onUnset
+            ? html`<button @click=${opts.onUnset} ?disabled=${opts.unsetDisabled}>
+                  unset
+              </button>`
+            : nothing}
+    </div>
+    <div class="nest"><slot></slot></div>
+</div>`
+
+// The scope chain, created once. A scope reads its parent's value until it
+// writes its own (copy-on-write).
+const teamScope = rootStore.scope("team")
+const projectScope = teamScope.scope("project")
+
+// One level of the hierarchy, bound to an explicit store and authored as nested
+// HTML so the DOM nesting mirrors the store nesting:
+//   <vl-scope-cell .store=${rootStore} root>
+//     <vl-scope-cell .store=${teamScope}>
+//       <vl-scope-cell .store=${projectScope}></vl-scope-cell>
+//     </vl-scope-cell>
+//   </vl-scope-cell>
 class ScopeCell extends LitElement {
     static properties = {
         label: {},
         store: { attribute: false },
-        depth: { type: Number },
         root: { type: Boolean },
     }
     declare label: string
     declare store: ReturnType<typeof createStore>
-    declare depth: number
     declare root: boolean
+    static styles = [base, cellStyles] as CSSResultGroup
     private ctrl?: AtomController<number>
-
-    static styles = [
-        base,
-        css`
-            .cell {
-                border: 1px solid var(--vl-line);
-                border-left: 3px solid
-                    color-mix(in oklch, var(--vl-accent) 60%, transparent);
-                border-radius: 10px;
-                padding: 0.7rem 0.9rem;
-                background: var(--vl-surface);
-            }
-            .head {
-                display: flex;
-                align-items: center;
-                gap: 0.6rem;
-            }
-            .label {
-                font:
-                    600 0.78rem var(--vl-mono);
-                color: var(--vl-muted);
-            }
-            .val {
-                font-family: var(--vl-mono);
-                font-size: 1.25rem;
-                font-weight: 700;
-                margin-left: auto;
-            }
-            .src {
-                font-size: 0.72rem;
-                color: var(--vl-muted);
-                margin-left: 0.4rem;
-            }
-            .controls {
-                margin-top: 0.5rem;
-                display: flex;
-                gap: 0.4rem;
-            }
-            button {
-                padding: 0.3rem 0.7rem;
-                font-size: 0.85rem;
-            }
-        `,
-    ] as CSSResultGroup
 
     willUpdate() {
         if (!this.ctrl && this.store)
@@ -407,83 +439,28 @@ class ScopeCell extends LitElement {
                 this.store,
             )
     }
-    private _inc() {
-        this.ctrl?.set(c => (c ?? 0) + 1)
-    }
-    private _unset() {
-        // del drops this scope's own value → it falls back to shadowing the
-        // parent. (reset() would instead return it to the atom's default.)
-        ;(this.store as any).del(scopeCounter)
-        this.requestUpdate()
-    }
     render() {
-        // A level "owns" its value when it has written one; otherwise the
-        // number shown is inherited from an ancestor.
-        const owns = this.store?.data.values.has(scopeCounter) ?? false
-        return html`<div class="cell">
-            <div class="head">
-                <span class="label">${this.label}</span>
-                <span class="val">${this.ctrl?.value ?? 0}</span>
-                <span class="src">${owns ? "own value" : "inherited"}</span>
-            </div>
-            <div class="controls">
-                <button @click=${this._inc}>increment</button>
-                ${this.root
-                    ? nothing
-                    : html`<button @click=${this._unset} ?disabled=${!owns}>
-                          unset
-                      </button>`}
-            </div>
-        </div>`
+        if (!this.ctrl) return nothing
+        const owns = this.store.data.values.has(scopeCounter)
+        return renderCell({
+            label: this.label,
+            value: this.ctrl.value ?? 0,
+            srcText: this.root ? "root" : owns ? "own value" : "inherited",
+            onInc: () => this.ctrl!.set(c => (c ?? 0) + 1),
+            onUnset: this.root
+                ? undefined
+                : () => {
+                      // del drops this scope's own value → it falls back to
+                      // shadowing its parent. (reset() returns it to the atom's
+                      // default instead.)
+                      ;(this.store as any).del(scopeCounter)
+                      this.requestUpdate()
+                  },
+            unsetDisabled: !owns,
+        })
     }
 }
 customElements.define("vl-scope-cell", ScopeCell)
-
-// A scope level: derives a child store from its parent (via context) and
-// renders its cell. Any nested level is rendered directly in this node's
-// shadow, so the child's ScopeController consumes THIS node's scope as its
-// parent — making the parentage deterministic (no slot/timing surprises).
-class ScopeNode extends LitElement {
-    static properties = {
-        label: {},
-        scopeId: {},
-        depth: { type: Number },
-        child: { attribute: false },
-    }
-    declare label: string
-    declare scopeId: string
-    declare depth: number
-    declare child?: { label: string; scopeId: string }
-    private scope?: ScopeController
-
-    static styles = css`
-        .nest {
-            margin-top: 0.7rem;
-        }
-    `
-    connectedCallback() {
-        super.connectedCallback()
-        if (!this.scope) this.scope = new ScopeController(this, this.scopeId)
-    }
-    render() {
-        if (!this.scope) return nothing
-        return html`<vl-scope-cell
-                label=${this.label}
-                .store=${this.scope.store}
-                depth=${this.depth}
-            ></vl-scope-cell>
-            ${this.child
-                ? html`<div class="nest">
-                      <vl-scope-node
-                          label=${this.child.label}
-                          scopeId=${this.child.scopeId}
-                          depth=${this.depth + 1}
-                      ></vl-scope-node>
-                  </div>`
-                : nothing}`
-    }
-}
-customElements.define("vl-scope-node", ScopeNode)
 
 // ---------------------------------------------------------------------------
 // <valdres-lit-docs> — the page shell (StoreProvider + sections)
@@ -520,12 +497,17 @@ const currentName = selector(get =>
 
 #dog = new AtomController(this, randomDog)
 // .status walks "pending" → "ready" | "error"; .reset() refetches`,
-    scope: `// A scope reads its parent's value until it writes its own.
-#scope = new ScopeController(this, "team")   // child store of the parent
+    scope: `// A scope forks a child store; it reads its parent's value
+// until it writes its own (copy-on-write). Nest them freely:
+const team = rootStore.scope("team")
+const project = team.scope("project")
 
-scope.store.get(counter)   // inherited from root until set here
-scope.store.set(counter, n) // copy-on-write: shadows for this subtree
-scope.store.del(counter)    // unset → inherit from the parent again`,
+project.get(counter)    // inherited: root → team → project
+project.set(counter, n) // copy-on-write: shadows for this subtree only
+project.del(counter)    // unset → inherit from the parent again
+
+// (In components, ScopeController provides a scope to a subtree via
+//  @lit/context; here the chain is explicit so the nesting is clear.)`,
 }
 
 class Docs extends LitElement {
@@ -722,28 +704,26 @@ class Docs extends LitElement {
                 ${this._section(
                     5,
                     "Scoped stores",
-                    "ScopeController",
-                    html`<code>ScopeController</code> forks a subtree's store from
-                    its parent. All three levels share one
-                    <code>scopeCounter</code>: a level shows its parent's value
+                    "store.scope()",
+                    html`<code>store.scope(id)</code> forks a child store, nested
+                    here as <code>root → Team → Project</code> over one
+                    <code>scopeCounter</code>. A level shows its parent's value
                     until you write its own (copy-on-write), and
                     <code>unset</code> drops that override so it
                     <em>inherits again</em>. Increment <strong>Root</strong> and
-                    watch the inherited levels follow; increment a child and it
-                    breaks away; unset it to re-join.`,
+                    the inherited levels follow; increment a child and it breaks
+                    away; unset it to re-join. (In components,
+                    <code>ScopeController</code> provides a scope to a subtree via
+                    context.)`,
                     CODE.scope,
-                    html`<vl-scope-cell
-                            label="Root store"
-                            .store=${rootStore}
-                            depth="0"
-                            root
-                        ></vl-scope-cell>
-                        <vl-scope-node
-                            label="Team scope"
-                            scopeId="team"
-                            depth="1"
-                            .child=${{ label: "Project scope", scopeId: "project" }}
-                        ></vl-scope-node>`,
+                    html`<vl-scope-cell label="Root store" .store=${rootStore} root>
+                        <vl-scope-cell label="Team scope" .store=${teamScope}>
+                            <vl-scope-cell
+                                label="Project scope"
+                                .store=${projectScope}
+                            ></vl-scope-cell>
+                        </vl-scope-cell>
+                    </vl-scope-cell>`,
                 )}
 
                 <footer>
