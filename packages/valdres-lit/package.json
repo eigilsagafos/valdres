@@ -11,6 +11,7 @@
         "url": "git+https://github.com/eigilsagafos/valdres.git"
     },
     "type": "module",
+    "sideEffects": false,
     "exports": {
         ".": "./src/index.ts"
     },
