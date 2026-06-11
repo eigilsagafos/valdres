@@ -1,0 +1,146 @@
+---
+title: public-ip
+description: Reactive public IP (v4/v6) with stale-while-revalidate
+---
+
+# public-ip
+
+Fetches your public IP from a list of HTTP endpoints and exposes it as global atoms, with stale-while-revalidate caching. `publicIpAtom` resolves to the IP (`Promise<string>` on first read, then `string`).
+
+<div className="callout callout-note">
+  <div className="callout-title">Async atom</div>
+  `publicIpAtom` suspends on first read. Wrap consumers in `<Suspense>`, or read the non-suspending `publicIpValueAtom` / `publicIpStatusAtom` instead.
+</div>
+
+## Install
+
+```bash
+bun add @valdres/public-ip
+```
+
+## Live example
+
+<PluginDemo plugin="public-ip" />
+
+## Usage
+
+<FrameworkBlock fw="react">
+
+```tsx
+import { Suspense } from "react"
+import { useValue } from "valdres-react"
+import { publicIpAtom } from "@valdres/public-ip"
+
+function Ip() {
+    const ip = useValue(publicIpAtom) // string (suspends until resolved)
+    return <span>{ip}</span>
+}
+
+function App() {
+    return (
+        <Suspense fallback="Loading…">
+            <Ip />
+        </Suspense>
+    )
+}
+```
+
+</FrameworkBlock>
+
+<FrameworkBlock fw="vue">
+
+```vue
+<script setup>
+import { useValue } from "valdres-vue"
+import { publicIpValueAtom, publicIpStatusAtom } from "@valdres/public-ip"
+
+const ip = useValue(publicIpValueAtom) // Ref<string | null>
+const status = useValue(publicIpStatusAtom) // Ref<PublicIpStatus>
+</script>
+
+<template>{{ status === "ok" ? ip : "Loading…" }}</template>
+```
+
+</FrameworkBlock>
+
+<FrameworkBlock fw="svelte">
+
+```svelte
+<script>
+import { watch } from "valdres-svelte"
+import { publicIpValueAtom, publicIpStatusAtom } from "@valdres/public-ip"
+
+const ip = watch(publicIpValueAtom)
+const status = watch(publicIpStatusAtom)
+</script>
+
+{status.value === "ok" ? ip.value : "Loading…"}
+```
+
+</FrameworkBlock>
+
+<FrameworkBlock fw="solid">
+
+```tsx
+import { createValue } from "valdres-solid"
+import { publicIpValueAtom, publicIpStatusAtom } from "@valdres/public-ip"
+
+function Ip() {
+    const ip = createValue(publicIpValueAtom) // () => string | null
+    const status = createValue(publicIpStatusAtom)
+    return <span>{status() === "ok" ? ip() : "Loading…"}</span>
+}
+```
+
+</FrameworkBlock>
+
+<FrameworkBlock fw="angular">
+
+```ts
+import { Component } from "@angular/core"
+import { injectValue } from "valdres-angular"
+import { publicIpAtom } from "@valdres/public-ip"
+
+@Component({
+    selector: "public-ip",
+    template: `{{ ip.isLoading() ? "Loading…" : ip.value() }}`,
+})
+export class PublicIp {
+    // injectValue resolves the promise: ip.value is Signal<string | undefined>,
+    // ip.isLoading / ip.status track the fetch.
+    ip = injectValue(publicIpAtom)
+}
+```
+
+</FrameworkBlock>
+
+## Exports
+
+| Export | Kind | Type |
+|--------|------|------|
+| `publicIpAtom` | atom (read-only) | `Promise<string> \| string` |
+| `publicIpStatusAtom` | atom (read-only) | `PublicIpStatus` |
+| `publicIpErrorAtom` | atom (read-only) | `Error \| null` |
+| `publicIpValueAtom` | atom (read-only) | `string \| null` |
+| `publicIpV4Atom` | atom (read-only) | `Promise<string> \| string` |
+| `publicIpV4StatusAtom` | atom (read-only) | `PublicIpStatus` |
+| `publicIpV4ErrorAtom` | atom (read-only) | `Error \| null` |
+| `publicIpV4ValueAtom` | atom (read-only) | `string \| null` |
+| `publicIpV6Atom` | atom (read-only) | `Promise<string> \| string` |
+| `publicIpV6StatusAtom` | atom (read-only) | `PublicIpStatus` |
+| `publicIpV6ErrorAtom` | atom (read-only) | `Error \| null` |
+| `publicIpV6ValueAtom` | atom (read-only) | `string \| null` |
+| `publicIpEndpointsAtom` | atom (settable) | `string[]` |
+| `publicIpV4EndpointsAtom` | atom (settable) | `string[]` |
+| `publicIpV6EndpointsAtom` | atom (settable) | `string[]` |
+| `publicIpMaxAgeAtom` | atom (settable) | `number` (ms) |
+| `publicIpStaleWhileRevalidateAtom` | atom (settable) | `number` (ms) |
+| `publicIpStaleIfErrorAtom` | atom (settable) | `number` (ms) |
+| `fetchPublicIp` | util fn | `(endpoints: string[], validate?: (v: string) => boolean, timeoutMs?: number) => Promise<string>` |
+| `PublicIpStatus` | type | `"idle" \| "loading" \| "revalidating" \| "ok" \| "error"` |
+
+The `V4` / `V6` atoms are the same shape, fetching from IPv4- and IPv6-only endpoints. Endpoint, `maxAge`, `staleWhileRevalidate`, and `staleIfError` atoms are settable to tune fetching.
+
+## Cross-framework
+
+Atoms are global: the fetch starts on the first subscriber and the result is shared across every store. Only the read primitive changes per framework (`useValue`, `createValue`, `injectValue`, `watch`, or `store.get` / `store.sub` in plain JS).

@@ -1,0 +1,38 @@
+---
+title: Performance
+description: Detailed benchmark results comparing Valdres to Jotai
+---
+
+# Performance
+
+<div className="callout callout-tip">
+  <div className="callout-title">Continuously verified</div>
+  These benchmarks run on every commit. If a regression is detected, the PR is blocked until performance is restored.
+</div>
+
+<BenchmarkTables />
+
+## Why the core is fast
+
+The engine is optimized for minimal allocations and cache-friendly data structures — WeakMap-based storage with no intermediate objects, and transactions that batch updates so subscribers fire once.
+
+In **React** specifically, the adapter is built on `useSyncExternalStore` (where Jotai uses `useEffect` + `useReducer`), which avoids extra renders and effect-cleanup overhead. The other adapters integrate with each framework's native reactivity — Vue refs, Svelte runes, Solid signals, Angular signals — so there the relevant performance is the framework's own.
+
+<div className="callout callout-note">
+  <div className="callout-title">What these numbers are (and aren't)</div>
+  Every benchmark here compares the core Valdres engine against Jotai at the JavaScript level. They are not framework-rendering benchmarks, and Valdres does not claim to be faster than a framework's native reactivity (e.g. Svelte runes). The adapters exist to share one store across frameworks, not to outrun them.
+</div>
+
+## Running benchmarks locally
+
+```bash
+# Bun (JSC/Safari engine)
+bun run --cwd packages/valdres test:bench
+
+# Node.js (V8/Chrome engine)
+bun run --cwd packages/valdres test:bench:node
+```
+
+## Historical trends
+
+Performance is tracked over time on every push to `main`. View the live, always-current numbers and history at [bencher.dev/perf/valdres](https://bencher.dev/perf/valdres).

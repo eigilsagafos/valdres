@@ -1,0 +1,134 @@
+---
+title: browser-device-motion
+description: Reactive device acceleration and rotation from DeviceMotionEvent
+---
+
+# browser-device-motion
+
+Wraps the `devicemotion` event as global atoms — linear acceleration and rotation rate, plus derived selectors. Values are usually `null` on desktop.
+
+<div className="callout callout-note">
+  <div className="callout-title">Permission</div>
+  iOS gates motion behind a user gesture — call <code>requestMotionPermission()</code> from a click before subscribing.
+</div>
+
+## Install
+
+```bash
+bun add @valdres/browser-device-motion
+```
+
+## Live example
+
+<PluginDemo plugin="browser-device-motion" />
+
+## Usage
+
+<FrameworkBlock fw="react">
+
+```tsx
+import { useValue } from "valdres-react"
+import {
+    accelerationSelector,
+    rotationRateSelector,
+    requestMotionPermission,
+} from "@valdres/browser-device-motion"
+
+function Motion() {
+    const accel = useValue(accelerationSelector) // Vector3 | null
+    const rot = useValue(rotationRateSelector)   // RotationRateSnapshot | null
+    return (
+        <div>
+            <button onClick={() => requestMotionPermission()}>Enable</button>
+            <pre>{JSON.stringify({ accel, rot }, null, 2)}</pre>
+        </div>
+    )
+}
+```
+
+</FrameworkBlock>
+
+<FrameworkBlock fw="vue">
+
+```vue
+<script setup>
+import { useValue } from "valdres-vue"
+import { accelerationSelector } from "@valdres/browser-device-motion"
+
+const accel = useValue(accelerationSelector) // Ref<Vector3 | null>
+</script>
+
+<template>{{ accel }}</template>
+```
+
+</FrameworkBlock>
+
+<FrameworkBlock fw="svelte">
+
+```svelte
+<script>
+import { watch } from "valdres-svelte"
+import { accelerationSelector } from "@valdres/browser-device-motion"
+
+const accel = watch(accelerationSelector)
+</script>
+
+{JSON.stringify(accel.value)}
+```
+
+</FrameworkBlock>
+
+<FrameworkBlock fw="solid">
+
+```tsx
+import { createValue } from "valdres-solid"
+import { accelerationSelector } from "@valdres/browser-device-motion"
+
+function Motion() {
+    const accel = createValue(accelerationSelector) // () => Vector3 | null
+    return <pre>{JSON.stringify(accel())}</pre>
+}
+```
+
+</FrameworkBlock>
+
+<FrameworkBlock fw="angular">
+
+```ts
+import { Component } from "@angular/core"
+import { injectValue } from "valdres-angular"
+import { accelerationSelector } from "@valdres/browser-device-motion"
+
+@Component({
+    selector: "motion-view",
+    template: `{{ accel() | json }}`,
+})
+export class MotionView {
+    accel = injectValue(accelerationSelector) // Signal<Vector3 | null>
+}
+```
+
+</FrameworkBlock>
+
+## Exports
+
+| Export | Kind | Type |
+|--------|------|------|
+| `motionAtom` | atom (read-only) | `MotionSnapshot \| null` |
+| `permissionAtom` | atom (read-only) | `PermissionValue` |
+| `motionStatusAtom` | atom (read-only) | `MotionStatus` |
+| `accelerationSelector` | selector | `Vector3 \| null` |
+| `accelerationIncludingGravitySelector` | selector | `Vector3 \| null` |
+| `accelerationMagnitudeSelector` | selector | `number \| null` |
+| `rotationRateSelector` | selector | `RotationRateSnapshot \| null` |
+| `intervalSelector` | selector | `number \| null` |
+| `requestMotionPermission` | util fn | `() => Promise<PermissionValue>` |
+| `MotionSnapshot` | type | `{ acceleration, accelerationIncludingGravity, rotationRate: ... \| null; interval: number; timeStamp: number }` |
+| `Vector3` | type | `{ x, y, z: number \| null }` |
+| `RotationRateSnapshot` | type | `{ alpha, beta, gamma: number \| null }` |
+| `MotionStatus` | type | `"unsupported" \| "idle" \| "active"` |
+| `PermissionValue` | type | `"granted" \| "denied" \| "prompt" \| "unsupported"` |
+
+## Cross-framework
+
+The `devicemotion` subscription starts on the first subscriber across all stores and stops when the last one leaves. Read primitive per framework: `useValue` (React/Vue), `createValue` (Solid), `injectValue` (Angular), `watch` (Svelte), or `store.get` / `store.sub`.

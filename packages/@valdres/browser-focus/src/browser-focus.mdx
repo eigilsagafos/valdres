@@ -1,0 +1,106 @@
+---
+title: browser-focus
+description: Reactive document focus state from the window focus/blur events
+---
+
+# browser-focus
+
+Wraps [`document.hasFocus()`](https://developer.mozilla.org/docs/Web/API/Document/hasFocus) plus the window `focus` / `blur` events as one global atom.
+
+## Install
+
+```bash
+bun add @valdres/browser-focus
+```
+
+## Live example
+
+<PluginDemo plugin="browser-focus" />
+
+## Usage
+
+<FrameworkBlock fw="react">
+
+```tsx
+import { useValue } from "valdres-react"
+import { focusAtom } from "@valdres/browser-focus"
+
+function FocusBadge() {
+    const focused = useValue(focusAtom)
+    return <span>{focused ? "Focused" : "Blurred"}</span>
+}
+```
+
+</FrameworkBlock>
+
+<FrameworkBlock fw="vue">
+
+```vue
+<script setup>
+import { useValue } from "valdres-vue"
+import { focusAtom } from "@valdres/browser-focus"
+
+const focused = useValue(focusAtom) // Ref<boolean>
+</script>
+
+<template>{{ focused ? "Focused" : "Blurred" }}</template>
+```
+
+</FrameworkBlock>
+
+<FrameworkBlock fw="svelte">
+
+```svelte
+<script>
+import { watch } from "valdres-svelte"
+import { focusAtom } from "@valdres/browser-focus"
+
+const focused = watch(focusAtom)
+</script>
+
+{focused.value ? "Focused" : "Blurred"}
+```
+
+</FrameworkBlock>
+
+<FrameworkBlock fw="solid">
+
+```tsx
+import { createValue } from "valdres-solid"
+import { focusAtom } from "@valdres/browser-focus"
+
+function FocusBadge() {
+    const focused = createValue(focusAtom) // () => boolean
+    return <span>{focused() ? "Focused" : "Blurred"}</span>
+}
+```
+
+</FrameworkBlock>
+
+<FrameworkBlock fw="angular">
+
+```ts
+import { Component } from "@angular/core"
+import { injectValue } from "valdres-angular"
+import { focusAtom } from "@valdres/browser-focus"
+
+@Component({
+    selector: "focus-badge",
+    template: `{{ focused.value() ? "Focused" : "Blurred" }}`,
+})
+export class FocusBadge {
+    focused = injectValue(focusAtom) // ValueState<boolean>
+}
+```
+
+</FrameworkBlock>
+
+## Exports
+
+| Export | Kind | Type |
+|--------|------|------|
+| `focusAtom` | atom (read-only) | `boolean` |
+
+## Cross-framework
+
+A global atom — works in every framework; only the read primitive's name changes (`useValue`, `createValue`, `injectValue`, `watch`, or `store.get` in plain JS). The `focus` / `blur` listeners attach on the first subscriber and detach when the last leaves. Returns `true` during SSR. Compose with `@valdres/browser-visibility` for a "user is present" signal (see `@valdres/browser-presence`).

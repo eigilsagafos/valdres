@@ -1,0 +1,250 @@
+---
+title: "Example: Currency Converter"
+description: Async data fetching with atoms and derived conversions with selectors
+---
+
+# Currency Converter
+
+A currency converter that demonstrates async atoms for data fetching and selectors for derived computations. Exchange rates are fetched once and cached in an atom. The converted amount updates reactively as the user types.
+
+## Shared state
+
+```ts
+import { atom, selector } from "valdres"
+
+export const amountAtom = atom(100)
+export const fromCurrencyAtom = atom("USD")
+export const toCurrencyAtom = atom("EUR")
+
+// Async atom — fetches exchange rates once, cached automatically
+export const ratesAtom = atom(async () => {
+    const res = await fetch("https://api.exchangerate-api.com/v4/latest/USD")
+    const data = await res.json()
+    return data.rates as Record<string, number>
+})
+
+// Derived: the converted amount
+export const convertedAmountSelector = selector(get => {
+    const amount = get(amountAtom)
+    const from = get(fromCurrencyAtom)
+    const to = get(toCurrencyAtom)
+    const rates = get(ratesAtom)
+
+    // Convert: amount in "from" currency → USD → "to" currency
+    const amountInUsd = amount / rates[from]
+    return Math.round(amountInUsd * rates[to] * 100) / 100
+})
+
+export const currencies = ["USD", "EUR", "GBP", "JPY", "CAD", "AUD", "CHF", "CNY"]
+```
+
+<div className="callout callout-tip">
+  <div className="callout-title">Async atoms are lazy</div>
+  The fetch only runs when <code>ratesAtom</code> is first read. In React, this integrates with Suspense — wrap your component in <code>&lt;Suspense&gt;</code> and the loading state is handled for you.
+</div>
+
+## React
+
+```tsx
+import { Suspense } from "react"
+import { useAtom, useValue } from "valdres-react"
+import { amountAtom, fromCurrencyAtom, toCurrencyAtom, convertedAmountSelector, currencies } from "./state"
+
+function CurrencyConverter() {
+    const [amount, setAmount] = useAtom(amountAtom)
+    const [from, setFrom] = useAtom(fromCurrencyAtom)
+    const [to, setTo] = useAtom(toCurrencyAtom)
+    const converted = useValue(convertedAmountSelector)
+
+    return (
+        <div>
+            <div>
+                <input
+                    type="number"
+                    value={amount}
+                    onChange={e => setAmount(Number(e.target.value))}
+                />
+                <select value={from} onChange={e => setFrom(e.target.value)}>
+                    {currencies.map(c => <option key={c}>{c}</option>)}
+                </select>
+            </div>
+            <div>
+                <span>{converted}</span>
+                <select value={to} onChange={e => setTo(e.target.value)}>
+                    {currencies.map(c => <option key={c}>{c}</option>)}
+                </select>
+            </div>
+        </div>
+    )
+}
+
+// Wrap in Suspense for the async rates fetch
+function App() {
+    return (
+        <Suspense fallback={<div>Loading exchange rates...</div>}>
+            <CurrencyConverter />
+        </Suspense>
+    )
+}
+```
+
+## Vue
+
+```vue
+<script setup>
+import { useAtom, useValue } from "valdres-vue"
+import { amountAtom, fromCurrencyAtom, toCurrencyAtom, convertedAmountSelector, currencies } from "./state"
+
+const amount = useAtom(amountAtom)
+const from = useAtom(fromCurrencyAtom)
+const to = useAtom(toCurrencyAtom)
+const converted = useValue(convertedAmountSelector)
+</script>
+
+<template>
+  <Suspense>
+    <template #fallback>
+      <div>Loading exchange rates...</div>
+    </template>
+    <div>
+      <div>
+        <input type="number" v-model.number="amount" />
+        <select v-model="from">
+          <option v-for="c in currencies" :key="c">{{ c }}</option>
+        </select>
+      </div>
+      <div>
+        <span>{{ converted }}</span>
+        <select v-model="to">
+          <option v-for="c in currencies" :key="c">{{ c }}</option>
+        </select>
+      </div>
+    </div>
+  </Suspense>
+</template>
+```
+
+## Svelte
+
+```svelte
+<script>
+  import { watch, readable } from "valdres-svelte"
+  import { amountAtom, fromCurrencyAtom, toCurrencyAtom, convertedAmountSelector, currencies } from "./state"
+
+  const amount = watch(amountAtom)
+  const from = watch(fromCurrencyAtom)
+  const to = watch(toCurrencyAtom)
+  const converted = readable(convertedAmountSelector)
+</script>
+
+<div>
+  <div>
+    <input type="number" value={amount.value}
+      oninput={e => amount.set(Number(e.target.value))} />
+    <select value={from.value}
+      onchange={e => from.set(e.target.value)}>
+      {#each currencies as c}
+        <option>{c}</option>
+      {/each}
+    </select>
+  </div>
+  <div>
+    <span>{converted.value}</span>
+    <select value={to.value}
+      onchange={e => to.set(e.target.value)}>
+      {#each currencies as c}
+        <option>{c}</option>
+      {/each}
+    </select>
+  </div>
+</div>
+```
+
+## Solid
+
+```tsx
+import { Suspense } from "solid-js"
+import { createAtom, createValue } from "valdres-solid"
+import { amountAtom, fromCurrencyAtom, toCurrencyAtom, convertedAmountSelector, currencies } from "./state"
+
+function CurrencyConverter() {
+    const [amount, setAmount] = createAtom(amountAtom)
+    const [from, setFrom] = createAtom(fromCurrencyAtom)
+    const [to, setTo] = createAtom(toCurrencyAtom)
+    const converted = createValue(convertedAmountSelector)
+
+    return (
+        <div>
+            <div>
+                <input type="number" value={amount()}
+                    onInput={e => setAmount(Number(e.target.value))} />
+                <select value={from()}
+                    onChange={e => setFrom(e.target.value)}>
+                    {currencies.map(c => <option>{c}</option>)}
+                </select>
+            </div>
+            <div>
+                <span>{converted()}</span>
+                <select value={to()}
+                    onChange={e => setTo(e.target.value)}>
+                    {currencies.map(c => <option>{c}</option>)}
+                </select>
+            </div>
+        </div>
+    )
+}
+
+function App() {
+    return (
+        <Suspense fallback={<div>Loading exchange rates...</div>}>
+            <CurrencyConverter />
+        </Suspense>
+    )
+}
+```
+
+## Angular
+
+```ts
+import { Component } from "@angular/core"
+import { injectAtom, injectValue } from "valdres-angular"
+import { amountAtom, fromCurrencyAtom, toCurrencyAtom, convertedAmountSelector, currencies } from "./state"
+
+@Component({
+    template: `
+        <div>
+            <div>
+                <input type="number" [value]="amount()"
+                    (input)="amount.set(+$event.target.value)" />
+                <select [value]="from()" (change)="from.set($event.target.value)">
+                    @for (c of currencies; track c) {
+                        <option>{{ c }}</option>
+                    }
+                </select>
+            </div>
+            <div>
+                <span>{{ converted() }}</span>
+                <select [value]="to()" (change)="to.set($event.target.value)">
+                    @for (c of currencies; track c) {
+                        <option>{{ c }}</option>
+                    }
+                </select>
+            </div>
+        </div>
+    `,
+})
+export class CurrencyConverter {
+    currencies = currencies
+    amount = injectAtom(amountAtom)
+    from = injectAtom(fromCurrencyAtom)
+    to = injectAtom(toCurrencyAtom)
+    converted = injectValue(convertedAmountSelector)
+}
+```
+
+## Key takeaways
+
+- **Async atoms** — exchange rates are fetched lazily on first read and cached automatically.
+- **Suspense integration** — React and Solid use `<Suspense>` for loading states. No loading booleans to manage.
+- **Derived state** — the converted amount is a selector that depends on three atoms and the async rates. It recomputes whenever any dependency changes.
+- **Same state, any framework** — the state layer is identical. Each framework just binds to it differently.

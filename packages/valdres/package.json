@@ -1,5 +1,6 @@
 {
     "name": "valdres",
+    "description": "Fast atom-based state management for JavaScript. Inspired by Recoil and Jotai.",
     "version": "1.0.0-beta.8",
     "license": "MIT",
     "author": {

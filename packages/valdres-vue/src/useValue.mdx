@@ -1,0 +1,40 @@
+---
+title: useValue
+description: Vue composable for reading atom or selector values
+---
+
+# useValue
+
+<div className="not-prose mb-8 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50 p-4">
+  <div className="text-xs font-medium text-zinc-400 dark:text-zinc-500 mb-2 uppercase tracking-wider">Signature</div>
+  <code className="text-sm font-mono text-accent-500">useValue&lt;T&gt;(state: Atom&lt;T&gt; | Selector&lt;T&gt;): Ref&lt;T&gt;</code>
+  <div className="mt-3 text-xs text-zinc-500 dark:text-zinc-400">
+    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-zinc-200 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 font-medium mr-2">valdres-vue</span>
+    Read-only subscription to state
+  </div>
+</div>
+
+A read-only composable that returns a reactive `Ref` for an atom or selector. The ref updates whenever the underlying state changes.
+
+## Usage
+
+```vue
+<script setup>
+import { atom, selector } from "valdres"
+import { useValue } from "valdres-vue"
+
+const nameAtom = atom("Valdres")
+const greetingSelector = selector(get => `Hello, ${get(nameAtom)}!`)
+
+const greeting = useValue(greetingSelector)
+</script>
+
+<template>
+    <h1>{{ greeting }}</h1>
+</template>
+```
+
+## See also
+
+- [useAtom](/vue/useAtom) — read + write composable
+- [useSetAtom](/vue/useSetAtom) — write-only composable

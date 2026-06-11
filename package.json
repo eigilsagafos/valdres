@@ -18,7 +18,10 @@
         "changeset": "changeset",
         "version-packages": "changeset version",
         "release": "bash scripts/ci-publish.sh",
-        "verify-publish": "bun run scripts/verify-publish.ts"
+        "verify-publish": "bun run scripts/verify-publish.ts",
+        "gen-readmes": "bun run scripts/gen-readmes.ts",
+        "docs:build": "bun run docs/build.ts",
+        "docs:dev": "bun run docs/dev.ts"
     },
     "workspaces": [
         "packages/*",
@@ -31,12 +34,46 @@
     "devDependencies": {
         "@changesets/changelog-github": "^0.6.0",
         "@changesets/cli": "^2.30.0",
+        "@codesandbox/sandpack-react": "^2.20.0",
+        "@mdx-js/mdx": "^3.1.1",
+        "@radix-ui/react-slider": "^1.3.6",
+        "@shikijs/rehype": "^4.0.2",
+        "@tailwindcss/cli": "^4.2.2",
+        "@tailwindcss/typography": "^0.5.19",
         "@types/bun": "1.2.2",
+        "@types/react": "19.2.3",
+        "@types/react-dom": "^19.2.3",
+        "@types/topojson-client": "^3.1.5",
         "@typescript/native-preview": "7.0.0-dev.20260521.1",
+        "clsx": "^2.1.1",
         "eslint": "9.20.1",
         "eslint-config-prettier": "10.0.1",
+        "gray-matter": "^4.0.3",
+        "pagefind": "^1.5.0",
         "prettier": "3.5.3",
-        "react": "19.1.1"
+        "react": "19.1.1",
+        "react-dom": "19.1.1",
+        "rehype-autolink-headings": "^7.1.0",
+        "rehype-slug": "^6.0.0",
+        "remark-frontmatter": "^5.0.0",
+        "remark-gfm": "^4.0.1",
+        "remark-mdx": "^3.1.0",
+        "remark-mdx-frontmatter": "^5.2.0",
+        "remark-parse": "^11.0.0",
+        "remark-stringify": "^11.0.0",
+        "shiki": "^4.0.2",
+        "solid-js": "^1.9.12",
+        "svelte": "5.28.2",
+        "tailwind-merge": "^3.5.0",
+        "tailwindcss": "^4.2.2",
+        "topojson-client": "^3.1.0",
+        "unified": "^11.0.5",
+        "unist-util-visit": "^5.0.0",
+        "vue": "3.5.13"
     },
-    "version": "1.0.0-beta.0"
+    "version": "1.0.0-beta.0",
+    "dependencies": {
+        "camera-controls": "^3.1.2",
+        "globe.gl": "^2.45.3"
+    }
 }

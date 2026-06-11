@@ -1,5 +1,6 @@
 {
     "name": "@valdres/bandwidth",
+    "description": "Reactive network throughput, latency, and jitter from a live measurement",
     "version": "1.0.0-beta.4",
     "license": "MIT",
     "author": {

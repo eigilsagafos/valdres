@@ -1,0 +1,37 @@
+---
+title: readable
+description: Svelte store-compatible readable for atom or selector values
+---
+
+# readable
+
+<div className="not-prose mb-8 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50 p-4">
+  <div className="text-xs font-medium text-zinc-400 dark:text-zinc-500 mb-2 uppercase tracking-wider">Signature</div>
+  <code className="text-sm font-mono text-accent-500">readable&lt;T&gt;(state: Atom&lt;T&gt; | Selector&lt;T&gt;, store: Store): Readable&lt;T&gt;</code>
+  <div className="mt-3 text-xs text-zinc-500 dark:text-zinc-400">
+    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-zinc-200 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 font-medium mr-2">valdres-svelte</span>
+    Read-only Svelte store subscription
+  </div>
+</div>
+
+Returns a Svelte store-compatible `Readable` that you can subscribe to with the `$` prefix. Useful when you need a read-only subscription that works with Svelte's store contract.
+
+## Usage
+
+```svelte
+<script>
+import { atom, selector } from "valdres"
+import { readable, getValdresContext } from "valdres-svelte"
+
+const store = getValdresContext()
+const nameAtom = atom("Valdres")
+const name = readable(nameAtom, store)
+</script>
+
+<h1>{$name}</h1>
+```
+
+## See also
+
+- [watch](/svelte/watch) — reactive object with read/write access
+- [getValdresContext](/svelte/getValdresContext) — get the store from context

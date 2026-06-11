@@ -1,0 +1,76 @@
+---
+title: Quick Start with Vue
+description: Get up and running with Valdres and Vue in under 5 minutes
+---
+
+# Quick Start with Vue
+
+## Install
+
+```bash
+npm install valdres valdres-vue
+```
+
+## Create your first atom
+
+```ts
+// store.ts
+import { atom } from "valdres"
+
+export const countAtom = atom(0)
+```
+
+## Use it in a component
+
+```vue
+<script setup>
+import { useAtom } from "valdres-vue"
+import { countAtom } from "./store"
+
+const count = useAtom(countAtom)
+</script>
+
+<template>
+  <div>
+    <p>Count: {{ count }}</p>
+    <button @click="count++">Increment</button>
+  </div>
+</template>
+```
+
+## Provide a store
+
+Wrap your app with `createValdres` to provide a store to all components:
+
+```ts
+// main.ts
+import { createApp } from "vue"
+import { createValdres } from "valdres-vue"
+import App from "./App.vue"
+
+const app = createApp(App)
+app.use(createValdres())
+app.mount("#app")
+```
+
+## Read-only values
+
+Use `useValue` when you only need to read:
+
+```vue
+<script setup>
+import { useValue } from "valdres-vue"
+import { countAtom } from "./store"
+
+const count = useValue(countAtom)
+</script>
+
+<template>
+  <p>The count is {{ count }}</p>
+</template>
+```
+
+## Next steps
+
+- [Core Concepts](/guides/core-concepts) — atoms, selectors, families, stores
+- [Patterns & Recipes](/guides/patterns) — real-world examples

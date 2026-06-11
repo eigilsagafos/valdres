@@ -1,0 +1,108 @@
+---
+title: browser-reduced-motion
+description: Reactive prefers-reduced-motion preference from matchMedia
+---
+
+# browser-reduced-motion
+
+Reactive `(prefers-reduced-motion: reduce)` as a global atom plus a boolean selector.
+
+## Install
+
+```bash
+bun add @valdres/browser-reduced-motion
+```
+
+## Live example
+
+<PluginDemo plugin="browser-reduced-motion" />
+
+## Usage
+
+<FrameworkBlock fw="react">
+
+```tsx
+import { useValue } from "valdres-react"
+import { prefersReducedMotionSelector } from "@valdres/browser-reduced-motion"
+
+function Banner() {
+    const reduced = useValue(prefersReducedMotionSelector)
+    return <div className={reduced ? "static" : "animated"} />
+}
+```
+
+</FrameworkBlock>
+
+<FrameworkBlock fw="vue">
+
+```vue
+<script setup>
+import { useValue } from "valdres-vue"
+import { prefersReducedMotionSelector } from "@valdres/browser-reduced-motion"
+
+const reduced = useValue(prefersReducedMotionSelector) // Ref<boolean>
+</script>
+
+<template>{{ reduced ? "static" : "animated" }}</template>
+```
+
+</FrameworkBlock>
+
+<FrameworkBlock fw="svelte">
+
+```svelte
+<script>
+import { watch } from "valdres-svelte"
+import { prefersReducedMotionSelector } from "@valdres/browser-reduced-motion"
+
+const reduced = watch(prefersReducedMotionSelector)
+</script>
+
+{reduced.value ? "static" : "animated"}
+```
+
+</FrameworkBlock>
+
+<FrameworkBlock fw="solid">
+
+```tsx
+import { createValue } from "valdres-solid"
+import { prefersReducedMotionSelector } from "@valdres/browser-reduced-motion"
+
+function Banner() {
+    const reduced = createValue(prefersReducedMotionSelector) // () => boolean
+    return <div class={reduced() ? "static" : "animated"} />
+}
+```
+
+</FrameworkBlock>
+
+<FrameworkBlock fw="angular">
+
+```ts
+import { Component } from "@angular/core"
+import { injectValue } from "valdres-angular"
+import { prefersReducedMotionSelector } from "@valdres/browser-reduced-motion"
+
+@Component({
+    selector: "motion-banner",
+    template: `<div [class]="reduced.value() ? 'static' : 'animated'"></div>`,
+})
+export class MotionBanner {
+    reduced = injectValue(prefersReducedMotionSelector) // ValueState<boolean>
+}
+```
+
+</FrameworkBlock>
+
+## Exports
+
+| Export | Kind | Type |
+|--------|------|------|
+| `reducedMotionAtom` | atom (read-only) | `ReducedMotion` (`"no-preference" \| "reduce"`) |
+| `prefersReducedMotionSelector` | selector | `boolean` |
+| `ReducedMotion` | type | `"no-preference" \| "reduce"` |
+
+## Cross-framework
+
+The atom is global: read it with each adapter's primitive (`useValue`, `createValue`, `injectValue`, `watch`) or `store.get` / `store.sub` in plain JS. The media-query subscription starts on the first subscriber and stops when the last one leaves.

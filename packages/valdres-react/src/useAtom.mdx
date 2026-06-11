@@ -1,0 +1,90 @@
+---
+title: useAtom
+description: React hook for reading and writing atom state
+---
+
+# useAtom
+
+<div className="not-prose mb-8 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50 p-4">
+  <div className="text-xs font-medium text-zinc-400 dark:text-zinc-500 mb-2 uppercase tracking-wider">Signature</div>
+  <code className="text-sm font-mono text-accent-500">useAtom&lt;T&gt;(atom: Atom&lt;T&gt;): [T, SetterFn&lt;T&gt;]</code>
+  <div className="mt-3 text-xs text-zinc-500 dark:text-zinc-400">
+    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-zinc-200 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 font-medium mr-2">valdres-react</span>
+    Subscribe to and update an atom's value
+  </div>
+</div>
+
+A React hook similar to `useState()` that returns the current value and a setter function for an atom. The component re-renders when the atom's value changes.
+
+## Usage
+
+```tsx
+import { atom } from "valdres"
+import { useAtom } from "valdres-react"
+
+const countAtom = atom(0)
+
+const Counter = () => {
+    const [count, setCount] = useAtom(countAtom)
+    return (
+        <div>
+            <span>{count}</span>
+            <button onClick={() => setCount(c => c + 1)}>+</button>
+        </div>
+    )
+}
+```
+
+## Try it
+
+<Playground code={`import { atom } from "valdres"
+import { Provider, useAtom } from "valdres-react"
+
+const countAtom = atom(0)
+
+function Counter() {
+  const [count, setCount] = useAtom(countAtom)
+  return (
+    <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+      <button onClick={() => setCount(c => c - 1)}>-</button>
+      <span style={{ minWidth: 24, textAlign: "center" }}>{count}</span>
+      <button onClick={() => setCount(c => c + 1)}>+</button>
+    </div>
+  )
+}
+
+export default function App() {
+  return (
+    <Provider>
+      <Counter />
+    </Provider>
+  )
+}
+`} />
+
+## Returns
+
+| Index | Type | Description |
+|-------|------|-------------|
+| `[0]` | `T` | Current value of the atom |
+| `[1]` | `SetterFn<T>` | Function to update the atom's value |
+
+## Updater function
+
+The setter supports both direct values and updater functions:
+
+```ts
+setCount(42)              // Set directly
+setCount(prev => prev + 1) // Update based on previous value
+```
+
+<div className="callout callout-note">
+  <div className="callout-title">Note</div>
+  If you only need to read the value, use <a href="/react/useValue">useValue</a> instead — it has the same subscription behavior but a simpler return type. If you only need the setter, use <a href="/react/useSetAtom">useSetAtom</a> to avoid subscribing to changes.
+</div>
+
+## See also
+
+- [useValue](/react/useValue) — read-only hook (no setter)
+- [useSetAtom](/react/useSetAtom) — write-only hook (no subscription)
+- [useResetAtom](/react/useResetAtom) — reset to default value

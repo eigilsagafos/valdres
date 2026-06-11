@@ -1,0 +1,37 @@
+# Docs are generated artifacts all the way down (site pages, package READMEs,
+# llms.txt, the root README package table). This catches broken MDX and README
+# drift on the PR instead of at deploy time — but only when docs-related files
+# actually changed, so unrelated PRs skip it entirely.
+name: Docs
+
+on:
+    pull_request:
+        branches: [main]
+        paths:
+            - "docs/**"
+            - "packages/**/*.mdx"
+            - "packages/**/README.md"
+            - "README.md"
+            - "scripts/gen-readmes.ts"
+            - "scripts/lib/mdx-to-markdown.ts"
+            - "scripts/lib/readme-sources.ts"
+            - ".github/workflows/docs-ci.yml"
+
+concurrency:
+    group: docs-${{ github.ref }}
+    cancel-in-progress: true
+
+jobs:
+    docs:
+        runs-on: ubuntu-22.04
+        steps:
+            - uses: actions/checkout@v6
+            - uses: oven-sh/setup-bun@v2
+              with:
+                  bun-version: 1.3.13
+            - name: Install
+              run: bun install --frozen-lockfile
+            - name: Build docs site
+              run: bun run docs:build
+            - name: READMEs in sync with docs MDX
+              run: bun run scripts/gen-readmes.ts --check

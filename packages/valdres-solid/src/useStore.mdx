@@ -1,0 +1,38 @@
+---
+title: useStore
+description: Solid function to access the current valdres store
+---
+
+# useStore
+
+<div className="not-prose mb-8 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50 p-4">
+  <div className="text-xs font-medium text-zinc-400 dark:text-zinc-500 mb-2 uppercase tracking-wider">Signature</div>
+  <code className="text-sm font-mono text-accent-500">useStore(): Store</code>
+  <div className="mt-3 text-xs text-zinc-500 dark:text-zinc-400">
+    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-zinc-200 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 font-medium mr-2">valdres-solid</span>
+    Access the current store instance
+  </div>
+</div>
+
+Returns the current valdres store from the nearest `ValdresProvider`. Useful for imperative operations.
+
+## Usage
+
+```tsx
+import { useStore } from "valdres-solid"
+
+function Debug() {
+    const store = useStore()
+
+    const handleClick = () => {
+        console.log("Current:", store.get(myAtom))
+    }
+
+    return <button onClick={handleClick}>Log value</button>
+}
+```
+
+## See also
+
+- [ValdresProvider](/solid/ValdresProvider) — provide a store to the component tree
+- [store](/valdres/store) — create a store instance

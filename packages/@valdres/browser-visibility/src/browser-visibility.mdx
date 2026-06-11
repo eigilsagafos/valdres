@@ -1,0 +1,90 @@
+---
+title: browser-visibility
+description: Reactive Page Visibility state (visible / hidden)
+---
+
+# browser-visibility
+
+Tracks the [Page Visibility API](https://developer.mozilla.org/docs/Web/API/Page_Visibility_API) — whether the tab is currently visible — via the `visibilitychange` event.
+
+## Install
+
+```bash
+bun add @valdres/browser-visibility
+```
+
+## Live example
+
+<PluginDemo plugin="browser-visibility" />
+
+## Usage
+
+<FrameworkBlock fw="react">
+
+```tsx
+import { useValue } from "valdres-react"
+import { visibilityAtom, isVisibleSelector } from "@valdres/browser-visibility"
+
+function PausableVideo() {
+    const visible = useValue(isVisibleSelector)
+    // pause work when the tab is hidden
+    return <video data-playing={visible} />
+}
+```
+
+</FrameworkBlock>
+
+<FrameworkBlock fw="vue">
+
+```ts
+import { useValue } from "valdres-vue"
+import { isVisibleSelector } from "@valdres/browser-visibility"
+
+const visible = useValue(isVisibleSelector) // Ref<boolean>
+```
+
+</FrameworkBlock>
+
+<FrameworkBlock fw="svelte">
+
+```ts
+import { watch } from "valdres-svelte"
+import { isVisibleSelector } from "@valdres/browser-visibility"
+
+const visible = watch(isVisibleSelector) // visible.value
+```
+
+</FrameworkBlock>
+
+<FrameworkBlock fw="solid">
+
+```ts
+import { createValue } from "valdres-solid"
+import { isVisibleSelector } from "@valdres/browser-visibility"
+
+const visible = createValue(isVisibleSelector) // visible()
+```
+
+</FrameworkBlock>
+
+<FrameworkBlock fw="angular">
+
+```ts
+import { injectValue } from "valdres-angular"
+import { isVisibleSelector } from "@valdres/browser-visibility"
+
+visible = injectValue(isVisibleSelector) // ValueState<boolean> — read visible.value()
+```
+
+</FrameworkBlock>
+
+## Exports
+
+| Export | Kind | Type |
+|--------|------|------|
+| `visibilityAtom` | atom (read-only) | `"visible" \| "hidden"` |
+| `isVisibleSelector` | selector | `boolean` |
+
+## Cross-framework
+
+A global atom plus a boolean selector — works in every framework. Compose it with `@valdres/browser-focus` for a "user is present" signal (see `@valdres/browser-presence`).

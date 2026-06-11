@@ -1,0 +1,104 @@
+---
+title: TypeScript
+description: Full type safety with Valdres atoms, selectors, and families
+---
+
+# TypeScript
+
+Valdres is written in TypeScript and provides full type inference out of the box. You rarely need to write explicit type annotations.
+
+## Atoms infer their type
+
+```ts
+import { atom } from "valdres"
+
+const countAtom = atom(0)          // Atom<number>
+const nameAtom = atom("hello")     // Atom<string>
+const userAtom = atom<User | null>(null)  // Atom<User | null>
+```
+
+When the default value is enough, TypeScript infers the type automatically. Use an explicit generic when you need a wider type than the default implies.
+
+## Selectors infer from the getter
+
+```ts
+import { atom, selector } from "valdres"
+
+const priceAtom = atom(100)
+const taxRateAtom = atom(0.25)
+
+// Selector<number> — inferred from the return type
+const totalSelector = selector(get => {
+    const price = get(priceAtom)     // number
+    const rate = get(taxRateAtom)    // number
+    return price * (1 + rate)
+})
+```
+
+The `get` function is fully typed — it knows what type each atom or selector returns.
+
+## Families are generic
+
+```ts
+import { atomFamily, selectorFamily } from "valdres"
+
+type User = { id: string; name: string; email: string }
+
+// AtomFamily<string, User> — key is string, value is User
+const userAtom = atomFamily<string, User>()
+
+// The returned atom is typed
+const alice = userAtom("alice")  // Atom<User>
+```
+
+```ts
+// SelectorFamily<string, string> — key is string, value is string
+const displayNameSelector = selectorFamily<string, string>(id => get => {
+    const user = get(userAtom(id))
+    return user.name
+})
+```
+
+## Store methods are typed
+
+```ts
+import { atom, store } from "valdres"
+
+const myStore = store()
+const countAtom = atom(0)
+
+myStore.get(countAtom)               // number
+myStore.set(countAtom, 42)           // OK
+myStore.set(countAtom, "hello")      // Type error!
+myStore.set(countAtom, prev => prev + 1) // prev is number
+```
+
+## Async atoms
+
+Async atoms resolve to their inner type:
+
+```ts
+type User = { id: string; name: string }
+
+const userAtom = atom<User>(async () => {
+    const res = await fetch("/api/user")
+    return res.json()
+})
+
+// In React: useValue returns User (not Promise<User>)
+const user = useValue(userAtom)  // User
+```
+
+## React hooks are typed
+
+All hooks infer types from the atom or selector passed in:
+
+```ts
+import { useAtom, useValue, useSetAtom } from "valdres-react"
+
+const countAtom = atom(0)
+
+const [count, setCount] = useAtom(countAtom)  // [number, (v: number | (prev: number) => number) => void]
+const value = useValue(countAtom)              // number
+const setter = useSetAtom(countAtom)           // (v: number | (prev: number) => number) => void
+```

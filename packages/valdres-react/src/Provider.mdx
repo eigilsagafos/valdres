@@ -1,0 +1,73 @@
+---
+title: Provider
+description: React context provider for valdres stores
+---
+
+# Provider
+
+<div className="not-prose mb-8 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50 p-4">
+  <div className="text-xs font-medium text-zinc-400 dark:text-zinc-500 mb-2 uppercase tracking-wider">Signature</div>
+  <code className="text-sm font-mono text-accent-500">{"<Provider store?: Store>"}</code>
+  <div className="mt-3 text-xs text-zinc-500 dark:text-zinc-400">
+    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-zinc-200 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 font-medium mr-2">valdres-react</span>
+    Provide a store to a React subtree
+  </div>
+</div>
+
+Wraps a React subtree with a valdres store. Optional — without a Provider, all hooks use a default global store.
+
+## Usage
+
+```tsx
+import { Provider } from "valdres-react"
+
+function App({ children }) {
+    return <Provider>{children}</Provider>
+}
+```
+
+## With a custom store
+
+Create a store with `store()` from `valdres` and pass it to the Provider:
+
+```tsx
+import { store } from "valdres"
+import { Provider } from "valdres-react"
+
+const myStore = store()
+
+function App({ children }) {
+    return <Provider store={myStore}>{children}</Provider>
+}
+```
+
+## Multiple stores
+
+You can nest Providers to isolate state between different parts of your app:
+
+```tsx
+function App() {
+    return (
+        <Provider>
+            <Header />
+            <Provider>
+                <EditorPanel />
+            </Provider>
+        </Provider>
+    )
+}
+```
+
+## When to use a Provider
+
+A `<Provider>` is required — `useAtom`, `useValue`, and the other hooks throw `No <Provider> found` if there isn't one above them in the tree.
+
+- **Without a `store` prop**: `<Provider>` creates a store for you (with `batchUpdates` enabled). Fine for most apps.
+- **With a `store` prop**: you pass a store you created yourself, giving you control over its lifecycle and isolation — useful for testing, micro-frontends, SSR, or independent state trees.
+
+For state access outside React (scripts, tests, cross-framework code), use the `globalStore` exported from `valdres`.
+
+## See also
+
+- [store](/valdres/store) — create a store instance
+- [useStore](/react/useStore) — access the current store

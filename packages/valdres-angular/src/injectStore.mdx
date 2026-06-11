@@ -1,0 +1,41 @@
+---
+title: injectStore
+description: Angular function to access the current valdres store
+---
+
+# injectStore
+
+<div className="not-prose mb-8 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50 p-4">
+  <div className="text-xs font-medium text-zinc-400 dark:text-zinc-500 mb-2 uppercase tracking-wider">Signature</div>
+  <code className="text-sm font-mono text-accent-500">injectStore(): Store</code>
+  <div className="mt-3 text-xs text-zinc-500 dark:text-zinc-400">
+    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-zinc-200 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 font-medium mr-2">valdres-angular</span>
+    Access the current store instance
+  </div>
+</div>
+
+Injects the current valdres store from the Angular dependency injection system. Useful for imperative operations.
+
+## Usage
+
+```ts
+import { Component } from "@angular/core"
+import { injectStore } from "valdres-angular"
+
+@Component({
+    selector: "app-debug",
+    template: `<button (click)="logValue()">Log value</button>`,
+})
+export class DebugComponent {
+    private store = injectStore()
+
+    logValue() {
+        console.log("Current:", this.store.get(myAtom))
+    }
+}
+```
+
+## See also
+
+- [provideValdres](/angular/provideValdres) — setup valdres in Angular
+- [store](/valdres/store) — create a store instance

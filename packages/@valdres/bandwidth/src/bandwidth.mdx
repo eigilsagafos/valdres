@@ -1,0 +1,133 @@
+---
+title: bandwidth
+description: Reactive network throughput, latency, and jitter from a live measurement
+---
+
+# bandwidth
+
+Download/upload speed, latency, and jitter from a live measurement, as async global atoms.
+
+<div className="callout callout-note">
+  <div className="callout-title">Runs a measurement</div>
+  Reading a measured atom triggers a download/upload test on first subscribe. Call `invalidateMeasurement()` to discard the result and re-run.
+</div>
+
+## Install
+
+```bash
+bun add @valdres/bandwidth
+```
+
+## Live example
+
+<PluginDemo plugin="bandwidth" />
+
+## Usage
+
+<FrameworkBlock fw="react">
+
+```tsx
+import { Suspense } from "react"
+import { useValue } from "valdres-react"
+import { downloadSpeedAtom, latencyAtom } from "@valdres/bandwidth"
+
+function Speed() {
+    const download = useValue(downloadSpeedAtom)
+    const latency = useValue(latencyAtom)
+    return <span>{download.toFixed(1)} Mbps · {latency.toFixed(0)} ms</span>
+}
+
+// The measured atoms suspend until the test resolves
+export function App() {
+    return (
+        <Suspense fallback="Measuring…">
+            <Speed />
+        </Suspense>
+    )
+}
+```
+
+</FrameworkBlock>
+
+<FrameworkBlock fw="vue">
+
+```vue
+<script setup>
+import { useValue } from "valdres-vue"
+import { downloadSpeedAtom } from "@valdres/bandwidth"
+
+const download = useValue(downloadSpeedAtom) // Ref<number>
+</script>
+
+<template>{{ download.toFixed(1) }} Mbps</template>
+```
+
+</FrameworkBlock>
+
+<FrameworkBlock fw="svelte">
+
+```svelte
+<script>
+import { watch } from "valdres-svelte"
+import { downloadSpeedAtom } from "@valdres/bandwidth"
+
+const download = watch(downloadSpeedAtom)
+</script>
+
+{download.value.toFixed(1)} Mbps
+```
+
+</FrameworkBlock>
+
+<FrameworkBlock fw="solid">
+
+```tsx
+import { createValue } from "valdres-solid"
+import { downloadSpeedAtom } from "@valdres/bandwidth"
+
+function Speed() {
+    const download = createValue(downloadSpeedAtom) // () => number
+    return <span>{download().toFixed(1)} Mbps</span>
+}
+```
+
+</FrameworkBlock>
+
+<FrameworkBlock fw="angular">
+
+```ts
+import { Component } from "@angular/core"
+import { injectValue } from "valdres-angular"
+import { downloadSpeedAtom } from "@valdres/bandwidth"
+
+@Component({
+    selector: "speed-badge",
+    template: `{{ download().toFixed(1) }} Mbps`,
+})
+export class SpeedBadge {
+    download = injectValue(downloadSpeedAtom) // Signal<number>
+}
+```
+
+</FrameworkBlock>
+
+## Exports
+
+| Export | Kind | Type |
+|--------|------|------|
+| `downloadSpeedAtom` | atom (read-only, async) | `number` — Mbps |
+| `uploadSpeedAtom` | atom (read-only, async) | `number` — Mbps |
+| `latencyAtom` | atom (read-only, async) | `number` — ms |
+| `jitterAtom` | atom (read-only, async) | `number` — ms |
+| `measurementStatusAtom` | atom (settable) | `MeasurementStatus` |
+| `lastMeasurementAtom` | atom (settable) | `number \| null` — timestamp |
+| `invalidateOnAtom` | atom (settable) | `GlobalAtom<unknown>[]` |
+| `measureBandwidth` | util fn | `(options?: MeasureBandwidthOptions) => Promise<BandwidthResult>` |
+| `invalidateMeasurement` | util fn | `() => void` |
+| `MeasurementStatus` | type | `"idle" \| "measuring-latency" \| "measuring-download" \| "measuring-upload" \| "complete" \| "error"` |
+| `BandwidthResult` | type | `{ downloadMbps, uploadMbps, latencyMs, jitterMs, timestamp: number }` |
+| `MeasureBandwidthOptions` | type | `{ latencySamples?, maxDurationMs?, minDurationMs?, warmupMs?, startStreams?, maxStreams?, stabilityThreshold?: number; signal?: AbortSignal; fresh?: boolean }` |
+
+## Cross-framework
+
+One in-flight measurement is shared across every store and framework. `invalidateMeasurement()` clears the result and, if anything is subscribed, kicks off a fresh run.

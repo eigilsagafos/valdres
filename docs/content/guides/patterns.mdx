@@ -1,0 +1,215 @@
+---
+title: Patterns & Recipes
+description: Common patterns for building real apps with Valdres
+---
+
+# Patterns & Recipes
+
+Practical patterns for building real applications with Valdres.
+
+## Todo list with families
+
+Use `atomFamily` to model a collection of items, with a separate atom tracking the list of IDs.
+
+```ts
+import { atom, atomFamily } from "valdres"
+
+const todoAtom = atomFamily()
+const todoIdsAtom = atom([])
+
+// Add a todo
+function addTodo(store, title) {
+    const id = crypto.randomUUID()
+    store.txn(set => {
+        set(todoAtom(id), { id, title, done: false })
+        set(todoIdsAtom, ids => [...ids, id])
+    })
+}
+
+// Toggle completion
+function toggleTodo(store, id) {
+    store.set(todoAtom(id), prev => ({ ...prev, done: !prev.done }))
+}
+```
+
+In React, render each todo with fine-grained updates — only the changed todo re-renders:
+
+```tsx
+import { useValue, useSetAtom } from "valdres-react"
+
+function TodoList() {
+    const ids = useValue(todoIdsAtom)
+    return ids.map(id => <TodoItem key={id} id={id} />)
+}
+
+function TodoItem({ id }) {
+    const todo = useValue(todoAtom(id))
+    return (
+        <label>
+            <input
+                type="checkbox"
+                checked={todo.done}
+                onChange={() => toggleTodo(store, id)}
+            />
+            {todo.title}
+        </label>
+    )
+}
+```
+
+## Async data fetching
+
+Atoms can be initialized with async functions. They work seamlessly with React Suspense.
+
+```tsx
+import { atom } from "valdres"
+import { useValue } from "valdres-react"
+import { Suspense } from "react"
+
+const userAtom = atom(async () => {
+    const res = await fetch("/api/user")
+    return res.json()
+})
+
+function UserProfile() {
+    const user = useValue(userAtom)
+    return <div>{user.name}</div>
+}
+
+// Wrap in Suspense
+function App() {
+    return (
+        <Suspense fallback={<div>Loading...</div>}>
+            <UserProfile />
+        </Suspense>
+    )
+}
+```
+
+## Derived collections
+
+Use `selectorFamily` to derive computed values for each item in a collection.
+
+```ts
+import { selector, selectorFamily } from "valdres"
+
+const todoAtom = atomFamily()
+
+// Derived: display text for each todo
+const todoDisplaySelector = selectorFamily(id => get => {
+    const todo = get(todoAtom(id))
+    return todo.done ? `✓ ${todo.title}` : todo.title
+})
+
+// Derived: count of completed todos
+const completedCountSelector = selector(get => {
+    const ids = get(todoIdsAtom)
+    return ids.filter(id => get(todoAtom(id)).done).length
+})
+```
+
+## Transactions for consistent updates
+
+When multiple atoms need to change together, use transactions. Subscribers only fire once after all updates complete.
+
+```ts
+import { atom, store } from "valdres"
+
+const balanceA = atom(100)
+const balanceB = atom(100)
+
+const myStore = store()
+
+// Without transaction: components see intermediate state
+myStore.set(balanceA, prev => prev - 50)
+myStore.set(balanceB, prev => prev + 50) // brief moment where $50 is "missing"
+
+// With transaction: atomic update
+myStore.txn(set => {
+    set(balanceA, prev => prev - 50)
+    set(balanceB, prev => prev + 50)
+    // Subscribers fire once, after both updates
+})
+```
+
+## Form state
+
+Use individual atoms for each field instead of one big form object. This gives you fine-grained re-renders — updating one field doesn't re-render the others.
+
+```ts
+import { atom } from "valdres"
+
+const nameAtom = atom("")
+const emailAtom = atom("")
+const messageAtom = atom("")
+```
+
+```tsx
+import { useAtom, useValue } from "valdres-react"
+
+function NameField() {
+    const [name, setName] = useAtom(nameAtom)
+    return <input value={name} onChange={e => setName(e.target.value)} />
+}
+
+function EmailField() {
+    const [email, setEmail] = useAtom(emailAtom)
+    return <input value={email} onChange={e => setEmail(e.target.value)} />
+}
+
+// Only re-renders when all three change (e.g., for a preview)
+function FormPreview() {
+    const name = useValue(nameAtom)
+    const email = useValue(emailAtom)
+    const message = useValue(messageAtom)
+    return <pre>{JSON.stringify({ name, email, message }, null, 2)}</pre>
+}
+```
+
+## Subscribing to a family
+
+Unlike other libraries, you can subscribe to an entire `atomFamily` to get notified when items are added or removed.
+
+```ts
+import { atomFamily, store } from "valdres"
+
+const userAtom = atomFamily()
+const myStore = store()
+
+// Subscribe to the family — callback receives array of all active keys
+myStore.sub(userAtom, keys => {
+    console.log("Active user IDs:", keys)
+})
+
+myStore.set(userAtom("user-1"), { name: "Alice" })
+// logs: Active user IDs: ["user-1"]
+
+myStore.set(userAtom("user-2"), { name: "Bob" })
+// logs: Active user IDs: ["user-1", "user-2"]
+```
+
+## State outside of components
+
+Valdres state lives in a store, not in components. You can read and write state from anywhere — event handlers, WebSocket callbacks, service workers, or tests.
+
+```ts
+import { atom, store } from "valdres"
+
+const myStore = store()
+const statusAtom = atom("idle")
+
+// From a WebSocket
+ws.addEventListener("message", event => {
+    const data = JSON.parse(event.data)
+    myStore.set(statusAtom, data.status)
+})
+
+// From a timer
+setInterval(() => {
+    myStore.set(statusAtom, "polling")
+}, 5000)
+
+// In a test
+myStore.set(statusAtom, "testing")
+expect(myStore.get(statusAtom)).toBe("testing")
+```

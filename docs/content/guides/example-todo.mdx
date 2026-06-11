@@ -1,0 +1,337 @@
+---
+title: "Example: Todo List"
+description: A complete todo list using atomFamily, selectors, and transactions
+---
+
+# Todo List
+
+A classic todo list that demonstrates `atomFamily` for individual items, family subscriptions for the list, and `selector` for derived counts.
+
+## Shared state
+
+This state definition is the same regardless of which framework you use:
+
+```ts
+import { atom, atomFamily, selector } from "valdres"
+
+export const todoAtom = atomFamily()
+export const todoIdsAtom = atom([])
+
+export const remainingCountSelector = selector(get => {
+    const ids = get(todoIdsAtom)
+    return ids.filter(id => !get(todoAtom(id)).done).length
+})
+
+export function addTodo(store, title) {
+    const id = crypto.randomUUID()
+    store.txn(set => {
+        set(todoAtom(id), { id, title, done: false })
+        set(todoIdsAtom, ids => [...ids, id])
+    })
+    return id
+}
+
+export function toggleTodo(store, id) {
+    store.set(todoAtom(id), prev => ({ ...prev, done: !prev.done }))
+}
+
+export function removeTodo(store, id) {
+    store.txn(set => {
+        set(todoIdsAtom, ids => ids.filter(i => i !== id))
+    })
+}
+```
+
+<div className="callout callout-tip">
+  <div className="callout-title">Why atomFamily?</div>
+  Each todo lives in its own atom. When you toggle one todo, only the component rendering that specific todo re-renders — not the entire list. This gives you fine-grained updates for free.
+</div>
+
+## React
+
+```tsx
+import { useValue, useStore } from "valdres-react"
+import { todoAtom, todoIdsAtom, remainingCountSelector, addTodo, toggleTodo, removeTodo } from "./state"
+
+function TodoApp() {
+    const store = useStore()
+    const ids = useValue(todoIdsAtom)
+    const remaining = useValue(remainingCountSelector)
+
+    const handleAdd = (e) => {
+        e.preventDefault()
+        const input = e.target.elements.title
+        if (input.value.trim()) {
+            addTodo(store, input.value.trim())
+            input.value = ""
+        }
+    }
+
+    return (
+        <div>
+            <h2>{remaining} items remaining</h2>
+            <form onSubmit={handleAdd}>
+                <input name="title" placeholder="What needs to be done?" />
+                <button type="submit">Add</button>
+            </form>
+            <ul>
+                {ids.map(id => <TodoItem key={id} id={id} />)}
+            </ul>
+        </div>
+    )
+}
+
+function TodoItem({ id }) {
+    const store = useStore()
+    const todo = useValue(todoAtom(id))
+
+    return (
+        <li>
+            <label>
+                <input
+                    type="checkbox"
+                    checked={todo.done}
+                    onChange={() => toggleTodo(store, id)}
+                />
+                <span style={{ textDecoration: todo.done ? "line-through" : "none" }}>
+                    {todo.title}
+                </span>
+            </label>
+            <button onClick={() => removeTodo(store, id)}>×</button>
+        </li>
+    )
+}
+```
+
+## Vue
+
+```vue
+<script setup>
+import { useValue, useStore } from "valdres-vue"
+import { todoAtom, todoIdsAtom, remainingCountSelector, addTodo, toggleTodo, removeTodo } from "./state"
+
+const store = useStore()
+const ids = useValue(todoIdsAtom)
+const remaining = useValue(remainingCountSelector)
+const newTitle = ref("")
+
+function handleAdd() {
+    if (newTitle.value.trim()) {
+        addTodo(store, newTitle.value.trim())
+        newTitle.value = ""
+    }
+}
+</script>
+
+<template>
+  <div>
+    <h2>{{ remaining }} items remaining</h2>
+    <form @submit.prevent="handleAdd">
+      <input v-model="newTitle" placeholder="What needs to be done?" />
+      <button type="submit">Add</button>
+    </form>
+    <ul>
+      <TodoItem v-for="id in ids" :key="id" :id="id" />
+    </ul>
+  </div>
+</template>
+```
+
+```vue
+<!-- TodoItem.vue -->
+<script setup>
+import { useValue, useStore } from "valdres-vue"
+import { todoAtom, toggleTodo, removeTodo } from "./state"
+
+const props = defineProps(['id'])
+const store = useStore()
+const todo = useValue(todoAtom(props.id))
+</script>
+
+<template>
+  <li>
+    <label>
+      <input type="checkbox" :checked="todo.done" @change="toggleTodo(store, id)" />
+      <span :style="{ textDecoration: todo.done ? 'line-through' : 'none' }">
+        {{ todo.title }}
+      </span>
+    </label>
+    <button @click="removeTodo(store, id)">×</button>
+  </li>
+</template>
+```
+
+## Svelte
+
+```svelte
+<script>
+  import { watch, readable } from "valdres-svelte"
+  import { todoAtom, todoIdsAtom, remainingCountSelector, addTodo, toggleTodo, removeTodo } from "./state"
+  import { getValdresContext } from "valdres-svelte"
+
+  const store = getValdresContext()
+  const ids = readable(todoIdsAtom)
+  const remaining = readable(remainingCountSelector)
+  let newTitle = $state("")
+
+  function handleAdd(e) {
+      e.preventDefault()
+      if (newTitle.trim()) {
+          addTodo(store, newTitle.trim())
+          newTitle = ""
+      }
+  }
+</script>
+
+<div>
+  <h2>{remaining.value} items remaining</h2>
+  <form onsubmit={handleAdd}>
+    <input bind:value={newTitle} placeholder="What needs to be done?" />
+    <button type="submit">Add</button>
+  </form>
+  <ul>
+    {#each ids.value as id (id)}
+      {@const todo = watch(todoAtom(id))}
+      <li>
+        <label>
+          <input type="checkbox" checked={todo.value.done} onchange={() => toggleTodo(store, id)} />
+          <span style:text-decoration={todo.value.done ? "line-through" : "none"}>
+            {todo.value.title}
+          </span>
+        </label>
+        <button onclick={() => removeTodo(store, id)}>×</button>
+      </li>
+    {/each}
+  </ul>
+</div>
+```
+
+## Solid
+
+```tsx
+import { createValue, useStore } from "valdres-solid"
+import { todoAtom, todoIdsAtom, remainingCountSelector, addTodo, toggleTodo, removeTodo } from "./state"
+import { For } from "solid-js"
+
+function TodoApp() {
+    const store = useStore()
+    const ids = createValue(todoIdsAtom)
+    const remaining = createValue(remainingCountSelector)
+    let inputRef
+
+    const handleAdd = (e) => {
+        e.preventDefault()
+        if (inputRef.value.trim()) {
+            addTodo(store, inputRef.value.trim())
+            inputRef.value = ""
+        }
+    }
+
+    return (
+        <div>
+            <h2>{remaining()} items remaining</h2>
+            <form onSubmit={handleAdd}>
+                <input ref={inputRef} placeholder="What needs to be done?" />
+                <button type="submit">Add</button>
+            </form>
+            <ul>
+                <For each={ids()}>
+                    {id => <TodoItem id={id} />}
+                </For>
+            </ul>
+        </div>
+    )
+}
+
+function TodoItem(props) {
+    const store = useStore()
+    const todo = createValue(todoAtom(props.id))
+
+    return (
+        <li>
+            <label>
+                <input
+                    type="checkbox"
+                    checked={todo().done}
+                    onChange={() => toggleTodo(store, props.id)}
+                />
+                <span style={{ "text-decoration": todo().done ? "line-through" : "none" }}>
+                    {todo().title}
+                </span>
+            </label>
+            <button onClick={() => removeTodo(store, props.id)}>×</button>
+        </li>
+    )
+}
+```
+
+## Angular
+
+```ts
+import { Component, signal, computed } from "@angular/core"
+import { injectValue, injectStore } from "valdres-angular"
+import { todoAtom, todoIdsAtom, remainingCountSelector, addTodo, toggleTodo, removeTodo } from "./state"
+
+@Component({
+    selector: "todo-app",
+    template: `
+        <div>
+            <h2>{{ remaining() }} items remaining</h2>
+            <form (submit)="handleAdd($event)">
+                <input #titleInput placeholder="What needs to be done?" />
+                <button type="submit">Add</button>
+            </form>
+            <ul>
+                @for (id of ids(); track id) {
+                    <todo-item [todoId]="id" />
+                }
+            </ul>
+        </div>
+    `,
+})
+export class TodoApp {
+    store = injectStore()
+    ids = injectValue(todoIdsAtom)
+    remaining = injectValue(remainingCountSelector)
+
+    handleAdd(e: Event) {
+        e.preventDefault()
+        const input = (e.target as HTMLFormElement).elements.namedItem("title") as HTMLInputElement
+        if (input.value.trim()) {
+            addTodo(this.store, input.value.trim())
+            input.value = ""
+        }
+    }
+}
+
+@Component({
+    selector: "todo-item",
+    template: `
+        <li>
+            <label>
+                <input type="checkbox" [checked]="todo().done" (change)="toggle()" />
+                <span [style.text-decoration]="todo().done ? 'line-through' : 'none'">
+                    {{ todo().title }}
+                </span>
+            </label>
+            <button (click)="remove()">×</button>
+        </li>
+    `,
+    inputs: ["todoId"],
+})
+export class TodoItem {
+    store = injectStore()
+    todoId!: string
+    todo = computed(() => injectValue(todoAtom(this.todoId))())
+
+    toggle() { toggleTodo(this.store, this.todoId) }
+    remove() { removeTodo(this.store, this.todoId) }
+}
+```
+
+## Key takeaways
+
+- **Fine-grained updates** — each todo is its own atom. Toggling one doesn't re-render the others.
+- **Transactions** — adding a todo updates both the item atom and the ID list atomically.
+- **Derived state** — the remaining count auto-updates when any todo changes.
+- **Framework agnostic state** — the entire state layer (`state.ts`) is identical across all frameworks. Only the UI binding changes.

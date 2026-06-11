@@ -1,5 +1,6 @@
 {
     "name": "@valdres/browser-online",
+    "description": "Reactive online/offline status from navigator.onLine",
     "version": "1.0.0-beta.4",
     "license": "MIT",
     "author": {

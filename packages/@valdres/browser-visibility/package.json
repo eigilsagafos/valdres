@@ -1,5 +1,6 @@
 {
     "name": "@valdres/browser-visibility",
+    "description": "Reactive Page Visibility state (visible / hidden)",
     "version": "1.0.0-beta.4",
     "license": "MIT",
     "author": {

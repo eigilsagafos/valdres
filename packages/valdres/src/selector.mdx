@@ -1,0 +1,55 @@
+---
+title: selector
+description: Create derived state from atoms or other selectors
+---
+
+# selector
+
+<div className="not-prose mb-8 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50 p-4">
+  <div className="text-xs font-medium text-zinc-400 dark:text-zinc-500 mb-2 uppercase tracking-wider">Signature</div>
+  <code className="text-sm font-mono text-accent-500">selector&lt;T&gt;(getter: (get: GetFn) =&gt; T): Selector&lt;T&gt;</code>
+  <div className="mt-3 text-xs text-zinc-500 dark:text-zinc-400">
+    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-zinc-200 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 font-medium mr-2">valdres</span>
+    Derive computed state that updates automatically
+  </div>
+</div>
+
+Creates derived state that automatically recomputes when its dependencies change. Selectors are read-only — they compute their value from atoms and other selectors.
+
+## Usage
+
+```ts
+import { atom, selector } from "valdres"
+
+const firstNameAtom = atom("John")
+const lastNameAtom = atom("Doe")
+
+const fullNameSelector = selector(get => {
+    const first = get(firstNameAtom)
+    const last = get(lastNameAtom)
+    return `${first} ${last}`
+})
+```
+
+## Parameters
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `getter` | `(get: GetFn) => T` | A function that computes the derived value. Use `get()` to read atoms or other selectors. |
+
+## Async selectors
+
+Selectors can also be async. They work with `Suspense` in React.
+
+```ts
+const userDataSelector = selector(async get => {
+    const userId = get(userIdAtom)
+    const res = await fetch(`/api/users/${userId}`)
+    return res.json()
+})
+```
+
+## See also
+
+- [selectorFamily](/valdres/selectorFamily) — create a collection of selectors keyed by a parameter
+- [useValue](/react/useValue) — read a selector value in your components

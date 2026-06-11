@@ -1,5 +1,6 @@
 {
     "name": "@valdres-react/color-mode",
+    "description": "React color mode hooks powered by Valdres",
     "version": "0.3.0-beta.1",
     "license": "MIT",
     "author": {

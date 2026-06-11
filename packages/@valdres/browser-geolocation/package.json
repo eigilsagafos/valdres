@@ -1,5 +1,6 @@
 {
     "name": "@valdres/browser-geolocation",
+    "description": "Reactive geolocation — position, accuracy, permission, and status",
     "version": "1.0.0-beta.4",
     "license": "MIT",
     "author": {

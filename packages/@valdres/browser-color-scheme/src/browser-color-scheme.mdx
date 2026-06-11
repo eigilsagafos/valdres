@@ -1,0 +1,91 @@
+---
+title: browser-color-scheme
+description: Reactive prefers-color-scheme (dark / light) media query
+---
+
+# browser-color-scheme
+
+Reads the user's OS-level `prefers-color-scheme` preference and keeps it in sync via a media-query listener. Exposes the raw value plus boolean selectors.
+
+## Install
+
+```bash
+bun add @valdres/browser-color-scheme
+```
+
+## Live example
+
+<PluginDemo plugin="browser-color-scheme" />
+
+## Usage
+
+<FrameworkBlock fw="react">
+
+```tsx
+import { useValue } from "valdres-react"
+import { colorSchemeAtom, isDarkSelector } from "@valdres/browser-color-scheme"
+
+function Theme() {
+    const scheme = useValue(colorSchemeAtom) // "dark" | "light"
+    const isDark = useValue(isDarkSelector)
+    return <span>{scheme}</span>
+}
+```
+
+</FrameworkBlock>
+
+<FrameworkBlock fw="vue">
+
+```ts
+import { useValue } from "valdres-vue"
+import { colorSchemeAtom } from "@valdres/browser-color-scheme"
+
+const scheme = useValue(colorSchemeAtom) // Ref<"dark" | "light">
+```
+
+</FrameworkBlock>
+
+<FrameworkBlock fw="svelte">
+
+```ts
+import { watch } from "valdres-svelte"
+import { colorSchemeAtom } from "@valdres/browser-color-scheme"
+
+const scheme = watch(colorSchemeAtom) // scheme.value
+```
+
+</FrameworkBlock>
+
+<FrameworkBlock fw="solid">
+
+```ts
+import { createValue } from "valdres-solid"
+import { colorSchemeAtom } from "@valdres/browser-color-scheme"
+
+const scheme = createValue(colorSchemeAtom) // scheme()
+```
+
+</FrameworkBlock>
+
+<FrameworkBlock fw="angular">
+
+```ts
+import { injectValue } from "valdres-angular"
+import { colorSchemeAtom } from "@valdres/browser-color-scheme"
+
+scheme = injectValue(colorSchemeAtom) // ValueState<"dark" | "light"> — read scheme.value()
+```
+
+</FrameworkBlock>
+
+## Exports
+
+| Export | Kind | Type |
+|--------|------|------|
+| `colorSchemeAtom` | atom (read-only) | `"dark" \| "light"` |
+| `isDarkSelector` | selector | `boolean` |
+| `isLightSelector` | selector | `boolean` |
+
+## Cross-framework
+
+A global atom plus derived selectors — works in every framework. For full theme management (system preference + user override + persistence), use `@valdres/color-mode`, which builds on top of this.

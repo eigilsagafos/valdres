@@ -1,0 +1,65 @@
+---
+title: scope
+description: Svelte function for creating a scoped child store
+---
+
+# scope
+
+<div className="not-prose mb-8 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50 p-4">
+  <div className="text-xs font-medium text-zinc-400 dark:text-zinc-500 mb-2 uppercase tracking-wider">Signature</div>
+  <code className="text-sm font-mono text-accent-500">scope(scopeId?: string): Store</code>
+  <div className="mt-3 text-xs text-zinc-500 dark:text-zinc-400">
+    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-zinc-200 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 font-medium mr-2">valdres-svelte</span>
+    Create an isolated child store in a Svelte component
+  </div>
+</div>
+
+Creates a scoped store that inherits state from the parent but can override values independently. Sets the scoped store as the context for child components.
+
+## Usage
+
+```svelte
+<script>
+  import { scope } from "valdres-svelte"
+
+  const scopedStore = scope("modal")
+</script>
+
+<ModalContent />
+```
+
+## Parameters
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `scopeId` | `string` | Optional identifier. Auto-generated if omitted. |
+
+## Returns
+
+The scoped `Store` instance.
+
+## Initializing state
+
+Since `scope()` returns the store directly, initialize values after creating it:
+
+```svelte
+<script>
+  import { scope } from "valdres-svelte"
+  import { nameAtom, emailAtom } from "./store"
+
+  const scopedStore = scope("edit-form")
+  scopedStore.set(nameAtom, "Draft")
+  scopedStore.set(emailAtom, "")
+</script>
+
+<EditForm />
+```
+
+## Cleanup
+
+The scope is automatically cleaned up when the component is destroyed.
+
+## See also
+
+- [Scoped Stores](/guides/scoped-stores) — full guide on scoped stores
+- [setValdresContext](/svelte/setValdresContext) — provide a store to your component tree

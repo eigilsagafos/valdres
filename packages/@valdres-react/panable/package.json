@@ -1,5 +1,6 @@
 {
     "name": "@valdres-react/panable",
+    "description": "React pan and zoom powered by Valdres",
     "version": "0.3.0-beta.0",
     "license": "MIT",
     "author": {

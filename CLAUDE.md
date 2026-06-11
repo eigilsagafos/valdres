@@ -44,7 +44,13 @@ Each `@valdres/browser-*` package wraps one browser API as global atoms. Canonic
 
 Changesets. Any PR touching a publishable package needs `bunx changeset` committed alongside it — CI enforces this via `bunx changeset status --since=origin/main`. For PRs that change publishable code but intentionally don't release (refactors, internal cleanup), run `bunx changeset --empty` to satisfy the check. Don't hand-edit `version` fields or CHANGELOGs — the Version Packages bot does that on merge. Repo is in `beta` prerelease mode.
 
+## Documentation
+
+- Docs site = repo-root `docs/` custom build (`bun run docs:dev` at `localhost:4321`). Source of truth is co-located MDX next to the code it documents.
+- **Don't hand-edit generated files**: package `README.md`s, the root README's `PACKAGES`/`BENCH` tables, and `docs/content/bench-summary.json` are regenerated (`bun run gen-readmes` / Bencher workflows) — edit the MDX instead.
+- **Before opening or updating a PR, run the `/before-pr` skill** — it has the full checklist: docs coverage, quality bar, generated artifacts, and the checks CI enforces (`docs:build` + `gen-readmes --check` run on PRs that touch docs-related files).
+
 ## Benchmarks
 
-- Benchmarks live in `packages/valdres/test/performance/*.bench.ts` (mitata via the `compare` / `measureOne` helpers in `bench-utils.ts`) and report to [Bencher](https://bencher.dev/perf/valdres) through `.github/workflows/bencher-{base,pr}.yml`. Bencher gates PRs on per-benchmark `latency` regressions vs `main`; the hosted perf page is the source of truth (the README links to it, not a generated table).
+- Benchmarks live in `packages/valdres/test/performance/*.bench.ts` (mitata via the `compare` / `measureOne` helpers in `bench-utils.ts`) and report to [Bencher](https://bencher.dev/perf/valdres) through `.github/workflows/bencher-{base,pr}.yml`. Bencher gates PRs on per-benchmark `latency` regressions vs `main`; the hosted perf page is the source of truth. The README's `BENCH` table and `docs/content/bench-summary.json` are committed snapshots auto-refreshed from Bencher — don't hand-edit.
 - New perf work needs head-to-head comparisons against the relevant competitor (Jotai for core, Recoil/MiniSearch/etc. where applicable), not isolated numbers.

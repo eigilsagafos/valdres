@@ -1,0 +1,107 @@
+---
+title: browser-screen
+description: Reactive screen resolution and orientation from window.screen
+---
+
+# browser-screen
+
+Wraps `window.screen` as one global atom, synced on `resize`, `orientationchange`, and DPR changes.
+
+## Install
+
+```bash
+bun add @valdres/browser-screen
+```
+
+## Live example
+
+<PluginDemo plugin="browser-screen" />
+
+## Usage
+
+<FrameworkBlock fw="react">
+
+```tsx
+import { useValue } from "valdres-react"
+import { screenAtom } from "@valdres/browser-screen"
+
+function Resolution() {
+    const s = useValue(screenAtom)
+    return <span>{s.width} × {s.height}</span>
+}
+```
+
+</FrameworkBlock>
+
+<FrameworkBlock fw="vue">
+
+```vue
+<script setup>
+import { useValue } from "valdres-vue"
+import { screenAtom } from "@valdres/browser-screen"
+
+const screen = useValue(screenAtom) // Ref<ScreenInfo>
+</script>
+
+<template>{{ screen.width }} × {{ screen.height }}</template>
+```
+
+</FrameworkBlock>
+
+<FrameworkBlock fw="svelte">
+
+```svelte
+<script>
+import { watch } from "valdres-svelte"
+import { screenAtom } from "@valdres/browser-screen"
+
+const screen = watch(screenAtom)
+</script>
+
+{screen.value.width} × {screen.value.height}
+```
+
+</FrameworkBlock>
+
+<FrameworkBlock fw="solid">
+
+```tsx
+import { createValue } from "valdres-solid"
+import { screenAtom } from "@valdres/browser-screen"
+
+function Resolution() {
+    const s = createValue(screenAtom) // () => ScreenInfo
+    return <span>{s().width} × {s().height}</span>
+}
+```
+
+</FrameworkBlock>
+
+<FrameworkBlock fw="angular">
+
+```ts
+import { Component } from "@angular/core"
+import { injectValue } from "valdres-angular"
+import { screenAtom } from "@valdres/browser-screen"
+
+@Component({
+    selector: "screen-resolution",
+    template: `{{ s().width }} × {{ s().height }}`,
+})
+export class ScreenResolution {
+    s = injectValue(screenAtom) // Signal<ScreenInfo>
+}
+```
+
+</FrameworkBlock>
+
+## Exports
+
+| Export | Kind | Type |
+|--------|------|------|
+| `screenAtom` | atom (read-only) | `ScreenInfo` |
+| `ScreenInfo` | type | `{ width, height, availWidth, availHeight, colorDepth, pixelDepth, devicePixelRatio, orientationType, orientationAngle }` |
+
+All fields are `number` except `orientationType: OrientationType`. Outside the browser the atom returns a fallback (zeros for dimensions; `colorDepth`/`pixelDepth` 24, `devicePixelRatio` 1, `orientationType: "landscape-primary"`).
+
+The browser subscription starts on the first subscriber across all stores and stops when the last one leaves.

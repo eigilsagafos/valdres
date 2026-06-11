@@ -1,0 +1,131 @@
+---
+title: hotkeys
+description: Callback-style keyboard shortcuts backed by global combination atoms
+---
+
+# hotkeys
+
+Keyboard shortcuts from `keydown` / `keyup`. `subscribeToHotkey`/`Key`/`Code`/`Command` fire a callback on match; the live key/code combination is exposed as global atoms.
+
+## Install
+
+```bash
+bun add @valdres/hotkeys
+```
+
+## Live example
+
+<PluginDemo plugin="hotkeys" />
+
+## Usage
+
+React has a `useHotkeys` hook family. Every other framework calls `subscribeToHotkey(...)` inside its own effect primitive and returns the unsubscribe.
+
+<FrameworkBlock fw="react">
+
+```tsx
+import { useHotkeys } from "@valdres-react/hotkeys"
+
+function Editor() {
+    useHotkeys("meta+s", () => save(), { preventDefault: true })
+    // also: useHotkeysKey, useHotkeysCode, useHotkeysCommand("Save", ...)
+    return <textarea />
+}
+```
+
+</FrameworkBlock>
+
+<FrameworkBlock fw="vue">
+
+```vue
+<script setup>
+import { onMounted, onUnmounted } from "vue"
+import { useStore } from "valdres-vue"
+import { subscribeToHotkey } from "@valdres/hotkeys"
+
+const store = useStore()
+let unsub
+onMounted(() => {
+    unsub = subscribeToHotkey("meta+s", () => save(), { preventDefault: true }, store)
+})
+onUnmounted(() => unsub?.())
+</script>
+```
+
+</FrameworkBlock>
+
+<FrameworkBlock fw="svelte">
+
+```svelte
+<script>
+import { onMount } from "svelte"
+import { getValdresContext } from "valdres-svelte"
+import { subscribeToHotkey } from "@valdres/hotkeys"
+
+const store = getValdresContext()
+onMount(() => subscribeToHotkey("meta+s", () => save(), { preventDefault: true }, store))
+</script>
+```
+
+</FrameworkBlock>
+
+<FrameworkBlock fw="solid">
+
+```tsx
+import { onCleanup } from "solid-js"
+import { useStore } from "valdres-solid"
+import { subscribeToHotkey } from "@valdres/hotkeys"
+
+function Editor() {
+    const store = useStore()
+    onCleanup(subscribeToHotkey("meta+s", () => save(), { preventDefault: true }, store))
+    return <textarea />
+}
+```
+
+</FrameworkBlock>
+
+<FrameworkBlock fw="angular">
+
+```ts
+import { Component, effect, inject, DestroyRef } from "@angular/core"
+import { injectStore } from "valdres-angular"
+import { subscribeToHotkey } from "@valdres/hotkeys"
+
+@Component({ selector: "editor", template: `<textarea></textarea>` })
+export class Editor {
+    private store = injectStore()
+    private destroyRef = inject(DestroyRef)
+    constructor() {
+        const unsub = subscribeToHotkey("meta+s", () => this.save(), { preventDefault: true }, this.store)
+        this.destroyRef.onDestroy(unsub)
+    }
+}
+```
+
+</FrameworkBlock>
+
+## Exports
+
+| Export | Kind | Type |
+|--------|------|------|
+| `currentCodeCombinationAtom` | atom (read-only) | `KeyboardCode[]` — `event.code`s currently held |
+| `currentKeyCombinationAtom` | atom (read-only) | `string[]` — lowercased `event.key`s currently held |
+| `eventByCodeAtom` | atomFamily | `(code: KeyboardCode[]) => Atom<KeyboardEvent \| null>` |
+| `eventByKeyAtom` | atomFamily | `(key: string[]) => Atom<KeyboardEvent \| null>` |
+| `subscribeToHotkey` | util fn | `(hotkey: string, cb: (e: KeyboardEvent) => void, options: Options, store: Store) => () => void` |
+| `subscribeToKey` | util fn | `(key: string \| string[], cb, options, store) => () => void` |
+| `subscribeToCode` | util fn | `(code: KeyboardCode \| KeyboardCode[], cb, options, store) => () => void` |
+| `subscribeToCommand` | util fn | `(command: KeyboardCommand, cb, options, store) => () => void` |
+| `registerListeners` | util fn | `() => void` — attaches the document key listeners |
+| `eventHandler` | util fn | `(event: KeyboardEvent) => void` |
+| `DEFAULT_OPTIONS` | const | frozen `Options` |
+| `Options` | type | `{ keyup, keydown, enabled, enableOnFormTags, enableOnContentEditable, preventDefault, repeat }` |
+| `KeyboardCode` | type | re-exported from `@valdres/browser-keyboard` |
+| `KeyboardCommand` | type | `"Save" \| "Undo" \| "Redo" \| "Cut" \| "Copy" \| "ZoomIn" \| "ZoomOut" \| "ZoomReset"` |
+
+`enabled` accepts a `boolean`, `() => boolean`, `Atom<boolean>`, or `Selector<boolean>`. `subscribeToCommand` maps a command to the OS-specific chord (e.g. `Save` → `meta+s` on Apple, `ctrl+s` elsewhere).
+
+## Cross-framework
+
+The combination atoms are global — read them with the framework's primitive (`useValue` / `createValue` / `injectValue` / `watch`, or `store.get` / `store.sub`). The `subscribeToX` callbacks take `store` explicitly, so they work anywhere.
