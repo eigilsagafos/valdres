@@ -21,7 +21,12 @@ values are skipped with a dev warning. `hydrate(store, payload)` resolves names
 through the registry — family entries via `family(...args)` — and applies
 everything in one `store.txn`; unknown names warn and are skipped (an atom only
 registers when its defining module was imported, so code-split clients must
-load those modules before hydrating).
+load those modules before hydrating). hydrate composes with schema validation:
+when the hydrating store (or an atom) enables `schemaValidation`, every payload
+entry is validated against its atom's `schema` as it stages — by default a
+failure throws `SchemaValidationError` and aborts the whole hydration
+atomically; `hydrate(store, payload, { invalid: "skip" })` instead warns and
+drops just the failing entries.
 
 **`store.onCommitEnd(callback)`.** Subscribe to commit boundaries: fires
 exactly once per commit (set/reset/del/unset, async resolution, `store.txn`,

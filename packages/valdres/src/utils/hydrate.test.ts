@@ -1,6 +1,8 @@
 import { describe, expect, mock, spyOn, test } from "bun:test"
+import { z } from "zod"
 import { atom } from "../atom"
 import { atomFamily } from "../atomFamily"
+import { SchemaValidationError } from "../errors/SchemaValidationError"
 import type { DehydratedState } from "../types/DehydratedState"
 import { store } from "../store"
 import { dehydrate } from "./dehydrate"
@@ -127,6 +129,61 @@ describe("hydrate", () => {
         } finally {
             warn.mockRestore()
         }
+    })
+
+    // hydrate is a trust boundary: payload values are wire data, and staging
+    // through txn.set runs the atom's schema when validation is enabled.
+    describe("schema validation", () => {
+        const count = atom(0, {
+            name: "hy-sv-count",
+            schema: z.number().int(),
+        })
+        const title = atom("", { name: "hy-sv-title", schema: z.string() })
+        const user = atomFamily<{ id: string }, [string]>(undefined, {
+            name: "hy-sv-user",
+            schema: z.object({ id: z.string() }),
+        })
+        // valid first: proves an abort rolls back already-staged entries too
+        const tampered: DehydratedState = {
+            atoms: [
+                ["hy-sv-title", "fine"],
+                ["hy-sv-count", "not-a-number"],
+            ],
+            families: [["hy-sv-user", ["u1"], { id: 42 }]],
+        }
+
+        test("an invalid entry aborts the whole hydration by default", () => {
+            const client = store({ schemaValidation: true })
+            expect(() => hydrate(client, tampered)).toThrow(
+                SchemaValidationError,
+            )
+            expect(() => hydrate(client, tampered)).toThrow("hy-sv-count")
+            // the txn never committed — even the valid entry did not land
+            expect(client.get(title)).toBe("")
+            expect(client.get(user)).toHaveLength(0)
+        })
+
+        test("invalid: 'skip' drops failing entries and applies the rest", () => {
+            const client = store({ schemaValidation: true })
+            const warn = spyOn(console, "warn").mockImplementation(mock())
+            try {
+                hydrate(client, tampered, { invalid: "skip" })
+                expect(client.get(title)).toBe("fine")
+                expect(client.get(count)).toBe(0) // skipped → default
+                expect(client.get(user)).toHaveLength(0) // member skipped too
+                expect(warn).toHaveBeenCalledTimes(2)
+                expect(warn.mock.calls[0][0]).toContain("hy-sv-count")
+                expect(warn.mock.calls[1][0]).toContain("hy-sv-user_u1")
+            } finally {
+                warn.mockRestore()
+            }
+        })
+
+        test("validation is opt-in: a default store stores payload values as-is", () => {
+            const client = store()
+            hydrate(client, tampered)
+            expect(client.get(count)).toBe("not-a-number" as unknown as number)
+        })
     })
 
     test("entry-kind mismatches warn and are skipped", () => {

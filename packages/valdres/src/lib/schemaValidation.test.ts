@@ -630,7 +630,7 @@ describe("schema validation", () => {
     describe("Standard Schema support", () => {
         test("validates via a parse-less Standard Schema (Valibot-style)", () => {
             const store1 = store({ schemaValidation: true })
-            const a = atom("hello", { name: "std", schema: standardString })
+            const a = atom("hello", { name: "std-valibot", schema: standardString })
             store1.set(a, "world")
             expect(store1.get(a)).toBe("world")
             // @ts-expect-error - wrong type
@@ -639,14 +639,14 @@ describe("schema validation", () => {
 
         test("Standard Schema failure message includes the issue", () => {
             const store1 = store({ schemaValidation: true })
-            const a = atom("hello", { name: "std", schema: standardString })
+            const a = atom("hello", { name: "std-msg", schema: standardString })
             try {
                 // @ts-expect-error - wrong type
                 store1.set(a, 123)
                 throw new Error("expected throw")
             } catch (err) {
                 expect((err as Error).message).toContain("expected string")
-                expect((err as Error).message).toContain("std")
+                expect((err as Error).message).toContain("std-msg")
             }
         })
 
