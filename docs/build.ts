@@ -26,7 +26,11 @@ console.log("📝 Compiling MDX...")
 const compiled = await compileMdx(entries)
 
 console.log("🎨 Building CSS...")
-await $`bunx @tailwindcss/cli -i ${import.meta.dir}/src/styles/globals.css -o ${distDir}/styles.css --minify`.quiet()
+// Invoke the bin directly: the package is @tailwindcss/cli but its bin is
+// named `tailwindcss`, and `bunx @tailwindcss/cli` mis-resolves that mapping
+// on CI runners ("Unknown command line option: '-i'").
+const tailwindBin = `${rootDir}/node_modules/.bin/tailwindcss`
+await $`${tailwindBin} -i ${import.meta.dir}/src/styles/globals.css -o ${distDir}/styles.css --minify`.quiet()
 
 console.log("⚡ Bundling client JS...")
 await Bun.build({
@@ -134,6 +138,6 @@ await generateSitemap(compiled, distDir, siteUrl)
 await Bun.write(`${distDir}/favicon.svg`, Bun.file(`${import.meta.dir}/favicon.svg`))
 
 console.log("🔎 Indexing for search...")
-await $`bunx pagefind --site ${distDir}`.quiet()
+await $`${rootDir}/node_modules/.bin/pagefind --site ${distDir}`.quiet()
 
 console.log(`✅ Built ${entries.length} pages to docs/dist/`)

@@ -48,7 +48,7 @@ Changesets. Any PR touching a publishable package needs `bunx changeset` committ
 
 - Docs site = repo-root `docs/` custom build (`bun run docs:dev` at `localhost:4321`). Source of truth is co-located MDX next to the code it documents.
 - **Don't hand-edit generated files**: package `README.md`s, the root README's `PACKAGES`/`BENCH` tables, and `docs/content/bench-summary.json` are regenerated (`bun run gen-readmes` / Bencher workflows) — edit the MDX instead.
-- **Before opening or updating a PR, run the `/before-pr` skill** — it has the full checklist: docs coverage, quality bar, generated artifacts, and the checks CI enforces (`docs:build` + `gen-readmes --check` run on every PR).
+- **Before opening or updating a PR, run the `/before-pr` skill** — it has the full checklist: docs coverage, quality bar, generated artifacts, and the checks CI enforces (`docs:build` + `gen-readmes --check` run on PRs that touch docs-related files).
 
 ## Benchmarks
 

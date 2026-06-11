@@ -149,7 +149,7 @@ const startTime = Date.now()
 
 const tailwind = Bun.spawn(
     [
-        "bunx", "@tailwindcss/cli",
+        `${rootDir}/node_modules/.bin/tailwindcss`,
         "-i", `${docsDir}/src/styles/globals.css`,
         "-o", `${distDir}/styles.css`,
         "--watch",
