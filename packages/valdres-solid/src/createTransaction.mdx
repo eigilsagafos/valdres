@@ -1,0 +1,44 @@
+---
+title: createTransaction
+description: Solid primitive for batching multiple state updates into one transaction
+---
+
+# createTransaction
+
+<div className="not-prose mb-8 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50 p-4">
+  <div className="text-xs font-medium text-zinc-400 dark:text-zinc-500 mb-2 uppercase tracking-wider">Signature</div>
+  <code className="text-sm font-mono text-accent-500">createTransaction(store?: Store): (callback: (txn: Transaction) =&gt; any) =&gt; any</code>
+  <div className="mt-3 text-xs text-zinc-500 dark:text-zinc-400">
+    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-zinc-200 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 font-medium mr-2">valdres-solid</span>
+    Batch updates — subscribers fire once
+  </div>
+</div>
+
+Returns a function that runs a callback as a [transaction](/guides/transactions) on the current store: all updates apply atomically and subscribers fire once at the end. The callback receives `{ set, get, reset, del, unset }`.
+
+## Usage
+
+```tsx
+import { atom } from "valdres"
+import { createTransaction } from "valdres-solid"
+
+const firstNameAtom = atom("")
+const lastNameAtom = atom("")
+
+function ResetForm() {
+    const txn = createTransaction()
+    const clear = () =>
+        txn(({ reset }) => {
+            reset(firstNameAtom)
+            reset(lastNameAtom)
+        })
+    return <button onClick={clear}>Clear</button>
+}
+```
+
+Pass a store to target one explicitly: `createTransaction(myStore)`.
+
+## See also
+
+- [Transactions guide](/guides/transactions) — semantics, nesting, and performance
+- [useStore](/solid/useStore) — access the current store

@@ -54,6 +54,14 @@ const apiRoles: Record<string, ApiMapping> = {
         angular: "provideValdres",
         vanilla: null,
     },
+    transaction: {
+        react: "useTransaction",
+        vue: "useTransaction",
+        svelte: null,
+        solid: "createTransaction",
+        angular: "injectTransaction",
+        vanilla: null,
+    },
     scope: {
         react: "Scope",
         vue: "ValdresScope",
