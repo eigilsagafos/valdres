@@ -24,6 +24,7 @@ const introduction: NavGroup = {
         { title: "Patterns & Recipes", route: "/guides/patterns" },
         { title: "Transactions", route: "/guides/transactions" },
         { title: "Scoped Stores", route: "/guides/scoped-stores" },
+        { title: "Schema Validation", route: "/guides/schema-validation" },
         { title: "TypeScript", route: "/guides/typescript" },
         { title: "Works Everywhere", route: "/guides/outside-react" },
         { title: "Performance", route: "/guides/performance" },

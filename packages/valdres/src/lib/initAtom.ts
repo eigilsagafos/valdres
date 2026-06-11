@@ -7,6 +7,8 @@ import { getState } from "./getState"
 import { propagateAtomUpdate } from "./propagateUpdatedAtoms"
 import { setAtom } from "./setAtom"
 import { setValueInData } from "./setValueInData"
+import { validateResolvedValue } from "./validateResolvedValue"
+import { validateSchema } from "./validateSchema"
 
 export const getAtomInitValue = <V = any>(
     atom: Atom<V>,
@@ -31,6 +33,16 @@ export const getAtomInitValue = <V = any>(
                     // replaced our promise as the cached value, swallow
                     // this resolution. Mirrors setAtom.handlePromise.
                     if (data.values.get(atom) !== value) return
+                    if (!validateResolvedValue(atom, resolvedValue, data)) {
+                        // Invalid: failure already reported; drop the stored
+                        // promise so a re-subscribe re-inits, rather than
+                        // committing the invalid value or leaving the atom
+                        // stuck on an unvalidated promise.
+                        if (data.values.get(atom) === value) {
+                            data.values.delete(atom)
+                        }
+                        return
+                    }
                     // @ts-ignore @ts-todo
                     setValueInData(atom, resolvedValue, data)
                     propagateAtomUpdate([atom], data, false, undefined, "async-set")
@@ -44,12 +56,37 @@ export const getAtomInitValue = <V = any>(
                     }
                 },
             )
+            return value
         }
-        return value
+        return validateSchema(atom, value, data)
     } else if (isSelector(atom.defaultValue)) {
-        return getState(atom.defaultValue, data, initializedAtomsSet)
+        const value = getState(atom.defaultValue, data, initializedAtomsSet)
+        if (isPromiseLike(value)) {
+            // The atom's value IS the source selector's promise (consumers await
+            // it). The source selector validates against its OWN schema, if any;
+            // here we additionally validate the resolved value against THIS
+            // atom's schema and report on failure — so an async selector default
+            // is covered like every other boundary. Unlike the function-default
+            // branch above we neither re-land the value (it's the shared
+            // promise, not a freshly-set atom value) nor drop the atom's cache
+            // on failure (re-init would just re-read the selector's cached
+            // result, so dropping buys nothing — awaiters of the shared promise
+            // see the raw resolved value either way; the report is the signal).
+            // Gated on schema presence so schema-less atoms pay no handler
+            // allocation (validateResolvedValue re-checks the full gate).
+            if (atom.schema) {
+                value.then(
+                    resolved => validateResolvedValue(atom, resolved, data),
+                    () => {}, // genuine rejection is handled by the selector's path
+                )
+            }
+            return value
+        }
+        return validateSchema(atom, value, data)
     } else {
-        return atom.defaultValue
+        // Narrowed: not undefined, not a function, not a selector — so the
+        // default is a plain value of type V.
+        return validateSchema(atom, atom.defaultValue as V, data)
     }
 }
 

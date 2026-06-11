@@ -226,7 +226,12 @@ export function storeFromStoreData(
             if (data.scopes.has(scopeId)) {
                 scopedStoreData = data.scopes.get(scopeId)!
             } else {
-                scopedStoreData = createStoreData(scopeId, data, data.batchUpdates ? { batchUpdates: true } : undefined)
+                // schemaValidation and enumerable are inherited from the parent
+                // inside createStoreData; only batchUpdates needs forwarding here.
+                const scopeOptions = data.batchUpdates
+                    ? { batchUpdates: true }
+                    : undefined
+                scopedStoreData = createStoreData(scopeId, data, scopeOptions)
                 data.scopes.set(scopeId, scopedStoreData)
             }
             const consumers = scopedStoreData.scopeConsumers!

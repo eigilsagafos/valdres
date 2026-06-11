@@ -1,6 +1,7 @@
 import type { AtomOnMount } from "./AtomOnMount"
 import type { EqualFunc } from "./EqualFunc"
 import type { GetValue } from "./GetValue"
+import type { Schema } from "./Schema"
 import type { SelectorFamily } from "./SelectorFamily"
 
 export type SelectorGetOptions = {
@@ -15,6 +16,9 @@ export type Selector<
     get: (get: GetValue, options: SelectorGetOptions) => Value | Promise<Value>
     equal: EqualFunc<Value>
     name?: string
+    schema?: Schema<Value>
+    /** Per-selector override of the store's `schemaValidation` flag (see SelectorOptions). */
+    schemaValidation?: boolean
     family?: SelectorFamily<Value, FamilyArgs>
     familyArgs?: FamilyArgs
     onMount?: AtomOnMount

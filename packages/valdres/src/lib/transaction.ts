@@ -6,6 +6,7 @@ import type { State } from "../types/State"
 import type { StoreData } from "../types/StoreData"
 import type { TransactionFn } from "../types/TransactionFn"
 import { deepFreeze } from "../utils/deepFreeze"
+import { validateSchema } from "./validateSchema"
 import { isAtom } from "../utils/isAtom"
 import { isAtomFamily } from "../utils/isAtomFamily"
 import { isFamilyAtom } from "../utils/isFamilyAtom"
@@ -205,6 +206,13 @@ export class Transaction {
         if (!atom.mutable && !IS_PROD && resolved !== null && (typeof resolved === "object" || typeof resolved === "function")) {
             resolved = deepFreeze(resolved) as V
         }
+        // Validate at staging time (inside the txn body), not at commit: a
+        // failure throws here, so the user's callback aborts and commit never
+        // runs — the transaction stays atomic. This also covers batched stores,
+        // whose set() routes through here. Caveat: a PROMISE value is skipped by
+        // validateSchema, and (unlike the non-txn setAtom path) the txn commit
+        // does NOT resolve it — the promise is stored as-is and never validated.
+        resolved = validateSchema(atom, resolved, this.data)
         this._atomMap.set(atom, resolved)
         // A set supersedes an unset of the same atom buffered earlier in this txn
         // (last write wins, regardless of order). Symmetric to `unset` dropping
@@ -240,7 +248,9 @@ export class Transaction {
             }
             index.created.set(atom, performance.now())
             if (index.deleted.has(atom)) index.deleted.delete(atom)
-            this._atomMap.set(atom, value)
+            // Validate like Transaction.set so this path can't become an
+            // unvalidated hole (promises are skipped by validateSchema).
+            this._atomMap.set(atom, validateSchema(atom, value, this.data))
             this._unsetSet?.delete(atom)
         }
         index.rendered = null

@@ -52,6 +52,7 @@ export type StoreData = {
     enumerable?: boolean
     scopes: Map<string, StoreData>
     batchUpdates?: boolean
+    schemaValidation?: boolean
     scopeValueIndex: WeakMap<WeakKey, Set<StoreData>>
     /** Present iff this is a scoped store. Root stores have `parent: undefined`. */
     parent?: StoreData

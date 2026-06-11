@@ -1,0 +1,166 @@
+---
+title: Schema Validation
+description: Opt-in runtime validation for atoms and selectors with schema-driven type inference
+---
+
+# Schema Validation
+
+Atoms and selectors accept an optional `schema` that validates values at
+runtime — and types your state without a generic. Validation is **opt-in per
+store** and off by default, so it adds zero cost unless you turn it on.
+
+```ts
+import { atom, store } from "valdres"
+import { z } from "zod"
+
+const userAtom = atom(
+    { name: "Ada", age: 36 },
+    {
+        name: "userAtom",
+        schema: z.object({ name: z.string(), age: z.number().min(0) }),
+    },
+)
+
+const s = store({ schemaValidation: true })
+
+s.set(userAtom, { name: "Bob", age: -1 })
+// SchemaValidationError: Schema validation failed for 'userAtom': …
+```
+
+## Two features in one
+
+1. **Type inference.** The schema is the single source of truth for the atom's
+   type — `atom(undefined, { schema: z.string() })` is `Atom<string>`, no
+   generic needed. This works even when validation is off.
+2. **Runtime validation.** With validation enabled, every value entering the
+   store is checked against the schema — catching the bugs TypeScript can't see
+   (API responses with the wrong shape, form input, data crossing team
+   boundaries).
+
+## Enabling validation
+
+Validation is off by default. Enable it per store:
+
+```ts
+const devStore = store({ schemaValidation: true })
+```
+
+Scoped stores inherit the setting from their parent. A typical setup enables it
+everywhere except production:
+
+```ts
+const appStore = store({ schemaValidation: import.meta.env.DEV })
+```
+
+An individual atom or selector can override the store's setting:
+
+```ts
+// Always validated — even in a store with validation off.
+// Useful for true boundary atoms (API responses, URL params).
+const apiResponseAtom = atom(undefined, {
+    schema: responseSchema,
+    schemaValidation: true,
+})
+
+// Never validated — even in a store with validation on.
+const hotPathAtom = atom(0, {
+    schema: z.number(),
+    schemaValidation: false,
+})
+```
+
+## Supported schema libraries
+
+Any [Standard Schema](https://standard-schema.dev) works — Zod 3.24+/4,
+Valibot, ArkType, and others — as well as any classic validator with a
+`parse(value)` method.
+
+```ts
+import * as v from "valibot"
+
+const nameAtom = atom("Ada", { schema: v.string() })
+```
+
+When a schema offers both interfaces (like Zod), the `parse` path is used so
+the library's native error (e.g. a `ZodError`) is preserved on the thrown
+error's `cause`.
+
+## Validate-only semantics
+
+The schema runs purely as a check — **the original value is stored unchanged**.
+A store with validation on holds exactly the same values as one with it off, so
+enabling validation in development can never make behavior diverge from
+production.
+
+The flip side: transforming or coercing schemas (`z.coerce.number()`,
+`z.string().trim()`, `z.string().default(...)`) validate but do **not**
+transform. Avoid them here — the inferred type follows the schema's output
+while the stored value stays the input. Do coercion at your data boundary
+(form handler, fetch layer) and give the atom a plain validator instead.
+
+## What gets validated
+
+With validation enabled, values are checked at every write boundary:
+
+| Boundary | On failure |
+|----------|-----------|
+| `store.set(atom, value)` | throws `SchemaValidationError` |
+| Atom defaults (static, function, selector) | throws on first read |
+| Selector results | throws on evaluation |
+| `store.txn(...)` writes | throws inside the txn body — the whole transaction aborts, nothing is committed |
+| Async values (a promise resolving to an invalid value) | reported via `console.error`; the invalid value is **never committed** |
+
+Async failures can't throw to the original caller (the promise was already
+returned), which is why they're reported instead. For an async `set`, the atom
+reverts to its previous value; for an async default, the value is dropped so a
+later read retries.
+
+## Error handling
+
+Sync failures throw a `SchemaValidationError` (exported from `valdres`) that
+names the offending atom or selector and keeps the underlying error on `cause`:
+
+```ts
+import { SchemaValidationError } from "valdres"
+
+try {
+    s.set(userAtom, badValue)
+} catch (err) {
+    if (err instanceof SchemaValidationError) {
+        console.log(err.message) // Schema validation failed for 'userAtom': …
+        console.log(err.cause)   // the ZodError (or library-native error)
+    }
+}
+```
+
+Give your atoms a `name` — it's what makes these errors debuggable in an app
+with hundreds of atoms.
+
+## Limitations
+
+- **Promises set inside a transaction** are stored as-is and not auto-resolved
+  by the transaction, so they aren't validated on resolve. Validate before
+  setting, or set async values outside transactions.
+- **Async defaults under React Suspense:** an invalid async default drops its
+  value (like a rejected one), so a component that keeps re-reading will
+  re-initialize and re-fetch. Validate at the fetch boundary rather than
+  relying on async-default validation under Suspense.
+- **Asynchronous schemas** (an async Standard Schema, or a Zod schema with an
+  async `refine`) are not supported — validation runs synchronously and
+  surfaces a clear error. Use synchronous schemas.
+
+## When to use it
+
+Most internal state doesn't need runtime validation — TypeScript already covers
+a `countAtom`. Schemas earn their keep at **system boundaries**: API responses,
+form input, URL/storage-hydrated state, and atoms one team owns while another
+writes. A good default: type inference everywhere you like, runtime validation
+on boundary atoms via the per-atom override, and the store-wide flag on in
+development as a safety net.
+
+## See also
+
+- [Core Concepts](/guides/core-concepts) — atoms, selectors, and stores
+- [TypeScript](/guides/typescript) — more on type inference
+- The `atom`, `selector`, and `store` API pages document the `schema` and
+  `schemaValidation` options in detail

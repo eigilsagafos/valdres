@@ -36,20 +36,41 @@ const fullNameSelector = selector(get => {
 | Parameter | Type | Description |
 |-----------|------|-------------|
 | `getter` | `(get: GetFn) => T` | A function that computes the derived value. Use `get()` to read atoms or other selectors. |
+| `options.name` | `string` | Optional name for debugging, devtools, and validation error messages |
+| `options.schema` | `Schema<T>` | Schema for runtime validation of the selector's result, and type inference. A no-op unless validation is enabled. See [Schema Validation](/guides/schema-validation). |
+| `options.schemaValidation` | `boolean` | Per-selector override of the store's `schemaValidation` flag — `true` always validates this selector, `false` exempts it |
 
 ## Async selectors
 
-Selectors can also be async. They work with `Suspense` in React.
+Selectors can return a promise. They work with `Suspense` in React. Note that
+the getter itself must be a sync function that *returns* a promise — `selector()`
+rejects `async` functions at creation time:
 
 ```ts
-const userDataSelector = selector(async get => {
+const userDataSelector = selector(get => {
     const userId = get(userIdAtom)
-    const res = await fetch(`/api/users/${userId}`)
-    return res.json()
+    return fetch(`/api/users/${userId}`).then(res => res.json())
 })
 ```
+
+## Schema validation
+
+A selector's `schema` validates its computed result on every evaluation — a
+runtime contract that catches a selector drifting from its declared shape:
+
+```ts
+const fullNameSelector = selector(
+    get => `${get(firstNameAtom)} ${get(lastNameAtom)}`,
+    { name: "fullName", schema: z.string() },
+)
+```
+
+Validation is opt-in per store (`store({ schemaValidation: true })`) or per
+selector (`schemaValidation: true`). See the
+[Schema Validation guide](/guides/schema-validation).
 
 ## See also
 
 - [selectorFamily](/valdres/selectorFamily) — create a collection of selectors keyed by a parameter
+- [Schema Validation](/guides/schema-validation) — runtime validation and type inference
 - [useValue](/react/useValue) — read a selector value in your components

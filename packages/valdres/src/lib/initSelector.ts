@@ -1,3 +1,4 @@
+import { SchemaValidationError } from "../errors/SchemaValidationError"
 import { SelectorCircularDependencyError } from "../errors/SelectorCircularDependencyError"
 import { SelectorEvaluationError } from "../errors/SelectorEvaluationError"
 import type { Atom } from "../types/Atom"
@@ -23,7 +24,10 @@ import {
     propagateAtomUpdate,
     propagateDirtySelectors,
 } from "./propagateUpdatedAtoms"
+import { reportAsyncSchemaError } from "./reportAsyncSchemaError"
 import { setValueInData } from "./setValueInData"
+import { validateResolvedValue } from "./validateResolvedValue"
+import { validateSchema } from "./validateSchema"
 
 export { isSuspendError } from "./asyncDependencyTracking"
 
@@ -276,8 +280,12 @@ export const handleSelectorResult = <Value>(
                 propagateAtomUpdate([...initializedAtomsSet], data, false, undefined, "async-set")
             }
             return res
-        }).catch(() => {
+        }).catch(err => {
             cleanUpRejectedPromise(selector, data, promise)
+            // Report schema validation failures (thrown from the sync
+            // re-evaluation inside initSelector) instead of swallowing them,
+            // consistent with the native-promise path below.
+            if (err instanceof SchemaValidationError) reportAsyncSchemaError(err)
         })
         return promise
     } else if (isPromiseLike(value)) {
@@ -317,6 +325,14 @@ export const handleSelectorResult = <Value>(
                 }
             }
 
+            // Async validation can't throw to a caller; on failure it's
+            // reported and we clean up so the invalid value never commits.
+            // Consistent with the atom async paths.
+            if (!validateResolvedValue(selector, resolved, data)) {
+                pendingAsyncDeps.delete(value as Promise<any>)
+                cleanUpRejectedPromise(selector, data, value as Promise<any>)
+                return
+            }
             // @ts-ignore
             setValueInData(selector, resolved, data)
             const dependents = data.stateDependents.get(selector)
@@ -365,7 +381,7 @@ export const handleSelectorResult = <Value>(
         if ((selector.get as (...args: any[]) => any).length >= 2) {
             data.abortControllers.set(selector, false)
         }
-        return value
+        return validateSchema(selector, value, data)
     }
 }
 

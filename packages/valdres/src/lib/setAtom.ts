@@ -7,6 +7,8 @@ import { propagateAtomUpdate } from "./propagateUpdatedAtoms"
 import { isFunction } from "./isFunction"
 import { resolvePendingDefault } from "./resolvePendingDefault"
 import { setValueInData } from "./setValueInData"
+import { validateResolvedValue } from "./validateResolvedValue"
+import { validateSchema } from "./validateSchema"
 
 const handlePromise = <Value>(
     atom: Atom<Value>,
@@ -20,6 +22,16 @@ const handlePromise = <Value>(
         .then(resolvedValue => {
             // Stale promise guard: if another set() overwrote us, bail
             if (data.values.get(atom) !== promise) return
+            // Async validation can't throw to the original caller (the promise
+            // was already returned), so it's reported and we revert — the
+            // invalid value never lands. Sync sets throw from store.set directly.
+            if (!validateResolvedValue(atom, resolvedValue, data)) {
+                if (data.values.get(atom) === promise) {
+                    setValueInData(atom, currentValue, data)
+                    propagateAtomUpdate([atom], data, false, undefined, "async-set")
+                }
+                return
+            }
             setValueInData(atom, resolvedValue, data)
             if (atom.onSet && !skipOnSet) atom.onSet(resolvedValue, data)
             resolvePendingDefault(atom, data, resolvedValue)
@@ -73,7 +85,7 @@ export const setAtom = <Value = any>(
     }
     // Past the isPromiseLike branch newValue is guaranteed to be a plain
     // Value (TypeScript can't narrow out PromiseLike fully, so we restate it).
-    let syncValue = newValue as Value
+    let syncValue = validateSchema(atom, newValue as Value, data)
     const areEqual = isPromiseLike(currentValue)
         ? currentValue === syncValue
         : atom.equal(currentValue, syncValue)
