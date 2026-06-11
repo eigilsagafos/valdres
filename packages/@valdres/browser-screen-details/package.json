@@ -1,5 +1,6 @@
 {
     "name": "@valdres/browser-screen-details",
+    "description": "Reactive multi-screen layout from the Window Management API",
     "version": "1.0.0-beta.4",
     "license": "MIT",
     "author": {

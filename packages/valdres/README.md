@@ -23,6 +23,6 @@ s.get(doubledSelector) // 42
 
 Part of [Valdres](https://valdres.dev) — reactive state management for React, Vue, Svelte, Solid, and Angular.
 
-Full documentation: https://valdres.dev
+Full documentation: https://valdres.dev/guides/introduction
 
 <!-- DOCS:END -->

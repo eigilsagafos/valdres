@@ -72,6 +72,11 @@ export async function discoverPackages(rootDir: string): Promise<PackageInfo[]> 
                 docUrl = `${SITE}/guides/migration`
             } else if (name === "@valdres-react/recoil") {
                 docUrl = `${SITE}/guides/migration`
+            } else if (name === "valdres" || name === "valdres-react") {
+                docUrl = `${SITE}/guides/introduction`
+            } else {
+                const fw = name.match(/^valdres-(vue|svelte|solid|angular)$/)?.[1]
+                if (fw) docUrl = `${SITE}/guides/quick-start-${fw}`
             }
 
             out.push({ name, dir, description: pkg.description ?? "", peerDeps, mode, mdxPath, liveUrl, docUrl })

@@ -72,6 +72,60 @@ function splice(existing: string | null, generated: string): string | null {
     return block
 }
 
+// Grouped package table spliced into the root README between
+// <!-- PACKAGES:START --> / <!-- PACKAGES:END --> markers.
+const PKG_START = "<!-- PACKAGES:START -->"
+const PKG_END = "<!-- PACKAGES:END -->"
+
+function packagesTable(packages: PackageInfo[]): string {
+    const row = (p: PackageInfo) =>
+        `| [\`${p.name}\`](${p.docUrl}) | ${p.description} |`
+    const table = (items: PackageInfo[]) =>
+        ["| Package | Description |", "|:--------|:------------|", ...items.map(row)].join("\n")
+
+    const core = packages.filter(p => p.name === "valdres")
+    const adapters = packages.filter(p => /^valdres-/.test(p.name))
+    const plugins = packages.filter(p => p.name.startsWith("@valdres/"))
+    const reactExtras = packages.filter(p => p.name.startsWith("@valdres-react/"))
+
+    return [
+        PKG_START,
+        "### Core",
+        "",
+        table(core),
+        "",
+        "### Framework adapters",
+        "",
+        table(adapters),
+        "",
+        "### Plugins (framework-agnostic)",
+        "",
+        table(plugins),
+        "",
+        "### React extras",
+        "",
+        table(reactExtras),
+        PKG_END,
+    ].join("\n")
+}
+
+async function updateRootReadme(
+    packages: PackageInfo[],
+    check: boolean,
+): Promise<"ok" | "stale" | "skipped"> {
+    const path = `${ROOT}/README.md`
+    const existing = await Bun.file(path).text()
+    const i = existing.indexOf(PKG_START)
+    const j = existing.indexOf(PKG_END)
+    if (i === -1 || j === -1) return "skipped"
+    const next =
+        existing.slice(0, i) + packagesTable(packages) + existing.slice(j + PKG_END.length)
+    if (next === existing) return "ok"
+    if (check) return "stale"
+    await Bun.write(path, next)
+    return "ok"
+}
+
 async function main() {
     const check = process.argv.includes("--check")
     const packages = await discoverPackages(ROOT)
@@ -102,6 +156,11 @@ async function main() {
             written++
         }
     }
+
+    const rootResult = await updateRootReadme(packages, check)
+    if (rootResult === "stale") stale.push("README.md (root packages table)")
+    if (rootResult === "skipped")
+        console.log("Root README has no PACKAGES markers — table not written.")
 
     if (skipped.length) {
         console.log(

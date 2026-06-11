@@ -38,7 +38,7 @@ jobs:
               run: bun run scripts/gen-readmes.ts
             - name: Commit if changed
               run: |
-                  git add packages/*/README.md packages/@valdres/*/README.md packages/@valdres-react/*/README.md 2>/dev/null || true
+                  git add README.md packages/*/README.md packages/@valdres/*/README.md packages/@valdres-react/*/README.md 2>/dev/null || true
                   if git diff --cached --quiet; then
                       echo "READMEs unchanged."
                   else
