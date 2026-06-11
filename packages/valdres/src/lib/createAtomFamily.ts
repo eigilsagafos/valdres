@@ -6,6 +6,7 @@ import { isSelectorFamily } from "../utils/isSelectorFamily"
 import { equal } from "./equal"
 import { familyKey, type FamilyKey } from "./familyKey"
 import { globalAtom } from "./globalAtom"
+import { registerName } from "./registerName"
 
 export const createAtomFamily = <
     Value extends any,
@@ -101,11 +102,16 @@ export const createAtomFamily = <
         ...args: Args
     ) => AtomFamilyAtom<Value, Args>
 
-    return Object.assign(callable, {
+    const family = Object.assign(callable, {
         __valdresAtomFamilyMap: map,
         release: (...args: Args) => {
             map.delete(familyKey(args))
         },
         equal,
     }) as AtomFamily<Value, Args>
+    // The FAMILY registers under its name; member atoms never do (they are
+    // addressed as `family(...args)`). Global families can't double-register:
+    // createGlobalAtomFamily returns its cached instance before re-creating.
+    if (hasName) registerName(options!.name!, family)
+    return family
 }

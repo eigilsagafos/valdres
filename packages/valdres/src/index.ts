@@ -1,16 +1,18 @@
-declare global {
-    var __valdres__: string
-}
+import { valdresGlobal } from "./lib/valdresGlobal"
+
 // `process.env.VALDRES_VERSION` is statically replaced at build time by
 // Bun.build's define option. Declared at module scope (not global) so we
 // don't conflict with consumers' @types/node or bun-types.
 declare const process: { env: { VALDRES_VERSION?: string } }
-if (globalThis.__valdres__) {
+// Single-instance guard. The slot (see valdresGlobal) also carries the global
+// name registry; `version` is claimed exactly once, by the first instance.
+const slot = valdresGlobal()
+if (slot.version) {
     throw new Error(
-        `Error! An instance of valdres is already loaded. Loaded: ${globalThis.__valdres__}. Attempted to load: ${process.env.VALDRES_VERSION}`,
+        `Error! An instance of valdres is already loaded. Loaded: ${slot.version}. Attempted to load: ${process.env.VALDRES_VERSION}`,
     )
 } else {
-    globalThis.__valdres__ = process.env.VALDRES_VERSION as string
+    slot.version = process.env.VALDRES_VERSION
 }
 
 export { atom } from "./atom"
@@ -23,6 +25,9 @@ export { selectorFamily } from "./selectorFamily"
 export { store } from "./store"
 
 export { deepFreeze } from "./utils/deepFreeze"
+export { dehydrate } from "./utils/dehydrate"
+export { hydrate } from "./utils/hydrate"
+export { setAtomPairs } from "./utils/setAtomPairs"
 export { isAtom } from "./utils/isAtom"
 export { isAtomFamily } from "./utils/isAtomFamily"
 export { isFamily } from "./utils/isFamily"
@@ -38,6 +43,8 @@ export { Transaction } from "./lib/transaction"
 export type { CacheMeta } from "./cacheMeta"
 export type { Atom } from "./types/Atom"
 export type { AtomFamily } from "./types/AtomFamily"
+export type { DehydratedState } from "./types/DehydratedState"
+export type { InitializeCallback } from "./types/InitializeCallback"
 export type { FamilyKey } from "./types/FamilyKey"
 export type { GetValue } from "./types/GetValue"
 export type { Reactive } from "./types/Reactive"

@@ -51,7 +51,7 @@ test("propagateUpdatedAtoms", () => {
             age: number
         },
         [number]
-    >(undefined, { name: "userFamily" })
+    >(undefined, { name: "prop-userFamily" })
 
     const userSettingsFamily = atomFamily(id => ({
         id,

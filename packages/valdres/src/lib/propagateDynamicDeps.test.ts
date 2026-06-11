@@ -3,6 +3,10 @@ import { atom } from "../atom"
 import { selector } from "../selector"
 import { store } from "../store"
 
+// Atom names register in a process-global registry (duplicates throw), so
+// atoms built per run get a unique suffix. Selector names are unaffected.
+let uid = 0
+
 // Regression tests for a selector-invalidation bug introduced when selector
 // update propagation moved to a static topological closure (1.0.0-beta.4).
 //
@@ -45,7 +49,8 @@ describe("dynamic-dependency propagation", () => {
             { deps: [0], selDeps: [0, 0], altSelDeps: [2], ctrl: { atom: 2 }, mode: 2 },
         ] as const
         const build = () => {
-            const atoms = Array.from({ length: 5 }, (_, i) => atom(i, { name: `a${i}` }))
+            const run = ++uid
+            const atoms = Array.from({ length: 5 }, (_, i) => atom(i, { name: `a${i}.${run}` }))
             const sels: any[] = []
             defs.forEach((def, idx) => {
                 sels.push(selector(get => {
@@ -115,7 +120,8 @@ describe("dynamic-dependency propagation", () => {
             return { nAtoms, selDefs }
         }
         const inst = (g: any) => {
-            const atoms = Array.from({ length: g.nAtoms }, (_, i) => atom(i, { name: `a${i}` }))
+            const run = ++uid
+            const atoms = Array.from({ length: g.nAtoms }, (_, i) => atom(i, { name: `a${i}.${run}` }))
             const sels: any[] = []
             g.selDefs.forEach((def: any, idx: number) => {
                 sels.push(selector(get => {

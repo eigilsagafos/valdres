@@ -118,7 +118,7 @@ describe("transaction", () => {
 
     test("transaction works with selectors", () => {
         const store1 = store()
-        const atom1 = atom(1, { name: "astom1" })
+        const atom1 = atom(1, { name: "txn-sel-atom1" })
         const selectorCb1 = mock(get => get(atom1) + 1)
         const selectorCb2 = mock(get => get(atom1) + 2)
         const selector1 = selector(selectorCb1, "selector1")
@@ -148,8 +148,8 @@ describe("transaction", () => {
 
     test("uninitialized selector reads txn state", () => {
         const store1 = store()
-        const atom1 = atom(10, { name: "atom1" })
-        const atom2 = atom(20, { name: "atom2" })
+        const atom1 = atom(10, { name: "txn-uninit-atom1" })
+        const atom2 = atom(20, { name: "txn-uninit-atom2" })
         const selector1 = selector(get => get(atom1) + 1)
         const selector2 = selector(get => get(atom2) + 1)
         const selector3 = selector(get => get(selector1) + get(selector2))
@@ -165,7 +165,7 @@ describe("transaction", () => {
 
     test.todo("transaction fails when trying to access dirty selector", () => {
         const store1 = store()
-        const atom1 = atom(1, { name: "astom1" })
+        const atom1 = atom(1, { name: "txn-dirty-atom1" })
         const selector1 = selector(get => get(atom1) + 1, { name: "selector1" })
         // const selector2 = selector((get) => get(selector1) + 1, "selector2")
 
@@ -577,7 +577,7 @@ describe("transaction", () => {
         const post = atomFamily<{ title: string; tags: string[] }, [string]>(
             null,
             {
-                name: "posts",
+                name: "txn-del-posts",
             },
         )
         const indexCallback = mock((doc, term) => {

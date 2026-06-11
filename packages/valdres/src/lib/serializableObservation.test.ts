@@ -77,9 +77,10 @@ describe("serializable observation", () => {
     test("fuzz: cross-scope subscribers only ever observe final values", () => {
         for (let seed = 1; seed <= 200; seed++) {
             const rnd = mulberry32(seed)
-            const R = atom(1, { name: "f-R" })
-            const A = atom(1, { name: "f-A" })
-            const B = atom(1, { name: "f-B" })
+            // Atom names register globally (duplicates throw); suffix per seed.
+            const R = atom(1, { name: `f-R.${seed}` })
+            const A = atom(1, { name: `f-A.${seed}` })
+            const B = atom(1, { name: `f-B.${seed}` })
             const n1 = selector(get => get(A) * 10, { name: "f-n1" })
             const n2 = selector(get => get(B) + get(n1), { name: "f-n2" })
             const m = selector(get => get(R) + get(n1) + get(n2), { name: "f-m" })

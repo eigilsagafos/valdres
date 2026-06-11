@@ -70,4 +70,15 @@ export type StoreData = {
         StoreChangeCallback,
         { atoms: boolean; selectors: boolean }
     >
+    /** Commit-end listeners registered via `store.onCommitEnd`. Root stores
+     *  only — a listener registered through a scoped store is attached to the
+     *  tree's root, and a commit anywhere in the tree fires the root's set.
+     *  Absent until the first listener is added and reset to undefined when the
+     *  last one leaves (see lib/onCommitEnd.ts). */
+    commitEndListeners?: Set<() => void>
+    /** Re-entrancy depth of in-flight commit boundaries for this store TREE
+     *  (root stores only). Tracked only while `onCommitEnd` listeners exist
+     *  anywhere; listeners fire when the OUTERMOST boundary closes, so writes a
+     *  subscriber performs during a commit coalesce into one notification. */
+    commitDepth?: number
 }

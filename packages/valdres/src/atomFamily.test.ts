@@ -84,16 +84,16 @@ describe("atomFamily", () => {
 
     test("debug name", () => {
         const userAtomFamily = atomFamily<string, string>(undefined, {
-            name: "userFamily",
+            name: "debugNameFamily",
         })
         const user1 = userAtomFamily("Foo")
-        expect(user1.name).toBe("userFamily_Foo")
+        expect(user1.name).toBe("debugNameFamily_Foo")
     })
 
     test("subscribe to atomFamily", () => {
         const store1 = store()
         const userAtomFamily = atomFamily<{ name: string }, [string]>(null, {
-            name: "userFamily",
+            name: "subToFamily",
         })
         const callbackIds: string[] = []
         const docs: { name: string }[] = []
@@ -120,7 +120,7 @@ describe("atomFamily", () => {
         const store1 = store()
         const userAtomFamily = atomFamily<{ name: string }, [{ id: number }]>(
             undefined,
-            { name: "userFamily" },
+            { name: "objectKeyFamily" },
         )
         const ids: number[] = []
         const docs: any[] = []
@@ -423,13 +423,18 @@ describe("atomFamily", () => {
     })
 
     test("global atomFamily returns same family for same key", () => {
-        const family1 = atomFamily("Default", {
+        // Non-global: a name registers globally, so re-creating under the same
+        // name is a hard error (names are global addresses for dehydrate/hydrate).
+        atomFamily("Default", {
             name: "non_global_test",
         })
-        const family2 = atomFamily("Default", {
-            name: "non_global_test",
-        })
-        expect(Object.is(family1, family2)).toBe(false)
+        expect(() =>
+            atomFamily("Default", {
+                name: "non_global_test",
+            }),
+        ).toThrow("'non_global_test' already exists")
+        // Global: creation is idempotent — the same name returns the cached
+        // family instead of creating (or registering) a second one.
         const globalGamily1 = atomFamily("Default", {
             global: true,
             name: "global_test",

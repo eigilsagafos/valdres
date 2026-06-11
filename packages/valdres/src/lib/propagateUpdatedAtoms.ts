@@ -37,6 +37,7 @@ import {
     type ChangeReport,
     type ChangeSink,
 } from "./notifyChangeListeners"
+import { beginCommit, commitEndRegistry, endCommit } from "./onCommitEnd"
 import { setValueInData } from "./setValueInData"
 
 export type {
@@ -267,89 +268,106 @@ export const propagateDeletedAtoms = (
     notify?: NotifyTarget,
     report?: ChangeReport,
 ) => {
-    // When deferring, subscribers accumulate into THIS store's notify entry so
-    // they fire once, at commit end, against this store's changed members.
-    const notifyEntry = notify ? notifyEntryFor(notify, data) : undefined
-    if (notifyEntry) {
-        subscriptions = notifyEntry.subscriptions
-    }
-    const selectors = new Set<Selector>()
-    for (const atom of atoms) {
-        addSetToSet(data.stateDependents.get(atom), selectors)
-        addSetToSet(data.subscriptions.get(atom), subscriptions)
+    // Commit boundary for store.onCommitEnd. With no listener anywhere this
+    // is a single global counter read on the Bencher-gated propagation hot
+    // path — no tracking, no allocation, no extra call frame. When listeners
+    // exist, the OUTERMOST boundary fires them exactly once, after every
+    // subscriber callback; boundaries opened while another is in flight (a
+    // transaction's per-store passes, a write from inside a subscriber) only
+    // move the tree's depth counter. On a throw the listeners still fire
+    // (writes were applied) but their own errors are swallowed so they never
+    // mask the original failure.
+    let commitRoot: StoreData | undefined
+    if (commitEndRegistry.count !== 0) commitRoot = beginCommit(data)
+    let completed = false
+    try {
+        // When deferring, subscribers accumulate into THIS store's notify entry so
+        // they fire once, at commit end, against this store's changed members.
+        const notifyEntry = notify ? notifyEntryFor(notify, data) : undefined
+        if (notifyEntry) {
+            subscriptions = notifyEntry.subscriptions
+        }
+        const selectors = new Set<Selector>()
+        for (const atom of atoms) {
+            addSetToSet(data.stateDependents.get(atom), selectors)
+            addSetToSet(data.subscriptions.get(atom), subscriptions)
 
-        if (isFamilyAtom(atom)) {
-            if (!deletedFamilyAtoms.has(atom.family)) {
-                deletedFamilyAtoms.set(atom.family, new Set())
+            if (isFamilyAtom(atom)) {
+                if (!deletedFamilyAtoms.has(atom.family)) {
+                    deletedFamilyAtoms.set(atom.family, new Set())
+                }
+                // @ts-ignore
+                deletedFamilyAtoms.get(atom.family).add(atom)
             }
-            // @ts-ignore
-            deletedFamilyAtoms.get(atom.family).add(atom)
         }
-    }
-    if (deletedFamilyAtoms.size > 0) {
-        for (const [family, familyAtoms] of deletedFamilyAtoms) {
-            addSetToSet(data.stateDependents.get(family), selectors)
-            addSetToSet(data.subscriptions.get(family), subscriptions)
-            if (familyAtoms.size === 0)
-                throw new Error("Should not be possible")
+        if (deletedFamilyAtoms.size > 0) {
+            for (const [family, familyAtoms] of deletedFamilyAtoms) {
+                addSetToSet(data.stateDependents.get(family), selectors)
+                addSetToSet(data.subscriptions.get(family), subscriptions)
+                if (familyAtoms.size === 0)
+                    throw new Error("Should not be possible")
 
-            deleteFamilyAtomsFromSet(family, familyAtoms, data, timestamp)
+                deleteFamilyAtomsFromSet(family, familyAtoms, data, timestamp)
+            }
         }
-    }
-    // `selectorCount` is the cheap global short-circuit; `hasSelectorChangeListener`
-    // then confirms a selector listener actually exists on THIS store's ancestor
-    // chain, so an unrelated root store with a selector listener doesn't make this
-    // one pay for selector collection.
-    const selectorActive =
-        report !== undefined &&
-        changeListenerRegistry.selectorCount !== 0 &&
-        hasSelectorChangeListener(data)
-    const changedSelectors = selectorActive ? new Set<Selector>() : undefined
-    propagateDirtySelectors(atoms, selectors, data, subscriptions, deletedFamilyAtoms, false, notify, changedSelectors)
-    if (notifyEntry) collectFamilyAtomsForNotify(notifyEntry, deletedFamilyAtoms)
-    const hasScopeCascade = !!data.scopes && data.scopes.size > 0
-    const watching = report !== undefined && changeListenerRegistry.count !== 0
+        // `selectorCount` is the cheap global short-circuit; `hasSelectorChangeListener`
+        // then confirms a selector listener actually exists on THIS store's ancestor
+        // chain, so an unrelated root store with a selector listener doesn't make this
+        // one pay for selector collection.
+        const selectorActive =
+            report !== undefined &&
+            changeListenerRegistry.selectorCount !== 0 &&
+            hasSelectorChangeListener(data)
+        const changedSelectors = selectorActive ? new Set<Selector>() : undefined
+        propagateDirtySelectors(atoms, selectors, data, subscriptions, deletedFamilyAtoms, false, notify, changedSelectors)
+        if (notifyEntry) collectFamilyAtomsForNotify(notifyEntry, deletedFamilyAtoms)
+        const hasScopeCascade = !!data.scopes && data.scopes.size > 0
+        const watching = report !== undefined && changeListenerRegistry.count !== 0
 
-    // When a selector listener is active and this delete cascades into scopes,
-    // the origin group + each scope's selector group must coalesce into one
-    // callback. On the immediate path (string report) buffer them into a
-    // transient sink tagged with the real source; the txn path already passes a
-    // sink. (Mirror of the wrap in propagateAtomUpdate.)
-    let localSink: ChangeSink | undefined
-    let effectiveReport: ChangeReport | undefined = report
-    if (selectorActive && hasScopeCascade && typeof report === "string") {
-        localSink = createChangeSink(undefined, report)
-        effectiveReport = localSink
-    }
-    // When buffering into a sink, report the origin deletes BEFORE cascading so
-    // they precede descendant-scope selectors in the single callback (the sink
-    // flushes at the end, so this only orders the batch). A bare string report
-    // fires immediately and stays AFTER the cascade to keep onChange last.
-    const reportIsSink =
-        effectiveReport !== undefined && typeof effectiveReport !== "string"
-    if (watching && reportIsSink)
-        reportDeletedAtoms(atoms, data, effectiveReport as ChangeReport, changedSelectors)
-
-    // Cross-propagate the deletion into descendant scopes, mirroring the update
-    // path (propagateAtomUpdate → propagateToScopes), and thread `effectiveReport`
-    // so the scoped selector recomputes are reported too. deleteFamilyAtomsFromSet
-    // already re-rendered each shadowing scope's family index; this re-evaluates
-    // the dependent selectors so their subscribers fire. Two kinds of scope
-    // dependent are reached: a scope that merely INHERITS the deleted member and
-    // reads it directly (get(family("a"))), and a non-shadowing scope whose
-    // selector reads the family list (get(family)). Members skip scopes that
-    // shadow them (visible value unchanged); families always propagate.
-    if (hasScopeCascade) {
-        const scopeAtoms: AtomInput[] = atoms.slice()
-        for (const family of deletedFamilyAtoms.keys()) {
-            scopeAtoms.push(family)
+        // When a selector listener is active and this delete cascades into scopes,
+        // the origin group + each scope's selector group must coalesce into one
+        // callback. On the immediate path (string report) buffer them into a
+        // transient sink tagged with the real source; the txn path already passes a
+        // sink. (Mirror of the wrap in propagateAtomUpdate.)
+        let localSink: ChangeSink | undefined
+        let effectiveReport: ChangeReport | undefined = report
+        if (selectorActive && hasScopeCascade && typeof report === "string") {
+            localSink = createChangeSink(undefined, report)
+            effectiveReport = localSink
         }
-        propagateToScopes(scopeAtoms, data, false, notify, effectiveReport)
-    }
+        // When buffering into a sink, report the origin deletes BEFORE cascading so
+        // they precede descendant-scope selectors in the single callback (the sink
+        // flushes at the end, so this only orders the batch). A bare string report
+        // fires immediately and stays AFTER the cascade to keep onChange last.
+        const reportIsSink =
+            effectiveReport !== undefined && typeof effectiveReport !== "string"
+        if (watching && reportIsSink)
+            reportDeletedAtoms(atoms, data, effectiveReport as ChangeReport, changedSelectors)
 
-    if (watching && !reportIsSink)
-        reportDeletedAtoms(atoms, data, effectiveReport as ChangeReport, changedSelectors)
-    if (localSink) flushChangeSink(localSink)
+        // Cross-propagate the deletion into descendant scopes, mirroring the update
+        // path (propagateAtomUpdate → propagateToScopes), and thread `effectiveReport`
+        // so the scoped selector recomputes are reported too. deleteFamilyAtomsFromSet
+        // already re-rendered each shadowing scope's family index; this re-evaluates
+        // the dependent selectors so their subscribers fire. Two kinds of scope
+        // dependent are reached: a scope that merely INHERITS the deleted member and
+        // reads it directly (get(family("a"))), and a non-shadowing scope whose
+        // selector reads the family list (get(family)). Members skip scopes that
+        // shadow them (visible value unchanged); families always propagate.
+        if (hasScopeCascade) {
+            const scopeAtoms: AtomInput[] = atoms.slice()
+            for (const family of deletedFamilyAtoms.keys()) {
+                scopeAtoms.push(family)
+            }
+            propagateToScopes(scopeAtoms, data, false, notify, effectiveReport)
+        }
+
+        if (watching && !reportIsSink)
+            reportDeletedAtoms(atoms, data, effectiveReport as ChangeReport, changedSelectors)
+        if (localSink) flushChangeSink(localSink)
+        completed = true
+    } finally {
+        if (commitRoot !== undefined) endCommit(commitRoot, !completed)
+    }
 }
 
 // Top-level entry: notify direct atom subscribers, walk dependent selectors,
@@ -377,163 +395,181 @@ export const propagateAtomUpdate = (
     // so they must not also surface as a `"set"`).
     reportAtoms = true,
 ) => {
-    // Fast path: single non-family atom with no dependent selectors and no
-    // scopes can skip the full graph walk entirely and just notify subscribers.
-    if (atoms.length === 1) {
-        const atom = atoms[0]
-        if (!isFamilyAtom(atom) && !isAtomFamily(atom)) {
-            const dependents = data.stateDependents.get(atom)
-            if (
-                (!dependents || dependents.size === 0) &&
-                (!data.scopes || data.scopes.size === 0)
-            ) {
-                const subs = data.subscriptions.get(atom)
-                if (subs && subs.size > 0) {
-                    if (notify) addSetToSet(subs, notifyEntryFor(notify, data).subscriptions)
-                    else callSubscribers(subs)
+    // Commit boundary for store.onCommitEnd. With no listener anywhere this
+    // is a single global counter read on the Bencher-gated propagation hot
+    // path — no tracking, no allocation, no extra call frame. When listeners
+    // exist, the OUTERMOST boundary fires them exactly once, after every
+    // subscriber callback; boundaries opened while another is in flight (a
+    // transaction's per-store passes, a write from inside a subscriber) only
+    // move the tree's depth counter. On a throw the listeners still fire
+    // (writes were applied) but their own errors are swallowed so they never
+    // mask the original failure.
+    let commitRoot: StoreData | undefined
+    if (commitEndRegistry.count !== 0) commitRoot = beginCommit(data)
+    let completed = false
+    try {
+        // Fast path: single non-family atom with no dependent selectors and no
+        // scopes can skip the full graph walk entirely and just notify subscribers.
+        if (atoms.length === 1) {
+            const atom = atoms[0]
+            if (!isFamilyAtom(atom) && !isAtomFamily(atom)) {
+                const dependents = data.stateDependents.get(atom)
+                if (
+                    (!dependents || dependents.size === 0) &&
+                    (!data.scopes || data.scopes.size === 0)
+                ) {
+                    const subs = data.subscriptions.get(atom)
+                    if (subs && subs.size > 0) {
+                        if (notify) addSetToSet(subs, notifyEntryFor(notify, data).subscriptions)
+                        else callSubscribers(subs)
+                    }
+                    // No dependents here, so there are no selectors to report; only
+                    // the atom would be, and only when reportAtoms is set.
+                    if (reportAtoms && report !== undefined && changeListenerRegistry.count !== 0 && !isInitOnly) {
+                        reportAtomChanges(atoms, data, report)
+                    }
+                    completed = true
+                    return
                 }
-                // No dependents here, so there are no selectors to report; only
-                // the atom would be, and only when reportAtoms is set.
-                if (reportAtoms && report !== undefined && changeListenerRegistry.count !== 0 && !isInitOnly) {
-                    reportAtomChanges(atoms, data, report)
-                }
-                return
             }
         }
-    }
 
-    const notifyEntry = notify ? notifyEntryFor(notify, data) : undefined
-    const subscriptions = notifyEntry ? notifyEntry.subscriptions : new Set<Subscription>()
-    // Per-call ONLY (never a cross-pass accumulator): the family atoms updated
-    // in THIS call. Drives index bookkeeping (addFamilyAtomsToSet), and is
-    // merged into notify.families afterwards for deferred notification — two
-    // roles, kept in one local map because within a single pass they are the
-    // same data. See collectFamilyAtomsForNotify for why they must not share a
-    // map across passes.
-    const updatedFamilyAtoms = new Map<
-        AtomFamily<any>,
-        Set<AtomFamilyAtom<any>>
-    >()
-    const selectors = new Set<Selector>()
+        const notifyEntry = notify ? notifyEntryFor(notify, data) : undefined
+        const subscriptions = notifyEntry ? notifyEntry.subscriptions : new Set<Subscription>()
+        // Per-call ONLY (never a cross-pass accumulator): the family atoms updated
+        // in THIS call. Drives index bookkeeping (addFamilyAtomsToSet), and is
+        // merged into notify.families afterwards for deferred notification — two
+        // roles, kept in one local map because within a single pass they are the
+        // same data. See collectFamilyAtomsForNotify for why they must not share a
+        // map across passes.
+        const updatedFamilyAtoms = new Map<
+            AtomFamily<any>,
+            Set<AtomFamilyAtom<any>>
+        >()
+        const selectors = new Set<Selector>()
 
-    for (const atom of atoms) {
-        addSetToSet(data.stateDependents.get(atom), selectors)
-        addSetToSet(data.subscriptions.get(atom), subscriptions)
-        if (isFamilyAtom(atom) && !skipFamilyIndexUpdate) {
-            if (!updatedFamilyAtoms.has(atom.family)) {
-                updatedFamilyAtoms.set(atom.family, new Set())
-            }
-            // @ts-ignore
-            updatedFamilyAtoms.get(atom.family).add(atom)
-        }
-    }
-
-    // Families whose MEMBERSHIP changed this pass (a member added/un-deleted, not
-    // just an existing member's value re-set). Only these need the family OBJECT
-    // propagated into scopes below — a pure value update reaches scope selectors
-    // via the member atom, so propagating the family then would be wasted work
-    // across every scope (the "family update, 100 scopes" hot path).
-    let membershipChanged: Set<AtomFamily<any>> | undefined
-    if (updatedFamilyAtoms.size > 0) {
-        const timestamp = performance.now()
-        for (const [family, familyAtoms] of updatedFamilyAtoms) {
-            addSetToSet(data.stateDependents.get(family), selectors)
-            addSetToSet(data.subscriptions.get(family), subscriptions)
-            if (familyAtoms.size === 0)
-                throw new Error("Should not be possible")
-            if (addFamilyAtomsToSet(family, familyAtoms, data, timestamp)) {
-                if (!membershipChanged) membershipChanged = new Set()
-                membershipChanged.add(family)
-            }
-        }
-    }
-
-    // A family OBJECT in `atoms` whose value changed without a corresponding
-    // family-atom update (the txn delete case: the rendered list shrank but the
-    // deleted member flows through propagateDeletedAtoms, not `families`) means
-    // the parent's committed family index may be a freshly cloned object. Re-link
-    // shadowing child scopes so their dependent selectors read the new index
-    // before they are evaluated below. Family-atom adds already did this via
-    // addFamilyAtomsToSet, so skip families handled there.
-    if (data.scopes && data.scopes.size > 0) {
         for (const atom of atoms) {
-            if (isAtomFamily(atom) && !updatedFamilyAtoms.has(atom)) {
-                recursivelyUpdateIndexes(data, atom)
+            addSetToSet(data.stateDependents.get(atom), selectors)
+            addSetToSet(data.subscriptions.get(atom), subscriptions)
+            if (isFamilyAtom(atom) && !skipFamilyIndexUpdate) {
+                if (!updatedFamilyAtoms.has(atom.family)) {
+                    updatedFamilyAtoms.set(atom.family, new Set())
+                }
+                // @ts-ignore
+                updatedFamilyAtoms.get(atom.family).add(atom)
             }
         }
-    }
 
-    // selectorCount is the O(1) global gate; hasSelectorChangeListener then
-    // confirms a selector listener exists on this store's ancestor chain, so a
-    // selector listener on an unrelated root store adds no overhead here.
-    const selectorActive =
-        report !== undefined &&
-        !isInitOnly &&
-        changeListenerRegistry.selectorCount !== 0 &&
-        hasSelectorChangeListener(data)
-    const changedSelectors = selectorActive ? new Set<Selector>() : undefined
-    propagateDirtySelectors(atoms, selectors, data, subscriptions, updatedFamilyAtoms, isInitOnly, notify, changedSelectors)
-    if (notifyEntry) collectFamilyAtomsForNotify(notifyEntry, updatedFamilyAtoms)
-
-    const hasScopes = !!data.scopes && data.scopes.size > 0
-    const watching =
-        report !== undefined && changeListenerRegistry.count !== 0 && !isInitOnly
-
-    // When a selector listener is active and this update cascades into scopes,
-    // the origin group (atoms + its selectors) and each descendant scope's
-    // selector group must coalesce into a single onChange callback. On the
-    // immediate path (string report) that means buffering into a transient sink
-    // tagged with the real source and flushing once; the txn path already passes
-    // a sink. With no selector listener there's only ever the one origin group,
-    // so the string report fires it inline exactly as before.
-    let localSink: ChangeSink | undefined
-    let effectiveReport: ChangeReport | undefined = report
-    if (selectorActive && hasScopes && typeof report === "string") {
-        localSink = createChangeSink(undefined, report)
-        effectiveReport = localSink
-    }
-    // When buffering into a sink (the txn sink, or the transient localSink
-    // above), buffer the origin group BEFORE cascading into scopes so the origin
-    // atoms precede descendant-scope selectors in the single callback. The sink
-    // flushes at the end regardless, so this only orders the batch — it does not
-    // change when onChange fires. A bare string report (no sink) fires
-    // immediately, so it stays AFTER the scope cascade to keep onChange last
-    // (after subscribers); that path never carries selector entries anyway.
-    const reportIsSink =
-        effectiveReport !== undefined && typeof effectiveReport !== "string"
-    // reportAtoms=false: emit only the recomputed selectors (the caller reports
-    // the trigger atoms — e.g. as `kind: "unset"`).
-    const emitOrigin = (rpt: ChangeReport) => {
-        if (reportAtoms) {
-            reportAtomChanges(atoms, data, rpt, changedSelectors)
-        } else if (changedSelectors && changedSelectors.size > 0) {
-            reportSelectorChanges(changedSelectors, data, rpt)
-        }
-    }
-    if (watching && reportIsSink) emitOrigin(effectiveReport as ChangeReport)
-    if (hasScopes) {
-        // A scope selector that reads get(family) depends on the FAMILY object,
-        // not the individual member atoms. When the parent's MEMBERSHIP changes (a
-        // member added/removed), propagating only the changed members into scopes
-        // (as `atoms` holds) re-renders each scope's family index via
-        // recursivelyUpdateIndexes above but never re-evaluates those selectors —
-        // leaving them stale. So mirror the delete path (propagateDeletedAtoms
-        // pushes the family onto its scopeAtoms): also propagate each family whose
-        // membership changed. A pure member VALUE-update (membership unchanged) is
-        // deliberately NOT included — its scope-side effect reaches selectors via
-        // the member atom already in `atoms`, so it keeps the single-atom scope
-        // fast path. That gate is `membershipChanged`.
-        let scopeAtoms: AtomInput[] = atoms
-        if (membershipChanged) {
-            scopeAtoms = atoms.slice()
-            for (const family of membershipChanged) {
-                if (!scopeAtoms.includes(family)) scopeAtoms.push(family)
+        // Families whose MEMBERSHIP changed this pass (a member added/un-deleted, not
+        // just an existing member's value re-set). Only these need the family OBJECT
+        // propagated into scopes below — a pure value update reaches scope selectors
+        // via the member atom, so propagating the family then would be wasted work
+        // across every scope (the "family update, 100 scopes" hot path).
+        let membershipChanged: Set<AtomFamily<any>> | undefined
+        if (updatedFamilyAtoms.size > 0) {
+            const timestamp = performance.now()
+            for (const [family, familyAtoms] of updatedFamilyAtoms) {
+                addSetToSet(data.stateDependents.get(family), selectors)
+                addSetToSet(data.subscriptions.get(family), subscriptions)
+                if (familyAtoms.size === 0)
+                    throw new Error("Should not be possible")
+                if (addFamilyAtomsToSet(family, familyAtoms, data, timestamp)) {
+                    if (!membershipChanged) membershipChanged = new Set()
+                    membershipChanged.add(family)
+                }
             }
         }
-        propagateToScopes(scopeAtoms, data, isInitOnly, notify, effectiveReport)
+
+        // A family OBJECT in `atoms` whose value changed without a corresponding
+        // family-atom update (the txn delete case: the rendered list shrank but the
+        // deleted member flows through propagateDeletedAtoms, not `families`) means
+        // the parent's committed family index may be a freshly cloned object. Re-link
+        // shadowing child scopes so their dependent selectors read the new index
+        // before they are evaluated below. Family-atom adds already did this via
+        // addFamilyAtomsToSet, so skip families handled there.
+        if (data.scopes && data.scopes.size > 0) {
+            for (const atom of atoms) {
+                if (isAtomFamily(atom) && !updatedFamilyAtoms.has(atom)) {
+                    recursivelyUpdateIndexes(data, atom)
+                }
+            }
+        }
+
+        // selectorCount is the O(1) global gate; hasSelectorChangeListener then
+        // confirms a selector listener exists on this store's ancestor chain, so a
+        // selector listener on an unrelated root store adds no overhead here.
+        const selectorActive =
+            report !== undefined &&
+            !isInitOnly &&
+            changeListenerRegistry.selectorCount !== 0 &&
+            hasSelectorChangeListener(data)
+        const changedSelectors = selectorActive ? new Set<Selector>() : undefined
+        propagateDirtySelectors(atoms, selectors, data, subscriptions, updatedFamilyAtoms, isInitOnly, notify, changedSelectors)
+        if (notifyEntry) collectFamilyAtomsForNotify(notifyEntry, updatedFamilyAtoms)
+
+        const hasScopes = !!data.scopes && data.scopes.size > 0
+        const watching =
+            report !== undefined && changeListenerRegistry.count !== 0 && !isInitOnly
+
+        // When a selector listener is active and this update cascades into scopes,
+        // the origin group (atoms + its selectors) and each descendant scope's
+        // selector group must coalesce into a single onChange callback. On the
+        // immediate path (string report) that means buffering into a transient sink
+        // tagged with the real source and flushing once; the txn path already passes
+        // a sink. With no selector listener there's only ever the one origin group,
+        // so the string report fires it inline exactly as before.
+        let localSink: ChangeSink | undefined
+        let effectiveReport: ChangeReport | undefined = report
+        if (selectorActive && hasScopes && typeof report === "string") {
+            localSink = createChangeSink(undefined, report)
+            effectiveReport = localSink
+        }
+        // When buffering into a sink (the txn sink, or the transient localSink
+        // above), buffer the origin group BEFORE cascading into scopes so the origin
+        // atoms precede descendant-scope selectors in the single callback. The sink
+        // flushes at the end regardless, so this only orders the batch — it does not
+        // change when onChange fires. A bare string report (no sink) fires
+        // immediately, so it stays AFTER the scope cascade to keep onChange last
+        // (after subscribers); that path never carries selector entries anyway.
+        const reportIsSink =
+            effectiveReport !== undefined && typeof effectiveReport !== "string"
+        // reportAtoms=false: emit only the recomputed selectors (the caller reports
+        // the trigger atoms — e.g. as `kind: "unset"`).
+        const emitOrigin = (rpt: ChangeReport) => {
+            if (reportAtoms) {
+                reportAtomChanges(atoms, data, rpt, changedSelectors)
+            } else if (changedSelectors && changedSelectors.size > 0) {
+                reportSelectorChanges(changedSelectors, data, rpt)
+            }
+        }
+        if (watching && reportIsSink) emitOrigin(effectiveReport as ChangeReport)
+        if (hasScopes) {
+            // A scope selector that reads get(family) depends on the FAMILY object,
+            // not the individual member atoms. When the parent's MEMBERSHIP changes (a
+            // member added/removed), propagating only the changed members into scopes
+            // (as `atoms` holds) re-renders each scope's family index via
+            // recursivelyUpdateIndexes above but never re-evaluates those selectors —
+            // leaving them stale. So mirror the delete path (propagateDeletedAtoms
+            // pushes the family onto its scopeAtoms): also propagate each family whose
+            // membership changed. A pure member VALUE-update (membership unchanged) is
+            // deliberately NOT included — its scope-side effect reaches selectors via
+            // the member atom already in `atoms`, so it keeps the single-atom scope
+            // fast path. That gate is `membershipChanged`.
+            let scopeAtoms: AtomInput[] = atoms
+            if (membershipChanged) {
+                scopeAtoms = atoms.slice()
+                for (const family of membershipChanged) {
+                    if (!scopeAtoms.includes(family)) scopeAtoms.push(family)
+                }
+            }
+            propagateToScopes(scopeAtoms, data, isInitOnly, notify, effectiveReport)
+        }
+        if (watching && !reportIsSink) emitOrigin(effectiveReport as ChangeReport)
+        if (localSink) flushChangeSink(localSink)
+        completed = true
+    } finally {
+        if (commitRoot !== undefined) endCommit(commitRoot, !completed)
     }
-    if (watching && !reportIsSink) emitOrigin(effectiveReport as ChangeReport)
-    if (localSink) flushChangeSink(localSink)
 }
 
 // Scope-recursive entry: re-evaluate selectors that depend on these atoms in

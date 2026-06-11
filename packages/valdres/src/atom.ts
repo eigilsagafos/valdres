@@ -1,5 +1,6 @@
 import { equal } from "./lib/equal"
 import { globalAtom } from "./lib/globalAtom"
+import { registerName } from "./lib/registerName"
 import type { Atom } from "./types/Atom"
 import type { AtomDefaultValue } from "./types/AtomDefaultValue"
 import type { AtomOptions } from "./types/AtomOptions"
@@ -29,11 +30,18 @@ export function atom<V>(
 ) {
     if (!options) return { equal, defaultValue }
     if (options.global) {
-        return globalAtom(defaultValue, options)
+        const created = globalAtom(defaultValue, options)
+        // Family member atoms are built by createAtomFamily (never through
+        // atom()), so registering here registers exactly the directly-created,
+        // named atoms.
+        if (options.name !== undefined) registerName(options.name, created)
+        return created
     }
-    return {
+    const created = {
         equal,
         defaultValue,
         ...options,
     } as Atom<V>
+    if (options.name !== undefined) registerName(options.name, created)
+    return created
 }

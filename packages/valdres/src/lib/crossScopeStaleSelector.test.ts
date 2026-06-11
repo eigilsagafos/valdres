@@ -143,6 +143,8 @@ describe("cross-scope stale intermediate selector", () => {
     // individual sets — never the guarded cross-scope path — then read lazily).
     // This is what surfaced the cross-store guard bug; it now holds.
     test("fuzz: cross-scope selectors match an independent oracle", () => {
+        // Atom names register globally (duplicates throw); suffix per build.
+        let buildUid = 0
         for (let seed = 1; seed <= 300; seed++) {
             const rnd = mulberry32(seed)
             const nAtoms = 3 + Math.floor(rnd() * 3)
@@ -162,8 +164,9 @@ describe("cross-scope stale intermediate selector", () => {
                 }
             })
             const build = () => {
+                const run = ++buildUid
                 const atoms = Array.from({ length: nAtoms }, (_, i) =>
-                    atom(i, { name: `fa${i}` }),
+                    atom(i, { name: `fa${i}.${run}` }),
                 )
                 const sels: any[] = []
                 defs.forEach((def: any, idx) => {

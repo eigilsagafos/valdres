@@ -288,7 +288,7 @@ describe("subscribe", () => {
 
     test("nested selectors should only re-calculate when needed", () => {
         const rootStore = store()
-        const atom1 = atom(1, { name: "atom" })
+        const atom1 = atom(1, { name: "sub-nested-atom" })
         const selector1cb = mock(get => {
             get(atom1) // We get the atom but we dont use the value
             return 1
