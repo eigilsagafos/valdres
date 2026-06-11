@@ -116,7 +116,7 @@ async function rebuildBundles() {
 async function rebuildPagesInline() {
     const entries = await discover(rootDir)
     const compiled = await compileMdx(entries)
-    await renderPages(compiled, distDir)
+    await renderPages(compiled, distDir, { testPages: true })
 }
 
 async function rebuildPagesFresh() {

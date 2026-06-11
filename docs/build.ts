@@ -1,7 +1,7 @@
 import { discover } from "./src/discover"
 import { compileMdx } from "./src/compile-mdx"
 import { renderPages } from "./src/render"
-import { generateLlmsTxt } from "./src/generate-llms-txt"
+import { generateLlmsTxt, generateMarkdownPages } from "./src/generate-llms-txt"
 import { generateSitemap } from "./src/generate-sitemap"
 import { $ } from "bun"
 
@@ -12,6 +12,11 @@ const siteUrl = "https://valdres.dev"
 const valdresVersion: string = (
     await Bun.file(`${rootDir}/packages/valdres/package.json`).json()
 ).version
+
+// Start from a clean slate — stale routes from earlier builds would otherwise
+// ship and get indexed by pagefind.
+import { rm } from "node:fs/promises"
+await rm(distDir, { recursive: true, force: true })
 
 console.log("🔍 Discovering MDX files...")
 const entries = await discover(rootDir)
@@ -118,8 +123,9 @@ if (!landingBuild.success) {
 console.log("📄 Rendering HTML...")
 await renderPages(compiled, distDir)
 
-console.log("🤖 Generating llms.txt...")
+console.log("🤖 Generating llms.txt + per-page markdown...")
 await generateLlmsTxt(compiled, distDir, siteUrl)
+await generateMarkdownPages(compiled, distDir, siteUrl)
 
 console.log("🗺️ Generating sitemap.xml & robots.txt...")
 await generateSitemap(compiled, distDir, siteUrl)

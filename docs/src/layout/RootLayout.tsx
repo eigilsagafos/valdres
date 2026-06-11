@@ -66,6 +66,12 @@ export function RootLayout({
                         content={description}
                     />
                 )}
+                <link
+                    rel="alternate"
+                    type="text/markdown"
+                    href={`${currentRoute}.md`}
+                    title="Markdown version of this page"
+                />
                 <link rel="stylesheet" href="/styles.css" />
                 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg width='48' height='48' viewBox='0 0 48 48' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Crect width='48' height='48' rx='12' fill='oklch(0.7 0.18 80)'/%3E%3Cpath d='M13 13L24 35' stroke='white' stroke-width='4' stroke-linecap='round' opacity='0.9'/%3E%3Cpath d='M35 13L24 35' stroke='white' stroke-width='4' stroke-linecap='round' opacity='0.6'/%3E%3C/svg%3E" />
                 <link rel="preconnect" href="https://fonts.googleapis.com" />

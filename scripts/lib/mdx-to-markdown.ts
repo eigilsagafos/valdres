@@ -53,6 +53,8 @@ function classList(node: AnyNode): string[] {
 export type MdxToMarkdownOptions = {
     /** URL of the live page, used for <PluginDemo> / <Playground> links. */
     liveUrl?: string
+    /** Which <FrameworkBlock fw="..."> to keep (default "react"). */
+    keepFramework?: string
     /** Collects names of unknown JSX components that were dropped. */
     onWarn?: (message: string) => void
 }
@@ -92,8 +94,8 @@ function makeTransform(opts: MdxToMarkdownOptions) {
     function handleJsx(node: AnyNode): AnyNode | AnyNode[] | null {
         switch (node.name) {
             case "FrameworkBlock":
-                // READMEs show the React variant (the common case); drop others.
-                return getAttr(node, "fw") === "react"
+                // Keep one framework's variant (react unless told otherwise).
+                return getAttr(node, "fw") === (opts.keepFramework ?? "react")
                     ? transformNodes(node.children ?? [])
                     : null
             case "PluginDemo":

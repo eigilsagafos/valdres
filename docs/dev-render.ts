@@ -7,4 +7,4 @@ const distDir = `${import.meta.dir}/dist`
 
 const entries = await discover(rootDir)
 const compiled = await compileMdx(entries)
-await renderPages(compiled, distDir)
+await renderPages(compiled, distDir, { testPages: true })

@@ -45,7 +45,11 @@ function rewriteLink(href: string, framework: Framework): { href: string; apiNam
     return { href }
 }
 
-export async function renderPages(docs: CompiledDoc[], distDir: string) {
+export async function renderPages(
+    docs: CompiledDoc[],
+    distDir: string,
+    options: { testPages?: boolean } = {},
+) {
 
     // Benchmark summary (generated from Bencher by scripts/gen-bench-summary.ts).
     // Read once: drives both the landing-page stats and the performance tables.
@@ -193,20 +197,21 @@ export async function renderPages(docs: CompiledDoc[], distDir: string) {
         `<!DOCTYPE html>\n${landingHtml}`,
     )
 
-    // Brand test pages
-    const brandHtml = renderToString(<BrandTestPage />)
-    await Bun.write(
-        `${distDir}/brand-test/index.html`,
-        `<!DOCTYPE html>\n${brandHtml}`,
-    )
+    // Brand/theme scratch pages — dev only, never shipped or search-indexed.
+    if (options.testPages) {
+        const brandHtml = renderToString(<BrandTestPage />)
+        await Bun.write(
+            `${distDir}/brand-test/index.html`,
+            `<!DOCTYPE html>\n${brandHtml}`,
+        )
 
-    const brand2Html = renderToString(<BrandTestPage2 />)
-    await Bun.write(
-        `${distDir}/brand-test/wild/index.html`,
-        `<!DOCTYPE html>\n${brand2Html}`,
-    )
+        const brand2Html = renderToString(<BrandTestPage2 />)
+        await Bun.write(
+            `${distDir}/brand-test/wild/index.html`,
+            `<!DOCTYPE html>\n${brand2Html}`,
+        )
 
-    // Theme comparison page
-    const themeHtml = await renderThemeTestPage()
-    await Bun.write(`${distDir}/theme-test/index.html`, themeHtml)
+        const themeHtml = await renderThemeTestPage()
+        await Bun.write(`${distDir}/theme-test/index.html`, themeHtml)
+    }
 }
