@@ -10,11 +10,11 @@ import { valdresContext } from "./lib/valdresContext"
 let rootStore: Store
 
 class App extends LitElement {
-    private _provider: StoreProvider
+    provider: StoreProvider
     constructor() {
         super()
         rootStore = createStore({ id: "root", batchUpdates: true })
-        this._provider = new StoreProvider(this, rootStore)
+        this.provider = new StoreProvider(this, rootStore)
     }
     render() {
         return html`<slot></slot>`
@@ -119,6 +119,27 @@ describe("ScopeController", () => {
         page.appendChild(reader)
         await reader.updateComplete
         expect(reader.seen!.get(a)).toBe(11)
+        app.remove()
+    })
+
+    test("re-scopes from the new parent when the provider swaps its store", async () => {
+        const a = atom(0)
+        const { app, page } = await mount("swap-scope")
+        const firstParent = rootStore
+        expect(page.scope!.store.data.parent).toBe(firstParent.data)
+
+        const second = createStore({ id: "root-2", batchUpdates: true })
+        second.set(a, 42)
+        app.provider.setStore(second)
+        await page.updateComplete
+        await new Promise(r => setTimeout(r, 0))
+        await page.updateComplete
+
+        // The scope re-derived from the swapped parent…
+        expect(page.scope!.store.data.parent).toBe(second.data)
+        // …inherits its values, and the old parent's scope was detached.
+        expect(page.scope!.store.get(a)).toBe(42)
+        expect(firstParent.data.scopes?.has("swap-scope")).toBe(false)
         app.remove()
     })
 })

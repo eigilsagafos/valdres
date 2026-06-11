@@ -24,7 +24,8 @@ class ExplicitHost extends LitElement {
         return html`<span>${watch(this.state, this.store)}</span>`
     }
 }
-customElements.define("watch-explicit-host", ExplicitHost)
+if (!customElements.get("watch-explicit-host"))
+    customElements.define("watch-explicit-host", ExplicitHost)
 
 class ProviderShell extends LitElement {
     provider = new StoreProvider(this)
@@ -32,7 +33,8 @@ class ProviderShell extends LitElement {
         return html`<slot></slot>`
     }
 }
-customElements.define("watch-provider-shell", ProviderShell)
+if (!customElements.get("watch-provider-shell"))
+    customElements.define("watch-provider-shell", ProviderShell)
 
 class ContextHost extends LitElement {
     state!: any
@@ -42,7 +44,8 @@ class ContextHost extends LitElement {
         return html`<span>${watch(this.state)}</span>`
     }
 }
-customElements.define("watch-context-host", ContextHost)
+if (!customElements.get("watch-context-host"))
+    customElements.define("watch-context-host", ContextHost)
 
 const text = (el: any) =>
     el.shadowRoot.querySelector("span").textContent.trim()

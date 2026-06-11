@@ -10,6 +10,16 @@ const tick = () => new Promise(r => setTimeout(r, 0))
 const subCount = (store: any, state: any) =>
     store.data.subscriptions.get(state)?.size ?? 0
 
+// Module-scoped element definition (defining inside a test throws on re-runs
+// in the same JS environment); the test parameterizes the signal via this slot.
+let currentSignal: ReturnType<typeof toSignal<number>> | undefined
+class SigHost extends SignalWatcher(LitElement) {
+    render() {
+        return html`<span>${currentSignal?.get()}</span>`
+    }
+}
+if (!customElements.get("sig-host")) customElements.define("sig-host", SigHost)
+
 describe("toSignal", () => {
     test("subscribes lazily on first watcher, unsubscribes on last", async () => {
         const a = atom(1)
@@ -109,13 +119,7 @@ describe("toSignal", () => {
         const a = atom(10)
         const s = createStore({ batchUpdates: true })
         const sig = toSignal(a, s)
-
-        class SigHost extends SignalWatcher(LitElement) {
-            render() {
-                return html`<span>${sig.get()}</span>`
-            }
-        }
-        customElements.define("sig-host", SigHost)
+        currentSignal = sig
 
         const el = document.createElement("sig-host") as LitElement
         document.body.appendChild(el)

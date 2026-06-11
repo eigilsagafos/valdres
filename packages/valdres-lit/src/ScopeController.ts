@@ -11,14 +11,12 @@ let scopeIdCounter = 0
 const generateScopeId = () => `valdres-lit-scope-${++scopeIdCounter}`
 
 export class ScopeController implements ReactiveController {
-    private _host: ReactiveElement
     private _scopeId: string
     private _provider: ContextProvider<typeof valdresContext>
     private _scopedStore?: ScopedStore
     private _wasCreated = false
 
     constructor(host: ReactiveElement, scopeId?: string) {
-        this._host = host
         this._scopeId = scopeId ?? generateScopeId()
         host.addController(this)
 
@@ -26,16 +24,23 @@ export class ScopeController implements ReactiveController {
             context: valdresContext,
         })
 
-        // subscribe:true so the callback re-fires on every (re)connect. A
-        // subscribe:false consumer is one-shot, which combined with the scope
-        // teardown in hostDisconnected would leave the scope unacquired (and
-        // `get store()` throwing) after a disconnect→reconnect cycle. The
-        // `_scopedStore` guard keeps this idempotent while connected.
+        // subscribe:true so the callback re-fires on every (re)connect and
+        // when an ancestor provider swaps its store. A subscribe:false
+        // consumer is one-shot, which combined with the scope teardown in
+        // hostDisconnected would leave the scope unacquired (and `get store()`
+        // throwing) after a disconnect→reconnect cycle.
         new ContextConsumer(host, {
             context: valdresContext,
             subscribe: true,
             callback: parent => {
-                if (!parent || this._scopedStore) return
+                if (!parent) return
+                if (this._scopedStore) {
+                    // Same parent re-announcing (e.g. a reconnect) — no-op.
+                    if (this._scopedStore.data.parent === parent.data) return
+                    // Ancestor swapped its store: drop the scope derived from
+                    // the old parent and re-derive from the new one.
+                    this._scopedStore.detach(this._wasCreated)
+                }
                 this._wasCreated = !parent.data.scopes?.has(this._scopeId)
                 this._scopedStore = parent.scope(this._scopeId) as ScopedStore
                 this._provider.setValue(this._scopedStore)

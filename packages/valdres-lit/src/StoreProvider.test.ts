@@ -7,12 +7,10 @@ import { StoreProvider } from "./StoreProvider"
 import { valdresContext } from "./lib/valdresContext"
 
 class App extends LitElement {
-    static current?: App
     store: Store
     private _provider: StoreProvider
     constructor() {
         super()
-        App.current = this
         this.store = createStore({ batchUpdates: true })
         this._provider = new StoreProvider(this, this.store)
     }
@@ -21,6 +19,29 @@ class App extends LitElement {
     }
 }
 if (!customElements.get("sp-app")) customElements.define("sp-app", App)
+
+// Element definitions are module-scoped (registering inside a test throws on
+// re-runs in the same JS environment). Tests parameterize the store via this
+// module-level slot, read at construction time.
+let providedStore: Store | undefined
+
+class ParamApp extends LitElement {
+    provider = new StoreProvider(this, providedStore)
+    render() {
+        return html`<slot></slot>`
+    }
+}
+if (!customElements.get("sp-param-app"))
+    customElements.define("sp-param-app", ParamApp)
+
+class AutoApp extends LitElement {
+    provider = new StoreProvider(this)
+    render() {
+        return html`<slot></slot>`
+    }
+}
+if (!customElements.get("sp-auto-app"))
+    customElements.define("sp-auto-app", AutoApp)
 
 class Reader extends LitElement {
     seen?: Store
@@ -66,19 +87,10 @@ describe("StoreProvider", () => {
         const warn = mock(() => {})
         const original = console.warn
         console.warn = warn
-        const noBatch = createStore("no-batch")
-        class WarnApp extends LitElement {
-            constructor() {
-                super()
-                new StoreProvider(this, noBatch)
-            }
-            render() {
-                return html``
-            }
-        }
-        customElements.define("sp-warn-app", WarnApp)
-        document.body.appendChild(document.createElement("sp-warn-app"))
+        providedStore = createStore("no-batch")
+        document.body.appendChild(document.createElement("sp-param-app"))
         console.warn = original
+        providedStore = undefined
         expect(warn).toHaveBeenCalledTimes(1)
     })
 
@@ -86,17 +98,6 @@ describe("StoreProvider", () => {
         const warn = mock(() => {})
         const original = console.warn
         console.warn = warn
-        class AutoApp extends LitElement {
-            provider: StoreProvider
-            constructor() {
-                super()
-                this.provider = new StoreProvider(this)
-            }
-            render() {
-                return html`<slot></slot>`
-            }
-        }
-        customElements.define("sp-auto-app", AutoApp)
         const app = document.createElement("sp-auto-app") as AutoApp
         document.body.appendChild(app)
         await app.updateComplete
@@ -105,7 +106,6 @@ describe("StoreProvider", () => {
         expect(app.provider.store).toBeDefined()
         expect(app.provider.store.data.batchUpdates).toBe(true)
 
-        // The auto-created store is actually provided to descendants.
         const a = atom(3)
         const reader = document.createElement("sp-reader") as Reader
         app.appendChild(reader)
@@ -117,14 +117,9 @@ describe("StoreProvider", () => {
 
     test("store getter returns the provided store", async () => {
         const s = createStore({ id: "getter", batchUpdates: true })
-        class GetterApp extends LitElement {
-            provider = new StoreProvider(this, s)
-            render() {
-                return html``
-            }
-        }
-        customElements.define("sp-getter-app", GetterApp)
-        const app = document.createElement("sp-getter-app") as GetterApp
+        providedStore = s
+        const app = document.createElement("sp-param-app") as ParamApp
+        providedStore = undefined
         document.body.appendChild(app)
         await app.updateComplete
         expect(app.provider.store).toBe(s)
@@ -132,25 +127,11 @@ describe("StoreProvider", () => {
     })
 
     test("setStore replaces the provided store", async () => {
-        const a = atom(0)
         const first = createStore({ id: "first", batchUpdates: true })
-        first.set(a, 1)
         const second = createStore({ id: "second", batchUpdates: true })
-        second.set(a, 2)
-
-        class SwapApp extends LitElement {
-            provider: StoreProvider
-            constructor() {
-                super()
-                this.provider = new StoreProvider(this, first)
-            }
-            render() {
-                return html`<slot></slot>`
-            }
-        }
-        customElements.define("sp-swap-app", SwapApp)
-
-        const app = document.createElement("sp-swap-app") as SwapApp
+        providedStore = first
+        const app = document.createElement("sp-param-app") as ParamApp
+        providedStore = undefined
         document.body.appendChild(app)
         await app.updateComplete
         const reader = document.createElement("sp-reader") as Reader

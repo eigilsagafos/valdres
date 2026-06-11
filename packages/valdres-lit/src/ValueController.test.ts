@@ -184,4 +184,62 @@ describe("ValueController", () => {
         expect(ctrl.value).toBeUndefined()
         el.remove()
     })
+
+    test("stale async resolution cannot overwrite a newer value", async () => {
+        const a = atom<string>("start")
+        const s = createStore({ batchUpdates: true })
+        const el = document.createElement("vc-host") as HostEl
+        const ctrl = new ValueController<string>(el, a, s)
+        el.ctrl = ctrl
+        document.body.appendChild(el)
+        await el.updateComplete
+        expect(ctrl.value).toBe("start")
+
+        let resolveSlow!: (v: string) => void
+        const slow = new Promise<string>(r => {
+            resolveSlow = r
+        })
+        s.set(a, slow as any) // pending…
+        await new Promise(r => setTimeout(r, 0))
+        s.set(a, "v2-sync") // overtaken by a sync write
+        await new Promise(r => setTimeout(r, 0))
+        await el.updateComplete
+        expect(ctrl.value).toBe("v2-sync")
+        expect(ctrl.status).toBe("ready")
+
+        resolveSlow("v1-stale") // stale promise resolves last
+        await new Promise(r => setTimeout(r, 0))
+        await el.updateComplete
+        expect(ctrl.value).toBe("v2-sync") // must NOT regress
+        expect(ctrl.status).toBe("ready")
+        el.remove()
+    })
+
+    test("error is undefined while a later async write is pending", async () => {
+        let reject!: (e: unknown) => void
+        const failing = new Promise<string>((_, r) => {
+            reject = r
+        })
+        failing.catch(() => {})
+        const a = atom<string>(failing as unknown as string)
+        const s = createStore({ batchUpdates: true })
+        const el = document.createElement("vc-host") as HostEl
+        const ctrl = new ValueController<string>(el, a, s)
+        el.ctrl = ctrl
+        document.body.appendChild(el)
+        await el.updateComplete
+        reject(new Error("boom"))
+        await failing.catch(() => {})
+        await el.updateComplete
+        expect(ctrl.status).toBe("error")
+        expect((ctrl.error as Error)?.message).toBe("boom")
+
+        // A new pending write clears the exposed error until it settles.
+        s.set(a, new Promise<string>(() => {}) as any)
+        await new Promise(r => setTimeout(r, 0))
+        await el.updateComplete
+        expect(ctrl.status).toBe("pending")
+        expect(ctrl.error).toBeUndefined()
+        el.remove()
+    })
 })

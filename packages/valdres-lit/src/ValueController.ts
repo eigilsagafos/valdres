@@ -22,6 +22,10 @@ export class ValueController<
     private _hasValue = false
     private _status: ValueStatus = "pending"
     private _error: unknown = undefined
+    // The promise whose resolution is allowed to commit. Cleared on every
+    // sync commit so a stale resolution can never overwrite a newer value
+    // (mirrors valdres core's `data.values.get(atom) !== promise` guard).
+    private _pendingPromise?: PromiseLike<unknown>
 
     constructor(host: Host, state: State<Value, Args>, store?: Store) {
         this._host = host
@@ -69,7 +73,7 @@ export class ValueController<
 
     /** The rejection reason when `status === "error"`, otherwise `undefined`. */
     get error(): unknown {
-        return this._error
+        return this._status === "error" ? this._error : undefined
     }
 
     private _attach(store: Store) {
@@ -88,11 +92,14 @@ export class ValueController<
 
     private _ingest(store: Store, next: unknown) {
         if (isPromiseLike(next)) {
+            this._pendingPromise = next
             this._status = "pending"
             this._host.requestUpdate()
             Promise.resolve(next).then(
                 v => {
-                    if (this._store !== store) return
+                    if (this._pendingPromise !== next || this._store !== store)
+                        return
+                    this._pendingPromise = undefined
                     this._value = v as Value
                     this._hasValue = true
                     this._status = "ready"
@@ -100,13 +107,16 @@ export class ValueController<
                     this._host.requestUpdate()
                 },
                 err => {
-                    if (this._store !== store) return
+                    if (this._pendingPromise !== next || this._store !== store)
+                        return
+                    this._pendingPromise = undefined
                     this._error = err
                     this._status = "error"
                     this._host.requestUpdate()
                 },
             )
         } else {
+            this._pendingPromise = undefined
             this._value = next as Value
             this._hasValue = true
             this._status = "ready"
