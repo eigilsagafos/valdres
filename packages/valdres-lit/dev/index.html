@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>valdres-lit — capabilities</title>
+        <style>
+            /* Theme tokens on :root pierce shadow DOM. Calm docs-site aesthetic. */
+            :root {
+                color-scheme: light dark;
+
+                --vl-bg: #fbfbfd;
+                --vl-surface: #ffffff;
+                --vl-ink: #1c1b22;
+                --vl-muted: color-mix(in oklch, var(--vl-ink) 55%, transparent);
+                --vl-line: color-mix(in oklch, var(--vl-ink) 13%, transparent);
+                --vl-accent: #6366f1;
+                --vl-accent-soft: color-mix(
+                    in oklch,
+                    var(--vl-accent) 14%,
+                    transparent
+                );
+                --vl-code-bg: #f4f4fa;
+                --vl-ok: #1aa179;
+                --vl-err: #d4452f;
+
+                --vl-radius: 12px;
+                --vl-font:
+                    system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+                --vl-mono:
+                    ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace;
+            }
+            @media (prefers-color-scheme: dark) {
+                :root {
+                    --vl-bg: #0e0e13;
+                    --vl-surface: #16161e;
+                    --vl-ink: #ecebf4;
+                    --vl-line: color-mix(in oklch, var(--vl-ink) 15%, transparent);
+                    --vl-accent: #8b8cf9;
+                    --vl-code-bg: #11111a;
+                }
+            }
+
+            html,
+            body {
+                margin: 0;
+                background: var(--vl-bg);
+                color: var(--vl-ink);
+                font-family: var(--vl-font);
+                line-height: 1.6;
+                -webkit-font-smoothing: antialiased;
+            }
+            valdres-lit-docs {
+                display: block;
+            }
+        </style>
+    </head>
+    <body>
+        <valdres-lit-docs></valdres-lit-docs>
+
+        <script>
+            window.process = { env: { NODE_ENV: "development" } }
+        </script>
+        <script type="module" src="./main.ts"></script>
+    </body>
+</html>

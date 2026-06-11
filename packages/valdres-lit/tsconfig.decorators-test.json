@@ -1,0 +1,16 @@
+{
+    "compilerOptions": {
+        "lib": ["ESNext", "DOM"],
+        "target": "ES2022",
+        "module": "ESNext",
+        "moduleResolution": "bundler",
+        "moduleDetection": "force",
+        "strict": true,
+        "skipLibCheck": true,
+        "noEmit": false,
+        "declaration": false,
+        "outDir": ".decorators-test",
+        "rootDir": "."
+    },
+    "include": ["test/decorators-tsc/run.ts"]
+}
