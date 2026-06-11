@@ -39,6 +39,10 @@ export type CreateStoreDataOptions = {
      *  can list the store's current state. Off by default; see `Store.snapshot`.
      *  Scopes inherit it from their parent. */
     enumerable?: boolean
+    /** Validate atom/selector values against their `schema` (if any) on init,
+     *  set, and selector evaluation. Off by default — opt in per store for
+     *  development-time safety. Scopes inherit it from their parent. */
+    schemaValidation?: boolean
 }
 
 export function createStoreData(
@@ -63,6 +67,11 @@ export function createStoreData(
     if (options?.batchUpdates) {
         data.batchUpdates = true
     }
+    // Opt-in, inherited down the scope chain like `enumerable` — chosen once
+    // here, never re-checked on get/set.
+    const schemaValidation =
+        options?.schemaValidation ?? parent?.schemaValidation ?? false
+    if (schemaValidation) data.schemaValidation = true
     if (parent) {
         data.parent = parent
         data.scopeConsumers = new Set()

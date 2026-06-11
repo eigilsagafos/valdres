@@ -4,6 +4,7 @@ import type { AtomOnMount } from "./AtomOnMount"
 import type { AtomOnSet } from "./AtomOnSet"
 import type { EqualFunc } from "./EqualFunc"
 import type { Reactive } from "./Reactive"
+import type { Schema } from "./Schema"
 import type { Selector } from "./Selector"
 
 export type CacheMeta = {
@@ -18,6 +19,9 @@ export type Atom<Value = unknown> = {
     equal: EqualFunc<Value>
     defaultValue?: AtomDefaultValue<Value>
     name?: string
+    schema?: Schema<Value>
+    /** Per-atom override of the store's `schemaValidation` flag (see AtomOptions). */
+    schemaValidation?: boolean
     /** Internal cross-store sync hook for global atoms. Not user-facing. */
     onInit?: AtomOnInit<Value>
     onSet?: AtomOnSet<Value>

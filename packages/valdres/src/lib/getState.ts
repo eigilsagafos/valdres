@@ -16,6 +16,8 @@ import { initSelector } from "./initSelector"
 import { propagateAtomUpdate } from "./propagateUpdatedAtoms"
 import { resolveAtomDefaultValue } from "./resolveAtomDefaultValue"
 import { setValueInData } from "./setValueInData"
+import { validateResolvedValue } from "./validateResolvedValue"
+import { validateSchema } from "./validateSchema"
 import {
     createAtomFamilyIndex,
     renderAtomFamilyIndex,
@@ -86,6 +88,10 @@ export function getState<
                         data,
                         initializedAtomsSet,
                     )
+                    // Validate the deleted-member default like any other
+                    // boundary: sync values throw here; the async value is
+                    // validated on resolve below.
+                    if (!isPromiseLike(value)) validateSchema(state, value, data)
                     const cached = setValueInData(state, value, data)
                     // Async default: mirror getAtomInitValue and swap the cached
                     // promise for its resolved value once it settles, so later
@@ -99,6 +105,14 @@ export function getState<
                         cached.then(
                             resolvedValue => {
                                 if (data.values.get(state) !== cached) return
+                                if (!validateResolvedValue(state, resolvedValue, data)) {
+                                    // Invalid: failure reported; drop so a later
+                                    // read re-inits rather than committing it.
+                                    if (data.values.get(state) === cached) {
+                                        data.values.delete(state)
+                                    }
+                                    return
+                                }
                                 setValueInData(state, resolvedValue, data)
                                 propagateAtomUpdate(
                                     [state],

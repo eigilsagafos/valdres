@@ -1,0 +1,8 @@
+{
+    "//": "Typecheck lane for the schema type-assertion tests. The package's main tsconfig only includes src/index.ts (it emits .d.ts), so type-level tests would otherwise never be checked. Run via `bun run typecheck:types`.",
+    "extends": "../../tsconfig.json",
+    "compilerOptions": {
+        "noEmit": true
+    },
+    "include": ["src/lib/schemaValidation.types.test.ts"]
+}

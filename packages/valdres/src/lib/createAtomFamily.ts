@@ -107,5 +107,10 @@ export const createAtomFamily = <
             map.delete(familyKey(args))
         },
         equal,
+        // Exposed on the family object too (members carry them via ...options)
+        // so a consumer (devtools, sync) can read a family's schema without
+        // materializing a member.
+        schema: options?.schema,
+        schemaValidation: options?.schemaValidation,
     }) as AtomFamily<Value, Args>
 }

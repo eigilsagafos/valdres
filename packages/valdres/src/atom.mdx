@@ -29,8 +29,8 @@ const userAtom = atom(() =>
     fetch("/api/user").then(res => res.json())
 )
 
-// With a label for debugging
-const nameAtom = atom("default", { label: "nameAtom" })
+// With a name for debugging and error messages
+const nameAtom = atom("default", { name: "nameAtom" })
 ```
 
 ## Parameters
@@ -38,7 +38,9 @@ const nameAtom = atom("default", { label: "nameAtom" })
 | Parameter | Type | Description |
 |-----------|------|-------------|
 | `defaultValue` | `T \| () => T \| Promise<T>` | Initial value, or a function that returns one |
-| `options.label` | `string` | Optional label for debugging and devtools |
+| `options.name` | `string` | Optional name for debugging, devtools, and validation error messages |
+| `options.schema` | `Schema<T>` | Schema for runtime validation and type inference. A no-op unless validation is enabled. See [Schema Validation](/guides/schema-validation). |
+| `options.schemaValidation` | `boolean` | Per-atom override of the store's `schemaValidation` flag — `true` always validates this atom, `false` exempts it |
 | `options.maxAge` | `Reactive<number>` | Re-fetch interval in milliseconds (requires async default). Accepts a number, atom, or selector. |
 | `options.staleWhileRevalidate` | `Reactive<number>` | Serve stale data for this many ms while re-fetching. Accepts a number, atom, or selector. |
 | `options.staleIfError` | `Reactive<number>` | Serve stale data for this many ms after re-fetch errors. Accepts a number, atom, or selector. |
@@ -229,8 +231,32 @@ Returns `null` for atoms that don't have `maxAge` configured.
 
 <div id="cache-demo" className="not-prose" />
 
+## Schema validation
+
+Pass a `schema` — any [Standard Schema](https://standard-schema.dev) (Zod,
+Valibot, ArkType, …) or `parse()`-style validator — to validate the atom's
+values at runtime and infer its type without a generic:
+
+```ts
+import { atom, store } from "valdres"
+import { z } from "zod"
+
+// Typed Atom<string> from the schema — no generic needed
+const nameAtom = atom(undefined, { name: "nameAtom", schema: z.string() })
+
+// Validation is opt-in per store (off by default)
+const s = store({ schemaValidation: true })
+s.set(nameAtom, 42) // throws SchemaValidationError naming 'nameAtom'
+```
+
+Validation is validate-only (the original value is stored unchanged) and can be
+overridden per atom via `schemaValidation: true | false`. See the
+[Schema Validation guide](/guides/schema-validation) for error handling, async
+behavior, and limitations.
+
 ## See also
 
 - [atomFamily](/valdres/atomFamily) — create a collection of atoms keyed by a parameter
 - [selector](/valdres/selector) — derive computed state from atoms
+- [Schema Validation](/guides/schema-validation) — runtime validation and type inference
 - [useAtom](/react/useAtom) — read and write an atom in your components

@@ -7,7 +7,7 @@ description: Create and interact with a valdres store
 
 <div className="not-prose mb-8 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50 p-4">
   <div className="text-xs font-medium text-zinc-400 dark:text-zinc-500 mb-2 uppercase tracking-wider">Signature</div>
-  <code className="text-sm font-mono text-accent-500">store(): Store</code>
+  <code className="text-sm font-mono text-accent-500">store(id?: string, options?: StoreOptions): Store</code>
   <div className="mt-3 text-xs text-zinc-500 dark:text-zinc-400">
     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-zinc-200 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 font-medium mr-2">valdres</span>
     Create a store to hold all state
@@ -23,6 +23,19 @@ import { atom, store } from "valdres"
 
 const myStore = store()
 const countAtom = atom(0)
+```
+
+## Options
+
+| Option | Type | Description |
+|--------|------|-------------|
+| `batchUpdates` | `boolean` | Batch sequential `set()` calls within a tick into one notification pass (recommended for React) |
+| `enumerable` | `boolean` | Retain values enumerably so `store.snapshot()` can list current state |
+| `schemaValidation` | `boolean` | Validate atom/selector values against their `schema` (off by default). Inherited by scoped stores. See [Schema Validation](/guides/schema-validation). |
+
+```ts
+// Enable schema validation (e.g. outside production)
+const devStore = store({ schemaValidation: import.meta.env.DEV })
 ```
 
 ## Reading state
@@ -86,3 +99,4 @@ Inside a component you normally read and write through your framework's provider
 
 - [Provider](/react/Provider) — provide a store to your component tree
 - [useStore](/react/useStore) — access the current store in your components
+- [Schema Validation](/guides/schema-validation) — opt-in runtime validation via the `schemaValidation` option
