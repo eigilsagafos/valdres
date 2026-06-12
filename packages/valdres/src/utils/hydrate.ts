@@ -1,5 +1,6 @@
 import { SchemaValidationError } from "../errors/SchemaValidationError"
 import { valdresGlobal } from "../lib/valdresGlobal"
+import { decodeWireValue } from "../lib/wireCodec"
 import type { AtomFamily } from "../types/AtomFamily"
 import type { Atom } from "../types/Atom"
 import type { DehydratedState } from "../types/DehydratedState"
@@ -37,11 +38,17 @@ export type HydrateOptions = {
  * resolve against. Make sure the modules defining transferred atoms are
  * imported before calling hydrate.
  *
- * The payload is wire data, so hydrate is a natural trust boundary: when the
- * store enables `schemaValidation` (or an atom forces it), every entry is
- * validated against its atom's `schema` as it is staged. By default a failing
- * entry throws `SchemaValidationError` and aborts the whole hydration; pass
- * `{ invalid: "skip" }` to drop failing entries individually instead.
+ * Entries `dehydrate` marked as wire-encoded (the atom's schema is
+ * bidirectional — zod 4 `safeEncode`/`safeDecode`, e.g. a `z.codec`) are run
+ * through the schema's decode direction first, restoring JS-native runtime
+ * values (string → BigInt, ISO string → Date, …). Decoding inherently
+ * validates the wire value, independent of the `schemaValidation` flag.
+ *
+ * The payload is wire data, so hydrate is a natural trust boundary: a decode
+ * failure — and, when the store enables `schemaValidation` (or an atom forces
+ * it), a staging validation failure — throws `SchemaValidationError` and
+ * aborts the whole hydration by default; pass `{ invalid: "skip" }` to drop
+ * failing entries individually instead.
  *
  * @example
  * hydrate(store, window.__STATE__)
@@ -55,22 +62,23 @@ export const hydrate = (
     const skipInvalid = options?.invalid === "skip"
     const { registry } = valdresGlobal()
     store.txn(txn => {
-        // Staging a value runs schema validation (when enabled), so in skip
-        // mode a schema failure is caught per entry: the entry simply never
-        // stages and the rest of the payload still commits.
-        const stage = (state: Atom<unknown>, value: unknown) => {
+        // Decoding a wire-encoded entry and staging a value (which runs schema
+        // validation when enabled) can both reject it with a
+        // SchemaValidationError. In skip mode that's caught per entry: the
+        // entry simply never stages and the rest of the payload still commits.
+        const stage = (state: Atom<unknown>, value: unknown, encoded?: 1) => {
             if (!skipInvalid) {
-                txn.set(state, value)
+                txn.set(state, encoded ? decodeWireValue(state, value) : value)
                 return
             }
             try {
-                txn.set(state, value)
+                txn.set(state, encoded ? decodeWireValue(state, value) : value)
             } catch (error) {
                 if (!(error instanceof SchemaValidationError)) throw error
                 console.warn(`valdres: hydrate skipped an entry — ${error.message}`)
             }
         }
-        for (const [name, value] of payload.atoms) {
+        for (const [name, value, encoded] of payload.atoms) {
             const state = registry.get(name)
             if (state === undefined) {
                 console.warn(
@@ -84,9 +92,9 @@ export const hydrate = (
                 )
                 continue
             }
-            stage(state as Atom<unknown>, value)
+            stage(state as Atom<unknown>, value, encoded)
         }
-        for (const [name, args, value] of payload.families) {
+        for (const [name, args, value, encoded] of payload.families) {
             const family = registry.get(name)
             if (family === undefined) {
                 console.warn(
@@ -114,6 +122,7 @@ export const hydrate = (
             stage(
                 (family as AtomFamily<unknown>)(...(args as [any, ...any[]])),
                 value,
+                encoded,
             )
         }
     })

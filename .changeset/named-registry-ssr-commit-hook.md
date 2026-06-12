@@ -28,6 +28,19 @@ failure throws `SchemaValidationError` and aborts the whole hydration
 atomically; `hydrate(store, payload, { invalid: "skip" })` instead warns and
 drops just the failing entries.
 
+Atoms with a bidirectional schema (zod 4 — meaningfully `z.codec`) are
+**wire-encoded**: `dehydrate` runs the schema's encode direction to produce
+the JSON-safe value (BigInt → string, Date → ISO string, nested codecs
+included) and marks the entry; `hydrate` runs decode to restore the runtime
+value. JS-native values cross a plain-JSON wire with no custom serializer —
+give the atom a codec schema and it just works. Decode failures route through
+the same `invalid` policy; a one-way transform schema can't encode and falls
+back to the raw value with a dev warning; classic `parse`-only and
+Standard-Schema-only validators transfer raw values as before. To support
+codecs under validation, `validateSchema` now also accepts a value when the
+schema's encode direction validates it (a stored value is output-side; `parse`
+checks the wire side) — purely additive over the previous behavior.
+
 **`store.onCommitEnd(callback)`.** Subscribe to commit boundaries: fires
 exactly once per commit (set/reset/del/unset, async resolution, `store.txn`,
 batched flush), strictly after every subscriber callback and after

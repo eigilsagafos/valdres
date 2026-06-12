@@ -1,9 +1,16 @@
 import { describe, expect, mock, spyOn, test } from "bun:test"
+import { z } from "zod"
 import { atom } from "../atom"
 import { atomFamily } from "../atomFamily"
+import { SchemaValidationError } from "../errors/SchemaValidationError"
 import { selector } from "../selector"
 import { store } from "../store"
 import { dehydrate } from "./dehydrate"
+
+const bigintCodec = z.codec(z.string(), z.bigint(), {
+    decode: s => BigInt(s),
+    encode: b => b.toString(),
+})
 
 describe("dehydrate", () => {
     test("payload shape: [name, value] atoms and [name, args, value] family entries", () => {
@@ -113,5 +120,104 @@ describe("dehydrate", () => {
         const scoped = root.scope("dh-scope")
         expect(() => dehydrate(scoped)).toThrow("only supports root stores")
         scoped.detach()
+    })
+
+    // Atoms with a bidirectional schema (zod 4) are wire-encoded: the encode
+    // direction produces the JSON-safe value and the entry is marked with a
+    // trailing 1 so hydrate knows to decode it.
+    describe("schema wire-encoding", () => {
+        test("a codec atom encodes to its wire type, and the payload survives JSON", () => {
+            const budget = atom(0n, { name: "dhc-bigint", schema: bigintCodec })
+            const store1 = store()
+            store1.set(budget, 123456789123456789n)
+            const payload = dehydrate(store1)
+            expect(payload.atoms).toEqual([
+                ["dhc-bigint", "123456789123456789", 1],
+            ])
+            // raw BigInt would make JSON.stringify throw — encoded it's a string
+            expect(() => JSON.stringify(payload)).not.toThrow()
+        })
+
+        test("a plain zod schema encodes as a validating identity (still marked)", () => {
+            const title = atom("", { name: "dhc-plain", schema: z.string() })
+            const store1 = store()
+            store1.set(title, "hello")
+            expect(dehydrate(store1).atoms).toEqual([["dhc-plain", "hello", 1]])
+        })
+
+        test("codecs nested in object schemas encode through", () => {
+            const stats = atom(
+                { count: 0n, label: "" },
+                {
+                    name: "dhc-nested",
+                    schema: z.object({ count: bigintCodec, label: z.string() }),
+                },
+            )
+            const store1 = store()
+            store1.set(stats, { count: 7n, label: "a" })
+            expect(dehydrate(store1).atoms).toEqual([
+                ["dhc-nested", { count: "7", label: "a" }, 1],
+            ])
+        })
+
+        test("family members encode via the family's schema", () => {
+            const balances = atomFamily<bigint, [string]>(undefined, {
+                name: "dhc-fam",
+                schema: bigintCodec,
+            })
+            const store1 = store()
+            store1.set(balances("acct1"), 42n)
+            expect(dehydrate(store1).families).toEqual([
+                ["dhc-fam", ["acct1"], "42", 1],
+            ])
+        })
+
+        test("a one-way transform schema falls back to the raw value with a dev warning", () => {
+            const trimmed = atom("", {
+                name: "dhc-transform",
+                schema: z.string().transform(s => s.trim()),
+            })
+            const store1 = store()
+            store1.set(trimmed, "  raw  ")
+            const warn = spyOn(console, "warn").mockImplementation(mock())
+            try {
+                expect(dehydrate(store1).atoms).toEqual([
+                    ["dhc-transform", "  raw  "],
+                ])
+                expect(warn).toHaveBeenCalledTimes(1)
+                expect(warn.mock.calls[0][0]).toContain("dhc-transform")
+                // warned once per schema, not once per dehydrate
+                dehydrate(store1)
+                expect(warn).toHaveBeenCalledTimes(1)
+            } finally {
+                warn.mockRestore()
+            }
+        })
+
+        test("classic parse-only and Standard-Schema-only validators stay raw", () => {
+            const classic = atom(0, {
+                name: "dhc-classic",
+                schema: {
+                    parse: (v: unknown) => {
+                        if (typeof v !== "number") throw new Error("nope")
+                        return v
+                    },
+                },
+            })
+            const store1 = store()
+            store1.set(classic, 5)
+            expect(dehydrate(store1).atoms).toEqual([["dhc-classic", 5]])
+        })
+
+        test("a stored value that fails its own schema's encode throws, naming the atom", () => {
+            const strict = atom<bigint>(undefined, {
+                name: "dhc-invalid",
+                schema: bigintCodec,
+            })
+            const store1 = store() // validation off: the bad write lands
+            store1.set(strict, "not-a-bigint" as unknown as bigint)
+            expect(() => dehydrate(store1)).toThrow(SchemaValidationError)
+            expect(() => dehydrate(store1)).toThrow("dhc-invalid")
+        })
     })
 })

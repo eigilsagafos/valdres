@@ -60,6 +60,24 @@ export const validateSchema = <V>(
             try {
                 schema.parse(value)
             } catch (cause) {
+                // zod 4 codecs: `parse` checks the WIRE (input) side, but a
+                // stored value is the RUNTIME (output) side — e.g. the BigInt
+                // of `z.codec(z.string(), z.bigint(), …)`. Accept the value
+                // when the encode direction validates it, so codec'd atoms can
+                // be set with runtime values under validation. Purely additive:
+                // anything `parse` accepted still passes; a one-way transform
+                // schema throws here (no encode direction) and falls through to
+                // the original parse error, exactly as before.
+                const safeEncode = (
+                    schema as {
+                        safeEncode?: (v: unknown) => { success: boolean }
+                    }
+                ).safeEncode
+                if (typeof safeEncode === "function") {
+                    try {
+                        if (safeEncode.call(schema, value).success) return value
+                    } catch {}
+                }
                 throw new SchemaValidationError(cause, state)
             }
         } else {

@@ -690,4 +690,45 @@ describe("schema validation", () => {
             }
         })
     })
+
+    // zod 4 codecs: `parse` checks the WIRE (input) side, but stored values are
+    // RUNTIME (output) side. Validation accepts a value when the encode
+    // direction validates it — additive on top of parse, so everything that
+    // passed before still passes.
+    describe("codec schemas (output-side acceptance)", () => {
+        const bigintCodec = z.codec(z.string(), z.bigint(), {
+            decode: s => BigInt(s),
+            encode: b => b.toString(),
+        })
+
+        test("setting a codec atom's runtime value passes validation", () => {
+            const store1 = store({ schemaValidation: true })
+            const a = atom(0n, { name: "codec-set", schema: bigintCodec })
+            expect(() => store1.set(a, 42n)).not.toThrow()
+            expect(store1.get(a)).toBe(42n)
+        })
+
+        test("garbage still fails a codec atom's validation", () => {
+            const store1 = store({ schemaValidation: true })
+            const a = atom(0n, { name: "codec-garbage", schema: bigintCodec })
+            expect(() =>
+                store1.set(a, { nope: true } as unknown as bigint),
+            ).toThrow(SchemaValidationError)
+        })
+
+        test("one-way transform schemas keep their parse-side behavior", () => {
+            const store1 = store({ schemaValidation: true })
+            const a = atom("", {
+                name: "codec-transform",
+                schema: z.string().transform(s => s.length),
+            })
+            // input-side value passes (as before)…
+            expect(() => store1.set(a, "ok")).not.toThrow()
+            // …output-side value is still rejected (encode direction throws
+            // ZodEncodeError internally and falls through to the parse error)
+            expect(() => store1.set(a, 2 as unknown as string)).toThrow(
+                SchemaValidationError,
+            )
+        })
+    })
 })

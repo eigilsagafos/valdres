@@ -186,6 +186,111 @@ describe("hydrate", () => {
         })
     })
 
+    // The all-in schema story: atoms with bidirectional (zod 4) schemas
+    // transfer JS-native values over plain JSON — encode at dehydrate, decode
+    // at hydrate — with no flags and no custom serializer.
+    describe("codec round trip", () => {
+        const bigintCodec = z.codec(z.string(), z.bigint(), {
+            decode: s => BigInt(s),
+            encode: b => b.toString(),
+        })
+        const dateCodec = z.codec(z.iso.datetime(), z.date(), {
+            decode: s => new Date(s),
+            encode: d => d.toISOString(),
+        })
+
+        test("BigInt, Date, and nested codecs survive server→client through JSON", () => {
+            const supply = atom(0n, { name: "hyc-supply", schema: bigintCodec })
+            const launchedAt = atom<Date>(undefined, {
+                name: "hyc-launched",
+                schema: dateCodec,
+            })
+            const account = atomFamily<
+                { balance: bigint; updatedAt: Date },
+                [string]
+            >(undefined, {
+                name: "hyc-account",
+                schema: z.object({ balance: bigintCodec, updatedAt: dateCodec }),
+            })
+
+            const when = new Date("2026-06-12T10:00:00.000Z")
+            const server = store()
+            server.set(supply, 900719925474099100n)
+            server.set(launchedAt, when)
+            server.set(account("a1"), { balance: 5n, updatedAt: when })
+
+            // The full wire: plain JSON, no superjson, no custom reviver.
+            const payload: DehydratedState = JSON.parse(
+                JSON.stringify(dehydrate(server)),
+            )
+
+            const client = store()
+            hydrate(client, payload)
+            expect(client.get(supply)).toBe(900719925474099100n)
+            expect(client.get(launchedAt)).toBeInstanceOf(Date)
+            expect(client.get(launchedAt).getTime()).toBe(when.getTime())
+            const hydrated = client.get(account("a1"))
+            expect(hydrated.balance).toBe(5n)
+            expect(hydrated.updatedAt).toBeInstanceOf(Date)
+            expect(hydrated.updatedAt.getTime()).toBe(when.getTime())
+        })
+
+        test("round trip works with schemaValidation enabled on the client", () => {
+            const total = atom(0n, { name: "hyc-sv-total", schema: bigintCodec })
+            const server = store()
+            server.set(total, 7n)
+            const client = store({ schemaValidation: true })
+            hydrate(client, JSON.parse(JSON.stringify(dehydrate(server))))
+            expect(client.get(total)).toBe(7n)
+        })
+
+        test("a tampered encoded entry fails decode: strict aborts, skip drops it", () => {
+            const amount = atom(0n, { name: "hyc-tamper", schema: bigintCodec })
+            const ok = atom(0, { name: "hyc-tamper-ok" })
+            const tampered: DehydratedState = {
+                atoms: [
+                    ["hyc-tamper-ok", 1],
+                    ["hyc-tamper", "definitely-not-a-bigint", 1],
+                ],
+                families: [],
+            }
+            const strict = store()
+            expect(() => hydrate(strict, tampered)).toThrow(
+                SchemaValidationError,
+            )
+            expect(strict.get(ok)).toBe(0) // aborted atomically
+
+            const lenient = store()
+            const warn = spyOn(console, "warn").mockImplementation(mock())
+            try {
+                hydrate(lenient, tampered, { invalid: "skip" })
+                expect(lenient.get(ok)).toBe(1)
+                expect(lenient.get(amount)).toBe(0n) // skipped → default
+                expect(warn).toHaveBeenCalledTimes(1)
+                expect(warn.mock.calls[0][0]).toContain("hyc-tamper")
+            } finally {
+                warn.mockRestore()
+            }
+        })
+
+        test("an encoded entry whose registered schema cannot decode is invalid", () => {
+            // server/client schema drift: the payload says encoded, but the
+            // client's atom carries a classic parse-only validator.
+            atom(0, {
+                name: "hyc-drift",
+                schema: { parse: (v: unknown) => v as number },
+            })
+            const payload: DehydratedState = {
+                atoms: [["hyc-drift", "5", 1]],
+                families: [],
+            }
+            const client = store()
+            expect(() => hydrate(client, payload)).toThrow(
+                "not bidirectional",
+            )
+        })
+    })
+
     test("malformed family args (wire data) warn and are skipped", () => {
         const fam = atomFamily<number, [string]>(undefined, {
             name: "hy-args-fam",

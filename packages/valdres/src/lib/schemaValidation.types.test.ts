@@ -34,6 +34,20 @@ test("atom infers complex type from schema", () => {
     type _1 = Expect<Equal<typeof userAtom, Atom<{ name: string; age: number }>>>
 })
 
+test("atom infers the RUNTIME (output) type from a codec schema", () => {
+    // The atom stores the codec's output side; the wire side only exists in
+    // DehydratedState payloads.
+    const bigintCodec = z.codec(z.string(), z.bigint(), {
+        decode: s => BigInt(s),
+        encode: b => b.toString(),
+    })
+    const supplyAtom = atom(undefined, { schema: bigintCodec })
+    type _1 = Expect<Equal<typeof supplyAtom, Atom<bigint>>>
+
+    // @ts-expect-error - the wire type (string) is not the stored type
+    atom("42", { schema: bigintCodec })
+})
+
 test("selector infers type from schema", () => {
     const numAtom = atom(5)
     const derived = selector(get => get(numAtom) * 2, {

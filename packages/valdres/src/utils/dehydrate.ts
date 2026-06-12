@@ -1,5 +1,6 @@
 import { IS_PROD } from "../lib/IS_PROD"
 import { valdresGlobal } from "../lib/valdresGlobal"
+import { encodeWireValue } from "../lib/wireCodec"
 import type { DehydratedState } from "../types/DehydratedState"
 import type { Store } from "../types/Store"
 import { isAtomFamily } from "./isAtomFamily"
@@ -22,6 +23,15 @@ import { isPromiseLike } from "./isPromiseLike"
  *
  * Promise-pending values (in-flight async sets or unresolved async defaults)
  * are skipped with a dev-only warning — settle them before dehydrating.
+ *
+ * Atoms whose `schema` is bidirectional (zod 4 — every zod schema, and
+ * meaningfully `z.codec`) are wire-encoded: the schema's encode direction
+ * produces the JSON-safe value (BigInt → string, Date → ISO string, …) and the
+ * entry is marked so `hydrate` decodes it back. JS-native values round-trip
+ * through plain JSON this way — give the atom a codec schema and it just
+ * works. A value that fails its own schema's encode throws (the payload would
+ * be undecodable — fail on the server, where the bug is); a one-way transform
+ * schema can't encode and falls back to the raw value with a dev warning.
  *
  * Root stores only: scoped stores are out of scope for v1 (the adapters' scope
  * `initialize` callback covers per-scope state) and throw.
@@ -53,7 +63,12 @@ export const dehydrate = (store: Store): DehydratedState => {
                         )
                     continue
                 }
-                families.push([name, member.familyArgs, value])
+                const wire = encodeWireValue(member, value)
+                families.push(
+                    wire.encoded
+                        ? [name, member.familyArgs, wire.value, 1]
+                        : [name, member.familyArgs, wire.value],
+                )
             }
         } else {
             if (!data.values.has(state)) continue
@@ -65,7 +80,10 @@ export const dehydrate = (store: Store): DehydratedState => {
                     )
                 continue
             }
-            atoms.push([name, value])
+            const wire = encodeWireValue(state, value)
+            atoms.push(
+                wire.encoded ? [name, wire.value, 1] : [name, wire.value],
+            )
         }
     }
     return { atoms, families }
