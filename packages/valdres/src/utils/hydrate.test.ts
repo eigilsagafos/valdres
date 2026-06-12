@@ -319,6 +319,18 @@ describe("hydrate", () => {
             }
         })
 
+        test("only the exact marker 1 triggers decoding — junk markers stage raw", () => {
+            const plain = atom(0, { name: "hyc-marker-plain" })
+            const payload = {
+                // wire data: a malformed marker must not trigger decoding
+                atoms: [["hyc-marker-plain", 7, 2]],
+                families: [],
+            } as unknown as DehydratedState
+            const client = store()
+            expect(() => hydrate(client, payload)).not.toThrow()
+            expect(client.get(plain)).toBe(7)
+        })
+
         test("an encoded entry whose registered schema cannot decode is invalid", () => {
             // server/client schema drift: the payload says encoded, but the
             // client's atom carries a classic parse-only validator.

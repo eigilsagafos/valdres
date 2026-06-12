@@ -55,6 +55,17 @@ export const dehydrate = (store: Store): DehydratedState => {
         if (isAtomFamily(state)) {
             for (const member of state.__valdresAtomFamilyMap.values()) {
                 if (!data.values.has(member)) continue
+                // The payload contracts args as a non-empty tuple (mirroring
+                // atomFamily's Args), and hydrate skips empty-args entries.
+                // A zero-arg member can only exist via an untyped JS call —
+                // don't emit an entry the other side cannot hydrate.
+                if (member.familyArgs.length === 0) {
+                    if (!IS_PROD)
+                        console.warn(
+                            `valdres: dehydrate skipped a '${name}' member created with zero args — it cannot be addressed by hydrate (family args must be a non-empty tuple).`,
+                        )
+                    continue
+                }
                 const value = data.values.get(member)
                 if (isPromiseLike(value)) {
                     if (!IS_PROD)

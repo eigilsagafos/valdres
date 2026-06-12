@@ -66,13 +66,21 @@ export const hydrate = (
         // validation when enabled) can both reject it with a
         // SchemaValidationError. In skip mode that's caught per entry: the
         // entry simply never stages and the rest of the payload still commits.
+        // The marker contract is exactly `1` — wire data can carry any junk in
+        // that position, and an unknown marker must not trigger decoding.
         const stage = (state: Atom<unknown>, value: unknown, encoded?: 1) => {
             if (!skipInvalid) {
-                txn.set(state, encoded ? decodeWireValue(state, value) : value)
+                txn.set(
+                    state,
+                    encoded === 1 ? decodeWireValue(state, value) : value,
+                )
                 return
             }
             try {
-                txn.set(state, encoded ? decodeWireValue(state, value) : value)
+                txn.set(
+                    state,
+                    encoded === 1 ? decodeWireValue(state, value) : value,
+                )
             } catch (error) {
                 if (!(error instanceof SchemaValidationError)) throw error
                 console.warn(`valdres: hydrate skipped an entry — ${error.message}`)

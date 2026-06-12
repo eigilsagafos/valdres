@@ -115,6 +115,24 @@ describe("dehydrate", () => {
         }
     })
 
+    test("a zero-arg member (untyped JS call) is skipped with a dev warning", () => {
+        const fam = atomFamily<number, [string]>(0, { name: "dh-zeroargs" })
+        const store1 = store()
+        store1.set(fam("ok"), 1)
+        // Only possible from untyped JS — the Args tuple forbids it in TS.
+        store1.set((fam as any)(), 2)
+        const warn = spyOn(console, "warn").mockImplementation(mock())
+        try {
+            expect(dehydrate(store1).families).toEqual([
+                ["dh-zeroargs", ["ok"], 1],
+            ])
+            expect(warn).toHaveBeenCalledTimes(1)
+            expect(warn.mock.calls[0][0]).toContain("zero args")
+        } finally {
+            warn.mockRestore()
+        }
+    })
+
     test("scoped stores throw (root stores only in v1)", () => {
         const root = store()
         const scoped = root.scope("dh-scope")
