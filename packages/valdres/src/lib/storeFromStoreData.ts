@@ -192,9 +192,12 @@ export function storeFromStoreData(
         deepEqualCheckBeforeCallback: boolean = true,
     ) => subscribe(state, callback, deepEqualCheckBeforeCallback, data)
 
-    const txn = (callback: TransactionFn, name?: string) => {
+    const txn = (
+        callback: TransactionFn,
+        nameOrOptions?: string | { name?: string; origin?: string },
+    ) => {
         if (data.batchUpdates) flushPendingTxn()
-        return transaction(callback, data, name)
+        return transaction(callback, data, nameOrOptions)
     }
 
     // Implementation signature is permissive; the precise per-option callback

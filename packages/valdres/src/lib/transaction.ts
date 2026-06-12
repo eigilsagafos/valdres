@@ -82,10 +82,15 @@ export class Transaction {
     data: StoreData
     parentTransaction: Transaction | undefined
     dirty: boolean
-    /** Optional name from `store.txn(callback, name)`, surfaced on the
-     *  `store.onChange` meta for this commit. Only meaningful on the root
+    /** Optional human-facing name from `store.txn(callback, name)`, surfaced on
+     *  the `store.onChange` meta for this commit. Only meaningful on the root
      *  transaction (the one that commits). */
     name: string | undefined
+    /** Optional machine-readable provenance tag from
+     *  `store.txn(callback, { origin })`, surfaced as `meta.origin` for this
+     *  commit so middleware can recognize the transactions it applied (echo
+     *  suppression). Only meaningful on the root transaction. */
+    origin: string | undefined
     private _scopedTransactions: undefined | Map<string, Transaction>
     private _initializedAtomsSet: any
     private _deleteSet: any
@@ -102,6 +107,7 @@ export class Transaction {
         this.parentTransaction = parentTransaction
         this.dirty = false
         this.name = undefined
+        this.origin = undefined
         this._atomMap = new Map()
         if (childTransaction) {
             this._scopedTransactions = new Map([
@@ -359,12 +365,12 @@ export class Transaction {
         }
         // Otherwise thread a change sink through the commit's per-store
         // propagation passes so they collapse into a single store.onChange
-        // callback, tagged "transaction" with this txn's name. The sink is a
-        // local (not global state), so a transaction started inside an onSet hook
-        // simply owns its own sink — no save/restore. Flush in `finally` so
-        // observers still see the (already-applied) changes if a subscriber
-        // throws during commit.
-        const sink = createChangeSink(this.name)
+        // callback, tagged "transaction" with this txn's name and origin. The
+        // sink is a local (not global state), so a transaction started inside an
+        // onSet hook simply owns its own sink — no save/restore. Flush in
+        // `finally` so observers still see the (already-applied) changes if a
+        // subscriber throws during commit.
+        const sink = createChangeSink(this.name, "transaction", this.origin)
         try {
             this.commitWork(sink)
         } catch (error) {
@@ -725,9 +731,14 @@ export class Transaction {
 export const transaction = (
     callback: TransactionFn,
     data: StoreData,
-    name?: string,
+    nameOrOptions?: string | { name?: string; origin?: string },
 ) => {
     const txn = new Transaction(data)
-    txn.name = name
+    if (typeof nameOrOptions === "string") {
+        txn.name = nameOrOptions
+    } else if (nameOrOptions) {
+        txn.name = nameOrOptions.name
+        txn.origin = nameOrOptions.origin
+    }
     return txn.execute(callback)
 }

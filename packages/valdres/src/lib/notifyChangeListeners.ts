@@ -27,6 +27,7 @@ export type ChangeGroup = {
 export type ChangeSink = {
     source: StoreChangeSource
     name: string | undefined
+    origin: string | undefined
     groups: ChangeGroup[]
 }
 
@@ -343,19 +344,27 @@ export const reportSelectorChanges = (
 /** Create a change sink. `source` defaults to `"transaction"` (the txn commit
  *  path); the immediate path passes the operation's real source so a cascaded,
  *  buffered batch still reports its true origin. `name` is the optional
- *  `store.txn(fn, name)` label. */
+ *  `store.txn(fn, name)` dev-tools label; `origin` is the optional
+ *  machine-readable provenance tag (`store.txn(fn, { origin })`). The immediate
+ *  (non-transaction) path passes neither. */
 export const createChangeSink = (
     name: string | undefined,
     source: StoreChangeSource = "transaction",
+    origin: string | undefined = undefined,
 ): ChangeSink => ({
     source,
     name,
+    origin,
     groups: [],
 })
 
 /** Flush a sink's accumulated changes as a single callback. */
 export const flushChangeSink = (sink: ChangeSink) => {
     if (sink.groups.length > 0) {
-        notifyChangeListeners(sink.groups, { source: sink.source, name: sink.name })
+        notifyChangeListeners(sink.groups, {
+            source: sink.source,
+            name: sink.name,
+            origin: sink.origin,
+        })
     }
 }
