@@ -186,6 +186,32 @@ describe("hydrate", () => {
         })
     })
 
+    test("malformed family args (wire data) warn and are skipped", () => {
+        const fam = atomFamily<number, [string]>(undefined, {
+            name: "hy-args-fam",
+        })
+        // The type requires a non-empty tuple; wire data can violate it anyway.
+        const payload = {
+            atoms: [],
+            families: [
+                ["hy-args-fam", [], 1],
+                ["hy-args-fam", "not-an-array", 2],
+                ["hy-args-fam", ["ok"], 3],
+            ],
+        } as unknown as DehydratedState
+        const client = store()
+        const warn = spyOn(console, "warn").mockImplementation(mock())
+        try {
+            expect(() => hydrate(client, payload)).not.toThrow()
+            expect(client.get(fam)).toHaveLength(1) // only the valid entry
+            expect(client.get(fam("ok"))).toBe(3)
+            expect(warn).toHaveBeenCalledTimes(2)
+            expect(warn.mock.calls[0][0]).toContain("non-empty array")
+        } finally {
+            warn.mockRestore()
+        }
+    })
+
     test("entry-kind mismatches warn and are skipped", () => {
         atom(0, { name: "hy-mm-atom" })
         atomFamily<number, [string]>(0, { name: "hy-mm-family" })

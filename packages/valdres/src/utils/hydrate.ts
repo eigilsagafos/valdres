@@ -100,6 +100,17 @@ export const hydrate = (
                 )
                 continue
             }
+            // The payload is wire data: the type promises a non-empty args
+            // tuple, but a hand-built or tampered payload can violate it.
+            // Spreading a non-array would throw mid-transaction (and an empty
+            // array would mint a phantom member), so guard like every other
+            // malformed entry: warn + skip.
+            if (!Array.isArray(args) || args.length === 0) {
+                console.warn(
+                    `valdres: hydrate skipped a '${name}' entry — its args is not a non-empty array (got ${JSON.stringify(args)}).`,
+                )
+                continue
+            }
             stage(
                 (family as AtomFamily<unknown>)(...(args as [any, ...any[]])),
                 value,
