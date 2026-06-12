@@ -14,6 +14,29 @@ describe("selectorFamily", () => {
         expect(nameSelectorFamily(1)).toEqual(nameSelectorFamily(1))
     })
 
+    test("name", () => {
+        const family = selectorFamily(() => () => null, { name: "familyName" })
+        expect(family.name).toBe("familyName")
+        expect(family(1).name).toBe("familyName_1")
+        expect(family("2").name).toBe("familyName_2")
+    })
+
+    test("unnamed family has name undefined (not the intrinsic 'selectorFamily')", () => {
+        const family = selectorFamily(() => () => null)
+        expect(family.name).toBeUndefined()
+        // Members of an unnamed family keep name undefined too.
+        expect(family(1).name).toBeUndefined()
+        expect(family("foo").name).toBeUndefined()
+    })
+
+    test("a family legitimately named 'selectorFamily' is distinguishable", () => {
+        const family = selectorFamily(() => () => null, {
+            name: "selectorFamily",
+        })
+        expect(family.name).toBe("selectorFamily")
+        expect(family(1).name).toBe("selectorFamily_1")
+    })
+
     test("defaultValue", () => {
         const store1 = store()
         const usersAtom = atom(["Foo", "Bar"])

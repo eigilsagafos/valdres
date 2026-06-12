@@ -33,6 +33,21 @@ describe("atomFamily", () => {
         expect(user3.name).toBe("familyName_[1,2]")
     })
 
+    test("unnamed family has name undefined (not the intrinsic 'atomFamily')", () => {
+        const family = atomFamily(null)
+        expect(family.name).toBeUndefined()
+        // Members of an unnamed family keep name undefined too.
+        expect(family(1).name).toBeUndefined()
+        expect(family("foo").name).toBeUndefined()
+    })
+
+    test("a family legitimately named 'atomFamily' is distinguishable", () => {
+        const family = atomFamily(null, { name: "atomFamily" })
+        expect(family.name).toBe("atomFamily")
+        // Members are still named <familyName>_<key>.
+        expect(family(1).name).toBe("atomFamily_1")
+    })
+
     // test("Allow default override first time atom is created in family", () => {
     //     const store1 = store()
     //     const family = atomFamily<{ id: number; name: string }, number>(id => ({

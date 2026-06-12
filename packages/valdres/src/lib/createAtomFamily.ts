@@ -87,11 +87,16 @@ export const createAtomFamily = <
         return build(args, key)
     }
 
-    if (hasName)
-        Object.defineProperty(atomFamily, "name", {
-            value: options!.name,
-            writable: false,
-        })
+    // Define `name` explicitly. When named, expose the user's name. When unnamed,
+    // override the intrinsic JS function name ("atomFamily") with `undefined` so
+    // an unnamed family mirrors an unnamed atom — consumers (devtools, sync,
+    // persistence) can detect "unnamed" via `name === undefined` instead of
+    // matching the literal string "atomFamily", which breaks under minification
+    // and wrongly flags a family a user legitimately named "atomFamily".
+    Object.defineProperty(atomFamily, "name", {
+        value: hasName ? options!.name : undefined,
+        writable: false,
+    })
 
     // The single-positional-param + `arguments` shape isn't structurally a
     // `(...args: Args)` signature, so the callable needs an unchecked assertion.

@@ -46,10 +46,16 @@ export const selectorFamily = <
     // a consumer can read a family's schema without materializing a member.
     selectorFamily.schema = options?.schema
     selectorFamily.schemaValidation = options?.schemaValidation
-    if (hasName)
-        Object.defineProperty(selectorFamily, "name", {
-            value: options!.name,
-            writable: false,
-        })
+    // Define `name` explicitly. When named, expose the user's name. When unnamed,
+    // override the intrinsic JS function name ("selectorFamily") with `undefined`
+    // so an unnamed family mirrors an unnamed selector — consumers (devtools,
+    // sync, persistence) can detect "unnamed" via `name === undefined` instead of
+    // matching the literal string "selectorFamily", which breaks under
+    // minification and wrongly flags a family a user legitimately named
+    // "selectorFamily".
+    Object.defineProperty(selectorFamily, "name", {
+        value: hasName ? options!.name : undefined,
+        writable: false,
+    })
     return selectorFamily
 }
