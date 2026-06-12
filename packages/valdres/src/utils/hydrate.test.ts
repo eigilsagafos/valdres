@@ -235,6 +235,52 @@ describe("hydrate", () => {
             expect(hydrated.updatedAt.getTime()).toBe(when.getTime())
         })
 
+        test("Map and Set codecs round-trip through JSON", () => {
+            const mapCodec = z.codec(
+                z.array(z.tuple([z.string(), z.number()])),
+                z.map(z.string(), z.number()),
+                {
+                    decode: entries => new Map(entries),
+                    encode: m => [...m.entries()],
+                },
+            )
+            const setCodec = z.codec(z.array(z.string()), z.set(z.string()), {
+                decode: values => new Set(values),
+                encode: s => [...s],
+            })
+            const scores = atom(new Map<string, number>(), {
+                name: "hyc-map",
+                schema: mapCodec,
+            })
+            const tags = atom(new Set<string>(), {
+                name: "hyc-set",
+                schema: setCodec,
+            })
+
+            const server = store()
+            server.set(scores, new Map([["a", 1], ["b", 2]]))
+            server.set(tags, new Set(["x", "y"]))
+
+            const payload: DehydratedState = JSON.parse(
+                JSON.stringify(dehydrate(server)),
+            )
+            // the wire carries plain arrays, not (JSON-lossy) Map/Set objects
+            expect(payload.atoms).toEqual([
+                ["hyc-map", [["a", 1], ["b", 2]], 1],
+                ["hyc-set", ["x", "y"], 1],
+            ])
+
+            const client = store()
+            hydrate(client, payload)
+            const hydratedScores = client.get(scores)
+            expect(hydratedScores).toBeInstanceOf(Map)
+            expect(hydratedScores.get("a")).toBe(1)
+            expect(hydratedScores.get("b")).toBe(2)
+            const hydratedTags = client.get(tags)
+            expect(hydratedTags).toBeInstanceOf(Set)
+            expect([...hydratedTags]).toEqual(["x", "y"])
+        })
+
         test("round trip works with schemaValidation enabled on the client", () => {
             const total = atom(0n, { name: "hyc-sv-total", schema: bigintCodec })
             const server = store()
