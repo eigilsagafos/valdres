@@ -131,6 +131,138 @@ describe("store.onChange", () => {
         unsub()
     })
 
+    // `meta.origin` is a machine-readable provenance tag for middleware (state
+    // sync, persistence, undo) that needs to recognize the transactions it
+    // applied — e.g. echo suppression. This contract is load-bearing: it must
+    // arrive verbatim on the commit it tags and be absent everywhere else.
+    describe("meta.origin", () => {
+        test("a txn tagged with origin surfaces it verbatim on meta", () => {
+            const store1 = store()
+            const atom1 = atom(1)
+            const metas: any[] = []
+            const unsub = store1.onChange((_changes, meta) => metas.push(meta))
+
+            store1.txn(({ set }) => set(atom1, 2), { origin: "sync:peer-a" })
+
+            expect(metas).toEqual([
+                { source: "transaction", origin: "sync:peer-a" },
+            ])
+            unsub()
+        })
+
+        test("origin and name coexist on the same txn", () => {
+            const store1 = store()
+            const atom1 = atom(1)
+            const metas: any[] = []
+            const unsub = store1.onChange((_changes, meta) => metas.push(meta))
+
+            store1.txn(({ set }) => set(atom1, 2), {
+                name: "rename-user",
+                origin: "sync:peer-a",
+            })
+
+            expect(metas).toEqual([
+                {
+                    source: "transaction",
+                    name: "rename-user",
+                    origin: "sync:peer-a",
+                },
+            ])
+            unsub()
+        })
+
+        test("origin is absent on an untagged txn", () => {
+            const store1 = store()
+            const atom1 = atom(1)
+            let receivedMeta: any
+            const unsub = store1.onChange((_changes, meta) => {
+                receivedMeta = meta
+            })
+
+            store1.txn(({ set }) => set(atom1, 2))
+
+            expect(receivedMeta.source).toBe("transaction")
+            expect(receivedMeta.origin).toBeUndefined()
+            unsub()
+        })
+
+        test("a plain-string second arg sets name but not origin", () => {
+            const store1 = store()
+            const atom1 = atom(1)
+            const metas: any[] = []
+            const unsub = store1.onChange((_changes, meta) => metas.push(meta))
+
+            store1.txn(({ set }) => set(atom1, 2), "rename-user")
+
+            expect(metas).toEqual([
+                { source: "transaction", name: "rename-user" },
+            ])
+            expect(metas[0].origin).toBeUndefined()
+            unsub()
+        })
+
+        test("origin is absent on a plain set/reset (non-transaction path)", () => {
+            const store1 = store()
+            const atom1 = atom(1)
+            const metas: any[] = []
+            const unsub = store1.onChange((_changes, meta) => metas.push(meta))
+
+            store1.set(atom1, 2)
+            store1.reset(atom1)
+
+            expect(metas.length).toBe(2)
+            expect(metas[0].origin).toBeUndefined()
+            expect(metas[1].origin).toBeUndefined()
+            unsub()
+        })
+
+        test("origin tags a txn committed inside a scope", () => {
+            const root = store("root")
+            const child = root.scope("child")
+            const atom1 = atom(1)
+            const metas: any[] = []
+            const unsub = child.onChange((_changes, meta) => metas.push(meta))
+
+            child.txn(({ set }) => set(atom1, 2), { origin: "sync:peer-a" })
+
+            expect(metas).toEqual([
+                { source: "transaction", origin: "sync:peer-a" },
+            ])
+            unsub()
+        })
+
+        test("origin tags a txn that spans root and a scope", () => {
+            // A cross-scope commit produces one onChange per watched store, all
+            // from the same sink — so every notified store must see the same
+            // origin tag.
+            const root = store("root")
+            const child = root.scope("child")
+            const atomRoot = atom(1)
+            const atomChild = atom(2)
+            const rootMetas: any[] = []
+            const childMetas: any[] = []
+            const unsubRoot = root.onChange((_c, meta) => rootMetas.push(meta))
+            const unsubChild = child.onChange((_c, meta) => childMetas.push(meta))
+
+            root.txn(
+                t => {
+                    t.set(atomRoot, 9)
+                    t.scope("child", s => s.set(atomChild, 9))
+                },
+                { origin: "sync:peer-a" },
+            )
+
+            expect(rootMetas).toEqual([
+                { source: "transaction", origin: "sync:peer-a" },
+            ])
+            expect(childMetas).toEqual([
+                { source: "transaction", origin: "sync:peer-a" },
+            ])
+            unsubRoot()
+            unsubChild()
+        })
+    })
+
     test("reset, delete and revalidation report their source", async () => {
         const store1 = store()
         const atom1 = atom(1)
