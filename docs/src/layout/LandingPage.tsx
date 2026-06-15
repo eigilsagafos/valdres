@@ -1,3 +1,5 @@
+import { Analytics } from "./Analytics"
+
 type BenchProps = {
     jscAverage: number | null
     v8Average: number | null
@@ -55,6 +57,8 @@ export function LandingPage({ bench }: { bench?: BenchProps }) {
                     href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
                     rel="stylesheet"
                 />
+
+                <Analytics />
             </head>
             <body className="bg-surface dark:bg-surface-dark text-zinc-800 dark:text-zinc-200 antialiased">
                 <div className="min-h-screen flex flex-col">

@@ -18,6 +18,7 @@ jobs:
               run: bun run docs:build
               env:
                   NODE_ENV: production
+                  PUBLIC_POSTHOG_KEY: ${{ vars.PUBLIC_POSTHOG_KEY }}
             - name: Upload website artifact
               uses: actions/upload-pages-artifact@v5
               with:

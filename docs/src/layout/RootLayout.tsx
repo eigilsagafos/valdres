@@ -6,6 +6,7 @@ import { MobileSidebar } from "./MobileSidebar"
 import { Footer } from "./Footer"
 import { PrevNext } from "./PrevNext"
 import { TableOfContents, type TocItem } from "./TableOfContents"
+import { Analytics } from "./Analytics"
 import type { NavGroup } from "../../content/nav"
 import type { Framework } from "../frameworks"
 
@@ -90,6 +91,8 @@ export function RootLayout({
                         __html: `(function(){var t=localStorage.getItem('theme');if(t==='light')document.documentElement.classList.remove('dark');else if(t==='dark'||!t)document.documentElement.classList.add('dark');else if(window.matchMedia('(prefers-color-scheme: light)').matches)document.documentElement.classList.remove('dark')})()`,
                     }}
                 />
+
+                <Analytics />
             </head>
             <body className="bg-surface dark:bg-surface-dark text-zinc-800 dark:text-zinc-200 antialiased">
                 <div className="flex min-h-screen">
