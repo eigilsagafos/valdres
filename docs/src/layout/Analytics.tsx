@@ -1,7 +1,7 @@
 // PostHog analytics. The project key is injected at build time from the
-// PUBLIC_POSTHOG_KEY env var (set as a GitHub Actions secret/variable), so it's
-// not committed to the repo and is absent during local `docs:dev` — meaning
-// analytics never loads in development and your own sessions stay out of the data.
+// PUBLIC_POSTHOG_KEY env var (a GitHub Actions repo variable in CI), so it's not
+// committed to the repo. The var is unset for local `docs:dev` unless you opt in,
+// so analytics stays out of the data during normal development.
 //
 // Renders nothing when the key is unset.
 export function Analytics() {
