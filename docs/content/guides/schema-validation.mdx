@@ -92,11 +92,74 @@ A store with validation on holds exactly the same values as one with it off, so
 enabling validation in development can never make behavior diverge from
 production.
 
-The flip side: transforming or coercing schemas (`z.coerce.number()`,
+The flip side: one-way transforming or coercing schemas (`z.coerce.number()`,
 `z.string().trim()`, `z.string().default(...)`) validate but do **not**
 transform. Avoid them here — the inferred type follows the schema's output
 while the stored value stays the input. Do coercion at your data boundary
 (form handler, fetch layer) and give the atom a plain validator instead.
+Bidirectional codecs are the sanctioned exception — see below.
+
+## Wire codecs (zod ≥ 4.1)
+
+A [zod codec](https://zod.dev/codecs) is a bidirectional schema: `decode` turns
+the wire representation into the runtime value, `encode` turns it back. Give an
+atom a codec and `dehydrate`/`hydrate` move JS-native values — BigInt, Date,
+Map, Set — over a plain JSON wire with no custom serializer:
+
+```ts
+import { atom, dehydrate, hydrate, store } from "valdres"
+import { z } from "zod"
+
+const bigintCodec = z.codec(z.string(), z.bigint(), {
+    decode: s => BigInt(s),
+    encode: b => b.toString(),
+})
+const mapCodec = z.codec(
+    z.array(z.tuple([z.string(), z.number()])),
+    z.map(z.string(), z.number()),
+    { decode: entries => new Map(entries), encode: m => [...m.entries()] },
+)
+const setCodec = z.codec(z.array(z.string()), z.set(z.string()), {
+    decode: values => new Set(values),
+    encode: s => [...s],
+})
+
+const supplyAtom = atom(0n, { name: "app/supply", schema: bigintCodec }) // Atom<bigint>
+const scoresAtom = atom(new Map(), { name: "app/scores", schema: mapCodec })
+const tagsAtom = atom(new Set(), { name: "app/tags", schema: setCodec })
+
+// server — the payload is plain JSON: BigInt is a string, Map/Set are arrays
+const payload = dehydrate(serverStore)
+const html = `<script>window.__STATE__ = ${JSON.stringify(payload)}</script>`
+
+// client — decode restores the runtime values
+hydrate(clientStore, window.__STATE__)
+clientStore.get(supplyAtom)     // 900719925474099100n  (a real BigInt)
+clientStore.get(scoresAtom)     // Map { "a" → 1 }
+```
+
+The atom stores the codec's *output* type (`Atom<bigint>`), and setting runtime
+values passes validation — the encode direction is what's checked. Decoding at
+`hydrate` inherently validates the wire value, so a tampered or stale payload
+entry fails loudly instead of landing silently.
+
+**The codec must sit at the non-JSON position.** A plain `z.bigint()` or
+`z.map(...)` inside an object validates the runtime value but encodes as an
+identity — `JSON.stringify` will still throw on the BigInt and silently turn
+the Map into `{}`:
+
+```ts
+// ✗ validates, but cannot cross a JSON wire
+z.object({ supply: z.bigint(), scores: z.map(z.string(), z.number()) })
+
+// ✓ codecs at the non-JSON positions — nested codecs encode through
+z.object({ supply: bigintCodec, scores: mapCodec })
+```
+
+Wire codecs are a zod ≥ 4.1 feature (any schema exposing
+`safeEncode`/`safeDecode`). Validation itself works with any supported schema
+library; atoms whose schema can't encode — including one-way transform
+schemas — transfer their raw value exactly as without a schema.
 
 ## What gets validated
 

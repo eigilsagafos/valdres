@@ -80,7 +80,7 @@ describe("deleteFamilyAtom", () => {
     test("default value", () => {
         const rootStore = store()
         const user = atomFamily<{ id: number }, [number]>(id => ({ id }), {
-            name: "userFamily",
+            name: "delfam-userFamily",
         })
         const allUsers = selector(get => get(user).map(atom => get(atom)), {
             name: "allUsersSelector",

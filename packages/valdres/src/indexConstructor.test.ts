@@ -9,7 +9,7 @@ describe("index", () => {
         const post = atomFamily<{ title: string; tags: string[] }, [string]>(
             null,
             {
-                name: "posts",
+                name: "idx-crud-posts",
             },
         )
         const indexCallback = mock((doc, term) => {
@@ -52,7 +52,7 @@ describe("index", () => {
         const post = atomFamily<
             { id: string; title: string; tags: string[] },
             [string]
-        >(null, { name: "posts" })
+        >(null, { name: "idx-basic-posts" })
         const indexCallback = mock((doc, term) => {
             return doc.tags.includes(term)
         })

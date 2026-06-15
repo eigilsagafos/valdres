@@ -41,6 +41,11 @@ const mulberry32 = (seed: number) => () => {
 
 type Which = { kind: "sum" | "count" } | { kind: "index"; term: number }
 
+// Family names register in a process-global registry (duplicates throw), so a
+// re-run of the same seed (e.g. a repro test plus the fuzz loop) needs a
+// unique suffix per runSeed call.
+let runUid = 0
+
 const runSeed = (seed: number): string | null => {
     const rnd = mulberry32(seed * 2654435761)
     const L = 1 + Math.floor(rnd() * 4) // 1..4 levels including root
@@ -48,7 +53,7 @@ const runSeed = (seed: number): string | null => {
     const ownerOf = (k: number) => Math.floor(k / PER_LEVEL)
     const steps = 30 + Math.floor(rnd() * 30)
 
-    const fam = atomFamily<number, [string]>(() => 0, { name: `fam${seed}` })
+    const fam = atomFamily<number, [string]>(() => 0, { name: `fam${seed}.${++runUid}` })
     const key = (k: number) => `k${k}`
     const sumSel = selector(get => (get(fam) as any[]).reduce((a, m) => (a + (get(m) | 0)) | 0, 0), { name: "sum" })
     const countSel = selector(get => (get(fam) as any[]).length, { name: "count" })

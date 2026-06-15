@@ -9,6 +9,7 @@ import {
     hasChangeListener,
     reportUnsetAtom,
 } from "./notifyChangeListeners"
+import { beginCommit, commitEndRegistry, endCommit } from "./onCommitEnd"
 import { propagateAtomUpdate } from "./propagateUpdatedAtoms"
 
 const InvalidStateError = "unset() expects an atom."
@@ -107,28 +108,40 @@ export const unsetValue = <V>(atom: Atom<V>, data: StoreData): void => {
 
     if (!detachOwnValue(atom, data)) return
 
-    // Notify unconditionally once a value was actually removed — even if the
-    // reverted value happens to equal the dropped one. This matches `reset`
-    // (which also fires without an equality check) and, more importantly, the
-    // dropped value IS the event a dev-tools `onChange` observer needs to see:
-    // suppressing it on value-equality would lose the very signal `source:
-    // "unset"` exists to carry.
-    if (hasChangeListener(data)) {
-        // Coalesce the atom unset and any dependent-selector recomputes into one
-        // onChange callback. Buffer the atom first (atoms precede selectors), then
-        // propagate with reportAtoms=false: the propagation reports only the
-        // selectors it recomputes, never the atom (already emitted as "unset").
-        const sink = createChangeSink(undefined, "unset")
-        reportUnsetAtom(atom, data, effectiveValueAfterUnset(atom, data), sink)
-        // skipFamilyIndexUpdate=false (default), reportAtoms=false (atom already
-        // emitted as "unset"; only report the selectors it recomputes).
-        propagateAtomUpdate([atom], data, false, undefined, sink, false, false)
-        // Resume parent delegation AFTER subscribers fire (during propagation),
-        // so a scope subscriber's idempotent delegate drop doesn't undo it.
-        reDelegateScopeSubscriptions(atom, data)
-        flushChangeSink(sink)
-    } else {
-        propagateAtomUpdate([atom], data, false)
-        reDelegateScopeSubscriptions(atom, data)
+    // Commit boundary for store.onCommitEnd, opened only once a value was
+    // actually removed (the no-op path notifies nothing, so it commits
+    // nothing). One standalone unset is one commit even when its onChange path
+    // runs an extra read-through propagation (effectiveValueAfterUnset).
+    let commitEndRoot: StoreData | undefined
+    if (commitEndRegistry.count !== 0) commitEndRoot = beginCommit(data)
+    let succeeded = false
+    try {
+        // Notify unconditionally once a value was actually removed — even if the
+        // reverted value happens to equal the dropped one. This matches `reset`
+        // (which also fires without an equality check) and, more importantly, the
+        // dropped value IS the event a dev-tools `onChange` observer needs to see:
+        // suppressing it on value-equality would lose the very signal `source:
+        // "unset"` exists to carry.
+        if (hasChangeListener(data)) {
+            // Coalesce the atom unset and any dependent-selector recomputes into one
+            // onChange callback. Buffer the atom first (atoms precede selectors), then
+            // propagate with reportAtoms=false: the propagation reports only the
+            // selectors it recomputes, never the atom (already emitted as "unset").
+            const sink = createChangeSink(undefined, "unset")
+            reportUnsetAtom(atom, data, effectiveValueAfterUnset(atom, data), sink)
+            // skipFamilyIndexUpdate=false (default), reportAtoms=false (atom already
+            // emitted as "unset"; only report the selectors it recomputes).
+            propagateAtomUpdate([atom], data, false, undefined, sink, false, false)
+            // Resume parent delegation AFTER subscribers fire (during propagation),
+            // so a scope subscriber's idempotent delegate drop doesn't undo it.
+            reDelegateScopeSubscriptions(atom, data)
+            flushChangeSink(sink)
+        } else {
+            propagateAtomUpdate([atom], data, false)
+            reDelegateScopeSubscriptions(atom, data)
+        }
+        succeeded = true
+    } finally {
+        if (commitEndRoot) endCommit(commitEndRoot, !succeeded)
     }
 }

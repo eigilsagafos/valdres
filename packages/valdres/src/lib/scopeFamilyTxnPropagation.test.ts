@@ -32,6 +32,10 @@ import { store } from "../store"
 
 const keys = (s: any, fam: any) => s.get(fam).map((a: any) => a.familyArgs[0]).sort()
 
+// Atom/family names are registered in a process-global registry (duplicates
+// throw), so families created per loop iteration get a unique suffix.
+let uid = 0
+
 describe("scope × family × txn propagation soundness", () => {
     // BUG 1 (a): parent ADDs after a txn-materialized scope index.
     test("scope sees parent family members added after the scope's index was created in a txn", () => {
@@ -40,7 +44,7 @@ describe("scope × family × txn propagation soundness", () => {
             (S: any, fam: any) => S.txn((t: any) => t.set(fam("sk"), 9)), // scope-only txn
             (root: any, S: any, fam: any, viaCross = true) => {}, // placeholder, replaced below
         ].slice(0, 2)) {
-            const fam = atomFamily<number, [string]>(() => 0, { name: "f" })
+            const fam = atomFamily<number, [string]>(() => 0, { name: `f${++uid}` })
             const root = store()
             const S = root.scope("c")
             root.set(fam("rk0"), 1)
@@ -75,7 +79,7 @@ describe("scope × family × txn propagation soundness", () => {
             ["S.txn / plain del", (S: any, fam: any) => S.txn((t: any) => t.set(fam("sk"), 9)), (r: any, fam: any) => r.del(fam("rk0"))],
             ["S.txn / txn del", (S: any, fam: any) => S.txn((t: any) => t.set(fam("sk"), 9)), (r: any, fam: any) => r.txn((t: any) => t.del(fam("rk0")))],
         ] as const) {
-            const fam = atomFamily<number, [string]>(() => 0, { name: "fd" })
+            const fam = atomFamily<number, [string]>(() => 0, { name: `fd${++uid}` })
             const root = store()
             const S = root.scope("c")
             root.set(fam("rk0"), 1)
@@ -119,7 +123,7 @@ describe("scope × family × txn propagation soundness", () => {
             (C: any, fam: any) => C.set(fam("c0"), 9),
             (_C: any, _fam: any, root?: any) => {}, // replaced below
         ].slice(0, 2)) {
-            const fam = atomFamily<number, [string]>(() => 0, { name: "fg" })
+            const fam = atomFamily<number, [string]>(() => 0, { name: `fg${++uid}` })
             const root = store()
             const B = root.scope("B")
             const C = B.scope("C")
@@ -222,7 +226,7 @@ describe("scope × family × txn propagation soundness", () => {
             (S: any, fam: any) => S.set(fam("sk"), 5),
             (S: any, fam: any) => S.txn((t: any) => t.set(fam("sk"), 5)),
         ]) {
-            const fam = atomFamily<number, [string]>(() => 0, { name: "fs" })
+            const fam = atomFamily<number, [string]>(() => 0, { name: `fs${++uid}` })
             const sum = selector(
                 get => (get(fam) as any[]).reduce((a, m) => a + (get(m) as number), 0),
                 { name: "sum" },

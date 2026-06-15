@@ -15,6 +15,7 @@ import { unsetValue } from "./unsetValue"
 import { createStoreData } from "./createStoreData"
 import { deleteFamilyAtom } from "./deleteFamilyAtom"
 import { getState } from "./getState"
+import { onCommitEnd } from "./onCommitEnd"
 import { onStoreChange } from "./onStoreChange"
 import { propagateAtomUpdate } from "./propagateUpdatedAtoms"
 import { resetAtom } from "./resetAtom"
@@ -204,6 +205,9 @@ export function storeFromStoreData(
         options?: { atoms?: boolean; selectors?: boolean },
     ) => onStoreChange(callback, data, options)) as Store["onChange"]
 
+    const storeOnCommitEnd = (callback: () => void) =>
+        onCommitEnd(callback, data)
+
     const storeSnapshot = () => snapshot(data)
 
     const scope: ScopeFn = ((scopeId: string, callback?: any) => {
@@ -273,6 +277,7 @@ export function storeFromStoreData(
             data,
             scope,
             onChange,
+            onCommitEnd: storeOnCommitEnd,
             snapshot: storeSnapshot,
             detach,
         } as ScopedStore
@@ -288,6 +293,7 @@ export function storeFromStoreData(
             data,
             scope,
             onChange,
+            onCommitEnd: storeOnCommitEnd,
             snapshot: storeSnapshot,
         } as Store
     }

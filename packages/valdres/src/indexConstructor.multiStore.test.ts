@@ -77,8 +77,9 @@ describe("index() across root + scope", () => {
         // pre-existing scope-family propagation concern not exercised here.)
         for (let seed = 1; seed <= 1500; seed++) {
             const rnd = mulberry32(seed)
+            // Family names register globally (duplicates throw); suffix per seed.
             const fam = atomFamily<{ kind: string } | null, [string]>(null, {
-                name: "ms-fz",
+                name: `ms-fz.${seed}`,
             })
             const byKind = index(
                 fam,

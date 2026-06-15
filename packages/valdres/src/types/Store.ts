@@ -100,6 +100,27 @@ export type Store<T = StoreData> = {
             options?: { atoms?: true; selectors?: false },
         ): () => void
     }
+    /** Subscribe to commit boundaries: the callback fires exactly once per
+     *  commit — a `set`, `reset`, `del`, `unset`, async resolution, or
+     *  `store.txn`/batched flush — strictly AFTER every subscriber callback of
+     *  that commit (and after `store.onChange`). Returns an unsubscribe
+     *  function.
+     *
+     *  Carries no payload by design: where `onChange` is a devtools pipeline
+     *  that constructs change objects, this is a minimal signal for adapters
+     *  that buffer subscriber updates and flush them once per commit (e.g.
+     *  coalescing one commit's writes into a single framework batch). With no
+     *  listener registered it costs one counter read per commit — nothing is
+     *  tracked or allocated.
+     *
+     *  Tree-wide: listeners attach to the store tree's ROOT, so a commit
+     *  anywhere in the tree (root or any scope) fires listeners registered
+     *  through any store of that tree — a root write that propagates into
+     *  scopes and a scope-local write both end in the same flush. Writes
+     *  performed during the commit by subscribers (or onSet hooks) start
+     *  nested commits that coalesce into the outermost commit's single
+     *  callback. */
+    onCommitEnd: (callback: () => void) => () => void
     /** List the store's current materialized state — every atom (root and
      *  scope), live evaluated selector, and family member — as a flat array of
      *  `SnapshotEntry`. Where `onChange` reports changes going forward, this is

@@ -262,8 +262,8 @@ describe("cross-scope transactions are atomically observable", () => {
         test("root subscriber sees a child write reached via parentScope", () => {
             const root = store()
             const child = root.scope("C")
-            const r = atom(0, { name: "ps-r" })
-            const c = atom(0, { name: "ps-c" })
+            const r = atom(0, { name: "as-ps-r" })
+            const c = atom(0, { name: "as-ps-c" })
             child.set(c, 0)
 
             const seen: Array<[number, number]> = []

@@ -11,12 +11,17 @@ import type { StandardSchemaV1 } from "./StandardSchemaV1"
  *
  * Validation is **validate-only**: the value is checked but the original input
  * is stored unchanged. With a plain validator (`z.string()`) input and output
- * coincide, so the inferred atom type matches the stored value. But a
+ * coincide, so the inferred atom type matches the stored value. But a one-way
  * transforming/coercing schema (`z.coerce.number()`, `z.string().trim()`,
  * `z.string().default(...)`) validates without altering stored state — and its
  * inferred type follows the schema's *output* while the stored value stays the
- * *input*. Avoid transform/coerce/default schemas here: the type would not
- * describe what's actually stored.
+ * *input*. Avoid one-way transform/coerce/default schemas here: the type would
+ * not describe what's actually stored.
+ *
+ * **Bidirectional codecs are the sanctioned transform** (zod 4 `z.codec`): the
+ * atom stores the codec's *output* (runtime) type — validation accepts
+ * output-side values via the encode direction — and `dehydrate`/`hydrate` run
+ * encode/decode so JS-native values (BigInt, Date, …) cross a JSON wire.
  */
 export type Schema<V = unknown> =
     | StandardSchemaV1<V>

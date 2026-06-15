@@ -26,6 +26,7 @@ import {
     reportUnsetAtom,
     type ChangeSink,
 } from "./notifyChangeListeners"
+import { beginCommit, commitEndRegistry, endCommit } from "./onCommitEnd"
 import { IS_PROD } from "./IS_PROD"
 import {
     cloneAtomFamilyIndex,
@@ -89,7 +90,7 @@ export class Transaction {
     private _scopedTransactions: undefined | Map<string, Transaction>
     private _initializedAtomsSet: any
     private _deleteSet: any
-    private _unsetSet: Set<Atom> | undefined
+    private _unsetSet: Set<Atom<any>> | undefined
     private _selectorDependencies: any
     private _selectorCache: any
     private _atomMap: Map<any, any>
@@ -324,12 +325,14 @@ export class Transaction {
         return this.parentTransaction.execute(callback, false)
     }
 
-    reset = (atom: Atom) => {
+    // Generic like ResetAtom so a Transaction is structurally assignable to
+    // TransactionInterface (what `InitializeCallback` is typed against).
+    reset = <V>(atom: Atom<V>): V | Promise<V> => {
         const value = getAtomInitValue(
             atom,
             this.data,
             this.initializedAtomsSet,
-        )
+        ) as V | Promise<V>
         this._atomMap.set(atom, value)
         // reset writes the default; it supersedes a buffered unset of the atom.
         this._unsetSet?.delete(atom)
@@ -351,33 +354,51 @@ export class Transaction {
     }
 
     commit = () => {
-        // When nothing is watching, commit directly — no sink allocation, so the
-        // Bencher-gated txn hot path is unchanged.
-        if (changeListenerRegistry.count === 0) {
-            this.commitWork(undefined)
-            return
-        }
-        // Otherwise thread a change sink through the commit's per-store
-        // propagation passes so they collapse into a single store.onChange
-        // callback, tagged "transaction" with this txn's name. The sink is a
-        // local (not global state), so a transaction started inside an onSet hook
-        // simply owns its own sink — no save/restore. Flush in `finally` so
-        // observers still see the (already-applied) changes if a subscriber
-        // throws during commit.
-        const sink = createChangeSink(this.name)
+        // Commit boundary for store.onCommitEnd: listeners fire once, when the
+        // outermost boundary closes — after every subscriber callback and after
+        // the onChange flush below. The inner propagation passes also open
+        // boundaries (see propagateAtomUpdate's wrapper); nested inside this one
+        // they just move the depth counter. With no listener anywhere this is a
+        // single counter read, so the Bencher-gated txn hot path is unchanged.
+        let commitEndRoot: StoreData | undefined
+        if (commitEndRegistry.count !== 0) commitEndRoot = beginCommit(this.data)
+        let succeeded = false
         try {
-            this.commitWork(sink)
-        } catch (error) {
-            // The commit failed (e.g. a subscriber threw), but its writes were
-            // already applied, so still flush onChange — best-effort, never
-            // letting an onChange-listener error mask the original failure.
+            // When nothing is watching, commit directly — no sink allocation, so
+            // the Bencher-gated txn hot path is unchanged.
+            if (changeListenerRegistry.count === 0) {
+                this.commitWork(undefined)
+                succeeded = true
+                return
+            }
+            // Otherwise thread a change sink through the commit's per-store
+            // propagation passes so they collapse into a single store.onChange
+            // callback, tagged "transaction" with this txn's name. The sink is a
+            // local (not global state), so a transaction started inside an onSet hook
+            // simply owns its own sink — no save/restore. Flush in `finally` so
+            // observers still see the (already-applied) changes if a subscriber
+            // throws during commit.
+            const sink = createChangeSink(this.name)
             try {
-                flushChangeSink(sink)
-            } catch {}
-            throw error
+                this.commitWork(sink)
+            } catch (error) {
+                // The commit failed (e.g. a subscriber threw), but its writes were
+                // already applied, so still flush onChange — best-effort, never
+                // letting an onChange-listener error mask the original failure.
+                try {
+                    flushChangeSink(sink)
+                } catch {}
+                throw error
+            }
+            // Commit succeeded: onChange-listener errors propagate normally.
+            flushChangeSink(sink)
+            succeeded = true
+        } finally {
+            // On failure, listener errors are swallowed so they never mask the
+            // commit's own error; the writes were applied either way, so
+            // listeners still fire.
+            if (commitEndRoot) endCommit(commitEndRoot, !succeeded)
         }
-        // Commit succeeded: onChange-listener errors propagate normally.
-        flushChangeSink(sink)
     }
 
     private commitWork = (sink: ChangeSink | undefined) => {

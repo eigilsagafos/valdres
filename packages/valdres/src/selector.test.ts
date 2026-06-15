@@ -24,7 +24,7 @@ describe("selector", () => {
 
     test("computations are cached", () => {
         const store1 = store()
-        const numberAtom = atom(5, { name: "atom" })
+        const numberAtom = atom(5, { name: "sel-cache-atom" })
         const callback = mock(get => get(numberAtom) * 100)
         const time100Selector = selector(callback, { name: "selector" })
         expect(store1.get(time100Selector)).toBe(500)
@@ -115,9 +115,9 @@ describe("selector", () => {
 
     test("conditional nested selector subscriptions update", () => {
         const store1 = store()
-        const boolAtom = atom(true, { name: "bool" })
-        const atom1 = atom(1, { name: "atom1" })
-        const atom2 = atom(2, { name: "atom2" })
+        const boolAtom = atom(true, { name: "sel-cond-bool" })
+        const atom1 = atom(1, { name: "sel-cond-atom1" })
+        const atom2 = atom(2, { name: "sel-cond-atom2" })
 
         const callback1 = mock(get => {
             if (get(boolAtom)) {
@@ -390,7 +390,7 @@ describe("selector", () => {
         // a non-cycle error left both the inner and the outer in the set,
         // so the next read of the outer falsely tripped the cycle check.
         const store1 = store()
-        const atom1 = atom(0, { name: "atom1" })
+        const atom1 = atom(0, { name: "sel-circ-atom1" })
 
         let shouldThrow = true
         const innerSelector = selector(
@@ -421,7 +421,7 @@ describe("selector", () => {
         // (propagateUpdatedAtoms passes circularDependencySet=undefined,
         //  which defaults to the shared set).
         const store1 = store()
-        const atom1 = atom(0, { name: "atom1" })
+        const atom1 = atom(0, { name: "sel-prop-atom1" })
 
         let shouldThrow = false
         const innerSelector = selector(
@@ -453,9 +453,9 @@ describe("selector", () => {
 
     test("store.get does not leak stale atoms after a selector throws", () => {
         const store1 = store()
-        const atom1 = atom(1, { name: "atom1" })
-        const atom2 = atom(10, { name: "atom2" })
-        const atom3 = atom(99, { name: "atom3" })
+        const atom1 = atom(1, { name: "sel-stale-atom1" })
+        const atom2 = atom(10, { name: "sel-stale-atom2" })
+        const atom3 = atom(99, { name: "sel-stale-atom3" })
 
         // A crashing selector that initializes atom1 before throwing.
         // atom1 has never been read, so getState will init it and add
