@@ -1,2 +1,2 @@
 [test]
-preload = ["./test/setup/svelte-plugin.ts"]
+preload = ["./test/setup/happyDom.ts", "./test/setup/svelte-plugin.ts"]

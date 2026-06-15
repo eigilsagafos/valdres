@@ -34,6 +34,12 @@ jobs:
               run: bun run build:types
             - name: Typecheck type-level tests
               run: bun --filter 'valdres' typecheck:types
+            - name: Lint valdres-svelte publish artifact
+              # Svelte libraries must ship uncompiled source + the `svelte` export
+              # condition; publint packs the real tarball and svelte-check
+              # type-checks the emitted d.ts, so a regression to the broken
+              # bundled-runes artifact (or a dropped condition) fails the PR.
+              run: bun --filter 'valdres-svelte' lint:publish
             - name: Verify publish (dry-run)
               run: DRY_RUN=1 bash scripts/ci-publish.sh
             - name: Test

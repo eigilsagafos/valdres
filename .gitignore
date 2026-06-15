@@ -3,6 +3,8 @@ out
 node_modules
 dist
 dist-tarball
+# svelte-package scratch dir
+.svelte-kit
 todo.md
 .env.local
 .npmrc

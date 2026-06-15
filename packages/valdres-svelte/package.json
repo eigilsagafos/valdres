@@ -13,25 +13,32 @@
     },
     "type": "module",
     "exports": {
-        ".": "./src/index.ts"
+        ".": {
+            "types": "./dist/index.d.ts",
+            "svelte": "./dist/index.js",
+            "default": "./dist/index.js"
+        }
     },
-    "svelte": "./src/index.ts",
+    "sideEffects": false,
     "files": [
         "dist"
     ],
     "scripts": {
-        "build": "NODE_ENV=production bun build src/index.ts --outdir ./dist --packages external",
-        "build:types": "rm -rf dist/types && bunx tsgo",
-        "test": "bun test --parallel src/"
+        "build": "svelte-package --input src --output dist --tsconfig ./tsconfig.json && find dist \\( -name '*.test.*' -o -name '*.mdx' \\) -delete",
+        "test": "bun test --conditions browser src/",
+        "lint:publish": "publint --strict && svelte-check --workspace ./dist"
     },
     "devDependencies": {
+        "@sveltejs/package": "^2.5.8",
         "@valdres/test": "workspace:^",
+        "publint": "^0.3.21",
         "svelte": "5.28.2",
+        "svelte-check": "^4.6.0",
         "typescript": "5.9.2",
         "valdres": "workspace:^"
     },
     "peerDependencies": {
-        "svelte": ">=5",
+        "svelte": ">=5.7",
         "valdres": "^1.0.0-beta.7"
     },
     "publishConfig": {

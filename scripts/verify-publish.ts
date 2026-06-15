@@ -151,18 +151,26 @@ for (const pkg of PUBLIC_PACKAGES) {
         // Check: exports point to real files
         if (packageJson.exports) {
             for (const [exportPath, exportValue] of Object.entries(packageJson.exports)) {
-                const exp = exportValue as { import?: string; types?: string }
+                const exp = exportValue as {
+                    import?: string
+                    svelte?: string
+                    default?: string
+                    types?: string
+                }
 
-                if (exp.import) {
-                    const importPath = `${pkgDir}/${exp.import}`
+                // The runnable entry is `import` for the bun-built packages, or
+                // the `svelte`/`default` condition for the svelte-package build.
+                const runtimeField = exp.import ?? exp.svelte ?? exp.default
+                if (runtimeField) {
+                    const importPath = `${pkgDir}/${runtimeField}`
                     const file = Bun.file(importPath)
                     if (!(await file.exists())) {
-                        error(pkgName, `export "${exportPath}" import file missing: ${exp.import}`)
+                        error(pkgName, `export "${exportPath}" entry file missing: ${runtimeField}`)
                     } else if (file.size === 0) {
-                        error(pkgName, `export "${exportPath}" import file is empty: ${exp.import}`)
+                        error(pkgName, `export "${exportPath}" entry file is empty: ${runtimeField}`)
                     }
                 } else {
-                    error(pkgName, `export "${exportPath}" missing import field`)
+                    error(pkgName, `export "${exportPath}" missing import/svelte/default field`)
                 }
 
                 if (exp.types) {
