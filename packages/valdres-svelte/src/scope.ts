@@ -1,5 +1,5 @@
 import { getContext, onDestroy, setContext } from "svelte"
-import { setAtomPairs, type InitializeCallback, type Store } from "valdres"
+import { applyInitialize, type InitializeCallback, type Store } from "valdres"
 import { VALDRES_CONTEXT_KEY, type ValdresContext } from "./lib/storeContext"
 import { getValdresContext } from "./getValdresContext"
 
@@ -36,10 +36,7 @@ export function scope(
     const scopedStore = parentStore.scope(scopeId)
 
     if (options?.initialize) {
-        scopedStore.txn(txn => {
-            const pairs = options.initialize!(txn)
-            if (pairs) setAtomPairs(txn.set, pairs)
-        })
+        scopedStore.txn(txn => applyInitialize(txn, options.initialize))
     }
 
     const parentCtx = getContext<ValdresContext | undefined>(

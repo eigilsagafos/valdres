@@ -1,8 +1,8 @@
 import { getContext, setContext } from "svelte"
 import {
+    applyInitialize,
     store as createStore,
     hydrate as hydrateStore,
-    setAtomPairs,
     type DehydratedState,
     type HydrateOptions,
     type InitializeCallback,
@@ -83,10 +83,7 @@ export function setValdresContext(
 
     // initialize first (so transferred values from hydrate win), then hydrate.
     if (options.initialize) {
-        store.txn(txn => {
-            const pairs = options.initialize!(txn)
-            if (pairs) setAtomPairs(txn.set, pairs)
-        })
+        store.txn(txn => applyInitialize(txn, options.initialize))
     }
     if (options.hydrate) {
         hydrateStore(store, options.hydrate, options.hydrateOptions)
