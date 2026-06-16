@@ -9,7 +9,7 @@ const apiRoles: Record<string, ApiMapping> = {
     readWrite: {
         react: "useAtom",
         vue: "useAtom",
-        svelte: "watch",
+        svelte: "fromState",
         solid: "createAtom",
         angular: "injectAtom",
         vanilla: null,
@@ -17,7 +17,9 @@ const apiRoles: Record<string, ApiMapping> = {
     readOnly: {
         react: "useValue",
         vue: "useValue",
-        svelte: "readable",
+        // fromState covers both roles in Svelte: read-only on a selector,
+        // read/write on an atom. There is no separate read-only export.
+        svelte: "fromState",
         solid: "createValue",
         angular: "injectValue",
         vanilla: null,
@@ -57,7 +59,7 @@ const apiRoles: Record<string, ApiMapping> = {
     transaction: {
         react: "useTransaction",
         vue: "useTransaction",
-        svelte: null,
+        svelte: "transaction",
         solid: "createTransaction",
         angular: "injectTransaction",
         vanilla: null,

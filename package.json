@@ -20,8 +20,8 @@
         "release": "bash scripts/ci-publish.sh",
         "verify-publish": "bun run scripts/verify-publish.ts",
         "gen-readmes": "bun run scripts/gen-readmes.ts",
-        "docs:build": "bun run docs/build.ts",
-        "docs:dev": "bun run docs/dev.ts"
+        "docs:build": "bun --filter 'valdres-svelte' build && bun run docs/build.ts",
+        "docs:dev": "bun --filter 'valdres-svelte' build && bun run docs/dev.ts"
     },
     "workspaces": [
         "packages/*",

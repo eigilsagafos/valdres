@@ -34,8 +34,7 @@ const demoMap: Record<string, (el: HTMLElement) => void> = {
     createValdres: mountCounterDemo,
 
     // Svelte
-    readable: mountValueDisplayDemo,
-    watch: mountValueDisplayDemo,
+    fromState: mountCounterDemo,
 
     // Solid
     createAtom: mountCounterDemo,

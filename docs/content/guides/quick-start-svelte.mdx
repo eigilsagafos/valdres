@@ -5,6 +5,10 @@ description: Get up and running with Valdres and Svelte 5 in under 5 minutes
 
 # Quick Start with Svelte
 
+`valdres-svelte` is the Svelte 5 (runes) adapter. It bridges valdres atoms and
+selectors into reactive boxes you read with `.current`, plus a store-contract
+bridge for `$`-syntax and a provider tier for SSR.
+
 ## Install
 
 ```bash
@@ -20,49 +24,239 @@ import { atom } from "valdres"
 export const countAtom = atom(0)
 ```
 
-## Use it in a component
-
-```svelte
-<script>
-  import { watch } from "valdres-svelte"
-  import { countAtom } from "./store"
-
-  const count = watch(countAtom)
-</script>
-
-<div>
-  <p>Count: {count.value}</p>
-  <button onclick={() => count.set(c => c + 1)}>Increment</button>
-</div>
-```
-
 ## Provide a store
 
-Use `setValdresContext` in your root layout:
+Call `setValdresContext` once near the root so descendants share a store. With
+no argument it creates a `store({ batchUpdates: true })` for the component tree
+— which on the server means one store per request, the pattern SvelteKit wants.
 
 ```svelte
-<script>
+<!-- +layout.svelte -->
+<script lang="ts">
   import { setValdresContext } from "valdres-svelte"
 
+  let { children } = $props()
   setValdresContext()
 </script>
 
-<slot />
+{@render children()}
 ```
 
-## Read-only values
+## Read and write with `fromState`
 
-Use `readable` for read-only subscriptions:
+`fromState` returns a reactive box. For an atom, `.current` is readable **and**
+writable, so `bind:value` and `count.current++` just work. For a
+read-modify-write it also has `update(fn)` (like `svelte/store`'s
+`Writable.update`) and a `reset()`.
 
 ```svelte
-<script>
-  import { readable } from "valdres-svelte"
+<script lang="ts">
+  import { fromState } from "valdres-svelte"
   import { countAtom } from "./store"
 
-  const count = readable(countAtom)
+  const count = fromState(countAtom)
 </script>
 
-<p>The count is {count.value}</p>
+<p>Count: {count.current}</p>
+
+<button onclick={() => count.current++}>Increment</button>
+<button onclick={() => count.update(c => c + 1)}>Increment (updater)</button>
+<button onclick={() => count.reset()}>Reset</button>
+
+<!-- two-way binding writes straight back to the atom -->
+<input type="number" bind:value={count.current} />
+```
+
+Pass an explicit store as the second argument (`fromState(countAtom, store)`)
+when you're outside component initialization — e.g. in plain `.svelte.ts`
+module state. Without it, the box resolves the store from context, which is only
+available during init.
+
+A selector (or any read-only state) yields a box with a read-only `.current`:
+
+```svelte
+<script lang="ts">
+  import { fromState } from "valdres-svelte"
+  import { selector } from "valdres"
+  import { countAtom } from "./store"
+
+  const doubled = selector(get => get(countAtom) * 2)
+  const double = fromState(doubled)
+</script>
+
+<p>Doubled: {double.current}</p>
+```
+
+## `$`-syntax with `toStore`
+
+For Svelte's store contract (`$`-prefix auto-subscription, `bind:value={$count$}`),
+use `toStore`. An atom becomes a `Writable`; a selector becomes a read-only
+`Readable`. The store argument is optional and falls back to context.
+
+```svelte
+<script lang="ts">
+  import { toStore } from "valdres-svelte"
+  import { countAtom } from "./store"
+
+  const count$ = toStore(countAtom)
+</script>
+
+<p>Count: {$count$}</p>
+<button onclick={() => ($count$ = 0)}>Zero</button>
+```
+
+## Scoped state
+
+`scope` creates a child store layered over the parent for a subtree, with an
+optional `initialize` to seed it. It detaches automatically when the component
+is destroyed. Descendants reading via `fromState`/`toStore` resolve the scoped
+store.
+
+```svelte
+<!-- CheckoutSection.svelte -->
+<script lang="ts">
+  import { scope, fromState } from "valdres-svelte"
+  import { countAtom } from "./store"
+
+  scope("checkout", { initialize: () => [[countAtom, 100]] })
+
+  const count = fromState(countAtom) // reads the scoped value (100)
+</script>
+
+<p>Scoped count: {count.current}</p>
+```
+
+## Transactions
+
+`transaction()` returns a runner bound to the context store, captured at
+component init. That capture is what makes it safe to call from an event
+handler — Svelte throws `lifecycle_outside_component` if you call `getContext`
+inside a handler.
+
+```svelte
+<script lang="ts">
+  import { transaction } from "valdres-svelte"
+  import { countAtom } from "./store"
+
+  const txn = transaction()
+
+  const buyTwo = () =>
+    txn(({ get, set }) => set(countAtom, get(countAtom) + 2))
+</script>
+
+<button onclick={buyTwo}>Buy two</button>
+```
+
+## Async selectors
+
+A selector can return a promise. Core erases asyncness, so `fromState(sel).current`
+is typed `V | Promise<V>` — consume it with Svelte's `{#await}` block:
+
+```svelte
+<script lang="ts">
+  import { fromState } from "valdres-svelte"
+  import { selector } from "valdres"
+
+  const userSelector = selector(() =>
+    fetch("/api/me").then(r => r.json()),
+  )
+  const user = fromState(userSelector)
+</script>
+
+{#await user.current}
+  <p>Loading…</p>
+{:then u}
+  <p>Hello {u.name}</p>
+{:catch error}
+  <p>Failed: {error.message}</p>
+{/await}
+```
+
+When you'd rather branch on flags than `await`, `resourceState` runs the
+promise detection for you and returns `{ current, loading, error }`:
+
+```svelte
+<script lang="ts">
+  import { resourceState } from "valdres-svelte"
+  import { userSelector } from "./store"
+
+  const user = resourceState(userSelector)
+</script>
+
+{#if user.loading}
+  <p>Loading…</p>
+{:else if user.error}
+  <p>Failed: {String(user.error)}</p>
+{:else}
+  <p>Hello {user.current?.name}</p>
+{/if}
+```
+
+## SvelteKit (SSR)
+
+Load data on the server, then map it to atoms with `initialize` in the root
+layout. Because `initialize` runs on both the server render and the client
+hydration, the atoms hold the right values in both passes — no custom
+serializer needed.
+
+```ts
+// +layout.server.ts
+export const load = async () => {
+  return { count: 7 } // plain, serializable
+}
+```
+
+```svelte
+<!-- +layout.svelte -->
+<script lang="ts">
+  import { setValdresContext } from "valdres-svelte"
+  import { countAtom } from "$lib/store"
+
+  let { data, children } = $props()
+
+  setValdresContext({ initialize: txn => [[countAtom, data.count]] })
+</script>
+
+{@render children()}
+```
+
+If your `load` data is itself a `dehydrate(store)` payload (e.g. produced by an
+API that ran a server-side valdres store), pass it as `hydrate` instead — it's
+applied as a standalone commit on the fresh store. Atoms carrying a codec schema
+round-trip `BigInt`/`Date`/`Map`/`Set` over plain JSON automatically. When both
+are given, `initialize` runs first so hydrated values win.
+
+```svelte
+<script lang="ts">
+  import { setValdresContext } from "valdres-svelte"
+
+  let { data, children } = $props()
+
+  setValdresContext({ hydrate: data.state })
+</script>
+
+{@render children()}
+```
+
+## Gotcha: lazy bootstrap
+
+The reactive box subscribes lazily (it's built on Svelte's `createSubscriber`,
+the same primitive behind `MediaQuery`). A valdres atom with an `onMount`
+bootstrap — the `@valdres/browser-*` packages, for instance — only starts once
+`.current` is **read inside an effect** (a template expression, `$derived`,
+`$effect`). A component that reads the value solely from an event handler will
+see the unbootstrapped default. Read it in the template, or via `$`-syntax with
+`toStore`, to start the subscription. If you genuinely need it to start without
+rendering it, force the subscription with a throwaway effect:
+
+```svelte
+<script lang="ts">
+  import { fromState } from "valdres-svelte"
+  import { onlineAtom } from "$lib/state"
+
+  const online = fromState(onlineAtom)
+  $effect(() => void online.current) // starts the subscription eagerly
+</script>
 ```
 
 ## Next steps

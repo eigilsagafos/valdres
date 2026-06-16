@@ -1,0 +1,40 @@
+---
+title: transaction
+description: Svelte function for batching multiple writes in one commit
+---
+
+# transaction
+
+<div className="not-prose mb-8 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50 p-4">
+  <div className="text-xs font-medium text-zinc-400 dark:text-zinc-500 mb-2 uppercase tracking-wider">Signature</div>
+  <code className="text-sm font-mono text-accent-500">transaction(store?: Store): (callback: TransactionFn, name?: string) =&gt; void</code>
+  <div className="mt-3 text-xs text-zinc-500 dark:text-zinc-400">
+    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-zinc-200 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 font-medium mr-2">valdres-svelte</span>
+    Batch multiple writes into a single commit
+  </div>
+</div>
+
+Returns a transaction runner bound to the current context store, captured at component initialization. That capture is what makes it safe to call from an event handler — Svelte throws `lifecycle_outside_component` if you call `getContext` inside a handler. Writes inside the callback commit together, so subscribers and selectors observe one atomic update. Forwards core's optional devtools `name`.
+
+## Usage
+
+```svelte
+<script lang="ts">
+    import { transaction } from "valdres-svelte"
+    import { countAtom } from "$lib/state"
+
+    const txn = transaction()
+
+    const buyTwo = () =>
+        txn(({ get, set }) => set(countAtom, get(countAtom) + 2))
+</script>
+
+<button onclick={buyTwo}>Buy two</button>
+```
+
+Pass an explicit `store` to bind the runner to a specific store instead of the context store.
+
+## See also
+
+- [setValdresContext](/svelte/setValdresContext) — provide the store the runner binds to
+- [scope](/svelte/scope) — scoped child store

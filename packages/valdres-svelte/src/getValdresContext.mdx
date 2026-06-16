@@ -10,29 +10,30 @@ description: Get the valdres store from Svelte component context
   <code className="text-sm font-mono text-accent-500">getValdresContext(): Store</code>
   <div className="mt-3 text-xs text-zinc-500 dark:text-zinc-400">
     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-zinc-200 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 font-medium mr-2">valdres-svelte</span>
-    Access the current store instance
+    Read the current store from context
   </div>
 </div>
 
-Retrieves the valdres store from the nearest `setValdresContext` in the component tree. Use this when you need direct store access.
+Returns the store set by the nearest [setValdresContext](/svelte/setValdresContext) / [scope](/svelte/scope) ancestor. Most of the time you don't need it — [fromState](/svelte/fromState), [toStore](/svelte/toStore), and [transaction](/svelte/transaction) resolve the context store on their own. Reach for it when you need direct `store.get` / `store.set` access.
 
 ## Usage
 
 ```svelte
-<script>
-import { getValdresContext } from "valdres-svelte"
+<script lang="ts">
+    import { getValdresContext } from "valdres-svelte"
+    import { countAtom } from "$lib/state"
 
-const store = getValdresContext()
-
-function logValue() {
-    console.log("Current:", store.get(myAtom))
-}
+    const store = getValdresContext()
+    console.log(store.get(countAtom))
 </script>
-
-<button onclick={logValue}>Log value</button>
 ```
+
+<div className="callout callout-note">
+  <div className="callout-title">Call during initialization</div>
+  Svelte throws <code>lifecycle_outside_component</code> for <code>getContext</code> outside component initialization, so capture the store at the top level rather than inside an event handler. To run writes from a handler, use <a href="/svelte/transaction">transaction</a>, which captures the store for you.
+</div>
 
 ## See also
 
-- [setValdresContext](/svelte/setValdresContext) — provide a store to the component tree
-- [store](/valdres/store) — create a store instance
+- [setValdresContext](/svelte/setValdresContext) — provide the store
+- [transaction](/svelte/transaction) — handler-safe transaction runner
