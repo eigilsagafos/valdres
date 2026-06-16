@@ -29,6 +29,7 @@
         "lint:publish": "publint --strict && svelte-check --workspace ./dist"
     },
     "devDependencies": {
+        "@happy-dom/global-registrator": "20.0.5",
         "@sveltejs/package": "^2.5.8",
         "@valdres/test": "workspace:^",
         "publint": "^0.3.21",

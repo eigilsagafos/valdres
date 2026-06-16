@@ -36,9 +36,16 @@ Consumes a possibly-async selector as a reactive `{ current, loading, error }` b
 {/if}
 ```
 
-When you'd rather `await` than branch on flags, [fromState](/svelte/fromState) plus Svelte's `{#await}` block works directly on the `T | Promise<T>` value:
+When you'd rather `await` than branch on flags, [fromState](/svelte/fromState) plus Svelte's `{#await}` block works directly on the `T | Promise<T>` value (`fromState(sel).current`, not the `resourceState` box above):
 
 ```svelte
+<script lang="ts">
+    import { fromState } from "valdres-svelte"
+    import { userSelector } from "$lib/state"
+
+    const user = fromState(userSelector)
+</script>
+
 {#await user.current then u}
     <p>Hello {u.name}</p>
 {/await}

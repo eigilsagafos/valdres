@@ -56,6 +56,13 @@ For a **selector** (`FromStateValue<T>`): a read-only `current`. Async selectors
 Core erases asyncness, so `fromState(asyncSelector).current` is typed `T | Promise<T>`. Consume it with Svelte's `{#await}` block, or reach for [resourceState](/svelte/resourceState) when you want `loading` / `error` flags:
 
 ```svelte
+<script lang="ts">
+    import { fromState } from "valdres-svelte"
+    import { userSelector } from "$lib/state"
+
+    const user = fromState(userSelector)
+</script>
+
 {#await user.current then u}
     <p>Hello {u.name}</p>
 {/await}
