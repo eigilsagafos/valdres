@@ -36,7 +36,8 @@
         "svelte": "5.28.2",
         "svelte-check": "^4.6.0",
         "typescript": "5.9.2",
-        "valdres": "workspace:^"
+        "valdres": "workspace:^",
+        "zod": "^4.3.6"
     },
     "peerDependencies": {
         "svelte": ">=5.7",

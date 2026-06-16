@@ -41,4 +41,24 @@ describe("transaction", () => {
         expect(seenName).toBe("my-txn")
         unsub()
     })
+
+    test("commits multiple writes atomically (one notification)", () => {
+        const a = atom(0)
+        const b = atom(0)
+        const s = store({ batchUpdates: true })
+        let commits = 0
+        const unsub = s.onChange(() => commits++)
+
+        const run = transaction(s)
+        run(({ set }) => {
+            set(a, 1)
+            set(b, 2)
+        })
+
+        expect(s.get(a)).toBe(1)
+        expect(s.get(b)).toBe(2)
+        // Two writes, one commit → one onChange notification.
+        expect(commits).toBe(1)
+        unsub()
+    })
 })

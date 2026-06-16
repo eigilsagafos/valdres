@@ -556,6 +556,7 @@
         "svelte-check": "^4.6.0",
         "typescript": "5.9.2",
         "valdres": "workspace:^",
+        "zod": "^4.3.6",
       },
       "peerDependencies": {
         "svelte": ">=5.7",

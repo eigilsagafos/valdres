@@ -3,6 +3,9 @@ import { mount, unmount, flushSync } from "svelte"
 import { atom, selector, store } from "valdres"
 import { fromState } from "./fromState"
 import FromStateCounter from "../test/components/FromStateCounter.svelte"
+import LazyProbe from "../test/components/LazyProbe.svelte"
+
+const tick = () => new Promise(resolve => setTimeout(resolve, 0))
 
 describe("fromState (value semantics, no effect needed)", () => {
     test("reads the current atom value", () => {
@@ -109,6 +112,59 @@ describe("fromState (mounted reactivity)", () => {
         input.dispatchEvent(new Event("input", { bubbles: true }))
         flushSync()
         expect(s.get(countAtom)).toBe(7)
+
+        unmount(comp)
+    })
+})
+
+describe("fromState (lazy bootstrap via createSubscriber)", () => {
+    test("reading .current in the template starts the onMount subscription, and unmount tears it down", async () => {
+        let starts = 0
+        let stops = 0
+        const liveAtom = atom(0, {
+            onMount: () => {
+                starts++
+                return () => stops++
+            },
+        })
+        const s = store()
+        const target = document.createElement("div")
+        const comp = mount(LazyProbe, {
+            target,
+            props: { atom: liveAtom, store: s, renderValue: true },
+        })
+
+        // Template reads .current inside an effect → subscription started.
+        expect(starts).toBe(1)
+        expect(stops).toBe(0)
+
+        unmount(comp)
+        await tick() // createSubscriber tears down on a microtask after destroy
+        expect(stops).toBe(1)
+    })
+
+    test("an atom read only from an event handler never bootstraps", () => {
+        let starts = 0
+        const liveAtom = atom(0, {
+            onMount: () => {
+                starts++
+                return () => {}
+            },
+        })
+        const s = store()
+        const target = document.createElement("div")
+        const comp = mount(LazyProbe, {
+            target,
+            props: { atom: liveAtom, store: s, renderValue: false },
+        })
+
+        // Never read in the template → no subscription.
+        expect(starts).toBe(0)
+
+        // Reading in a handler doesn't subscribe either (store.get, no sub).
+        target.querySelector("button")!.click()
+        flushSync()
+        expect(starts).toBe(0)
 
         unmount(comp)
     })

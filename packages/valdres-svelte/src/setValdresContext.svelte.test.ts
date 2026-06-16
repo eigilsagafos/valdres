@@ -1,6 +1,7 @@
-import { describe, test, expect, spyOn } from "bun:test"
+import { describe, test, expect, spyOn, mock } from "bun:test"
 import { mount, unmount } from "svelte"
-import { atom, dehydrate, store, type Store } from "valdres"
+import { atom, dehydrate, store, type DehydratedState, type Store } from "valdres"
+import { z } from "zod"
 import SetupProbe from "../test/components/SetupProbe.svelte"
 
 const mountProbe = (options?: any): Store => {
@@ -65,5 +66,48 @@ describe("setValdresContext", () => {
             hydrate: payload,
         })
         expect(s.get(seededAtom)).toBe(2)
+    })
+})
+
+describe("setValdresContext hydrateOptions", () => {
+    const titleAtom = atom("", {
+        name: "svelte-setup-skip-title",
+        schema: z.string(),
+    })
+    const countAtom = atom(0, {
+        name: "svelte-setup-skip-count",
+        schema: z.number().int(),
+    })
+    // Hand-built payload: one valid entry, one that fails schema validation.
+    const tampered: DehydratedState = {
+        atoms: [
+            ["svelte-setup-skip-title", "fine"],
+            ["svelte-setup-skip-count", "not-a-number"],
+        ],
+        families: [],
+    }
+
+    test("forwards { invalid: 'skip' } to core hydrate — valid entries land, bad ones drop", () => {
+        const warn = spyOn(console, "warn").mockImplementation(mock())
+        try {
+            const s = store({ batchUpdates: true, schemaValidation: true })
+            mountProbe({
+                store: s,
+                hydrate: tampered,
+                hydrateOptions: { invalid: "skip" },
+            })
+            expect(s.get(titleAtom)).toBe("fine")
+            expect(s.get(countAtom)).toBe(0) // failed validation → skipped
+            expect(warn).toHaveBeenCalled()
+        } finally {
+            warn.mockRestore()
+        }
+    })
+
+    test("defaults to strict — an invalid entry throws and aborts hydration", () => {
+        const s = store({ batchUpdates: true, schemaValidation: true })
+        expect(() => mountProbe({ store: s, hydrate: tampered })).toThrow()
+        // strict abort rolls back the whole payload — even the valid entry
+        expect(s.get(titleAtom)).toBe("")
     })
 })
