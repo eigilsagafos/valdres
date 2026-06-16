@@ -45,7 +45,7 @@ import { useStore } from "valdres-vue"
 const store = useStore()
 
 function resetAll() {
-    store.txn(set => {
+    store.txn(({ set }) => {
         set(nameAtom, "")
         set(emailAtom, "")
         set(ageAtom, 0)

@@ -1,53 +1,64 @@
-import { defineComponent, inject, provide, onScopeDispose, type PropType } from "vue"
-import { ValdresKey } from "./lib/storeKey"
-import { hydrate } from "./lib/hydrate"
-import type { InitializeCallback } from "./types/InitializeCallback"
+import { defineComponent, watch, type PropType } from "vue"
+import type { InitializeCallback } from "valdres"
+import { provideValdresScope } from "./provideValdresScope"
 
-const generateId = () => (Math.random() + 1).toString(36).substring(7)
+// Declared at module scope (not global) to avoid clashing with consumers'
+// @types/node; guarded at use so it can't throw in raw browser ESM. Plain
+// member access keeps `process.env.NODE_ENV` matchable for consumer bundlers'
+// dead-code elimination (mirrors valdres core's IS_PROD).
+declare const process: { env?: { NODE_ENV?: string } }
+const isDev =
+    typeof process === "undefined" ||
+    process.env == null ||
+    process.env.NODE_ENV !== "production"
 
+/** [Docs Reference](https://valdres.dev/vue/ValdresScope)
+ *
+ * Renderless component that scopes its slot to a child store — sugar over
+ * {@link provideValdresScope} for template-driven scoping. Prefer the composable
+ * when a `<script setup>` component scopes itself.
+ *
+ * ```vue
+ * <ValdresScope scope-id="modal" :initialize="init">
+ *   <ModalContent />
+ * </ValdresScope>
+ * ```
+ *
+ * `scopeId` is read once at mount (it is not reactive); a dynamic id needs
+ * `:key="scopeId"` to force a remount. In dev, changing it without a remount
+ * logs a warning.
+ */
 export const ValdresScope = defineComponent({
     name: "ValdresScope",
     props: {
         scopeId: {
             type: String,
-            default: () => generateId(),
+            // No default factory: provideValdresScope computes the SSR-stable
+            // useId() default in its body when scopeId is undefined.
+            default: undefined,
         },
         initialize: {
             type: Function as PropType<InitializeCallback>,
         },
     },
     setup(props, { slots }) {
-        const parentCtx = inject(ValdresKey)
-        if (!parentCtx) {
-            throw new Error(
-                "No valdres store provided. ValdresScope must be nested under createValdres() or another ValdresScope.",
+        provideValdresScope({
+            scopeId: props.scopeId,
+            initialize: props.initialize,
+        })
+
+        if (isDev) {
+            watch(
+                () => props.scopeId,
+                (next, prev) => {
+                    console.warn(
+                        `valdres-vue: <ValdresScope> scopeId changed from ` +
+                            `"${prev}" to "${next}" without a remount — descendants ` +
+                            `keep the original scope. Add :key="scopeId" to re-scope.`,
+                    )
+                },
             )
         }
-
-        const scopeCreated = !parentCtx.current.data.scopes?.has(props.scopeId)
-        const scopedStore = parentCtx.current.scope(props.scopeId)
-
-        if (props.initialize) {
-            scopedStore.txn(txn => {
-                const pairs = props.initialize!(txn)
-                if (pairs) {
-                    hydrate(txn.set, pairs)
-                }
-            })
-        }
-
-        provide(ValdresKey, {
-            current: scopedStore,
-            stores: {
-                ...parentCtx.stores,
-                [parentCtx.current.data.id]: parentCtx.current,
-                [scopedStore.data.id]: scopedStore,
-            },
-        })
-
-        onScopeDispose(() => {
-            scopedStore?.detach?.(scopeCreated)
-        })
 
         return () => slots.default?.()
     },
