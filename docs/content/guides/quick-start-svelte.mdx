@@ -45,8 +45,9 @@ no argument it creates a `store({ batchUpdates: true })` for the component tree
 ## Read and write with `fromState`
 
 `fromState` returns a reactive box. For an atom, `.current` is readable **and**
-writable, so `bind:value` and `count.current++` just work. It also keeps the
-updater-form `set` and a `reset`.
+writable, so `bind:value` and `count.current++` just work. For a
+read-modify-write it also has `update(fn)` (like `svelte/store`'s
+`Writable.update`) and a `reset()`.
 
 ```svelte
 <script lang="ts">
@@ -59,7 +60,7 @@ updater-form `set` and a `reset`.
 <p>Count: {count.current}</p>
 
 <button onclick={() => count.current++}>Increment</button>
-<button onclick={() => count.set(c => c + 1)}>Increment (updater)</button>
+<button onclick={() => count.update(c => c + 1)}>Increment (updater)</button>
 <button onclick={() => count.reset()}>Reset</button>
 
 <!-- two-way binding writes straight back to the atom -->
@@ -245,7 +246,18 @@ bootstrap — the `@valdres/browser-*` packages, for instance — only starts on
 `.current` is **read inside an effect** (a template expression, `$derived`,
 `$effect`). A component that reads the value solely from an event handler will
 see the unbootstrapped default. Read it in the template, or via `$`-syntax with
-`toStore`, to start the subscription.
+`toStore`, to start the subscription. If you genuinely need it to start without
+rendering it, force the subscription with a throwaway effect:
+
+```svelte
+<script lang="ts">
+  import { fromState } from "valdres-svelte"
+  import { onlineAtom } from "$lib/state"
+
+  const online = fromState(onlineAtom)
+  $effect(() => void online.current) // starts the subscription eagerly
+</script>
+```
 
 ## Next steps
 

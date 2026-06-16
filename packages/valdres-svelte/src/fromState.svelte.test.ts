@@ -30,11 +30,11 @@ describe("fromState (value semantics, no effect needed)", () => {
         expect(s.get(fnAtom)()).toBe(2)
     })
 
-    test("set accepts the updater form", () => {
+    test("update applies the read-modify-write updater", () => {
         const countAtom = atom(1)
         const s = store()
         const box = fromState(countAtom, s)
-        box.set(c => c + 10)
+        box.update(c => c + 10)
         expect(s.get(countAtom)).toBe(11)
     })
 

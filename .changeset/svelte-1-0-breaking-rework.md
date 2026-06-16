@@ -27,10 +27,13 @@ bumped to `>=5.7` (for `createSubscriber`).
   idiom shared by `fromStore`, Spring, Tween, MediaQuery, and all of runed)
   instead of `.value` (a Vue ref-ism).
 
-**`fromState` (breaking).** Returns `{ get current(), set current(v), set(updater), reset() }`
+**`fromState` (breaking).** Returns `{ get current(), set current(v), update(fn), reset() }`
 for atoms and `{ readonly current }` for selectors, so `bind:value={box.current}`
-and `box.current++` work. The `current` setter wraps the value in a thunk so a
-function value is stored verbatim rather than treated as an updater. Async
+and `box.current++` work. Plain sets go through `box.current = v`; the
+read-modify-write updater is `box.update(c => c + 1)` (mirroring
+`svelte/store`'s `Writable.update`). The `current` setter wraps the value in a
+thunk so a function value is stored verbatim rather than treated as an updater.
+Async
 selectors are now typed honestly as `current: V | Promise<V>` — consume with
 `{#await box.current then v}` (core erases asyncness, so the union is the
 honest adapter-level type). Rebuilt on `createSubscriber` from

@@ -3,7 +3,6 @@ import {
     isAtom,
     type Atom,
     type Selector,
-    type SetAtomValue,
     type State,
     type Store,
 } from "valdres"
@@ -16,9 +15,10 @@ import type { FromStateValue } from "./types/FromStateValue"
  * Reading `box.current` inside an effect (a template expression, `$derived`,
  * `$effect`, …) subscribes to the state and re-runs that effect when it
  * changes. For an atom the box is writable — `box.current = v`, `bind:value`,
- * `box.current++` — and also carries the updater-form `set` and `reset`. For a
- * selector (or generic `State`) the box is read-only; async selectors surface
- * as `current: V | Promise<V>` (see {@link FromStateValue} / {@link resourceState}).
+ * `box.current++` — and also carries the read-modify-write `update(fn)` and
+ * `reset()`. For a selector (or generic `State`) the box is read-only; async
+ * selectors surface as `current: V | Promise<V>` (see {@link FromStateValue} /
+ * {@link resourceState}).
  *
  * `store` defaults to the store from `setValdresContext`/`scope` (resolved via
  * `getValdresContext`), so it can only be omitted during component
@@ -29,7 +29,9 @@ import type { FromStateValue } from "./types/FromStateValue"
  * shared — it starts on the first effect that reads `.current` and stops when
  * the last one is destroyed. One consequence to know: a valdres `onMount`-driven
  * atom (the `@valdres/browser-*` pattern) only bootstraps once `.current` is
- * read inside an effect, matching Svelte's own `MediaQuery` semantics.
+ * read inside an effect, matching Svelte's own `MediaQuery` semantics. If a
+ * component reads the value only from an event handler (never in the template /
+ * an effect), force the subscription to start with `$effect(() => void box.current)`.
  */
 export function fromState<V>(atom: Atom<V>, store?: Store): FromStateAtom<V>
 export function fromState<V>(
@@ -57,8 +59,8 @@ export function fromState<V>(
                 // than hitting core's updater-function branch (setAtom.ts).
                 resolvedStore.set(state, () => value)
             },
-            set(value: SetAtomValue<V>) {
-                resolvedStore.set(state, value)
+            update(updater: (current: V) => V) {
+                resolvedStore.set(state, updater)
             },
             reset() {
                 resolvedStore.reset(state)
