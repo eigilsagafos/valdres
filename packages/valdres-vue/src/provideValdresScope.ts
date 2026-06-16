@@ -69,10 +69,13 @@ export const provideValdresScope = (
     const scopeCreated = !parentCtx.current.data.scopes?.has(scopeId)
     const scopedStore = parentCtx.current.scope(scopeId)
 
+    // Array.isArray (not truthiness): a single-expression `initialize` that
+    // wrote through txn.set returns a non-array, which must not reach
+    // setAtomPairs. (Switches to core's applyInitialize once #195 lands.)
     if (options.initialize) {
         scopedStore.txn(txn => {
             const pairs = options.initialize!(txn)
-            if (pairs) setAtomPairs(txn.set, pairs)
+            if (Array.isArray(pairs)) setAtomPairs(txn.set, pairs)
         })
     }
 

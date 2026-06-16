@@ -112,6 +112,16 @@ describe("createValdres", () => {
         expect(ref.value).toBe(99)
     })
 
+    test("single-expression initialize (returns set value) does not throw", () => {
+        const countAtom = atom(0)
+        // `txn => txn.set(...)` returns the set value (a number), not pairs —
+        // the Array.isArray guard must ignore it rather than iterate it.
+        const valdres = createValdres({
+            initialize: (txn: any) => txn.set(countAtom, 7),
+        })
+        expect(valdres.store.get(countAtom)).toBe(7)
+    })
+
     test("hydrate applies a dehydrated payload (SSR round-trip)", () => {
         // Named atoms register globally; duplicate names throw process-wide, so
         // use names unique to this test file.
