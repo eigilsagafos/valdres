@@ -1,0 +1,77 @@
+---
+title: setValdresContext
+description: Provide a valdres store to the Svelte component tree
+---
+
+# setValdresContext
+
+<div className="not-prose mb-8 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50 p-4">
+  <div className="text-xs font-medium text-zinc-400 dark:text-zinc-500 mb-2 uppercase tracking-wider">Signature</div>
+  <code className="text-sm font-mono text-accent-500">setValdresContext(storeOrOptions?: Store | SetValdresContextOptions): Store</code>
+  <div className="mt-3 text-xs text-zinc-500 dark:text-zinc-400">
+    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-zinc-200 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 font-medium mr-2">valdres-svelte</span>
+    Provide a store to the component tree
+  </div>
+</div>
+
+Creates (or adopts) a valdres store and exposes it to descendants via Svelte context — the root of the adapter's provider tier. Call it once near the root. With no argument it creates `store({ batchUpdates: true })` for the component tree, which on the server means one store per request — the canonical SvelteKit pattern that avoids a module-level shared-store leak. Returns the store now in context.
+
+## Usage
+
+```svelte
+<!-- +layout.svelte -->
+<script lang="ts">
+    import { setValdresContext } from "valdres-svelte"
+
+    let { children } = $props()
+    setValdresContext()
+</script>
+
+{@render children()}
+```
+
+Descendants then read state with [fromState](/svelte/fromState) / [toStore](/svelte/toStore) and no explicit store argument.
+
+## Options
+
+Pass an options object to seed the store:
+
+| Option | Type | Description |
+|--------|------|-------------|
+| `store` | `Store` | Use this store instead of auto-creating one (warns if not created with `batchUpdates: true`) |
+| `initialize` | `InitializeCallback` | Seed the store inside a transaction before it's exposed |
+| `hydrate` | `DehydratedState` | Apply a `dehydrate(store)` payload to the fresh store |
+| `hydrateOptions` | `HydrateOptions` | Forwarded to core `hydrate` (`{ invalid: "throw" \| "skip" }`) |
+
+When both `initialize` and `hydrate` are given, `initialize` runs first so transferred values win.
+
+## SvelteKit (SSR)
+
+Load data on the server, then map it to atoms with `initialize`. Because `initialize` runs on both the server render and client hydration, the atoms hold the right values in both passes — no custom serializer needed.
+
+```ts
+// +layout.server.ts
+export const load = async () => {
+    return { count: 7 } // plain, serializable
+}
+```
+
+```svelte
+<!-- +layout.svelte -->
+<script lang="ts">
+    import { setValdresContext } from "valdres-svelte"
+    import { countAtom } from "$lib/state"
+
+    let { data, children } = $props()
+    setValdresContext({ initialize: txn => [[countAtom, data.count]] })
+</script>
+
+{@render children()}
+```
+
+If your `load` data is itself a `dehydrate(store)` payload (e.g. from an API that ran a server-side store), pass it as `hydrate` instead. Atoms carrying a codec schema round-trip `BigInt` / `Date` / `Map` / `Set` over plain JSON automatically.
+
+## See also
+
+- [getValdresContext](/svelte/getValdresContext) — read the store from context
+- [scope](/svelte/scope) — scoped child store for a subtree

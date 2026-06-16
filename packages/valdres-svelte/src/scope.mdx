@@ -1,0 +1,40 @@
+---
+title: scope
+description: Svelte function for creating a scoped child store
+---
+
+# scope
+
+<div className="not-prose mb-8 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50 p-4">
+  <div className="text-xs font-medium text-zinc-400 dark:text-zinc-500 mb-2 uppercase tracking-wider">Signature</div>
+  <code className="text-sm font-mono text-accent-500">scope(scopeId?: string, options?: ScopeOptions): Store</code>
+  <div className="mt-3 text-xs text-zinc-500 dark:text-zinc-400">
+    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-zinc-200 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 font-medium mr-2">valdres-svelte</span>
+    Scoped child store for a component subtree
+  </div>
+</div>
+
+Creates a scoped child store layered over the parent for a subtree, and exposes it to descendants via context. Reuses an existing scope of the same `scopeId` if one is already in the tree; otherwise it creates one and detaches it automatically when the owning component is destroyed. Descendants reading via [fromState](/svelte/fromState) / [toStore](/svelte/toStore) resolve the scoped store.
+
+## Usage
+
+```svelte
+<!-- CheckoutSection.svelte -->
+<script lang="ts">
+    import { scope, fromState } from "valdres-svelte"
+    import { countAtom } from "$lib/state"
+
+    scope("checkout", { initialize: () => [[countAtom, 100]] })
+
+    const count = fromState(countAtom) // reads the scoped value (100)
+</script>
+
+<p>Scoped count: {count.current}</p>
+```
+
+The optional `initialize` callback seeds the scoped store inside a transaction when the scope is created — the same `InitializeCallback` contract used by [setValdresContext](/svelte/setValdresContext). It must be called during component initialization (it reads context and registers an `onDestroy` cleanup).
+
+## See also
+
+- [setValdresContext](/svelte/setValdresContext) — provide the root store
+- [getValdresContext](/svelte/getValdresContext) — read the current (scoped) store

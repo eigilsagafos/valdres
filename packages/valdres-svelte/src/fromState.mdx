@@ -1,0 +1,73 @@
+---
+title: fromState
+description: Svelte reactive binding for reading and writing atom or selector state
+---
+
+# fromState
+
+<div className="not-prose mb-8 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50 p-4">
+  <div className="text-xs font-medium text-zinc-400 dark:text-zinc-500 mb-2 uppercase tracking-wider">Signature</div>
+  <code className="text-sm font-mono text-accent-500">fromState&lt;T&gt;(state: Atom&lt;T&gt; | Selector&lt;T&gt;, store?: Store): FromStateAtom&lt;T&gt; | FromStateValue&lt;T&gt;</code>
+  <div className="mt-3 text-xs text-zinc-500 dark:text-zinc-400">
+    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-zinc-200 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 font-medium mr-2">valdres-svelte</span>
+    Reactive read/write box for an atom (read-only for selectors)
+  </div>
+</div>
+
+Bridges a valdres atom or selector into a Svelte 5 reactive box. Reading `.current` inside an effect — a template expression, `$derived`, `$effect` — subscribes to the state and re-runs that effect when it changes. For an atom the box is writable, so `bind:value` and `count.current++` just work; for a selector (or any read-only state) `.current` is read-only.
+
+## Usage
+
+```svelte
+<script lang="ts">
+    import { atom } from "valdres"
+    import { fromState } from "valdres-svelte"
+
+    const countAtom = atom(0)
+    const count = fromState(countAtom)
+</script>
+
+<p>Count: {count.current}</p>
+
+<button onclick={() => count.current++}>Increment</button>
+<button onclick={() => count.update(c => c + 1)}>Increment (updater)</button>
+<button onclick={() => count.reset()}>Reset</button>
+
+<!-- two-way binding writes straight back to the atom -->
+<input type="number" bind:value={count.current} />
+```
+
+The second `store` argument defaults to the store from [setValdresContext](/svelte/setValdresContext) / [scope](/svelte/scope), resolved via [getValdresContext](/svelte/getValdresContext). Because context is only available during component initialization, pass an explicit `store` to use the box in plain `.svelte.ts` module state or during SSR.
+
+## Returns
+
+For an **atom** (`FromStateAtom<T>`):
+
+| Member | Type | Description |
+|--------|------|-------------|
+| `current` | `T` | Tracked read and write (`box.current = v`, `box.current++`, `bind:value`) |
+| `update` | `(updater: (current: T) => T) => void` | Read-modify-write, mirroring `svelte/store`'s `Writable.update` |
+| `reset` | `() => void` | Reset the atom to its default value |
+
+For a **selector** (`FromStateValue<T>`): a read-only `current`. Async selectors surface as `current: T | Promise<T>` — see the async note below.
+
+## Async selectors
+
+Core erases asyncness, so `fromState(asyncSelector).current` is typed `T | Promise<T>`. Consume it with Svelte's `{#await}` block, or reach for [resourceState](/svelte/resourceState) when you want `loading` / `error` flags:
+
+```svelte
+{#await user.current then u}
+    <p>Hello {u.name}</p>
+{/await}
+```
+
+<div className="callout callout-note">
+  <div className="callout-title">Lazy bootstrap</div>
+  The box is built on Svelte's <code>createSubscriber</code> (the primitive behind <code>MediaQuery</code>), so the underlying subscription is lazy: it starts on the first effect that reads <code>.current</code>. A valdres <code>onMount</code>-driven atom — the <a href="/svelte/plugins/browser-online">@valdres/browser-*</a> packages — therefore bootstraps only once <code>.current</code> is read in the template or an effect. If a component reads the value solely from an event handler, start the subscription with a throwaway effect: <code>$effect(() =&gt; void box.current)</code>.
+</div>
+
+## See also
+
+- [toStore](/svelte/toStore) — Svelte store-contract bridge for `$`-syntax
+- [resourceState](/svelte/resourceState) — async selectors with `loading` / `error`
+- [setValdresContext](/svelte/setValdresContext) — provide a store to the component tree

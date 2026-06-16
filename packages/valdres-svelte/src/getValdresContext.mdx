@@ -1,0 +1,39 @@
+---
+title: getValdresContext
+description: Get the valdres store from Svelte component context
+---
+
+# getValdresContext
+
+<div className="not-prose mb-8 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50 p-4">
+  <div className="text-xs font-medium text-zinc-400 dark:text-zinc-500 mb-2 uppercase tracking-wider">Signature</div>
+  <code className="text-sm font-mono text-accent-500">getValdresContext(): Store</code>
+  <div className="mt-3 text-xs text-zinc-500 dark:text-zinc-400">
+    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-zinc-200 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 font-medium mr-2">valdres-svelte</span>
+    Read the current store from context
+  </div>
+</div>
+
+Returns the store set by the nearest [setValdresContext](/svelte/setValdresContext) / [scope](/svelte/scope) ancestor. Most of the time you don't need it — [fromState](/svelte/fromState), [toStore](/svelte/toStore), and [transaction](/svelte/transaction) resolve the context store on their own. Reach for it when you need direct `store.get` / `store.set` access.
+
+## Usage
+
+```svelte
+<script lang="ts">
+    import { getValdresContext } from "valdres-svelte"
+    import { countAtom } from "$lib/state"
+
+    const store = getValdresContext()
+    console.log(store.get(countAtom))
+</script>
+```
+
+<div className="callout callout-note">
+  <div className="callout-title">Call during initialization</div>
+  Svelte throws <code>lifecycle_outside_component</code> for <code>getContext</code> outside component initialization, so capture the store at the top level rather than inside an event handler. To run writes from a handler, use <a href="/svelte/transaction">transaction</a>, which captures the store for you.
+</div>
+
+## See also
+
+- [setValdresContext](/svelte/setValdresContext) — provide the store
+- [transaction](/svelte/transaction) — handler-safe transaction runner

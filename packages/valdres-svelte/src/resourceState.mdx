@@ -1,0 +1,58 @@
+---
+title: resourceState
+description: Svelte helper for consuming async selectors with loading and error
+---
+
+# resourceState
+
+<div className="not-prose mb-8 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50 p-4">
+  <div className="text-xs font-medium text-zinc-400 dark:text-zinc-500 mb-2 uppercase tracking-wider">Signature</div>
+  <code className="text-sm font-mono text-accent-500">resourceState&lt;T&gt;(selector: Selector&lt;T&gt;, store?: Store): ResourceState&lt;T&gt;</code>
+  <div className="mt-3 text-xs text-zinc-500 dark:text-zinc-400">
+    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-zinc-200 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 font-medium mr-2">valdres-svelte</span>
+    Async selector with loading and error state
+  </div>
+</div>
+
+Consumes a possibly-async selector as a reactive `{ current, loading, error }` box. Core erases asyncness, so `fromState(sel).current` may be `T | Promise<T>`; `resourceState` does the runtime promise detection for you and tracks settlement. While pending, `loading` is `true` and `current` is `undefined`; on resolve, `current` holds the value; on reject, `error` holds the reason. A dependency change re-enters the pending state.
+
+## Usage
+
+```svelte
+<script lang="ts">
+    import { selector } from "valdres"
+    import { resourceState } from "valdres-svelte"
+
+    const userSelector = selector(() => fetch("/api/me").then(r => r.json()))
+    const user = resourceState(userSelector)
+</script>
+
+{#if user.loading}
+    <p>Loading…</p>
+{:else if user.error}
+    <p>Failed: {String(user.error)}</p>
+{:else}
+    <p>Hello {user.current?.name}</p>
+{/if}
+```
+
+When you'd rather `await` than branch on flags, [fromState](/svelte/fromState) plus Svelte's `{#await}` block works directly on the `T | Promise<T>` value:
+
+```svelte
+{#await user.current then u}
+    <p>Hello {u.name}</p>
+{/await}
+```
+
+## Returns
+
+| Member | Type | Description |
+|--------|------|-------------|
+| `current` | `T \| undefined` | Resolved value, or `undefined` while pending or errored |
+| `loading` | `boolean` | `true` while the selector's promise is pending |
+| `error` | `unknown` | The rejection reason, if the promise rejected |
+
+## See also
+
+- [fromState](/svelte/fromState) — reactive box; `{#await}` works on its `.current`
+- [toStore](/svelte/toStore) — Svelte store-contract bridge

@@ -695,15 +695,15 @@ function highlightVue() {
 function highlightSvelte() {
     return [
         `${plain("<")}${tag("script")}${plain(">")}`,
-        `  ${kw("import")} ${plain("{ watch }")} ${kw("from")} ${str('"valdres-svelte"')}`,
+        `  ${kw("import")} ${plain("{ fromState }")} ${kw("from")} ${str('"valdres-svelte"')}`,
         `  ${kw("import")} ${plain("{ countAtom }")} ${kw("from")} ${str('"./shared"')}`,
         ``,
-        `  ${kw("const")} ${plain("count =")} ${fn("watch")}${plain("(countAtom)")}`,
+        `  ${kw("const")} ${plain("count =")} ${fn("fromState")}${plain("(countAtom)")}`,
         `${plain("</")}${tag("script")}${plain(">")}`,
         ``,
         `${plain("<")}${tag("div")}${plain(">")}`,
-        `  ${plain("<")}${tag("span")}${plain(">")}${plain("{count.value}")}${plain("</")}${tag("span")}${plain(">")}`,
-        `  ${plain("<")}${tag("button")} ${name("onclick")}${plain("={() => count.")}${fn("set")}${plain("(c => c + 1)}>+</")}${tag("button")}${plain(">")}`,
+        `  ${plain("<")}${tag("span")}${plain(">")}${plain("{count.current}")}${plain("</")}${tag("span")}${plain(">")}`,
+        `  ${plain("<")}${tag("button")} ${name("onclick")}${plain("={() => count.current++}>+</")}${tag("button")}${plain(">")}`,
         `${plain("</")}${tag("div")}${plain(">")}`,
     ].join("\n")
 }
