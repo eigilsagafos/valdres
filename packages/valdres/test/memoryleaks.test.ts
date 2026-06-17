@@ -13,6 +13,18 @@ import { selectorFamily } from "../src/selectorFamily"
 // entries ARE released when the WeakMap (inside the store's data) is itself
 // collected. Selector getter closures must be defined in a separate scope
 // from the store to avoid JSC scope-capture keeping the store alive.
+//
+// NOTE: the valdres package test script intentionally runs WITHOUT `--parallel`
+// (see package.json). These collection checks depend on JSC actually reclaiming
+// a dropped store's object graph; under `bun test --parallel`, the concurrent
+// heap pressure from other test files leaves recently-dead allocations pinned by
+// JSC's conservative stack scan (see LeakDetector), so the store isn't collected
+// in the GC window and these tests flake. A read selector now caches its value
+// on the store (so repeated unsubscribed reads are reference-stable — see
+// unsubscribedSelectorRefStability.test.ts), which ties that value's lifetime to
+// the store's and makes more of these tests sensitive to that pressure. Running
+// the suite in a single non-parallel process keeps the heap quiet enough for the
+// collection to happen deterministically.
 
 describe("memory leaks (atoms)", () => {
     test("unreferenced atom value is collected", async () => {
