@@ -65,7 +65,9 @@ const filter = useValue(filterAtom, scoped)
 
 `scopeId` is captured once — provided context is read once by each descendant.
 To re-scope on a changing id, force a remount with `:key` on the providing
-component (in dev, changing it without a remount logs a warning).
+component. (The [`<ValdresScope>`](/vue/ValdresScope) component logs a dev
+warning if its reactive `scope-id` prop changes without a remount; this
+composable takes a plain string, so there is nothing to watch.)
 
 ## See also
 

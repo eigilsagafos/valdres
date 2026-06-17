@@ -42,10 +42,13 @@ const generateId = () => (Math.random() + 1).toString(36).substring(7)
  * otherwise creates one and detaches it on unmount. The default id is `useId()`
  * (SSR-stable on Vue 3.5+), computed here in the composable body.
  *
- * **scopeId is not reactive.** Vue captures provided context once per
+ * **scopeId is captured once.** Vue captures provided context once per
  * descendant at its setup, so re-scoping a live tree would silently fail to
- * propagate — change the id with `:key="scopeId"` on the providing component to
- * force a remount. In dev, changing it without a remount logs a warning.
+ * propagate. This composable reads `scopeId` a single time; to re-scope on a
+ * changing id, force a remount with `:key` on the providing component. (The
+ * {@link ValdresScope} component, whose `scope-id` is a reactive prop, logs a
+ * dev warning if it changes without a remount; the composable takes a plain
+ * string, so there is nothing for it to watch.)
  *
  * **Reading scoped state in the same component.** Vue's inject never sees the
  * component's own provides, so this component's other composables still resolve
