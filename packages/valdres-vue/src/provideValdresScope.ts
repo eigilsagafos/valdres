@@ -1,6 +1,6 @@
 import * as Vue from "vue"
 import { inject, onScopeDispose, provide } from "vue"
-import { setAtomPairs, type InitializeCallback, type Store } from "valdres"
+import { applyInitialize, type InitializeCallback, type Store } from "valdres"
 import { ValdresKey } from "./lib/storeKey"
 
 /** Options for {@link provideValdresScope}. */
@@ -69,14 +69,8 @@ export const provideValdresScope = (
     const scopeCreated = !parentCtx.current.data.scopes?.has(scopeId)
     const scopedStore = parentCtx.current.scope(scopeId)
 
-    // Array.isArray (not truthiness): a single-expression `initialize` that
-    // wrote through txn.set returns a non-array, which must not reach
-    // setAtomPairs. (Switches to core's applyInitialize once #195 lands.)
     if (options.initialize) {
-        scopedStore.txn(txn => {
-            const pairs = options.initialize!(txn)
-            if (Array.isArray(pairs)) setAtomPairs(txn.set, pairs)
-        })
+        scopedStore.txn(txn => applyInitialize(txn, options.initialize))
     }
 
     provide(ValdresKey, {
