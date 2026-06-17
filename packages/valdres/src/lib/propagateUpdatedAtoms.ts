@@ -141,7 +141,7 @@ const reEvaluateSelector = (
 }
 
 const callSubscribers = (
-    subscriptions: Set<Subscription>,
+    subscriptions: Iterable<Subscription>,
     families?: Map<AtomFamily<any>, Set<AtomFamilyAtom<any>>>,
 ) => {
     let firstError: unknown
@@ -420,8 +420,20 @@ export const propagateAtomUpdate = (
                 ) {
                     const subs = data.subscriptions.get(atom)
                     if (subs && subs.size > 0) {
+                        // Snapshot the live subscription set before firing. This
+                        // is the one path that hands callSubscribers the LIVE
+                        // `data.subscriptions` set, so without a copy a listener
+                        // that subscribes/unsubscribes from inside a callback
+                        // would mutate the set mid-iteration — a listener added
+                        // during dispatch would leak into the in-flight change,
+                        // an unsubscribed one would be order-dependently skipped.
+                        // Snapshotting matches the React/Redux contract: the
+                        // listener list is fixed at dispatch start. Copy only
+                        // when actually firing (size > 0, already gated). The
+                        // deferred path collects into a fresh accumulator and is
+                        // already effectively snapshotted — leave it alone.
                         if (notify) addSetToSet(subs, notifyEntryFor(notify, data).subscriptions)
-                        else callSubscribers(subs)
+                        else callSubscribers([...subs])
                     }
                     // No dependents here, so there are no selectors to report; only
                     // the atom would be, and only when reportAtoms is set.
