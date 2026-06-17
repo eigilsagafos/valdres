@@ -156,13 +156,17 @@ describe("memory leaks (subscriptions)", () => {
         const baseAtom = atom(1)
         const sel = selector(get => get(baseAtom) + 1)
         expect(s.get(sel)).toBe(2)
-        // After init-time propagation, sel has no subscribers/dependents so
-        // its value is removed from data.values to allow GC.
-        expect(s.data.values.has(sel)).toBe(false)
+        // The freshly-computed value of the READ selector is kept cached after
+        // init-time propagation (getDefault restores it) so repeated unsubscribed
+        // reads are reference-stable — same as if it had been read twice. The GC
+        // that matters happens on a real change with no live consumer (below) and
+        // on unsubscribe, not on read.
+        expect(s.data.values.has(sel)).toBe(true)
         // Subscribe to baseAtom (not sel) so propagation runs on change
         const unsub = s.sub(baseAtom, () => {})
         s.set(baseAtom, 2)
-        // Value is still cleared — not stashed in any secondary cache
+        // A genuine change with no live consumer DOES drop the value (this is the
+        // non-init propagation path) — not stashed in any secondary cache.
         expect(s.data.values.has(sel)).toBe(false)
         // Lazy re-evaluation on next read still works
         expect(s.get(sel)).toBe(3)

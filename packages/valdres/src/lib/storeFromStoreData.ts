@@ -20,6 +20,7 @@ import { onStoreChange } from "./onStoreChange"
 import { propagateAtomUpdate } from "./propagateUpdatedAtoms"
 import { resetAtom } from "./resetAtom"
 import { setAtom } from "./setAtom"
+import { setValueInData } from "./setValueInData"
 import { snapshot } from "./snapshot"
 import { subscribe } from "./subscribe"
 import { Transaction, transaction } from "./transaction"
@@ -118,6 +119,7 @@ export function storeFromStoreData(
             data.lastValueWriteAt.delete(state)
         }
         let res
+        let initialized = false
         try {
             res = getState(state, data, _initSet)
         } finally {
@@ -125,7 +127,27 @@ export function storeFromStoreData(
                 const atoms = [..._initSet]
                 _initSet.clear()
                 propagateAtomUpdate(atoms, data, true)
+                initialized = true
             }
+        }
+        // The init-only propagation above walks the dependents of the just-
+        // initialized atoms and, for any selector with no live consumer, drops
+        // its cached value "for lazy re-eval on next read". When that selector is
+        // the very one being read here, that's counterproductive: getState just
+        // computed it against the now-materialized atoms, so its value is correct
+        // and we want it to stay cached — otherwise every unsubscribed get()
+        // re-evaluates and returns a NEW reference, which trips React's "the
+        // result of getSnapshot should be cached" warning at initial mount
+        // (before useSyncExternalStore establishes its subscription). Restore the
+        // freshly-computed value so repeated reads are reference-stable.
+        //
+        // We restore ONLY the read target. A selector reached merely transitively
+        // (e.g. one that read a family whose membership this read just changed) is
+        // left invalidated on purpose, so its genuine staleness is picked up on
+        // its own next read. (If getState threw, the exception unwinds past this
+        // line before it runs, so `res` is never read while undefined.)
+        if (initialized && isSelector(state) && !data.values.has(state)) {
+            setValueInData(state, res, data)
         }
         return res
     }

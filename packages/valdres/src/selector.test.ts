@@ -32,9 +32,12 @@ describe("selector", () => {
         expect(store1.get(time100Selector)).toBe(500)
         expect(store1.get(time100Selector)).toBe(500)
         expect(store1.get(time100Selector)).toBe(500)
-        // TODO: There is something now with the way init/propagate works where this turns out to 2 instead of 1
-        // probably because the numberAtom is not set before we call the selector and then the propagate resets it
-        expect(callback).toHaveBeenCalledTimes(2)
+        // Computed exactly once: getDefault restores the freshly-computed value
+        // of the read selector after the init-only propagation that would
+        // otherwise drop it, so the next read hits the cache instead of
+        // re-evaluating (previously this was 2 — the init pass invalidated the
+        // just-computed value and the second read recomputed it).
+        expect(callback).toHaveBeenCalledTimes(1)
     })
 
     test("dependents/dependencies are correctly handled for selector dependent on atom", () => {

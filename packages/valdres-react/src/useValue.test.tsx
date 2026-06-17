@@ -89,13 +89,18 @@ describe("useValue", () => {
             useValue(selector3),
         ])
         expect(result.current).toStrictEqual([1, 2, 3])
-        expect(selector1cb).toHaveBeenCalledTimes(2) // This could also be optimized
+        // Computed exactly once now: the read selector's freshly-computed value
+        // is kept cached after init-time propagation (getDefault restores it)
+        // instead of being dropped and recomputed on the next read.
+        expect(selector1cb).toHaveBeenCalledTimes(1)
         expect(selector2cb).toHaveBeenCalledTimes(1)
         expect(selector3cb).toHaveBeenCalledTimes(1)
         store.set(atom1, 2)
-        // With batchUpdates, selector re-evaluation is deferred to commit
+        // With batchUpdates, selector re-evaluation is deferred to commit, so the
+        // synchronous count here is unchanged from above (1 after the fix — the
+        // init-time double-eval is gone).
         expect(result.current).toStrictEqual([1, 2, 3])
-        expect(selector1cb).toHaveBeenCalledTimes(2)
+        expect(selector1cb).toHaveBeenCalledTimes(1)
         expect(selector2cb).toHaveBeenCalledTimes(1)
         expect(selector3cb).toHaveBeenCalledTimes(1)
     })

@@ -43,7 +43,12 @@ describe("setAtom", () => {
         store1.set(numberAtom, 1)
         expect(selectorCallback).toHaveBeenCalledTimes(1)
         expect(store1.get(multiplySelector)).toBe(2)
-        expect(selectorCallback).toHaveBeenCalledTimes(2) // this could be 1 if we optimize, getting the multiplySelector wrongly triggers a re eval
+        // Computed exactly once: the read selector's freshly-computed value is
+        // kept cached after init (getDefault restores it), so a same-value set
+        // (no propagation) followed by another read hits the cache rather than
+        // re-evaluating. (Previously 2 — the init pass dropped the just-computed
+        // value, forcing the second read to recompute.)
+        expect(selectorCallback).toHaveBeenCalledTimes(1)
     })
 
     test("check deep freeze", () => {
