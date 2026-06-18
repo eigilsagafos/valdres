@@ -118,6 +118,113 @@ export const onLiveDependencyRemoved = (dep: State, data: StoreData) => {
 }
 
 /**
+ * Reconcile `liveDependentCount` after a selector-update propagation pass that
+ * removed dependencies.
+ *
+ * The incremental `onLiveDependency{Added,Removed}` bookkeeping is not robust to
+ * a selector being re-evaluated MORE THAN ONCE within a single pass with
+ * transitional (non-final) dependency sets — which the topological scheduler
+ * does (a selector that is both in the initial dirty set and downstream of
+ * another, plus escaped/stranded re-evals). A transient dependency removal by a
+ * still-live selector eagerly tears down the `liveDependentCount` of an entire
+ * transitive subtree (via `propagateNotLive`); when the dependency is re-added
+ * later in the same pass, the `isLive(selector)` guard is now false (the
+ * selector was itself caught in that teardown), so the re-add is skipped and the
+ * subtree is left permanently non-live even though a live subscriber still
+ * reads it. `propagateDirtySelectors` then skips it forever → stale value.
+ *
+ * Every state whose count a teardown can corrupt lies in the DOWNWARD
+ * (dependency) closure of the deps removed during the pass — `propagateNotLive`
+ * only ever walks dependencies, so a cascade can't escape that closure; and a
+ * wrongly-skipped re-add only matters for a dependency of a selector that was
+ * itself torn down (hence already in the closure). We recompute the invariant
+ *
+ *   liveDependentCount[D] = |{ S ∈ stateDependents[D] : isLive(S) }|
+ *
+ * for exactly that region from ground truth: dependents OUTSIDE the region keep
+ * their (unaffected) cached liveness as the fixed base, and a worklist fixpoint
+ * resolves liveness for dependents INSIDE it (the region can contain cycles —
+ * recursive selectorFamilies). Gated by the caller on `removed.size > 0`, so the
+ * steady-state propagation path (no dependency removals) is untouched.
+ */
+export const reconcileLivenessAfterChurn = (
+    removed: Set<State>,
+    data: StoreData,
+) => {
+    // 1. region = downward dependency closure of the removed deps.
+    const region = new Set<State>()
+    const stack: State[] = [...removed]
+    while (stack.length > 0) {
+        const s = stack.pop()!
+        if (region.has(s)) continue
+        region.add(s)
+        const deps = data.stateDependencies.get(s)
+        if (deps) for (const d of deps) if (!region.has(d)) stack.push(d)
+    }
+
+    // 2. Ground-truth liveness for the region. Seed from direct subscribers and
+    //    from dependents OUTSIDE the region (their liveness is unaffected by
+    //    this churn, so the cached isLive() is authoritative). Then push
+    //    liveness DOWN: a live state's dependencies each gain a live dependent.
+    const live = new Set<State>()
+    const work: State[] = []
+    for (const D of region) {
+        let isit = hasDirectSubscribers(D, data)
+        if (!isit) {
+            const dependents = data.stateDependents.get(D)
+            if (dependents) {
+                for (const T of dependents) {
+                    if (!region.has(T) && isLive(T, data)) {
+                        isit = true
+                        break
+                    }
+                }
+            }
+        }
+        if (isit) {
+            live.add(D)
+            work.push(D)
+        }
+    }
+    while (work.length > 0) {
+        const T = work.pop()!
+        const deps = data.stateDependencies.get(T)
+        if (!deps) continue
+        for (const D of deps) {
+            if (region.has(D) && !live.has(D)) {
+                live.add(D)
+                work.push(D)
+            }
+        }
+    }
+
+    // 3. Recompute counts from ground truth, snapshotting prior liveness so we
+    //    can mount/unmount on genuine transitions afterwards (idempotent).
+    const wasLive = new Map<State, boolean>()
+    for (const D of region) wasLive.set(D, isLive(D, data))
+    for (const D of region) {
+        const dependents = data.stateDependents.get(D)
+        let count = 0
+        if (dependents) {
+            for (const T of dependents) {
+                if (region.has(T) ? live.has(T) : isLive(T, data)) count++
+            }
+        }
+        // liveDependentCount never stores 0 (entries are deleted at <= 0), so a
+        // missing entry IS count 0 — only touch the map on a genuine change.
+        const prev = data.liveDependentCount.get(D) ?? 0
+        if (count === prev) continue
+        if (count <= 0) data.liveDependentCount.delete(D)
+        else data.liveDependentCount.set(D, count)
+    }
+    for (const D of region) {
+        const now = live.has(D)
+        if (now && !wasLive.get(D)) mountTransitiveDeps(D, data)
+        else if (!now && wasLive.get(D)) unmountOrphanedDeps(D, data)
+    }
+}
+
+/**
  * Mount a single atom: call its onMount and store the cleanup in data.mounts.
  * No-op if the atom has no onMount or is already mounted.
  *

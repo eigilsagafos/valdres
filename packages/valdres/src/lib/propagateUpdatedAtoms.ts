@@ -24,6 +24,7 @@ import {
     mountTransitiveDeps,
     onLiveDependencyAdded,
     onLiveDependencyRemoved,
+    reconcileLivenessAfterChurn,
     unmountOrphanedDeps,
 } from "./mountAtom"
 import {
@@ -744,6 +745,9 @@ const propagateDownstreamTopo = (
     updatedInitializedAtoms: Set<Atom>,
     isInitOnly: boolean,
     changedSelectors?: Set<Selector>,
+    // Collects every dependency removed from a LIVE selector during the pass, so
+    // the caller can reconcile the liveness bookkeeping it may have corrupted.
+    removedDeps?: Set<State>,
 ) => {
     const closure = new Set<Selector>(seeds)
     {
@@ -886,6 +890,7 @@ const propagateDownstreamTopo = (
                     for (const dep of removed) {
                         onLiveDependencyRemoved(dep, data)
                         unmountOrphanedDeps(dep, data)
+                        if (removedDeps) removedDeps.add(dep)
                     }
                 }
             }
@@ -960,6 +965,7 @@ const propagateDownstreamTopo = (
                     for (const dep of removed) {
                         onLiveDependencyRemoved(dep, data)
                         unmountOrphanedDeps(dep, data)
+                        if (removedDeps) removedDeps.add(dep)
                     }
                 }
             }
@@ -1007,6 +1013,13 @@ const propagateSelectorUpdates = (
     if (selectors.size === 0) return
 
     let downstreamSeeds: Set<Selector> | undefined
+    // Dependencies removed from a live selector during this pass. Eager
+    // incremental liveness bookkeeping is not robust to a selector re-evaluating
+    // multiple times with transitional dep sets (a transient drop tears down a
+    // subtree's liveDependentCount that the later re-add fails to restore); we
+    // reconcile that subtree from ground truth at the end. Allocated lazily so
+    // the steady-state path (no removals) pays nothing.
+    let removedDeps: Set<State> | undefined
 
     // Reused across every re-evaluated selector — see propagateDownstreamTopo.
     const depsChange: DepsChange = {}
@@ -1048,6 +1061,8 @@ const propagateSelectorUpdates = (
                 for (const dep of removed) {
                     onLiveDependencyRemoved(dep, data)
                     unmountOrphanedDeps(dep, data)
+                    if (!removedDeps) removedDeps = new Set()
+                    removedDeps.add(dep)
                 }
             }
         }
@@ -1063,6 +1078,7 @@ const propagateSelectorUpdates = (
     }
 
     if (downstreamSeeds && downstreamSeeds.size > 0) {
+        if (!removedDeps) removedDeps = new Set()
         propagateDownstreamTopo(
             downstreamSeeds,
             data,
@@ -1070,6 +1086,15 @@ const propagateSelectorUpdates = (
             updatedInitializedAtoms,
             isInitOnly,
             changedSelectors,
+            removedDeps,
         )
+    }
+
+    // A dependency was removed from a live selector this pass: the eager
+    // teardown may have left a still-read subtree non-live (see
+    // reconcileLivenessAfterChurn). Re-derive that subtree's liveDependentCount
+    // from ground truth. No removals → no allocation, no work.
+    if (removedDeps && removedDeps.size > 0) {
+        reconcileLivenessAfterChurn(removedDeps, data)
     }
 }
