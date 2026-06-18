@@ -1,20 +1,30 @@
 ---
 title: createValdres
-description: Vue plugin factory for setting up valdres
+description: Create a valdres instance (plugin + store) for a Vue app
 ---
 
 # createValdres
 
 <div className="not-prose mb-8 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50 p-4">
   <div className="text-xs font-medium text-zinc-400 dark:text-zinc-500 mb-2 uppercase tracking-wider">Signature</div>
-  <code className="text-sm font-mono text-accent-500">createValdres(options?: ValdresPluginOptions): Plugin</code>
+  <code className="text-sm font-mono text-accent-500">createValdres(options?: ValdresOptions): Valdres</code>
   <div className="mt-3 text-xs text-zinc-500 dark:text-zinc-400">
     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-zinc-200 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 font-medium mr-2">valdres-vue</span>
-    Provide a store to your Vue app
+    Pinia-shaped instance — register with app.use
   </div>
 </div>
 
-Creates a Vue plugin that provides a valdres store to all components via Vue's provide/inject system.
+Creates a valdres instance — the Vue plugin plus a handle on its store —
+mirroring the Pinia shape (`createPinia()` returns an instance). The store is
+created in the `createValdres()` body, so `valdres.store` is available
+immediately; `app.use(valdres)` provides it to every component.
+
+```ts
+interface Valdres {
+    install(app: App): void
+    store: Store
+}
+```
 
 ## Usage
 
@@ -23,23 +33,62 @@ import { createApp } from "vue"
 import { createValdres } from "valdres-vue"
 import App from "./App.vue"
 
-const app = createApp(App)
-app.use(createValdres())
-app.mount("#app")
+const valdres = createValdres()
+createApp(App).use(valdres).mount("#app")
 ```
 
 ## With a custom store
+
+By default `createValdres()` creates `store({ batchUpdates: true })`. Pass your
+own to share it (a warning is logged if it isn't batched):
 
 ```ts
 import { store } from "valdres"
 import { createValdres } from "valdres-vue"
 
-const myStore = store()
-
+const myStore = store({ batchUpdates: true })
 app.use(createValdres({ store: myStore }))
 ```
+
+## Initialize
+
+Seed the store before any component reads it:
+
+```ts
+createValdres({
+    initialize: txn => {
+        txn.set(themeAtom, "dark")
+    },
+})
+```
+
+## SSR / Nuxt
+
+Create **one instance per request** (a shared module-level store would leak
+state across users). On the server, `dehydrate(valdres.store)` into the payload;
+on the client, pass it back as `hydrate`:
+
+```ts
+// server
+import { dehydrate } from "valdres"
+const valdres = createValdres()
+app.use(valdres)
+// …render…
+nuxtApp.payload.valdres = dehydrate(valdres.store)
+
+// client
+const valdres = createValdres({ hydrate: nuxtApp.payload.valdres })
+```
+
+`hydrate` runs core `hydrate` during creation (before any read), resolving atom
+names through the global registry. Only `name`d atoms/families transfer; an
+unknown name (its module not yet imported under code-splitting) is warn-skipped.
+Atoms with a codec schema round-trip `BigInt`/`Date`/`Map`/`Set` over plain
+JSON. When both `initialize` and `hydrate` are given, `initialize` runs first so
+hydrated values win.
 
 ## See also
 
 - [useStore](/vue/useStore) — access the store in components
+- [provideValdresScope](/vue/provideValdresScope) — scope a subtree
 - [store](/valdres/store) — create a store instance

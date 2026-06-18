@@ -1,9 +1,13 @@
 ---
 title: Quick Start with Vue
-description: Get up and running with Valdres and Vue in under 5 minutes
+description: Get up and running with Valdres and Vue 3 in under 5 minutes
 ---
 
 # Quick Start with Vue
+
+Valdres provides idiomatic Vue 3 bindings: composables return native `Ref`s
+(writable and `v-model`-friendly), arguments accept refs/getters so prop-driven
+keys stay live, and the plugin mirrors Pinia's instance shape for SSR.
 
 ## Install
 
@@ -11,36 +15,9 @@ description: Get up and running with Valdres and Vue in under 5 minutes
 npm install valdres valdres-vue
 ```
 
-## Create your first atom
-
-```ts
-// store.ts
-import { atom } from "valdres"
-
-export const countAtom = atom(0)
-```
-
-## Use it in a component
-
-```vue
-<script setup>
-import { useAtom } from "valdres-vue"
-import { countAtom } from "./store"
-
-const count = useAtom(countAtom)
-</script>
-
-<template>
-  <div>
-    <p>Count: {{ count }}</p>
-    <button @click="count++">Increment</button>
-  </div>
-</template>
-```
-
 ## Provide a store
 
-Wrap your app with `createValdres` to provide a store to all components:
+`createValdres()` returns an instance you register with `app.use`:
 
 ```ts
 // main.ts
@@ -48,29 +25,184 @@ import { createApp } from "vue"
 import { createValdres } from "valdres-vue"
 import App from "./App.vue"
 
-const app = createApp(App)
-app.use(createValdres())
-app.mount("#app")
+const valdres = createValdres()
+createApp(App).use(valdres).mount("#app")
 ```
 
-## Read-only values
+## Define state
 
-Use `useValue` when you only need to read:
+```ts
+// state.ts
+import { atom, atomFamily, selector } from "valdres"
+
+export const countAtom = atom(0)
+export const doubled = selector(get => get(countAtom) * 2)
+export const todoFamily = atomFamily((id: string) => ({ id, done: false }))
+export const userSelector = selector(get => fetch(`/api/user/${get(countAtom)}`).then(r => r.json()))
+```
+
+## Read and write
+
+`useAtom` returns a writable `Ref` — drop it straight into `v-model`:
 
 ```vue
-<script setup>
-import { useValue } from "valdres-vue"
-import { countAtom } from "./store"
+<script setup lang="ts">
+import { useAtom } from "valdres-vue"
+import { countAtom } from "./state"
 
-const count = useValue(countAtom)
+const count = useAtom(countAtom)
 </script>
 
 <template>
-  <p>The count is {{ count }}</p>
+  <input v-model.number="count" />
+  <button @click="count++">Increment</button>
 </template>
 ```
+
+`useValue` is the read-only view. It reads through to the store, so it's fresh
+immediately after a write — consistent with `useAtom`:
+
+```vue
+<script setup lang="ts">
+import { useValue } from "valdres-vue"
+import { doubled } from "./state"
+
+const double = useValue(doubled)
+</script>
+
+<template>
+  <p>{{ double }}</p>
+</template>
+```
+
+## Reactive (prop-driven) keys
+
+Pass a **getter** so a family member follows a changing prop. The composable
+re-subscribes when the resolved member changes:
+
+```vue
+<script setup lang="ts">
+import { useValue } from "valdres-vue"
+import { todoFamily } from "./state"
+
+const props = defineProps<{ todoId: string }>()
+const todo = useValue(() => todoFamily(props.todoId))
+</script>
+
+<template>
+  <p>{{ todo.done ? "✓" : "○" }} {{ todo.id }}</p>
+</template>
+```
+
+## Async state
+
+Async selectors never throw. Use `useAsyncValue` for `{ data, error, isPending,
+status }` reactive refs:
+
+```vue
+<script setup lang="ts">
+import { useAsyncValue } from "valdres-vue"
+import { userSelector } from "./state"
+
+const { data: user, isPending, error } = useAsyncValue(userSelector)
+</script>
+
+<template>
+  <p v-if="isPending">Loading…</p>
+  <p v-else-if="error">Failed: {{ error }}</p>
+  <p v-else>{{ user.name }}</p>
+</template>
+```
+
+Under `<Suspense>`, await `suspense()` in an async `setup()`:
+
+```vue
+<script setup lang="ts">
+import { useAsyncValue } from "valdres-vue"
+import { userSelector } from "./state"
+
+const user = await useAsyncValue(userSelector).suspense()
+</script>
+```
+
+## Transactions
+
+```vue
+<script setup lang="ts">
+import { useTransaction } from "valdres-vue"
+import { countAtom, todoFamily } from "./state"
+
+const txn = useTransaction()
+const reset = (id: string) =>
+  txn(({ set, reset }) => {
+    set(countAtom, 0)
+    reset(todoFamily(id))
+  }, "reset")
+</script>
+```
+
+## Scoped subtrees
+
+Scope a subtree to its own overlay store with the `provideValdresScope`
+composable in `<script setup>`:
+
+```vue
+<!-- Board.vue -->
+<script setup lang="ts">
+import { provideValdresScope, useValue } from "valdres-vue"
+import { countAtom } from "./state"
+
+const props = defineProps<{ boardId: string }>()
+const scoped = provideValdresScope({
+  scopeId: props.boardId,
+  initialize: txn => {
+    txn.set(countAtom, 100)
+  },
+})
+
+// Vue's inject never sees a component's own provides, so to read scoped state
+// in THIS component, pass the returned store explicitly:
+const count = useValue(countAtom, scoped)
+</script>
+```
+
+Descendants automatically read and write the scoped store. The `<ValdresScope>`
+component is available as template-driven sugar over the same composable.
+
+> `scopeId` is captured once at mount. To re-scope on a changing id, add
+> `:key="boardId"` to force a remount.
+
+## SSR / Nuxt
+
+Create **one instance per request** (never share a store across requests). On
+the server, `dehydrate` the store into the transferable payload; on the client,
+pass it back as `hydrate`:
+
+```ts
+// server
+import { dehydrate } from "valdres"
+import { createValdres } from "valdres-vue"
+
+const valdres = createValdres()
+app.use(valdres)
+// …render the app…
+nuxtApp.payload.valdres = dehydrate(valdres.store)
+```
+
+```ts
+// client
+import { createValdres } from "valdres-vue"
+
+const valdres = createValdres({ hydrate: nuxtApp.payload.valdres })
+createApp(App).use(valdres).mount("#app")
+```
+
+Only `name`d atoms and atomFamilies transfer (resolved through the global
+registry), and atoms carrying a codec schema round-trip `BigInt`/`Date`/`Map`/
+`Set` over plain JSON automatically — no custom serializer needed.
 
 ## Next steps
 
 - [Core Concepts](/guides/core-concepts) — atoms, selectors, families, stores
-- [Patterns & Recipes](/guides/patterns) — real-world examples
+- [Scoped Stores](/guides/scoped-stores) — overlay stores in depth
+- [useAsyncValue](/vue/useAsyncValue) — async selector API

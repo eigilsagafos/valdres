@@ -7,14 +7,15 @@ description: Vue composable for reading and writing atom state
 
 <div className="not-prose mb-8 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50 p-4">
   <div className="text-xs font-medium text-zinc-400 dark:text-zinc-500 mb-2 uppercase tracking-wider">Signature</div>
-  <code className="text-sm font-mono text-accent-500">useAtom&lt;T&gt;(atom: Atom&lt;T&gt;): Ref&lt;T&gt;</code>
+  <code className="text-sm font-mono text-accent-500">useAtom&lt;T&gt;(atom: MaybeRefOrGetter&lt;Atom&lt;T&gt;&gt;, store?: Store): Ref&lt;T&gt;</code>
   <div className="mt-3 text-xs text-zinc-500 dark:text-zinc-400">
     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-zinc-200 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 font-medium mr-2">valdres-vue</span>
     Subscribe to and update an atom's value
   </div>
 </div>
 
-Returns a reactive `Ref` that stays in sync with the atom. Writing to the ref updates the atom, and atom changes update the ref.
+Returns a writable `Ref` that stays in sync with the atom: reading is fresh
+(read-through to the store), and writing updates the atom.
 
 ## Usage
 
@@ -51,6 +52,21 @@ const name = useAtom(nameAtom)
 <template>
     <input v-model="name" placeholder="Enter name" />
 </template>
+```
+
+## Reactive (prop-driven) keys
+
+Pass a **getter** so a family member follows a changing prop — the ref
+re-subscribes (and writes route) to the new member:
+
+```vue
+<script setup>
+import { useAtom } from "valdres-vue"
+import { todoFamily } from "./state"
+
+const props = defineProps(["todoId"])
+const todo = useAtom(() => todoFamily(props.todoId))
+</script>
 ```
 
 ## See also

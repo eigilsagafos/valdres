@@ -1,0 +1,75 @@
+---
+title: provideValdresScope
+description: Vue composable that scopes a subtree to a child store
+---
+
+# provideValdresScope
+
+<div className="not-prose mb-8 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50 p-4">
+  <div className="text-xs font-medium text-zinc-400 dark:text-zinc-500 mb-2 uppercase tracking-wider">Signature</div>
+  <code className="text-sm font-mono text-accent-500">provideValdresScope(options?: ProvideValdresScopeOptions): Store</code>
+  <div className="mt-3 text-xs text-zinc-500 dark:text-zinc-400">
+    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-zinc-200 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 font-medium mr-2">valdres-vue</span>
+    Scope a subtree from inside script setup
+  </div>
+</div>
+
+Scopes the current component's subtree to a child store and exposes it to
+descendants — the composable form of [ValdresScope](/vue/ValdresScope), so a
+`<script setup>` component can scope itself. Returns the scoped store.
+
+```ts
+interface ProvideValdresScopeOptions {
+    scopeId?: string
+    initialize?: InitializeCallback
+}
+```
+
+## Usage
+
+```vue
+<script setup lang="ts">
+import { provideValdresScope } from "valdres-vue"
+import { countAtom } from "./state"
+
+provideValdresScope({
+    scopeId: "board",
+    initialize: txn => {
+        txn.set(countAtom, 100)
+    },
+})
+</script>
+```
+
+Descendants now read and write the scoped store. It reuses an existing scope of
+the same `scopeId` in the ancestor chain; otherwise it creates one and detaches
+it on unmount. The default id is `useId()` (SSR-stable on Vue 3.5+).
+
+## Reading scoped state in the same component
+
+Vue's `inject` never sees a component's own provides, so this component's other
+composables still resolve the **parent** store. Pass the returned store
+explicitly to read scoped state here:
+
+```vue
+<script setup lang="ts">
+import { provideValdresScope, useValue } from "valdres-vue"
+import { filterAtom } from "./state"
+
+const scoped = provideValdresScope({ scopeId: "list" })
+const filter = useValue(filterAtom, scoped)
+</script>
+```
+
+## Dynamic scope id
+
+`scopeId` is captured once — provided context is read once by each descendant.
+To re-scope on a changing id, force a remount with `:key` on the providing
+component. (The [`<ValdresScope>`](/vue/ValdresScope) component logs a dev
+warning if its reactive `scope-id` prop changes without a remount; this
+composable takes a plain string, so there is nothing to watch.)
+
+## See also
+
+- [ValdresScope](/vue/ValdresScope) — the component sugar
+- [Scoped Stores](/guides/scoped-stores) — full guide on scoped stores

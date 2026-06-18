@@ -1,8 +1,9 @@
 import { describe, test, expect, mock } from "bun:test"
 import { mount } from "@vue/test-utils"
-import { defineComponent, type Readonly, type Ref } from "vue"
+import { defineComponent, ref as vueRef, watch, type Ref } from "vue"
 import { atom, atomFamily, selector, selectorFamily, store as createStore } from "valdres"
 import { useValue } from "./useValue"
+import { useAtom } from "./useAtom"
 import { ValdresKey } from "./lib/storeKey"
 
 const mountWithStore = (
@@ -101,17 +102,23 @@ describe("useValue", () => {
 
     test("unsubscribes on unmount", async () => {
         const numberAtom = atom(10)
+        const callback = mock(() => {})
         let ref: Readonly<Ref<number>>
         const { wrapper, store } = mountWithStore(() => {
             ref = useValue(numberAtom)
+            // The read-through ref reads live, so assert on reactivity: no
+            // trigger fires after unmount once the subscription is cleaned up.
+            watch(ref, callback)
             return { ref }
         })
         expect(ref!.value).toBe(10)
+        store.set(numberAtom, 20)
+        await new Promise(r => queueMicrotask(r))
+        expect(callback).toHaveBeenCalledTimes(1)
         wrapper.unmount()
         store.set(numberAtom, 99)
         await new Promise(r => queueMicrotask(r))
-        // ref should still hold old value since subscription was cleaned up
-        expect(ref!.value).toBe(10)
+        expect(callback).toHaveBeenCalledTimes(1)
     })
 
     test("multiple components subscribe independently", async () => {
@@ -148,5 +155,85 @@ describe("useValue", () => {
         await new Promise(r => queueMicrotask(r))
         expect(refA!.value).toBe(42)
         expect(refB!.value).toBe(42)
+    })
+
+    test("reactive family key (getter) tracks the new member", async () => {
+        const family = atomFamily((key: string) => `default-${key}`)
+        const keyRef = vueRef("a")
+        const store = createStore({ batchUpdates: true })
+        store.set(family("a"), "A")
+        store.set(family("b"), "B")
+
+        let ref: Readonly<Ref<string>>
+        mountWithStore(() => {
+            ref = useValue(() => family(keyRef.value))
+            return { ref }
+        }, store)
+
+        expect(ref!.value).toBe("A")
+        keyRef.value = "b"
+        await new Promise(r => queueMicrotask(r))
+        expect(ref!.value).toBe("B")
+
+        // A set on the now-tracked member propagates.
+        store.set(family("b"), "B2")
+        await new Promise(r => queueMicrotask(r))
+        expect(ref!.value).toBe("B2")
+    })
+
+    test("read-after-write is fresh on a batched store (parity with useAtom)", () => {
+        const countAtom = atom(1)
+        const doubled = selector(get => get(countAtom) * 2)
+        const store = createStore({ batchUpdates: true })
+
+        let viaValue: Readonly<Ref<number>>
+        let viaAtom: Ref<number>
+        mountWithStore(() => {
+            viaValue = useValue(doubled)
+            viaAtom = useAtom(countAtom)
+            return {}
+        }, store)
+
+        expect(viaValue!.value).toBe(2)
+        store.set(countAtom, 5)
+        // No microtask wait: read-through reads live, like useAtom.
+        expect(viaAtom!.value).toBe(5)
+        expect(viaValue!.value).toBe(10)
+    })
+
+    test("async selector is undefined while pending, never throws", async () => {
+        let resolveFn: (v: number) => void
+        const promise = new Promise<number>(r => {
+            resolveFn = r
+        })
+        const asyncSel = selector(() => promise)
+        const store = createStore({ batchUpdates: true })
+
+        let ref: Readonly<Ref<number>>
+        expect(() => {
+            mountWithStore(() => {
+                ref = useValue(asyncSel)
+                return {}
+            }, store)
+        }).not.toThrow()
+
+        expect(ref!.value).toBeUndefined()
+        resolveFn!(7)
+        await promise
+        await new Promise(r => queueMicrotask(r))
+        expect(ref!.value).toBe(7)
+    })
+
+    test("promise atom default does not throw", () => {
+        const asyncAtom = atom(Promise.resolve(99))
+        const store = createStore({ batchUpdates: true })
+        let ref: Readonly<Ref<Promise<number>>>
+        expect(() => {
+            mountWithStore(() => {
+                ref = useValue(asyncAtom)
+                return {}
+            }, store)
+        }).not.toThrow()
+        expect(ref!.value).toBeUndefined()
     })
 })

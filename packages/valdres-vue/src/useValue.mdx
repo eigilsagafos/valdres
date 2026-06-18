@@ -7,14 +7,18 @@ description: Vue composable for reading atom or selector values
 
 <div className="not-prose mb-8 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50 p-4">
   <div className="text-xs font-medium text-zinc-400 dark:text-zinc-500 mb-2 uppercase tracking-wider">Signature</div>
-  <code className="text-sm font-mono text-accent-500">useValue&lt;T&gt;(state: Atom&lt;T&gt; | Selector&lt;T&gt;): Ref&lt;T&gt;</code>
+  <code className="text-sm font-mono text-accent-500">useValue&lt;T&gt;(state: MaybeRefOrGetter&lt;Atom&lt;T&gt; | Selector&lt;T&gt;&gt;, store?: Store): Readonly&lt;ShallowRef&lt;T&gt;&gt;</code>
   <div className="mt-3 text-xs text-zinc-500 dark:text-zinc-400">
     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-zinc-200 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 font-medium mr-2">valdres-vue</span>
     Read-only subscription to state
   </div>
 </div>
 
-A read-only composable that returns a reactive `Ref` for an atom or selector. The ref updates whenever the underlying state changes.
+A read-only composable returning a reactive `ShallowRef` for an atom or
+selector. It reads **through** to the store, so the ref is fresh immediately
+after a `store.set` — consistent with [useAtom](/vue/useAtom), even under the
+default batched store. (A chained `computed()` stays microtask-deferred — this
+is sibling consistency, not fully synchronous propagation.)
 
 ## Usage
 
@@ -34,7 +38,31 @@ const greeting = useValue(greetingSelector)
 </template>
 ```
 
+## Reactive (prop-driven) keys
+
+Pass a **getter** so a family member follows a changing prop — the composable
+re-subscribes when the resolved member changes:
+
+```vue
+<script setup>
+import { useValue } from "valdres-vue"
+import { todoFamily } from "./state"
+
+const props = defineProps(["todoId"])
+const todo = useValue(() => todoFamily(props.todoId))
+</script>
+```
+
+## Async selectors
+
+`useValue` **never throws** on a pending async selector (or a promise atom
+default): the ref reads `undefined` while pending and holds the last resolved
+value once available. On a key change it holds the previous value until the new
+state resolves. For pending/error status or `<Suspense>` support, use
+[useAsyncValue](/vue/useAsyncValue).
+
 ## See also
 
 - [useAtom](/vue/useAtom) — read + write composable
+- [useAsyncValue](/vue/useAsyncValue) — async selector status + suspense
 - [useSetAtom](/vue/useSetAtom) — write-only composable

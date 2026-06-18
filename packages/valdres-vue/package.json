@@ -12,6 +12,7 @@
         "url": "git+https://github.com/eigilsagafos/valdres.git"
     },
     "type": "module",
+    "sideEffects": false,
     "exports": {
         ".": "./src/index.ts"
     },
@@ -33,7 +34,7 @@
     },
     "peerDependencies": {
         "valdres": "^1.0.0-beta.7",
-        "vue": ">=3.3"
+        "vue": ">=3.3 <4"
     },
     "publishConfig": {
         "access": "public",

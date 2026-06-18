@@ -1,0 +1,88 @@
+---
+title: useAsyncValue
+description: Vue composable for reading async selectors with status and suspense
+---
+
+# useAsyncValue
+
+<div className="not-prose mb-8 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50 p-4">
+  <div className="text-xs font-medium text-zinc-400 dark:text-zinc-500 mb-2 uppercase tracking-wider">Signature</div>
+  <code className="text-sm font-mono text-accent-500">useAsyncValue&lt;T&gt;(state: MaybeRefOrGetter&lt;Selector&lt;T&gt;&gt;, store?: Store): AsyncValue&lt;T&gt;</code>
+  <div className="mt-3 text-xs text-zinc-500 dark:text-zinc-400">
+    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-zinc-200 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 font-medium mr-2">valdres-vue</span>
+    Reactive async state — the Vue way (no thrown promises)
+  </div>
+</div>
+
+Consumes a (possibly async) selector as a reactive box — the Pinia Colada /
+TanStack vue-query v5 shape. Async state never throws; you read its status from
+reactive refs:
+
+```ts
+interface AsyncValue<T> {
+    data: Readonly<ShallowRef<T | undefined>>
+    error: Readonly<ShallowRef<unknown>>
+    isPending: Readonly<Ref<boolean>>
+    status: Readonly<Ref<"pending" | "success" | "error">>
+    suspense: () => Promise<T>
+}
+```
+
+While pending, `data` is `undefined`, `isPending` is `true`, and `status` is
+`"pending"`; on resolve `data` holds the value; on rejection `error` holds the
+reason. A dependency/key change re-enters the pending state (holding the previous
+`data` until the new value resolves).
+
+## Usage
+
+```vue
+<script setup lang="ts">
+import { selector } from "valdres"
+import { useAsyncValue } from "valdres-vue"
+import { userIdAtom } from "./state"
+
+const userSelector = selector(get =>
+    fetch(`/api/user/${get(userIdAtom)}`).then(r => r.json()),
+)
+
+const { data: user, isPending, error } = useAsyncValue(userSelector)
+</script>
+
+<template>
+  <p v-if="isPending">Loading…</p>
+  <p v-else-if="error">Failed: {{ error }}</p>
+  <p v-else>{{ user.name }}</p>
+</template>
+```
+
+## Suspense
+
+Await `suspense()` in an async `setup()` under `<Suspense>`:
+
+```vue
+<script setup lang="ts">
+import { useAsyncValue } from "valdres-vue"
+import { userSelector } from "./state"
+
+const user = await useAsyncValue(userSelector).suspense()
+</script>
+```
+
+`suspense()` loops await→re-get because core returns the *dependency's* promise
+when a selector is suspended, not a promise of the final value — so a chain of
+async dependencies resolves fully before it returns. (Both Vue `<Suspense>` and
+the suspense pattern are still labeled experimental upstream; the status-refs API
+above is not.)
+
+## Reactive keys
+
+Pass a getter so a prop-driven selector key stays live:
+
+```ts
+const { data } = useAsyncValue(() => userFamily(props.id))
+```
+
+## See also
+
+- [useValue](/vue/useValue) — sync read (also never throws on async)
+- [selector](/vue/selector) — derive (possibly async) state

@@ -3,7 +3,7 @@ import { mount } from "@vue/test-utils"
 import { defineComponent, h } from "vue"
 import { atom, store as createStore } from "valdres"
 import { ValdresScope } from "./ValdresScope"
-import { createValdres } from "./ValdresPlugin"
+import { createValdres } from "./createValdres"
 import { useValue } from "./useValue"
 import { useStore } from "./useStore"
 

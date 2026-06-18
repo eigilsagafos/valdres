@@ -14,7 +14,10 @@ description: Vue component for creating a scoped child store
   </div>
 </div>
 
-Creates a scoped store that inherits state from the parent but can override values independently. Components inside the scope read and write to the scoped store.
+Renderless component that scopes its slot to a child store — template-driven
+sugar over [provideValdresScope](/vue/provideValdresScope). The scoped store
+inherits state from the parent but can override values independently. Prefer the
+composable when a `<script setup>` component scopes itself.
 
 ## Usage
 
@@ -34,8 +37,8 @@ import { ValdresScope } from "valdres-vue"
 
 | Prop | Type | Description |
 |------|------|-------------|
-| `scopeId` | `string` | Optional identifier. Auto-generated if omitted. |
-| `initialize` | `(txn) => void \| [Atom, value][]` | Optional callback to set initial values. |
+| `scopeId` | `string` | Optional identifier. Defaults to an SSR-stable `useId()`. |
+| `initialize` | `(txn) => void \| [Atom, value][]` | Optional callback to seed initial values. |
 
 ## Initializing state
 
@@ -57,11 +60,23 @@ const init = (txn) => {
 </script>
 ```
 
+## Dynamic scope id
+
+`scopeId` is captured once at mount (it is not reactive). To re-scope on a
+changing id, add `:key` to force a remount:
+
+```vue
+<ValdresScope :scope-id="boardId" :key="boardId">
+  <Board />
+</ValdresScope>
+```
+
 ## Cleanup
 
-The scope is automatically cleaned up when the component is destroyed.
+The scope is automatically detached when the component is unmounted.
 
 ## See also
 
+- [provideValdresScope](/vue/provideValdresScope) — the composable form
 - [Scoped Stores](/guides/scoped-stores) — full guide on scoped stores
 - [createValdres](/vue/createValdres) — provide a store to your component tree
