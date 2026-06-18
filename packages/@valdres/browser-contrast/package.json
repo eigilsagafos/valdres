@@ -1,7 +1,7 @@
 {
     "name": "@valdres/browser-contrast",
     "description": "Reactive prefers-contrast preference from the OS",
-    "version": "1.0.0-beta.4",
+    "version": "1.0.0-beta.5",
     "license": "MIT",
     "author": {
         "name": "Eigil Sagafos"
@@ -37,7 +37,7 @@
         "valdres-react": "workspace:^"
     },
     "peerDependencies": {
-        "valdres": "^1.0.0-beta.7"
+        "valdres": "^1.0.0-beta.9"
     },
     "publishConfig": {
         "access": "public",

@@ -39,6 +39,7 @@
     "@valdres/redux-devtools": "1.0.0-beta.0"
   },
   "changesets": [
+    "apply-initialize-helper",
     "atomfamily-cachehit-fast-path",
     "atomic-cross-scope-txn",
     "cache-selector-live-flag",
@@ -57,6 +58,7 @@
     "lazy-abort-controller",
     "lazy-deps-change-holder",
     "loud-pandas-press",
+    "named-registry-ssr-commit-hook",
     "onchange-selectors",
     "pending-default-on-store",
     "per-store-selector-eval-state",
@@ -65,20 +67,26 @@
     "remove-selector-trampoline",
     "ripe-mails-deny",
     "ripe-wasps-tie",
+    "schema-validation",
     "scope-family-txn-stale",
     "scope-maxage-and-type-unify",
     "scope-unset-reinherit",
     "selector-zero-alloc-reads",
     "six-cups-grin",
+    "snapshot-subscriber-set",
+    "some-wombats-occur",
     "spicy-sheep-bet",
     "split-propagate-updated-atoms",
     "stabilize-maxage-tests-fake-clock",
+    "stable-unsubscribed-selector-reads",
     "stale-selector-dynamic-deps",
     "store-onchange",
     "store-snapshot-enumerable",
     "strong-maps-attack",
+    "svelte-1-0-breaking-rework",
     "tough-cats-accept",
     "txn-resolves-pending-default",
+    "unnamed-atomfamily-name-undefined",
     "young-symbols-sing"
   ]
 }
