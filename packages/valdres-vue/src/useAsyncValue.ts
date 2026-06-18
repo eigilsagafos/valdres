@@ -71,6 +71,10 @@ export const useAsyncValue = <T>(
     // getter: core re-evaluates an async selector on every `get`, so per-access
     // reads would issue a fresh promise and oscillate the status.
     let tracked: Promise<T> | undefined
+    // Cleared when the watcher stops (unmount): an in-flight promise that
+    // settles after teardown must not mutate the orphaned refs. Re-armed at the
+    // top of each watch run so a key change keeps working.
+    let active = true
 
     const refresh = () => {
         const next: unknown = currentStore.get(current)
@@ -81,13 +85,13 @@ export const useAsyncValue = <T>(
             error.value = undefined
             next.then(
                 resolved => {
-                    if (tracked !== next) return
+                    if (!active || tracked !== next) return
                     data.value = resolved
                     status.value = "success"
                     error.value = undefined
                 },
                 reason => {
-                    if (tracked !== next) return
+                    if (!active || tracked !== next) return
                     error.value = reason
                     status.value = "error"
                 },
@@ -107,13 +111,19 @@ export const useAsyncValue = <T>(
                 await v
                 v = currentStore.get(current)
             }
-            data.value = v as T
-            status.value = "success"
-            error.value = undefined
+            // Still return the value to the awaiting caller, but don't write to
+            // the refs if the component unmounted mid-await.
+            if (active) {
+                data.value = v as T
+                status.value = "success"
+                error.value = undefined
+            }
             return v as T
         } catch (reason) {
-            error.value = reason
-            status.value = "error"
+            if (active) {
+                error.value = reason
+                status.value = "error"
+            }
             throw reason
         }
     }
@@ -121,11 +131,15 @@ export const useAsyncValue = <T>(
     watch(
         () => toValue(state),
         (next, _prev, onCleanup) => {
+            active = true
             current = next
             tracked = undefined
             refresh()
             const unsub = currentStore.sub(next, () => refresh(), false)
-            onCleanup(() => unsub())
+            onCleanup(() => {
+                active = false
+                unsub()
+            })
         },
         { immediate: true },
     )

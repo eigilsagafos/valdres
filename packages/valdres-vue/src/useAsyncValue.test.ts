@@ -158,4 +158,30 @@ describe("useAsyncValue", () => {
         expect(box!.data.value).toBe("B")
         expect(box!.status.value).toBe("success")
     })
+
+    test("ignores an in-flight settlement after unmount", async () => {
+        let resolveFn: (v: number) => void
+        const promise = new Promise<number>(r => {
+            resolveFn = r
+        })
+        const asyncSel = selector(() => promise)
+
+        let box: AsyncValue<number>
+        const { wrapper } = mountWithStore(() => {
+            box = useAsyncValue(asyncSel)
+            return {}
+        })
+
+        expect(box!.status.value).toBe("pending")
+        wrapper.unmount()
+
+        // The promise the component was awaiting settles after teardown — it
+        // must not mutate the (now-orphaned) refs.
+        resolveFn!(42)
+        await promise
+        await new Promise(r => queueMicrotask(r))
+
+        expect(box!.status.value).toBe("pending")
+        expect(box!.data.value).toBeUndefined()
+    })
 })
