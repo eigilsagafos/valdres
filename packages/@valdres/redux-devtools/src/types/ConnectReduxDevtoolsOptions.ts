@@ -1,4 +1,23 @@
-import type { SnapshotEntry } from "valdres"
+import type { Atom, AtomFamily, Selector, SnapshotEntry } from "valdres"
+
+/**
+ * One way to single out atoms (or selectors) to exclude from DevTools:
+ * - an atom / selector reference — matched by identity;
+ * - an `atomFamily` reference — matches every one of its members;
+ * - a `name` string — matches an atom/selector with that `name`, or any member
+ *   of a family with that `name`;
+ * - a predicate `(state) => boolean` over the changed atom/selector for full
+ *   control.
+ */
+export type ExcludeRule =
+    | Atom<any>
+    | AtomFamily<any>
+    | Selector<any>
+    | string
+    | ((state: SnapshotEntry["state"]) => boolean)
+
+/** One rule, or an array of them. */
+export type ExcludeOption = ExcludeRule | readonly ExcludeRule[]
 
 export interface ConnectReduxDevtoolsOptions {
     /** Instance name shown in the Redux DevTools extension dropdown. */
@@ -26,6 +45,15 @@ export interface ConnectReduxDevtoolsOptions {
      * - `"ignore"`: leave them out of DevTools entirely.
      */
     unnamed?: "track" | "ignore"
+    /**
+     * Atoms (or selectors) to leave out of DevTools entirely — neither seeded
+     * nor reported as actions. Pass an atom/selector reference, an `atomFamily`
+     * (excludes all its members), a `name` string, a predicate
+     * `(state) => boolean`, or an array mixing any of these. Use this for
+     * high-frequency churn (e.g. a `cursorPositionAtom`) that would otherwise
+     * flood the timeline and make time-travel unusable.
+     */
+    exclude?: ExcludeOption
     /**
      * Also report named selector (derived) values under a `@computed` key.
      * Display-only — selectors aren't settable, so they're excluded from

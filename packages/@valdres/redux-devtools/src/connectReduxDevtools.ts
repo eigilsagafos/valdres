@@ -11,6 +11,7 @@ import type {
 } from "./types/ConnectReduxDevtoolsOptions"
 import type { DevtoolsSnapshot } from "./types/DevtoolsSnapshot"
 import { createNameRegistry } from "./lib/nameRegistry"
+import { makeExcludeFilter } from "./lib/makeExcludeFilter"
 import { restoreSnapshot } from "./lib/restoreSnapshot"
 import { atomBucket, cloneSnapshot, computedBucket } from "./lib/snapshot"
 
@@ -93,7 +94,10 @@ export const connectReduxDevtools = (
         scopes: includeScopes = true,
         unnamed = "track",
         selectors: includeSelectors = false,
+        exclude,
     } = options
+
+    const isExcluded = makeExcludeFilter(exclude)
 
     // NB: we intentionally do NOT pass a `features` object to disable the
     // reducer-only controls (skip/reorder/dispatch). In practice the extension
@@ -113,6 +117,7 @@ export const connectReduxDevtools = (
     if (store.data.enumerable) {
         for (const entry of store.snapshot()) {
             if (entry.scope.length > 0 && !includeScopes) continue
+            if (isExcluded(entry.state)) continue
             const scopeKey =
                 entry.scope.length === 0 ? null : entry.scope.join("/")
             if (entry.type === "selector") {
@@ -165,6 +170,7 @@ export const connectReduxDevtools = (
 
         for (const change of changes) {
             if (change.scope.length > 0 && !includeScopes) continue
+            if (isExcluded(change.state)) continue
             const scopeKey =
                 change.scope.length === 0 ? null : change.scope.join("/")
 
