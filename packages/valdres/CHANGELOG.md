@@ -1,5 +1,240 @@
 # valdres
 
+## 1.0.0-beta.9
+
+### Minor Changes
+
+- [#195](https://github.com/eigilsagafos/valdres/pull/195)
+  [`67536e7`](https://github.com/eigilsagafos/valdres/commit/67536e7f177d46278b7324a56b2eecf738b1c86f)
+  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! - Add
+  `applyInitialize(txn, initialize)` — the single place the adapter `initialize`
+  contract is interpreted, so every framework adapter handles it identically.
+
+    It runs the callback inside a transaction the caller opened and applies any
+    returned `[atom, value]` pairs, guarding with `Array.isArray` rather than a
+    truthiness check. This fixes a latent footgun: a single-expression callback
+    like `txn => txn.set(atom, 1)` already writes through `txn.set` and _returns
+    that call's value_ (e.g. a number), which the previous
+    `if (pairs) setAtomPairs(...)` pattern fed back into `setAtomPairs`,
+    throwing "is not iterable". A non-array return now correctly means "the
+    callback wrote directly; nothing left to apply".
+
+    `valdres-svelte`'s `setValdresContext` and `scope` now consume the helper
+    (replacing the inline `if (pairs)` pattern), so the crash no longer occurs.
+    `setAtomPairs` remains exported as the low-level primitive; its docs now
+    point to `applyInitialize` and show the `Array.isArray` guard.
+
+- [#188](https://github.com/eigilsagafos/valdres/pull/188)
+  [`0b3dbb7`](https://github.com/eigilsagafos/valdres/commit/0b3dbb7214d640beac5c1aead9d89e45d732e4fd)
+  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! - Core prerequisites
+  for the 1.0 adapter rework: a named-state registry with serializable SSR state
+  transfer, a commit-boundary hook, and the shared adapter-initialization
+  contract.
+
+    **Named-atom registry + `dehydrate`/`hydrate` (SSR state transfer).** Atoms
+    and atomFamilies created with a `name` now auto-register in a global
+    registry on the `globalThis.__valdres__` single-instance slot. Names are
+    global addresses: creating a second atom or family under an
+    already-registered name throws (namespace them like
+    `"@valdres/<pkg>/<atom>"`). An atomFamily registers the FAMILY under its
+    name — members never register individually and are addressed as
+    `family(...args)`; global families keep their idempotent same-name →
+    same-instance behavior; selectors never register. `dehydrate(store)` walks
+    the registry (not the store) and returns a JSON-serializable
+    `{ atoms: [name, value][], families: [name, args, value][] }` payload
+    holding only state with an own value in that store (root stores only);
+    pending-promise values are skipped with a dev warning.
+    `hydrate(store, payload)` resolves names through the registry — family
+    entries via `family(...args)` — and applies everything in one `store.txn`;
+    unknown names warn and are skipped (an atom only registers when its defining
+    module was imported, so code-split clients must load those modules before
+    hydrating). hydrate composes with schema validation: when the hydrating
+    store (or an atom) enables `schemaValidation`, every payload entry is
+    validated against its atom's `schema` as it stages — by default a failure
+    throws `SchemaValidationError` and aborts the whole hydration atomically;
+    `hydrate(store, payload, { invalid: "skip" })` instead warns and drops just
+    the failing entries.
+
+    Atoms with a bidirectional schema (zod 4 — meaningfully `z.codec`) are
+    **wire-encoded**: `dehydrate` runs the schema's encode direction to produce
+    the JSON-safe value (BigInt → string, Date → ISO string, nested codecs
+    included) and marks the entry; `hydrate` runs decode to restore the runtime
+    value. JS-native values cross a plain-JSON wire with no custom serializer —
+    give the atom a codec schema and it just works. Decode failures route
+    through the same `invalid` policy; a one-way transform schema can't encode
+    and falls back to the raw value with a dev warning; classic `parse`-only and
+    Standard-Schema-only validators transfer raw values as before. To support
+    codecs under validation, `validateSchema` now also accepts a value when the
+    schema's encode direction validates it (a stored value is output-side;
+    `parse` checks the wire side) — purely additive over the previous behavior.
+
+    **`store.onCommitEnd(callback)`.** Subscribe to commit boundaries: fires
+    exactly once per commit (set/reset/del/unset, async resolution, `store.txn`,
+    batched flush), strictly after every subscriber callback and after
+    `store.onChange`, and returns an unsubscribe function. No payload by design
+    — it is the minimal signal an adapter needs to coalesce one commit's
+    subscriber updates into a single framework batch. Listeners attach to the
+    store TREE's root: a commit anywhere in the tree (root or any scope) fires
+    them, and writes performed by subscribers during a commit fold into the
+    outermost commit's single fire. With no listener registered, commits pay one
+    counter read — no tracking, no allocation.
+
+    **Shared `InitializeCallback` + `setAtomPairs`.** The
+    `(txn: TransactionInterface) => void | [Atom<any>, any][]` initialization
+    callback every adapter accepts is now defined and exported by core,
+    alongside `setAtomPairs(set, pairs)` which applies returned pairs through
+    `txn.set`. `Transaction.reset` is now generic, making `Transaction`
+    structurally assignable to `TransactionInterface` (kills the adapters'
+    `@ts-ignore`).
+
+    **Breaking (pre-1.0):** duplicate names throw as described above, and the
+    `globalThis.__valdres__` slot changed from a bare version string to
+    `{ version, registry }` (the single-instance guard behaves as before, and a
+    leftover string slot from an older build is still detected).
+
+- [#70](https://github.com/eigilsagafos/valdres/pull/70)
+  [`ce638b0`](https://github.com/eigilsagafos/valdres/commit/ce638b0ba3871b2ba1536589da482670822c3585)
+  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! - Add opt-in runtime
+  schema validation for atoms and selectors.
+
+    Pass a `schema` to an atom, selector, or family. Any **Standard Schema**
+    (https://standard-schema.dev — Zod 3.24+/4, Valibot, ArkType, …) works, as
+    does any classic validator with a `parse(value)` method. The schema also
+    drives type inference, so `atom(undefined, { schema: z.string() })` is typed
+    as `Atom<string>` without a generic. The schema is readable back off any
+    atom, selector, or family object via `.schema` (families expose it without
+    materializing a member), so consumers like devtools or a sync layer can
+    validate values against a state's declared shape.
+
+    ```ts
+    const user = atom(
+        { name: "Ada", age: 36 },
+        {
+            schema: z.object({ name: z.string(), age: z.number().min(0) }),
+        },
+    )
+
+    // validation is opt-in per store, off by default
+    const s = store({ schemaValidation: true })
+    s.set(user, { name: "Bob", age: -1 }) // throws SchemaValidationError
+    ```
+
+    Design:
+
+    - **Opt-in, inherited like `enumerable`.** Off by default; enable per store
+      with `store({ schemaValidation: true })`. Scopes inherit it from their
+      parent, so it stays off the hot path for the common (production) case and
+      serves as a development-time safety net. An individual atom/selector can
+      override the store with its own `schemaValidation: true` (always validate
+      a boundary atom, even in a store with validation off) or
+      `schemaValidation: false` (exempt a hot one).
+    - **Validate-only.** The schema runs purely for its rejecting side effect;
+      the original value is stored unchanged. A store with validation on
+      therefore stores the same value as one with it off — no dev/prod
+      divergence. Note this means a transforming/coercing schema
+      (`z.coerce.number()`, `z.string().trim()`, `z.string().default(...)`)
+      validates but does **not** transform; avoid those here (the inferred type
+      follows the schema's output while the stored value is the input).
+    - **Validated at the write boundaries.** Atom init (static, function, async,
+      and selector defaults), atom `set` (sync + async), selector evaluation
+      (sync + async), deleted-family-member reads, and `store.txn()` —
+      transaction writes validate at staging time, so an invalid value throws in
+      the txn body and aborts the whole transaction (atomic). Batched stores
+      validate too.
+    - **Errors name the culprit.** Sync failures throw a `SchemaValidationError`
+      (exported) that names the offending atom/selector and keeps the
+      library-native error (e.g. a Zod `ZodError`) on `cause`, instead of a raw
+      error from deep inside the store. Async failures (a promise resolving to
+      an invalid value) can't be thrown to the caller, so they're reported via
+      `console.error` and the invalid value is never committed.
+
+    Known limitations:
+
+    - A **promise set inside `store.txn()`** is stored as-is and not
+      auto-resolved by the transaction (pre-existing behavior), so it is not
+      validated on resolve. Validate before setting, or set outside a
+      transaction.
+    - An invalid **async default/selector** drops its value (so a re-read
+      re-inits) — the same as a rejecting async default. Under React Suspense a
+      component that keeps re-reading will re-init/re-fetch; validate at the
+      data boundary rather than relying on async-default validation under
+      Suspense.
+    - Asynchronous schema validation (an async Standard Schema, or a Zod schema
+      with an async refinement) is not supported on the synchronous validation
+      path and surfaces as an error; use synchronous schemas.
+
+### Patch Changes
+
+- [#196](https://github.com/eigilsagafos/valdres/pull/196)
+  [`a0c959a`](https://github.com/eigilsagafos/valdres/commit/a0c959a1d41bc7041a69c87c651a6e7f5587d9ca)
+  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! - Snapshot the
+  subscriber list at dispatch start on the immediate single-atom notify path,
+  matching the React/Redux contract.
+
+    Previously the non-batched single-atom fast path iterated the LIVE
+    `data.subscriptions` set, so subscription churn from inside a subscriber's
+    callback leaked into the in-flight dispatch: a listener subscribed during
+    dispatch fired for the same change, and a listener unsubscribed mid-dispatch
+    was order-dependently skipped. The list is now copied before firing
+    (`[...subs]`), so it's fixed at dispatch start — a listener added during
+    dispatch does not fire for the in-flight change (it fires on the next one),
+    and a listener that was present at dispatch start still fires even if
+    another subscriber removes it mid-dispatch.
+
+    This is a correctness fix for direct `store.sub` users and any adapter that
+    adds or removes subscriptions inside a callback. The React adapter is
+    unaffected: `useSyncExternalStore` does its sub/unsub in React's commit
+    phase, outside valdres's dispatch. The copy happens only on the path that
+    handed `callSubscribers` a live set and only when there are subscribers to
+    fire; the deferred (multi-pass commit) and selector paths already accumulate
+    into a fresh set and were already snapshotted.
+
+- [#197](https://github.com/eigilsagafos/valdres/pull/197)
+  [`4d57212`](https://github.com/eigilsagafos/valdres/commit/4d572129587e801ebea26c00f1e8f581b78f5035)
+  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! - Make
+  `store.get(selector)` return a stable reference across repeated reads of a
+  derived selector that has no live consumer (not subscribed, no live
+  dependents). Previously the first read of such a selector returned a different
+  reference than subsequent reads, even when nothing had changed — values were
+  always correct, only reference identity was unstable while unsubscribed. This
+  is what tripped React's "The result of getSnapshot should be cached to avoid
+  an infinite loop" warning at initial mount, before `useSyncExternalStore`
+  establishes its subscription.
+
+    Root cause: a read that materializes new atoms runs an init-only propagation
+    to register them. That pass walks the just-read selector's dependents and,
+    for any selector with no live consumer, drops its freshly-computed cache
+    "for lazy re-eval" — so the very next read re-evaluated and produced a new
+    reference. The read path (`getDefault`) now restores the read selector's
+    freshly-computed value after that pass, so repeated unsubscribed reads are
+    reference-stable.
+
+    The restore applies only to the selector being read. A selector reached
+    merely transitively — e.g. one that read a family whose membership the read
+    just changed — is still invalidated, so genuine staleness is picked up on
+    its next read. A side benefit: a selector read without a subscription is now
+    computed exactly once instead of twice (the init-time double-evaluation is
+    gone).
+
+- [#190](https://github.com/eigilsagafos/valdres/pull/190)
+  [`59fab53`](https://github.com/eigilsagafos/valdres/commit/59fab53ed00b411ca3ad331f92f49c1c34fb7ae2)
+  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! - Unnamed
+  `atomFamily.name` / `selectorFamily.name` are now `undefined` instead of the
+  intrinsic JS function names `"atomFamily"` / `"selectorFamily"`. Previously a
+  family created without `{ name }` reported the declaring function's name, so
+  consumers that use `name` as an identity/address (devtools, sync/persistence
+  adapters) had to treat those literal strings as reserved "unnamed" sentinels.
+  That heuristic broke under minification (bundlers mangle the intrinsic name,
+  so an unnamed family slipped unnamed-detection in production builds) and
+  wrongly flagged a family a user legitimately named `"atomFamily"` /
+  `"selectorFamily"`.
+
+    Unnamed families now mirror unnamed atoms/selectors (`atom()` / `selector()`
+    without options have `name` undefined): `atomFamily(x).name === undefined`.
+    A family explicitly named `"atomFamily"` keeps that name and is now
+    distinguishable from an unnamed one. Named-family member naming
+    (`name + "_" + key`) is unchanged.
+
 ## 1.0.0-beta.8
 
 ### Patch Changes

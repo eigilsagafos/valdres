@@ -1,7 +1,7 @@
 {
     "name": "@valdres/bandwidth",
     "description": "Reactive network throughput, latency, and jitter from a live measurement",
-    "version": "1.0.0-beta.4",
+    "version": "1.0.0-beta.5",
     "license": "MIT",
     "author": {
         "name": "Eigil Sagafos"
@@ -31,7 +31,7 @@
         "valdres": "workspace:^"
     },
     "peerDependencies": {
-        "valdres": "^1.0.0-beta.7"
+        "valdres": "^1.0.0-beta.9"
     },
     "publishConfig": {
         "access": "public",

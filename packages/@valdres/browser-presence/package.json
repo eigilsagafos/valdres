@@ -1,7 +1,7 @@
 {
     "name": "@valdres/browser-presence",
     "description": "Whether the user is present — tab visible and window focused",
-    "version": "1.0.0-beta.4",
+    "version": "1.0.0-beta.5",
     "license": "MIT",
     "author": {
         "name": "Eigil Sagafos"
@@ -26,8 +26,8 @@
         "test:ci": "bun test"
     },
     "dependencies": {
-        "@valdres/browser-focus": "^1.0.0-beta.4",
-        "@valdres/browser-visibility": "^1.0.0-beta.4"
+        "@valdres/browser-focus": "^1.0.0-beta.5",
+        "@valdres/browser-visibility": "^1.0.0-beta.5"
     },
     "devDependencies": {
         "@happy-dom/global-registrator": "20.0.5",
@@ -41,7 +41,7 @@
         "valdres-react": "workspace:^"
     },
     "peerDependencies": {
-        "valdres": "^1.0.0-beta.7"
+        "valdres": "^1.0.0-beta.9"
     },
     "publishConfig": {
         "access": "public",
