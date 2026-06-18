@@ -128,7 +128,7 @@ const handle = connectReduxDevtools(store())
 | `serialize` | `(state, value) => unknown` | identity | Shape values that aren't structured-cloneable before they're sent. |
 | `scopes` | `boolean` | `true` | Include scope state under `@scopes` and react to scope writes. |
 | `unnamed` | `"track" \| "ignore"` | `"track"` | `track` labels unnamed atoms `unnamed_atom_N`; `ignore` omits them. |
-| `exclude` | `ExcludeRule \| ExcludeRule[]` | — | Leave atoms/selectors out entirely — neither seeded nor reported. A rule is an atom/selector reference, an `atomFamily` (all its members), a `name` string, or a predicate `(state) => boolean`. |
+| `exclude` | `ExcludeRule \| ExcludeRule[]` | — | Leave atoms/selectors out entirely — neither seeded nor reported. A rule is an atom/selector reference, an `atomFamily`/`selectorFamily` (all its members), a `name` string, or a predicate `(state) => boolean`. |
 | `selectors` | `boolean` | `false` | Also report named selectors under `@computed` (display-only, never restored). |
 
 ### Excluding high-frequency atoms
@@ -140,7 +140,7 @@ your store keeps working normally:
 
 ```ts
 connectReduxDevtools(store, {
-  // any of: a reference, a name, an atomFamily, a predicate, or a mix
+  // any of: a reference, a name, an atomFamily/selectorFamily, a predicate, or a mix
   exclude: [cursorPositionAtom, "pointerAtom", pointerFamily],
 })
 ```

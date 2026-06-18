@@ -1,9 +1,16 @@
-import type { Atom, AtomFamily, Selector, SnapshotEntry } from "valdres"
+import type {
+    Atom,
+    AtomFamily,
+    Selector,
+    SelectorFamily,
+    SnapshotEntry,
+} from "valdres"
 
 /**
  * One way to single out atoms (or selectors) to exclude from DevTools:
  * - an atom / selector reference — matched by identity;
- * - an `atomFamily` reference — matches every one of its members;
+ * - an `atomFamily` / `selectorFamily` reference — matches every one of its
+ *   members;
  * - a `name` string — matches an atom/selector with that `name`, or any member
  *   of a family with that `name`;
  * - a predicate `(state) => boolean` over the changed atom/selector for full
@@ -13,6 +20,7 @@ export type ExcludeRule =
     | Atom<any>
     | AtomFamily<any>
     | Selector<any>
+    | SelectorFamily<any, any>
     | string
     | ((state: SnapshotEntry["state"]) => boolean)
 
@@ -48,10 +56,10 @@ export interface ConnectReduxDevtoolsOptions {
     /**
      * Atoms (or selectors) to leave out of DevTools entirely — neither seeded
      * nor reported as actions. Pass an atom/selector reference, an `atomFamily`
-     * (excludes all its members), a `name` string, a predicate
-     * `(state) => boolean`, or an array mixing any of these. Use this for
-     * high-frequency churn (e.g. a `cursorPositionAtom`) that would otherwise
-     * flood the timeline and make time-travel unusable.
+     * or `selectorFamily` (excludes all its members), a `name` string, a
+     * predicate `(state) => boolean`, or an array mixing any of these. Use this
+     * for high-frequency churn (e.g. a `cursorPositionAtom`) that would
+     * otherwise flood the timeline and make time-travel unusable.
      */
     exclude?: ExcludeOption
     /**

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, mock, test } from "bun:test"
-import { atom, atomFamily, selector, store } from "valdres"
+import { atom, atomFamily, selector, selectorFamily, store } from "valdres"
 import { connectReduxDevtools } from "./connectReduxDevtools"
 import type {
     ReduxDevtoolsConnection,
@@ -403,6 +403,30 @@ describe("connectReduxDevtools", () => {
 
         const labels = fake.sent.map(e => e.action?.type)
         expect(labels).toEqual(["exf_count"])
+        handle.disconnect()
+    })
+
+    test("exclude a selectorFamily excludes all its members from @computed", () => {
+        const fake = makeFakeExtension()
+        install(fake.ext)
+        const s = store()
+        const a = atom(0, { name: "exsf_a" })
+        const doubles = selectorFamily(
+            (k: string) => get => `${k}:${get(a) * 2}`,
+            { name: "exsf_doubles" },
+        )
+        s.sub(doubles("x"), () => {}) // live, so it recomputes on change
+        const handle = connectReduxDevtools(s, {
+            selectors: true,
+            exclude: doubles,
+        })
+
+        s.set(a, 5)
+
+        const last = fake.sent.at(-1)!
+        // The atom is reported, but the excluded selector-family member is not.
+        expect(last.state.exsf_a).toBe(5)
+        expect(last.state["@computed"]?.exsf_doubles_x).toBeUndefined()
         handle.disconnect()
     })
 
