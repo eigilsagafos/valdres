@@ -13,6 +13,18 @@ import { selectorFamily } from "../src/selectorFamily"
 // entries ARE released when the WeakMap (inside the store's data) is itself
 // collected. Selector getter closures must be defined in a separate scope
 // from the store to avoid JSC scope-capture keeping the store alive.
+//
+// NOTE: the valdres package test script intentionally runs WITHOUT `--parallel`
+// (see package.json). These collection checks depend on JSC actually reclaiming
+// a dropped store's object graph; under `bun test --parallel`, the concurrent
+// heap pressure from other test files leaves recently-dead allocations pinned by
+// JSC's conservative stack scan (see LeakDetector), so the store isn't collected
+// in the GC window and these tests flake. A read selector now caches its value
+// on the store (so repeated unsubscribed reads are reference-stable — see
+// unsubscribedSelectorRefStability.test.ts), which ties that value's lifetime to
+// the store's and makes more of these tests sensitive to that pressure. Running
+// the suite in a single non-parallel process keeps the heap quiet enough for the
+// collection to happen deterministically.
 
 describe("memory leaks (atoms)", () => {
     test("unreferenced atom value is collected", async () => {
@@ -156,13 +168,17 @@ describe("memory leaks (subscriptions)", () => {
         const baseAtom = atom(1)
         const sel = selector(get => get(baseAtom) + 1)
         expect(s.get(sel)).toBe(2)
-        // After init-time propagation, sel has no subscribers/dependents so
-        // its value is removed from data.values to allow GC.
-        expect(s.data.values.has(sel)).toBe(false)
+        // The freshly-computed value of the READ selector is kept cached after
+        // init-time propagation (getDefault restores it) so repeated unsubscribed
+        // reads are reference-stable — same as if it had been read twice. The GC
+        // that matters happens on a real change with no live consumer (below) and
+        // on unsubscribe, not on read.
+        expect(s.data.values.has(sel)).toBe(true)
         // Subscribe to baseAtom (not sel) so propagation runs on change
         const unsub = s.sub(baseAtom, () => {})
         s.set(baseAtom, 2)
-        // Value is still cleared — not stashed in any secondary cache
+        // A genuine change with no live consumer DOES drop the value (this is the
+        // non-init propagation path) — not stashed in any secondary cache.
         expect(s.data.values.has(sel)).toBe(false)
         // Lazy re-evaluation on next read still works
         expect(s.get(sel)).toBe(3)
