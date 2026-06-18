@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, mock, test } from "bun:test"
-import { atom, atomFamily, selector, store } from "valdres"
+import { atom, atomFamily, selector, selectorFamily, store } from "valdres"
 import { connectReduxDevtools } from "./connectReduxDevtools"
 import type {
     ReduxDevtoolsConnection,
@@ -349,6 +349,138 @@ describe("connectReduxDevtools", () => {
         const handle = connectReduxDevtools(s, { unnamed: "ignore" })
 
         s.set(anon, 1)
+
+        expect(fake.sent).toHaveLength(0)
+        handle.disconnect()
+    })
+
+    test("exclude by atom reference drops it from the timeline", () => {
+        const fake = makeFakeExtension()
+        install(fake.ext)
+        const s = store()
+        const cursor = atom(0, { name: "ex_cursor" })
+        const count = atom(0, { name: "ex_count" })
+        const handle = connectReduxDevtools(s, { exclude: cursor })
+
+        s.set(cursor, 1)
+        s.set(cursor, 2)
+        s.set(count, 5)
+
+        const labels = fake.sent.map(e => e.action?.type)
+        expect(labels).toEqual(["ex_count"])
+        expect(fake.sent.at(-1)!.state.ex_cursor).toBeUndefined()
+        expect(fake.sent.at(-1)!.state.ex_count).toBe(5)
+        handle.disconnect()
+    })
+
+    test("exclude by name string", () => {
+        const fake = makeFakeExtension()
+        install(fake.ext)
+        const s = store()
+        const cursor = atom(0, { name: "exn_cursor" })
+        const count = atom(0, { name: "exn_count" })
+        const handle = connectReduxDevtools(s, { exclude: "exn_cursor" })
+
+        s.set(cursor, 1)
+        s.set(count, 5)
+
+        const labels = fake.sent.map(e => e.action?.type)
+        expect(labels).toEqual(["exn_count"])
+        handle.disconnect()
+    })
+
+    test("exclude an atomFamily excludes all its members", () => {
+        const fake = makeFakeExtension()
+        install(fake.ext)
+        const s = store()
+        const cursors = atomFamily(0, { name: "exf_cursors" })
+        const count = atom(0, { name: "exf_count" })
+        const handle = connectReduxDevtools(s, { exclude: cursors })
+
+        s.set(cursors("a"), 1)
+        s.set(cursors("b"), 2)
+        s.set(count, 5)
+
+        const labels = fake.sent.map(e => e.action?.type)
+        expect(labels).toEqual(["exf_count"])
+        handle.disconnect()
+    })
+
+    test("exclude a selectorFamily excludes all its members from @computed", () => {
+        const fake = makeFakeExtension()
+        install(fake.ext)
+        const s = store()
+        const a = atom(0, { name: "exsf_a" })
+        const doubles = selectorFamily(
+            (k: string) => get => `${k}:${get(a) * 2}`,
+            { name: "exsf_doubles" },
+        )
+        s.sub(doubles("x"), () => {}) // live, so it recomputes on change
+        const handle = connectReduxDevtools(s, {
+            selectors: true,
+            exclude: doubles,
+        })
+
+        s.set(a, 5)
+
+        const last = fake.sent.at(-1)!
+        // The atom is reported, but the excluded selector-family member is not.
+        expect(last.state.exsf_a).toBe(5)
+        expect(last.state["@computed"]?.exsf_doubles_x).toBeUndefined()
+        handle.disconnect()
+    })
+
+    test("exclude accepts an array mixing references, names and predicates", () => {
+        const fake = makeFakeExtension()
+        install(fake.ext)
+        const s = store()
+        const cursor = atom(0, { name: "exa_cursor" })
+        const ping = atom(0, { name: "exa_ping" })
+        const noisy = atom(0, { name: "exa_internal_x" })
+        const count = atom(0, { name: "exa_count" })
+        const handle = connectReduxDevtools(s, {
+            exclude: [
+                cursor,
+                "exa_ping",
+                state => state.name?.startsWith("exa_internal") ?? false,
+            ],
+        })
+
+        s.set(cursor, 1)
+        s.set(ping, 1)
+        s.set(noisy, 1)
+        s.set(count, 5)
+
+        const labels = fake.sent.map(e => e.action?.type)
+        expect(labels).toEqual(["exa_count"])
+        handle.disconnect()
+    })
+
+    test("an excluded atom is not seeded from an enumerable store", () => {
+        const fake = makeFakeExtension()
+        install(fake.ext)
+        const s = store("exseed_root", { enumerable: true })
+        const cursor = atom(0, { name: "exseed_cursor" })
+        const count = atom(0, { name: "exseed_count" })
+        s.set(cursor, 7)
+        s.set(count, 3)
+
+        const handle = connectReduxDevtools(s, { exclude: cursor })
+
+        const init = fake.inits[0] as any
+        expect(init.exseed_cursor).toBeUndefined()
+        expect(init.exseed_count).toBe(3)
+        handle.disconnect()
+    })
+
+    test("excluding every changed atom emits no action", () => {
+        const fake = makeFakeExtension()
+        install(fake.ext)
+        const s = store()
+        const cursor = atom(0, { name: "exnone_cursor" })
+        const handle = connectReduxDevtools(s, { exclude: cursor })
+
+        s.set(cursor, 1)
 
         expect(fake.sent).toHaveLength(0)
         handle.disconnect()
