@@ -68,7 +68,14 @@ export const evaluateSelector = <V>(
     depsChangeOut?: DepsChange,
 ) => {
     const currentDependencies = data.stateDependencies.get(selector)
-    const updatedDepsArray: State<any>[] = []
+    // Deduped set of deps read this evaluation. Using a Set (not an array)
+    // makes change-detection robust to a dependency read MORE THAN ONCE in one
+    // evaluation (e.g. `cond ? get(a) + get(b) : get(a) + get(a)`): comparing
+    // against an array's length (which counts duplicates) previously masked a
+    // removed dependency whenever a duplicate kept the raw count equal, leaving
+    // a stale reverse edge in stateDependents. It also avoids the later
+    // array→Set conversion. Insertion order is preserved (Set semantics).
+    const updatedDeps = new Set<State<any>>()
     let depsChanged = false
     let evaluationComplete = false
 
@@ -165,7 +172,7 @@ export const evaluateSelector = <V>(
                     initializedAtomsSet,
                     circularDependencySet,
                 )
-                updatedDepsArray.push(state)
+                updatedDeps.add(state)
                 if (!depsChanged && (!currentDependencies || !currentDependencies.has(state))) {
                     depsChanged = true
                 }
@@ -192,12 +199,12 @@ export const evaluateSelector = <V>(
         // For sync selectors, check if dep count changed (handles removed deps).
         // For async selectors, skip — the dep count is incomplete until the
         // promise resolves.
-        if (!isAsyncResult && !depsChanged && currentDependencies && currentDependencies.size !== updatedDepsArray.length) {
+        if (!isAsyncResult && !depsChanged && currentDependencies && currentDependencies.size !== updatedDeps.size) {
             depsChanged = true
         }
 
         if (depsChanged || !currentDependencies) {
-            const updatedDependencies = new Set<State<any>>(updatedDepsArray)
+            const updatedDependencies = new Set<State<any>>(updatedDeps)
             // For async selectors, retain all previous deps so they aren't
             // prematurely removed (and unmounted) before the continuation runs.
             // Stale deps are cleaned up when the promise resolves (see
@@ -239,7 +246,7 @@ export const evaluateSelector = <V>(
         if (isPromiseLike(result)) {
             // Build the tracking set from sync deps discovered so far. Late
             // `get` calls (after await) will add to this set dynamically.
-            allDepsThisEval = new Set<State>(updatedDepsArray)
+            allDepsThisEval = new Set<State>(updatedDeps)
             pendingAsyncDeps.set(result, allDepsThisEval)
         }
 
