@@ -42,12 +42,14 @@ export const unsubscribe = <V>(
             // dependency groups — their mutual contributions keep each other's
             // count > 0 once the anchor leaves. Reconcile from ground-truth
             // reachability so a cyclic subtree that lost its only subscriber is
-            // marked non-live. Needed ONLY when a cycle is present, and a cycle
-            // is selector-only (atoms/family-members are graph sinks), so an atom
-            // unsubscribe can skip in O(1) without even building a region; a
-            // selector is gated on regionHasCycle (acyclic → propagateNotLive
-            // already drained the counts exactly → skip the O(region+dependents)
-            // reconcile). This keeps the plain sub/unsub hot path allocation-free.
+            // marked non-live. Needed ONLY when a cycle is present, and a cycle is
+            // selector-only (only selectors are keyed in stateDependencies; atoms
+            // and atom-family members are graph sinks), so unsubscribing an atom
+            // can skip in O(1) without even building a region; a selector (incl. a
+            // selectorFamily member) is gated on regionHasCycle (acyclic →
+            // propagateNotLive already drained the counts exactly → skip the
+            // O(region+dependents) reconcile). Keeps the plain sub/unsub hot path
+            // allocation-free.
             if (
                 isSelector(state) &&
                 regionHasCycle(new Set([state as State<V>]), data)

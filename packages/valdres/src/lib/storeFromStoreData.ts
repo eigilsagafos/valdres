@@ -15,7 +15,11 @@ import { unsetValue } from "./unsetValue"
 import { createStoreData } from "./createStoreData"
 import { deleteFamilyAtom } from "./deleteFamilyAtom"
 import { getState } from "./getState"
-import { reconcileLivenessAfterChurn, regionHasCycle } from "./mountAtom"
+import {
+    beginLivenessPass,
+    endLivenessPass,
+    reconcileLivenessAfterChurn,
+} from "./mountAtom"
 import { onCommitEnd } from "./onCommitEnd"
 import { onStoreChange } from "./onStoreChange"
 import { propagateAtomUpdate } from "./propagateUpdatedAtoms"
@@ -129,15 +133,8 @@ export function storeFromStoreData(
         // guard composes with propagation (the init-propagation below sees the
         // collector already owned and defers its reconcile to us). Only the
         // cache-miss path reaches here; cache hits returned above.
-        const ownsLivenessSeeds = !data.livenessPassActive
-        if (ownsLivenessSeeds) {
-            // Boolean ownership token; the Set is allocated lazily on first seed.
-            // A first-init read seeds nothing (the seed guard needs an existing
-            // dependency set), so a cold selector read stays allocation-free.
-            data.livenessPassActive = true
-            data.livenessRemovalArmed = false
-            data.livenessLazyArmed = false
-        }
+        const ownsLivenessSeeds = beginLivenessPass(data)
+        let seedsToReconcile: Set<State> | null = null
         try {
             res = getState(state, data, _initSet)
         } finally {
@@ -147,27 +144,11 @@ export function storeFromStoreData(
                 propagateAtomUpdate(atoms, data, true)
                 initialized = true
             }
-            if (ownsLivenessSeeds) {
-                const seeds = data.livenessSeeds
-                const lazyArmed = data.livenessLazyArmed
-                const removalArmed = data.livenessRemovalArmed
-                data.livenessPassActive = false
-                data.livenessSeeds = undefined
-                data.livenessLazyArmed = undefined
-                data.livenessRemovalArmed = undefined
-                // Same gate as the propagation pass: a lazy re-init reconciles
-                // unconditionally (the incremental path never ran for it); a
-                // removal only when the churned region has a cycle.
-                if (
-                    seeds &&
-                    seeds.size > 0 &&
-                    (lazyArmed ||
-                        (removalArmed && regionHasCycle(seeds as Set<State>, data)))
-                ) {
-                    reconcileLivenessAfterChurn(seeds as Set<State>, data)
-                }
-            }
+            // Release the collector in the finally (a throwing getState/onMount
+            // still releases it); reconcile the returned region after the try.
+            if (ownsLivenessSeeds) seedsToReconcile = endLivenessPass(data)
         }
+        if (seedsToReconcile) reconcileLivenessAfterChurn(seedsToReconcile, data)
         // The init-only propagation above walks the dependents of the just-
         // initialized atoms and, for any selector with no live consumer, drops
         // its cached value "for lazy re-eval on next read". When that selector is

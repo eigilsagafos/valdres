@@ -261,12 +261,15 @@ export const evaluateSelector = <V>(
                         }
                         // Removed dep: arm the removal path only when the dropped
                         // dep is a SELECTOR. A directed cycle is selector-only —
-                        // atoms/family-members are never keyed in stateDependencies
-                        // (graph sinks), so removing one can be on no cycle and the
-                        // incremental teardown is already exact. For a selector dep
-                        // we seed its torn-down subtree and arm; the end-of-pass
-                        // reconcile is then still gated on regionHasCycle, so an
-                        // acyclic selector removal also stays on the incremental path.
+                        // only selectors are keyed in stateDependencies; atoms and
+                        // atom-family members are graph sinks (no out-edges), so
+                        // removing one can be on no cycle and the incremental
+                        // teardown is already exact. (selectorFamily members ARE
+                        // selectors — isSelector is true for them, so they take
+                        // this gated path.) For a selector dep we seed its
+                        // torn-down subtree and arm; the end-of-pass reconcile is
+                        // then still gated on regionHasCycle, so an acyclic selector
+                        // removal also stays on the incremental path.
                         if (data.livenessPassActive && isSelector(state)) {
                             ;(data.livenessSeeds ??= new Set<State>()).add(state)
                             data.livenessRemovalArmed = true

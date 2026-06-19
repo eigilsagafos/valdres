@@ -2,8 +2,8 @@ import type { State } from "../types/State"
 import type { StoreData } from "../types/StoreData"
 import { storeFromStoreData } from "./storeFromStoreData"
 
-// Shared immutable empty set — a missing stateDependencies entry (atoms /
-// family-members are graph sinks) yields a zero-length iterator without
+// Shared immutable empty set — a missing stateDependencies entry (atoms and
+// atom-family members are graph sinks) yields a zero-length iterator without
 // allocating. Never mutated.
 const EMPTY: Set<State> = new Set()
 
@@ -137,9 +137,10 @@ export const onLiveDependencyRemoved = (dep: State, data: StoreData) => {
  *
  * Iterative DFS over `data.stateDependencies` (down-edges only) restricted to the
  * seeds' closure; an `onPath` (gray) set detects a back-edge, a `done` (black) set
- * memoizes fully-explored acyclic subgraphs. Atoms/family-members are never keyed
- * in `stateDependencies` (they are graph sinks), so a region of pure atom deps has
- * no out-edges and returns false in O(seeds).
+ * memoizes fully-explored acyclic subgraphs. Only selectors are keyed in
+ * `stateDependencies`; atoms and atom-family members are graph sinks (no
+ * out-edges), so a region of pure atom deps returns false in O(seeds).
+ * (selectorFamily members ARE selectors and do have out-edges.)
  */
 export const regionHasCycle = (
     seeds: Set<State>,
@@ -176,6 +177,53 @@ export const regionHasCycle = (
         }
     }
     return false
+}
+
+/**
+ * Begin a liveness-reconcile pass. Returns true iff THIS call owns the pass (the
+ * outermost one) — a nested pass returns false and must not release or reconcile.
+ * The collector Set (`livenessSeeds`) is allocated lazily by `evaluateSelector` on
+ * the first actual seed, so a no-churn / first-init pass stays allocation-free.
+ */
+export const beginLivenessPass = (data: StoreData): boolean => {
+    if (data.livenessPassActive) return false
+    data.livenessPassActive = true
+    data.livenessRemovalArmed = false
+    data.livenessLazyArmed = false
+    return true
+}
+
+/**
+ * End the liveness pass owned by the caller: reset all per-pass state and return
+ * the seed region to reconcile, or null if none is owed. This is the single
+ * definition of the reconcile gate — a lazy re-init arms it unconditionally (the
+ * incremental path never ran for those edges); a removal arms it only when the
+ * region has a cycle (both bugs a removal can cause require one, and an acyclic
+ * removal is already exact incrementally).
+ *
+ * Call from the owning pass's `finally` so a throwing onMount still releases the
+ * collector — but reconcile the RETURNED region AFTER that finally, never inside
+ * it: `reconcileLivenessAfterChurn` re-enters user onMount/cleanup, so running it
+ * while an exception is in flight would mask the original error.
+ */
+export const endLivenessPass = (data: StoreData): Set<State> | null => {
+    const seeds = data.livenessSeeds as Set<State> | undefined
+    const lazyArmed = data.livenessLazyArmed
+    const removalArmed = data.livenessRemovalArmed
+    // Reset flags to false (not undefined) so the property stays monomorphic
+    // boolean; livenessSeeds back to undefined = "unallocated / no owner".
+    data.livenessPassActive = false
+    data.livenessSeeds = undefined
+    data.livenessLazyArmed = false
+    data.livenessRemovalArmed = false
+    if (
+        seeds &&
+        seeds.size > 0 &&
+        (lazyArmed || (removalArmed && regionHasCycle(seeds, data)))
+    ) {
+        return seeds
+    }
+    return null
 }
 
 /**

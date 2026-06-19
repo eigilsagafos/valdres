@@ -190,24 +190,8 @@ const runDynamicLiveCountSeed = (
 }
 
 describe("liveDependentCount follow-up regressions", () => {
-    test("dependency diff removes a stale dependency when a branch reads another dependency twice", () => {
-        const useB = atom(true, { name: "live-followup.dup.use-b" })
-        const a = atom(1, { name: "live-followup.dup.a" })
-        const b = atom(2, { name: "live-followup.dup.b" })
-        const root = selector(
-            get => (get(useB) ? get(a) + get(b) : get(a) + get(a)),
-            { name: "live-followup.dup.root" },
-        )
-
-        const s = store("live-followup.dup")
-        s.sub(root, () => {}, false)
-        s.set(useB, false)
-
-        expect(s.data.stateDependencies.get(root)).not.toContain(b)
-        expect(s.data.stateDependents.get(b) ?? new Set()).not.toContain(root)
-        expect(s.data.liveDependentCount.get(b) ?? 0).toBe(0)
-    })
-
+    // (The "dependency read twice masks a removal" regression lives in the
+    // dedicated dependencyDedup.test.ts — same scenario, kept there.)
     test("lazy reinitialization after a throwing dependency reconciles live counts", () => {
         const gate = atom(false, { name: "live-followup.throw.gate" })
         const ready = atom(false, { name: "live-followup.throw.ready" })

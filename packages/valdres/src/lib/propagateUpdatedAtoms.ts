@@ -20,12 +20,13 @@ import {
     handleSelectorResult,
 } from "./initSelector"
 import {
+    beginLivenessPass,
+    endLivenessPass,
     isLive,
     mountTransitiveDeps,
     onLiveDependencyAdded,
     onLiveDependencyRemoved,
     reconcileLivenessAfterChurn,
-    regionHasCycle,
     unmountOrphanedDeps,
 } from "./mountAtom"
 import {
@@ -1016,28 +1017,15 @@ const propagateSelectorUpdates = (
     // outside the loop — unconditional). A purely-additive loop-driven pass is
     // correct incrementally (even through cycles), so it arms neither. Allocated
     // only when a dep-set actually changes — the no-churn fast path never trips it.
-    const ownsLivenessSeeds = !data.livenessPassActive
-    if (ownsLivenessSeeds) {
-        // Take ownership via the boolean token; the Set is allocated lazily by
-        // evaluateSelector on the first actual seed, so a no-churn pass (and the
-        // 1000-no-churn-passes-per-write scope fan-out) stays allocation-free.
-        data.livenessPassActive = true
-        data.livenessRemovalArmed = false
-        data.livenessLazyArmed = false
-    }
-
-    // Captured in the finally and used by the reconcile AFTER the owned region.
-    // The loop and propagateDownstreamTopo run user onMount/cleanup (via
-    // mountTransitiveDeps / unmountOrphanedDeps) that can throw; the finally
-    // guarantees the collector is released even then. Without it a throwing
-    // onMount would strand `data.livenessSeeds` non-undefined forever, so no later
-    // pass could ever own it again — silently disabling the reconcile (the
-    // freeze/leak return) and leaking strong refs to every churned selector. This
-    // is realistic here: browser-API atoms bootstrap in onMount and throw when the
-    // API is unavailable.
-    let seedsToReconcile: Set<State> | undefined
-    let lazyArmed = false
-    let removalArmed = false
+    // Take ownership of the liveness collector. The loop and
+    // propagateDownstreamTopo below run user onMount/cleanup (via
+    // mountTransitiveDeps / unmountOrphanedDeps) that can throw, so endLivenessPass
+    // runs in the `finally` (else a throwing onMount would strand the collector and
+    // permanently disable the reconcile) — and the returned region is reconciled
+    // AFTER the try, so a throwing pass doesn't re-enter user code and mask its
+    // error.
+    const ownsLivenessSeeds = beginLivenessPass(data)
+    let seedsToReconcile: Set<State> | null = null
     try {
         // Reused across every re-evaluated selector — see propagateDownstreamTopo.
         const depsChange: DepsChange = {}
@@ -1104,33 +1092,12 @@ const propagateSelectorUpdates = (
             )
         }
     } finally {
-        // Always release ownership of the collector — see the note above. Capture
-        // the seeds + arm flags for the reconcile that runs after this block.
-        if (ownsLivenessSeeds) {
-            seedsToReconcile = data.livenessSeeds as Set<State> | undefined
-            lazyArmed = !!data.livenessLazyArmed
-            removalArmed = !!data.livenessRemovalArmed
-            data.livenessPassActive = false
-            data.livenessSeeds = undefined
-            data.livenessLazyArmed = undefined
-            data.livenessRemovalArmed = undefined
-        }
+        // Always release the collector — even if a user onMount/cleanup above threw
+        // (see the note at the top). Returns the region to reconcile, or null.
+        if (ownsLivenessSeeds) seedsToReconcile = endLivenessPass(data)
     }
 
-    // Backstop reconcile, run AFTER the owned region is released so a throwing
-    // pass (whose finally already ran) does NOT re-enter user onMount/cleanup here
-    // and mask its original error — an in-flight exception skips this block
-    // entirely. A lazy re-init arms it unconditionally (the incremental path never
-    // ran for those edges). A removal arms it too, but both bugs a removal can
-    // cause — cyclic leak and transient-drop freeze — require a directed cycle in
-    // the region; on an acyclic region the inline onLiveDependencyRemoved already
-    // equals ground truth, so it is gated on regionHasCycle (the hot acyclic
-    // dep-churn / sub-unsub paths short-circuit it and skip the reconcile).
-    if (
-        seedsToReconcile &&
-        seedsToReconcile.size > 0 &&
-        (lazyArmed || (removalArmed && regionHasCycle(seedsToReconcile, data)))
-    ) {
-        reconcileLivenessAfterChurn(seedsToReconcile, data)
-    }
+    // Reconcile AFTER the owned region is released (an in-flight exception from the
+    // try skips this entirely, so a throwing pass never re-enters user code here).
+    if (seedsToReconcile) reconcileLivenessAfterChurn(seedsToReconcile, data)
 }
