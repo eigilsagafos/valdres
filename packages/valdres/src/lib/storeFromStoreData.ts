@@ -129,9 +129,12 @@ export function storeFromStoreData(
         // guard composes with propagation (the init-propagation below sees the
         // collector already owned and defers its reconcile to us). Only the
         // cache-miss path reaches here; cache hits returned above.
-        const ownsLivenessSeeds = !data.livenessSeeds
+        const ownsLivenessSeeds = !data.livenessPassActive
         if (ownsLivenessSeeds) {
-            data.livenessSeeds = new Set()
+            // Boolean ownership token; the Set is allocated lazily on first seed.
+            // A first-init read seeds nothing (the seed guard needs an existing
+            // dependency set), so a cold selector read stays allocation-free.
+            data.livenessPassActive = true
             data.livenessRemovalArmed = false
             data.livenessLazyArmed = false
         }
@@ -148,6 +151,7 @@ export function storeFromStoreData(
                 const seeds = data.livenessSeeds
                 const lazyArmed = data.livenessLazyArmed
                 const removalArmed = data.livenessRemovalArmed
+                data.livenessPassActive = false
                 data.livenessSeeds = undefined
                 data.livenessLazyArmed = undefined
                 data.livenessRemovalArmed = undefined

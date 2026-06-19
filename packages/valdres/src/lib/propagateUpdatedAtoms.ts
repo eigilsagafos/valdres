@@ -1016,9 +1016,12 @@ const propagateSelectorUpdates = (
     // outside the loop — unconditional). A purely-additive loop-driven pass is
     // correct incrementally (even through cycles), so it arms neither. Allocated
     // only when a dep-set actually changes — the no-churn fast path never trips it.
-    const ownsLivenessSeeds = !data.livenessSeeds
+    const ownsLivenessSeeds = !data.livenessPassActive
     if (ownsLivenessSeeds) {
-        data.livenessSeeds = new Set<State>()
+        // Take ownership via the boolean token; the Set is allocated lazily by
+        // evaluateSelector on the first actual seed, so a no-churn pass (and the
+        // 1000-no-churn-passes-per-write scope fan-out) stays allocation-free.
+        data.livenessPassActive = true
         data.livenessRemovalArmed = false
         data.livenessLazyArmed = false
     }
@@ -1107,6 +1110,7 @@ const propagateSelectorUpdates = (
             seedsToReconcile = data.livenessSeeds as Set<State> | undefined
             lazyArmed = !!data.livenessLazyArmed
             removalArmed = !!data.livenessRemovalArmed
+            data.livenessPassActive = false
             data.livenessSeeds = undefined
             data.livenessLazyArmed = undefined
             data.livenessRemovalArmed = undefined

@@ -23,11 +23,19 @@ export type StoreData = {
      *  has direct subscribers OR this count is > 0. Maintained incrementally
      *  on sub/unsub and on dep add/remove instead of walking the graph. */
     liveDependentCount: WeakMap<WeakKey, number>
-    /** Transient, set only while a selector-update pass is in flight: every
-     *  selector whose dependency SET changed during the pass (added or removed,
-     *  via the propagation loop OR a lazy re-init through `get`), plus the
-     *  removed deps. Drives the region the end-of-pass liveness reconcile
-     *  recomputes from reachability. Undefined outside a pass — the no-churn
+    /** True while a selector-update / cold-read pass owns the liveness collector.
+     *  This (not `livenessSeeds`) is the ownership token, so the Set can be
+     *  allocated LAZILY on the first actual seed: a no-churn pass (or a first-init
+     *  read, which seeds nothing) never allocates one. Critical on fan-out-to-
+     *  many-stores paths (e.g. set-atom-across-1000-scopes runs 1000 no-churn
+     *  passes per write — eager allocation was 1000 wasted Sets). */
+    livenessPassActive?: boolean
+    /** Transient, set only while a pass is in flight: every selector whose
+     *  dependency SET changed during the pass (added or removed, via the
+     *  propagation loop OR a lazy re-init through `get`), plus the removed deps.
+     *  Drives the region the end-of-pass liveness reconcile recomputes from
+     *  reachability. Allocated lazily on first seed (see `livenessPassActive`) and
+     *  reset to undefined when the owning pass ends — the no-churn / first-init
      *  fast path never allocates it. */
     livenessSeeds?: Set<WeakKey>
     /** Transient, set only while a pass is in flight: true once a dependency was

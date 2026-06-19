@@ -212,8 +212,10 @@ export const evaluateSelector = <V>(
             // seeded individually below to cover torn-down subtrees. Only when an
             // EXISTING selector changed — a first init is reached (and seeded)
             // through whatever live selector just read it.
-            if (data.livenessSeeds && currentDependencies) {
-                data.livenessSeeds.add(selector)
+            if (data.livenessPassActive && currentDependencies) {
+                // Allocate the collector lazily on first seed — a no-churn pass
+                // never reaches here, so it stays allocation-free.
+                ;(data.livenessSeeds ??= new Set<State>()).add(selector)
                 // A lazy re-init (no depsChangeOut) commits these edges without
                 // going through the propagation loop's onLiveDependency* calls,
                 // so the incremental count never sees them — arm the reconcile
@@ -265,8 +267,8 @@ export const evaluateSelector = <V>(
                         // we seed its torn-down subtree and arm; the end-of-pass
                         // reconcile is then still gated on regionHasCycle, so an
                         // acyclic selector removal also stays on the incremental path.
-                        if (data.livenessSeeds && isSelector(state)) {
-                            data.livenessSeeds.add(state)
+                        if (data.livenessPassActive && isSelector(state)) {
+                            ;(data.livenessSeeds ??= new Set<State>()).add(state)
                             data.livenessRemovalArmed = true
                         }
                     }
