@@ -221,7 +221,13 @@ export const evaluateSelector = <V>(
                 // the incremental path never ran for it).
                 if (!depsChangeOut) data.livenessLazyArmed = true
             }
-            const updatedDependencies = new Set<State<any>>(updatedDeps)
+            // Sync selectors store the freshly-read dep set directly — no copy.
+            // Async selectors need a separate set so previous deps can be merged
+            // in (below) without mutating `updatedDeps`, which is still read as
+            // the promise-tracking seed (`allDepsThisEval`) further down.
+            const updatedDependencies = isAsyncResult
+                ? new Set<State<any>>(updatedDeps)
+                : updatedDeps
             // For async selectors, retain all previous deps so they aren't
             // prematurely removed (and unmounted) before the continuation runs.
             // Stale deps are cleaned up when the promise resolves (see
