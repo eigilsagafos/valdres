@@ -1008,16 +1008,19 @@ const propagateSelectorUpdates = (
     if (selectors.size === 0) return
 
     let downstreamSeeds: Set<Selector> | undefined
-    // Own the per-pass liveness-seed collector. `evaluateSelector` populates
-    // `data.livenessSeeds` with every selector whose dependency SET changed —
-    // via the propagation loop OR a lazy re-init through `get` — plus removed
-    // deps. After the pass we reconcile liveness for that region from
-    // ground-truth reachability, which is robust to cycles, lazily-added edges,
-    // and transient drops in BOTH directions (the incremental refcount is not).
-    // Allocated only when a dep-set actually changes — the no-churn fast path
-    // (value-only re-eval) never trips it.
+    // Own the per-pass liveness-reconcile collector. `evaluateSelector` populates
+    // `data.livenessSeeds` (selectors whose dep SET changed + removed deps) and
+    // sets `data.livenessNeedsReconcile` when it does something the inline
+    // onLiveDependency{Added,Removed} calls can't settle: a REMOVAL (cyclic leak
+    // / transient freeze) or a LAZY re-init that commits edges outside the loop.
+    // A purely-additive pass driven by the loop is correct incrementally (even
+    // through cycles), so it skips the reconcile. Allocated only when a dep-set
+    // actually changes — the no-churn fast path never trips it.
     const ownsLivenessSeeds = !data.livenessSeeds
-    if (ownsLivenessSeeds) data.livenessSeeds = new Set<State>()
+    if (ownsLivenessSeeds) {
+        data.livenessSeeds = new Set<State>()
+        data.livenessNeedsReconcile = false
+    }
 
     // Reused across every re-evaluated selector — see propagateDownstreamTopo.
     const depsChange: DepsChange = {}
@@ -1084,15 +1087,17 @@ const propagateSelectorUpdates = (
         )
     }
 
-    // Reconcile liveness for the churned region from ground-truth reachability.
-    // This is the single correctness mechanism for liveness under dep churn;
-    // the inline onLiveDependency* calls above keep the count roughly right for
-    // the common case, but cycles / lazy edges / transient multi-eval drops can
-    // leave it wrong in either direction, which this re-derives. No dep-set
-    // change → empty seeds → no work.
+    // Backstop reconcile, armed only when the pass did something the inline
+    // onLiveDependency* calls can't settle: a removal (cyclic leak / transient
+    // freeze) or a lazy re-init that committed edges outside the loop. Both are
+    // re-derived here from ground-truth reachability. A purely-additive,
+    // loop-driven pass skips this entirely.
     if (ownsLivenessSeeds) {
         const seeds = data.livenessSeeds
+        const needsReconcile = data.livenessNeedsReconcile
         data.livenessSeeds = undefined
-        if (seeds && seeds.size > 0) reconcileLivenessAfterChurn(seeds as Set<State>, data)
+        data.livenessNeedsReconcile = undefined
+        if (needsReconcile && seeds && seeds.size > 0)
+            reconcileLivenessAfterChurn(seeds as Set<State>, data)
     }
 }

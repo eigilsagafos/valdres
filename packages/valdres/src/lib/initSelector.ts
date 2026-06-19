@@ -206,15 +206,19 @@ export const evaluateSelector = <V>(
         if (depsChanged || !currentDependencies) {
             // Seed the active selector-update pass's liveness reconcile with this
             // selector whenever its dep SET changed — covering BOTH the
-            // propagation-loop path and lazy re-inits through `get` (which carry
-            // no depsChangeOut and otherwise bypass the live-count bookkeeping;
-            // this is what left cyclic/self-cyclic subtrees mis-counted). Added
-            // deps are covered via this selector's downward closure; removed deps
-            // are seeded individually below to cover torn-down subtrees. Only
-            // when an EXISTING selector changed — a first init is reached (and
-            // seeded) through whatever live selector just read it.
+            // propagation-loop path and lazy re-inits through `get`. Added deps
+            // are covered via this selector's downward closure; removed deps are
+            // seeded individually below to cover torn-down subtrees. Only when an
+            // EXISTING selector changed — a first init is reached (and seeded)
+            // through whatever live selector just read it.
             if (data.livenessSeeds && currentDependencies) {
                 data.livenessSeeds.add(selector)
+                // A lazy re-init (no depsChangeOut) commits these edges without
+                // going through the propagation loop's onLiveDependency* calls,
+                // so the incremental count never sees them — arm the reconcile.
+                // (This is what left cyclic/self-cyclic subtrees mis-counted
+                // when only the propagation-loop, removal-armed path ran.)
+                if (!depsChangeOut) data.livenessNeedsReconcile = true
             }
             const updatedDependencies = new Set<State<any>>(updatedDeps)
             // For async selectors, retain all previous deps so they aren't
@@ -246,8 +250,14 @@ export const evaluateSelector = <V>(
                             if (!depsChangeOut.removed) depsChangeOut.removed = new Set<State>()
                             depsChangeOut.removed.add(state)
                         }
-                        // Removed dep: seed its torn-down subtree for reconcile.
-                        if (data.livenessSeeds) data.livenessSeeds.add(state)
+                        // Removed dep: seed its torn-down subtree for reconcile
+                        // and arm the pass — a removal is what the incremental
+                        // path can't always settle (cyclic leak / transient
+                        // freeze), regardless of which path drove it.
+                        if (data.livenessSeeds) {
+                            data.livenessSeeds.add(state)
+                            data.livenessNeedsReconcile = true
+                        }
                     }
                 }
             }

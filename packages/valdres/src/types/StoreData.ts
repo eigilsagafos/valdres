@@ -26,10 +26,21 @@ export type StoreData = {
     /** Transient, set only while a selector-update pass is in flight: every
      *  selector whose dependency SET changed during the pass (added or removed,
      *  via the propagation loop OR a lazy re-init through `get`), plus the
-     *  removed deps. The pass reconciles liveness for this region's reachability
-     *  at the end. Undefined outside a pass — the no-churn fast path never
-     *  allocates it. */
+     *  removed deps. Drives the region the end-of-pass liveness reconcile
+     *  recomputes from reachability. Undefined outside a pass — the no-churn
+     *  fast path never allocates it. */
     livenessSeeds?: Set<WeakKey>
+    /** Transient, set only while a PROPAGATION pass is in flight: true once the
+     *  pass did something the inline incremental bookkeeping can't settle on its
+     *  own, which arms the end-of-pass reachability reconcile. Two triggers:
+     *  (1) a dependency was REMOVED — `propagateNotLive` can't collect a cycle
+     *  (leak) and a transient drop-then-readd can strand a still-read subtree
+     *  (freeze); (2) a dep-set changed via a LAZY re-init through `get` (no
+     *  `depsChangeOut`), which commits edges without going through the loop's
+     *  onLiveDependency* calls at all. A purely-additive pass driven entirely by
+     *  the propagation loop is correct incrementally (even through cycles) and
+     *  skips the reconcile. */
+    livenessNeedsReconcile?: boolean
     abortControllers: WeakMap<WeakKey, AbortController | false>
     /** Selectors currently mid-evaluation in this store. Used for cycle
      *  detection. Per-store so that the same selector evaluated in two
