@@ -1023,92 +1023,110 @@ const propagateSelectorUpdates = (
         data.livenessLazyArmed = false
     }
 
-    // Reused across every re-evaluated selector — see propagateDownstreamTopo.
-    const depsChange: DepsChange = {}
-    for (const selector of selectors) {
-        const currentValue = data.values.get(selector)
-        if (isPromiseLike(currentValue) && isInitOnly) continue
-        const dependents = data.stateDependents.get(selector)
-        const subscribers = data.subscriptions.get(selector)
-        if (
-            !isPromiseLike(currentValue) &&
-            (!dependents || dependents.size === 0) &&
-            (!subscribers || subscribers.size === 0)
-        ) {
-            // No live consumer — invalidate for lazy re-eval on next read.
-            data.values.delete(selector)
-            continue
-        }
-        depsChange.added = undefined
-        depsChange.removed = undefined
-        const wasValueUpdated = reEvaluateSelector(
-            selector,
-            data,
-            updatedInitializedAtoms,
-            depsChange,
-            currentValue,
-        )
-        // Casts work around a tsgo control-flow narrowing quirk where
-        // property accesses lose their narrowing after a function call.
-        const added = depsChange.added as Set<State> | undefined
-        const removed = depsChange.removed as Set<State> | undefined
-        if ((added || removed) && isLive(selector, data)) {
-            if (added) {
-                for (const dep of added) {
-                    onLiveDependencyAdded(dep, data)
-                    mountTransitiveDeps(dep, data)
+    // Captured in the finally and used by the reconcile AFTER the owned region.
+    // The loop and propagateDownstreamTopo run user onMount/cleanup (via
+    // mountTransitiveDeps / unmountOrphanedDeps) that can throw; the finally
+    // guarantees the collector is released even then. Without it a throwing
+    // onMount would strand `data.livenessSeeds` non-undefined forever, so no later
+    // pass could ever own it again — silently disabling the reconcile (the
+    // freeze/leak return) and leaking strong refs to every churned selector. This
+    // is realistic here: browser-API atoms bootstrap in onMount and throw when the
+    // API is unavailable.
+    let seedsToReconcile: Set<State> | undefined
+    let lazyArmed = false
+    let removalArmed = false
+    try {
+        // Reused across every re-evaluated selector — see propagateDownstreamTopo.
+        const depsChange: DepsChange = {}
+        for (const selector of selectors) {
+            const currentValue = data.values.get(selector)
+            if (isPromiseLike(currentValue) && isInitOnly) continue
+            const dependents = data.stateDependents.get(selector)
+            const subscribers = data.subscriptions.get(selector)
+            if (
+                !isPromiseLike(currentValue) &&
+                (!dependents || dependents.size === 0) &&
+                (!subscribers || subscribers.size === 0)
+            ) {
+                // No live consumer — invalidate for lazy re-eval on next read.
+                data.values.delete(selector)
+                continue
+            }
+            depsChange.added = undefined
+            depsChange.removed = undefined
+            const wasValueUpdated = reEvaluateSelector(
+                selector,
+                data,
+                updatedInitializedAtoms,
+                depsChange,
+                currentValue,
+            )
+            // Casts work around a tsgo control-flow narrowing quirk where
+            // property accesses lose their narrowing after a function call.
+            const added = depsChange.added as Set<State> | undefined
+            const removed = depsChange.removed as Set<State> | undefined
+            if ((added || removed) && isLive(selector, data)) {
+                if (added) {
+                    for (const dep of added) {
+                        onLiveDependencyAdded(dep, data)
+                        mountTransitiveDeps(dep, data)
+                    }
+                }
+                if (removed) {
+                    for (const dep of removed) {
+                        onLiveDependencyRemoved(dep, data)
+                        unmountOrphanedDeps(dep, data)
+                    }
                 }
             }
-            if (removed) {
-                for (const dep of removed) {
-                    onLiveDependencyRemoved(dep, data)
-                    unmountOrphanedDeps(dep, data)
-                }
+            if (!wasValueUpdated) continue
+            if (changedSelectors) changedSelectors.add(selector)
+            if (subscribers) addSetToSet(subscribers, collectedSubscribers)
+            // Re-fetch dependents — eval may have changed them.
+            const downstream = data.stateDependents.get(selector)
+            if (downstream && downstream.size > 0) {
+                if (!downstreamSeeds) downstreamSeeds = new Set()
+                for (const d of downstream) downstreamSeeds.add(d)
             }
         }
-        if (!wasValueUpdated) continue
-        if (changedSelectors) changedSelectors.add(selector)
-        if (subscribers) addSetToSet(subscribers, collectedSubscribers)
-        // Re-fetch dependents — eval may have changed them.
-        const downstream = data.stateDependents.get(selector)
-        if (downstream && downstream.size > 0) {
-            if (!downstreamSeeds) downstreamSeeds = new Set()
-            for (const d of downstream) downstreamSeeds.add(d)
+
+        if (downstreamSeeds && downstreamSeeds.size > 0) {
+            propagateDownstreamTopo(
+                downstreamSeeds,
+                data,
+                collectedSubscribers,
+                updatedInitializedAtoms,
+                isInitOnly,
+                changedSelectors,
+            )
+        }
+    } finally {
+        // Always release ownership of the collector — see the note above. Capture
+        // the seeds + arm flags for the reconcile that runs after this block.
+        if (ownsLivenessSeeds) {
+            seedsToReconcile = data.livenessSeeds as Set<State> | undefined
+            lazyArmed = !!data.livenessLazyArmed
+            removalArmed = !!data.livenessRemovalArmed
+            data.livenessSeeds = undefined
+            data.livenessLazyArmed = undefined
+            data.livenessRemovalArmed = undefined
         }
     }
 
-    if (downstreamSeeds && downstreamSeeds.size > 0) {
-        propagateDownstreamTopo(
-            downstreamSeeds,
-            data,
-            collectedSubscribers,
-            updatedInitializedAtoms,
-            isInitOnly,
-            changedSelectors,
-        )
-    }
-
-    // Backstop reconcile. A lazy re-init arms it unconditionally (the incremental
-    // path never ran for those edges). A removal arms it too, but BOTH bugs a
-    // removal can cause — cyclic leak and transient-drop freeze — provably
-    // require a directed cycle in the affected region; on an acyclic region the
-    // inline onLiveDependencyRemoved already equals ground truth, so the reconcile
-    // is gated on regionHasCycle (a single DFS over the churned region; the hot
-    // acyclic dep-churn / sub-unsub paths short-circuit it and skip the reconcile).
-    if (ownsLivenessSeeds) {
-        const seeds = data.livenessSeeds
-        const lazyArmed = data.livenessLazyArmed
-        const removalArmed = data.livenessRemovalArmed
-        data.livenessSeeds = undefined
-        data.livenessLazyArmed = undefined
-        data.livenessRemovalArmed = undefined
-        if (
-            seeds &&
-            seeds.size > 0 &&
-            (lazyArmed ||
-                (removalArmed && regionHasCycle(seeds as Set<State>, data)))
-        ) {
-            reconcileLivenessAfterChurn(seeds as Set<State>, data)
-        }
+    // Backstop reconcile, run AFTER the owned region is released so a throwing
+    // pass (whose finally already ran) does NOT re-enter user onMount/cleanup here
+    // and mask its original error — an in-flight exception skips this block
+    // entirely. A lazy re-init arms it unconditionally (the incremental path never
+    // ran for those edges). A removal arms it too, but both bugs a removal can
+    // cause — cyclic leak and transient-drop freeze — require a directed cycle in
+    // the region; on an acyclic region the inline onLiveDependencyRemoved already
+    // equals ground truth, so it is gated on regionHasCycle (the hot acyclic
+    // dep-churn / sub-unsub paths short-circuit it and skip the reconcile).
+    if (
+        seedsToReconcile &&
+        seedsToReconcile.size > 0 &&
+        (lazyArmed || (removalArmed && regionHasCycle(seedsToReconcile, data)))
+    ) {
+        reconcileLivenessAfterChurn(seedsToReconcile, data)
     }
 }
