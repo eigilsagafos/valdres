@@ -120,9 +120,19 @@ jobs:
             # can't regress from a valdres change, so gating them only adds noise
             # (every false positive we saw was a reference bench). They're still
             # measured + plotted via the base lane for the head-to-head perf page.
+            #
+            # BENCH_EXCLUDE_TINY additionally drops sub-~10ns ops (atom(1),
+            # selector(fn), atomFamily cache hit) from the GATE: their +50%
+            # boundary is only a few ns — below the runner's noise floor even after
+            # min-of-3 — so the gate flipped on variance rather than regressions
+            # (it alerted on them while they measured FASTER than base). Dropped
+            # from BOTH the base-seed and PR files so the relative comparison stays
+            # consistent. Like the refs, they're still measured + plotted via the
+            # base lane — tracked, just not blocking.
             - name: Convert base + PR results -> BMF (valdres-only, min)
               env:
                   BENCH_EXCLUDE_REFS: "1"
+                  BENCH_EXCLUDE_TINY: "1"
               run: |
                   BENCH_NDJSON_BUN=/tmp/base_bun.ndjson \
                   BENCH_NDJSON_NODE=/tmp/base_node.ndjson \
