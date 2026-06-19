@@ -23,6 +23,37 @@ export type StoreData = {
      *  has direct subscribers OR this count is > 0. Maintained incrementally
      *  on sub/unsub and on dep add/remove instead of walking the graph. */
     liveDependentCount: WeakMap<WeakKey, number>
+    /** True while a selector-update / cold-read pass owns the liveness collector.
+     *  This (not `livenessSeeds`) is the ownership token, so the Set can be
+     *  allocated LAZILY on the first actual seed: a no-churn pass (or a first-init
+     *  read, which seeds nothing) never allocates one. Critical on fan-out-to-
+     *  many-stores paths (e.g. set-atom-across-1000-scopes runs 1000 no-churn
+     *  passes per write — eager allocation was 1000 wasted Sets). */
+    livenessPassActive?: boolean
+    /** Transient, set only while a pass is in flight: every selector whose
+     *  dependency SET changed during the pass (added or removed, via the
+     *  propagation loop OR a lazy re-init through `get`), plus the removed deps.
+     *  Drives the region the end-of-pass liveness reconcile recomputes from
+     *  reachability. Allocated lazily on first seed (see `livenessPassActive`) and
+     *  reset to undefined when the owning pass ends — the no-churn / first-init
+     *  fast path never allocates it. */
+    livenessSeeds?: Set<WeakKey>
+    /** Transient, set only while a pass is in flight: true once a dependency was
+     *  REMOVED. A removal is the only loop-driven event the incremental refcount
+     *  can't always settle — but ONLY when the affected region contains a cycle
+     *  (`propagateNotLive` can't collect a cyclic group → leak; a transient
+     *  drop-then-readd can strand a still-read selector → freeze, and that
+     *  stranding requires the selector to sit on a cycle through the removed
+     *  dep). On an acyclic region the refcount is exact, so the end-of-pass
+     *  reconcile is armed by this flag but still gated on `regionHasCycle`. */
+    livenessRemovalArmed?: boolean
+    /** Transient, set only while a pass is in flight: true once a dep-set changed
+     *  via a LAZY re-init through `get` (no `depsChangeOut`), which commits edges
+     *  without going through the propagation loop's onLiveDependency* calls at
+     *  all. This arms the reconcile UNCONDITIONALLY (no cycle gate) — a lazy
+     *  re-init can mis-count even an acyclic graph because the incremental path
+     *  never ran for it. Lazy re-inits are off the hot path, so this is cheap. */
+    livenessLazyArmed?: boolean
     abortControllers: WeakMap<WeakKey, AbortController | false>
     /** Selectors currently mid-evaluation in this store. Used for cycle
      *  detection. Per-store so that the same selector evaluated in two

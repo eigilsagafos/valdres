@@ -371,6 +371,11 @@ export const subscribe = <V>(
         // First direct subscriber: bump liveness through the dep graph.
         // Selectors track this via stateDependencies; families have none.
         if (!isFamily(state)) {
+            // First direct subscriber is an ADDITIVE liveness change — the
+            // incremental walk is correct here, including through cycles (each
+            // live dependent is counted once; the prev===0 guard visits each
+            // node the single time it flips live). Deps built lazily via get()
+            // after this subscribe are reconciled by getDefault's own pass.
             onFirstDirectSubscriber(state as State, data)
             mountTransitiveDeps(state, data)
         }

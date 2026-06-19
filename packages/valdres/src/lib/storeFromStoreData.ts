@@ -15,6 +15,11 @@ import { unsetValue } from "./unsetValue"
 import { createStoreData } from "./createStoreData"
 import { deleteFamilyAtom } from "./deleteFamilyAtom"
 import { getState } from "./getState"
+import {
+    beginLivenessPass,
+    endLivenessPass,
+    reconcileLivenessAfterChurn,
+} from "./mountAtom"
 import { onCommitEnd } from "./onCommitEnd"
 import { onStoreChange } from "./onStoreChange"
 import { propagateAtomUpdate } from "./propagateUpdatedAtoms"
@@ -120,6 +125,16 @@ export function storeFromStoreData(
         }
         let res
         let initialized = false
+        // A read can lazily re-materialize a selector whose value was dropped
+        // (orphan-invalidation, a throwing eval, …), committing new dependency
+        // edges WITHOUT going through propagation's liveness bookkeeping. Own the
+        // pass-scoped liveness-seed collector around the read so that re-wire is
+        // reconciled from ground-truth reachability afterwards. The ownership
+        // guard composes with propagation (the init-propagation below sees the
+        // collector already owned and defers its reconcile to us). Only the
+        // cache-miss path reaches here; cache hits returned above.
+        const ownsLivenessSeeds = beginLivenessPass(data)
+        let seedsToReconcile: Set<State> | null = null
         try {
             res = getState(state, data, _initSet)
         } finally {
@@ -129,7 +144,11 @@ export function storeFromStoreData(
                 propagateAtomUpdate(atoms, data, true)
                 initialized = true
             }
+            // Release the collector in the finally (a throwing getState/onMount
+            // still releases it); reconcile the returned region after the try.
+            if (ownsLivenessSeeds) seedsToReconcile = endLivenessPass(data)
         }
+        if (seedsToReconcile) reconcileLivenessAfterChurn(seedsToReconcile, data)
         // The init-only propagation above walks the dependents of the just-
         // initialized atoms and, for any selector with no live consumer, drops
         // its cached value "for lazy re-eval on next read". When that selector is

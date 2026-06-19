@@ -32,6 +32,27 @@ function isReference(name: string): boolean {
     return m !== null && m[1] !== "valdres"
 }
 
+// The "<op>" part of a benchmark name, dropping any " / <impl>" suffix.
+function opName(name: string): string {
+    const m = name.match(/^(.*) \/ [^/]+$/)
+    return m ? m[1] : name
+}
+
+// Operations too small to GATE reliably. These are sub-~10ns ops where the gate's
+// +50% relative boundary is only a few nanoseconds — below the CI runner's
+// measurement noise even after min-of-3 — so the percentage gate flips on
+// variance rather than regressions (it has alerted on these while they measured
+// FASTER than base). BENCH_EXCLUDE_TINY (set by the PR gate only) drops them from
+// the gated comparison. They are still measured and plotted via the base lane
+// (bencher-base.yml), so the historical perf page is unaffected — they're tracked,
+// just not blocking. A new benchmark is gated by default; add it here only if it
+// proves noise-dominated. Keep this in sync with the README's tiny ops.
+const UNGATEABLE_OPS = new Set([
+    "atom(1)", // ~2ns
+    "selector(fn)", // ~5ns
+    "atomFamily(id) cache hit", // ~10ns
+])
+
 function toBmf(results: BenchResult[]): Bmf {
     // The relative-CB gate runs the suite multiple times and concatenates the
     // NDJSON, so a benchmark name legitimately appears once per repeat. Keep the
@@ -45,9 +66,11 @@ function toBmf(results: BenchResult[]): Bmf {
     // measured and plotted via the base lane (bencher-base.yml) for the
     // head-to-head perf page.
     const excludeRefs = !!process.env.BENCH_EXCLUDE_REFS
+    const excludeTiny = !!process.env.BENCH_EXCLUDE_TINY
     const bmf: Bmf = {}
     for (const r of results) {
         if (excludeRefs && isReference(r.name)) continue
+        if (excludeTiny && UNGATEABLE_OPS.has(opName(r.name))) continue
         const prev = bmf[r.name]?.latency.value
         if (prev === undefined || r.ns < prev) {
             bmf[r.name] = { latency: { value: r.ns } }

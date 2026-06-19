@@ -3,7 +3,8 @@ import type { State } from "../types/State"
 import type { StoreData } from "../types/StoreData"
 import type { Subscription } from "../types/Subscription"
 import { getMaxAgeCleanup, deleteMaxAgeCleanup } from "./maxAgeCleanups"
-import { isLive, onLastDirectSubscriber, unmountOrphanedDeps } from "./mountAtom"
+import { isLive, onLastDirectSubscriber, reconcileLivenessAfterChurn, regionHasCycle, unmountOrphanedDeps } from "./mountAtom"
+import { isSelector } from "../utils/isSelector"
 
 export const unsubscribe = <V>(
     state: State<V> | Family<V>,
@@ -37,6 +38,24 @@ export const unsubscribe = <V>(
             // its dependencies. Done before unmount/cleanup so subsequent
             // isLive checks reflect the updated liveness.
             onLastDirectSubscriber(state as State<V>, data)
+            // The incremental teardown (propagateNotLive) cannot collect cyclic
+            // dependency groups — their mutual contributions keep each other's
+            // count > 0 once the anchor leaves. Reconcile from ground-truth
+            // reachability so a cyclic subtree that lost its only subscriber is
+            // marked non-live. Needed ONLY when a cycle is present, and a cycle is
+            // selector-only (only selectors are keyed in stateDependencies; atoms
+            // and atom-family members are graph sinks), so unsubscribing an atom
+            // can skip in O(1) without even building a region; a selector (incl. a
+            // selectorFamily member) is gated on regionHasCycle (acyclic →
+            // propagateNotLive already drained the counts exactly → skip the
+            // O(region+dependents) reconcile). Keeps the plain sub/unsub hot path
+            // allocation-free.
+            if (
+                isSelector(state) &&
+                regionHasCycle(new Set([state as State<V>]), data)
+            ) {
+                reconcileLivenessAfterChurn(new Set([state as State<V>]), data)
+            }
             // Unmount this state and any transitive dependencies that are
             // no longer reachable from any subscriber.
             unmountOrphanedDeps(state as State<V>, data)

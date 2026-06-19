@@ -6,6 +6,7 @@ import type { Selector } from "../types/Selector"
 import type { State } from "../types/State"
 import type { StoreData } from "../types/StoreData"
 import { isPromiseLike } from "../utils/isPromiseLike"
+import { isSelector } from "../utils/isSelector"
 import {
     SuspendAndWaitForResolveError,
     cleanUpRejectedPromise,
@@ -68,7 +69,14 @@ export const evaluateSelector = <V>(
     depsChangeOut?: DepsChange,
 ) => {
     const currentDependencies = data.stateDependencies.get(selector)
-    const updatedDepsArray: State<any>[] = []
+    // Deduped set of deps read this evaluation. Using a Set (not an array)
+    // makes change-detection robust to a dependency read MORE THAN ONCE in one
+    // evaluation (e.g. `cond ? get(a) + get(b) : get(a) + get(a)`): comparing
+    // against an array's length (which counts duplicates) previously masked a
+    // removed dependency whenever a duplicate kept the raw count equal, leaving
+    // a stale reverse edge in stateDependents. It also avoids the later
+    // array→Set conversion. Insertion order is preserved (Set semantics).
+    const updatedDeps = new Set<State<any>>()
     let depsChanged = false
     let evaluationComplete = false
 
@@ -165,7 +173,7 @@ export const evaluateSelector = <V>(
                     initializedAtomsSet,
                     circularDependencySet,
                 )
-                updatedDepsArray.push(state)
+                updatedDeps.add(state)
                 if (!depsChanged && (!currentDependencies || !currentDependencies.has(state))) {
                     depsChanged = true
                 }
@@ -192,12 +200,36 @@ export const evaluateSelector = <V>(
         // For sync selectors, check if dep count changed (handles removed deps).
         // For async selectors, skip — the dep count is incomplete until the
         // promise resolves.
-        if (!isAsyncResult && !depsChanged && currentDependencies && currentDependencies.size !== updatedDepsArray.length) {
+        if (!isAsyncResult && !depsChanged && currentDependencies && currentDependencies.size !== updatedDeps.size) {
             depsChanged = true
         }
 
         if (depsChanged || !currentDependencies) {
-            const updatedDependencies = new Set<State<any>>(updatedDepsArray)
+            // Seed the active selector-update pass's liveness reconcile with this
+            // selector whenever its dep SET changed — covering BOTH the
+            // propagation-loop path and lazy re-inits through `get`. Added deps
+            // are covered via this selector's downward closure; removed deps are
+            // seeded individually below to cover torn-down subtrees. Only when an
+            // EXISTING selector changed — a first init is reached (and seeded)
+            // through whatever live selector just read it.
+            if (data.livenessPassActive && currentDependencies) {
+                // Allocate the collector lazily on first seed — a no-churn pass
+                // never reaches here, so it stays allocation-free.
+                ;(data.livenessSeeds ??= new Set<State>()).add(selector)
+                // A lazy re-init (no depsChangeOut) commits these edges without
+                // going through the propagation loop's onLiveDependency* calls,
+                // so the incremental count never sees them — arm the reconcile
+                // UNCONDITIONALLY (it can mis-count even an acyclic graph because
+                // the incremental path never ran for it).
+                if (!depsChangeOut) data.livenessLazyArmed = true
+            }
+            // Sync selectors store the freshly-read dep set directly — no copy.
+            // Async selectors need a separate set so previous deps can be merged
+            // in (below) without mutating `updatedDeps`, which is still read as
+            // the promise-tracking seed (`allDepsThisEval`) further down.
+            const updatedDependencies = isAsyncResult
+                ? new Set<State<any>>(updatedDeps)
+                : updatedDeps
             // For async selectors, retain all previous deps so they aren't
             // prematurely removed (and unmounted) before the continuation runs.
             // Stale deps are cleaned up when the promise resolves (see
@@ -227,6 +259,21 @@ export const evaluateSelector = <V>(
                             if (!depsChangeOut.removed) depsChangeOut.removed = new Set<State>()
                             depsChangeOut.removed.add(state)
                         }
+                        // Removed dep: arm the removal path only when the dropped
+                        // dep is a SELECTOR. A directed cycle is selector-only —
+                        // only selectors are keyed in stateDependencies; atoms and
+                        // atom-family members are graph sinks (no out-edges), so
+                        // removing one can be on no cycle and the incremental
+                        // teardown is already exact. (selectorFamily members ARE
+                        // selectors — isSelector is true for them, so they take
+                        // this gated path.) For a selector dep we seed its
+                        // torn-down subtree and arm; the end-of-pass reconcile is
+                        // then still gated on regionHasCycle, so an acyclic selector
+                        // removal also stays on the incremental path.
+                        if (data.livenessPassActive && isSelector(state)) {
+                            ;(data.livenessSeeds ??= new Set<State>()).add(state)
+                            data.livenessRemovalArmed = true
+                        }
                     }
                 }
             }
@@ -239,7 +286,7 @@ export const evaluateSelector = <V>(
         if (isPromiseLike(result)) {
             // Build the tracking set from sync deps discovered so far. Late
             // `get` calls (after await) will add to this set dynamically.
-            allDepsThisEval = new Set<State>(updatedDepsArray)
+            allDepsThisEval = new Set<State>(updatedDeps)
             pendingAsyncDeps.set(result, allDepsThisEval)
         }
 

@@ -64,6 +64,17 @@ export function createStoreData(
     // allocate on first setAtom — eager just makes that explicit and avoids
     // touching the prototype getter on the hot path.
     data.pendingDefaults = new WeakMap()
+    // Liveness-pass scratch, initialized here (not added lazily during the first
+    // pass) so the StoreData hidden class is fixed at construction. Otherwise the
+    // first getDefault/propagation pass adds these fields at runtime, transitions
+    // the object's V8 shape, and de-opts the inline caches on the adjacent atom
+    // get/set hot path (a measurable ~25%/op V8-only regression on the atom
+    // lifecycle path). `livenessPassActive` is the ownership token; `livenessSeeds`
+    // is allocated lazily on first seed (undefined = unallocated).
+    data.livenessPassActive = false
+    data.livenessSeeds = undefined
+    data.livenessRemovalArmed = false
+    data.livenessLazyArmed = false
     if (options?.batchUpdates) {
         data.batchUpdates = true
     }

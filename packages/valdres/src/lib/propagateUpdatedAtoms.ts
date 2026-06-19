@@ -20,10 +20,13 @@ import {
     handleSelectorResult,
 } from "./initSelector"
 import {
+    beginLivenessPass,
+    endLivenessPass,
     isLive,
     mountTransitiveDeps,
     onLiveDependencyAdded,
     onLiveDependencyRemoved,
+    reconcileLivenessAfterChurn,
     unmountOrphanedDeps,
 } from "./mountAtom"
 import {
@@ -1007,69 +1010,94 @@ const propagateSelectorUpdates = (
     if (selectors.size === 0) return
 
     let downstreamSeeds: Set<Selector> | undefined
-
-    // Reused across every re-evaluated selector — see propagateDownstreamTopo.
-    const depsChange: DepsChange = {}
-    for (const selector of selectors) {
-        const currentValue = data.values.get(selector)
-        if (isPromiseLike(currentValue) && isInitOnly) continue
-        const dependents = data.stateDependents.get(selector)
-        const subscribers = data.subscriptions.get(selector)
-        if (
-            !isPromiseLike(currentValue) &&
-            (!dependents || dependents.size === 0) &&
-            (!subscribers || subscribers.size === 0)
-        ) {
-            // No live consumer — invalidate for lazy re-eval on next read.
-            data.values.delete(selector)
-            continue
-        }
-        depsChange.added = undefined
-        depsChange.removed = undefined
-        const wasValueUpdated = reEvaluateSelector(
-            selector,
-            data,
-            updatedInitializedAtoms,
-            depsChange,
-            currentValue,
-        )
-        // Casts work around a tsgo control-flow narrowing quirk where
-        // property accesses lose their narrowing after a function call.
-        const added = depsChange.added as Set<State> | undefined
-        const removed = depsChange.removed as Set<State> | undefined
-        if ((added || removed) && isLive(selector, data)) {
-            if (added) {
-                for (const dep of added) {
-                    onLiveDependencyAdded(dep, data)
-                    mountTransitiveDeps(dep, data)
+    // Own the per-pass liveness-reconcile collector. `evaluateSelector` populates
+    // `data.livenessSeeds` (selectors whose dep SET changed + removed deps) and
+    // arms one of two flags: `livenessRemovalArmed` (a dep was removed — gated on
+    // a cycle below) or `livenessLazyArmed` (a lazy re-init committed edges
+    // outside the loop — unconditional). A purely-additive loop-driven pass is
+    // correct incrementally (even through cycles), so it arms neither. Allocated
+    // only when a dep-set actually changes — the no-churn fast path never trips it.
+    // Take ownership of the liveness collector. The loop and
+    // propagateDownstreamTopo below run user onMount/cleanup (via
+    // mountTransitiveDeps / unmountOrphanedDeps) that can throw, so endLivenessPass
+    // runs in the `finally` (else a throwing onMount would strand the collector and
+    // permanently disable the reconcile) — and the returned region is reconciled
+    // AFTER the try, so a throwing pass doesn't re-enter user code and mask its
+    // error.
+    const ownsLivenessSeeds = beginLivenessPass(data)
+    let seedsToReconcile: Set<State> | null = null
+    try {
+        // Reused across every re-evaluated selector — see propagateDownstreamTopo.
+        const depsChange: DepsChange = {}
+        for (const selector of selectors) {
+            const currentValue = data.values.get(selector)
+            if (isPromiseLike(currentValue) && isInitOnly) continue
+            const dependents = data.stateDependents.get(selector)
+            const subscribers = data.subscriptions.get(selector)
+            if (
+                !isPromiseLike(currentValue) &&
+                (!dependents || dependents.size === 0) &&
+                (!subscribers || subscribers.size === 0)
+            ) {
+                // No live consumer — invalidate for lazy re-eval on next read.
+                data.values.delete(selector)
+                continue
+            }
+            depsChange.added = undefined
+            depsChange.removed = undefined
+            const wasValueUpdated = reEvaluateSelector(
+                selector,
+                data,
+                updatedInitializedAtoms,
+                depsChange,
+                currentValue,
+            )
+            // Casts work around a tsgo control-flow narrowing quirk where
+            // property accesses lose their narrowing after a function call.
+            const added = depsChange.added as Set<State> | undefined
+            const removed = depsChange.removed as Set<State> | undefined
+            if ((added || removed) && isLive(selector, data)) {
+                if (added) {
+                    for (const dep of added) {
+                        onLiveDependencyAdded(dep, data)
+                        mountTransitiveDeps(dep, data)
+                    }
+                }
+                if (removed) {
+                    for (const dep of removed) {
+                        onLiveDependencyRemoved(dep, data)
+                        unmountOrphanedDeps(dep, data)
+                    }
                 }
             }
-            if (removed) {
-                for (const dep of removed) {
-                    onLiveDependencyRemoved(dep, data)
-                    unmountOrphanedDeps(dep, data)
-                }
+            if (!wasValueUpdated) continue
+            if (changedSelectors) changedSelectors.add(selector)
+            if (subscribers) addSetToSet(subscribers, collectedSubscribers)
+            // Re-fetch dependents — eval may have changed them.
+            const downstream = data.stateDependents.get(selector)
+            if (downstream && downstream.size > 0) {
+                if (!downstreamSeeds) downstreamSeeds = new Set()
+                for (const d of downstream) downstreamSeeds.add(d)
             }
         }
-        if (!wasValueUpdated) continue
-        if (changedSelectors) changedSelectors.add(selector)
-        if (subscribers) addSetToSet(subscribers, collectedSubscribers)
-        // Re-fetch dependents — eval may have changed them.
-        const downstream = data.stateDependents.get(selector)
-        if (downstream && downstream.size > 0) {
-            if (!downstreamSeeds) downstreamSeeds = new Set()
-            for (const d of downstream) downstreamSeeds.add(d)
+
+        if (downstreamSeeds && downstreamSeeds.size > 0) {
+            propagateDownstreamTopo(
+                downstreamSeeds,
+                data,
+                collectedSubscribers,
+                updatedInitializedAtoms,
+                isInitOnly,
+                changedSelectors,
+            )
         }
+    } finally {
+        // Always release the collector — even if a user onMount/cleanup above threw
+        // (see the note at the top). Returns the region to reconcile, or null.
+        if (ownsLivenessSeeds) seedsToReconcile = endLivenessPass(data)
     }
 
-    if (downstreamSeeds && downstreamSeeds.size > 0) {
-        propagateDownstreamTopo(
-            downstreamSeeds,
-            data,
-            collectedSubscribers,
-            updatedInitializedAtoms,
-            isInitOnly,
-            changedSelectors,
-        )
-    }
+    // Reconcile AFTER the owned region is released (an in-flight exception from the
+    // try skips this entirely, so a throwing pass never re-enters user code here).
+    if (seedsToReconcile) reconcileLivenessAfterChurn(seedsToReconcile, data)
 }
