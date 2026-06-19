@@ -745,9 +745,6 @@ const propagateDownstreamTopo = (
     updatedInitializedAtoms: Set<Atom>,
     isInitOnly: boolean,
     changedSelectors?: Set<Selector>,
-    // Collects every dependency removed from a LIVE selector during the pass, so
-    // the caller can reconcile the liveness bookkeeping it may have corrupted.
-    removedDeps?: Set<State>,
 ) => {
     const closure = new Set<Selector>(seeds)
     {
@@ -890,7 +887,6 @@ const propagateDownstreamTopo = (
                     for (const dep of removed) {
                         onLiveDependencyRemoved(dep, data)
                         unmountOrphanedDeps(dep, data)
-                        if (removedDeps) removedDeps.add(dep)
                     }
                 }
             }
@@ -965,7 +961,6 @@ const propagateDownstreamTopo = (
                     for (const dep of removed) {
                         onLiveDependencyRemoved(dep, data)
                         unmountOrphanedDeps(dep, data)
-                        if (removedDeps) removedDeps.add(dep)
                     }
                 }
             }
@@ -1013,13 +1008,16 @@ const propagateSelectorUpdates = (
     if (selectors.size === 0) return
 
     let downstreamSeeds: Set<Selector> | undefined
-    // Dependencies removed from a live selector during this pass. Eager
-    // incremental liveness bookkeeping is not robust to a selector re-evaluating
-    // multiple times with transitional dep sets (a transient drop tears down a
-    // subtree's liveDependentCount that the later re-add fails to restore); we
-    // reconcile that subtree from ground truth at the end. Allocated lazily so
-    // the steady-state path (no removals) pays nothing.
-    let removedDeps: Set<State> | undefined
+    // Own the per-pass liveness-seed collector. `evaluateSelector` populates
+    // `data.livenessSeeds` with every selector whose dependency SET changed —
+    // via the propagation loop OR a lazy re-init through `get` — plus removed
+    // deps. After the pass we reconcile liveness for that region from
+    // ground-truth reachability, which is robust to cycles, lazily-added edges,
+    // and transient drops in BOTH directions (the incremental refcount is not).
+    // Allocated only when a dep-set actually changes — the no-churn fast path
+    // (value-only re-eval) never trips it.
+    const ownsLivenessSeeds = !data.livenessSeeds
+    if (ownsLivenessSeeds) data.livenessSeeds = new Set<State>()
 
     // Reused across every re-evaluated selector — see propagateDownstreamTopo.
     const depsChange: DepsChange = {}
@@ -1061,8 +1059,6 @@ const propagateSelectorUpdates = (
                 for (const dep of removed) {
                     onLiveDependencyRemoved(dep, data)
                     unmountOrphanedDeps(dep, data)
-                    if (!removedDeps) removedDeps = new Set()
-                    removedDeps.add(dep)
                 }
             }
         }
@@ -1078,7 +1074,6 @@ const propagateSelectorUpdates = (
     }
 
     if (downstreamSeeds && downstreamSeeds.size > 0) {
-        if (!removedDeps) removedDeps = new Set()
         propagateDownstreamTopo(
             downstreamSeeds,
             data,
@@ -1086,15 +1081,18 @@ const propagateSelectorUpdates = (
             updatedInitializedAtoms,
             isInitOnly,
             changedSelectors,
-            removedDeps,
         )
     }
 
-    // A dependency was removed from a live selector this pass: the eager
-    // teardown may have left a still-read subtree non-live (see
-    // reconcileLivenessAfterChurn). Re-derive that subtree's liveDependentCount
-    // from ground truth. No removals → no allocation, no work.
-    if (removedDeps && removedDeps.size > 0) {
-        reconcileLivenessAfterChurn(removedDeps, data)
+    // Reconcile liveness for the churned region from ground-truth reachability.
+    // This is the single correctness mechanism for liveness under dep churn;
+    // the inline onLiveDependency* calls above keep the count roughly right for
+    // the common case, but cycles / lazy edges / transient multi-eval drops can
+    // leave it wrong in either direction, which this re-derives. No dep-set
+    // change → empty seeds → no work.
+    if (ownsLivenessSeeds) {
+        const seeds = data.livenessSeeds
+        data.livenessSeeds = undefined
+        if (seeds && seeds.size > 0) reconcileLivenessAfterChurn(seeds as Set<State>, data)
     }
 }

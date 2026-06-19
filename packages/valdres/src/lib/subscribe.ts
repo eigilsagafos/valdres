@@ -18,7 +18,7 @@ import { initSelector } from "./initSelector"
 import { propagateAtomUpdate } from "./propagateUpdatedAtoms"
 import { setValueInData } from "./setValueInData"
 import { setMaxAgeCleanup } from "./maxAgeCleanups"
-import { mountTransitiveDeps, onFirstDirectSubscriber } from "./mountAtom"
+import { mountTransitiveDeps, onFirstDirectSubscriber, reconcileLivenessAfterChurn } from "./mountAtom"
 import { unsubscribe } from "./unsubscribe"
 
 const initSubscribers = <V>(state: State<V> | Family<V>, data: StoreData) => {
@@ -372,6 +372,10 @@ export const subscribe = <V>(
         // Selectors track this via stateDependencies; families have none.
         if (!isFamily(state)) {
             onFirstDirectSubscriber(state as State, data)
+            // propagateLive's incremental walk under-counts cyclic deps and
+            // misses deps built lazily via get() after this subscribe; reconcile
+            // this region's liveness from ground-truth reachability.
+            reconcileLivenessAfterChurn(new Set([state as State]), data)
             mountTransitiveDeps(state, data)
         }
     }

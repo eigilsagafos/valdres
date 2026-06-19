@@ -23,6 +23,13 @@ export type StoreData = {
      *  has direct subscribers OR this count is > 0. Maintained incrementally
      *  on sub/unsub and on dep add/remove instead of walking the graph. */
     liveDependentCount: WeakMap<WeakKey, number>
+    /** Transient, set only while a selector-update pass is in flight: every
+     *  selector whose dependency SET changed during the pass (added or removed,
+     *  via the propagation loop OR a lazy re-init through `get`), plus the
+     *  removed deps. The pass reconciles liveness for this region's reachability
+     *  at the end. Undefined outside a pass — the no-churn fast path never
+     *  allocates it. */
+    livenessSeeds?: Set<WeakKey>
     abortControllers: WeakMap<WeakKey, AbortController | false>
     /** Selectors currently mid-evaluation in this store. Used for cycle
      *  detection. Per-store so that the same selector evaluated in two

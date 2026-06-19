@@ -204,6 +204,18 @@ export const evaluateSelector = <V>(
         }
 
         if (depsChanged || !currentDependencies) {
+            // Seed the active selector-update pass's liveness reconcile with this
+            // selector whenever its dep SET changed — covering BOTH the
+            // propagation-loop path and lazy re-inits through `get` (which carry
+            // no depsChangeOut and otherwise bypass the live-count bookkeeping;
+            // this is what left cyclic/self-cyclic subtrees mis-counted). Added
+            // deps are covered via this selector's downward closure; removed deps
+            // are seeded individually below to cover torn-down subtrees. Only
+            // when an EXISTING selector changed — a first init is reached (and
+            // seeded) through whatever live selector just read it.
+            if (data.livenessSeeds && currentDependencies) {
+                data.livenessSeeds.add(selector)
+            }
             const updatedDependencies = new Set<State<any>>(updatedDeps)
             // For async selectors, retain all previous deps so they aren't
             // prematurely removed (and unmounted) before the continuation runs.
@@ -234,6 +246,8 @@ export const evaluateSelector = <V>(
                             if (!depsChangeOut.removed) depsChangeOut.removed = new Set<State>()
                             depsChangeOut.removed.add(state)
                         }
+                        // Removed dep: seed its torn-down subtree for reconcile.
+                        if (data.livenessSeeds) data.livenessSeeds.add(state)
                     }
                 }
             }

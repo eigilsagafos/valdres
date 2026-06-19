@@ -3,7 +3,7 @@ import type { State } from "../types/State"
 import type { StoreData } from "../types/StoreData"
 import type { Subscription } from "../types/Subscription"
 import { getMaxAgeCleanup, deleteMaxAgeCleanup } from "./maxAgeCleanups"
-import { isLive, onLastDirectSubscriber, unmountOrphanedDeps } from "./mountAtom"
+import { isLive, onLastDirectSubscriber, reconcileLivenessAfterChurn, unmountOrphanedDeps } from "./mountAtom"
 
 export const unsubscribe = <V>(
     state: State<V> | Family<V>,
@@ -37,6 +37,12 @@ export const unsubscribe = <V>(
             // its dependencies. Done before unmount/cleanup so subsequent
             // isLive checks reflect the updated liveness.
             onLastDirectSubscriber(state as State<V>, data)
+            // The incremental teardown (propagateNotLive) cannot collect cyclic
+            // dependency groups — their mutual contributions keep each other's
+            // count > 0 once the anchor leaves. Reconcile this region's liveness
+            // from ground-truth reachability so a cyclic subtree that lost its
+            // only subscriber is correctly marked non-live.
+            reconcileLivenessAfterChurn(new Set([state as State<V>]), data)
             // Unmount this state and any transitive dependencies that are
             // no longer reachable from any subscriber.
             unmountOrphanedDeps(state as State<V>, data)

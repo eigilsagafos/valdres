@@ -15,6 +15,7 @@ import { unsetValue } from "./unsetValue"
 import { createStoreData } from "./createStoreData"
 import { deleteFamilyAtom } from "./deleteFamilyAtom"
 import { getState } from "./getState"
+import { reconcileLivenessAfterChurn } from "./mountAtom"
 import { onCommitEnd } from "./onCommitEnd"
 import { onStoreChange } from "./onStoreChange"
 import { propagateAtomUpdate } from "./propagateUpdatedAtoms"
@@ -120,6 +121,16 @@ export function storeFromStoreData(
         }
         let res
         let initialized = false
+        // A read can lazily re-materialize a selector whose value was dropped
+        // (orphan-invalidation, a throwing eval, …), committing new dependency
+        // edges WITHOUT going through propagation's liveness bookkeeping. Own the
+        // pass-scoped liveness-seed collector around the read so that re-wire is
+        // reconciled from ground-truth reachability afterwards. The ownership
+        // guard composes with propagation (the init-propagation below sees the
+        // collector already owned and defers its reconcile to us). Only the
+        // cache-miss path reaches here; cache hits returned above.
+        const ownsLivenessSeeds = !data.livenessSeeds
+        if (ownsLivenessSeeds) data.livenessSeeds = new Set()
         try {
             res = getState(state, data, _initSet)
         } finally {
@@ -128,6 +139,12 @@ export function storeFromStoreData(
                 _initSet.clear()
                 propagateAtomUpdate(atoms, data, true)
                 initialized = true
+            }
+            if (ownsLivenessSeeds) {
+                const seeds = data.livenessSeeds
+                data.livenessSeeds = undefined
+                if (seeds && seeds.size > 0)
+                    reconcileLivenessAfterChurn(seeds as Set<State>, data)
             }
         }
         // The init-only propagation above walks the dependents of the just-
