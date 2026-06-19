@@ -1,6 +1,6 @@
 {
-  "jscAverage": 5.9,
-  "v8Average": 2.7,
+  "jscAverage": 6,
+  "v8Average": 2.5,
   "jotaiVersion": "2.19.0",
   "date": "2026-06-19",
   "categories": [
@@ -9,43 +9,43 @@
       "benchmarks": [
         {
           "name": "atom lifecycle (create+100get+100set)",
-          "jscTag": "22.6x faster",
-          "v8Tag": "4.8x faster"
+          "jscTag": "21.3x faster",
+          "v8Tag": "4.4x faster"
         },
         {
           "name": "atom(1)",
-          "jscTag": "21.0x faster",
-          "v8Tag": "2.0x faster"
+          "jscTag": "23.5x faster",
+          "v8Tag": "1.9x faster"
         },
         {
           "name": "get 1000 atoms",
-          "jscTag": "38.0x faster",
+          "jscTag": "23.1x faster",
           "v8Tag": "13.7x faster"
         },
         {
           "name": "set 1000 atoms",
-          "jscTag": "8.5x faster",
-          "v8Tag": "4.5x faster"
+          "jscTag": "8.7x faster",
+          "v8Tag": "4.3x faster"
         },
         {
           "name": "set(atom, curr => curr+1)",
-          "jscTag": "13.1x faster",
-          "v8Tag": "5.3x faster"
+          "jscTag": "22.5x faster",
+          "v8Tag": "4.7x faster"
         },
         {
           "name": "set(atom, value)",
-          "jscTag": "36.2x faster",
-          "v8Tag": "4.8x faster"
+          "jscTag": "43.7x faster",
+          "v8Tag": "4.2x faster"
         },
         {
           "name": "set(atom) with 10 subs",
-          "jscTag": "14.6x faster",
-          "v8Tag": "4.7x faster"
+          "jscTag": "19.5x faster",
+          "v8Tag": "4.3x faster"
         },
         {
           "name": "store.get(atom)",
           "jscTag": "12.0x faster",
-          "v8Tag": "8.8x faster"
+          "v8Tag": "8.6x faster"
         }
       ]
     },
@@ -54,28 +54,28 @@
       "benchmarks": [
         {
           "name": "selector(fn)",
-          "jscTag": "11.8x faster",
-          "v8Tag": "1.5x faster"
+          "jscTag": "14.5x faster",
+          "v8Tag": "1.4x slower"
         },
         {
           "name": "set + read 10 selectors",
-          "jscTag": "3.8x faster",
-          "v8Tag": "2.5x faster"
+          "jscTag": "4.3x faster",
+          "v8Tag": "2.2x faster"
         },
         {
           "name": "set + read 100 selectorFamily entries",
           "jscTag": "3.0x faster",
-          "v8Tag": "1.6x faster"
+          "v8Tag": "1.5x faster"
         },
         {
           "name": "set + read 100 selectors",
           "jscTag": "4.5x faster",
-          "v8Tag": "1.6x faster"
+          "v8Tag": "1.5x faster"
         },
         {
           "name": "set + read through 5 chained selectors",
-          "jscTag": "2.2x faster",
-          "v8Tag": "2.0x faster"
+          "jscTag": "1.8x faster",
+          "v8Tag": "1.9x faster"
         }
       ]
     },
@@ -84,38 +84,38 @@
       "benchmarks": [
         {
           "name": "txn: 10 atoms × 10 selectors, set + read",
-          "jscTag": "2.9x faster",
+          "jscTag": "3.1x faster",
           "v8Tag": "1.3x faster"
         },
         {
           "name": "txn: 10 atoms × 10 selectors, with subs",
           "jscTag": "6.4x faster",
-          "v8Tag": "2.8x faster"
+          "v8Tag": "2.7x faster"
         },
         {
           "name": "txn: 10 atoms × 100 selectors, set + read",
-          "jscTag": "6.2x faster",
-          "v8Tag": "1.6x faster"
+          "jscTag": "4.3x faster",
+          "v8Tag": "1.4x faster"
         },
         {
           "name": "txn: asymmetric DAG shared sink",
-          "jscTag": "5.7x faster",
-          "v8Tag": "2.1x faster"
+          "jscTag": "5.8x faster",
+          "v8Tag": "2.0x faster"
         },
         {
           "name": "txn: cross-atom 1000 selectors, set + read",
-          "jscTag": "4.5x faster",
-          "v8Tag": "1.8x faster"
+          "jscTag": "5.3x faster",
+          "v8Tag": "1.6x faster"
         },
         {
           "name": "txn: cross-atom 1000 selectors, with subs",
-          "jscTag": "25.2x faster",
-          "v8Tag": "12.3x faster"
+          "jscTag": "20.0x faster",
+          "v8Tag": "11.3x faster"
         },
         {
           "name": "txn: large asymmetric DAG (1000 leaves × 50 chain)",
-          "jscTag": "3.6x faster",
-          "v8Tag": "2.2x faster"
+          "jscTag": "4.1x faster",
+          "v8Tag": "2.0x faster"
         }
       ]
     },
@@ -124,28 +124,28 @@
       "benchmarks": [
         {
           "name": "createStore",
-          "jscTag": "18.3x faster",
-          "v8Tag": "10.0x faster"
+          "jscTag": "18.2x faster",
+          "v8Tag": "8.5x faster"
         },
         {
           "name": "sub + unsub",
-          "jscTag": "6.7x faster",
-          "v8Tag": "2.8x faster"
+          "jscTag": "6.2x faster",
+          "v8Tag": "2.4x faster"
         },
         {
           "name": "sub+unsub on chain of 100 unsubscribed derived deps",
-          "jscTag": "1.1x faster",
-          "v8Tag": "1.2x slower"
+          "jscTag": "1.0x slower",
+          "v8Tag": "1.3x slower"
         },
         {
           "name": "sub+unsub on chain of 50 unsubscribed derived deps",
-          "jscTag": "1.3x faster",
-          "v8Tag": "1.2x slower"
+          "jscTag": "1.0x faster",
+          "v8Tag": "1.3x slower"
         },
         {
           "name": "sub+unsub on chain of 500 unsubscribed derived deps",
           "jscTag": "1.2x faster",
-          "v8Tag": "1.1x slower"
+          "v8Tag": "1.2x slower"
         }
       ]
     },
@@ -154,13 +154,13 @@
       "benchmarks": [
         {
           "name": "atomFamily(id)",
-          "jscTag": "2.6x faster",
-          "v8Tag": "1.3x faster"
+          "jscTag": "3.6x faster",
+          "v8Tag": "2.3x faster"
         },
         {
           "name": "atomFamily(id) cache hit",
           "jscTag": "1.1x faster",
-          "v8Tag": "6.1x faster"
+          "v8Tag": "7.6x faster"
         },
         {
           "name": "selectorFamily(id)",
