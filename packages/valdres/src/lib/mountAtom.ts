@@ -227,42 +227,41 @@ export const endLivenessPass = (data: StoreData): Set<State> | null => {
 }
 
 /**
- * Reconcile `liveDependentCount` after a selector-update propagation pass that
- * removed dependencies.
+ * Re-derive `liveDependentCount` from ground-truth reachability for a churned
+ * region. This is the backstop the incremental `onLiveDependency{Added,Removed}`
+ * bookkeeping can't replace, because that bookkeeping fails in two ways the
+ * caller has detected (see `endLivenessPass`, which gates and invokes this):
  *
- * The incremental `onLiveDependency{Added,Removed}` bookkeeping is not robust to
- * a selector being re-evaluated MORE THAN ONCE within a single pass with
- * transitional (non-final) dependency sets — which the topological scheduler
- * does (a selector that is both in the initial dirty set and downstream of
- * another, plus escaped/stranded re-evals). A transient dependency removal by a
- * still-live selector eagerly tears down the `liveDependentCount` of an entire
- * transitive subtree (via `propagateNotLive`); when the dependency is re-added
- * later in the same pass, the `isLive(selector)` guard is now false (the
- * selector was itself caught in that teardown), so the re-add is skipped and the
- * subtree is left permanently non-live even though a live subscriber still
- * reads it. `propagateDirtySelectors` then skips it forever → stale value.
+ *  - REMOVAL into a cycle. A reference count can't collect a cyclic group (their
+ *    mutual edges keep each other's count > 0 → leak), and a TRANSIENT removal by
+ *    a multiply-evaluated selector tears down a subtree via `propagateNotLive`
+ *    that a later same-pass re-add then skips (the `isLive` guard is now false),
+ *    stranding a still-read subtree non-live → freeze. Both require a cycle in the
+ *    region, which is why the caller gates the removal case on `regionHasCycle`.
+ *  - LAZY re-init through `get` commits dep edges outside the propagation loop, so
+ *    the incremental calls never ran for them at all.
  *
- * Every state whose count a teardown can corrupt lies in the DOWNWARD
- * (dependency) closure of the deps removed during the pass — `propagateNotLive`
- * only ever walks dependencies, so a cascade can't escape that closure; and a
- * wrongly-skipped re-add only matters for a dependency of a selector that was
- * itself torn down (hence already in the closure). We recompute the invariant
+ * `seeds` is the region's seed set: the selectors whose dependency SET changed
+ * this pass plus the removed deps (so its DOWNWARD dependency closure covers
+ * every state a teardown or a lazy re-wire could have mis-counted —
+ * `propagateNotLive` only ever walks dependencies, so a cascade can't escape it).
+ * We recompute the invariant
  *
  *   liveDependentCount[D] = |{ S ∈ stateDependents[D] : isLive(S) }|
  *
- * for exactly that region from ground truth: dependents OUTSIDE the region keep
- * their (unaffected) cached liveness as the fixed base, and a worklist fixpoint
- * resolves liveness for dependents INSIDE it (the region can contain cycles —
- * recursive selectorFamilies). Gated by the caller on `removed.size > 0`, so the
- * steady-state propagation path (no dependency removals) is untouched.
+ * for exactly that region: dependents OUTSIDE the region keep their (unaffected)
+ * cached liveness as the fixed base, and a worklist fixpoint resolves liveness for
+ * dependents INSIDE it (the region can contain cycles — recursive
+ * selectorFamilies). The caller only invokes this when a dep-set actually changed
+ * AND a flag was armed, so the steady-state propagation path never reaches here.
  */
 export const reconcileLivenessAfterChurn = (
-    removed: Set<State>,
+    seeds: Set<State>,
     data: StoreData,
 ) => {
-    // 1. region = downward dependency closure of the removed deps.
+    // 1. region = downward dependency closure of the seeds.
     const region = new Set<State>()
-    const stack: State[] = [...removed]
+    const stack: State[] = [...seeds]
     while (stack.length > 0) {
         const s = stack.pop()!
         if (region.has(s)) continue
@@ -326,10 +325,18 @@ export const reconcileLivenessAfterChurn = (
         if (count <= 0) data.liveDependentCount.delete(D)
         else data.liveDependentCount.set(D, count)
     }
+    // Share a visited set across all mount calls (and a separate one across all
+    // unmount calls) so overlapping transitive subtrees are walked once total, not
+    // once per transitioning region node — O(region + edges), not O(region *
+    // edges). Mount and unmount must NOT share a set: a node skipped by an unmount
+    // walk must still be reachable by a mount walk, and vice versa.
+    const mountVisited = new Set<State>()
+    const unmountVisited = new Set<State>()
     for (const D of region) {
         const now = live.has(D)
-        if (now && !wasLive.get(D)) mountTransitiveDeps(D, data)
-        else if (!now && wasLive.get(D)) unmountOrphanedDeps(D, data)
+        if (now && !wasLive.get(D)) mountTransitiveDeps(D, data, mountVisited)
+        else if (!now && wasLive.get(D))
+            unmountOrphanedDeps(D, data, unmountVisited)
     }
 }
 

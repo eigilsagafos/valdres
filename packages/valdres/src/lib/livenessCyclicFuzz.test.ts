@@ -84,6 +84,13 @@ const check = (s: any, states: any[]): Mismatch | null => {
     return null
 }
 
+// 8000 seeds (vs ~400 in the acyclic fuzzers) because this one ALLOWS cycles:
+// ~90% of random configs hit a genuine eval-time circular dependency and are
+// skipped (see the catch below), so 8000 seeds yield ~15.6k surviving churn ops —
+// comparable coverage to the acyclic fuzzers, which skip nothing. It is fully
+// deterministic (seeded PRNG, synchronous) so it can't be flaky, and runs in
+// ~0.4s; the explicit timeout is a generous bound against a future hang, not a
+// budget it approaches.
 test("cyclic dynamic-dep liveness invariant holds across churn", () => {
     let under = 0
     let over = 0
@@ -191,4 +198,4 @@ test("cyclic dynamic-dep liveness invariant holds across churn", () => {
     expect(firstOver).toBe("")
     expect(under).toBe(0)
     expect(over).toBe(0)
-})
+}, 30000)
