@@ -2,6 +2,11 @@ import type { State } from "../types/State"
 import type { StoreData } from "../types/StoreData"
 import { storeFromStoreData } from "./storeFromStoreData"
 
+// Shared immutable empty set — a missing stateDependencies entry (atoms /
+// family-members are graph sinks) yields a zero-length iterator without
+// allocating. Never mutated.
+const EMPTY: Set<State> = new Set()
+
 const hasDirectSubscribers = (state: State, data: StoreData): boolean => {
     const subs = data.subscriptions.get(state)
     return !!subs && subs.size > 0
@@ -115,6 +120,62 @@ export const onLiveDependencyRemoved = (dep: State, data: StoreData) => {
     if (prev === 1 && !hasDirectSubscribers(dep, data)) {
         propagateNotLive(dep, data)
     }
+}
+
+/**
+ * Does the DOWNWARD (dependency) closure of `seeds` contain a directed cycle?
+ *
+ * This is the exact gate for the removal-armed liveness reconcile. Both bugs the
+ * reconcile fixes provably require a cycle inside the affected region:
+ *  - FREEZE: a still-live selector S is stranded only if `propagateNotLive`,
+ *    walking DOWN from a removed dep D, reaches back to S — i.e. D depends
+ *    (transitively) on S while S reads D, a cycle through D and S.
+ *  - LEAK: a reference count fails to drain only a cycle; a DAG always drains
+ *    via the `prev === 1` guard.
+ * So on an acyclic region the incremental onLiveDependencyRemoved + propagateNotLive
+ * already equals ground truth and the reconcile is a no-op — skip it.
+ *
+ * Iterative DFS over `data.stateDependencies` (down-edges only) restricted to the
+ * seeds' closure; an `onPath` (gray) set detects a back-edge, a `done` (black) set
+ * memoizes fully-explored acyclic subgraphs. Atoms/family-members are never keyed
+ * in `stateDependencies` (they are graph sinks), so a region of pure atom deps has
+ * no out-edges and returns false in O(seeds).
+ */
+export const regionHasCycle = (
+    seeds: Set<State>,
+    data: StoreData,
+): boolean => {
+    const done = new Set<State>()
+    const onPath = new Set<State>()
+    // Explicit stack of frames: { node, iterator over its deps }. A frame is
+    // pushed onto `onPath` when entered and moved to `done` when its deps are
+    // exhausted; encountering a node already `onPath` is a back-edge → cycle.
+    for (const seed of seeds) {
+        if (done.has(seed)) continue
+        const stack: { node: State; it: Iterator<State> }[] = [
+            { node: seed, it: (data.stateDependencies.get(seed) ?? EMPTY).values() },
+        ]
+        onPath.add(seed)
+        while (stack.length > 0) {
+            const frame = stack[stack.length - 1]!
+            const next = frame.it.next()
+            if (next.done) {
+                onPath.delete(frame.node)
+                done.add(frame.node)
+                stack.pop()
+                continue
+            }
+            const dep = next.value as State
+            if (onPath.has(dep)) return true // back-edge → cycle
+            if (done.has(dep)) continue
+            onPath.add(dep)
+            stack.push({
+                node: dep,
+                it: (data.stateDependencies.get(dep) ?? EMPTY).values(),
+            })
+        }
+    }
+    return false
 }
 
 /**

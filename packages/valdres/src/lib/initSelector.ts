@@ -6,6 +6,7 @@ import type { Selector } from "../types/Selector"
 import type { State } from "../types/State"
 import type { StoreData } from "../types/StoreData"
 import { isPromiseLike } from "../utils/isPromiseLike"
+import { isSelector } from "../utils/isSelector"
 import {
     SuspendAndWaitForResolveError,
     cleanUpRejectedPromise,
@@ -215,10 +216,10 @@ export const evaluateSelector = <V>(
                 data.livenessSeeds.add(selector)
                 // A lazy re-init (no depsChangeOut) commits these edges without
                 // going through the propagation loop's onLiveDependency* calls,
-                // so the incremental count never sees them — arm the reconcile.
-                // (This is what left cyclic/self-cyclic subtrees mis-counted
-                // when only the propagation-loop, removal-armed path ran.)
-                if (!depsChangeOut) data.livenessNeedsReconcile = true
+                // so the incremental count never sees them — arm the reconcile
+                // UNCONDITIONALLY (it can mis-count even an acyclic graph because
+                // the incremental path never ran for it).
+                if (!depsChangeOut) data.livenessLazyArmed = true
             }
             const updatedDependencies = new Set<State<any>>(updatedDeps)
             // For async selectors, retain all previous deps so they aren't
@@ -250,13 +251,17 @@ export const evaluateSelector = <V>(
                             if (!depsChangeOut.removed) depsChangeOut.removed = new Set<State>()
                             depsChangeOut.removed.add(state)
                         }
-                        // Removed dep: seed its torn-down subtree for reconcile
-                        // and arm the pass — a removal is what the incremental
-                        // path can't always settle (cyclic leak / transient
-                        // freeze), regardless of which path drove it.
-                        if (data.livenessSeeds) {
+                        // Removed dep: arm the removal path only when the dropped
+                        // dep is a SELECTOR. A directed cycle is selector-only —
+                        // atoms/family-members are never keyed in stateDependencies
+                        // (graph sinks), so removing one can be on no cycle and the
+                        // incremental teardown is already exact. For a selector dep
+                        // we seed its torn-down subtree and arm; the end-of-pass
+                        // reconcile is then still gated on regionHasCycle, so an
+                        // acyclic selector removal also stays on the incremental path.
+                        if (data.livenessSeeds && isSelector(state)) {
                             data.livenessSeeds.add(state)
-                            data.livenessNeedsReconcile = true
+                            data.livenessRemovalArmed = true
                         }
                     }
                 }

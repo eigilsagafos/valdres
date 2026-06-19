@@ -15,7 +15,7 @@ import { unsetValue } from "./unsetValue"
 import { createStoreData } from "./createStoreData"
 import { deleteFamilyAtom } from "./deleteFamilyAtom"
 import { getState } from "./getState"
-import { reconcileLivenessAfterChurn } from "./mountAtom"
+import { reconcileLivenessAfterChurn, regionHasCycle } from "./mountAtom"
 import { onCommitEnd } from "./onCommitEnd"
 import { onStoreChange } from "./onStoreChange"
 import { propagateAtomUpdate } from "./propagateUpdatedAtoms"
@@ -130,7 +130,11 @@ export function storeFromStoreData(
         // collector already owned and defers its reconcile to us). Only the
         // cache-miss path reaches here; cache hits returned above.
         const ownsLivenessSeeds = !data.livenessSeeds
-        if (ownsLivenessSeeds) data.livenessSeeds = new Set()
+        if (ownsLivenessSeeds) {
+            data.livenessSeeds = new Set()
+            data.livenessRemovalArmed = false
+            data.livenessLazyArmed = false
+        }
         try {
             res = getState(state, data, _initSet)
         } finally {
@@ -142,9 +146,22 @@ export function storeFromStoreData(
             }
             if (ownsLivenessSeeds) {
                 const seeds = data.livenessSeeds
+                const lazyArmed = data.livenessLazyArmed
+                const removalArmed = data.livenessRemovalArmed
                 data.livenessSeeds = undefined
-                if (seeds && seeds.size > 0)
+                data.livenessLazyArmed = undefined
+                data.livenessRemovalArmed = undefined
+                // Same gate as the propagation pass: a lazy re-init reconciles
+                // unconditionally (the incremental path never ran for it); a
+                // removal only when the churned region has a cycle.
+                if (
+                    seeds &&
+                    seeds.size > 0 &&
+                    (lazyArmed ||
+                        (removalArmed && regionHasCycle(seeds as Set<State>, data)))
+                ) {
                     reconcileLivenessAfterChurn(seeds as Set<State>, data)
+                }
             }
         }
         // The init-only propagation above walks the dependents of the just-

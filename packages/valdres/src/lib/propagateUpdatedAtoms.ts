@@ -25,6 +25,7 @@ import {
     onLiveDependencyAdded,
     onLiveDependencyRemoved,
     reconcileLivenessAfterChurn,
+    regionHasCycle,
     unmountOrphanedDeps,
 } from "./mountAtom"
 import {
@@ -1010,16 +1011,16 @@ const propagateSelectorUpdates = (
     let downstreamSeeds: Set<Selector> | undefined
     // Own the per-pass liveness-reconcile collector. `evaluateSelector` populates
     // `data.livenessSeeds` (selectors whose dep SET changed + removed deps) and
-    // sets `data.livenessNeedsReconcile` when it does something the inline
-    // onLiveDependency{Added,Removed} calls can't settle: a REMOVAL (cyclic leak
-    // / transient freeze) or a LAZY re-init that commits edges outside the loop.
-    // A purely-additive pass driven by the loop is correct incrementally (even
-    // through cycles), so it skips the reconcile. Allocated only when a dep-set
-    // actually changes — the no-churn fast path never trips it.
+    // arms one of two flags: `livenessRemovalArmed` (a dep was removed — gated on
+    // a cycle below) or `livenessLazyArmed` (a lazy re-init committed edges
+    // outside the loop — unconditional). A purely-additive loop-driven pass is
+    // correct incrementally (even through cycles), so it arms neither. Allocated
+    // only when a dep-set actually changes — the no-churn fast path never trips it.
     const ownsLivenessSeeds = !data.livenessSeeds
     if (ownsLivenessSeeds) {
         data.livenessSeeds = new Set<State>()
-        data.livenessNeedsReconcile = false
+        data.livenessRemovalArmed = false
+        data.livenessLazyArmed = false
     }
 
     // Reused across every re-evaluated selector — see propagateDownstreamTopo.
@@ -1087,17 +1088,27 @@ const propagateSelectorUpdates = (
         )
     }
 
-    // Backstop reconcile, armed only when the pass did something the inline
-    // onLiveDependency* calls can't settle: a removal (cyclic leak / transient
-    // freeze) or a lazy re-init that committed edges outside the loop. Both are
-    // re-derived here from ground-truth reachability. A purely-additive,
-    // loop-driven pass skips this entirely.
+    // Backstop reconcile. A lazy re-init arms it unconditionally (the incremental
+    // path never ran for those edges). A removal arms it too, but BOTH bugs a
+    // removal can cause — cyclic leak and transient-drop freeze — provably
+    // require a directed cycle in the affected region; on an acyclic region the
+    // inline onLiveDependencyRemoved already equals ground truth, so the reconcile
+    // is gated on regionHasCycle (a single DFS over the churned region; the hot
+    // acyclic dep-churn / sub-unsub paths short-circuit it and skip the reconcile).
     if (ownsLivenessSeeds) {
         const seeds = data.livenessSeeds
-        const needsReconcile = data.livenessNeedsReconcile
+        const lazyArmed = data.livenessLazyArmed
+        const removalArmed = data.livenessRemovalArmed
         data.livenessSeeds = undefined
-        data.livenessNeedsReconcile = undefined
-        if (needsReconcile && seeds && seeds.size > 0)
+        data.livenessLazyArmed = undefined
+        data.livenessRemovalArmed = undefined
+        if (
+            seeds &&
+            seeds.size > 0 &&
+            (lazyArmed ||
+                (removalArmed && regionHasCycle(seeds as Set<State>, data)))
+        ) {
             reconcileLivenessAfterChurn(seeds as Set<State>, data)
+        }
     }
 }

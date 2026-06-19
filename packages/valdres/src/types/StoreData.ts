@@ -30,17 +30,22 @@ export type StoreData = {
      *  recomputes from reachability. Undefined outside a pass — the no-churn
      *  fast path never allocates it. */
     livenessSeeds?: Set<WeakKey>
-    /** Transient, set only while a PROPAGATION pass is in flight: true once the
-     *  pass did something the inline incremental bookkeeping can't settle on its
-     *  own, which arms the end-of-pass reachability reconcile. Two triggers:
-     *  (1) a dependency was REMOVED — `propagateNotLive` can't collect a cycle
-     *  (leak) and a transient drop-then-readd can strand a still-read subtree
-     *  (freeze); (2) a dep-set changed via a LAZY re-init through `get` (no
-     *  `depsChangeOut`), which commits edges without going through the loop's
-     *  onLiveDependency* calls at all. A purely-additive pass driven entirely by
-     *  the propagation loop is correct incrementally (even through cycles) and
-     *  skips the reconcile. */
-    livenessNeedsReconcile?: boolean
+    /** Transient, set only while a pass is in flight: true once a dependency was
+     *  REMOVED. A removal is the only loop-driven event the incremental refcount
+     *  can't always settle — but ONLY when the affected region contains a cycle
+     *  (`propagateNotLive` can't collect a cyclic group → leak; a transient
+     *  drop-then-readd can strand a still-read selector → freeze, and that
+     *  stranding requires the selector to sit on a cycle through the removed
+     *  dep). On an acyclic region the refcount is exact, so the end-of-pass
+     *  reconcile is armed by this flag but still gated on `regionHasCycle`. */
+    livenessRemovalArmed?: boolean
+    /** Transient, set only while a pass is in flight: true once a dep-set changed
+     *  via a LAZY re-init through `get` (no `depsChangeOut`), which commits edges
+     *  without going through the propagation loop's onLiveDependency* calls at
+     *  all. This arms the reconcile UNCONDITIONALLY (no cycle gate) — a lazy
+     *  re-init can mis-count even an acyclic graph because the incremental path
+     *  never ran for it. Lazy re-inits are off the hot path, so this is cheap. */
+    livenessLazyArmed?: boolean
     abortControllers: WeakMap<WeakKey, AbortController | false>
     /** Selectors currently mid-evaluation in this store. Used for cycle
      *  detection. Per-store so that the same selector evaluated in two
