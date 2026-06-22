@@ -3,7 +3,7 @@ import type { Selector } from "../types/Selector"
 import type { State } from "../types/State"
 import type { StoreData } from "../types/StoreData"
 import { getState } from "./getState"
-import { isLive, mountTransitiveDeps, onLiveDependencyAdded } from "./mountAtom"
+import { isLive, mountTransitiveDeps, noteDependencyAdded, onLiveDependencyAdded } from "./mountAtom"
 
 // Tracks all deps (sync + async) for each pending async selector evaluation.
 // Keyed by the Promise returned by the async selector. When the promise
@@ -59,6 +59,8 @@ export const lateGet = (
         deps.add(state)
         const dependents = getOrInitDependentsSet(state, data)
         dependents.add(selector)
+        // New edge: keep the mount-closure marker's no-false-negative invariant.
+        noteDependencyAdded(selector, state, data)
     }
 
     // Get the value (may throw for error-throwing selectors).

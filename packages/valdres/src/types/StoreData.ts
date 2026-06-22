@@ -23,6 +23,22 @@ export type StoreData = {
      *  has direct subscribers OR this count is > 0. Maintained incrementally
      *  on sub/unsub and on dep add/remove instead of walking the graph. */
     liveDependentCount: WeakMap<WeakKey, number>
+    /** Per-state cache for the mount/unmount graph-walk short-circuit. A key is
+     *  present (value `true`) iff at least one state in this state's DOWNWARD
+     *  dependency closure — its strict transitive dependencies, NOT the state
+     *  itself — carries an `onMount`/`__valdresOnMount` hook, i.e. a walk DOWN
+     *  from here could find something to mount. Absent means no mountable
+     *  descendant, so `mountTransitiveDeps`/`unmountOrphanedDeps` can return
+     *  without walking (the common case: layout/derived selectors whose whole
+     *  subtree is mount-free).
+     *
+     *  INVARIANT (one-directional, the only property the skip relies on): NO
+     *  FALSE NEGATIVES. If a mountable descendant exists the key is present.
+     *  The key MAY be stale-`true` after an edge removal shrinks the closure —
+     *  that only costs a redundant (and self-clearing) walk, never a missed
+     *  mount. Set + propagated UP on every edge add via `noteDependencyAdded`;
+     *  cleared opportunistically when a full walk finds the subtree mount-free. */
+    mountInClosure: WeakMap<WeakKey, true>
     /** True while a selector-update / cold-read pass owns the liveness collector.
      *  This (not `livenessSeeds`) is the ownership token, so the Set can be
      *  allocated LAZILY on the first actual seed: a no-churn pass (or a first-init

@@ -15,7 +15,7 @@ import {
     pendingAsyncDeps,
 } from "./asyncDependencyTracking"
 import { getState } from "./getState"
-import { isLive, onLiveDependencyRemoved, unmountOrphanedDeps } from "./mountAtom"
+import { isLive, noteDependencyAdded, onLiveDependencyRemoved, unmountOrphanedDeps } from "./mountAtom"
 import {
     changeListenerRegistry,
     hasSelectorChangeListener,
@@ -244,6 +244,9 @@ export const evaluateSelector = <V>(
                 if (!prev.has(state)) {
                     const set = getOrInitDependentsSet(state, data)
                     set.add(selector)
+                    // New edge: propagate the mount-closure marker up so the
+                    // mount/unmount walk-skip stays free of false negatives.
+                    noteDependencyAdded(selector, state, data)
                     if (depsChangeOut) {
                         if (!depsChangeOut.added) depsChangeOut.added = new Set<State>()
                         depsChangeOut.added.add(state)
