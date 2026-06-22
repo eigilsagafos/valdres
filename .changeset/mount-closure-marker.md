@@ -21,9 +21,10 @@ no maintenance (a stale-true marker only costs a redundant, self-clearing walk,
 never a missed mount), which keeps the fix off the cyclic-reconcile path. A
 standalone walk that finds its subtree mount-free clears the stale marker.
 
-No API or behavior change — mounts and unmounts fire exactly as before, including
-through dependency cycles, scopes, global atoms, and async/late dependencies. The
-marker-skip is trusted only on the hot propagation path where the closure's edges
-were just maintained; the cold entry points (subscribe / unsubscribe / reconcile)
-still walk fully, so a mount hook attached after its edges already exist (e.g. via
-the Jotai adapter's settable `onMount`) is mounted exactly as before.
+Mounts and unmounts fire exactly as before through dependency cycles, scopes,
+global atoms, and async/late dependencies. This also pins down the long-standing
+`onMount` contract: a mount hook must be set before the atom/selector is first
+used in a store (at creation, or assigned afterward but before first use — as the
+Jotai adapter does). Assigning `onMount` after the state is already participating
+in a store was never a guaranteed pattern and is now documented as unsupported,
+which is what lets the marker be trusted on every path.

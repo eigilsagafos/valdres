@@ -132,25 +132,18 @@ test("marker stays correct (no false negative) across churn in a cyclic region",
     expect(cleanups).toBe(1)
 })
 
-// A mount hook can be assigned to a state AFTER its dependency edges already
-// exist (notably the Jotai adapter exposes onMount as a settable property). The
-// edge add that would normally mark the closure has already happened, so the
-// marker skip must NOT swallow such a hook on the cold entry points (subscribe /
-// unsubscribe / reconcile) — those always do the full walk, exactly as the
-// pre-marker engine did. (The hot propagation-churn path trusts the marker and
-// relies on hooks being present at edge-creation time.)
-test("onMount assigned after the dependency edge is wired still mounts on subscribe", () => {
+// The `AtomOnMount` contract: a hook must be set before the state is first used
+// in a store, but it need NOT be passed at creation — assigning it afterward,
+// before first use, is fully supported (this is how the Jotai adapter works:
+// `atom()` then `.onMount = fn`, before any subscribe). The marker is populated
+// when the dependency edge forms (first use), by which point the hook exists, so
+// it mounts correctly.
+test("onMount assigned after atom() but before first store use still mounts", () => {
     let mounts = 0
     let cleanups = 0
-    const tracked: any = atom(0, { name: "mic.late.tracked" }) // no onMount yet
-    const sel = selector(get => get(tracked), { name: "mic.late.sel" })
+    const tracked: any = atom(0, { name: "mic.late.tracked" }) // created without onMount
 
-    const s = store("mic.late")
-    // Cold read wires sel→tracked while tracked is mount-free; subscribing later
-    // adds no edge, so the marker on `sel` is never set by edge maintenance.
-    s.get(sel)
-
-    // Hook attached late, by property assignment — no dependency edge is created.
+    // Hook attached by property assignment, before `tracked` is ever read.
     tracked.onMount = () => {
         mounts++
         return () => {
@@ -158,11 +151,14 @@ test("onMount assigned after the dependency edge is wired still mounts on subscr
         }
     }
 
-    // First subscriber drives the mount walk over sel's (cached) closure. The
-    // cold path must walk fully and discover the late hook.
+    // First use is the subscribe below: it wires sel→tracked (marking the
+    // closure, since tracked's hook is already present) and mounts.
+    const sel = selector(get => get(tracked), { name: "mic.late.sel" })
+    const s = store("mic.late")
     const unsub = s.sub(sel, () => {}, false)
     expect(mounts).toBe(1)
     expect(cleanups).toBe(0)
+    expect(s.data.mountInClosure.has(sel)).toBe(true)
 
     unsub()
     expect(cleanups).toBe(1)

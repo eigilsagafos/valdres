@@ -455,25 +455,14 @@ export const mountTransitiveDeps = (
     state: State,
     data: StoreData,
     visited?: Set<State>,
-    trustMarker = false,
 ) => {
-    if (trustMarker) {
-        // Hot propagation-churn path. A dependency edge was just added/removed on
-        // a live selector, so the `mountInClosure` marker is authoritative for
-        // this closure: when it says "mount-free" skip the whole Set alloc + walk.
-        // This is the path the perf fix targets (thousands of re-pointed deps per
-        // action). It trusts that mount hooks are present at edge-creation time —
-        // see the StoreData.mountInClosure note.
-        if (!hasMountInClosure(state, data)) return
-    } else if (!hasOwnMount(state)) {
-        // Cold entry point (subscribe / reconcile / late dep): the marker may be
-        // stale-absent if a hook was assigned AFTER this closure's edges formed
-        // (e.g. the Jotai adapter's settable onMount). Fall back to the original
-        // leaf-only fast path and otherwise walk fully — matching the pre-marker
-        // engine, which read onMount live on every node — so late hooks still mount.
-        const deps = data.stateDependencies.get(state)
-        if (!deps || deps.size === 0) return
-    }
+    // Fast path: nothing mountable here or anywhere reachable below. The cached
+    // `mountInClosure` marker generalizes the old leaf-only check to any subtree
+    // that is entirely mount-free (the common case) — skip the Set alloc + walk.
+    // Sound because mount hooks are present before a state is first used (the
+    // AtomOnMount contract), so the marker is populated as dependency edges form
+    // and never has a false negative.
+    if (!hasMountInClosure(state, data)) return
     // A standalone walk (no shared `visited`) covers the FULL strict-descendant
     // closure, so we can recompute the marker exactly: if no descendant turns
     // out to be mountable, clear the (now stale) marker. Skipped when a `visited`
@@ -520,16 +509,10 @@ export const unmountOrphanedDeps = (
     state: State,
     data: StoreData,
     visited?: Set<State>,
-    trustMarker = false,
 ) => {
-    // See mountTransitiveDeps for the trustMarker contract. Hot churn path trusts
-    // the marker; cold entry points fall back to the original leaf-only fast path.
-    if (trustMarker) {
-        if (!hasMountInClosure(state, data)) return
-    } else if (!hasOwnMount(state)) {
-        const deps = data.stateDependencies.get(state)
-        if (!deps || deps.size === 0) return
-    }
+    // Fast path: nothing mountable here or anywhere reachable below means nothing
+    // could be mounted beneath it either. See mountTransitiveDeps for soundness.
+    if (!hasMountInClosure(state, data)) return
     // See mountTransitiveDeps: a standalone walk can clear a now-stale marker.
     const canRecomputeMarker = visited === undefined
     let sawMountDescendant = false

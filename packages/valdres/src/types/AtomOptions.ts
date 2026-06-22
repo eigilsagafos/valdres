@@ -18,6 +18,9 @@ export type AtomOptions<Value = unknown> = {
      *  exempt a hot atom. Defaults to the store's setting. */
     schemaValidation?: boolean
     onSet?: AtomOnSet<Value>
+    /** Mount lifecycle hook — see `AtomOnMount`. Must be set before the atom is
+     *  first used in a store; assigning it after the atom is already in use is
+     *  unsupported. */
     onMount?: AtomOnMount
     maxAge?: Reactive<number>
     mutable?: boolean
