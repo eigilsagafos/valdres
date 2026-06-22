@@ -37,7 +37,16 @@ export type StoreData = {
      *  The key MAY be stale-`true` after an edge removal shrinks the closure —
      *  that only costs a redundant (and self-clearing) walk, never a missed
      *  mount. Set + propagated UP on every edge add via `noteDependencyAdded`;
-     *  cleared opportunistically when a full walk finds the subtree mount-free. */
+     *  cleared opportunistically when a full walk finds the subtree mount-free.
+     *
+     *  The marker can be stale-ABSENT only if a hook is attached to a state
+     *  AFTER edges into its closure already exist (no edge add fires to mark it
+     *  — e.g. the Jotai adapter's settable `onMount`). So the marker-skip is
+     *  trusted ONLY on the hot propagation-churn path (`trustMarker`), where a
+     *  dep edge was just maintained; the cold entry points (subscribe /
+     *  unsubscribe / reconcile / late dep) fall back to the original leaf-only
+     *  fast path and otherwise walk fully, so a late-attached hook still mounts
+     *  there exactly as it did before the marker existed. */
     mountInClosure: WeakMap<WeakKey, true>
     /** True while a selector-update / cold-read pass owns the liveness collector.
      *  This (not `livenessSeeds`) is the ownership token, so the Set can be

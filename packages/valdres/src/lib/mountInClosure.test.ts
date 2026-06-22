@@ -131,3 +131,39 @@ test("marker stays correct (no false negative) across churn in a cyclic region",
     unsub()
     expect(cleanups).toBe(1)
 })
+
+// A mount hook can be assigned to a state AFTER its dependency edges already
+// exist (notably the Jotai adapter exposes onMount as a settable property). The
+// edge add that would normally mark the closure has already happened, so the
+// marker skip must NOT swallow such a hook on the cold entry points (subscribe /
+// unsubscribe / reconcile) — those always do the full walk, exactly as the
+// pre-marker engine did. (The hot propagation-churn path trusts the marker and
+// relies on hooks being present at edge-creation time.)
+test("onMount assigned after the dependency edge is wired still mounts on subscribe", () => {
+    let mounts = 0
+    let cleanups = 0
+    const tracked: any = atom(0, { name: "mic.late.tracked" }) // no onMount yet
+    const sel = selector(get => get(tracked), { name: "mic.late.sel" })
+
+    const s = store("mic.late")
+    // Cold read wires sel→tracked while tracked is mount-free; subscribing later
+    // adds no edge, so the marker on `sel` is never set by edge maintenance.
+    s.get(sel)
+
+    // Hook attached late, by property assignment — no dependency edge is created.
+    tracked.onMount = () => {
+        mounts++
+        return () => {
+            cleanups++
+        }
+    }
+
+    // First subscriber drives the mount walk over sel's (cached) closure. The
+    // cold path must walk fully and discover the late hook.
+    const unsub = s.sub(sel, () => {}, false)
+    expect(mounts).toBe(1)
+    expect(cleanups).toBe(0)
+
+    unsub()
+    expect(cleanups).toBe(1)
+})

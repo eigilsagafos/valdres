@@ -882,13 +882,13 @@ const propagateDownstreamTopo = (
                 if (added) {
                     for (const dep of added) {
                         onLiveDependencyAdded(dep, data)
-                        mountTransitiveDeps(dep, data)
+                        mountTransitiveDeps(dep, data, undefined, true)
                     }
                 }
                 if (removed) {
                     for (const dep of removed) {
                         onLiveDependencyRemoved(dep, data)
-                        unmountOrphanedDeps(dep, data)
+                        unmountOrphanedDeps(dep, data, undefined, true)
                     }
                 }
             }
@@ -956,13 +956,13 @@ const propagateDownstreamTopo = (
                 if (added) {
                     for (const dep of added) {
                         onLiveDependencyAdded(dep, data)
-                        mountTransitiveDeps(dep, data)
+                        mountTransitiveDeps(dep, data, undefined, true)
                     }
                 }
                 if (removed) {
                     for (const dep of removed) {
                         onLiveDependencyRemoved(dep, data)
-                        unmountOrphanedDeps(dep, data)
+                        unmountOrphanedDeps(dep, data, undefined, true)
                     }
                 }
             }
@@ -1060,13 +1060,13 @@ const propagateSelectorUpdates = (
                 if (added) {
                     for (const dep of added) {
                         onLiveDependencyAdded(dep, data)
-                        mountTransitiveDeps(dep, data)
+                        mountTransitiveDeps(dep, data, undefined, true)
                     }
                 }
                 if (removed) {
                     for (const dep of removed) {
                         onLiveDependencyRemoved(dep, data)
-                        unmountOrphanedDeps(dep, data)
+                        unmountOrphanedDeps(dep, data, undefined, true)
                     }
                 }
             }

@@ -22,4 +22,8 @@ never a missed mount), which keeps the fix off the cyclic-reconcile path. A
 standalone walk that finds its subtree mount-free clears the stale marker.
 
 No API or behavior change — mounts and unmounts fire exactly as before, including
-through dependency cycles, scopes, global atoms, and async/late dependencies.
+through dependency cycles, scopes, global atoms, and async/late dependencies. The
+marker-skip is trusted only on the hot propagation path where the closure's edges
+were just maintained; the cold entry points (subscribe / unsubscribe / reconcile)
+still walk fully, so a mount hook attached after its edges already exist (e.g. via
+the Jotai adapter's settable `onMount`) is mounted exactly as before.
