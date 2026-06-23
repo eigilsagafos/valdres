@@ -396,4 +396,32 @@ describe("subscribe", () => {
         rootStore.set(source, 2)
         expect(intermediateCallback).toHaveBeenCalledTimes(1)
     })
+
+    test("unsubscribe cleans deep orphaned selector chains iteratively", () => {
+        const rootStore = store()
+        const source = atom(1)
+        const depth = 100_000
+        let current = selector(get => get(source) + 1)
+        const first = current
+        rootStore.get(current)
+
+        for (let i = 1; i < depth; i++) {
+            const previous = current
+            current = selector(get => get(previous) + 1)
+            // Materialize each link as it is built so this test isolates
+            // unsubscribe cleanup depth rather than selector eval recursion.
+            rootStore.get(current)
+        }
+
+        const unsubscribeTail = rootStore.sub(current, () => {}, false)
+
+        expect(() => unsubscribeTail()).not.toThrow()
+        expect(rootStore.data.stateDependencies.has(current)).toBe(false)
+        expect(rootStore.data.stateDependencies.has(first)).toBe(false)
+        expect(rootStore.data.values.has(current)).toBe(false)
+        expect(rootStore.data.values.has(first)).toBe(false)
+        expect(rootStore.data.stateDependents.get(source)).not.toContain(
+            first,
+        )
+    })
 })
