@@ -190,4 +190,124 @@ describe("dynamic-dependency propagation", () => {
             subbed.forEach(u => u && u())
         }
     })
+
+    // Regression for the scope-shadow-on-equal bug: `scope.set(atom, v)` must
+    // establish the scope's shadow even when `v` equals the value currently
+    // INHERITED from the parent — otherwise the scope keeps tracking the parent
+    // and a later parent write to that atom leaks in, silently dropping the
+    // explicit override. (setAtom short-circuited on `areEqual` before writing
+    // the shadow; the txn path in writeAtoms already pinned equal values.)
+    //
+    // The fuzz above never caught this: its oracle REPLAYS the same ops in the
+    // same order, so when a scope set was order-dependently dropped, the oracle
+    // dropped it identically and the two agreed. This oracle is ORDER-INDEPENDENT
+    // — it derives each atom's expected scope value from a model (the scope's own
+    // last set if it ever set the atom, else read-through to the root's last set)
+    // and applies the root values before the scope shadows, so the scope's
+    // explicit set is always the last write and the shadow is guaranteed to pin.
+    test("fuzz: scope shadows pin regardless of set order (order-independent oracle)", () => {
+        const mulberry32 = (seed: number) => () => {
+            seed |= 0
+            seed = (seed + 0x6d2b79f5) | 0
+            let t = Math.imul(seed ^ (seed >>> 15), 1 | seed)
+            t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
+            return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+        }
+        const buildGraph = (rnd: () => number, nAtoms: number, nSelectors: number) => {
+            const selDefs: any[] = []
+            for (let i = 0; i < nSelectors; i++) {
+                const pick = (n: number, max: number) => {
+                    const out: number[] = []
+                    for (let j = 0; j < n; j++) out.push(Math.floor(rnd() * max))
+                    return out
+                }
+                selDefs.push({
+                    deps: pick(1 + Math.floor(rnd() * 3), nAtoms),
+                    selDeps: i > 0 ? pick(Math.floor(rnd() * 3), i) : [],
+                    altSelDeps: i > 0 ? pick(Math.floor(rnd() * 3), i) : [],
+                    ctrl: i > 0 && rnd() < 0.6 ? { sel: Math.floor(rnd() * i) } : { atom: Math.floor(rnd() * nAtoms) },
+                    mode: Math.floor(rnd() * 3),
+                })
+            }
+            return { nAtoms, selDefs }
+        }
+        const inst = (g: any) => {
+            const run = ++uid
+            const atoms = Array.from({ length: g.nAtoms }, (_, i) => atom(i, { name: `oa${i}.${run}` }))
+            const sels: any[] = []
+            g.selDefs.forEach((def: any, idx: number) => {
+                sels.push(selector(get => {
+                    const ctrl = "atom" in def.ctrl ? get(atoms[def.ctrl.atom]) : get(sels[def.ctrl.sel])
+                    let acc = def.mode + (ctrl % 3)
+                    if (ctrl % 2 === 0) {
+                        for (const di of def.deps) acc += get(atoms[di])
+                        for (const si of def.selDeps) acc += get(sels[si])
+                    } else {
+                        for (const si of def.altSelDeps) acc += get(sels[si]) * 2
+                    }
+                    return acc
+                }, { name: `s${idx}` }))
+            })
+            return { atoms, sels }
+        }
+
+        for (let seed = 1; seed <= 300; seed++) {
+            const rnd = mulberry32(seed)
+            const nAtoms = 3 + Math.floor(rnd() * 4)
+            const nSelectors = 10 + Math.floor(rnd() * 12)
+            const g = buildGraph(rnd, nAtoms, nSelectors)
+            const I = inst(g)
+            const root = store()
+            const child: any = root.scope("child")
+
+            // Order-independent model: per atom, the root's last set (default = i)
+            // and the scope's own last set (if it ever set it).
+            const rootVal = Array.from({ length: nAtoms }, (_, i) => i)
+            const scopeSet = new Array(nAtoms).fill(false)
+            const scopeVal = new Array(nAtoms).fill(0)
+
+            const subbed: (null | (() => void))[] = new Array(nSelectors).fill(null)
+            const toggle = (si: number) => {
+                if (subbed[si]) { subbed[si]!(); subbed[si] = null }
+                else subbed[si] = child.sub(I.sels[si], () => {})
+            }
+            for (let si = 0; si < nSelectors; si++) if (rnd() < 0.6) toggle(si)
+
+            for (let step = 0; step < 40; step++) {
+                const churn = Math.floor(rnd() * 3)
+                for (let c = 0; c < churn; c++) toggle(Math.floor(rnd() * nSelectors))
+                // Interleave individual root and scope sets in random order — the
+                // very mix that order-dependent shadow creation got wrong.
+                const m = 1 + Math.floor(rnd() * 3)
+                for (let j = 0; j < m; j++) {
+                    const ai = Math.floor(rnd() * nAtoms)
+                    const v = Math.floor(rnd() * 20)
+                    if (rnd() < 0.5) {
+                        root.set(I.atoms[ai], v)
+                        rootVal[ai] = v
+                    } else {
+                        child.set(I.atoms[ai], v)
+                        scopeSet[ai] = true
+                        scopeVal[ai] = v
+                    }
+                }
+
+                // Fresh oracle from the model: apply ALL root values first, then the
+                // scope shadows, so each scope set is the last write for its atom and
+                // the shadow is guaranteed to pin — independent of the live store's
+                // interleaving.
+                const oI = inst(g)
+                const oRoot = store()
+                const oChild: any = oRoot.scope("child")
+                for (let ai = 0; ai < nAtoms; ai++) oRoot.set(oI.atoms[ai], rootVal[ai])
+                for (let ai = 0; ai < nAtoms; ai++) if (scopeSet[ai]) oChild.set(oI.atoms[ai], scopeVal[ai])
+
+                for (let si = 0; si < nSelectors; si++) {
+                    if (!subbed[si]) continue
+                    expect(child.get(I.sels[si])).toBe(oChild.get(oI.sels[si]))
+                }
+            }
+            subbed.forEach(u => u && u())
+        }
+    })
 })

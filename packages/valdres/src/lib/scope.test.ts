@@ -423,6 +423,143 @@ describe("subscribe / unsubscribe / resubscribe across scopes", () => {
     })
 })
 
+describe("scope set pins even when value equals the inherited value", () => {
+    // Regression: setAtom short-circuited on `areEqual` BEFORE establishing the
+    // scope shadow, so `scope.set(atom, v)` where v equalled the currently
+    // INHERITED value created no shadow — the scope kept tracking the parent and
+    // a later parent write leaked in, silently dropping the explicit override.
+    // The txn commit path (writeAtoms) already pinned equal values; the
+    // individual-set path (setAtom) did not. Both must agree.
+
+    test("set to the inherited value still shadows; a later parent write does not leak", () => {
+        const a = atom(2, { name: "pin-eq-a" }) // default 2
+        const A = store()
+        const B = A.scope("B")
+
+        // B pins a=2 — the SAME value it currently inherits from A's default.
+        B.set(a, 2)
+        expect(B.data.values.has(a)).toBe(true) // shadow established
+
+        A.set(a, 11)
+        expect(A.get(a)).toBe(11)
+        expect(B.get(a)).toBe(2) // explicit override holds — parent write doesn't leak
+    })
+
+    test("the equal-value set itself notifies no one (visible value unchanged) but re-roots", () => {
+        const a = atom(2, { name: "pin-eq-b" })
+        const A = store()
+        const B = A.scope("B")
+
+        const cb = mock(() => {})
+        B.sub(a, cb)
+        // Until B writes, B's subscription is delegated up at A.
+        expect(A.data.subscriptions.get(a)?.size).toBe(1)
+
+        B.set(a, 2) // equal to inherited — visible value unchanged
+        expect(cb).toHaveBeenCalledTimes(0) // no notification for an unchanged value
+
+        // But the subscription has re-rooted into B, so a later parent write must
+        // NOT notify B (B now shadows the atom).
+        A.set(a, 11)
+        expect(cb).toHaveBeenCalledTimes(0)
+        expect(B.get(a)).toBe(2)
+    })
+
+    test("a scope selector reading the equal-pinned atom stays fresh after a parent write", () => {
+        const a = atom(2, { name: "pin-eq-c" })
+        const sel = selector(get => get(a) * 10, { name: "pin-eq-sel" })
+        const A = store()
+        const B = A.scope("B")
+
+        const cb = mock(() => {})
+        B.sub(sel, cb)
+        expect(B.get(sel)).toBe(20)
+
+        B.set(a, 2) // equal-value pin: B selector value unchanged
+        expect(cb).toHaveBeenCalledTimes(0)
+
+        A.set(a, 11) // must not leak into B
+        expect(A.get(sel)).toBe(110)
+        expect(B.get(sel)).toBe(20)
+        expect(cb).toHaveBeenCalledTimes(0)
+    })
+
+    test("individual set and txn set agree on pinning an equal value", () => {
+        const a1 = atom(2, { name: "pin-eq-d1" })
+        const a2 = atom(2, { name: "pin-eq-d2" })
+        const A = store()
+        const B = A.scope("B")
+
+        B.set(a1, 2) // individual set path (setAtom)
+        B.txn(t => t.set(a2, 2)) // txn commit path (writeAtoms)
+
+        A.set(a1, 99)
+        A.set(a2, 99)
+
+        expect(B.get(a1)).toBe(2)
+        expect(B.get(a2)).toBe(2)
+    })
+
+    test("family member: equal-value set in a scope holds against a later root write", () => {
+        const fam = atomFamily<number, [string]>(0, { name: "pin-eq-fam" })
+        const m = fam("k")
+        const A = store()
+        A.set(m, 5)
+        const B = A.scope("B")
+        B.set(m, 5) // equal to inherited 5
+        A.set(m, 99)
+        expect(A.get(m)).toBe(99)
+        expect(B.get(m)).toBe(5)
+    })
+
+    test("deep nesting: a grandchild equal-pin follows neither a later parent nor grandparent write", () => {
+        const a = atom(7, { name: "pin-eq-deep" })
+        const A = store()
+        A.set(a, 7)
+        const B = A.scope("B")
+        const C = B.scope("C")
+        C.set(a, 7) // equal to the value inherited (through B) from A
+        A.set(a, 50)
+        expect(A.get(a)).toBe(50)
+        expect(B.get(a)).toBe(50) // B never shadowed → follows root
+        expect(C.get(a)).toBe(7) // C pinned
+    })
+
+    test("function updater returning the inherited value still pins", () => {
+        const a = atom(3, { name: "pin-eq-fn" })
+        const A = store()
+        const B = A.scope("B")
+        B.set(a, current => current) // resolves to the inherited 3
+        A.set(a, 42)
+        expect(B.get(a)).toBe(3)
+    })
+
+    test("set-equal then unset re-inherits (the shadow really was created, then removed)", () => {
+        const a = atom(4, { name: "pin-eq-unset" })
+        const A = store()
+        const B = A.scope("B")
+        B.set(a, 4) // equal-value pin → shadow established
+        expect(B.data.values.has(a)).toBe(true)
+        B.unset(a) // remove the shadow → re-inherit
+        expect(B.data.values.has(a)).toBe(false)
+        A.set(a, 88)
+        expect(B.get(a)).toBe(88) // follows root again
+    })
+
+    test("equal-value set on a root store is a true no-op (no spurious write)", () => {
+        // The fix is scoped to scopes: a root store has no parent to leak from,
+        // so an equal-value set must remain a no-op on the write hot path.
+        const a = atom(1, { name: "pin-eq-root" })
+        const A = store()
+        A.set(a, 5)
+        const cb = mock(() => {})
+        A.sub(a, cb)
+        A.set(a, 5) // same value
+        expect(cb).toHaveBeenCalledTimes(0)
+        expect(A.get(a)).toBe(5)
+    })
+})
+
 describe("maxAge interaction with scopes", () => {
     test("scope reading a maxAge atom inherits root's cached value, no separate timer", async () => {
         const A = store("A")

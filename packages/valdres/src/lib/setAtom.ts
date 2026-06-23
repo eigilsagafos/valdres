@@ -89,7 +89,23 @@ export const setAtom = <Value = any>(
     const areEqual = isPromiseLike(currentValue)
         ? currentValue === syncValue
         : atom.equal(currentValue, syncValue)
-    if (areEqual) return syncValue
+    if (areEqual) {
+        // On a scope, an atom that hasn't been shadowed yet is read through to a
+        // parent, so `currentValue` is the INHERITED value. Setting it to a value
+        // equal to the inherited one must STILL establish the shadow — otherwise
+        // the scope keeps tracking the parent and a later parent write leaks in,
+        // silently dropping this explicit override (and a delegating subscription
+        // never re-roots). setValueInData pins the value, registers the shadow in
+        // scopeValueIndex, and re-roots any delegating subscriptions. The visible
+        // value is unchanged, so there is nothing to propagate or notify. This
+        // mirrors writeAtoms' equal branch, which already does this for the txn
+        // commit path. On a root (no parent) or an already-shadowed scope atom
+        // this is a true no-op, so the write hot path is untouched.
+        if (data.parent && !data.values.has(atom)) {
+            return setValueInData(atom, syncValue, data)
+        }
+        return syncValue
+    }
     syncValue = setValueInData(atom, syncValue, data)
     if (atom.onSet && !skipOnSet) atom.onSet(syncValue, data)
     resolvePendingDefault(atom, data, syncValue)
