@@ -42,6 +42,38 @@ test("deleting atom family member from root propagates into scope with cloned fa
     expect(scopedStore.get(countSelector)).toBe(2)
 })
 
+test("overlapping initial and downstream dirty selectors evaluate once", () => {
+    const rootStore = store()
+    const source = atom(1, { name: "overlap-source" })
+
+    const parentSelectorCallback = mock(get => get(source) * 2)
+    const parentSelector = selector(parentSelectorCallback, {
+        name: "overlap-parent",
+    })
+    const childSelectorCallback = mock(
+        // Read `source` before `parentSelector` so the child is inserted before
+        // the parent in source's dependent set. The old linear-first pass then
+        // evaluated child once before parent settled, and once again downstream.
+        get => get(source) + get(parentSelector),
+    )
+    const childSelector = selector(childSelectorCallback, {
+        name: "overlap-child",
+    })
+
+    const callback = mock(() => {})
+    rootStore.sub(childSelector, callback)
+    expect(rootStore.get(childSelector)).toBe(3)
+    expect(parentSelectorCallback).toHaveBeenCalledTimes(1)
+    expect(childSelectorCallback).toHaveBeenCalledTimes(1)
+
+    rootStore.set(source, 2)
+
+    expect(rootStore.get(childSelector)).toBe(6)
+    expect(parentSelectorCallback).toHaveBeenCalledTimes(2)
+    expect(childSelectorCallback).toHaveBeenCalledTimes(2)
+    expect(callback).toHaveBeenCalledTimes(1)
+})
+
 test("propagateUpdatedAtoms", () => {
     const rootStore = store()
     const userFamily = atomFamily<

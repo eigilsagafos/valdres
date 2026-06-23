@@ -782,7 +782,6 @@ const propagateDownstreamTopo = (
         pending.set(s, count)
         if (count === 0) ready.push(s)
     }
-
     // A closure member only needs re-evaluation if at least one of its
     // upstream parents actually changed value. Seeds reach here because
     // a first-pass parent changed, so they start as needing eval. Pure
@@ -980,25 +979,148 @@ const propagateDownstreamTopo = (
     }
 }
 
-// Re-evaluate the initial dirty selectors, then topologically evaluate
-// anything downstream of selectors whose values actually shifted. The topo
-// path guarantees each transitive selector evaluates at most once per
-// propagation even when reachable through paths of differing lengths — the
-// wide-DAG case where a pure BFS would recompute shared nodes once per
-// depth.
-//
-// The first sweep stays a plain linear loop (matching the legacy BFS first
-// iteration) so flat fan-out and init-only chain initialization — where
-// values often don't change at all — pay zero topo overhead. We only
-// allocate closure/pending state when at least one parent's value shift
-// produced live downstream work.
-//
-// Caveat: a selector that's both in the initial set AND a downstream of
-// another initial selector can be evaluated twice in this scheme (once in
-// the linear sweep with potentially stale upstream, once in the topo
-// settle). This matches the legacy BFS behavior and is a niche case in
-// practice; the wide-DAG payoff comes from intermediate (non-initial)
-// selectors which the topo path handles exactly once.
+const orderInitialSelectors = (
+    selectors: Set<Selector>,
+    data: StoreData,
+): Selector[] => {
+    if (selectors.size < 2) return [...selectors]
+
+    const pending = new Map<Selector, number>()
+    const downstream = new Map<Selector, Selector[]>()
+    const ready: Selector[] = []
+
+    for (const selector of selectors) {
+        let count = 0
+        const deps = data.stateDependencies.get(selector)
+        if (deps) {
+            for (const dep of deps) {
+                if (!selectors.has(dep as Selector)) continue
+                count++
+                let list = downstream.get(dep as Selector)
+                if (!list) {
+                    list = []
+                    downstream.set(dep as Selector, list)
+                }
+                list.push(selector)
+            }
+        }
+        pending.set(selector, count)
+        if (count === 0) ready.push(selector)
+    }
+
+    const ordered: Selector[] = []
+    let head = 0
+    while (head < ready.length) {
+        const selector = ready[head++]
+        ordered.push(selector)
+        const children = downstream.get(selector)
+        if (!children) continue
+        for (const child of children) {
+            const count = (pending.get(child) ?? 0) - 1
+            pending.set(child, count)
+            if (count === 0) ready.push(child)
+        }
+    }
+
+    // Cyclic initial regions rely on the old insertion-order behavior plus the
+    // liveness reconcile. Only reorder when the initial subgraph is acyclic.
+    return ordered.length === selectors.size ? ordered : [...selectors]
+}
+
+const propagateSelectorUpdatesLinearFirst = (
+    selectors: Set<Selector>,
+    data: StoreData,
+    collectedSubscribers: Set<any>,
+    updatedInitializedAtoms: Set<Atom>,
+    isInitOnly: boolean,
+    changedSelectors?: Set<Selector>,
+) => {
+    let downstreamSeeds: Set<Selector> | undefined
+    const orderedSelectors = orderInitialSelectors(selectors, data)
+    const processedInitialSelectors = new Set<Selector>()
+    // Reused across every re-evaluated selector — see propagateDownstreamTopo.
+    const depsChange: DepsChange = {}
+    for (const selector of orderedSelectors) {
+        const currentValue = data.values.get(selector)
+        if (isPromiseLike(currentValue) && isInitOnly) {
+            processedInitialSelectors.add(selector)
+            continue
+        }
+        const dependents = data.stateDependents.get(selector)
+        const subscribers = data.subscriptions.get(selector)
+        if (
+            !isPromiseLike(currentValue) &&
+            (!dependents || dependents.size === 0) &&
+            (!subscribers || subscribers.size === 0)
+        ) {
+            // No live consumer — invalidate for lazy re-eval on next read.
+            data.values.delete(selector)
+            processedInitialSelectors.add(selector)
+            continue
+        }
+        depsChange.added = undefined
+        depsChange.removed = undefined
+        const wasValueUpdated = reEvaluateSelector(
+            selector,
+            data,
+            updatedInitializedAtoms,
+            depsChange,
+            currentValue,
+        )
+        // Casts work around a tsgo control-flow narrowing quirk where
+        // property accesses lose their narrowing after a function call.
+        const added = depsChange.added as Set<State> | undefined
+        const removed = depsChange.removed as Set<State> | undefined
+        if ((added || removed) && isLive(selector, data)) {
+            if (added) {
+                for (const dep of added) {
+                    onLiveDependencyAdded(dep, data)
+                    mountTransitiveDeps(dep, data)
+                }
+            }
+            if (removed) {
+                for (const dep of removed) {
+                    onLiveDependencyRemoved(dep, data)
+                    unmountOrphanedDeps(dep, data)
+                }
+            }
+        }
+        processedInitialSelectors.add(selector)
+        if (!wasValueUpdated) continue
+        if (changedSelectors) changedSelectors.add(selector)
+        if (subscribers) addSetToSet(subscribers, collectedSubscribers)
+        // Re-fetch dependents — eval may have changed them.
+        const downstream = data.stateDependents.get(selector)
+        if (downstream && downstream.size > 0) {
+            if (!downstreamSeeds) downstreamSeeds = new Set()
+            for (const d of downstream) {
+                if (selectors.has(d) && !processedInitialSelectors.has(d)) {
+                    continue
+                }
+                downstreamSeeds.add(d)
+            }
+        }
+    }
+
+    if (downstreamSeeds && downstreamSeeds.size > 0) {
+        propagateDownstreamTopo(
+            downstreamSeeds,
+            data,
+            collectedSubscribers,
+            updatedInitializedAtoms,
+            isInitOnly,
+            changedSelectors,
+        )
+    }
+}
+
+// Re-evaluate the initial dirty selectors, then topologically evaluate anything
+// downstream of selectors whose values actually shifted. The initial sweep is
+// ordered topologically when that initial subgraph is acyclic, and a downstream
+// selector already scheduled later in the same initial sweep is not queued for a
+// second topo pass. Cyclic regions keep the old insertion-order behavior because
+// the liveness churn tests rely on those transitional cycles being evaluated
+// and reconciled by the existing backstop.
 const propagateSelectorUpdates = (
     selectors: Set<Selector>,
     data: StoreData,
@@ -1009,7 +1131,6 @@ const propagateSelectorUpdates = (
 ) => {
     if (selectors.size === 0) return
 
-    let downstreamSeeds: Set<Selector> | undefined
     // Own the per-pass liveness-reconcile collector. `evaluateSelector` populates
     // `data.livenessSeeds` (selectors whose dep SET changed + removed deps) and
     // arms one of two flags: `livenessRemovalArmed` (a dep was removed — gated on
@@ -1027,70 +1148,14 @@ const propagateSelectorUpdates = (
     const ownsLivenessSeeds = beginLivenessPass(data)
     let seedsToReconcile: Set<State> | null = null
     try {
-        // Reused across every re-evaluated selector — see propagateDownstreamTopo.
-        const depsChange: DepsChange = {}
-        for (const selector of selectors) {
-            const currentValue = data.values.get(selector)
-            if (isPromiseLike(currentValue) && isInitOnly) continue
-            const dependents = data.stateDependents.get(selector)
-            const subscribers = data.subscriptions.get(selector)
-            if (
-                !isPromiseLike(currentValue) &&
-                (!dependents || dependents.size === 0) &&
-                (!subscribers || subscribers.size === 0)
-            ) {
-                // No live consumer — invalidate for lazy re-eval on next read.
-                data.values.delete(selector)
-                continue
-            }
-            depsChange.added = undefined
-            depsChange.removed = undefined
-            const wasValueUpdated = reEvaluateSelector(
-                selector,
-                data,
-                updatedInitializedAtoms,
-                depsChange,
-                currentValue,
-            )
-            // Casts work around a tsgo control-flow narrowing quirk where
-            // property accesses lose their narrowing after a function call.
-            const added = depsChange.added as Set<State> | undefined
-            const removed = depsChange.removed as Set<State> | undefined
-            if ((added || removed) && isLive(selector, data)) {
-                if (added) {
-                    for (const dep of added) {
-                        onLiveDependencyAdded(dep, data)
-                        mountTransitiveDeps(dep, data)
-                    }
-                }
-                if (removed) {
-                    for (const dep of removed) {
-                        onLiveDependencyRemoved(dep, data)
-                        unmountOrphanedDeps(dep, data)
-                    }
-                }
-            }
-            if (!wasValueUpdated) continue
-            if (changedSelectors) changedSelectors.add(selector)
-            if (subscribers) addSetToSet(subscribers, collectedSubscribers)
-            // Re-fetch dependents — eval may have changed them.
-            const downstream = data.stateDependents.get(selector)
-            if (downstream && downstream.size > 0) {
-                if (!downstreamSeeds) downstreamSeeds = new Set()
-                for (const d of downstream) downstreamSeeds.add(d)
-            }
-        }
-
-        if (downstreamSeeds && downstreamSeeds.size > 0) {
-            propagateDownstreamTopo(
-                downstreamSeeds,
-                data,
-                collectedSubscribers,
-                updatedInitializedAtoms,
-                isInitOnly,
-                changedSelectors,
-            )
-        }
+        propagateSelectorUpdatesLinearFirst(
+            selectors,
+            data,
+            collectedSubscribers,
+            updatedInitializedAtoms,
+            isInitOnly,
+            changedSelectors,
+        )
     } finally {
         // Always release the collector — even if a user onMount/cleanup above threw
         // (see the note at the top). Returns the region to reconcile, or null.
