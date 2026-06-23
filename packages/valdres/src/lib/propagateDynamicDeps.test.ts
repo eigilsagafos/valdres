@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test"
+import { describe, expect, mock, test } from "bun:test"
 import { atom } from "../atom"
 import { selector } from "../selector"
 import { store } from "../store"
@@ -87,6 +87,148 @@ describe("dynamic-dependency propagation", () => {
             if (!subs[i]) continue
             expect(s.get(sels[i])).toBe(os.get(o.sels[i]))
         }
+    })
+
+    test("stranded aggregate is settled once after upstream revisits", () => {
+        const defs = [
+            {
+                deps: [1, 2],
+                selDeps: [],
+                altSelDeps: [],
+                ctrl: { atom: 0 },
+                mode: 0,
+            },
+            {
+                deps: [4, 1, 4],
+                selDeps: [0],
+                altSelDeps: [],
+                ctrl: { sel: 0 },
+                mode: 1,
+            },
+            {
+                deps: [2, 0],
+                selDeps: [1, 0],
+                altSelDeps: [1, 1],
+                ctrl: { atom: 4 },
+                mode: 2,
+            },
+            {
+                deps: [1, 2, 1],
+                selDeps: [],
+                altSelDeps: [],
+                ctrl: { atom: 2 },
+                mode: 1,
+            },
+            {
+                deps: [4, 2],
+                selDeps: [2, 2],
+                altSelDeps: [],
+                ctrl: { atom: 4 },
+                mode: 0,
+            },
+            {
+                deps: [1, 3],
+                selDeps: [],
+                altSelDeps: [],
+                ctrl: { sel: 1 },
+                mode: 0,
+            },
+            {
+                deps: [1],
+                selDeps: [],
+                altSelDeps: [0],
+                ctrl: { atom: 2 },
+                mode: 0,
+            },
+            {
+                deps: [2, 0],
+                selDeps: [4],
+                altSelDeps: [],
+                ctrl: { sel: 6 },
+                mode: 0,
+            },
+            {
+                deps: [2],
+                selDeps: [5, 7],
+                altSelDeps: [],
+                ctrl: { sel: 3 },
+                mode: 2,
+            },
+            {
+                deps: [0],
+                selDeps: [0, 0],
+                altSelDeps: [2],
+                ctrl: { atom: 2 },
+                mode: 2,
+            },
+        ] as const
+        const build = () => {
+            const run = ++uid
+            const atoms = Array.from({ length: 5 }, (_, i) =>
+                atom(i, { name: `a${i}.${run}` }),
+            )
+            const sels: any[] = []
+            defs.forEach((def, idx) => {
+                sels.push(
+                    selector(
+                        get => {
+                            const ctrl =
+                                "atom" in def.ctrl
+                                    ? get(atoms[def.ctrl.atom])
+                                    : get(sels[def.ctrl.sel])
+                            let acc = def.mode + (ctrl % 3)
+                            if (ctrl % 2 === 0) {
+                                for (const di of def.deps) acc += get(atoms[di])
+                                for (const si of def.selDeps)
+                                    acc += get(sels[si])
+                            } else {
+                                for (const si of def.altSelDeps)
+                                    acc += get(sels[si]) * 2
+                            }
+                            return acc
+                        },
+                        { name: `s${idx}` },
+                    ),
+                )
+            })
+            const aggregateCallback = mock(get => {
+                let total = 0
+                for (const sel of sels) total += get(sel)
+                return total
+            })
+            const aggregate = selector(aggregateCallback, {
+                name: `strandedAggregate.${run}`,
+            })
+            return { atoms, sels, aggregate, aggregateCallback }
+        }
+
+        const { atoms, sels, aggregate, aggregateCallback } = build()
+        const root = store()
+        const s = root.scope("stranded-aggregate")
+        const subs: (null | (() => void))[] = sels.map(sel =>
+            s.sub(sel, () => {}),
+        )
+        s.sub(aggregate, () => {})
+        s.get(aggregate)
+        subs[7]!()
+        subs[7] = null
+        subs[0]!()
+        subs[0] = null
+        s.set(atoms[0], 18)
+
+        const callsBeforeStrandedUpdate = aggregateCallback.mock.calls.length
+        s.set(atoms[2], 16)
+
+        const o = build()
+        const oRoot = store()
+        const os = oRoot.scope("stranded-aggregate")
+        os.set(o.atoms[0], 18)
+        os.set(o.atoms[2], 16)
+
+        expect(s.get(aggregate)).toBe(os.get(o.aggregate))
+        expect(
+            aggregateCallback.mock.calls.length - callsBeforeStrandedUpdate,
+        ).toBe(1)
     })
 
     // Random dynamic-dependency graphs (branch keyed on a derived selector,
@@ -188,6 +330,93 @@ describe("dynamic-dependency propagation", () => {
                 }
             }
             subbed.forEach(u => u && u())
+        }
+    })
+
+    // Regression for the 1.0.0-beta wide-fan-in re-evaluation blow-up: a
+    // subscribed aggregator with dynamic deps that reads many upstream selectors
+    // was re-evaluated roughly once per dependency on a single commit. This
+    // seed produced ~169 evaluations of one selector before the fix.
+    test("wide fan-in aggregator is not re-evaluated once per dependency", () => {
+        const mulberry32 = (seed: number) => () => {
+            seed |= 0
+            seed = (seed + 0x6d2b79f5) | 0
+            let t = Math.imul(seed ^ (seed >>> 15), 1 | seed)
+            t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
+            return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+        }
+        const seed = 1147
+        const rnd = mulberry32(seed)
+        const nAtoms = 4 + Math.floor(rnd() * 6)
+        const nSelectors = 12 + Math.floor(rnd() * 24)
+        const evals = new Map<number, number>()
+        const defs: any[] = []
+        for (let i = 0; i < nSelectors; i++) {
+            const pick = (n: number, max: number) => {
+                const out: number[] = []
+                for (let j = 0; j < n; j++) out.push(Math.floor(rnd() * max))
+                return out
+            }
+            const wide = i >= nSelectors - 3 && i > 4
+            defs.push({
+                ctrl: i > 0 && rnd() < 0.6 ? { sel: Math.floor(rnd() * i) } : { atom: Math.floor(rnd() * nAtoms) },
+                deps: pick(1 + Math.floor(rnd() * 3), nAtoms),
+                selDeps: wide ? Array.from({ length: i }, (_, k) => k) : i > 0 ? pick(Math.floor(rnd() * 3), i) : [],
+                altSelDeps: i > 0 ? pick(Math.floor(rnd() * 3), i) : [],
+                mode: Math.floor(rnd() * 3),
+            })
+        }
+        const inst = (countEvals: boolean) => {
+            const run = ++uid
+            const atoms = Array.from({ length: nAtoms }, (_, i) => atom(i, { name: `wfi-a${i}.${run}` }))
+            const sels: any[] = []
+            defs.forEach((def, idx) => {
+                sels.push(selector(get => {
+                    if (countEvals) evals.set(idx, (evals.get(idx) ?? 0) + 1)
+                    const ctrl = "atom" in def.ctrl ? get(atoms[def.ctrl.atom]) : get(sels[def.ctrl.sel])
+                    let acc = def.mode + (ctrl % 3)
+                    if (ctrl % 2 === 0) {
+                        for (const di of def.deps) acc += get(atoms[di])
+                        for (const si of def.selDeps) acc += get(sels[si])
+                    } else {
+                        for (const si of def.altSelDeps) acc += get(sels[si]) * 2
+                    }
+                    return acc
+                }, { name: `wfi-s${idx}.${run}` }))
+            })
+            return { atoms, sels }
+        }
+
+        const I = inst(true)
+        const root = store()
+        const child = root.scope("draft")
+        const unsubs: (() => void)[] = []
+        for (let i = 0; i < nSelectors; i++)
+            if (rnd() < 0.5) unsubs.push(child.sub(I.sels[i], () => {}))
+        for (let i = Math.max(0, nSelectors - 3); i < nSelectors; i++)
+            unsubs.push(child.sub(I.sels[i], () => {}))
+        for (let i = 0; i < nSelectors; i++) child.get(I.sels[i])
+
+        evals.clear()
+        const nChanged = 1 + Math.floor(rnd() * 4)
+        const changed: { ai: number; v: number }[] = []
+        for (let k = 0; k < nChanged; k++)
+            changed.push({ ai: Math.floor(rnd() * nAtoms), v: 100 + Math.floor(rnd() * 50) })
+        child.txn(({ set }) => {
+            for (const c of changed) set(I.atoms[c.ai], c.v)
+        })
+
+        let maxEvals = 0
+        for (const n of evals.values()) if (n > maxEvals) maxEvals = n
+        unsubs.forEach(u => u())
+        expect(maxEvals).toBeLessThan(40)
+
+        const O = inst(false)
+        const oRoot = store()
+        const oChild = oRoot.scope("draft")
+        for (const c of changed) oChild.set(O.atoms[c.ai], c.v)
+        for (let i = 0; i < nSelectors; i++) {
+            expect(child.get(I.sels[i])).toBe(oChild.get(O.sels[i]))
         }
     })
 })
