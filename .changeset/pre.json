@@ -61,6 +61,7 @@
     "lazy-abort-controller",
     "lazy-deps-change-holder",
     "loud-pandas-press",
+    "mount-closure-marker",
     "named-registry-ssr-commit-hook",
     "onchange-selectors",
     "pending-default-on-store",
