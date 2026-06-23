@@ -733,13 +733,17 @@ export const propagateDirtySelectors = (
 }
 
 
-// Topological evaluation of a downstream subgraph. Each selector in
-// `seeds` (and everything transitively reachable from them) is re-evaluated
-// at most once, in dependency order. The seeds are direct dependents of
-// initial selectors whose values just changed in the first sweep — i.e.
-// "level-2" selectors. We only enter the topo path when there's actual
-// downstream work, since the bookkeeping (closure + pending count) is
-// material relative to a simple BFS pass.
+// Topological evaluation of a downstream subgraph. The main ready queue visits
+// each selector in `seeds` (and everything transitively reachable from them) at
+// most once, in dependency order. A finalized node is deleted from `pending`,
+// which caps duplicate pushes caused by dynamic dependency churn without a
+// separate queued/evaluated Set. If churn later proves that a settled selector
+// must run again, that selector and its downstream closure are deferred to the
+// settle phase below so wide aggregates run after upstream revisits rather than
+// once per transient wave. The seeds are direct dependents of initial selectors
+// whose values just changed in the first sweep — i.e. "level-2" selectors. We
+// only enter the topo path when there's actual downstream work, since the
+// bookkeeping (closure + pending count) is material relative to a simple BFS pass.
 const propagateDownstreamTopo = (
     seeds: Set<Selector>,
     data: StoreData,
@@ -790,9 +794,24 @@ const propagateDownstreamTopo = (
 
     // Set when the dependency graph changes during the walk (a selector's deps
     // were added/removed, or an out-of-closure dependent was pulled in). Only
-    // then can a node be left stranded with an undrained `pending`, so the
-    // settle scan below is skipped entirely on the steady-state path.
+    // then can a node need the settle scan below, so the steady-state fast path
+    // skips it entirely.
     let graphMutated = false
+    let resweep: Set<Selector> | undefined
+    const markForResweep = (selector: Selector) => {
+        graphMutated = true
+        if (!resweep) resweep = new Set()
+        const stack = [selector]
+        for (let i = 0; i < stack.length; i++) {
+            const s = stack[i]
+            if (resweep.has(s)) continue
+            resweep.add(s)
+            const downstream = data.stateDependents.get(s)
+            if (downstream) {
+                for (const d of downstream) stack.push(d)
+            }
+        }
+    }
 
     const advance = (selector: Selector, propagateChange: boolean) => {
         const downstream = data.stateDependents.get(selector)
@@ -818,7 +837,12 @@ const propagateDownstreamTopo = (
                 }
                 continue
             }
-            const c = (pending.get(d) ?? 0) - 1
+            const cur = pending.get(d)
+            if (cur === undefined) {
+                if (propagateChange) markForResweep(d)
+                continue
+            }
+            const c = cur - 1
             pending.set(d, c)
             if (propagateChange) needsEval.add(d)
             if (c <= 0) ready.push(d)
@@ -834,15 +858,19 @@ const propagateDownstreamTopo = (
     let head = 0
     while (head < ready.length) {
         const selector = ready[head++]
+        if (resweep?.has(selector)) continue
+        if (!pending.has(selector)) continue
 
         const currentValue = data.values.get(selector)
 
         if (isPromiseLike(currentValue) && isInitOnly) {
+            pending.delete(selector)
             advance(selector, false)
             continue
         }
 
         if (!needsEval.has(selector)) {
+            pending.delete(selector)
             advance(selector, false)
             continue
         }
@@ -857,6 +885,7 @@ const propagateDownstreamTopo = (
         ) {
             // No live consumer — invalidate for lazy re-eval on next read.
             data.values.delete(selector)
+            pending.delete(selector)
             advance(selector, false)
             continue
         }
@@ -893,6 +922,7 @@ const propagateDownstreamTopo = (
             }
         }
 
+        pending.delete(selector)
         advance(selector, wasValueUpdated)
         if (wasValueUpdated) {
             if (changedSelectors) changedSelectors.add(selector)
@@ -900,24 +930,26 @@ const propagateDownstreamTopo = (
         }
     }
 
-    // Settle stranded nodes. The `pending` counts are a snapshot taken before
-    // the walk; they assume the dependency graph is fixed for its duration. But
-    // a selector can be re-evaluated out-of-band DURING the walk — most commonly
-    // lazily re-initialized via getState when another selector reads it (after
-    // its value was dropped by an earlier orphan-invalidation/unsubscribe). If
-    // that re-eval drops a dependency it was snapshotted with, the dropped
-    // parent's reverse edge is gone, so it never decrements this node's
-    // `pending`, which then stalls above 0 and the node is never processed —
-    // even though one of its surviving dependencies changed. Such a node is left
-    // stale, and so is anything that read it. Re-settle the stranded set (and
-    // whatever depends on it) with a fixpoint that re-fetches dependents each
-    // pass, which is inherently robust to a graph that changed under us. Guarded
-    // by `graphMutated`, so the steady-state fast path skips it entirely.
+    // Settle stranded/resweep nodes. The `pending` counts are a snapshot taken
+    // before the walk; they assume the dependency graph is fixed for its
+    // duration. But a selector can be re-evaluated out-of-band DURING the walk —
+    // most commonly lazily re-initialized via getState when another selector
+    // reads it (after its value was dropped by an earlier
+    // orphan-invalidation/unsubscribe). If that re-eval drops a dependency it
+    // was snapshotted with, the dropped parent's reverse edge is gone, so it
+    // never decrements this node's `pending`, which then stalls above 0 and the
+    // node is never processed. Also, a node already settled by the main ready
+    // queue can receive another real changed-parent signal after graph churn; it
+    // has no `pending` entry, so it is recorded in `resweep`. Re-settle those
+    // nodes and their downstream closure with a dynamic topo fixpoint. That lets
+    // upstream revisits settle before wide downstream aggregates run, while
+    // still falling back to wave settling for cyclic regions. Guarded by
+    // `graphMutated`, so the steady-state fast path skips it entirely.
     if (!graphMutated) return
 
-    let stranded: Set<Selector> | undefined
+    let stranded: Set<Selector> | undefined = resweep
     for (const s of closure) {
-        if (needsEval.has(s) && (pending.get(s) ?? 0) > 0) {
+        if (needsEval.has(s) && pending.has(s)) {
             if (!stranded) stranded = new Set()
             stranded.add(s)
         }
@@ -925,57 +957,87 @@ const propagateDownstreamTopo = (
     if (!stranded) return
 
     let work = stranded
-    while (work.size > 0) {
-        const next = new Set<Selector>()
-        for (const selector of work) {
-            const currentValue = data.values.get(selector)
-            if (isPromiseLike(currentValue) && isInitOnly) continue
-            const dependents = data.stateDependents.get(selector)
-            const subscribers = data.subscriptions.get(selector)
-            if (
-                !isPromiseLike(currentValue) &&
-                (!dependents || dependents.size === 0) &&
-                (!subscribers || subscribers.size === 0)
-            ) {
-                data.values.delete(selector)
-                continue
-            }
-            depsChange.added = undefined
-            depsChange.removed = undefined
-            const wasValueUpdated = reEvaluateSelector(
-                selector,
-                data,
-                updatedInitializedAtoms,
-                depsChange,
-                currentValue,
-            )
-            const added = depsChange.added as Set<State> | undefined
-            const removed = depsChange.removed as Set<State> | undefined
-            if ((added || removed) && isLive(selector, data)) {
-                if (added) {
-                    for (const dep of added) {
-                        onLiveDependencyAdded(dep, data)
-                        mountTransitiveDeps(dep, data)
-                    }
+    const hasUnsettledDependency = (selector: Selector) => {
+        const deps = data.stateDependencies.get(selector)
+        if (!deps) return false
+        for (const dep of deps) {
+            if (dep !== selector && work.has(dep as Selector)) return true
+        }
+        return false
+    }
+    const enqueueDownstream = (selector: Selector) => {
+        const downstream = data.stateDependents.get(selector)
+        if (!downstream) return
+        for (const d of downstream) {
+            work.add(d)
+        }
+    }
+    const evaluateStrandedSelector = (selector: Selector) => {
+        const currentValue = data.values.get(selector)
+        if (isPromiseLike(currentValue) && isInitOnly) return false
+        const dependents = data.stateDependents.get(selector)
+        const subscribers = data.subscriptions.get(selector)
+        if (
+            !isPromiseLike(currentValue) &&
+            (!dependents || dependents.size === 0) &&
+            (!subscribers || subscribers.size === 0)
+        ) {
+            data.values.delete(selector)
+            return false
+        }
+        depsChange.added = undefined
+        depsChange.removed = undefined
+        const wasValueUpdated = reEvaluateSelector(
+            selector,
+            data,
+            updatedInitializedAtoms,
+            depsChange,
+            currentValue,
+        )
+        const added = depsChange.added as Set<State> | undefined
+        const removed = depsChange.removed as Set<State> | undefined
+        if ((added || removed) && isLive(selector, data)) {
+            if (added) {
+                for (const dep of added) {
+                    onLiveDependencyAdded(dep, data)
+                    mountTransitiveDeps(dep, data)
                 }
-                if (removed) {
-                    for (const dep of removed) {
-                        onLiveDependencyRemoved(dep, data)
-                        unmountOrphanedDeps(dep, data)
-                    }
-                }
             }
-            if (wasValueUpdated) {
-                if (changedSelectors) changedSelectors.add(selector)
-                if (subscribers) addSetToSet(subscribers, collectedSubscribers)
-                // Re-fetch dependents — eval may have changed them.
-                const downstream = data.stateDependents.get(selector)
-                if (downstream) {
-                    for (const d of downstream) next.add(d)
+            if (removed) {
+                for (const dep of removed) {
+                    onLiveDependencyRemoved(dep, data)
+                    unmountOrphanedDeps(dep, data)
                 }
             }
         }
-        work = next
+        if (wasValueUpdated) {
+            if (changedSelectors) changedSelectors.add(selector)
+            if (subscribers) addSetToSet(subscribers, collectedSubscribers)
+            // Re-fetch dependents — eval may have changed them.
+            enqueueDownstream(selector)
+        }
+        return wasValueUpdated
+    }
+    while (work.size > 0) {
+        let progressed = false
+        const batch = [...work]
+        for (const selector of batch) {
+            if (!work.has(selector)) continue
+            if (hasUnsettledDependency(selector)) continue
+            work.delete(selector)
+            progressed = true
+            evaluateStrandedSelector(selector)
+        }
+        if (progressed) continue
+
+        // Cyclic stranded regions have no dependency-free node. Fall back to the
+        // previous wave behavior for that region so cyclic dynamic graphs still
+        // get a chance to settle instead of stalling behind the topo gate.
+        const cyclicBatch = [...work]
+        work = new Set()
+        for (const selector of cyclicBatch) {
+            evaluateStrandedSelector(selector)
+        }
     }
 }
 
