@@ -79,31 +79,46 @@ export const unsubscribe = <V>(
 const cleanupOrphanedDeps = (
     state: State,
     data: StoreData,
-    visited: Set<State> = new Set(),
 ) => {
-    if (visited.has(state)) return
-    visited.add(state)
-    if (isLive(state, data)) return
+    const visited = new Set<State>()
+    const stack = [state]
+    while (stack.length > 0) {
+        const current = stack.pop()!
+        if (visited.has(current)) continue
+        visited.add(current)
+        if (isLive(current, data)) continue
 
-    // For selectors: remove from dependencies' stateDependents and clear cache
-    const deps = data.stateDependencies.get(state)
-    if (deps) {
-        for (const dep of deps) {
-            const depDependents = data.stateDependents.get(dep)
-            if (depDependents) {
-                depDependents.delete(state)
+        const dependents = data.stateDependents.get(current)
+        const dependentNext = dependents ? [...dependents] : []
+
+        // For selectors: remove from dependencies' stateDependents and clear
+        // cache. Then walk those dependencies too: removing `current` may have
+        // been the last live edge keeping an intermediate selector materialized.
+        const deps = data.stateDependencies.get(current)
+        if (deps) {
+            const dependencyNext = [...deps]
+            for (const dep of dependencyNext) {
+                const depDependents = data.stateDependents.get(dep)
+                if (depDependents) {
+                    depDependents.delete(current)
+                }
             }
-        }
-        data.stateDependencies.delete(state)
-        data.values.delete(state)
-        data.abortControllers.delete(state)
-    }
+            data.stateDependencies.delete(current)
+            data.values.delete(current)
+            data.abortControllers.delete(current)
 
-    // Recursively clean up orphaned dependents (selectors that read this state)
-    const dependents = data.stateDependents.get(state)
-    if (dependents) {
-        for (const dep of [...dependents]) {
-            cleanupOrphanedDeps(dep, data, visited)
+            for (let i = dependentNext.length - 1; i >= 0; i--) {
+                stack.push(dependentNext[i]!)
+            }
+            for (let i = dependencyNext.length - 1; i >= 0; i--) {
+                stack.push(dependencyNext[i]!)
+            }
+            continue
+        }
+
+        // Clean up orphaned dependents (selectors that read this state).
+        for (let i = dependentNext.length - 1; i >= 0; i--) {
+            stack.push(dependentNext[i]!)
         }
     }
 }
