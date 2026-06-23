@@ -23,6 +23,31 @@ export type StoreData = {
      *  has direct subscribers OR this count is > 0. Maintained incrementally
      *  on sub/unsub and on dep add/remove instead of walking the graph. */
     liveDependentCount: WeakMap<WeakKey, number>
+    /** Per-state cache for the mount/unmount graph-walk short-circuit. A key is
+     *  present (value `true`) iff at least one state in this state's DOWNWARD
+     *  dependency closure — its strict transitive dependencies, NOT the state
+     *  itself — carries an `onMount`/`__valdresOnMount` hook, i.e. a walk DOWN
+     *  from here could find something to mount. Absent means no mountable
+     *  descendant, so `mountTransitiveDeps`/`unmountOrphanedDeps` can return
+     *  without walking (the common case: layout/derived selectors whose whole
+     *  subtree is mount-free).
+     *
+     *  INVARIANT (one-directional, the only property the skip relies on): NO
+     *  FALSE NEGATIVES. If a mountable descendant exists the key is present.
+     *  The key MAY be stale-`true` after an edge removal shrinks the closure —
+     *  that only costs a redundant (and self-clearing) walk, never a missed
+     *  mount. Set + propagated UP on every edge add via `noteDependencyAdded`;
+     *  cleared opportunistically when a full walk finds the subtree mount-free.
+     *
+     *  The invariant holds because the marker is populated as dependency edges
+     *  form and mount hooks must exist before a state is first used (the
+     *  `AtomOnMount` contract). The only way to get a stale-ABSENT marker is to
+     *  attach a hook AFTER edges into its closure already exist — no edge add
+     *  fires to mark it — which is exactly the unsupported "assign onMount after
+     *  first use" case the contract forbids. So the skip is trusted on every
+     *  path; supporting late assignment would require invalidating this cache on
+     *  hook assignment, and a `State` has no back-reference to its stores. */
+    mountInClosure: WeakMap<WeakKey, true>
     /** True while a selector-update / cold-read pass owns the liveness collector.
      *  This (not `livenessSeeds`) is the ownership token, so the Set can be
      *  allocated LAZILY on the first actual seed: a no-churn pass (or a first-init

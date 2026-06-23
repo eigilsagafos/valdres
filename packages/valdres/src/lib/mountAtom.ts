@@ -12,6 +12,73 @@ const hasDirectSubscribers = (state: State, data: StoreData): boolean => {
     return !!subs && subs.size > 0
 }
 
+/** Does `state` itself carry a mount hook? */
+const hasOwnMount = (state: State): boolean =>
+    !!(state.__valdresOnMount || state.onMount)
+
+/**
+ * "Mount-relevant" = a walk DOWN from `state` could find something to mount:
+ * `state` itself has a mount hook, OR a strict descendant does (the cached
+ * `mountInClosure` marker). When this is false, `mountTransitiveDeps` /
+ * `unmountOrphanedDeps` are pure no-ops and can return before allocating.
+ */
+const hasMountInClosure = (state: State, data: StoreData): boolean =>
+    hasOwnMount(state) || data.mountInClosure.has(state)
+
+/**
+ * Push the `mountInClosure` marker UP from `state` to its dependents. Called
+ * when `state` newly became mount-relevant (so each selector that reads it now
+ * has a mountable descendant). Monotonic BFS over `stateDependents`: a parent
+ * is marked and recursed into only when it was NOT already mount-relevant —
+ * a parent that already had the marker (or its own hook) had its own ancestors
+ * accounted for when that became true, so the walk stops there. This bounds the
+ * work to the genuinely-newly-marked frontier and is cycle-safe (a node is
+ * pushed at most once, when its key flips absent→present).
+ */
+const propagateMountMarkerUp = (state: State, data: StoreData) => {
+    const stack: State[] = [state]
+    while (stack.length > 0) {
+        const current = stack.pop()!
+        const parents = data.stateDependents.get(current)
+        if (!parents) continue
+        for (const parent of parents) {
+            if (data.mountInClosure.has(parent)) continue
+            // parent gains a mount-relevant child → it now has a mountable
+            // descendant. Record the marker regardless of parent's own hook.
+            data.mountInClosure.set(parent, true)
+            // Only ascend through parents that were not ALREADY mount-relevant
+            // via their own hook — those had their ancestors marked when their
+            // hook-bearing edges first formed, so re-ascending is redundant.
+            if (!hasOwnMount(parent)) stack.push(parent)
+        }
+    }
+}
+
+/**
+ * Record that `dep` just became a (strict) dependency of `selector`. If `dep`
+ * is mount-relevant, `selector`'s downward closure now contains a mountable
+ * node, so ensure `selector` carries the `mountInClosure` marker and propagate
+ * it up to `selector`'s dependents. The common case — `dep` mount-free — is a
+ * single `WeakMap.has` and return, so steady-state graph churn over mount-free
+ * subgraphs stays allocation- and walk-free.
+ *
+ * Must be called for EVERY new dependency edge (every place a forward
+ * `stateDependencies` / reverse `stateDependents` edge is created), because the
+ * skip in `mountTransitiveDeps` trusts the marker's no-false-negative invariant.
+ */
+export const noteDependencyAdded = (
+    selector: State,
+    dep: State,
+    data: StoreData,
+) => {
+    if (!hasMountInClosure(dep, data)) return
+    if (data.mountInClosure.has(selector)) return
+    data.mountInClosure.set(selector, true)
+    // If `selector` already had its own hook it was already mount-relevant, so
+    // its dependents were marked when their edges formed — no up-walk needed.
+    if (!hasOwnMount(selector)) propagateMountMarkerUp(selector, data)
+}
+
 /**
  * Cached liveness check. A state is "live" (transitively subscribed) iff it
  * has direct subscribers OR at least one of its dependents (selectors that
@@ -389,12 +456,19 @@ export const mountTransitiveDeps = (
     data: StoreData,
     visited?: Set<State>,
 ) => {
-    // Fast path: leaf state with no onMount means there is nothing to mount
-    // anywhere reachable from here. Skip the Set/Array allocation and walk.
-    if (!state.__valdresOnMount && !state.onMount) {
-        const deps = data.stateDependencies.get(state)
-        if (!deps || deps.size === 0) return
-    }
+    // Fast path: nothing mountable here or anywhere reachable below. The cached
+    // `mountInClosure` marker generalizes the old leaf-only check to any subtree
+    // that is entirely mount-free (the common case) — skip the Set alloc + walk.
+    // Sound because mount hooks are present before a state is first used (the
+    // AtomOnMount contract), so the marker is populated as dependency edges form
+    // and never has a false negative.
+    if (!hasMountInClosure(state, data)) return
+    // A standalone walk (no shared `visited`) covers the FULL strict-descendant
+    // closure, so we can recompute the marker exactly: if no descendant turns
+    // out to be mountable, clear the (now stale) marker. Skipped when a `visited`
+    // set is shared across sibling walks, where this walk may be truncated.
+    const canRecomputeMarker = visited === undefined
+    let sawMountDescendant = false
     const seen = visited ?? new Set<State>()
     let firstError: { value: unknown } | null = null
     const stack: State[] = [state]
@@ -403,6 +477,7 @@ export const mountTransitiveDeps = (
         if (seen.has(current)) continue
         seen.add(current)
         if (current.__valdresOnMount || current.onMount) {
+            if (current !== state) sawMountDescendant = true
             try {
                 mountAtom(current, data)
             } catch (error) {
@@ -415,6 +490,9 @@ export const mountTransitiveDeps = (
                 if (!seen.has(dep)) stack.push(dep)
             }
         }
+    }
+    if (canRecomputeMarker && !sawMountDescendant) {
+        data.mountInClosure.delete(state)
     }
     if (firstError) {
         throw firstError.value
@@ -432,12 +510,12 @@ export const unmountOrphanedDeps = (
     data: StoreData,
     visited?: Set<State>,
 ) => {
-    // Fast path: leaf state with no onMount can't have anything mounted
-    // beneath it. Skip the Set/Array allocation and walk.
-    if (!state.__valdresOnMount && !state.onMount) {
-        const deps = data.stateDependencies.get(state)
-        if (!deps || deps.size === 0) return
-    }
+    // Fast path: nothing mountable here or anywhere reachable below means nothing
+    // could be mounted beneath it either. See mountTransitiveDeps for soundness.
+    if (!hasMountInClosure(state, data)) return
+    // See mountTransitiveDeps: a standalone walk can clear a now-stale marker.
+    const canRecomputeMarker = visited === undefined
+    let sawMountDescendant = false
     const seen = visited ?? new Set<State>()
     let firstError: { value: unknown } | null = null
     const stack: State[] = [state]
@@ -445,8 +523,9 @@ export const unmountOrphanedDeps = (
         const current = stack.pop()!
         if (seen.has(current)) continue
         seen.add(current)
-        if ((current.__valdresOnMount || current.onMount) && data.mounts.has(current)) {
-            if (!isLive(current, data)) {
+        if (current.__valdresOnMount || current.onMount) {
+            if (current !== state) sawMountDescendant = true
+            if (data.mounts.has(current) && !isLive(current, data)) {
                 try {
                     unmountAtom(current, data)
                 } catch (error) {
@@ -460,6 +539,9 @@ export const unmountOrphanedDeps = (
                 if (!seen.has(dep)) stack.push(dep)
             }
         }
+    }
+    if (canRecomputeMarker && !sawMountDescendant) {
+        data.mountInClosure.delete(state)
     }
     if (firstError) {
         throw firstError.value

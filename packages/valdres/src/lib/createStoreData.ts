@@ -27,6 +27,7 @@ Object.defineProperties(lazyProto, {
     stateDependencies: makeLazyGetter("stateDependencies"),
     mounts: makeLazyGetter("mounts"),
     liveDependentCount: makeLazyGetter("liveDependentCount"),
+    mountInClosure: makeLazyGetter("mountInClosure"),
     abortControllers: makeLazyGetter("abortControllers"),
     lastValueWriteAt: makeLazyGetter("lastValueWriteAt"),
     circularDepSet: makeLazyGetter("circularDepSet", () => new WeakSet()),
