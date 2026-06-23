@@ -1,5 +1,17 @@
 # valdres
 
+## 1.0.0-beta.13
+
+### Patch Changes
+
+- [#206](https://github.com/eigilsagafos/valdres/pull/206)
+  [`b3db58b`](https://github.com/eigilsagafos/valdres/commit/b3db58b38f57adf2ab96a40e78ed7a17cefcc59b)
+  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! - Clean up newly
+  orphaned dependency selectors when the last subscriber to a leaf selector
+  unsubscribes. Hidden subtrees now drop their cached selector values and
+  reverse dependency edges instead of being re-evaluated on later upstream
+  writes despite having no live consumer.
+
 ## 1.0.0-beta.12
 
 ### Patch Changes

@@ -64,6 +64,7 @@
     "mount-closure-marker",
     "named-registry-ssr-commit-hook",
     "onchange-selectors",
+    "orphan-selector-deps",
     "pending-default-on-store",
     "per-store-selector-eval-state",
     "redux-devtools-adapter",
