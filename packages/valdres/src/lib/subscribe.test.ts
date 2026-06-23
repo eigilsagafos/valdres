@@ -364,4 +364,36 @@ describe("subscribe", () => {
         // expect(selector3cb).toHaveBeenCalledTimes(1)
         // expect(subCallback).toHaveBeenCalledTimes(1)
     })
+
+    test("unsubscribe cleans orphaned dependency selectors", () => {
+        const rootStore = store()
+        const source = atom(1, { name: "orphan-source" })
+        const intermediateCallback = mock(get => get(source) * 2)
+        const intermediate = selector(intermediateCallback, {
+            name: "orphan-intermediate",
+        })
+        const leaf = selector(get => get(intermediate) + 1, {
+            name: "orphan-leaf",
+        })
+
+        const unsubscribeLeaf = rootStore.sub(leaf, () => {}, false)
+        expect(rootStore.get(leaf)).toBe(3)
+        expect(rootStore.data.stateDependencies.has(intermediate)).toBe(true)
+        expect(rootStore.data.stateDependents.get(source)).toContain(
+            intermediate,
+        )
+
+        unsubscribeLeaf()
+
+        expect(rootStore.data.stateDependencies.has(leaf)).toBe(false)
+        expect(rootStore.data.stateDependencies.has(intermediate)).toBe(false)
+        expect(rootStore.data.values.has(leaf)).toBe(false)
+        expect(rootStore.data.values.has(intermediate)).toBe(false)
+        expect(rootStore.data.stateDependents.get(source)).not.toContain(
+            intermediate,
+        )
+
+        rootStore.set(source, 2)
+        expect(intermediateCallback).toHaveBeenCalledTimes(1)
+    })
 })
