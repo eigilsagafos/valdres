@@ -78,6 +78,73 @@ describe("selectorFamily", () => {
         expect(store1.get(testFamily(selector1))).toEqual("Foo")
         expect(testFamily(selector1)).toStrictEqual(testFamily(selector1))
     })
+
+    test("structured keys use stable Map, Set, object, and nested args", () => {
+        const store1 = store()
+        const family = selectorFamily<string, [unknown]>(() => () => "value")
+
+        const mapA = new Map<any, any>([
+            ["b", 2],
+            ["a", 1],
+        ])
+        const mapB = new Map<any, any>([
+            ["a", 1],
+            ["b", 2],
+        ])
+        expect(family(mapA)).toBe(family(mapB))
+
+        const setA = new Set([3, 1, 2])
+        const setB = new Set([2, 3, 1])
+        expect(family(setA)).toBe(family(setB))
+
+        expect(family({ b: 2, a: 1 })).toBe(family({ a: 1, b: 2 }))
+
+        const nestedA = {
+            meta: new Map<any, any>([
+                [{ b: 2, a: 1 }, new Set(["z", "a"])],
+                ["tags", new Set([2, 1])],
+            ]),
+        }
+        const nestedB = {
+            meta: new Map<any, any>([
+                ["tags", new Set([1, 2])],
+                [{ a: 1, b: 2 }, new Set(["a", "z"])],
+            ]),
+        }
+        expect(family(nestedA)).toBe(family(nestedB))
+        expect(store1.get(family(nestedB))).toBe("value")
+    })
+
+    test("structured keys avoid Map and Set collisions", () => {
+        const store1 = store()
+        const objectKeyMap = new Map<any, any>([[{ id: 1 }, "value"]])
+        const stringKeyMap = new Map<any, any>([[`{"id":1}`, "value"]])
+        const mapAsObject = new Map<any, any>([["a", 1]])
+        const object = { a: 1 }
+        const set = new Set([1, 2])
+        const array = [1, 2]
+        const family = selectorFamily<string, [unknown]>(key => () => {
+            if (key === objectKeyMap) return "object-map"
+            if (key === stringKeyMap) return "string-map"
+            if (key === mapAsObject) return "map"
+            if (key === object) return "object"
+            if (key === set) return "set"
+            if (key === array) return "array"
+            return "unknown"
+        })
+
+        expect(family(objectKeyMap)).not.toBe(family(stringKeyMap))
+        expect(family(mapAsObject)).not.toBe(family(object))
+        expect(family(set)).not.toBe(family(array))
+
+        expect(store1.get(family(objectKeyMap))).toBe("object-map")
+        expect(store1.get(family(stringKeyMap))).toBe("string-map")
+        expect(store1.get(family(mapAsObject))).toBe("map")
+        expect(store1.get(family(object))).toBe("object")
+        expect(store1.get(family(set))).toBe("set")
+        expect(store1.get(family(array))).toBe("array")
+    })
+
     test("factory runs once per cache entry, not per read", () => {
         // The wrapper used to be `(get) => callback(...args)(get)`, which
         // re-invoked the user's factory on every selector evaluation and
