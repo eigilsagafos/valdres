@@ -20,8 +20,11 @@ The walk now evaluates each selector at most once: finalizing a node deletes
 its `pending` entry, so a re-push (a desynced count going non-positive again) is
 a no-op pop. The genuine re-evaluation a graph mutation can still require — a
 parent that settles to a new value out of topological order (e.g. an orphan
-lazily re-initialized mid-walk) — is handed to the existing fixpoint settle pass
-instead of being re-pushed, so correctness under dynamic-dep churn is preserved
-(escaped/stranded nodes still re-settle). Eval count is now bounded by the actual
-churn, not by fan-in width; the steady-state fast path is unchanged and the cap
-adds no extra allocation.
+lazily re-initialized mid-walk) — is deferred to the settle pass instead of
+being re-pushed, so correctness under dynamic-dep churn is preserved
+(escaped/stranded nodes still re-settle). That settle pass is now a dynamic
+topological worklist (a node re-evaluates only once none of its dependencies are
+still queued), so a wide aggregate waits for all its upstream revisits and runs
+once rather than once per settling wave, with a cyclic-region fallback. Eval
+count is now bounded by the actual churn, not by fan-in width; the steady-state
+fast path is unchanged and the cap adds no extra allocation.

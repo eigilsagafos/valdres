@@ -955,9 +955,9 @@ const propagateDownstreamTopo = (
 
     // Re-settle the nodes the single-pass topo walk could not get right because
     // the dependency graph mutated under it (the `pending` counts are a snapshot
-    // taken before the walk and assume a fixed graph). Two cases, both fed to one
-    // fixpoint that re-fetches dependents each pass and is inherently robust to a
-    // graph that changed under it:
+    // taken before the walk and assume a fixed graph). Two cases, both fed to the
+    // dynamic topological worklist below, which re-fetches dependents as it runs
+    // and is inherently robust to a graph that changed under it:
     //
     //  - STRANDED (`needsEval` but never settled, i.e. still in `pending`): a
     //    selector re-evaluated out-of-band during the walk — most commonly
@@ -992,58 +992,100 @@ const propagateDownstreamTopo = (
     }
     if (!stranded) return
 
+    // Re-settle as a DYNAMIC TOPOLOGICAL worklist rather than depth-blind waves:
+    // a node is evaluated only once none of its dependencies are themselves still
+    // queued for re-settlement. That makes a wide aggregate wait for ALL its
+    // upstream revisits and then run exactly once, instead of once per wave as a
+    // parent settles. A re-evaluation that changes value re-queues its dependents
+    // (`enqueueDownstream`). Cyclic regions have no dependency-free node, so when a
+    // full scan makes no progress we fall back to evaluating the remaining set in
+    // one wave — preserving the cyclic-graph settling the liveness-churn tests
+    // rely on. (Topo-settle approach adapted from #209.)
     let work = stranded
-    while (work.size > 0) {
-        const next = new Set<Selector>()
-        for (const selector of work) {
-            const currentValue = data.values.get(selector)
-            if (isPromiseLike(currentValue) && isInitOnly) continue
-            const dependents = data.stateDependents.get(selector)
-            const subscribers = data.subscriptions.get(selector)
-            if (
-                !isPromiseLike(currentValue) &&
-                (!dependents || dependents.size === 0) &&
-                (!subscribers || subscribers.size === 0)
-            ) {
-                data.values.delete(selector)
-                continue
-            }
-            depsChange.added = undefined
-            depsChange.removed = undefined
-            const wasValueUpdated = reEvaluateSelector(
-                selector,
-                data,
-                updatedInitializedAtoms,
-                depsChange,
-                currentValue,
-            )
-            const added = depsChange.added as Set<State> | undefined
-            const removed = depsChange.removed as Set<State> | undefined
-            if ((added || removed) && isLive(selector, data)) {
-                if (added) {
-                    for (const dep of added) {
-                        onLiveDependencyAdded(dep, data)
-                        mountTransitiveDeps(dep, data)
-                    }
+    const resettled = new Set<Selector>()
+    const hasUnsettledDependency = (selector: Selector) => {
+        const deps = data.stateDependencies.get(selector)
+        if (!deps) return false
+        for (const dep of deps) {
+            if (dep !== selector && work.has(dep as Selector)) return true
+        }
+        return false
+    }
+    const enqueueDownstream = (selector: Selector) => {
+        const downstream = data.stateDependents.get(selector)
+        if (!downstream) return
+        for (const d of downstream) {
+            resettled.delete(d)
+            work.add(d)
+        }
+    }
+    const evaluateStrandedSelector = (selector: Selector) => {
+        const currentValue = data.values.get(selector)
+        if (isPromiseLike(currentValue) && isInitOnly) return
+        const dependents = data.stateDependents.get(selector)
+        const subscribers = data.subscriptions.get(selector)
+        if (
+            !isPromiseLike(currentValue) &&
+            (!dependents || dependents.size === 0) &&
+            (!subscribers || subscribers.size === 0)
+        ) {
+            data.values.delete(selector)
+            return
+        }
+        depsChange.added = undefined
+        depsChange.removed = undefined
+        const wasValueUpdated = reEvaluateSelector(
+            selector,
+            data,
+            updatedInitializedAtoms,
+            depsChange,
+            currentValue,
+        )
+        const added = depsChange.added as Set<State> | undefined
+        const removed = depsChange.removed as Set<State> | undefined
+        if ((added || removed) && isLive(selector, data)) {
+            if (added) {
+                for (const dep of added) {
+                    onLiveDependencyAdded(dep, data)
+                    mountTransitiveDeps(dep, data)
                 }
-                if (removed) {
-                    for (const dep of removed) {
-                        onLiveDependencyRemoved(dep, data)
-                        unmountOrphanedDeps(dep, data)
-                    }
-                }
             }
-            if (wasValueUpdated) {
-                if (changedSelectors) changedSelectors.add(selector)
-                if (subscribers) addSetToSet(subscribers, collectedSubscribers)
-                // Re-fetch dependents — eval may have changed them.
-                const downstream = data.stateDependents.get(selector)
-                if (downstream) {
-                    for (const d of downstream) next.add(d)
+            if (removed) {
+                for (const dep of removed) {
+                    onLiveDependencyRemoved(dep, data)
+                    unmountOrphanedDeps(dep, data)
                 }
             }
         }
-        work = next
+        if (wasValueUpdated) {
+            if (changedSelectors) changedSelectors.add(selector)
+            if (subscribers) addSetToSet(subscribers, collectedSubscribers)
+            // Re-fetch dependents — eval may have changed them.
+            enqueueDownstream(selector)
+        }
+    }
+    while (work.size > 0) {
+        let progressed = false
+        const batch = [...work]
+        for (const selector of batch) {
+            if (!work.has(selector)) continue
+            if (hasUnsettledDependency(selector)) continue
+            work.delete(selector)
+            resettled.add(selector)
+            progressed = true
+            evaluateStrandedSelector(selector)
+        }
+        if (progressed) continue
+
+        // Cyclic stranded region: no dependency-free node remains. Evaluate the
+        // remaining set in one wave so cyclic dynamic graphs still settle instead
+        // of stalling behind the topo gate.
+        const cyclicBatch = [...work]
+        work = new Set()
+        for (const selector of cyclicBatch) {
+            resettled.add(selector)
+            evaluateStrandedSelector(selector)
+        }
     }
 }
 
