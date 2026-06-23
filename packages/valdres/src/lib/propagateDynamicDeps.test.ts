@@ -7,6 +7,54 @@ import { store } from "../store"
 // atoms built per run get a unique suffix. Selector names are unaffected.
 let uid = 0
 
+// Shared fuzz helpers (used by both fuzz tests below) — kept at file scope so the
+// two oracles can't drift. `inst` suffixes atom names with a per-build `++uid`, so
+// names stay globally unique no matter how many builds run in this process.
+const mulberry32 = (seed: number) => () => {
+    seed |= 0
+    seed = (seed + 0x6d2b79f5) | 0
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed)
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+}
+const buildGraph = (rnd: () => number, nAtoms: number, nSelectors: number) => {
+    const selDefs: any[] = []
+    for (let i = 0; i < nSelectors; i++) {
+        const pick = (n: number, max: number) => {
+            const out: number[] = []
+            for (let j = 0; j < n; j++) out.push(Math.floor(rnd() * max))
+            return out
+        }
+        selDefs.push({
+            deps: pick(1 + Math.floor(rnd() * 3), nAtoms),
+            selDeps: i > 0 ? pick(Math.floor(rnd() * 3), i) : [],
+            altSelDeps: i > 0 ? pick(Math.floor(rnd() * 3), i) : [],
+            ctrl: i > 0 && rnd() < 0.6 ? { sel: Math.floor(rnd() * i) } : { atom: Math.floor(rnd() * nAtoms) },
+            mode: Math.floor(rnd() * 3),
+        })
+    }
+    return { nAtoms, selDefs }
+}
+const inst = (g: any) => {
+    const run = ++uid
+    const atoms = Array.from({ length: g.nAtoms }, (_, i) => atom(i, { name: `a${i}.${run}` }))
+    const sels: any[] = []
+    g.selDefs.forEach((def: any, idx: number) => {
+        sels.push(selector(get => {
+            const ctrl = "atom" in def.ctrl ? get(atoms[def.ctrl.atom]) : get(sels[def.ctrl.sel])
+            let acc = def.mode + (ctrl % 3)
+            if (ctrl % 2 === 0) {
+                for (const di of def.deps) acc += get(atoms[di])
+                for (const si of def.selDeps) acc += get(sels[si])
+            } else {
+                for (const si of def.altSelDeps) acc += get(sels[si]) * 2
+            }
+            return acc
+        }, { name: `s${idx}` }))
+    })
+    return { atoms, sels }
+}
+
 // Regression tests for a selector-invalidation bug introduced when selector
 // update propagation moved to a static topological closure (1.0.0-beta.4).
 //
@@ -94,51 +142,6 @@ describe("dynamic-dependency propagation", () => {
     // both a root store and a scope. Each step is checked against a fresh store
     // replaying the identical op sequence — any divergence is a stale selector.
     test("fuzz: incremental store matches fresh-replay oracle", () => {
-        const mulberry32 = (seed: number) => () => {
-            seed |= 0
-            seed = (seed + 0x6d2b79f5) | 0
-            let t = Math.imul(seed ^ (seed >>> 15), 1 | seed)
-            t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
-            return ((t ^ (t >>> 14)) >>> 0) / 4294967296
-        }
-        const buildGraph = (rnd: () => number, nAtoms: number, nSelectors: number) => {
-            const selDefs: any[] = []
-            for (let i = 0; i < nSelectors; i++) {
-                const pick = (n: number, max: number) => {
-                    const out: number[] = []
-                    for (let j = 0; j < n; j++) out.push(Math.floor(rnd() * max))
-                    return out
-                }
-                selDefs.push({
-                    deps: pick(1 + Math.floor(rnd() * 3), nAtoms),
-                    selDeps: i > 0 ? pick(Math.floor(rnd() * 3), i) : [],
-                    altSelDeps: i > 0 ? pick(Math.floor(rnd() * 3), i) : [],
-                    ctrl: i > 0 && rnd() < 0.6 ? { sel: Math.floor(rnd() * i) } : { atom: Math.floor(rnd() * nAtoms) },
-                    mode: Math.floor(rnd() * 3),
-                })
-            }
-            return { nAtoms, selDefs }
-        }
-        const inst = (g: any) => {
-            const run = ++uid
-            const atoms = Array.from({ length: g.nAtoms }, (_, i) => atom(i, { name: `a${i}.${run}` }))
-            const sels: any[] = []
-            g.selDefs.forEach((def: any, idx: number) => {
-                sels.push(selector(get => {
-                    const ctrl = "atom" in def.ctrl ? get(atoms[def.ctrl.atom]) : get(sels[def.ctrl.sel])
-                    let acc = def.mode + (ctrl % 3)
-                    if (ctrl % 2 === 0) {
-                        for (const di of def.deps) acc += get(atoms[di])
-                        for (const si of def.selDeps) acc += get(sels[si])
-                    } else {
-                        for (const si of def.altSelDeps) acc += get(sels[si]) * 2
-                    }
-                    return acc
-                }, { name: `s${idx}` }))
-            })
-            return { atoms, sels }
-        }
-
         for (let seed = 1; seed <= 200; seed++) {
             const rnd = mulberry32(seed)
             const nAtoms = 3 + Math.floor(rnd() * 4)
@@ -206,51 +209,6 @@ describe("dynamic-dependency propagation", () => {
     // and applies the root values before the scope shadows, so the scope's
     // explicit set is always the last write and the shadow is guaranteed to pin.
     test("fuzz: scope shadows pin regardless of set order (order-independent oracle)", () => {
-        const mulberry32 = (seed: number) => () => {
-            seed |= 0
-            seed = (seed + 0x6d2b79f5) | 0
-            let t = Math.imul(seed ^ (seed >>> 15), 1 | seed)
-            t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
-            return ((t ^ (t >>> 14)) >>> 0) / 4294967296
-        }
-        const buildGraph = (rnd: () => number, nAtoms: number, nSelectors: number) => {
-            const selDefs: any[] = []
-            for (let i = 0; i < nSelectors; i++) {
-                const pick = (n: number, max: number) => {
-                    const out: number[] = []
-                    for (let j = 0; j < n; j++) out.push(Math.floor(rnd() * max))
-                    return out
-                }
-                selDefs.push({
-                    deps: pick(1 + Math.floor(rnd() * 3), nAtoms),
-                    selDeps: i > 0 ? pick(Math.floor(rnd() * 3), i) : [],
-                    altSelDeps: i > 0 ? pick(Math.floor(rnd() * 3), i) : [],
-                    ctrl: i > 0 && rnd() < 0.6 ? { sel: Math.floor(rnd() * i) } : { atom: Math.floor(rnd() * nAtoms) },
-                    mode: Math.floor(rnd() * 3),
-                })
-            }
-            return { nAtoms, selDefs }
-        }
-        const inst = (g: any) => {
-            const run = ++uid
-            const atoms = Array.from({ length: g.nAtoms }, (_, i) => atom(i, { name: `oa${i}.${run}` }))
-            const sels: any[] = []
-            g.selDefs.forEach((def: any, idx: number) => {
-                sels.push(selector(get => {
-                    const ctrl = "atom" in def.ctrl ? get(atoms[def.ctrl.atom]) : get(sels[def.ctrl.sel])
-                    let acc = def.mode + (ctrl % 3)
-                    if (ctrl % 2 === 0) {
-                        for (const di of def.deps) acc += get(atoms[di])
-                        for (const si of def.selDeps) acc += get(sels[si])
-                    } else {
-                        for (const si of def.altSelDeps) acc += get(sels[si]) * 2
-                    }
-                    return acc
-                }, { name: `s${idx}` }))
-            })
-            return { atoms, sels }
-        }
-
         for (let seed = 1; seed <= 300; seed++) {
             const rnd = mulberry32(seed)
             const nAtoms = 3 + Math.floor(rnd() * 4)
