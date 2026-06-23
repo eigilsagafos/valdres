@@ -85,7 +85,9 @@ const cleanupOrphanedDeps = (
     visited.add(state)
     if (isLive(state, data)) return
 
-    // For selectors: remove from dependencies' stateDependents and clear cache
+    // For selectors: remove from dependencies' stateDependents and clear cache.
+    // Then walk those dependencies too: removing `state` may have been the last
+    // live edge keeping an intermediate selector materialized.
     const deps = data.stateDependencies.get(state)
     if (deps) {
         for (const dep of deps) {
@@ -97,6 +99,9 @@ const cleanupOrphanedDeps = (
         data.stateDependencies.delete(state)
         data.values.delete(state)
         data.abortControllers.delete(state)
+        for (const dep of deps) {
+            cleanupOrphanedDeps(dep, data, visited)
+        }
     }
 
     // Recursively clean up orphaned dependents (selectors that read this state)
