@@ -1,5 +1,31 @@
 # valdres
 
+## 1.0.0-beta.14
+
+### Patch Changes
+
+- [#209](https://github.com/eigilsagafos/valdres/pull/209)
+  [`c2f836f`](https://github.com/eigilsagafos/valdres/commit/c2f836fdf1fb33e72e2f20c49af0969e62c544a4)
+  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! - Bound redundant
+  selector re-evaluation for wide fan-in selectors under dynamic dependency
+  churn.
+
+    The downstream topological propagation walk now treats removal from its
+    `pending` map as the settled marker, preventing dynamically changed
+    dependency edges from repeatedly re-queueing an already finalized selector.
+    When a graph mutation still requires a settled selector to be revisited,
+    that selector and its downstream closure are deferred to the stranded settle
+    phase, which now settles work in dependency order before falling back for
+    cyclic regions. This preserves correctness for escaped/stranded
+    dynamic-dependency cases while avoiding repeated evaluation of subscribed
+    wide aggregators during transient settle waves.
+
+- [#208](https://github.com/eigilsagafos/valdres/pull/208)
+  [`7878dae`](https://github.com/eigilsagafos/valdres/commit/7878dae5dd2e2046893ef32a0f5094dd76d12baf)
+  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! - Make orphan
+  selector dependency cleanup iterative so unsubscribing deep selector chains
+  does not depend on JavaScript call-stack depth.
+
 ## 1.0.0-beta.13
 
 ### Patch Changes
