@@ -788,11 +788,36 @@ const propagateDownstreamTopo = (
     // downstream gets flagged as parents propagate change.
     const needsEval = new Set<Selector>(seeds)
 
+    // Each selector is evaluated AT MOST ONCE in this topo walk. The `pending`
+    // counter is only a snapshot — under dynamic deps the live `stateDependents`
+    // that `advance` walks diverges from it (an evaluation that adds an edge to
+    // an already-counted parent makes that parent decrement this node twice),
+    // driving the count negative and re-pushing the node once per extra parent.
+    // For a wide-fan-in aggregator that is ~once per dependency — the 1.0.0-beta
+    // re-evaluation blow-up. To cap every node at one evaluation, a finalized
+    // node is DELETED from `pending`: a closure member with no `pending` entry is
+    // "settled" (`closure.has(s) && !pending.has(s)`), which `advance` and the
+    // pop loop both check to skip it. Reusing `pending` this way avoids a second
+    // per-walk Set allocation on the propagation hot path. The rare genuine
+    // re-evaluation a graph mutation demands (a parent that settled to a new
+    // value out of topological order) is delegated to the fixpoint sweep below
+    // via `resweep`, which re-settles it (and its dependents) a bounded number
+    // of times instead.
+
     // Set when the dependency graph changes during the walk (a selector's deps
     // were added/removed, or an out-of-closure dependent was pulled in). Only
-    // then can a node be left stranded with an undrained `pending`, so the
-    // settle scan below is skipped entirely on the steady-state path.
+    // then can a node need the settle scan below, so the steady-state fast path
+    // skips it entirely.
     let graphMutated = false
+
+    // Selectors that had already settled when one of their parents settled to a
+    // NEW value after them, so the topo `advance` could not reach them (it skips
+    // settled nodes to avoid the re-eval blow-up). In a clean topological order a
+    // parent always settles before its child, so this stays empty; it fills only
+    // when the graph mutated under the walk and a parent materialized/changed out
+    // of order (e.g. an orphan lazily re-initialized mid-walk). Handed to the
+    // fixpoint sweep below for a bounded re-settle.
+    let resweep: Set<Selector> | undefined
 
     const advance = (selector: Selector, propagateChange: boolean) => {
         const downstream = data.stateDependents.get(selector)
@@ -818,9 +843,28 @@ const propagateDownstreamTopo = (
                 }
                 continue
             }
-            const c = (pending.get(d) ?? 0) - 1
+            const cur = pending.get(d)
+            if (cur === undefined) {
+                // `d` is in the closure but has no `pending` entry → already
+                // settled. If `selector` changed value AFTER `d` settled, `d`
+                // computed against a stale input and must re-settle — but
+                // re-pushing it into this walk is exactly the per-parent re-eval
+                // blow-up the once-per-walk cap exists to prevent. Hand it to the
+                // fixpoint sweep instead. Only reachable under graph mutation
+                // (parents settle in topological order otherwise), so the
+                // wide-fan-in hot path never gets here.
+                if (propagateChange) {
+                    graphMutated = true
+                    ;(resweep ??= new Set()).add(d)
+                }
+                continue
+            }
+            const c = cur - 1
             pending.set(d, c)
             if (propagateChange) needsEval.add(d)
+            // `c < 0` is possible when dynamic deps desynced the snapshot from
+            // the live graph; the settled check above makes the redundant
+            // re-push a no-op pop.
             if (c <= 0) ready.push(d)
         }
     }
@@ -835,14 +879,21 @@ const propagateDownstreamTopo = (
     while (head < ready.length) {
         const selector = ready[head++]
 
+        // Evaluated already this walk (no `pending` entry) — a node can be
+        // re-queued by a later advance (a desynced `pending` going negative, or
+        // a re-pushed orphan). Finalizing deletes the entry; the skip is here.
+        if (!pending.has(selector)) continue
+
         const currentValue = data.values.get(selector)
 
         if (isPromiseLike(currentValue) && isInitOnly) {
+            pending.delete(selector)
             advance(selector, false)
             continue
         }
 
         if (!needsEval.has(selector)) {
+            pending.delete(selector)
             advance(selector, false)
             continue
         }
@@ -857,6 +908,7 @@ const propagateDownstreamTopo = (
         ) {
             // No live consumer — invalidate for lazy re-eval on next read.
             data.values.delete(selector)
+            pending.delete(selector)
             advance(selector, false)
             continue
         }
@@ -893,6 +945,7 @@ const propagateDownstreamTopo = (
             }
         }
 
+        pending.delete(selector)
         advance(selector, wasValueUpdated)
         if (wasValueUpdated) {
             if (changedSelectors) changedSelectors.add(selector)
@@ -900,24 +953,39 @@ const propagateDownstreamTopo = (
         }
     }
 
-    // Settle stranded nodes. The `pending` counts are a snapshot taken before
-    // the walk; they assume the dependency graph is fixed for its duration. But
-    // a selector can be re-evaluated out-of-band DURING the walk — most commonly
-    // lazily re-initialized via getState when another selector reads it (after
-    // its value was dropped by an earlier orphan-invalidation/unsubscribe). If
-    // that re-eval drops a dependency it was snapshotted with, the dropped
-    // parent's reverse edge is gone, so it never decrements this node's
-    // `pending`, which then stalls above 0 and the node is never processed —
-    // even though one of its surviving dependencies changed. Such a node is left
-    // stale, and so is anything that read it. Re-settle the stranded set (and
-    // whatever depends on it) with a fixpoint that re-fetches dependents each
-    // pass, which is inherently robust to a graph that changed under us. Guarded
-    // by `graphMutated`, so the steady-state fast path skips it entirely.
+    // Re-settle the nodes the single-pass topo walk could not get right because
+    // the dependency graph mutated under it (the `pending` counts are a snapshot
+    // taken before the walk and assume a fixed graph). Two cases, both fed to one
+    // fixpoint that re-fetches dependents each pass and is inherently robust to a
+    // graph that changed under it:
+    //
+    //  - STRANDED (`needsEval` but never settled, i.e. still in `pending`): a
+    //    selector re-evaluated out-of-band during the walk — most commonly
+    //    lazily re-initialized via getState when another selector reads it after
+    //    its value was dropped by orphan-invalidation/unsubscribe — dropped a
+    //    dependency it was snapshotted with. The dropped parent's reverse edge is
+    //    gone, so it never decrements this node's `pending`, which stalls above
+    //    0; the node is never popped and so never settles (its `pending` entry
+    //    survives).
+    //  - RESWEEP (settled, then a parent changed out of topological order): a
+    //    node finalized, then a still-dirty parent of it settled to a new value.
+    //    `advance` cannot re-push a settled node (that is the re-eval blow-up the
+    //    once-per-walk cap prevents), so it queued the node here instead.
+    //
+    // Either way the node — and anything that read its stale value — must
+    // re-settle. Guarded by `graphMutated`, so the steady-state fast path skips
+    // it entirely.
     if (!graphMutated) return
 
-    let stranded: Set<Selector> | undefined
+    let stranded: Set<Selector> | undefined = resweep
     for (const s of closure) {
-        if (needsEval.has(s) && (pending.get(s) ?? 0) > 0) {
+        // A node that needed eval but never settled in the walk still has its
+        // `pending` entry (settling deletes it): its count never drained to 0
+        // because a parent edge it was counting on was removed (truly stranded),
+        // or it sits on a cycle that never reached a ready state. Re-settle it
+        // here. Nodes that DID settle but were reached by an out-of-order parent
+        // change come in via `resweep`.
+        if (needsEval.has(s) && pending.has(s)) {
             if (!stranded) stranded = new Set()
             stranded.add(s)
         }
