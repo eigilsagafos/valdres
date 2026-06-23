@@ -75,6 +75,7 @@
     "scope-family-txn-stale",
     "scope-maxage-and-type-unify",
     "scope-unset-reinherit",
+    "selector-overlap-propagation",
     "selector-zero-alloc-reads",
     "six-cups-grin",
     "snapshot-subscriber-set",

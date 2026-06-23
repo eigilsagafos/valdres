@@ -1,5 +1,20 @@
 # valdres
 
+## 1.0.0-beta.12
+
+### Patch Changes
+
+- [#204](https://github.com/eigilsagafos/valdres/pull/204)
+  [`3fc4fa3`](https://github.com/eigilsagafos/valdres/commit/3fc4fa331c58a513763497a8b49a7dd2655e0134)
+  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! - Avoid redundant
+  selector evaluations when an initial dirty selector is also downstream of
+  another initial dirty selector in the same propagation pass. The initial dirty
+  set is now ordered topologically when that subgraph is acyclic, and selectors
+  scheduled later in that initial pass are not queued again for downstream
+  propagation before they run. Cyclic initial regions keep the existing
+  insertion-order behavior so dynamic dependency churn continues to use the
+  established liveness reconciliation path.
+
 ## 1.0.0-beta.11
 
 ### Patch Changes
