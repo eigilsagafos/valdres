@@ -1,5 +1,7 @@
 import { isPromiseLike } from "../utils/isPromiseLike"
 
+const compareStrings = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0)
+
 const stableStringifyRecurse = (x: any, key?: string): string => {
     // A optimization to avoid the more expensive JSON.stringify() for simple strings
     // This may lose protection for u2028 and u2029, though.
@@ -60,8 +62,8 @@ const stableStringifyRecurse = (x: any, key?: string): string => {
             stableStringifyRecurse(k),
             stableStringifyRecurse(v),
         ]).sort(([ak, av], [bk, bv]) => {
-            const keyOrder = ak.localeCompare(bk)
-            return keyOrder || av.localeCompare(bv)
+            const keyOrder = compareStrings(ak, bk)
+            return keyOrder || compareStrings(av, bv)
         })
         return `__MAP(${stableStringifyRecurse(entries, key)})__`
     }
