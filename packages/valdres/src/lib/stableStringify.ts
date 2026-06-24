@@ -1,5 +1,7 @@
 import { isPromiseLike } from "../utils/isPromiseLike"
 
+const compareStrings = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0)
+
 const stableStringifyRecurse = (x: any, key?: string): string => {
     // A optimization to avoid the more expensive JSON.stringify() for simple strings
     // This may lose protection for u2028 and u2029, though.
@@ -53,29 +55,25 @@ const stableStringifyRecurse = (x: any, key?: string): string => {
     }
 
     // For built-in Maps, sort the keys in a stable order instead of the
-    // default insertion order.  Support non-string keys.
+    // default insertion order.  Support non-string keys and keep Maps distinct
+    // from plain objects with the same apparent entries.
     if (x instanceof Map) {
-        const obj = {}
-        for (const [k, v] of x) {
-            // Stringify will escape any nested quotes
-            // @ts-ignore
-            obj[typeof k === "string" ? k : stringify(k, opt)] = v
-        }
-        return stableStringifyRecurse(obj, key)
+        const entries = Array.from(x, ([k, v]) => [
+            stableStringifyRecurse(k),
+            stableStringifyRecurse(v),
+        ]).sort(([ak, av], [bk, bv]) => {
+            const keyOrder = compareStrings(ak, bk)
+            return keyOrder || compareStrings(av, bv)
+        })
+        return `__MAP(${stableStringifyRecurse(entries, key)})__`
     }
 
     // For built-in Sets, sort the keys in a stable order instead of the
-    // default insertion order.
+    // default insertion order.  Keep Sets distinct from Arrays with the same
+    // apparent values.
     if (x instanceof Set) {
-        return stableStringifyRecurse(
-            // $FlowFixMe[missing-local-annot]
-            Array.from(x).sort((a, b) =>
-                stableStringifyRecurse(a).localeCompare(
-                    stableStringifyRecurse(b),
-                ),
-            ),
-            key,
-        )
+        const values = Array.from(x, v => stableStringifyRecurse(v)).sort()
+        return `__SET(${stableStringifyRecurse(values, key)})__`
     }
 
     // Anything else that is iterable serialize as an Array.

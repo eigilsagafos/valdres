@@ -151,6 +151,70 @@ describe("atomFamily", () => {
         expect(docs).toStrictEqual([{ name: "Foo" }, { name: "Bar" }])
     })
 
+    test("atomFamily with structured keys uses stable Map, Set, object, and nested args", () => {
+        const store1 = store()
+        const family = atomFamily<string, [unknown]>("default")
+
+        const mapA = new Map<any, any>([
+            ["b", 2],
+            ["a", 1],
+        ])
+        const mapB = new Map<any, any>([
+            ["a", 1],
+            ["b", 2],
+        ])
+        expect(family(mapA)).toBe(family(mapB))
+        store1.set(family(mapA), "map")
+        expect(store1.get(family(mapB))).toBe("map")
+
+        const setA = new Set([3, 1, 2])
+        const setB = new Set([2, 3, 1])
+        expect(family(setA)).toBe(family(setB))
+        store1.set(family(setA), "set")
+        expect(store1.get(family(setB))).toBe("set")
+
+        expect(family({ b: 2, a: 1 })).toBe(family({ a: 1, b: 2 }))
+
+        const nestedA = {
+            meta: new Map<any, any>([
+                [{ b: 2, a: 1 }, new Set(["z", "a"])],
+                ["tags", new Set([2, 1])],
+            ]),
+        }
+        const nestedB = {
+            meta: new Map<any, any>([
+                ["tags", new Set([1, 2])],
+                [{ a: 1, b: 2 }, new Set(["a", "z"])],
+            ]),
+        }
+        expect(family(nestedA)).toBe(family(nestedB))
+    })
+
+    test("atomFamily structured keys avoid Map and Set collisions", () => {
+        const store1 = store()
+        const family = atomFamily<string, [unknown]>("default")
+        const objectKeyMap = new Map<any, any>([[{ id: 1 }, "value"]])
+        const stringKeyMap = new Map<any, any>([[`{"id":1}`, "value"]])
+        const mapAsObject = new Map<any, any>([["a", 1]])
+        const object = { a: 1 }
+        const set = new Set([1, 2])
+        const array = [1, 2]
+
+        expect(family(objectKeyMap)).not.toBe(family(stringKeyMap))
+        expect(family(mapAsObject)).not.toBe(family(object))
+        expect(family(set)).not.toBe(family(array))
+
+        store1.set(family(objectKeyMap), "object-map")
+        store1.set(family(stringKeyMap), "string-map")
+        store1.set(family(set), "set")
+        store1.set(family(array), "array")
+
+        expect(store1.get(family(objectKeyMap))).toBe("object-map")
+        expect(store1.get(family(stringKeyMap))).toBe("string-map")
+        expect(store1.get(family(set))).toBe("set")
+        expect(store1.get(family(array))).toBe("array")
+    })
+
     test("get an entire atom family", () => {
         const store1 = store()
         const userAtomFamily = atomFamily<{ name: string }, [number]>()
