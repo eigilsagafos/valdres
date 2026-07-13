@@ -49,6 +49,11 @@ import {
     requestOrientationPermission,
 } from "@valdres/browser-device-orientation"
 import { focusAtom } from "@valdres/browser-focus"
+import {
+    mousePositionAtom,
+    mouseButtonsAtom,
+    mouseInsideAtom,
+} from "@valdres/browser-mouse"
 import { presenceSelector } from "@valdres/browser-presence"
 import {
     reducedDataAtom,
@@ -214,6 +219,31 @@ export const pluginDemos: Record<string, (el: HTMLElement) => void> = {
     "browser-focus": inspector({
         hint: "Click outside the page or switch tabs/windows and back",
         rows: [{ label: "focusAtom", state: focusAtom }],
+    }),
+
+    "browser-mouse": inspector({
+        hint: "Move the mouse and press buttons over this page",
+        rows: [
+            {
+                label: "mousePositionAtom",
+                state: mousePositionAtom,
+                format: (p: { clientX: number; clientY: number }) =>
+                    `${p.clientX} × ${p.clientY}`,
+            },
+            {
+                label: "mouseButtonsAtom",
+                state: mouseButtonsAtom,
+                format: (b: {
+                    left: boolean
+                    right: boolean
+                    middle: boolean
+                }) =>
+                    [b.left && "left", b.right && "right", b.middle && "middle"]
+                        .filter(Boolean)
+                        .join(", ") || "none",
+            },
+            { label: "mouseInsideAtom", state: mouseInsideAtom },
+        ],
     }),
 
     "browser-presence": inspector({

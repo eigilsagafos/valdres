@@ -1,0 +1,114 @@
+---
+title: browser-mouse
+description: Reactive mouse cursor position and button state from mouse events
+---
+
+# browser-mouse
+
+Wraps the [`MouseEvent`](https://developer.mozilla.org/docs/Web/API/MouseEvent) stream as global atoms: cursor `position`, pressed `buttons`, and whether the cursor is `inside` the page.
+
+For touch and pen, or for tracking multiple simultaneous contacts, reach for `@valdres/browser-pointer` instead — a mouse is a single cursor, so this package keeps it to simple singleton atoms.
+
+## Install
+
+```bash
+bun add @valdres/browser-mouse
+```
+
+## Live example
+
+<PluginDemo plugin="browser-mouse" />
+
+## Usage
+
+<FrameworkBlock fw="react">
+
+```tsx
+import { useValue } from "valdres-react"
+import { mousePositionAtom } from "@valdres/browser-mouse"
+
+function Cursor() {
+    const { clientX, clientY } = useValue(mousePositionAtom)
+    return <span>{clientX}, {clientY}</span>
+}
+```
+
+</FrameworkBlock>
+
+<FrameworkBlock fw="vue">
+
+```vue
+<script setup>
+import { useValue } from "valdres-vue"
+import { mousePositionAtom } from "@valdres/browser-mouse"
+
+const pos = useValue(mousePositionAtom) // Ref<MousePosition>
+</script>
+
+<template>{{ pos.clientX }}, {{ pos.clientY }}</template>
+```
+
+</FrameworkBlock>
+
+<FrameworkBlock fw="svelte">
+
+```svelte
+<script>
+import { watch } from "valdres-svelte"
+import { mousePositionAtom } from "@valdres/browser-mouse"
+
+const pos = watch(mousePositionAtom)
+</script>
+
+{pos.value.clientX}, {pos.value.clientY}
+```
+
+</FrameworkBlock>
+
+<FrameworkBlock fw="solid">
+
+```tsx
+import { createValue } from "valdres-solid"
+import { mousePositionAtom } from "@valdres/browser-mouse"
+
+function Cursor() {
+    const pos = createValue(mousePositionAtom) // () => MousePosition
+    return <span>{pos().clientX}, {pos().clientY}</span>
+}
+```
+
+</FrameworkBlock>
+
+<FrameworkBlock fw="angular">
+
+```ts
+import { Component } from "@angular/core"
+import { injectValue } from "valdres-angular"
+import { mousePositionAtom } from "@valdres/browser-mouse"
+
+@Component({
+    selector: "cursor-readout",
+    template: `{{ pos.value().clientX }}, {{ pos.value().clientY }}`,
+})
+export class CursorReadout {
+    pos = injectValue(mousePositionAtom) // ValueState<MousePosition>
+}
+```
+
+</FrameworkBlock>
+
+## Exports
+
+| Export | Kind | Type |
+|--------|------|------|
+| `mousePositionAtom` | atom (read-only) | `MousePosition` |
+| `mouseButtonsAtom` | atom (read-only) | `MouseButtons` |
+| `mouseInsideAtom` | atom (read-only) | `boolean` |
+
+`MousePosition` carries `clientX/Y`, `pageX/Y`, and `screenX/Y`. `MouseButtons` carries the raw `buttons` bitmask plus `left` / `right` / `middle` booleans.
+
+## Cross-framework
+
+Global atoms — they work in every framework; only the read primitive's name changes (`useValue`, `createValue`, `injectValue`, `watch`, or `store.get` in plain JS). Each atom attaches its own listeners on the first subscriber and detaches them when the last leaves, so subscribing only to `mouseButtonsAtom` won't wire up `mousemove`.
+
+Three things to know. There is no API to read the cursor position without an event, so `mousePositionAtom` stays zeroed until the first `mousemove`. `mouseButtonsAtom` resyncs from the live `buttons` bitmask on each mouse event — so a right-click shows as pressed while the context menu is open (which swallows the `mouseup`) and clears on the first move after the menu is dismissed; a focus loss (alt-tab, devtools, releasing outside the page) clears it immediately. And `mouseInsideAtom` tracks *geometric* containment via `mouseenter` / `mouseleave` — it stays `true` when you alt-tab away with the cursor still over the page, because the cursor really is still there. Compose with [`@valdres/browser-focus`](/react/plugins/browser-focus) if you want a focus-gated "user is actively here" signal.
