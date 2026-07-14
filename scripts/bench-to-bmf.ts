@@ -39,22 +39,22 @@ function opName(name: string): string {
     return m ? m[1] : name
 }
 
-// Operations too small to GATE reliably. These are sub-~10ns ops where the gate's
-// +50% relative boundary is only a few nanoseconds — below the CI runner's
-// measurement noise even after median-of-3 — so the percentage gate flips on
-// variance rather than regressions (it has alerted on these while they measured
-// FASTER than base). BENCH_EXCLUDE_TINY (set by the PR gate only) drops them from
-// the gated comparison. They are still measured and plotted via the base lane
-// (bencher-base.yml), so the historical perf page is unaffected — they're tracked,
-// just not blocking. A new benchmark is gated by default; add it here only if it
-// proves noise-dominated. Keep this in sync with the README's tiny ops.
+// Operations too small to gate reliably. Their +50% relative boundary is only a
+// few nanoseconds — below the CI runner's measurement noise even after
+// median-of-3. They remain measured and plotted by the base lane.
 const UNGATEABLE_OPS = new Set([
     "atom(1)", // ~2ns
     "selector(fn)", // ~5ns
     "atomFamily(id) cache hit", // ~10ns
 ])
 
-function toBmf(results: BenchResult[]): Bmf {
+// Runtime-specific unstable operations. Isolated same-runner Bun samples for
+// selectorFamily(id) are bimodal (~145ns or ~280ns) on BOTH base and PR, so even
+// median-of-3 can draw two samples from opposite modes and report a false +60%.
+// Its Node samples are stable, so it remains blocking there.
+const BUN_UNGATEABLE_OPS = new Set(["selectorFamily(id)"])
+
+function toBmf(results: BenchResult[], runtime: "bun" | "node"): Bmf {
     // The relative-CB gate runs the suite multiple times and concatenates the
     // NDJSON, so a benchmark name legitimately appears once per repeat. Keep the
     // MEDIAN latency across repeats: with three runs it rejects either one slow
@@ -67,12 +67,21 @@ function toBmf(results: BenchResult[]): Bmf {
     // is pinned, map is native) — gating them only adds noise. They're still
     // measured and plotted via the base lane (bencher-base.yml) for the
     // head-to-head perf page.
+    // The PR gate opts out of only the known noise-dominated operations above.
+    // Historical base runs leave this unset, so every series is still tracked.
     const excludeRefs = !!process.env.BENCH_EXCLUDE_REFS
-    const excludeTiny = !!process.env.BENCH_EXCLUDE_TINY
+    const excludeUngateable = !!process.env.BENCH_EXCLUDE_UNGATEABLE
     const samples: Record<string, number[]> = {}
     for (const r of results) {
         if (excludeRefs && isReference(r.name)) continue
-        if (excludeTiny && UNGATEABLE_OPS.has(opName(r.name))) continue
+        const op = opName(r.name)
+        if (
+            excludeUngateable &&
+            (UNGATEABLE_OPS.has(op) ||
+                (runtime === "bun" && BUN_UNGATEABLE_OPS.has(op)))
+        ) {
+            continue
+        }
         samples[r.name] ??= []
         samples[r.name].push(r.ns)
     }
@@ -89,10 +98,12 @@ function toBmf(results: BenchResult[]): Bmf {
 // the base SHA ships an older bench-to-bmf that would reject the repeated names.
 const lanes = [
     {
+        runtime: "bun" as const,
         ndjson: process.env.BENCH_NDJSON_BUN ?? join(PERF_DIR, "bench-results.ndjson"),
         out: process.env.BENCH_OUT_BUN ?? join(ROOT, "packages/valdres/bun_results.json"),
     },
     {
+        runtime: "node" as const,
         ndjson:
             process.env.BENCH_NDJSON_NODE ??
             join(PERF_DIR, "bench-results-node.ndjson"),
@@ -108,7 +119,7 @@ for (const lane of lanes) {
         console.warn(`No results in ${lane.ndjson} — skipping ${lane.out}`)
         continue
     }
-    const bmf = toBmf(results)
+    const bmf = toBmf(results, lane.runtime)
     writeFileSync(lane.out, JSON.stringify(bmf, null, 2))
     console.log(`Wrote ${Object.keys(bmf).length} benchmarks -> ${lane.out}`)
 }
