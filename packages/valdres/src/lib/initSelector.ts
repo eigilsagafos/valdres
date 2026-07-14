@@ -322,7 +322,16 @@ export const handleSelectorResult = <Value>(
         // abort the signal.
         data.abortControllers.delete(selector)
         const promise = value.promise
+        const evaluationContext = data.latestEvalContext.get(selector)
         promise.then(() => {
+            // Dependency presence alone is not an evaluation identity: a stale
+            // late `get` or a newer evaluation can recreate the selector's graph.
+            // Only the context that installed this handler may retry/commit.
+            if (
+                !evaluationContext ||
+                evaluationContext.revoked ||
+                data.latestEvalContext.get(selector) !== evaluationContext
+            ) return
             // Guard against stale promise — if the selector's value has been
             // replaced with a different value, this resolution is outdated.
             // If the value was deleted (e.g. moved to expired), still proceed.
@@ -346,7 +355,18 @@ export const handleSelectorResult = <Value>(
     } else if (isPromiseLike(value)) {
         // When a promise is returned when initializing a selector we suspend,
         // then we retry when the promise resolves.
+        const evaluationContext = data.latestEvalContext.get(selector)
         value.then(resolved => {
+            // A graph entry can be recreated after this Promise was superseded;
+            // use per-evaluation identity as the primary stale-result guard.
+            if (
+                !evaluationContext ||
+                evaluationContext.revoked ||
+                data.latestEvalContext.get(selector) !== evaluationContext
+            ) {
+                pendingAsyncDeps.delete(value)
+                return
+            }
             // Guard: selector was cleaned up by unsubscribe GC
             if (!data.stateDependencies.has(selector)) {
                 pendingAsyncDeps.delete(value)
