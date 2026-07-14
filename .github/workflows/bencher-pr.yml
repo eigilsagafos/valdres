@@ -79,10 +79,8 @@ jobs:
             # Each side runs 3× and bench-to-bmf takes the MEDIAN p50 per
             # benchmark. The Node/vitest lane's single-run p50 is heavy-tailed;
             # median-of-3 rejects either one slow GC sample or one anomalously
-            # fast JIT sample. The runner script rewrites its NDJSON each run, so
-            # we concatenate each run's output into a per-side accumulator.
-            # It also starts a fresh process per benchmark file, preventing a new
-            # benchmark from changing the JIT/GC state of unrelated later files.
+            # fast JIT sample. The package scripts rewrite their NDJSON each
+            # run, so we concatenate each run's output into a per-side accumulator.
             #
             # BENCH_VALDRES_ONLY skips the jotai/map reference measurements — the
             # gate is valdres-only, so measuring them here is wasted time. (The
@@ -96,9 +94,9 @@ jobs:
               run: |
                   rm -f /tmp/base_bun.ndjson /tmp/base_node.ndjson
                   for i in 1 2 3; do
-                    bash "$GITHUB_WORKSPACE/scripts/run-bench-suite.sh" bun
+                    bun run test:bench
                     cat test/performance/bench-results.ndjson >> /tmp/base_bun.ndjson
-                    bash "$GITHUB_WORKSPACE/scripts/run-bench-suite.sh" node
+                    bun run test:bench:node
                     cat test/performance/bench-results-node.ndjson >> /tmp/base_node.ndjson
                   done
 
@@ -110,9 +108,9 @@ jobs:
               run: |
                   rm -f /tmp/pr_bun.ndjson /tmp/pr_node.ndjson
                   for i in 1 2 3; do
-                    bash "$GITHUB_WORKSPACE/scripts/run-bench-suite.sh" bun
+                    bun run test:bench
                     cat test/performance/bench-results.ndjson >> /tmp/pr_bun.ndjson
-                    bash "$GITHUB_WORKSPACE/scripts/run-bench-suite.sh" node
+                    bun run test:bench:node
                     cat test/performance/bench-results-node.ndjson >> /tmp/pr_node.ndjson
                   done
 
@@ -124,14 +122,13 @@ jobs:
             # (every false positive we saw was a reference bench). They're still
             # measured + plotted via the base lane for the head-to-head perf page.
             #
-            # BENCH_EXCLUDE_UNGATEABLE additionally drops known noise-dominated
-            # operations from the gate: sub-~10ns ops on both runtimes, plus the
-            # Bun-only bimodal selectorFamily(id) microbench. Runtime-stable lanes
-            # remain gated. All are still measured and plotted by the base lane.
+            # BENCH_EXCLUDE_TINY additionally drops sub-~10ns ops whose +50%
+            # boundary is below the runner's noise floor. All are still measured
+            # and plotted by the base lane — tracked, just not blocking.
             - name: Convert base + PR results -> BMF (valdres-only, median)
               env:
                   BENCH_EXCLUDE_REFS: "1"
-                  BENCH_EXCLUDE_UNGATEABLE: "1"
+                  BENCH_EXCLUDE_TINY: "1"
               run: |
                   BENCH_NDJSON_BUN=/tmp/base_bun.ndjson \
                   BENCH_NDJSON_NODE=/tmp/base_node.ndjson \

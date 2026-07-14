@@ -18,9 +18,8 @@ const RESULTS_PATH = join(__dir, RESULTS_FILE)
 // sample or one anomalously fast JIT sample, taming the Node/vitest lane's
 // single-run jitter far better than one longer run would.
 //
-// NOTE: every result is appended to one shared NDJSON file, so benchmark files
-// MUST run serially. run-bench-suite.sh gives each file a fresh process to keep
-// its JIT/GC history from contaminating unrelated files.
+// NOTE: every result is appended to one shared NDJSON file, so the suite MUST
+// run serially — bun via `--concurrency 1`, vitest via pool=forks + singleFork.
 const MEASURE_ONE_OPTS = {
     min_samples: 12,
     min_cpu_time: 100 * 1e6,
