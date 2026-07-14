@@ -1,5 +1,6 @@
 import type { State } from "../types/State"
 import type { StoreData } from "../types/StoreData"
+import type { Selector } from "../types/Selector"
 import { isLive } from "./mountAtom"
 
 /**
@@ -29,6 +30,23 @@ export const cleanupOrphanedDeps = (state: State, data: StoreData) => {
         const dependents = data.stateDependents.get(current)
         const deps = data.stateDependencies.get(current)
         if (deps) {
+            // Revoke the evaluation before removing its graph. Deferred `get`
+            // closures capture this object, so flipping it first makes every
+            // post-cleanup read read-only even after the WeakMap entry is gone.
+            // This also gives pending Promise handlers an evaluation-identity
+            // guard stronger than `stateDependencies.has`, which a stale late
+            // `get` or a newer evaluation can make true again.
+            const selector = current as Selector
+            const evaluationContext = data.latestEvalContext.get(selector)
+            if (evaluationContext) {
+                // Unmount invalidates store ownership but intentionally keeps
+                // the public AbortSignal alive. Re-evaluation still aborts the
+                // superseded signal through evaluateSelector's normal path.
+                evaluationContext.preserveSignalOnRevoke = true
+                evaluationContext.revoked = true
+            }
+            data.latestEvalContext.delete(selector)
+
             for (const dep of deps) {
                 data.stateDependents.get(dep)?.delete(current)
             }
