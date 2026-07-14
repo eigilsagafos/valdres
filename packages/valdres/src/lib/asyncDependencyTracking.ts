@@ -4,6 +4,7 @@ import type { State } from "../types/State"
 import type { StoreData } from "../types/StoreData"
 import { getState } from "./getState"
 import { isLive, mountTransitiveDeps, noteDependencyAdded, onLiveDependencyAdded } from "./mountAtom"
+import { noteDependencyGraphChanged } from "./noteDependencyGraphChanged"
 
 // Tracks all deps (sync + async) for each pending async selector evaluation.
 // Keyed by the Promise returned by the async selector. When the promise
@@ -56,6 +57,7 @@ export const lateGet = (
     }
     const isNewDep = !deps.has(state)
     if (isNewDep) {
+        noteDependencyGraphChanged(selector, data)
         deps.add(state)
         const dependents = getOrInitDependentsSet(state, data)
         dependents.add(selector)

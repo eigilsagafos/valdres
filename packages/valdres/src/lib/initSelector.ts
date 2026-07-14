@@ -16,6 +16,7 @@ import {
 } from "./asyncDependencyTracking"
 import { getState } from "./getState"
 import { isLive, noteDependencyAdded, onLiveDependencyRemoved, unmountOrphanedDeps } from "./mountAtom"
+import { noteDependencyGraphChanged } from "./noteDependencyGraphChanged"
 import {
     changeListenerRegistry,
     hasSelectorChangeListener,
@@ -205,6 +206,10 @@ export const evaluateSelector = <V>(
         }
 
         if (depsChanged || !currentDependencies) {
+            // Invalidate topology-sensitive teardown caches once for this
+            // dependency-set materialization or change (including an empty
+            // selector re-materialized after cleanup).
+            noteDependencyGraphChanged(selector, data)
             // Seed the active selector-update pass's liveness reconcile with this
             // selector whenever its dep SET changed — covering BOTH the
             // propagation-loop path and lazy re-inits through `get`. Added deps
@@ -361,8 +366,13 @@ export const handleSelectorResult = <Value>(
                 const currentDeps = data.stateDependencies.get(selector)
                 if (currentDeps) {
                     const selectorIsLive = isLive(selector, data)
+                    let graphChangeNoted = false
                     for (const dep of currentDeps) {
                         if (!evalDeps.has(dep)) {
+                            if (!graphChangeNoted) {
+                                noteDependencyGraphChanged(selector, data)
+                                graphChangeNoted = true
+                            }
                             currentDeps.delete(dep)
                             const dependents = data.stateDependents.get(dep)
                             if (dependents) dependents.delete(selector)

@@ -1,5 +1,6 @@
 import type { State } from "../types/State"
 import type { StoreData } from "../types/StoreData"
+import { isSelector } from "../utils/isSelector"
 import { storeFromStoreData } from "./storeFromStoreData"
 
 // Shared immutable empty set — a missing stateDependencies entry (atoms and
@@ -54,6 +55,23 @@ const propagateMountMarkerUp = (state: State, data: StoreData) => {
     }
 }
 
+/** Mark `state` and every existing dependent as potentially cyclic. */
+const propagateCycleRiskUp = (state: State, data: StoreData) => {
+    if (data.cycleRiskInClosure.has(state)) return
+    data.cycleRiskInClosure.set(state, true)
+    const stack: State[] = [state]
+    while (stack.length > 0) {
+        const current = stack.pop()!
+        const parents = data.stateDependents.get(current)
+        if (!parents) continue
+        for (const parent of parents) {
+            if (data.cycleRiskInClosure.has(parent)) continue
+            data.cycleRiskInClosure.set(parent, true)
+            stack.push(parent)
+        }
+    }
+}
+
 /**
  * Record that `dep` just became a (strict) dependency of `selector`. If `dep`
  * is mount-relevant, `selector`'s downward closure now contains a mountable
@@ -71,6 +89,22 @@ export const noteDependencyAdded = (
     dep: State,
     data: StoreData,
 ) => {
+    // Any directed cycle must contain at least one edge that does not descend
+    // through the stable selector-materialization order. Mark that edge's source
+    // (and its existing dependents) as cycle-risky. A risky dependency also makes
+    // the selector's closure risky. This is conservative and monotonic: false
+    // positives are allowed; false negatives are not.
+    const selectorOrder = data.dependencyOrder.get(selector)
+    const depOrder = data.dependencyOrder.get(dep)
+    if (
+        data.cycleRiskInClosure.has(dep) ||
+        selectorOrder === undefined ||
+        (isSelector(dep) &&
+            (depOrder === undefined || depOrder >= selectorOrder))
+    ) {
+        propagateCycleRiskUp(selector, data)
+    }
+
     if (!hasMountInClosure(dep, data)) return
     if (data.mountInClosure.has(selector)) return
     data.mountInClosure.set(selector, true)
@@ -203,47 +237,72 @@ export const onLiveDependencyRemoved = (dep: State, data: StoreData) => {
  * already equals ground truth and the reconcile is a no-op — skip it.
  *
  * Iterative DFS over `data.stateDependencies` (down-edges only) restricted to the
- * seeds' closure; an `onPath` (gray) set detects a back-edge, a `done` (black) set
- * memoizes fully-explored acyclic subgraphs. Only selectors are keyed in
- * `stateDependencies`; atoms and atom-family members are graph sinks (no
- * out-edges), so a region of pure atom deps returns false in O(seeds).
+ * seeds' closure; an `onPath` (gray) set detects a back-edge, while fully explored
+ * acyclic subgraphs are memoized against the current topology generation. Only
+ * selectors are keyed in `stateDependencies`; atoms and atom-family members are
+ * graph sinks (no out-edges), so a region of pure atom deps returns false in
+ * O(seeds).
  * (selectorFamily members ARE selectors and do have out-edges.)
  */
-export const regionHasCycle = (
-    seeds: Set<State>,
+const seedClosureHasCycle = (
+    seed: State,
     data: StoreData,
+    graphVersion: number,
+    acyclicAtVersion: WeakMap<WeakKey, number>,
 ): boolean => {
-    const done = new Set<State>()
+    // A prior scan at this topology version proved the full downward closure
+    // acyclic. Orphan teardown only deletes edges, so the proof stays valid
+    // across every sibling unsubscribe in the burst.
+    if (acyclicAtVersion.get(seed) === graphVersion) return false
+
     const onPath = new Set<State>()
     // Explicit stack of frames: { node, iterator over its deps }. A frame is
-    // pushed onto `onPath` when entered and moved to `done` when its deps are
-    // exhausted; encountering a node already `onPath` is a back-edge → cycle.
-    for (const seed of seeds) {
-        if (done.has(seed)) continue
-        const stack: { node: State; it: Iterator<State> }[] = [
-            { node: seed, it: (data.stateDependencies.get(seed) ?? EMPTY).values() },
-        ]
-        onPath.add(seed)
-        while (stack.length > 0) {
-            const frame = stack[stack.length - 1]!
-            const next = frame.it.next()
-            if (next.done) {
-                onPath.delete(frame.node)
-                done.add(frame.node)
-                stack.pop()
-                continue
-            }
-            const dep = next.value as State
-            if (onPath.has(dep)) return true // back-edge → cycle
-            if (done.has(dep)) continue
-            onPath.add(dep)
-            stack.push({
-                node: dep,
-                it: (data.stateDependencies.get(dep) ?? EMPTY).values(),
-            })
+    // pushed onto `onPath` when entered. Once its deps are exhausted, its whole
+    // closure is proven acyclic at this graph version. Encountering an `onPath`
+    // node is a back-edge. Positive results are never cached because a later
+    // teardown edge deletion could break the cycle without bumping the version.
+    const stack: { node: State; it: Iterator<State> }[] = [
+        { node: seed, it: (data.stateDependencies.get(seed) ?? EMPTY).values() },
+    ]
+    onPath.add(seed)
+    while (stack.length > 0) {
+        const frame = stack[stack.length - 1]!
+        const next = frame.it.next()
+        if (next.done) {
+            onPath.delete(frame.node)
+            acyclicAtVersion.set(frame.node, graphVersion)
+            stack.pop()
+            continue
         }
+        const dep = next.value as State
+        if (onPath.has(dep)) return true // back-edge → cycle
+        if (acyclicAtVersion.get(dep) === graphVersion) continue
+        onPath.add(dep)
+        stack.push({
+            node: dep,
+            it: (data.stateDependencies.get(dep) ?? EMPTY).values(),
+        })
     }
     return false
+}
+
+export const regionHasCycle = (
+    seeds: Set<State> | State,
+    data: StoreData,
+): boolean => {
+    const graphVersion = data.dependencyGraphVersion
+    const acyclicAtVersion = data.acyclicDependencyVersion
+    if (seeds instanceof Set) {
+        for (const seed of seeds) {
+            if (
+                seedClosureHasCycle(seed, data, graphVersion, acyclicAtVersion)
+            ) {
+                return true
+            }
+        }
+        return false
+    }
+    return seedClosureHasCycle(seeds, data, graphVersion, acyclicAtVersion)
 }
 
 /**
