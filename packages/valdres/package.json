@@ -23,8 +23,8 @@
         "build:types": "rm -rf dist/types && bunx tsgo",
         "typecheck:types": "bunx tsc -p tsconfig.types-test.json",
         "test": "bun test --reporter=dots",
-        "test:bench": "rm -f test/performance/bench-results.ndjson && NODE_ENV=production bun test --timeout 60000 --concurrency 1 ./test/performance/*.bench.ts",
-        "test:bench:node": "rm -f test/performance/bench-results-node.ndjson && NODE_ENV=production npx vitest run --config vitest.bench.config.ts"
+        "test:bench": "bash ../../scripts/run-bench-suite.sh bun",
+        "test:bench:node": "bash ../../scripts/run-bench-suite.sh node"
     },
     "devDependencies": {
         "@testing-library/react": "16.3.0",

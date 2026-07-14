@@ -76,11 +76,13 @@ jobs:
             # looks faster never alerts. (Matches Bencher's documented order:
             # bench main, then bench the feature branch.)
             #
-            # Each side runs 3× and bench-to-bmf takes the MIN p50 per benchmark.
-            # The Node/vitest lane's single-run p50 is heavy-tailed (one GC pause
-            # doubles it); min-of-3 filters those spikes so a tight gate is
-            # trustworthy. The npm scripts rm + rewrite their NDJSON each run, so
+            # Each side runs 3× and bench-to-bmf takes the MEDIAN p50 per
+            # benchmark. The Node/vitest lane's single-run p50 is heavy-tailed;
+            # median-of-3 rejects either one slow GC sample or one anomalously
+            # fast JIT sample. The runner script rewrites its NDJSON each run, so
             # we concatenate each run's output into a per-side accumulator.
+            # It also starts a fresh process per benchmark file, preventing a new
+            # benchmark from changing the JIT/GC state of unrelated later files.
             #
             # BENCH_VALDRES_ONLY skips the jotai/map reference measurements — the
             # gate is valdres-only, so measuring them here is wasted time. (The
@@ -94,9 +96,9 @@ jobs:
               run: |
                   rm -f /tmp/base_bun.ndjson /tmp/base_node.ndjson
                   for i in 1 2 3; do
-                    bun run test:bench
+                    bash "$GITHUB_WORKSPACE/scripts/run-bench-suite.sh" bun
                     cat test/performance/bench-results.ndjson >> /tmp/base_bun.ndjson
-                    bun run test:bench:node
+                    bash "$GITHUB_WORKSPACE/scripts/run-bench-suite.sh" node
                     cat test/performance/bench-results-node.ndjson >> /tmp/base_node.ndjson
                   done
 
@@ -108,15 +110,16 @@ jobs:
               run: |
                   rm -f /tmp/pr_bun.ndjson /tmp/pr_node.ndjson
                   for i in 1 2 3; do
-                    bun run test:bench
+                    bash "$GITHUB_WORKSPACE/scripts/run-bench-suite.sh" bun
                     cat test/performance/bench-results.ndjson >> /tmp/pr_bun.ndjson
-                    bun run test:bench:node
+                    bash "$GITHUB_WORKSPACE/scripts/run-bench-suite.sh" node
                     cat test/performance/bench-results-node.ndjson >> /tmp/pr_node.ndjson
                   done
 
             # Convert both sides with the PR-checkout script (the base worktree's
-            # older bench-to-bmf rejects the repeated names). MIN across repeats,
-            # and BENCH_EXCLUDE_REFS drops the jotai/map reference sides: they
+            # older bench-to-bmf rejects the repeated names). MEDIAN across
+            # repeats, and BENCH_EXCLUDE_REFS drops the jotai/map reference
+            # sides: they
             # can't regress from a valdres change, so gating them only adds noise
             # (every false positive we saw was a reference bench). They're still
             # measured + plotted via the base lane for the head-to-head perf page.
@@ -124,12 +127,12 @@ jobs:
             # BENCH_EXCLUDE_TINY additionally drops sub-~10ns ops (atom(1),
             # selector(fn), atomFamily cache hit) from the GATE: their +50%
             # boundary is only a few ns — below the runner's noise floor even after
-            # min-of-3 — so the gate flipped on variance rather than regressions
+            # median-of-3 — so the gate flipped on variance rather than regressions
             # (it alerted on them while they measured FASTER than base). Dropped
             # from BOTH the base-seed and PR files so the relative comparison stays
             # consistent. Like the refs, they're still measured + plotted via the
             # base lane — tracked, just not blocking.
-            - name: Convert base + PR results -> BMF (valdres-only, min)
+            - name: Convert base + PR results -> BMF (valdres-only, median)
               env:
                   BENCH_EXCLUDE_REFS: "1"
                   BENCH_EXCLUDE_TINY: "1"
@@ -169,10 +172,10 @@ jobs:
             # Percentage test: alert if a benchmark is >50% slower than the base
             # measurement on THIS runner. Variance-independent and immune to the
             # cross-runner global-slowdown that flaked the old t-test gate. The
-            # min-of-3 measurement above filters the GC/scheduler spikes that made
-            # single-shot p50s swing ~2x, so +50% is a trustworthy boundary on
-            # both lanes — a real same-runner regression is a large, consistent
-            # shift well within reach. --err fails on any per-benchmark alert.
+            # median-of-3 measurement above filters the one-off fast/slow samples
+            # that made single-shot p50s swing ~2x, so +50% is a trustworthy
+            # boundary on both lanes — a real same-runner regression is a large,
+            # consistent shift well within reach. --err fails on any alert.
             - name: Gate Bun PR vs base
               run: |
                   bencher run \
