@@ -14,9 +14,9 @@ const RESULTS_PATH = join(__dir, RESULTS_FILE)
 
 // Measurement budget. 100ms per benchmark keeps the suite cheap enough to run
 // 3× per side in the relative-CB gate (bencher-pr.yml), where bench-to-bmf takes
-// the MIN p50 across the repeats — interference (GC, scheduler) only ever adds
-// time, so the minimum is the clean signal and tames the heavy-tailed single-run
-// jitter on the Node/vitest lane far better than one longer run would.
+// the MEDIAN p50 across the repeats. Median-of-3 rejects one slow GC/scheduler
+// sample or one anomalously fast JIT sample, taming the Node/vitest lane's
+// single-run jitter far better than one longer run would.
 //
 // NOTE: every result is appended to one shared NDJSON file, so the suite MUST
 // run serially — bun via `--concurrency 1`, vitest via pool=forks + singleFork.

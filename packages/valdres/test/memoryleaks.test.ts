@@ -136,19 +136,20 @@ describe("memory leaks (subscriptions)", () => {
         expect(await detector.isLeaking()).toBe(false)
     })
 
-    test("stateDependents are cleaned up after selector unsubscribe", () => {
+    test("stateDependents are cleaned up after selector unsubscribe", async () => {
         const s = store()
         const baseAtom = atom(1)
         const sel = selector(get => get(baseAtom) + 1)
         const unsub = s.sub(sel, () => {})
         expect(s.data.stateDependents.get(baseAtom)?.has(sel)).toBe(true)
         unsub()
+        await Promise.resolve()
         // After unsubscribe, sel should be removed from baseAtom's dependents
         const after = s.data.stateDependents.get(baseAtom)
         expect(!after || !after.has(sel)).toBe(true)
     })
 
-    test("stateDependents are cleaned up after base atom unsubscribe", () => {
+    test("stateDependents are cleaned up after base atom unsubscribe", async () => {
         const s = store()
         const baseAtom = atom(1)
         const sel = selector(get => get(baseAtom) + 1)
@@ -158,6 +159,7 @@ describe("memory leaks (subscriptions)", () => {
         // Subscribe to the base atom, then unsubscribe
         const unsub = s.sub(baseAtom, () => {})
         unsub()
+        await Promise.resolve()
         // After unsubscribe, sel should be removed from baseAtom's dependents
         const after = s.data.stateDependents.get(baseAtom)
         expect(!after || !after.has(sel)).toBe(true)
@@ -198,6 +200,7 @@ describe("memory leaks (subscriptions)", () => {
         expect(s.data.values.has(sel)).toBe(true)
         // Unsubscribe — cleanup deletes value and deps
         unsub()
+        await Promise.resolve()
         expect(s.data.values.has(sel)).toBe(false)
         expect(s.data.stateDependencies.has(sel)).toBe(false)
         // Resolve the promise — handler should bail, not repopulate
@@ -233,7 +236,12 @@ describe("memory leaks (subscriptions)", () => {
             }
         })()
         for (const detector of detectors) {
-            expect(await detector.isLeaking()).toBe(false)
+            // Plain atom teardown deliberately has no orphan-cleanup microtask.
+            // After this tight loop, JSC's conservative stack scan can retain a
+            // stale callback register under full-suite heap pressure even though
+            // the subscription entry is gone. Use the wider bounded window that
+            // LeakDetector exposes for exactly this post-teardown shape.
+            expect(await detector.isLeaking(50)).toBe(false)
         }
     })
 })

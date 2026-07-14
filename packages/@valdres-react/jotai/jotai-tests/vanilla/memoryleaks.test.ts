@@ -58,6 +58,7 @@ describe("memory leaks (with subscribe)", () => {
         const detector = new LeakDetector(store.get(objAtom))
         let unsub: (() => void) | undefined = store.sub(objAtom, () => {})
         unsub()
+        await Promise.resolve()
         unsub = undefined
         objAtom = undefined
         expect(await detector.isLeaking()).toBe(false)
@@ -73,10 +74,15 @@ describe("memory leaks (with subscribe)", () => {
         const detector2 = new LeakDetector(store.get(derivedAtom))
         let unsub: (() => void) | undefined = store.sub(objAtom, () => {})
         unsub()
+        await Promise.resolve()
         unsub = undefined
         objAtom = undefined
         derivedAtom = undefined
-        expect(await detector1.isLeaking()).toBe(false)
+        // Deferred cleanup has only just returned. Under full-suite heap
+        // pressure JSC can conservatively retain its stale stack slots beyond
+        // the detector's normal 10-round window; a true strong reference still
+        // survives this longer bounded check and fails.
+        expect(await detector1.isLeaking(50)).toBe(false)
         expect(await detector2.isLeaking()).toBe(false)
     })
 

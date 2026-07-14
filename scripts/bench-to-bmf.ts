@@ -17,6 +17,7 @@
 import { writeFileSync } from "fs"
 import { join } from "path"
 import { type BenchResult, readBenchResults } from "./lib/read-bench-results"
+import { median } from "./lib/median"
 
 type Metric = { value: number; lower_value?: number; upper_value?: number }
 type Bmf = Record<string, Record<string, Metric>>
@@ -38,15 +39,9 @@ function opName(name: string): string {
     return m ? m[1] : name
 }
 
-// Operations too small to GATE reliably. These are sub-~10ns ops where the gate's
-// +50% relative boundary is only a few nanoseconds — below the CI runner's
-// measurement noise even after min-of-3 — so the percentage gate flips on
-// variance rather than regressions (it has alerted on these while they measured
-// FASTER than base). BENCH_EXCLUDE_TINY (set by the PR gate only) drops them from
-// the gated comparison. They are still measured and plotted via the base lane
-// (bencher-base.yml), so the historical perf page is unaffected — they're tracked,
-// just not blocking. A new benchmark is gated by default; add it here only if it
-// proves noise-dominated. Keep this in sync with the README's tiny ops.
+// Operations too small to gate reliably. Their +50% relative boundary is only a
+// few nanoseconds — below the CI runner's measurement noise even after
+// median-of-3. They remain measured and plotted by the base lane.
 const UNGATEABLE_OPS = new Set([
     "atom(1)", // ~2ns
     "selector(fn)", // ~5ns
@@ -56,9 +51,10 @@ const UNGATEABLE_OPS = new Set([
 function toBmf(results: BenchResult[]): Bmf {
     // The relative-CB gate runs the suite multiple times and concatenates the
     // NDJSON, so a benchmark name legitimately appears once per repeat. Keep the
-    // MIN latency across repeats: interference (GC, scheduler, contention) only
-    // ever adds time, so the minimum is the cleanest, most reproducible reading.
-    // (A single run — e.g. the base lane — simply yields min-of-one.)
+    // MEDIAN latency across repeats: with three runs it rejects either one slow
+    // GC/scheduler sample or one anomalously fast JIT sample. Min-of-three only
+    // rejected slow outliers and could turn one lucky base result into a false
+    // regression. A single run (the base lane) yields median-of-one.
     //
     // BENCH_EXCLUDE_REFS drops the competitor/native-floor sides. The PR gate
     // sets it because those benches can't regress from a valdres change (jotai
@@ -67,14 +63,17 @@ function toBmf(results: BenchResult[]): Bmf {
     // head-to-head perf page.
     const excludeRefs = !!process.env.BENCH_EXCLUDE_REFS
     const excludeTiny = !!process.env.BENCH_EXCLUDE_TINY
-    const bmf: Bmf = {}
+    const samples: Record<string, number[]> = {}
     for (const r of results) {
         if (excludeRefs && isReference(r.name)) continue
         if (excludeTiny && UNGATEABLE_OPS.has(opName(r.name))) continue
-        const prev = bmf[r.name]?.latency.value
-        if (prev === undefined || r.ns < prev) {
-            bmf[r.name] = { latency: { value: r.ns } }
-        }
+        samples[r.name] ??= []
+        samples[r.name].push(r.ns)
+    }
+
+    const bmf: Bmf = {}
+    for (const [name, values] of Object.entries(samples)) {
+        bmf[name] = { latency: { value: median(values) } }
     }
     return bmf
 }

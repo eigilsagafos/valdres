@@ -17,6 +17,34 @@ export type StoreData = {
     subscriptionsRequireEqualCheck: WeakMap<WeakKey, boolean>
     stateDependents: WeakMap<WeakKey, any>
     stateDependencies: WeakMap<WeakKey, any>
+    /** Stable per-store order assigned when a selector first materializes its
+     *  dependency set. An edge to an equal/newer selector violates this order,
+     *  making a directed cycle possible in that closure. */
+    dependencyOrder: WeakMap<WeakKey, number>
+    nextDependencyOrder: number
+    /** Monotonic, conservative marker: present when a state's downward closure
+     *  may contain an edge that violates `dependencyOrder`. Every real cycle has
+     *  at least one such edge, so absence proves the closure acyclic in O(1).
+     *  Stale positives after edge removal only cost a fallback DFS. */
+    cycleRiskInClosure: WeakMap<WeakKey, true>
+    /** Monotonic generation for dependency-graph materialization/churn. Selector
+     *  evaluation increments it when a dependency set is created or changed.
+     *  Orphan teardown only removes edges and deliberately leaves it unchanged:
+     *  deletion cannot create a cycle, so a synchronous unsubscribe burst can
+     *  reuse both negative cycle proofs and completed orphan-walk visits. */
+    dependencyGraphVersion: number
+    /** `state -> dependencyGraphVersion` for closures proven acyclic. A cached
+     *  negative remains valid while teardown only deletes edges; any normal graph
+     *  construction/churn bumps `dependencyGraphVersion` and invalidates it. */
+    acyclicDependencyVersion: WeakMap<WeakKey, number>
+    /** `state -> dependencyGraphVersion` for non-live states whose orphan graph
+     *  work has completed. This is the shared visited set for a deletion-only
+     *  unsubscribe burst, without retaining states strongly between calls. */
+    orphanCleanupVersion: WeakMap<WeakKey, number>
+    /** Strong only until the queued microtask drains it. Batches orphan graph
+     *  cleanup roots across a synchronous unsubscribe burst. */
+    pendingOrphanCleanup?: Set<WeakKey>
+    orphanCleanupScheduled: boolean
     mounts: WeakMap<WeakKey, { cleanup?: () => void }>
     /** Count of dependents (selectors that read this state) that are
      *  currently "live" (transitively subscribed). A state is live iff it

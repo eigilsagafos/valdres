@@ -25,6 +25,10 @@ Object.defineProperties(lazyProto, {
     subscriptionsRequireEqualCheck: makeLazyGetter("subscriptionsRequireEqualCheck"),
     stateDependents: makeLazyGetter("stateDependents"),
     stateDependencies: makeLazyGetter("stateDependencies"),
+    dependencyOrder: makeLazyGetter("dependencyOrder"),
+    cycleRiskInClosure: makeLazyGetter("cycleRiskInClosure"),
+    acyclicDependencyVersion: makeLazyGetter("acyclicDependencyVersion"),
+    orphanCleanupVersion: makeLazyGetter("orphanCleanupVersion"),
     mounts: makeLazyGetter("mounts"),
     liveDependentCount: makeLazyGetter("liveDependentCount"),
     mountInClosure: makeLazyGetter("mountInClosure"),
@@ -58,6 +62,10 @@ export function createStoreData(
     const enumerable = options?.enumerable ?? parent?.enumerable ?? false
     if (enumerable) data.enumerable = true
     data.values = enumerable ? new Map() : new WeakMap()
+    data.nextDependencyOrder = 0
+    data.dependencyGraphVersion = 0
+    data.pendingOrphanCleanup = undefined
+    data.orphanCleanupScheduled = false
     data.scopes = new Map()
     data.scopeValueIndex = new WeakMap()
     // Eager (not lazy) because resolvePendingDefault in setAtom walks every

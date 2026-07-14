@@ -365,7 +365,7 @@ describe("subscribe", () => {
         // expect(subCallback).toHaveBeenCalledTimes(1)
     })
 
-    test("unsubscribe cleans orphaned dependency selectors", () => {
+    test("unsubscribe cleans orphaned dependency selectors", async () => {
         const rootStore = store()
         const source = atom(1, { name: "orphan-source" })
         const intermediateCallback = mock(get => get(source) * 2)
@@ -384,6 +384,7 @@ describe("subscribe", () => {
         )
 
         unsubscribeLeaf()
+        await Promise.resolve()
 
         expect(rootStore.data.stateDependencies.has(leaf)).toBe(false)
         expect(rootStore.data.stateDependencies.has(intermediate)).toBe(false)
@@ -397,7 +398,83 @@ describe("subscribe", () => {
         expect(intermediateCallback).toHaveBeenCalledTimes(1)
     })
 
-    test("unsubscribe cleans deep orphaned selector chains iteratively", () => {
+    test("plain atom unsubscribe skips an empty orphan cleanup", () => {
+        const rootStore = store()
+        const source = atom(1, { name: "orphan-free-atom" })
+
+        const unsubscribe = rootStore.sub(source, () => {}, false)
+        unsubscribe()
+
+        expect(rootStore.data.pendingOrphanCleanup).toBeUndefined()
+        expect(rootStore.data.orphanCleanupScheduled).toBe(false)
+    })
+
+    test("orphan cleanup runs again after an empty selector is re-materialized", async () => {
+        const rootStore = store()
+        const constant = selector(() => 42, { name: "orphan-constant" })
+
+        const firstUnsubscribe = rootStore.sub(constant, () => {}, false)
+        expect(rootStore.get(constant)).toBe(42)
+        firstUnsubscribe()
+        await Promise.resolve()
+        expect(rootStore.data.stateDependencies.has(constant)).toBe(false)
+        expect(rootStore.data.values.has(constant)).toBe(false)
+
+        // An empty dependency set creates no edge that could implicitly
+        // invalidate a shared teardown visit. Re-materializing the selector
+        // itself must invalidate it so the second unsubscribe still cleans up.
+        const secondUnsubscribe = rootStore.sub(constant, () => {}, false)
+        expect(rootStore.get(constant)).toBe(42)
+        secondUnsubscribe()
+        await Promise.resolve()
+        expect(rootStore.data.stateDependencies.has(constant)).toBe(false)
+        expect(rootStore.data.values.has(constant)).toBe(false)
+    })
+
+    test("a public read flushes queued orphan cleanup first", () => {
+        const rootStore = store()
+        const evaluate = mock(() => 42)
+        const constant = selector(evaluate, { name: "orphan-read-flush" })
+
+        const unsubscribe = rootStore.sub(constant, () => {}, false)
+        expect(evaluate).toHaveBeenCalledTimes(1)
+        unsubscribe()
+
+        // Cleanup is normally microtask-batched, but an immediate public read
+        // preserves the previous observable behavior: clear the cached orphan,
+        // then evaluate it again instead of returning the pre-unsubscribe value.
+        expect(rootStore.get(constant)).toBe(42)
+        expect(evaluate).toHaveBeenCalledTimes(2)
+    })
+
+    test("lifecycle cleanup is synchronous while graph cleanup is microtask-batched", async () => {
+        const rootStore = store()
+        let lifecycleCleanups = 0
+        const mounted = atom(1, {
+            name: "orphan-timing-mounted",
+            onMount: () => () => {
+                lifecycleCleanups++
+            },
+        })
+        const derived = selector(get => get(mounted) + 1, {
+            name: "orphan-timing-derived",
+        })
+
+        const unsubscribe = rootStore.sub(derived, () => {}, false)
+        expect(rootStore.data.stateDependencies.has(derived)).toBe(true)
+        unsubscribe()
+
+        // This timing split is deliberate: release user resources before the
+        // disposer returns, but coalesce internal graph/cache work for the burst.
+        expect(lifecycleCleanups).toBe(1)
+        expect(rootStore.data.stateDependencies.has(derived)).toBe(true)
+
+        await Promise.resolve()
+        expect(rootStore.data.stateDependencies.has(derived)).toBe(false)
+        expect(rootStore.data.values.has(derived)).toBe(false)
+    })
+
+    test("unsubscribe cleans deep orphaned selector chains iteratively", async () => {
         const rootStore = store()
         const source = atom(1)
         const depth = 100_000
@@ -416,6 +493,7 @@ describe("subscribe", () => {
         const unsubscribeTail = rootStore.sub(current, () => {}, false)
 
         expect(() => unsubscribeTail()).not.toThrow()
+        await Promise.resolve()
         expect(rootStore.data.stateDependencies.has(current)).toBe(false)
         expect(rootStore.data.stateDependencies.has(first)).toBe(false)
         expect(rootStore.data.values.has(current)).toBe(false)

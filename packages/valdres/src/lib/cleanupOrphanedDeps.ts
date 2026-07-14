@@ -1,0 +1,50 @@
+import type { State } from "../types/State"
+import type { StoreData } from "../types/StoreData"
+import { isLive } from "./mountAtom"
+
+/**
+ * Remove non-live states from the dependency graph, clear selector caches, and
+ * recursively clean orphaned dependencies/dependents. Visit marks persist for
+ * one topology generation so every state is processed once across a queued
+ * sibling-unsubscribe burst.
+ */
+export const cleanupOrphanedDeps = (state: State, data: StoreData) => {
+    // A live root has nothing to clean. This is the dominant shape for wide
+    // fan-in teardown until the aggregator itself unsubscribes.
+    if (isLive(state, data)) return
+
+    const graphVersion = data.dependencyGraphVersion
+    const cleanedAtVersion = data.orphanCleanupVersion
+    if (cleanedAtVersion.get(state) === graphVersion) return
+
+    const stack = [state]
+    while (stack.length > 0) {
+        const current = stack.pop()!
+        // Live boundaries are deliberately NOT marked: a later burst may make
+        // one transition to non-live, at which point it needs cleanup.
+        if (cleanedAtVersion.get(current) === graphVersion) continue
+        if (isLive(current, data)) continue
+        cleanedAtVersion.set(current, graphVersion)
+
+        const dependents = data.stateDependents.get(current)
+        const deps = data.stateDependencies.get(current)
+        if (deps) {
+            for (const dep of deps) {
+                data.stateDependents.get(dep)?.delete(current)
+            }
+            data.stateDependencies.delete(current)
+            data.values.delete(current)
+            data.abortControllers.delete(current)
+
+            if (dependents) {
+                for (const dependent of dependents) stack.push(dependent)
+            }
+            for (const dep of deps) stack.push(dep)
+            continue
+        }
+
+        if (dependents) {
+            for (const dependent of dependents) stack.push(dependent)
+        }
+    }
+}
