@@ -86,7 +86,7 @@ export const evaluateSelector = <V>(
     const latestEvalContext = data.latestEvalContext
     const prevCtx = latestEvalContext.get(selector)
     if (prevCtx) prevCtx.revoked = true
-    const evalCtx = { revoked: false }
+    const evalCtx = { revoked: false, preserveSignalOnRevoke: false }
     latestEvalContext.set(selector, evalCtx)
 
     if (circularDependencySet.has(selector)) {
@@ -135,7 +135,9 @@ export const evaluateSelector = <V>(
                         if (!controller) {
                             controller = new AbortController()
                             if (myEvalCtx.revoked) {
-                                controller.abort()
+                                if (!myEvalCtx.preserveSignalOnRevoke) {
+                                    controller.abort()
+                                }
                             } else {
                                 data.abortControllers.set(selector, controller)
                             }

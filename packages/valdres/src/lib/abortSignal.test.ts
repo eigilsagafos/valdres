@@ -76,7 +76,7 @@ describe("abort signal support for async selectors", () => {
         expect(signals[1]!.aborted).toBe(false)
     })
 
-    test("signal is aborted when unsubscribe cleanup drains", async () => {
+    test("signal is not aborted when unsubscribe cleanup drains", async () => {
         const store1 = store()
         const countAtom = atom(1)
         const signals: AbortSignal[] = []
@@ -91,12 +91,12 @@ describe("abort signal support for async selectors", () => {
         expect(signals).toHaveLength(1)
         expect(signals[0]!.aborted).toBe(false)
 
-        // Lifecycle unmount remains synchronous, while internal selector graph
-        // and async-evaluation cleanup is batched into the queued microtask.
+        // Internal selector graph and async-evaluation ownership cleanup is
+        // batched, but unmount does not cancel the caller-owned async operation.
         unsub()
         expect(signals[0]!.aborted).toBe(false)
         await Promise.resolve()
-        expect(signals[0]!.aborted).toBe(true)
+        expect(signals[0]!.aborted).toBe(false)
     })
 
     test("each store gets its own abort signal for the same selector", () => {

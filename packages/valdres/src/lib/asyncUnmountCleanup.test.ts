@@ -26,7 +26,7 @@ describe("async selector unmount cleanup", () => {
         unsubscribe()
         await Promise.resolve()
 
-        expect(signal!.aborted).toBe(true)
+        expect(signal!.aborted).toBe(false)
         expect(targetStore.data.values.has(derived)).toBe(false)
         expect(targetStore.data.stateDependencies.has(derived)).toBe(false)
         expect(targetStore.data.latestEvalContext.has(derived)).toBe(false)
@@ -43,7 +43,7 @@ describe("async selector unmount cleanup", () => {
         ).toBe(false)
     })
 
-    test("signal first accessed after cleanup is already aborted", async () => {
+    test("signal first accessed after cleanup remains active", async () => {
         const targetStore = store()
         const source = atom(1)
         let release!: () => void
@@ -62,10 +62,11 @@ describe("async selector unmount cleanup", () => {
         await Promise.resolve()
         release()
 
-        expect(await pending).toBe(true)
+        expect(await pending).toBe(false)
         await Promise.resolve()
         expect(targetStore.data.values.has(derived)).toBe(false)
         expect(targetStore.data.stateDependencies.has(derived)).toBe(false)
+        expect(targetStore.data.abortControllers.has(derived)).toBe(false)
     })
 
     test("deferred get from a settled selector is read-only after cleanup", async () => {

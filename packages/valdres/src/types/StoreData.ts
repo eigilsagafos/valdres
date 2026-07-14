@@ -117,7 +117,10 @@ export type StoreData = {
      *  await) `get` calls from superseded evaluations. Per-store so that
      *  store2 evaluating a shared selector doesn't silently strip dep
      *  registration from store1's in-flight async eval. */
-    latestEvalContext: WeakMap<Selector, { revoked: boolean }>
+    latestEvalContext: WeakMap<
+        Selector,
+        { revoked: boolean; preserveSignalOnRevoke: boolean }
+    >
     /** Per-atom timestamp of the last value write, used for lazy
      *  maxAge revalidation when the atom is unmounted (no active timer
      *  to keep the cache fresh). Only populated for atoms with `maxAge`. */

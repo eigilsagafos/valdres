@@ -38,22 +38,21 @@ export const cleanupOrphanedDeps = (state: State, data: StoreData) => {
             // `get` or a newer evaluation can make true again.
             const selector = current as Selector
             const evaluationContext = data.latestEvalContext.get(selector)
-            if (evaluationContext) evaluationContext.revoked = true
+            if (evaluationContext) {
+                // Unmount invalidates store ownership but intentionally keeps
+                // the public AbortSignal alive. Re-evaluation still aborts the
+                // superseded signal through evaluateSelector's normal path.
+                evaluationContext.preserveSignalOnRevoke = true
+                evaluationContext.revoked = true
+            }
             data.latestEvalContext.delete(selector)
 
-            // Abort only a controller allocated by this evaluation (`false` is
-            // the known-sync sentinel). Delete all old state before aborting:
-            // AbortSignal listeners run synchronously and may re-enter the
-            // store, in which case their newly materialized evaluation must not
-            // be deleted when control returns here.
-            const controller = data.abortControllers.get(current)
             for (const dep of deps) {
                 data.stateDependents.get(dep)?.delete(current)
             }
             data.stateDependencies.delete(current)
             data.values.delete(current)
             data.abortControllers.delete(current)
-            if (controller) controller.abort()
 
             if (dependents) {
                 for (const dependent of dependents) stack.push(dependent)
