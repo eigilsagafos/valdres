@@ -3,7 +3,8 @@ import type { Selector } from "../types/Selector"
 import type { State } from "../types/State"
 import type { StoreData } from "../types/StoreData"
 import { getState } from "./getState"
-import { isLive, mountTransitiveDeps, noteDependencyAdded, onLiveDependencyAdded } from "./mountAtom"
+import { isLive, mountTransitiveDeps, noteDependencyAdded, onLiveDependencyAdded, probeForDependencyCycle } from "./mountAtom"
+import { isSelector } from "../utils/isSelector"
 
 // Tracks all deps (sync + async) for each pending async selector evaluation.
 // Keyed by the Promise returned by the async selector. When the promise
@@ -61,6 +62,9 @@ export const lateGet = (
         dependents.add(selector)
         // New edge: keep the mount-closure marker's no-false-negative invariant.
         noteDependencyAdded(selector, state, data)
+        // Both edge directions are committed above, so a new selector dep may
+        // have just closed a directed cycle — keep `depGraphMaybeCyclic` sound.
+        if (isSelector(state)) probeForDependencyCycle(selector, data)
     }
 
     // Get the value (may throw for error-throwing selectors).

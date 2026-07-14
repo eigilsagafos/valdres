@@ -45,24 +45,38 @@ export const unsubscribe = <V>(
             // marked non-live. Needed ONLY when a cycle is present, and a cycle is
             // selector-only (only selectors are keyed in stateDependencies; atoms
             // and atom-family members are graph sinks), so unsubscribing an atom
-            // can skip in O(1) without even building a region; a selector (incl. a
-            // selectorFamily member) is gated on regionHasCycle (acyclic →
+            // can skip in O(1) without even building a region. For a selector,
+            // the sticky `depGraphMaybeCyclic` flag (maintained at edge-commit
+            // time by probeForDependencyCycle) short-circuits first: while no
+            // cycle was ever committed to this store, regionHasCycle is
+            // guaranteed false, so the O(closure) walk — previously paid on
+            // EVERY selector unsubscribe, making synchronous teardown bursts
+            // O(unsubs × shared closure) — is skipped outright. Once the flag
+            // is set, the exact per-region gate runs as before (acyclic region →
             // propagateNotLive already drained the counts exactly → skip the
-            // O(region+dependents) reconcile). Keeps the plain sub/unsub hot path
-            // allocation-free.
+            // O(region+dependents) reconcile).
             if (
+                data.depGraphMaybeCyclic &&
                 isSelector(state) &&
                 regionHasCycle(new Set([state as State<V>]), data)
             ) {
                 reconcileLivenessAfterChurn(new Set([state as State<V>]), data)
             }
-            // Unmount this state and any transitive dependencies that are
-            // no longer reachable from any subscriber.
-            unmountOrphanedDeps(state as State<V>, data)
-            // Clean up dependency graph for states that are no longer
-            // transitively subscribed, allowing derived atoms/selectors
-            // to be garbage collected.
-            cleanupOrphanedDeps(state as State<V>, data)
+            // A state still live via dependents keeps its entire downward
+            // closure live (each dep holds a positive liveDependentCount from
+            // its live dependent), so both orphan sweeps below are no-ops —
+            // skip them without allocating. Counts are trustworthy here: either
+            // the reconcile above just ground-truthed them, or the region is
+            // acyclic and the incremental bookkeeping is exact.
+            if (!isLive(state as State<V>, data)) {
+                // Unmount this state and any transitive dependencies that are
+                // no longer reachable from any subscriber.
+                unmountOrphanedDeps(state as State<V>, data)
+                // Clean up dependency graph for states that are no longer
+                // transitively subscribed, allowing derived atoms/selectors
+                // to be garbage collected.
+                cleanupOrphanedDeps(state as State<V>, data)
+            }
         }
     }
 }

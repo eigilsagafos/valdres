@@ -79,6 +79,21 @@ export type StoreData = {
      *  re-init can mis-count even an acyclic graph because the incremental path
      *  never ran for it. Lazy re-inits are off the hot path, so this is cheap. */
     livenessLazyArmed?: boolean
+    /** Sticky over-approximation of "this store's dependency graph contains (or
+     *  ever contained) a directed cycle". False means NO cycle was ever
+     *  committed, so every `regionHasCycle` gate (unsubscribe teardown, the
+     *  removal-armed end-of-pass reconcile) can skip its O(closure) walk
+     *  outright — that walk ran once per unsubscribe and dominated teardown
+     *  bursts on cycle-free graphs (the overwhelmingly common case).
+     *
+     *  Maintained by `probeForDependencyCycle` at dependency-edge COMMIT time:
+     *  a cycle can only come into existence when its last ("closing") edge
+     *  S→D is committed while a path D ⤳ S already exists — and that path
+     *  implies `stateDependents[S]` is non-empty, so the probe only pays an
+     *  O(closure) walk on commits that could actually close a cycle. Never
+     *  reset (edges of a dissolved cycle may already have leaked counts);
+     *  while true, the gates fall back to the exact per-region walk. */
+    depGraphMaybeCyclic?: boolean
     abortControllers: WeakMap<WeakKey, AbortController | false>
     /** Selectors currently mid-evaluation in this store. Used for cycle
      *  detection. Per-store so that the same selector evaluated in two

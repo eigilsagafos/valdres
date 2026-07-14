@@ -76,6 +76,7 @@ export function createStoreData(
     data.livenessSeeds = undefined
     data.livenessRemovalArmed = false
     data.livenessLazyArmed = false
+    data.depGraphMaybeCyclic = false
     if (options?.batchUpdates) {
         data.batchUpdates = true
     }

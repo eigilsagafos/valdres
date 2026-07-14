@@ -247,6 +247,37 @@ export const regionHasCycle = (
 }
 
 /**
+ * Commit-time maintenance of the sticky `depGraphMaybeCyclic` flag. Call after
+ * a commit added at least one NEW selector→selector dependency edge from
+ * `selector`, with BOTH edge directions already visible (`stateDependencies`
+ * AND `stateDependents`) so the downward walk can see the new edges.
+ *
+ * Soundness (no false negatives): a directed cycle comes into existence only
+ * at the commit of its LAST ("closing") edge S→D, at which point the rest of
+ * the cycle D ⤳ S already exists. That pre-existing path ends in an edge
+ * X→S, so `stateDependents[S]` is non-empty — the dependents guard below can
+ * never skip a genuinely closing commit. (A self-edge S→S is covered too: the
+ * commit itself put S into `stateDependents[S]` before the probe runs.) And
+ * the cycle passes through S, so the downward walk from S finds it. Atoms and
+ * atom-family members are graph sinks (no out-edges), so commits that only
+ * add atom deps cannot close a cycle — callers skip the probe for those.
+ *
+ * The common cases stay O(1): first evaluations commit bottom-up, so the
+ * evaluating selector has no dependents yet and the guard exits before
+ * walking. Only a re-wire of a selector that is already read by others pays
+ * the O(closure) walk — once per such commit instead of once per every later
+ * unsubscribe, which is what made teardown bursts O(unsubs × closure).
+ */
+export const probeForDependencyCycle = (selector: State, data: StoreData) => {
+    if (data.depGraphMaybeCyclic) return
+    const dependents = data.stateDependents.get(selector)
+    if (!dependents || dependents.size === 0) return
+    if (regionHasCycle(new Set([selector]), data)) {
+        data.depGraphMaybeCyclic = true
+    }
+}
+
+/**
  * Begin a liveness-reconcile pass. Returns true iff THIS call owns the pass (the
  * outermost one) — a nested pass returns false and must not release or reconcile.
  * The collector Set (`livenessSeeds`) is allocated lazily by `evaluateSelector` on
@@ -283,10 +314,17 @@ export const endLivenessPass = (data: StoreData): Set<State> | null => {
     data.livenessSeeds = undefined
     data.livenessLazyArmed = false
     data.livenessRemovalArmed = false
+    // The removal arm is gated on a cycle in the region; if no cycle was ever
+    // committed to this store (`depGraphMaybeCyclic` false), `regionHasCycle`
+    // is guaranteed false — skip its O(region) walk. The lazy arm is NOT cycle
+    // dependent and stays ungated.
     if (
         seeds &&
         seeds.size > 0 &&
-        (lazyArmed || (removalArmed && regionHasCycle(seeds, data)))
+        (lazyArmed ||
+            (removalArmed &&
+                data.depGraphMaybeCyclic &&
+                regionHasCycle(seeds, data)))
     ) {
         return seeds
     }

@@ -15,7 +15,7 @@ import {
     pendingAsyncDeps,
 } from "./asyncDependencyTracking"
 import { getState } from "./getState"
-import { isLive, noteDependencyAdded, onLiveDependencyRemoved, unmountOrphanedDeps } from "./mountAtom"
+import { isLive, noteDependencyAdded, onLiveDependencyRemoved, probeForDependencyCycle, unmountOrphanedDeps } from "./mountAtom"
 import {
     changeListenerRegistry,
     hasSelectorChangeListener,
@@ -240,6 +240,10 @@ export const evaluateSelector = <V>(
                 }
             }
             const prev = currentDependencies ?? new Set<State<any>>()
+            // Only a new selector→selector edge can close a directed cycle
+            // (atoms are graph sinks) — tracked so the commit-time cycle probe
+            // below runs only when this commit could have created one.
+            let addedSelectorDep = false
             for (const state of updatedDependencies) {
                 if (!prev.has(state)) {
                     const set = getOrInitDependentsSet(state, data)
@@ -247,6 +251,9 @@ export const evaluateSelector = <V>(
                     // New edge: propagate the mount-closure marker up so the
                     // mount/unmount walk-skip stays free of false negatives.
                     noteDependencyAdded(selector, state, data)
+                    if (!addedSelectorDep && isSelector(state)) {
+                        addedSelectorDep = true
+                    }
                     if (depsChangeOut) {
                         if (!depsChangeOut.added) depsChangeOut.added = new Set<State>()
                         depsChangeOut.added.add(state)
@@ -281,6 +288,10 @@ export const evaluateSelector = <V>(
                 }
             }
             data.stateDependencies.set(selector, updatedDependencies)
+            // Probe AFTER the forward edges land — `regionHasCycle` walks
+            // `stateDependencies`, so probing mid-loop would miss the very
+            // edges this commit added.
+            if (addedSelectorDep) probeForDependencyCycle(selector, data)
         }
 
         // Store tracking set so handleSelectorResult can reconcile when the
