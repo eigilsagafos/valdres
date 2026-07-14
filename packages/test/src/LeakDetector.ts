@@ -21,6 +21,9 @@ import { releaseWeakRefs } from "bun:jsc"
  *   const detector = new LeakDetector(someObject)
  *   someObject = undefined
  *   expect(await detector.isLeaking()).toBe(false)
+ *
+ * Pass a larger `maxRounds` only when deferred cleanup has just returned and
+ * the test needs a wider bounded window for JSC's conservative stack scan.
  */
 export class LeakDetector {
     private _ref: WeakRef<object>
@@ -29,8 +32,8 @@ export class LeakDetector {
         this._ref = new WeakRef(value)
     }
 
-    async isLeaking(): Promise<boolean> {
-        for (let round = 0; round < 10; round++) {
+    async isLeaking(maxRounds = 10): Promise<boolean> {
+        for (let round = 0; round < maxRounds; round++) {
             releaseWeakRefs()
             Bun.gc(true)
             if (round > 0) generateHeapSnapshot()
