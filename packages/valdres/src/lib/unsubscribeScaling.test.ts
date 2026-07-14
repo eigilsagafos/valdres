@@ -3,14 +3,24 @@ import { atom } from "../atom"
 import { selector } from "../selector"
 import { store } from "../store"
 
-const countTeardownDependencyReads = async (fanIn: boolean) => {
+const countTeardownDependencyReads = async (
+    fanIn: boolean,
+    includeMount: boolean,
+) => {
     const count = 120
     const targetStore = store(fanIn ? "teardown-fanin" : "teardown-baseline")
     const noop = () => {}
     const unsubs: (() => void)[] = []
     const leaves: any[] = []
 
-    const spineRoot = atom(0)
+    let mountCleanups = 0
+    const spineRoot = includeMount
+        ? atom(0, {
+              onMount: () => () => {
+                  mountCleanups++
+              },
+          })
+        : atom(0)
     let spineTop = selector(get => get(spineRoot) + 1)
     for (let depth = 1; depth < 20; depth++) {
         const previous = spineTop
@@ -52,17 +62,40 @@ const countTeardownDependencyReads = async (fanIn: boolean) => {
     } as WeakMap<WeakKey, any>
 
     for (const unsubscribe of unsubs) unsubscribe()
+    const lifecycleCleanupWasSynchronous = !includeMount || mountCleanups === 1
     // Include the one queued orphan sweep: the assertion covers total burst
     // work, not merely what remains on each individual unsubscribe stack.
     await Promise.resolve()
-    return { count, dependencyReads }
+    const graphWasCleaned =
+        !targetStore.data.stateDependencies.has(leaves[0]) &&
+        !targetStore.data.stateDependencies.has(spineTop)
+    return {
+        count,
+        dependencyReads,
+        lifecycleCleanupWasSynchronous,
+        mountCleanups,
+        graphWasCleaned,
+    }
 }
 
 describe("unsubscribe scaling", () => {
-    for (const fanIn of [false, true]) {
-        test(`${fanIn ? "wide fan-in" : "shared spine"} visits graph O(states), not O(unsubscribes × closure)`, async () => {
-            const { count, dependencyReads } =
-                await countTeardownDependencyReads(fanIn)
+    for (const { fanIn, includeMount, label } of [
+        { fanIn: false, includeMount: false, label: "shared spine" },
+        { fanIn: true, includeMount: false, label: "wide fan-in" },
+        {
+            fanIn: true,
+            includeMount: true,
+            label: "wide fan-in with mounted spine",
+        },
+    ]) {
+        test(`${label} visits graph O(states), not O(unsubscribes × closure)`, async () => {
+            const {
+                count,
+                dependencyReads,
+                lifecycleCleanupWasSynchronous,
+                mountCleanups,
+                graphWasCleaned,
+            } = await countTeardownDependencyReads(fanIn, includeMount)
 
             // The graph has ~4 states per leaf plus the fixed 20-state spine.
             // A fresh depth-20 cycle scan for both subscriptions would exceed
@@ -70,6 +103,9 @@ describe("unsubscribe scaling", () => {
             // bound loose enough to describe linear work, not implementation
             // minutiae or wall-clock timing.
             expect(dependencyReads).toBeLessThan(count * 12 + 100)
+            expect(lifecycleCleanupWasSynchronous).toBe(true)
+            expect(graphWasCleaned).toBe(true)
+            if (includeMount) expect(mountCleanups).toBe(1)
         })
     }
 })

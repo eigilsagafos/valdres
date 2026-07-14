@@ -436,6 +436,33 @@ describe("subscribe", () => {
         expect(evaluate).toHaveBeenCalledTimes(2)
     })
 
+    test("lifecycle cleanup is synchronous while graph cleanup is microtask-batched", async () => {
+        const rootStore = store()
+        let lifecycleCleanups = 0
+        const mounted = atom(1, {
+            name: "orphan-timing-mounted",
+            onMount: () => () => {
+                lifecycleCleanups++
+            },
+        })
+        const derived = selector(get => get(mounted) + 1, {
+            name: "orphan-timing-derived",
+        })
+
+        const unsubscribe = rootStore.sub(derived, () => {}, false)
+        expect(rootStore.data.stateDependencies.has(derived)).toBe(true)
+        unsubscribe()
+
+        // This timing split is deliberate: release user resources before the
+        // disposer returns, but coalesce internal graph/cache work for the burst.
+        expect(lifecycleCleanups).toBe(1)
+        expect(rootStore.data.stateDependencies.has(derived)).toBe(true)
+
+        await Promise.resolve()
+        expect(rootStore.data.stateDependencies.has(derived)).toBe(false)
+        expect(rootStore.data.values.has(derived)).toBe(false)
+    })
+
     test("unsubscribe cleans deep orphaned selector chains iteratively", async () => {
         const rootStore = store()
         const source = atom(1)

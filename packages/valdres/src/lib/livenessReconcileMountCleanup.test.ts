@@ -114,3 +114,41 @@ test("a nested cyclic region is collected when its subscribed parent leaves", ()
     expect(s.data.liveDependentCount.get(tracked) ?? 0).toBe(0)
     expect(cleanups).toBe(1)
 })
+
+test("acyclic dependency removals skip the exact cycle DFS", async () => {
+    const chooseLeft = atom(true, { name: "cycle-gate.choose-left" })
+    const source = atom(1, { name: "cycle-gate.source" })
+    const left = selector(get => get(source) + 1, { name: "cycle-gate.left" })
+    const right = selector(get => get(source) + 2, {
+        name: "cycle-gate.right",
+    })
+    const dynamic = selector(
+        get => (get(chooseLeft) ? get(left) : get(right)),
+        { name: "cycle-gate.dynamic" },
+    )
+    const root = selector(get => get(dynamic), { name: "cycle-gate.root" })
+    const s = store("cycle-gate")
+
+    // Materialize both alternatives before the dynamic selector so either edge
+    // descends the stable order and the closure marker can prove this is a DAG.
+    s.get(left)
+    s.get(right)
+    const unsubscribe = s.sub(root, () => {}, false)
+    expect(s.data.cycleRiskInClosure.has(dynamic)).toBe(false)
+
+    const proofs = s.data.acyclicDependencyVersion
+    const writeProof = proofs.set.bind(proofs)
+    let proofWrites = 0
+    proofs.set = (key: WeakKey, version: number) => {
+        proofWrites++
+        return writeProof(key, version)
+    }
+
+    // This removes dynamic→left and adds dynamic→right. The removal arm is set,
+    // but the unmarked seed closure proves no exact cycle scan is necessary.
+    s.set(chooseLeft, false)
+    expect(proofWrites).toBe(0)
+
+    unsubscribe()
+    await Promise.resolve()
+})

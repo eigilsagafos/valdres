@@ -306,6 +306,18 @@ export const regionHasCycle = (
 }
 
 /**
+ * The materialization-order marker is conservative and propagated upward on
+ * every dependency addition. Therefore, if none of these seeds is marked, no
+ * directed cycle can exist anywhere in their downward closures.
+ */
+const seededRegionMayHaveCycle = (seeds: Set<State>, data: StoreData) => {
+    for (const seed of seeds) {
+        if (data.cycleRiskInClosure.has(seed)) return true
+    }
+    return false
+}
+
+/**
  * Begin a liveness-reconcile pass. Returns true iff THIS call owns the pass (the
  * outermost one) — a nested pass returns false and must not release or reconcile.
  * The collector Set (`livenessSeeds`) is allocated lazily by `evaluateSelector` on
@@ -345,7 +357,10 @@ export const endLivenessPass = (data: StoreData): Set<State> | null => {
     if (
         seeds &&
         seeds.size > 0 &&
-        (lazyArmed || (removalArmed && regionHasCycle(seeds, data)))
+        (lazyArmed ||
+            (removalArmed &&
+                seededRegionMayHaveCycle(seeds, data) &&
+                regionHasCycle(seeds, data)))
     ) {
         return seeds
     }

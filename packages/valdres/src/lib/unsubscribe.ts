@@ -5,6 +5,7 @@ import type { Subscription } from "../types/Subscription"
 import { isSelector } from "../utils/isSelector"
 import { getMaxAgeCleanup, deleteMaxAgeCleanup } from "./maxAgeCleanups"
 import {
+    isLive,
     onLastDirectSubscriber,
     reconcileLivenessAfterChurn,
     regionHasCycle,
@@ -55,13 +56,18 @@ export const unsubscribe = <V>(
             ) {
                 reconcileLivenessAfterChurn(new Set([state as State<V>]), data)
             }
-            // Unmount this state and any transitive dependencies that are
-            // no longer reachable from any subscriber.
-            unmountOrphanedDeps(state as State<V>, data)
-            // Graph/value cleanup has no user-visible lifecycle callback. Batch
-            // it across the synchronous burst so sibling roots share completed
-            // visits and the calling stack pays only liveness + eager unmount.
-            queueOrphanCleanup(state as State<V>, data)
+            // A live state keeps its full downward dependency closure live, so
+            // neither orphan walk can do work. This is especially important for
+            // wide fan-in: sibling subscriptions disappear while an aggregator
+            // still keeps every shared branch live.
+            if (!isLive(state as State<V>, data)) {
+                // User-visible lifecycle cleanup stays synchronous.
+                unmountOrphanedDeps(state as State<V>, data)
+                // Graph/value cleanup is intentionally microtask-batched so
+                // sibling roots share completed visits. Every public store
+                // operation flushes it first, preserving API-level cache reads.
+                queueOrphanCleanup(state as State<V>, data)
+            }
         }
     }
 }

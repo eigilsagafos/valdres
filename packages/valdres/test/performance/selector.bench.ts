@@ -8,9 +8,15 @@ import { selectorFamily as valdresSelectorFamily } from "../../src/selectorFamil
 import { store as valdresCreateStore } from "../../src/store"
 import { compare } from "./bench-utils"
 
-const makeSharedTeardown = (count: number, fanIn: boolean) => {
+const makeSharedTeardown = (
+    count: number,
+    fanIn: boolean,
+    includeMount: boolean,
+) => {
     const vStore = valdresCreateStore()
-    const vSpineRoot = valdresAtom(0)
+    const vSpineRoot = includeMount
+        ? valdresAtom(0, { onMount: () => () => {} })
+        : valdresAtom(0)
     let vSpineTop: any = valdresSelector(get => get(vSpineRoot) + 1)
     for (let depth = 1; depth < 20; depth++) {
         const previous = vSpineTop
@@ -33,6 +39,7 @@ const makeSharedTeardown = (count: number, fanIn: boolean) => {
 
     const jStore = jotaiCreateStore()
     const jSpineRoot = jotaiAtom(0)
+    if (includeMount) jSpineRoot.onMount = () => () => {}
     let jSpineTop: any = jotaiAtom(get => get(jSpineRoot) + 1)
     for (let depth = 1; depth < 20; depth++) {
         const previous = jSpineTop
@@ -204,11 +211,19 @@ describe("selector", () => {
         })
     }
 
-    for (const fanIn of [false, true]) {
-        test(`subscribe + unsubscribe 100 shared selector pairs${fanIn ? " + fan-in" : ""}`, async () => {
-            const teardown = makeSharedTeardown(100, fanIn)
+    for (const { fanIn, includeMount, suffix } of [
+        { fanIn: false, includeMount: false, suffix: "" },
+        { fanIn: true, includeMount: false, suffix: " + fan-in" },
+        {
+            fanIn: true,
+            includeMount: true,
+            suffix: " + fan-in + mounted spine",
+        },
+    ]) {
+        test(`subscribe + unsubscribe 100 shared selector pairs${suffix}`, async () => {
+            const teardown = makeSharedTeardown(100, fanIn, includeMount)
             await compare(
-                `subscribe + unsubscribe 100 shared selector pairs${fanIn ? " + fan-in" : ""}`,
+                `subscribe + unsubscribe 100 shared selector pairs${suffix}`,
                 teardown.valdres,
                 teardown.jotai,
             )
