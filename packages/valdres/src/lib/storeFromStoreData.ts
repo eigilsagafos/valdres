@@ -117,7 +117,7 @@ export function storeFromStoreData(
 
     // --- get ---
     const getDefault: GetValue = (state: State) => {
-        flushPendingOrphanCleanup(data)
+        if (data.pendingOrphanCleanup) flushPendingOrphanCleanup(data)
         if (data.values.has(state)) {
             if (!isCachedValueStale(state, data)) {
                 return data.values.get(state)
@@ -175,7 +175,7 @@ export function storeFromStoreData(
 
     const getBatched: GetValue = (state: State) => {
         if (_pendingTxn) {
-            flushPendingOrphanCleanup(data)
+            if (data.pendingOrphanCleanup) flushPendingOrphanCleanup(data)
             return _pendingTxn.get(state)
         }
         return getDefault(state)
@@ -186,7 +186,7 @@ export function storeFromStoreData(
     // --- set ---
     // @ts-ignore @ts-todo
     const setDefault: SetAtom = (state, value) => {
-        flushPendingOrphanCleanup(data)
+        if (data.pendingOrphanCleanup) flushPendingOrphanCleanup(data)
         if (isAtom(state)) return setAtom(state, value, data)
         if (isSelector(state)) throw new Error(SelectorProvidedToSetError)
         throw new Error(InvalidStateSetError)
@@ -194,7 +194,7 @@ export function storeFromStoreData(
 
     // @ts-ignore @ts-todo
     const setBatched: SetAtom = (state, value) => {
-        flushPendingOrphanCleanup(data)
+        if (data.pendingOrphanCleanup) flushPendingOrphanCleanup(data)
         if (isAtom(state)) {
             return ensurePendingTxn().set(state, value)
         }
@@ -206,7 +206,7 @@ export function storeFromStoreData(
 
     // --- reset ---
     const reset = <V>(atom: Atom<V>) => {
-        flushPendingOrphanCleanup(data)
+        if (data.pendingOrphanCleanup) flushPendingOrphanCleanup(data)
         if (data.batchUpdates) flushPendingTxn()
         return resetAtom(atom, data)
     }
@@ -218,7 +218,7 @@ export function storeFromStoreData(
     >(
         atom: AtomFamilyAtom<Value, Args>,
     ) => {
-        flushPendingOrphanCleanup(data)
+        if (data.pendingOrphanCleanup) flushPendingOrphanCleanup(data)
         if (data.batchUpdates) flushPendingTxn()
         return deleteFamilyAtom(atom, data)
     }
@@ -231,7 +231,7 @@ export function storeFromStoreData(
     // which eagerly writes the default back). Distinct from `del` (removes a
     // family member).
     const unset = <V>(atom: Atom<V>) => {
-        flushPendingOrphanCleanup(data)
+        if (data.pendingOrphanCleanup) flushPendingOrphanCleanup(data)
         if (data.batchUpdates) flushPendingTxn()
         return unsetValue(atom, data)
     }
@@ -241,12 +241,12 @@ export function storeFromStoreData(
         callback: () => void,
         deepEqualCheckBeforeCallback: boolean = true,
     ) => {
-        flushPendingOrphanCleanup(data)
+        if (data.pendingOrphanCleanup) flushPendingOrphanCleanup(data)
         return subscribe(state, callback, deepEqualCheckBeforeCallback, data)
     }
 
     const txn = (callback: TransactionFn, name?: string) => {
-        flushPendingOrphanCleanup(data)
+        if (data.pendingOrphanCleanup) flushPendingOrphanCleanup(data)
         if (data.batchUpdates) flushPendingTxn()
         return transaction(callback, data, name)
     }
@@ -262,7 +262,7 @@ export function storeFromStoreData(
         onCommitEnd(callback, data)
 
     const storeSnapshot = () => {
-        flushPendingOrphanCleanup(data)
+        if (data.pendingOrphanCleanup) flushPendingOrphanCleanup(data)
         return snapshot(data)
     }
 

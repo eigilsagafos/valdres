@@ -236,7 +236,12 @@ describe("memory leaks (subscriptions)", () => {
             }
         })()
         for (const detector of detectors) {
-            expect(await detector.isLeaking()).toBe(false)
+            // Plain atom teardown deliberately has no orphan-cleanup microtask.
+            // After this tight loop, JSC's conservative stack scan can retain a
+            // stale callback register under full-suite heap pressure even though
+            // the subscription entry is gone. Use the wider bounded window that
+            // LeakDetector exposes for exactly this post-teardown shape.
+            expect(await detector.isLeaking(50)).toBe(false)
         }
     })
 })

@@ -398,6 +398,17 @@ describe("subscribe", () => {
         expect(intermediateCallback).toHaveBeenCalledTimes(1)
     })
 
+    test("plain atom unsubscribe skips an empty orphan cleanup", () => {
+        const rootStore = store()
+        const source = atom(1, { name: "orphan-free-atom" })
+
+        const unsubscribe = rootStore.sub(source, () => {}, false)
+        unsubscribe()
+
+        expect(rootStore.data.pendingOrphanCleanup).toBeUndefined()
+        expect(rootStore.data.orphanCleanupScheduled).toBe(false)
+    })
+
     test("orphan cleanup runs again after an empty selector is re-materialized", async () => {
         const rootStore = store()
         const constant = selector(() => 42, { name: "orphan-constant" })

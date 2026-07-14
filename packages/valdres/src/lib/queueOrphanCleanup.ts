@@ -9,6 +9,16 @@ import { flushPendingOrphanCleanup } from "./flushPendingOrphanCleanup"
  * can observe or mutate selector caches.
  */
 export const queueOrphanCleanup = (state: State, data: StoreData) => {
+    // Plain atoms with no dependents have no dependency edges or selector cache
+    // for the orphan sweep to remove. Avoid allocating a Set and scheduling a
+    // microtask on the common subscribe/unsubscribe fast path.
+    if (
+        !data.stateDependencies.has(state) &&
+        !data.stateDependents.get(state)?.size
+    ) {
+        return
+    }
+
     let pending = data.pendingOrphanCleanup as Set<State> | undefined
     if (!pending) {
         pending = new Set()
