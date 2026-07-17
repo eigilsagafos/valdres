@@ -29,6 +29,17 @@ import {
 import { beginCommit, commitEndRegistry, endCommit } from "./onCommitEnd"
 import { IS_PROD } from "./IS_PROD"
 import {
+    createCommitErrors,
+    recordCommitError,
+    throwCommitError,
+} from "./commitErrors"
+import {
+    applyGlobalSets,
+    beginGlobalCommit,
+    endGlobalCommit,
+    type DeferredGlobalSet,
+} from "./globalAtomFanOut"
+import {
     cloneAtomFamilyIndex,
     createAtomFamilyIndex,
     renderAtomFamilyIndex,
@@ -40,7 +51,7 @@ import {
     type NotifyTarget,
 } from "./propagateUpdatedAtoms"
 import { setAtoms } from "./setAtoms"
-import { writeAtoms, type DeferredOnSet } from "./writeAtoms"
+import { runOnSets, writeAtoms, type DeferredOnSet } from "./writeAtoms"
 
 /** One store's slot in a cross-scope commit. Collected root-first; written
  *  leaf-first (see commit) but notified root-first. */
@@ -51,6 +62,7 @@ type CommitWrite = {
     deleted: AtomFamilyAtom<any, any>[] | undefined
     unsetAtoms: Atom[] | undefined
     onSets: DeferredOnSet[]
+    globalSets: DeferredGlobalSet[]
 }
 
 // const findDependencies = (
@@ -402,28 +414,80 @@ export class Transaction {
     }
 
     private commitWork = (sink: ChangeSink | undefined) => {
-        // Single-store fast path: no scoped transactions to coordinate, so
-        // write-and-notify in one pass. onSet fires inline during the write loop.
+        // Single-store fast path: no scoped transactions to coordinate.
         if (!this._scopedTransactions) {
             const initializedAtomsSet = new Set<Atom>()
-            if (this._unsetSet?.size) {
-                // An unset empties this scope value, so it can't share the
-                // single-pass setAtoms path (which reports out of data.values).
-                // Write any set atoms, then detach + propagate the unsets into the
-                // same deferred notify so subscribers fire once with final state.
-                const notify: NotifyTarget = new Map()
-                const updatedAtoms = writeAtoms(
+            if (!this._unsetSet?.size && !this._deleteSet?.size) {
+                setAtoms(
                     this._atomMap,
                     this.data,
                     initializedAtomsSet,
+                    false,
+                    sink,
                 )
-                if (updatedAtoms.length > 0) {
-                    propagateAtomUpdate(updatedAtoms, this.data, false, notify, sink)
+                return
+            }
+
+            // Deletes/unsets require multiple propagation passes. Complete ALL
+            // mutations first, then hooks, then every propagation/notification.
+            const onSets: DeferredOnSet[] = []
+            const globalSets: DeferredGlobalSet[] = []
+            const updatedAtoms = writeAtoms(
+                this._atomMap,
+                this.data,
+                initializedAtomsSet,
+                false,
+                onSets,
+                globalSets,
+            )
+            const deleted = this._deleteSet?.size
+                ? [...this._deleteSet]
+                : undefined
+            if (this._deleteSet?.size) {
+                deleteAtomFamilyAtoms(this._deleteSet, this.data)
+            }
+            const unsetAtoms = this._unsetSet?.size
+                ? this.applyUnsets(this._unsetSet, this.data)
+                : []
+
+            const errors = createCommitErrors()
+            const globalUpdates = applyGlobalSets(globalSets, errors)
+            runOnSets(onSets, errors)
+
+            const notify: NotifyTarget = new Map()
+            const globalSink =
+                globalUpdates.size > 0
+                    ? createChangeSink(undefined, "set")
+                    : undefined
+            const commitRoots = globalSink
+                ? beginGlobalCommit(this.data, globalUpdates)
+                : []
+            // Global peers historically surface as direct `set` changes and
+            // report before the transaction origin.
+            for (const [peer, atoms] of globalUpdates) {
+                try {
+                    propagateAtomUpdate(atoms, peer, false, notify, globalSink)
+                } catch (error) {
+                    recordCommitError(errors, error)
                 }
-                if (this._deleteSet?.size) {
-                    deleteAtomFamilyAtoms(this._deleteSet, this.data)
+            }
+            if (updatedAtoms.length > 0) {
+                try {
+                    propagateAtomUpdate(
+                        updatedAtoms,
+                        this.data,
+                        false,
+                        notify,
+                        sink,
+                    )
+                } catch (error) {
+                    recordCommitError(errors, error)
+                }
+            }
+            if (deleted) {
+                try {
                     propagateDeletedAtoms(
-                        [...this._deleteSet],
+                        deleted,
                         this.data,
                         undefined,
                         undefined,
@@ -431,66 +495,59 @@ export class Transaction {
                         notify,
                         sink,
                     )
+                } catch (error) {
+                    recordCommitError(errors, error)
                 }
-                const unsetAtoms = this.applyUnsets(this._unsetSet, this.data)
-                if (unsetAtoms.length > 0) {
-                    // Atoms first (emitted as "unset"), then propagate with
-                    // reportAtoms=false so dependent-selector recomputes are
-                    // reported too (the atom value is gone from data.values, so it
-                    // must not also surface as a "set").
-                    if (sink) {
-                        for (const atom of unsetAtoms) {
-                            reportUnsetAtom(
-                                atom,
-                                this.data,
-                                effectiveValueAfterUnset(atom, this.data),
-                                sink,
-                            )
-                        }
-                    }
-                    propagateAtomUpdate(unsetAtoms, this.data, false, notify, sink, false, false)
-                }
-                notifyDeferred(notify)
-                // Re-delegate AFTER firing: the deferred notify fires the
-                // scope-local callback (which idempotently drops the delegate),
-                // so re-establishing the parent delegate must come last.
-                for (const atom of unsetAtoms) {
-                    reDelegateScopeSubscriptions(atom, this.data)
-                }
-            } else if (this._deleteSet?.size) {
-                // Updates and a delete in one single-store txn: a selector that
-                // depends on both an updated atom and the deleted family is
-                // reachable by the update pass (propagateAtomUpdate) and the
-                // delete pass (propagateDeletedAtoms). Defer subscriber
-                // notification across both passes so an observer never sees the
-                // update pass's value of a selector the delete pass recomputes
-                // (and vice versa). No cross-pass dedup guard: each pass
-                // re-derives its selectors against the fully-written state, so
-                // the later pass corrects any value the earlier one computed
-                // from a not-yet-final selector input. (See NotifyTarget.)
-                const notify: NotifyTarget = new Map()
-                const updatedAtoms = writeAtoms(
-                    this._atomMap,
-                    this.data,
-                    initializedAtomsSet,
-                )
-                if (updatedAtoms.length > 0) {
-                    propagateAtomUpdate(updatedAtoms, this.data, false, notify, sink)
-                }
-                deleteAtomFamilyAtoms(this._deleteSet, this.data)
-                propagateDeletedAtoms(
-                    [...this._deleteSet],
-                    this.data,
-                    undefined,
-                    undefined,
-                    undefined,
-                    notify,
-                    sink,
-                )
-                notifyDeferred(notify)
-            } else {
-                setAtoms(this._atomMap, this.data, initializedAtomsSet, false, sink)
             }
+            if (unsetAtoms.length > 0) {
+                if (sink) {
+                    for (const atom of unsetAtoms) {
+                        reportUnsetAtom(
+                            atom,
+                            this.data,
+                            effectiveValueAfterUnset(atom, this.data),
+                            sink,
+                        )
+                    }
+                }
+                try {
+                    propagateAtomUpdate(
+                        unsetAtoms,
+                        this.data,
+                        false,
+                        notify,
+                        sink,
+                        false,
+                        false,
+                    )
+                } catch (error) {
+                    recordCommitError(errors, error)
+                }
+            }
+            try {
+                notifyDeferred(notify)
+            } catch (error) {
+                recordCommitError(errors, error)
+            }
+            if (globalSink) {
+                try {
+                    flushChangeSink(globalSink)
+                } catch (error) {
+                    recordCommitError(errors, error)
+                }
+                endGlobalCommit(commitRoots, errors)
+            }
+            // Re-delegate AFTER firing: the deferred scope-local callback
+            // idempotently drops its delegate, so the fresh parent delegate is
+            // established last even when a callback threw.
+            for (const atom of unsetAtoms) {
+                try {
+                    reDelegateScopeSubscriptions(atom, this.data)
+                } catch (error) {
+                    recordCommitError(errors, error)
+                }
+            }
+            throwCommitError(errors)
             return
         }
 
@@ -521,6 +578,7 @@ export class Transaction {
                 new Set<Atom>(),
                 false,
                 entry.onSets,
+                entry.globalSets,
             )
             if (txn._deleteSet?.size) {
                 deleteAtomFamilyAtoms(txn._deleteSet, entry.data)
@@ -533,18 +591,19 @@ export class Transaction {
             }
         }
 
-        // Every value across the tree is now applied. onSet hooks fire here, in
-        // the notify phase, so a hook reading any atom — root or scope — sees
-        // the fully-applied transaction. Fired root-first (matching the old
-        // model's order) and before any subscriber, preserving the
-        // long-standing onSet-before-subscribers ordering. (Deliberate
-        // placement: in the old model onSet fired mid-write-loop and a
-        // cross-scope hook could read a not-yet-written scope value. Deferring
-        // to here is the only placement consistent with atomicity.)
+        const errors = createCommitErrors()
+
+        // Global peers are writes too. Apply them all before entering the hook
+        // phase, preserving the root-first hook/fan-out order of the plan.
+        const globalSets: DeferredGlobalSet[] = []
+        for (const entry of plan) globalSets.push(...entry.globalSets)
+        const globalUpdates = applyGlobalSets(globalSets, errors)
+
+        // Every value across the tree and every global peer is now applied.
+        // Hooks fire root-first, all are attempted, and their first error is
+        // retained until propagation and notification have also completed.
         for (const entry of plan) {
-            for (const [atom, value, data] of entry.onSets) {
-                atom.onSet!(value, data)
-            }
+            runOnSets(entry.onSets, errors)
         }
 
         // One propagation pass per store, root-first (ancestors before
@@ -564,20 +623,45 @@ export class Transaction {
         // notification fires its subscriber exactly once. See the warning on
         // NotifyTarget for why a dedup guard must not come back.
         const notify: NotifyTarget = new Map()
+        const globalSink =
+            globalUpdates.size > 0
+                ? createChangeSink(undefined, "set")
+                : undefined
+        const commitRoots = globalSink
+            ? beginGlobalCommit(this.data, globalUpdates)
+            : []
+        // Global fan-out retains its public direct-set metadata and precedes
+        // the originating transaction's reports, as it did when fan-out lived
+        // inside the global atom's onSet wrapper.
+        for (const [data, atoms] of globalUpdates) {
+            try {
+                propagateAtomUpdate(atoms, data, false, notify, globalSink)
+            } catch (error) {
+                recordCommitError(errors, error)
+            }
+        }
         for (const { data, updatedAtoms, deleted, unsetAtoms } of plan) {
             if (updatedAtoms.length > 0) {
-                propagateAtomUpdate(updatedAtoms, data, false, notify, sink)
+                try {
+                    propagateAtomUpdate(updatedAtoms, data, false, notify, sink)
+                } catch (error) {
+                    recordCommitError(errors, error)
+                }
             }
             if (deleted) {
-                propagateDeletedAtoms(
-                    deleted,
-                    data,
-                    undefined,
-                    undefined,
-                    undefined,
-                    notify,
-                    sink,
-                )
+                try {
+                    propagateDeletedAtoms(
+                        deleted,
+                        data,
+                        undefined,
+                        undefined,
+                        undefined,
+                        notify,
+                        sink,
+                    )
+                } catch (error) {
+                    recordCommitError(errors, error)
+                }
             }
             if (unsetAtoms && unsetAtoms.length > 0) {
                 // Atoms first (emitted as "unset" via reportUnsetAtom), then
@@ -594,20 +678,49 @@ export class Transaction {
                         )
                     }
                 }
-                propagateAtomUpdate(unsetAtoms, data, false, notify, sink, false, false)
+                try {
+                    propagateAtomUpdate(
+                        unsetAtoms,
+                        data,
+                        false,
+                        notify,
+                        sink,
+                        false,
+                        false,
+                    )
+                } catch (error) {
+                    recordCommitError(errors, error)
+                }
             }
         }
-        notifyDeferred(notify)
+        try {
+            notifyDeferred(notify)
+        } catch (error) {
+            recordCommitError(errors, error)
+        }
+        if (globalSink) {
+            try {
+                flushChangeSink(globalSink)
+            } catch (error) {
+                recordCommitError(errors, error)
+            }
+            endGlobalCommit(commitRoots, errors)
+        }
         // Re-delegate AFTER firing (notifyDeferred): the scope-local callback
         // idempotently drops its delegate when it fires, so the fresh parent
         // delegate must be (re)established last.
         for (const { data, unsetAtoms } of plan) {
             if (unsetAtoms) {
                 for (const atom of unsetAtoms) {
-                    reDelegateScopeSubscriptions(atom, data)
+                    try {
+                        reDelegateScopeSubscriptions(atom, data)
+                    } catch (error) {
+                        recordCommitError(errors, error)
+                    }
                 }
             }
         }
+        throwCommitError(errors)
     }
 
     // Depth-first pre-order: this store, then each nested scope. Produces a
@@ -621,6 +734,7 @@ export class Transaction {
             deleted: undefined,
             unsetAtoms: undefined,
             onSets: [],
+            globalSets: [],
         })
         if (this._scopedTransactions) {
             for (const [, scopedTxn] of this._scopedTransactions) {

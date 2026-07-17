@@ -9,7 +9,6 @@ import type { GlobalAtom } from "./../types/GlobalAtom"
 import type { StoreData } from "./../types/StoreData"
 import { isLive, mountAtom, unmountAtom } from "./mountAtom"
 import { propagateAtomUpdate } from "./propagateUpdatedAtoms"
-import { setAtom } from "./setAtom"
 import { installMaxAgeTimer } from "./subscribe"
 import { globalStore } from "../globalStore"
 
@@ -27,18 +26,11 @@ export const globalAtom = <Value = unknown>(
         stores.add(data)
     }
 
-    // Cross-store sync propagates to peers with skipOnSet=true, so the user
-    // hook fires exactly once per set — in the originating store.
-    const onSet: AtomOnSet<Value> = (newValue, currentStore) => {
-        if (stores.size > 1) {
-            for (const store of stores) {
-                if (store.id !== currentStore.id) {
-                    setAtom(atom, newValue, store, true)
-                }
-            }
-        }
-        userOnSet?.(newValue, currentStore)
-    }
+    // Cross-store synchronization is part of the write phase (see
+    // globalAtomFanOut), rather than this hook. Keeping only the user's hook
+    // here lets every peer value land before any hook runs, and every hook
+    // finish before selector propagation/subscriber notification starts.
+    const onSet: AtomOnSet<Value> | undefined = userOnSet
 
     // For global atoms, options.onMount fires when the FIRST subscriber across
     // any store attaches, and its cleanup fires when the LAST subscriber across
