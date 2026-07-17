@@ -1,5 +1,17 @@
 # valdres
 
+## 1.0.0-beta.16
+
+### Patch Changes
+
+- [#218](https://github.com/eigilsagafos/valdres/pull/218)
+  [`5f2497f`](https://github.com/eigilsagafos/valdres/commit/5f2497f801f55c73caae95b14aac878976d7ff04)
+  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! - Prevent pending
+  async selectors from recreating cache entries and dependency edges after their
+  last subscriber unmounts. Queued orphan cleanup now revokes the evaluation
+  while preserving the existing signal contract, and stale Promise resolution
+  and suspension retries are ignored by the store.
+
 ## 1.0.0-beta.15
 
 ### Patch Changes

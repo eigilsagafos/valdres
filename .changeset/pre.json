@@ -40,6 +40,7 @@
   },
   "changesets": [
     "apply-initialize-helper",
+    "async-selector-unmount-revocation",
     "atomfamily-cachehit-fast-path",
     "atomic-cross-scope-txn",
     "batch-unsubscribe-teardown",
