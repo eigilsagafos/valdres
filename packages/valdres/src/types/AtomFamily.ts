@@ -21,5 +21,7 @@ export type AtomFamily<
      *  the State union's dynamic mount-check uniform without runtime casts. */
     onMount?: never
     __valdresOnMount?: never
+    /** Shared weak-value identity cache. Its Map-shaped iteration surface only
+     *  exposes members that are still strongly reachable by a caller/store. */
     __valdresAtomFamilyMap: Map<FamilyKey, AtomFamilyAtom<Value, Args>>
 }

@@ -262,17 +262,15 @@ describe("memory leaks (atom families)", () => {
         expect(await detector.isLeaking()).toBe(false)
     })
 
-    test("unreleased family atom is retained in map", async () => {
+    test("unreferenced family atom is collected from the weak identity cache", async () => {
         const family = atomFamily<{ name: string }, [string]>(
             (...args) => ({ name: args[0] }),
         )
         let familyAtom: any = family("bob")
         const detector = new LeakDetector(familyAtom)
         familyAtom = undefined
-        // Without release(), the Map holds a reference
-        expect(await detector.isLeaking()).toBe(true)
-        // Clean up
-        family.release("bob")
+        expect(await detector.isLeaking()).toBe(false)
+        expect(family.__valdresAtomFamilyMap.has("bob")).toBe(false)
     })
 
     test("family atom value is collected after release and unsubscribe", async () => {
@@ -289,13 +287,15 @@ describe("memory leaks (atom families)", () => {
         expect(await detector.isLeaking()).toBe(false)
     })
 
-    test("store.del() releases family atom from family map", async () => {
+    test("store.del() preserves the shared family identity", () => {
         const store1 = store()
         const family = atomFamily<object, [number]>(() => ({}))
-        store1.set(family(1), { value: 1 })
+        const member = family(1)
+        store1.set(member, { value: 1 })
         expect(family.__valdresAtomFamilyMap.has(1)).toBe(true)
-        store1.del(family(1))
-        expect(family.__valdresAtomFamilyMap.has(1)).toBe(false)
+        store1.del(member)
+        expect(family(1)).toBe(member)
+        expect(family.__valdresAtomFamilyMap.has(1)).toBe(true)
     })
 })
 

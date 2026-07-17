@@ -17,12 +17,11 @@ import { index } from "../indexConstructor"
 // audited paths (see audit notes):
 //  - member values are 1..9 (never the family default 0) so `set` is always an
 //    unambiguous create/update (no equality short-circuit);
-//  - a deleted key is retired (never re-created) because deleteFamilyAtom calls
-//    family.release(...), minting a fresh identity whose key↔identity mapping is
-//    ambiguous across stores;
-//  - each level owns a DISJOINT key range, so deleteFamilyAtom's GLOBAL release
-//    can never strand another level on a stale identity. The chain is linear, so
-//    a key owned by level j is visible at level j and all DEEPER levels
+//  - a deleted key is retired (never re-created) to keep this oracle focused on
+//    propagation rather than adding a second lifecycle model for re-creation;
+//  - each level owns a DISJOINT key range, giving every key exactly one writer.
+//    The chain is linear, so a key owned by level j is visible at level j and all
+//    DEEPER levels
 //    (descendants inherit) and at no ancestor — making membership at level i
 //    exactly "every existing key owned by levels 0..i", with a single owner per
 //    key so its value is unambiguous. Inheritance across the full chain (the
