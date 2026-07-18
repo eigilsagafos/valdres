@@ -10,14 +10,12 @@ export class WeakValueMap<K, V extends WeakKey> {
     readonly [Symbol.toStringTag] = "Map"
 
     private readonly refs = new Map<K, WeakRef<V>>()
-    private readonly cleanup = new FinalizationRegistry<{
-        key: K
-        ref: WeakRef<V>
-    }>(({ key, ref }) => {
+    private readonly cleanup = new FinalizationRegistry<K>((key) => {
         // A key may have been explicitly released and recreated before the old
-        // member is finalized. Only remove the entry if it still points at the
-        // finalized member's WeakRef.
-        if (this.refs.get(key) === ref) this.refs.delete(key)
+        // member is finalized. Re-read the current ref so a stale callback
+        // never removes a live replacement.
+        const ref = this.refs.get(key)
+        if (ref?.deref() === undefined) this.refs.delete(key)
     })
 
     get size() {
@@ -30,15 +28,11 @@ export class WeakValueMap<K, V extends WeakKey> {
     }
 
     clear() {
-        for (const ref of this.refs.values()) this.cleanup.unregister(ref)
         this.refs.clear()
     }
 
     delete(key: K) {
-        const ref = this.refs.get(key)
-        if (!ref) return false
-        this.deleteRef(key, ref)
-        return true
+        return this.refs.delete(key)
     }
 
     get(key: K): V | undefined {
@@ -54,12 +48,12 @@ export class WeakValueMap<K, V extends WeakKey> {
     }
 
     set(key: K, value: V) {
-        const previous = this.refs.get(key)
-        if (previous) this.cleanup.unregister(previous)
-
         const ref = new WeakRef(value)
         this.refs.set(key, ref)
-        this.cleanup.register(value, { key, ref }, ref)
+        // Deliberately omit an unregister token. Tokenized registration is
+        // costly in JavaScriptCore, and stale callbacks are safe because
+        // cleanup rechecks the current ref for this key.
+        this.cleanup.register(value, key)
         return this
     }
 
@@ -123,7 +117,6 @@ export class WeakValueMap<K, V extends WeakKey> {
     }
 
     private deleteRef(key: K, ref: WeakRef<V>) {
-        this.cleanup.unregister(ref)
         // Do not delete a replacement installed for the same key while an
         // iterator was suspended between dereferencing and cleanup.
         if (this.refs.get(key) === ref) this.refs.delete(key)
