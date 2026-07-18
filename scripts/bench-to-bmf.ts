@@ -46,6 +46,10 @@ const UNGATEABLE_OPS = new Set([
     "atom(1)", // ~2ns
     "selector(fn)", // ~5ns
     "atomFamily(id) cache hit", // ~10ns
+    // The single-call p50 flips between JIT tiers on the same runner (roughly
+    // 15-40ns). The identical hot path remains gated by "get 1000 atoms",
+    // whose aggregated window is stable enough for a percentage boundary.
+    "store.get(atom)",
 ])
 
 function toBmf(results: BenchResult[]): Bmf {
