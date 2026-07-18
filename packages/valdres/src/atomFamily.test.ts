@@ -11,7 +11,7 @@ describe("atomFamily", () => {
         expect(userAtomFamily(1)).toEqual(userAtomFamily(1))
     })
 
-    test("deleting from one store preserves identity retained by another store", () => {
+    test("deleting from one store preserves identity retained by another store", async () => {
         const family = atomFamily((id: string) => `default:${id}`)
         const store1 = store()
         const store2 = store()
@@ -19,6 +19,9 @@ describe("atomFamily", () => {
 
         store1.set(member, "store 1")
         store2.set(member, "store 2")
+        // Let the family cache convert its new strong entry to a WeakRef before
+        // deletion exercises the cross-store identity guarantee.
+        await Promise.resolve()
         store1.del(member)
 
         expect(family("shared")).toBe(member)

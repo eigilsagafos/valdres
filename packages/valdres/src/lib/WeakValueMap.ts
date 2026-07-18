@@ -2,22 +2,32 @@
  * A Map-shaped cache that keeps its values weakly.
  *
  * Atom-family keys are primitive/serialized values, so a WeakMap cannot be used
- * directly. Keeping WeakRefs as the values preserves a member's identity for as
- * long as a caller or store membership still retains it, without making the
- * family itself the lifetime owner of every member it has ever created. Dead
- * entries are swept lazily by lookup, iteration, and size reads so finalization
- * callbacks never add unpredictable work to unrelated code.
+ * directly. Keeping only WeakRefs after the current job preserves a member's
+ * identity for as long as a caller or store membership still retains it,
+ * without making the family itself the lifetime owner of every member it has
+ * ever created. Dead entries are swept lazily by lookup, iteration, and size
+ * reads so finalization callbacks never add unpredictable work to unrelated
+ * code.
+ *
+ * New values stay strong until the next microtask checkpoint, then are weakened
+ * in one batch. This keeps synchronous family creation on the normal Map.set
+ * path and performs weak-ref conversion in one tight loop; the ECMAScript
+ * WeakRef model keeps newly dereferenced targets alive for the current job
+ * either way.
  */
 export class WeakValueMap<K, V extends WeakKey> {
     readonly [Symbol.toStringTag] = "Map"
 
-    private readonly refs = new Map<K, WeakRef<V>>()
+    private readonly refs = new Map<K, V | WeakRef<V>>()
+    private weakeningScheduled = false
 
     get size() {
         // Sweep here so the observable Map surface never counts entries whose
         // values are gone.
-        for (const [key, ref] of this.refs) {
-            if (ref.deref() === undefined) this.deleteRef(key, ref)
+        for (const [key, entry] of this.refs) {
+            if (entry instanceof WeakRef && entry.deref() === undefined) {
+                this.deleteRef(key, entry)
+            }
         }
         return this.refs.size
     }
@@ -31,10 +41,11 @@ export class WeakValueMap<K, V extends WeakKey> {
     }
 
     get(key: K): V | undefined {
-        const ref = this.refs.get(key)
-        if (!ref) return undefined
-        const value = ref.deref()
-        if (value === undefined) this.deleteRef(key, ref)
+        const entry = this.refs.get(key)
+        if (entry === undefined) return undefined
+        if (!(entry instanceof WeakRef)) return entry
+        const value = entry.deref()
+        if (value === undefined) this.deleteRef(key, entry)
         return value
     }
 
@@ -43,8 +54,8 @@ export class WeakValueMap<K, V extends WeakKey> {
     }
 
     set(key: K, value: V) {
-        const ref = new WeakRef(value)
-        this.refs.set(key, ref)
+        this.refs.set(key, value)
+        this.scheduleWeakening()
         return this
     }
 
@@ -89,12 +100,16 @@ export class WeakValueMap<K, V extends WeakKey> {
     }
 
     private *iterateEntries(): IterableIterator<[K, V]> {
-        for (const [key, ref] of this.refs) {
-            const value = ref.deref()
-            if (value === undefined) {
-                this.deleteRef(key, ref)
+        for (const [key, entry] of this.refs) {
+            if (entry instanceof WeakRef) {
+                const value = entry.deref()
+                if (value === undefined) {
+                    this.deleteRef(key, entry)
+                } else {
+                    yield [key, value]
+                }
             } else {
-                yield [key, value]
+                yield [key, entry]
             }
         }
     }
@@ -105,6 +120,19 @@ export class WeakValueMap<K, V extends WeakKey> {
 
     private *iterateValues(): IterableIterator<V> {
         for (const [, value] of this.entries()) yield value
+    }
+
+    private scheduleWeakening() {
+        if (this.weakeningScheduled) return
+        this.weakeningScheduled = true
+        queueMicrotask(() => {
+            this.weakeningScheduled = false
+            for (const [key, entry] of this.refs) {
+                if (!(entry instanceof WeakRef)) {
+                    this.refs.set(key, new WeakRef(entry))
+                }
+            }
+        })
     }
 
     private deleteRef(key: K, ref: WeakRef<V>) {
