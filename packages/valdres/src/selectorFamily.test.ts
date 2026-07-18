@@ -19,6 +19,10 @@ describe("selectorFamily", () => {
         expect(family.name).toBe("familyName")
         expect(family(1).name).toBe("familyName_1")
         expect(family("2").name).toBe("familyName_2")
+        const structured = family({ id: 3 })
+        expect(structured.name).toBe(
+            `familyName_${structured.familyArgsStringified.toString()}`,
+        )
     })
 
     test("unnamed family has name undefined (not the intrinsic 'selectorFamily')", () => {

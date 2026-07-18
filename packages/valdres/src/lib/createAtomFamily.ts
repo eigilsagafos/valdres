@@ -4,7 +4,6 @@ import type { AtomFamilyDefaultValue } from "../types/AtomFamilyDefaultValue"
 import type { AtomFamilyOptions } from "../types/AtomFamilyOptions"
 import type { AtomOptions } from "../types/AtomOptions"
 import { isSelectorFamily } from "../utils/isSelectorFamily"
-import { displayFamilyArgs } from "./displayFamilyArgs"
 import { equal } from "./equal"
 import { familyKey, type FamilyKey } from "./familyKey"
 import { globalAtom } from "./globalAtom"
@@ -42,7 +41,7 @@ export const createAtomFamily = <
     const build = (
         args: any[],
         key: FamilyKey,
-        displayedKey?: string | number | boolean,
+        displayedKey: FamilyKey = key,
     ) => {
         // Resolve default value — inlined to avoid intermediate closures
         let dv: any
@@ -57,7 +56,7 @@ export const createAtomFamily = <
         }
 
         const memberName = hasName
-            ? memberOptions!.name + "_" + (displayedKey ?? key)
+            ? memberOptions!.name + "_" + displayedKey
             : undefined
 
         let familyAtom: any
@@ -124,7 +123,7 @@ export const createAtomFamily = <
         const key = familyKey(args)
         const cached = map.get(key)
         if (cached !== undefined) return cached
-        return build(args, key, hasName ? displayFamilyArgs(args) : undefined)
+        return build(args, key)
     }
 
     function keyedAtomFamily(a0?: any) {
@@ -136,7 +135,9 @@ export const createAtomFamily = <
         return build(
             args,
             key,
-            hasName ? displayFamilyArgs(keyArgs) : undefined,
+            keyArgs.length === 1 && typeof keyArgs[0] === "string"
+                ? keyArgs[0]
+                : key,
         )
     }
 

@@ -1,5 +1,4 @@
 import { equal } from "./lib/equal"
-import { displayFamilyArgs } from "./lib/displayFamilyArgs"
 import { familyKey, type FamilyKey } from "./lib/familyKey"
 import type { GetValue } from "./types/GetValue"
 import type { Selector } from "./types/Selector"
@@ -47,13 +46,10 @@ export const selectorFamily = <
         // inner getter directly. The previous implementation wrapped it in
         // a closure that re-invoked `callback(...args)` on every evaluation,
         // allocating a new inner getter per read.
-        const displayedKey = hasName
-            ? typeof key === "string"
-                ? displayFamilyArgs(keyArgs)
-                : typeof key === "bigint"
-                  ? String(key)
-                  : key
-            : undefined
+        const displayedKey =
+            keyArgs.length === 1 && typeof keyArgs[0] === "string"
+                ? keyArgs[0]
+                : key
         const newSelector = {
             equal,
             ...selectorOptions,

@@ -13,3 +13,7 @@ properties, and cyclic structures with a descriptive `TypeError` instead of
 silently merging them or overflowing the stack. Both family APIs accept an
 optional typed `keyOf(...args)` option for deriving supported deterministic
 identity from those arguments.
+
+Structured member debug names now reuse the canonical key instead of running a
+second display-only serialization on cache misses. Primitive names remain
+concise.

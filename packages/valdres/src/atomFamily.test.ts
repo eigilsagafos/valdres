@@ -65,7 +65,9 @@ describe("atomFamily", () => {
         expect(user2.name).toBe("familyName_2")
 
         const user3 = userAtomFamily([1, 2])
-        expect(user3.name).toBe("familyName_[1,2]")
+        expect(user3.name).toBe(
+            `familyName_${user3.familyArgsStringified.toString()}`,
+        )
     })
 
     test("unnamed family has name undefined (not the intrinsic 'atomFamily')", () => {
