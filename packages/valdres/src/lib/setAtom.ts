@@ -2,52 +2,13 @@ import type { Atom } from "../types/Atom"
 import type { SetAtomValue } from "../types/SetAtomValue"
 import type { StoreData } from "../types/StoreData"
 import { isPromiseLike } from "../utils/isPromiseLike"
+import { coordinateAsyncWrite } from "./coordinateAsyncWrite"
 import { getState } from "./getState"
 import { propagateAtomUpdate } from "./propagateUpdatedAtoms"
 import { isFunction } from "./isFunction"
 import { resolvePendingDefault } from "./resolvePendingDefault"
 import { setValueInData } from "./setValueInData"
-import { validateResolvedValue } from "./validateResolvedValue"
 import { validateSchema } from "./validateSchema"
-
-const handlePromise = <Value>(
-    atom: Atom<Value>,
-    promise: Promise<Value>,
-    currentValue: Value,
-    data: StoreData,
-    skipOnSet: boolean,
-) => {
-    setValueInData(atom, promise as Value, data)
-    promise
-        .then(resolvedValue => {
-            // Stale promise guard: if another set() overwrote us, bail
-            if (data.values.get(atom) !== promise) return
-            // Async validation can't throw to the original caller (the promise
-            // was already returned), so it's reported and we revert — the
-            // invalid value never lands. Sync sets throw from store.set directly.
-            if (!validateResolvedValue(atom, resolvedValue, data)) {
-                if (data.values.get(atom) === promise) {
-                    setValueInData(atom, currentValue, data)
-                    propagateAtomUpdate([atom], data, false, undefined, "async-set")
-                }
-                return
-            }
-            setValueInData(atom, resolvedValue, data)
-            if (atom.onSet && !skipOnSet) atom.onSet(resolvedValue, data)
-            resolvePendingDefault(atom, data, resolvedValue)
-            propagateAtomUpdate([atom], data, false, undefined, "async-set")
-        })
-        // Chained .catch so errors thrown inside the fulfilled handler
-        // (e.g. from atom.onSet) don't surface as unhandled rejections.
-        .catch(() => {
-            // Only revert if the promise is still the current in-flight value;
-            // if a fulfilled handler partially updated state, the guard below
-            // lets us avoid clobbering it.
-            if (data.values.get(atom) !== promise) return
-            setValueInData(atom, currentValue, data)
-            propagateAtomUpdate([atom], data, false, undefined, "async-set")
-        })
-}
 
 export const setAtom = <Value = any>(
     atom: Atom<Value>,
@@ -72,9 +33,16 @@ export const setAtom = <Value = any>(
         // Promise.resolve(realPromise) returns the same reference, so this
         // is a no-op allocation for the common case.
         const promise = Promise.resolve(newValue) as Promise<Value>
-        // Same promise reference — no-op (matches equality check below)
-        if (currentValue === promise) return promise as Value
-        handlePromise(atom, promise, currentValue, data, skipOnSet)
+        // Same own promise reference is a no-op. In a scope that still reads
+        // through to its parent, however, an explicit equal set must pin a local
+        // shadow just like the settled-value branch below.
+        if (currentValue === promise) {
+            if (data.parent && !data.values.has(atom)) {
+                coordinateAsyncWrite(atom, promise, currentValue, data, skipOnSet)
+            }
+            return promise as Value
+        }
+        coordinateAsyncWrite(atom, promise, currentValue, data, skipOnSet)
         if (initializedAtomsSet && initializedAtomsSet.size > 0) {
             initializedAtomsSet.add(atom)
             propagateAtomUpdate([...initializedAtomsSet], data, false, undefined, "set")
