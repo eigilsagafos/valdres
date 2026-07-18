@@ -4,9 +4,23 @@ import { createStore as jotaiCreateStore, atom as jotaiAtom } from "jotai"
 import { atom as valdresAtom } from "../../src/atom"
 import { selector as valdresSelector } from "../../src/selector"
 import { store as valdresCreateStore } from "../../src/store"
-import { compare } from "./bench-utils"
+import { compare, measureOne } from "./bench-utils"
 
 describe("transaction", () => {
+    test("staged write followed by selector read", async () => {
+        const vStore = valdresCreateStore()
+        const vAtom = valdresAtom(0)
+        const vSelector = valdresSelector(get => get(vAtom) + 1)
+        let value = 0
+
+        await measureOne("txn: staged set + selector read", () => {
+            vStore.txn(txn => {
+                txn.set(vAtom, ++value)
+                do_not_optimize(txn.get(vSelector))
+            })
+        })
+    })
+
     test("10 atoms × 10 selectors each, batch set + read all", async () => {
         const atomCount = 10
         const selectorsPerAtom = 10

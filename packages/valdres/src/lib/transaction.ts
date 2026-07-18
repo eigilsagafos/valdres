@@ -53,6 +53,10 @@ import {
 } from "./propagateUpdatedAtoms"
 import { setAtoms } from "./setAtoms"
 import { runOnSets, writeAtoms, type DeferredOnSet } from "./writeAtoms"
+import {
+    evaluateSelectorValue,
+    type SelectorEvaluationRuntime,
+} from "./initSelector"
 
 /** One store's slot in a cross-scope commit. Collected root-first; written
  *  leaf-first (see commit) but notified root-first. */
@@ -103,8 +107,9 @@ export class Transaction {
     private _initializedAtomsSet: any
     private _deleteSet: any
     private _unsetSet: Set<Atom<any>> | undefined
-    private _selectorDependencies: any
     private _selectorCache: any
+    private _selectorRuntime: SelectorEvaluationRuntime | undefined
+    private _selectorCircularDependencySet: WeakSet<any> | undefined
     private _atomMap: Map<any, any>
     // Global atoms always carry an onSet marker, so this one bit covers every
     // write that needs phased hook/fan-out handling. Transactions containing
@@ -183,21 +188,20 @@ export class Transaction {
         } else if (isSelector(state)) {
             if (this.dirty) {
                 this.selectorCache.clear()
-                this.selectorDependencies.clear()
                 this.dirty = false
             } else if (this.selectorCache.has(state)) {
                 // If the selector is cached and not dirty, return the cached value
                 return this.selectorCache.get(state)
             }
 
-            // @ts-ignore
-            const res = state.get(s => {
-                // Could we optimize this even further? Could we better track selector dependencies and if any of the deps are touched by the transaction?
-                if (!this.selectorDependencies.has(s)) {
-                    this.selectorDependencies.add(s)
-                }
-                return this.get(s)
-            }, this.data.id)
+            const res = evaluateSelectorValue(
+                state,
+                this.data,
+                this.initializedAtomsSet,
+                this.get,
+                this.selectorCircularDependencySet,
+                this.selectorRuntime,
+            )
             this.selectorCache.set(state, res)
             return res
         } else {
@@ -243,7 +247,7 @@ export class Transaction {
         // (last write wins, regardless of order). Symmetric to `unset` dropping
         // any buffered set.
         this._unsetSet?.delete(atom)
-        if (!this.dirty) this.dirty = true
+        this.invalidateSelectorCache()
 
         if (isFamilyAtom(atom)) {
             if (!this._atomMap.has(atom.family)) {
@@ -266,6 +270,7 @@ export class Transaction {
             // @ts-ignore
             this.cloneFamilyIntoTxn(family)
         }
+        this.invalidateSelectorCache()
         const index = this._atomMap.get(family).__index
         for (const [atom, value] of pairs) {
             if (atom.family !== family) {
@@ -304,6 +309,7 @@ export class Transaction {
         if (this._atomMap.has(atom)) {
             this._atomMap.delete(atom)
         }
+        this.invalidateSelectorCache()
     }
 
     unset = (atom: Atom) => {
@@ -314,6 +320,7 @@ export class Transaction {
         this._atomMap.delete(atom)
         if (!this._unsetSet) this._unsetSet = new Set()
         this._unsetSet.add(atom)
+        this.invalidateSelectorCache()
     }
 
     // Detach the own value + bookkeeping for each unset atom that actually had
@@ -367,13 +374,30 @@ export class Transaction {
         }
         // reset writes the default; it supersedes a buffered unset of the atom.
         this._unsetSet?.delete(atom)
+        this.invalidateSelectorCache()
         return value
     }
 
-    execute = (callback: TransactionFn, autoCommit = true) => {
-        const result = callback(this)
-        if (autoCommit) this.txnCommit()
-        return result
+    execute = <Callback extends TransactionFn>(
+        callback: Callback,
+        autoCommit = true,
+    ): ReturnType<Callback> => {
+        if (this._selectorRuntime) this._selectorRuntime.readOverlayActive = true
+        try {
+            const result = callback(this) as ReturnType<Callback>
+            if (isPromiseLike(result)) {
+                // Do not commit writes staged before the thenable was returned.
+                // Observe native Promise rejection to avoid an unhandled rejection.
+                if (result instanceof Promise) result.catch(() => {})
+                throw new Error("Transaction callbacks must be synchronous")
+            }
+            if (autoCommit) this.txnCommit()
+            return result
+        } finally {
+            if (this._selectorRuntime) {
+                this._selectorRuntime.readOverlayActive = false
+            }
+        }
     }
 
     private txnCommit = () => {
@@ -785,9 +809,27 @@ export class Transaction {
         return this._selectorCache
     }
 
-    private get selectorDependencies() {
-        if (!this._selectorDependencies) this._selectorDependencies = new Set()
-        return this._selectorDependencies
+    private invalidateSelectorCache() {
+        if (!this.dirty) this.dirty = true
+    }
+
+    private get selectorRuntime(): SelectorEvaluationRuntime {
+        if (!this._selectorRuntime) {
+            this._selectorRuntime = {
+                abortControllers: new Map(),
+                latestEvalContext: new Map(),
+                stateDependencies: new Map(),
+                readOverlayActive: true,
+            }
+        }
+        return this._selectorRuntime
+    }
+
+    private get selectorCircularDependencySet() {
+        if (!this._selectorCircularDependencySet) {
+            this._selectorCircularDependencySet = new WeakSet()
+        }
+        return this._selectorCircularDependencySet
     }
     private get deleteSet() {
         if (!this._deleteSet) this._deleteSet = new Set()

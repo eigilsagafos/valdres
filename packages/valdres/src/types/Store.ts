@@ -54,8 +54,9 @@ export type Store<T = StoreData> = {
      *  on a scope, reverts to the default on a root); no-op when the store holds
      *  no own value. See `UnsetAtom`. */
     unset: UnsetAtom
-    /** Run a transaction. An optional `name` is surfaced on the `meta` argument
-     *  of `store.onChange` callbacks for this commit (useful for dev tools). */
+    /** Run a synchronous transaction. Promise/thenable callbacks are rejected.
+     *  An optional `name` is surfaced on the `meta` argument of `store.onChange`
+     *  callbacks for this commit (useful for dev tools). */
     txn: (callback: TransactionFn, name?: string) => void
     scope: ScopeFn
     /** Subscribe to changes in this store and its descendant scopes. The callback
