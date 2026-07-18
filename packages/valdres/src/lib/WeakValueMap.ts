@@ -4,23 +4,18 @@
  * Atom-family keys are primitive/serialized values, so a WeakMap cannot be used
  * directly. Keeping WeakRefs as the values preserves a member's identity for as
  * long as a caller or store membership still retains it, without making the
- * family itself the lifetime owner of every member it has ever created.
+ * family itself the lifetime owner of every member it has ever created. Dead
+ * entries are swept lazily by lookup, iteration, and size reads so finalization
+ * callbacks never add unpredictable work to unrelated code.
  */
 export class WeakValueMap<K, V extends WeakKey> {
     readonly [Symbol.toStringTag] = "Map"
 
     private readonly refs = new Map<K, WeakRef<V>>()
-    private readonly cleanup = new FinalizationRegistry<K>((key) => {
-        // A key may have been explicitly released and recreated before the old
-        // member is finalized. Re-read the current ref so a stale callback
-        // never removes a live replacement.
-        const ref = this.refs.get(key)
-        if (ref?.deref() === undefined) this.refs.delete(key)
-    })
 
     get size() {
-        // Finalization callbacks are deliberately eventual. Sweep here so the
-        // observable Map surface never counts entries whose values are gone.
+        // Sweep here so the observable Map surface never counts entries whose
+        // values are gone.
         for (const [key, ref] of this.refs) {
             if (ref.deref() === undefined) this.deleteRef(key, ref)
         }
@@ -50,10 +45,6 @@ export class WeakValueMap<K, V extends WeakKey> {
     set(key: K, value: V) {
         const ref = new WeakRef(value)
         this.refs.set(key, ref)
-        // Deliberately omit an unregister token. Tokenized registration is
-        // costly in JavaScriptCore, and stale callbacks are safe because
-        // cleanup rechecks the current ref for this key.
-        this.cleanup.register(value, key)
         return this
     }
 
