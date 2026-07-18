@@ -270,7 +270,6 @@ describe("atomFamily", () => {
         expect(family(1n)).toBe(family(1n))
         expect(() => family(Promise.resolve())).toThrow(TypeError)
         expect(() => family(Symbol("same"))).toThrow(TypeError)
-        expect(() => family(Symbol("same"))).toThrow(TypeError)
     })
 
     test("atomFamily keyOf supports otherwise unsupported arguments", () => {
