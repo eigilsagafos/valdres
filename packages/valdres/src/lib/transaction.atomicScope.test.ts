@@ -330,7 +330,7 @@ describe("cross-scope transactions are atomically observable", () => {
             // The distinguishing test for deferral: writes run leaf-first, so the
             // scope atom is written BEFORE the root atom. If onSet fired inline
             // during the write loop it would observe the not-yet-written root
-            // value (0). Deferring every onSet to the notify phase — after all
+            // value (0). Deferring every onSet to the hook phase — after all
             // writes — guarantees it sees the fully-applied root value.
             const root = store()
             const S = root.scope("S")
@@ -350,18 +350,16 @@ describe("cross-scope transactions are atomically observable", () => {
             expect(seen).toEqual([7]) // never the inline-observed 0
         })
 
-        test("onSet still fires inline (mid-write-loop) for a non-scoped txn", () => {
-            // The single-store fast path is unchanged: onSet fires during the
-            // write loop, before subscribers, exactly as before.
+        test("onSet runs after all writes and before subscribers for a non-scoped txn", () => {
             const root = store()
             const order: string[] = []
-            const a = atom(0, {
-                name: "inline-a",
-                onSet: () => order.push("onSet:a"),
-            })
             const b = atom(0, {
-                name: "inline-b",
+                name: "deferred-b",
                 onSet: () => order.push("onSet:b"),
+            })
+            const a = atom(0, {
+                name: "deferred-a",
+                onSet: () => order.push(`onSet:a:b=${root.get(b)}`),
             })
             root.sub(a, () => order.push("sub:a"))
             root.sub(b, () => order.push("sub:b"))
@@ -371,8 +369,13 @@ describe("cross-scope transactions are atomically observable", () => {
                 t.set(b, 1)
             })
 
-            // Both onSets fire during the write loop, then subscribers.
-            expect(order).toEqual(["onSet:a", "onSet:b", "sub:a", "sub:b"])
+            // `a`'s hook sees `b`'s write even though `a` was staged first.
+            expect(order).toEqual([
+                "onSet:a:b=1",
+                "onSet:b",
+                "sub:a",
+                "sub:b",
+            ])
         })
     })
 

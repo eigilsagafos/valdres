@@ -2,14 +2,25 @@ import type { Atom } from "../types/Atom"
 import type { StoreData } from "../types/StoreData"
 import { isPromiseLike } from "../utils/isPromiseLike"
 import { coordinateAsyncWrite } from "./coordinateAsyncWrite"
+import type { CommitErrors } from "./commitErrors"
+import { recordCommitError } from "./commitErrors"
 import { getState } from "./getState"
 import { resolvePendingDefault } from "./resolvePendingDefault"
 import { setValueInData } from "./setValueInData"
 
-/** A deferred onSet invocation: the hook, the written value, and the store it
- *  was written to. Collected during the write phase of a cross-scope commit so
- *  hooks fire only once the whole tree has been written. */
+/** A deferred onSet invocation: the atom, written value, and originating store. */
 export type DeferredOnSet = [Atom<any>, any, StoreData]
+
+/** Run every hook in insertion order, retaining the first failure. */
+export const runOnSets = (onSets: DeferredOnSet[], errors: CommitErrors) => {
+    for (const [atom, value, data] of onSets) {
+        try {
+            atom.onSet!(value, data)
+        } catch (error) {
+            recordCommitError(errors, error)
+        }
+    }
+}
 
 /**
  * Write phase for a single store. Applies every value in `pairs` to
@@ -18,19 +29,17 @@ export type DeferredOnSet = [Atom<any>, any, StoreData]
  * equality checks. This does NOT propagate — see `setAtoms` (single-store
  * fast path) or `Transaction.commit` (cross-scope path) for the notify pass.
  *
- * onSet handling:
- *  - `skipOnSet` true     → never fire onSet.
- *  - `onSetQueue` given    → defer onSet by pushing `[atom, value, data]`. The
- *    cross-scope commit uses this so a hook never observes a half-applied
- *    transaction — it fires only after every store's writes have landed.
- *  - otherwise             → fire onSet inline (single-store path, unchanged).
+ * Hook and global handling are deliberately collection-only. The caller first
+ * completes every local/global write, then runs `onSetQueue`, then propagates.
+ * This keeps a throwing hook from interrupting either the write or propagation
+ * phase.
  */
 export const writeAtoms = (
     pairs: Map<Atom<any>, any>,
     data: StoreData,
     initializedAtomsSet: Set<Atom>,
-    skipOnSet = false,
-    onSetQueue?: DeferredOnSet[],
+    skipOnSet: boolean,
+    onSetQueue: DeferredOnSet[],
 ): Atom[] => {
     const updatedAtoms: Atom[] = []
     for (let [atom, value] of pairs) {
@@ -58,16 +67,19 @@ export const writeAtoms = (
                 value = promise
             } else {
                 value = setValueInData(atom, value, data)
-                if (atom.onSet && !skipOnSet) {
-                    if (onSetQueue) onSetQueue.push([atom, value, data])
-                    else atom.onSet(value, data)
-                }
                 // Landing a settled value over a suspense placeholder must
                 // resolve the held promise, exactly as setAtom does. The
                 // currentIsPromise gate keeps the common write path from walking
                 // the scope chain; an in-flight value took the async branch.
                 if (currentIsPromise) {
                     resolvePendingDefault(atom, data, value)
+                }
+                // Global atoms always carry a no-op marker hook, so one existing
+                // property read identifies every settled write that needs the
+                // phased slow path. Async hooks run after settlement through the
+                // shared coordinator instead of receiving the pending Promise.
+                if (!skipOnSet && atom.onSet) {
+                    onSetQueue.push([atom, value, data])
                 }
             }
         } else {

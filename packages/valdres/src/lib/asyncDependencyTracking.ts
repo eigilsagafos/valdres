@@ -6,11 +6,6 @@ import { getState } from "./getState"
 import { isLive, mountTransitiveDeps, noteDependencyAdded, onLiveDependencyAdded } from "./mountAtom"
 import { noteDependencyGraphChanged } from "./noteDependencyGraphChanged"
 
-// Tracks all deps (sync + async) for each pending async selector evaluation.
-// Keyed by the Promise returned by the async selector. When the promise
-// resolves, handleSelectorResult reads this to reconcile stale deps.
-export const pendingAsyncDeps = new WeakMap<Promise<any>, Set<State>>()
-
 export class SuspendAndWaitForResolveError extends Error {
     promise: Promise<any>
     constructor(promise: Promise<any>) {

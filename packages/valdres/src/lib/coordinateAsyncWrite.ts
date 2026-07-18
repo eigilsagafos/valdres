@@ -1,5 +1,6 @@
 import type { Atom } from "../types/Atom"
 import type { StoreData } from "../types/StoreData"
+import { finishAtomSet } from "./finishAtomSet"
 import { propagateAtomUpdate } from "./propagateUpdatedAtoms"
 import { resolvePendingDefault } from "./resolvePendingDefault"
 import { setValueInData } from "./setValueInData"
@@ -56,9 +57,20 @@ export const coordinateAsyncWrite = <Value>(
                 return
             }
             setValueInData(atom, resolvedValue, data)
-            if (atom.onSet && !skipOnSet) atom.onSet(resolvedValue, data)
             resolvePendingDefault(atom, data, resolvedValue)
-            propagateAtomUpdate([atom], data, false, undefined, "async-set")
+            if (atom.onSet && !skipOnSet) {
+                finishAtomSet(atom, resolvedValue, data, [atom], "async-set")
+            } else {
+                // Ordinary atoms retain the inline, allocation-free propagation
+                // path. Only hook/global writes pay for phased error handling.
+                propagateAtomUpdate(
+                    [atom],
+                    data,
+                    false,
+                    undefined,
+                    "async-set",
+                )
+            }
         })
         // Chaining catch also contains errors from the fulfilled handler (for
         // example, an onSet hook throwing) instead of leaking an unhandled

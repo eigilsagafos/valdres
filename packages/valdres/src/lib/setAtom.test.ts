@@ -306,18 +306,24 @@ describe("setAtom", () => {
             })
             const store1 = store()
             const stringAtom = atom<string>("initial", { onSet: onSetMock })
+            const isUpdated = selector(get => get(stringAtom) === "updated")
+            const subscriber = mock(() => {})
             store1.get(stringAtom)
+            store1.sub(isUpdated, subscriber)
 
             const result = setAtom(
                 stringAtom,
                 () => Promise.resolve("updated"),
                 store1.data,
             )
+            const callsWhilePending = subscriber.mock.calls.length
             await result
             // Allow unhandled rejection tracking to flush
             await new Promise(r => setTimeout(r, 10))
 
             expect(rejections).toHaveLength(0)
+            expect(store1.get(isUpdated)).toBe(true)
+            expect(subscriber.mock.calls.length).toBe(callsWhilePending + 1)
         } finally {
             process.off("unhandledRejection", handler)
         }

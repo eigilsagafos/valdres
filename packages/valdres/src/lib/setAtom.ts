@@ -3,6 +3,7 @@ import type { SetAtomValue } from "../types/SetAtomValue"
 import type { StoreData } from "../types/StoreData"
 import { isPromiseLike } from "../utils/isPromiseLike"
 import { coordinateAsyncWrite } from "./coordinateAsyncWrite"
+import { finishAtomSet } from "./finishAtomSet"
 import { getState } from "./getState"
 import { propagateAtomUpdate } from "./propagateUpdatedAtoms"
 import { isFunction } from "./isFunction"
@@ -75,13 +76,18 @@ export const setAtom = <Value = any>(
         return syncValue
     }
     syncValue = setValueInData(atom, syncValue, data)
-    if (atom.onSet && !skipOnSet) atom.onSet(syncValue, data)
     resolvePendingDefault(atom, data, syncValue)
+    let updatedAtoms: Atom<any>[]
     if (initializedAtomsSet && initializedAtomsSet.size > 0) {
         initializedAtomsSet.add(atom)
-        propagateAtomUpdate([...initializedAtomsSet], data, false, undefined, "set")
+        updatedAtoms = [...initializedAtomsSet]
     } else {
-        propagateAtomUpdate([atom], data, false, undefined, "set")
+        updatedAtoms = [atom]
+    }
+    if (atom.onSet && !skipOnSet) {
+        finishAtomSet(atom, syncValue, data, updatedAtoms, "set")
+    } else {
+        propagateAtomUpdate(updatedAtoms, data, false, undefined, "set")
     }
     return syncValue
 }

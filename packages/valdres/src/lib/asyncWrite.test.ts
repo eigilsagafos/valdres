@@ -183,6 +183,40 @@ describe("async writes", () => {
             expect(onSet).toHaveBeenCalledWith(2, store1.data)
         })
 
+        test(`${mode.name} propagates settlement after onSet throws`, async () => {
+            const hookError = new Error("onSet failed")
+            const store1 = mode.createStore()
+            const valueAtom = atom(1, {
+                onSet: () => {
+                    throw hookError
+                },
+            })
+            const doubled = selector(get => get(valueAtom) * 2)
+            const seen: number[] = []
+            store1.sub(doubled, () => seen.push(store1.get(doubled)))
+
+            mode.write(store1, valueAtom, Promise.resolve(2))
+            await flushMicrotasks()
+
+            expect(store1.get(valueAtom)).toBe(2)
+            expect(store1.get(doubled)).toBe(4)
+            expect(seen.at(-1)).toBe(4)
+        })
+
+        test(`${mode.name} fans a settled global write out to peers`, async () => {
+            const source = mode.createStore()
+            const peer = store()
+            const valueAtom = atom(1, { global: true })
+            source.get(valueAtom)
+            peer.get(valueAtom)
+
+            mode.write(source, valueAtom, Promise.resolve(2))
+            await flushMicrotasks()
+
+            expect(source.get(valueAtom)).toBe(2)
+            expect(peer.get(valueAtom)).toBe(2)
+        })
+
         test(`${mode.name} adopts a bare thenable`, async () => {
             const store1 = mode.createStore()
             const valueAtom = atom(1)
