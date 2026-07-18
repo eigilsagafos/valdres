@@ -4,7 +4,10 @@ import { SelectorEvaluationError } from "../errors/SelectorEvaluationError"
 import type { Atom } from "../types/Atom"
 import type { Selector } from "../types/Selector"
 import type { State } from "../types/State"
-import type { StoreData } from "../types/StoreData"
+import type {
+    SelectorEvaluationContext,
+    StoreData,
+} from "../types/StoreData"
 import { isPromiseLike } from "../utils/isPromiseLike"
 import { isSelector } from "../utils/isSelector"
 import {
@@ -12,7 +15,6 @@ import {
     cleanUpRejectedPromise,
     getOrInitDependentsSet,
     lateGet,
-    pendingAsyncDeps,
 } from "./asyncDependencyTracking"
 import { getState } from "./getState"
 import { isLive, noteDependencyAdded, onLiveDependencyRemoved, unmountOrphanedDeps } from "./mountAtom"
@@ -86,7 +88,10 @@ export const evaluateSelector = <V>(
     const latestEvalContext = data.latestEvalContext
     const prevCtx = latestEvalContext.get(selector)
     if (prevCtx) prevCtx.revoked = true
-    const evalCtx = { revoked: false, preserveSignalOnRevoke: false }
+    const evalCtx: SelectorEvaluationContext = {
+        revoked: false,
+        preserveSignalOnRevoke: false,
+    }
     latestEvalContext.set(selector, evalCtx)
 
     if (circularDependencySet.has(selector)) {
@@ -148,10 +153,6 @@ export const evaluateSelector = <V>(
             }
         }
 
-        // Lazily populated: tracks ALL deps read during this evaluation (sync +
-        // async). Only allocated when the result turns out to be a promise.
-        let allDepsThisEval: Set<State> | undefined
-
         let result
         try {
             // @ts-ignore, @ts-todo
@@ -159,8 +160,8 @@ export const evaluateSelector = <V>(
                 // Deferred get calls (setTimeout, after await) use late binding
                 if (evaluationComplete) {
                     // Track for reconciliation (unless this is a stale closure)
-                    if (!evalCtx.revoked && allDepsThisEval) {
-                        allDepsThisEval.add(state)
+                    if (!evalCtx.revoked && evalCtx.asyncDeps) {
+                        evalCtx.asyncDeps.add(state)
                     }
                     if (evalCtx.revoked) {
                         // Stale closure — the selector has been re-evaluated since
@@ -290,14 +291,16 @@ export const evaluateSelector = <V>(
             data.stateDependencies.set(selector, updatedDependencies)
         }
 
-        // Store tracking set so handleSelectorResult can reconcile when the
-        // promise resolves. Only needed for native-promise selectors —
-        // SuspendAndWaitForResolveError re-evaluates via initSelector instead.
+        // Store the tracking set on this evaluation's identity so
+        // handleSelectorResult can reconcile when the promise resolves. A
+        // Promise may be shared by selectors or stores, so Promise identity is
+        // not a safe owner for this data. Only needed for native-promise
+        // selectors — SuspendAndWaitForResolveError re-evaluates via
+        // initSelector instead.
         if (isPromiseLike(result)) {
             // Build the tracking set from sync deps discovered so far. Late
             // `get` calls (after await) will add to this set dynamically.
-            allDepsThisEval = new Set<State>(updatedDeps)
-            pendingAsyncDeps.set(result, allDepsThisEval)
+            evalCtx.asyncDeps = new Set<State>(updatedDeps)
         }
 
         return result
@@ -359,32 +362,27 @@ export const handleSelectorResult = <Value>(
         // then we retry when the promise resolves.
         const evaluationContext = data.latestEvalContext.get(selector)
         value.then(resolved => {
+            // Take and clear this evaluation's dependency set up front. The
+            // latest context remains cached after resolution, so retaining the
+            // Set there would keep its dependency states alive unnecessarily.
+            const evalDeps = evaluationContext?.asyncDeps
+            if (evaluationContext) evaluationContext.asyncDeps = undefined
+
             // A graph entry can be recreated after this Promise was superseded;
             // use per-evaluation identity as the primary stale-result guard.
             if (
                 !evaluationContext ||
                 evaluationContext.revoked ||
                 data.latestEvalContext.get(selector) !== evaluationContext
-            ) {
-                pendingAsyncDeps.delete(value)
-                return
-            }
+            ) return
             // Guard: selector was cleaned up by unsubscribe GC
-            if (!data.stateDependencies.has(selector)) {
-                pendingAsyncDeps.delete(value)
-                return
-            }
+            if (!data.stateDependencies.has(selector)) return
             // Guard against stale promise
-            if (data.values.has(selector) && data.values.get(selector) !== value) {
-                pendingAsyncDeps.delete(value)
-                return
-            }
+            if (data.values.has(selector) && data.values.get(selector) !== value) return
 
             // Reconcile deps: remove any that were carried forward from a
             // previous evaluation but not read in this one.
-            const evalDeps = pendingAsyncDeps.get(value)
             if (evalDeps) {
-                pendingAsyncDeps.delete(value)
                 const currentDeps = data.stateDependencies.get(selector)
                 if (currentDeps) {
                     const selectorIsLive = isLive(selector, data)
@@ -411,7 +409,6 @@ export const handleSelectorResult = <Value>(
             // reported and we clean up so the invalid value never commits.
             // Consistent with the atom async paths.
             if (!validateResolvedValue(selector, resolved, data)) {
-                pendingAsyncDeps.delete(value as Promise<any>)
                 cleanUpRejectedPromise(selector, data, value as Promise<any>)
                 return
             }
@@ -451,7 +448,7 @@ export const handleSelectorResult = <Value>(
                 }
             }
         }).catch(() => {
-            pendingAsyncDeps.delete(value as Promise<any>)
+            if (evaluationContext) evaluationContext.asyncDeps = undefined
             cleanUpRejectedPromise(selector, data, value as Promise<any>)
         })
         return value
