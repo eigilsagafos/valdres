@@ -18,7 +18,7 @@ import { validateSchema } from "./validateSchema"
 import type { DeferredOnSet } from "./writeAtoms"
 
 /** A changed global atom whose value still needs to be applied to its peers. */
-export type DeferredGlobalSet = [GlobalAtom<any>, any]
+export type DeferredGlobalSet = [GlobalAtom<any>, any, StoreData]
 
 export type StoreAtomUpdates = Map<StoreData, Atom<any>[]>
 
@@ -105,6 +105,7 @@ const applyPeerValue = (
 const applyGlobalSet = (
     atom: GlobalAtom<any>,
     value: any,
+    origin: StoreData,
     updates: StoreAtomUpdates,
     errors: CommitErrors,
 ): void => {
@@ -112,10 +113,21 @@ const applyGlobalSet = (
     // registration set, but it must not change this commit's fan-out list.
     for (const peer of [...atom.stores]) {
         try {
-            // Include the originating store. This is normally an equal no-op,
-            // but when one commit stages the same global atom from multiple
-            // stores it makes the last queued value win EVERYWHERE instead of
-            // leaving each origin on a different prior value.
+            // Store ids are user-provided labels and need not be unique. The
+            // origin check is strictly StoreData identity. Skip its common
+            // already-written case without paying getState/schema/equality
+            // costs; if an earlier cross-store write in this commit overwrote
+            // it, the raw value differs and it correctly goes through fan-out.
+            if (
+                peer === origin &&
+                peer.values.has(atom) &&
+                Object.is(peer.values.get(atom), value)
+            ) {
+                continue
+            }
+            // An origin reaches here only when an earlier write in the same
+            // commit overwrote it. Applying it again makes the last queued
+            // value win EVERYWHERE instead of leaving origins divergent.
             addUpdates(updates, peer, applyPeerValue(atom, value, peer))
         } catch (error) {
             recordCommitError(errors, error)
@@ -128,8 +140,8 @@ export const applyGlobalSets = (
     errors: CommitErrors,
 ): StoreAtomUpdates => {
     const updates: StoreAtomUpdates = new Map()
-    for (const [atom, value] of globalSets) {
-        applyGlobalSet(atom, value, updates, errors)
+    for (const [atom, value, origin] of globalSets) {
+        applyGlobalSet(atom, value, origin, updates, errors)
     }
     return updates
 }
@@ -146,10 +158,10 @@ export const applyGlobalOnSets = (
     errors: CommitErrors,
     updates?: StoreAtomUpdates,
 ): StoreAtomUpdates | undefined => {
-    for (const [atom, value] of onSets) {
+    for (const [atom, value, origin] of onSets) {
         if (!isGlobalAtom(atom)) continue
         updates ??= new Map()
-        applyGlobalSet(atom, value, updates, errors)
+        applyGlobalSet(atom, value, origin, updates, errors)
     }
     return updates
 }

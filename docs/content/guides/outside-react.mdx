@@ -63,7 +63,13 @@ const snapshot = {
     session: serverStore.get(sessionAtom),
     config: serverStore.get(cacheAtom("config")),
 }
+
+// Release global-atom registrations held for this request.
+serverStore.dispose()
 ```
+
+For real request handlers, put `dispose()` in a `finally` block so thrown
+renders and aborted requests are cleaned up too.
 
 ## Web Workers
 
