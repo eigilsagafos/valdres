@@ -10,8 +10,16 @@ export const deleteFamilyAtom = <
     data: StoreData,
 ) => {
     data.values.delete(atom)
-    if (atom.family) {
-        atom.family.release(...atom.familyArgs)
-    }
-    propagateDeletedAtoms([atom], data, undefined, undefined, undefined, undefined, "delete")
+    // Membership is store-local, while the family's identity cache is shared.
+    // Releasing here could strand another store on this member while
+    // family(...args) starts returning a different object for the same key.
+    propagateDeletedAtoms(
+        [atom],
+        data,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        "delete",
+    )
 }

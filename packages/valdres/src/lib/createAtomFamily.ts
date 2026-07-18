@@ -7,6 +7,7 @@ import { equal } from "./equal"
 import { familyKey, type FamilyKey } from "./familyKey"
 import { globalAtom } from "./globalAtom"
 import { registerName } from "./registerName"
+import { WeakValueMap } from "./WeakValueMap"
 
 export const createAtomFamily = <
     Value extends any,
@@ -15,7 +16,7 @@ export const createAtomFamily = <
     defaultValue: AtomFamilyDefaultValue<Value, Args>,
     options?: AtomOptions<Value>,
 ) => {
-    const map = new Map<FamilyKey, AtomFamilyAtom<Value, Args>>()
+    const map = new WeakValueMap<FamilyKey, AtomFamilyAtom<Value, Args>>()
     // Hoist type checks to family creation time — avoid per-call overhead
     const isSelectorFamilyDefault = isSelectorFamily(defaultValue)
     const isFunctionDefault =
