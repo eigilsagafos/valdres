@@ -382,11 +382,6 @@ export class Transaction {
         callback: Callback,
         autoCommit = true,
     ): ReturnType<Callback> => {
-        // Reject native async callbacks before their synchronous prefix runs.
-        // The thenable check also covers transpiled async functions.
-        if (callback.constructor?.name === "AsyncFunction") {
-            throw new Error("Transaction callbacks must be synchronous")
-        }
         if (this._selectorRuntime) this._selectorRuntime.readOverlayActive = true
         try {
             const result = callback(this) as ReturnType<Callback>
