@@ -358,26 +358,48 @@ export const subscribe = <V>(
         }
     }
     subscribers.add(subscription)
-    if (subscribers.size === 1) {
-        // Skip scope-local timer installation: reaching the non-delegating
-        // branch in a scope means the atom was shadowed via `set()`, which
-        // we treat as a deliberate pin. Running an extra timer here would
-        // overwrite the shadow on the next tick and double the work for
-        // non-global maxAge atoms (which lack the refCount sharing that
-        // installMaxAgeTimer uses for global atoms).
-        if (isAtom(state) && state.maxAge !== undefined && !data.parent) {
-            installMaxAgeTimer(state, data)
+    const unsubscribeSubscription = () => {
+        if (!parentUnsubscribe) {
+            unsubscribe(state, subscription, data)
+            return
         }
-        // First direct subscriber: bump liveness through the dep graph.
-        // Selectors track this via stateDependencies; families have none.
-        if (!isFamily(state)) {
-            // First direct subscriber is an ADDITIVE liveness change — the
-            // incremental walk is correct here, including through cycles (each
-            // live dependent is counted once; the prev===0 guard visits each
-            // node the single time it flips live). Deps built lazily via get()
-            // after this subscribe are reconciled by getDefault's own pass.
-            onFirstDirectSubscriber(state as State, data)
-            mountTransitiveDeps(state, data)
+        // A delegated parent cleanup is user code and may throw. The local
+        // subscription still has to unwind in that case.
+        try {
+            parentUnsubscribe()
+        } finally {
+            unsubscribe(state, subscription, data)
+        }
+    }
+    if (subscribers.size === 1) {
+        try {
+            // Skip scope-local timer installation: reaching the non-delegating
+            // branch in a scope means the atom was shadowed via `set()`, which
+            // we treat as a deliberate pin. Running an extra timer here would
+            // overwrite the shadow on the next tick and double the work for
+            // non-global maxAge atoms (which lack the refCount sharing that
+            // installMaxAgeTimer uses for global atoms).
+            if (isAtom(state) && state.maxAge !== undefined && !data.parent) {
+                installMaxAgeTimer(state, data)
+            }
+            // First direct subscriber: bump liveness through the dep graph.
+            // Selectors track this via stateDependencies; families have none.
+            if (!isFamily(state)) {
+                // First direct subscriber is an ADDITIVE liveness change — the
+                // incremental walk is correct here, including through cycles (each
+                // live dependent is counted once; the prev===0 guard visits each
+                // node the single time it flips live). Deps built lazily via get()
+                // after this subscribe are reconciled by getDefault's own pass.
+                onFirstDirectSubscriber(state as State, data)
+                mountTransitiveDeps(state, data)
+            }
+        } catch (error) {
+            // Preserve the mount error if rollback encounters a secondary
+            // cleanup error.
+            try {
+                unsubscribeSubscription()
+            } catch {}
+            throw error
         }
     }
 
@@ -388,10 +410,5 @@ export const subscribe = <V>(
         data.subscriptionsRequireEqualCheck.set(state, true)
     }
 
-    return () => {
-        if (parentUnsubscribe) {
-            parentUnsubscribe()
-        }
-        unsubscribe(state, subscription, data)
-    }
+    return unsubscribeSubscription
 }

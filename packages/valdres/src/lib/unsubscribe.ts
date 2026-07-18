@@ -54,19 +54,35 @@ export const unsubscribe = <V>(
                 data.cycleRiskInClosure.has(state as State<V>) &&
                 regionHasCycle(state as State<V>, data)
             ) {
-                reconcileLivenessAfterChurn(new Set([state as State<V>]), data)
+                // Reconciliation can synchronously unmount a cyclic region, so
+                // its user cleanup needs the same exception-safe graph queue.
+                try {
+                    reconcileLivenessAfterChurn(
+                        new Set([state as State<V>]),
+                        data,
+                    )
+                } catch (error) {
+                    if (!isLive(state as State<V>, data)) {
+                        queueOrphanCleanup(state as State<V>, data)
+                    }
+                    throw error
+                }
             }
             // A live state keeps its full downward dependency closure live, so
             // neither orphan walk can do work. This is especially important for
             // wide fan-in: sibling subscriptions disappear while an aggregator
             // still keeps every shared branch live.
             if (!isLive(state as State<V>, data)) {
-                // User-visible lifecycle cleanup stays synchronous.
-                unmountOrphanedDeps(state as State<V>, data)
-                // Graph/value cleanup is intentionally microtask-batched so
-                // sibling roots share completed visits. Every public store
-                // operation flushes it first, preserving API-level cache reads.
-                queueOrphanCleanup(state as State<V>, data)
+                try {
+                    // User-visible lifecycle cleanup stays synchronous.
+                    unmountOrphanedDeps(state as State<V>, data)
+                } finally {
+                    // Graph/value cleanup is intentionally microtask-batched so
+                    // sibling roots share completed visits. Every public store
+                    // operation flushes it first, preserving API-level cache
+                    // reads. Queue even when user lifecycle cleanup throws.
+                    queueOrphanCleanup(state as State<V>, data)
+                }
             }
         }
     }
