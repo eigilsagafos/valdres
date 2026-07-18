@@ -371,7 +371,10 @@ export class Transaction {
         return value
     }
 
-    execute = (callback: TransactionFn, autoCommit = true) => {
+    execute = <Callback extends TransactionFn>(
+        callback: Callback,
+        autoCommit = true,
+    ): ReturnType<Callback> => {
         // Reject native async callbacks before their synchronous prefix runs.
         // The thenable check also covers transpiled async functions.
         if (callback.constructor?.name === "AsyncFunction") {
@@ -379,7 +382,7 @@ export class Transaction {
         }
         if (this._selectorRuntime) this._selectorRuntime.readOverlayActive = true
         try {
-            const result = callback(this)
+            const result = callback(this) as ReturnType<Callback>
             if (isPromiseLike(result)) {
                 // Do not commit writes staged before the thenable was returned.
                 // Observe native Promise rejection to avoid an unhandled rejection.
