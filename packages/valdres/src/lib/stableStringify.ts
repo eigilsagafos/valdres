@@ -17,8 +17,11 @@ const stableStringifyRecurse = (x: any, key?: string): string => {
             return x ? "true" : "false"
         case "number":
         case "symbol":
-            // case 'bigint': // BigInt is not supported in www
             return String(x)
+        case "bigint":
+            // Keep nested BigInts distinct from both Numbers and Strings while
+            // retaining a compact, readable debug representation.
+            return `${x}n`
         case "string":
             // Add surrounding quotes and escape internal quotes
             return JSON.stringify(x)
@@ -100,11 +103,12 @@ const stableStringifyRecurse = (x: any, key?: string): string => {
         )
         .join(",")}}`
 }
-export const stableStringify = (x: any): string | number | boolean => {
+export const stableStringify = (x: any): string | number | boolean | bigint => {
     if (
         typeof x === "string" ||
         typeof x === "boolean" ||
-        typeof x === "number"
+        typeof x === "number" ||
+        typeof x === "bigint"
     )
         return x
 

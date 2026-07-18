@@ -30,6 +30,23 @@ const userDisplayNameSelector = selectorFamily(id => get => {
 store.get(userDisplayNameSelector("user-1")) // "John Doe"
 ```
 
+## Custom key identity
+
+Selector families use the same deterministic key codec as `atomFamily`: types
+and argument count are distinct, while plain Object keys and Map/Set contents
+are canonicalized independent of insertion order. Unsupported values (including
+Symbols, functions, Promises, class instances, and cycles) throw a `TypeError`.
+
+Provide `keyOf` when the original argument is unsupported or when only part of
+it should determine selector identity:
+
+```ts
+const userRevision = selectorFamily(
+    user => get => `${get(userAtom(user.id)).name}@${user.revision}`,
+    { keyOf: user => [user.id, user.revision] },
+)
+```
+
 ## With async computation
 
 ```ts
