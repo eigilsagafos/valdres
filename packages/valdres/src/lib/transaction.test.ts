@@ -5,6 +5,9 @@ import { selector } from "../selector"
 import { store } from "../store"
 import { transaction } from "./transaction"
 import { index } from "../indexConstructor"
+import { SchemaValidationError } from "../errors/SchemaValidationError"
+import { SelectorCircularDependencyError } from "../errors/SelectorCircularDependencyError"
+import { SelectorEvaluationError } from "../errors/SelectorEvaluationError"
 
 /** Resolve to a promise's value if it settles within `ms`, else report it
  *  still pending — a bounded race so a hung suspense promise fails fast
@@ -144,6 +147,231 @@ describe("transaction", () => {
             expect(selectorCb1).toHaveBeenCalledTimes(4)
             expect(selectorCb2).toHaveBeenCalledTimes(2)
         })
+    })
+
+    test("transaction selectors use the normal options, validation, and error boundaries", () => {
+        const store1 = store()
+        let receivedOptions: any
+        const optionsSelector = selector((_get, options) => {
+            receivedOptions = options
+            return 1
+        })
+        const schemaFailure = new Error("not a number")
+        const invalidSelector = selector(() => "wrong", {
+            name: "invalid transaction selector",
+            schemaValidation: true,
+            schema: {
+                parse() {
+                    throw schemaFailure
+                },
+            },
+        })
+        const evaluationFailure = new Error("selector exploded")
+        const throwingSelector = selector(
+            () => {
+                throw evaluationFailure
+            },
+            { name: "throwing transaction selector" },
+        )
+
+        store1.txn(({ get }) => {
+            expect(get(optionsSelector)).toBe(1)
+            expect(receivedOptions).toEqual({
+                signal: expect.any(AbortSignal),
+                storeId: store1.data.id,
+            })
+
+            try {
+                get(invalidSelector)
+                throw new Error("expected selector validation to fail")
+            } catch (error) {
+                expect(error).toBeInstanceOf(SchemaValidationError)
+                expect((error as SchemaValidationError).cause).toBe(
+                    schemaFailure,
+                )
+            }
+
+            try {
+                get(throwingSelector)
+                throw new Error("expected selector evaluation to fail")
+            } catch (error) {
+                expect(error).toBeInstanceOf(SelectorEvaluationError)
+                expect((error as SelectorEvaluationError).cause).toBe(
+                    evaluationFailure,
+                )
+            }
+        })
+    })
+
+    test("transaction selector cycles use the normal cycle error", () => {
+        const store1 = store()
+        let circular: ReturnType<typeof selector>
+        circular = selector(get => get(circular), {
+            name: "transaction cycle",
+        })
+
+        expect(() =>
+            store1.txn(({ get }) => {
+                get(circular)
+            }),
+        ).toThrow(SelectorCircularDependencyError)
+    })
+
+    test("aborted transaction selector reads do not mutate committed selector state", async () => {
+        const store1 = store()
+        const useLeft = atom(false)
+        const left = atom("left")
+        const right = atom("right")
+        const selected = selector(get =>
+            get(useLeft) ? get(left) : get(right),
+        )
+        const asyncSelected = selector(get => Promise.resolve(get(selected)))
+
+        expect(store1.get(selected)).toBe("right")
+        const committedDependencies = new Set(
+            store1.data.stateDependencies.get(selected),
+        )
+
+        expect(() =>
+            store1.txn(txn => {
+                txn.set(useLeft, true)
+                expect(txn.get(selected)).toBe("left")
+                txn.get(asyncSelected)
+                throw new Error("abort")
+            }),
+        ).toThrow("abort")
+
+        await Promise.resolve()
+        expect(store1.get(useLeft)).toBe(false)
+        expect(store1.get(selected)).toBe("right")
+        expect(store1.data.stateDependencies.get(selected)).toEqual(
+            committedDependencies,
+        )
+        expect(store1.data.stateDependencies.has(asyncSelected)).toBe(false)
+        expect(store1.data.values.has(asyncSelected)).toBe(false)
+    })
+
+    test("transaction evaluator tracks async dependencies and aborts superseded work locally", async () => {
+        const store1 = store()
+        const count = atom(1)
+        let release!: () => void
+        const gate = new Promise<void>(resolve => {
+            release = resolve
+        })
+        const signals: AbortSignal[] = []
+        const asyncCount = selector((get, { signal }) => {
+            signals.push(signal)
+            return gate.then(() => get(count))
+        })
+        let transactionRef: any
+        let latest!: Promise<number>
+
+        store1.txn(txn => {
+            transactionRef = txn
+            txn.get(asyncCount)
+            txn.set(count, 2)
+            latest = txn.get(asyncCount) as Promise<number>
+        })
+
+        expect(signals).toHaveLength(2)
+        expect(signals[0].aborted).toBe(true)
+        expect(signals[1].aborted).toBe(false)
+
+        release()
+        expect(await latest).toBe(2)
+        expect(
+            transactionRef._selectorRuntime.stateDependencies
+                .get(asyncCount)
+                .has(count),
+        ).toBe(true)
+        expect(store1.data.stateDependencies.has(asyncCount)).toBe(false)
+        expect(store1.data.values.has(asyncCount)).toBe(false)
+    })
+
+    test("transaction selector continuations read current committed state", async () => {
+        const store1 = store()
+        const count = atom(1)
+        let release!: () => void
+        const gate = new Promise<void>(resolve => {
+            release = resolve
+        })
+        const asyncCount = selector(get => gate.then(() => get(count)))
+        let pending!: Promise<number>
+
+        store1.txn(txn => {
+            txn.set(count, 2)
+            pending = txn.get(asyncCount) as Promise<number>
+        })
+        store1.set(count, 3)
+        release()
+
+        expect(await pending).toBe(3)
+    })
+
+    test("every transaction write invalidates cached selector reads", () => {
+        const store1 = store()
+        const count = atom(1)
+        const users = atomFamily<string, [number]>()
+        const firstUser = users(1)
+        const secondUser = users(2)
+        const doubled = selector(get => get(count) * 2)
+        const userSummary = selector(get =>
+            get(users)
+                .map(member => get(member))
+                .join(","),
+        )
+
+        store1.set(count, 3)
+        store1.set(firstUser, "one")
+
+        store1.txn(txn => {
+            expect(txn.get(doubled)).toBe(6)
+            txn.reset(count)
+            expect(txn.get(doubled)).toBe(2)
+
+            txn.set(count, 4)
+            expect(txn.get(doubled)).toBe(8)
+            txn.unset(count)
+            expect(txn.get(doubled)).toBe(2)
+
+            expect(txn.get(userSummary)).toBe("one")
+            txn.batchSetFamilyAtoms(users, [[secondUser, "two"]])
+            expect(txn.get(userSummary)).toBe("one,two")
+            txn.del(firstUser)
+            expect(txn.get(userSummary)).toBe("two")
+        })
+    })
+
+    test("thenable transaction callbacks throw synchronously and never commit", async () => {
+        const store1 = store()
+        const count = atom(0)
+
+        expect(() =>
+            store1.txn(txn => {
+                txn.set(count, 1)
+                return { then() {} }
+            }),
+        ).toThrow("Transaction callbacks must be synchronous")
+        expect(store1.get(count)).toBe(0)
+
+        expect(() =>
+            store1.txn(txn => {
+                txn.set(count, 2)
+                return Promise.resolve()
+            }),
+        ).toThrow("Transaction callbacks must be synchronous")
+        expect(store1.get(count)).toBe(0)
+
+        expect(() =>
+            store1.txn(async txn => {
+                txn.set(count, 3)
+                await Promise.resolve()
+                txn.set(count, 4)
+            }),
+        ).toThrow("Transaction callbacks must be synchronous")
+
+        await Promise.resolve()
+        expect(store1.get(count)).toBe(0)
     })
 
     test("uninitialized selector reads txn state", () => {
@@ -523,7 +751,9 @@ describe("transaction", () => {
         })
 
         expect(store1.data.values.get(doc1)).toStrictEqual([1, 2])
-        expect(store1.data.scopes.get("foo")!.values.get(doc1)).toStrictEqual([1, 2, 3])
+        expect(store1.data.scopes.get("foo")!.values.get(doc1)).toStrictEqual([
+            1, 2, 3,
+        ])
         expect(
             store1.data.scopes.get("foo")!.scopes.get("bar")!.values.get(doc1),
         ).toStrictEqual([1, 2, 3, 4])

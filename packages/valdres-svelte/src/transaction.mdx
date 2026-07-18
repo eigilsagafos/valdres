@@ -16,6 +16,10 @@ description: Svelte function for batching multiple writes in one commit
 
 Returns a transaction runner bound to the current context store, captured at component initialization. That capture is what makes it safe to call from an event handler — Svelte throws `lifecycle_outside_component` if you call `getContext` inside a handler. Writes inside the callback commit together, so subscribers and selectors observe one atomic update. Forwards core's optional devtools `name`.
 
+Callbacks must be synchronous. Returning a Promise or other thenable throws
+without automatically committing staged writes; await asynchronous work before
+calling the transaction runner.
+
 ## Usage
 
 ```svelte

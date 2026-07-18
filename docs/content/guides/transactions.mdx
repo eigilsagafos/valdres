@@ -42,6 +42,22 @@ myStore.txn(set => {
 // Now subscribers fire once with fullName = "Jane Smith"
 ```
 
+## Synchronous callbacks
+
+Transaction callbacks must be synchronous. Returning a Promise or other
+thenable throws and aborts the automatic commit, because writes after an
+`await` cannot be part of the same atomic commit. Perform asynchronous work
+before the transaction, then apply its result synchronously:
+
+```ts
+const user = await fetchUser()
+
+myStore.txn(({ set }) => {
+    set(userAtom, user)
+    set(statusAtom, "ready")
+})
+```
+
 ## Updater functions
 
 Inside a transaction, `set` works the same as outside — you can pass values or updater functions:

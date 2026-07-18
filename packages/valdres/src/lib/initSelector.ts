@@ -2,6 +2,7 @@ import { SchemaValidationError } from "../errors/SchemaValidationError"
 import { SelectorCircularDependencyError } from "../errors/SelectorCircularDependencyError"
 import { SelectorEvaluationError } from "../errors/SelectorEvaluationError"
 import type { Atom } from "../types/Atom"
+import type { GetValue } from "../types/GetValue"
 import type { Selector } from "../types/Selector"
 import type { State } from "../types/State"
 import type {
@@ -64,14 +65,28 @@ export type DepsChange = {
     removed?: Set<State>
 }
 
+/** Selector bookkeeping owned by a read overlay rather than the committed
+ * store. Transactions keep this state local so an aborted speculative read
+ * cannot rewrite the store's dependency graph or publish an async result. */
+export type SelectorEvaluationRuntime = {
+    abortControllers: Map<Selector, AbortController | false>
+    latestEvalContext: Map<Selector, SelectorEvaluationContext>
+    stateDependencies: Map<Selector, Set<State>>
+    readOverlayActive: boolean
+}
+
 export const evaluateSelector = <V>(
     selector: Selector<V>,
     data: StoreData,
     initializedAtomsSet: Set<Atom>,
     circularDependencySet: WeakSet<Selector> = data.circularDepSet,
     depsChangeOut?: DepsChange,
+    readOverlay?: GetValue,
+    runtime?: SelectorEvaluationRuntime,
 ) => {
-    const currentDependencies = data.stateDependencies.get(selector)
+    const stateDependencies = runtime?.stateDependencies ?? data.stateDependencies
+    const abortControllers = runtime?.abortControllers ?? data.abortControllers
+    const currentDependencies = stateDependencies.get(selector)
     // Deduped set of deps read this evaluation. Using a Set (not an array)
     // makes change-detection robust to a dependency read MORE THAN ONCE in one
     // evaluation (e.g. `cond ? get(a) + get(b) : get(a) + get(a)`): comparing
@@ -85,7 +100,7 @@ export const evaluateSelector = <V>(
 
     // Revoke any previous late-binding closure for this selector so that
     // deferred get calls from old evaluations become read-only.
-    const latestEvalContext = data.latestEvalContext
+    const latestEvalContext = runtime?.latestEvalContext ?? data.latestEvalContext
     const prevCtx = latestEvalContext.get(selector)
     if (prevCtx) prevCtx.revoked = true
     const evalCtx: SelectorEvaluationContext = {
@@ -122,7 +137,7 @@ export const evaluateSelector = <V>(
         if ((selector.get as (...args: any[]) => any).length < 2) {
             options = getSyncOptions(data)
         } else {
-            const prev = data.abortControllers.get(selector)
+            const prev = abortControllers.get(selector)
             if (prev === false) {
                 // Known-sync selector — use cached options, no allocation
                 options = getSyncOptions(data)
@@ -144,7 +159,7 @@ export const evaluateSelector = <V>(
                                     controller.abort()
                                 }
                             } else {
-                                data.abortControllers.set(selector, controller)
+                                abortControllers.set(selector, controller)
                             }
                         }
                         return controller.signal
@@ -163,6 +178,14 @@ export const evaluateSelector = <V>(
                     if (!evalCtx.revoked && evalCtx.asyncDeps) {
                         evalCtx.asyncDeps.add(state)
                     }
+                    if (runtime) {
+                        if (!evalCtx.revoked) {
+                            runtime.stateDependencies.get(selector)?.add(state)
+                        }
+                        return readOverlay && runtime.readOverlayActive
+                            ? readOverlay(state)
+                            : getState(state, data, new Set<Atom>())
+                    }
                     if (evalCtx.revoked) {
                         // Stale closure — the selector has been re-evaluated since
                         // this closure was created. Read the value without
@@ -171,12 +194,14 @@ export const evaluateSelector = <V>(
                     }
                     return lateGet(state, selector, data)
                 }
-                const value = getState(
-                    state,
-                    data,
-                    initializedAtomsSet,
-                    circularDependencySet,
-                )
+                const value = readOverlay
+                    ? readOverlay(state)
+                    : getState(
+                          state,
+                          data,
+                          initializedAtomsSet,
+                          circularDependencySet,
+                      )
                 updatedDeps.add(state)
                 if (!depsChanged && (!currentDependencies || !currentDependencies.has(state))) {
                     depsChanged = true
@@ -208,7 +233,21 @@ export const evaluateSelector = <V>(
             depsChanged = true
         }
 
-        if (depsChanged || !currentDependencies) {
+        if (runtime && (depsChanged || !currentDependencies)) {
+            // The overlay graph tracks async dependencies and re-evaluations,
+            // but deliberately has no committed reverse edges or liveness.
+            const updatedDependencies = isAsyncResult
+                ? new Set<State<any>>(updatedDeps)
+                : updatedDeps
+            if (isAsyncResult && currentDependencies) {
+                for (const dep of currentDependencies) {
+                    updatedDependencies.add(dep)
+                }
+            }
+            stateDependencies.set(selector, updatedDependencies)
+        }
+
+        if (!runtime && (depsChanged || !currentDependencies)) {
             // Invalidate topology-sensitive teardown caches once for this
             // dependency-set materialization or change (including an empty
             // selector re-materialized after cleanup).
@@ -318,8 +357,13 @@ export const handleSelectorResult = <Value>(
     value: Value | Promise<Value> | SuspendAndWaitForResolveError,
     selector: Selector<Value>,
     data: StoreData,
+    runtime?: SelectorEvaluationRuntime,
 ) => {
     if (value instanceof SuspendAndWaitForResolveError) {
+        if (runtime) {
+            runtime.abortControllers.delete(selector)
+            return value.promise
+        }
         // The selector was suspended — it threw before completing, so no
         // meaningful async work was started with the current signal. Clear
         // the AbortController so that when the dependency resolves and
@@ -358,6 +402,32 @@ export const handleSelectorResult = <Value>(
         })
         return promise
     } else if (isPromiseLike(value)) {
+        if (runtime) {
+            const evaluationContext = runtime.latestEvalContext.get(selector)
+            value.then(resolved => {
+                const evalDeps = evaluationContext?.asyncDeps
+                if (evaluationContext) evaluationContext.asyncDeps = undefined
+                if (
+                    !evaluationContext ||
+                    evaluationContext.revoked ||
+                    runtime.latestEvalContext.get(selector) !== evaluationContext
+                ) return
+
+                // Reconcile carried async dependencies in the private graph.
+                if (evalDeps) {
+                    const currentDeps = runtime.stateDependencies.get(selector)
+                    if (currentDeps) {
+                        for (const dep of currentDeps) {
+                            if (!evalDeps.has(dep)) currentDeps.delete(dep)
+                        }
+                    }
+                }
+                validateResolvedValue(selector, resolved, data)
+            }).catch(() => {
+                if (evaluationContext) evaluationContext.asyncDeps = undefined
+            })
+            return value
+        }
         // When a promise is returned when initializing a selector we suspend,
         // then we retry when the promise resolves.
         const evaluationContext = data.latestEvalContext.get(selector)
@@ -458,7 +528,10 @@ export const handleSelectorResult = <Value>(
         // selectors that read options (arity >= 2); arity-<2 selectors bypass
         // the abortControllers path entirely, so don't pollute the map.
         if ((selector.get as (...args: any[]) => any).length >= 2) {
-            data.abortControllers.set(selector, false)
+            ;(runtime?.abortControllers ?? data.abortControllers).set(
+                selector,
+                false,
+            )
         }
         return validateSchema(selector, value, data)
     }
@@ -471,10 +544,11 @@ export const initSelector = <V>(
     circularDependencySet: WeakSet<Selector> = data.circularDepSet,
 ): boolean => {
     const existingValue = data.values.get(selector)
-    const updatedValue = evaluate(
+    const updatedValue = evaluateSelectorValue(
         selector,
         data,
         initializedAtomsSet,
+        undefined,
         circularDependencySet,
     )
 
@@ -492,23 +566,30 @@ export const initSelector = <V>(
     }
 }
 
-const evaluate = <V>(
+/** Evaluate through the store selector boundary, optionally using a read
+ * overlay and private bookkeeping for transactional reads. */
+export const evaluateSelectorValue = <V>(
     selector: Selector<V>,
     data: StoreData,
     initializedAtomsSet: Set<Atom>,
-    circularDependencySet: WeakSet<Selector>,
+    readOverlay?: GetValue,
+    circularDependencySet: WeakSet<Selector> = data.circularDepSet,
+    runtime?: SelectorEvaluationRuntime,
 ) => {
-    let tmpValue
+    let value
     try {
-        tmpValue = evaluateSelector(
+        value = evaluateSelector(
             selector,
             data,
             initializedAtomsSet,
             circularDependencySet,
+            undefined,
+            readOverlay,
+            runtime,
         )
-    } catch (e) {
-        if (e instanceof SelectorEvaluationError) e.track(selector)
-        throw e
+    } catch (error) {
+        if (error instanceof SelectorEvaluationError) error.track(selector)
+        throw error
     }
-    return handleSelectorResult<V>(tmpValue, selector, data)
+    return handleSelectorResult(value, selector, data, runtime)
 }
