@@ -474,6 +474,58 @@ describe("subscribe", () => {
         expect(rootStore.data.values.has(derived)).toBe(false)
     })
 
+    test("a failed mount rolls back the subscription so retry mounts again", () => {
+        const rootStore = store()
+        let mountCalls = 0
+        let cleanupCalls = 0
+        let shouldThrow = true
+        const mounted = atom(1, {
+            name: "failed-mount-rollback",
+            onMount: () => {
+                mountCalls++
+                if (shouldThrow) throw new Error("mount boom")
+                return () => {
+                    cleanupCalls++
+                }
+            },
+        })
+
+        expect(() => rootStore.sub(mounted, () => {})).toThrow("mount boom")
+        expect(rootStore.data.subscriptions.get(mounted)).toBeUndefined()
+
+        shouldThrow = false
+        const unsubscribe = rootStore.sub(mounted, () => {})
+        expect(mountCalls).toBe(2)
+
+        unsubscribe()
+        expect(cleanupCalls).toBe(1)
+    })
+
+    test("a throwing cleanup still queues orphaned graph cleanup", async () => {
+        const rootStore = store()
+        const mounted = atom(1, {
+            name: "throwing-cleanup-mounted",
+            onMount: () => () => {
+                throw new Error("cleanup boom")
+            },
+        })
+        const derived = selector(get => get(mounted) + 1, {
+            name: "throwing-cleanup-derived",
+        })
+
+        const unsubscribe = rootStore.sub(derived, () => {}, false)
+        expect(rootStore.data.stateDependencies.has(derived)).toBe(true)
+
+        expect(() => unsubscribe()).toThrow("cleanup boom")
+        await Promise.resolve()
+
+        expect(rootStore.data.stateDependencies.has(derived)).toBe(false)
+        expect(rootStore.data.values.has(derived)).toBe(false)
+        expect(rootStore.data.stateDependents.get(mounted)).not.toContain(
+            derived,
+        )
+    })
+
     test("unsubscribe cleans deep orphaned selector chains iteratively", async () => {
         const rootStore = store()
         const source = atom(1)

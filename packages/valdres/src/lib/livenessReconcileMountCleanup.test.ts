@@ -115,6 +115,44 @@ test("a nested cyclic region is collected when its subscribed parent leaves", ()
     expect(cleanups).toBe(1)
 })
 
+test("a throwing cyclic cleanup still queues orphaned graph cleanup", async () => {
+    const tracked = atom(0, {
+        name: "throwing-cycle.tracked",
+        onMount: () => () => {
+            throw new Error("cleanup boom")
+        },
+    })
+    const closeCycle = atom(false, { name: "throwing-cycle.close" })
+
+    let y: any
+    const x = selector(
+        get => {
+            get(tracked)
+            return get(y)
+        },
+        { name: "throwing-cycle.x" },
+    )
+    y = selector(get => (get(closeCycle) ? get(x) : 0), {
+        name: "throwing-cycle.y",
+    })
+    const root = selector(get => get(x), { name: "throwing-cycle.root" })
+    const s = store("throwing-cycle")
+    const unsubscribe = s.sub(root, () => {}, false)
+    s.set(closeCycle, true)
+
+    expect(s.data.stateDependencies.get(x)).toContain(y)
+    expect(s.data.stateDependencies.get(y)).toContain(x)
+    expect(() => unsubscribe()).toThrow("cleanup boom")
+
+    await Promise.resolve()
+    expect(s.data.stateDependencies.has(root)).toBe(false)
+    expect(s.data.stateDependencies.has(x)).toBe(false)
+    expect(s.data.stateDependencies.has(y)).toBe(false)
+    expect(s.data.values.has(root)).toBe(false)
+    expect(s.data.values.has(x)).toBe(false)
+    expect(s.data.values.has(y)).toBe(false)
+})
+
 test("acyclic dependency removals skip the exact cycle DFS", async () => {
     const chooseLeft = atom(true, { name: "cycle-gate.choose-left" })
     const source = atom(1, { name: "cycle-gate.source" })
