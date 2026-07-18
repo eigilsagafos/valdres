@@ -537,6 +537,31 @@ export const handleSelectorResult = <Value>(
     }
 }
 
+// Keep the committed call shape monomorphic: passing unused overlay/runtime
+// arguments measurably deoptimizes Bun's ordinary selector hot path. This is a
+// thin boundary only; both committed and transactional reads still delegate to
+// the same evaluator and result handler below.
+const evaluateCommittedSelectorValue = <V>(
+    selector: Selector<V>,
+    data: StoreData,
+    initializedAtomsSet: Set<Atom>,
+    circularDependencySet: WeakSet<Selector>,
+) => {
+    let value
+    try {
+        value = evaluateSelector(
+            selector,
+            data,
+            initializedAtomsSet,
+            circularDependencySet,
+        )
+    } catch (error) {
+        if (error instanceof SelectorEvaluationError) error.track(selector)
+        throw error
+    }
+    return handleSelectorResult(value, selector, data)
+}
+
 export const initSelector = <V>(
     selector: Selector<V>,
     data: StoreData,
@@ -544,11 +569,10 @@ export const initSelector = <V>(
     circularDependencySet: WeakSet<Selector> = data.circularDepSet,
 ): boolean => {
     const existingValue = data.values.get(selector)
-    const updatedValue = evaluateSelectorValue(
+    const updatedValue = evaluateCommittedSelectorValue(
         selector,
         data,
         initializedAtomsSet,
-        undefined,
         circularDependencySet,
     )
 
