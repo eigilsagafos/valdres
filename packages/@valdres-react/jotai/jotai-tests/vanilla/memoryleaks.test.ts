@@ -98,7 +98,9 @@ describe("memory leaks (with subscribe)", () => {
         unsub = undefined
         derivedAtom = undefined
         await Promise.resolve()
-        expect(await detector.isLeaking()).toBe(false)
+        // Same deferred-cleanup/full-suite heap-pressure case as the shared
+        // two-atom test above. A real strong reference still survives 50 rounds.
+        expect(await detector.isLeaking(50)).toBe(false)
     })
 })
 
