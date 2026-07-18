@@ -6,7 +6,12 @@ import { isPromiseLike } from "../utils/isPromiseLike"
 import type { CommitErrors } from "./commitErrors"
 import { recordCommitError } from "./commitErrors"
 import { getState } from "./getState"
-import { beginCommit, commitEndRegistry, endCommit } from "./onCommitEnd"
+import {
+    beginCommit,
+    commitEndRegistry,
+    commitRootOf,
+    endCommit,
+} from "./onCommitEnd"
 import { resolvePendingDefault } from "./resolvePendingDefault"
 import { setValueInData } from "./setValueInData"
 import { validateSchema } from "./validateSchema"
@@ -22,14 +27,18 @@ export type StoreAtomUpdates = Map<StoreData, Atom<any>[]>
 export const beginGlobalCommit = (
     origin: StoreData,
     updates: StoreAtomUpdates,
-): StoreData[] => {
+): Iterable<StoreData> => {
     if (commitEndRegistry.count === 0) return []
-    const roots = [beginCommit(origin)]
-    for (const data of updates.keys()) roots.push(beginCommit(data))
+    const roots = new Set<StoreData>([commitRootOf(origin)])
+    for (const data of updates.keys()) roots.add(commitRootOf(data))
+    for (const root of roots) beginCommit(root)
     return roots
 }
 
-export const endGlobalCommit = (roots: StoreData[], errors: CommitErrors) => {
+export const endGlobalCommit = (
+    roots: Iterable<StoreData>,
+    errors: CommitErrors,
+) => {
     for (const root of roots) {
         try {
             // Once an earlier phase failed, commit-end errors must not mask it.
