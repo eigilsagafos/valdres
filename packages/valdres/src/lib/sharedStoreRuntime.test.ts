@@ -70,7 +70,7 @@ describe("shared StoreData runtime", () => {
         expect(first.get(total)).toBe(2)
     })
 
-    test("nested lease reads share initialization coordination", () => {
+    test("nested lease reads keep cold caches out of the live graph", () => {
         const root = store()
         const first = root.scope("shared")
         const second = root.scope("shared")
@@ -81,12 +81,17 @@ describe("shared StoreData runtime", () => {
 
         expect(first.get(outer)).toBe(3)
 
-        // Init-only propagation keeps the public read target cached, but leaves
-        // another selector reached during the same initialization invalidated
-        // for lazy re-evaluation. The nested handle must not flush the shared
-        // init set before `outer` finishes installing its dependency edges.
+        // Both handles share initialization coordination. Cold selectors now
+        // remain revision-validated forward caches, so init propagation keeps
+        // both values without promoting either dependency into the live graph.
         expect(first.data.values.has(outer)).toBe(true)
-        expect(first.data.values.has(inner)).toBe(false)
+        expect(first.data.values.has(inner)).toBe(true)
+        expect(first.data.stateDependents.get(left)?.has(outer) ?? false).toBe(
+            false,
+        )
+        expect(first.data.stateDependents.get(right)?.has(inner) ?? false).toBe(
+            false,
+        )
     })
 
     test("the facade created for onMount shares pending writes", async () => {
