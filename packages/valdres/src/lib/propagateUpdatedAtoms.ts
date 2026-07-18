@@ -127,7 +127,16 @@ const reEvaluateSelector = (
             undefined,
             depsChange,
         )
-        const updatedValue = handleSelectorResult(rawValue, selector, data)
+        // This evaluator is reached from the committed reverse graph; cold
+        // selectors are deliberately absent from that graph. Passing the known
+        // mode avoids a second WeakSet lookup for every propagated selector.
+        const updatedValue = handleSelectorResult(
+            rawValue,
+            selector,
+            data,
+            undefined,
+            true,
+        )
 
         // Use reference equality for promises — deep equal treats all
         // promises as structurally identical (both have zero own keys).

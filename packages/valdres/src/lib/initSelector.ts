@@ -535,7 +535,11 @@ export const handleSelectorResult = <Value>(
     selector: Selector<Value>,
     data: StoreData,
     runtime?: SelectorEvaluationRuntime,
+    selectorGraphActive?: boolean,
 ) => {
+    const tracksCommittedGraph =
+        !runtime &&
+        (selectorGraphActive ?? data.selectorGraphActive.has(selector))
     if (value instanceof SuspendAndWaitForResolveError) {
         if (runtime) {
             runtime.abortControllers.delete(selector)
@@ -577,7 +581,7 @@ export const handleSelectorResult = <Value>(
             // consistent with the native-promise path below.
             if (err instanceof SchemaValidationError) reportAsyncSchemaError(err)
         })
-        if (!data.selectorGraphActive.has(selector)) {
+        if (!tracksCommittedGraph) {
             const dependencies = data.stateDependencies.get(selector)
             if (dependencies)
                 recordColdSelectorCache(selector, dependencies, data)
@@ -726,7 +730,7 @@ export const handleSelectorResult = <Value>(
                 evaluationContext.asyncDependencyRevisions = undefined
             cleanUpRejectedPromise(selector, data, value as Promise<any>)
         })
-        if (!data.selectorGraphActive.has(selector)) {
+        if (!tracksCommittedGraph) {
             const dependencies = data.stateDependencies.get(selector)
             if (dependencies)
                 recordColdSelectorCache(selector, dependencies, data)
@@ -746,7 +750,7 @@ export const handleSelectorResult = <Value>(
         const validated = validateSchema(selector, value, data)
         // Transaction selector evaluation uses private dependency bookkeeping.
         // It must not refresh metadata for the committed value/graph.
-        if (!runtime && !data.selectorGraphActive.has(selector)) {
+        if (!runtime && !tracksCommittedGraph) {
             const dependencies = data.stateDependencies.get(selector)
             if (dependencies) {
                 recordColdSelectorCache(selector, dependencies, data)
@@ -765,6 +769,7 @@ const evaluateCommittedSelectorValue = <V>(
     data: StoreData,
     initializedAtomsSet: Set<Atom>,
     circularDependencySet: WeakSet<Selector>,
+    selectorGraphActive: boolean,
 ) => {
     let value
     try {
@@ -778,7 +783,13 @@ const evaluateCommittedSelectorValue = <V>(
         if (error instanceof SelectorEvaluationError) error.track(selector)
         throw error
     }
-    return handleSelectorResult(value, selector, data)
+    return handleSelectorResult(
+        value,
+        selector,
+        data,
+        undefined,
+        selectorGraphActive,
+    )
 }
 
 export const initSelector = <V>(
@@ -787,12 +798,14 @@ export const initSelector = <V>(
     initializedAtomsSet: Set<Atom>,
     circularDependencySet: WeakSet<Selector> = data.circularDepSet,
 ): boolean => {
+    const selectorGraphActive = data.selectorGraphActive.has(selector)
     const existingValue = data.values.get(selector)
     const updatedValue = evaluateCommittedSelectorValue(
         selector,
         data,
         initializedAtomsSet,
         circularDependencySet,
+        selectorGraphActive,
     )
 
     // Promises should use reference equality — deep equal treats all
@@ -802,13 +815,13 @@ export const initSelector = <V>(
         : selector.equal(existingValue as V, updatedValue as V)
 
     if (areEqual) {
-        if (!data.selectorGraphActive.has(selector)) {
+        if (!selectorGraphActive) {
             markColdSelectorCacheValidated(selector, data)
         }
         return false
     } else {
         setValueInData<V>(selector, updatedValue as V, data)
-        if (!data.selectorGraphActive.has(selector)) {
+        if (!selectorGraphActive) {
             markColdSelectorCacheValidated(selector, data)
         }
         return true
