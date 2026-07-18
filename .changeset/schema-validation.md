@@ -55,9 +55,6 @@ Design:
 
 Known limitations:
 
-- A **promise set inside `store.txn()`** is stored as-is and not auto-resolved
-  by the transaction (pre-existing behavior), so it is not validated on resolve.
-  Validate before setting, or set outside a transaction.
 - An invalid **async default/selector** drops its value (so a re-read re-inits) —
   the same as a rejecting async default. Under React Suspense a component that
   keeps re-reading will re-init/re-fetch; validate at the data boundary rather

@@ -469,6 +469,27 @@ describe("schema validation", () => {
             expect(store1.get(nameAtom)).toBe("hello")
         })
 
+        for (const mode of ["batched", "transactional"] as const) {
+            test(`${mode} async atom set is validated on resolve`, async () => {
+                const store1 = store(
+                    mode === "batched"
+                        ? { batchUpdates: true, schemaValidation: true }
+                        : { schemaValidation: true },
+                )
+                const nameAtom = atom("hello", { schema: z.string() })
+                store1.get(nameAtom)
+                const errors = await captureConsoleErrors(() => {
+                    const invalid = Promise.resolve(123 as any)
+                    if (mode === "batched") store1.set(nameAtom, invalid)
+                    else store1.txn(txn => txn.set(nameAtom, invalid))
+                })
+                expect(
+                    errors.some(e => e instanceof SchemaValidationError),
+                ).toBe(true)
+                expect(store1.get(nameAtom)).toBe("hello")
+            })
+        }
+
         test("async atom default: invalid resolved value is reported", async () => {
             const store1 = store({ schemaValidation: true })
             const nameAtom = atom(() => Promise.resolve(123 as any), {

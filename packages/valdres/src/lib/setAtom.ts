@@ -1,161 +1,15 @@
 import type { Atom } from "../types/Atom"
 import type { SetAtomValue } from "../types/SetAtomValue"
 import type { StoreData } from "../types/StoreData"
-import { isGlobalAtom } from "../utils/isGlobalAtom"
 import { isPromiseLike } from "../utils/isPromiseLike"
-import {
-    createCommitErrors,
-    recordCommitError,
-    throwCommitError,
-} from "./commitErrors"
+import { coordinateAsyncWrite } from "./coordinateAsyncWrite"
+import { finishAtomSet } from "./finishAtomSet"
 import { getState } from "./getState"
-import {
-    applyGlobalSets,
-    beginGlobalCommit,
-    endGlobalCommit,
-} from "./globalAtomFanOut"
-import { createChangeSink, flushChangeSink } from "./notifyChangeListeners"
-import {
-    notifyDeferred,
-    propagateAtomUpdate,
-    type NotifyTarget,
-} from "./propagateUpdatedAtoms"
+import { propagateAtomUpdate } from "./propagateUpdatedAtoms"
 import { isFunction } from "./isFunction"
 import { resolvePendingDefault } from "./resolvePendingDefault"
 import { setValueInData } from "./setValueInData"
-import { validateResolvedValue } from "./validateResolvedValue"
 import { validateSchema } from "./validateSchema"
-
-/**
- * Slow path for a settled write carrying an onSet hook (global atoms always
- * carry a no-op marker hook). Global peer writes are applied first, then the
- * hook runs, then every store propagates and notifies. Errors never interrupt a
- * later phase; the first is rethrown last.
- */
-const finishAtomSet = <Value>(
-    atom: Atom<Value>,
-    value: Value,
-    data: StoreData,
-    updatedAtoms: Atom<any>[],
-    source: "set" | "async-set",
-) => {
-    if (!isGlobalAtom(atom)) {
-        let hasHookError = false
-        let hookError: unknown
-        try {
-            atom.onSet!(value, data)
-        } catch (error) {
-            hasHookError = true
-            hookError = error
-        }
-        try {
-            propagateAtomUpdate(updatedAtoms, data, false, undefined, source)
-        } catch (error) {
-            if (hasHookError) throw hookError
-            throw error
-        }
-        if (hasHookError) throw hookError
-        return
-    }
-
-    const errors = createCommitErrors()
-    const globalUpdates = applyGlobalSets([[atom, value]], errors)
-
-    try {
-        atom.onSet!(value, data)
-    } catch (error) {
-        recordCommitError(errors, error)
-    }
-
-    if (globalUpdates.size === 0) {
-        try {
-            propagateAtomUpdate(updatedAtoms, data, false, undefined, source)
-        } catch (error) {
-            recordCommitError(errors, error)
-        }
-    } else {
-        const notify: NotifyTarget = new Map()
-        const changeSink = createChangeSink(undefined, source)
-        const commitRoots = beginGlobalCommit(data, globalUpdates)
-        // Preserve global onChange ordering: peers report before the origin.
-        for (const [peer, peerAtoms] of globalUpdates) {
-            try {
-                propagateAtomUpdate(peerAtoms, peer, false, notify, changeSink)
-            } catch (error) {
-                recordCommitError(errors, error)
-            }
-        }
-        try {
-            propagateAtomUpdate(updatedAtoms, data, false, notify, changeSink)
-        } catch (error) {
-            recordCommitError(errors, error)
-        }
-        try {
-            notifyDeferred(notify)
-        } catch (error) {
-            recordCommitError(errors, error)
-        }
-        try {
-            flushChangeSink(changeSink)
-        } catch (error) {
-            recordCommitError(errors, error)
-        }
-        endGlobalCommit(commitRoots, errors)
-    }
-
-    throwCommitError(errors)
-}
-
-const handlePromise = <Value>(
-    atom: Atom<Value>,
-    promise: Promise<Value>,
-    currentValue: Value,
-    data: StoreData,
-    skipOnSet: boolean,
-) => {
-    setValueInData(atom, promise as Value, data)
-    promise
-        .then(resolvedValue => {
-            // Stale promise guard: if another set() overwrote us, bail
-            if (data.values.get(atom) !== promise) return
-            // Async validation can't throw to the original caller (the promise
-            // was already returned), so it's reported and we revert — the
-            // invalid value never lands. Sync sets throw from store.set directly.
-            if (!validateResolvedValue(atom, resolvedValue, data)) {
-                if (data.values.get(atom) === promise) {
-                    setValueInData(atom, currentValue, data)
-                    propagateAtomUpdate([atom], data, false, undefined, "async-set")
-                }
-                return
-            }
-            setValueInData(atom, resolvedValue, data)
-            resolvePendingDefault(atom, data, resolvedValue)
-            if (atom.onSet && !skipOnSet) {
-                finishAtomSet(atom, resolvedValue, data, [atom], "async-set")
-            } else {
-                // Ordinary atoms retain the original inline, allocation-free
-                // propagation path. Only hook/global writes pay for phased
-                // error handling.
-                propagateAtomUpdate(
-                    [atom],
-                    data,
-                    false,
-                    undefined,
-                    "async-set",
-                )
-            }
-        })
-        // Chained .catch so errors thrown inside the fulfilled handler
-        // (e.g. from atom.onSet) don't surface as unhandled rejections.
-        .catch(() => {
-            // Only revert if the promise is still the current in-flight value;
-            // if a fulfilled handler partially updated state, the guard below
-            // lets us avoid clobbering it.
-            if (data.values.get(atom) !== promise) return
-            setValueInData(atom, currentValue, data)
-            propagateAtomUpdate([atom], data, false, undefined, "async-set")
-        })
-}
 
 export const setAtom = <Value = any>(
     atom: Atom<Value>,
@@ -180,9 +34,16 @@ export const setAtom = <Value = any>(
         // Promise.resolve(realPromise) returns the same reference, so this
         // is a no-op allocation for the common case.
         const promise = Promise.resolve(newValue) as Promise<Value>
-        // Same promise reference — no-op (matches equality check below)
-        if (currentValue === promise) return promise as Value
-        handlePromise(atom, promise, currentValue, data, skipOnSet)
+        // Same own promise reference is a no-op. In a scope that still reads
+        // through to its parent, however, an explicit equal set must pin a local
+        // shadow just like the settled-value branch below.
+        if (currentValue === promise) {
+            if (data.parent && !data.values.has(atom)) {
+                coordinateAsyncWrite(atom, promise, currentValue, data, skipOnSet)
+            }
+            return promise as Value
+        }
+        coordinateAsyncWrite(atom, promise, currentValue, data, skipOnSet)
         if (initializedAtomsSet && initializedAtomsSet.size > 0) {
             initializedAtomsSet.add(atom)
             propagateAtomUpdate([...initializedAtomsSet], data, false, undefined, "set")
