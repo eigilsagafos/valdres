@@ -484,27 +484,30 @@ export const propagateAtomUpdate = (
         if (updatedFamilyAtoms.size > 0) {
             const timestamp = performance.now()
             for (const [family, familyAtoms] of updatedFamilyAtoms) {
-                addSetToSet(data.stateDependents.get(family), selectors)
+                // Family subscriptions are member-change subscriptions: they
+                // still fire for value-only writes with the changed member's
+                // args. Selectors that read the family object, however, depend
+                // only on membership and should run only when its list changes.
                 addSetToSet(data.subscriptions.get(family), subscriptions)
                 if (familyAtoms.size === 0)
                     throw new Error("Should not be possible")
                 if (addFamilyAtomsToSet(family, familyAtoms, data, timestamp)) {
+                    addSetToSet(data.stateDependents.get(family), selectors)
                     if (!membershipChanged) membershipChanged = new Set()
                     membershipChanged.add(family)
                 }
             }
         }
 
-        // A family OBJECT in `atoms` whose value changed without a corresponding
-        // family-atom update (the txn delete case: the rendered list shrank but the
-        // deleted member flows through propagateDeletedAtoms, not `families`) means
-        // the parent's committed family index may be a freshly cloned object. Re-link
-        // shadowing child scopes so their dependent selectors read the new index
-        // before they are evaluated below. Family-atom adds already did this via
-        // addFamilyAtomsToSet, so skip families handled there.
+        // A family OBJECT in `atoms` means the committed family index may be a
+        // freshly cloned transaction index. Re-link shadowing child scopes so
+        // their dependent selectors read that new index before evaluation.
+        // This also covers transaction adds: addFamilyAtomsToSet now correctly
+        // skips their already-present members instead of redundantly mutating +
+        // rendering the just-committed index.
         if (data.scopes && data.scopes.size > 0) {
             for (const atom of atoms) {
-                if (isAtomFamily(atom) && !updatedFamilyAtoms.has(atom)) {
+                if (isAtomFamily(atom)) {
                     recursivelyUpdateIndexes(data, atom)
                 }
             }

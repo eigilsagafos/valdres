@@ -102,6 +102,13 @@ export const hydrate = (
             }
             stage(state as Atom<unknown>, value, encoded)
         }
+
+        // Keep first-seen family order while collecting all of each family's
+        // members. One batch then mutates and renders that family index once.
+        const familyGroups = new Map<
+            AtomFamily<unknown>,
+            Array<[Atom<unknown>, unknown]>
+        >()
         for (const [name, args, value, encoded] of payload.families) {
             const family = registry.get(name)
             if (family === undefined) {
@@ -127,11 +134,36 @@ export const hydrate = (
                 )
                 continue
             }
-            stage(
-                (family as AtomFamily<unknown>)(...(args as [any, ...any[]])),
-                value,
-                encoded,
+            const member = (family as AtomFamily<unknown>)(
+                ...(args as [any, ...any[]]),
             )
+            let decoded: unknown
+            try {
+                decoded = encoded === 1 ? decodeWireValue(member, value) : value
+            } catch (error) {
+                if (!skipInvalid || !(error instanceof SchemaValidationError)) {
+                    throw error
+                }
+                console.warn(
+                    `valdres: hydrate skipped an entry — ${error.message}`,
+                )
+                continue
+            }
+            let group = familyGroups.get(family as AtomFamily<unknown>)
+            if (!group) {
+                group = []
+                familyGroups.set(family as AtomFamily<unknown>, group)
+            }
+            group.push([member, decoded])
+        }
+        const onSchemaError = skipInvalid
+            ? (error: SchemaValidationError) =>
+                  console.warn(
+                      `valdres: hydrate skipped an entry — ${error.message}`,
+                  )
+            : undefined
+        for (const [family, pairs] of familyGroups) {
+            txn.batchSetFamilyAtoms(family, pairs, onSchemaError)
         }
     })
 }

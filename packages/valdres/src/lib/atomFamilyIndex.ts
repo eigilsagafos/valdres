@@ -47,6 +47,15 @@ export const renderAtomFamilyIndex = (index: AtomFamilyIndex) => {
     return array
 }
 
+/** Whether this index itself owns a live member. Parent membership is
+ *  deliberately ignored: a scoped write to an inherited member must still
+ *  create a local ownership entry so a later parent delete does not remove the
+ *  scope's member. */
+export const hasOwnFamilyAtom = (
+    index: AtomFamilyIndex,
+    atom: AtomFamilyAtom<any, any>,
+) => index.created.has(atom) && !index.deleted.has(atom)
+
 export type AtomFamilyIndex = {
     created: Map<AtomFamilyAtom<any, any>, number>
     deleted: Map<AtomFamilyAtom<any, any>, number>
@@ -204,11 +213,15 @@ export const addFamilyAtomsToSet = (
     if (!index) throw new Error("index not found")
     let membershipChanged = false
     for (const atom of familyAtoms) {
-        if (!(index.created.has(atom) && !index.deleted.has(atom)))
-            membershipChanged = true
+        // A value-only write must leave the membership index completely alone.
+        // Besides preserving insertion order and the rendered-array identity,
+        // this avoids copying + sorting all K members on every one of K writes.
+        if (hasOwnFamilyAtom(index, atom)) continue
+        membershipChanged = true
         index.created.set(atom, timestamp)
         index.deleted.delete(atom)
     }
+    if (!membershipChanged) return false
     index.rendered = null
     index.renderedArray = null
     data.values.set(family, renderAtomFamilyIndex(index))

@@ -75,6 +75,85 @@ describe("hydrate", () => {
         expect(changes.map(c => c.state)).toEqual([a, b])
     })
 
+    test("groups interleaved family entries into one batch per family", () => {
+        const users = atomFamily<number, [string]>(0, {
+            name: "hy-group-users",
+        })
+        const docs = atomFamily<string, [string]>("", {
+            name: "hy-group-docs",
+        })
+        const payload: DehydratedState = {
+            atoms: [],
+            families: [
+                ["hy-group-users", ["a"], 1],
+                ["hy-group-docs", ["x"], "doc"],
+                ["hy-group-users", ["b"], 2],
+            ],
+        }
+        const client = store()
+        const originalTxn = client.txn
+        const batches: Array<[unknown, number]> = []
+        client.txn = ((callback, name) =>
+            originalTxn(txn => {
+                const batchSetFamilyAtoms = txn.batchSetFamilyAtoms
+                txn.batchSetFamilyAtoms = (family, pairs) => {
+                    batches.push([family, pairs.length])
+                    return batchSetFamilyAtoms(family, pairs)
+                }
+                return callback(txn)
+            }, name)) as typeof client.txn
+
+        hydrate(client, payload)
+
+        expect(batches).toStrictEqual([
+            [users, 2],
+            [docs, 1],
+        ])
+        expect(client.get(users("a"))).toBe(1)
+        expect(client.get(users("b"))).toBe(2)
+        expect(client.get(docs("x"))).toBe("doc")
+    })
+
+    test("validates each grouped family entry once", () => {
+        const parse = mock((value: unknown) => value as number)
+        const family = atomFamily<number, [string]>(undefined, {
+            name: "hy-group-validation",
+            schema: { parse },
+        })
+        const client = store({ schemaValidation: true })
+
+        hydrate(client, {
+            atoms: [],
+            families: [
+                ["hy-group-validation", ["a"], 1],
+                ["hy-group-validation", ["b"], 2],
+            ],
+        })
+
+        expect(parse).toHaveBeenCalledTimes(2)
+        expect(client.get(family("a"))).toBe(1)
+        expect(client.get(family("b"))).toBe(2)
+    })
+
+    test("grouped family hydration preserves transaction immutability", () => {
+        const family = atomFamily<{ nested: { value: number } }, [string]>(
+            undefined,
+            { name: "hy-group-freeze" },
+        )
+        const client = store()
+
+        hydrate(client, {
+            atoms: [],
+            families: [
+                ["hy-group-freeze", ["a"], { nested: { value: 1 } }],
+            ],
+        })
+
+        const value = client.get(family("a"))
+        expect(Object.isFrozen(value)).toBe(true)
+        expect(Object.isFrozen(value.nested)).toBe(true)
+    })
+
     test("a custom-equal atom round-trips, and hydrate respects its equality", () => {
         const idEqual = atom(
             { id: 0, rev: 0 },

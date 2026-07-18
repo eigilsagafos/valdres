@@ -416,6 +416,65 @@ describe("transaction", () => {
             expect(res3).toBe(2)
         })
     })
+
+    test("value-only family writes preserve membership order and identity", () => {
+        const store1 = store()
+        const family = atomFamily<number, [string]>(0)
+        const a = family("a")
+        const b = family("b")
+        const c = family("c")
+
+        store1.txn(({ set }) => {
+            set(a, 1)
+            set(b, 2)
+            set(c, 3)
+        })
+        const members = store1.get(family)
+
+        // Updating values in a different order must not turn writes into
+        // membership churn. In particular, the cached family list remains the
+        // same object and members retain their original insertion order.
+        store1.txn(({ set }) => {
+            set(c, 30)
+            set(a, 10)
+            set(b, 20)
+        })
+
+        expect(store1.get(family)).toBe(members)
+        expect(store1.get(family)).toStrictEqual([a, b, c])
+    })
+
+    test("family membership renders lazily on transaction read", () => {
+        const store1 = store()
+        const family = atomFamily<number, [string]>(0)
+        const a = family("a")
+        const b = family("b")
+
+        store1.txn(txn => {
+            txn.set(a, 1)
+            const familyValue = (
+                txn as unknown as {
+                    _atomMap: Map<
+                        unknown,
+                        { __index: { renderedArray: unknown } }
+                    >
+                }
+            )._atomMap.get(family)!
+
+            // Staging membership only dirties the index. Rendering here would
+            // copy + sort after every set and make K staged members superlinear.
+            expect(familyValue.__index.renderedArray).toBeNull()
+            txn.set(b, 2)
+            expect(familyValue.__index.renderedArray).toBeNull()
+
+            const rendered = txn.get(family)
+            expect(rendered).toStrictEqual([a, b])
+            expect(familyValue.__index.renderedArray).toBe(rendered)
+        })
+
+        expect(store1.get(family)).toStrictEqual([a, b])
+    })
+
     test("delete in transaction", () => {
         const rootStore = store()
         const user = atomFamily<{ id: number; name: string }, [number]>()
@@ -658,11 +717,11 @@ describe("transaction", () => {
             ])
         })
         expect(rootStore.get(userAtomFamily)).toStrictEqual([user2atom])
-
-        // TODO: Find way for txn insertion order to persist on txn commit...
+        // Commit-time propagation must not refresh either member's timestamp:
+        // the child write happened first and keeps that insertion position.
         expect(childStore.get(userAtomFamily)).toStrictEqual([
-            user2atom,
             user1atom,
+            user2atom,
         ])
     })
 
