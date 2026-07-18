@@ -250,6 +250,44 @@ describe("atomFamily", () => {
         expect(store1.get(family(array))).toBe("array")
     })
 
+    test("atomFamily keys distinguish value types and call arity", () => {
+        const family = atomFamily<string, [unknown] | [unknown, unknown]>(
+            "default",
+        )
+
+        const stringMember = family("{}")
+        const objectMember = family({})
+        expect(stringMember).not.toBe(objectMember)
+        expect(stringMember.familyArgsStringified).not.toBe(
+            objectMember.familyArgsStringified,
+        )
+        expect(family("[]")).not.toBe(family([]))
+        expect(family("__PROMISE__")).not.toBe(family({ __PROMISE__: true }))
+        expect(family([1, 2])).not.toBe(family(1, 2))
+        expect(family(1n)).not.toBe(family(1))
+        expect(family(1n)).toBe(family(1n))
+        expect(() => family(Promise.resolve())).toThrow(TypeError)
+        expect(() => family(Symbol("same"))).toThrow(TypeError)
+        expect(() => family(Symbol("same"))).toThrow(TypeError)
+    })
+
+    test("atomFamily keyOf supports otherwise unsupported arguments", () => {
+        type Entity = { id: string; self?: Entity }
+        const family = atomFamily<string, [Entity]>(entity => entity.id, {
+            keyOf: entity => entity.id,
+        })
+        const a: Entity = { id: "same" }
+        a.self = a
+        const b: Entity = { id: "same" }
+        b.self = b
+
+        const first = family(a)
+        expect(family(b)).toBe(first)
+        expect("keyOf" in first).toBe(false)
+        family.release(a)
+        expect(family(b)).not.toBe(first)
+    })
+
     test("get an entire atom family", () => {
         const store1 = store()
         const userAtomFamily = atomFamily<{ name: string }, [number]>()
@@ -369,11 +407,11 @@ describe("atomFamily", () => {
          * store to release from the keys atom
          */
         expect(
-            store1.get(todosAtomFamily).map(atom => atom.familyArgsStringified),
+            store1.get(todosAtomFamily).map(atom => atom.familyArgs[0]),
         ).toStrictEqual(["1", "2", "3"])
         store1.del(todo1)
         expect(
-            store1.get(todosAtomFamily).map(atom => atom.familyArgsStringified),
+            store1.get(todosAtomFamily).map(atom => atom.familyArgs[0]),
         ).toStrictEqual(["2", "3"])
         // Deletion is store-local. The shared identity remains available so a
         // different store or scope cannot be stranded on another member object.
@@ -381,7 +419,10 @@ describe("atomFamily", () => {
         expect(todosAtomFamily("2")).toBe(todo2)
         expect(todosAtomFamily("3")).toBe(todo3)
         expect(
-            todosAtomFamily.__valdresAtomFamilyMap.keys().toArray(),
+            todosAtomFamily.__valdresAtomFamilyMap
+                .values()
+                .map(atom => atom.familyArgs[0])
+                .toArray(),
         ).toStrictEqual(["1", "2", "3"])
     })
 

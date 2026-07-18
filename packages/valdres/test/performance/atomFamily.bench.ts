@@ -45,6 +45,23 @@ describe("atomFamily cache hit", () => {
             () => do_not_optimize(jFamily(1)),
         )
     })
+
+    test("atomFamily string cache hit", async () => {
+        const vFamily = valdresAtomFamily<string, [string]>(id => `user-${id}`)
+        const jFamily = jotaiAtomFamily((id: string) => jotaiAtom(`user-${id}`))
+
+        vFamily("user-1")
+        jFamily("user-1")
+
+        // String keys require canonical encoding to stay disjoint from
+        // structured keys. Guard the raw-string side cache that keeps encoding
+        // off the steady-state lookup path.
+        await compare(
+            "atomFamily(string) cache hit",
+            () => do_not_optimize(vFamily("user-1")),
+            () => do_not_optimize(jFamily("user-1")),
+        )
+    })
 })
 
 describe("selectorFamily", () => {
@@ -65,6 +82,26 @@ describe("selectorFamily", () => {
             "selectorFamily(id)",
             () => do_not_optimize(vFamily(++vCounter)),
             () => do_not_optimize(jFamily(++jCounter)),
+        )
+    })
+
+    test("selectorFamily string cache hit", async () => {
+        const vAtom = valdresAtom(0)
+        const jAtom = jotaiAtom(0)
+        const vFamily = valdresSelectorFamily<number, [string]>(
+            id => get => get(vAtom) + id.length,
+        )
+        const jFamily = jotaiAtomFamily((id: string) =>
+            jotaiAtom(get => get(jAtom) + id.length),
+        )
+
+        vFamily("user-1")
+        jFamily("user-1")
+
+        await compare(
+            "selectorFamily(string) cache hit",
+            () => do_not_optimize(vFamily("user-1")),
+            () => do_not_optimize(jFamily("user-1")),
         )
     })
 })

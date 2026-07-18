@@ -3,7 +3,7 @@ import { createGlobalAtomFamily } from "./lib/createGlobalAtomFamily"
 import type { AtomFamily } from "./types/AtomFamily"
 import type { AtomFamilyDefaultValue } from "./types/AtomFamilyDefaultValue"
 import type { AtomFamilyAtom } from "./types/AtomFamilyAtom"
-import type { AtomOptions } from "./types/AtomOptions"
+import type { AtomFamilyOptions } from "./types/AtomFamilyOptions"
 import type { GlobalAtom } from "./types/GlobalAtom"
 
 type GlobalAtomFamily<
@@ -18,21 +18,21 @@ export function atomFamily<
     Args extends [any, ...any[]] = [any, ...any[]],
 >(
     defaultValue: AtomFamilyDefaultValue<Value, Args> | undefined,
-    options: AtomOptions<Value> & { global: true },
+    options: AtomFamilyOptions<Value, Args> & { global: true },
 ): GlobalAtomFamily<Value, Args>
 export function atomFamily<
     Value extends any,
     Args extends [any, ...any[]] = [any, ...any[]],
 >(
     defaultValue?: AtomFamilyDefaultValue<Value, Args>,
-    options?: AtomOptions<Value>,
+    options?: AtomFamilyOptions<Value, Args>,
 ): AtomFamily<Value, Args>
 export function atomFamily<
     Value extends any,
     Args extends [any, ...any[]] = [any, ...any[]],
 >(
     defaultValue?: AtomFamilyDefaultValue<Value, Args>,
-    options?: AtomOptions<Value>,
+    options?: AtomFamilyOptions<Value, Args>,
 ) {
     if (options?.global) return createGlobalAtomFamily(defaultValue, options)
     return createAtomFamily(defaultValue, options)

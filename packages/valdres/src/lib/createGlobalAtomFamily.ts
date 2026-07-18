@@ -1,7 +1,7 @@
 import { globalStore } from "../globalStore"
 import type { AtomFamily } from "../types/AtomFamily"
 import type { AtomFamilyDefaultValue } from "../types/AtomFamilyDefaultValue"
-import type { AtomOptions } from "../types/AtomOptions"
+import type { AtomFamilyOptions } from "../types/AtomFamilyOptions"
 import { createAtomFamily } from "./createAtomFamily"
 
 export const createGlobalAtomFamily = <
@@ -9,7 +9,7 @@ export const createGlobalAtomFamily = <
     Args extends [any, ...any[]] = [any, ...any[]],
 >(
     defaultValue: AtomFamilyDefaultValue<Value, Args>,
-    options: AtomOptions<Value>,
+    options: AtomFamilyOptions<Value, Args>,
 ) => {
     if (!options.name) throw new Error(`Missing name for global atomFamiliy`)
     if (globalStore.atomFamilies.has(options.name)) {

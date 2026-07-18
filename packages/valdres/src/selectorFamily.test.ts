@@ -63,7 +63,18 @@ describe("selectorFamily", () => {
     test("atom as arg", async () => {
         const store1 = store()
         const atom1 = atom(1)
-        const testFamily = selectorFamily(atom => get => get(atom))
+        const keys = new WeakMap<object, number>()
+        let nextKey = 0
+        const testFamily = selectorFamily(atom => get => get(atom), {
+            keyOf: atom => {
+                let key = keys.get(atom)
+                if (key === undefined) {
+                    key = ++nextKey
+                    keys.set(atom, key)
+                }
+                return key
+            },
+        })
 
         expect(testFamily(atom1)).toStrictEqual(testFamily(atom1))
         expect(store1.get(testFamily(atom1))).toEqual(1)
@@ -74,7 +85,9 @@ describe("selectorFamily", () => {
     test("selector as arg", async () => {
         const store1 = store()
         const selector1 = selector(() => "Foo")
-        const testFamily = selectorFamily(selector => get => get(selector1))
+        const testFamily = selectorFamily(selector => get => get(selector1), {
+            keyOf: () => "selector1",
+        })
         expect(store1.get(testFamily(selector1))).toEqual("Foo")
         expect(testFamily(selector1)).toStrictEqual(testFamily(selector1))
     })
@@ -143,6 +156,30 @@ describe("selectorFamily", () => {
         expect(store1.get(family(object))).toBe("object")
         expect(store1.get(family(set))).toBe("set")
         expect(store1.get(family(array))).toBe("array")
+    })
+
+    test("selectorFamily keyOf defines cache identity", () => {
+        const family = selectorFamily<
+            string,
+            [{ id: string; revision: number }]
+        >(entity => () => `${entity.id}:${entity.revision}`, {
+            keyOf: entity => entity.id,
+        })
+
+        const first = family({ id: "a", revision: 1 })
+        expect(family({ id: "a", revision: 2 })).toBe(first)
+        expect("keyOf" in first).toBe(false)
+        family.release({ id: "a", revision: 3 })
+        expect(family({ id: "a", revision: 4 })).not.toBe(first)
+    })
+
+    test("selectorFamily release clears canonical and string caches", () => {
+        const family = selectorFamily<string, [string]>(id => () => id)
+        const first = family("a")
+
+        family.release("a")
+
+        expect(family("a")).not.toBe(first)
     })
 
     test("factory runs once per cache entry, not per read", () => {
