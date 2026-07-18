@@ -13,7 +13,6 @@ import { isAtomFamily } from "../utils/isAtomFamily"
 import { isFamilyAtom } from "../utils/isFamilyAtom"
 import { isPromiseLike } from "../utils/isPromiseLike"
 import { isSelector } from "../utils/isSelector"
-import { isPromiseLike } from "../utils/isPromiseLike"
 import {
     detachOwnValue,
     effectiveValueAfterUnset,

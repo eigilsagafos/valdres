@@ -481,7 +481,9 @@ describe("schema validation", () => {
                 const errors = await captureConsoleErrors(() => {
                     const invalid = Promise.resolve(123 as any)
                     if (mode === "batched") store1.set(nameAtom, invalid)
-                    else store1.txn(txn => txn.set(nameAtom, invalid))
+                    else store1.txn(txn => {
+                        txn.set(nameAtom, invalid)
+                    })
                 })
                 expect(
                     errors.some(e => e instanceof SchemaValidationError),

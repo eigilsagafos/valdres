@@ -41,7 +41,9 @@ const writeModes: WriteMode[] = [
         name: "transactional set",
         createStore: () => store(),
         write: (store1, valueAtom, value) => {
-            store1.txn(txn => txn.set(valueAtom, value))
+            store1.txn(txn => {
+                txn.set(valueAtom, value)
+            })
         },
     },
 ]
