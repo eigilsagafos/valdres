@@ -483,8 +483,13 @@ export const evaluateSelector = <V>(
                         noteDependencyAdded(selector, state, data)
                         // A newly-read selector may itself have been only cold-
                         // cached. Promote its closure before liveness bookkeeping
-                        // treats it as a live dependency.
-                        activateSelectorGraph(state, data)
+                        // treats it as a live dependency. Stores that have never
+                        // built a cold cache have nothing to promote; keep that
+                        // dominant live-only path to one scalar branch rather
+                        // than a helper call plus a state-shape check per edge.
+                        if (data.coldSelectorCachesEnabled) {
+                            activateSelectorGraph(state, data)
+                        }
                         if (depsChangeOut) {
                             if (!depsChangeOut.added)
                                 depsChangeOut.added = new Set<State>()
