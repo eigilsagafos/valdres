@@ -338,7 +338,11 @@ export const subscribe = <V>(
         // active-marker WeakSet.
         if (!selectorHasValue && !data.stateDependencies.has(state)) {
             initFreshActiveSelector(state, data, new Set(), new WeakSet())
-        } else if (!selectorHasValue || !data.selectorGraphActive.has(state)) {
+        } else if (
+            !selectorHasValue ||
+            (data.coldSelectorCachesEnabled &&
+                !data.selectorGraphActive.has(state))
+        ) {
             // Existing cold caches must validate before promotion; an active
             // selector whose value was dropped must re-evaluate in graph mode.
             getState(state, data, new Set(), new WeakSet())

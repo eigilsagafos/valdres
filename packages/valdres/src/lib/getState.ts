@@ -91,10 +91,9 @@ const isColdSelectorCacheFresh = (
     }
 }
 
-/** Read a cache entry already resolved by the public store boundary. Keeping
- * this separate avoids repeating values/cold-cache WeakMap probes on every
- * cold selector read while retaining the normal recursive validation path. */
-export const getColdSelectorState = <Value>(
+/** Validate a cache entry already resolved by the caller while retaining the
+ * normal recursive selector-validation path. */
+const getColdSelectorState = <Value>(
     selector: Selector<Value>,
     cache: ColdSelectorCache,
     data: StoreData,
@@ -250,6 +249,14 @@ export function getState<
         return data.values.get(state)
     }
     if (isSelector<Value>(state)) {
+        // Orphan cleanup may leave the weak active marker behind to keep
+        // teardown cheap. With no forward graph this is a fresh read, not a
+        // live re-evaluation, so clear the stale marker before selecting the
+        // evaluation mode. Fresh live subscriptions bypass this path and call
+        // initFreshActiveSelector directly.
+        if (!data.stateDependencies.has(state)) {
+            data.selectorGraphActive.delete(state)
+        }
         initSelector<Value>(
             state,
             data,

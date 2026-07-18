@@ -52,7 +52,11 @@ export const cleanupOrphanedDeps = (state: State, data: StoreData) => {
                 data.stateDependents.get(dep)?.delete(current)
             }
             data.stateDependencies.delete(current)
-            data.selectorGraphActive.delete(current)
+            // The active marker is weak and can remain through teardown. A
+            // later subscription overwrites it while rebuilding the live graph;
+            // a later cold read clears it on the cache-miss path before
+            // evaluation. Deferring that delete keeps synchronous unsubscribe
+            // bursts from paying one extra WeakSet mutation per selector.
             // Live-only stores never instantiate the cold-cache WeakMap. Keep
             // their batched teardown to the original graph/value work.
             if (data.coldSelectorCachesEnabled) {

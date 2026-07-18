@@ -162,6 +162,22 @@ describe("memory leaks (subscriptions)", () => {
         expect(!after || !after.has(sel)).toBe(true)
     })
 
+    test("a cold read after live teardown does not restore reverse edges", async () => {
+        const s = store()
+        const baseAtom = atom(1)
+        const sel = selector(get => get(baseAtom) + 1)
+
+        const unsubscribe = s.sub(sel, () => {})
+        expect(s.data.stateDependents.get(baseAtom)).toContain(sel)
+        unsubscribe()
+        await Promise.resolve()
+
+        expect(s.get(sel)).toBe(2)
+        expect(s.data.stateDependents.get(baseAtom)?.has(sel) ?? false).toBe(
+            false,
+        )
+    })
+
     test("subscribing to a base atom does not promote its cold selectors", async () => {
         const s = store()
         const baseAtom = atom(1)
