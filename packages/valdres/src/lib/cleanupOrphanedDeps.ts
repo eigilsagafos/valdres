@@ -51,6 +51,8 @@ export const cleanupOrphanedDeps = (state: State, data: StoreData) => {
                 data.stateDependents.get(dep)?.delete(current)
             }
             data.stateDependencies.delete(current)
+            data.selectorGraphActive.delete(current)
+            data.coldSelectorCaches.delete(current)
             data.values.delete(current)
             data.abortControllers.delete(current)
 

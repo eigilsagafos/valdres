@@ -1,6 +1,7 @@
 import type { State } from "../types/State"
 import type { StoreData } from "../types/StoreData"
 import { isSelector } from "../utils/isSelector"
+import { noteDependencyGraphChanged } from "./noteDependencyGraphChanged"
 import { storeFromStoreData } from "./storeFromStoreData"
 
 // Shared immutable empty set — a missing stateDependencies entry (atoms and
@@ -80,9 +81,9 @@ const propagateCycleRiskUp = (state: State, data: StoreData) => {
  * single `WeakMap.has` and return, so steady-state graph churn over mount-free
  * subgraphs stays allocation- and walk-free.
  *
- * Must be called for EVERY new dependency edge (every place a forward
- * `stateDependencies` / reverse `stateDependents` edge is created), because the
- * skip in `mountTransitiveDeps` trusts the marker's no-false-negative invariant.
+ * Must be called for EVERY edge entering the live reverse graph (during
+ * cold-to-live promotion and later live dependency additions), because the skip
+ * in `mountTransitiveDeps` trusts the marker's no-false-negative invariant.
  */
 export const noteDependencyAdded = (
     selector: State,
@@ -111,6 +112,37 @@ export const noteDependencyAdded = (
     // If `selector` already had its own hook it was already mount-relevant, so
     // its dependents were marked when their edges formed — no up-walk needed.
     if (!hasOwnMount(selector)) propagateMountMarkerUp(selector, data)
+}
+
+/**
+ * Promote a selector's cached forward dependency closure into the iterable
+ * reverse graph. Cold reads intentionally build only forward edges; the first
+ * direct or transitive live consumer calls this before liveness propagation so
+ * subsequent source writes can reach the whole subscribed selector closure.
+ */
+export const activateSelectorGraph = (root: State, data: StoreData) => {
+    if (!isSelector(root)) return
+    const stack: State[] = [root]
+    while (stack.length > 0) {
+        const selector = stack.pop()!
+        if (data.selectorGraphActive.has(selector)) continue
+        data.selectorGraphActive.add(selector)
+        data.coldSelectorCaches.delete(selector)
+
+        const dependencies = data.stateDependencies.get(selector)
+        if (!dependencies) continue
+        noteDependencyGraphChanged(selector, data)
+        for (const dependency of dependencies) {
+            let dependents = data.stateDependents.get(dependency)
+            if (!dependents) {
+                dependents = new Set<State>()
+                data.stateDependents.set(dependency, dependents)
+            }
+            dependents.add(selector)
+            noteDependencyAdded(selector, dependency, data)
+            if (isSelector(dependency)) stack.push(dependency)
+        }
+    }
 }
 
 /**
@@ -176,6 +208,7 @@ const propagateNotLive = (root: State, data: StoreData) => {
  * wasn't already live via dependents, mark it live and propagate.
  */
 export const onFirstDirectSubscriber = (state: State, data: StoreData) => {
+    activateSelectorGraph(state, data)
     const liveDepCount = data.liveDependentCount.get(state) ?? 0
     if (liveDepCount === 0) {
         propagateLive(state, data)
@@ -199,6 +232,7 @@ export const onLastDirectSubscriber = (state: State, data: StoreData) => {
  * dep's liveDependentCount; if dep transitions to live, propagate.
  */
 export const onLiveDependencyAdded = (dep: State, data: StoreData) => {
+    activateSelectorGraph(dep, data)
     const prev = data.liveDependentCount.get(dep) ?? 0
     data.liveDependentCount.set(dep, prev + 1)
     if (prev === 0 && !hasDirectSubscribers(dep, data)) {

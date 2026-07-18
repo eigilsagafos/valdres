@@ -9,6 +9,7 @@ import type { GlobalAtom } from "./../types/GlobalAtom"
 import type { StoreData } from "./../types/StoreData"
 import { isLive, mountAtom, unmountAtom } from "./mountAtom"
 import { propagateAtomUpdate } from "./propagateUpdatedAtoms"
+import { noteStateValueChanged } from "./stateRevisions"
 import { installMaxAgeTimer } from "./subscribe"
 import { globalStore } from "../globalStore"
 
@@ -120,6 +121,7 @@ export const globalAtom = <Value = unknown>(
         for (const store of snapshot) {
             stores.delete(store)
             store.values.delete(atom)
+            noteStateValueChanged(atom, store)
             try {
                 propagateAtomUpdate([atom], store, false, undefined, "reset")
             } catch (e) {

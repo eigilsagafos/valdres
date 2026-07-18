@@ -398,6 +398,36 @@ describe("subscribe", () => {
         expect(intermediateCallback).toHaveBeenCalledTimes(1)
     })
 
+    test("subscription promotes a freshly validated dynamic cold cache", () => {
+        const rootStore = store()
+        const chooseLeft = atom(true)
+        const left = atom(1)
+        const right = atom(2)
+        const evaluate = mock(get => (get(chooseLeft) ? get(left) : get(right)))
+        const dynamic = selector(evaluate)
+
+        expect(rootStore.get(dynamic)).toBe(1)
+        expect(rootStore.data.stateDependents.get(left)).toBeUndefined()
+
+        // This invalidates the cold dependency snapshot without eagerly
+        // evaluating or inserting a reverse edge.
+        rootStore.set(chooseLeft, false)
+        expect(evaluate).toHaveBeenCalledTimes(1)
+
+        const callback = mock(() => {})
+        const unsubscribe = rootStore.sub(dynamic, callback, false)
+        expect(evaluate).toHaveBeenCalledTimes(2)
+        expect(
+            rootStore.data.stateDependents.get(left)?.has(dynamic) ?? false,
+        ).toBe(false)
+        expect(rootStore.data.stateDependents.get(right)).toContain(dynamic)
+
+        rootStore.set(right, 3)
+        expect(callback).toHaveBeenCalledTimes(1)
+        expect(rootStore.get(dynamic)).toBe(3)
+        unsubscribe()
+    })
+
     test("plain atom unsubscribe skips an empty orphan cleanup", () => {
         const rootStore = store()
         const source = atom(1, { name: "orphan-free-atom" })

@@ -118,7 +118,7 @@ export function storeFromStoreData(
     // --- get ---
     const getDefault: GetValue = (state: State) => {
         if (data.pendingOrphanCleanup) flushPendingOrphanCleanup(data)
-        if (data.values.has(state)) {
+        if (data.values.has(state) && !isSelector(state)) {
             if (!isCachedValueStale(state, data)) {
                 return data.values.get(state)
             }
@@ -127,14 +127,13 @@ export function storeFromStoreData(
         }
         let res
         let initialized = false
-        // A read can lazily re-materialize a selector whose value was dropped
-        // (orphan-invalidation, a throwing eval, …), committing new dependency
-        // edges WITHOUT going through propagation's liveness bookkeeping. Own the
-        // pass-scoped liveness-seed collector around the read so that re-wire is
-        // reconciled from ground-truth reachability afterwards. The ownership
-        // guard composes with propagation (the init-propagation below sees the
-        // collector already owned and defers its reconcile to us). Only the
-        // cache-miss path reaches here; cache hits returned above.
+        // A read can lazily re-materialize an active selector whose value was
+        // dropped (orphan-invalidation, a throwing eval, …), committing new live
+        // dependency edges WITHOUT going through propagation's liveness
+        // bookkeeping. Own the pass-scoped liveness-seed collector around the
+        // read so that re-wire is reconciled from ground-truth reachability
+        // afterwards. Cold cache hits also pass through here for revision
+        // validation, but they never seed the live graph collector.
         const ownsLivenessSeeds = beginLivenessPass(data)
         let seedsToReconcile: Set<State> | null = null
         try {

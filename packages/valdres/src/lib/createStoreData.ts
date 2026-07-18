@@ -25,6 +25,16 @@ Object.defineProperties(lazyProto, {
     subscriptionsRequireEqualCheck: makeLazyGetter("subscriptionsRequireEqualCheck"),
     stateDependents: makeLazyGetter("stateDependents"),
     stateDependencies: makeLazyGetter("stateDependencies"),
+    selectorGraphActive: makeLazyGetter(
+        "selectorGraphActive",
+        () => new WeakSet(),
+    ),
+    coldSelectorCaches: makeLazyGetter("coldSelectorCaches"),
+    stateRevisions: makeLazyGetter("stateRevisions"),
+    coldCacheValidationSet: makeLazyGetter(
+        "coldCacheValidationSet",
+        () => new WeakSet(),
+    ),
     dependencyOrder: makeLazyGetter("dependencyOrder"),
     cycleRiskInClosure: makeLazyGetter("cycleRiskInClosure"),
     acyclicDependencyVersion: makeLazyGetter("acyclicDependencyVersion"),
@@ -62,6 +72,10 @@ export function createStoreData(
     const enumerable = options?.enumerable ?? parent?.enumerable ?? false
     if (enumerable) data.enumerable = true
     data.values = enumerable ? new Map() : new WeakMap()
+    data.stateRevisionClock = parent?.stateRevisionClock ?? {
+        current: 0,
+        enabled: false,
+    }
     data.nextDependencyOrder = 0
     data.dependencyGraphVersion = 0
     data.pendingOrphanCleanup = undefined

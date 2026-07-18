@@ -34,17 +34,22 @@ describe("index", () => {
         expect(indexCallback).toHaveBeenCalledTimes(1)
         expect(defaultStore.get(postsByTag("foo"))).toHaveLength(1)
 
-        // When updating to a new value callback is triggered
+        // A new value is reflected lazily on the next index read.
         defaultStore.set(post("1"), {
             title: "Updated",
             tags: ["foo"],
         })
-        expect(indexCallback).toHaveBeenCalledTimes(2)
+        // The index is cold: the write records a new member revision without
+        // eagerly running predicate selectors.
+        expect(indexCallback).toHaveBeenCalledTimes(1)
         expect(defaultStore.get(postsByTag("foo"))).toHaveLength(1)
+        expect(indexCallback).toHaveBeenCalledTimes(2)
 
         // Delete works
         defaultStore.del(post("1"))
-        expect(indexCallback).toHaveBeenCalledTimes(3)
+        expect(indexCallback).toHaveBeenCalledTimes(2)
+        expect(defaultStore.get(postsByTag("foo"))).toHaveLength(0)
+        expect(indexCallback).toHaveBeenCalledTimes(2)
     })
 
     test("basic use", () => {
@@ -92,13 +97,13 @@ describe("index", () => {
             tags: [],
         })
 
-        expect(indexCallback).toHaveBeenCalledTimes(8) // TOOD: This was 6 with the old sub/dep logic. Could we get back to this not triggering until we actually get the value?
+        expect(indexCallback).toHaveBeenCalledTimes(6)
         expect(
             defaultStore
                 .get(postsByTag("foo"))
                 .map(atom => atom.familyArgsStringified),
         ).toStrictEqual(["1"])
-        expect(indexCallback).toHaveBeenCalledTimes(8)
+        expect(indexCallback).toHaveBeenCalledTimes(7)
         expect(
             defaultStore
                 .get(postsByTag("bar"))

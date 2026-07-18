@@ -48,6 +48,12 @@ export const setValueInData = <Value extends unknown>(
         data.values.set(atom, frozenValue)
         written = frozenValue
     }
+    // Cold-selector revision tracking is enabled lazily. Keep the atom-only
+    // write hot path to this one predictable branch and avoid a helper frame.
+    const revisionClock = data.stateRevisionClock
+    if (revisionClock.enabled) {
+        data.stateRevisions.set(atom, ++revisionClock.current)
+    }
     if (isNewAtomInScope) {
         trackScopeValue(atom, data)
         // This scope now shadows `atom`, so any subscription here that was

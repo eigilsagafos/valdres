@@ -3,6 +3,7 @@ import type { AtomFamily } from "../types/AtomFamily"
 import type { AtomFamilyAtom } from "../types/AtomFamilyAtom"
 import type { Family } from "../types/Family"
 import type { Selector } from "../types/Selector"
+import type { State } from "../types/State"
 import type { StoreData } from "../types/StoreData"
 import { isAtom } from "../utils/isAtom"
 import { isAtomFamily } from "../utils/isAtomFamily"
@@ -16,12 +17,66 @@ import { initSelector } from "./initSelector"
 import { propagateAtomUpdate } from "./propagateUpdatedAtoms"
 import { resolveAtomDefaultValue } from "./resolveAtomDefaultValue"
 import { setValueInData } from "./setValueInData"
+import { getStateRevision, noteStateValueChanged } from "./stateRevisions"
 import { validateResolvedValue } from "./validateResolvedValue"
 import { validateSchema } from "./validateSchema"
 import {
     createAtomFamilyIndex,
     renderAtomFamilyIndex,
 } from "./atomFamilyIndex"
+
+const isColdSelectorCacheFresh = (
+    selector: Selector,
+    data: StoreData,
+    initializedAtomsSet: Set<Atom>,
+    circularDependencySet?: WeakSet<Selector>,
+): boolean => {
+    if (data.selectorGraphActive.has(selector)) return true
+    const cache = data.coldSelectorCaches.get(selector)
+    if (!cache) return false
+    if (cache.validatedAt === data.stateRevisionClock.current) return true
+
+    // Cached async/dynamic selector graphs can be cyclic. Treat a cache already
+    // being validated as provisionally fresh; the outer walk still compares its
+    // state revision and every reachable non-cyclic source revision.
+    if (data.coldCacheValidationSet.has(selector)) return true
+    const dependencies = data.stateDependencies.get(selector) as
+        | Set<State>
+        | undefined
+    if (
+        !dependencies ||
+        dependencies.size !== cache.dependencyRevisions.length
+    ) {
+        return false
+    }
+
+    data.coldCacheValidationSet.add(selector)
+    try {
+        let index = 0
+        for (const dependency of dependencies) {
+            if (isSelector(dependency)) {
+                getState(
+                    dependency,
+                    data,
+                    initializedAtomsSet,
+                    circularDependencySet,
+                )
+            }
+            if (
+                getStateRevision(dependency, data) !==
+                cache.dependencyRevisions[index++]
+            ) {
+                return false
+            }
+        }
+        // Dependency validation can itself materialize values and advance the
+        // shared clock. This snapshot is current through the end of that walk.
+        cache.validatedAt = data.stateRevisionClock.current
+        return true
+    } finally {
+        data.coldCacheValidationSet.delete(selector)
+    }
+}
 
 export function getState<
     Value extends any,
@@ -62,7 +117,19 @@ export function getState<
     initializedAtomsSet: Set<Atom<any>>,
     circularDependencySet?: WeakSet<Selector>,
 ) {
-    if (data.values.has(state)) return data.values.get(state)
+    if (data.values.has(state)) {
+        if (
+            !isSelector(state) ||
+            isColdSelectorCacheFresh(
+                state,
+                data,
+                initializedAtomsSet,
+                circularDependencySet,
+            )
+        ) {
+            return data.values.get(state)
+        }
+    }
     if (isAtom<Value>(state)) {
         if (data.parent)
             return getState<Value, Args>(
@@ -110,6 +177,7 @@ export function getState<
                                     // read re-inits rather than committing it.
                                     if (data.values.get(state) === cached) {
                                         data.values.delete(state)
+                                        noteStateValueChanged(state, data)
                                     }
                                     return
                                 }
@@ -126,6 +194,7 @@ export function getState<
                             () => {
                                 if (data.values.get(state) === cached) {
                                     data.values.delete(state)
+                                    noteStateValueChanged(state, data)
                                 }
                             },
                         )
@@ -158,6 +227,9 @@ export function getState<
             )
         }
         data.values.set(state, renderAtomFamilyIndex(createAtomFamilyIndex()))
+        // Family indexes bypass setValueInData because their mutable internal
+        // bookkeeping must not be deep-frozen.
+        noteStateValueChanged(state, data)
         initializedAtomsSet.add(state)
         return data.values.get(state)
     }

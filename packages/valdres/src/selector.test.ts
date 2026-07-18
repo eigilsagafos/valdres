@@ -32,12 +32,29 @@ describe("selector", () => {
         expect(store1.get(time100Selector)).toBe(500)
         expect(store1.get(time100Selector)).toBe(500)
         expect(store1.get(time100Selector)).toBe(500)
-        // Computed exactly once: getDefault restores the freshly-computed value
-        // of the read selector after the init-only propagation that would
-        // otherwise drop it, so the next read hits the cache instead of
-        // re-evaluating (previously this was 2 — the init pass invalidated the
-        // just-computed value and the second read recomputed it).
+        // Computed exactly once: a cold selector keeps a revision-validated
+        // forward cache without joining the live reverse graph.
         expect(callback).toHaveBeenCalledTimes(1)
+    })
+
+    test("cold cache skips re-evaluation after an unrelated write", () => {
+        const rootStore = store()
+        const source = atom(1)
+        const unrelated = atom(0)
+        const callback = mock(get => ({ value: get(source) }))
+        const derived = selector(callback)
+
+        const first = rootStore.get(derived)
+        rootStore.set(unrelated, 1)
+
+        expect(rootStore.get(derived)).toBe(first)
+        expect(callback).toHaveBeenCalledTimes(1)
+
+        rootStore.set(source, 2)
+        // The source write did not eagerly visit the cold selector.
+        expect(callback).toHaveBeenCalledTimes(1)
+        expect(rootStore.get(derived)).toStrictEqual({ value: 2 })
+        expect(callback).toHaveBeenCalledTimes(2)
     })
 
     test("dependents/dependencies are correctly handled for selector dependent on atom", () => {
@@ -50,16 +67,16 @@ describe("selector", () => {
         rootStore.get(time100Selector)
         const { stateDependents, stateDependencies } = rootStore.data
 
-        expect(stateDependents.get(numberAtom)).toHaveLength(1)
+        // A cold read keeps its forward dependency for revision validation but
+        // stays out of the strongly-held, iterable reverse graph.
+        expect(stateDependents.get(numberAtom)).toBeUndefined()
         expect(stateDependents.get(time100Selector)).toBeUndefined
         expect(stateDependencies.get(time100Selector)).toHaveLength(1)
         expect(stateDependencies.get(numberAtom)).toBeUndefined()
         expect(stateDependencies.get(time100Selector)).toStrictEqual(
             new Set([numberAtom]),
         )
-        expect(stateDependents.get(numberAtom)).toStrictEqual(
-            new Set([time100Selector]),
-        )
+        expect(stateDependents.get(numberAtom)).toBeUndefined()
     })
     test("dependents/dependencies are correctly handled for selector dependent on atomFamily", () => {
         const rootStore = store()
@@ -71,16 +88,14 @@ describe("selector", () => {
         rootStore.get(allUserIds)
         const { stateDependents, stateDependencies } = rootStore.data
 
-        expect(stateDependents.get(usersFamily)).toHaveLength(1)
+        expect(stateDependents.get(usersFamily)).toBeUndefined()
         expect(stateDependents.get(allUserIds)).toBeUndefined
         expect(stateDependencies.get(allUserIds)).toHaveLength(1)
         expect(stateDependencies.get(usersFamily)).toBeUndefined()
         expect(stateDependencies.get(allUserIds)).toStrictEqual(
             new Set([usersFamily]),
         )
-        expect(stateDependents.get(usersFamily)).toStrictEqual(
-            new Set([allUserIds]),
-        )
+        expect(stateDependents.get(usersFamily)).toBeUndefined()
     })
 
     test("one level selectors update", () => {
@@ -205,8 +220,9 @@ describe("selector", () => {
 
         store1.set(asyncAtom1, 3)
         store1.set(asyncAtom2, 4)
-        // TODO: This test now does not pass now due to the change in update strategy.
-        expect(store1.data.values.get(selector1)).toBeUndefined()
+        // Cold caches stay materialized but outside the live reverse graph. The
+        // dependency revisions make the next read re-evaluate lazily.
+        expect(store1.data.values.get(selector1)).toStrictEqual([1, 2])
         expect(store1.get(selector1)).toStrictEqual([3, 4])
         expect(store1.data.values.get(selector1)).toStrictEqual([3, 4])
     })

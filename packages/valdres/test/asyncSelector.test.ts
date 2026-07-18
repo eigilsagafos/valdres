@@ -64,6 +64,72 @@ describe("async selectors", () => {
         expect(cb).toHaveBeenCalledTimes(2)
     })
 
+    test("cold async late dependencies invalidate by revision", async () => {
+        const s = store()
+        const base = atom(1)
+        let evaluations = 0
+        const sel = selector((get: any) => {
+            evaluations++
+            return Promise.resolve().then(() => get(base) * 10)
+        })
+
+        expect(await s.get(sel)).toBe(10)
+        expect(s.get(sel)).toBe(10)
+        expect(evaluations).toBe(1)
+        expect(s.data.stateDependents.get(base)).toBeUndefined()
+
+        s.set(base, 2)
+        expect(evaluations).toBe(1)
+        expect(await s.get(sel)).toBe(20)
+        expect(evaluations).toBe(2)
+    })
+
+    test("cold async caches retain the first revision observed for a dependency", async () => {
+        const s = store()
+        const base = atom(1)
+        let release!: () => void
+        const gate = new Promise<void>(resolve => {
+            release = resolve
+        })
+        let evaluations = 0
+        const sel = selector((get: any) => {
+            evaluations++
+            const before = get(base)
+            const currentGate = evaluations === 1 ? gate : Promise.resolve()
+            return currentGate.then(() => `${before}:${get(base)}`)
+        })
+
+        const initial = s.get(sel)
+        s.set(base, 2)
+        release()
+
+        expect(await initial).toBe("1:2")
+        expect(await s.get(sel)).toBe("2:2")
+        expect(evaluations).toBe(2)
+    })
+
+    test("an active async late read validates a cold selector before promotion", async () => {
+        const s = store()
+        const base = atom(1)
+        const child = selector((get: any) => get(base))
+        let release!: () => void
+        const gate = new Promise<void>(resolve => {
+            release = resolve
+        })
+        const parent = selector((get: any) => gate.then(() => get(child)))
+
+        expect(s.get(child)).toBe(1)
+        s.set(base, 2)
+
+        const unsubscribe = s.sub(parent, () => {})
+        release()
+        await wait(0)
+
+        expect(s.get(parent)).toBe(2)
+        expect(s.data.stateDependents.get(base)).toContain(child)
+        unsubscribe()
+    })
+
     test("suspension resolves and derived selector re-evaluates", async () => {
         const s = store()
         let resolve!: (v: number) => void

@@ -14,7 +14,7 @@ import { isReactive, resolveReactive } from "../utils/resolveReactive"
 import type { CacheMeta } from "../types/Atom"
 import { equal } from "./equal"
 import { initAtom } from "./initAtom"
-import { initSelector } from "./initSelector"
+import { getState } from "./getState"
 import { propagateAtomUpdate } from "./propagateUpdatedAtoms"
 import { setValueInData } from "./setValueInData"
 import { setMaxAgeCleanup } from "./maxAgeCleanups"
@@ -327,9 +327,11 @@ export const subscribe = <V>(
             throw new Error("This should not be possible")
         }
     }
-    // TODO: Should we init no matter what if not in data.values? Or is that the wrong approach?
-    if (isSelector(state) && !data.values.has(state)) {
-        initSelector(state, data, new Set(), new WeakSet())
+    // A selector may have a revision-validated cold cache. Read through
+    // getState even on a cache hit so a stale dynamic dependency set is rebuilt
+    // before the first subscriber promotes it into the live reverse graph.
+    if (isSelector(state)) {
+        getState(state, data, new Set(), new WeakSet())
     }
 
     const subscribers =
