@@ -1,4 +1,5 @@
 import type { StoreData } from "../types/StoreData"
+import { STORE_RUNTIME } from "./storeRuntimeKey"
 
 let nextId = 0
 const generateId = () => "__valdres_store_" + nextId++
@@ -89,6 +90,9 @@ export function createStoreData(
     // allocate on first setAtom — eager just makes that explicit and avoids
     // touching the prototype getter on the hot path.
     data.pendingDefaults = new WeakMap()
+    // Reserve the private runtime slot eagerly to keep StoreData's hidden class
+    // stable. storeFromStoreData fills it immediately after creation.
+    data[STORE_RUNTIME] = undefined
     // Liveness-pass scratch, initialized here (not added lazily during the first
     // pass) so the StoreData hidden class is fixed at construction. Otherwise the
     // first getDefault/propagation pass adds these fields at runtime, transitions

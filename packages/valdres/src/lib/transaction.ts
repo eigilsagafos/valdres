@@ -6,6 +6,7 @@ import type { State } from "../types/State"
 import type { SetAtomValue } from "../types/SetAtomValue"
 import type { StoreData } from "../types/StoreData"
 import type { TransactionFn } from "../types/TransactionFn"
+import { SchemaValidationError } from "../errors/SchemaValidationError"
 import { deepFreeze } from "../utils/deepFreeze"
 import { validateSchema } from "./validateSchema"
 import { isAtom } from "../utils/isAtom"
@@ -43,6 +44,7 @@ import {
 import {
     cloneAtomFamilyIndex,
     createAtomFamilyIndex,
+    hasOwnFamilyAtom,
     renderAtomFamilyIndex,
 } from "./atomFamilyIndex"
 import {
@@ -113,6 +115,12 @@ export class Transaction {
     private _selectorRuntime: SelectorEvaluationRuntime | undefined
     private _selectorCircularDependencySet: WeakSet<any> | undefined
     private _atomMap: Map<any, any>
+    // Allocated only for transactions that clone/mutate family membership.
+    // Ordinary-atom and existing-family-member transactions keep their commit
+    // path allocation-free and never scan `_atomMap` looking for families.
+    private _dirtyFamilyIndexes:
+        | Set<AtomFamily<any, [any, ...any[]]>>
+        | undefined
     // Global atoms always carry an onSet marker, so this one bit covers every
     // write that needs phased hook/fan-out handling. Transactions containing
     // only ordinary atoms retain the original allocation-light commit path.
@@ -171,7 +179,26 @@ export class Transaction {
     get: GetValue = (state: State<any>) => {
         if (isAtom(state) || isAtomFamily(state)) {
             if (this.hasTxnOrData(state)) {
-                return this.valueFromTxnOrData(state)
+                const value = this.valueFromTxnOrData(state)
+                if (isAtomFamily(state) && value?.__index) {
+                    // Membership writes leave the working index dirty so a run
+                    // of txn.set calls pays for one copy + sort, not one per
+                    // staged member. A transaction read is an observation
+                    // boundary, so materialize the latest membership here.
+                    const rendered = renderAtomFamilyIndex(value.__index)
+                    if (
+                        this._atomMap.get(state) === value &&
+                        rendered !== value
+                    ) {
+                        this._atomMap.set(state, rendered)
+                        this._dirtyFamilyIndexes?.delete(state)
+                        if (this._dirtyFamilyIndexes?.size === 0) {
+                            this._dirtyFamilyIndexes = undefined
+                        }
+                    }
+                    return rendered
+                }
+                return value
             }
             // No txn level provides a value. If this level unset the atom, its
             // committed value is still in this.data.values until commit, so we
@@ -252,45 +279,105 @@ export class Transaction {
         this.invalidateSelectorCache()
 
         if (isFamilyAtom(atom)) {
-            if (!this._atomMap.has(atom.family)) {
-                // @ts-ignore
-                this.cloneFamilyIntoTxn(atom.family)
+            const ownFamilyValue = this._atomMap.has(atom.family)
+                ? this._atomMap.get(atom.family)
+                : this.data.values.has(atom.family)
+                  ? this.data.values.get(atom.family)
+                  : undefined
+            // A root (or already-materialized scope) that already owns this
+            // member needs no family-index write at all. An inherited scoped
+            // member intentionally falls through: the scope must claim local
+            // ownership so it survives a later parent deletion.
+            if (
+                !ownFamilyValue?.__index ||
+                !hasOwnFamilyAtom(ownFamilyValue.__index, atom)
+            ) {
+                if (!this._atomMap.has(atom.family)) {
+                    // @ts-ignore
+                    this.cloneFamilyIntoTxn(atom.family)
+                }
+                const index = this._atomMap.get(atom.family).__index
+                index.created.set(atom, performance.now())
+                index.deleted.delete(atom)
+                this.recursivelyUpdateAtomFamilyIndexes(atom.family)
             }
-            const index = this._atomMap.get(atom.family).__index
-            index.created.set(atom, performance.now())
-            index.deleted.delete(atom)
-            index.rendered = null
-            index.renderedArray = null
-            this.recursivelyUpdateAtomFamilyIndexes(atom.family)
         }
         return resolved as V
     }
 
-    // @ts-ignore
-    batchSetFamilyAtoms = (family, pairs) => {
-        if (!this._atomMap.has(family)) {
-            // @ts-ignore
-            this.cloneFamilyIntoTxn(family)
-        }
-        this.invalidateSelectorCache()
-        const index = this._atomMap.get(family).__index
+    batchSetFamilyAtoms = (
+        family: any,
+        pairs: any,
+        onSchemaError:
+            | ((error: SchemaValidationError) => void)
+            | undefined = undefined,
+    ) => {
+        let ownFamilyValue = this._atomMap.has(family)
+            ? this._atomMap.get(family)
+            : this.data.values.has(family)
+              ? this.data.values.get(family)
+              : undefined
+        let index = ownFamilyValue?.__index
+        let membershipChanged = false
+        let staged = false
         for (const [atom, value] of pairs) {
             if (atom.family !== family) {
                 throw new Error("Atom does not belong to the provided family")
             }
-            index.created.set(atom, performance.now())
-            if (index.deleted.has(atom)) index.deleted.delete(atom)
-            // Validate like Transaction.set so this path can't become an
-            // unvalidated hole (promises are skipped by validateSchema).
-            this._atomMap.set(atom, validateSchema(atom, value, this.data))
+            let resolved = value
+            // Match Transaction.set's immutability contract. The branch stays
+            // allocation-free for primitives, which dominate hydration and the
+            // existing bulk benchmark.
+            if (
+                !atom.mutable &&
+                !IS_PROD &&
+                resolved !== null &&
+                (typeof resolved === "object" ||
+                    typeof resolved === "function") &&
+                !isPromiseLike(resolved)
+            ) {
+                resolved = deepFreeze(resolved)
+            }
+            // Validate like Transaction.set so this public bulk path cannot be
+            // used to bypass a store's schema boundary. Hydrate's lenient mode
+            // supplies a per-entry handler so invalid members can be skipped
+            // without giving up one grouped write per family.
+            if (!onSchemaError) {
+                resolved = validateSchema(atom, resolved, this.data)
+            } else {
+                try {
+                    resolved = validateSchema(atom, resolved, this.data)
+                } catch (error) {
+                    if (!(error instanceof SchemaValidationError)) throw error
+                    onSchemaError(error)
+                    continue
+                }
+            }
+            this._atomMap.set(atom, resolved)
+            if (!staged) {
+                staged = true
+                this.invalidateSelectorCache()
+            }
             if (!this._hasCommitEffects && atom.onSet) {
                 this._hasCommitEffects = true
             }
             this._unsetSet?.delete(atom)
+
+            if (!index || !hasOwnFamilyAtom(index, atom)) {
+                if (!this._atomMap.has(family)) {
+                    // @ts-ignore
+                    this.cloneFamilyIntoTxn(family)
+                    ownFamilyValue = this._atomMap.get(family)
+                    index = ownFamilyValue.__index
+                }
+                index.created.set(atom, performance.now())
+                index.deleted.delete(atom)
+                membershipChanged = true
+            }
         }
-        index.rendered = null
-        index.renderedArray = null
-        this.recursivelyUpdateAtomFamilyIndexes(family)
+        if (membershipChanged) {
+            this.recursivelyUpdateAtomFamilyIndexes(family)
+        }
     }
 
     del = (atom: AtomFamilyAtom<any, any>) => {
@@ -301,9 +388,6 @@ export class Transaction {
         const index = this._atomMap.get(atom.family).__index
         index.created.delete(atom)
         index.deleted.set(atom, performance.now())
-        index.rendered = null
-        index.renderedArray = null
-        this._atomMap.set(atom.family, renderAtomFamilyIndex(index))
         this.recursivelyUpdateAtomFamilyIndexes(atom.family)
         if (this.data.values.has(atom)) {
             this.deleteSet.add(atom)
@@ -461,6 +545,7 @@ export class Transaction {
     private commitWork = (sink: ChangeSink | undefined) => {
         // Single-store fast path: no scoped transactions to coordinate.
         if (!this._scopedTransactions) {
+            this.renderDirtyAtomFamilyIndexes()
             const initializedAtomsSet = new Set<Atom>()
             if (!this._unsetSet?.size && !this._deleteSet?.size) {
                 setAtoms(
@@ -624,6 +709,7 @@ export class Transaction {
         for (let i = plan.length - 1; i >= 0; i--) {
             const entry = plan[i]
             const txn = entry.txn
+            txn.renderDirtyAtomFamilyIndexes()
             entry.updatedAtoms = writeAtoms(
                 txn._atomMap,
                 entry.data,
@@ -865,7 +951,11 @@ export class Transaction {
                 parentIndex,
                 moveUpIfParent,
             )
-        const currentFamilyList = this.get(family)
+        const currentFamilyIndex = this._atomMap.has(family)
+            ? this._atomMap.get(family).__index
+            : this.data.values.has(family)
+              ? this.data.values.get(family).__index
+              : (this.get(family) as any).__index
         // A scope that first materializes its OWN family index inside a txn must
         // build a CHILD index — empty created/deleted, linked to the parent via
         // parentIndex — exactly as the non-txn path does in initFamilyIndex. The
@@ -904,12 +994,12 @@ export class Transaction {
             // would deref `undefined` in recursivelyUpdateIndexes.
             clonedIndex = createAtomFamilyIndex(
                 // @ts-ignore
-                parentIndex ?? currentFamilyList.__index,
+                parentIndex ?? currentFamilyIndex,
             )
         } else {
             clonedIndex = cloneAtomFamilyIndex(
                 // @ts-ignore
-                currentFamilyList.__index,
+                currentFamilyIndex,
                 parentIndex,
             )
         }
@@ -918,23 +1008,49 @@ export class Transaction {
                 scopedTxn.cloneFamilyIntoTxn(family, clonedIndex, false)
             }
         }
-        this._atomMap.set(family, renderAtomFamilyIndex(clonedIndex))
+        // The array is only a carrier for the working index. `get` and commit
+        // replace it with a rendered value at their observation boundaries.
+        // Avoiding a render here means a membership-changing transaction sorts
+        // once, after all staged changes, rather than once before and after.
+        const unrenderedFamilyValue: any[] = []
+        // @ts-ignore
+        unrenderedFamilyValue.__index = clonedIndex
+        this._atomMap.set(family, unrenderedFamilyValue)
+        this.markAtomFamilyIndexDirty(family)
     }
 
     private recursivelyUpdateAtomFamilyIndexes(
         atomFamily: AtomFamily<any, any>,
     ) {
-        const currentIndex = this._atomMap.get(atomFamily).__index
-        currentIndex.rendered = null
-        currentIndex.renderedArray = null
-        const updatedValue = renderAtomFamilyIndex(currentIndex)
-        this._atomMap.set(atomFamily, updatedValue)
+        this.markAtomFamilyIndexDirty(atomFamily)
 
         if (this._scopedTransactions?.size) {
             for (const [, scopedTxn] of this._scopedTransactions) {
                 scopedTxn.recursivelyUpdateAtomFamilyIndexes(atomFamily)
             }
         }
+    }
+
+    private markAtomFamilyIndexDirty(atomFamily: AtomFamily<any, any>) {
+        const currentIndex = this._atomMap.get(atomFamily).__index
+        currentIndex.rendered = null
+        currentIndex.renderedArray = null
+        if (!this._dirtyFamilyIndexes) this._dirtyFamilyIndexes = new Set()
+        this._dirtyFamilyIndexes.add(atomFamily)
+    }
+
+    /** Materialize every dirty family working index immediately before this
+     *  transaction writes. Updating a Map value does not disturb insertion
+     *  order, so atom/family propagation order remains unchanged. */
+    private renderDirtyAtomFamilyIndexes() {
+        const dirtyFamilyIndexes = this._dirtyFamilyIndexes
+        if (!dirtyFamilyIndexes) return
+        for (const state of dirtyFamilyIndexes) {
+            const value = this._atomMap.get(state)
+            const rendered = renderAtomFamilyIndex(value.__index)
+            if (rendered !== value) this._atomMap.set(state, rendered)
+        }
+        this._dirtyFamilyIndexes = undefined
     }
 }
 

@@ -10,6 +10,18 @@ import { store as valdresCreateStore } from "../../src/store"
 // tracks and t-test-gates them like the rest of the suite, rather than only
 // printing to the console.
 describe("scope propagation", () => {
+    test("acquire and detach another handle for an existing scope", async () => {
+        const root = valdresCreateStore()
+        const anchor = root.scope("shared")
+
+        await measureOne("scope: acquire + detach existing scope lease", () => {
+            const lease = root.scope("shared")
+            lease.detach()
+        })
+
+        anchor.detach()
+    })
+
     test("set atom in root with 100 child scopes (no shadowing)", async () => {
         const root = valdresCreateStore()
         const a = valdresAtom(0)
