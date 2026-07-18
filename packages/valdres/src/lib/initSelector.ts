@@ -124,6 +124,8 @@ export const evaluateSelector = <V>(
     const stateDependencies = runtime?.stateDependencies ?? data.stateDependencies
     const abortControllers = runtime?.abortControllers ?? data.abortControllers
     const currentDependencies = stateDependencies.get(selector)
+    const tracksReverseEdges =
+        !runtime && data.selectorGraphActive.has(selector)
     // Deduped set of deps read this evaluation. Using a Set (not an array)
     // makes change-detection robust to a dependency read MORE THAN ONCE in one
     // evaluation (e.g. `cond ? get(a) + get(b) : get(a) + get(a)`): comparing
@@ -259,12 +261,11 @@ export const evaluateSelector = <V>(
                     // an existing cold cache still goes through getState first
                     // so revision validation precedes promotion.
                     const activateFreshSelector =
-                        !runtime &&
-                        data.selectorGraphActive.has(selector) &&
-                        isSelector(state) &&
-                        !data.selectorGraphActive.has(state) &&
+                        tracksReverseEdges &&
                         !data.values.has(state) &&
-                        !data.stateDependencies.has(state)
+                        !data.stateDependencies.has(state) &&
+                        isSelector(state) &&
+                        !data.selectorGraphActive.has(state)
                     if (activateFreshSelector) {
                         data.selectorGraphActive.add(state)
                         try {
@@ -337,7 +338,6 @@ export const evaluateSelector = <V>(
         }
 
         if (!runtime && (depsChanged || !currentDependencies)) {
-            const tracksReverseEdges = data.selectorGraphActive.has(selector)
             // Invalidate topology-sensitive teardown caches once for this
             // dependency-set materialization or change (including an empty
             // selector re-materialized after cleanup).
@@ -455,7 +455,7 @@ export const evaluateSelector = <V>(
             // Transaction evaluators own a private dependency graph and never
             // publish a committed cold cache, so revision snapshots would be
             // both unused and an avoidable allocation on that path.
-            if (!runtime && !data.selectorGraphActive.has(selector)) {
+            if (!runtime && !tracksReverseEdges) {
                 evalCtx.asyncDependencyRevisions = new Map<State, number>()
                 for (const dependency of updatedDeps) {
                     evalCtx.asyncDependencyRevisions.set(
