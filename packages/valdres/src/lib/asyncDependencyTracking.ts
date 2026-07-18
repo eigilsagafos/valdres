@@ -100,6 +100,7 @@ export const cleanUpRejectedPromise = <Value>(
     promise: Promise<any>,
 ) => {
     if (data.values.has(selector) && data.values.get(selector) !== promise) return
-    data.values.delete(selector)
-    noteStateValueChanged(selector, data)
+    if (data.values.delete(selector)) {
+        noteStateValueChanged(selector, data)
+    }
 }

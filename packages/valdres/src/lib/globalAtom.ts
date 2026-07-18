@@ -120,8 +120,9 @@ export const globalAtom = <Value = unknown>(
 
         for (const store of snapshot) {
             stores.delete(store)
-            store.values.delete(atom)
-            noteStateValueChanged(atom, store)
+            if (store.values.delete(atom)) {
+                noteStateValueChanged(atom, store)
+            }
             try {
                 propagateAtomUpdate([atom], store, false, undefined, "reset")
             } catch (e) {

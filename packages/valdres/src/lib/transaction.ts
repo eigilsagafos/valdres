@@ -94,8 +94,9 @@ const deleteAtomFamilyAtoms = (
     data: StoreData,
 ) => {
     set.forEach(atom => {
-        data.values.delete(atom)
-        noteStateValueChanged(atom, data)
+        if (data.values.delete(atom)) {
+            noteStateValueChanged(atom, data)
+        }
     })
 }
 
