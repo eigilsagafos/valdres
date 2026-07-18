@@ -484,11 +484,15 @@ export const propagateAtomUpdate = (
         if (updatedFamilyAtoms.size > 0) {
             const timestamp = performance.now()
             for (const [family, familyAtoms] of updatedFamilyAtoms) {
-                addSetToSet(data.stateDependents.get(family), selectors)
+                // Family subscriptions are member-change subscriptions: they
+                // still fire for value-only writes with the changed member's
+                // args. Selectors that read the family object, however, depend
+                // only on membership and should run only when its list changes.
                 addSetToSet(data.subscriptions.get(family), subscriptions)
                 if (familyAtoms.size === 0)
                     throw new Error("Should not be possible")
                 if (addFamilyAtomsToSet(family, familyAtoms, data, timestamp)) {
+                    addSetToSet(data.stateDependents.get(family), selectors)
                     if (!membershipChanged) membershipChanged = new Set()
                     membershipChanged.add(family)
                 }

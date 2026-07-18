@@ -219,6 +219,50 @@ describe("scope × family × txn propagation soundness", () => {
         expect(evals).toBe(base + 1) // re-run exactly once
     })
 
+    test("value-only writes do not re-evaluate a root membership selector", () => {
+        const run = ++uid
+        const fam = atomFamily<number, [string]>(() => 0, {
+            name: `fr${run}`,
+        })
+        const root = store()
+        const member = fam("a")
+        root.set(member, 1)
+
+        let evals = 0
+        const famCount = selector(
+            get => {
+                evals++
+                return (get(fam) as any[]).length
+            },
+            { name: `fr-count${run}` },
+        )
+        root.sub(famCount, () => {})
+        const base = evals
+
+        root.set(member, 2)
+        root.txn(txn => txn.set(member, 3))
+        expect(evals).toBe(base)
+
+        root.set(fam("b"), 4)
+        expect(evals).toBe(base + 1)
+    })
+
+    test("family subscribers still fire for value-only writes", () => {
+        const fam = atomFamily<number, [string]>(() => 0, {
+            name: `fr-sub${++uid}`,
+        })
+        const root = store()
+        const member = fam("a")
+        root.set(member, 1)
+        const calls: string[][] = []
+        root.sub(fam, (...args) => calls.push(args))
+
+        root.set(member, 2)
+        root.txn(txn => txn.set(member, 3))
+
+        expect(calls).toStrictEqual([["a"], ["a"]])
+    })
+
     // BUG 2: a scope selector that reads get(family) recomputes on a parent add.
     test("scope selector reading get(family) recomputes when the parent adds a member", () => {
         for (const makeScopeMember of [
