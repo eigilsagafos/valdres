@@ -715,11 +715,9 @@ describe("transaction", () => {
         expect(settled).toEqual({ kind: "resolved", value: "hello" })
     })
 
-    // Demonstrates the `!isPromiseLike(value)` half of the writeAtoms gate.
-    // The txn path does no async resolution, so storing an in-flight promise
-    // must NOT resolve the placeholder by adoption — that would consume it and
-    // strand it on a promise that never settles, so a later settled write
-    // could never resolve it. The placeholder must survive until a settled
+    // Storing an in-flight promise must NOT resolve the placeholder by adoption
+    // before that write settles — that would consume it and strand it if the
+    // user promise never resolves. The placeholder survives until a settled
     // value lands. Mirrors lib/setAtom.test.ts "sync set after in-flight async
     // set on empty atom resolves suspense promise" for the transaction path.
     test("txn set: in-flight promise does not consume the suspense placeholder", async () => {

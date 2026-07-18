@@ -3,6 +3,7 @@ import type { AtomFamily } from "../types/AtomFamily"
 import type { AtomFamilyAtom } from "../types/AtomFamilyAtom"
 import type { GetValue } from "../types/GetValue"
 import type { State } from "../types/State"
+import type { SetAtomValue } from "../types/SetAtomValue"
 import type { StoreData } from "../types/StoreData"
 import type { TransactionFn } from "../types/TransactionFn"
 import { deepFreeze } from "../utils/deepFreeze"
@@ -10,6 +11,7 @@ import { validateSchema } from "./validateSchema"
 import { isAtom } from "../utils/isAtom"
 import { isAtomFamily } from "../utils/isAtomFamily"
 import { isFamilyAtom } from "../utils/isFamilyAtom"
+import { isPromiseLike } from "../utils/isPromiseLike"
 import { isSelector } from "../utils/isSelector"
 import {
     detachOwnValue,
@@ -203,29 +205,35 @@ export class Transaction {
         }
     }
 
-    set = <V>(atom: Atom<V>, value: V | ((currentValue: V) => V)): V => {
+    set = <V>(atom: Atom<V>, value: SetAtomValue<V>): V => {
         if (!isAtom(atom)) throw new Error("Not an atom")
-        let resolved: V
+        let resolved: V | PromiseLike<V>
         if (isFunction(value)) {
             const currentValue = this.get(atom) as V
-            resolved = (value as (current: V) => V)(currentValue)
+            resolved = value(currentValue)
         } else {
             resolved = value
         }
 
-        // Freeze non-primitives so values are immutable within the transaction.
-        // Respect atom.mutable and production mode. Kept in sync with the inline
-        // freeze decision in setValueInData.ts (not shared, to avoid a call on the
-        // write hot path) — change both together.
-        if (!atom.mutable && !IS_PROD && resolved !== null && (typeof resolved === "object" || typeof resolved === "function")) {
-            resolved = deepFreeze(resolved) as V
+        // Freeze settled non-primitives so values are immutable within the
+        // transaction. Promise-like inputs are normalized by the async-write
+        // coordinator at commit and must remain usable until then. Respect
+        // atom.mutable and production mode. Kept inline (not shared, to avoid a
+        // call on the write hot path).
+        if (
+            !atom.mutable &&
+            !IS_PROD &&
+            resolved !== null &&
+            (typeof resolved === "object" || typeof resolved === "function") &&
+            !isPromiseLike(resolved)
+        ) {
+            resolved = deepFreeze(resolved)
         }
         // Validate at staging time (inside the txn body), not at commit: a
         // failure throws here, so the user's callback aborts and commit never
-        // runs — the transaction stays atomic. This also covers batched stores,
-        // whose set() routes through here. Caveat: a PROMISE value is skipped by
-        // validateSchema, and (unlike the non-txn setAtom path) the txn commit
-        // does NOT resolve it — the promise is stored as-is and never validated.
+        // runs — the transaction stays atomic. Promise-like values are skipped
+        // here and validated after settlement by coordinateAsyncWrite during the
+        // commit path. This also covers stores using implicit batched txns.
         resolved = validateSchema(atom, resolved, this.data)
         this._atomMap.set(atom, resolved)
         if (!this._hasCommitEffects && atom.onSet) {
@@ -249,7 +257,7 @@ export class Transaction {
             index.renderedArray = null
             this.recursivelyUpdateAtomFamilyIndexes(atom.family)
         }
-        return resolved
+        return resolved as V
     }
 
     // @ts-ignore

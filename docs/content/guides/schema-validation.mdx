@@ -201,9 +201,6 @@ with hundreds of atoms.
 
 ## Limitations
 
-- **Promises set inside a transaction** are stored as-is and not auto-resolved
-  by the transaction, so they aren't validated on resolve. Validate before
-  setting, or set async values outside transactions.
 - **Async defaults under React Suspense:** an invalid async default drops its
   value (like a rejected one), so a component that keeps re-reading will
   re-initialize and re-fetch. Validate at the fetch boundary rather than
