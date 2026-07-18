@@ -28,6 +28,7 @@ import { resetAtom } from "./resetAtom"
 import { setAtom } from "./setAtom"
 import { setValueInData } from "./setValueInData"
 import { snapshot } from "./snapshot"
+import { STORE_RUNTIME } from "./storeRuntimeKey"
 import { subscribe } from "./subscribe"
 import { Transaction, transaction } from "./transaction"
 
@@ -76,11 +77,25 @@ export function storeFromStoreData(
     detach: () => void,
 ): ScopedStore
 export function storeFromStoreData(data: StoreData): Store
-export function storeFromStoreData(
-    data: StoreData,
-    detach?: () => void,
-) {
+export function storeFromStoreData(data: StoreData, detach?: () => void) {
+    const runtimeData = data as StoreData & { [STORE_RUNTIME]?: Store }
+    let runtime = runtimeData[STORE_RUNTIME]
+    if (!runtime) {
+        runtime = createStoreRuntime(data)
+        runtimeData[STORE_RUNTIME] = runtime
+    }
+    return detach ? createScopeLease(runtime, detach) : runtime
+}
+
+/**
+ * One facade runtime per StoreData. Besides avoiding a full set of method
+ * closures for every scope consumer, this makes the closure-owned init set and
+ * implicit transaction authoritative for every handle that reaches the same
+ * store data (including the internal handle mountAtom requests).
+ */
+const createStoreRuntime = (data: StoreData): Store => {
     const _initSet = new Set<Atom>()
+    let _initDepth = 0
 
     // --- Batched mode (implicit transaction) ---
     // When data.batchUpdates is true, sequential store.set() calls within
@@ -137,10 +152,17 @@ export function storeFromStoreData(
         // cache-miss path reaches here; cache hits returned above.
         const ownsLivenessSeeds = beginLivenessPass(data)
         let seedsToReconcile: Set<State> | null = null
+        _initDepth++
         try {
             res = getState(state, data, _initSet)
         } finally {
-            if (_initSet.size) {
+            _initDepth--
+            // A selector may call another handle for this same StoreData while
+            // it is evaluating. Keep every atom initialized by that nested read
+            // in the shared set until the outermost get has installed all of its
+            // dependency edges; propagating from the nested read would clear the
+            // set too early and miss those not-yet-committed edges.
+            if (_initDepth === 0 && _initSet.size) {
                 const atoms = [..._initSet]
                 _initSet.clear()
                 propagateAtomUpdate(atoms, data, true)
@@ -321,36 +343,35 @@ export function storeFromStoreData(
         }
     }) as ScopeFn
 
-    if (detach) {
-        return {
-            get,
-            set,
-            sub,
-            txn,
-            reset,
-            del,
-            unset,
-            data,
-            scope,
-            onChange,
-            onCommitEnd: storeOnCommitEnd,
-            snapshot: storeSnapshot,
-            detach,
-        } as ScopedStore
-    } else {
-        return {
-            get,
-            set,
-            sub,
-            txn,
-            reset,
-            del,
-            unset,
-            data,
-            scope,
-            onChange,
-            onCommitEnd: storeOnCommitEnd,
-            snapshot: storeSnapshot,
-        } as Store
+    return {
+        get,
+        set,
+        sub,
+        txn,
+        reset,
+        del,
+        unset,
+        data,
+        scope,
+        onChange,
+        onCommitEnd: storeOnCommitEnd,
+        snapshot: storeSnapshot,
     }
 }
+
+/** A scope consumer owns only its detach lease; all operations share runtime. */
+const createScopeLease = (runtime: Store, detach: () => void): ScopedStore => ({
+    get: runtime.get,
+    set: runtime.set,
+    sub: runtime.sub,
+    txn: runtime.txn,
+    reset: runtime.reset,
+    del: runtime.del,
+    unset: runtime.unset,
+    data: runtime.data,
+    scope: runtime.scope,
+    onChange: runtime.onChange,
+    onCommitEnd: runtime.onCommitEnd,
+    snapshot: runtime.snapshot,
+    detach,
+})
