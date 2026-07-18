@@ -125,6 +125,7 @@ const reEvaluateSelector = (
             data,
             updatedAtoms,
             undefined,
+            true,
             depsChange,
         )
         // This evaluator is reached from the committed reverse graph; cold

@@ -94,6 +94,7 @@ export const initFreshActiveSelector = <V>(
             data,
             initializedAtomsSet,
             circularDependencySet,
+            true,
         )
         return data.values.get(selector)
     } catch (error) {
@@ -162,6 +163,7 @@ export const evaluateSelector = <V>(
     data: StoreData,
     initializedAtomsSet: Set<Atom>,
     circularDependencySet: WeakSet<Selector> = data.circularDepSet,
+    selectorGraphActive: boolean = false,
     depsChangeOut?: DepsChange,
     readOverlay?: GetValue,
     runtime?: SelectorEvaluationRuntime,
@@ -169,8 +171,7 @@ export const evaluateSelector = <V>(
     const stateDependencies = runtime?.stateDependencies ?? data.stateDependencies
     const abortControllers = runtime?.abortControllers ?? data.abortControllers
     const currentDependencies = stateDependencies.get(selector)
-    const tracksReverseEdges =
-        !runtime && data.selectorGraphActive.has(selector)
+    const tracksReverseEdges = !runtime && selectorGraphActive
     // Deduped set of deps read this evaluation. Using a Set (not an array)
     // makes change-detection robust to a dependency read MORE THAN ONCE in one
     // evaluation (e.g. `cond ? get(a) + get(b) : get(a) + get(a)`): comparing
@@ -778,6 +779,7 @@ const evaluateCommittedSelectorValue = <V>(
             data,
             initializedAtomsSet,
             circularDependencySet,
+            selectorGraphActive,
         )
     } catch (error) {
         if (error instanceof SelectorEvaluationError) error.track(selector)
@@ -797,8 +799,10 @@ export const initSelector = <V>(
     data: StoreData,
     initializedAtomsSet: Set<Atom>,
     circularDependencySet: WeakSet<Selector> = data.circularDepSet,
+    selectorGraphActiveOverride?: boolean,
 ): boolean => {
-    const selectorGraphActive = data.selectorGraphActive.has(selector)
+    const selectorGraphActive =
+        selectorGraphActiveOverride ?? data.selectorGraphActive.has(selector)
     const existingValue = data.values.get(selector)
     const updatedValue = evaluateCommittedSelectorValue(
         selector,
@@ -838,6 +842,8 @@ export const evaluateSelectorValue = <V>(
     circularDependencySet: WeakSet<Selector> = data.circularDepSet,
     runtime?: SelectorEvaluationRuntime,
 ) => {
+    const selectorGraphActive =
+        !runtime && data.selectorGraphActive.has(selector)
     let value
     try {
         value = evaluateSelector(
@@ -845,6 +851,7 @@ export const evaluateSelectorValue = <V>(
             data,
             initializedAtomsSet,
             circularDependencySet,
+            selectorGraphActive,
             undefined,
             readOverlay,
             runtime,
