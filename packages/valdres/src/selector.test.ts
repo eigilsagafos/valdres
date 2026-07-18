@@ -75,7 +75,7 @@ describe("selector", () => {
         // A cold read keeps its forward dependency for revision validation but
         // stays out of the strongly-held, iterable reverse graph.
         expect(stateDependents.get(numberAtom)).toBeUndefined()
-        expect(stateDependents.get(time100Selector)).toBeUndefined
+        expect(stateDependents.get(time100Selector)).toBeUndefined()
         expect(stateDependencies.get(time100Selector)).toHaveLength(1)
         expect(stateDependencies.get(numberAtom)).toBeUndefined()
         expect(stateDependencies.get(time100Selector)).toStrictEqual(
@@ -94,7 +94,7 @@ describe("selector", () => {
         const { stateDependents, stateDependencies } = rootStore.data
 
         expect(stateDependents.get(usersFamily)).toBeUndefined()
-        expect(stateDependents.get(allUserIds)).toBeUndefined
+        expect(stateDependents.get(allUserIds)).toBeUndefined()
         expect(stateDependencies.get(allUserIds)).toHaveLength(1)
         expect(stateDependencies.get(usersFamily)).toBeUndefined()
         expect(stateDependencies.get(allUserIds)).toStrictEqual(
