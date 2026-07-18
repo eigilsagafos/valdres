@@ -242,9 +242,9 @@ describe("atom", () => {
         expect(callback.mock.calls.length).toBe(callCountAfterEval2)
     })
 
-    test("async selector: rejection cleans up pendingAsyncDeps", async () => {
+    test("async selector: rejection cleans up evaluation dependencies", async () => {
         // If an async selector rejects, the .catch() handler must clean up
-        // the pendingAsyncDeps entry so it doesn't leak. Verify by checking
+        // its evaluation dependency set so it doesn't leak. Verify by checking
         // that subsequent evaluations work correctly.
         const store1 = store()
         const onUnmount = mock(() => {})

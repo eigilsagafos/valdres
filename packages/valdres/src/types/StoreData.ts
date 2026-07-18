@@ -1,7 +1,16 @@
 import type { Selector } from "./Selector"
+import type { State } from "./State"
 import type { Store } from "./Store"
 import type { StoreChangeCallback } from "./StoreChangeCallback"
 import type { Subscription } from "./Subscription"
+
+export type SelectorEvaluationContext = {
+    revoked: boolean
+    preserveSignalOnRevoke: boolean
+    /** All dependencies read by this async evaluation. Kept on the evaluation
+     *  identity so two stores/selectors may safely return the same Promise. */
+    asyncDeps?: Set<State>
+}
 
 export type StoreData = {
     id: string
@@ -113,14 +122,11 @@ export type StoreData = {
      *  stores doesn't trigger a spurious cycle. Add at evaluateSelector
      *  entry, delete in `finally` — balanced over synchronous eval. */
     circularDepSet: WeakSet<Selector>
-    /** Latest evaluation context per selector for revoking deferred (post-
-     *  await) `get` calls from superseded evaluations. Per-store so that
-     *  store2 evaluating a shared selector doesn't silently strip dep
-     *  registration from store1's in-flight async eval. */
-    latestEvalContext: WeakMap<
-        Selector,
-        { revoked: boolean; preserveSignalOnRevoke: boolean }
-    >
+    /** Latest evaluation context per selector for owning async dependencies and
+     *  revoking deferred (post-await) `get` calls from superseded evaluations.
+     *  Per-store so one store evaluating a shared selector cannot interfere
+     *  with another store's in-flight async evaluation. */
+    latestEvalContext: WeakMap<Selector, SelectorEvaluationContext>
     /** Per-atom timestamp of the last value write, used for lazy
      *  maxAge revalidation when the atom is unmounted (no active timer
      *  to keep the cache fresh). Only populated for atoms with `maxAge`. */

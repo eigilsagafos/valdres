@@ -81,4 +81,31 @@ describe("cross-store selector eval — module-level state audit", () => {
         expect(deps).toBeDefined()
         expect(deps!.has(b)).toBe(true)
     })
+
+    test("shared Promise keeps async dependency reconciliation isolated per store", async () => {
+        const dep1 = atom(1)
+        const dep2 = atom(2)
+        const s1 = store()
+        const s2 = store()
+        let resolve!: (value: number) => void
+        const sharedPromise = new Promise<number>(r => (resolve = r))
+        const sel = selector((get, { storeId }) => {
+            get(storeId === s1.data.id ? dep1 : dep2)
+            return sharedPromise
+        })
+
+        expect(s1.get(sel)).toBe(sharedPromise)
+        expect(s2.get(sel)).toBe(sharedPromise)
+
+        resolve(3)
+        await sharedPromise
+        await Promise.resolve()
+
+        const deps1 = s1.data.stateDependencies.get(sel) as Set<unknown>
+        const deps2 = s2.data.stateDependencies.get(sel) as Set<unknown>
+        expect(deps1.has(dep1)).toBe(true)
+        expect(deps1.has(dep2)).toBe(false)
+        expect(deps2.has(dep1)).toBe(false)
+        expect(deps2.has(dep2)).toBe(true)
+    })
 })
