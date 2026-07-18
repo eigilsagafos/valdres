@@ -11,6 +11,11 @@ import { isLive, mountAtom, unmountAtom } from "./mountAtom"
 import { propagateAtomUpdate } from "./propagateUpdatedAtoms"
 import { installMaxAgeTimer } from "./subscribe"
 import { globalStore } from "../globalStore"
+import {
+    isStoreDisposed,
+    trackTouchedGlobal,
+    untrackTouchedGlobal,
+} from "./storeLifecycle"
 
 // Every global atom carries an onSet function, even when the user did not
 // provide one. This lets the write hot path use the existing `atom.onSet`
@@ -26,11 +31,29 @@ export const globalAtom = <Value = unknown>(
     const stores = new Set<StoreData>()
     const userOnSet = options.onSet
 
+    const attach = (data: StoreData) => {
+        // User cleanup runs during disposal and may still hold a store facade.
+        // A terminal store must never acquire a new strong registration.
+        // globalStore is permanent. Reverse-tracking it would make that store
+        // retain every otherwise-unreferenced global atom forever.
+        if (data === globalStore.data) {
+            if (isStoreDisposed(data)) return
+        } else if (!trackTouchedGlobal(data, atom)) {
+            return
+        }
+        stores.add(data)
+    }
+
+    const detach = (data: StoreData) => {
+        stores.delete(data)
+        untrackTouchedGlobal(data, atom)
+    }
+
     // Sync the atom's current value into a store on first access. Called by
     // initAtom whenever a store touches this atom for the first time.
     const onInit: AtomOnInit<Value> = (setSelf, data) => {
         setSelf(globalStore.get(atom))
-        stores.add(data)
+        attach(data)
     }
 
     // Cross-store synchronization is part of the write phase (see
@@ -118,7 +141,7 @@ export const globalAtom = <Value = unknown>(
         }
 
         for (const store of snapshot) {
-            stores.delete(store)
+            detach(store)
             store.values.delete(atom)
             try {
                 propagateAtomUpdate([atom], store, false, undefined, "reset")
@@ -128,7 +151,7 @@ export const globalAtom = <Value = unknown>(
         }
 
         for (const s of subscribedStores) {
-            stores.add(s)
+            attach(s)
             // Match subscribe.ts: maxAge timer is installed only when the
             // atom has a DIRECT subscriber. Transitive (selector-only)
             // subscribers go through the lazy-revalidation path on read.
@@ -143,10 +166,6 @@ export const globalAtom = <Value = unknown>(
         }
 
         if (firstError) throw firstError
-    }
-
-    const detach = (storeData: StoreData) => {
-        stores.delete(storeData)
     }
 
     // `stores` is a plain data property. A getter wasn't buying anything —

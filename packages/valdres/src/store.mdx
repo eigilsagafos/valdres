@@ -82,6 +82,28 @@ myStore.txn(set => {
   Selectors that depend on atoms updated in a transaction will only recompute once, after all updates are applied. This is the intended behavior for performance.
 </div>
 
+## Disposing request stores
+
+Global atoms remember each store that has materialized them so writes can fan
+out synchronously. Dispose short-lived stores—such as one store per SSR request
+or background job—when their work finishes:
+
+```ts
+const requestStore = store()
+
+try {
+    return await renderRequest(requestStore)
+} finally {
+    requestStore.dispose()
+}
+```
+
+`dispose()` unregisters the store and all of its descendant scopes from only the
+global atoms they touched, so cleanup is proportional to work that store did.
+Detached scopes are disposed automatically when their last consumer calls
+`detach()`. Treat a disposed store as finished; create a new store for later
+work.
+
 ## The global store
 
 `valdres` exports a shared `globalStore` — the store that global atoms synchronize through. Import it when you need store access outside of a component (scripts, tests, workers, cross-framework code):

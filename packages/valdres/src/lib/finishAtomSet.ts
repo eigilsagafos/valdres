@@ -51,7 +51,7 @@ export const finishAtomSet = <Value>(
     }
 
     const errors = createCommitErrors()
-    const globalUpdates = applyGlobalSets([[atom, value]], errors)
+    const globalUpdates = applyGlobalSets([[atom, value, data]], errors)
 
     try {
         atom.onSet!(value, data)

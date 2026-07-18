@@ -49,6 +49,34 @@ describe("memory leaks (atoms)", () => {
     })
 })
 
+describe("memory leaks (global atoms)", () => {
+    test("disposed request store is collected while its global atom remains", async () => {
+        const globalAtom = atom(0, { global: true })
+        const detector = (() => {
+            const requestStore = store()
+            requestStore.get(globalAtom)
+            const detector = new LeakDetector(requestStore.data)
+            requestStore.dispose()
+            return detector
+        })()
+
+        expect(await detector.isLeaking()).toBe(false)
+    })
+
+    test("global store does not retain an otherwise released global atom", async () => {
+        const detector = (() => {
+            const requestStore = store()
+            const globalAtom = atom(0, { global: true })
+            requestStore.get(globalAtom)
+            const detector = new LeakDetector(globalAtom)
+            requestStore.dispose()
+            return detector
+        })()
+
+        expect(await detector.isLeaking()).toBe(false)
+    })
+})
+
 describe("memory leaks (selectors)", () => {
     test("unreferenced selector value is collected", async () => {
         const sel = (() => {
