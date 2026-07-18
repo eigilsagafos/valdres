@@ -14,6 +14,7 @@ import { resolveReactive } from "../utils/resolveReactive"
 import { unsetValue } from "./unsetValue"
 import { createStoreData } from "./createStoreData"
 import { deleteFamilyAtom } from "./deleteFamilyAtom"
+import { disposeStoreData } from "./disposeStoreData"
 import { flushPendingOrphanCleanup } from "./flushPendingOrphanCleanup"
 import { getState } from "./getState"
 import {
@@ -29,6 +30,7 @@ import { setAtom } from "./setAtom"
 import { setValueInData } from "./setValueInData"
 import { snapshot } from "./snapshot"
 import { STORE_RUNTIME } from "./storeRuntimeKey"
+import { isStoreDisposed, STORE_LIFECYCLE } from "./storeLifecycle"
 import { subscribe } from "./subscribe"
 import { Transaction, transaction } from "./transaction"
 
@@ -104,6 +106,10 @@ const createStoreRuntime = (data: StoreData): Store => {
     let _pendingTxn: Transaction | null = null
 
     const flushPendingTxn = () => {
+        if (isStoreDisposed(data)) {
+            _pendingTxn = null
+            return
+        }
         if (_pendingTxn) {
             const txnToCommit = _pendingTxn
             _pendingTxn = null
@@ -307,6 +313,8 @@ const createStoreRuntime = (data: StoreData): Store => {
         return snapshot(data)
     }
 
+    const dispose = () => disposeStoreData(data)
+
     const scope: ScopeFn = ((scopeId: string, callback?: any) => {
         if (callback) {
             if (!data.scopes.has(scopeId)) {
@@ -332,20 +340,10 @@ const createStoreRuntime = (data: StoreData): Store => {
                 data.scopes.set(scopeId, scopedStoreData)
             }
             const consumers = scopedStoreData.scopeConsumers!
-            const indexKeys = scopedStoreData.scopeIndexKeys!
             const detach = (expectedToDestroy = false) => {
                 consumers.delete(detach)
                 if (consumers.size === 0) {
-                    data.scopes.delete(scopeId)
-                    // Clean up scopeValueIndex entries referencing this scope
-                    for (const key of indexKeys) {
-                        const set = data.scopeValueIndex.get(key)
-                        if (set) {
-                            set.delete(scopedStoreData)
-                            if (set.size === 0) data.scopeValueIndex.delete(key)
-                        }
-                    }
-                    indexKeys.clear()
+                    disposeStoreData(scopedStoreData)
                     return true
                 }
                 if (expectedToDestroy) {
@@ -375,7 +373,11 @@ const createStoreRuntime = (data: StoreData): Store => {
         onChange,
         onCommitEnd: storeOnCommitEnd,
         snapshot: storeSnapshot,
-    }
+        dispose,
+        // Reserve the lazy lifecycle slot without adding fields to StoreData's
+        // atom-hot hidden class. Global first-touch can populate it in place.
+        [STORE_LIFECYCLE]: undefined,
+    } as Store
 }
 
 /** A scope consumer owns only its detach lease; all operations share runtime. */
@@ -392,5 +394,6 @@ const createScopeLease = (runtime: Store, detach: () => void): ScopedStore => ({
     onChange: runtime.onChange,
     onCommitEnd: runtime.onCommitEnd,
     snapshot: runtime.snapshot,
+    dispose: detach,
     detach,
 })

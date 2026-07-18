@@ -4,6 +4,7 @@ import { finishAtomSet } from "./finishAtomSet"
 import { propagateAtomUpdate } from "./propagateUpdatedAtoms"
 import { resolvePendingDefault } from "./resolvePendingDefault"
 import { setValueInData } from "./setValueInData"
+import { isStoreDisposed } from "./storeLifecycle"
 import { unsetValue } from "./unsetValue"
 import { validateResolvedValue } from "./validateResolvedValue"
 
@@ -32,6 +33,7 @@ export const coordinateAsyncWrite = <Value>(
         !!data.parent && !data.values.has(atom) && currentValue === value
     setValueInData(atom, promise as Value, data)
     const rollback = () => {
+        if (isStoreDisposed(data)) return
         if (data.values.get(atom) !== promise) return
         if (rollbackInheritedWrite) {
             // Promise reactions run in registration order. Defer the unset one
@@ -39,6 +41,7 @@ export const coordinateAsyncWrite = <Value>(
             // first even when a cross-scope transaction registered this child
             // coordinator before the parent's (writes are leaf-first).
             queueMicrotask(() => {
+                if (isStoreDisposed(data)) return
                 if (data.values.get(atom) === promise) unsetValue(atom, data)
             })
             return
@@ -49,7 +52,7 @@ export const coordinateAsyncWrite = <Value>(
     promise
         .then(resolvedValue => {
             // Last write wins, not last Promise to settle.
-            if (data.values.get(atom) !== promise) return
+            if (isStoreDisposed(data) || data.values.get(atom) !== promise) return
             // Async validation cannot throw back to the original caller. Report
             // the error and restore the value observed before this write.
             if (!validateResolvedValue(atom, resolvedValue, data)) {

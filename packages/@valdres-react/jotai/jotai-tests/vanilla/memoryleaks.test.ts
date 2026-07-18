@@ -61,7 +61,9 @@ describe("memory leaks (with subscribe)", () => {
         await Promise.resolve()
         unsub = undefined
         objAtom = undefined
-        expect(await detector.isLeaking()).toBe(false)
+        // Match the bounded full-suite window below: a true strong reference
+        // still survives it, while stale JSC stack slots get time to clear.
+        expect(await detector.isLeaking(50)).toBe(false)
     })
 
     test("two atoms", async () => {

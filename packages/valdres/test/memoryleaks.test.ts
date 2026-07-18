@@ -5,6 +5,7 @@ import { atom } from "../src/atom"
 import { selector } from "../src/selector"
 import { atomFamily } from "../src/atomFamily"
 import { selectorFamily } from "../src/selectorFamily"
+import { familyKey } from "../src/lib/familyKey"
 
 // All leak tests that check if a value is collected use an IIFE to ensure
 // the store goes fully out of scope before asserting. When bun runs many
@@ -45,6 +46,34 @@ describe("memory leaks (atoms)", () => {
             s.set(a, { replaced: true })
             return d
         })()
+        expect(await detector.isLeaking()).toBe(false)
+    })
+})
+
+describe("memory leaks (global atoms)", () => {
+    test("disposed request store is collected while its global atom remains", async () => {
+        const globalAtom = atom(0, { global: true })
+        const detector = (() => {
+            const requestStore = store()
+            requestStore.get(globalAtom)
+            const detector = new LeakDetector(requestStore.data)
+            requestStore.dispose()
+            return detector
+        })()
+
+        expect(await detector.isLeaking()).toBe(false)
+    })
+
+    test("global store does not retain an otherwise released global atom", async () => {
+        const detector = (() => {
+            const requestStore = store()
+            const globalAtom = atom(0, { global: true })
+            requestStore.get(globalAtom)
+            const detector = new LeakDetector(globalAtom)
+            requestStore.dispose()
+            return detector
+        })()
+
         expect(await detector.isLeaking()).toBe(false)
     })
 })
@@ -307,7 +336,9 @@ describe("memory leaks (atom families)", () => {
         const detector = new LeakDetector(familyAtom)
         familyAtom = undefined
         expect(await detector.isLeaking()).toBe(false)
-        expect(family.__valdresAtomFamilyMap.has("bob")).toBe(false)
+        expect(family.__valdresAtomFamilyMap.has(familyKey(["bob"]))).toBe(
+            false,
+        )
     })
 
     test("family atom value is collected after release and unsubscribe", async () => {

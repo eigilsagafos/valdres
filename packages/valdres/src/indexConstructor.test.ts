@@ -82,13 +82,13 @@ describe("index", () => {
         expect(
             defaultStore
                 .get(postsByTag("foo"))
-                .map(atom => atom.familyArgsStringified),
+                .map(atom => atom.familyArgs[0]),
         ).toStrictEqual(["1", "3"])
         expect(indexCallback).toHaveBeenCalledTimes(3)
         expect(
             defaultStore
                 .get(postsByTag("bar"))
-                .map(atom => atom.familyArgsStringified),
+                .map(atom => atom.familyArgs[0]),
         ).toStrictEqual(["2", "3"])
         expect(indexCallback).toHaveBeenCalledTimes(6)
         defaultStore.set(post("3"), {
@@ -101,13 +101,13 @@ describe("index", () => {
         expect(
             defaultStore
                 .get(postsByTag("foo"))
-                .map(atom => atom.familyArgsStringified),
+                .map(atom => atom.familyArgs[0]),
         ).toStrictEqual(["1"])
         expect(indexCallback).toHaveBeenCalledTimes(7)
         expect(
             defaultStore
                 .get(postsByTag("bar"))
-                .map(atom => atom.familyArgsStringified),
+                .map(atom => atom.familyArgs[0]),
         ).toStrictEqual(["2"])
         expect(indexCallback).toHaveBeenCalledTimes(8)
         process.debug1 = true
