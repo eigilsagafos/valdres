@@ -291,8 +291,19 @@ export const evaluateSelector = <V>(
                     return lateGet(state, selector, data)
                 }
                 let value
+                const liveOnlyDependencyRead =
+                    tracksReverseEdges && !data.coldSelectorCachesEnabled
                 if (readOverlay) {
                     value = readOverlay(state)
+                } else if (
+                    liveOnlyDependencyRead &&
+                    data.values.has(state)
+                ) {
+                    // A live-only store has no forward-only cache to validate.
+                    // Keep its already-materialized dependency read on the
+                    // original WeakMap has/get path instead of entering
+                    // getState only to repeat the same lookup.
+                    value = data.values.get(state)
                 } else {
                     // A selector first discovered while evaluating an active
                     // selector is already transitively live. When it has no
@@ -301,7 +312,7 @@ export const evaluateSelector = <V>(
                     // so revision validation precedes promotion.
                     const activateFreshSelector =
                         tracksReverseEdges &&
-                        !data.values.has(state) &&
+                        (liveOnlyDependencyRead || !data.values.has(state)) &&
                         !data.stateDependencies.has(state) &&
                         isSelector(state) &&
                         !data.selectorGraphActive.has(state)
