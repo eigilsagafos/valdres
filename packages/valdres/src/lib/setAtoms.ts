@@ -7,10 +7,9 @@ import {
     throwCommitError,
 } from "./commitErrors"
 import {
-    applyGlobalSets,
+    applyGlobalOnSets,
     beginGlobalCommit,
     endGlobalCommit,
-    type DeferredGlobalSet,
 } from "./globalAtomFanOut"
 import { createChangeSink, flushChangeSink } from "./notifyChangeListeners"
 import {
@@ -20,31 +19,49 @@ import {
 } from "./propagateUpdatedAtoms"
 import { runOnSets, writeAtoms, type DeferredOnSet } from "./writeAtoms"
 
+// Safe only with writeAtoms(skipOnSet=true), which cannot mutate this queue.
+// Reusing it keeps transactions without hooks/globals on the pre-fix
+// allocation profile.
+const noOnSets: DeferredOnSet[] = []
+
 export const setAtoms = (
     pairs: Map<Atom<any>, any>,
     data: StoreData,
     initializedAtomsSet: Set<Atom>,
     skipOnSet = false,
     report?: ChangeReport,
+    hasCommitEffects = true,
 ) => {
+    if (skipOnSet || !hasCommitEffects) {
+        const updatedAtoms = writeAtoms(
+            pairs,
+            data,
+            initializedAtomsSet,
+            true,
+            noOnSets,
+        )
+        if (updatedAtoms.length > 0) {
+            propagateAtomUpdate(updatedAtoms, data, false, undefined, report)
+        }
+        return
+    }
+
     const onSets: DeferredOnSet[] = []
-    const globalSets: DeferredGlobalSet[] = []
     const updatedAtoms = writeAtoms(
         pairs,
         data,
         initializedAtomsSet,
-        skipOnSet,
+        false,
         onSets,
-        globalSets,
     )
     const errors = createCommitErrors()
 
     // Complete global fan-out while still in the write phase. Only after every
     // peer has been attempted do user hooks run.
-    const globalUpdates = applyGlobalSets(globalSets, errors)
+    const globalUpdates = applyGlobalOnSets(onSets, errors)
     runOnSets(onSets, errors)
 
-    if (globalUpdates.size === 0) {
+    if (!globalUpdates || globalUpdates.size === 0) {
         if (updatedAtoms.length > 0) {
             try {
                 propagateAtomUpdate(

@@ -27,29 +27,26 @@ import { validateResolvedValue } from "./validateResolvedValue"
 import { validateSchema } from "./validateSchema"
 
 /**
- * Finish a settled atom write after its value has landed. Global peer writes
- * are applied first, then the user hook runs, then every store propagates and
- * notifies. Errors never interrupt a later phase; the first is rethrown last.
+ * Slow path for a settled write carrying an onSet hook (global atoms always
+ * carry a no-op marker hook). Global peer writes are applied first, then the
+ * hook runs, then every store propagates and notifies. Errors never interrupt a
+ * later phase; the first is rethrown last.
  */
 const finishAtomSet = <Value>(
     atom: Atom<Value>,
     value: Value,
     data: StoreData,
     updatedAtoms: Atom<any>[],
-    skipOnSet: boolean,
     source: "set" | "async-set",
 ) => {
-    // The overwhelmingly common path stays allocation-free.
-    if (skipOnSet || !isGlobalAtom(atom)) {
+    if (!isGlobalAtom(atom)) {
         let hasHookError = false
         let hookError: unknown
-        if (atom.onSet && !skipOnSet) {
-            try {
-                atom.onSet(value, data)
-            } catch (error) {
-                hasHookError = true
-                hookError = error
-            }
+        try {
+            atom.onSet!(value, data)
+        } catch (error) {
+            hasHookError = true
+            hookError = error
         }
         try {
             propagateAtomUpdate(updatedAtoms, data, false, undefined, source)
@@ -64,12 +61,10 @@ const finishAtomSet = <Value>(
     const errors = createCommitErrors()
     const globalUpdates = applyGlobalSets([[atom, value]], errors)
 
-    if (atom.onSet) {
-        try {
-            atom.onSet(value, data)
-        } catch (error) {
-            recordCommitError(errors, error)
-        }
+    try {
+        atom.onSet!(value, data)
+    } catch (error) {
+        recordCommitError(errors, error)
     }
 
     if (globalUpdates.size === 0) {
@@ -135,14 +130,20 @@ const handlePromise = <Value>(
             }
             setValueInData(atom, resolvedValue, data)
             resolvePendingDefault(atom, data, resolvedValue)
-            finishAtomSet(
-                atom,
-                resolvedValue,
-                data,
-                [atom],
-                skipOnSet,
-                "async-set",
-            )
+            if (atom.onSet && !skipOnSet) {
+                finishAtomSet(atom, resolvedValue, data, [atom], "async-set")
+            } else {
+                // Ordinary atoms retain the original inline, allocation-free
+                // propagation path. Only hook/global writes pay for phased
+                // error handling.
+                propagateAtomUpdate(
+                    [atom],
+                    data,
+                    false,
+                    undefined,
+                    "async-set",
+                )
+            }
         })
         // Chained .catch so errors thrown inside the fulfilled handler
         // (e.g. from atom.onSet) don't surface as unhandled rejections.
@@ -215,18 +216,17 @@ export const setAtom = <Value = any>(
     }
     syncValue = setValueInData(atom, syncValue, data)
     resolvePendingDefault(atom, data, syncValue)
+    let updatedAtoms: Atom<any>[]
     if (initializedAtomsSet && initializedAtomsSet.size > 0) {
         initializedAtomsSet.add(atom)
-        finishAtomSet(
-            atom,
-            syncValue,
-            data,
-            [...initializedAtomsSet],
-            skipOnSet,
-            "set",
-        )
+        updatedAtoms = [...initializedAtomsSet]
     } else {
-        finishAtomSet(atom, syncValue, data, [atom], skipOnSet, "set")
+        updatedAtoms = [atom]
+    }
+    if (atom.onSet && !skipOnSet) {
+        finishAtomSet(atom, syncValue, data, updatedAtoms, "set")
+    } else {
+        propagateAtomUpdate(updatedAtoms, data, false, undefined, "set")
     }
     return syncValue
 }

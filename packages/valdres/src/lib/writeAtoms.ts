@@ -1,11 +1,9 @@
 import type { Atom } from "../types/Atom"
 import type { StoreData } from "../types/StoreData"
-import { isGlobalAtom } from "../utils/isGlobalAtom"
 import { isPromiseLike } from "../utils/isPromiseLike"
 import type { CommitErrors } from "./commitErrors"
 import { recordCommitError } from "./commitErrors"
 import { getState } from "./getState"
-import type { DeferredGlobalSet } from "./globalAtomFanOut"
 import { resolvePendingDefault } from "./resolvePendingDefault"
 import { setValueInData } from "./setValueInData"
 
@@ -41,7 +39,6 @@ export const writeAtoms = (
     initializedAtomsSet: Set<Atom>,
     skipOnSet: boolean,
     onSetQueue: DeferredOnSet[],
-    globalSetQueue: DeferredGlobalSet[],
 ): Atom[] => {
     const updatedAtoms: Atom[] = []
     for (let [atom, value] of pairs) {
@@ -65,11 +62,11 @@ export const writeAtoms = (
             if (currentIsPromise && !isPromiseLike(value)) {
                 resolvePendingDefault(atom, data, value)
             }
-            if (!skipOnSet) {
-                if (isGlobalAtom(atom)) {
-                    globalSetQueue.push([atom, value])
-                }
-                if (atom.onSet) onSetQueue.push([atom, value, data])
+            // Global atoms always carry a no-op marker hook, so one existing
+            // property read identifies every write that needs the phased slow
+            // path. Ordinary atoms avoid an Object.hasOwn/global check here.
+            if (!skipOnSet && atom.onSet) {
+                onSetQueue.push([atom, value, data])
             }
         } else {
             // We do this to ensure that if an atom was set in a scoped transaction but was the same we still override it in that scope

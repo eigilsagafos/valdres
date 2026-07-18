@@ -34,10 +34,9 @@ import {
     throwCommitError,
 } from "./commitErrors"
 import {
-    applyGlobalSets,
+    applyGlobalOnSets,
     beginGlobalCommit,
     endGlobalCommit,
-    type DeferredGlobalSet,
 } from "./globalAtomFanOut"
 import {
     cloneAtomFamilyIndex,
@@ -62,7 +61,6 @@ type CommitWrite = {
     deleted: AtomFamilyAtom<any, any>[] | undefined
     unsetAtoms: Atom[] | undefined
     onSets: DeferredOnSet[]
-    globalSets: DeferredGlobalSet[]
 }
 
 // const findDependencies = (
@@ -106,6 +104,10 @@ export class Transaction {
     private _selectorDependencies: any
     private _selectorCache: any
     private _atomMap: Map<any, any>
+    // Global atoms always carry an onSet marker, so this one bit covers every
+    // write that needs phased hook/fan-out handling. Transactions containing
+    // only ordinary atoms retain the original allocation-light commit path.
+    private _hasCommitEffects = false
     constructor(
         data: StoreData,
         parentTransaction?: Transaction,
@@ -226,6 +228,9 @@ export class Transaction {
         // does NOT resolve it — the promise is stored as-is and never validated.
         resolved = validateSchema(atom, resolved, this.data)
         this._atomMap.set(atom, resolved)
+        if (!this._hasCommitEffects && atom.onSet) {
+            this._hasCommitEffects = true
+        }
         // A set supersedes an unset of the same atom buffered earlier in this txn
         // (last write wins, regardless of order). Symmetric to `unset` dropping
         // any buffered set.
@@ -263,6 +268,9 @@ export class Transaction {
             // Validate like Transaction.set so this path can't become an
             // unvalidated hole (promises are skipped by validateSchema).
             this._atomMap.set(atom, validateSchema(atom, value, this.data))
+            if (!this._hasCommitEffects && atom.onSet) {
+                this._hasCommitEffects = true
+            }
             this._unsetSet?.delete(atom)
         }
         index.rendered = null
@@ -346,6 +354,9 @@ export class Transaction {
             this.initializedAtomsSet,
         ) as V | Promise<V>
         this._atomMap.set(atom, value)
+        if (!this._hasCommitEffects && atom.onSet) {
+            this._hasCommitEffects = true
+        }
         // reset writes the default; it supersedes a buffered unset of the atom.
         this._unsetSet?.delete(atom)
         return value
@@ -424,6 +435,7 @@ export class Transaction {
                     initializedAtomsSet,
                     false,
                     sink,
+                    this._hasCommitEffects,
                 )
                 return
             }
@@ -431,14 +443,12 @@ export class Transaction {
             // Deletes/unsets require multiple propagation passes. Complete ALL
             // mutations first, then hooks, then every propagation/notification.
             const onSets: DeferredOnSet[] = []
-            const globalSets: DeferredGlobalSet[] = []
             const updatedAtoms = writeAtoms(
                 this._atomMap,
                 this.data,
                 initializedAtomsSet,
                 false,
                 onSets,
-                globalSets,
             )
             const deleted = this._deleteSet?.size
                 ? [...this._deleteSet]
@@ -451,24 +461,32 @@ export class Transaction {
                 : []
 
             const errors = createCommitErrors()
-            const globalUpdates = applyGlobalSets(globalSets, errors)
+            const globalUpdates = applyGlobalOnSets(onSets, errors)
             runOnSets(onSets, errors)
 
             const notify: NotifyTarget = new Map()
             const globalSink =
-                globalUpdates.size > 0
+                globalUpdates && globalUpdates.size > 0
                     ? createChangeSink(undefined, "set")
                     : undefined
             const commitRoots = globalSink
-                ? beginGlobalCommit(this.data, globalUpdates)
+                ? beginGlobalCommit(this.data, globalUpdates!)
                 : []
             // Global peers historically surface as direct `set` changes and
             // report before the transaction origin.
-            for (const [peer, atoms] of globalUpdates) {
-                try {
-                    propagateAtomUpdate(atoms, peer, false, notify, globalSink)
-                } catch (error) {
-                    recordCommitError(errors, error)
+            if (globalUpdates) {
+                for (const [peer, atoms] of globalUpdates) {
+                    try {
+                        propagateAtomUpdate(
+                            atoms,
+                            peer,
+                            false,
+                            notify,
+                            globalSink,
+                        )
+                    } catch (error) {
+                        recordCommitError(errors, error)
+                    }
                 }
             }
             if (updatedAtoms.length > 0) {
@@ -578,7 +596,6 @@ export class Transaction {
                 new Set<Atom>(),
                 false,
                 entry.onSets,
-                entry.globalSets,
             )
             if (txn._deleteSet?.size) {
                 deleteAtomFamilyAtoms(txn._deleteSet, entry.data)
@@ -595,9 +612,14 @@ export class Transaction {
 
         // Global peers are writes too. Apply them all before entering the hook
         // phase, preserving the root-first hook/fan-out order of the plan.
-        const globalSets: DeferredGlobalSet[] = []
-        for (const entry of plan) globalSets.push(...entry.globalSets)
-        const globalUpdates = applyGlobalSets(globalSets, errors)
+        let globalUpdates
+        for (const entry of plan) {
+            globalUpdates = applyGlobalOnSets(
+                entry.onSets,
+                errors,
+                globalUpdates,
+            )
+        }
 
         // Every value across the tree and every global peer is now applied.
         // Hooks fire root-first, all are attempted, and their first error is
@@ -624,20 +646,28 @@ export class Transaction {
         // NotifyTarget for why a dedup guard must not come back.
         const notify: NotifyTarget = new Map()
         const globalSink =
-            globalUpdates.size > 0
+            globalUpdates && globalUpdates.size > 0
                 ? createChangeSink(undefined, "set")
                 : undefined
         const commitRoots = globalSink
-            ? beginGlobalCommit(this.data, globalUpdates)
+            ? beginGlobalCommit(this.data, globalUpdates!)
             : []
         // Global fan-out retains its public direct-set metadata and precedes
         // the originating transaction's reports, as it did when fan-out lived
         // inside the global atom's onSet wrapper.
-        for (const [data, atoms] of globalUpdates) {
-            try {
-                propagateAtomUpdate(atoms, data, false, notify, globalSink)
-            } catch (error) {
-                recordCommitError(errors, error)
+        if (globalUpdates) {
+            for (const [data, atoms] of globalUpdates) {
+                try {
+                    propagateAtomUpdate(
+                        atoms,
+                        data,
+                        false,
+                        notify,
+                        globalSink,
+                    )
+                } catch (error) {
+                    recordCommitError(errors, error)
+                }
             }
         }
         for (const { data, updatedAtoms, deleted, unsetAtoms } of plan) {
@@ -734,7 +764,6 @@ export class Transaction {
             deleted: undefined,
             unsetAtoms: undefined,
             onSets: [],
-            globalSets: [],
         })
         if (this._scopedTransactions) {
             for (const [, scopedTxn] of this._scopedTransactions) {

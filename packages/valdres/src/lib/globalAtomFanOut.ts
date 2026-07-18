@@ -1,6 +1,7 @@
 import type { Atom } from "../types/Atom"
 import type { GlobalAtom } from "../types/GlobalAtom"
 import type { StoreData } from "../types/StoreData"
+import { isGlobalAtom } from "../utils/isGlobalAtom"
 import { isPromiseLike } from "../utils/isPromiseLike"
 import type { CommitErrors } from "./commitErrors"
 import { recordCommitError } from "./commitErrors"
@@ -9,6 +10,7 @@ import { beginCommit, commitEndRegistry, endCommit } from "./onCommitEnd"
 import { resolvePendingDefault } from "./resolvePendingDefault"
 import { setValueInData } from "./setValueInData"
 import { validateSchema } from "./validateSchema"
+import type { DeferredOnSet } from "./writeAtoms"
 
 /** A changed global atom whose value still needs to be applied to its peers. */
 export type DeferredGlobalSet = [GlobalAtom<any>, any]
@@ -91,25 +93,54 @@ const applyPeerValue = (
  * before hooks or propagation begin; a failure in one peer cannot starve later
  * peers. Returned updates are grouped by store for the propagation phase.
  */
+const applyGlobalSet = (
+    atom: GlobalAtom<any>,
+    value: any,
+    updates: StoreAtomUpdates,
+    errors: CommitErrors,
+): void => {
+    // Snapshot: initializing or user code in a later phase may mutate the
+    // registration set, but it must not change this commit's fan-out list.
+    for (const peer of [...atom.stores]) {
+        try {
+            // Include the originating store. This is normally an equal no-op,
+            // but when one commit stages the same global atom from multiple
+            // stores it makes the last queued value win EVERYWHERE instead of
+            // leaving each origin on a different prior value.
+            addUpdates(updates, peer, applyPeerValue(atom, value, peer))
+        } catch (error) {
+            recordCommitError(errors, error)
+        }
+    }
+}
+
 export const applyGlobalSets = (
     globalSets: DeferredGlobalSet[],
     errors: CommitErrors,
 ): StoreAtomUpdates => {
     const updates: StoreAtomUpdates = new Map()
     for (const [atom, value] of globalSets) {
-        // Snapshot: initializing or user code in a later phase may mutate the
-        // registration set, but it must not change this commit's fan-out list.
-        for (const peer of [...atom.stores]) {
-            try {
-                // Include the originating store. This is normally an equal
-                // no-op, but when one commit stages the same global atom from
-                // multiple stores it makes the last queued value win EVERYWHERE
-                // instead of leaving each origin on a different prior value.
-                addUpdates(updates, peer, applyPeerValue(atom, value, peer))
-            } catch (error) {
-                recordCommitError(errors, error)
-            }
-        }
+        applyGlobalSet(atom, value, updates, errors)
+    }
+    return updates
+}
+
+/**
+ * Apply only the global writes from a deferred-hook queue. Global atoms carry
+ * an onSet marker even without a user hook, so the queue is also the complete
+ * set of commit-sensitive writes. The updates map is created lazily: a
+ * transaction containing ordinary user hooks but no globals allocates no
+ * global fan-out state.
+ */
+export const applyGlobalOnSets = (
+    onSets: DeferredOnSet[],
+    errors: CommitErrors,
+    updates?: StoreAtomUpdates,
+): StoreAtomUpdates | undefined => {
+    for (const [atom, value] of onSets) {
+        if (!isGlobalAtom(atom)) continue
+        updates ??= new Map()
+        applyGlobalSet(atom, value, updates, errors)
     }
     return updates
 }
