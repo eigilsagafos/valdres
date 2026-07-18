@@ -7,5 +7,5 @@ export type AtomFamilyAtom<
 > = Atom<Value> & {
     family: AtomFamily<Value, Args>
     familyArgs: Args
-    familyArgsStringified: string | number | boolean
+    familyArgsStringified: string | number | boolean | bigint
 }

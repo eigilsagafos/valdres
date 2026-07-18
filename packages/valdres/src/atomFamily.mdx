@@ -43,6 +43,29 @@ const userAtom = atomFamily(id => ({
 store.get(userAtom("user-1")) // { id: "user-1", name: "", email: "" }
 ```
 
+## Key identity
+
+Family calls are keyed by a deterministic structural encoding. Primitive types,
+argument count, Arrays, plain Objects, Dates, Maps, and Sets remain distinct;
+object property order and Map/Set insertion order do not affect identity.
+`BigInt` is supported too.
+
+Values without deterministic structural semantics—such as Symbols, functions,
+Promises, class instances, accessor properties, and cyclic structures—throw a
+`TypeError`. Use `keyOf` to derive a supported identity for those arguments, or
+to intentionally group multiple arguments:
+
+```ts
+type Entity = { id: string; self?: Entity }
+
+const entityAtom = atomFamily<Entity, [Entity]>(entity => entity, {
+    keyOf: entity => entity.id,
+})
+```
+
+`keyOf` receives the same argument tuple as the family factory. Its result is
+run through the same canonical codec, and `release(...args)` uses it as well.
+
 ## Subscribing to all keys
 
 <div className="callout callout-tip">

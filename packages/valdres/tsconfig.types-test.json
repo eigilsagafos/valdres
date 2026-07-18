@@ -4,5 +4,5 @@
     "compilerOptions": {
         "noEmit": true
     },
-    "include": ["src/lib/schemaValidation.types.test.ts"]
+    "include": ["src/lib/*.types.test.ts"]
 }
