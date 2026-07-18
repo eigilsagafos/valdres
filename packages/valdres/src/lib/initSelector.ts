@@ -81,6 +81,27 @@ const rollbackFreshSelectorActivation = (
     if (!isLive(selector, data)) data.selectorGraphActive.delete(selector)
 }
 
+export const initFreshActiveSelector = <V>(
+    selector: Selector<V>,
+    data: StoreData,
+    initializedAtomsSet: Set<Atom>,
+    circularDependencySet: WeakSet<Selector>,
+): V => {
+    data.selectorGraphActive.add(selector)
+    try {
+        initSelector(
+            selector,
+            data,
+            initializedAtomsSet,
+            circularDependencySet,
+        )
+        return data.values.get(selector)
+    } catch (error) {
+        rollbackFreshSelectorActivation(selector, data)
+        throw error
+    }
+}
+
 const rollbackFreshSelectorActivations = (
     selectors: Selector | Selector[] | undefined,
     data: StoreData,
@@ -92,6 +113,26 @@ const rollbackFreshSelectorActivations = (
     }
     for (let i = selectors.length - 1; i >= 0; i--) {
         rollbackFreshSelectorActivation(selectors[i], data)
+    }
+}
+
+const lateGetWithRevisionSnapshot = (
+    state: State,
+    selector: Selector,
+    data: StoreData,
+    evalCtx: SelectorEvaluationContext,
+) => {
+    try {
+        return lateGet(state, selector, data)
+    } finally {
+        // Native cold async selectors retain the revision observed by each
+        // post-await read. Promise settlement must not stamp a stale result
+        // with the dependency's newer revision.
+        const revisions = evalCtx.asyncDependencyRevisions
+        if (!evalCtx.revoked && revisions && !revisions.has(state)) {
+            trackStateRevision(state, data)
+            revisions.set(state, getStateRevision(state, data))
+        }
     }
 }
 
@@ -239,24 +280,15 @@ export const evaluateSelector = <V>(
                         // registering deps or mounting.
                         return getState(state, data, new Set<Atom>())
                     }
-                    try {
-                        return lateGet(state, selector, data)
-                    } finally {
-                        // Native async selectors retain the revision observed by
-                        // each post-await read. Promise settlement must not stamp
-                        // a stale result with the dependency's newer revision.
-                        if (
-                            !evalCtx.revoked &&
-                            evalCtx.asyncDependencyRevisions &&
-                            !evalCtx.asyncDependencyRevisions.has(state)
-                        ) {
-                            trackStateRevision(state, data)
-                            evalCtx.asyncDependencyRevisions.set(
-                                state,
-                                getStateRevision(state, data),
-                            )
-                        }
+                    if (evalCtx.asyncDependencyRevisions) {
+                        return lateGetWithRevisionSnapshot(
+                            state,
+                            selector,
+                            data,
+                            evalCtx,
+                        )
                     }
+                    return lateGet(state, selector, data)
                 }
                 let value
                 if (readOverlay) {
@@ -274,18 +306,12 @@ export const evaluateSelector = <V>(
                         isSelector(state) &&
                         !data.selectorGraphActive.has(state)
                     if (activateFreshSelector) {
-                        data.selectorGraphActive.add(state)
-                        try {
-                            value = getState(
-                                state,
-                                data,
-                                initializedAtomsSet,
-                                circularDependencySet,
-                            )
-                        } catch (error) {
-                            rollbackFreshSelectorActivation(state, data)
-                            throw error
-                        }
+                        value = initFreshActiveSelector(
+                            state,
+                            data,
+                            initializedAtomsSet,
+                            circularDependencySet,
+                        )
                         if (!activatedDuringEvaluation) {
                             activatedDuringEvaluation = state
                         } else if (Array.isArray(activatedDuringEvaluation)) {
@@ -412,9 +438,7 @@ export const evaluateSelector = <V>(
                         // A newly-read selector may itself have been only cold-
                         // cached. Promote its closure before liveness bookkeeping
                         // treats it as a live dependency.
-                        if (data.coldSelectorCachesEnabled) {
-                            activateSelectorGraph(state, data)
-                        }
+                        activateSelectorGraph(state, data)
                         if (depsChangeOut) {
                             if (!depsChangeOut.added)
                                 depsChangeOut.added = new Set<State>()

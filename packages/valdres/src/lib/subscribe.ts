@@ -14,13 +14,13 @@ import { isReactive, resolveReactive } from "../utils/resolveReactive"
 import type { CacheMeta } from "../types/Atom"
 import { equal } from "./equal"
 import { initAtom } from "./initAtom"
+import { initFreshActiveSelector } from "./initSelector"
 import { getState } from "./getState"
 import { propagateAtomUpdate } from "./propagateUpdatedAtoms"
 import { setValueInData } from "./setValueInData"
 import { setMaxAgeCleanup } from "./maxAgeCleanups"
 import { mountTransitiveDeps, onFirstDirectSubscriber } from "./mountAtom"
 import { unsubscribe } from "./unsubscribe"
-import { cleanupOrphanedDeps } from "./cleanupOrphanedDeps"
 
 const initSubscribers = <V>(state: State<V> | Family<V>, data: StoreData) => {
     const set = new Set<Subscription>()
@@ -348,16 +348,9 @@ export const subscribe = <V>(
                 !selectorHasValue &&
                 !data.stateDependencies.has(state)
             if (activateFreshSelector) {
-                data.selectorGraphActive.add(state)
-            }
-            try {
+                initFreshActiveSelector(state, data, new Set(), new WeakSet())
+            } else {
                 getState(state, data, new Set(), new WeakSet())
-            } catch (error) {
-                if (activateFreshSelector) {
-                    cleanupOrphanedDeps(state, data)
-                    data.selectorGraphActive.delete(state)
-                }
-                throw error
             }
         }
     }
