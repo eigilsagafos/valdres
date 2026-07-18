@@ -9,9 +9,15 @@ import type { GlobalAtom } from "./../types/GlobalAtom"
 import type { StoreData } from "./../types/StoreData"
 import { isLive, mountAtom, unmountAtom } from "./mountAtom"
 import { propagateAtomUpdate } from "./propagateUpdatedAtoms"
-import { setAtom } from "./setAtom"
 import { installMaxAgeTimer } from "./subscribe"
 import { globalStore } from "../globalStore"
+
+// Every global atom carries an onSet function, even when the user did not
+// provide one. This lets the write hot path use the existing `atom.onSet`
+// property as its single fast/slow discriminator: ordinary atoms without hooks
+// stay on the original inline propagation path, while global atoms enter the
+// phased fan-out path. Shared across atoms so the marker itself allocates once.
+const globalOnSetMarker: AtomOnSet<any> = () => {}
 
 export const globalAtom = <Value = unknown>(
     defaultValue: AtomDefaultValue<Value>,
@@ -27,18 +33,11 @@ export const globalAtom = <Value = unknown>(
         stores.add(data)
     }
 
-    // Cross-store sync propagates to peers with skipOnSet=true, so the user
-    // hook fires exactly once per set — in the originating store.
-    const onSet: AtomOnSet<Value> = (newValue, currentStore) => {
-        if (stores.size > 1) {
-            for (const store of stores) {
-                if (store.id !== currentStore.id) {
-                    setAtom(atom, newValue, store, true)
-                }
-            }
-        }
-        userOnSet?.(newValue, currentStore)
-    }
+    // Cross-store synchronization is part of the write phase (see
+    // globalAtomFanOut), rather than this hook. The no-op fallback marks a
+    // global atom as commit-sensitive without adding another property check to
+    // every ordinary set.
+    const onSet: AtomOnSet<Value> = userOnSet ?? globalOnSetMarker
 
     // For global atoms, options.onMount fires when the FIRST subscriber across
     // any store attaches, and its cleanup fires when the LAST subscriber across

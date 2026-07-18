@@ -7,7 +7,9 @@ import type { StoreData } from "../types/StoreData"
  *  no allocation. */
 export const commitEndRegistry = { count: 0 }
 
-const rootOf = (data: StoreData): StoreData => {
+/** Resolve the root that owns commit state for a store tree. Exported for
+ * multi-store commits so they can de-duplicate scopes before opening roots. */
+export const commitRootOf = (data: StoreData): StoreData => {
     let root = data
     while (root.parent) root = root.parent
     return root
@@ -19,7 +21,7 @@ const rootOf = (data: StoreData): StoreData => {
  *  on every path (including throws) using the returned root, so a listener
  *  unsubscribing mid-commit can't strand the depth counter. */
 export const beginCommit = (data: StoreData): StoreData => {
-    const root = rootOf(data)
+    const root = commitRootOf(data)
     root.commitDepth = (root.commitDepth ?? 0) + 1
     return root
 }
@@ -67,7 +69,7 @@ export const onCommitEnd = (
     callback: () => void,
     data: StoreData,
 ): (() => void) => {
-    const root = rootOf(data)
+    const root = commitRootOf(data)
     let listeners = root.commitEndListeners
     if (!listeners) {
         listeners = new Set()

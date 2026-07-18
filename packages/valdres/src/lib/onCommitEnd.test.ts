@@ -194,6 +194,26 @@ describe("store.onCommitEnd", () => {
             scoped.detach()
         })
 
+        test("a scoped global write opens one boundary for the store tree", () => {
+            const root = store()
+            const scoped = root.scope("ce-global")
+            const value = atom(0, { global: true })
+            const subscriberDepths: number[] = []
+            root.get(value)
+            const unsubValue = scoped.sub(value, () => {
+                subscriberDepths.push(root.data.commitDepth ?? 0)
+            })
+            const unsubCommit = root.onCommitEnd(() => {})
+
+            scoped.set(value, 1)
+
+            expect(subscriberDepths).toEqual([1])
+            expect(root.data.commitDepth).toBe(0)
+            unsubValue()
+            unsubCommit()
+            scoped.detach()
+        })
+
         test("an unrelated root store's commit does not fire this tree's listeners", () => {
             const store1 = store()
             const store2 = store()
