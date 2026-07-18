@@ -27,13 +27,11 @@ import {
 
 const isColdSelectorCacheFresh = (
     selector: Selector,
+    cache: { dependencyRevisions: number[]; validatedAt: number },
     data: StoreData,
     initializedAtomsSet: Set<Atom>,
     circularDependencySet?: WeakSet<Selector>,
 ): boolean => {
-    if (data.selectorGraphActive.has(selector)) return true
-    const cache = data.coldSelectorCaches.get(selector)
-    if (!cache) return false
     if (cache.validatedAt === data.stateRevisionClock.current) return true
 
     // Cached async/dynamic selector graphs can be cyclic. Treat a cache already
@@ -118,17 +116,25 @@ export function getState<
     circularDependencySet?: WeakSet<Selector>,
 ) {
     if (data.values.has(state)) {
+        // Atom-only stores retain the original has/get fast path. Once this
+        // store has materialized any cold selector, only a state with matching
+        // metadata needs validation; active selectors have no such entry.
+        const coldCache = data.coldSelectorCachesEnabled
+            ? data.coldSelectorCaches.get(state)
+            : undefined
+        if (!coldCache) {
+            return data.values.get(state)
+        }
         if (
-            !isSelector(state) ||
             isColdSelectorCacheFresh(
-                state,
+                state as Selector,
+                coldCache,
                 data,
                 initializedAtomsSet,
                 circularDependencySet,
             )
-        ) {
+        )
             return data.values.get(state)
-        }
     }
     if (isAtom<Value>(state)) {
         if (data.parent)

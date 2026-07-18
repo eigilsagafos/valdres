@@ -40,12 +40,23 @@ export type StoreData = {
         WeakKey,
         { dependencyRevisions: number[]; validatedAt: number }
     >
+    /** Set on this store after its first cold selector cache. Kept as an eager
+     *  scalar so atom-only cache hits can skip the lazy WeakMap without a state
+     *  shape check or nested revision-clock lookup. */
+    coldSelectorCachesEnabled: boolean
     /** Per-state value revision. Scoped reads fall through to an ancestor when
      *  the state has no local value/revision. */
     stateRevisions: WeakMap<WeakKey, number>
     /** Shared by a root store and every scope. It is enabled lazily by the first
      *  cold selector so atom-only stores don't maintain revision entries. */
-    stateRevisionClock: { current: number; enabled: boolean }
+    stateRevisionClock: {
+        current: number
+        enabled: boolean
+        /** States directly referenced by at least one cold cache. Weak
+         *  membership lets writes skip revision-map churn for unrelated states
+         *  without retaining either side of the dependency. */
+        tracked?: WeakSet<WeakKey>
+    }
     /** Cycle guard for recursive validation of cached selector dependencies. */
     coldCacheValidationSet: WeakSet<WeakKey>
     /** Stable per-store order assigned when a selector first materializes its

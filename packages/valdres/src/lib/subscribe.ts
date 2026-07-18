@@ -20,6 +20,7 @@ import { setValueInData } from "./setValueInData"
 import { setMaxAgeCleanup } from "./maxAgeCleanups"
 import { mountTransitiveDeps, onFirstDirectSubscriber } from "./mountAtom"
 import { unsubscribe } from "./unsubscribe"
+import { cleanupOrphanedDeps } from "./cleanupOrphanedDeps"
 
 const initSubscribers = <V>(state: State<V> | Family<V>, data: StoreData) => {
     const set = new Set<Subscription>()
@@ -331,7 +332,26 @@ export const subscribe = <V>(
     // getState even on a cache hit so a stale dynamic dependency set is rebuilt
     // before the first subscriber promotes it into the live reverse graph.
     if (isSelector(state)) {
-        getState(state, data, new Set(), new WeakSet())
+        // With no committed value or dependency set there is nothing cold to
+        // validate. Mark the root active before evaluation so it and every
+        // newly-read selector build live reverse edges directly, avoiding a
+        // throwaway cold snapshot followed by a separate promotion walk.
+        const activateFreshSelector =
+            !data.selectorGraphActive.has(state) &&
+            !data.values.has(state) &&
+            !data.stateDependencies.has(state)
+        if (activateFreshSelector) {
+            data.selectorGraphActive.add(state)
+        }
+        try {
+            getState(state, data, new Set(), new WeakSet())
+        } catch (error) {
+            if (activateFreshSelector) {
+                cleanupOrphanedDeps(state, data)
+                data.selectorGraphActive.delete(state)
+            }
+            throw error
+        }
     }
 
     const subscribers =

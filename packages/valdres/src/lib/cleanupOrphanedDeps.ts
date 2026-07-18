@@ -2,6 +2,7 @@ import type { State } from "../types/State"
 import type { StoreData } from "../types/StoreData"
 import type { Selector } from "../types/Selector"
 import { isLive } from "./mountAtom"
+import { noteStateValueChanged } from "./stateRevisions"
 
 /**
  * Remove non-live states from the dependency graph, clear selector caches, and
@@ -53,7 +54,9 @@ export const cleanupOrphanedDeps = (state: State, data: StoreData) => {
             data.stateDependencies.delete(current)
             data.selectorGraphActive.delete(current)
             data.coldSelectorCaches.delete(current)
-            data.values.delete(current)
+            if (data.values.delete(current)) {
+                noteStateValueChanged(current, data)
+            }
             data.abortControllers.delete(current)
 
             if (dependents) {

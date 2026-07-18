@@ -49,12 +49,17 @@ describe("selector", () => {
 
         expect(rootStore.get(derived)).toBe(first)
         expect(callback).toHaveBeenCalledTimes(1)
+        expect(rootStore.data.stateRevisionClock.current).toBe(0)
 
         rootStore.set(source, 2)
+        expect(rootStore.data.stateRevisionClock.current).toBe(1)
         // The source write did not eagerly visit the cold selector.
         expect(callback).toHaveBeenCalledTimes(1)
         expect(rootStore.get(derived)).toStrictEqual({ value: 2 })
         expect(callback).toHaveBeenCalledTimes(2)
+        // Recomputing an unreferenced selector does not maintain its own
+        // revision unless another cold cache directly depends on it.
+        expect(rootStore.data.stateRevisionClock.current).toBe(1)
     })
 
     test("dependents/dependencies are correctly handled for selector dependent on atom", () => {

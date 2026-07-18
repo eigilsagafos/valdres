@@ -75,7 +75,9 @@ export function createStoreData(
     data.stateRevisionClock = parent?.stateRevisionClock ?? {
         current: 0,
         enabled: false,
+        tracked: undefined,
     }
+    data.coldSelectorCachesEnabled = false
     data.nextDependencyOrder = 0
     data.dependencyGraphVersion = 0
     data.pendingOrphanCleanup = undefined

@@ -42,6 +42,7 @@ import {
 } from "./notifyChangeListeners"
 import { beginCommit, commitEndRegistry, endCommit } from "./onCommitEnd"
 import { setValueInData } from "./setValueInData"
+import { noteStateValueChanged } from "./stateRevisions"
 
 export type {
     AtomFamilyIndex,
@@ -138,7 +139,9 @@ const reEvaluateSelector = (
         setValueInData(selector, updatedValue, data)
         return true
     } catch {
-        data.values.delete(selector)
+        if (data.values.delete(selector)) {
+            noteStateValueChanged(selector, data)
+        }
         return true
     }
 }
@@ -884,7 +887,9 @@ const propagateDownstreamTopo = (
             (!subscribers || subscribers.size === 0)
         ) {
             // No live consumer — invalidate for lazy re-eval on next read.
-            data.values.delete(selector)
+            if (data.values.delete(selector)) {
+                noteStateValueChanged(selector, data)
+            }
             pending.delete(selector)
             advance(selector, false)
             continue
@@ -982,7 +987,9 @@ const propagateDownstreamTopo = (
             (!dependents || dependents.size === 0) &&
             (!subscribers || subscribers.size === 0)
         ) {
-            data.values.delete(selector)
+            if (data.values.delete(selector)) {
+                noteStateValueChanged(selector, data)
+            }
             return false
         }
         depsChange.added = undefined
@@ -1116,7 +1123,9 @@ const propagateSelectorUpdatesLinearFirst = (
             (!subscribers || subscribers.size === 0)
         ) {
             // No live consumer — invalidate for lazy re-eval on next read.
-            data.values.delete(selector)
+            if (data.values.delete(selector)) {
+                noteStateValueChanged(selector, data)
+            }
             processedInitialSelectors.add(selector)
             continue
         }

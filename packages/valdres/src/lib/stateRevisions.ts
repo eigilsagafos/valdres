@@ -1,7 +1,6 @@
 import type { Selector } from "../types/Selector"
 import type { State } from "../types/State"
 import type { StoreData } from "../types/StoreData"
-import { isSelector } from "../utils/isSelector"
 
 /**
  * Record a materialized state value changing. Revision tracking is enabled by
@@ -10,14 +9,24 @@ import { isSelector } from "../utils/isSelector"
  */
 export const noteStateValueChanged = (state: WeakKey, data: StoreData) => {
     const clock = data.stateRevisionClock
-    if (!clock.enabled) return
+    if (!clock.enabled || !clock.tracked!.has(state)) return
     data.stateRevisions.set(state, ++clock.current)
+}
+
+/** Start maintaining a revision for a state newly discovered by a cold async
+ * selector. This must happen at read time, not promise settlement, so a write
+ * between those events advances beyond the revision the evaluation observed. */
+export const trackStateRevision = (state: WeakKey, data: StoreData) => {
+    const clock = data.stateRevisionClock
+    const tracked = (clock.tracked ??= new WeakSet())
+    tracked.add(state)
+    clock.enabled = true
 }
 
 /** Resolve the revision of the value this store would actually read. Scoped
  * atoms without a local shadow inherit their closest ancestor's revision. */
 export const getStateRevision = (state: WeakKey, data: StoreData): number => {
-    if (isSelector(state) || data.values.has(state) || !data.parent) {
+    if (data.values.has(state) || !data.parent) {
         return data.stateRevisions.get(state) ?? 0
     }
     return getStateRevision(state, data.parent)
@@ -36,11 +45,14 @@ export const recordColdSelectorCache = (
         return true
     }
 
+    data.coldSelectorCachesEnabled = true
     const clock = data.stateRevisionClock
+    const tracked = (clock.tracked ??= new WeakSet())
     clock.enabled = true
     const dependencyRevisions: number[] = []
     let matchesCurrentValues = true
     for (const dependency of dependencies) {
+        tracked.add(dependency)
         const currentRevision = getStateRevision(dependency, data)
         const revision = revisions?.get(dependency) ?? currentRevision
         dependencyRevisions.push(revision)

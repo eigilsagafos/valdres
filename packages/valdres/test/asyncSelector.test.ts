@@ -108,6 +108,37 @@ describe("async selectors", () => {
         expect(evaluations).toBe(2)
     })
 
+    test("a late-only dependency starts revision tracking when it is read", async () => {
+        const s = store()
+        const base = atom(1)
+        let dependencyRead!: () => void
+        const readObserved = new Promise<void>(resolve => {
+            dependencyRead = resolve
+        })
+        let release!: () => void
+        const gate = new Promise<void>(resolve => {
+            release = resolve
+        })
+        let evaluations = 0
+        const sel = selector((get: any) => {
+            evaluations++
+            return Promise.resolve().then(() => {
+                const value = get(base)
+                dependencyRead()
+                return gate.then(() => value)
+            })
+        })
+
+        const initial = s.get(sel)
+        await readObserved
+        s.set(base, 2)
+        release()
+
+        expect(await initial).toBe(1)
+        expect(await s.get(sel)).toBe(2)
+        expect(evaluations).toBe(2)
+    })
+
     test("an active async late read validates a cold selector before promotion", async () => {
         const s = store()
         const base = atom(1)

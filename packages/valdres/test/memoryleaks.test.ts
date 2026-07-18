@@ -254,9 +254,9 @@ describe("memory leaks (subscriptions)", () => {
             // Plain atom teardown deliberately has no orphan-cleanup microtask.
             // After this tight loop, JSC's conservative stack scan can retain a
             // stale callback register under full-suite heap pressure even though
-            // the subscription entry is gone. Use the wider bounded window that
-            // LeakDetector exposes for exactly this post-teardown shape.
-            expect(await detector.isLeaking(50)).toBe(false)
+            // the subscription entry is gone. The detector's default bounded
+            // window accounts for exactly this post-teardown shape.
+            expect(await detector.isLeaking()).toBe(false)
         }
     })
 })
@@ -264,14 +264,20 @@ describe("memory leaks (subscriptions)", () => {
 describe("memory leaks (atom families)", () => {
     test("released family atom is collected", async () => {
         const detector = (() => {
-            const s = store()
-            const family = atomFamily<{ name: string }, [string]>(
+            let s: any = store()
+            let family: any = atomFamily<{ name: string }, [string]>(
                 (...args) => ({ name: args[0] }),
             )
             let familyAtom: any = family("alice")
             const d = new LeakDetector(familyAtom)
             s.get(familyAtom)
             family.release("alice")
+            // Clear the local owner chain explicitly before returning the
+            // detector; JSC's conservative scan can otherwise treat the ended
+            // scope's store/index slots as roots for the whole bounded window.
+            familyAtom = undefined
+            family = undefined
+            s = undefined
             return d
         })()
         expect(await detector.isLeaking()).toBe(false)
@@ -342,7 +348,9 @@ describe("memory leaks (selector families)", () => {
         let sel: any = family(3)
         const detector = new LeakDetector(sel)
         sel = undefined
-        expect(await detector.isLeaking()).toBe(true)
+        // A real strong reference does not need the detector's wider
+        // dead-object window; keep this intentional-leak assertion fast.
+        expect(await detector.isLeaking(10)).toBe(true)
         // Clean up
         family.release(3)
     })

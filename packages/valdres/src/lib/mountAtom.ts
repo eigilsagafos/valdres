@@ -127,7 +127,9 @@ export const activateSelectorGraph = (root: State, data: StoreData) => {
         const selector = stack.pop()!
         if (data.selectorGraphActive.has(selector)) continue
         data.selectorGraphActive.add(selector)
-        data.coldSelectorCaches.delete(selector)
+        if (data.coldSelectorCachesEnabled) {
+            data.coldSelectorCaches.delete(selector)
+        }
 
         const dependencies = data.stateDependencies.get(selector)
         if (!dependencies) continue

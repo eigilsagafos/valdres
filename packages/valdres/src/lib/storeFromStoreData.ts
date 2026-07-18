@@ -118,12 +118,21 @@ export function storeFromStoreData(
     // --- get ---
     const getDefault: GetValue = (state: State) => {
         if (data.pendingOrphanCleanup) flushPendingOrphanCleanup(data)
-        if (data.values.has(state) && !isSelector(state)) {
-            if (!isCachedValueStale(state, data)) {
-                return data.values.get(state)
+        // Cold selectors are the only cached states that need to pass through
+        // getState for revision validation. Preserve the original atom/active-
+        // selector cache-hit path. The eager scalar keeps atom-only stores from
+        // touching the lazy cache WeakMap or checking the state object's shape.
+        if (data.values.has(state)) {
+            const hasColdCache =
+                data.coldSelectorCachesEnabled &&
+                data.coldSelectorCaches.has(state)
+            if (!hasColdCache) {
+                if (!isCachedValueStale(state, data)) {
+                    return data.values.get(state)
+                }
+                data.values.delete(state)
+                data.lastValueWriteAt.delete(state)
             }
-            data.values.delete(state)
-            data.lastValueWriteAt.delete(state)
         }
         let res
         let initialized = false

@@ -29,6 +29,7 @@ import {
     noteDependencyGraphChanged,
     noteDependencyMaterialized,
 } from "./noteDependencyGraphChanged"
+import { cleanupOrphanedDeps } from "./cleanupOrphanedDeps"
 import {
     changeListenerRegistry,
     hasSelectorChangeListener,
@@ -44,6 +45,7 @@ import {
     getStateRevision,
     markColdSelectorCacheValidated,
     recordColdSelectorCache,
+    trackStateRevision,
 } from "./stateRevisions"
 import { validateResolvedValue } from "./validateResolvedValue"
 import { validateSchema } from "./validateSchema"
@@ -66,6 +68,27 @@ const getSyncOptions = (data: StoreData) => {
         syncOptionsCache.set(data, cached)
     }
     return cached
+}
+
+const rollbackFreshSelectorActivation = (
+    selector: Selector,
+    data: StoreData,
+) => {
+    cleanupOrphanedDeps(selector, data)
+    // A selector that threw before committing its dependency set has no graph
+    // for cleanupOrphanedDeps to remove, but the active marker is still owned
+    // by the evaluation that speculatively added it.
+    if (!isLive(selector, data)) data.selectorGraphActive.delete(selector)
+}
+
+const rollbackFreshSelectorActivations = (
+    selectors: Selector[] | undefined,
+    data: StoreData,
+) => {
+    if (!selectors) return
+    for (let i = selectors.length - 1; i >= 0; i--) {
+        rollbackFreshSelectorActivation(selectors[i], data)
+    }
 }
 
 /**
@@ -111,6 +134,8 @@ export const evaluateSelector = <V>(
     const updatedDeps = new Set<State<any>>()
     let depsChanged = false
     let evaluationComplete = false
+    let activatedDuringEvaluation: Selector[] | undefined
+    let keepActivatedSelectors = false
 
     // Revoke any previous late-binding closure for this selector so that
     // deferred get calls from old evaluations become read-only.
@@ -217,6 +242,7 @@ export const evaluateSelector = <V>(
                             evalCtx.asyncDependencyRevisions &&
                             !evalCtx.asyncDependencyRevisions.has(state)
                         ) {
+                            trackStateRevision(state, data)
                             evalCtx.asyncDependencyRevisions.set(
                                 state,
                                 getStateRevision(state, data),
@@ -224,14 +250,42 @@ export const evaluateSelector = <V>(
                         }
                     }
                 }
-                const value = readOverlay
-                    ? readOverlay(state)
-                    : getState(
-                          state,
-                          data,
-                          initializedAtomsSet,
-                          circularDependencySet,
-                      )
+                let value
+                if (readOverlay) {
+                    value = readOverlay(state)
+                } else {
+                    // A selector first discovered while evaluating an active
+                    // selector is already transitively live. When it has no
+                    // committed cache/graph, initialize it directly as active;
+                    // an existing cold cache still goes through getState first
+                    // so revision validation precedes promotion.
+                    const activateFreshSelector =
+                        !runtime &&
+                        data.selectorGraphActive.has(selector) &&
+                        isSelector(state) &&
+                        !data.selectorGraphActive.has(state) &&
+                        !data.values.has(state) &&
+                        !data.stateDependencies.has(state)
+                    if (activateFreshSelector) {
+                        data.selectorGraphActive.add(state)
+                    }
+                    try {
+                        value = getState(
+                            state,
+                            data,
+                            initializedAtomsSet,
+                            circularDependencySet,
+                        )
+                    } catch (error) {
+                        if (activateFreshSelector) {
+                            rollbackFreshSelectorActivation(state, data)
+                        }
+                        throw error
+                    }
+                    if (activateFreshSelector) {
+                        ;(activatedDuringEvaluation ??= []).push(state)
+                    }
+                }
                 updatedDeps.add(state)
                 if (!depsChanged && (!currentDependencies || !currentDependencies.has(state))) {
                     depsChanged = true
@@ -279,11 +333,14 @@ export const evaluateSelector = <V>(
 
         if (!runtime && (depsChanged || !currentDependencies)) {
             const tracksReverseEdges = data.selectorGraphActive.has(selector)
-            noteDependencyMaterialized(selector, data)
             // Invalidate topology-sensitive teardown caches once for this
             // dependency-set materialization or change (including an empty
             // selector re-materialized after cleanup).
-            if (tracksReverseEdges) noteDependencyGraphChanged(selector, data)
+            if (tracksReverseEdges) {
+                noteDependencyGraphChanged(selector, data)
+            } else {
+                noteDependencyMaterialized(selector, data)
+            }
             // Seed the active selector-update pass's liveness reconcile with this
             // selector whenever its dep SET changed — covering BOTH the
             // propagation-loop path and lazy re-inits through `get`. Added deps
@@ -393,7 +450,7 @@ export const evaluateSelector = <V>(
             // Transaction evaluators own a private dependency graph and never
             // publish a committed cold cache, so revision snapshots would be
             // both unused and an avoidable allocation on that path.
-            if (!runtime) {
+            if (!runtime && !data.selectorGraphActive.has(selector)) {
                 evalCtx.asyncDependencyRevisions = new Map<State, number>()
                 for (const dependency of updatedDeps) {
                     evalCtx.asyncDependencyRevisions.set(
@@ -404,8 +461,15 @@ export const evaluateSelector = <V>(
             }
         }
 
+        keepActivatedSelectors = true
         return result
     } finally {
+        if (!keepActivatedSelectors) {
+            rollbackFreshSelectorActivations(
+                activatedDuringEvaluation,
+                data,
+            )
+        }
         // The set is reused across selector evaluations within the same
         // store, so cleanup must run on every exit path — including
         // SelectorEvaluationError rethrows and any throw from the
@@ -462,8 +526,11 @@ export const handleSelectorResult = <Value>(
             // consistent with the native-promise path below.
             if (err instanceof SchemaValidationError) reportAsyncSchemaError(err)
         })
-        const dependencies = data.stateDependencies.get(selector)
-        if (dependencies) recordColdSelectorCache(selector, dependencies, data)
+        if (!data.selectorGraphActive.has(selector)) {
+            const dependencies = data.stateDependencies.get(selector)
+            if (dependencies)
+                recordColdSelectorCache(selector, dependencies, data)
+        }
         return promise
     } else if (isPromiseLike(value)) {
         if (runtime) {
@@ -557,7 +624,10 @@ export const handleSelectorResult = <Value>(
             // @ts-ignore
             setValueInData(selector, resolved, data)
             const resolvedDependencies = data.stateDependencies.get(selector)
-            if (resolvedDependencies) {
+            if (
+                resolvedDependencies &&
+                !data.selectorGraphActive.has(selector)
+            ) {
                 const current = recordColdSelectorCache(
                     selector,
                     resolvedDependencies,
@@ -605,8 +675,11 @@ export const handleSelectorResult = <Value>(
                 evaluationContext.asyncDependencyRevisions = undefined
             cleanUpRejectedPromise(selector, data, value as Promise<any>)
         })
-        const dependencies = data.stateDependencies.get(selector)
-        if (dependencies) recordColdSelectorCache(selector, dependencies, data)
+        if (!data.selectorGraphActive.has(selector)) {
+            const dependencies = data.stateDependencies.get(selector)
+            if (dependencies)
+                recordColdSelectorCache(selector, dependencies, data)
+        }
         return value
     } else {
         // Sync result — mark as known-sync so subsequent evaluations skip
@@ -622,7 +695,7 @@ export const handleSelectorResult = <Value>(
         const validated = validateSchema(selector, value, data)
         // Transaction selector evaluation uses private dependency bookkeeping.
         // It must not refresh metadata for the committed value/graph.
-        if (!runtime) {
+        if (!runtime && !data.selectorGraphActive.has(selector)) {
             const dependencies = data.stateDependencies.get(selector)
             if (dependencies) {
                 recordColdSelectorCache(selector, dependencies, data)
@@ -678,11 +751,15 @@ export const initSelector = <V>(
         : selector.equal(existingValue as V, updatedValue as V)
 
     if (areEqual) {
-        markColdSelectorCacheValidated(selector, data)
+        if (!data.selectorGraphActive.has(selector)) {
+            markColdSelectorCacheValidated(selector, data)
+        }
         return false
     } else {
         setValueInData<V>(selector, updatedValue as V, data)
-        markColdSelectorCacheValidated(selector, data)
+        if (!data.selectorGraphActive.has(selector)) {
+            markColdSelectorCacheValidated(selector, data)
+        }
         return true
     }
 }
