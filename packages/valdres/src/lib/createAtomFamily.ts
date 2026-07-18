@@ -43,7 +43,6 @@ export const createAtomFamily = <
         args: any[],
         key: FamilyKey,
         displayedKey?: string | number | boolean,
-        rawStringKey?: string,
     ) => {
         // Resolve default value — inlined to avoid intermediate closures
         let dv: any
@@ -58,7 +57,7 @@ export const createAtomFamily = <
         }
 
         const memberName = hasName
-            ? memberOptions!.name + "_" + displayedKey!
+            ? memberOptions!.name + "_" + (displayedKey ?? key)
             : undefined
 
         let familyAtom: any
@@ -83,7 +82,6 @@ export const createAtomFamily = <
         familyAtom.familyArgsStringified = key
 
         map.set(key, familyAtom)
-        if (rawStringKey !== undefined) stringMap.set(rawStringKey, familyAtom)
         return familyAtom
     }
 
@@ -104,23 +102,21 @@ export const createAtomFamily = <
                 const cached = map.get(a0)
                 if (cached !== undefined) return cached
                 const args = [a0]
-                return build(args, a0, a0)
+                return build(args, a0)
             }
             if (t === "string") {
                 const cached = stringMap.get(a0)
                 if (cached !== undefined) return cached
                 const args = [a0]
-                return build(args, familyKey(args), a0, a0)
+                const familyAtom = build(args, familyKey(args), a0)
+                stringMap.set(a0, familyAtom)
+                return familyAtom
             }
             if (t === "boolean" || t === "bigint") {
                 const cached = map.get(a0)
                 if (cached !== undefined) return cached
                 const args = [a0]
-                return build(
-                    args,
-                    a0,
-                    t === "bigint" ? (hasName ? String(a0) : undefined) : a0,
-                )
+                return build(args, a0)
             }
         }
         // Cold/variadic path: object/multi args need a stable stringified key.

@@ -15,15 +15,8 @@ const enter = (value: object, active: WeakSet<object>) => {
     active.add(value)
 }
 
-const rejectSymbolProperties = (value: object) => {
-    if (Object.getOwnPropertySymbols(value).length > 0) {
-        unsupported("symbol-keyed property")
-    }
-}
-
 const rejectOwnProperties = (value: object, description: string) => {
-    if (Object.getOwnPropertyNames(value).length > 0) unsupported(description)
-    rejectSymbolProperties(value)
+    if (Reflect.ownKeys(value).length > 0) unsupported(description)
 }
 
 const encodeNumber = (value: number) => {
@@ -64,22 +57,19 @@ const encodeValue = (value: unknown, active: WeakSet<object>): string => {
     // unambiguous to declaration emit.
     if (typeof value !== "object") return unsupported(typeof value)
 
-    // Promise identity/result is neither structural nor synchronously
-    // knowable. Do not duck-type by reading `.then`: that could invoke a user
-    // getter, while the rest of this codec deliberately reads data descriptors.
-    if (value instanceof Promise) return unsupported("Promise")
-
     if (Array.isArray(value)) {
         if (Object.getPrototypeOf(value) !== Array.prototype) {
             return unsupported("Array subclass")
         }
         enter(value, active)
         try {
-            rejectSymbolProperties(value)
-            const keys = Object.getOwnPropertyNames(value).filter(
-                key => key !== "length",
-            )
-            for (const key of keys) {
+            const keys: string[] = []
+            for (const ownKey of Reflect.ownKeys(value)) {
+                if (typeof ownKey === "symbol") {
+                    return unsupported("symbol-keyed property")
+                }
+                if (ownKey === "length") continue
+                const key = ownKey
                 const index = Number(key)
                 if (
                     !Number.isInteger(index) ||
@@ -89,13 +79,14 @@ const encodeValue = (value: unknown, active: WeakSet<object>): string => {
                 ) {
                     return unsupported("Array with non-index property")
                 }
+                keys.push(key)
             }
 
             keys.sort((a, b) => Number(a) - Number(b))
             let encoded = `r${value.length}:${keys.length}:`
             for (const key of keys) {
-                const descriptor = Object.getOwnPropertyDescriptor(value, key)!
-                if (!("value" in descriptor)) {
+                const descriptor = Object.getOwnPropertyDescriptor(value, key)
+                if (descriptor === undefined || !("value" in descriptor)) {
                     return unsupported("Array accessor property")
                 }
                 encoded += `j${key};${encodeValue(descriptor.value, active)}`
@@ -106,25 +97,63 @@ const encodeValue = (value: unknown, active: WeakSet<object>): string => {
         }
     }
 
-    if (value instanceof Date) {
-        if (Object.getPrototypeOf(value) !== Date.prototype) {
-            return unsupported("Date subclass")
+    // Route exact built-ins by prototype instead of running every object
+    // through four instanceof checks. Plain-object family keys are a common
+    // lookup path, and this keeps their validation overhead proportional to
+    // their own properties. Cross-realm built-ins and subclasses deliberately
+    // fall through to the unsupported case below.
+    const prototype = Object.getPrototypeOf(value)
+
+    if (prototype === Object.prototype || prototype === null) {
+        enter(value, active)
+        try {
+            const ownKeys = Reflect.ownKeys(value)
+            for (const key of ownKeys) {
+                if (typeof key === "symbol") {
+                    return unsupported("symbol-keyed property")
+                }
+            }
+            const keys = ownKeys as string[]
+            keys.sort()
+            let encoded = `${prototype === null ? "q" : "o"}${keys.length}:`
+            for (const key of keys) {
+                const descriptor = Object.getOwnPropertyDescriptor(value, key)
+                if (descriptor === undefined || !descriptor.enumerable) {
+                    return unsupported("object with non-enumerable property")
+                }
+                if (!("value" in descriptor)) {
+                    return unsupported("object accessor property")
+                }
+                encoded += `k${key.length}:${key}`
+                encoded += encodeValue(descriptor.value, active)
+            }
+            return encoded
+        } finally {
+            active.delete(value)
         }
-        rejectOwnProperties(value, "Date with custom properties")
-        return `d${Date.prototype.getTime.call(value)};`
     }
 
-    if (value instanceof Map) {
-        if (Object.getPrototypeOf(value) !== Map.prototype) {
-            return unsupported("Map subclass")
+    if (prototype === Date.prototype) {
+        rejectOwnProperties(value, "Date with custom properties")
+        try {
+            return `d${Date.prototype.getTime.call(value)};`
+        } catch {
+            return unsupported("non-Date object with Date prototype")
         }
+    }
+
+    if (prototype === Map.prototype) {
         enter(value, active)
         try {
             rejectOwnProperties(value, "Map with custom properties")
             const entries: string[] = []
-            for (const [entryKey, entryValue] of Map.prototype.entries.call(
-                value,
-            )) {
+            let iterator: IterableIterator<[unknown, unknown]>
+            try {
+                iterator = Map.prototype.entries.call(value)
+            } catch {
+                return unsupported("non-Map object with Map prototype")
+            }
+            for (const [entryKey, entryValue] of iterator) {
                 entries.push(
                     encodeValue(entryKey, active) +
                         encodeValue(entryValue, active),
@@ -137,15 +166,18 @@ const encodeValue = (value: unknown, active: WeakSet<object>): string => {
         }
     }
 
-    if (value instanceof Set) {
-        if (Object.getPrototypeOf(value) !== Set.prototype) {
-            return unsupported("Set subclass")
-        }
+    if (prototype === Set.prototype) {
         enter(value, active)
         try {
             rejectOwnProperties(value, "Set with custom properties")
             const entries: string[] = []
-            for (const entry of Set.prototype.values.call(value)) {
+            let iterator: IterableIterator<unknown>
+            try {
+                iterator = Set.prototype.values.call(value)
+            } catch {
+                return unsupported("non-Set object with Set prototype")
+            }
+            for (const entry of iterator) {
                 entries.push(encodeValue(entry, active))
             }
             entries.sort()
@@ -155,31 +187,12 @@ const encodeValue = (value: unknown, active: WeakSet<object>): string => {
         }
     }
 
-    const prototype = Object.getPrototypeOf(value)
-    if (prototype !== Object.prototype && prototype !== null) {
-        return unsupported("non-plain object or class instance")
-    }
+    // Promise identity/result is neither structural nor synchronously
+    // knowable. Do not duck-type by reading `.then`: that could invoke a user
+    // getter, while the rest of this codec deliberately reads data descriptors.
+    if (prototype === Promise.prototype) return unsupported("Promise")
 
-    enter(value, active)
-    try {
-        rejectSymbolProperties(value)
-        const keys = Object.keys(value).sort()
-        if (Object.getOwnPropertyNames(value).length !== keys.length) {
-            return unsupported("object with non-enumerable property")
-        }
-        let encoded = `${prototype === null ? "q" : "o"}${keys.length}:`
-        for (const key of keys) {
-            const descriptor = Object.getOwnPropertyDescriptor(value, key)!
-            if (!("value" in descriptor)) {
-                return unsupported("object accessor property")
-            }
-            encoded += `k${key.length}:${key}`
-            encoded += encodeValue(descriptor.value, active)
-        }
-        return encoded
-    } finally {
-        active.delete(value)
-    }
+    return unsupported("non-plain object or class instance")
 }
 
 /** Encode a complete family call. The leading argument count distinguishes a
