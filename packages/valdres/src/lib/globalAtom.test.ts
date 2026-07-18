@@ -623,14 +623,14 @@ describe("globalAtom", () => {
             {
                 global: true,
                 name: "test/lazy-revalidate-fresh-cache",
-                maxAge: 200,
+                maxAge: 60_000,
             },
         )
         const s = store()
         const initial = s.get(a)
         const callsAfterInit = calls
 
-        await wait(20) // well within maxAge
+        await wait(20) // well within maxAge, including on contended CI workers
 
         expect(s.get(a)).toBe(initial)
         expect(calls).toBe(callsAfterInit)
