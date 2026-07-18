@@ -135,7 +135,6 @@ export const evaluateSelector = <V>(
     let depsChanged = false
     let evaluationComplete = false
     let activatedDuringEvaluation: Selector[] | undefined
-    let keepActivatedSelectors = false
 
     // Revoke any previous late-binding closure for this selector so that
     // deferred get calls from old evaluations become read-only.
@@ -268,22 +267,25 @@ export const evaluateSelector = <V>(
                         !data.stateDependencies.has(state)
                     if (activateFreshSelector) {
                         data.selectorGraphActive.add(state)
-                    }
-                    try {
+                        try {
+                            value = getState(
+                                state,
+                                data,
+                                initializedAtomsSet,
+                                circularDependencySet,
+                            )
+                        } catch (error) {
+                            rollbackFreshSelectorActivation(state, data)
+                            throw error
+                        }
+                        ;(activatedDuringEvaluation ??= []).push(state)
+                    } else {
                         value = getState(
                             state,
                             data,
                             initializedAtomsSet,
                             circularDependencySet,
                         )
-                    } catch (error) {
-                        if (activateFreshSelector) {
-                            rollbackFreshSelectorActivation(state, data)
-                        }
-                        throw error
-                    }
-                    if (activateFreshSelector) {
-                        ;(activatedDuringEvaluation ??= []).push(state)
                     }
                 }
                 updatedDeps.add(state)
@@ -298,9 +300,12 @@ export const evaluateSelector = <V>(
         } catch (error) {
             if (error instanceof SuspendAndWaitForResolveError) {
                 result = error
-            } else if (error instanceof SelectorEvaluationError) {
-                throw error
             } else {
+                rollbackFreshSelectorActivations(
+                    activatedDuringEvaluation,
+                    data,
+                )
+                if (error instanceof SelectorEvaluationError) throw error
                 throw new SelectorEvaluationError(error)
             }
         }
@@ -461,15 +466,8 @@ export const evaluateSelector = <V>(
             }
         }
 
-        keepActivatedSelectors = true
         return result
     } finally {
-        if (!keepActivatedSelectors) {
-            rollbackFreshSelectorActivations(
-                activatedDuringEvaluation,
-                data,
-            )
-        }
         // The set is reused across selector evaluations within the same
         // store, so cleanup must run on every exit path — including
         // SelectorEvaluationError rethrows and any throw from the
