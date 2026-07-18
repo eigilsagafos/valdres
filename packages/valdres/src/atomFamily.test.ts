@@ -11,6 +11,41 @@ describe("atomFamily", () => {
         expect(userAtomFamily(1)).toEqual(userAtomFamily(1))
     })
 
+    test("deleting from one store preserves identity retained by another store", async () => {
+        const family = atomFamily((id: string) => `default:${id}`)
+        const store1 = store()
+        const store2 = store()
+        const member = family("shared")
+
+        store1.set(member, "store 1")
+        store2.set(member, "store 2")
+        // Let the family cache convert its new strong entry to a WeakRef before
+        // deletion exercises the cross-store identity guarantee.
+        await Promise.resolve()
+        store1.del(member)
+
+        expect(family("shared")).toBe(member)
+        expect(store1.get(family)).toStrictEqual([])
+        expect(store2.get(family)).toStrictEqual([member])
+        expect(store2.get(family("shared"))).toBe("store 2")
+    })
+
+    test("deleting from a scope preserves identity retained by its parent", () => {
+        const family = atomFamily((id: string) => `default:${id}`)
+        const root = store()
+        const scope = root.scope("scope")
+        const member = family("shared")
+
+        root.set(member, "root")
+        scope.set(member, "scope")
+        scope.del(member)
+
+        expect(family("shared")).toBe(member)
+        expect(root.get(family)).toStrictEqual([member])
+        expect(root.get(family("shared"))).toBe("root")
+        expect(scope.get(family)).toStrictEqual([])
+    })
+
     test("Simple default value", () => {
         const store1 = store()
         const userAtomFamily = atomFamily<number, string>("Foo")
@@ -311,7 +346,7 @@ describe("atomFamily", () => {
         })
     })
 
-    test("release an atomFamily memeber", () => {
+    test("release an atomFamily member", () => {
         const store1 = store()
         const todosAtomFamily = atomFamily((id: string) => ({
             id,
@@ -323,9 +358,12 @@ describe("atomFamily", () => {
         expect(store1.get(todosAtomFamily)).toStrictEqual([])
         todosAtomFamily.release("1")
         expect(store1.get(todosAtomFamily)).toStrictEqual([])
-        store1.get(todosAtomFamily("1"))
-        store1.get(todosAtomFamily("2"))
-        store1.get(todosAtomFamily("3"))
+        const todo1 = todosAtomFamily("1")
+        const todo2 = todosAtomFamily("2")
+        const todo3 = todosAtomFamily("3")
+        store1.get(todo1)
+        store1.get(todo2)
+        store1.get(todo3)
         /**
          * TODO: Have to figure out how to correctly do release, have to include
          * store to release from the keys atom
@@ -333,14 +371,18 @@ describe("atomFamily", () => {
         expect(
             store1.get(todosAtomFamily).map(atom => atom.familyArgsStringified),
         ).toStrictEqual(["1", "2", "3"])
-        store1.del(todosAtomFamily("1"))
+        store1.del(todo1)
         expect(
             store1.get(todosAtomFamily).map(atom => atom.familyArgsStringified),
         ).toStrictEqual(["2", "3"])
-        // store.del() now also releases the entry from the family map
+        // Deletion is store-local. The shared identity remains available so a
+        // different store or scope cannot be stranded on another member object.
+        expect(todosAtomFamily("1")).toBe(todo1)
+        expect(todosAtomFamily("2")).toBe(todo2)
+        expect(todosAtomFamily("3")).toBe(todo3)
         expect(
             todosAtomFamily.__valdresAtomFamilyMap.keys().toArray(),
-        ).toStrictEqual(["2", "3"])
+        ).toStrictEqual(["1", "2", "3"])
     })
 
     test("reading a deleted family member resolves the default factory, not the raw function", () => {

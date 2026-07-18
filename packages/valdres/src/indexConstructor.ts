@@ -39,12 +39,12 @@ export const index = <
         // `get(family)` on every evaluation makes each store read its own correct
         // membership, and the cache lookup is never undefined for a live member.
         //
-        // A WeakMap (not a Map) keyed by the family-atom object: deleting a
-        // member calls family.release(...), so a deleted-and-recreated key mints
-        // a fresh atom identity; a strong Map would retain one dead entry per
-        // create/delete/recreate cycle (unbounded under churn). The WeakMap lets
-        // a released member's entry (and its predicate selector) become
-        // GC-eligible, bounding the cache by live membership.
+        // A WeakMap (not a Map) keyed by the family-atom object: the family's
+        // identity cache is weak-valued, so an unused or explicitly released
+        // member can eventually be recreated. A strong Map here would retain
+        // one dead entry per collected identity (unbounded under churn). The
+        // WeakMap lets that member's predicate selector become GC-eligible too,
+        // bounding the cache by live identities.
         const predicateSelectors = new WeakMap<
             AtomFamilyAtom<Value, FamilyArgs>,
             Selector<boolean>

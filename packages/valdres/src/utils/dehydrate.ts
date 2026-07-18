@@ -16,9 +16,11 @@ import { isPromiseLike } from "./isPromiseLike"
  * `atoms: [name, value]` entry and every `name`d atomFamily gets one
  * `families: [name, args, value]` entry per member — in both cases only when
  * the state holds an own value in THIS store, so a freshly created per-request
- * store dehydrates to exactly the state that request touched (family member
- * caches are module-global and outlive per-request stores; the per-store value
- * check is what keeps requests apart). Unnamed state is not transferable;
+ * store dehydrates to exactly the state that request touched (family identity
+ * caches are module-global and shared across per-request stores; the per-store
+ * value check is what keeps requests apart). The cache is weak-valued, so it
+ * does not become the lifetime owner of unused members.
+ * Unnamed state is not transferable;
  * selectors are never included (they re-derive from hydrated atoms).
  *
  * Promise-pending values (in-flight async sets or unresolved async defaults)
