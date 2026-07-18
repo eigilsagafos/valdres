@@ -82,10 +82,14 @@ const rollbackFreshSelectorActivation = (
 }
 
 const rollbackFreshSelectorActivations = (
-    selectors: Selector[] | undefined,
+    selectors: Selector | Selector[] | undefined,
     data: StoreData,
 ) => {
     if (!selectors) return
+    if (!Array.isArray(selectors)) {
+        rollbackFreshSelectorActivation(selectors, data)
+        return
+    }
     for (let i = selectors.length - 1; i >= 0; i--) {
         rollbackFreshSelectorActivation(selectors[i], data)
     }
@@ -136,7 +140,10 @@ export const evaluateSelector = <V>(
     const updatedDeps = new Set<State<any>>()
     let depsChanged = false
     let evaluationComplete = false
-    let activatedDuringEvaluation: Selector[] | undefined
+    // Most selector bodies discover at most one fresh selector dependency. Keep
+    // that common rollback token as a bare reference and allocate an array only
+    // if a second fresh child is encountered.
+    let activatedDuringEvaluation: Selector | Selector[] | undefined
 
     // Revoke any previous late-binding closure for this selector so that
     // deferred get calls from old evaluations become read-only.
@@ -279,7 +286,16 @@ export const evaluateSelector = <V>(
                             rollbackFreshSelectorActivation(state, data)
                             throw error
                         }
-                        ;(activatedDuringEvaluation ??= []).push(state)
+                        if (!activatedDuringEvaluation) {
+                            activatedDuringEvaluation = state
+                        } else if (Array.isArray(activatedDuringEvaluation)) {
+                            activatedDuringEvaluation.push(state)
+                        } else {
+                            activatedDuringEvaluation = [
+                                activatedDuringEvaluation,
+                                state,
+                            ]
+                        }
                     } else {
                         value = getState(
                             state,
@@ -396,7 +412,9 @@ export const evaluateSelector = <V>(
                         // A newly-read selector may itself have been only cold-
                         // cached. Promote its closure before liveness bookkeeping
                         // treats it as a live dependency.
-                        activateSelectorGraph(state, data)
+                        if (data.coldSelectorCachesEnabled) {
+                            activateSelectorGraph(state, data)
+                        }
                         if (depsChangeOut) {
                             if (!depsChangeOut.added)
                                 depsChangeOut.added = new Set<State>()

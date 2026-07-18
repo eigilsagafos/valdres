@@ -332,25 +332,33 @@ export const subscribe = <V>(
     // getState even on a cache hit so a stale dynamic dependency set is rebuilt
     // before the first subscriber promotes it into the live reverse graph.
     if (isSelector(state)) {
-        // With no committed value or dependency set there is nothing cold to
-        // validate. Mark the root active before evaluation so it and every
-        // newly-read selector build live reverse edges directly, avoiding a
-        // throwaway cold snapshot followed by a separate promotion walk.
-        const activateFreshSelector =
-            !data.selectorGraphActive.has(state) &&
-            !data.values.has(state) &&
-            !data.stateDependencies.has(state)
-        if (activateFreshSelector) {
-            data.selectorGraphActive.add(state)
-        }
-        try {
-            getState(state, data, new Set(), new WeakSet())
-        } catch (error) {
+        const selectorIsActive = data.selectorGraphActive.has(state)
+        const selectorHasValue = data.values.has(state)
+        // A selector already in the live graph with a committed value needs no
+        // cold-cache validation. Besides matching the pre-cold-cache behavior,
+        // this avoids allocating traversal guards when a child is subscribed
+        // directly after an enclosing live selector already initialized it.
+        if (!selectorIsActive || !selectorHasValue) {
+            // With no committed value or dependency set there is nothing cold
+            // to validate. Mark the root active before evaluation so it and
+            // every newly-read selector build live reverse edges directly,
+            // avoiding a throwaway cold snapshot followed by promotion.
+            const activateFreshSelector =
+                !selectorIsActive &&
+                !selectorHasValue &&
+                !data.stateDependencies.has(state)
             if (activateFreshSelector) {
-                cleanupOrphanedDeps(state, data)
-                data.selectorGraphActive.delete(state)
+                data.selectorGraphActive.add(state)
             }
-            throw error
+            try {
+                getState(state, data, new Set(), new WeakSet())
+            } catch (error) {
+                if (activateFreshSelector) {
+                    cleanupOrphanedDeps(state, data)
+                    data.selectorGraphActive.delete(state)
+                }
+                throw error
+            }
         }
     }
 

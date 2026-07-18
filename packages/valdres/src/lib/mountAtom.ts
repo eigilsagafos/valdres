@@ -121,7 +121,11 @@ export const noteDependencyAdded = (
  * subsequent source writes can reach the whole subscribed selector closure.
  */
 export const activateSelectorGraph = (root: State, data: StoreData) => {
-    if (!isSelector(root)) return
+    // Active dependencies dominate this call site: fresh live evaluation has
+    // already marked each selector before committing the incoming edge, and a
+    // second direct subscriber reaches the same graph again. Avoid allocating a
+    // one-item traversal stack merely to discover that there is no work.
+    if (!isSelector(root) || data.selectorGraphActive.has(root)) return
     const stack: State[] = [root]
     while (stack.length > 0) {
         const selector = stack.pop()!

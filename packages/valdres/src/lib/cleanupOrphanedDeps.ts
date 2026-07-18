@@ -53,9 +53,15 @@ export const cleanupOrphanedDeps = (state: State, data: StoreData) => {
             }
             data.stateDependencies.delete(current)
             data.selectorGraphActive.delete(current)
-            data.coldSelectorCaches.delete(current)
+            // Live-only stores never instantiate the cold-cache WeakMap. Keep
+            // their batched teardown to the original graph/value work.
+            if (data.coldSelectorCachesEnabled) {
+                data.coldSelectorCaches.delete(current)
+            }
             if (data.values.delete(current)) {
-                noteStateValueChanged(current, data)
+                if (data.stateRevisionClock.enabled) {
+                    noteStateValueChanged(current, data)
+                }
             }
             data.abortControllers.delete(current)
 
