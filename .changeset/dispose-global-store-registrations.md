@@ -14,3 +14,6 @@ Global fan-out now identifies its origin by `StoreData` identity rather than a
 user-provided store id, so separately-created stores with duplicate ids still
 synchronize. The identity fast path also skips redundant validation and equality
 work for the already-written origin store.
+
+The process-wide `globalStore` now rejects disposal so it remains available as
+the synchronization anchor for global atoms created later.

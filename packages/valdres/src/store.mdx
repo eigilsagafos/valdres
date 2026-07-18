@@ -115,6 +115,13 @@ globalStore.get(myAtom)
 globalStore.set(myAtom, 1)
 ```
 
+<div className="callout callout-warning">
+  <div className="callout-title">Do not dispose the global store</div>
+  `globalStore` is a process-wide singleton that global atoms use for
+  synchronization. Calling `globalStore.dispose()` throws. Only dispose stores
+  that your application creates with `store()`.
+</div>
+
 Inside a component you normally read and write through your framework's provider/context instead — see [Provider](/react/Provider).
 
 ## See also

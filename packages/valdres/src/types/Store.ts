@@ -46,7 +46,8 @@ export type ScopeFn = {
 export type Store<T = StoreData> = {
     data: T
     /** Release this store and its descendant scopes from every global atom they
-     *  touched. Call this for request/SSR stores when the request completes. */
+     *  touched. Call this for request/SSR stores when the request completes.
+     *  The process-wide `globalStore` cannot be disposed. */
     dispose: () => void
     get: GetValue
     set: SetAtom
