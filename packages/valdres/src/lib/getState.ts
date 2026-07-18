@@ -4,7 +4,7 @@ import type { AtomFamilyAtom } from "../types/AtomFamilyAtom"
 import type { Family } from "../types/Family"
 import type { Selector } from "../types/Selector"
 import type { State } from "../types/State"
-import type { StoreData } from "../types/StoreData"
+import type { ColdSelectorCache, StoreData } from "../types/StoreData"
 import { isAtom } from "../utils/isAtom"
 import { isAtomFamily } from "../utils/isAtomFamily"
 import { isPromiseLike } from "../utils/isPromiseLike"
@@ -27,31 +27,46 @@ import {
 
 const isColdSelectorCacheFresh = (
     selector: Selector,
-    cache: { dependencyRevisions: number[]; validatedAt: number },
+    cache: ColdSelectorCache,
     data: StoreData,
     initializedAtomsSet: Set<Atom>,
     circularDependencySet?: WeakSet<Selector>,
 ): boolean => {
     if (cache.validatedAt === data.stateRevisionClock.current) return true
+    // Negative snapshots are deliberately non-validatable: either a late async
+    // read changed the dependency set before its revision array was rebuilt, or
+    // the evaluation observed a dependency revision that is no longer current.
+    if (cache.validatedAt < 0) return false
+
+    const dependencies = cache.dependencies
+    if (dependencies.length !== cache.dependencyRevisions.length) return false
+
+    // A dependency set containing no selectors cannot recurse back into this
+    // cache. This is the overwhelmingly common shape (a derived value reading
+    // one or a few atoms), so validate it without three WeakSet operations and
+    // without looking the dependency Set up again in stateDependencies.
+    if (!cache.hasSelectorDependencies) {
+        for (let index = 0; index < dependencies.length; index++) {
+            const dependency = dependencies[index]
+            if (
+                getStateRevision(dependency, data) !==
+                cache.dependencyRevisions[index]
+            ) {
+                return false
+            }
+        }
+        cache.validatedAt = data.stateRevisionClock.current
+        return true
+    }
 
     // Cached async/dynamic selector graphs can be cyclic. Treat a cache already
     // being validated as provisionally fresh; the outer walk still compares its
     // state revision and every reachable non-cyclic source revision.
     if (data.coldCacheValidationSet.has(selector)) return true
-    const dependencies = data.stateDependencies.get(selector) as
-        | Set<State>
-        | undefined
-    if (
-        !dependencies ||
-        dependencies.size !== cache.dependencyRevisions.length
-    ) {
-        return false
-    }
-
     data.coldCacheValidationSet.add(selector)
     try {
-        let index = 0
-        for (const dependency of dependencies) {
+        for (let index = 0; index < dependencies.length; index++) {
+            const dependency = dependencies[index]
             if (isSelector(dependency)) {
                 getState(
                     dependency,
@@ -62,7 +77,7 @@ const isColdSelectorCacheFresh = (
             }
             if (
                 getStateRevision(dependency, data) !==
-                cache.dependencyRevisions[index++]
+                cache.dependencyRevisions[index]
             ) {
                 return false
             }
@@ -74,6 +89,30 @@ const isColdSelectorCacheFresh = (
     } finally {
         data.coldCacheValidationSet.delete(selector)
     }
+}
+
+/** Read a cache entry already resolved by the public store boundary. Keeping
+ * this separate avoids repeating values/cold-cache WeakMap probes on every
+ * cold selector read while retaining the normal recursive validation path. */
+export const getColdSelectorState = <Value>(
+    selector: Selector<Value>,
+    cache: ColdSelectorCache,
+    data: StoreData,
+    initializedAtomsSet: Set<Atom>,
+    circularDependencySet?: WeakSet<Selector>,
+): Value => {
+    if (
+        !isColdSelectorCacheFresh(
+            selector,
+            cache,
+            data,
+            initializedAtomsSet,
+            circularDependencySet,
+        )
+    ) {
+        initSelector(selector, data, initializedAtomsSet, circularDependencySet)
+    }
+    return data.values.get(selector)
 }
 
 export function getState<
@@ -125,16 +164,13 @@ export function getState<
         if (!coldCache) {
             return data.values.get(state)
         }
-        if (
-            isColdSelectorCacheFresh(
-                state as Selector,
-                coldCache,
-                data,
-                initializedAtomsSet,
-                circularDependencySet,
-            )
+        return getColdSelectorState(
+            state as Selector,
+            coldCache,
+            data,
+            initializedAtomsSet,
+            circularDependencySet,
         )
-            return data.values.get(state)
     }
     if (isAtom<Value>(state)) {
         if (data.parent)

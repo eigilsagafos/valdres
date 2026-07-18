@@ -3,9 +3,10 @@ import type { AtomFamilyAtom } from "../types/AtomFamilyAtom"
 import type { Family } from "../types/Family"
 import type { GetValue } from "../types/GetValue"
 import type { SetAtom } from "../types/SetAtom"
+import type { Selector } from "../types/Selector"
 import type { State } from "../types/State"
 import type { ScopedStore, ScopeFn, Store } from "../types/Store"
-import type { StoreData } from "../types/StoreData"
+import type { ColdSelectorCache, StoreData } from "../types/StoreData"
 import type { TransactionFn } from "../types/TransactionFn"
 import { isAtom } from "../utils/isAtom"
 import { isGlobalAtom } from "../utils/isGlobalAtom"
@@ -15,7 +16,7 @@ import { unsetValue } from "./unsetValue"
 import { createStoreData } from "./createStoreData"
 import { deleteFamilyAtom } from "./deleteFamilyAtom"
 import { flushPendingOrphanCleanup } from "./flushPendingOrphanCleanup"
-import { getState } from "./getState"
+import { getColdSelectorState, getState } from "./getState"
 import {
     beginLivenessPass,
     endLivenessPass,
@@ -122,11 +123,22 @@ export function storeFromStoreData(
         // getState for revision validation. Preserve the original atom/active-
         // selector cache-hit path. The eager scalar keeps atom-only stores from
         // touching the lazy cache WeakMap or checking the state object's shape.
+        let coldCache: ColdSelectorCache | false | undefined
         if (data.values.has(state)) {
-            const hasColdCache =
+            coldCache =
                 data.coldSelectorCachesEnabled &&
-                data.coldSelectorCaches.has(state)
-            if (!hasColdCache) {
+                data.coldSelectorCaches.get(state)
+            if (coldCache) {
+                // No state observed by this cache has changed since its last
+                // validation. Return at the store boundary so steady cold
+                // reads avoid opening a liveness pass only to collect no seeds.
+                if (
+                    coldCache.validatedAt ===
+                    data.stateRevisionClock.current
+                ) {
+                    return data.values.get(state)
+                }
+            } else {
                 if (!isCachedValueStale(state, data)) {
                     return data.values.get(state)
                 }
@@ -146,7 +158,14 @@ export function storeFromStoreData(
         const ownsLivenessSeeds = beginLivenessPass(data)
         let seedsToReconcile: Set<State> | null = null
         try {
-            res = getState(state, data, _initSet)
+            res = coldCache
+                ? getColdSelectorState(
+                      state as Selector,
+                      coldCache,
+                      data,
+                      _initSet,
+                  )
+                : getState(state, data, _initSet)
         } finally {
             if (_initSet.size) {
                 const atoms = [..._initSet]

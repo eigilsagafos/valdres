@@ -16,6 +16,18 @@ export type SelectorEvaluationContext = {
     asyncDependencyRevisions?: Map<State, number>
 }
 
+export type ColdSelectorCache = {
+    /** Weak-key-owned forward references aligned with `dependencyRevisions`.
+     * The array is reused across evaluations and disappears with the selector;
+     * unlike a reverse edge, no long-lived dependency points back to it. */
+    dependencies: State[]
+    dependencyRevisions: number[]
+    validatedAt: number
+    /** Atom/family-only dependency sets cannot contain a selector cycle, so
+     * their validation skips the recursive cycle guard entirely. */
+    hasSelectorDependencies: boolean
+}
+
 export type StoreData = {
     id: string
     /** The store's materialized values, keyed by state identity. A `WeakMap` by
@@ -33,13 +45,8 @@ export type StoreData = {
     /** Selectors whose forward dependency sets are currently mirrored into the
      *  iterable reverse graph. Cold selectors are deliberately absent. */
     selectorGraphActive: WeakSet<WeakKey>
-    /** Dependency-revision snapshots for cached, non-live selectors. Arrays are
-     *  aligned with the insertion order of `stateDependencies.get(selector)` so
-     *  the cache adds no second set of strong state references. */
-    coldSelectorCaches: WeakMap<
-        WeakKey,
-        { dependencyRevisions: number[]; validatedAt: number }
-    >
+    /** Dependency-revision snapshots for cached, non-live selectors. */
+    coldSelectorCaches: WeakMap<WeakKey, ColdSelectorCache>
     /** Set on this store after its first cold selector cache. Kept as an eager
      *  scalar so atom-only cache hits can skip the lazy WeakMap without a state
      *  shape check or nested revision-clock lookup. */

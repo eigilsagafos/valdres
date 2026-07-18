@@ -1,6 +1,7 @@
 import type { Selector } from "../types/Selector"
 import type { State } from "../types/State"
 import type { StoreData } from "../types/StoreData"
+import { isSelector } from "../utils/isSelector"
 
 /**
  * Record a materialized state value changing. Revision tracking is enabled by
@@ -26,7 +27,9 @@ export const trackStateRevision = (state: WeakKey, data: StoreData) => {
 /** Resolve the revision of the value this store would actually read. Scoped
  * atoms without a local shadow inherit their closest ancestor's revision. */
 export const getStateRevision = (state: WeakKey, data: StoreData): number => {
-    if (data.values.has(state) || !data.parent) {
+    // Root stores dominate. Check parent first so their revision reads avoid an
+    // otherwise redundant values.has() WeakMap probe.
+    if (!data.parent || data.values.has(state)) {
         return data.stateRevisions.get(state) ?? 0
     }
     return getStateRevision(state, data.parent)
@@ -49,21 +52,40 @@ export const recordColdSelectorCache = (
     const clock = data.stateRevisionClock
     const tracked = (clock.tracked ??= new WeakSet())
     clock.enabled = true
-    const dependencyRevisions: number[] = []
+    const existingCache = data.coldSelectorCaches.get(selector)
+    const dependencyStates = existingCache?.dependencies ?? []
+    const dependencyRevisions = existingCache?.dependencyRevisions ?? []
+    dependencyRevisions.length = 0
+    let hasSelectorDependencies = false
     let matchesCurrentValues = true
+    let index = 0
     for (const dependency of dependencies) {
-        tracked.add(dependency)
+        if (dependencyStates[index] !== dependency) {
+            tracked.add(dependency)
+        }
+        dependencyStates[index] = dependency
+        if (isSelector(dependency)) hasSelectorDependencies = true
         const currentRevision = getStateRevision(dependency, data)
         const revision = revisions?.get(dependency) ?? currentRevision
         dependencyRevisions.push(revision)
         if (revision !== currentRevision) {
             matchesCurrentValues = false
         }
+        index++
     }
-    data.coldSelectorCaches.set(selector, {
-        dependencyRevisions,
-        validatedAt: matchesCurrentValues ? clock.current : -1,
-    })
+    dependencyStates.length = index
+    const validatedAt = matchesCurrentValues ? clock.current : -1
+    if (existingCache) {
+        existingCache.hasSelectorDependencies = hasSelectorDependencies
+        existingCache.validatedAt = validatedAt
+    } else {
+        data.coldSelectorCaches.set(selector, {
+            dependencies: dependencyStates,
+            dependencyRevisions,
+            validatedAt,
+            hasSelectorDependencies,
+        })
+    }
     return matchesCurrentValues
 }
 

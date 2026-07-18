@@ -139,6 +139,44 @@ describe("async selectors", () => {
         expect(evaluations).toBe(2)
     })
 
+    test("subscription restarts a stale pending cold late dependency", async () => {
+        const s = store()
+        const base = atom(1)
+        let firstDependencyRead!: () => void
+        const dependencyRead = new Promise<void>(resolve => {
+            firstDependencyRead = resolve
+        })
+        let release!: () => void
+        const gate = new Promise<void>(resolve => {
+            release = resolve
+        })
+        let evaluations = 0
+        const sel = selector((get: any) => {
+            evaluations++
+            const evaluation = evaluations
+            return Promise.resolve().then(() => {
+                const value = get(base)
+                if (evaluation === 1) firstDependencyRead()
+                return gate.then(() => value)
+            })
+        })
+
+        const first = s.get(sel)
+        await dependencyRead
+        s.set(base, 2)
+
+        const unsubscribe = s.sub(sel, () => {})
+        expect(evaluations).toBe(2)
+        await wait(0)
+        release()
+        await first
+        await wait(0)
+
+        expect(s.get(sel)).toBe(2)
+        expect(s.data.stateDependents.get(base)).toContain(sel)
+        unsubscribe()
+    })
+
     test("an active async late read validates a cold selector before promotion", async () => {
         const s = store()
         const base = atom(1)
