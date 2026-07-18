@@ -343,7 +343,7 @@ describe("atomFamily", () => {
         })
     })
 
-    test("release an atomFamily memeber", () => {
+    test("release an atomFamily member", () => {
         const store1 = store()
         const todosAtomFamily = atomFamily((id: string) => ({
             id,
@@ -355,9 +355,12 @@ describe("atomFamily", () => {
         expect(store1.get(todosAtomFamily)).toStrictEqual([])
         todosAtomFamily.release("1")
         expect(store1.get(todosAtomFamily)).toStrictEqual([])
-        store1.get(todosAtomFamily("1"))
-        store1.get(todosAtomFamily("2"))
-        store1.get(todosAtomFamily("3"))
+        const todo1 = todosAtomFamily("1")
+        const todo2 = todosAtomFamily("2")
+        const todo3 = todosAtomFamily("3")
+        store1.get(todo1)
+        store1.get(todo2)
+        store1.get(todo3)
         /**
          * TODO: Have to figure out how to correctly do release, have to include
          * store to release from the keys atom
@@ -365,12 +368,15 @@ describe("atomFamily", () => {
         expect(
             store1.get(todosAtomFamily).map(atom => atom.familyArgsStringified),
         ).toStrictEqual(["1", "2", "3"])
-        store1.del(todosAtomFamily("1"))
+        store1.del(todo1)
         expect(
             store1.get(todosAtomFamily).map(atom => atom.familyArgsStringified),
         ).toStrictEqual(["2", "3"])
         // Deletion is store-local. The shared identity remains available so a
         // different store or scope cannot be stranded on another member object.
+        expect(todosAtomFamily("1")).toBe(todo1)
+        expect(todosAtomFamily("2")).toBe(todo2)
+        expect(todosAtomFamily("3")).toBe(todo3)
         expect(
             todosAtomFamily.__valdresAtomFamilyMap.keys().toArray(),
         ).toStrictEqual(["1", "2", "3"])
