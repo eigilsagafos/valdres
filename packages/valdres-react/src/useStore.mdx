@@ -43,7 +43,7 @@ function BatchUpdate() {
     const store = useStore()
 
     const handleReset = () => {
-        store.txn(set => {
+        store.txn(({ set }) => {
             set(nameAtom, "")
             set(emailAtom, "")
             set(ageAtom, 0)

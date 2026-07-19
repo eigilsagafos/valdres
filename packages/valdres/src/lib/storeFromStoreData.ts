@@ -319,17 +319,17 @@ const createStoreRuntime = (data: StoreData): Store => {
 
     const dispose = () => disposeStoreData(data)
 
-    const scope: ScopeFn = ((scopeId: string, callback?: any) => {
+    const scope: ScopeFn = ((
+        scopeId: string,
+        callback?: (store: Omit<Store, "dispose">) => unknown,
+    ) => {
         if (callback) {
             if (!data.scopes.has(scopeId)) {
                 throw new Error(`Scope ${scopeId} does not exist`)
             }
             const scopedStoreData = data.scopes.get(scopeId)!
-            const scopedStore = storeFromStoreData(
-                scopedStoreData,
-            ) as ScopedStore
-            const res = callback(scopedStore)
-            return res
+            const scopedStore = storeFromStoreData(scopedStoreData)
+            return callback(scopedStore)
         } else {
             let scopedStoreData
             if (data.scopes.has(scopeId)) {

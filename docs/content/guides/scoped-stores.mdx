@@ -107,8 +107,8 @@ const root = store()
 const child = root.scope("child")
 const countAtom = atom(0)
 
-child.sub(countAtom, value => {
-    console.log("child sees:", value)
+child.sub(countAtom, () => {
+    console.log("child sees:", child.get(countAtom))
 })
 
 root.set(countAtom, 1)
@@ -126,7 +126,7 @@ root.set(countAtom, 2)
 Transactions work the same way inside scopes:
 
 ```ts
-child.txn(set => {
+child.txn(({ set }) => {
     set(nameAtom, "New name")
     set(ageAtom, 25)
     // Both updates are atomic within the scope
