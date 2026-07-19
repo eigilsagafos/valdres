@@ -35,6 +35,7 @@ import {
     hasSelectorChangeListener,
     reportSelectorChanges,
 } from "./notifyChangeListeners"
+import { beginCommit, commitEndRegistry, endCommit } from "./onCommitEnd"
 import {
     propagateAtomUpdate,
     propagateDirtySelectors,
@@ -884,55 +885,68 @@ export const handleSelectorResult = <Value>(
                 cleanUpRejectedPromise(selector, data, value as Promise<any>)
                 return
             }
-            // @ts-ignore
-            setValueInData(selector, resolved, data)
-            const resolvedDependencies = data.stateDependencies.get(selector)
-            if (
-                resolvedDependencies &&
-                !data.selectorGraphActive.has(selector)
-            ) {
-                const current = recordColdSelectorCache(
-                    selector,
-                    resolvedDependencies,
-                    data,
-                    evalDependencyRevisions,
-                )
-                if (current) markColdSelectorCacheValidated(selector, data)
-            }
-            const dependents = data.stateDependents.get(selector)
-            const subs = data.subscriptions.get(selector)
-            if (
-                (subs && subs.size > 0) ||
-                (dependents && dependents.size > 0)
-            ) {
-                // Collect downstream selectors that recompute as a result, so a
-                // `{ selectors: true }` listener sees them alongside this
-                // selector. Off the hot path unless a selector listener exists on
-                // this store's chain (not merely some unrelated root store).
-                const changedSelectors =
-                    changeListenerRegistry.selectorCount !== 0 &&
-                    hasSelectorChangeListener(data)
-                        ? new Set<Selector>()
-                        : undefined
-                propagateDirtySelectors(
-                    [],
-                    new Set(dependents),
-                    data,
-                    new Set(subs),
-                    new Map(),
-                    false,
-                    undefined,
-                    changedSelectors,
-                )
-                if (changedSelectors) {
-                    // This selector itself just resolved from a pending promise
-                    // to `resolved` — a genuine value change. Report it (and the
-                    // downstream it triggered) as an "async-set" batch.
-                    changedSelectors.add(selector)
-                    reportSelectorChanges(changedSelectors, data, "async-set")
+            // Promise settlement is a standalone commit: the resolved value,
+            // downstream recomputation, subscribers, and onChange all precede
+            // one onCommitEnd notification. Preserve the zero-listener fast
+            // path used by synchronous propagation: one global counter read,
+            // with no root walk or tracking when nobody observes commit ends.
+            let commitRoot: StoreData | undefined
+            if (commitEndRegistry.count !== 0) commitRoot = beginCommit(data)
+            let completed = false
+            try {
+                // @ts-ignore
+                setValueInData(selector, resolved, data)
+                const resolvedDependencies = data.stateDependencies.get(selector)
+                if (
+                    resolvedDependencies &&
+                    !data.selectorGraphActive.has(selector)
+                ) {
+                    const current = recordColdSelectorCache(
+                        selector,
+                        resolvedDependencies,
+                        data,
+                        evalDependencyRevisions,
+                    )
+                    if (current) markColdSelectorCacheValidated(selector, data)
                 }
+                const dependents = data.stateDependents.get(selector)
+                const subs = data.subscriptions.get(selector)
+                if (
+                    (subs && subs.size > 0) ||
+                    (dependents && dependents.size > 0)
+                ) {
+                    // Collect downstream selectors that recompute as a result, so a
+                    // `{ selectors: true }` listener sees them alongside this
+                    // selector. Off the hot path unless a selector listener exists on
+                    // this store's chain (not merely some unrelated root store).
+                    const changedSelectors =
+                        changeListenerRegistry.selectorCount !== 0 &&
+                        hasSelectorChangeListener(data)
+                            ? new Set<Selector>()
+                            : undefined
+                    propagateDirtySelectors(
+                        [],
+                        new Set(dependents),
+                        data,
+                        new Set(subs),
+                        new Map(),
+                        false,
+                        undefined,
+                        changedSelectors,
+                    )
+                    if (changedSelectors) {
+                        // This selector itself just resolved from a pending promise
+                        // to `resolved` — a genuine value change. Report it (and the
+                        // downstream it triggered) as an "async-set" batch.
+                        changedSelectors.add(selector)
+                        reportSelectorChanges(changedSelectors, data, "async-set")
+                    }
+                }
+                completed = true
+            } finally {
+                if (commitRoot !== undefined) endCommit(commitRoot, !completed)
             }
-        }).catch(() => {
+        }, () => {
             if (evaluationContext) evaluationContext.asyncDeps = undefined
             if (evaluationContext)
                 evaluationContext.asyncDependencyRevisions = undefined
