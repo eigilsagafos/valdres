@@ -25,7 +25,7 @@ import {
     createStoreDisposedError,
     DISPOSED_STORE_PENDING,
 } from "./storeLifecycle"
-import { unsubscribe } from "./unsubscribe"
+import { addSubscriptionEqualCheck, unsubscribe } from "./unsubscribe"
 import { validateResolvedValue } from "./validateResolvedValue"
 
 const initSubscribers = <V>(state: State<V> | Family<V>, data: StoreData) => {
@@ -531,17 +531,14 @@ export const subscribe = <V>(
         }
     }
     subscribers.add(subscription)
-    const equalCheckSubscriptions = data.subscriptionsRequireEqualCheck
-    if (subscribers.size === 1) {
-        equalCheckSubscriptions.set(
-            state,
-            requireDeepEqualCheckBeforeCallback ? true : undefined,
-        )
-    } else if (
-        requireDeepEqualCheckBeforeCallback &&
-        equalCheckSubscriptions.get(state) !== true
-    ) {
-        equalCheckSubscriptions.set(state, true)
+    // This public equality table also serves as disposal's iterable active-state
+    // index. Equality counts live on the subscriber Set, so the map remains one
+    // O(1) write per state transition rather than a second bookkeeping structure.
+    if (subscribers.size === 1 && !requireDeepEqualCheckBeforeCallback) {
+        data.subscriptionsRequireEqualCheck.set(state, undefined)
+    }
+    if (requireDeepEqualCheckBeforeCallback) {
+        addSubscriptionEqualCheck(state, subscribers, data)
     }
     const unsubscribeSubscription = () => {
         if (!parentUnsubscribe) {

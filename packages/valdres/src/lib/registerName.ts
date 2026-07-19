@@ -2,6 +2,16 @@ import type { Atom } from "../types/Atom"
 import type { AtomFamily } from "../types/AtomFamily"
 import { valdresGlobal } from "./valdresGlobal"
 
+// Reverse lookup for store-local dehydration indexes. Weak keys preserve the
+// registry's existing ownership model while letting a store record the exact
+// address registered for a state (rather than trusting its mutable `name`
+// property later).
+const registeredNames = new WeakMap<WeakKey, string>()
+
+export const getRegisteredName = (
+    state: Atom<any> | AtomFamily<any>,
+): string | undefined => registeredNames.get(state)
+
 /** Register a `name`d atom or atomFamily in the global name registry (the
  *  `globalThis.__valdres__` slot), keyed by name. Names are global addresses —
  *  `dehydrate`/`hydrate` resolve state by name across processes — so a
@@ -24,4 +34,5 @@ export const registerName = (
         )
     }
     registry.set(name, state)
+    registeredNames.set(state, name)
 }

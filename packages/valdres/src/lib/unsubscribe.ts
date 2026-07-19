@@ -13,33 +13,64 @@ import {
 } from "./mountAtom"
 import { queueOrphanCleanup } from "./queueOrphanCleanup"
 
+const equalCheckCount = Symbol()
+type CountedSubscriptions = Set<Subscription> & {
+    [equalCheckCount]?: number
+}
+
+// StoreData exposes the legacy boolean map publicly. Keep it accurate without
+// a survivor scan or a second state index: the subscription Set already has
+// exactly the lifetime and identity needed to own the private O(1) count.
+export const addSubscriptionEqualCheck = (
+    state: State | Family<any>,
+    subscriptions: Set<Subscription>,
+    data: StoreData,
+) => {
+    const countedSubscriptions = subscriptions as CountedSubscriptions
+    const count = countedSubscriptions[equalCheckCount] ?? 0
+    if (count === 0) {
+        countedSubscriptions[equalCheckCount] = 1
+        data.subscriptionsRequireEqualCheck.set(state, true)
+        return
+    }
+    countedSubscriptions[equalCheckCount] = count + 1
+}
+
+const removeSubscriptionEqualCheck = (
+    state: State | Family<any>,
+    subscriptions: Set<Subscription>,
+    data: StoreData,
+) => {
+    const countedSubscriptions = subscriptions as CountedSubscriptions
+    const count = countedSubscriptions[equalCheckCount]
+    if (count === undefined) return
+    if (count === 1) {
+        // Retain the Set's shape; the Set itself is discarded with its last
+        // subscriber, and a later equality subscription can reuse this slot.
+        countedSubscriptions[equalCheckCount] = 0
+        // A key with an undefined value remains disposal's active-state index.
+        // The final-unsubscribe path below deletes the key outright.
+        if (subscriptions.size !== 0) {
+            data.subscriptionsRequireEqualCheck.set(state, undefined)
+        }
+        return
+    }
+    countedSubscriptions[equalCheckCount] = count - 1
+}
+
 export const unsubscribe = <V>(
     state: State<V> | Family<V>,
     subscription: Subscription,
     data: StoreData,
 ) => {
     const subscribers = data.subscriptions.get(state)
-    if (subscribers?.delete(subscription)) {
-        const equalCheckSubscriptions = data.subscriptionsRequireEqualCheck
-        if (subscribers.size === 0) {
-            // The iterable equality table is also disposal's active-state
-            // index. Delete its one entry directly on the overwhelmingly
-            // common final-unsubscribe path; there is no remaining callback
-            // whose equality mode needs recomputing.
-            equalCheckSubscriptions.delete(state)
-        } else if (equalCheckSubscriptions.get(state)) {
-            let remove = true
-            for (const subscriber of subscribers) {
-                if (subscriber.requireDeepEqualCheckBeforeCallback) {
-                    remove = false
-                    break
-                }
-            }
-            if (remove) {
-                equalCheckSubscriptions.set(state, undefined)
-            }
+    if (subscribers) {
+        const wasSubscribed = subscribers.delete(subscription)
+        if (wasSubscribed && subscription.requireDeepEqualCheckBeforeCallback) {
+            removeSubscriptionEqualCheck(state, subscribers, data)
         }
         if (subscribers.size === 0) {
+            data.subscriptionsRequireEqualCheck.delete(state)
             const maxAgeCleanup = getMaxAgeCleanup(data, state)
             if (maxAgeCleanup) {
                 maxAgeCleanup()
