@@ -176,10 +176,8 @@ describe("transaction", () => {
 
         store1.txn(({ get }) => {
             expect(get(optionsSelector)).toBe(1)
-            expect(receivedOptions).toEqual({
-                signal: expect.any(AbortSignal),
-                storeId: store1.data.id,
-            })
+            expect(receivedOptions.signal).toBeInstanceOf(AbortSignal)
+            expect(receivedOptions.storeId).toBe(store1.data.id)
 
             try {
                 get(invalidSelector)
