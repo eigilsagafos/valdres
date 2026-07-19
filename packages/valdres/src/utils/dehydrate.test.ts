@@ -3,6 +3,8 @@ import { z } from "zod"
 import { atom } from "../atom"
 import { atomFamily } from "../atomFamily"
 import { SchemaValidationError } from "../errors/SchemaValidationError"
+import { getNamedStateIndex } from "../lib/namedStateIndex"
+import { valdresGlobal } from "../lib/valdresGlobal"
 import { selector } from "../selector"
 import { store } from "../store"
 import { dehydrate } from "./dehydrate"
@@ -59,6 +61,79 @@ describe("dehydrate", () => {
         expect(dehydrate(request2).families).toEqual([
             ["dh-req-fam", ["r2-only"], 2],
         ])
+    })
+
+    test("does not scan the global registry or family identity cache", () => {
+        const fam = atomFamily<number, [string]>(0, {
+            name: "dh-local-index-fam",
+        })
+        const unrelated = atomFamily<number, [number]>(0, {
+            name: "dh-local-index-unrelated",
+        })
+        const store1 = store()
+        store1.set(fam("owned"), 1)
+
+        // Keep unrelated identities live. Their exact count is deliberately
+        // small: iterator-call instrumentation below guards the asymptotic
+        // behavior without a timing threshold or a slow test fixture.
+        const unrelatedMembers = Array.from({ length: 32 }, (_, i) =>
+            unrelated(i),
+        )
+        expect(unrelatedMembers).toHaveLength(32)
+
+        const registry = valdresGlobal().registry
+        const registryIterator = registry[Symbol.iterator]
+        const familyValues = fam.__valdresAtomFamilyMap.values
+        const unrelatedValues = unrelated.__valdresAtomFamilyMap.values
+        let registryScans = 0
+        let familyCacheScans = 0
+
+        registry[Symbol.iterator] = function () {
+            registryScans++
+            return registryIterator.call(this)
+        }
+        fam.__valdresAtomFamilyMap.values = function () {
+            familyCacheScans++
+            return familyValues.call(this)
+        }
+        unrelated.__valdresAtomFamilyMap.values = function () {
+            familyCacheScans++
+            return unrelatedValues.call(this)
+        }
+
+        try {
+            expect(dehydrate(store1).families).toEqual([
+                ["dh-local-index-fam", ["owned"], 1],
+            ])
+            expect(registryScans).toBe(0)
+            expect(familyCacheScans).toBe(0)
+        } finally {
+            // Each method was inherited; delete the temporary own override so
+            // this test leaves the shared registry/cache objects unchanged.
+            delete (registry as any)[Symbol.iterator]
+            delete (fam.__valdresAtomFamilyMap as any).values
+            delete (unrelated.__valdresAtomFamilyMap as any).values
+        }
+    })
+
+    test("prunes named atoms from the local index when their value is removed", () => {
+        const kept = atom(0, { name: "dh-local-index-kept" })
+        const removed = atom(0, { name: "dh-local-index-removed" })
+        const store1 = store()
+        store1.set(kept, 1)
+        store1.set(removed, 2)
+
+        expect([...getNamedStateIndex(store1.data)!.values()]).toEqual([
+            "dh-local-index-kept",
+            "dh-local-index-removed",
+        ])
+
+        store1.unset(removed)
+
+        expect([...getNamedStateIndex(store1.data)!.values()]).toEqual([
+            "dh-local-index-kept",
+        ])
+        expect(dehydrate(store1).atoms).toEqual([["dh-local-index-kept", 1]])
     })
 
     test("unnamed atoms and named selectors are never included", () => {

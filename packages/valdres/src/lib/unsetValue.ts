@@ -9,6 +9,7 @@ import {
     reportUnsetAtom,
 } from "./notifyChangeListeners"
 import { beginCommit, commitEndRegistry, endCommit } from "./onCommitEnd"
+import { untrackNamedAtom } from "./namedStateIndex"
 import { propagateAtomUpdate } from "./propagateUpdatedAtoms"
 import { noteStateValueChanged } from "./stateRevisions"
 
@@ -27,6 +28,7 @@ export const detachOwnValue = (atom: Atom<any>, data: StoreData): boolean => {
     if (!data.values.has(atom)) return false
 
     data.values.delete(atom)
+    untrackNamedAtom(atom, data)
     noteStateValueChanged(atom, data)
     // Only present for maxAge atoms; guard to avoid materializing the lazy
     // WeakMap getter for the common (non-maxAge) atom.

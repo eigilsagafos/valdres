@@ -11,6 +11,7 @@ import { isLive, mountAtom, unmountAtom } from "./mountAtom"
 import { propagateAtomUpdate } from "./propagateUpdatedAtoms"
 import { noteStateValueChanged } from "./stateRevisions"
 import { installMaxAgeTimer } from "./subscribe"
+import { untrackNamedAtom } from "./namedStateIndex"
 import { globalStore } from "../globalStore"
 import {
     isStoreDisposed,
@@ -144,6 +145,7 @@ export const globalAtom = <Value = unknown>(
         for (const store of snapshot) {
             detach(store)
             if (store.values.delete(atom)) {
+                untrackNamedAtom(atom, store)
                 noteStateValueChanged(atom, store)
             }
             try {

@@ -8,6 +8,7 @@ import { propagateAtomUpdate } from "./propagateUpdatedAtoms"
 import { setAtom } from "./setAtom"
 import { setValueInData } from "./setValueInData"
 import { noteStateValueChanged } from "./stateRevisions"
+import { trackNamedState, untrackNamedAtom } from "./namedStateIndex"
 import { validateResolvedValue } from "./validateResolvedValue"
 import { validateSchema } from "./validateSchema"
 
@@ -41,6 +42,7 @@ export const getAtomInitValue = <V = any>(
                         // stuck on an unvalidated promise.
                         if (data.values.get(atom) === value) {
                             data.values.delete(atom)
+                            untrackNamedAtom(atom, data)
                             noteStateValueChanged(atom, data)
                         }
                         return
@@ -55,6 +57,7 @@ export const getAtomInitValue = <V = any>(
                     // rather than being stuck with a rejected promise.
                     if (data.values.get(atom) === value) {
                         data.values.delete(atom)
+                        untrackNamedAtom(atom, data)
                         noteStateValueChanged(atom, data)
                     }
                 },
@@ -103,6 +106,10 @@ export const initAtom = <
 ) => {
     const tmpVal = getAtomInitValue(atom, data, initializedAtomsSet)
     let value = setValueInData(atom, tmpVal, data)
+    // Cold-path bookkeeping for dehydrate. This runs once per materialized
+    // atom/store pair, not on subsequent writes; family members index only
+    // their globally named family, never each member identity.
+    if (atom.name !== undefined) trackNamedState(atom, data)
     if (atom.onInit)
         atom.onInit((newVal: Value) => {
             value = newVal

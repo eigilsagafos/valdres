@@ -24,6 +24,7 @@ import {
 } from "./mountAtom"
 import { onCommitEnd } from "./onCommitEnd"
 import { onStoreChange } from "./onStoreChange"
+import { untrackNamedAtom } from "./namedStateIndex"
 import { propagateAtomUpdate } from "./propagateUpdatedAtoms"
 import { resetAtom } from "./resetAtom"
 import { setAtom } from "./setAtom"
@@ -167,6 +168,9 @@ const createStoreRuntime = (data: StoreData): Store => {
                     return data.values.get(state)
                 }
                 data.values.delete(state)
+                // Only directly registered atoms are present in this index;
+                // selectors and family members make this a cheap no-op.
+                untrackNamedAtom(state as Atom, data)
                 data.lastValueWriteAt.delete(state)
             }
         }
