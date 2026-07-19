@@ -15,6 +15,26 @@ describe("subscribe", () => {
         expect(callback).toHaveBeenCalledTimes(1)
     })
 
+    test("fresh atom subscription propagates selector-default initialization", () => {
+        const store1 = store()
+        const sourceFamily = atomFamily((id: number) => id)
+        const source = sourceFamily(1)
+        const defaultSelector = selector(get => get(source) + 1)
+        const target = atom(defaultSelector)
+        const callback = mock(() => {})
+
+        const unsubscribe = store1.sub(target, callback)
+
+        expect(store1.get(source)).toBe(1)
+        expect(store1.get(sourceFamily)).toStrictEqual([source])
+        expect(store1.get(target)).toBe(2)
+        expect(callback).toHaveBeenCalledTimes(0)
+
+        store1.set(target, 3)
+        expect(callback).toHaveBeenCalledTimes(1)
+        unsubscribe()
+    })
+
     test("Subscribe to un-mounted selector", () => {
         const store1 = store()
         const atom1 = atom([1, 2, 3]) // sum 6

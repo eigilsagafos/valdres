@@ -325,7 +325,7 @@ export const subscribe = <V>(
         const initializedAtomsSet = new Set<Atom>()
         initAtom(state, data, initializedAtomsSet)
         if (initializedAtomsSet.size) {
-            throw new Error("This should not be possible")
+            propagateAtomUpdate([...initializedAtomsSet], data, true)
         }
     }
     // A selector may have a revision-validated cold cache. Read through
