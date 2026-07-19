@@ -41,7 +41,7 @@ export const setValueInData = <Value extends unknown>(
     // values map. Families are callable; ordinary atom descriptors are objects,
     // so this cheap type check keeps that internal bookkeeping out of the user
     // value freeze contract without an isAtomFamily helper call on every write.
-    if (atom.mutable || IS_PROD || typeof atom === "function") {
+    if ((atom as Atom<Value>).mutable || IS_PROD || typeof atom === "function") {
         data.values.set(atom, value)
         written = value
     } else {

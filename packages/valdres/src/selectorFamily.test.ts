@@ -14,12 +14,11 @@ describe("selectorFamily", () => {
         expect(nameSelectorFamily(1)).toEqual(nameSelectorFamily(1))
     })
 
-    test("mutable option is exposed and inherited by members", () => {
+    test("mutable option is inherited by members", () => {
         const family = selectorFamily(() => () => new Map<string, number>(), {
             mutable: true,
         })
 
-        expect(family.mutable).toBe(true)
         expect(family("one").mutable).toBe(true)
         expect(() => store().get(family("one")).set("value", 1)).not.toThrow()
     })

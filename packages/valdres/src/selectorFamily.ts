@@ -82,7 +82,6 @@ export const selectorFamily = <
     // a consumer can read a family's schema without materializing a member.
     selectorFamily.schema = selectorOptions?.schema
     selectorFamily.schemaValidation = selectorOptions?.schemaValidation
-    selectorFamily.mutable = selectorOptions?.mutable
     // Define `name` explicitly. When named, expose the user's name. When unnamed,
     // override the intrinsic JS function name ("selectorFamily") with `undefined`
     // so an unnamed family mirrors an unnamed selector — consumers (devtools,

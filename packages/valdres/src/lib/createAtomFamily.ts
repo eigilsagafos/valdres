@@ -175,7 +175,6 @@ export const createAtomFamily = <
         // materializing a member.
         schema: memberOptions?.schema,
         schemaValidation: memberOptions?.schemaValidation,
-        mutable: memberOptions?.mutable,
     }) as AtomFamily<Value, Args>
     // The FAMILY registers under its name; member atoms never do (they are
     // addressed as `family(...args)`). Global families can't double-register:
