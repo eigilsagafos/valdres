@@ -25,7 +25,7 @@ import {
     createStoreDisposedError,
     DISPOSED_STORE_PENDING,
 } from "./storeLifecycle"
-import { trackStoreSubscription } from "./storeSubscriptions"
+import { trackStoreSubscriptionState } from "./storeSubscriptions"
 import { unsubscribe } from "./unsubscribe"
 import { validateResolvedValue } from "./validateResolvedValue"
 
@@ -532,7 +532,9 @@ export const subscribe = <V>(
         }
     }
     subscribers.add(subscription)
-    trackStoreSubscription(state, subscription, data)
+    if (subscribers.size === 1) {
+        trackStoreSubscriptionState(state, subscribers, data)
+    }
     const unsubscribeSubscription = () => {
         if (!parentUnsubscribe) {
             unsubscribe(state, subscription, data)

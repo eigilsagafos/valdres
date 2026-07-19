@@ -14,10 +14,7 @@ import {
     takeStoreCleanups,
     takeStoreMounts,
 } from "./storeLifecycle"
-import {
-    stateForStoreSubscription,
-    takeStoreSubscriptions,
-} from "./storeSubscriptions"
+import { takeStoreSubscriptionStates } from "./storeSubscriptions"
 
 type StoreGlobals = [StoreData, GlobalAtom<any>[]]
 
@@ -104,23 +101,26 @@ export const disposeStoreData = (data: StoreData): void => {
             }
         }
 
-        // Active ownership is a compact array on the existing WeakMap. Scope
-        // subscriptions drop their parent delegates before their local entry
-        // is removed.
+        // The existing WeakMap carries a compact array of subscribed states.
+        // Scope subscriptions drop their parent delegates before their local
+        // entry is removed.
         if (Object.hasOwn(current, "subscriptions")) {
-            const subscriptions = takeStoreSubscriptions(current)
-            if (subscriptions) {
-                for (const subscription of subscriptions) {
-                    const state = stateForStoreSubscription(subscription)
-                    try {
-                        subscription.reRoot?.()
-                    } catch (error) {
-                        recordError(error)
-                    }
-                    try {
-                        unsubscribe(state, subscription, current)
-                    } catch (error) {
-                        recordError(error)
+            const states = takeStoreSubscriptionStates(current)
+            if (states) {
+                for (const state of states) {
+                    const subscriptions = current.subscriptions.get(state)
+                    if (!subscriptions) continue
+                    for (const subscription of subscriptions) {
+                        try {
+                            subscription.reRoot?.()
+                        } catch (error) {
+                            recordError(error)
+                        }
+                        try {
+                            unsubscribe(state, subscription, current)
+                        } catch (error) {
+                            recordError(error)
+                        }
                     }
                 }
             }

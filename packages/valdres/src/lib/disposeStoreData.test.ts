@@ -42,6 +42,30 @@ describe("store.dispose", () => {
         }
     })
 
+    test("drains every subscription after active-state churn", () => {
+        const targetStore = store()
+        const first = atom(0)
+        const second = atom(0)
+        const third = atom(0)
+        const unsubscribeFirst = targetStore.sub(first, () => {})
+        const unsubscribeSecondA = targetStore.sub(second, () => {})
+        const unsubscribeSecondB = targetStore.sub(second, () => {})
+        const unsubscribeThird = targetStore.sub(third, () => {})
+
+        // Removing the first state exercises the ledger's swap-pop path while
+        // the second state remains represented by more than one subscription.
+        unsubscribeFirst()
+        targetStore.dispose()
+
+        expect(targetStore.data.subscriptions.get(first)).toBeUndefined()
+        expect(targetStore.data.subscriptions.get(second)).toBeUndefined()
+        expect(targetStore.data.subscriptions.get(third)).toBeUndefined()
+
+        unsubscribeSecondA()
+        unsubscribeSecondB()
+        unsubscribeThird()
+    })
+
     test("hands a shared global maxAge timer to a live store", () =>
         withFakeClock(async clock => {
             const owner = store()

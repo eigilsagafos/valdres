@@ -3,63 +3,70 @@ import type { State } from "../types/State"
 import type { StoreData } from "../types/StoreData"
 import type { Subscription } from "../types/Subscription"
 
-const ACTIVE_SUBSCRIPTIONS = Symbol("valdres.activeSubscriptions")
-const SUBSCRIPTION_INDEX = Symbol("valdres.subscriptionIndex")
-const SUBSCRIPTION_STATE = Symbol("valdres.subscriptionState")
+const ACTIVE_SUBSCRIPTION_STATES = Symbol("valdres.activeSubscriptionStates")
+const SUBSCRIPTION_STATE_INDEX = Symbol("valdres.subscriptionStateIndex")
 
-type OwnedSubscription = Subscription & {
-    [SUBSCRIPTION_INDEX]: number
-    [SUBSCRIPTION_STATE]: State | Family<any>
+type SubscriberSet = Set<Subscription> & {
+    [SUBSCRIPTION_STATE_INDEX]?: number
 }
 
-type SubscriptionTable = WeakMap<WeakKey, Set<Subscription>> & {
-    [ACTIVE_SUBSCRIPTIONS]?: OwnedSubscription[]
+type SubscriptionTable = StoreData["subscriptions"] & {
+    [ACTIVE_SUBSCRIPTION_STATES]?: (State | Family<any>)[]
 }
 
-/** Track active ownership without changing StoreData or its WeakMap lookup path. */
-export const trackStoreSubscription = (
+/** Track each subscribed state once without changing the WeakMap lookup path. */
+export const trackStoreSubscriptionState = (
     state: State | Family<any>,
-    subscription: Subscription,
+    subscribers: Set<Subscription>,
     data: StoreData,
 ): void => {
     const table = data.subscriptions as SubscriptionTable
-    const active = (table[ACTIVE_SUBSCRIPTIONS] ??= [])
-    const owned = subscription as OwnedSubscription
-    owned[SUBSCRIPTION_INDEX] = active.length
-    owned[SUBSCRIPTION_STATE] = state
-    active.push(owned)
-}
-
-/** O(1) swap-pop removal for the ordinary unsubscribe path. */
-export const untrackStoreSubscription = (
-    subscription: Subscription,
-    data: StoreData,
-): void => {
-    const table = data.subscriptions as SubscriptionTable
-    const active = table[ACTIVE_SUBSCRIPTIONS]
-    if (!active) return
-    const owned = subscription as OwnedSubscription
-    const index = owned[SUBSCRIPTION_INDEX]
-    if (index < 0 || active[index] !== owned) return
-    const tail = active.pop()!
-    if (tail !== owned) {
-        active[index] = tail
-        tail[SUBSCRIPTION_INDEX] = index
+    const active = (table[ACTIVE_SUBSCRIPTION_STATES] ??= [])
+    const length = active.length
+    if (length === 1) {
+        const firstSubscribers = table.get(active[0]) as
+            | SubscriberSet
+            | undefined
+        if (firstSubscribers) firstSubscribers[SUBSCRIPTION_STATE_INDEX] = 0
     }
-    owned[SUBSCRIPTION_INDEX] = -1
-    if (active.length === 0) table[ACTIVE_SUBSCRIPTIONS] = undefined
+    if (length > 0) {
+        const owned = subscribers as SubscriberSet
+        owned[SUBSCRIPTION_STATE_INDEX] = length
+    }
+    active.push(state)
 }
 
-/** Transfer active ownership to the terminal disposal pass. */
-export const takeStoreSubscriptions = (
+/** The caller invokes this only when the state's final subscriber is removed. */
+export const untrackStoreSubscriptionState = (
+    state: State | Family<any>,
+    subscribers: Set<Subscription>,
     data: StoreData,
-): OwnedSubscription[] | undefined => {
+): void => {
     const table = data.subscriptions as SubscriptionTable
-    const active = table[ACTIVE_SUBSCRIPTIONS]
-    table[ACTIVE_SUBSCRIPTIONS] = undefined
+    const active = table[ACTIVE_SUBSCRIPTION_STATES]
+    if (!active) return
+    if (active.length === 1) {
+        if (active[0] === state) active.pop()
+        return
+    }
+    const owned = subscribers as SubscriberSet
+    const index = owned[SUBSCRIPTION_STATE_INDEX]
+    if (index === undefined || active[index] !== state) return
+    const tail = active.pop()!
+    if (tail !== state) {
+        active[index] = tail
+        const tailSubscribers = table.get(tail) as SubscriberSet | undefined
+        if (tailSubscribers) tailSubscribers[SUBSCRIPTION_STATE_INDEX] = index
+    }
+    owned[SUBSCRIPTION_STATE_INDEX] = undefined
+}
+
+/** Transfer active state ownership to the terminal disposal pass. */
+export const takeStoreSubscriptionStates = (
+    data: StoreData,
+): (State | Family<any>)[] | undefined => {
+    const table = data.subscriptions as SubscriptionTable
+    const active = table[ACTIVE_SUBSCRIPTION_STATES]
+    table[ACTIVE_SUBSCRIPTION_STATES] = undefined
     return active
 }
-
-export const stateForStoreSubscription = (
-    subscription: OwnedSubscription,
-): State | Family<any> => subscription[SUBSCRIPTION_STATE]
