@@ -2,7 +2,6 @@ import type { Atom } from "../types/Atom"
 import type { StoreData } from "../types/StoreData"
 import { isAtom } from "../utils/isAtom"
 import { getState } from "./getState"
-import { getAtomInitValue } from "./initAtom"
 import {
     createChangeSink,
     flushChangeSink,
@@ -60,32 +59,27 @@ export const reDelegateScopeSubscriptions = (
     }
 }
 
-/** The value the store reads for `atom` after its own value was removed, used to
- *  populate the `onChange` report:
+/** The already-available value the store reads for `atom` after its own value
+ *  was removed, used to populate the `onChange` report:
  *
  *  - **scoped store** → the inherited parent value (already materialized, since
  *    shadowing an atom always initializes the parent first), so this is a cheap
  *    read-through.
- *  - **root store** → the atom's default. We deliberately do NOT re-materialize
- *    (write) it: unset's purpose on a root is to drop the stored value and let
- *    the next read re-initialize lazily. If a live consumer re-read the atom
- *    during propagation it is already back in `data.values`, so we report that;
- *    otherwise we compute the default with `getAtomInitValue` (which does not
- *    write). For an atom whose default is a function/async, computing it here
- *    runs the same initializer the next read would run. */
+ *  - **root store** → `undefined`; `reportUnsetAtom` reads `data.values` itself
+ *    if a live consumer already rematerialized the atom. Reporting must never
+ *    evaluate a lazy function/async default: root unset stays observationally
+ *    neutral and the next read initializes it exactly as it would without an
+ *    `onChange` listener. */
 export const effectiveValueAfterUnset = (
     atom: Atom<any>,
     data: StoreData,
 ): unknown => {
     const parent = data.parent
-    if (parent) {
-        const initSet = new Set<Atom>()
-        const value = getState(atom, parent, initSet)
-        if (initSet.size > 0) propagateAtomUpdate([...initSet], parent, true)
-        return value
-    }
-    if (data.values.has(atom)) return data.values.get(atom)
-    return getAtomInitValue(atom, data, new Set())
+    if (!parent) return undefined
+    const initSet = new Set<Atom>()
+    const value = getState(atom, parent, initSet)
+    if (initSet.size > 0) propagateAtomUpdate([...initSet], parent, true)
+    return value
 }
 
 /** Public `store.unset(atom)`: drop the store's own value for `atom` so it
@@ -103,8 +97,10 @@ export const effectiveValueAfterUnset = (
  *  store has no own value for `atom`. Otherwise removes the value + bookkeeping,
  *  notifies subscribers, dependent selectors, and nested scopes of the reverted
  *  value, re-delegates scope subscriptions so future parent changes are observed
- *  again, and reports the change on `store.onChange` as a `kind: "unset"` (carrying
- *  the reverted value) with `meta.source === "unset"`. */
+ *  again, and reports the change on `store.onChange` as a `kind: "unset"` with
+ *  `meta.source === "unset"`. A scope change carries its inherited value. A root
+ *  change carries a value only if propagation rematerialized the atom; otherwise
+ *  the value is omitted to preserve lazy-default semantics. */
 export const unsetValue = <V>(atom: Atom<V>, data: StoreData): void => {
     if (!isAtom(atom)) throw new Error(InvalidStateError)
 

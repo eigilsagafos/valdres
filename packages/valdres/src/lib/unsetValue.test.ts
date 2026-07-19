@@ -254,13 +254,59 @@ describe("unset — root store", () => {
         expect(root.data.values.has(a)).toBe(false)
     })
 
-    test("a subscriber fires on unset and onChange reports the default with source 'unset'", () => {
+    test("onChange does not evaluate a lazy default solely to report a root unset", () => {
+        const root = store()
+        let initCount = 0
+        const a = atom(() => ++initCount)
+        expect(root.get(a)).toBe(1)
+
+        let received: readonly StoreChange[] = []
+        root.onChange(changes => (received = changes))
+
+        root.unset(a)
+
+        expect(initCount).toBe(1)
+        expect(root.data.values.has(a)).toBe(false)
+        expect(received).toEqual([
+            { type: "atom", kind: "unset", state: a, scope: [] },
+        ])
+        expect(root.get(a)).toBe(2)
+        expect(initCount).toBe(2)
+    })
+
+    test("onChange does not start an async default solely to report a root unset", () => {
+        const root = store()
+        let initCount = 0
+        const a = atom(() => {
+            initCount++
+            return new Promise<number>(() => {})
+        })
+        const first = root.get(a)
+
+        let received: readonly StoreChange[] = []
+        root.onChange(changes => (received = changes))
+
+        root.unset(a)
+
+        expect(initCount).toBe(1)
+        expect(root.data.values.has(a)).toBe(false)
+        expect(received).toEqual([
+            { type: "atom", kind: "unset", state: a, scope: [] },
+        ])
+        const second = root.get(a)
+        expect(initCount).toBe(2)
+        expect(second).not.toBe(first)
+    })
+
+    test("a consumer can rematerialize the default before onChange reports a root unset", () => {
         const root = store()
         const a = atom(1)
+        const doubled = selector(get => get(a) * 2)
         root.set(a, 5)
 
         const sub = mock(() => {})
-        root.sub(a, sub)
+        root.sub(doubled, sub)
+        expect(root.get(doubled)).toBe(10)
         const calls: { changes: readonly StoreChange[]; meta: any }[] = []
         root.onChange((changes, meta) => calls.push({ changes, meta }))
 
@@ -273,6 +319,7 @@ describe("unset — root store", () => {
             { type: "atom", kind: "unset", state: a, value: 1, scope: [] },
         ])
         expect(root.get(a)).toBe(1)
+        expect(root.get(doubled)).toBe(2)
     })
 
     test("a dependent selector re-evaluates after a root atom is unset", () => {
@@ -299,6 +346,26 @@ describe("unset — root store", () => {
         // De-materialized first (a read would re-initialize it), then reverts.
         expect(root.data.values.has(a)).toBe(false)
         expect(root.get(a)).toBe(1)
+    })
+
+    test("transaction onChange does not evaluate a lazy default solely to report a root unset", () => {
+        const root = store()
+        let initCount = 0
+        const a = atom(() => ++initCount)
+        expect(root.get(a)).toBe(1)
+
+        let received: readonly StoreChange[] = []
+        root.onChange(changes => (received = changes))
+
+        root.txn(t => t.unset(a))
+
+        expect(initCount).toBe(1)
+        expect(root.data.values.has(a)).toBe(false)
+        expect(received).toEqual([
+            { type: "atom", kind: "unset", state: a, scope: [] },
+        ])
+        expect(root.get(a)).toBe(2)
+        expect(initCount).toBe(2)
     })
 
     test("reading a root atom mid-transaction after unset returns the default", () => {
