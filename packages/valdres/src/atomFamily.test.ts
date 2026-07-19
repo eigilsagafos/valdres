@@ -46,6 +46,26 @@ describe("atomFamily", () => {
         expect(scope.get(family)).toStrictEqual([])
     })
 
+    test("release preserves identity retained by a store", async () => {
+        const family = atomFamily((_id: string) => 0)
+        const store1 = store()
+        const member = family("shared")
+
+        store1.set(member, 1)
+        // Exercise the weak-cache path rather than its same-job strong entry.
+        await Promise.resolve()
+        family.release("shared")
+
+        const releasedMember = family("shared")
+        expect(releasedMember).toBe(member)
+
+        store1.set(releasedMember, 2)
+        expect(store1.get(family)).toStrictEqual([member])
+        expect(store1.get(family).map(atom => store1.get(atom))).toStrictEqual([
+            2,
+        ])
+    })
+
     test("Simple default value", () => {
         const store1 = store()
         const userAtomFamily = atomFamily<number, string>("Foo")
@@ -286,7 +306,7 @@ describe("atomFamily", () => {
         expect(family(b)).toBe(first)
         expect("keyOf" in first).toBe(false)
         family.release(a)
-        expect(family(b)).not.toBe(first)
+        expect(family(b)).toBe(first)
     })
 
     test("get an entire atom family", () => {
@@ -385,7 +405,7 @@ describe("atomFamily", () => {
         })
     })
 
-    test("release an atomFamily member", () => {
+    test("deprecated release does not remove an atomFamily member", () => {
         const store1 = store()
         const todosAtomFamily = atomFamily((id: string) => ({
             id,
