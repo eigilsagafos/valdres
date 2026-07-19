@@ -110,7 +110,16 @@ export const initAtom = <
     data: StoreData,
     initializedAtomsSet: Set<Atom>,
 ) => {
-    const tmpVal = getAtomInitValue(atom, data, initializedAtomsSet)
+    let tmpVal
+    try {
+        tmpVal = getAtomInitValue(atom, data, initializedAtomsSet)
+    } catch (error) {
+        // A stale value may have been evicted immediately before this
+        // re-initialization. Keep failure cleanup off the steady store.get()
+        // path while ensuring historical direct-atom state is not retained.
+        untrackNamedAtom(atom, data)
+        throw error
+    }
     let value = setValueInData(atom, tmpVal, data)
     // Cold-path bookkeeping for dehydrate. Resolve registration through the
     // reverse WeakMap instead of probing the optional `name` property: besides

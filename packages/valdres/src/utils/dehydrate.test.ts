@@ -157,6 +157,34 @@ describe("dehydrate", () => {
         expect(nameReads).toBe(0)
     })
 
+    test("prunes a named atom when stale re-initialization throws", () => {
+        let now = 0
+        let initializations = 0
+        const nowSpy = spyOn(Date, "now").mockImplementation(() => now)
+        try {
+            const stale = atom(
+                () => {
+                    if (initializations++ === 0) return 1
+                    throw new Error("stale init failed")
+                },
+                { name: "dh-stale-init-failure", maxAge: 0 },
+            )
+            const store1 = store()
+            expect(store1.get(stale)).toBe(1)
+            expect(getNamedStateIndex(store1.data)?.has(stale)).toBe(true)
+
+            now = 1
+            expect(() => store1.get(stale)).toThrow("stale init failed")
+
+            expect(store1.data.values.has(stale)).toBe(false)
+            expect(getNamedStateIndex(store1.data)?.has(stale) ?? false).toBe(
+                false,
+            )
+        } finally {
+            nowSpy.mockRestore()
+        }
+    })
+
     test("unnamed atoms and named selectors are never included", () => {
         const unnamed = atom(1)
         const named = atom(2, { name: "dh-excl-named" })
