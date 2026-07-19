@@ -1,15 +1,19 @@
 /**
  * Converts the benchmark NDJSON (from bench-utils.ts) into Bencher Metric
- * Format (BMF), one file per runtime/testbed. A SINGLE measure: the built-in
- * `latency` (nanoseconds — units are set automatically by Bencher).
+ * Format (BMF), one file per runtime/testbed. Every benchmark gets the built-in
+ * `latency` measure (nanoseconds — units are set automatically by Bencher).
+ * When BENCH_NORMALIZE is set, gateable Valdres benchmarks also get the custom
+ * `runner-normalized-latency-v1` measure. It divides latency by a fixed
+ * geometric-mean index of pinned-Jotai controls from the same run, cancelling
+ * runner-wide slowdown while preserving Valdres-specific regressions.
  *
  * Each benchmark is one implementation of an operation, named "<op> / <impl>"
  * (e.g. "store.get(atom) / valdres", "store.get(atom) / jotai",
  * "store.get(atom) / map"). The competitor / native-floor comparison is read
- * off a Bencher plot by overlaying the sibling benchmarks; regression gating is
- * per-benchmark against the base branch. Names are deduped — an implementation
- * can be measured in more than one comparison (e.g. valdres.get appears in both
- * the vs-jotai and vs-map comparisons).
+ * off a Bencher plot by overlaying the sibling benchmarks. PRs gate Valdres
+ * latency against a same-runner base; main gates only the normalized measure.
+ * Names are deduped — an implementation can be measured in more than one
+ * comparison (e.g. valdres.get appears in both the vs-jotai and vs-map plots).
  *
  *   bench-results.ndjson       -> packages/valdres/bun_results.json   (testbed ubuntu-2204-bun)
  *   bench-results-node.ndjson  -> packages/valdres/node_results.json  (testbed ubuntu-2204-node)
@@ -20,7 +24,13 @@ import { type BenchResult, readBenchResults } from "./lib/read-bench-results"
 import { median } from "./lib/median"
 
 type Metric = { value: number; lower_value?: number; upper_value?: number }
-type Bmf = Record<string, Record<string, Metric>>
+export type Bmf = Record<string, Record<string, Metric>>
+
+export interface BmfOptions {
+    excludeRefs?: boolean
+    excludeTiny?: boolean
+    normalize?: boolean
+}
 
 const ROOT = join(import.meta.dir, "..")
 const PERF_DIR = join(ROOT, "packages/valdres/test/performance")
@@ -46,38 +56,106 @@ const UNGATEABLE_OPS = new Set([
     "atom(1)", // ~2ns
     "selector(fn)", // ~5ns
     "atomFamily(id) cache hit", // ~10ns
+    "atomFamily(string) cache hit", // ~25ns
+    "selectorFamily(string) cache hit", // ~60ns
     // The single-call p50 flips between JIT tiers on the same runner (roughly
     // 15-40ns). The identical hot path remains gated by "get 1000 atoms",
     // whose aggregated window is stable enough for a percentage boundary.
     "store.get(atom)",
 ])
 
-function toBmf(results: BenchResult[]): Bmf {
+// Versioned because changing the control set changes the scale of every metric.
+// If a control ever needs replacing, create a v2 measure instead of silently
+// splicing a different scale into v1's history. Jotai is exactly pinned in the
+// package manifest, and these controls span the suite from microseconds to tens
+// of milliseconds so one workload or transient cannot dominate the index.
+export const NORMALIZED_LATENCY_MEASURE = "runner-normalized-latency-v1"
+export const RUNNER_CONTROL_BENCHMARKS = [
+    "set(atom) with 10 subs / jotai",
+    "atom lifecycle (create+100get+100set) / jotai",
+    "sub + unsub / jotai",
+    "set(atom, curr => curr+1) / jotai",
+    "get 1000 atoms / jotai",
+    "txn: cross-atom 1000 selectors, with subs / jotai",
+    "txn: asymmetric DAG shared sink / jotai",
+    "txn: large asymmetric DAG (1000 leaves × 50 chain) / jotai",
+] as const
+
+function geometricMean(values: number[]): number {
+    if (
+        values.length === 0 ||
+        values.some(value => !Number.isFinite(value) || value <= 0)
+    ) {
+        throw new Error(
+            "Runner controls must contain finite, positive latencies",
+        )
+    }
+    return Math.exp(
+        values.reduce((sum, value) => sum + Math.log(value), 0) / values.length,
+    )
+}
+
+export function toBmf(results: BenchResult[], options: BmfOptions = {}): Bmf {
     // The relative-CB gate runs the suite multiple times and concatenates the
     // NDJSON, so a benchmark name legitimately appears once per repeat. Keep the
     // MEDIAN latency across repeats: with three runs it rejects either one slow
     // GC/scheduler sample or one anomalously fast JIT sample. Min-of-three only
     // rejected slow outliers and could turn one lucky base result into a false
-    // regression. A single run (the base lane) yields median-of-one.
+    // regression. A single local run still yields median-of-one.
     //
     // BENCH_EXCLUDE_REFS drops the competitor/native-floor sides. The PR gate
     // sets it because those benches can't regress from a valdres change (jotai
     // is pinned, map is native) — gating them only adds noise. They're still
     // measured and plotted via the base lane (bencher-base.yml) for the
     // head-to-head perf page.
-    const excludeRefs = !!process.env.BENCH_EXCLUDE_REFS
-    const excludeTiny = !!process.env.BENCH_EXCLUDE_TINY
+    const {
+        excludeRefs = false,
+        excludeTiny = false,
+        normalize = false,
+    } = options
     const samples: Record<string, number[]> = {}
     for (const r of results) {
-        if (excludeRefs && isReference(r.name)) continue
-        if (excludeTiny && UNGATEABLE_OPS.has(opName(r.name))) continue
         samples[r.name] ??= []
         samples[r.name].push(r.ns)
     }
 
+    const latencies = new Map(
+        Object.entries(samples).map(([name, values]) => [name, median(values)]),
+    )
+    let runnerControlIndex: number | undefined
+    if (normalize) {
+        const missingControls = RUNNER_CONTROL_BENCHMARKS.filter(
+            name => !latencies.has(name),
+        )
+        if (missingControls.length > 0) {
+            throw new Error(
+                `Missing runner controls: ${missingControls.join(", ")}`,
+            )
+        }
+        runnerControlIndex = geometricMean(
+            RUNNER_CONTROL_BENCHMARKS.map(name => latencies.get(name)!),
+        )
+    }
+
     const bmf: Bmf = {}
-    for (const [name, values] of Object.entries(samples)) {
-        bmf[name] = { latency: { value: median(values) } }
+    for (const [name, latency] of latencies) {
+        if (excludeRefs && isReference(name)) continue
+        if (excludeTiny && UNGATEABLE_OPS.has(opName(name))) continue
+
+        const measures: Record<string, Metric> = { latency: { value: latency } }
+        // Raw latency remains available for every benchmark and for the public
+        // comparison plots. Only Valdres-owned, sufficiently large benchmarks
+        // get the normalized measure that main's Threshold evaluates.
+        if (
+            runnerControlIndex !== undefined &&
+            !isReference(name) &&
+            !UNGATEABLE_OPS.has(opName(name))
+        ) {
+            measures[NORMALIZED_LATENCY_MEASURE] = {
+                value: latency / runnerControlIndex,
+            }
+        }
+        bmf[name] = measures
     }
     return bmf
 }
@@ -87,8 +165,12 @@ function toBmf(results: BenchResult[]): Bmf {
 // the base SHA ships an older bench-to-bmf that would reject the repeated names.
 const lanes = [
     {
-        ndjson: process.env.BENCH_NDJSON_BUN ?? join(PERF_DIR, "bench-results.ndjson"),
-        out: process.env.BENCH_OUT_BUN ?? join(ROOT, "packages/valdres/bun_results.json"),
+        ndjson:
+            process.env.BENCH_NDJSON_BUN ??
+            join(PERF_DIR, "bench-results.ndjson"),
+        out:
+            process.env.BENCH_OUT_BUN ??
+            join(ROOT, "packages/valdres/bun_results.json"),
     },
     {
         ndjson:
@@ -100,13 +182,25 @@ const lanes = [
     },
 ]
 
-for (const lane of lanes) {
-    const results = readBenchResults(lane.ndjson)
-    if (results.length === 0) {
-        console.warn(`No results in ${lane.ndjson} — skipping ${lane.out}`)
-        continue
+if (import.meta.main) {
+    const options: BmfOptions = {
+        excludeRefs: !!process.env.BENCH_EXCLUDE_REFS,
+        excludeTiny: !!process.env.BENCH_EXCLUDE_TINY,
+        normalize: !!process.env.BENCH_NORMALIZE,
     }
-    const bmf = toBmf(results)
-    writeFileSync(lane.out, JSON.stringify(bmf, null, 2))
-    console.log(`Wrote ${Object.keys(bmf).length} benchmarks -> ${lane.out}`)
+    for (const lane of lanes) {
+        const results = readBenchResults(lane.ndjson)
+        if (results.length === 0) {
+            console.warn(`No results in ${lane.ndjson} — skipping ${lane.out}`)
+            continue
+        }
+        const bmf = toBmf(results, options)
+        writeFileSync(lane.out, JSON.stringify(bmf, null, 2))
+        const normalized = options.normalize
+            ? ` with ${NORMALIZED_LATENCY_MEASURE}`
+            : ""
+        console.log(
+            `Wrote ${Object.keys(bmf).length} benchmarks${normalized} -> ${lane.out}`,
+        )
+    }
 }

@@ -1,6 +1,6 @@
 # Bencher base lane — the benchmark CI for this repo. On pushes to main it
-# records the baseline latency series for each runtime and creates/updates the
-# regression Threshold that PRs are gated against.
+# records raw latency and tracks a runner-normalized latency measure over time.
+# PRs use a separate same-runner relative gate in bencher-pr.yml.
 #
 # Project slug is `valdres` (BENCHER_PROJECT below); the project is public, so
 # its perf page and plots are viewable at bencher.dev/perf/valdres.
@@ -12,6 +12,7 @@ on:
 
 permissions:
     checks: write
+    contents: read
 
 concurrency:
     group: bencher-base-${{ github.ref }}
@@ -42,41 +43,52 @@ jobs:
             - name: Install
               run: bun install --frozen-lockfile
 
-            # Measurement layer writes per-implementation latency NDJSON
-            # (bench-utils.ts: measureOne / compare) which we convert to BMF.
-            - name: Run benchmarks (Bun)
+            # Run each runtime three times and take the per-benchmark median in
+            # bench-to-bmf. This rejects one GC/scheduler or JIT-tier outlier
+            # before the cross-run statistical Threshold sees the result.
+            - name: Run benchmarks (Bun + Node, 3×)
               working-directory: packages/valdres
-              run: bun run test:bench
-            - name: Run benchmarks (Node)
-              working-directory: packages/valdres
-              run: bun run test:bench:node
+              run: |
+                  rm -f /tmp/main_bun.ndjson /tmp/main_node.ndjson
+                  for i in 1 2 3; do
+                    bun run test:bench
+                    cat test/performance/bench-results.ndjson >> /tmp/main_bun.ndjson
+                    bun run test:bench:node
+                    cat test/performance/bench-results-node.ndjson >> /tmp/main_node.ndjson
+                  done
 
+            # Raw latency remains in Bencher for plots. The additional
+            # runner-normalized measure divides each gateable Valdres median by
+            # a fixed geometric-mean index of pinned-Jotai controls from the
+            # same run. Shared runner slowdown cancels; Valdres-only slowdown
+            # remains. Reference and sub-noise-floor benchmarks do not receive
+            # the normalized measure and therefore cannot alert on main.
             - name: Convert NDJSON -> Bencher Metric Format
+              env:
+                  BENCH_NDJSON_BUN: /tmp/main_bun.ndjson
+                  BENCH_NDJSON_NODE: /tmp/main_node.ndjson
+                  BENCH_NORMALIZE: "1"
               run: bun run scripts/bench-to-bmf.ts
 
-            # Gate the built-in `latency` measure with a t-test against main's
-            # history (auto-scales tolerance to each benchmark's own variance).
-            # Tuned for noisy shared runners: min-sample-size 6 means a benchmark
-            # isn't gated until it has enough history (kills early-life false
-            # alerts on a thin baseline), and a wide 0.9999 upper boundary
-            # tolerates the ~1.5x wobble heavy/allocation benches show on a loaded
-            # runner while still catching genuine large regressions. NOTE:
-            # thresholds are per-measure, so the jotai/map reference benches are
-            # gated too — stable enough to self-pass; move them to their own
-            # measure if that ever flakes.
+            # Positive ratios are multiplicative, so a log-normal model is a
+            # better fit than the old absolute-latency t-test. 0.9999 keeps the
+            # per-report false-positive budget low across dozens of benchmarks;
+            # min 6 lets the new measure establish history before alerting.
+            # `--thresholds-reset` also removes the obsolete raw-latency model.
             - name: Track Bun baseline
               run: |
                   bencher run \
                     --branch main \
                     --testbed ubuntu-2204-bun \
-                    --threshold-measure latency \
-                    --threshold-test t_test \
+                    --threshold-measure runner-normalized-latency-v1 \
+                    --threshold-test log_normal \
                     --threshold-min-sample-size 6 \
                     --threshold-max-sample-size 64 \
                     --threshold-upper-boundary 0.9999 \
                     --thresholds-reset \
                     --adapter json \
                     --github-actions '${{ secrets.GITHUB_TOKEN }}' \
+                    --ci-id main-bun-normalized \
                     --file packages/valdres/bun_results.json
 
             - name: Track Node baseline
@@ -84,12 +96,13 @@ jobs:
                   bencher run \
                     --branch main \
                     --testbed ubuntu-2204-node \
-                    --threshold-measure latency \
-                    --threshold-test t_test \
+                    --threshold-measure runner-normalized-latency-v1 \
+                    --threshold-test log_normal \
                     --threshold-min-sample-size 6 \
                     --threshold-max-sample-size 64 \
                     --threshold-upper-boundary 0.9999 \
                     --thresholds-reset \
                     --adapter json \
                     --github-actions '${{ secrets.GITHUB_TOKEN }}' \
+                    --ci-id main-node-normalized \
                     --file packages/valdres/node_results.json

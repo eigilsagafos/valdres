@@ -3,6 +3,7 @@ import type { Selector } from "../types/Selector"
 import type { State } from "../types/State"
 import type { StoreData } from "../types/StoreData"
 import { getState } from "./getState"
+import { addStateDependent } from "./inheritedDependencyBranches"
 import {
     activateSelectorGraph,
     isLive,
@@ -29,17 +30,6 @@ export const isSuspendError = (
     return e instanceof SuspendAndWaitForResolveError
 }
 
-export const getOrInitDependentsSet = (
-    state: State,
-    data: StoreData,
-): Set<State<any>> => {
-    const set = data.stateDependents.get(state)
-    if (set) return set
-    const newSet = new Set<State>()
-    data.stateDependents.set(state, newSet)
-    return newSet
-}
-
 /**
  * Handle a deferred `get` call — one that runs after the synchronous
  * evaluation of the selector has already completed (e.g. inside a
@@ -62,8 +52,7 @@ export const lateGet = (
         deps.add(state)
         if (data.selectorGraphActive.has(selector)) {
             noteDependencyGraphChanged(selector, data)
-            const dependents = getOrInitDependentsSet(state, data)
-            dependents.add(selector)
+            addStateDependent(state, selector, data)
             // New edge: keep the mount-closure marker's no-false-negative invariant.
             noteDependencyAdded(selector, state, data)
         } else {

@@ -192,6 +192,10 @@ export type StoreData = {
     batchUpdates?: boolean
     schemaValidation?: boolean
     scopeValueIndex: WeakMap<WeakKey, Set<StoreData>>
+    /** Per inherited atom/family, the immediate child branches that contain at
+     *  least one active dependent before any intervening atom shadow. Parent
+     *  propagation uses this to enter only affected scope subtrees. */
+    inheritedDependencyBranches: WeakMap<WeakKey, Set<StoreData>>
     /** Present iff this is a scoped store. Root stores have `parent: undefined`. */
     parent?: StoreData
     /** Present iff this is a scoped store. Tracks active scope consumers
@@ -200,6 +204,9 @@ export type StoreData = {
     /** Present iff this is a scoped store. Records keys this scope registered
      *  in its parent's `scopeValueIndex`, used for cleanup on detach. */
     scopeIndexKeys?: Set<WeakKey>
+    /** Present iff this is a scoped store. Records inherited dependency keys
+     *  for which this scope is registered as a branch in its parent's index. */
+    inheritedDependencyKeys?: Set<WeakKey>
     /** Store-wide change listeners registered via `store.onChange`, each mapped
      *  to the kinds of change it opted into: `atoms` (default true) and
      *  `selectors` (default false). Absent (undefined) until the first listener

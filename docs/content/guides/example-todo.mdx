@@ -24,7 +24,7 @@ export const remainingCountSelector = selector(get => {
 
 export function addTodo(store, title) {
     const id = crypto.randomUUID()
-    store.txn(set => {
+    store.txn(({ set }) => {
         set(todoAtom(id), { id, title, done: false })
         set(todoIdsAtom, ids => [...ids, id])
     })
@@ -36,7 +36,7 @@ export function toggleTodo(store, id) {
 }
 
 export function removeTodo(store, id) {
-    store.txn(set => {
+    store.txn(({ set }) => {
         set(todoIdsAtom, ids => ids.filter(i => i !== id))
     })
 }
