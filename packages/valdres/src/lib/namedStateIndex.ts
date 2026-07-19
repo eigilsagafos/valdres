@@ -20,10 +20,11 @@ export const trackNamedState = (
     state: Atom<any> | AtomFamilyAtom<any, any>,
     data: StoreData,
 ): void => {
-    // Keep unnamed atom initialization on its old path: named family members
-    // carry the family's derived member name, while every transferable direct
-    // atom carries its registered name.
-    if (state.name === undefined) return
+    // Directly named atoms are present in the reverse registry. Family members
+    // are represented by their registered family, never by member identity.
+    // Avoid probing `state.name`: it is mutable and is not the registry source
+    // of truth, and on Bun/JSC the optional-property read perturbs the hot atom
+    // property-access shape after initialization.
     let namedState: NamedState = state
     let name = getRegisteredName(state)
     if (name === undefined) {
@@ -44,7 +45,6 @@ export const trackNamedState = (
 
 /** Remove a directly registered atom after its own store value disappears. */
 export const untrackNamedAtom = (atom: Atom<any>, data: StoreData): void => {
-    if (atom.name === undefined) return
     if (getRegisteredName(atom) === undefined) return
     const index = indexes.get(data)
     if (index === undefined) return

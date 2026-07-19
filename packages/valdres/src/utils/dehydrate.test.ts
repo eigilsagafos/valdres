@@ -136,6 +136,27 @@ describe("dehydrate", () => {
         expect(dehydrate(store1).atoms).toEqual([["dh-local-index-kept", 1]])
     })
 
+    test("index bookkeeping does not probe an unnamed atom's name property", () => {
+        const unnamed = atom(0)
+        let nameReads = 0
+        Object.defineProperty(unnamed, "name", {
+            configurable: true,
+            get: () => {
+                nameReads++
+                return undefined
+            },
+        })
+        const store1 = store()
+
+        store1.get(unnamed)
+        store1.unset(unnamed)
+
+        // Registration, not a mutable optional property, is the source of
+        // truth. Keeping this at zero also protects Bun/JSC's steady atom-read
+        // property-access shape from initialization-only index bookkeeping.
+        expect(nameReads).toBe(0)
+    })
+
     test("unnamed atoms and named selectors are never included", () => {
         const unnamed = atom(1)
         const named = atom(2, { name: "dh-excl-named" })

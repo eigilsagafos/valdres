@@ -49,7 +49,13 @@ export const getAtomInitValue = <V = any>(
                     }
                     // @ts-ignore @ts-todo
                     setValueInData(atom, resolvedValue, data)
-                    propagateAtomUpdate([atom], data, false, undefined, "async-set")
+                    propagateAtomUpdate(
+                        [atom],
+                        data,
+                        false,
+                        undefined,
+                        "async-set",
+                    )
                 },
                 () => {
                     // On rejection, remove the rejected promise from the
@@ -106,10 +112,11 @@ export const initAtom = <
 ) => {
     const tmpVal = getAtomInitValue(atom, data, initializedAtomsSet)
     let value = setValueInData(atom, tmpVal, data)
-    // Cold-path bookkeeping for dehydrate. This runs once per materialized
-    // atom/store pair, not on subsequent writes; family members index only
-    // their globally named family, never each member identity.
-    if (atom.name !== undefined) trackNamedState(atom, data)
+    // Cold-path bookkeeping for dehydrate. Resolve registration through the
+    // reverse WeakMap instead of probing the optional `name` property: besides
+    // being the registry's source of truth, this keeps unnamed atoms on Bun's
+    // original property-access shape for subsequent hot reads.
+    trackNamedState(atom, data)
     if (atom.onInit)
         atom.onInit((newVal: Value) => {
             value = newVal
