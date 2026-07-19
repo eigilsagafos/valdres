@@ -26,6 +26,7 @@ Object.defineProperties(lazyProto, {
     subscriptionsRequireEqualCheck: makeLazyGetter("subscriptionsRequireEqualCheck"),
     stateDependents: makeLazyGetter("stateDependents"),
     stateDependencies: makeLazyGetter("stateDependencies"),
+    inheritedDependencyBranches: makeLazyGetter("inheritedDependencyBranches"),
     selectorGraphActive: makeLazyGetter(
         "selectorGraphActive",
         () => new WeakSet(),
@@ -116,6 +117,7 @@ export function createStoreData(
         data.parent = parent
         data.scopeConsumers = new Set()
         data.scopeIndexKeys = new Set()
+        data.inheritedDependencyKeys = undefined
     }
     return data
 }

@@ -40,6 +40,21 @@ describe("scope propagation", () => {
         })
     })
 
+    test("set atom in root with 10,000 idle child scopes", async () => {
+        const root = valdresCreateStore()
+        const a = valdresAtom(0)
+        root.get(a)
+
+        // These branches deliberately never read or subscribe to `a`. Root
+        // writes should remain on the atom fast path regardless of scope count.
+        Array.from({ length: 10_000 }, (_, i) => root.scope(`idle-scope-${i}`))
+
+        let counter = 0
+        await measureOne("scope: set atom, 10,000 idle scopes", () => {
+            root.set(a, ++counter)
+        })
+    })
+
     test("set atom in root with 100 child scopes (50 shadowing)", async () => {
         const root = valdresCreateStore()
         const a = valdresAtom(0)

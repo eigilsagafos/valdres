@@ -14,10 +14,13 @@ import { isSelector } from "../utils/isSelector"
 import {
     SuspendAndWaitForResolveError,
     cleanUpRejectedPromise,
-    getOrInitDependentsSet,
     lateGet,
 } from "./asyncDependencyTracking"
 import { getState } from "./getState"
+import {
+    addStateDependent,
+    removeStateDependent,
+} from "./inheritedDependencyBranches"
 import {
     activateSelectorGraph,
     isLive,
@@ -342,16 +345,14 @@ const evaluateLiveOnlySelector = <V>(
             const prev = currentDependencies ?? new Set<State<any>>()
             for (const state of updatedDependencies) {
                 if (!prev.has(state)) {
-                    const set = getOrInitDependentsSet(state, data)
-                    set.add(selector)
+                    addStateDependent(state, selector, data)
                     noteDependencyAdded(selector, state, data)
                 }
             }
             if (!isAsyncResult) {
                 for (const state of prev) {
                     if (!updatedDependencies.has(state)) {
-                        const set = getOrInitDependentsSet(state, data)
-                        set.delete(selector)
+                        removeStateDependent(state, selector, data)
                         if (
                             data.livenessPassActive &&
                             isSelector(state)
@@ -639,8 +640,7 @@ export const evaluateSelector = <V>(
             for (const state of updatedDependencies) {
                 if (!prev.has(state)) {
                     if (tracksReverseEdges) {
-                        const set = getOrInitDependentsSet(state, data)
-                        set.add(selector)
+                        addStateDependent(state, selector, data)
                         // New edge: propagate the mount-closure marker up so the
                         // mount/unmount walk-skip stays free of false negatives.
                         noteDependencyAdded(selector, state, data)
@@ -665,8 +665,7 @@ export const evaluateSelector = <V>(
                 for (const state of prev) {
                     if (!updatedDependencies.has(state)) {
                         if (tracksReverseEdges) {
-                            const set = getOrInitDependentsSet(state, data)
-                            set.delete(selector)
+                            removeStateDependent(state, selector, data)
                             if (depsChangeOut) {
                                 if (!depsChangeOut.removed)
                                     depsChangeOut.removed = new Set<State>()
@@ -869,8 +868,7 @@ export const handleSelectorResult = <Value>(
                             }
                             currentDeps.delete(dep)
                             if (tracksReverseEdges) {
-                                const dependents = data.stateDependents.get(dep)
-                                if (dependents) dependents.delete(selector)
+                                removeStateDependent(dep, selector, data)
                                 if (selectorIsLive) {
                                     onLiveDependencyRemoved(dep, data)
                                 }

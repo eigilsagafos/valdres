@@ -4,6 +4,7 @@ import type { StoreData } from "../types/StoreData"
 import { deepFreeze } from "../utils/deepFreeze"
 import { isAtomFamily } from "../utils/isAtomFamily"
 import { ensureFamilyAncestorChain } from "./atomFamilyIndex"
+import { refreshInheritedDependencyBranch } from "./inheritedDependencyBranches"
 import { IS_PROD } from "./IS_PROD"
 import { trackScopeValue } from "./trackScopeValue"
 
@@ -60,6 +61,9 @@ export const setValueInData = <Value extends unknown>(
     }
     if (isNewAtomInScope) {
         trackScopeValue(atom, data)
+        // The new shadow cuts this store's dependent subtree off from ancestor
+        // writes. Keep the complementary inherited-dependency index in sync.
+        refreshInheritedDependencyBranch(atom, data)
         // This scope now shadows `atom`, so any subscription here that was
         // delegating to an ancestor must stop delegating now — otherwise an
         // ancestor write in the same transaction commit would notify it in

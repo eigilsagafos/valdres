@@ -41,6 +41,7 @@ import {
     type ChangeSink,
 } from "./notifyChangeListeners"
 import { beginCommit, commitEndRegistry, endCommit } from "./onCommitEnd"
+import { hasInheritedDependencyBranches } from "./inheritedDependencyBranches"
 import { setValueInData } from "./setValueInData"
 import { noteStateValueChanged } from "./stateRevisions"
 
@@ -319,18 +320,9 @@ export const propagateDeletedAtoms = (
     if (commitEndRegistry.count !== 0) commitRoot = beginCommit(data)
     let completed = false
     try {
-        const hasScopeCascade = !!data.scopes && data.scopes.size > 0
-        // An immediate store-tree propagation still needs a deferred notify
-        // phase: every descendant selector must settle before the first root
-        // callback can observe (or interrupt) the tree. Keep the allocation off
-        // the single-store hot path, and let callers that already own a deferred
-        // commit keep owning its notification phase.
-        const localNotify: NotifyTarget | undefined =
-            notify === undefined && hasScopeCascade ? new Map() : undefined
-        const effectiveNotify = notify ?? localNotify
         // Reuse an entry from an earlier pass. The first pass stays local until
         // it actually finds a subscriber, avoiding empty per-scope entries.
-        const notifyEntry = effectiveNotify?.get(data)
+        const notifyEntry = notify?.get(data)
         if (notifyEntry) {
             subscriptions = notifyEntry.subscriptions
         }
@@ -357,6 +349,21 @@ export const propagateDeletedAtoms = (
                 deleteFamilyAtomsFromSet(family, familyAtoms, data, timestamp)
             }
         }
+        // A deleted member changes both its own value and family membership.
+        // Include family objects before deciding whether any scope branch is
+        // affected; a scope selector may observe only get(family), not member.
+        const scopeAtoms: AtomInput[] = atoms.slice()
+        for (const family of deletedFamilyAtoms.keys()) {
+            if (!scopeAtoms.includes(family)) scopeAtoms.push(family)
+        }
+        const hasScopeCascade = hasInheritedDependencyBranches(scopeAtoms, data)
+        // An immediate store-tree propagation still needs a deferred notify
+        // phase: every affected descendant selector must settle before the
+        // first root callback can observe (or interrupt) the tree. Keep the
+        // allocation off both the single-store and idle-scope paths.
+        const localNotify: NotifyTarget | undefined =
+            notify === undefined && hasScopeCascade ? new Map() : undefined
+        const effectiveNotify = notify ?? localNotify
         // `selectorCount` is the cheap global short-circuit; `hasSelectorChangeListener`
         // then confirms a selector listener actually exists on THIS store's ancestor
         // chain, so an unrelated root store with a selector listener doesn't make this
@@ -411,10 +418,6 @@ export const propagateDeletedAtoms = (
         // selector reads the family list (get(family)). Members skip scopes that
         // shadow them (visible value unchanged); families always propagate.
         if (hasScopeCascade) {
-            const scopeAtoms: AtomInput[] = atoms.slice()
-            for (const family of deletedFamilyAtoms.keys()) {
-                scopeAtoms.push(family)
-            }
             propagateToScopes(scopeAtoms, data, false, effectiveNotify, effectiveReport)
         }
 
@@ -468,16 +471,20 @@ export const propagateAtomUpdate = (
     if (commitEndRegistry.count !== 0) commitRoot = beginCommit(data)
     let completed = false
     try {
-        const hasScopes = !!data.scopes && data.scopes.size > 0
+        const hasScopeCascadeForInputs = hasInheritedDependencyBranches(
+            atoms,
+            data,
+        )
         // Fast path: single non-family atom with no dependent selectors and no
-        // scopes can skip the full graph walk entirely and just notify subscribers.
+        // affected scope branch can skip the full graph walk entirely and just
+        // notify subscribers. Merely having idle scopes no longer defeats it.
         if (atoms.length === 1) {
             const atom = atoms[0]
             if (!isFamilyAtom(atom) && !isAtomFamily(atom)) {
                 const dependents = data.stateDependents.get(atom)
                 if (
                     (!dependents || dependents.size === 0) &&
-                    !hasScopes
+                    !hasScopeCascadeForInputs
                 ) {
                     const subs = data.subscriptions.get(atom)
                     if (subs && subs.size > 0) {
@@ -507,13 +514,7 @@ export const propagateAtomUpdate = (
             }
         }
 
-        // Scope cascades must finish before any subscriber can observe the tree
-        // (or throw and interrupt it). Allocate a local target only for that
-        // store-tree path; externally deferred commits keep their existing target.
-        const localNotify: NotifyTarget | undefined =
-            notify === undefined && hasScopes ? new Map() : undefined
-        const effectiveNotify = notify ?? localNotify
-        const notifyEntry = effectiveNotify?.get(data)
+        const notifyEntry = notify?.get(data)
         const subscriptions = notifyEntry
             ? notifyEntry.subscriptions
             : new Set<Subscription>()
@@ -565,6 +566,28 @@ export const propagateAtomUpdate = (
             }
         }
 
+        // A family object is scope-relevant only when membership changed. A
+        // value-only member update stays on the member's branch index.
+        let scopeAtoms: AtomInput[] = atoms
+        if (membershipChanged) {
+            scopeAtoms = atoms.slice()
+            for (const family of membershipChanged) {
+                if (!scopeAtoms.includes(family)) scopeAtoms.push(family)
+            }
+        }
+        const hasScopeCascade =
+            membershipChanged === undefined
+                ? hasScopeCascadeForInputs
+                : hasInheritedDependencyBranches(scopeAtoms, data)
+
+        // Scope cascades must finish before any subscriber can observe the tree
+        // (or throw and interrupt it). Allocate a local target only when the
+        // branch index found affected descendants; externally deferred commits
+        // keep their existing target.
+        const localNotify: NotifyTarget | undefined =
+            notify === undefined && hasScopeCascade ? new Map() : undefined
+        const effectiveNotify = notify ?? localNotify
+
         // A family OBJECT in `atoms` means the committed family index may be a
         // freshly cloned transaction index. Re-link shadowing child scopes so
         // their dependent selectors read that new index before evaluation.
@@ -611,7 +634,7 @@ export const propagateAtomUpdate = (
         let localSink: ChangeSink | undefined
         let effectiveReport: ChangeReport | undefined = report
         if (
-            hasScopes &&
+            hasScopeCascade &&
             typeof report === "string" &&
             changeListenerRegistry.selectorCount !== 0
         ) {
@@ -637,7 +660,7 @@ export const propagateAtomUpdate = (
             }
         }
         if (watching && reportIsSink) emitOrigin(effectiveReport as ChangeReport)
-        if (hasScopes) {
+        if (hasScopeCascade) {
             // A scope selector that reads get(family) depends on the FAMILY object,
             // not the individual member atoms. When the parent's MEMBERSHIP changes (a
             // member added/removed), propagating only the changed members into scopes
@@ -649,13 +672,6 @@ export const propagateAtomUpdate = (
             // deliberately NOT included — its scope-side effect reaches selectors via
             // the member atom already in `atoms`, so it keeps the single-atom scope
             // fast path. That gate is `membershipChanged`.
-            let scopeAtoms: AtomInput[] = atoms
-            if (membershipChanged) {
-                scopeAtoms = atoms.slice()
-                for (const family of membershipChanged) {
-                    if (!scopeAtoms.includes(family)) scopeAtoms.push(family)
-                }
-            }
             propagateToScopes(scopeAtoms, data, isInitOnly, effectiveNotify, effectiveReport)
         }
         if (localNotify) notifyDeferred(localNotify)
@@ -723,60 +739,35 @@ const propagateToScopes = (
     report?: ChangeReport,
 ) => {
     if (atoms.length === 1) {
-        // Fast path for single-atom updates (most common case)
+        // Fast path for single-atom updates (most common case): the index is
+        // already pruned at atom shadows and contains only affected branches.
         const atom = atoms[0]
-        const shadowingScopes = isAtomFamily(atom)
-            ? undefined
-            : data.scopeValueIndex.get(atom)
-        for (const [, scope] of data.scopes) {
-            if (!shadowingScopes || !shadowingScopes.has(scope)) {
-                propagateInScope(atoms, scope, isInitOnly, notify, report)
-            }
-        }
-        return
-    }
-
-    // Multi-atom path: precompute shadow sets once
-    let anyShadowed = false
-    let atomShadows: Map<any, Set<any>> | undefined
-    for (const atom of atoms) {
-        if (!isAtomFamily(atom)) {
-            const s = data.scopeValueIndex.get(atom)
-            if (s && s.size > 0) {
-                if (!atomShadows) atomShadows = new Map()
-                atomShadows.set(atom, s)
-                anyShadowed = true
-            }
-        }
-    }
-
-    if (!anyShadowed) {
-        for (const [, scope] of data.scopes) {
+        const branches = data.inheritedDependencyBranches.get(atom)
+        if (!branches) return
+        for (const scope of branches) {
             propagateInScope(atoms, scope, isInitOnly, notify, report)
         }
         return
     }
 
-    // Some atoms are shadowed, filter per scope
-    for (const [, scope] of data.scopes) {
-        const atomsToUpdateInScope: AtomInput[] = []
-        for (const atom of atoms) {
-            if (isAtomFamily(atom)) {
-                // The scope has its own family index, but the parent
-                // index may have changed (e.g. a member was deleted
-                // from root). Re-evaluate dependent selectors in the
-                // scope so subscribers get notified.
-                atomsToUpdateInScope.push(atom)
+    // Multi-atom path: invert the per-state branch sets into one pass per
+    // affected child. Idle siblings never enter this map, and each child sees
+    // only the atoms whose inherited value can affect its subtree.
+    const atomsByScope = new Map<StoreData, AtomInput[]>()
+    for (const atom of atoms) {
+        const branches = data.inheritedDependencyBranches.get(atom)
+        if (!branches) continue
+        for (const scope of branches) {
+            const scopeAtoms = atomsByScope.get(scope)
+            if (scopeAtoms) {
+                scopeAtoms.push(atom)
             } else {
-                const s = atomShadows!.get(atom)
-                if (!s || !s.has(scope)) {
-                    atomsToUpdateInScope.push(atom)
-                }
+                atomsByScope.set(scope, [atom])
             }
         }
-        if (atomsToUpdateInScope.length > 0) {
-            propagateInScope(atomsToUpdateInScope, scope, isInitOnly, notify, report)
-        }
+    }
+    for (const [scope, scopeAtoms] of atomsByScope) {
+        propagateInScope(scopeAtoms, scope, isInitOnly, notify, report)
     }
 }
 
