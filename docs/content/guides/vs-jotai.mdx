@@ -34,7 +34,7 @@ Jotai has a single concept for both state and derived state. Valdres separates s
 
 ### atomFamily / selectorFamily
 
-In Jotai, `atomFamily` is a simple utility. In Valdres, `atomFamily` and `selectorFamily` are first-class citizens with a Recoil-like API. You can subscribe to an entire family and get all keys as an array.
+In Jotai, `atomFamily` is a simple utility. In Valdres, `atomFamily` also has store-local membership: you can subscribe to the family and read its active members as an array. A `selectorFamily` is an identity-cached selector factory; read and subscribe to its individual members.
 
 ### Transactions
 

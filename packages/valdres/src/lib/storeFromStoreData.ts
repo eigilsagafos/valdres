@@ -1,6 +1,5 @@
 import type { Atom } from "../types/Atom"
 import type { AtomFamilyAtom } from "../types/AtomFamilyAtom"
-import type { Family } from "../types/Family"
 import type { GetValue } from "../types/GetValue"
 import type { SetAtom } from "../types/SetAtom"
 import type { State } from "../types/State"
@@ -288,7 +287,7 @@ const createStoreRuntime = (data: StoreData): Store => {
     }
 
     const sub = <V>(
-        state: State<V> | Family<V, any>,
+        state: State<V>,
         callback: () => void,
         deepEqualCheckBeforeCallback: boolean = true,
     ) => {

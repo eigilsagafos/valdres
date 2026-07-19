@@ -390,7 +390,7 @@ export function LandingPage({ bench }: { bench?: BenchProps }) {
                             />
                             <FeatureCard
                                 title="First-class families"
-                                description="atomFamily and selectorFamily are first-class citizens, not just utilities. Subscribe to entire families."
+                                description="Create identity-cached atom and selector families, with store-local membership subscriptions for atom families."
                                 icon={
                                     <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="8" height="8" x="2" y="2" rx="2"/><rect width="8" height="8" x="14" y="2" rx="2"/><rect width="8" height="8" x="2" y="14" rx="2"/><rect width="8" height="8" x="14" y="14" rx="2"/></svg>
                                 }
@@ -743,4 +743,3 @@ function highlightAngular() {
         `${plain("}")}`,
     ].join("\n")
 }
-
