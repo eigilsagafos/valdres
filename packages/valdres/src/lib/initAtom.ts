@@ -8,6 +8,7 @@ import { propagateAtomUpdate } from "./propagateUpdatedAtoms"
 import { setAtom } from "./setAtom"
 import { setValueInData } from "./setValueInData"
 import { noteStateValueChanged } from "./stateRevisions"
+import { trackNamedState, untrackNamedAtom } from "./namedStateIndex"
 import { validateResolvedValue } from "./validateResolvedValue"
 import { validateSchema } from "./validateSchema"
 
@@ -41,13 +42,20 @@ export const getAtomInitValue = <V = any>(
                         // stuck on an unvalidated promise.
                         if (data.values.get(atom) === value) {
                             data.values.delete(atom)
+                            untrackNamedAtom(atom, data)
                             noteStateValueChanged(atom, data)
                         }
                         return
                     }
                     // @ts-ignore @ts-todo
                     setValueInData(atom, resolvedValue, data)
-                    propagateAtomUpdate([atom], data, false, undefined, "async-set")
+                    propagateAtomUpdate(
+                        [atom],
+                        data,
+                        false,
+                        undefined,
+                        "async-set",
+                    )
                 },
                 () => {
                     // On rejection, remove the rejected promise from the
@@ -55,6 +63,7 @@ export const getAtomInitValue = <V = any>(
                     // rather than being stuck with a rejected promise.
                     if (data.values.get(atom) === value) {
                         data.values.delete(atom)
+                        untrackNamedAtom(atom, data)
                         noteStateValueChanged(atom, data)
                     }
                 },
@@ -101,8 +110,22 @@ export const initAtom = <
     data: StoreData,
     initializedAtomsSet: Set<Atom>,
 ) => {
-    const tmpVal = getAtomInitValue(atom, data, initializedAtomsSet)
+    let tmpVal
+    try {
+        tmpVal = getAtomInitValue(atom, data, initializedAtomsSet)
+    } catch (error) {
+        // A stale value may have been evicted immediately before this
+        // re-initialization. Keep failure cleanup off the steady store.get()
+        // path while ensuring historical direct-atom state is not retained.
+        untrackNamedAtom(atom, data)
+        throw error
+    }
     let value = setValueInData(atom, tmpVal, data)
+    // Cold-path bookkeeping for dehydrate. Resolve registration through the
+    // reverse WeakMap instead of probing the optional `name` property: besides
+    // being the registry's source of truth, this keeps unnamed atoms on Bun's
+    // original property-access shape for subsequent hot reads.
+    trackNamedState(atom, data)
     if (atom.onInit)
         atom.onInit((newVal: Value) => {
             value = newVal

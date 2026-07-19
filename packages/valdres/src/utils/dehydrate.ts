@@ -1,5 +1,5 @@
 import { IS_PROD } from "../lib/IS_PROD"
-import { valdresGlobal } from "../lib/valdresGlobal"
+import { getNamedStateIndex } from "../lib/namedStateIndex"
 import { encodeWireValue } from "../lib/wireCodec"
 import type { DehydratedState } from "../types/DehydratedState"
 import type { Store } from "../types/Store"
@@ -12,14 +12,12 @@ import { isPromiseLike } from "./isPromiseLike"
  * `DehydratedState` payload — the server half of SSR state transfer (see
  * `hydrate` for the client half).
  *
- * Iterates the global name registry, NOT the store: every `name`d atom gets an
- * `atoms: [name, value]` entry and every `name`d atomFamily gets one
- * `families: [name, args, value]` entry per member — in both cases only when
- * the state holds an own value in THIS store, so a freshly created per-request
- * store dehydrates to exactly the state that request touched (family identity
- * caches are module-global and shared across per-request stores; the per-store
- * value check is what keeps requests apart). The cache is weak-valued, so it
- * does not become the lifetime owner of unused members.
+ * Iterates a lazy per-store index of globally named state: every `name`d atom
+ * gets an `atoms: [name, value]` entry and every `name`d atomFamily gets one
+ * `families: [name, args, value]` entry per member in THIS store's membership.
+ * Work is therefore proportional to the store being serialized, independent
+ * of the process-global name registry and family identity caches shared by
+ * other request stores.
  * Unnamed state is not transferable;
  * selectors are never included (they re-derive from hydrated atoms).
  *
@@ -53,9 +51,13 @@ export const dehydrate = (store: Store): DehydratedState => {
     }
     const atoms: DehydratedState["atoms"] = []
     const families: DehydratedState["families"] = []
-    for (const [name, state] of valdresGlobal().registry) {
+    const namedStates = getNamedStateIndex(data)
+    if (namedStates === undefined) return { atoms, families }
+    for (const [state, name] of namedStates) {
         if (isAtomFamily(state)) {
-            for (const member of state.__valdresAtomFamilyMap.values()) {
+            const members = data.values.get(state)
+            if (members === undefined) continue
+            for (const member of members) {
                 if (!data.values.has(member)) continue
                 // The payload contracts args as a non-empty tuple (mirroring
                 // atomFamily's Args), and hydrate skips empty-args entries.
