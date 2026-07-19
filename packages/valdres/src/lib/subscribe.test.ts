@@ -194,7 +194,7 @@ describe("subscribe", () => {
         const unsubscribeWithEqualityCheck = store1.sub(atom1, () => {})
 
         let iterations = 0
-        const subscriptions = new Set(store1.data.subscriptions.get(atom1))
+        const subscriptions = store1.data.subscriptions.get(atom1)!
         Object.defineProperty(subscriptions, Symbol.iterator, {
             value: function* () {
                 for (const value of Set.prototype.values.call(subscriptions)) {
@@ -203,8 +203,6 @@ describe("subscribe", () => {
                 }
             },
         })
-        store1.data.subscriptions.set(atom1, subscriptions)
-
         for (const unsubscribe of unsubscribes) unsubscribe()
 
         expect(iterations).toBe(0)

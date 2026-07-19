@@ -21,8 +21,7 @@ import { propagateAtomUpdate } from "./propagateUpdatedAtoms"
 import { setValueInData } from "./setValueInData"
 import { setMaxAgeCleanup } from "./maxAgeCleanups"
 import { mountTransitiveDeps, onFirstDirectSubscriber } from "./mountAtom"
-import { addSubscriptionEqualCheck } from "./subscriptionEqualCheckCounts"
-import { unsubscribe } from "./unsubscribe"
+import { addSubscriptionEqualCheck, unsubscribe } from "./unsubscribe"
 import { validateResolvedValue } from "./validateResolvedValue"
 
 const initSubscribers = <V>(state: State<V> | Family<V>, data: StoreData) => {
@@ -292,12 +291,7 @@ export const installMaxAgeTimer = (state: Atom<any>, data: StoreData) => {
     }
     if (state.staleWhileRevalidate && isReactive(state.staleWhileRevalidate)) {
         configUnsubs.push(
-            subscribe(
-                state.staleWhileRevalidate as any,
-                () => updateMeta(),
-                false,
-                data,
-            ),
+            subscribe(state.staleWhileRevalidate as any, () => updateMeta(), false, data),
         )
     }
     if (state.staleIfError && isReactive(state.staleIfError)) {
@@ -490,7 +484,7 @@ export const subscribe = <V>(
     }
 
     if (requireDeepEqualCheckBeforeCallback) {
-        addSubscriptionEqualCheck(state, data)
+        addSubscriptionEqualCheck(state, subscribers, data)
     }
 
     return unsubscribeSubscription
