@@ -76,6 +76,76 @@ describe("abort signal support for async selectors", () => {
         expect(signals[1]!.aborted).toBe(false)
     })
 
+    test("defaulted options receive an evaluation-local signal", () => {
+        const store1 = store()
+        const countAtom = atom(1)
+        const signals: AbortSignal[] = []
+
+        const asyncSelector = selector((get, options: any = {}) => {
+            get(countAtom)
+            signals.push(options.signal)
+            return new Promise<number>(() => {})
+        })
+
+        store1.get(asyncSelector)
+        store1.set(countAtom, 2)
+        store1.get(asyncSelector)
+
+        expect(signals).toHaveLength(2)
+        expect(signals[0]).not.toBe(signals[1])
+        expect(signals[0]!.aborted).toBe(true)
+        expect(signals[1]!.aborted).toBe(false)
+    })
+
+    test("rest options receive an evaluation-local signal", () => {
+        const store1 = store()
+        const countAtom = atom(1)
+        const signals: AbortSignal[] = []
+
+        const asyncSelector = selector((get, ...rest: any[]) => {
+            get(countAtom)
+            signals.push(rest[0].signal)
+            return new Promise<number>(() => {})
+        })
+
+        store1.get(asyncSelector)
+        store1.set(countAtom, 2)
+        store1.get(asyncSelector)
+
+        expect(signals).toHaveLength(2)
+        expect(signals[0]).not.toBe(signals[1])
+        expect(signals[0]!.aborted).toBe(true)
+        expect(signals[1]!.aborted).toBe(false)
+    })
+
+    test("a selector can become async after returning synchronously", () => {
+        const store1 = store()
+        const asyncModeAtom = atom(false)
+        const countAtom = atom(1)
+        const signals: AbortSignal[] = []
+
+        const sometimesAsyncSelector = selector((get, { signal }) => {
+            const asyncMode = get(asyncModeAtom)
+            const count = get(countAtom)
+            signals.push(signal)
+            return asyncMode ? new Promise<number>(() => {}) : count
+        })
+
+        expect(store1.get(sometimesAsyncSelector)).toBe(1)
+
+        store1.set(asyncModeAtom, true)
+        store1.get(sometimesAsyncSelector)
+        store1.set(countAtom, 2)
+        store1.get(sometimesAsyncSelector)
+
+        expect(signals).toHaveLength(3)
+        expect(signals[0]).not.toBe(signals[1])
+        expect(signals[1]).not.toBe(signals[2])
+        expect(signals[0]!.aborted).toBe(true)
+        expect(signals[1]!.aborted).toBe(true)
+        expect(signals[2]!.aborted).toBe(false)
+    })
+
     test("signal is not aborted when unsubscribe cleanup drains", async () => {
         const store1 = store()
         const countAtom = atom(1)

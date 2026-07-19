@@ -8,6 +8,12 @@ export type AtomFamily<
     Args extends [any, ...any[]] = [any, ...any[]],
 > = {
     (...args: Args): AtomFamilyAtom<Value, Args>
+    /**
+     * @deprecated Atom-family members leave the weak identity cache
+     * automatically once nothing retains them. This compatibility method is a
+     * no-op because manually evicting a live member would break shared identity
+     * across stores.
+     */
     release: (...args: Args) => void
     equal: EqualFunc<Value>
     name?: string

@@ -307,7 +307,7 @@ describe("memory leaks (subscriptions)", () => {
 })
 
 describe("memory leaks (atom families)", () => {
-    test("released family atom is collected", async () => {
+    test("store-retained family atom is collected with its store", async () => {
         const detector = (() => {
             let s: any = store()
             let family: any = atomFamily<{ name: string }, [string]>(
@@ -316,7 +316,6 @@ describe("memory leaks (atom families)", () => {
             let familyAtom: any = family("alice")
             const d = new LeakDetector(familyAtom)
             s.get(familyAtom)
-            family.release("alice")
             // Clear the local owner chain explicitly before returning the
             // detector; JSC's conservative scan can otherwise treat the ended
             // scope's store/index slots as roots for the whole bounded window.
@@ -341,7 +340,7 @@ describe("memory leaks (atom families)", () => {
         )
     })
 
-    test("family atom value is collected after release and unsubscribe", async () => {
+    test("family atom value is collected after unsubscribe", async () => {
         const detector = (() => {
             const s = store()
             const family = atomFamily<object, [string]>(() => ({}))
@@ -349,7 +348,6 @@ describe("memory leaks (atom families)", () => {
             const d = new LeakDetector(s.get(familyAtom))
             const unsub = s.sub(familyAtom, () => {})
             unsub()
-            family.release("charlie")
             return d
         })()
         expect(await detector.isLeaking()).toBe(false)

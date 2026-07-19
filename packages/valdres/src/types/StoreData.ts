@@ -5,8 +5,12 @@ import type { StoreChangeCallback } from "./StoreChangeCallback"
 import type { Subscription } from "./Subscription"
 
 export type SelectorEvaluationContext = {
-    revoked: boolean
-    preserveSignalOnRevoke: boolean
+    readonly revoked: boolean
+    /** Revoke deferred reads and abort work owned by this evaluation unless
+     * its signal was explicitly preserved for suspension/unmount cleanup. */
+    revoke(): void
+    /** Detach this evaluation's signal from cancellation without aborting it. */
+    preserveSignal(): void
     /** All dependencies read by this async evaluation. Kept on the evaluation
      *  identity so two stores/selectors may safely return the same Promise. */
     asyncDeps?: Set<State>
@@ -157,7 +161,7 @@ export type StoreData = {
      *  re-init can mis-count even an acyclic graph because the incremental path
      *  never ran for it. Lazy re-inits are off the hot path, so this is cheap. */
     livenessLazyArmed?: boolean
-    abortControllers: WeakMap<WeakKey, AbortController | false>
+    abortControllers: WeakMap<WeakKey, AbortController>
     /** Selectors currently mid-evaluation in this store. Used for cycle
      *  detection. Per-store so that the same selector evaluated in two
      *  stores doesn't trigger a spurious cycle. Add at evaluateSelector

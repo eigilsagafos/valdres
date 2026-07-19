@@ -10,6 +10,10 @@ import { globalAtom } from "./globalAtom"
 import { registerName } from "./registerName"
 import { WeakValueMap } from "./WeakValueMap"
 
+// Kept as a shared compatibility function so deprecated `release()` neither
+// allocates per family nor can evict an identity that a store still retains.
+const releaseAtomFamilyMember = () => {}
+
 export const createAtomFamily = <
     Value extends any,
     Args extends [any, ...any[]] = [any, ...any[]],
@@ -164,17 +168,7 @@ export const createAtomFamily = <
 
     const family = Object.assign(callable, {
         __valdresAtomFamilyMap: map,
-        release: (...args: Args) => {
-            if (
-                keyOf === undefined &&
-                args.length === 1 &&
-                typeof args[0] === "string"
-            ) {
-                stringMap.delete(args[0])
-            }
-            const keyArgs = keyOf === undefined ? args : [keyOf(...args)]
-            map.delete(familyKey(keyArgs))
-        },
+        release: releaseAtomFamilyMember,
         equal,
         // Exposed on the family object too (members carry them via ...options)
         // so a consumer (devtools, sync) can read a family's schema without

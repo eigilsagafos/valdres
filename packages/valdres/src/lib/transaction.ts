@@ -5,6 +5,7 @@ import type { GetValue } from "../types/GetValue"
 import type { State } from "../types/State"
 import type { SetAtomValue } from "../types/SetAtomValue"
 import type { StoreData } from "../types/StoreData"
+import type { StoreChangeSource } from "../types/StoreChangeSource"
 import type { TransactionFn } from "../types/TransactionFn"
 import { SchemaValidationError } from "../errors/SchemaValidationError"
 import { deepFreeze } from "../utils/deepFreeze"
@@ -495,7 +496,7 @@ export class Transaction {
         }
     }
 
-    commit = () => {
+    commit = (source?: StoreChangeSource) => {
         // Commit boundary for store.onCommitEnd: listeners fire once, when the
         // outermost boundary closes — after every subscriber callback and after
         // the onChange flush below. The inner propagation passes also open
@@ -520,7 +521,7 @@ export class Transaction {
             // simply owns its own sink — no save/restore. Flush in `finally` so
             // observers still see the (already-applied) changes if a subscriber
             // throws during commit.
-            const sink = createChangeSink(this.name)
+            const sink = createChangeSink(this.name, source)
             try {
                 this.commitWork(sink)
             } catch (error) {

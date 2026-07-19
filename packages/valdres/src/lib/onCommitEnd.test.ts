@@ -283,4 +283,80 @@ describe("store.onCommitEnd", () => {
         expect(events).toEqual(["sub-selector", "commit-end"])
         unsub()
     })
+
+    test("async selector settlement is one commit after subscribers and onChange", async () => {
+        const store1 = store()
+        let resolve!: (value: number) => void
+        const asyncValue = selector(
+            () => new Promise<number>(r => (resolve = r)),
+        )
+        const events: string[] = []
+        const subscriberDepths: number[] = []
+        const unsubSelector = store1.sub(asyncValue, () => {
+            events.push("subscriber")
+            subscriberDepths.push(store1.data.commitDepth ?? 0)
+        })
+        const unsubChange = store1.onChange(() => events.push("onChange"), {
+            atoms: false,
+            selectors: true,
+        })
+        const unsubCommit = store1.onCommitEnd(() => events.push("commit-end"))
+
+        resolve(42)
+        await Promise.resolve()
+
+        expect(events).toEqual(["subscriber", "onChange", "commit-end"])
+        expect(subscriberDepths).toEqual([1])
+        expect(store1.get(asyncValue)).toBe(42)
+        unsubSelector()
+        unsubChange()
+        unsubCommit()
+    })
+
+    test("async selector observer errors are not handled as source-Promise rejection", () => {
+        const store1 = store()
+        let fulfill!: (value: number) => unknown
+        let rejectSource: ((error: unknown) => unknown) | undefined
+        let rejectChained: ((error: unknown) => unknown) | undefined
+        const chainedPromise = {
+            catch: (onRejected: (error: unknown) => unknown) => {
+                rejectChained = onRejected
+                return chainedPromise
+            },
+        }
+        const sourcePromise = {
+            then: (
+                onFulfilled: (value: number) => unknown,
+                onRejected?: (error: unknown) => unknown,
+            ) => {
+                fulfill = onFulfilled
+                rejectSource = onRejected
+                return chainedPromise
+            },
+        } as unknown as Promise<number>
+        const asyncValue = selector(() => sourcePromise)
+        const observerError = new Error("observer boom")
+        const unsub = store1.sub(asyncValue, () => {
+            throw observerError
+        })
+        let surfaced: unknown
+
+        try {
+            try {
+                fulfill(42)
+            } catch (error) {
+                // Model Promise reaction routing without creating an actual
+                // process-level unhandled rejection in the test runner.
+                if (rejectChained) rejectChained(error)
+                else surfaced = error
+            }
+
+            expect(rejectSource).toBeDefined()
+            expect(rejectChained).toBeUndefined()
+            expect(surfaced).toBe(observerError)
+            expect(store1.get(asyncValue)).toBe(42)
+        } finally {
+            unsub()
+        }
+    })
 })
