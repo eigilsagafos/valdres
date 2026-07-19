@@ -78,8 +78,8 @@ myStore.txn(({ set }) => {
 ```
 
 Valdres owns commit and rollback: a successful callback commits once, while a
-callback throw discards every staged write. Callback transactions intentionally
-expose no manual `commit()` or backing store `data`.
+callback that throws discards every staged write. Callback transactions
+intentionally expose no manual `commit()` or backing store `data`.
 
 <div className="callout callout-warning">
   <div className="callout-title">Warning</div>

@@ -40,6 +40,8 @@ describe("build output", () => {
             output.path.endsWith("/adapter-internals.js"),
         )
 
+        expect(index).toBeGreaterThanOrEqual(0)
+        expect(adapterInternals).toBeGreaterThanOrEqual(0)
         expect(
             outputs.filter(code => code.includes("class TransactionContext")),
         ).toHaveLength(1)
