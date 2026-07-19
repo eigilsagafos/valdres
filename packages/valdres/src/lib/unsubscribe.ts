@@ -1,4 +1,3 @@
-import type { Family } from "../types/Family"
 import type { State } from "../types/State"
 import type { StoreData } from "../types/StoreData"
 import type { Subscription } from "../types/Subscription"
@@ -22,7 +21,7 @@ type CountedSubscriptions = Set<Subscription> & {
 // a survivor scan or a second state index: the subscription Set already has
 // exactly the lifetime and identity needed to own the private O(1) count.
 export const addSubscriptionEqualCheck = (
-    state: State | Family<any>,
+    state: State,
     subscriptions: Set<Subscription>,
     data: StoreData,
 ) => {
@@ -37,7 +36,7 @@ export const addSubscriptionEqualCheck = (
 }
 
 const removeSubscriptionEqualCheck = (
-    state: State | Family<any>,
+    state: State,
     subscriptions: Set<Subscription>,
     data: StoreData,
 ) => {
@@ -59,7 +58,7 @@ const removeSubscriptionEqualCheck = (
 }
 
 export const unsubscribe = <V>(
-    state: State<V> | Family<V>,
+    state: State<V>,
     subscription: Subscription,
     data: StoreData,
 ) => {

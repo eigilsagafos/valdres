@@ -1,6 +1,5 @@
 import type { Selector } from "./Selector"
 import type { State } from "./State"
-import type { Family } from "./Family"
 import type { Store } from "./Store"
 import type { StoreChangeCallback } from "./StoreChangeCallback"
 import type { Subscription } from "./Subscription"
@@ -48,7 +47,7 @@ export type StoreData = {
      *  requires structural equality. The iterable keys also let terminal
      *  disposal drain the otherwise-weak subscription table. Entries are
      *  deleted synchronously with the final subscriber. */
-    subscriptionsRequireEqualCheck: Map<State | Family<any>, true | undefined>
+    subscriptionsRequireEqualCheck: Map<State, true | undefined>
     stateDependents: WeakMap<WeakKey, any>
     stateDependencies: WeakMap<WeakKey, any>
     /** Selectors whose forward dependency sets are currently mirrored into the

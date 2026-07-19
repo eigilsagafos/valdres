@@ -1,4 +1,5 @@
 import { equal } from "./lib/equal"
+import { nativeAsyncSelectorError } from "./lib/nativeAsyncSelectorError"
 import type { GetValue } from "./types/GetValue"
 import type { Selector, SelectorGetOptions } from "./types/Selector"
 import type { SelectorOptions } from "./types/SelectorOptions"
@@ -11,10 +12,7 @@ export const selector = <
     options?: SelectorOptions<Value>,
 ): Selector<Value, FamilyArgs> => {
     if (get.constructor?.name === "AsyncFunction") {
-        throw new Error(
-            "selector() does not accept async functions. " +
-                "Use a sync function that returns a Promise instead.",
-        )
+        throw nativeAsyncSelectorError("selector()")
     }
     if (!options) return { equal, get }
     return { equal, ...options, get }

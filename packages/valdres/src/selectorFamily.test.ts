@@ -6,7 +6,28 @@ import { wait } from "../test/utils/wait"
 import { selector } from "./selector"
 
 describe("selectorFamily", () => {
-    test("the same atom is returned when calling atomFamily", () => {
+    test("the family object is a factory, not enumerable state", () => {
+        const family = selectorFamily((id: string) => () => id)
+        family("one")
+        const rootStore = store()
+
+        expect(() => rootStore.get(family as any)).toThrow(
+            "Invalid object passed to get",
+        )
+        expect(() => rootStore.sub(family as any, () => {})).toThrow(
+            "Invalid object passed to sub",
+        )
+    })
+
+    test("throws if a member factory returns an async function", () => {
+        const family = selectorFamily((id: number) => async () => id)
+
+        expect(() => family(1)).toThrow(
+            "selectorFamily() does not accept async functions",
+        )
+    })
+
+    test("the same selector is returned for the same family arguments", () => {
         const nameSelectorFamily2 = selectorFamily(() => () => null)
         nameSelectorFamily2(1)
 
@@ -63,7 +84,7 @@ describe("selectorFamily", () => {
     test("get returns a promise", async () => {
         const store1 = store()
         const nameSelectorFamily = selectorFamily<string>(
-            (key: number) => async () => wait(1).then(() => "done"),
+            (key: number) => () => wait(1).then(() => "done"),
         )
 
         const res = store1.get(nameSelectorFamily(1))

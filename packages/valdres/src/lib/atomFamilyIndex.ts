@@ -1,5 +1,5 @@
+import type { AtomFamily } from "../types/AtomFamily"
 import type { AtomFamilyAtom } from "../types/AtomFamilyAtom"
-import type { Family } from "../types/Family"
 import type { StoreData } from "../types/StoreData"
 import { noteStateValueChanged } from "./stateRevisions"
 import { trackScopeValue } from "./trackScopeValue"
@@ -98,7 +98,7 @@ export const createAtomFamilyIndex = (
 }
 
 export const deleteFamilyAtomsFromSet = (
-    family: Family<any>,
+    family: AtomFamily<any, any>,
     familyAtoms: Set<AtomFamilyAtom<any>>,
     data: StoreData,
     timestamp: number,
@@ -120,7 +120,10 @@ export const deleteFamilyAtomsFromSet = (
 // recursivelyUpdateIndexes relies on this: it only recurses into child scopes
 // that appear in scopeValueIndex, trusting that intermediate scopes without
 // the family have no descendants with it either.
-export const initFamilyIndex = (family: Family<any>, data: StoreData) => {
+export const initFamilyIndex = (
+    family: AtomFamily<any, any>,
+    data: StoreData,
+) => {
     if (data.values.has(family)) return data.values.get(family).__index
     let parentIndex
     if (data.parent) {
@@ -136,7 +139,7 @@ export const initFamilyIndex = (family: Family<any>, data: StoreData) => {
     return index
 }
 
-const findFamilyIndex = (family: Family<any>, data: StoreData) => {
+const findFamilyIndex = (family: AtomFamily<any, any>, data: StoreData) => {
     if (!data.values.has(family)) {
         initFamilyIndex(family, data)
     }
@@ -150,7 +153,7 @@ const findFamilyIndex = (family: Family<any>, data: StoreData) => {
 
 export const recursivelyUpdateIndexes = (
     data: StoreData,
-    family: Family<any>,
+    family: AtomFamily<any, any>,
 ) => {
     const childScopesWithFamily = data.scopeValueIndex.get(family)
     if (!childScopesWithFamily || childScopesWithFamily.size === 0) return
@@ -187,7 +190,7 @@ export const recursivelyUpdateIndexes = (
 // level. Idempotent: a no-op once the chain already links up (the common
 // direct-child-of-root case never relinks).
 export const ensureFamilyAncestorChain = (
-    family: Family<any>,
+    family: AtomFamily<any, any>,
     data: StoreData,
 ) => {
     if (!data.parent) return
@@ -213,7 +216,7 @@ export const ensureFamilyAncestorChain = (
 // "changed" (an inherited-but-not-locally-created member), which is safe — it
 // never suppresses a needed propagation.
 export const addFamilyAtomsToSet = (
-    family: Family<any>,
+    family: AtomFamily<any, any>,
     familyAtoms: Set<AtomFamilyAtom<any>>,
     data: StoreData,
     timestamp: number,

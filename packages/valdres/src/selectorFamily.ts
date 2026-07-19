@@ -1,5 +1,6 @@
 import { equal } from "./lib/equal"
 import { familyKey, type FamilyKey } from "./lib/familyKey"
+import { nativeAsyncSelectorError } from "./lib/nativeAsyncSelectorError"
 import type { GetValue } from "./types/GetValue"
 import type { Selector } from "./types/Selector"
 import type { SelectorFamily } from "./types/SelectorFamily"
@@ -50,10 +51,16 @@ export const selectorFamily = <
             keyArgs.length === 1 && typeof keyArgs[0] === "string"
                 ? keyArgs[0]
                 : key
+        const get = callback(...args)
+        // Keep native-async behavior aligned with selector(). Detection stays
+        // on the cache-miss path so family cache hits pay no extra work.
+        if (get.constructor?.name === "AsyncFunction") {
+            throw nativeAsyncSelectorError("selectorFamily()")
+        }
         const newSelector = {
             equal,
             ...selectorOptions,
-            get: callback(...args),
+            get,
             family: selectorFamily,
             familyArgs: args,
             familyArgsStringified: key,

@@ -16,6 +16,11 @@ description: Create a collection of selectors keyed by a parameter
 
 Creates a family of selectors keyed by a parameter. Each selector derives its value from atoms or other selectors based on the key.
 
+The family object is a factory, not readable or subscribable state. Read or
+subscribe to a member such as `userDisplayNameSelector("user-1")`. Unlike an
+`atomFamily`, creating a selector-family member does not add store-local state
+or membership to enumerate.
+
 Selector options apply to every family member. In particular, use
 `{ mutable: true }` when results contain mutable built-ins or host objects; see
 the selector [immutability contract](/valdres/selector#parameters).
@@ -54,11 +59,15 @@ const userRevision = selectorFamily(
 ## With async computation
 
 ```ts
-const userPostsSelector = selectorFamily(userId => async get => {
-    const res = await fetch(`/api/users/${userId}/posts`)
-    return res.json()
-})
+const userPostsSelector = selectorFamily(userId => get =>
+    fetch(`/api/users/${userId}/posts`).then(res => res.json()),
+)
 ```
+
+As with `selector()`, the member getter itself must be synchronous. It may
+return a Promise, but a native `async` function is rejected because Valdres
+unwraps settled selector values and therefore cannot preserve an async
+function's always-Promise return contract.
 
 ## In React
 
