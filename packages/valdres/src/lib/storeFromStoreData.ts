@@ -413,7 +413,10 @@ const createStoreRuntime = (
         disposeStoreData(data)
     }
 
-    const scope: ScopeFn = ((scopeId: string, callback?: any) => {
+    const scope: ScopeFn = ((
+        scopeId: string,
+        callback?: (store: Omit<Store, "dispose">) => unknown,
+    ) => {
         if (data.pendingOrphanCleanup) {
             if (data.pendingOrphanCleanup === DISPOSED_STORE_PENDING) {
                 throw createStoreDisposedError(data)
@@ -425,11 +428,8 @@ const createStoreRuntime = (
                 throw new Error(`Scope ${scopeId} does not exist`)
             }
             const scopedStoreData = data.scopes.get(scopeId)!
-            const scopedStore = storeFromStoreData(
-                scopedStoreData,
-            ) as ScopedStore
-            const res = callback(scopedStore)
-            return res
+            const scopedStore = storeFromStoreData(scopedStoreData)
+            return callback(scopedStore)
         } else {
             let scopedStoreData
             if (data.scopes.has(scopeId)) {

@@ -25,8 +25,8 @@ myStore.set(countAtom, 5)
 myStore.get(doubleSelector)  // 10
 
 // Subscribe to changes
-const unsub = myStore.sub(countAtom, value => {
-    console.log("count changed:", value)
+const unsub = myStore.sub(countAtom, () => {
+    console.log("count changed:", myStore.get(countAtom))
 })
 
 myStore.set(countAtom, 10)
@@ -115,7 +115,7 @@ test("transactions are atomic", () => {
     const b = atom(100)
     const total = selector(get => get(a) + get(b))
 
-    testStore.txn(set => {
+    testStore.txn(({ set }) => {
         set(a, 50)
         set(b, 150)
     })
