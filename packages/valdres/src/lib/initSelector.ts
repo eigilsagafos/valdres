@@ -158,6 +158,174 @@ export type SelectorEvaluationRuntime = {
     readOverlayActive: boolean
 }
 
+/**
+ * Dedicated evaluator for the dominant live-only store shape. Before a store
+ * creates its first cold cache, every materialized selector belongs to the
+ * live reverse graph, so none of the cold/live mode branches are needed.
+ * Keeping this code shape separate lets JavaScriptCore tier it like the
+ * pre-cold-cache evaluator instead of compiling the larger mixed-mode path.
+ * Getters that declare the options argument stay on the full evaluator below.
+ */
+const evaluateLiveOnlySelector = <V>(
+    selector: Selector<V>,
+    data: StoreData,
+    initializedAtomsSet: Set<Atom>,
+    circularDependencySet: WeakSet<Selector>,
+) => {
+    const currentDependencies = data.stateDependencies.get(selector)
+    const updatedDeps = new Set<State<any>>()
+    let depsChanged = false
+    let evaluationComplete = false
+    let activatedDuringEvaluation: Selector | Selector[] | undefined
+
+    const prevCtx = data.latestEvalContext.get(selector)
+    if (prevCtx) prevCtx.revoked = true
+    const evalCtx: SelectorEvaluationContext = {
+        revoked: false,
+        preserveSignalOnRevoke: false,
+    }
+    data.latestEvalContext.set(selector, evalCtx)
+
+    if (circularDependencySet.has(selector)) {
+        throw new SelectorCircularDependencyError()
+    }
+    circularDependencySet.add(selector)
+
+    try {
+        let result
+        try {
+            // @ts-ignore, @ts-todo
+            result = selector.get(state => {
+                if (evaluationComplete) {
+                    if (!evalCtx.revoked && evalCtx.asyncDeps) {
+                        evalCtx.asyncDeps.add(state)
+                    }
+                    if (evalCtx.revoked) {
+                        return getState(state, data, new Set<Atom>())
+                    }
+                    return lateGet(state, selector, data)
+                }
+
+                let value
+                if (data.values.has(state)) {
+                    value = data.values.get(state)
+                } else if (isSelector(state)) {
+                    const wasMaterialized =
+                        data.stateDependencies.has(state)
+                    value = initFreshActiveSelector(
+                        state,
+                        data,
+                        initializedAtomsSet,
+                        circularDependencySet,
+                    )
+                    if (!wasMaterialized) {
+                        if (!activatedDuringEvaluation) {
+                            activatedDuringEvaluation = state
+                        } else if (Array.isArray(activatedDuringEvaluation)) {
+                            activatedDuringEvaluation.push(state)
+                        } else {
+                            activatedDuringEvaluation = [
+                                activatedDuringEvaluation,
+                                state,
+                            ]
+                        }
+                    }
+                } else {
+                    value = getState(
+                        state,
+                        data,
+                        initializedAtomsSet,
+                        circularDependencySet,
+                    )
+                }
+                updatedDeps.add(state)
+                if (
+                    !depsChanged &&
+                    (!currentDependencies || !currentDependencies.has(state))
+                ) {
+                    depsChanged = true
+                }
+                if (isPromiseLike(value)) {
+                    throw new SuspendAndWaitForResolveError(value)
+                }
+                return value
+            }, getSyncOptions(data))
+        } catch (error) {
+            if (error instanceof SuspendAndWaitForResolveError) {
+                result = error
+            } else {
+                rollbackFreshSelectorActivations(
+                    activatedDuringEvaluation,
+                    data,
+                )
+                if (error instanceof SelectorEvaluationError) throw error
+                throw new SelectorEvaluationError(error)
+            }
+        }
+
+        evaluationComplete = true
+        const isAsyncResult =
+            result instanceof SuspendAndWaitForResolveError ||
+            isPromiseLike(result)
+
+        if (
+            !isAsyncResult &&
+            !depsChanged &&
+            currentDependencies &&
+            currentDependencies.size !== updatedDeps.size
+        ) {
+            depsChanged = true
+        }
+
+        if (depsChanged || !currentDependencies) {
+            noteDependencyGraphChanged(selector, data)
+            if (data.livenessPassActive && currentDependencies) {
+                ;(data.livenessSeeds ??= new Set<State>()).add(selector)
+                data.livenessLazyArmed = true
+            }
+            const updatedDependencies = isAsyncResult
+                ? new Set<State<any>>(updatedDeps)
+                : updatedDeps
+            if (isAsyncResult && currentDependencies) {
+                for (const dep of currentDependencies) {
+                    updatedDependencies.add(dep)
+                }
+            }
+            const prev = currentDependencies ?? new Set<State<any>>()
+            for (const state of updatedDependencies) {
+                if (!prev.has(state)) {
+                    const set = getOrInitDependentsSet(state, data)
+                    set.add(selector)
+                    noteDependencyAdded(selector, state, data)
+                }
+            }
+            if (!isAsyncResult) {
+                for (const state of prev) {
+                    if (!updatedDependencies.has(state)) {
+                        const set = getOrInitDependentsSet(state, data)
+                        set.delete(selector)
+                        if (
+                            data.livenessPassActive &&
+                            isSelector(state)
+                        ) {
+                            ;(data.livenessSeeds ??= new Set<State>()).add(state)
+                            data.livenessRemovalArmed = true
+                        }
+                    }
+                }
+            }
+            data.stateDependencies.set(selector, updatedDependencies)
+        }
+
+        if (isPromiseLike(result)) {
+            evalCtx.asyncDeps = new Set<State>(updatedDeps)
+        }
+        return result
+    } finally {
+        circularDependencySet.delete(selector)
+    }
+}
+
 export const evaluateSelector = <V>(
     selector: Selector<V>,
     data: StoreData,
@@ -813,13 +981,23 @@ const evaluateCommittedSelectorValue = <V>(
 ) => {
     let value
     try {
-        value = evaluateSelector(
-            selector,
-            data,
-            initializedAtomsSet,
-            circularDependencySet,
-            selectorGraphActive,
-        )
+        value =
+            selectorGraphActive &&
+            !data.coldSelectorCachesEnabled &&
+            (selector.get as (...args: any[]) => any).length < 2
+                ? evaluateLiveOnlySelector(
+                      selector,
+                      data,
+                      initializedAtomsSet,
+                      circularDependencySet,
+                  )
+                : evaluateSelector(
+                      selector,
+                      data,
+                      initializedAtomsSet,
+                      circularDependencySet,
+                      selectorGraphActive,
+                  )
     } catch (error) {
         if (error instanceof SelectorEvaluationError) error.track(selector)
         throw error
