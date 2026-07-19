@@ -381,6 +381,18 @@ describe("subscribe", () => {
         expect(level2callback.mock.calls[0]).toStrictEqual(["Foo"])
     })
 
+    test("scoped family callbacks preserve every family argument", () => {
+        const rootStore = store()
+        const scopedStore = rootStore.scope("child")
+        const family = atomFamily<string, [string, number]>("default")
+        const callback = mock((_key: string, _revision: number) => {})
+
+        scopedStore.sub(family, callback)
+        scopedStore.set(family("document", 2), "updated")
+
+        expect(callback.mock.calls).toStrictEqual([["document", 2]])
+    })
+
     test("nested selectors should only re-calculate when needed", () => {
         const rootStore = store()
         const atom1 = atom(1, { name: "sub-nested-atom" })

@@ -288,7 +288,7 @@ const createStoreRuntime = (data: StoreData): Store => {
 
     const sub = <V>(
         state: State<V>,
-        callback: () => void,
+        callback: (...args: any[]) => void,
         deepEqualCheckBeforeCallback: boolean = true,
     ) => {
         if (data.pendingOrphanCleanup) flushPendingOrphanCleanup(data)

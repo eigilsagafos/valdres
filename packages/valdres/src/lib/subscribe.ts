@@ -325,7 +325,7 @@ export const installMaxAgeTimer = (state: Atom<any>, data: StoreData) => {
 
 export const subscribe = <V>(
     state: State<V>,
-    callback: (arg?: any) => void,
+    callback: (...args: any[]) => void,
     requireDeepEqualCheckBeforeCallback: boolean,
     data: StoreData,
 ) => {
@@ -384,10 +384,15 @@ export const subscribe = <V>(
                 parentUnsubscribe = delegateToParent()
             }
         }
-        callback = arg => {
-            dropDelegate!()
-            originalCallback(arg)
-        }
+        callback = atomFamilyState
+            ? (...args) => {
+                  dropDelegate!()
+                  originalCallback(...args)
+              }
+            : () => {
+                  dropDelegate!()
+                  originalCallback()
+              }
     } else if (!data.values.has(state) && atomState) {
         const initializedAtomsSet = new Set<Atom>()
         initAtom(state, data, initializedAtomsSet)
