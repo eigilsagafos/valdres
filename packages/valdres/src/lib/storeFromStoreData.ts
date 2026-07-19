@@ -32,7 +32,11 @@ import { snapshot } from "./snapshot"
 import { STORE_RUNTIME } from "./storeRuntimeKey"
 import { isStoreDisposed, STORE_LIFECYCLE } from "./storeLifecycle"
 import { subscribe } from "./subscribe"
-import { Transaction, transaction } from "./transaction"
+import {
+    commitTransaction,
+    transaction,
+    TransactionContext,
+} from "./transaction"
 
 const SelectorProvidedToSetError = `Invalid state object passed to set().
 You provided a \`selector\`.
@@ -103,7 +107,7 @@ const createStoreRuntime = (data: StoreData): Store => {
     // When data.batchUpdates is true, sequential store.set() calls within
     // the same microtask are batched into a single transaction whose commit
     // (selector re-evaluation + subscriber notification) is deferred.
-    let _pendingTxn: Transaction | null = null
+    let _pendingTxn: TransactionContext | null = null
 
     const flushPendingTxn = () => {
         if (isStoreDisposed(data)) {
@@ -113,13 +117,13 @@ const createStoreRuntime = (data: StoreData): Store => {
         if (_pendingTxn) {
             const txnToCommit = _pendingTxn
             _pendingTxn = null
-            txnToCommit.commit()
+            commitTransaction(txnToCommit)
         }
     }
 
     const ensurePendingTxn = () => {
         if (!_pendingTxn) {
-            _pendingTxn = new Transaction(data)
+            _pendingTxn = new TransactionContext(data)
             queueMicrotask(() => {
                 try {
                     flushPendingTxn()

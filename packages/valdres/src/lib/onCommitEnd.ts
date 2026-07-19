@@ -36,7 +36,7 @@ export const beginCommit = (data: StoreData): StoreData => {
  *  Every listener fires even if one throws; the first error is rethrown unless
  *  `swallowErrors` — used when the commit itself is already throwing, so a
  *  listener error never masks the original failure (same contract as the
- *  onChange flush in Transaction.commit). */
+ *  onChange flush in the transaction commit pipeline). */
 export const endCommit = (root: StoreData, swallowErrors: boolean) => {
     if ((root.commitDepth = root.commitDepth! - 1) !== 0) return
     const listeners = root.commitEndListeners

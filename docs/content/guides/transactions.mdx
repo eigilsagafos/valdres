@@ -34,7 +34,7 @@ If a component is subscribed to `fullName`, it briefly shows "Jane Doe" before s
 Wrap related updates in `store.txn()`:
 
 ```ts
-myStore.txn(set => {
+myStore.txn(({ set }) => {
     set(firstName, "Jane")
     set(lastName, "Smith")
     // Nothing fires until here
@@ -58,6 +58,24 @@ myStore.txn(({ set }) => {
 })
 ```
 
+## Atomic lifecycle
+
+Valdres owns the transaction lifecycle. The callback receives state operations
+such as `get`, `set`, and `reset`, but no `commit()` method or backing store
+data. Returning successfully commits once; throwing discards every staged write:
+
+```ts
+myStore.txn(({ set }) => {
+    set(statusAtom, "saving")
+    throw new Error("save failed")
+})
+
+// statusAtom was not changed
+```
+
+If an operation intentionally needs multiple publish points, use separate
+`store.txn()` calls. Each call is an explicit atomic boundary.
+
 ## Updater functions
 
 Inside a transaction, `set` works the same as outside — you can pass values or updater functions:
@@ -66,7 +84,7 @@ Inside a transaction, `set` works the same as outside — you can pass values or
 const countA = atom(0)
 const countB = atom(0)
 
-myStore.txn(set => {
+myStore.txn(({ set }) => {
     set(countA, prev => prev + 1)
     set(countB, prev => prev + 10)
 })
@@ -98,7 +116,7 @@ const itemAtom = atomFamily()       // itemId → item data
 const myStore = store()
 
 function moveItem(itemId, fromListId, toListId) {
-    myStore.txn(set => {
+    myStore.txn(({ set }) => {
         set(listItemsAtom(fromListId), ids =>
             ids.filter(id => id !== itemId)
         )
@@ -123,7 +141,7 @@ const sum = selector(get => atoms.reduce((acc, a) => acc + get(a), 0))
 atoms.forEach(a => myStore.set(a, 1))
 
 // With txn: sum recomputes once
-myStore.txn(set => {
+myStore.txn(({ set }) => {
     atoms.forEach(a => set(a, 1))
 })
 ```

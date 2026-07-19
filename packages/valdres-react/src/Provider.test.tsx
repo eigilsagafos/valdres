@@ -78,7 +78,7 @@ describe("Provider", () => {
         expect(storeB.get(userIds)).toStrictEqual([1, 2, 3])
     })
 
-    test("data.id avilable on init txn", () => {
+    test("initialization receives only transaction operations", () => {
         const storeA = store("A")
         const atom1 = atom("unset")
 
@@ -87,13 +87,15 @@ describe("Provider", () => {
                 <Provider
                     store={storeA}
                     initialize={txn => {
-                        txn.set(atom1, txn.data.id)
+                        expect("data" in txn).toBe(false)
+                        expect("commit" in txn).toBe(false)
+                        txn.set(atom1, "initialized")
                     }}
                 >
                     {children}
                 </Provider>
             ),
         })
-        expect(result.current).toBe("A")
+        expect(result.current).toBe("initialized")
     })
 })

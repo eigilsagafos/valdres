@@ -1,4 +1,4 @@
-import type { Transaction } from "../lib/transaction"
+import type { Transaction } from "./Transaction"
 
 /** A transaction callback runs to completion before its writes commit.
  * Promise/thenable returns are rejected at runtime so writes after an `await`

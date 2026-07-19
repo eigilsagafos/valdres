@@ -112,7 +112,7 @@ describe("async writes", () => {
         expect(store1.get(valueAtom)).toBe(2)
     })
 
-    test("an explicit commit adopts a bare thenable only once", async () => {
+    test("a transaction adopts a bare thenable only once", async () => {
         const store1 = store()
         const valueAtom = atom(1)
         let adoptions = 0
@@ -127,7 +127,6 @@ describe("async writes", () => {
 
         store1.txn(txn => {
             txn.set(valueAtom, thenable)
-            txn.commit()
         })
         await flushMicrotasks()
 
