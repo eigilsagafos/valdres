@@ -6,6 +6,7 @@ import type { Subscription } from "../types/Subscription"
 import { isAtom } from "../utils/isAtom"
 import { isAtomFamily } from "../utils/isAtomFamily"
 import { isFamily } from "../utils/isFamily"
+import { isFamilyAtom } from "../utils/isFamilyAtom"
 import { isGlobalAtom } from "../utils/isGlobalAtom"
 import { isPromiseLike } from "../utils/isPromiseLike"
 import { isSelector } from "../utils/isSelector"
@@ -384,7 +385,10 @@ export const subscribe = <V>(
         const initializedAtomsSet = new Set<Atom>()
         initAtom(state, data, initializedAtomsSet)
         if (initializedAtomsSet.size) {
-            throw new Error("This should not be possible")
+            initializedAtomsSet.add(state)
+            propagateAtomUpdate([...initializedAtomsSet], data, true)
+        } else if (isFamilyAtom(state)) {
+            propagateAtomUpdate([state], data, true)
         }
     }
     // A selector may have a revision-validated cold cache. Read through

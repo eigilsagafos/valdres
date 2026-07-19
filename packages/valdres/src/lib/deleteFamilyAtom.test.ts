@@ -38,7 +38,7 @@ describe("deleteFamilyAtom", () => {
         const user = atomFamily<{ id: number; gender: string }, [number]>(null)
         const allUsers = selector(get => get(user).map(atom => get(atom)))
         const allWomenAtoms = selector(get =>
-            get(user).filter(atom => get(atom).gender === "woman"),
+            get(user).filter(atom => get(atom)?.gender === "woman"),
         )
         const allWomen = selector(get => get(allWomenAtoms).map(get))
         const callback = mock(() => {})
