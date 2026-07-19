@@ -11,6 +11,28 @@ describe("atomFamily", () => {
         expect(userAtomFamily(1)).toEqual(userAtomFamily(1))
     })
 
+    test("family membership is an immutable snapshot with hidden metadata", () => {
+        const store1 = store()
+        const family = atomFamily<number, [string]>(0)
+        const a = family("a")
+        const b = family("b")
+
+        store1.set(a, 1)
+        store1.set(b, 2)
+        const members = store1.get(family)
+
+        expect(Object.isFrozen(members)).toBe(true)
+        expect(Object.keys(members)).toStrictEqual(["0", "1"])
+        expect(
+            Object.prototype.propertyIsEnumerable.call(members, "__index"),
+        ).toBe(false)
+        expect(() => (members as any).pop()).toThrow(TypeError)
+
+        // The cached fast path still returns the same intact snapshot.
+        expect(store1.get(family)).toBe(members)
+        expect(store1.get(family)).toStrictEqual([a, b])
+    })
+
     test("deleting from one store preserves identity retained by another store", async () => {
         const family = atomFamily((id: string) => `default:${id}`)
         const store1 = store()

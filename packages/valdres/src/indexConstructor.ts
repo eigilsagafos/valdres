@@ -63,10 +63,7 @@ export const index = <
         const filteredSelector = selector<AtomFamilyAtom<Value, FamilyArgs>[]>(
             get => {
                 const res: AtomFamilyAtom<Value, FamilyArgs>[] = []
-                const members = get(family) as AtomFamilyAtom<
-                    Value,
-                    FamilyArgs
-                >[]
+                const members = get(family)
                 for (const atom of members) {
                     if (get(predicateFor(atom))) res.push(atom)
                 }
