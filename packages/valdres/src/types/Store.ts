@@ -6,17 +6,9 @@ import type { SnapshotEntry } from "./SnapshotEntry"
 import type { AtomChange, SelectorChange, StoreChange } from "./StoreChange"
 import type { StoreChangeMeta } from "./StoreChangeMeta"
 import type { StoreData } from "./StoreData"
-import type { SetAtomValue } from "./SetAtomValue"
+import type { SetAtom } from "./SetAtom"
 import type { SubscribeFn } from "./SubscribeFn"
 import type { TransactionFn } from "./TransactionFn"
-
-type SetAtom = {
-    <Value extends any, Args extends [any, ...any[]] = [any, ...any[]]>(
-        atom: AtomFamilyAtom<Value, Args>,
-        value: SetAtomValue<Value>,
-    ): void
-    <Value extends any>(atom: Atom<Value>, value: SetAtomValue<Value>): void
-}
 
 type DeleteAtom = <
     Value extends any,
@@ -36,11 +28,11 @@ type DeleteAtom = <
 type UnsetAtom = <Value extends any>(atom: Atom<Value>) => void
 
 export type ScopeFn = {
-    <ReturnType extends any>(scopeId: string): ScopedStore
-    <ReturnType extends any>(
-        scopeId: string,
-        callback: (store: ScopedStore) => ReturnType,
-    ): ReturnType
+    /** Acquire a scope lease. The caller owns the returned `detach`. */
+    (scopeId: string): ScopedStore
+    /** Borrow an existing scope for the duration of `callback`. A borrowed
+     * store has no `detach` lease to release. */
+    <Result>(scopeId: string, callback: (store: Store) => Result): Result
 }
 
 export type Store<T = StoreData> = {

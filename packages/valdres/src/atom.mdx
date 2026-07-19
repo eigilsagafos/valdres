@@ -247,9 +247,12 @@ const meta = store.get(cacheMeta(dataAtom))
 `cacheMeta()` returns a selector, so you can subscribe to it reactively:
 
 ```ts
-store.sub(cacheMeta(dataAtom), meta => {
-    console.log(meta.isRevalidating) // true when re-fetching
-    console.log(meta.lastSuccessAt)  // timestamp of last success
+const dataMeta = cacheMeta(dataAtom)
+
+store.sub(dataMeta, () => {
+    const meta = store.get(dataMeta)
+    console.log(meta?.isRevalidating) // true when re-fetching
+    console.log(meta?.lastSuccessAt)  // timestamp of last success
 })
 ```
 
