@@ -1,5 +1,6 @@
 import type { GlobalAtom } from "../types/GlobalAtom"
 import type { StoreData } from "../types/StoreData"
+import { detachInheritedDependencyBranches } from "./inheritedDependencyBranches"
 import { deleteMaxAgeCleanup, getMaxAgeCleanup } from "./maxAgeCleanups"
 import { unmountAtom } from "./mountAtom"
 import { getTouchedGlobals, markStoreDisposed } from "./storeLifecycle"
@@ -30,6 +31,7 @@ export const disposeStoreData = (data: StoreData): void => {
         // also what the ref-counted ScopedStore.detach() path needs to release.
         const parent = current.parent
         if (parent) {
+            detachInheritedDependencyBranches(current, current === data)
             if (parent.scopes.get(current.id) === current) {
                 parent.scopes.delete(current.id)
             }
