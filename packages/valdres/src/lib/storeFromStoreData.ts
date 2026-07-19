@@ -42,7 +42,12 @@ import {
 import type { StoreLifecycle } from "./storeLifecycle"
 import type { PendingStoreLifecycle } from "./storeLifecycle"
 import { subscribe } from "./subscribe"
-import { cancelTransaction, Transaction, transaction } from "./transaction"
+import {
+    cancelTransaction,
+    commitTransaction,
+    transaction,
+    TransactionContext,
+} from "./transaction"
 
 const SelectorProvidedToSetError = `Invalid state object passed to set().
 You provided a \`selector\`.
@@ -124,7 +129,7 @@ const createStoreRuntime = (
     // When data.batchUpdates is true, sequential store.set() calls within
     // the same microtask are batched into a single transaction whose commit
     // (selector re-evaluation + subscriber notification) is deferred.
-    let _pendingTxn: Transaction | null = null
+    let _pendingTxn: TransactionContext | null = null
     let _pendingTxnCleanup: (() => void) | undefined
 
     const flushPendingTxn = () => {
@@ -143,13 +148,13 @@ const createStoreRuntime = (
                 untrackStoreCleanup(data, _pendingTxnCleanup)
                 _pendingTxnCleanup = undefined
             }
-            txnToCommit.commit()
+            commitTransaction(txnToCommit)
         }
     }
 
     const ensurePendingTxn = () => {
         if (!_pendingTxn) {
-            _pendingTxn = new Transaction(data)
+            _pendingTxn = new TransactionContext(data)
             const cancelPendingTxn = () => {
                 const pendingTxn = _pendingTxn
                 _pendingTxn = null

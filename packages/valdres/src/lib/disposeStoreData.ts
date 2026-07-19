@@ -13,7 +13,9 @@ import {
     takeAbortControllers,
     takeStoreCleanups,
     takeStoreMounts,
+    takeStoreTransactions,
 } from "./storeLifecycle"
+import { cancelTransaction } from "./transaction"
 
 type StoreGlobals = [StoreData, GlobalAtom<any>[]]
 
@@ -88,6 +90,22 @@ export const disposeStoreData = (data: StoreData): void => {
         // and becomes a no-op. Batched transactions, maxAge timers, onChange,
         // and onCommitEnd own tracked cleanup entries below.
         current.orphanCleanupScheduled = false
+
+        const transactions = takeStoreTransactions(current)
+        if (transactions) {
+            const cancel = (
+                transaction: Parameters<typeof cancelTransaction>[0],
+            ) => {
+                try {
+                    cancelTransaction(transaction)
+                } catch (error) {
+                    recordError(error)
+                }
+            }
+            if (transactions instanceof Set) {
+                for (const transaction of transactions) cancel(transaction)
+            } else cancel(transactions)
+        }
 
         const controllers = takeAbortControllers(current)
         if (controllers) {

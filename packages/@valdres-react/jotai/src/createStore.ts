@@ -1,9 +1,5 @@
-import {
-    store as valdresCreateStore,
-    isPromiseLike,
-    isSelector,
-    Transaction,
-} from "valdres"
+import { store as valdresCreateStore, isPromiseLike, isSelector } from "valdres"
+import { Transaction } from "valdres/adapter-internals"
 import { registerStore } from "./storeRegistry"
 
 export const createStore = (id?: string) => {

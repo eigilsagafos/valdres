@@ -7,9 +7,8 @@ import type { TransactionInterface } from "./TransactionInterface"
  *  return nothing, or return `[atom, value]` pairs for the caller to apply —
  *  see `setAtomPairs`.
  *
- *  Typed against `TransactionInterface`, which the `Transaction` passed by
- *  `store.txn` structurally satisfies — so adapters can forward their
- *  `initialize` straight into `store.txn` without casts. */
+ *  Typed against the restricted transaction callback interface, so adapters
+ *  can forward their `initialize` straight into `store.txn` without casts. */
 export type InitializeCallback = (
     txn: TransactionInterface,
 ) => void | [Atom<any>, any][]

@@ -22,19 +22,20 @@ describe("state revisions", () => {
         expect(rootStore.data.stateRevisionClock.current).toBe(1)
     })
 
-    test("a repeated transaction commit does not record a no-op deletion", () => {
+    test("a repeated transaction deletion does not record a no-op", () => {
         const rootStore = store()
         const family = atomFamily(0)
         const member = family(1)
         rootStore.get(member)
         trackStateRevision(member, rootStore.data)
 
-        rootStore.txn(({ del, commit }) => {
+        rootStore.txn(({ del }) => {
             del(member)
-            commit()
-            expect(rootStore.data.stateRevisionClock.current).toBe(1)
+            expect(rootStore.data.stateRevisionClock.current).toBe(0)
         })
+        expect(rootStore.data.stateRevisionClock.current).toBe(1)
 
+        rootStore.txn(({ del }) => del(member))
         expect(rootStore.data.stateRevisionClock.current).toBe(1)
     })
 

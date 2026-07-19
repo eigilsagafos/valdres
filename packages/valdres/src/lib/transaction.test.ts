@@ -45,6 +45,75 @@ describe("transaction", () => {
         expect(store1.get(atom1)).toBe(2)
     })
 
+    test("a callback cannot publish writes before it throws", () => {
+        const store1 = store()
+        const atom1 = atom(1)
+        const callbackError = new Error("callback failed")
+
+        expect(() =>
+            store1.txn(txn => {
+                txn.set(atom1, 2)
+                expect("commit" in txn).toBe(false)
+                expect("data" in txn).toBe(false)
+
+                // Exercise the legacy escape hatch without making it part of
+                // the callback's public type. A transaction must remain atomic
+                // even when untyped consumer code attempts an early commit.
+                ;(txn as any).commit?.()
+                throw callbackError
+            }),
+        ).toThrow(callbackError)
+        expect(store1.get(atom1)).toBe(1)
+    })
+
+    test("captured transaction operations close after success and failure", () => {
+        const store1 = store()
+        const atom1 = atom(1)
+        let successfulTxn: any
+        let failedTxn: any
+
+        store1.txn(txn => {
+            successfulTxn = txn
+            txn.set(atom1, 2)
+        })
+        expect(() => successfulTxn.get(atom1)).toThrow(
+            "Cannot read from transaction while it is closed",
+        )
+        expect(() => successfulTxn.set(atom1, 3)).toThrow(
+            "Cannot write to transaction while it is closed",
+        )
+
+        expect(() =>
+            store1.txn(txn => {
+                failedTxn = txn
+                txn.set(atom1, 3)
+                throw new Error("abort")
+            }),
+        ).toThrow("abort")
+        expect(() => failedTxn.set(atom1, 4)).toThrow(
+            "Cannot write to transaction while it is closed",
+        )
+        expect(store1.get(atom1)).toBe(2)
+    })
+
+    test("captured operations cannot mutate a committing transaction", () => {
+        const store1 = store()
+        const atom1 = atom(1)
+        let capturedTxn: any
+        store1.sub(atom1, () => capturedTxn.set(atom1, 3))
+
+        expect(() =>
+            store1.txn(txn => {
+                capturedTxn = txn
+                txn.set(atom1, 2)
+            }),
+        ).toThrow("Cannot write to transaction while it is committing")
+        expect(store1.get(atom1)).toBe(2)
+        expect(() => capturedTxn.set(atom1, 4)).toThrow(
+            "Cannot write to transaction while it is closed",
+        )
+    })
+
     test("txn simple get", () => {
         const store1 = store()
         const atom1 = atom(1)
@@ -73,7 +142,7 @@ describe("transaction", () => {
         expect(store1.get(atom1)).toBe(1)
     })
 
-    test("commit during transaction", () => {
+    test("staged selector reads stay isolated until the callback returns", () => {
         const store1 = store()
 
         const atom1 = atom(10)
@@ -85,22 +154,23 @@ describe("transaction", () => {
         expect(store1.get(sum)).toBe(60)
         expect(store1.get(product)).toBe(6_000)
 
-        transaction(({ set, get, commit }) => {
+        transaction(({ set, get }) => {
             expect(get(sum)).toBe(60)
             expect(get(product)).toBe(6000)
             set(atom1, 100)
             set(atom2, 200)
             set(atom3, 300)
-            commit()
             expect(get(sum)).toBe(600)
             expect(get(product)).toBe(6_000_000)
+            expect(store1.get(sum)).toBe(60)
+            expect(store1.get(product)).toBe(6_000)
         }, store1.data)
 
         expect(store1.get(sum)).toBe(600)
         expect(store1.get(product)).toBe(6_000_000)
     })
 
-    test("commit has access to all state", () => {
+    test("transaction selectors have access to all staged state", () => {
         const store1 = store()
         const ids = atom(["1"])
         const userFamily = atomFamily(null)
@@ -111,12 +181,13 @@ describe("transaction", () => {
 
         expect(store1.get(userNames)).toStrictEqual(["Foo"])
 
-        store1.txn(({ set, get, reset, commit }) => {
+        store1.txn(({ set, get }) => {
             set(ids, curr => [...curr, "2"])
             set(userFamily("2"), { id: "2", name: "Bar" })
-            commit()
-            expect(store1.get(userNames)).toStrictEqual(["Foo", "Bar"])
+            expect(get(userNames)).toStrictEqual(["Foo", "Bar"])
+            expect(store1.get(userNames)).toStrictEqual(["Foo"])
         })
+        expect(store1.get(userNames)).toStrictEqual(["Foo", "Bar"])
     })
 
     test("transaction works with selectors", () => {
@@ -128,7 +199,7 @@ describe("transaction", () => {
         const selector2 = selector(selectorCb2, "selector2")
         // const selector2 = selector((get) => get(selector1) + 1, "selector2")
 
-        store1.txn(({ set, get, reset, commit }) => {
+        store1.txn(({ set, get }) => {
             expect(get(selector1)).toBe(2)
             expect(get(selector2)).toBe(3)
             set(atom1, 2)
@@ -906,22 +977,21 @@ describe("transaction", () => {
         expect(defaultStore.get(postsByTag("foo"))).toHaveLength(0)
     })
 
-    test("when using txn.parentScope commit in child scope and then crashm should persist correctly", () => {
+    test("parent and child writes both roll back when the callback throws", () => {
         const nameAtom = atom("default")
         const rootStore = store()
         const nestedStore = rootStore.scope("Nested")
 
-        try {
+        expect(() => {
             nestedStore.txn(txn => {
                 txn.set(nameAtom, "Set in Foo before parentScope")
                 txn.parentScope(parentTxn => {
                     parentTxn.set(nameAtom, "Set in Parent")
                 })
-                txn.commit()
                 throw new Error("Crash")
             })
-        } catch (e) {}
-        expect(nestedStore.get(nameAtom)).toBe("Set in Foo before parentScope")
+        }).toThrow("Crash")
+        expect(nestedStore.get(nameAtom)).toBe("default")
         expect(rootStore.get(nameAtom)).toBe("default")
     })
 

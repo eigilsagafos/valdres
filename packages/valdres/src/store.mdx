@@ -78,12 +78,16 @@ unsub()
 Batch multiple updates so subscribers only fire once:
 
 ```ts
-myStore.txn(set => {
+myStore.txn(({ set }) => {
     set(atomA, 1)
     set(atomB, 2)
     // Subscribers fire once after the transaction completes
 })
 ```
+
+Valdres owns commit and rollback: a successful callback commits once, while a
+callback that throws discards every staged write. Callback transactions
+intentionally expose no manual `commit()` or backing store `data`.
 
 <div className="callout callout-warning">
   <div className="callout-title">Warning</div>

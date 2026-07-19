@@ -216,6 +216,25 @@ describe("store.dispose", () => {
         expect(targetStore.data.values.get(source)).toBeUndefined()
     })
 
+    test("aborts async selector work retained by a completed transaction", () => {
+        const targetStore = store()
+        const pending = new Promise<number>(() => {})
+        let signal!: AbortSignal
+        const selected = selector((_get, options) => {
+            signal = options.signal
+            return pending
+        })
+
+        targetStore.txn(txn => {
+            txn.get(selected)
+        })
+        expect(signal.aborted).toBe(false)
+
+        targetStore.dispose()
+
+        expect(signal.aborted).toBe(true)
+    })
+
     test("rejects every operation after disposal and remains idempotent", () => {
         const targetStore = store({ enumerable: true })
         const target = atom(0)
@@ -250,8 +269,6 @@ describe("store.dispose", () => {
             () => retainedTransaction.unset(target),
             () => retainedTransaction.scope("missing", () => {}),
             () => retainedTransaction.parentScope(() => {}),
-            () => retainedTransaction.execute(() => {}),
-            () => retainedTransaction.commit(),
         ]
 
         for (const operation of operations) {

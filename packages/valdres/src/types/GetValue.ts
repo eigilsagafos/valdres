@@ -10,5 +10,5 @@ export type GetValue = {
     ): Value
     <Value extends any, Args extends [any, ...any[]]>(
         family: AtomFamily<Value, Args>,
-    ): AtomFamilyAtom<Value, Args>[]
+    ): readonly AtomFamilyAtom<Value, Args>[]
 }

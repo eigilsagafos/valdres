@@ -4,6 +4,7 @@ import type { State } from "../types/State"
 import type { Store } from "../types/Store"
 import type { StoreData } from "../types/StoreData"
 import { STORE_RUNTIME } from "./storeRuntimeKey"
+import type { TransactionContext } from "./transaction"
 
 /**
  * Resource collections are allocated only when the store acquires a resource.
@@ -15,6 +16,7 @@ export type StoreResources = {
     cleanups?: Set<() => void>
     mounts?: Set<State>
     abortControllers?: Set<AbortController>
+    transactions?: TransactionContext | Set<TransactionContext>
 }
 
 export const DISPOSED_STORE_LIFECYCLE = Symbol("valdres.disposedStore")
@@ -226,6 +228,71 @@ export const takeStoreCleanups = (
     const cleanups = resources?.cleanups
     if (resources) resources.cleanups = undefined
     return cleanups
+}
+
+/** Register an open transaction with its backing store. The common case stores
+ * one context directly; only concurrent adapter transactions allocate a Set.
+ * Returning the resource owner lets commit untrack without a second runtime
+ * lookup while preserving StoreData's performance-critical object shape. */
+export const trackStoreTransaction = (
+    data: StoreData,
+    transaction: TransactionContext,
+): StoreResources | undefined => {
+    const slot = slotFor(data)
+    let resources: StoreResources
+    if (!slot) {
+        resources = {}
+        ;(data as RuntimeData)[STORE_RUNTIME] = {
+            [PENDING_STORE_LIFECYCLE]: true,
+            resources,
+        }
+    } else if (isPendingStoreLifecycle(slot)) {
+        if (slot.disposed) return
+        resources = slot.resources ?? (slot.resources = {})
+    } else {
+        const lifecycle = slot[STORE_LIFECYCLE]
+        if (lifecycle === DISPOSED_STORE_LIFECYCLE || lifecycle?.disposed) {
+            return
+        }
+        if (lifecycle) resources = lifecycle
+        else {
+            resources = {}
+            slot[STORE_LIFECYCLE] = resources
+        }
+    }
+    const current = resources.transactions
+    if (!current) resources.transactions = transaction
+    else if (current instanceof Set) current.add(transaction)
+    else if (current !== transaction) {
+        resources.transactions = new Set([current, transaction])
+    }
+    return resources
+}
+
+export const untrackStoreTransaction = (
+    resources: StoreResources,
+    transaction: TransactionContext,
+): void => {
+    const current = resources.transactions
+    if (current === transaction) {
+        resources.transactions = undefined
+        return
+    }
+    if (!(current instanceof Set)) return
+    current.delete(transaction)
+    if (current.size === 1) {
+        resources.transactions = current.values().next().value
+    } else if (current.size === 0) resources.transactions = undefined
+}
+
+/** Transfer open adapter transactions to the disposal pass. */
+export const takeStoreTransactions = (
+    data: StoreData,
+): TransactionContext | Set<TransactionContext> | undefined => {
+    const resources = resourcesFor(data)
+    const transactions = resources?.transactions
+    if (resources) resources.transactions = undefined
+    return transactions
 }
 
 export const trackStoreMount = (data: StoreData, state: State): boolean => {

@@ -27,7 +27,7 @@ export const runOnSets = (onSets: DeferredOnSet[], errors: CommitErrors) => {
  * `data.values`, returning the atoms whose value actually changed (the
  * propagation set), merged with any atoms lazily initialized during the
  * equality checks. This does NOT propagate — see `setAtoms` (single-store
- * fast path) or `Transaction.commit` (cross-scope path) for the notify pass.
+ * fast path) or the transaction commit pipeline (cross-scope path) for notify.
  *
  * Hook and global handling are deliberately collection-only. The caller first
  * completes every local/global write, then runs `onSetQueue`, then propagates.
