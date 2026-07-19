@@ -17,6 +17,7 @@ export type AtomFamily<
     release: (...args: Args) => void
     equal: EqualFunc<Value>
     name?: string
+    /** Skip development/test deep-freezing; see AtomOptions.mutable. */
     mutable?: boolean
     /** The schema members validate against, readable from the family itself —
      *  members carry the same reference via their options. */

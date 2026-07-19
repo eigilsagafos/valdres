@@ -11,5 +11,7 @@ export type SelectorFamily<Value extends any, Args extends [any, ...any[]]> = {
     schema?: Schema<Value>
     /** Per-family `schemaValidation` override, mirrored from the options. */
     schemaValidation?: boolean
+    /** Skip development/test deep-freezing for every family member. */
+    mutable?: boolean
     __valdresSelectorFamilyMap: Map<FamilyKey, Selector<Value, Args>>
 }

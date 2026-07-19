@@ -11,6 +11,14 @@ describe("atomFamily", () => {
         expect(userAtomFamily(1)).toEqual(userAtomFamily(1))
     })
 
+    test("mutable option is exposed and inherited by members", () => {
+        const family = atomFamily(new Map<string, number>(), { mutable: true })
+
+        expect(family.mutable).toBe(true)
+        expect(family("one").mutable).toBe(true)
+        expect(() => store().get(family("one")).set("value", 1)).not.toThrow()
+    })
+
     test("deleting from one store preserves identity retained by another store", async () => {
         const family = atomFamily((id: string) => `default:${id}`)
         const store1 = store()

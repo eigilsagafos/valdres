@@ -37,7 +37,11 @@ export const setValueInData = <Value extends unknown>(
     // extra call frame measurably regresses the hot primitive-set path; if you
     // change this policy, keep Transaction.set in transaction.ts in sync.
     let written: Value
-    if (atom.mutable || IS_PROD) {
+    // Atom families store Valdres' own mutable membership-index carrier in the
+    // values map. Families are callable; ordinary atom descriptors are objects,
+    // so this cheap type check keeps that internal bookkeeping out of the user
+    // value freeze contract without an isAtomFamily helper call on every write.
+    if (atom.mutable || IS_PROD || typeof atom === "function") {
         data.values.set(atom, value)
         written = value
     } else {

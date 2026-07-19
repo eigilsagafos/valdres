@@ -30,6 +30,7 @@ export type Atom<Value = unknown> = {
      *  to wrap the user-supplied onMount signature). Not user-facing. */
     __valdresOnMount?: AtomOnMount
     maxAge?: Reactive<number>
+    /** Skip development/test deep-freezing; see AtomOptions.mutable. */
     mutable?: boolean
     staleWhileRevalidate?: Reactive<number>
     staleIfError?: Reactive<number>
