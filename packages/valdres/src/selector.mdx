@@ -39,6 +39,12 @@ const fullNameSelector = selector(get => {
 | `options.name` | `string` | Optional name for debugging, devtools, and validation error messages |
 | `options.schema` | `Schema<T>` | Schema for runtime validation of the selector's result, and type inference. A no-op unless validation is enabled. See [Schema Validation](/guides/schema-validation). |
 | `options.schemaValidation` | `boolean` | Per-selector override of the store's `schemaValidation` flag — `true` always validates this selector, `false` exempts it |
+| `options.mutable` | `boolean` | Opt out of development/test deep-freezing. Required when results contain mutable built-ins or host objects that cannot be frozen safely. |
+
+Selectors follow the same [immutability and exotic-value
+contract](/valdres/atom#immutability-and-exotic-values) as atoms. When a
+selector returns a value from a mutable atom unchanged, mark the selector
+`mutable: true` as well so its cache does not attempt to deep-freeze that value.
 
 ## Async selectors
 

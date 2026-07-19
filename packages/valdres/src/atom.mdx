@@ -41,9 +41,35 @@ const nameAtom = atom("default", { name: "nameAtom" })
 | `options.name` | `string` | Optional name for debugging, devtools, and validation error messages |
 | `options.schema` | `Schema<T>` | Schema for runtime validation and type inference. A no-op unless validation is enabled. See [Schema Validation](/guides/schema-validation). |
 | `options.schemaValidation` | `boolean` | Per-atom override of the store's `schemaValidation` flag — `true` always validates this atom, `false` exempts it |
+| `options.mutable` | `boolean` | Opt out of development/test deep-freezing. Required for mutable built-ins and host objects that cannot be frozen safely. |
 | `options.maxAge` | `Reactive<number>` | Re-fetch interval in milliseconds (requires async default). Accepts a number, atom, or selector. |
 | `options.staleWhileRevalidate` | `Reactive<number>` | Serve stale data for this many ms while re-fetching. Accepts a number, atom, or selector. |
 | `options.staleIfError` | `Reactive<number>` | Serve stale data for this many ms after re-fetch errors. Accepts a number, atom, or selector. |
+
+## Immutability and exotic values
+
+In development and tests, Valdres deep-freezes plain object and array atom
+values so accidental in-place changes fail immediately. Error objects and
+Promise handles remain usable while their object surface is frozen. Production
+builds skip this development check.
+
+`Object.freeze` cannot make mutable built-ins or host objects reliably
+immutable. This includes `Map`, `Set`, `WeakMap`, `WeakSet`, `Date`,
+`ArrayBuffer`, `SharedArrayBuffer`, `DataView`, typed arrays, browser API
+objects, and other branded exotic values. Valdres rejects such values with an
+actionable error instead of storing something that only appears frozen.
+Ordinary class instances have their own property graph frozen, like plain
+objects. Store an immutable plain-data representation when possible, or opt out
+explicitly:
+
+```ts
+const bytesAtom = atom(new Uint8Array(), { mutable: true })
+```
+
+With `mutable: true`, Valdres does not protect the value from in-place changes.
+Use replacement updates (or an appropriate custom `equal` function) so writes
+still produce notifications. The default equality function compares binary
+buffers and views by their visible bytes.
 
 ## Async atoms
 

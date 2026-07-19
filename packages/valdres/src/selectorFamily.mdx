@@ -16,6 +16,10 @@ description: Create a collection of selectors keyed by a parameter
 
 Creates a family of selectors keyed by a parameter. Each selector derives its value from atoms or other selectors based on the key.
 
+Selector options apply to every family member. In particular, use
+`{ mutable: true }` when results contain mutable built-ins or host objects; see
+the selector [immutability contract](/valdres/selector#parameters).
+
 ## Usage
 
 ```ts

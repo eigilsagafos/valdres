@@ -37,6 +37,21 @@ describe("selector", () => {
         expect(callback).toHaveBeenCalledTimes(1)
     })
 
+    test("unsupported exotic results require a mutable selector", () => {
+        const rootStore = store()
+        const source = atom(new Map([["one", 1]]), { mutable: true })
+        const immutableSelector = selector(get => get(source))
+        const mutableSelector = selector(get => get(source), { mutable: true })
+
+        expect(() => rootStore.get(immutableSelector)).toThrow(
+            /Map.*\{ mutable: true \}/,
+        )
+
+        const value = rootStore.get(mutableSelector)
+        expect(() => value.set("two", 2)).not.toThrow()
+        expect(rootStore.get(mutableSelector).get("two")).toBe(2)
+    })
+
     test("cold cache skips re-evaluation after an unrelated write", () => {
         const rootStore = store()
         const source = atom(1)

@@ -23,6 +23,11 @@ export type AtomOptions<Value = unknown> = {
      *  unsupported. */
     onMount?: AtomOnMount
     maxAge?: Reactive<number>
+    /** Opt out of development/test deep-freezing. Required when values contain
+     *  mutable built-ins or host objects (for example Map, Set, Date,
+     *  ArrayBuffer, DataView, typed arrays, or browser API objects) that
+     *  Object.freeze cannot make safely immutable. The caller is responsible
+     *  for avoiding silent in-place mutations that bypass atom notifications. */
     mutable?: boolean
     staleWhileRevalidate?: Reactive<number>
     staleIfError?: Reactive<number>

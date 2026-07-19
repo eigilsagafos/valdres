@@ -19,6 +19,8 @@ export type Selector<
     schema?: Schema<Value>
     /** Per-selector override of the store's `schemaValidation` flag (see SelectorOptions). */
     schemaValidation?: boolean
+    /** Skip development/test deep-freezing; see SelectorOptions.mutable. */
+    mutable?: boolean
     family?: SelectorFamily<Value, FamilyArgs>
     familyArgs?: FamilyArgs
     onMount?: AtomOnMount

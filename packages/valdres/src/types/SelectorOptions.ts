@@ -13,5 +13,10 @@ export type SelectorOptions<Value extends any> = {
      *  boundary selector (even in a store with validation off), or `false` to
      *  exempt a hot selector. Defaults to the store's setting. */
     schemaValidation?: boolean
+    /** Opt out of development/test deep-freezing. Required when results contain
+     *  mutable built-ins or host objects that Object.freeze cannot make safely
+     *  immutable. The caller is responsible for avoiding silent in-place
+     *  mutations that bypass selector change detection. */
+    mutable?: boolean
     equal?: EqualFunc<Value>
 }
