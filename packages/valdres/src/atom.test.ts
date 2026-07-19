@@ -1,8 +1,17 @@
 import { describe, test, expect, mock, spyOn } from "bun:test"
 import { atom } from "./atom"
+import { cacheMeta } from "./cacheMeta"
+import { SchemaValidationError } from "./errors/SchemaValidationError"
 import { selector } from "./selector"
 import { store } from "./store"
 import { withFakeClock, mockAsyncSource } from "../test/utils/fakeClock"
+
+const numberSchema = {
+    parse: (value: unknown): number => {
+        if (typeof value !== "number") throw new Error("expected number")
+        return value
+    },
+}
 
 describe("atom", () => {
     test("is good", () => {
@@ -325,6 +334,171 @@ describe("atom", () => {
             expect(res).toHaveLength(2)
             setIntervalSpy.mockRestore()
             clearIntervalSpy.mockRestore()
+        }))
+
+    test("maxAge validates sync results and preserves the last good value", () =>
+        withFakeClock(async clock => {
+            const errorSpy = spyOn(console, "error").mockImplementation(
+                () => {},
+            )
+            let unsubscribe = () => {}
+            try {
+                const store1 = store({ schemaValidation: true })
+                let next: unknown = 1
+                const atom1 = atom<number>(() => next as number, {
+                    equal: () => true,
+                    maxAge: 20,
+                    schema: numberSchema,
+                })
+                const callback = mock(() => {})
+                unsubscribe = store1.sub(atom1, callback)
+
+                expect(store1.get(atom1)).toBe(1)
+                next = "bad"
+                await clock.advance(20)
+
+                expect(store1.get(atom1)).toBe(1)
+                expect(callback).not.toHaveBeenCalled()
+                expect(
+                    errorSpy.mock.calls.some(
+                        call => call[0] instanceof SchemaValidationError,
+                    ),
+                ).toBe(true)
+            } finally {
+                unsubscribe()
+                errorSpy.mockRestore()
+            }
+        }))
+
+    test("maxAge validates async results and restores the last good value", () =>
+        withFakeClock(async clock => {
+            const errorSpy = spyOn(console, "error").mockImplementation(
+                () => {},
+            )
+            let unsubscribe = () => {}
+            try {
+                const store1 = store({ schemaValidation: true })
+                const source = mockAsyncSource<unknown>()
+                const atom1 = atom<number>(source.fn as () => Promise<number>, {
+                    maxAge: 20,
+                    staleWhileRevalidate: 0,
+                    schema: numberSchema,
+                })
+                unsubscribe = store1.sub(atom1, () => {})
+
+                await source.resolve(1)
+                expect(store1.get(atom1)).toBe(1)
+
+                await clock.advance(20)
+                expect(store1.get(atom1)).toBeInstanceOf(Promise)
+                await source.resolve("bad")
+
+                expect(store1.get(atom1)).toBe(1)
+                expect(
+                    errorSpy.mock.calls.some(
+                        call => call[0] instanceof SchemaValidationError,
+                    ),
+                ).toBe(true)
+            } finally {
+                unsubscribe()
+                errorSpy.mockRestore()
+            }
+        }))
+
+    test("global maxAge validates when any attached store opts in", () =>
+        withFakeClock(async clock => {
+            const errorSpy = spyOn(console, "error").mockImplementation(
+                () => {},
+            )
+            let unsubscribeOff = () => {}
+            let unsubscribeOn = () => {}
+            try {
+                const validationOff = store()
+                const validationOn = store({ schemaValidation: true })
+                let next: unknown = 1
+                const atom1 = atom<number>(() => next as number, {
+                    global: true,
+                    maxAge: 20,
+                    schema: numberSchema,
+                })
+                unsubscribeOff = validationOff.sub(atom1, () => {})
+                unsubscribeOn = validationOn.sub(atom1, () => {})
+
+                next = "bad"
+                await clock.advance(20)
+
+                expect(validationOff.get(atom1)).toBe(1)
+                expect(validationOn.get(atom1)).toBe(1)
+                expect(
+                    errorSpy.mock.calls.some(
+                        call => call[0] instanceof SchemaValidationError,
+                    ),
+                ).toBe(true)
+            } finally {
+                unsubscribeOff()
+                unsubscribeOn()
+                errorSpy.mockRestore()
+            }
+        }))
+
+    test("equal sync maxAge result refreshes metadata without propagating", () =>
+        withFakeClock(async clock => {
+            const store1 = store()
+            let callCount = 0
+            const atom1 = atom(
+                () => {
+                    callCount++
+                    return { id: 1, refresh: callCount }
+                },
+                {
+                    equal: (a, b) => a.id === b.id,
+                    maxAge: 20,
+                },
+            )
+            const callback = mock(() => {})
+            const unsubscribe = store1.sub(atom1, callback)
+            const initialValue = store1.get(atom1)
+            const initialSuccessAt = store1.get(cacheMeta(atom1))!.lastSuccessAt
+
+            await clock.advance(20)
+
+            expect(store1.get(atom1)).toBe(initialValue)
+            expect(callback).not.toHaveBeenCalled()
+            expect(store1.get(cacheMeta(atom1))!.lastSuccessAt).toBeGreaterThan(
+                initialSuccessAt,
+            )
+            expect(callCount).toBe(2)
+
+            // Equal success also refreshes the internal freshness timestamp.
+            // Once unmounted, a read within the new maxAge window stays cached.
+            unsubscribe()
+            await clock.advance(10)
+            expect(store1.get(atom1)).toBe(initialValue)
+            expect(callCount).toBe(2)
+        }))
+
+    test("equal async maxAge result refreshes metadata without propagating", () =>
+        withFakeClock(async clock => {
+            const store1 = store()
+            const source = mockAsyncSource<{ value: number }>()
+            const atom1 = atom(source.fn, { maxAge: 20 })
+            const callback = mock(() => {})
+            const unsubscribe = store1.sub(atom1, callback)
+
+            await source.resolve({ value: 1 })
+            const initialValue = store1.get(atom1)
+            const initialSuccessAt = store1.get(cacheMeta(atom1))!.lastSuccessAt
+            const callsBeforeRevalidation = callback.mock.calls.length
+
+            await clock.advance(20)
+            await source.resolve({ value: 1 })
+
+            expect(store1.get(atom1)).toBe(initialValue)
+            expect(callback).toHaveBeenCalledTimes(callsBeforeRevalidation)
+            expect(store1.get(cacheMeta(atom1))!.lastSuccessAt).toBeGreaterThan(
+                initialSuccessAt,
+            )
+            unsubscribe()
         }))
 
     test("atom with maxAge async rejection does not cause unhandled rejection", () =>
