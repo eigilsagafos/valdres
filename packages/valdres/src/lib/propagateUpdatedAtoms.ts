@@ -471,10 +471,12 @@ export const propagateAtomUpdate = (
     if (commitEndRegistry.count !== 0) commitRoot = beginCommit(data)
     let completed = false
     try {
-        const hasScopeCascadeForInputs = hasInheritedDependencyBranches(
-            atoms,
-            data,
-        )
+        // Keep the no-scope gate at this call site even though the helper also
+        // checks it. Avoiding that call keeps large scope-free transactions on
+        // V8's optimized path (Node 22 otherwise falls off a severe perf cliff).
+        const hasScopeCascadeForInputs =
+            data.scopes.size !== 0 &&
+            hasInheritedDependencyBranches(atoms, data)
         // Fast path: single non-family atom with no dependent selectors and no
         // affected scope branch can skip the full graph walk entirely and just
         // notify subscribers. Merely having idle scopes no longer defeats it.
