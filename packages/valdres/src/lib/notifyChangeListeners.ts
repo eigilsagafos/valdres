@@ -1,7 +1,7 @@
 import type { Atom } from "../types/Atom"
 import type { AtomFamilyAtom } from "../types/AtomFamilyAtom"
 import type { Selector } from "../types/Selector"
-import type { StoreChange } from "../types/StoreChange"
+import type { AtomChange, StoreChange } from "../types/StoreChange"
 import type { StoreChangeMeta } from "../types/StoreChangeMeta"
 import type { StoreChangeSource } from "../types/StoreChangeSource"
 import type { StoreData } from "../types/StoreData"
@@ -28,6 +28,14 @@ export type ChangeSink = {
     source: StoreChangeSource
     name: string | undefined
     groups: ChangeGroup[]
+    /** Root unset changes whose optional value is finalized immediately before
+     *  dispatch. Allocated only for a watched root unset that is still lazy when
+     *  first buffered; propagation may rematerialize it before the sink flushes. */
+    pendingRootUnsets?: [
+        change: Extract<AtomChange, { kind: "unset" }>,
+        atom: Atom<any>,
+        data: StoreData,
+    ][]
 }
 
 /** Where a propagation's change reports go: a bare `source` tag means emit
@@ -280,15 +288,18 @@ export const reportAtomChanges = (
 }
 
 /** Report that `data`'s own value for `atom` was unset (called from unsetValue,
- *  after the value and its bookkeeping have been removed). The store now reads
- *  `revertedValue` — the inherited parent value on a scope, or the default on a
- *  root — carried as the change's `value`. The change is a `kind: "unset"`, NOT
- *  a `"set"` (so a consumer can drop the override rather than treat the reverted
- *  value as a new write) and NOT a `"delete"` (the atom still exists, only this
- *  store's own value is gone). The batch's `meta.source` is "unset" for a
- *  standalone unset, or "transaction" when buffered into a txn — but the
- *  per-change kind stays "unset" either way, so it's distinguishable even inside
- *  a mixed transaction. */
+ *  after the value and its bookkeeping have been removed). A scope carries its
+ *  inherited `revertedValue`. A root carries `value` only when the atom is
+ *  already materialized; otherwise the property stays absent and a buffered
+ *  report checks once more immediately before dispatch, after propagation had a
+ *  chance to rematerialize it. Reporting never evaluates a lazy default.
+ *
+ *  The change is a `kind: "unset"`, NOT a `"set"` (so a consumer can drop the
+ *  override rather than treat the reverted value as a new write) and NOT a
+ *  `"delete"` (the atom still exists, only this store's own value is gone). The
+ *  batch's `meta.source` is "unset" for a standalone unset, or "transaction"
+ *  when buffered into a txn — but the per-change kind stays "unset" either way,
+ *  so it's distinguishable even inside a mixed transaction. */
 export const reportUnsetAtom = (
     atom: Atom<any>,
     data: StoreData,
@@ -296,17 +307,23 @@ export const reportUnsetAtom = (
     report: ChangeReport,
 ) => {
     if (!hasChangeListener(data)) return
+    const change: Extract<AtomChange, { kind: "unset" }> = {
+        type: "atom",
+        kind: "unset",
+        state: atom,
+        scope: scopePath(data),
+    }
+    if (data.parent) {
+        change.value = revertedValue
+    } else if (data.values.has(atom)) {
+        change.value = data.values.get(atom)
+    } else if (typeof report !== "string") {
+        const pendingRootUnsets = (report.pendingRootUnsets ??= [])
+        pendingRootUnsets.push([change, atom, data])
+    }
     const group: ChangeGroup = {
         data,
-        changes: [
-            {
-                type: "atom",
-                kind: "unset",
-                state: atom,
-                value: revertedValue,
-                scope: scopePath(data),
-            },
-        ],
+        changes: [change],
     }
     emitGroup(group, report)
 }
@@ -355,6 +372,12 @@ export const createChangeSink = (
 
 /** Flush a sink's accumulated changes as a single callback. */
 export const flushChangeSink = (sink: ChangeSink) => {
+    const pendingRootUnsets = sink.pendingRootUnsets
+    if (pendingRootUnsets) {
+        for (const [change, atom, data] of pendingRootUnsets) {
+            if (data.values.has(atom)) change.value = data.values.get(atom)
+        }
+    }
     if (sink.groups.length > 0) {
         notifyChangeListeners(sink.groups, { source: sink.source, name: sink.name })
     }

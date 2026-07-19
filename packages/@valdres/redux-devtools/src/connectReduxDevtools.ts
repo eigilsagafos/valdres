@@ -199,11 +199,13 @@ export const connectReduxDevtools = (
             //  - unset + scope → the override is gone and the scope re-inherits,
             //                    so drop it from `@scopes` rather than showing
             //                    the inherited value as if it were an override.
-            //  - unset + root  → reverted to default; that IS the root's value.
+            //  - unset + root  → apply the default only if a live consumer
+            //                    rematerialized it; otherwise drop the cold entry.
             //  - set           → the new value.
             if (
                 change.kind === "delete" ||
-                (change.kind === "unset" && scopeKey !== null)
+                (change.kind === "unset" &&
+                    (scopeKey !== null || !("value" in change)))
             ) {
                 delete bucket[atomName]
             } else {
