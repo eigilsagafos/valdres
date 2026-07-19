@@ -14,7 +14,6 @@ import {
     takeStoreCleanups,
     takeStoreMounts,
 } from "./storeLifecycle"
-import { takeStoreSubscriptionStates } from "./storeSubscriptions"
 
 type StoreGlobals = [StoreData, GlobalAtom<any>[]]
 
@@ -101,26 +100,23 @@ export const disposeStoreData = (data: StoreData): void => {
             }
         }
 
-        // The existing WeakMap carries a compact array of subscribed states.
-        // Scope subscriptions drop their parent delegates before their local
-        // entry is removed.
-        if (Object.hasOwn(current, "subscriptions")) {
-            const states = takeStoreSubscriptionStates(current)
-            if (states) {
-                for (const state of states) {
-                    const subscriptions = current.subscriptions.get(state)
-                    if (!subscriptions) continue
-                    for (const subscription of subscriptions) {
-                        try {
-                            subscription.reRoot?.()
-                        } catch (error) {
-                            recordError(error)
-                        }
-                        try {
-                            unsubscribe(state, subscription, current)
-                        } catch (error) {
-                            recordError(error)
-                        }
+        // The equality side table doubles as the iterable active-state index;
+        // the subscription lookup itself remains a WeakMap. Scope entries drop
+        // their parent delegates before their local entry is removed.
+        if (Object.hasOwn(current, "subscriptionsRequireEqualCheck")) {
+            for (const state of current.subscriptionsRequireEqualCheck.keys()) {
+                const subscriptions = current.subscriptions.get(state)
+                if (!subscriptions) continue
+                for (const subscription of subscriptions) {
+                    try {
+                        subscription.reRoot?.()
+                    } catch (error) {
+                        recordError(error)
+                    }
+                    try {
+                        unsubscribe(state, subscription, current)
+                    } catch (error) {
+                        recordError(error)
                     }
                 }
             }

@@ -25,6 +25,7 @@ Object.defineProperties(lazyProto, {
     subscriptions: makeLazyGetter("subscriptions"),
     subscriptionsRequireEqualCheck: makeLazyGetter(
         "subscriptionsRequireEqualCheck",
+        () => new Map(),
     ),
     stateDependents: makeLazyGetter("stateDependents"),
     stateDependencies: makeLazyGetter("stateDependencies"),

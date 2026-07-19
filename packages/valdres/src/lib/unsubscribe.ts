@@ -12,7 +12,6 @@ import {
     unmountOrphanedDeps,
 } from "./mountAtom"
 import { queueOrphanCleanup } from "./queueOrphanCleanup"
-import { untrackStoreSubscriptionState } from "./storeSubscriptions"
 
 export const unsubscribe = <V>(
     state: State<V> | Family<V>,
@@ -21,7 +20,8 @@ export const unsubscribe = <V>(
 ) => {
     const subscribers = data.subscriptions.get(state)
     if (subscribers?.delete(subscription)) {
-        if (data.subscriptionsRequireEqualCheck.get(state)) {
+        const equalCheckSubscriptions = data.subscriptionsRequireEqualCheck
+        if (equalCheckSubscriptions.get(state)) {
             let remove = true
             for (const subscriber of subscribers) {
                 if (subscriber.requireDeepEqualCheckBeforeCallback) {
@@ -30,11 +30,11 @@ export const unsubscribe = <V>(
                 }
             }
             if (remove) {
-                data.subscriptionsRequireEqualCheck.delete(state)
+                equalCheckSubscriptions.set(state, undefined)
             }
         }
         if (subscribers.size === 0) {
-            untrackStoreSubscriptionState(state, subscribers, data)
+            equalCheckSubscriptions.delete(state)
             const maxAgeCleanup = getMaxAgeCleanup(data, state)
             if (maxAgeCleanup) {
                 maxAgeCleanup()

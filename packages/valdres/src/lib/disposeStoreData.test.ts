@@ -50,10 +50,14 @@ describe("store.dispose", () => {
         const unsubscribeFirst = targetStore.sub(first, () => {})
         const unsubscribeSecondA = targetStore.sub(second, () => {})
         const unsubscribeSecondB = targetStore.sub(second, () => {})
-        const unsubscribeThird = targetStore.sub(third, () => {})
+        const unsubscribeThird = targetStore.sub(third, () => {}, false)
 
-        // Removing the first state exercises the ledger's swap-pop path while
-        // the second state remains represented by more than one subscription.
+        expect(targetStore.data.subscriptionsRequireEqualCheck.has(third)).toBe(
+            true,
+        )
+
+        // Remove one active-state key while a second still has multiple
+        // subscriptions and a third has opted out of structural equality.
         unsubscribeFirst()
         targetStore.dispose()
 

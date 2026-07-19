@@ -25,7 +25,6 @@ import {
     createStoreDisposedError,
     DISPOSED_STORE_PENDING,
 } from "./storeLifecycle"
-import { trackStoreSubscriptionState } from "./storeSubscriptions"
 import { unsubscribe } from "./unsubscribe"
 import { validateResolvedValue } from "./validateResolvedValue"
 
@@ -532,8 +531,17 @@ export const subscribe = <V>(
         }
     }
     subscribers.add(subscription)
+    const equalCheckSubscriptions = data.subscriptionsRequireEqualCheck
     if (subscribers.size === 1) {
-        trackStoreSubscriptionState(state, subscribers, data)
+        equalCheckSubscriptions.set(
+            state,
+            requireDeepEqualCheckBeforeCallback ? true : undefined,
+        )
+    } else if (
+        requireDeepEqualCheckBeforeCallback &&
+        equalCheckSubscriptions.get(state) !== true
+    ) {
+        equalCheckSubscriptions.set(state, true)
     }
     const unsubscribeSubscription = () => {
         if (!parentUnsubscribe) {
@@ -578,13 +586,6 @@ export const subscribe = <V>(
             } catch {}
             throw error
         }
-    }
-
-    if (
-        requireDeepEqualCheckBeforeCallback &&
-        data.subscriptionsRequireEqualCheck.get(state) !== true
-    ) {
-        data.subscriptionsRequireEqualCheck.set(state, true)
     }
 
     return unsubscribeSubscription
