@@ -1187,6 +1187,21 @@ describe("atom", () => {
         expect(() => (immutableObject.foo = "bar")).toThrowError()
         expect(() => (mutableObject.foo = "bar")).not.toThrowError()
     })
+
+    test("unsupported exotic values require a mutable atom", () => {
+        const store1 = store()
+        const immutableAtom = atom<Map<string, number>>()
+        const mutableAtom = atom(new Map<string, number>(), { mutable: true })
+
+        expect(() =>
+            store1.set(immutableAtom, new Map([["one", 1]])),
+        ).toThrow(/Map.*\{ mutable: true \}/)
+
+        const value = new Map([["one", 1]])
+        expect(() => store1.set(mutableAtom, value)).not.toThrow()
+        expect(() => value.set("two", 2)).not.toThrow()
+        expect(store1.get(mutableAtom).get("two")).toBe(2)
+    })
 })
 
 describe("atom with promise values", () => {

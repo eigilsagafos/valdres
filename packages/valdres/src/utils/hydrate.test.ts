@@ -283,6 +283,7 @@ describe("hydrate", () => {
             const launchedAt = atom<Date>(undefined, {
                 name: "hyc-launched",
                 schema: dateCodec,
+                mutable: true,
             })
             const account = atomFamily<
                 { balance: bigint; updatedAt: Date },
@@ -290,6 +291,7 @@ describe("hydrate", () => {
             >(undefined, {
                 name: "hyc-account",
                 schema: z.object({ balance: bigintCodec, updatedAt: dateCodec }),
+                mutable: true,
             })
 
             const when = new Date("2026-06-12T10:00:00.000Z")
@@ -330,10 +332,12 @@ describe("hydrate", () => {
             const scores = atom(new Map<string, number>(), {
                 name: "hyc-map",
                 schema: mapCodec,
+                mutable: true,
             })
             const tags = atom(new Set<string>(), {
                 name: "hyc-set",
                 schema: setCodec,
+                mutable: true,
             })
 
             const server = store()
