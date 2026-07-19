@@ -55,10 +55,11 @@ export {
 
 type AtomInput = Atom<any> | AtomFamilyAtom<any, any> | AtomFamily<any, any>
 
-// Deferred-notification target for a multi-pass commit (a cross-scope txn, or a
-// single-store update+delete txn). Each store-pass collects its subscribers here
-// instead of firing them; the commit fires them ONCE at the very end — after
-// every value across every store is final. That is what makes a transaction
+// Deferred-notification target for a multi-store propagation or multi-pass
+// commit (an immediate scoped update, a cross-scope txn, or a single-store
+// update+delete txn). Each store-pass collects its subscribers here instead of
+// firing them; the owner fires them ONCE at the very end — after every value
+// across every affected store is final. That is what makes a transaction
 // *serializable to observe*: no subscriber, and nothing a SYNCHRONOUS selector a
 // subscriber reads, ever sees a half-applied intermediate. (Scope: an async /
 // Promise-returning selector still notifies again when its promise resolves — a
@@ -191,11 +192,11 @@ const callSubscribers = (
     if (hasError) throw firstError
 }
 
-// Fire the subscribers accumulated by a deferred (multi-pass) commit, once,
-// after every pass has run and every value is final. Per store (root-first, by
-// insertion order): each store's subscriptions fire against only that store's
-// changed family members, so a family subscription never fires for a member
-// that changed in a different store.
+// Fire the subscribers accumulated by a deferred store-tree propagation or
+// multi-pass commit, once, after every pass has run and every value is final.
+// Per store (root-first, by insertion order): each store's subscriptions fire
+// against only that store's changed family members, so a family subscription
+// never fires for a member that changed in a different store.
 export const notifyDeferred = (notify: NotifyTarget) => {
     // Fire EVERY store's subscribers even if one throws, then rethrow the first
     // error — the same "fire all, surface the first error" contract that
@@ -221,9 +222,9 @@ export const notifyDeferred = (notify: NotifyTarget) => {
 }
 
 // Record a pass's changed family members into its store's notify entry, so
-// callSubscribers can resolve that store's family-atom subscriptions once at
-// commit end. This is the NOTIFICATION side only. The per-pass map handed in
-// here is the SAME data a pass uses to drive index bookkeeping
+// callSubscribers can resolve that store's family-atom subscriptions once in
+// the final notify phase. This is the NOTIFICATION side only. The per-pass map
+// handed in here is the SAME data a pass uses to drive index bookkeeping
 // (add/deleteFamilyAtomsFromSet) — but those two roles must NOT share one
 // mutable map across passes: the bookkeeping map has to contain only THIS pass's
 // atoms (a delete pass that saw an earlier pass's added atoms would delete them).
@@ -239,6 +240,27 @@ const collectFamilyAtomsForNotify = (
             entry.families.set(family, target)
         }
         for (const atom of atoms) target.add(atom)
+    }
+}
+
+// Promote a pass's already-allocated collectors into the per-store notify map
+// only when there is something to dispatch. This keeps a scoped propagation
+// with no subscribers on its old allocation profile apart from the one tree
+// accumulator: it does not create an entry object + Set + Map for every scope.
+// A later pass for the same store reuses the promoted entry and merges only its
+// family members.
+const collectForNotify = (
+    notify: NotifyTarget,
+    data: StoreData,
+    subscriptions: Set<Subscription>,
+    changedByFamily: Map<AtomFamily<any>, Set<AtomFamilyAtom<any>>>,
+) => {
+    if (subscriptions.size === 0) return
+    const entry = notify.get(data)
+    if (entry === undefined) {
+        notify.set(data, { subscriptions, families: changedByFamily })
+    } else {
+        collectFamilyAtomsForNotify(entry, changedByFamily)
     }
 }
 
@@ -297,9 +319,18 @@ export const propagateDeletedAtoms = (
     if (commitEndRegistry.count !== 0) commitRoot = beginCommit(data)
     let completed = false
     try {
-        // When deferring, subscribers accumulate into THIS store's notify entry so
-        // they fire once, at commit end, against this store's changed members.
-        const notifyEntry = notify ? notifyEntryFor(notify, data) : undefined
+        const hasScopeCascade = !!data.scopes && data.scopes.size > 0
+        // An immediate store-tree propagation still needs a deferred notify
+        // phase: every descendant selector must settle before the first root
+        // callback can observe (or interrupt) the tree. Keep the allocation off
+        // the single-store hot path, and let callers that already own a deferred
+        // commit keep owning its notification phase.
+        const localNotify: NotifyTarget | undefined =
+            notify === undefined && hasScopeCascade ? new Map() : undefined
+        const effectiveNotify = notify ?? localNotify
+        // Reuse an entry from an earlier pass. The first pass stays local until
+        // it actually finds a subscriber, avoiding empty per-scope entries.
+        const notifyEntry = effectiveNotify?.get(data)
         if (notifyEntry) {
             subscriptions = notifyEntry.subscriptions
         }
@@ -335,19 +366,29 @@ export const propagateDeletedAtoms = (
             changeListenerRegistry.selectorCount !== 0 &&
             hasSelectorChangeListener(data)
         const changedSelectors = selectorActive ? new Set<Selector>() : undefined
-        propagateDirtySelectors(atoms, selectors, data, subscriptions, deletedFamilyAtoms, false, notify, changedSelectors)
-        if (notifyEntry) collectFamilyAtomsForNotify(notifyEntry, deletedFamilyAtoms)
-        const hasScopeCascade = !!data.scopes && data.scopes.size > 0
+        propagateDirtySelectors(atoms, selectors, data, subscriptions, deletedFamilyAtoms, false, effectiveNotify, changedSelectors)
+        if (effectiveNotify)
+            collectForNotify(
+                effectiveNotify,
+                data,
+                subscriptions,
+                deletedFamilyAtoms,
+            )
         const watching = report !== undefined && changeListenerRegistry.count !== 0
 
-        // When a selector listener is active and this delete cascades into scopes,
-        // the origin group + each scope's selector group must coalesce into one
-        // callback. On the immediate path (string report) buffer them into a
-        // transient sink tagged with the real source; the txn path already passes a
-        // sink. (Mirror of the wrap in propagateAtomUpdate.)
+        // When any selector listener exists and this delete cascades into scopes,
+        // the origin group + each scope's selector group must coalesce behind the
+        // tree's subscriber notify phase. A listener may live only in a descendant
+        // (and therefore be invisible to selectorActive's ancestor walk), so use the
+        // O(1) global gate rather than scanning the scope tree. The txn path already
+        // passes a sink. (Mirror of the wrap in propagateAtomUpdate.)
         let localSink: ChangeSink | undefined
         let effectiveReport: ChangeReport | undefined = report
-        if (selectorActive && hasScopeCascade && typeof report === "string") {
+        if (
+            hasScopeCascade &&
+            typeof report === "string" &&
+            changeListenerRegistry.selectorCount !== 0
+        ) {
             localSink = createChangeSink(undefined, report)
             effectiveReport = localSink
         }
@@ -374,9 +415,10 @@ export const propagateDeletedAtoms = (
             for (const family of deletedFamilyAtoms.keys()) {
                 scopeAtoms.push(family)
             }
-            propagateToScopes(scopeAtoms, data, false, notify, effectiveReport)
+            propagateToScopes(scopeAtoms, data, false, effectiveNotify, effectiveReport)
         }
 
+        if (localNotify) notifyDeferred(localNotify)
         if (watching && !reportIsSink)
             reportDeletedAtoms(atoms, data, effectiveReport as ChangeReport, changedSelectors)
         if (localSink) flushChangeSink(localSink)
@@ -386,13 +428,15 @@ export const propagateDeletedAtoms = (
     }
 }
 
-// Top-level entry: notify direct atom subscribers, walk dependent selectors,
-// then cross-propagate into scopes.
+// Top-level entry: collect direct atom subscribers, walk dependent selectors,
+// then cross-propagate into scopes. A scoped immediate update notifies only
+// after the full affected tree has settled.
 //
 // `notify` (multi-pass commit only): see NotifyTarget. When provided, subscribers
 // are collected into it instead of fired, so the commit can fire them once at
-// the end. Left undefined on the single-store / non-scoped hot path, where
-// firing stays inline and this function is unchanged.
+// the end. An immediate update that reaches scopes creates its own target, settles
+// the whole store tree, then fires it. The single-store / non-scoped hot path
+// stays inline and allocation-free with respect to deferred notification.
 export const propagateAtomUpdate = (
     atoms: AtomInput[],
     data: StoreData,
@@ -424,6 +468,7 @@ export const propagateAtomUpdate = (
     if (commitEndRegistry.count !== 0) commitRoot = beginCommit(data)
     let completed = false
     try {
+        const hasScopes = !!data.scopes && data.scopes.size > 0
         // Fast path: single non-family atom with no dependent selectors and no
         // scopes can skip the full graph walk entirely and just notify subscribers.
         if (atoms.length === 1) {
@@ -432,7 +477,7 @@ export const propagateAtomUpdate = (
                 const dependents = data.stateDependents.get(atom)
                 if (
                     (!dependents || dependents.size === 0) &&
-                    (!data.scopes || data.scopes.size === 0)
+                    !hasScopes
                 ) {
                     const subs = data.subscriptions.get(atom)
                     if (subs && subs.size > 0) {
@@ -462,8 +507,16 @@ export const propagateAtomUpdate = (
             }
         }
 
-        const notifyEntry = notify ? notifyEntryFor(notify, data) : undefined
-        const subscriptions = notifyEntry ? notifyEntry.subscriptions : new Set<Subscription>()
+        // Scope cascades must finish before any subscriber can observe the tree
+        // (or throw and interrupt it). Allocate a local target only for that
+        // store-tree path; externally deferred commits keep their existing target.
+        const localNotify: NotifyTarget | undefined =
+            notify === undefined && hasScopes ? new Map() : undefined
+        const effectiveNotify = notify ?? localNotify
+        const notifyEntry = effectiveNotify?.get(data)
+        const subscriptions = notifyEntry
+            ? notifyEntry.subscriptions
+            : new Set<Subscription>()
         // Per-call ONLY (never a cross-pass accumulator): the family atoms updated
         // in THIS call. Drives index bookkeeping (addFamilyAtomsToSet), and is
         // merged into notify.families afterwards for deferred notification — two
@@ -535,23 +588,33 @@ export const propagateAtomUpdate = (
             changeListenerRegistry.selectorCount !== 0 &&
             hasSelectorChangeListener(data)
         const changedSelectors = selectorActive ? new Set<Selector>() : undefined
-        propagateDirtySelectors(atoms, selectors, data, subscriptions, updatedFamilyAtoms, isInitOnly, notify, changedSelectors)
-        if (notifyEntry) collectFamilyAtomsForNotify(notifyEntry, updatedFamilyAtoms)
+        propagateDirtySelectors(atoms, selectors, data, subscriptions, updatedFamilyAtoms, isInitOnly, effectiveNotify, changedSelectors)
+        if (effectiveNotify)
+            collectForNotify(
+                effectiveNotify,
+                data,
+                subscriptions,
+                updatedFamilyAtoms,
+            )
 
-        const hasScopes = !!data.scopes && data.scopes.size > 0
         const watching =
             report !== undefined && changeListenerRegistry.count !== 0 && !isInitOnly
 
-        // When a selector listener is active and this update cascades into scopes,
+        // When any selector listener exists and this update cascades into scopes,
         // the origin group (atoms + its selectors) and each descendant scope's
-        // selector group must coalesce into a single onChange callback. On the
-        // immediate path (string report) that means buffering into a transient sink
-        // tagged with the real source and flushing once; the txn path already passes
-        // a sink. With no selector listener there's only ever the one origin group,
-        // so the string report fires it inline exactly as before.
+        // selector group must coalesce behind the tree's subscriber notify phase.
+        // A listener may live only in a descendant (and therefore be invisible to
+        // selectorActive's ancestor walk), so use the O(1) global gate rather than
+        // scanning the scope tree. The txn path already passes a sink. With no
+        // selector listener there's only ever the one origin group, so the string
+        // report fires it inline exactly as before.
         let localSink: ChangeSink | undefined
         let effectiveReport: ChangeReport | undefined = report
-        if (selectorActive && hasScopes && typeof report === "string") {
+        if (
+            hasScopes &&
+            typeof report === "string" &&
+            changeListenerRegistry.selectorCount !== 0
+        ) {
             localSink = createChangeSink(undefined, report)
             effectiveReport = localSink
         }
@@ -593,8 +656,9 @@ export const propagateAtomUpdate = (
                     if (!scopeAtoms.includes(family)) scopeAtoms.push(family)
                 }
             }
-            propagateToScopes(scopeAtoms, data, isInitOnly, notify, effectiveReport)
+            propagateToScopes(scopeAtoms, data, isInitOnly, effectiveNotify, effectiveReport)
         }
+        if (localNotify) notifyDeferred(localNotify)
         if (watching && !reportIsSink) emitOrigin(effectiveReport as ChangeReport)
         if (localSink) flushChangeSink(localSink)
         completed = true
@@ -605,7 +669,7 @@ export const propagateAtomUpdate = (
 
 // Scope-recursive entry: re-evaluate selectors that depend on these atoms in
 // this scope and cross into nested scopes. Skips collecting direct atom and
-// family subscribers — the parent scope already notified those, and family
+// family subscribers — the parent scope already collected those, and family
 // index bookkeeping has already cascaded via recursivelyUpdateIndexes.
 export const propagateInScope = (
     atoms: AtomInput[],
@@ -617,8 +681,9 @@ export const propagateInScope = (
     // Selector subscribers must accumulate into THIS store's notify entry (so
     // they fire once at the end); `families` is unused here (this entry skips
     // direct atom/family subscribers — the parent pass collected those).
-    const subscriptions = notify
-        ? notifyEntryFor(notify, data).subscriptions
+    const notifyEntry = notify?.get(data)
+    const subscriptions = notifyEntry
+        ? notifyEntry.subscriptions
         : new Set<Subscription>()
     const families = new Map<AtomFamily<any>, Set<AtomFamilyAtom<any>>>()
     const selectors = new Set<Selector>()
@@ -639,6 +704,7 @@ export const propagateInScope = (
             : undefined
 
     propagateDirtySelectors(atoms, selectors, data, subscriptions, families, isInitOnly, notify, changedSelectors)
+    if (notify) collectForNotify(notify, data, subscriptions, families)
 
     if (changedSelectors && changedSelectors.size > 0) {
         reportSelectorChanges(changedSelectors, data, report as ChangeReport)
@@ -741,8 +807,8 @@ export const propagateDirtySelectors = (
             changedSelectors,
         )
     }
-    // When deferring (multi-pass commit), the caller owns `subscriptions` /
-    // `families` and fires them once after every pass has run.
+    // When deferring a store-tree propagation or multi-pass commit, the caller
+    // owns `subscriptions` / `families` and fires them once after every pass.
     if (!notify && subscriptions.size > 0) {
         callSubscribers(subscriptions, families)
     }
