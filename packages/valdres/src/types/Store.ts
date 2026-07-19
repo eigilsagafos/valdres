@@ -31,8 +31,11 @@ export type ScopeFn = {
     /** Acquire a scope lease. The caller owns the returned `detach`. */
     (scopeId: string): ScopedStore
     /** Borrow an existing scope for the duration of `callback`. A borrowed
-     * store has no `detach` lease to release. */
-    <Result>(scopeId: string, callback: (store: Store) => Result): Result
+     * store has no lifecycle ownership, so it cannot be disposed or detached. */
+    <Result>(
+        scopeId: string,
+        callback: (store: Omit<Store, "dispose">) => Result,
+    ): Result
 }
 
 export type Store<T = StoreData> = {

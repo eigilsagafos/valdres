@@ -38,7 +38,7 @@ test("batched store set returns the staged value", () => {
     batched.dispose()
 })
 
-test("callback scopes expose a borrowed store, not a detachable lease", () => {
+test("callback scopes expose a borrowed store without lifecycle ownership", () => {
     const root = store()
     const lease = root.scope("child")
 
@@ -47,6 +47,8 @@ test("callback scopes expose a borrowed store, not a detachable lease", () => {
         if (false) {
             // @ts-expect-error callback scopes do not own a detach lease
             borrowed.detach()
+            // @ts-expect-error callback scopes do not own store disposal
+            borrowed.dispose()
         }
     })
 

@@ -321,7 +321,7 @@ const createStoreRuntime = (data: StoreData): Store => {
 
     const scope: ScopeFn = ((
         scopeId: string,
-        callback?: (store: Store) => unknown,
+        callback?: (store: Omit<Store, "dispose">) => unknown,
     ) => {
         if (callback) {
             if (!data.scopes.has(scopeId)) {
