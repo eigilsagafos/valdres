@@ -65,11 +65,12 @@ export const reDelegateScopeSubscriptions = (
  *  - **scoped store** → the inherited parent value (already materialized, since
  *    shadowing an atom always initializes the parent first), so this is a cheap
  *    read-through.
- *  - **root store** → `undefined`; `reportUnsetAtom` reads `data.values` itself
- *    if a live consumer already rematerialized the atom. Reporting must never
- *    evaluate a lazy function/async default: root unset stays observationally
- *    neutral and the next read initializes it exactly as it would without an
- *    `onChange` listener. */
+ *  - **root store** → `undefined`; `reportUnsetAtom` carries an already-
+ *    materialized value when buffering, otherwise omits it and lets the change
+ *    sink recheck `data.values` after propagation. Reporting must never evaluate
+ *    a lazy function/async default: root unset stays observationally neutral and
+ *    the next read initializes it exactly as it would without an `onChange`
+ *    listener. */
 export const effectiveValueAfterUnset = (
     atom: Atom<any>,
     data: StoreData,
