@@ -284,19 +284,22 @@ export const installMaxAgeTimer = (state: Atom<any>, data: StoreData) => {
                     startInterval()
                     updateMeta()
                 },
-                false,
                 data,
             ),
         )
     }
     if (state.staleWhileRevalidate && isReactive(state.staleWhileRevalidate)) {
         configUnsubs.push(
-            subscribe(state.staleWhileRevalidate as any, () => updateMeta(), false, data),
+            subscribe(
+                state.staleWhileRevalidate as any,
+                () => updateMeta(),
+                data,
+            ),
         )
     }
     if (state.staleIfError && isReactive(state.staleIfError)) {
         configUnsubs.push(
-            subscribe(state.staleIfError as any, () => updateMeta(), false, data),
+            subscribe(state.staleIfError as any, () => updateMeta(), data),
         )
     }
 
@@ -329,7 +332,6 @@ export const installMaxAgeTimer = (state: Atom<any>, data: StoreData) => {
 export const subscribe = <V>(
     state: State<V> | Family<V>,
     callback: (arg?: any) => void,
-    requireDeepEqualCheckBeforeCallback: boolean,
     data: StoreData,
 ) => {
     let parentUnsubscribe: undefined | (() => void)
@@ -346,12 +348,7 @@ export const subscribe = <V>(
          */
         const originalCallback = callback
         const delegateToParent = () =>
-            subscribe(
-                state,
-                originalCallback,
-                requireDeepEqualCheckBeforeCallback,
-                data.parent!,
-            )
+            subscribe(state, originalCallback, data.parent!)
         // A family always reads through (no own value); an atom delegates only
         // while this scope does not shadow it.
         if (isAtomFamily(state) || !data.values.has(state)) {
@@ -425,14 +422,12 @@ export const subscribe = <V>(
         subscription = {
             callback,
             state,
-            requireDeepEqualCheckBeforeCallback,
             reRoot: dropDelegate,
             reDelegate,
         }
     } else {
         subscription = {
             callback,
-            requireDeepEqualCheckBeforeCallback,
             reRoot: dropDelegate,
             reDelegate,
         }
@@ -481,13 +476,6 @@ export const subscribe = <V>(
             } catch {}
             throw error
         }
-    }
-
-    if (
-        requireDeepEqualCheckBeforeCallback &&
-        data.subscriptionsRequireEqualCheck.get(state) !== true
-    ) {
-        data.subscriptionsRequireEqualCheck.set(state, true)
     }
 
     return unsubscribeSubscription

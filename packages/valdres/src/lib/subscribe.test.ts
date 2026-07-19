@@ -185,44 +185,30 @@ describe("subscribe", () => {
         // expect(callbackResults).toStrictEqual([true, true])
     })
 
-    test("unsubscribe resets when needed", () => {
+    test("unsubscribe does not scan remaining subscribers", () => {
         const store1 = store()
         const atom1 = atom(1)
-        const selector1 = selector(get => get(atom1) * 2)
-
-        expect(
-            store1.data.subscriptionsRequireEqualCheck.get(selector1),
-        ).toBeUndefined()
-
-        // We subscribe but opt-out of equality check
-        const unsubscribe1 = store1.sub(selector1, () => {}, false)
-        expect(
-            store1.data.subscriptionsRequireEqualCheck.get(selector1),
-        ).toBeUndefined()
-
-        // We subscribe
-        const unsubscribe2 = store1.sub(selector1, () => {})
-        expect(store1.data.subscriptionsRequireEqualCheck.get(selector1)).toBe(
-            true,
+        const unsubscribes = Array.from({ length: 100 }, () =>
+            store1.sub(atom1, () => {}, false),
         )
+        const unsubscribeWithEqualityCheck = store1.sub(atom1, () => {})
 
-        // We subscribe again and opt-out of equality check
-        const unsubscribe3 = store1.sub(selector1, () => {}, false)
-        expect(store1.data.subscriptionsRequireEqualCheck.get(selector1)).toBe(
-            true,
-        )
+        let iterations = 0
+        const subscriptions = new Set(store1.data.subscriptions.get(atom1))
+        Object.defineProperty(subscriptions, Symbol.iterator, {
+            value: function* () {
+                for (const value of Set.prototype.values.call(subscriptions)) {
+                    iterations++
+                    yield value
+                }
+            },
+        })
+        store1.data.subscriptions.set(atom1, subscriptions)
 
-        // We cancel one of the two opt-out callbacks
-        unsubscribe1()
-        expect(store1.data.subscriptionsRequireEqualCheck.get(selector1)).toBe(
-            true,
-        )
+        for (const unsubscribe of unsubscribes) unsubscribe()
 
-        // We cancel the default subscription with equality check
-        unsubscribe2()
-        expect(
-            store1.data.subscriptionsRequireEqualCheck.get(selector1),
-        ).toBeUndefined()
+        expect(iterations).toBe(0)
+        unsubscribeWithEqualityCheck()
     })
 
     test("subscribe to atom in scoped store", () => {

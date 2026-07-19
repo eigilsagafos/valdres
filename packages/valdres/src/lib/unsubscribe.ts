@@ -21,18 +21,6 @@ export const unsubscribe = <V>(
     const subscribers = data.subscriptions.get(state)
     if (subscribers) {
         subscribers.delete(subscription)
-        if (data.subscriptionsRequireEqualCheck.get(state)) {
-            let remove = true
-            for (const subscriber of subscribers) {
-                if (subscriber.requireDeepEqualCheckBeforeCallback) {
-                    remove = false
-                    break
-                }
-            }
-            if (remove) {
-                data.subscriptionsRequireEqualCheck.delete(state)
-            }
-        }
         if (subscribers.size === 0) {
             const maxAgeCleanup = getMaxAgeCleanup(data, state)
             if (maxAgeCleanup) {

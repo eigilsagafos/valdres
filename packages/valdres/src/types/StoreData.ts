@@ -43,7 +43,6 @@ export type StoreData = {
      *  creation — no per-call branch on the hot path. */
     values: WeakMap<WeakKey, any> | Map<WeakKey, any>
     subscriptions: WeakMap<WeakKey, Set<Subscription>>
-    subscriptionsRequireEqualCheck: WeakMap<WeakKey, boolean>
     stateDependents: WeakMap<WeakKey, any>
     stateDependencies: WeakMap<WeakKey, any>
     /** Selectors whose forward dependency sets are currently mirrored into the
