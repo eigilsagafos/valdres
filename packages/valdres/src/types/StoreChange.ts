@@ -9,11 +9,14 @@ import type { Selector } from "./Selector"
  *                 atom resolving, a cache revalidation, …; the originating
  *                 operation is on `StoreChangeMeta.source`).
  *  - `"unset"`  — the store dropped its own value for the atom (`store.unset` /
- *                 `txn.unset`); it now reverts to what it otherwise reads, carried
- *                 as `value` (the inherited parent value on a scope, the default
- *                 on a root). The atom still exists — NOT a `"delete"`. A flat
- *                 value-mirror can read `value`; an inheritance-aware consumer
- *                 switches on the kind to drop the override. `"unset"` is also on
+ *                 `txn.unset`); it now reverts to what it otherwise reads. `value`
+ *                 carries the inherited parent value on a scope. On a root it is
+ *                 present only when a live consumer rematerialized the default
+ *                 during propagation; otherwise it is omitted so reporting the
+ *                 change does not evaluate a lazy default. The atom still exists
+ *                 — NOT a `"delete"`. An inheritance-aware consumer switches on
+ *                 the kind to drop the override; a flat mirror should also drop a
+ *                 root entry when `value` is absent. `"unset"` is also on
  *                 `StoreChangeMeta.source` for a standalone unset, but inside a
  *                 transaction the source is `"transaction"`, so this per-change
  *                 kind is the only signal distinguishing it from a set.
@@ -36,7 +39,7 @@ export type AtomChange =
           type: "atom"
           kind: "unset"
           state: Atom<any> | AtomFamilyAtom<any, any>
-          value: unknown
+          value?: unknown
           scope: string[]
       }
     | {

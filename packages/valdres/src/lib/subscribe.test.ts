@@ -15,6 +15,42 @@ describe("subscribe", () => {
         expect(callback).toHaveBeenCalledTimes(1)
     })
 
+    test("fresh family-member subscription registers a plain-default member", () => {
+        const store1 = store()
+        const family = atomFamily("default")
+        const member = family("member")
+        const callback = mock(() => {})
+
+        const unsubscribe = store1.sub(member, callback)
+
+        expect(store1.get(member)).toBe("default")
+        expect(store1.get(family)).toStrictEqual([member])
+        expect(callback).toHaveBeenCalledTimes(0)
+        unsubscribe()
+    })
+
+    test("fresh family-member subscription propagates selector-default initialization", () => {
+        const store1 = store()
+        const sourceFamily = atomFamily((id: number) => id)
+        const source = sourceFamily(1)
+        const defaultSelector = selector(get => get(source) + 1)
+        const targetFamily = atomFamily(defaultSelector)
+        const target = targetFamily("target")
+        const callback = mock(() => {})
+
+        const unsubscribe = store1.sub(target, callback)
+
+        expect(store1.get(source)).toBe(1)
+        expect(store1.get(sourceFamily)).toStrictEqual([source])
+        expect(store1.get(target)).toBe(2)
+        expect(store1.get(targetFamily)).toStrictEqual([target])
+        expect(callback).toHaveBeenCalledTimes(0)
+
+        store1.set(target, 3)
+        expect(callback).toHaveBeenCalledTimes(1)
+        unsubscribe()
+    })
+
     test("Subscribe to un-mounted selector", () => {
         const store1 = store()
         const atom1 = atom([1, 2, 3]) // sum 6

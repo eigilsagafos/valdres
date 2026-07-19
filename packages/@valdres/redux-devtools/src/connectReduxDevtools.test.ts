@@ -251,6 +251,28 @@ describe("connectReduxDevtools", () => {
         scoped.detach()
     })
 
+    test("a root unset removes a cold lazy value without evaluating its default", () => {
+        const fake = makeFakeExtension()
+        install(fake.ext)
+        const s = store()
+        let initCount = 0
+        const a = atom(() => ++initCount, { name: "un_lazy_root" })
+        const handle = connectReduxDevtools(s)
+
+        expect(s.get(a)).toBe(1)
+        s.set(a, 9)
+        expect(fake.sent.at(-1)!.state.un_lazy_root).toBe(9)
+
+        s.unset(a)
+
+        const last = fake.sent.at(-1)!
+        expect(last.action.source).toBe("unset")
+        expect("un_lazy_root" in last.state).toBe(false)
+        expect(initCount).toBe(1)
+        expect(s.get(a)).toBe(2)
+        handle.disconnect()
+    })
+
     test("unset inside a transaction still drops the scope override", () => {
         const fake = makeFakeExtension()
         install(fake.ext)

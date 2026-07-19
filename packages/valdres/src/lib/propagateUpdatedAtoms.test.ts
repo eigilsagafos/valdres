@@ -149,6 +149,14 @@ test("propagateUpdatedAtoms", () => {
     // rootStore.sub(userAgeSelector, usersAgeUpdatedCallback)
     rootStore.sub(user1, user1UpdatedCallback)
 
+    // Subscribing the fresh family member initializes it and registers its
+    // membership, matching store.get(user1). Aggregates that read the pending
+    // no-default member become pending and their subscribers observe that
+    // membership transition.
+    expect(userUpdatedCallback).toHaveBeenCalledTimes(1)
+    expect(norwegianUserAddedCallback).toHaveBeenCalledTimes(1)
+    expect(age21UserAddedCallback).toHaveBeenCalledTimes(1)
+
     expect(rootStore.get(userSettingsFamily(1))).toStrictEqual({
         id: 1,
         enabled: true,
@@ -158,16 +166,17 @@ test("propagateUpdatedAtoms", () => {
     // rootStore
 
     expect(rootStore.get(user1)).toBeInstanceOf(Promise)
-    expect(rootStore.get(usersByCountry("Norway"))).toStrictEqual([])
-    expect(rootStore.get(allUserSummariesSelector)).toStrictEqual([])
+    expect(rootStore.get(usersByCountry("Norway"))).toBeInstanceOf(Promise)
+    expect(rootStore.get(usersByAge(21))).toBeInstanceOf(Promise)
+    expect(rootStore.get(allUserSummariesSelector)).toBeInstanceOf(Promise)
 
     rootStore.set(user1, { name: "Foo", age: 21, country: "Norway" })
 
     expect(user1UpdatedCallback).toHaveBeenCalledTimes(1)
-    expect(userUpdatedCallback).toHaveBeenCalledTimes(1)
-    expect(norwegianUserAddedCallback).toHaveBeenCalledTimes(1)
+    expect(userUpdatedCallback).toHaveBeenCalledTimes(2)
+    expect(norwegianUserAddedCallback).toHaveBeenCalledTimes(2)
 
-    expect(age21UserAddedCallback).toHaveBeenCalledTimes(1)
+    expect(age21UserAddedCallback).toHaveBeenCalledTimes(2)
     expect(rootStore.get(usersByAge(21))).toStrictEqual([user1])
     expect(rootStore.get(usersByCountry("Norway"))).toStrictEqual([user1])
     expect(usersByAge.callback).toHaveBeenCalledTimes(1)
