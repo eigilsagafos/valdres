@@ -71,16 +71,16 @@ members leave the weak identity cache automatically once no caller or store can
 reach them. Manual eviction could otherwise create two live member objects for
 the same arguments and split their values across stores.
 
-## Subscribing to all keys
+## Subscribing to a family
 
 <div className="callout callout-tip">
   <div className="callout-title">Tip</div>
-  Unlike Jotai, you can subscribe to an entire family and get all active keys as an array. This is a first-class feature, not a workaround.
+  Subscribe to an entire family to be notified when any member changes. The callback receives that member's family arguments.
 </div>
 
 ```ts
-store.sub(todoAtom, keys => {
-    console.log("Active todo keys:", keys)
+store.sub(todoAtom, id => {
+    console.log("Changed todo ID:", id)
 })
 ```
 

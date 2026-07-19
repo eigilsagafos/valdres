@@ -1,6 +1,7 @@
 import type { State } from "../types/State"
 import type { StoreData } from "../types/StoreData"
 import { isSelector } from "../utils/isSelector"
+import { addStateDependent } from "./inheritedDependencyBranches"
 import { noteDependencyGraphChanged } from "./noteDependencyGraphChanged"
 import { storeFromStoreData } from "./storeFromStoreData"
 
@@ -142,12 +143,7 @@ export const activateSelectorGraph = (root: State, data: StoreData) => {
         if (!dependencies) continue
         noteDependencyGraphChanged(selector, data)
         for (const dependency of dependencies) {
-            let dependents = data.stateDependents.get(dependency)
-            if (!dependents) {
-                dependents = new Set<State>()
-                data.stateDependents.set(dependency, dependents)
-            }
-            dependents.add(selector)
+            addStateDependent(dependency, selector, data)
             noteDependencyAdded(selector, dependency, data)
             if (isSelector(dependency)) stack.push(dependency)
         }

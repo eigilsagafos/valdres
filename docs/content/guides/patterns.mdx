@@ -20,7 +20,7 @@ const todoIdsAtom = atom([])
 // Add a todo
 function addTodo(store, title) {
     const id = crypto.randomUUID()
-    store.txn(set => {
+    store.txn(({ set }) => {
         set(todoAtom(id), { id, title, done: false })
         set(todoIdsAtom, ids => [...ids, id])
     })
@@ -125,7 +125,7 @@ myStore.set(balanceA, prev => prev - 50)
 myStore.set(balanceB, prev => prev + 50) // brief moment where $50 is "missing"
 
 // With transaction: atomic update
-myStore.txn(set => {
+myStore.txn(({ set }) => {
     set(balanceA, prev => prev - 50)
     set(balanceB, prev => prev + 50)
     // Subscribers fire once, after both updates
@@ -176,16 +176,16 @@ import { atomFamily, store } from "valdres"
 const userAtom = atomFamily()
 const myStore = store()
 
-// Subscribe to the family — callback receives array of all active keys
-myStore.sub(userAtom, keys => {
-    console.log("Active user IDs:", keys)
+// Family callbacks receive the arguments of the member that changed
+myStore.sub(userAtom, id => {
+    console.log("Changed user ID:", id)
 })
 
 myStore.set(userAtom("user-1"), { name: "Alice" })
-// logs: Active user IDs: ["user-1"]
+// logs: Changed user ID: user-1
 
 myStore.set(userAtom("user-2"), { name: "Bob" })
-// logs: Active user IDs: ["user-1", "user-2"]
+// logs: Changed user ID: user-2
 ```
 
 ## State outside of components

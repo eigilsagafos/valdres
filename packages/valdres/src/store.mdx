@@ -56,9 +56,12 @@ myStore.set(countAtom, prev => prev + 1)
 
 ## Subscribing to changes
 
+Subscription callbacks are notifications. Read the current value from the
+store when the callback runs:
+
 ```ts
-const unsub = myStore.sub(countAtom, value => {
-    console.log("count changed:", value)
+const unsub = myStore.sub(countAtom, () => {
+    console.log("count changed:", myStore.get(countAtom))
 })
 
 // Later: stop listening

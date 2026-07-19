@@ -62,8 +62,8 @@ myStore.set(countAtom, 42)
 console.log(myStore.get(countAtom)) // 42
 
 // Subscribe to changes
-myStore.sub(countAtom, value => {
-    console.log("count changed:", value)
+myStore.sub(countAtom, () => {
+    console.log("count changed:", myStore.get(countAtom))
 })
 ```
 
