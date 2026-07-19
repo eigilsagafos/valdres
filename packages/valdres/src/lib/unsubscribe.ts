@@ -21,7 +21,13 @@ export const unsubscribe = <V>(
     const subscribers = data.subscriptions.get(state)
     if (subscribers?.delete(subscription)) {
         const equalCheckSubscriptions = data.subscriptionsRequireEqualCheck
-        if (equalCheckSubscriptions.get(state)) {
+        if (subscribers.size === 0) {
+            // The iterable equality table is also disposal's active-state
+            // index. Delete its one entry directly on the overwhelmingly
+            // common final-unsubscribe path; there is no remaining callback
+            // whose equality mode needs recomputing.
+            equalCheckSubscriptions.delete(state)
+        } else if (equalCheckSubscriptions.get(state)) {
             let remove = true
             for (const subscriber of subscribers) {
                 if (subscriber.requireDeepEqualCheckBeforeCallback) {
@@ -34,7 +40,6 @@ export const unsubscribe = <V>(
             }
         }
         if (subscribers.size === 0) {
-            equalCheckSubscriptions.delete(state)
             const maxAgeCleanup = getMaxAgeCleanup(data, state)
             if (maxAgeCleanup) {
                 maxAgeCleanup()

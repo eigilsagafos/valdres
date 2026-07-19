@@ -2,6 +2,7 @@ import type { Atom } from "../types/Atom"
 import type { StoreData } from "../types/StoreData"
 import { isAtom } from "../utils/isAtom"
 import { getState } from "./getState"
+import { refreshInheritedDependencyBranch } from "./inheritedDependencyBranches"
 import {
     createChangeSink,
     flushChangeSink,
@@ -40,6 +41,9 @@ export const detachOwnValue = (atom: Atom<any>, data: StoreData): boolean => {
             if (scopes.size === 0) parent.scopeValueIndex.delete(atom)
         }
         data.scopeIndexKeys!.delete(atom)
+        // Dropping the shadow may expose this store's local/descendant
+        // dependents to ancestor writes again.
+        refreshInheritedDependencyBranch(atom, data)
     }
     return true
 }

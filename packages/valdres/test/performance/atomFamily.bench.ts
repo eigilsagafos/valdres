@@ -10,9 +10,7 @@ import { do_not_optimize } from "mitata"
 
 describe("atomFamily", () => {
     test("create atoms from family", async () => {
-        const vFamily = valdresAtomFamily<string, [number]>(
-            id => `user-${id}`,
-        )
+        const vFamily = valdresAtomFamily<string, [number]>(id => `user-${id}`)
         const jFamily = jotaiAtomFamily((id: number) => jotaiAtom(`user-${id}`))
 
         let vCounter = 0
@@ -27,9 +25,7 @@ describe("atomFamily", () => {
 
 describe("atomFamily cache hit", () => {
     test("atomFamily cache hit", async () => {
-        const vFamily = valdresAtomFamily<string, [number]>(
-            id => `user-${id}`,
-        )
+        const vFamily = valdresAtomFamily<string, [number]>(id => `user-${id}`)
         const jFamily = jotaiAtomFamily((id: number) => jotaiAtom(`user-${id}`))
 
         // Prime the cache
@@ -38,8 +34,8 @@ describe("atomFamily cache hit", () => {
 
         // valdres's atomFamily cache hit is ~2x slower than jotai's on quiet
         // hardware (a known optimization target). It sits near the timer-
-        // resolution floor (~16ns), so its absolute latency is noisy; Bencher's
-        // t-test widens the band accordingly — tracked, not tightly gated.
+        // resolution floor (~16ns), so its absolute latency is noisy. It stays
+        // in the raw history and plots but is excluded from both CI gates.
         await compare(
             "atomFamily(id) cache hit",
             () => do_not_optimize(vFamily(1)),
@@ -112,7 +108,7 @@ describe("selectorFamily", () => {
         const jAtom = jotaiAtom(0)
 
         const vFamily = valdresSelectorFamily<number, [number]>(
-            (id) => (get) => get(vAtom) + id,
+            id => get => get(vAtom) + id,
         )
         const jFamily = jotaiAtomFamily((id: number) =>
             jotaiAtom(get => get(jAtom) + id),

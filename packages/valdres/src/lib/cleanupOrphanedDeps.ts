@@ -1,6 +1,7 @@
 import type { State } from "../types/State"
 import type { StoreData } from "../types/StoreData"
 import type { Selector } from "../types/Selector"
+import { removeStateDependent } from "./inheritedDependencyBranches"
 import { isLive } from "./mountAtom"
 import { noteStateValueChanged } from "./stateRevisions"
 import { untrackAbortController } from "./storeLifecycle"
@@ -50,7 +51,7 @@ export const cleanupOrphanedDeps = (state: State, data: StoreData) => {
             data.latestEvalContext.delete(selector)
 
             for (const dep of deps) {
-                data.stateDependents.get(dep)?.delete(current)
+                removeStateDependent(dep, current, data)
             }
             data.stateDependencies.delete(current)
             // The active marker is weak and can remain through teardown. A

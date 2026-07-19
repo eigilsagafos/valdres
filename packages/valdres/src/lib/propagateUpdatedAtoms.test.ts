@@ -191,6 +191,126 @@ test("propagateUpdatedAtoms", () => {
 })
 
 describe("scopeValueIndex", () => {
+    test("root writes do not scan idle scope branches", () => {
+        const rootStore = store()
+        const source = atom(0)
+        rootStore.get(source)
+
+        // Keep one genuinely affected branch among a wider set of scopes. The
+        // selector proves propagation still reaches that branch; the counting
+        // map makes a full `data.scopes` scan observable without a timing-based
+        // assertion.
+        const affected = rootStore.scope("affected")
+        const derived = selector(get => get(source) + 1)
+        const callback = mock(() => {})
+        affected.sub(derived, callback)
+        for (let i = 0; i < 100; i++) rootStore.scope(`idle-${i}`)
+
+        expect(rootStore.data.inheritedDependencyBranches.get(source)).toEqual(
+            new Set([affected.data]),
+        )
+
+        const scopes = new Map(rootStore.data.scopes)
+        const entries = [...scopes.entries()]
+        let visited = 0
+        function* countScopes() {
+            for (const entry of entries) {
+                visited++
+                yield entry
+            }
+        }
+        scopes[Symbol.iterator] = countScopes
+        rootStore.data.scopes = scopes
+
+        rootStore.set(source, 1)
+
+        expect(callback).toHaveBeenCalledTimes(1)
+        expect(affected.get(derived)).toBe(2)
+        expect(visited).toBe(0)
+    })
+
+    test("nested branch registration stops at shadows and resumes after unset", () => {
+        const rootStore = store()
+        const middle = rootStore.scope("middle")
+        const leaf = middle.scope("leaf")
+        const source = atom(0)
+        const derived = selector(get => get(source) + 1)
+        const callback = mock(() => {})
+        leaf.sub(derived, callback)
+
+        expect(rootStore.data.inheritedDependencyBranches.get(source)).toEqual(
+            new Set([middle.data]),
+        )
+        expect(middle.data.inheritedDependencyBranches.get(source)).toEqual(
+            new Set([leaf.data]),
+        )
+
+        middle.set(source, 10)
+        expect(
+            rootStore.data.inheritedDependencyBranches.get(source),
+        ).toBeUndefined()
+        expect(middle.data.inheritedDependencyBranches.get(source)).toEqual(
+            new Set([leaf.data]),
+        )
+
+        middle.unset(source)
+        expect(rootStore.data.inheritedDependencyBranches.get(source)).toEqual(
+            new Set([middle.data]),
+        )
+
+        leaf.detach()
+        expect(
+            middle.data.inheritedDependencyBranches.get(source),
+        ).toBeUndefined()
+        expect(
+            rootStore.data.inheritedDependencyBranches.get(source),
+        ).toBeUndefined()
+    })
+
+    test("dynamic dependencies and unsubscribe update the branch index", async () => {
+        const rootStore = store()
+        const scoped = rootStore.scope("dynamic")
+        const chooseLeft = atom(true)
+        const left = atom(1)
+        const right = atom(2)
+        let evaluations = 0
+        const dynamic = selector(get => {
+            evaluations++
+            return get(chooseLeft) ? get(left) : get(right)
+        })
+        const unsubscribe = scoped.sub(dynamic, () => {})
+
+        expect(rootStore.data.inheritedDependencyBranches.get(left)).toEqual(
+            new Set([scoped.data]),
+        )
+        expect(
+            rootStore.data.inheritedDependencyBranches.get(right),
+        ).toBeUndefined()
+
+        rootStore.set(chooseLeft, false)
+        expect(
+            rootStore.data.inheritedDependencyBranches.get(left),
+        ).toBeUndefined()
+        expect(rootStore.data.inheritedDependencyBranches.get(right)).toEqual(
+            new Set([scoped.data]),
+        )
+
+        const afterSwitch = evaluations
+        rootStore.set(left, 10)
+        expect(evaluations).toBe(afterSwitch)
+        rootStore.set(right, 20)
+        expect(evaluations).toBe(afterSwitch + 1)
+
+        unsubscribe()
+        await new Promise<void>(resolve => queueMicrotask(resolve))
+        expect(
+            rootStore.data.inheritedDependencyBranches.get(chooseLeft),
+        ).toBeUndefined()
+        expect(
+            rootStore.data.inheritedDependencyBranches.get(right),
+        ).toBeUndefined()
+    })
+
     test("3-level deep family deletion: root → A → B with cloned family", () => {
         const rootStore = store()
         const family = atomFamily<string>(undefined, { name: "deepFamily" })

@@ -27,8 +27,8 @@ const MEASURE_ONE_OPTS = {
 }
 
 // Record one absolute latency (ns) for a benchmark. mitata's measure() already
-// returns a robust, tail-trimmed p50; Bencher's t-test owns cross-run noise, so
-// we report p50 directly with no extra outlier filtering.
+// returns a robust, tail-trimmed p50. The CI workflows repeat the suite and
+// bench-to-bmf takes the cross-run median before Bencher evaluates it.
 export async function measureOne(name: string, fn: () => void) {
     const stats = await measure(fn, MEASURE_ONE_OPTS)
     console.log(`  ${name}: ${fmtNs(stats.p50)}`)
@@ -40,9 +40,9 @@ export async function measureOne(name: string, fn: () => void) {
 
 // Measure valdres and a reference implementation for the same operation as two
 // separate `latency` benchmarks — "<op> / valdres" and "<op> / <ref>". The
-// comparison is read off an overlaid Bencher plot; each series is gated against
-// its own history. The two sides are measured in independent windows on purpose
-// (no in-process ratio) — Bencher is the gate.
+// comparison is read off an overlaid Bencher plot. Main also uses a fixed set of
+// pinned-Jotai series to normalize runner-wide slowdown; PRs gate Valdres only.
+// The two sides use independent measurement windows so each retains a robust p50.
 export async function compare(
     op: string,
     valdresFn: () => void,
