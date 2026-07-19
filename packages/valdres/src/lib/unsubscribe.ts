@@ -1,4 +1,3 @@
-import type { Family } from "../types/Family"
 import type { State } from "../types/State"
 import type { StoreData } from "../types/StoreData"
 import type { Subscription } from "../types/Subscription"
@@ -55,7 +54,7 @@ const removeSubscriptionEqualCheck = (
 }
 
 export const unsubscribe = <V>(
-    state: State<V> | Family<V>,
+    state: State<V>,
     subscription: Subscription,
     data: StoreData,
 ) => {

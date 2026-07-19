@@ -1,7 +1,6 @@
 import type { Atom } from "../types/Atom"
 import type { AtomFamily } from "../types/AtomFamily"
 import type { AtomFamilyAtom } from "../types/AtomFamilyAtom"
-import type { Family } from "../types/Family"
 import type { Selector } from "../types/Selector"
 import type { State } from "../types/State"
 import type { ColdSelectorCache, StoreData } from "../types/StoreData"
@@ -10,8 +9,6 @@ import { isAtomFamily } from "../utils/isAtomFamily"
 import { isPromiseLike } from "../utils/isPromiseLike"
 import { isFamilyAtom } from "../utils/isFamilyAtom"
 import { isSelector } from "../utils/isSelector"
-import { isSelectorFamily } from "../utils/isSelectorFamily"
-import { equal } from "./equal"
 import { initAtom } from "./initAtom"
 import { initSelector } from "./initSelector"
 import { propagateAtomUpdate } from "./propagateUpdatedAtoms"
@@ -148,7 +145,7 @@ export function getState<
     Value extends any,
     Args extends [any, ...any[]] = [any, ...any[]],
 >(
-    state: Atom<Value> | Selector<Value> | Family<Value, Args>,
+    state: State<Value, Args>,
     data: StoreData,
     initializedAtomsSet: Set<Atom<any>>,
     circularDependencySet?: WeakSet<Selector>,
@@ -281,15 +278,6 @@ export function getState<
         noteStateValueChanged(state, data)
         initializedAtomsSet.add(state)
         return data.values.get(state)
-    }
-    if (isSelectorFamily<Value, Args>(state)) {
-        // TODO: Impement more efficient way to solve this
-        const array = Array.from(state.__valdresSelectorFamilyMap.keys())
-        // @ts-ignore
-        if (equal(array, state._keyArray)) return state._keyArray
-        // @ts-ignore
-        state._keyArray = array
-        return array
     }
     throw new Error("Invalid object passed to get")
 }

@@ -1,16 +1,13 @@
 import type { Atom } from "../types/Atom"
-import type { Family } from "../types/Family"
 import type { State } from "../types/State"
 import type { StoreData } from "../types/StoreData"
 import type { Subscription } from "../types/Subscription"
 import { isAtom } from "../utils/isAtom"
 import { isAtomFamily } from "../utils/isAtomFamily"
-import { isFamily } from "../utils/isFamily"
 import { isFamilyAtom } from "../utils/isFamilyAtom"
 import { isGlobalAtom } from "../utils/isGlobalAtom"
 import { isPromiseLike } from "../utils/isPromiseLike"
 import { isSelector } from "../utils/isSelector"
-import { isSelectorFamily } from "../utils/isSelectorFamily"
 import { isReactive, resolveReactive } from "../utils/resolveReactive"
 import type { CacheMeta } from "../types/Atom"
 import { equal } from "./equal"
@@ -24,7 +21,7 @@ import { mountTransitiveDeps, onFirstDirectSubscriber } from "./mountAtom"
 import { addSubscriptionEqualCheck, unsubscribe } from "./unsubscribe"
 import { validateResolvedValue } from "./validateResolvedValue"
 
-const initSubscribers = <V>(state: State<V> | Family<V>, data: StoreData) => {
+const initSubscribers = <V>(state: State<V>, data: StoreData) => {
     const set = new Set<Subscription>()
     data.subscriptions.set(state, set)
     return set
@@ -327,15 +324,25 @@ export const installMaxAgeTimer = (state: Atom<any>, data: StoreData) => {
 }
 
 export const subscribe = <V>(
-    state: State<V> | Family<V>,
-    callback: (arg?: any) => void,
+    state: State<V>,
+    callback: (...args: any[]) => void,
     requireDeepEqualCheckBeforeCallback: boolean,
     data: StoreData,
 ) => {
+    // Classify once. Besides rejecting selector-family factory objects at the
+    // runtime boundary, this avoids repeating Object.hasOwn checks throughout
+    // the subscription setup hot path.
+    const atomState = isAtom(state)
+    const atomFamilyState = !atomState && isAtomFamily(state)
+    const selectorState =
+        !atomState && !atomFamilyState && isSelector(state)
+    if (!atomState && !atomFamilyState && !selectorState) {
+        throw new Error("Invalid object passed to sub")
+    }
     let parentUnsubscribe: undefined | (() => void)
     let dropDelegate: undefined | (() => void)
     let reDelegate: undefined | (() => void)
-    if (data.parent && (isAtom(state) || isAtomFamily(state))) {
+    if (data.parent && (atomState || atomFamilyState)) {
         /**
          * Getting here means that we are within a scope subscribing to an atom
          * (or a family, which always reads through). While the scope does not
@@ -354,7 +361,7 @@ export const subscribe = <V>(
             )
         // A family always reads through (no own value); an atom delegates only
         // while this scope does not shadow it.
-        if (isAtomFamily(state) || !data.values.has(state)) {
+        if (atomFamilyState || !data.values.has(state)) {
             parentUnsubscribe = delegateToParent()
         }
         // Idempotent: once the scope re-roots the subscription, the parent-side
@@ -377,11 +384,16 @@ export const subscribe = <V>(
                 parentUnsubscribe = delegateToParent()
             }
         }
-        callback = arg => {
-            dropDelegate!()
-            originalCallback(arg)
-        }
-    } else if (!data.values.has(state) && isAtom(state)) {
+        callback = atomFamilyState
+            ? (...args) => {
+                  dropDelegate!()
+                  originalCallback(...args)
+              }
+            : () => {
+                  dropDelegate!()
+                  originalCallback()
+              }
+    } else if (!data.values.has(state) && atomState) {
         const initializedAtomsSet = new Set<Atom>()
         initAtom(state, data, initializedAtomsSet)
         if (initializedAtomsSet.size) {
@@ -394,7 +406,7 @@ export const subscribe = <V>(
     // A selector may have a revision-validated cold cache. Read through
     // getState even on a cache hit so a stale dynamic dependency set is rebuilt
     // before the first subscriber promotes it into the live reverse graph.
-    if (isSelector(state)) {
+    if (selectorState) {
         const selectorHasValue = data.values.has(state)
         // With no value or dependency set there is nothing cold to validate.
         // Check this dominant fresh-subscription shape before touching the
@@ -416,12 +428,7 @@ export const subscribe = <V>(
         data.subscriptions.get(state) || initSubscribers(state, data)
 
     let subscription
-    if (isFamily(state)) {
-        if (isSelectorFamily(state)) {
-            throw new Error(
-                "Subscribe to selectorFammily is currently not supported",
-            )
-        }
+    if (atomFamilyState) {
         subscription = {
             callback,
             state,
@@ -459,12 +466,12 @@ export const subscribe = <V>(
             // overwrite the shadow on the next tick and double the work for
             // non-global maxAge atoms (which lack the refCount sharing that
             // installMaxAgeTimer uses for global atoms).
-            if (isAtom(state) && state.maxAge !== undefined && !data.parent) {
+            if (atomState && state.maxAge !== undefined && !data.parent) {
                 installMaxAgeTimer(state, data)
             }
             // First direct subscriber: bump liveness through the dep graph.
             // Selectors track this via stateDependencies; families have none.
-            if (!isFamily(state)) {
+            if (!atomFamilyState) {
                 // First direct subscriber is an ADDITIVE liveness change — the
                 // incremental walk is correct here, including through cycles (each
                 // live dependent is counted once; the prev===0 guard visits each

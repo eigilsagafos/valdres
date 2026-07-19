@@ -1,7 +1,6 @@
 import type { Atom } from "../types/Atom"
 import type { AtomFamily } from "../types/AtomFamily"
 import type { AtomFamilyAtom } from "../types/AtomFamilyAtom"
-import type { Family } from "../types/Family"
 import type { Selector } from "../types/Selector"
 import type { State } from "../types/State"
 import type { StoreData } from "../types/StoreData"
@@ -274,7 +273,7 @@ const addSetToSet = (fromSet: Set<any> | undefined, toSet: Set<any>) => {
 }
 
 const findClosestStoreWithAtomInitialized = (
-    atom: State | Family<any>,
+    atom: State,
     data: StoreData,
 ) => {
     if (!data.parent) return data
@@ -283,7 +282,7 @@ const findClosestStoreWithAtomInitialized = (
 }
 
 const findInClosestStore = (
-    state: State<any> | Family<any>,
+    state: State<any>,
     data: StoreData,
 ) => {
     const store = findClosestStoreWithAtomInitialized(state, data)
