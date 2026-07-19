@@ -52,5 +52,5 @@ Changesets. Any PR touching a publishable package needs `bunx changeset` committ
 
 ## Benchmarks
 
-- Benchmarks live in `packages/valdres/test/performance/*.bench.ts` (mitata via the `compare` / `measureOne` helpers in `bench-utils.ts`) and report to [Bencher](https://bencher.dev/perf/valdres) through `.github/workflows/bencher-{base,pr}.yml`. Bencher gates PRs on per-benchmark `latency` regressions vs `main`; the hosted perf page is the source of truth. The README's `BENCH` table and `docs/content/bench-summary.json` are committed snapshots auto-refreshed from Bencher — don't hand-edit.
+- Benchmarks live in `packages/valdres/test/performance/*.bench.ts` (mitata via the `compare` / `measureOne` helpers in `bench-utils.ts`) and report to [Bencher](https://bencher.dev/perf/valdres) through `.github/workflows/bencher-{base,pr}.yml`. PRs use a same-runner relative `latency` gate; `main` tracks median-of-three raw latency plus a pinned-Jotai runner-normalized measure for cumulative regressions. The hosted perf page is the source of truth. The README's `BENCH` table and `docs/content/bench-summary.json` are committed snapshots auto-refreshed from Bencher — don't hand-edit.
 - New perf work needs head-to-head comparisons against the relevant competitor (Jotai for core, Recoil/MiniSearch/etc. where applicable), not isolated numbers.
