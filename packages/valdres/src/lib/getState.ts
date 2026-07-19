@@ -142,7 +142,7 @@ export function getState<
     data: StoreData,
     initializedAtomsSet: Set<Atom>,
     circularDependencySet?: WeakSet<Selector>,
-): AtomFamilyAtom<Value, Args>[]
+): readonly AtomFamilyAtom<Value, Args>[]
 
 export function getState<
     Value extends any,

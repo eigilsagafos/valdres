@@ -35,17 +35,24 @@ const getSortedKeysByValues = <K, V extends number | string>(
     // res.__in
 }
 
-export const renderAtomFamilyIndex = (index: AtomFamilyIndex) => {
+type RenderedAtomFamilyIndex = readonly AtomFamilyAtom<any, any>[] & {
+    readonly __index: AtomFamilyIndex
+}
+
+export const renderAtomFamilyIndex = (
+    index: AtomFamilyIndex,
+): RenderedAtomFamilyIndex => {
     if (index.renderedArray) {
         return index.renderedArray
     }
     const renderedMap = getAtomFamilyRenderedMap(index)
-    const array = getSortedKeysByValues(renderedMap)
-    // @ts-ignore
-    array.__index = index
-    // @ts-ignore
-    index.renderedArray = array
-    return array
+    const snapshot = getSortedKeysByValues(renderedMap)
+    Object.defineProperty(snapshot, "__index", { value: index })
+    Object.freeze(snapshot)
+    // Object.defineProperty does not refine the array's static type.
+    const renderedSnapshot = snapshot as unknown as RenderedAtomFamilyIndex
+    index.renderedArray = renderedSnapshot
+    return renderedSnapshot
 }
 
 /** Whether this index itself owns a live member. Parent membership is
@@ -61,9 +68,7 @@ export type AtomFamilyIndex = {
     created: Map<AtomFamilyAtom<any, any>, number>
     deleted: Map<AtomFamilyAtom<any, any>, number>
     rendered: Map<AtomFamilyAtom<any, any>, number> | null
-    renderedArray:
-        | (AtomFamilyAtom<any, any>[] & { __index: AtomFamilyIndex })
-        | null
+    renderedArray: RenderedAtomFamilyIndex | null
     parentIndex?: AtomFamilyIndex
 }
 
