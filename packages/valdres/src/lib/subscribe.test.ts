@@ -185,43 +185,60 @@ describe("subscribe", () => {
         // expect(callbackResults).toStrictEqual([true, true])
     })
 
-    test("unsubscribe resets when needed", () => {
+    test("unsubscribe does not scan remaining subscribers", () => {
         const store1 = store()
         const atom1 = atom(1)
-        const selector1 = selector(get => get(atom1) * 2)
+        const unsubscribes = Array.from({ length: 100 }, () =>
+            store1.sub(atom1, () => {}, false),
+        )
+        const unsubscribeWithEqualityCheck = store1.sub(atom1, () => {})
 
+        let iterations = 0
+        const subscriptions = store1.data.subscriptions.get(atom1)!
+        Object.defineProperty(subscriptions, Symbol.iterator, {
+            value: function* () {
+                for (const value of Set.prototype.values.call(subscriptions)) {
+                    iterations++
+                    yield value
+                }
+            },
+        })
+        for (const unsubscribe of unsubscribes) unsubscribe()
+
+        expect(iterations).toBe(0)
+        unsubscribeWithEqualityCheck()
+    })
+
+    test("keeps public equality metadata accurate without scanning", () => {
+        const store1 = store()
+        const atom1 = atom(1)
+        const unsubscribeWithoutEqualityCheck = store1.sub(
+            atom1,
+            () => {},
+            false,
+        )
         expect(
-            store1.data.subscriptionsRequireEqualCheck.get(selector1),
+            store1.data.subscriptionsRequireEqualCheck.get(atom1),
         ).toBeUndefined()
+        const unsubscribeWithEqualityCheck1 = store1.sub(atom1, () => {})
+        const unsubscribeWithEqualityCheck2 = store1.sub(atom1, () => {})
 
-        // We subscribe but opt-out of equality check
-        const unsubscribe1 = store1.sub(selector1, () => {}, false)
         expect(
-            store1.data.subscriptionsRequireEqualCheck.get(selector1),
-        ).toBeUndefined()
+            [...store1.data.subscriptions.get(atom1)!].map(
+                subscription =>
+                    subscription.requireDeepEqualCheckBeforeCallback,
+            ),
+        ).toStrictEqual([false, true, true])
+        expect(store1.data.subscriptionsRequireEqualCheck.get(atom1)).toBe(true)
 
-        // We subscribe
-        const unsubscribe2 = store1.sub(selector1, () => {})
-        expect(store1.data.subscriptionsRequireEqualCheck.get(selector1)).toBe(
-            true,
-        )
+        unsubscribeWithoutEqualityCheck()
+        unsubscribeWithEqualityCheck1()
+        unsubscribeWithEqualityCheck1()
+        expect(store1.data.subscriptionsRequireEqualCheck.get(atom1)).toBe(true)
 
-        // We subscribe again and opt-out of equality check
-        const unsubscribe3 = store1.sub(selector1, () => {}, false)
-        expect(store1.data.subscriptionsRequireEqualCheck.get(selector1)).toBe(
-            true,
-        )
-
-        // We cancel one of the two opt-out callbacks
-        unsubscribe1()
-        expect(store1.data.subscriptionsRequireEqualCheck.get(selector1)).toBe(
-            true,
-        )
-
-        // We cancel the default subscription with equality check
-        unsubscribe2()
+        unsubscribeWithEqualityCheck2()
         expect(
-            store1.data.subscriptionsRequireEqualCheck.get(selector1),
+            store1.data.subscriptionsRequireEqualCheck.get(atom1),
         ).toBeUndefined()
     })
 

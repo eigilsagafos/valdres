@@ -13,6 +13,47 @@ import {
 } from "./mountAtom"
 import { queueOrphanCleanup } from "./queueOrphanCleanup"
 
+const equalCheckCount = Symbol()
+type CountedSubscriptions = Set<Subscription> & {
+    [equalCheckCount]?: number
+}
+
+// StoreData exposes the legacy boolean map publicly. Keep it accurate without
+// a survivor scan or a second state index: the subscription Set already has
+// exactly the lifetime and identity needed to own the private O(1) count.
+export const addSubscriptionEqualCheck = (
+    state: WeakKey,
+    subscriptions: Set<Subscription>,
+    data: StoreData,
+) => {
+    const countedSubscriptions = subscriptions as CountedSubscriptions
+    const count = countedSubscriptions[equalCheckCount] ?? 0
+    if (count === 0) {
+        countedSubscriptions[equalCheckCount] = 1
+        data.subscriptionsRequireEqualCheck.set(state, true)
+        return
+    }
+    countedSubscriptions[equalCheckCount] = count + 1
+}
+
+const removeSubscriptionEqualCheck = (
+    state: WeakKey,
+    subscriptions: Set<Subscription>,
+    data: StoreData,
+) => {
+    const countedSubscriptions = subscriptions as CountedSubscriptions
+    const count = countedSubscriptions[equalCheckCount]
+    if (count === undefined) return
+    if (count === 1) {
+        // Retain the Set's shape; the Set itself is discarded with its last
+        // subscriber, and a later equality subscription can reuse this slot.
+        countedSubscriptions[equalCheckCount] = 0
+        data.subscriptionsRequireEqualCheck.delete(state)
+        return
+    }
+    countedSubscriptions[equalCheckCount] = count - 1
+}
+
 export const unsubscribe = <V>(
     state: State<V> | Family<V>,
     subscription: Subscription,
@@ -20,18 +61,12 @@ export const unsubscribe = <V>(
 ) => {
     const subscribers = data.subscriptions.get(state)
     if (subscribers) {
-        subscribers.delete(subscription)
-        if (data.subscriptionsRequireEqualCheck.get(state)) {
-            let remove = true
-            for (const subscriber of subscribers) {
-                if (subscriber.requireDeepEqualCheckBeforeCallback) {
-                    remove = false
-                    break
-                }
-            }
-            if (remove) {
-                data.subscriptionsRequireEqualCheck.delete(state)
-            }
+        const wasSubscribed = subscribers.delete(subscription)
+        if (
+            wasSubscribed &&
+            subscription.requireDeepEqualCheckBeforeCallback
+        ) {
+            removeSubscriptionEqualCheck(state, subscribers, data)
         }
         if (subscribers.size === 0) {
             const maxAgeCleanup = getMaxAgeCleanup(data, state)

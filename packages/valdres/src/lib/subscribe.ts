@@ -21,7 +21,7 @@ import { propagateAtomUpdate } from "./propagateUpdatedAtoms"
 import { setValueInData } from "./setValueInData"
 import { setMaxAgeCleanup } from "./maxAgeCleanups"
 import { mountTransitiveDeps, onFirstDirectSubscriber } from "./mountAtom"
-import { unsubscribe } from "./unsubscribe"
+import { addSubscriptionEqualCheck, unsubscribe } from "./unsubscribe"
 import { validateResolvedValue } from "./validateResolvedValue"
 
 const initSubscribers = <V>(state: State<V> | Family<V>, data: StoreData) => {
@@ -483,11 +483,8 @@ export const subscribe = <V>(
         }
     }
 
-    if (
-        requireDeepEqualCheckBeforeCallback &&
-        data.subscriptionsRequireEqualCheck.get(state) !== true
-    ) {
-        data.subscriptionsRequireEqualCheck.set(state, true)
+    if (requireDeepEqualCheckBeforeCallback) {
+        addSubscriptionEqualCheck(state, subscribers, data)
     }
 
     return unsubscribeSubscription
