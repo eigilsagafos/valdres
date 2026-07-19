@@ -1,9 +1,16 @@
+import { readdir, unlink } from "node:fs/promises"
+import { join } from "node:path"
+
 const pkg = await Bun.file("package.json").json()
 const version = pkg.version
 
 export const buildOptions = {
-    entrypoints: ["./src/index.ts"],
+    entrypoints: ["./src/index.ts", "./src/adapter-internals.ts"],
     outdir: "./dist",
+    // The adapter-internals entrypoint must share the exact transaction module
+    // instance used by the public store bundle. Without splitting, Bun would
+    // duplicate commit registries and adapter commits would miss listeners.
+    splitting: true,
     external: ["./package.json"],
     packages: "external" as const,
     define: {
@@ -19,6 +26,31 @@ export const buildOptions = {
     },
 }
 
+/** Split builds emit content-hashed chunks. Remove prior JavaScript output so
+ * repeated local/release builds cannot publish unreachable stale chunks, while
+ * preserving declaration files produced by the independent type build. */
+export const removeStaleBuildJavaScript = async (outdir: string) => {
+    let entries
+    try {
+        entries = await readdir(outdir, { withFileTypes: true })
+    } catch (error) {
+        if ((error as { code?: string }).code === "ENOENT") return
+        throw error
+    }
+
+    await Promise.all(
+        entries
+            .filter(
+                entry =>
+                    entry.isFile() &&
+                    (entry.name.endsWith(".js") ||
+                        entry.name.endsWith(".js.map")),
+            )
+            .map(entry => unlink(join(outdir, entry.name))),
+    )
+}
+
 if (import.meta.main) {
+    await removeStaleBuildJavaScript(buildOptions.outdir)
     await Bun.build(buildOptions)
 }

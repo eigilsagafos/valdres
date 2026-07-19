@@ -1,6 +1,6 @@
 import type { Atom } from "../types/Atom"
 import type { StoreData } from "../types/StoreData"
-import { Transaction } from "./transaction"
+import { commitTransaction, TransactionContext } from "./transaction"
 
 export const resetAtom = <V>(
     atom: Atom<V>,
@@ -9,8 +9,8 @@ export const resetAtom = <V>(
     // Keep direct reset on the exact transaction write/commit path. Besides
     // preventing a second implementation from drifting, constructing the
     // transaction explicitly avoids the callback allocation of transaction().
-    const txn = new Transaction(data)
+    const txn = new TransactionContext(data)
     const value = txn.reset(atom)
-    txn.commit("reset")
+    commitTransaction(txn, "reset")
     return value
 }

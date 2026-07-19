@@ -65,13 +65,46 @@ import { noteStateValueChanged } from "./stateRevisions"
 /** One store's slot in a cross-scope commit. Collected root-first; written
  *  leaf-first (see commit) but notified root-first. */
 type CommitWrite = {
-    txn: Transaction
+    txn: TransactionContext
     data: StoreData
     updatedAtoms: Atom[]
     deleted: AtomFamilyAtom<any, any>[] | undefined
     unsetAtoms: Atom[] | undefined
     onSets: DeferredOnSet[]
 }
+
+const TRANSACTION_OPEN = 0
+const TRANSACTION_COMMITTING = 1
+const TRANSACTION_CLOSED = 2
+
+type TransactionState =
+    | typeof TRANSACTION_OPEN
+    | typeof TRANSACTION_COMMITTING
+    | typeof TRANSACTION_CLOSED
+
+const transactionStateName = (state: TransactionState) =>
+    state === TRANSACTION_OPEN
+        ? "open"
+        : state === TRANSACTION_COMMITTING
+          ? "committing"
+          : "closed"
+
+const throwTransactionStateError = (
+    state: TransactionState,
+    operation: string,
+): never => {
+    throw new Error(
+        `Cannot ${operation} transaction while it is ${transactionStateName(state)}`,
+    )
+}
+
+// Lifecycle controls are symbol-named so the object handed to a store.txn
+// callback has no runtime `commit`, `abort`, `execute`, or `data` escape hatch.
+// The adapter-only controller below this package boundary invokes them through
+// the module helpers exported at the end of this file.
+const EXECUTE_TRANSACTION = Symbol("executeTransaction")
+const COMMIT_TRANSACTION = Symbol("commitTransaction")
+const ABORT_TRANSACTION = Symbol("abortTransaction")
 
 // const findDependencies = (
 //     state: State,
@@ -101,15 +134,13 @@ const deleteAtomFamilyAtoms = (
     })
 }
 
-export class Transaction {
-    data: StoreData
-    parentTransaction: Transaction | undefined
-    dirty: boolean
-    /** Optional name from `store.txn(callback, name)`, surfaced on the
-     *  `store.onChange` meta for this commit. Only meaningful on the root
-     *  transaction (the one that commits). */
-    name: string | undefined
-    private _scopedTransactions: undefined | Map<string, Transaction>
+export class TransactionContext {
+    private readonly _data: StoreData
+    private _parentTransaction: TransactionContext | undefined
+    private _dirty = false
+    private readonly _name: string | undefined
+    private _state: TransactionState = TRANSACTION_OPEN
+    private _scopedTransactions: undefined | Map<string, TransactionContext>
     private _initializedAtomsSet: any
     private _deleteSet: any
     private _unsetSet: Set<Atom<any>> | undefined
@@ -129,17 +160,17 @@ export class Transaction {
     private _hasCommitEffects = false
     constructor(
         data: StoreData,
-        parentTransaction?: Transaction,
-        childTransaction?: Transaction,
+        parentTransaction?: TransactionContext,
+        childTransaction?: TransactionContext,
+        name?: string,
     ) {
-        this.data = data
-        this.parentTransaction = parentTransaction
-        this.dirty = false
-        this.name = undefined
+        this._data = data
+        this._parentTransaction = parentTransaction
+        this._name = name
         this._atomMap = new Map()
         if (childTransaction) {
             this._scopedTransactions = new Map([
-                [childTransaction.data.id, childTransaction],
+                [childTransaction._data.id, childTransaction],
             ])
         }
     }
@@ -148,16 +179,17 @@ export class Transaction {
         if (this._atomMap.has(state)) return true
         // An unset buffered at this level (and not superseded by a later set)
         // makes this scope provide no value: the committed shadow still sits in
-        // this.data.values until commit, so we must NOT read it — fall through
+        // this._data.values until commit, so we must NOT read it — fall through
         // to a parent transaction, or report "not here" so `get` reads through
         // the committed parent chain.
         if (this._unsetSet?.has(state)) {
-            return this.parentTransaction
-                ? this.parentTransaction.hasTxnOrData(state)
+            return this._parentTransaction
+                ? this._parentTransaction.hasTxnOrData(state)
                 : false
         }
-        if (this.data.values.has(state)) return true
-        if (this.parentTransaction) return this.parentTransaction.hasTxnOrData(state)
+        if (this._data.values.has(state)) return true
+        if (this._parentTransaction)
+            return this._parentTransaction.hasTxnOrData(state)
         return false
     }
 
@@ -166,19 +198,22 @@ export class Transaction {
             return this._atomMap.get(state)
         }
         if (this._unsetSet?.has(state)) {
-            return this.parentTransaction
-                ? this.parentTransaction.valueFromTxnOrData(state)
+            return this._parentTransaction
+                ? this._parentTransaction.valueFromTxnOrData(state)
                 : undefined
         }
-        if (this.data.values.has(state)) {
-            return this.data.values.get(state)
+        if (this._data.values.has(state)) {
+            return this._data.values.get(state)
         }
-        if (this.parentTransaction) {
-            return this.parentTransaction.valueFromTxnOrData(state)
+        if (this._parentTransaction) {
+            return this._parentTransaction.valueFromTxnOrData(state)
         }
     }
 
     get: GetValue = (state: State<any>) => {
+        if (this._state !== TRANSACTION_OPEN) {
+            throwTransactionStateError(this._state, "read from")
+        }
         if (isAtom(state) || isAtomFamily(state)) {
             if (this.hasTxnOrData(state)) {
                 const value = this.valueFromTxnOrData(state)
@@ -203,23 +238,27 @@ export class Transaction {
                 return value
             }
             // No txn level provides a value. If this level unset the atom, its
-            // committed value is still in this.data.values until commit, so we
+            // committed value is still in this._data.values until commit, so we
             // must NOT read it: read through the parent chain (scope) or compute
             // the atom's default (root) instead.
             if (this._unsetSet?.has(state)) {
-                return this.data.parent
-                    ? getState(state, this.data.parent, this.initializedAtomsSet)
+                return this._data.parent
+                    ? getState(
+                          state,
+                          this._data.parent,
+                          this.initializedAtomsSet,
+                      )
                     : getAtomInitValue(
                           state as Atom,
-                          this.data,
+                          this._data,
                           this.initializedAtomsSet,
                       )
             }
-            return getState(state, this.data, this.initializedAtomsSet)
+            return getState(state, this._data, this.initializedAtomsSet)
         } else if (isSelector(state)) {
-            if (this.dirty) {
+            if (this._dirty) {
                 this.selectorCache.clear()
-                this.dirty = false
+                this._dirty = false
             } else if (this.selectorCache.has(state)) {
                 // If the selector is cached and not dirty, return the cached value
                 return this.selectorCache.get(state)
@@ -227,7 +266,7 @@ export class Transaction {
 
             const res = evaluateSelectorValue(
                 state,
-                this.data,
+                this._data,
                 this.initializedAtomsSet,
                 this.get,
                 this.selectorCircularDependencySet,
@@ -241,6 +280,9 @@ export class Transaction {
     }
 
     set = <V>(atom: Atom<V>, value: SetAtomValue<V>): V => {
+        if (this._state !== TRANSACTION_OPEN) {
+            throwTransactionStateError(this._state, "write to")
+        }
         if (!isAtom(atom)) throw new Error("Not an atom")
         let resolved: V | PromiseLike<V>
         if (isFunction(value)) {
@@ -269,7 +311,7 @@ export class Transaction {
         // runs — the transaction stays atomic. Promise-like values are skipped
         // here and validated after settlement by coordinateAsyncWrite during the
         // commit path. This also covers stores using implicit batched txns.
-        resolved = validateSchema(atom, resolved, this.data)
+        resolved = validateSchema(atom, resolved, this._data)
         this._atomMap.set(atom, resolved)
         if (!this._hasCommitEffects && atom.onSet) {
             this._hasCommitEffects = true
@@ -283,8 +325,8 @@ export class Transaction {
         if (isFamilyAtom(atom)) {
             const ownFamilyValue = this._atomMap.has(atom.family)
                 ? this._atomMap.get(atom.family)
-                : this.data.values.has(atom.family)
-                  ? this.data.values.get(atom.family)
+                : this._data.values.has(atom.family)
+                  ? this._data.values.get(atom.family)
                   : undefined
             // A root (or already-materialized scope) that already owns this
             // member needs no family-index write at all. An inherited scoped
@@ -314,10 +356,13 @@ export class Transaction {
             | ((error: SchemaValidationError) => void)
             | undefined = undefined,
     ) => {
+        if (this._state !== TRANSACTION_OPEN) {
+            throwTransactionStateError(this._state, "write to")
+        }
         let ownFamilyValue = this._atomMap.has(family)
             ? this._atomMap.get(family)
-            : this.data.values.has(family)
-              ? this.data.values.get(family)
+            : this._data.values.has(family)
+              ? this._data.values.get(family)
               : undefined
         let index = ownFamilyValue?.__index
         let membershipChanged = false
@@ -345,10 +390,10 @@ export class Transaction {
             // supplies a per-entry handler so invalid members can be skipped
             // without giving up one grouped write per family.
             if (!onSchemaError) {
-                resolved = validateSchema(atom, resolved, this.data)
+                resolved = validateSchema(atom, resolved, this._data)
             } else {
                 try {
-                    resolved = validateSchema(atom, resolved, this.data)
+                    resolved = validateSchema(atom, resolved, this._data)
                 } catch (error) {
                     if (!(error instanceof SchemaValidationError)) throw error
                     onSchemaError(error)
@@ -383,6 +428,9 @@ export class Transaction {
     }
 
     del = (atom: AtomFamilyAtom<any, any>) => {
+        if (this._state !== TRANSACTION_OPEN) {
+            throwTransactionStateError(this._state, "write to")
+        }
         if (!this._atomMap.has(atom.family)) {
             // @ts-ignore
             this.cloneFamilyIntoTxn(atom.family)
@@ -391,7 +439,7 @@ export class Transaction {
         index.created.delete(atom)
         index.deleted.set(atom, performance.now())
         this.recursivelyUpdateAtomFamilyIndexes(atom.family)
-        if (this.data.values.has(atom)) {
+        if (this._data.values.has(atom)) {
             this.deleteSet.add(atom)
         }
         if (this._atomMap.has(atom)) {
@@ -401,6 +449,9 @@ export class Transaction {
     }
 
     unset = (atom: Atom) => {
+        if (this._state !== TRANSACTION_OPEN) {
+            throwTransactionStateError(this._state, "write to")
+        }
         if (!isAtom(atom)) throw new Error("unset() expects an atom.")
         // An unset in the same txn supersedes a set of the same atom — drop any
         // buffered write so the atom reverts (re-inherits on a scope / reverts to
@@ -423,37 +474,51 @@ export class Transaction {
         return unsetAtoms
     }
 
-    scope = (scopeId: string, callback: (txn: Transaction) => any) => {
-        if (this.data.scopes.has(scopeId)) {
-            // @ts-ignore
-            return this.scopedTransaction(scopeId).execute(callback, false)
+    scope = <Callback extends TransactionFn>(
+        scopeId: string,
+        callback: Callback,
+    ): ReturnType<Callback> => {
+        if (this._state !== TRANSACTION_OPEN) {
+            throwTransactionStateError(this._state, "open a scope on")
+        }
+        if (this._data.scopes.has(scopeId)) {
+            return this.scopedTransaction(scopeId)[EXECUTE_TRANSACTION](
+                callback,
+                false,
+            )
         } else {
             throw new Error(
-                `Scope '${scopeId}' not found. Registered scopes: ${[...this.data.scopes.keys()].join(", ")}`,
+                `Scope '${scopeId}' not found. Registered scopes: ${[...this._data.scopes.keys()].join(", ")}`,
             )
         }
     }
 
-    parentScope = (callback: (txn: Transaction) => any) => {
-        if (!this.parentTransaction) {
-            if (!this.data.parent) {
+    parentScope = <Callback extends TransactionFn>(
+        callback: Callback,
+    ): ReturnType<Callback> => {
+        if (this._state !== TRANSACTION_OPEN) {
+            throwTransactionStateError(this._state, "open a parent scope on")
+        }
+        if (!this._parentTransaction) {
+            if (!this._data.parent) {
                 throw new Error("Cannot access parentScope on root store")
             }
-            this.parentTransaction = new Transaction(
-                this.data.parent,
+            this._parentTransaction = new TransactionContext(
+                this._data.parent,
                 undefined,
                 this,
             )
         }
-        return this.parentTransaction.execute(callback, false)
+        return this._parentTransaction[EXECUTE_TRANSACTION](callback, false)
     }
 
-    // Generic like ResetAtom so a Transaction is structurally assignable to
-    // TransactionInterface (what `InitializeCallback` is typed against).
     reset = <V>(atom: Atom<V>): V | Promise<V> => {
+        if (this._state !== TRANSACTION_OPEN) {
+            throwTransactionStateError(this._state, "write to")
+        }
         const value = getAtomInitValue(
             atom,
-            this.data,
+            this._data,
             this.initializedAtomsSet,
         ) as V | Promise<V>
         this._atomMap.set(atom, value)
@@ -464,13 +529,17 @@ export class Transaction {
         this._unsetSet?.delete(atom)
         this.invalidateSelectorCache()
         return value
-    }
+    };
 
-    execute = <Callback extends TransactionFn>(
+    [EXECUTE_TRANSACTION]<Callback extends TransactionFn>(
         callback: Callback,
         autoCommit = true,
-    ): ReturnType<Callback> => {
-        if (this._selectorRuntime) this._selectorRuntime.readOverlayActive = true
+    ): ReturnType<Callback> {
+        if (this._state !== TRANSACTION_OPEN) {
+            throwTransactionStateError(this._state, "execute")
+        }
+        if (this._selectorRuntime)
+            this._selectorRuntime.readOverlayActive = true
         try {
             const result = callback(this) as ReturnType<Callback>
             if (isPromiseLike(result)) {
@@ -479,8 +548,17 @@ export class Transaction {
                 if (result instanceof Promise) result.catch(() => {})
                 throw new Error("Transaction callbacks must be synchronous")
             }
-            if (autoCommit) this.txnCommit()
+            if (autoCommit) this[COMMIT_TRANSACTION]()
             return result
+        } catch (error) {
+            // Only the outer store.txn owns the lifecycle. Nested scope
+            // callbacks share its working tree and let the outer callback
+            // decide whether a caught nested error should abort its own work.
+            const root = this._parentTransaction ? this.rootTransaction() : this
+            if (autoCommit && root._state === TRANSACTION_OPEN) {
+                root[ABORT_TRANSACTION]()
+            }
+            throw error
         } finally {
             if (this._selectorRuntime) {
                 this._selectorRuntime.readOverlayActive = false
@@ -488,15 +566,70 @@ export class Transaction {
         }
     }
 
-    private txnCommit = () => {
-        if (this.parentTransaction) {
-            this.parentTransaction.txnCommit()
-        } else {
-            this.commit()
+    [COMMIT_TRANSACTION](source?: StoreChangeSource): void {
+        const root = this._parentTransaction ? this.rootTransaction() : this
+        if (root._state !== TRANSACTION_OPEN) {
+            throwTransactionStateError(root._state, "commit")
+        }
+        // The overwhelmingly common single-store path changes two scalar
+        // fields and never calls or allocates a tree helper. Cross-scope
+        // transactions validate every child before changing any state.
+        if (root._scopedTransactions) {
+            root.assertScopedTreeOpen("commit")
+            root.setScopedTreeState(TRANSACTION_COMMITTING)
+        }
+        root._state = TRANSACTION_COMMITTING
+        try {
+            root.commitOpenTransaction(source)
+        } finally {
+            root._state = TRANSACTION_CLOSED
+            if (root._scopedTransactions) {
+                root.setScopedTreeState(TRANSACTION_CLOSED)
+            }
         }
     }
 
-    commit = (source?: StoreChangeSource) => {
+    [ABORT_TRANSACTION](): void {
+        const root = this._parentTransaction ? this.rootTransaction() : this
+        if (root._state !== TRANSACTION_OPEN) {
+            throwTransactionStateError(root._state, "abort")
+        }
+        if (root._scopedTransactions) {
+            root.assertScopedTreeOpen("abort")
+        }
+        root._state = TRANSACTION_CLOSED
+        if (root._scopedTransactions) {
+            root.setScopedTreeState(TRANSACTION_CLOSED)
+        }
+    }
+
+    private rootTransaction(): TransactionContext {
+        return this._parentTransaction
+            ? this._parentTransaction.rootTransaction()
+            : this
+    }
+
+    private assertScopedTreeOpen(operation: string): void {
+        if (this._scopedTransactions) {
+            for (const [, scopedTxn] of this._scopedTransactions) {
+                if (scopedTxn._state !== TRANSACTION_OPEN) {
+                    throwTransactionStateError(scopedTxn._state, operation)
+                }
+                scopedTxn.assertScopedTreeOpen(operation)
+            }
+        }
+    }
+
+    private setScopedTreeState(state: TransactionState): void {
+        if (this._scopedTransactions) {
+            for (const [, scopedTxn] of this._scopedTransactions) {
+                scopedTxn._state = state
+                scopedTxn.setScopedTreeState(state)
+            }
+        }
+    }
+
+    private commitOpenTransaction(source?: StoreChangeSource): void {
         // Commit boundary for store.onCommitEnd: listeners fire once, when the
         // outermost boundary closes — after every subscriber callback and after
         // the onChange flush below. The inner propagation passes also open
@@ -504,7 +637,8 @@ export class Transaction {
         // they just move the depth counter. With no listener anywhere this is a
         // single counter read, so the Bencher-gated txn hot path is unchanged.
         let commitEndRoot: StoreData | undefined
-        if (commitEndRegistry.count !== 0) commitEndRoot = beginCommit(this.data)
+        if (commitEndRegistry.count !== 0)
+            commitEndRoot = beginCommit(this._data)
         let succeeded = false
         try {
             // When nothing is watching, commit directly — no sink allocation, so
@@ -521,7 +655,7 @@ export class Transaction {
             // simply owns its own sink — no save/restore. Flush in `finally` so
             // observers still see the (already-applied) changes if a subscriber
             // throws during commit.
-            const sink = createChangeSink(this.name, source)
+            const sink = createChangeSink(this._name, source)
             try {
                 this.commitWork(sink)
             } catch (error) {
@@ -552,7 +686,7 @@ export class Transaction {
             if (!this._unsetSet?.size && !this._deleteSet?.size) {
                 setAtoms(
                     this._atomMap,
-                    this.data,
+                    this._data,
                     initializedAtomsSet,
                     false,
                     sink,
@@ -566,7 +700,7 @@ export class Transaction {
             const onSets: DeferredOnSet[] = []
             const updatedAtoms = writeAtoms(
                 this._atomMap,
-                this.data,
+                this._data,
                 initializedAtomsSet,
                 false,
                 onSets,
@@ -575,10 +709,10 @@ export class Transaction {
                 ? [...this._deleteSet]
                 : undefined
             if (this._deleteSet?.size) {
-                deleteAtomFamilyAtoms(this._deleteSet, this.data)
+                deleteAtomFamilyAtoms(this._deleteSet, this._data)
             }
             const unsetAtoms = this._unsetSet?.size
-                ? this.applyUnsets(this._unsetSet, this.data)
+                ? this.applyUnsets(this._unsetSet, this._data)
                 : []
 
             const errors = createCommitErrors()
@@ -591,7 +725,7 @@ export class Transaction {
                     ? createChangeSink(undefined, "set")
                     : undefined
             const commitRoots = globalSink
-                ? beginGlobalCommit(this.data, globalUpdates!)
+                ? beginGlobalCommit(this._data, globalUpdates!)
                 : []
             // Global peers historically surface as direct `set` changes and
             // report before the transaction origin.
@@ -614,7 +748,7 @@ export class Transaction {
                 try {
                     propagateAtomUpdate(
                         updatedAtoms,
-                        this.data,
+                        this._data,
                         false,
                         notify,
                         sink,
@@ -627,7 +761,7 @@ export class Transaction {
                 try {
                     propagateDeletedAtoms(
                         deleted,
-                        this.data,
+                        this._data,
                         undefined,
                         undefined,
                         undefined,
@@ -643,8 +777,8 @@ export class Transaction {
                     for (const atom of unsetAtoms) {
                         reportUnsetAtom(
                             atom,
-                            this.data,
-                            effectiveValueAfterUnset(atom, this.data),
+                            this._data,
+                            effectiveValueAfterUnset(atom, this._data),
                             sink,
                         )
                     }
@@ -652,7 +786,7 @@ export class Transaction {
                 try {
                     propagateAtomUpdate(
                         unsetAtoms,
-                        this.data,
+                        this._data,
                         false,
                         notify,
                         sink,
@@ -681,7 +815,7 @@ export class Transaction {
             // established last even when a callback threw.
             for (const atom of unsetAtoms) {
                 try {
-                    reDelegateScopeSubscriptions(atom, this.data)
+                    reDelegateScopeSubscriptions(atom, this._data)
                 } catch (error) {
                     recordCommitError(errors, error)
                 }
@@ -772,7 +906,7 @@ export class Transaction {
                 ? createChangeSink(undefined, "set")
                 : undefined
         const commitRoots = globalSink
-            ? beginGlobalCommit(this.data, globalUpdates!)
+            ? beginGlobalCommit(this._data, globalUpdates!)
             : []
         // Global fan-out retains its public direct-set metadata and precedes
         // the originating transaction's reports, as it did when fan-out lived
@@ -780,13 +914,7 @@ export class Transaction {
         if (globalUpdates) {
             for (const [data, atoms] of globalUpdates) {
                 try {
-                    propagateAtomUpdate(
-                        atoms,
-                        data,
-                        false,
-                        notify,
-                        globalSink,
-                    )
+                    propagateAtomUpdate(atoms, data, false, notify, globalSink)
                 } catch (error) {
                     recordCommitError(errors, error)
                 }
@@ -881,7 +1009,7 @@ export class Transaction {
     private collectStores = (plan: CommitWrite[]) => {
         plan.push({
             txn: this,
-            data: this.data,
+            data: this._data,
             updatedAtoms: [],
             deleted: undefined,
             unsetAtoms: undefined,
@@ -900,7 +1028,7 @@ export class Transaction {
     }
 
     private invalidateSelectorCache() {
-        if (!this.dirty) this.dirty = true
+        if (!this._dirty) this._dirty = true
     }
 
     private get selectorRuntime(): SelectorEvaluationRuntime {
@@ -934,11 +1062,11 @@ export class Transaction {
     private scopedTransaction(scopeId: string) {
         if (!this._scopedTransactions) this._scopedTransactions = new Map()
         if (!this._scopedTransactions.has(scopeId)) {
-            const scopedData = this.data.scopes.get(scopeId)!
-            const scopedTransaction = new Transaction(scopedData, this)
+            const scopedData = this._data.scopes.get(scopeId)!
+            const scopedTransaction = new TransactionContext(scopedData, this)
             this._scopedTransactions.set(scopeId, scopedTransaction)
         }
-        return this._scopedTransactions.get(scopeId)
+        return this._scopedTransactions.get(scopeId)!
     }
 
     private cloneFamilyIntoTxn(
@@ -947,16 +1075,16 @@ export class Transaction {
         parentIndex,
         moveUpIfParent = true,
     ): void {
-        if (moveUpIfParent && this.parentTransaction)
-            return this.parentTransaction.cloneFamilyIntoTxn(
+        if (moveUpIfParent && this._parentTransaction)
+            return this._parentTransaction.cloneFamilyIntoTxn(
                 family,
                 parentIndex,
                 moveUpIfParent,
             )
         const currentFamilyIndex = this._atomMap.has(family)
             ? this._atomMap.get(family).__index
-            : this.data.values.has(family)
-              ? this.data.values.get(family).__index
+            : this._data.values.has(family)
+              ? this._data.values.get(family).__index
               : (this.get(family) as any).__index
         // A scope that first materializes its OWN family index inside a txn must
         // build a CHILD index — empty created/deleted, linked to the parent via
@@ -979,9 +1107,9 @@ export class Transaction {
         // created/deleted in _atomMap — which must be preserved (cloned), not
         // reset to an empty child index.
         const scopeFirstMaterialization =
-            this.data.parent &&
+            this._data.parent &&
             !this._atomMap.has(family) &&
-            !this.data.values.has(family)
+            !this._data.values.has(family)
         let clonedIndex
         if (scopeFirstMaterialization) {
             // parentIndex is the parent transaction's working clone in a
@@ -1056,12 +1184,22 @@ export class Transaction {
     }
 }
 
+/** Adapter-internal lifecycle control. Public store.txn callbacks never receive
+ *  a context with a named commit method. */
+export const commitTransaction = (
+    txn: TransactionContext,
+    source?: StoreChangeSource,
+): void => txn[COMMIT_TRANSACTION](source)
+
+/** Adapter-internal rollback for manually controlled contexts. */
+export const abortTransaction = (txn: TransactionContext): void =>
+    txn[ABORT_TRANSACTION]()
+
 export const transaction = (
     callback: TransactionFn,
     data: StoreData,
     name?: string,
 ) => {
-    const txn = new Transaction(data)
-    txn.name = name
-    return txn.execute(callback)
+    const txn = new TransactionContext(data, undefined, undefined, name)
+    return txn[EXECUTE_TRANSACTION](callback)
 }
