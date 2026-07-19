@@ -21,6 +21,7 @@ import { setValueInData } from "./setValueInData"
 import { setMaxAgeCleanup } from "./maxAgeCleanups"
 import { mountTransitiveDeps, onFirstDirectSubscriber } from "./mountAtom"
 import { unsubscribe } from "./unsubscribe"
+import { validateResolvedValue } from "./validateResolvedValue"
 
 const initSubscribers = <V>(state: State<V> | Family<V>, data: StoreData) => {
     const set = new Set<Subscription>()
@@ -101,15 +102,65 @@ export const installMaxAgeTimer = (state: Atom<any>, data: StoreData) => {
         return elapsed >= getMaxAge() + getStaleIfError()
     }
 
-    const setAndPropagate = (atom: Atom, val: any) => {
+    const validateRevalidatedValue = (value: any): boolean => {
+        // Schema-less atoms are the dominant maxAge path. Keep them off the
+        // validation helper entirely; it would only rediscover this condition.
+        if (!state.schema) return true
+
+        // A global value is shared by every attached store. If validation is a
+        // per-atom override, one check is sufficient. Otherwise, validate when
+        // any attached store has opted in so the stores cannot diverge around
+        // one invalid refresh.
+        if (state.schemaValidation === false) return true
+        if (state.schemaValidation === true || !globalState) {
+            return validateResolvedValue(state, value, data)
+        }
+        for (const store of globalState.stores) {
+            if (store.schemaValidation) {
+                return validateResolvedValue(state, value, store)
+            }
+        }
+        return true
+    }
+
+    const writeRevalidatedValue = (
+        store: StoreData,
+        val: any,
+        valueIsPromise: boolean,
+        refreshedAt?: number,
+    ) => {
+        const currentValue = store.values.get(state)
+        // Avoid a second WeakMap lookup for the common defined-value case;
+        // `has` is only needed to distinguish a stored undefined from absence.
+        const hasCurrentValue =
+            currentValue !== undefined || store.values.has(state)
+        const areEqual =
+            hasCurrentValue &&
+            (valueIsPromise || isPromiseLike(currentValue)
+                ? currentValue === val
+                : state.equal(currentValue, val))
+        if (areEqual) {
+            // An equal successful refresh is still fresh. Preserve the
+            // canonical stored reference and subscriber silence, but move
+            // the lazy-revalidation timestamp forward so an unsubscribe
+            // followed by a read does not immediately fetch again.
+            if (refreshedAt !== undefined) {
+                store.lastValueWriteAt.set(state, refreshedAt)
+            }
+            return
+        }
+        setValueInData(state, val, store)
+        propagateAtomUpdate([state], store, false, undefined, "revalidate")
+    }
+
+    const setAndPropagate = (val: any, refreshedAt?: number) => {
+        const valueIsPromise = isPromiseLike(val)
         if (globalState) {
             for (const store of globalState.stores) {
-                setValueInData(atom, val, store)
-                propagateAtomUpdate([atom], store, false, undefined, "revalidate")
+                writeRevalidatedValue(store, val, valueIsPromise, refreshedAt)
             }
         } else {
-            setValueInData(atom, val, data)
-            propagateAtomUpdate([atom], data, false, undefined, "revalidate")
+            writeRevalidatedValue(data, val, valueIsPromise, refreshedAt)
         }
     }
 
@@ -143,9 +194,16 @@ export const installMaxAgeTimer = (state: Atom<any>, data: StoreData) => {
             const handleResolve = (resolved: any) => {
                 if (cancelled) return
                 revalidating = false
+                if (!validateRevalidatedValue(resolved)) {
+                    if (lastGoodValue !== NO_VALUE) {
+                        setAndPropagate(lastGoodValue)
+                    }
+                    updateMeta()
+                    return
+                }
                 lastSuccessTime = Date.now()
                 lastGoodValue = resolved
-                setAndPropagate(state, resolved)
+                setAndPropagate(resolved, lastSuccessTime)
                 updateMeta()
             }
 
@@ -156,9 +214,9 @@ export const installMaxAgeTimer = (state: Atom<any>, data: StoreData) => {
                     !isPastStaleIfErrorWindow() &&
                     lastGoodValue !== NO_VALUE
                 ) {
-                    setAndPropagate(state, lastGoodValue)
+                    setAndPropagate(lastGoodValue)
                 } else {
-                    setAndPropagate(state, value)
+                    setAndPropagate(value)
                 }
                 updateMeta()
             }
@@ -173,7 +231,7 @@ export const installMaxAgeTimer = (state: Atom<any>, data: StoreData) => {
                     timeoutRef = setTimeout(() => {
                         pendingTimeouts.delete(timeoutRef!)
                         if (cancelled || !revalidating) return
-                        setAndPropagate(state, value)
+                        setAndPropagate(value)
                     }, swr)
                     pendingTimeouts.add(timeoutRef)
                 }
@@ -196,13 +254,14 @@ export const installMaxAgeTimer = (state: Atom<any>, data: StoreData) => {
             } else {
                 // swr === 0: opt out of stale-while-revalidate; show
                 // pending promise immediately on revalidate.
-                setAndPropagate(state, value)
+                setAndPropagate(value)
                 value.then(handleResolve, handleReject)
             }
         } else {
+            if (!validateRevalidatedValue(value)) return
             lastSuccessTime = Date.now()
             lastGoodValue = value
-            setAndPropagate(state, value)
+            setAndPropagate(value, lastSuccessTime)
             updateMeta()
         }
     }
