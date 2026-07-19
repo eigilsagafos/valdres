@@ -53,22 +53,73 @@ import { validateSchema } from "./validateSchema"
 
 export { isSuspendError } from "./asyncDependencyTracking"
 
-// Static signal for known-sync selectors — avoids AbortController allocation.
-const neverAbortedSignal = new AbortController().signal
+/**
+ * The selector's public options object and its internal evaluation identity are
+ * the same allocation. Controller/lifecycle state stays in private fields, so
+ * making signals evaluation-local doesn't add a second object to the ordinary
+ * selector hot path. The controller itself remains lazy.
+ */
+class SelectorEvaluation implements SelectorEvaluationContext {
+    readonly #selector: Selector
+    readonly #data: StoreData
+    readonly #runtimeAbortControllers?: Map<Selector, AbortController>
+    #revoked = false
+    #preserveSignalOnRevoke = false
+    #abortController?: AbortController
 
-// Per-store options object reused whenever a selector evaluation needs no
-// live AbortController — i.e. known-sync selectors and selectors that don't
-// declare the options parameter. Carries the real `storeId` and a permanently
-// non-aborted `signal`. Cached per store so reuse costs one WeakMap lookup
-// instead of an allocation.
-const syncOptionsCache = new WeakMap<StoreData, { signal: AbortSignal; storeId: string }>()
-const getSyncOptions = (data: StoreData) => {
-    let cached = syncOptionsCache.get(data)
-    if (!cached) {
-        cached = { signal: neverAbortedSignal, storeId: data.id }
-        syncOptionsCache.set(data, cached)
+    declare asyncDeps?: Set<State>
+    declare asyncDependencyRevisions?: Map<State, number>
+
+    constructor(
+        selector: Selector,
+        data: StoreData,
+        runtimeAbortControllers?: Map<Selector, AbortController>,
+    ) {
+        this.#selector = selector
+        this.#data = data
+        this.#runtimeAbortControllers = runtimeAbortControllers
     }
-    return cached
+
+    get storeId() {
+        return this.#data.id
+    }
+
+    get revoked() {
+        return this.#revoked
+    }
+
+    get signal() {
+        let controller = this.#abortController
+        if (!controller) {
+            controller = new AbortController()
+            this.#abortController = controller
+            if (this.#revoked) {
+                if (!this.#preserveSignalOnRevoke) controller.abort()
+            } else if (!this.#preserveSignalOnRevoke) {
+                this.#abortControllers.set(this.#selector, controller)
+            }
+        }
+        return controller.signal
+    }
+
+    revoke() {
+        this.#revoked = true
+        if (!this.#preserveSignalOnRevoke && this.#abortController) {
+            this.#abortController.abort()
+            this.#abortControllers.delete(this.#selector)
+        }
+    }
+
+    preserveSignal() {
+        this.#preserveSignalOnRevoke = true
+        if (this.#abortController) {
+            this.#abortControllers.delete(this.#selector)
+        }
+    }
+
+    get #abortControllers() {
+        return this.#runtimeAbortControllers ?? this.#data.abortControllers
+    }
 }
 
 const rollbackFreshSelectorActivation = (
@@ -153,7 +204,7 @@ export type DepsChange = {
  * store. Transactions keep this state local so an aborted speculative read
  * cannot rewrite the store's dependency graph or publish an async result. */
 export type SelectorEvaluationRuntime = {
-    abortControllers: Map<Selector, AbortController | false>
+    abortControllers: Map<Selector, AbortController>
     latestEvalContext: Map<Selector, SelectorEvaluationContext>
     stateDependencies: Map<Selector, Set<State>>
     readOverlayActive: boolean
@@ -165,7 +216,6 @@ export type SelectorEvaluationRuntime = {
  * live reverse graph, so none of the cold/live mode branches are needed.
  * Keeping this code shape separate lets JavaScriptCore tier it like the
  * pre-cold-cache evaluator instead of compiling the larger mixed-mode path.
- * Getters that declare the options argument stay on the full evaluator below.
  */
 const evaluateLiveOnlySelector = <V>(
     selector: Selector<V>,
@@ -180,11 +230,8 @@ const evaluateLiveOnlySelector = <V>(
     let activatedDuringEvaluation: Selector | Selector[] | undefined
 
     const prevCtx = data.latestEvalContext.get(selector)
-    if (prevCtx) prevCtx.revoked = true
-    const evalCtx: SelectorEvaluationContext = {
-        revoked: false,
-        preserveSignalOnRevoke: false,
-    }
+    if (prevCtx) prevCtx.revoke()
+    const evalCtx = new SelectorEvaluation(selector, data)
     data.latestEvalContext.set(selector, evalCtx)
 
     if (circularDependencySet.has(selector)) {
@@ -250,7 +297,7 @@ const evaluateLiveOnlySelector = <V>(
                     throw new SuspendAndWaitForResolveError(value)
                 }
                 return value
-            }, getSyncOptions(data))
+            }, evalCtx)
         } catch (error) {
             if (error instanceof SuspendAndWaitForResolveError) {
                 result = error
@@ -338,7 +385,6 @@ export const evaluateSelector = <V>(
     runtime?: SelectorEvaluationRuntime,
 ) => {
     const stateDependencies = runtime?.stateDependencies ?? data.stateDependencies
-    const abortControllers = runtime?.abortControllers ?? data.abortControllers
     const currentDependencies = stateDependencies.get(selector)
     const tracksReverseEdges = !runtime && selectorGraphActive
     // A store that has never materialized a cold selector needs neither cache
@@ -365,11 +411,12 @@ export const evaluateSelector = <V>(
     // deferred get calls from old evaluations become read-only.
     const latestEvalContext = runtime?.latestEvalContext ?? data.latestEvalContext
     const prevCtx = latestEvalContext.get(selector)
-    if (prevCtx) prevCtx.revoked = true
-    const evalCtx: SelectorEvaluationContext = {
-        revoked: false,
-        preserveSignalOnRevoke: false,
-    }
+    if (prevCtx) prevCtx.revoke()
+    const evalCtx = new SelectorEvaluation(
+        selector,
+        data,
+        runtime?.abortControllers,
+    )
     latestEvalContext.set(selector, evalCtx)
 
     if (circularDependencySet.has(selector)) {
@@ -378,59 +425,6 @@ export const evaluateSelector = <V>(
     circularDependencySet.add(selector)
 
     try {
-        // Abort signal support: `options.signal` is a lazy getter that only
-        // allocates an AbortController when the selector body reads it. Most
-        // selectors don't, so first eval pays nothing extra. After eval,
-        // handleSelectorResult marks the entry as `false` for sync results,
-        // letting subsequent evaluations reuse a shared cached options object.
-        // For async results the controller stays, and re-evaluation aborts it.
-        let options: { signal: AbortSignal; storeId: string }
-        // Fast path for selectors that don't declare a second (options)
-        // parameter. `get.length < 2` is a heuristic for "doesn't use options",
-        // not a guarantee: it's true for `(get) => …`, but NOT for an options
-        // param written with a default value (`(get, opts = {})`) or as a rest
-        // param, and it can't see a body that reaches `arguments[1]`. In every
-        // such case the selector still receives a valid options object with the
-        // correct `storeId` — only `signal` is a permanently non-abortable
-        // placeholder. Selectors that need a live abort signal must declare
-        // options positionally or via destructuring (`(get, opts)`,
-        // `(get, { signal })`), which is arity 2 and takes the full path below.
-        // The fast path avoids the per-eval accessor-object allocation and the
-        // abortControllers WeakMap traffic for the common case.
-        if ((selector.get as (...args: any[]) => any).length < 2) {
-            options = getSyncOptions(data)
-        } else {
-            const prev = abortControllers.get(selector)
-            if (prev === false) {
-                // Known-sync selector — use cached options, no allocation
-                options = getSyncOptions(data)
-            } else {
-                if (prev) prev.abort()
-                let controller: AbortController | undefined
-                // Capture this eval's context so that if `signal` is read after
-                // the selector has already been superseded by a re-eval, we
-                // return a pre-aborted signal. This preserves abort semantics
-                // for selectors that touch `opts.signal` only after an await.
-                const myEvalCtx = evalCtx
-                options = {
-                    storeId: data.id,
-                    get signal() {
-                        if (!controller) {
-                            controller = new AbortController()
-                            if (myEvalCtx.revoked) {
-                                if (!myEvalCtx.preserveSignalOnRevoke) {
-                                    controller.abort()
-                                }
-                            } else {
-                                abortControllers.set(selector, controller)
-                            }
-                        }
-                        return controller.signal
-                    },
-                }
-            }
-        }
-
         let result
         try {
             // @ts-ignore, @ts-todo
@@ -554,7 +548,7 @@ export const evaluateSelector = <V>(
                     throw new SuspendAndWaitForResolveError(value)
 
                 return value
-            }, options)
+            }, evalCtx)
         } catch (error) {
             if (error instanceof SuspendAndWaitForResolveError) {
                 result = error
@@ -751,7 +745,12 @@ export const handleSelectorResult = <Value>(
         (selectorGraphActive ?? data.selectorGraphActive.has(selector))
     if (value instanceof SuspendAndWaitForResolveError) {
         if (runtime) {
-            runtime.abortControllers.delete(selector)
+            const evaluationContext = runtime.latestEvalContext.get(selector)
+            if (evaluationContext) {
+                evaluationContext.preserveSignal()
+            } else {
+                runtime.abortControllers.delete(selector)
+            }
             return value.promise
         }
         // The selector was suspended — it threw before completing, so no
@@ -759,9 +758,13 @@ export const handleSelectorResult = <Value>(
         // the AbortController so that when the dependency resolves and
         // propagation re-evaluates this selector, it won't spuriously
         // abort the signal.
-        data.abortControllers.delete(selector)
         const promise = value.promise
         const evaluationContext = data.latestEvalContext.get(selector)
+        if (evaluationContext) {
+            evaluationContext.preserveSignal()
+        } else {
+            data.abortControllers.delete(selector)
+        }
         promise.then(() => {
             // Dependency presence alone is not an evaluation identity: a stale
             // late `get` or a newer evaluation can recreate the selector's graph.
@@ -959,16 +962,6 @@ export const handleSelectorResult = <Value>(
         }
         return value
     } else {
-        // Sync result — mark as known-sync so subsequent evaluations skip
-        // AbortController allocation on the hot path. Only meaningful for
-        // selectors that read options (arity >= 2); arity-<2 selectors bypass
-        // the abortControllers path entirely, so don't pollute the map.
-        if ((selector.get as (...args: any[]) => any).length >= 2) {
-            ;(runtime?.abortControllers ?? data.abortControllers).set(
-                selector,
-                false,
-            )
-        }
         const validated = validateSchema(selector, value, data)
         // Transaction selector evaluation uses private dependency bookkeeping.
         // It must not refresh metadata for the committed value/graph.
@@ -997,8 +990,7 @@ const evaluateCommittedSelectorValue = <V>(
     try {
         value =
             selectorGraphActive &&
-            !data.coldSelectorCachesEnabled &&
-            (selector.get as (...args: any[]) => any).length < 2
+            !data.coldSelectorCachesEnabled
                 ? evaluateLiveOnlySelector(
                       selector,
                       data,

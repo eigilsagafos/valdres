@@ -43,8 +43,8 @@ export const cleanupOrphanedDeps = (state: State, data: StoreData) => {
                 // Unmount invalidates store ownership but intentionally keeps
                 // the public AbortSignal alive. Re-evaluation still aborts the
                 // superseded signal through evaluateSelector's normal path.
-                evaluationContext.preserveSignalOnRevoke = true
-                evaluationContext.revoked = true
+                evaluationContext.preserveSignal()
+                evaluationContext.revoke()
             }
             data.latestEvalContext.delete(selector)
 
