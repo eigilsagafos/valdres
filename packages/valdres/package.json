@@ -14,7 +14,7 @@
     "type": "module",
     "exports": {
         ".": "./src/index.ts",
-        "./adapter-internals": "./src/adapter-internals.ts"
+        "./adapter-internals/v1": "./src/adapter-internals/v1.ts"
     },
     "files": [
         "dist"

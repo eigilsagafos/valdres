@@ -1,4 +1,5 @@
 import { IS_PROD } from "../lib/IS_PROD"
+import { getStoreData } from "../lib/getStoreData"
 import { getNamedStateIndex } from "../lib/namedStateIndex"
 import { encodeWireValue } from "../lib/wireCodec"
 import type { DehydratedState } from "../types/DehydratedState"
@@ -41,7 +42,7 @@ import { isPromiseLike } from "./isPromiseLike"
  * const html = `<script>window.__STATE__ = ${JSON.stringify(payload)}</script>`
  */
 export const dehydrate = (store: Store): DehydratedState => {
-    const data = store.data
+    const data = getStoreData(store)
     if (data.parent) {
         throw new Error(
             "valdres: dehydrate(store) only supports root stores. Scoped " +

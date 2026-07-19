@@ -1,3 +1,3 @@
-import type { StoreData } from "./StoreData"
+import type { Store } from "./Store"
 
-export type AtomOnSet<Value = any> = (value: Value, store: StoreData) => void
+export type AtomOnSet<Value = any> = (value: Value, store: Store) => void

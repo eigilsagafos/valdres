@@ -1,3 +1,4 @@
+import { getStoreData } from "../src/lib/getStoreData"
 import { describe, test, expect, mock } from "bun:test"
 import { atom } from "../src/atom"
 import { selector } from "../src/selector"
@@ -76,7 +77,7 @@ describe("async selectors", () => {
         expect(await s.get(sel)).toBe(10)
         expect(s.get(sel)).toBe(10)
         expect(evaluations).toBe(1)
-        expect(s.data.stateDependents.get(base)).toBeUndefined()
+        expect(getStoreData(s).stateDependents.get(base)).toBeUndefined()
 
         s.set(base, 2)
         expect(evaluations).toBe(1)
@@ -173,7 +174,7 @@ describe("async selectors", () => {
         await wait(0)
 
         expect(s.get(sel)).toBe(2)
-        expect(s.data.stateDependents.get(base)).toContain(sel)
+        expect(getStoreData(s).stateDependents.get(base)).toContain(sel)
         unsubscribe()
     })
 
@@ -195,16 +196,14 @@ describe("async selectors", () => {
         await wait(0)
 
         expect(s.get(parent)).toBe(2)
-        expect(s.data.stateDependents.get(base)).toContain(child)
+        expect(getStoreData(s).stateDependents.get(base)).toContain(child)
         unsubscribe()
     })
 
     test("suspension resolves and derived selector re-evaluates", async () => {
         const s = store()
         let resolve!: (v: number) => void
-        const asyncSel = selector(
-            () => new Promise<number>(r => (resolve = r)),
-        )
+        const asyncSel = selector(() => new Promise<number>(r => (resolve = r)))
 
         // A sync selector that gets an async selector suspends during eval
         // and the Promise is stored

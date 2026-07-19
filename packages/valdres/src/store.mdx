@@ -12,12 +12,12 @@ description: Create and interact with a valdres store
     <code className="text-sm font-mono text-accent-500">
         store(id?: string, options?: StoreOptions): Store
     </code>
-  <div className="mt-3 text-xs text-zinc-500 dark:text-zinc-400">
+    <div className="mt-3 text-xs text-zinc-500 dark:text-zinc-400">
         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-zinc-200 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 font-medium mr-2">
             valdres
         </span>
-    Create a store to hold all state
-  </div>
+        Create a store to hold all state
+    </div>
 </div>
 
 Creates a store instance that holds all atom and selector state and manages
@@ -33,12 +33,25 @@ const myStore = store()
 const countAtom = atom(0)
 ```
 
+Every store exposes a stable, read-only `id`. Pass one explicitly when an
+adapter or application needs to address the store later; generated IDs are
+unique within the loaded Valdres instance.
+
+```ts
+const checkoutStore = store("checkout")
+checkoutStore.id // "checkout"
+```
+
+The Store facade exposes operations and identity, not its mutable graph/cache
+runtime. Framework and tooling integrations use Valdres' versioned adapter
+entrypoint instead of reaching through the public Store object.
+
 ## Options
 
-| Option | Type | Description |
+| Option             | Type      | Description                                                                                                                                            |
 | ------------------ | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `batchUpdates` | `boolean` | Batch sequential `set()` calls within a tick into one notification pass (recommended for React) |
-| `enumerable` | `boolean` | Retain values enumerably so `store.snapshot()` can list current state |
+| `batchUpdates`     | `boolean` | Batch sequential `set()` calls within a tick into one notification pass (recommended for React)                                                        |
+| `enumerable`       | `boolean` | Retain values enumerably so `store.snapshot()` can list current state                                                                                  |
 | `schemaValidation` | `boolean` | Validate atom/selector values against their `schema` (off by default). Inherited by scoped stores. See [Schema Validation](/guides/schema-validation). |
 
 ```ts
@@ -64,8 +77,8 @@ myStore.set(countAtom, prev => prev + 1)
 
 ## Subscribing to changes
 
-Subscription callbacks are notifications. Read the current value from the
-store when the callback runs:
+Subscription callbacks are notifications. Read the current value from the store
+when the callback runs:
 
 ```ts
 const unsub = myStore.sub(countAtom, () => {
@@ -93,7 +106,7 @@ callback that throws discards every staged write. Callback transactions
 intentionally expose no manual `commit()` or backing store `data`.
 
 <div className="callout callout-warning">
-  <div className="callout-title">Warning</div>
+    <div className="callout-title">Warning</div>
     Selectors that depend on atoms updated in a transaction will only recompute
     once, after all updates are applied. This is the intended behavior for
     performance.
@@ -140,10 +153,10 @@ globalStore.set(myAtom, 1)
 ```
 
 <div className="callout callout-warning">
-  <div className="callout-title">Do not dispose the global store</div>
-  `globalStore` is a process-wide singleton that global atoms use for
-  synchronization. Calling `globalStore.dispose()` throws. Only dispose stores
-  that your application creates with `store()`.
+    <div className="callout-title">Do not dispose the global store</div>
+    `globalStore` is a process-wide singleton that global atoms use for
+    synchronization. Calling `globalStore.dispose()` throws. Only dispose stores
+    that your application creates with `store()`.
 </div>
 
 Inside a component you normally read and write through your framework's

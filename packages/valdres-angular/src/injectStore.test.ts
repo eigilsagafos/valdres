@@ -13,7 +13,7 @@ describe("injectStore", () => {
                     provide: VALDRES_STORE,
                     useValue: {
                         current: storeInstance,
-                        stores: { [storeInstance.data.id]: storeInstance },
+                        stores: { [storeInstance.id]: storeInstance },
                     },
                 },
             ],
@@ -22,7 +22,7 @@ describe("injectStore", () => {
         runInInjectionContext(injector, () => {
             result = injectStore()
         })
-        expect(result.data.id).toBe(storeInstance.data.id)
+        expect(result.id).toBe(storeInstance.id)
     })
 
     test("throws without provider", () => {
@@ -44,8 +44,8 @@ describe("injectStore", () => {
                     useValue: {
                         current: childStore,
                         stores: {
-                            [parentStore.data.id]: parentStore,
-                            [childStore.data.id]: childStore,
+                            [parentStore.id]: parentStore,
+                            [childStore.id]: childStore,
                         },
                     },
                 },
@@ -53,9 +53,9 @@ describe("injectStore", () => {
         })
         let result: any
         runInInjectionContext(injector, () => {
-            result = injectStore(parentStore.data.id)
+            result = injectStore(parentStore.id)
         })
-        expect(result.data.id).toBe(parentStore.data.id)
+        expect(result.id).toBe(parentStore.id)
     })
 
     test("throws for unknown store id", () => {
@@ -66,7 +66,7 @@ describe("injectStore", () => {
                     provide: VALDRES_STORE,
                     useValue: {
                         current: storeInstance,
-                        stores: { [storeInstance.data.id]: storeInstance },
+                        stores: { [storeInstance.id]: storeInstance },
                     },
                 },
             ],

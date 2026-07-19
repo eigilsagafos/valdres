@@ -1,3 +1,4 @@
+import { getStoreData } from "./getStoreData"
 import { describe, expect, mock, test } from "bun:test"
 import { atom } from "../atom"
 import { atomFamily } from "../atomFamily"
@@ -153,7 +154,7 @@ describe("deferred commit: a subscriber that throws", () => {
             expect(root.get(span)).toBe("1:9")
             expect(root.get(Y)).toBe(9)
             // The deleted member's value is actually evicted from the store.
-            expect(root.data.values.has(m2)).toBe(false)
+            expect(getStoreData(root).values.has(m2)).toBe(false)
         })
 
         test("within one store's set, a throwing subscriber does not stop the others; txn throws the first error", () => {

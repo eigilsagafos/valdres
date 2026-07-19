@@ -1,4 +1,5 @@
 import { useContext, useEffect, useMemo, type ReactNode } from "react"
+import { storeAdapter } from "valdres/adapter-internals/v1"
 import { StoreContext } from "./lib/StoreContext"
 import type { InitializeCallback } from "./types/InitializeCallback"
 import { hydrate } from "./lib/hydrate"
@@ -22,7 +23,7 @@ export const Scope = ({
             "No <Provider> in tree. <Scope> has to be nested under a <Provider> to work",
         )
     const [scopedStore, scopeCreated] = useMemo(() => {
-        const scopeCreated = !currentStore.data.scopes?.has(scopeId)
+        const scopeCreated = !storeAdapter.hasScope(currentStore, scopeId)
         const store = currentStore.scope(scopeId)
         if (initialize) {
             store.txn(txn => {

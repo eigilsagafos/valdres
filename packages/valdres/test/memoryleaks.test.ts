@@ -1,3 +1,4 @@
+import { getStoreData } from "../src/lib/getStoreData"
 import { describe, expect, test } from "bun:test"
 import { LeakDetector } from "../../test/src/LeakDetector"
 import { store } from "../src/store"
@@ -57,7 +58,7 @@ describe("memory leaks (global atoms)", () => {
         const detector = (() => {
             const requestStore = store()
             requestStore.get(globalAtom)
-            const detector = new LeakDetector(requestStore.data)
+            const detector = new LeakDetector(getStoreData(requestStore))
             requestStore.dispose()
             return detector
         })()
@@ -90,7 +91,7 @@ describe("memory leaks (selectors)", () => {
             expect(s.get(coldSelector)).toBe(i + 1)
         }
 
-        expect(s.data.stateDependents.get(baseAtom)?.size ?? 0).toBe(0)
+        expect(getStoreData(s).stateDependents.get(baseAtom)?.size ?? 0).toBe(0)
     })
 
     test("unreferenced selector value is collected", async () => {
@@ -184,11 +185,13 @@ describe("memory leaks (subscriptions)", () => {
         const baseAtom = atom(1)
         const sel = selector(get => get(baseAtom) + 1)
         const unsub = s.sub(sel, () => {})
-        expect(s.data.stateDependents.get(baseAtom)?.has(sel)).toBe(true)
+        expect(getStoreData(s).stateDependents.get(baseAtom)?.has(sel)).toBe(
+            true,
+        )
         unsub()
         await Promise.resolve()
         // After unsubscribe, sel should be removed from baseAtom's dependents
-        const after = s.data.stateDependents.get(baseAtom)
+        const after = getStoreData(s).stateDependents.get(baseAtom)
         expect(!after || !after.has(sel)).toBe(true)
     })
 
@@ -198,14 +201,14 @@ describe("memory leaks (subscriptions)", () => {
         const sel = selector(get => get(baseAtom) + 1)
 
         const unsubscribe = s.sub(sel, () => {})
-        expect(s.data.stateDependents.get(baseAtom)).toContain(sel)
+        expect(getStoreData(s).stateDependents.get(baseAtom)).toContain(sel)
         unsubscribe()
         await Promise.resolve()
 
         expect(s.get(sel)).toBe(2)
-        expect(s.data.stateDependents.get(baseAtom)?.has(sel) ?? false).toBe(
-            false,
-        )
+        expect(
+            getStoreData(s).stateDependents.get(baseAtom)?.has(sel) ?? false,
+        ).toBe(false)
     })
 
     test("subscribing to a base atom does not promote its cold selectors", async () => {
@@ -214,15 +217,15 @@ describe("memory leaks (subscriptions)", () => {
         const sel = selector(get => get(baseAtom) + 1)
         // A cold evaluation records only the forward dependency.
         s.get(sel)
-        expect(s.data.stateDependents.get(baseAtom)?.has(sel) ?? false).toBe(
-            false,
-        )
+        expect(
+            getStoreData(s).stateDependents.get(baseAtom)?.has(sel) ?? false,
+        ).toBe(false)
         // Subscribe to the base atom, then unsubscribe
         const unsub = s.sub(baseAtom, () => {})
         unsub()
         await Promise.resolve()
         // The unrelated base subscription never inserted the selector.
-        const after = s.data.stateDependents.get(baseAtom)
+        const after = getStoreData(s).stateDependents.get(baseAtom)
         expect(!after || !after.has(sel)).toBe(true)
     })
 
@@ -234,16 +237,16 @@ describe("memory leaks (subscriptions)", () => {
         // A cold value stays cached for reference-stable reads. The cache lives
         // behind weak selector keys and has no strong reverse edge, so it does
         // not prevent an otherwise-unreferenced selector from being collected.
-        expect(s.data.values.has(sel)).toBe(true)
+        expect(getStoreData(s).values.has(sel)).toBe(true)
         // Subscribe to baseAtom (not sel) so propagation runs on change.
         const unsub = s.sub(baseAtom, () => {})
         s.set(baseAtom, 2)
         // The cached value remains, but no reverse edge made this write visit it.
         // Its dependency revision makes the next read re-evaluate lazily.
-        expect(s.data.values.has(sel)).toBe(true)
-        expect(s.data.stateDependents.get(baseAtom)?.has(sel) ?? false).toBe(
-            false,
-        )
+        expect(getStoreData(s).values.has(sel)).toBe(true)
+        expect(
+            getStoreData(s).stateDependents.get(baseAtom)?.has(sel) ?? false,
+        ).toBe(false)
         expect(s.get(sel)).toBe(3)
         unsub()
     })
@@ -254,20 +257,22 @@ describe("memory leaks (subscriptions)", () => {
         let resolve!: (v: number) => void
         const sel = selector(get => {
             get(baseAtom)
-            return new Promise<number>(r => { resolve = r })
+            return new Promise<number>(r => {
+                resolve = r
+            })
         })
         // Subscribe triggers evaluation; sel's value is the pending promise
         const unsub = s.sub(sel, () => {})
-        expect(s.data.values.has(sel)).toBe(true)
+        expect(getStoreData(s).values.has(sel)).toBe(true)
         // Unsubscribe — cleanup deletes value and deps
         unsub()
         await Promise.resolve()
-        expect(s.data.values.has(sel)).toBe(false)
-        expect(s.data.stateDependencies.has(sel)).toBe(false)
+        expect(getStoreData(s).values.has(sel)).toBe(false)
+        expect(getStoreData(s).stateDependencies.has(sel)).toBe(false)
         // Resolve the promise — handler should bail, not repopulate
         resolve(42)
         await Promise.resolve()
-        expect(s.data.values.has(sel)).toBe(false)
+        expect(getStoreData(s).values.has(sel)).toBe(false)
     })
 
     test("subscription callback is not retained after unsubscribe", async () => {
@@ -329,9 +334,9 @@ describe("memory leaks (atom families)", () => {
     })
 
     test("unreferenced family atom is collected from the weak identity cache", async () => {
-        const family = atomFamily<{ name: string }, [string]>(
-            (...args) => ({ name: args[0] }),
-        )
+        const family = atomFamily<{ name: string }, [string]>((...args) => ({
+            name: args[0],
+        }))
         let familyAtom: any = family("bob")
         const detector = new LeakDetector(familyAtom)
         familyAtom = undefined
@@ -387,10 +392,9 @@ describe("memory leaks (selector families)", () => {
 
     test("unreleased selector family entry is retained", async () => {
         const baseAtom = atom(1)
-        const family = selectorFamily<object, [number]>(
-            (...args) =>
-                get => ({ result: get(baseAtom) * args[0] }),
-        )
+        const family = selectorFamily<object, [number]>((...args) => get => ({
+            result: get(baseAtom) * args[0],
+        }))
         let sel: any = family(3)
         const detector = new LeakDetector(sel)
         sel = undefined
@@ -492,11 +496,11 @@ describe("memory leaks (scoped stores)", () => {
         const store1 = store()
         const scoped1: any = store1.scope("shared")
         const scoped2: any = store1.scope("shared")
-        expect(store1.data.scopes.has("shared")).toBe(true)
+        expect(getStoreData(store1).scopes.has("shared")).toBe(true)
         scoped1.detach()
-        expect(store1.data.scopes.has("shared")).toBe(true)
+        expect(getStoreData(store1).scopes.has("shared")).toBe(true)
         scoped2.detach()
-        expect(store1.data.scopes.has("shared")).toBe(false)
+        expect(getStoreData(store1).scopes.has("shared")).toBe(false)
     })
 })
 

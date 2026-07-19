@@ -1,3 +1,4 @@
+import { getStoreData } from "./lib/getStoreData"
 import { describe, test, expect, mock, spyOn } from "bun:test"
 import { atom } from "./atom"
 import { cacheMeta } from "./cacheMeta"
@@ -160,7 +161,10 @@ describe("atom", () => {
 
     // Helper: wrap async fn so selector() accepts it (it rejects AsyncFunction).
     // This mirrors what the jotai adapter does via wrapAsync.
-    const wrapAsync = (fn: Function) => (...args: any[]) => fn(...args)
+    const wrapAsync =
+        (fn: Function) =>
+        (...args: any[]) =>
+            fn(...args)
 
     test("async selector: deps read after await are not unmounted on re-evaluation", async () => {
         // When a sync dep changes, the async selector is re-evaluated.
@@ -172,23 +176,29 @@ describe("atom", () => {
         const atom1 = atom(0, {
             onMount: () => {
                 ++metrics1.mounted
-                return () => { ++metrics1.unmounted }
+                return () => {
+                    ++metrics1.unmounted
+                }
             },
         })
         const metrics2 = { mounted: 0, unmounted: 0 }
         const atom2 = atom(0, {
             onMount: () => {
                 ++metrics2.mounted
-                return () => { ++metrics2.unmounted }
+                return () => {
+                    ++metrics2.unmounted
+                }
             },
         })
 
         let resolve = () => {}
-        const asyncDerived = selector(wrapAsync(async get => {
-            get(atom1)
-            await new Promise<void>(r => (resolve = r))
-            get(atom2)
-        }))
+        const asyncDerived = selector(
+            wrapAsync(async get => {
+                get(atom1)
+                await new Promise<void>(r => (resolve = r))
+                get(atom2)
+            }),
+        )
 
         store1.sub(asyncDerived, () => {})
         resolve()
@@ -219,12 +229,14 @@ describe("atom", () => {
 
         let resolve = () => {}
         let readAtomA = true
-        const asyncDerived = selector(wrapAsync(async get => {
-            get(triggerAtom)
-            await new Promise<void>(r => (resolve = r))
-            if (readAtomA) return get(atomA)
-            return "static"
-        }))
+        const asyncDerived = selector(
+            wrapAsync(async get => {
+                get(triggerAtom)
+                await new Promise<void>(r => (resolve = r))
+                if (readAtomA) return get(atomA)
+                return "static"
+            }),
+        )
 
         const callback = mock(() => {})
         store1.sub(asyncDerived, callback)
@@ -262,12 +274,14 @@ describe("atom", () => {
 
         let resolve = () => {}
         let shouldReject = true
-        const asyncDerived = selector(wrapAsync(async get => {
-            get(atom1)
-            await new Promise<void>(r => (resolve = r))
-            if (shouldReject) throw new Error("boom")
-            return "ok"
-        }))
+        const asyncDerived = selector(
+            wrapAsync(async get => {
+                get(atom1)
+                await new Promise<void>(r => (resolve = r))
+                if (shouldReject) throw new Error("boom")
+                return "ok"
+            }),
+        )
 
         store1.sub(asyncDerived, () => {})
         resolve()
@@ -672,14 +686,15 @@ describe("atom", () => {
 
             const staleTimeoutIds: ReturnType<typeof setTimeout>[] = []
             const originalSetTimeout = globalThis.setTimeout
-            const setTimeoutSpy = spyOn(globalThis, "setTimeout").mockImplementation(
-                (...args: any[]) => {
-                    // @ts-ignore
-                    const id = originalSetTimeout(...args)
-                    if (args[1] === 200) staleTimeoutIds.push(id)
-                    return id
-                },
-            )
+            const setTimeoutSpy = spyOn(
+                globalThis,
+                "setTimeout",
+            ).mockImplementation((...args: any[]) => {
+                // @ts-ignore
+                const id = originalSetTimeout(...args)
+                if (args[1] === 200) staleTimeoutIds.push(id)
+                return id
+            })
             const clearedIds: Set<ReturnType<typeof setTimeout>> = new Set()
             const originalClearTimeout = globalThis.clearTimeout
             const clearTimeoutSpy = spyOn(
@@ -721,7 +736,10 @@ describe("atom", () => {
             // while already revalidating).
             const store1 = store()
             const source = mockAsyncSource<number>()
-            const atom1 = atom(source.fn, { maxAge: 15, staleWhileRevalidate: 200 })
+            const atom1 = atom(source.fn, {
+                maxAge: 15,
+                staleWhileRevalidate: 200,
+            })
 
             const unsubscribe = store1.sub(atom1, () => {})
 
@@ -1193,9 +1211,9 @@ describe("atom", () => {
         const immutableAtom = atom<Map<string, number>>()
         const mutableAtom = atom(new Map<string, number>(), { mutable: true })
 
-        expect(() =>
-            store1.set(immutableAtom, new Map([["one", 1]])),
-        ).toThrow(/Map.*\{ mutable: true \}/)
+        expect(() => store1.set(immutableAtom, new Map([["one", 1]]))).toThrow(
+            /Map.*\{ mutable: true \}/,
+        )
 
         const value = new Map([["one", 1]])
         expect(() => store1.set(mutableAtom, value)).not.toThrow()
@@ -1296,7 +1314,7 @@ describe("subscriber error handling", () => {
             // (We assert via the raw cache to avoid triggering lazy maxAge
             // revalidation on an unmounted read, which is unrelated to the
             // cleanup invariant being verified here.)
-            expect(store1.data.values.get(atom1)).toBe(1)
+            expect(getStoreData(store1).values.get(atom1)).toBe(1)
         }))
 
     test("stale init promise from before lazy eviction does not clobber new value", () =>
@@ -1317,7 +1335,9 @@ describe("subscriber error handling", () => {
 
             // First init kicks off promise#1.
             const firstPending = s.get(a)
-            expect(typeof (firstPending as Promise<string>).then).toBe("function")
+            expect(typeof (firstPending as Promise<string>).then).toBe(
+                "function",
+            )
             expect(calls).toBe(1)
 
             await clock.advance(50) // past maxAge

@@ -1,3 +1,4 @@
+import { getStoreData } from "./getStoreData"
 import { describe, test, expect, mock, spyOn } from "bun:test"
 import { store } from "../store"
 import { atom } from "../atom"
@@ -21,11 +22,11 @@ describe("deep nesting (4+ levels)", () => {
         // E reads through 4 ancestors back to A
         expect(E.get(greeting)).toBe("from-A")
         // No intermediate scope shadowed it, so the value lives only on A
-        expect(A.data.values.has(greeting)).toBe(true)
-        expect(B.data.values.has(greeting)).toBe(false)
-        expect(C.data.values.has(greeting)).toBe(false)
-        expect(D.data.values.has(greeting)).toBe(false)
-        expect(E.data.values.has(greeting)).toBe(false)
+        expect(getStoreData(A).values.has(greeting)).toBe(true)
+        expect(getStoreData(B).values.has(greeting)).toBe(false)
+        expect(getStoreData(C).values.has(greeting)).toBe(false)
+        expect(getStoreData(D).values.has(greeting)).toBe(false)
+        expect(getStoreData(E).values.has(greeting)).toBe(false)
     })
 
     test("shadow at mid-level masks ancestor for descendants only", () => {
@@ -375,8 +376,8 @@ describe("subscribe / unsubscribe / resubscribe across scopes", () => {
         B.sub(a, cb)
 
         // Until B writes, B's subscription is registered up at A
-        expect(A.data.subscriptions.get(a)?.size).toBe(1)
-        expect(B.data.subscriptions.get(a)?.size).toBe(1)
+        expect(getStoreData(A).subscriptions.get(a)?.size).toBe(1)
+        expect(getStoreData(B).subscriptions.get(a)?.size).toBe(1)
 
         // Root write notifies B's callback through the delegated subscription
         A.set(a, "from-A")
@@ -438,7 +439,7 @@ describe("scope set pins even when value equals the inherited value", () => {
 
         // B pins a=2 — the SAME value it currently inherits from A's default.
         B.set(a, 2)
-        expect(B.data.values.has(a)).toBe(true) // shadow established
+        expect(getStoreData(B).values.has(a)).toBe(true) // shadow established
 
         A.set(a, 11)
         expect(A.get(a)).toBe(11)
@@ -453,7 +454,7 @@ describe("scope set pins even when value equals the inherited value", () => {
         const cb = mock(() => {})
         B.sub(a, cb)
         // Until B writes, B's subscription is delegated up at A.
-        expect(A.data.subscriptions.get(a)?.size).toBe(1)
+        expect(getStoreData(A).subscriptions.get(a)?.size).toBe(1)
 
         B.set(a, 2) // equal to inherited — visible value unchanged
         expect(cb).toHaveBeenCalledTimes(0) // no notification for an unchanged value
@@ -539,9 +540,9 @@ describe("scope set pins even when value equals the inherited value", () => {
         const A = store()
         const B = A.scope("B")
         B.set(a, 4) // equal-value pin → shadow established
-        expect(B.data.values.has(a)).toBe(true)
+        expect(getStoreData(B).values.has(a)).toBe(true)
         B.unset(a) // remove the shadow → re-inherit
-        expect(B.data.values.has(a)).toBe(false)
+        expect(getStoreData(B).values.has(a)).toBe(false)
         A.set(a, 88)
         expect(B.get(a)).toBe(88) // follows root again
     })
@@ -595,7 +596,7 @@ describe("maxAge interaction with scopes", () => {
 
         const B = A.scope("B")
         B.set(a, 999)
-        expect(B.data.values.get(a)).toBe(999)
+        expect(getStoreData(B).values.get(a)).toBe(999)
 
         const bUnsub = B.sub(a, () => {})
 
@@ -603,7 +604,7 @@ describe("maxAge interaction with scopes", () => {
         bUnsub()
 
         // B's shadow survived — no scope-local timer overwrote it.
-        expect(B.data.values.get(a)).toBe(999)
+        expect(getStoreData(B).values.get(a)).toBe(999)
         expect(B.get(a)).toBe(999)
         // defaultValue() ran only during set() initialization (to read the
         // prior value), not from any scope-local revalidation tick.
@@ -669,9 +670,9 @@ describe("batchUpdates and scopes", () => {
         const B = A.scope("B")
         const C = B.scope("C")
 
-        expect(A.data.batchUpdates).toBe(true)
-        expect(B.data.batchUpdates).toBe(true)
-        expect(C.data.batchUpdates).toBe(true)
+        expect(getStoreData(A).batchUpdates).toBe(true)
+        expect(getStoreData(B).batchUpdates).toBe(true)
+        expect(getStoreData(C).batchUpdates).toBe(true)
     })
 
     test("batched scope set is observable inside the same microtask via get", async () => {
@@ -707,8 +708,8 @@ describe("batchUpdates and scopes", () => {
         const A = store("A")
         const B = A.scope("B")
 
-        expect(A.data.batchUpdates).toBeUndefined()
-        expect(B.data.batchUpdates).toBeUndefined()
+        expect(getStoreData(A).batchUpdates).toBeUndefined()
+        expect(getStoreData(B).batchUpdates).toBeUndefined()
 
         const a = atom(0)
         const cb = mock(() => {})
@@ -730,7 +731,7 @@ describe("regression: contract guards", () => {
     test("trackScopeValue throws a clear error when called on a root store", () => {
         const rootStore = store()
         const a = atom(1)
-        expect(() => trackScopeValue(a, rootStore.data)).toThrow(
+        expect(() => trackScopeValue(a, getStoreData(rootStore))).toThrow(
             "trackScopeValue called on a root store",
         )
     })
@@ -771,7 +772,7 @@ describe("regression: maxAge: 0 is a valid TTL", () => {
             expect(setIntervalSpy.mock.calls.length).toBe(before + 1)
         } finally {
             unsub()
-            a.detach(s.data)
+            a.detach(getStoreData(s))
             setIntervalSpy.mockRestore()
         }
     })

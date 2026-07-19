@@ -1,16 +1,32 @@
 import { describe, expect, test } from "bun:test"
 import { atom } from "../atom"
 import { atomFamily } from "../atomFamily"
-import { Transaction } from "../adapter-internals"
+import { Transaction, storeAdapter } from "../adapter-internals/v1"
 import { StoreDisposedError } from "../errors/StoreDisposedError"
 import { selector } from "../selector"
 import { store } from "../store"
 
 describe("adapter transaction lifecycle", () => {
+    test("exposes versioned capabilities without StoreData", () => {
+        const root = store({ batchUpdates: true, enumerable: true })
+
+        expect(storeAdapter.isBatching(root)).toBe(true)
+        expect(storeAdapter.isEnumerable(root)).toBe(true)
+        expect(storeAdapter.hasScope(root, "child")).toBe(false)
+
+        const child = root.scope("child")
+        child.scope("grandchild")
+
+        expect(storeAdapter.hasScope(root, "child")).toBe(true)
+        expect(storeAdapter.hasScopePath(root, ["child", "grandchild"])).toBe(
+            true,
+        )
+    })
+
     test("commit is terminal", () => {
         const store1 = store()
         const atom1 = atom(1)
-        const txn = new Transaction(store1.data)
+        const txn = new Transaction(store1)
 
         txn.set(atom1, 2)
         txn.commit()
@@ -27,7 +43,7 @@ describe("adapter transaction lifecycle", () => {
     test("abort discards staged writes and is terminal", () => {
         const store1 = store()
         const atom1 = atom(1)
-        const txn = new Transaction(store1.data)
+        const txn = new Transaction(store1)
 
         txn.set(atom1, 2)
         txn.abort()
@@ -47,7 +63,7 @@ describe("adapter transaction lifecycle", () => {
         const atom1 = atom(1)
         const family = atomFamily(0)
         const member = family("member")
-        const txn = new Transaction(store1.data)
+        const txn = new Transaction(store1)
         txn.commit()
 
         const operations = [
@@ -73,7 +89,7 @@ describe("adapter transaction lifecycle", () => {
         const unsubscribe = store1.onChange((_changes, meta) =>
             sources.push(meta.source),
         )
-        const txn = new Transaction(store1.data)
+        const txn = new Transaction(store1)
 
         txn.set(atom1, 2)
         txn.commit("reset")
@@ -90,7 +106,7 @@ describe("adapter transaction lifecycle", () => {
             signal = options.signal
             return pending
         })
-        const txn = new Transaction(store1.data)
+        const txn = new Transaction(store1)
 
         txn.get(selected)
         expect(signal.aborted).toBe(false)
@@ -112,7 +128,7 @@ describe("adapter transaction lifecycle", () => {
             signal = options.signal
             return pending
         })
-        const txn = new Transaction(root.data)
+        const txn = new Transaction(root)
 
         txn.scope("child", scopedTxn => {
             childTxn = scopedTxn

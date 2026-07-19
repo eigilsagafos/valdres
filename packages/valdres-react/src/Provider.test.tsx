@@ -45,13 +45,13 @@ describe("Provider", () => {
                 ),
             },
         )
-        expect(result.current.data.id).toBe("C")
+        expect(result.current.id).toBe("C")
         rerender("A")
-        expect(result.current.data.id).toBe("A")
+        expect(result.current.id).toBe("A")
         rerender("B")
-        expect(result.current.data.id).toBe("B")
+        expect(result.current.id).toBe("B")
         rerender("C")
-        expect(result.current.data.id).toBe("C")
+        expect(result.current.id).toBe("C")
     })
 
     test("global atom works as expected when initializing store", () => {

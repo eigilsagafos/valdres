@@ -1,3 +1,4 @@
+import { getStoreData } from "./getStoreData"
 import { expect, test } from "bun:test"
 import { atom } from "../atom"
 import { selector } from "../selector"
@@ -21,7 +22,9 @@ test("a dependency read twice does not mask a removed dependency", () => {
     s.sub(root, () => {}, false)
     s.set(useB, false)
 
-    expect(s.data.stateDependencies.get(root)).not.toContain(b)
-    expect(s.data.stateDependents.get(b) ?? new Set()).not.toContain(root)
-    expect(s.data.liveDependentCount.get(b) ?? 0).toBe(0)
+    expect(getStoreData(s).stateDependencies.get(root)).not.toContain(b)
+    expect(getStoreData(s).stateDependents.get(b) ?? new Set()).not.toContain(
+        root,
+    )
+    expect(getStoreData(s).liveDependentCount.get(b) ?? 0).toBe(0)
 })

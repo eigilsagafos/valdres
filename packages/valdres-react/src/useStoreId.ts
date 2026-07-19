@@ -8,5 +8,5 @@ export const useStoreId = (): string => {
             "No valdres store found. Make sure you wrap your code in a <Provider>",
         )
 
-    return currentStore.data.id
+    return currentStore.id
 }

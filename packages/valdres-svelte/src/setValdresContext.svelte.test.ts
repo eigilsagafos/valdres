@@ -1,6 +1,13 @@
 import { describe, test, expect, spyOn, mock } from "bun:test"
 import { mount, unmount } from "svelte"
-import { atom, dehydrate, store, type DehydratedState, type Store } from "valdres"
+import {
+    atom,
+    dehydrate,
+    store,
+    type DehydratedState,
+    type Store,
+} from "valdres"
+import { storeAdapter } from "valdres/adapter-internals/v1"
 import { z } from "zod"
 import SetupProbe from "../test/components/SetupProbe.svelte"
 
@@ -19,7 +26,7 @@ describe("setValdresContext", () => {
     test("no-arg creates a batched store per tree", () => {
         const s = mountProbe()
         expect(s).toBeDefined()
-        expect(s.data.batchUpdates).toBe(true)
+        expect(storeAdapter.isBatching(s)).toBe(true)
     })
 
     test("adopts a passed store", () => {

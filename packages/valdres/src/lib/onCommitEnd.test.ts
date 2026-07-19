@@ -1,3 +1,4 @@
+import { getStoreData } from "./getStoreData"
 import { describe, expect, mock, test } from "bun:test"
 import { atom } from "../atom"
 import { atomFamily } from "../atomFamily"
@@ -184,10 +185,7 @@ describe("store.onCommitEnd", () => {
                 txn.scope("ce-s3", scopedTxn => scopedTxn.set(b, 2))
             })
             // both subscribers first, then each listener exactly once
-            expect(events.slice(0, 2).sort()).toEqual([
-                "sub-root",
-                "sub-scope",
-            ])
+            expect(events.slice(0, 2).sort()).toEqual(["sub-root", "sub-scope"])
             expect(events.slice(2).sort()).toEqual(["end-root", "end-scope"])
             unsubRoot()
             unsubScoped()
@@ -201,14 +199,14 @@ describe("store.onCommitEnd", () => {
             const subscriberDepths: number[] = []
             root.get(value)
             const unsubValue = scoped.sub(value, () => {
-                subscriberDepths.push(root.data.commitDepth ?? 0)
+                subscriberDepths.push(getStoreData(root).commitDepth ?? 0)
             })
             const unsubCommit = root.onCommitEnd(() => {})
 
             scoped.set(value, 1)
 
             expect(subscriberDepths).toEqual([1])
-            expect(root.data.commitDepth).toBe(0)
+            expect(getStoreData(root).commitDepth).toBe(0)
             unsubValue()
             unsubCommit()
             scoped.detach()
@@ -294,7 +292,7 @@ describe("store.onCommitEnd", () => {
         const subscriberDepths: number[] = []
         const unsubSelector = store1.sub(asyncValue, () => {
             events.push("subscriber")
-            subscriberDepths.push(store1.data.commitDepth ?? 0)
+            subscriberDepths.push(getStoreData(store1).commitDepth ?? 0)
         })
         const unsubChange = store1.onChange(() => events.push("onChange"), {
             atoms: false,

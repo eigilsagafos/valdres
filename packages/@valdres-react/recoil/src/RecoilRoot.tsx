@@ -20,12 +20,15 @@ export const RecoilRoot: typeof RecoilRoot_original = ({
         const originalSet = store.set
         store.set = ((state: any, ...args: any[]) => {
             if (isSelector(state)) {
-                return (state as any).set(store.set, store.get, store.reset, ...args)
+                return (state as any).set(
+                    store.set,
+                    store.get,
+                    store.reset,
+                    ...args,
+                )
             }
             return (originalSet as (...a: any[]) => any)(state, ...args)
         }) as any
-        ;(store.data as any).storeRef = store
-
         if (initializeState) {
             store.txn(({ set, reset }) => {
                 initializeState({

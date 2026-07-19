@@ -1,5 +1,6 @@
 import type { Atom } from "../types/Atom"
 import type { AtomFamilyAtom } from "../types/AtomFamilyAtom"
+import type { InternalAtom } from "../types/InternalAtom"
 import type { StoreData } from "../types/StoreData"
 import { isPromiseLike } from "../utils/isPromiseLike"
 import { isSelector } from "../utils/isSelector"
@@ -133,8 +134,9 @@ export const initAtom = <
     // being the registry's source of truth, this keeps unnamed atoms on Bun's
     // original property-access shape for subsequent hot reads.
     trackNamedState(atom, data)
-    if (atom.onInit)
-        atom.onInit((newVal: Value) => {
+    const onInit = (atom as InternalAtom<Value>).onInit
+    if (onInit)
+        onInit((newVal: Value) => {
             if (isStoreDisposed(data)) return
             value = newVal
             setAtom(atom, newVal, data, true)

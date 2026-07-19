@@ -39,9 +39,7 @@ export interface PanableComponentArguments {
 const useInitPanableConfig = config => {
     const store = useStore()
     useMemo(() => {
-        if (store.data.values.get(configAtom) === undefined) {
-            store.data.values.set(configAtom, config)
-        }
+        store.set(configAtom, config)
 
         if (config?.defaultZoom) {
             store.set(scaleAtom, config.defaultZoom)
@@ -90,10 +88,13 @@ export const Panable = ({
         defaultOffset,
     })
 
-    const mouseMove = useCallback((e: MouseEvent) => {
-        e.stopPropagation()
-        onMouseMove(e, store)
-    }, [store])
+    const mouseMove = useCallback(
+        (e: MouseEvent) => {
+            e.stopPropagation()
+            onMouseMove(e, store)
+        },
+        [store],
+    )
 
     const touchMove = useCallback((e: TouchEvent) => {
         e.preventDefault()

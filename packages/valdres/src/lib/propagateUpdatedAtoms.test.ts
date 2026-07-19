@@ -1,3 +1,4 @@
+import { getStoreData } from "./getStoreData"
 import { test, expect, mock, describe } from "bun:test"
 import { store } from "../store"
 import { atom } from "../atom"
@@ -206,11 +207,11 @@ describe("scopeValueIndex", () => {
         affected.sub(derived, callback)
         for (let i = 0; i < 100; i++) rootStore.scope(`idle-${i}`)
 
-        expect(rootStore.data.inheritedDependencyBranches.get(source)).toEqual(
-            new Set([affected.data]),
-        )
+        expect(
+            getStoreData(rootStore).inheritedDependencyBranches.get(source),
+        ).toEqual(new Set([getStoreData(affected)]))
 
-        const scopes = new Map(rootStore.data.scopes)
+        const scopes = new Map(getStoreData(rootStore).scopes)
         const entries = [...scopes.entries()]
         let visited = 0
         function* countScopes() {
@@ -220,7 +221,7 @@ describe("scopeValueIndex", () => {
             }
         }
         scopes[Symbol.iterator] = countScopes
-        rootStore.data.scopes = scopes
+        getStoreData(rootStore).scopes = scopes
 
         rootStore.set(source, 1)
 
@@ -238,32 +239,32 @@ describe("scopeValueIndex", () => {
         const callback = mock(() => {})
         leaf.sub(derived, callback)
 
-        expect(rootStore.data.inheritedDependencyBranches.get(source)).toEqual(
-            new Set([middle.data]),
-        )
-        expect(middle.data.inheritedDependencyBranches.get(source)).toEqual(
-            new Set([leaf.data]),
-        )
+        expect(
+            getStoreData(rootStore).inheritedDependencyBranches.get(source),
+        ).toEqual(new Set([getStoreData(middle)]))
+        expect(
+            getStoreData(middle).inheritedDependencyBranches.get(source),
+        ).toEqual(new Set([getStoreData(leaf)]))
 
         middle.set(source, 10)
         expect(
-            rootStore.data.inheritedDependencyBranches.get(source),
+            getStoreData(rootStore).inheritedDependencyBranches.get(source),
         ).toBeUndefined()
-        expect(middle.data.inheritedDependencyBranches.get(source)).toEqual(
-            new Set([leaf.data]),
-        )
+        expect(
+            getStoreData(middle).inheritedDependencyBranches.get(source),
+        ).toEqual(new Set([getStoreData(leaf)]))
 
         middle.unset(source)
-        expect(rootStore.data.inheritedDependencyBranches.get(source)).toEqual(
-            new Set([middle.data]),
-        )
+        expect(
+            getStoreData(rootStore).inheritedDependencyBranches.get(source),
+        ).toEqual(new Set([getStoreData(middle)]))
 
         leaf.detach()
         expect(
-            middle.data.inheritedDependencyBranches.get(source),
+            getStoreData(middle).inheritedDependencyBranches.get(source),
         ).toBeUndefined()
         expect(
-            rootStore.data.inheritedDependencyBranches.get(source),
+            getStoreData(rootStore).inheritedDependencyBranches.get(source),
         ).toBeUndefined()
     })
 
@@ -280,20 +281,20 @@ describe("scopeValueIndex", () => {
         })
         const unsubscribe = scoped.sub(dynamic, () => {})
 
-        expect(rootStore.data.inheritedDependencyBranches.get(left)).toEqual(
-            new Set([scoped.data]),
-        )
         expect(
-            rootStore.data.inheritedDependencyBranches.get(right),
+            getStoreData(rootStore).inheritedDependencyBranches.get(left),
+        ).toEqual(new Set([getStoreData(scoped)]))
+        expect(
+            getStoreData(rootStore).inheritedDependencyBranches.get(right),
         ).toBeUndefined()
 
         rootStore.set(chooseLeft, false)
         expect(
-            rootStore.data.inheritedDependencyBranches.get(left),
+            getStoreData(rootStore).inheritedDependencyBranches.get(left),
         ).toBeUndefined()
-        expect(rootStore.data.inheritedDependencyBranches.get(right)).toEqual(
-            new Set([scoped.data]),
-        )
+        expect(
+            getStoreData(rootStore).inheritedDependencyBranches.get(right),
+        ).toEqual(new Set([getStoreData(scoped)]))
 
         const afterSwitch = evaluations
         rootStore.set(left, 10)
@@ -304,10 +305,10 @@ describe("scopeValueIndex", () => {
         unsubscribe()
         await new Promise<void>(resolve => queueMicrotask(resolve))
         expect(
-            rootStore.data.inheritedDependencyBranches.get(chooseLeft),
+            getStoreData(rootStore).inheritedDependencyBranches.get(chooseLeft),
         ).toBeUndefined()
         expect(
-            rootStore.data.inheritedDependencyBranches.get(right),
+            getStoreData(rootStore).inheritedDependencyBranches.get(right),
         ).toBeUndefined()
     })
 
@@ -346,7 +347,7 @@ describe("scopeValueIndex", () => {
 
         expect(bCallback).toHaveBeenCalledTimes(1)
         expect(rootStore.get(countSel)).toBe(1) // x
-        expect(scopeB.get(countSel)).toBe(2)    // x, z
+        expect(scopeB.get(countSel)).toBe(2) // x, z
     })
 
     test("scopeValueIndex is empty after scope detach", () => {
@@ -360,17 +361,17 @@ describe("scopeValueIndex", () => {
         scoped.get(family1("a"))
 
         // scopeIndexKeys tracks what keys the scope registered in the parent's index
-        const scopedData = scoped.data as any
+        const scopedData = getStoreData(scoped) as any
         expect(scopedData.scopeIndexKeys.size).toBeGreaterThan(0)
 
         // The parent's index should point back to this scope for atom1
-        expect(rootStore.data.scopeValueIndex.has(atom1)).toBe(true)
+        expect(getStoreData(rootStore).scopeValueIndex.has(atom1)).toBe(true)
 
         // Detach the scope
         scoped.detach()
 
         // Parent's index entries for this scope's keys should be cleaned up
-        expect(rootStore.data.scopeValueIndex.has(atom1)).toBe(false)
+        expect(getStoreData(rootStore).scopeValueIndex.has(atom1)).toBe(false)
     })
 
     test("multi-atom transaction with partial shadowing propagates correctly", () => {
@@ -481,29 +482,62 @@ describe("scopeValueIndex", () => {
         const a = atom(0)
 
         const counts = {
-            b: 0, c: 0,
-            d: 0, e: 0, f: 0, g: 0,
-            h: 0, i: 0,
+            b: 0,
+            c: 0,
+            d: 0,
+            e: 0,
+            f: 0,
+            g: 0,
+            h: 0,
+            i: 0,
             j: 0,
         }
         // Layer 1: b, c both read a
-        const b = selector(get => { counts.b++; return get(a) + 1 })
-        const c = selector(get => { counts.c++; return get(a) + 2 })
+        const b = selector(get => {
+            counts.b++
+            return get(a) + 1
+        })
+        const c = selector(get => {
+            counts.c++
+            return get(a) + 2
+        })
         // Layer 2: d/e read b, f/g read c
-        const d = selector(get => { counts.d++; return get(b) + 10 })
-        const e = selector(get => { counts.e++; return get(b) + 20 })
-        const f = selector(get => { counts.f++; return get(c) + 30 })
-        const g = selector(get => { counts.g++; return get(c) + 40 })
+        const d = selector(get => {
+            counts.d++
+            return get(b) + 10
+        })
+        const e = selector(get => {
+            counts.e++
+            return get(b) + 20
+        })
+        const f = selector(get => {
+            counts.f++
+            return get(c) + 30
+        })
+        const g = selector(get => {
+            counts.g++
+            return get(c) + 40
+        })
         // Layer 3: h merges d+f (one diamond), i merges e+g (another)
-        const h = selector(get => { counts.h++; return get(d) + get(f) })
-        const i = selector(get => { counts.i++; return get(e) + get(g) })
+        const h = selector(get => {
+            counts.h++
+            return get(d) + get(f)
+        })
+        const i = selector(get => {
+            counts.i++
+            return get(e) + get(g)
+        })
         // Apex
-        const j = selector(get => { counts.j++; return get(h) + get(i) })
+        const j = selector(get => {
+            counts.j++
+            return get(h) + get(i)
+        })
 
         rootStore.sub(j, () => {})
 
         // Reset counts after initial materialization
-        for (const k of Object.keys(counts) as (keyof typeof counts)[]) counts[k] = 0
+        for (const k of Object.keys(counts) as (keyof typeof counts)[])
+            counts[k] = 0
 
         rootStore.set(a, 5)
 
@@ -520,9 +554,18 @@ describe("scopeValueIndex", () => {
         const a = atom(0)
 
         const counts = { b: 0, e: 0, d: 0 }
-        const b = selector(get => { counts.b++; return get(a) + 1 })
-        const e = selector(get => { counts.e++; return get(b) + 10 })
-        const d = selector(get => { counts.d++; return get(b) + get(e) })
+        const b = selector(get => {
+            counts.b++
+            return get(a) + 1
+        })
+        const e = selector(get => {
+            counts.e++
+            return get(b) + 10
+        })
+        const d = selector(get => {
+            counts.d++
+            return get(b) + get(e)
+        })
 
         rootStore.sub(d, () => {})
         counts.b = 0
@@ -534,7 +577,7 @@ describe("scopeValueIndex", () => {
         expect(counts.e).toBe(1)
         expect(counts.d).toBe(1)
         // And d sees the post-update value of e, not a stale value.
-        expect(rootStore.get(d)).toBe((7 + 1) + (7 + 1 + 10))
+        expect(rootStore.get(d)).toBe(7 + 1 + (7 + 1 + 10))
     })
 
     test("leaf reads atom and chain link: final value is correct", () => {
@@ -566,13 +609,17 @@ describe("scopeValueIndex", () => {
         expect(scoped.get(sel)).toBe(2)
 
         // The scope's scopeIndexKeys should NOT contain the selector
-        const scopedData = scoped.data as any
+        const scopedData = getStoreData(scoped) as any
         for (const key of scopedData.scopeIndexKeys) {
             // All keys should be atoms or families, never selectors
-            expect(typeof key === "object" && "get" in key && !("defaultValue" in key)).toBe(false)
+            expect(
+                typeof key === "object" &&
+                    "get" in key &&
+                    !("defaultValue" in key),
+            ).toBe(false)
         }
 
         // The parent's scopeValueIndex should not have the selector
-        expect(rootStore.data.scopeValueIndex.has(sel)).toBe(false)
+        expect(getStoreData(rootStore).scopeValueIndex.has(sel)).toBe(false)
     })
 })

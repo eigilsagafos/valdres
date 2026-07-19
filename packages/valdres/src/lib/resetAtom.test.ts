@@ -67,7 +67,7 @@ describe("direct reset commit pipeline", () => {
         }
 
         expect(thrown).toBe(hookError)
-        expect(onSet).toHaveBeenLastCalledWith(1, store1.data)
+        expect(onSet).toHaveBeenLastCalledWith(1, store1)
         expect(store1.get(value)).toBe(1)
         expect(store1.get(doubled)).toBe(2)
         expect(seen).toEqual([2])

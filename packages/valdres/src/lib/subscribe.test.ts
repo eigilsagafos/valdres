@@ -1,3 +1,4 @@
+import { getStoreData } from "./getStoreData"
 import { describe, test, expect, mock } from "bun:test"
 import { store } from "../store"
 import { atom } from "../atom"
@@ -77,13 +78,15 @@ describe("subscribe", () => {
 
         const unsubscribe = store1.sub(root, () => {})
 
-        expect(store1.data.selectorGraphActive.has(root)).toBe(true)
-        expect(store1.data.selectorGraphActive.has(child)).toBe(true)
-        expect(store1.data.stateDependents.get(source)).toContain(child)
-        expect(store1.data.stateDependents.get(child)).toContain(root)
+        expect(getStoreData(store1).selectorGraphActive.has(root)).toBe(true)
+        expect(getStoreData(store1).selectorGraphActive.has(child)).toBe(true)
+        expect(getStoreData(store1).stateDependents.get(source)).toContain(
+            child,
+        )
+        expect(getStoreData(store1).stateDependents.get(child)).toContain(root)
         // A selector that is known-live before its first evaluation never needs
         // a forward-only revision snapshot or the associated write bookkeeping.
-        expect(store1.data.stateRevisionClock.enabled).toBe(false)
+        expect(getStoreData(store1).stateRevisionClock.enabled).toBe(false)
 
         unsubscribe()
     })
@@ -98,11 +101,12 @@ describe("subscribe", () => {
         })
 
         expect(() => store1.sub(root, () => {})).toThrow()
-        expect(store1.data.selectorGraphActive.has(root)).toBe(false)
-        expect(store1.data.selectorGraphActive.has(child)).toBe(false)
-        expect(store1.data.stateDependents.get(source)?.has(child) ?? false).toBe(
-            false,
-        )
+        expect(getStoreData(store1).selectorGraphActive.has(root)).toBe(false)
+        expect(getStoreData(store1).selectorGraphActive.has(child)).toBe(false)
+        expect(
+            getStoreData(store1).stateDependents.get(source)?.has(child) ??
+                false,
+        ).toBe(false)
     })
 
     test("a caught nested selector error rolls back its live graph activation", () => {
@@ -120,10 +124,14 @@ describe("subscribe", () => {
 
         const unsubscribe = store1.sub(root, () => {})
 
-        expect(store1.data.selectorGraphActive.has(root)).toBe(true)
-        expect(store1.data.selectorGraphActive.has(failingChild)).toBe(false)
-        expect(store1.data.stateDependencies.has(failingChild)).toBe(false)
-        expect(store1.data.stateDependents.get(source)).toContain(root)
+        expect(getStoreData(store1).selectorGraphActive.has(root)).toBe(true)
+        expect(getStoreData(store1).selectorGraphActive.has(failingChild)).toBe(
+            false,
+        )
+        expect(getStoreData(store1).stateDependencies.has(failingChild)).toBe(
+            false,
+        )
+        expect(getStoreData(store1).stateDependents.get(source)).toContain(root)
 
         unsubscribe()
     })
@@ -194,7 +202,7 @@ describe("subscribe", () => {
         const unsubscribeWithEqualityCheck = store1.sub(atom1, () => {})
 
         let iterations = 0
-        const subscriptions = store1.data.subscriptions.get(atom1)!
+        const subscriptions = getStoreData(store1).subscriptions.get(atom1)!
         Object.defineProperty(subscriptions, Symbol.iterator, {
             value: function* () {
                 for (const value of Set.prototype.values.call(subscriptions)) {
@@ -218,27 +226,31 @@ describe("subscribe", () => {
             false,
         )
         expect(
-            store1.data.subscriptionsRequireEqualCheck.get(atom1),
+            getStoreData(store1).subscriptionsRequireEqualCheck.get(atom1),
         ).toBeUndefined()
         const unsubscribeWithEqualityCheck1 = store1.sub(atom1, () => {})
         const unsubscribeWithEqualityCheck2 = store1.sub(atom1, () => {})
 
         expect(
-            [...store1.data.subscriptions.get(atom1)!].map(
+            [...getStoreData(store1).subscriptions.get(atom1)!].map(
                 subscription =>
                     subscription.requireDeepEqualCheckBeforeCallback,
             ),
         ).toStrictEqual([false, true, true])
-        expect(store1.data.subscriptionsRequireEqualCheck.get(atom1)).toBe(true)
+        expect(
+            getStoreData(store1).subscriptionsRequireEqualCheck.get(atom1),
+        ).toBe(true)
 
         unsubscribeWithoutEqualityCheck()
         unsubscribeWithEqualityCheck1()
         unsubscribeWithEqualityCheck1()
-        expect(store1.data.subscriptionsRequireEqualCheck.get(atom1)).toBe(true)
+        expect(
+            getStoreData(store1).subscriptionsRequireEqualCheck.get(atom1),
+        ).toBe(true)
 
         unsubscribeWithEqualityCheck2()
         expect(
-            store1.data.subscriptionsRequireEqualCheck.get(atom1),
+            getStoreData(store1).subscriptionsRequireEqualCheck.get(atom1),
         ).toBeUndefined()
     })
 
@@ -253,9 +265,15 @@ describe("subscribe", () => {
         const rootUnsub = mock(level1store.sub(anAtom, level1callback))
         const scopedUnsub = mock(level2store.sub(anAtom, level2callback))
         const nestedUnsub = mock(level3store.sub(anAtom, level3callback))
-        expect(level1store.data.subscriptions.get(anAtom)).toHaveLength(3)
-        expect(level2store.data.subscriptions.get(anAtom)).toHaveLength(2)
-        expect(level3store.data.subscriptions.get(anAtom)).toHaveLength(1)
+        expect(
+            getStoreData(level1store).subscriptions.get(anAtom),
+        ).toHaveLength(3)
+        expect(
+            getStoreData(level2store).subscriptions.get(anAtom),
+        ).toHaveLength(2)
+        expect(
+            getStoreData(level3store).subscriptions.get(anAtom),
+        ).toHaveLength(1)
         // We set the atom in the root store. All callbacks should be called once
         level1store.set(anAtom, "set in level 1")
         expect(level1callback).toHaveBeenCalledTimes(1)
@@ -270,17 +288,29 @@ describe("subscribe", () => {
         expect(level1callback).toHaveBeenCalledTimes(1)
         expect(level2callback).toHaveBeenCalledTimes(2)
         expect(level3callback).toHaveBeenCalledTimes(2)
-        expect(level1store.data.subscriptions.get(anAtom)).toHaveLength(1)
-        expect(level2store.data.subscriptions.get(anAtom)).toHaveLength(2)
-        expect(level3store.data.subscriptions.get(anAtom)).toHaveLength(1)
+        expect(
+            getStoreData(level1store).subscriptions.get(anAtom),
+        ).toHaveLength(1)
+        expect(
+            getStoreData(level2store).subscriptions.get(anAtom),
+        ).toHaveLength(2)
+        expect(
+            getStoreData(level3store).subscriptions.get(anAtom),
+        ).toHaveLength(1)
         level1store.set(anAtom, "root 2")
         expect(level1callback).toHaveBeenCalledTimes(2)
         expect(level2callback).toHaveBeenCalledTimes(2)
         expect(level3callback).toHaveBeenCalledTimes(2)
         level3store.set(anAtom, "nested 1")
-        expect(level1store.data.subscriptions.get(anAtom)).toHaveLength(1)
-        expect(level2store.data.subscriptions.get(anAtom)).toHaveLength(1)
-        expect(level3store.data.subscriptions.get(anAtom)).toHaveLength(1)
+        expect(
+            getStoreData(level1store).subscriptions.get(anAtom),
+        ).toHaveLength(1)
+        expect(
+            getStoreData(level2store).subscriptions.get(anAtom),
+        ).toHaveLength(1)
+        expect(
+            getStoreData(level3store).subscriptions.get(anAtom),
+        ).toHaveLength(1)
         expect(level1callback).toHaveBeenCalledTimes(2)
         expect(level2callback).toHaveBeenCalledTimes(2)
         expect(level3callback).toHaveBeenCalledTimes(3)
@@ -298,9 +328,15 @@ describe("subscribe", () => {
         expect(rootUnsub).toHaveBeenCalledTimes(1)
         expect(scopedUnsub).toHaveBeenCalledTimes(1)
         expect(nestedUnsub).toHaveBeenCalledTimes(1)
-        expect(level1store.data.subscriptions.get(anAtom)).toBeUndefined()
-        expect(level2store.data.subscriptions.get(anAtom)).toBeUndefined()
-        expect(level3store.data.subscriptions.get(anAtom)).toBeUndefined()
+        expect(
+            getStoreData(level1store).subscriptions.get(anAtom),
+        ).toBeUndefined()
+        expect(
+            getStoreData(level2store).subscriptions.get(anAtom),
+        ).toBeUndefined()
+        expect(
+            getStoreData(level3store).subscriptions.get(anAtom),
+        ).toBeUndefined()
     })
     test("subscribe to atomFamily in scoped store", () => {
         const level1store = store()
@@ -313,9 +349,13 @@ describe("subscribe", () => {
         const rootUnsub = mock(level1store.sub(userAtom, level1callback))
         const scopedUnsub = mock(level2store.sub(userAtom, level2callback))
         const nestedUnsub = mock(level3store.sub(userAtom, level3callback))
-        // expect(level1store.data.subscriptions.get(userAtom)).toHaveLength(3)
-        expect(level2store.data.subscriptions.get(userAtom)).toHaveLength(2)
-        expect(level3store.data.subscriptions.get(userAtom)).toHaveLength(1)
+        // expect(getStoreData(level1store).subscriptions.get(userAtom)).toHaveLength(3)
+        expect(
+            getStoreData(level2store).subscriptions.get(userAtom),
+        ).toHaveLength(2)
+        expect(
+            getStoreData(level3store).subscriptions.get(userAtom),
+        ).toHaveLength(1)
         // // We set the atom in the root store. All callbacks should be called once
         level1store.set(userAtom("Foo"), "set in level 1")
         expect(level1callback).toHaveBeenCalledTimes(1)
@@ -336,17 +376,29 @@ describe("subscribe", () => {
         expect(level1callback).toHaveBeenCalledTimes(1)
         expect(level2callback).toHaveBeenCalledTimes(2)
         expect(level3callback).toHaveBeenCalledTimes(2)
-        expect(level1store.data.subscriptions.get(userAtom)).toHaveLength(1)
-        expect(level2store.data.subscriptions.get(userAtom)).toHaveLength(2)
-        expect(level3store.data.subscriptions.get(userAtom)).toHaveLength(1)
+        expect(
+            getStoreData(level1store).subscriptions.get(userAtom),
+        ).toHaveLength(1)
+        expect(
+            getStoreData(level2store).subscriptions.get(userAtom),
+        ).toHaveLength(2)
+        expect(
+            getStoreData(level3store).subscriptions.get(userAtom),
+        ).toHaveLength(1)
         level1store.set(userAtom("Foo"), "root 2")
         expect(level1callback).toHaveBeenCalledTimes(2)
         expect(level2callback).toHaveBeenCalledTimes(2)
         expect(level3callback).toHaveBeenCalledTimes(2)
         level3store.set(userAtom("Foo"), "nested 1")
-        expect(level1store.data.subscriptions.get(userAtom)).toHaveLength(1)
-        expect(level2store.data.subscriptions.get(userAtom)).toHaveLength(1)
-        expect(level3store.data.subscriptions.get(userAtom)).toHaveLength(1)
+        expect(
+            getStoreData(level1store).subscriptions.get(userAtom),
+        ).toHaveLength(1)
+        expect(
+            getStoreData(level2store).subscriptions.get(userAtom),
+        ).toHaveLength(1)
+        expect(
+            getStoreData(level3store).subscriptions.get(userAtom),
+        ).toHaveLength(1)
         expect(level1callback).toHaveBeenCalledTimes(2)
         expect(level2callback).toHaveBeenCalledTimes(2)
         expect(level3callback).toHaveBeenCalledTimes(3)
@@ -379,9 +431,15 @@ describe("subscribe", () => {
         expect(rootUnsub).toHaveBeenCalledTimes(1)
         expect(scopedUnsub).toHaveBeenCalledTimes(1)
         expect(nestedUnsub).toHaveBeenCalledTimes(1)
-        expect(level1store.data.subscriptions.get(userAtom)).toBeUndefined()
-        expect(level2store.data.subscriptions.get(userAtom)).toBeUndefined()
-        expect(level3store.data.subscriptions.get(userAtom)).toBeUndefined()
+        expect(
+            getStoreData(level1store).subscriptions.get(userAtom),
+        ).toBeUndefined()
+        expect(
+            getStoreData(level2store).subscriptions.get(userAtom),
+        ).toBeUndefined()
+        expect(
+            getStoreData(level3store).subscriptions.get(userAtom),
+        ).toBeUndefined()
     })
 
     test("nested family callback includes key", () => {
@@ -502,21 +560,25 @@ describe("subscribe", () => {
 
         const unsubscribeLeaf = rootStore.sub(leaf, () => {}, false)
         expect(rootStore.get(leaf)).toBe(3)
-        expect(rootStore.data.stateDependencies.has(intermediate)).toBe(true)
-        expect(rootStore.data.stateDependents.get(source)).toContain(
+        expect(
+            getStoreData(rootStore).stateDependencies.has(intermediate),
+        ).toBe(true)
+        expect(getStoreData(rootStore).stateDependents.get(source)).toContain(
             intermediate,
         )
 
         unsubscribeLeaf()
         await Promise.resolve()
 
-        expect(rootStore.data.stateDependencies.has(leaf)).toBe(false)
-        expect(rootStore.data.stateDependencies.has(intermediate)).toBe(false)
-        expect(rootStore.data.values.has(leaf)).toBe(false)
-        expect(rootStore.data.values.has(intermediate)).toBe(false)
-        expect(rootStore.data.stateDependents.get(source)).not.toContain(
-            intermediate,
-        )
+        expect(getStoreData(rootStore).stateDependencies.has(leaf)).toBe(false)
+        expect(
+            getStoreData(rootStore).stateDependencies.has(intermediate),
+        ).toBe(false)
+        expect(getStoreData(rootStore).values.has(leaf)).toBe(false)
+        expect(getStoreData(rootStore).values.has(intermediate)).toBe(false)
+        expect(
+            getStoreData(rootStore).stateDependents.get(source),
+        ).not.toContain(intermediate)
 
         rootStore.set(source, 2)
         expect(intermediateCallback).toHaveBeenCalledTimes(1)
@@ -531,7 +593,9 @@ describe("subscribe", () => {
         const dynamic = selector(evaluate)
 
         expect(rootStore.get(dynamic)).toBe(1)
-        expect(rootStore.data.stateDependents.get(left)).toBeUndefined()
+        expect(
+            getStoreData(rootStore).stateDependents.get(left),
+        ).toBeUndefined()
 
         // This invalidates the cold dependency snapshot without eagerly
         // evaluating or inserting a reverse edge.
@@ -542,9 +606,12 @@ describe("subscribe", () => {
         const unsubscribe = rootStore.sub(dynamic, callback, false)
         expect(evaluate).toHaveBeenCalledTimes(2)
         expect(
-            rootStore.data.stateDependents.get(left)?.has(dynamic) ?? false,
+            getStoreData(rootStore).stateDependents.get(left)?.has(dynamic) ??
+                false,
         ).toBe(false)
-        expect(rootStore.data.stateDependents.get(right)).toContain(dynamic)
+        expect(getStoreData(rootStore).stateDependents.get(right)).toContain(
+            dynamic,
+        )
 
         rootStore.set(right, 3)
         expect(callback).toHaveBeenCalledTimes(1)
@@ -575,8 +642,8 @@ describe("subscribe", () => {
         const unsubscribe = rootStore.sub(source, () => {}, false)
         unsubscribe()
 
-        expect(rootStore.data.pendingOrphanCleanup).toBeUndefined()
-        expect(rootStore.data.orphanCleanupScheduled).toBe(false)
+        expect(getStoreData(rootStore).pendingOrphanCleanup).toBeUndefined()
+        expect(getStoreData(rootStore).orphanCleanupScheduled).toBe(false)
     })
 
     test("orphan cleanup runs again after an empty selector is re-materialized", async () => {
@@ -587,8 +654,10 @@ describe("subscribe", () => {
         expect(rootStore.get(constant)).toBe(42)
         firstUnsubscribe()
         await Promise.resolve()
-        expect(rootStore.data.stateDependencies.has(constant)).toBe(false)
-        expect(rootStore.data.values.has(constant)).toBe(false)
+        expect(getStoreData(rootStore).stateDependencies.has(constant)).toBe(
+            false,
+        )
+        expect(getStoreData(rootStore).values.has(constant)).toBe(false)
 
         // An empty dependency set creates no edge that could implicitly
         // invalidate a shared teardown visit. Re-materializing the selector
@@ -597,8 +666,10 @@ describe("subscribe", () => {
         expect(rootStore.get(constant)).toBe(42)
         secondUnsubscribe()
         await Promise.resolve()
-        expect(rootStore.data.stateDependencies.has(constant)).toBe(false)
-        expect(rootStore.data.values.has(constant)).toBe(false)
+        expect(getStoreData(rootStore).stateDependencies.has(constant)).toBe(
+            false,
+        )
+        expect(getStoreData(rootStore).values.has(constant)).toBe(false)
     })
 
     test("a public read flushes queued orphan cleanup first", () => {
@@ -631,17 +702,23 @@ describe("subscribe", () => {
         })
 
         const unsubscribe = rootStore.sub(derived, () => {}, false)
-        expect(rootStore.data.stateDependencies.has(derived)).toBe(true)
+        expect(getStoreData(rootStore).stateDependencies.has(derived)).toBe(
+            true,
+        )
         unsubscribe()
 
         // This timing split is deliberate: release user resources before the
         // disposer returns, but coalesce internal graph/cache work for the burst.
         expect(lifecycleCleanups).toBe(1)
-        expect(rootStore.data.stateDependencies.has(derived)).toBe(true)
+        expect(getStoreData(rootStore).stateDependencies.has(derived)).toBe(
+            true,
+        )
 
         await Promise.resolve()
-        expect(rootStore.data.stateDependencies.has(derived)).toBe(false)
-        expect(rootStore.data.values.has(derived)).toBe(false)
+        expect(getStoreData(rootStore).stateDependencies.has(derived)).toBe(
+            false,
+        )
+        expect(getStoreData(rootStore).values.has(derived)).toBe(false)
     })
 
     test("a failed mount rolls back the subscription so retry mounts again", () => {
@@ -661,7 +738,9 @@ describe("subscribe", () => {
         })
 
         expect(() => rootStore.sub(mounted, () => {})).toThrow("mount boom")
-        expect(rootStore.data.subscriptions.get(mounted)).toBeUndefined()
+        expect(
+            getStoreData(rootStore).subscriptions.get(mounted),
+        ).toBeUndefined()
 
         shouldThrow = false
         const unsubscribe = rootStore.sub(mounted, () => {})
@@ -684,16 +763,20 @@ describe("subscribe", () => {
         })
 
         const unsubscribe = rootStore.sub(derived, () => {}, false)
-        expect(rootStore.data.stateDependencies.has(derived)).toBe(true)
+        expect(getStoreData(rootStore).stateDependencies.has(derived)).toBe(
+            true,
+        )
 
         expect(() => unsubscribe()).toThrow("cleanup boom")
         await Promise.resolve()
 
-        expect(rootStore.data.stateDependencies.has(derived)).toBe(false)
-        expect(rootStore.data.values.has(derived)).toBe(false)
-        expect(rootStore.data.stateDependents.get(mounted)).not.toContain(
-            derived,
+        expect(getStoreData(rootStore).stateDependencies.has(derived)).toBe(
+            false,
         )
+        expect(getStoreData(rootStore).values.has(derived)).toBe(false)
+        expect(
+            getStoreData(rootStore).stateDependents.get(mounted),
+        ).not.toContain(derived)
     })
 
     test("unsubscribe cleans deep orphaned selector chains iteratively", async () => {
@@ -716,12 +799,14 @@ describe("subscribe", () => {
 
         expect(() => unsubscribeTail()).not.toThrow()
         await Promise.resolve()
-        expect(rootStore.data.stateDependencies.has(current)).toBe(false)
-        expect(rootStore.data.stateDependencies.has(first)).toBe(false)
-        expect(rootStore.data.values.has(current)).toBe(false)
-        expect(rootStore.data.values.has(first)).toBe(false)
-        expect(rootStore.data.stateDependents.get(source)).not.toContain(
-            first,
+        expect(getStoreData(rootStore).stateDependencies.has(current)).toBe(
+            false,
         )
+        expect(getStoreData(rootStore).stateDependencies.has(first)).toBe(false)
+        expect(getStoreData(rootStore).values.has(current)).toBe(false)
+        expect(getStoreData(rootStore).values.has(first)).toBe(false)
+        expect(
+            getStoreData(rootStore).stateDependents.get(source),
+        ).not.toContain(first)
     })
 })

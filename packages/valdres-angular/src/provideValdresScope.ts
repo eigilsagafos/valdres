@@ -1,4 +1,5 @@
 import { inject, DestroyRef, type Provider } from "@angular/core"
+import { storeAdapter } from "valdres/adapter-internals/v1"
 import { VALDRES_STORE } from "./lib/VALDRES_STORE"
 import { hydrate } from "./lib/hydrate"
 import type { InitializeCallback } from "./types/InitializeCallback"
@@ -31,8 +32,10 @@ export const provideValdresScope = (
 
                 const destroyRef = inject(DestroyRef)
                 const scopeId = options.scopeId ?? generateId()
-                const scopeCreated =
-                    !parentCtx.current.data.scopes?.has(scopeId)
+                const scopeCreated = !storeAdapter.hasScope(
+                    parentCtx.current,
+                    scopeId,
+                )
                 const scopedStore = parentCtx.current.scope(scopeId)
 
                 if (options.initialize) {
@@ -52,8 +55,8 @@ export const provideValdresScope = (
                     current: scopedStore,
                     stores: {
                         ...parentCtx.stores,
-                        [parentCtx.current.data.id]: parentCtx.current,
-                        [scopedStore.data.id]: scopedStore,
+                        [parentCtx.current.id]: parentCtx.current,
+                        [scopedStore.id]: scopedStore,
                     },
                 }
             },

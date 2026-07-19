@@ -1,5 +1,4 @@
 import type { AtomDefaultValue } from "./AtomDefaultValue"
-import type { AtomOnInit } from "./AtomOnInit"
 import type { AtomOnMount } from "./AtomOnMount"
 import type { AtomOnSet } from "./AtomOnSet"
 import type { EqualFunc } from "./EqualFunc"
@@ -22,8 +21,6 @@ export type Atom<Value = unknown> = {
     schema?: Schema<Value>
     /** Per-atom override of the store's `schemaValidation` flag (see AtomOptions). */
     schemaValidation?: boolean
-    /** Internal cross-store sync hook for global atoms. Not user-facing. */
-    onInit?: AtomOnInit<Value>
     onSet?: AtomOnSet<Value>
     onMount?: AtomOnMount
     /** Internal: compat-layer override for onMount (set by adapters that need

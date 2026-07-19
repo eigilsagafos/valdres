@@ -1,20 +1,7 @@
-import type { Atom, Store, StoreData } from "valdres"
+import type { Atom, Store } from "valdres"
+import { storeAdapter } from "valdres/adapter-internals/v1"
 import type { DevtoolsSnapshot } from "../types/DevtoolsSnapshot"
 import { COMPUTED_KEY, SCOPES_KEY } from "./snapshot"
-
-/** Resolve a scope's StoreData by walking the path, or null if it's gone. */
-const resolveScopeData = (
-    rootData: StoreData,
-    ids: string[],
-): StoreData | null => {
-    let cur: StoreData = rootData
-    for (const id of ids) {
-        const next = cur.scopes.get(id)
-        if (!next) return null
-        cur = next
-    }
-    return cur
-}
 
 /** Run `fn` against an existing nested scope using the side-effect-free
  *  callback form of `scope()` (it doesn't register a detach consumer). */
@@ -91,7 +78,12 @@ export const restoreSnapshot = (
     resolveAtom: ResolveAtom,
     includeScopes: boolean,
 ): void => {
-    reconcileInto(store, rootValuesOf(target), rootValuesOf(current), resolveAtom)
+    reconcileInto(
+        store,
+        rootValuesOf(target),
+        rootValuesOf(current),
+        resolveAtom,
+    )
 
     if (!includeScopes) return
     const targetScopes = target[SCOPES_KEY] ?? {}
@@ -102,7 +94,7 @@ export const restoreSnapshot = (
     ])
     for (const path of paths) {
         const ids = path.split("/")
-        if (!resolveScopeData(store.data, ids)) {
+        if (!storeAdapter.hasScopePath(store, ids)) {
             console.warn(
                 `[@valdres/redux-devtools] Cannot restore scope "${path}" — it no longer exists. Skipping.`,
             )

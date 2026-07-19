@@ -1,3 +1,4 @@
+import { getStoreData } from "./getStoreData"
 import { describe, expect, test } from "bun:test"
 import { atomFamily } from "../atomFamily"
 import { selector } from "../selector"
@@ -52,11 +53,22 @@ const runSeed = (seed: number): string | null => {
     const ownerOf = (k: number) => Math.floor(k / PER_LEVEL)
     const steps = 30 + Math.floor(rnd() * 30)
 
-    const fam = atomFamily<number, [string]>(() => 0, { name: `fam${seed}.${++runUid}` })
+    const fam = atomFamily<number, [string]>(() => 0, {
+        name: `fam${seed}.${++runUid}`,
+    })
     const key = (k: number) => `k${k}`
-    const sumSel = selector(get => (get(fam) as any[]).reduce((a, m) => (a + (get(m) | 0)) | 0, 0), { name: "sum" })
-    const countSel = selector(get => (get(fam) as any[]).length, { name: "count" })
-    const idx = index<number, number, [string]>(fam, (v, term) => (((v | 0) % NTERMS) + NTERMS) % NTERMS === term, { name: "byMod" })
+    const sumSel = selector(
+        get => (get(fam) as any[]).reduce((a, m) => (a + (get(m) | 0)) | 0, 0),
+        { name: "sum" },
+    )
+    const countSel = selector(get => (get(fam) as any[]).length, {
+        name: "count",
+    })
+    const idx = index<number, number, [string]>(
+        fam,
+        (v, term) => (((v | 0) % NTERMS) + NTERMS) % NTERMS === term,
+        { name: "byMod" },
+    )
     const idxSel = Array.from({ length: NTERMS }, (_, term) => idx(term))
 
     // Build the linear store chain. stores[0] = root; stores[i] = scope "s{i}".
@@ -72,19 +84,22 @@ const runSeed = (seed: number): string | null => {
     // membership at level i = every existing key owned by a level 0..i
     const keysAt = (i: number): number[] => {
         const out: number[] = []
-        for (let k = 0; k < K; k++) if (ownerOf(k) <= i && exists[k]) out.push(k)
+        for (let k = 0; k < K; k++)
+            if (ownerOf(k) <= i && exists[k]) out.push(k)
         return out
     }
 
     const memberKeys = (arr: any[]) => new Set(arr.map(a => a.familyArgs[0]))
-    const setEq = (a: Set<string>, b: Set<string>) => a.size === b.size && [...a].every(x => b.has(x))
+    const setEq = (a: Set<string>, b: Set<string>) =>
+        a.size === b.size && [...a].every(x => b.has(x))
 
     const subs = new Map<string, () => void>()
-    const subKey = (lvl: number, w: Which) => `${lvl}:${w.kind}${w.kind === "index" ? w.term : ""}`
+    const subKey = (lvl: number, w: Which) =>
+        `${lvl}:${w.kind}${w.kind === "index" ? w.term : ""}`
 
     const verify = (): string | null => {
         for (let i = 0; i < L; i++) {
-            const data = stores[i].data
+            const data = getStoreData(stores[i])
             const ks = keysAt(i)
             if (data.values.has(fam)) {
                 const expected = new Set(ks.map(key))
@@ -93,15 +108,29 @@ const runSeed = (seed: number): string | null => {
             }
             if (data.values.has(sumSel)) {
                 const exp = ks.reduce((a, k) => (a + (value[k] | 0)) | 0, 0)
-                if (data.values.get(sumSel) !== exp) return `L${i} sum: ${data.values.get(sumSel)} != ${exp}`
+                if (data.values.get(sumSel) !== exp)
+                    return `L${i} sum: ${data.values.get(sumSel)} != ${exp}`
             }
-            if (data.values.has(countSel) && data.values.get(countSel) !== ks.length)
+            if (
+                data.values.has(countSel) &&
+                data.values.get(countSel) !== ks.length
+            )
                 return `L${i} count: ${data.values.get(countSel)} != ${ks.length}`
             for (let term = 0; term < NTERMS; term++) {
                 if (!data.values.has(idxSel[term])) continue
                 const got = memberKeys(data.values.get(idxSel[term]))
-                const exp = new Set(ks.filter(k => (((value[k] | 0) % NTERMS) + NTERMS) % NTERMS === term).map(key))
-                if (!setEq(got, exp)) return `L${i} idx(${term}): got {${[...got].sort()}} expected {${[...exp].sort()}}`
+                const exp = new Set(
+                    ks
+                        .filter(
+                            k =>
+                                (((value[k] | 0) % NTERMS) + NTERMS) %
+                                    NTERMS ===
+                                term,
+                        )
+                        .map(key),
+                )
+                if (!setEq(got, exp))
+                    return `L${i} idx(${term}): got {${[...got].sort()}} expected {${[...exp].sort()}}`
             }
         }
         return null
@@ -115,18 +144,30 @@ const runSeed = (seed: number): string | null => {
         }
         return -1
     }
-    const delAt = (lvl: number) => lvl * PER_LEVEL + Math.floor(rnd() * PER_LEVEL)
-    const applySet = (k: number, v: number) => { exists[k] = true; value[k] = v }
-    const applyDel = (k: number) => { exists[k] = false; retired.add(k) }
+    const delAt = (lvl: number) =>
+        lvl * PER_LEVEL + Math.floor(rnd() * PER_LEVEL)
+    const applySet = (k: number, v: number) => {
+        exists[k] = true
+        value[k] = v
+    }
+    const applyDel = (k: number) => {
+        exists[k] = false
+        retired.add(k)
+    }
 
     // Build one level's set/del ops (disjoint keys), applied to BOTH oracle and
     // (via the supplied `t` interface) the engine.
     const planLevelOps = (lvl: number) => {
         const ns = Math.floor(rnd() * 3)
         const nd = Math.floor(rnd() * 2)
-        const sets = Array.from({ length: ns }, () => ({ k: settableAt(lvl), val: 1 + Math.floor(rnd() * 9) })).filter(s => s.k >= 0)
+        const sets = Array.from({ length: ns }, () => ({
+            k: settableAt(lvl),
+            val: 1 + Math.floor(rnd() * 9),
+        })).filter(s => s.k >= 0)
         const setKeys = new Set(sets.map(s => s.k))
-        const dels = Array.from({ length: nd }, () => delAt(lvl)).filter(d => !setKeys.has(d))
+        const dels = Array.from({ length: nd }, () => delAt(lvl)).filter(
+            d => !setKeys.has(d),
+        )
         return { sets, dels }
     }
 
@@ -135,9 +176,15 @@ const runSeed = (seed: number): string | null => {
         const roll = rnd()
         if (roll < 0.28) {
             const k = settableAt(lvl)
-            if (k >= 0) { const v = 1 + Math.floor(rnd() * 9); applySet(k, v); stores[lvl].set(fam(key(k)), v) }
+            if (k >= 0) {
+                const v = 1 + Math.floor(rnd() * 9)
+                applySet(k, v)
+                stores[lvl].set(fam(key(k)), v)
+            }
         } else if (roll < 0.42) {
-            const k = delAt(lvl); applyDel(k); stores[lvl].del(fam(key(k)))
+            const k = delAt(lvl)
+            applyDel(k)
+            stores[lvl].del(fam(key(k)))
         } else if (roll < 0.64) {
             // scope-only (single-store) txn at this level
             const { sets, dels } = planLevelOps(lvl)
@@ -150,27 +197,50 @@ const runSeed = (seed: number): string | null => {
         } else if (roll < 0.84) {
             // nested cross-scope txn from root down to a random depth
             const maxLevel = Math.floor(rnd() * L)
-            const perLevel = Array.from({ length: maxLevel + 1 }, (_, i) => planLevelOps(i))
+            const perLevel = Array.from({ length: maxLevel + 1 }, (_, i) =>
+                planLevelOps(i),
+            )
             for (let i = 0; i <= maxLevel; i++) {
                 for (const s of perLevel[i].sets) applySet(s.k, s.val)
                 for (const d of perLevel[i].dels) applyDel(d)
             }
             const build = (t: any, level: number) => {
-                for (const s of perLevel[level].sets) t.set(fam(key(s.k)), s.val)
+                for (const s of perLevel[level].sets)
+                    t.set(fam(key(s.k)), s.val)
                 for (const d of perLevel[level].dels) t.del(fam(key(d)))
-                if (level < maxLevel) t.scope(`s${level + 1}`, (st: any) => build(st, level + 1))
+                if (level < maxLevel)
+                    t.scope(`s${level + 1}`, (st: any) => build(st, level + 1))
             }
             root.txn((t: any) => build(t, 0))
         } else {
             const r2 = rnd()
-            const which: Which = r2 < 0.34 ? { kind: "sum" } : r2 < 0.67 ? { kind: "count" } : { kind: "index", term: Math.floor(rnd() * NTERMS) }
+            const which: Which =
+                r2 < 0.34
+                    ? { kind: "sum" }
+                    : r2 < 0.67
+                      ? { kind: "count" }
+                      : { kind: "index", term: Math.floor(rnd() * NTERMS) }
             const sk = subKey(lvl, which)
             if (rnd() < 0.6) {
                 if (!subs.has(sk)) {
-                    const sel = which.kind === "sum" ? sumSel : which.kind === "count" ? countSel : idxSel[which.term]
-                    subs.set(sk, stores[lvl].sub(sel, () => {}))
+                    const sel =
+                        which.kind === "sum"
+                            ? sumSel
+                            : which.kind === "count"
+                              ? countSel
+                              : idxSel[which.term]
+                    subs.set(
+                        sk,
+                        stores[lvl].sub(sel, () => {}),
+                    )
                 }
-            } else { const u = subs.get(sk); if (u) { u(); subs.delete(sk) } }
+            } else {
+                const u = subs.get(sk)
+                if (u) {
+                    u()
+                    subs.delete(sk)
+                }
+            }
         }
         const err = verify()
         if (err) return `seed ${seed} (L=${L}) step ${step}: ${err}`

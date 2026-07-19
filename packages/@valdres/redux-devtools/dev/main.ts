@@ -84,8 +84,9 @@ const snapshotEl = $("snapshot")
 const computedEl = $("computed")
 
 // The scope owns its own value (copy-on-write) only after it's been written;
-// until then it inherits the root. `data.values` is where the shadow lives.
-const scopeHasOwnTheme = () => sessionA.data.values.has(themeAtom)
+// until then it inherits the root. A scoped snapshot lists only local values.
+const scopeHasOwnTheme = () =>
+    sessionA.snapshot().some(entry => entry.state === themeAtom)
 
 const renderCount = () => (countEl.textContent = String(s.get(countAtom)))
 const renderMessage = () => {
@@ -98,7 +99,9 @@ const renderTheme = () => {
     themeRootEl.textContent = s.get(themeAtom)
     themeScopeEl.textContent = sessionA.get(themeAtom)
     const own = scopeHasOwnTheme()
-    themeBadgeEl.textContent = own ? "own (copy-on-write)" : "inherited from root"
+    themeBadgeEl.textContent = own
+        ? "own (copy-on-write)"
+        : "inherited from root"
     themeBadgeEl.className = `pill ${own ? "own" : "inherited"}`
 }
 const renderComputed = () => {
@@ -170,12 +173,8 @@ sessionA.sub(themeAtom, renderAll)
 // "sessionA/user/isDark".
 sessionA.sub(isDarkTheme, renderAll)
 
-$("inc").addEventListener("click", () =>
-    s.set(countAtom, c => c + 1),
-)
-$("dec").addEventListener("click", () =>
-    s.set(countAtom, c => c - 1),
-)
+$("inc").addEventListener("click", () => s.set(countAtom, c => c + 1))
+$("dec").addEventListener("click", () => s.set(countAtom, c => c - 1))
 $("reset-count").addEventListener("click", () => s.set(countAtom, 0))
 
 msgEl.addEventListener("input", () => s.set(messageAtom, msgEl.value))

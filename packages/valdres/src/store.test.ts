@@ -1,3 +1,4 @@
+import { getStoreData } from "./lib/getStoreData"
 import { describe, test, expect } from "bun:test"
 import { store } from "./store"
 import { atom } from "./atom"
@@ -5,6 +6,16 @@ import { atomFamily } from "./atomFamily"
 import { selector } from "./selector"
 
 describe("store", () => {
+    test("exposes stable identity without mutable runtime data", () => {
+        const root = store("root")
+        const child = root.scope("child")
+
+        expect(root.id).toBe("root")
+        expect(child.id).toBe("child")
+        expect("data" in root).toBe(false)
+        expect("data" in child).toBe(false)
+    })
+
     test("txn", () => {
         const store1 = store()
         const atom1 = atom(10)
@@ -80,35 +91,39 @@ describe("store", () => {
 
             expect(root.get(userFamily)).toHaveLength(0)
             expect(child.get(userFamily)).toHaveLength(0)
-            expect(root.data.values.get(userFamily)).toStrictEqual([])
-            expect(child.data.values.get(userFamily)).toBeUndefined()
+            expect(getStoreData(root).values.get(userFamily)).toStrictEqual([])
+            expect(getStoreData(child).values.get(userFamily)).toBeUndefined()
 
             // We get a atom from the family. Nothing should happen
             const user1 = userFamily("1")
             expect(root.get(userFamily)).toHaveLength(0)
             expect(child.get(userFamily)).toHaveLength(0)
-            expect(root.data.values.get(userFamily)).toStrictEqual([])
-            expect(child.data.values.get(userFamily)).toBeUndefined()
+            expect(getStoreData(root).values.get(userFamily)).toStrictEqual([])
+            expect(getStoreData(child).values.get(userFamily)).toBeUndefined()
 
             // We get the atom from root. This will then init in the root
             root.get(user1)
             expect(root.get(userFamily)).toHaveLength(1)
             expect(child.get(userFamily)).toHaveLength(1)
-            expect(root.data.values.get(userFamily)).toStrictEqual([user1])
-            expect(child.data.values.get(userFamily)).toBeUndefined()
-            expect(root.data.values.get(user1)).toStrictEqual({ id: "1" })
-            expect(child.data.values.get(user1)).toBeUndefined()
+            expect(getStoreData(root).values.get(userFamily)).toStrictEqual([
+                user1,
+            ])
+            expect(getStoreData(child).values.get(userFamily)).toBeUndefined()
+            expect(getStoreData(root).values.get(user1)).toStrictEqual({
+                id: "1",
+            })
+            expect(getStoreData(child).values.get(user1)).toBeUndefined()
 
             // Init another user and get from root
             const user2 = userFamily("2")
             root.get(user2)
             expect(root.get(userFamily)).toHaveLength(2)
             expect(child.get(userFamily)).toHaveLength(2)
-            expect(root.data.values.get(userFamily)).toStrictEqual([
+            expect(getStoreData(root).values.get(userFamily)).toStrictEqual([
                 user1,
                 user2,
             ])
-            expect(child.data.values.get(userFamily)).toBeUndefined()
+            expect(getStoreData(child).values.get(userFamily)).toBeUndefined()
 
             // Now we init user3 and get it on the child. This should trigger
             // the atom family array to split
@@ -116,11 +131,11 @@ describe("store", () => {
             child.get(user3)
             expect(root.get(userFamily)).toHaveLength(2)
             expect(child.get(userFamily)).toHaveLength(3)
-            expect(root.data.values.get(userFamily)).toStrictEqual([
+            expect(getStoreData(root).values.get(userFamily)).toStrictEqual([
                 user1,
                 user2,
             ])
-            expect(child.data.values.get(userFamily)).toStrictEqual([
+            expect(getStoreData(child).values.get(userFamily)).toStrictEqual([
                 user1,
                 user2,
                 user3,

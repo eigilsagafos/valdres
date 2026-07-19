@@ -1,6 +1,6 @@
 {
     "extends": "../../tsconfig.json",
-    "include": ["src/index.ts", "src/adapter-internals.ts"],
+    "include": ["src/index.ts", "src/adapter-internals/v1.ts"],
     "exclude": [],
     "compilerOptions": {
         "rootDir": "src",

@@ -5,9 +5,13 @@ description: Edit-and-cancel pattern using scoped stores
 
 # Profile Editor
 
-An edit form that uses scoped stores for a "save or cancel" pattern. The edit form opens in a scope that inherits the current profile — edits stay isolated until the user saves.
+An edit form that uses scoped stores for a "save or cancel" pattern. The edit
+form opens in a scope that inherits the current profile — edits stay isolated
+until the user saves.
 
-Scoped stores make this pattern unusually low-boilerplate — other libraries can do it too, but typically require manually cloning the form state and diffing it back on save.
+Scoped stores make this pattern unusually low-boilerplate — other libraries can
+do it too, but typically require manually cloning the form state and diffing it
+back on save.
 
 ## Shared state
 
@@ -23,7 +27,8 @@ export const profileAtom = atom({
 
 ## How it works
 
-1. User clicks "Edit" — a scoped store is created, inheriting the current profile
+1. User clicks "Edit" — a scoped store is created, inheriting the current
+   profile
 2. Edits happen inside the scope — the original profile is untouched
 3. "Save" copies the scoped values back to the parent store
 4. "Cancel" discards the scope — nothing changes
@@ -47,13 +52,17 @@ import { profileAtom } from "./state"
 
 function ProfileView() {
     const profile = useValue(profileAtom)
+    const parentStore = useStore()
     const [editing, setEditing] = useState(false)
 
     return (
         <div>
             {editing ? (
                 <Scope scopeId="edit-profile">
-                    <EditForm onClose={() => setEditing(false)} />
+                    <EditForm
+                        parentStore={parentStore}
+                        onClose={() => setEditing(false)}
+                    />
                 </Scope>
             ) : (
                 <div>
@@ -67,9 +76,8 @@ function ProfileView() {
     )
 }
 
-function EditForm({ onClose }) {
+function EditForm({ parentStore, onClose }) {
     const [profile, setProfile] = useAtom(profileAtom)
-    const parentStore = useStore()  // Access parent to save
 
     const update = (field, value) => {
         setProfile(prev => ({ ...prev, [field]: value }))
@@ -77,8 +85,7 @@ function EditForm({ onClose }) {
 
     const handleSave = () => {
         // Copy scoped value back to parent
-        parentStore.data.parent &&
-            parentStore.set(profileAtom, profile)
+        parentStore.set(profileAtom, profile)
         onClose()
     }
 
@@ -86,18 +93,24 @@ function EditForm({ onClose }) {
         <div>
             <label>
                 Name
-                <input value={profile.name}
-                    onChange={e => update("name", e.target.value)} />
+                <input
+                    value={profile.name}
+                    onChange={e => update("name", e.target.value)}
+                />
             </label>
             <label>
                 Email
-                <input value={profile.email}
-                    onChange={e => update("email", e.target.value)} />
+                <input
+                    value={profile.email}
+                    onChange={e => update("email", e.target.value)}
+                />
             </label>
             <label>
                 Bio
-                <textarea value={profile.bio}
-                    onChange={e => update("bio", e.target.value)} />
+                <textarea
+                    value={profile.bio}
+                    onChange={e => update("bio", e.target.value)}
+                />
             </label>
             <button onClick={handleSave}>Save</button>
             <button onClick={onClose}>Cancel</button>
@@ -116,34 +129,38 @@ import { profileAtom } from "./state"
 
 const editing = ref(false)
 const profile = useValue(profileAtom)
+const parentStore = useStore()
 </script>
 
 <template>
-  <div>
-    <template v-if="editing">
-      <ValdresScope scope-id="edit-profile">
-        <EditForm @close="editing = false" />
-      </ValdresScope>
-    </template>
-    <template v-else>
-      <h2>{{ profile.name }}</h2>
-      <p>{{ profile.email }}</p>
-      <p>{{ profile.bio }}</p>
-      <button @click="editing = true">Edit</button>
-    </template>
-  </div>
+    <div>
+        <template v-if="editing">
+            <ValdresScope scope-id="edit-profile">
+                <EditForm
+                    :parent-store="parentStore"
+                    @close="editing = false"
+                />
+            </ValdresScope>
+        </template>
+        <template v-else>
+            <h2>{{ profile.name }}</h2>
+            <p>{{ profile.email }}</p>
+            <p>{{ profile.bio }}</p>
+            <button @click="editing = true">Edit</button>
+        </template>
+    </div>
 </template>
 ```
 
 ```vue
 <!-- EditForm.vue -->
 <script setup>
-import { useAtom, useStore } from "valdres-vue"
+import { useAtom } from "valdres-vue"
 import { profileAtom } from "./state"
 
 const emit = defineEmits(["close"])
+const { parentStore } = defineProps(["parentStore"])
 const profile = useAtom(profileAtom)
-const store = useStore()
 
 function update(field, value) {
     profile.value = { ...profile.value, [field]: value }
@@ -151,19 +168,35 @@ function update(field, value) {
 
 function handleSave() {
     // Save scoped value to parent
-    store.data.parent?.set(profileAtom, profile.value)
+    parentStore.set(profileAtom, profile.value)
     emit("close")
 }
 </script>
 
 <template>
-  <div>
-    <label>Name <input :value="profile.name" @input="update('name', $event.target.value)" /></label>
-    <label>Email <input :value="profile.email" @input="update('email', $event.target.value)" /></label>
-    <label>Bio <textarea :value="profile.bio" @input="update('bio', $event.target.value)" /></label>
-    <button @click="handleSave">Save</button>
-    <button @click="emit('close')">Cancel</button>
-  </div>
+    <div>
+        <label
+            >Name
+            <input
+                :value="profile.name"
+                @input="update('name', $event.target.value)"
+        /></label>
+        <label
+            >Email
+            <input
+                :value="profile.email"
+                @input="update('email', $event.target.value)"
+        /></label>
+        <label
+            >Bio
+            <textarea
+                :value="profile.bio"
+                @input="update('bio', $event.target.value)"
+            />
+        </label>
+        <button @click="handleSave">Save</button>
+        <button @click="emit('close')">Cancel</button>
+    </div>
 </template>
 ```
 
@@ -175,6 +208,7 @@ function handleSave() {
   import { profileAtom } from "./state"
 
   let editing = $state(false)
+  const parentStore = getValdresContext()
   const profile = watch(profileAtom)
 </script>
 
@@ -189,8 +223,7 @@ function handleSave() {
     <label>Bio <textarea value={editProfile.value.bio}
       oninput={e => editProfile.set(p => ({ ...p, bio: e.target.value }))} /></label>
     <button onclick={() => {
-        const store = getValdresContext()
-        store.set(profileAtom, editProfile.value)
+        parentStore.set(profileAtom, editProfile.value)
         editing = false
     }}>Save</button>
     <button onclick={() => editing = false}>Cancel</button>
@@ -214,20 +247,27 @@ import { profileAtom } from "./state"
 
 function ProfileView() {
     const profile = createValue(profileAtom)
+    const parentStore = useStore()
     const [editing, setEditing] = createSignal(false)
 
     return (
         <div>
-            <Show when={editing()} fallback={
-                <div>
-                    <h2>{profile().name}</h2>
-                    <p>{profile().email}</p>
-                    <p>{profile().bio}</p>
-                    <button onClick={() => setEditing(true)}>Edit</button>
-                </div>
-            }>
+            <Show
+                when={editing()}
+                fallback={
+                    <div>
+                        <h2>{profile().name}</h2>
+                        <p>{profile().email}</p>
+                        <p>{profile().bio}</p>
+                        <button onClick={() => setEditing(true)}>Edit</button>
+                    </div>
+                }
+            >
                 <ValdresScope scopeId="edit-profile">
-                    <EditForm onClose={() => setEditing(false)} />
+                    <EditForm
+                        parentStore={parentStore}
+                        onClose={() => setEditing(false)}
+                    />
                 </ValdresScope>
             </Show>
         </div>
@@ -236,7 +276,6 @@ function ProfileView() {
 
 function EditForm(props) {
     const [profile, setProfile] = createAtom(profileAtom)
-    const store = useStore()
 
     const update = (field, value) => {
         setProfile(prev => ({ ...prev, [field]: value }))
@@ -244,16 +283,35 @@ function EditForm(props) {
 
     return (
         <div>
-            <label>Name <input value={profile().name}
-                onInput={e => update("name", e.target.value)} /></label>
-            <label>Email <input value={profile().email}
-                onInput={e => update("email", e.target.value)} /></label>
-            <label>Bio <textarea value={profile().bio}
-                onInput={e => update("bio", e.target.value)} /></label>
-            <button onClick={() => {
-                store.data.parent?.set(profileAtom, profile())
-                props.onClose()
-            }}>Save</button>
+            <label>
+                Name{" "}
+                <input
+                    value={profile().name}
+                    onInput={e => update("name", e.target.value)}
+                />
+            </label>
+            <label>
+                Email{" "}
+                <input
+                    value={profile().email}
+                    onInput={e => update("email", e.target.value)}
+                />
+            </label>
+            <label>
+                Bio{" "}
+                <textarea
+                    value={profile().bio}
+                    onInput={e => update("bio", e.target.value)}
+                />
+            </label>
+            <button
+                onClick={() => {
+                    props.parentStore.set(profileAtom, profile())
+                    props.onClose()
+                }}
+            >
+                Save
+            </button>
             <button onClick={props.onClose}>Cancel</button>
         </div>
     )
@@ -263,15 +321,24 @@ function EditForm(props) {
 ## Angular
 
 ```ts
-import { Component, signal } from "@angular/core"
-import { provideValdresScope, injectAtom, injectValue, injectStore } from "valdres-angular"
+import { Component, EventEmitter, Input, signal } from "@angular/core"
+import type { Store } from "valdres"
+import {
+    provideValdresScope,
+    injectAtom,
+    injectValue,
+    injectStore,
+} from "valdres-angular"
 import { profileAtom } from "./state"
 
 @Component({
     selector: "profile-view",
     template: `
         @if (editing()) {
-            <profile-edit-form (close)="editing.set(false)" />
+            <profile-edit-form
+                [parentStore]="store"
+                (close)="editing.set(false)"
+            />
         } @else {
             <h2>{{ profile().name }}</h2>
             <p>{{ profile().email }}</p>
@@ -282,6 +349,7 @@ import { profileAtom } from "./state"
 })
 export class ProfileView {
     profile = injectValue(profileAtom)
+    store = injectStore()
     editing = signal(false)
 }
 
@@ -291,28 +359,41 @@ export class ProfileView {
     outputs: ["close"],
     template: `
         <div>
-            <label>Name <input [value]="profile().name"
-                (input)="update('name', $event.target.value)" /></label>
-            <label>Email <input [value]="profile().email"
-                (input)="update('email', $event.target.value)" /></label>
-            <label>Bio <textarea [value]="profile().bio"
-                (input)="update('bio', $event.target.value)"></textarea></label>
+            <label
+                >Name
+                <input
+                    [value]="profile().name"
+                    (input)="update('name', $event.target.value)"
+            /></label>
+            <label
+                >Email
+                <input
+                    [value]="profile().email"
+                    (input)="update('email', $event.target.value)"
+            /></label>
+            <label
+                >Bio
+                <textarea
+                    [value]="profile().bio"
+                    (input)="update('bio', $event.target.value)"
+                ></textarea>
+            </label>
             <button (click)="handleSave()">Save</button>
             <button (click)="close.emit()">Cancel</button>
         </div>
     `,
 })
 export class ProfileEditForm {
+    @Input() parentStore!: Store
     close = new EventEmitter()
     profile = injectAtom(profileAtom)
-    store = injectStore()
 
     update(field: string, value: string) {
         this.profile.update(prev => ({ ...prev, [field]: value }))
     }
 
     handleSave() {
-        this.store.data.parent?.set(profileAtom, this.profile())
+        this.parentStore.set(profileAtom, this.profile())
         this.close.emit()
     }
 }
@@ -320,7 +401,11 @@ export class ProfileEditForm {
 
 ## Key takeaways
 
-- **Scoped stores** — edits are isolated in a child store. The parent state is untouched until you explicitly save.
-- **No copying** — you don't need to manually clone state into local form state. The scope inherits everything automatically.
+- **Scoped stores** — edits are isolated in a child store. The parent state is
+  untouched until you explicitly save.
+- **No copying** — you don't need to manually clone state into local form state.
+  The scope inherits everything automatically.
 - **Cancel is free** — just unmount the scope. No cleanup, no reset logic.
-- **Less boilerplate** — with Jotai, Zustand, or Redux you'd reach the same result by manually cloning form state and writing it back; scoped stores handle the inherit-and-commit for you.
+- **Less boilerplate** — with Jotai, Zustand, or Redux you'd reach the same
+  result by manually cloning form state and writing it back; scoped stores
+  handle the inherit-and-commit for you.

@@ -8,7 +8,7 @@ import { ValdresKey } from "./lib/storeKey"
 const provideStore = (storeInstance: ReturnType<typeof createStore>) => ({
     [ValdresKey as symbol]: {
         current: storeInstance,
-        stores: { [storeInstance.data.id]: storeInstance },
+        stores: { [storeInstance.id]: storeInstance },
     },
 })
 
@@ -28,7 +28,7 @@ describe("useStore", () => {
                 provide: provideStore(storeInstance),
             },
         })
-        expect(result.data.id).toBe(storeInstance.data.id)
+        expect(result.id).toBe(storeInstance.id)
     })
 
     test("throws without provider", () => {
@@ -48,7 +48,7 @@ describe("useStore", () => {
         let result: any
         const Comp = defineComponent({
             setup() {
-                result = useStore(parentStore.data.id)
+                result = useStore(parentStore.id)
                 return {}
             },
             template: "<div></div>",
@@ -59,14 +59,14 @@ describe("useStore", () => {
                     [ValdresKey as symbol]: {
                         current: childStore,
                         stores: {
-                            [parentStore.data.id]: parentStore,
-                            [childStore.data.id]: childStore,
+                            [parentStore.id]: parentStore,
+                            [childStore.id]: childStore,
                         },
                     },
                 },
             },
         })
-        expect(result.data.id).toBe(parentStore.data.id)
+        expect(result.id).toBe(parentStore.id)
     })
 
     test("throws for unknown store id", () => {

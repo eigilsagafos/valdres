@@ -1,5 +1,6 @@
 import type { Plugin } from "vue"
 import { store as createStore, type Store } from "valdres"
+import { storeAdapter } from "valdres/adapter-internals/v1"
 import { ValdresKey } from "./lib/storeKey"
 import { hydrate } from "./lib/hydrate"
 import type { InitializeCallback } from "./types/InitializeCallback"
@@ -13,12 +14,12 @@ export const createValdres = (options: ValdresPluginOptions = {}): Plugin => ({
     install(app) {
         let store = options.store
         if (store) {
-            if (!store.data.batchUpdates) {
+            if (!storeAdapter.isBatching(store)) {
                 console.warn(
                     "valdres-vue: The store passed to createValdres() was not created " +
-                    "with { batchUpdates: true }. Sequential store.set() calls " +
-                    "will trigger intermediate selector evaluations. Consider " +
-                    "using store({ batchUpdates: true }) for optimal performance.",
+                        "with { batchUpdates: true }. Sequential store.set() calls " +
+                        "will trigger intermediate selector evaluations. Consider " +
+                        "using store({ batchUpdates: true }) for optimal performance.",
                 )
             }
         } else {
@@ -34,7 +35,7 @@ export const createValdres = (options: ValdresPluginOptions = {}): Plugin => ({
         }
         app.provide(ValdresKey, {
             current: store,
-            stores: { [store.data.id]: store },
+            stores: { [store.id]: store },
         })
     },
 })

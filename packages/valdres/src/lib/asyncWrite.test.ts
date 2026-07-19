@@ -181,7 +181,7 @@ describe("async writes", () => {
             await pending
             await flushMicrotasks()
             expect(onSet).toHaveBeenCalledTimes(1)
-            expect(onSet).toHaveBeenCalledWith(2, store1.data)
+            expect(onSet).toHaveBeenCalledWith(2, store1)
         })
 
         test(`${mode.name} propagates settlement after onSet throws`, async () => {

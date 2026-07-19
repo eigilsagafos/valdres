@@ -11,7 +11,7 @@ const createInjector = (storeInstance = createStore()) => {
                 provide: VALDRES_STORE,
                 useValue: {
                     current: storeInstance,
-                    stores: { [storeInstance.data.id]: storeInstance },
+                    stores: { [storeInstance.id]: storeInstance },
                 },
             },
         ],

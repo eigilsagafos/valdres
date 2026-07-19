@@ -1,3 +1,4 @@
+import { getStoreData } from "./getStoreData"
 import { describe, test, expect } from "bun:test"
 import { atom } from "../atom"
 import { store } from "../store"
@@ -21,8 +22,8 @@ describe("batched flush error handling", () => {
         await new Promise(r => queueMicrotask(r))
 
         // After flush: values are committed to store data
-        expect(s.data.values.get(a)).toBe(1)
-        expect(s.data.values.get(b)).toBe(2)
+        expect(getStoreData(s).values.get(a)).toBe(1)
+        expect(getStoreData(s).values.get(b)).toBe(2)
     })
 
     test("new sets after flush create a fresh implicit transaction", async () => {
@@ -42,7 +43,7 @@ describe("batched flush error handling", () => {
         expect(s.get(a)).toBe(2)
 
         await new Promise(r => queueMicrotask(r))
-        expect(s.data.values.get(a)).toBe(2)
+        expect(getStoreData(s).values.get(a)).toBe(2)
     })
 
     test("subscriber error in non-batched mode throws synchronously", () => {

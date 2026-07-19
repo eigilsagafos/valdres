@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test"
 import { atom } from "../atom"
 import { atomFamily } from "../atomFamily"
+import { getStoreData } from "./getStoreData"
 import { store } from "../store"
 import type { SetAtom, Store } from "../index"
 
@@ -53,5 +54,5 @@ test("callback scopes expose a borrowed store without lifecycle ownership", () =
     })
 
     lease.detach()
-    expect(root.data.scopes.has("child")).toBe(false)
+    expect(getStoreData(root).scopes.has("child")).toBe(false)
 })

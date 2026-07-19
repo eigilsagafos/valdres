@@ -1,3 +1,4 @@
+import { getStoreData } from "./getStoreData"
 import { describe, expect, mock, test } from "bun:test"
 import { atom } from "../atom"
 import { selector } from "../selector"
@@ -27,19 +28,26 @@ describe("async selector unmount cleanup", () => {
         await Promise.resolve()
 
         expect(signal!.aborted).toBe(false)
-        expect(targetStore.data.values.has(derived)).toBe(false)
-        expect(targetStore.data.stateDependencies.has(derived)).toBe(false)
-        expect(targetStore.data.latestEvalContext.has(derived)).toBe(false)
+        expect(getStoreData(targetStore).values.has(derived)).toBe(false)
+        expect(getStoreData(targetStore).stateDependencies.has(derived)).toBe(
+            false,
+        )
+        expect(getStoreData(targetStore).latestEvalContext.has(derived)).toBe(
+            false,
+        )
 
         release()
         expect(await pending).toBe(3)
         await Promise.resolve()
 
         expect(callback).toHaveBeenCalledTimes(0)
-        expect(targetStore.data.values.has(derived)).toBe(false)
-        expect(targetStore.data.stateDependencies.has(derived)).toBe(false)
+        expect(getStoreData(targetStore).values.has(derived)).toBe(false)
+        expect(getStoreData(targetStore).stateDependencies.has(derived)).toBe(
+            false,
+        )
         expect(
-            targetStore.data.stateDependents.get(late)?.has(derived) ?? false,
+            getStoreData(targetStore).stateDependents.get(late)?.has(derived) ??
+                false,
         ).toBe(false)
     })
 
@@ -64,9 +72,13 @@ describe("async selector unmount cleanup", () => {
 
         expect(await pending).toBe(false)
         await Promise.resolve()
-        expect(targetStore.data.values.has(derived)).toBe(false)
-        expect(targetStore.data.stateDependencies.has(derived)).toBe(false)
-        expect(targetStore.data.abortControllers.has(derived)).toBe(false)
+        expect(getStoreData(targetStore).values.has(derived)).toBe(false)
+        expect(getStoreData(targetStore).stateDependencies.has(derived)).toBe(
+            false,
+        )
+        expect(getStoreData(targetStore).abortControllers.has(derived)).toBe(
+            false,
+        )
     })
 
     test("deferred get from a settled selector is read-only after cleanup", async () => {
@@ -91,10 +103,13 @@ describe("async selector unmount cleanup", () => {
         await gate
         await Promise.resolve()
 
-        expect(targetStore.data.values.has(derived)).toBe(false)
-        expect(targetStore.data.stateDependencies.has(derived)).toBe(false)
+        expect(getStoreData(targetStore).values.has(derived)).toBe(false)
+        expect(getStoreData(targetStore).stateDependencies.has(derived)).toBe(
+            false,
+        )
         expect(
-            targetStore.data.stateDependents.get(late)?.has(derived) ?? false,
+            getStoreData(targetStore).stateDependents.get(late)?.has(derived) ??
+                false,
         ).toBe(false)
     })
 
@@ -120,9 +135,13 @@ describe("async selector unmount cleanup", () => {
         await Promise.resolve()
 
         expect(evaluations).toBe(1)
-        expect(targetStore.data.values.has(asyncDependency)).toBe(false)
-        expect(targetStore.data.values.has(derived)).toBe(false)
-        expect(targetStore.data.stateDependencies.has(derived)).toBe(false)
+        expect(getStoreData(targetStore).values.has(asyncDependency)).toBe(
+            false,
+        )
+        expect(getStoreData(targetStore).values.has(derived)).toBe(false)
+        expect(getStoreData(targetStore).stateDependencies.has(derived)).toBe(
+            false,
+        )
     })
 
     test("old Promise cannot commit through a newer evaluation's graph", async () => {
@@ -145,14 +164,16 @@ describe("async selector unmount cleanup", () => {
         // dependency graph, but its error leaves no cached value. Value/graph
         // presence alone therefore cannot identify the old Promise as stale.
         targetStore.set(trigger, 1)
-        expect(targetStore.data.stateDependencies.has(derived)).toBe(true)
-        expect(targetStore.data.values.has(derived)).toBe(false)
+        expect(getStoreData(targetStore).stateDependencies.has(derived)).toBe(
+            true,
+        )
+        expect(getStoreData(targetStore).values.has(derived)).toBe(false)
 
         resolveFirst(42)
         expect(await firstPending).toBe(42)
         await Promise.resolve()
 
-        expect(targetStore.data.values.has(derived)).toBe(false)
+        expect(getStoreData(targetStore).values.has(derived)).toBe(false)
         unsubscribe()
     })
 })

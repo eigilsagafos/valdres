@@ -1,3 +1,4 @@
+import { getStoreData } from "./getStoreData"
 import { expect, test } from "bun:test"
 import { atom } from "../atom"
 import { selector } from "../selector"
@@ -38,7 +39,9 @@ test("a cyclic region's onMount cleanup fires when its only subscriber leaves", 
         },
         { name: "cyc-mount.x" },
     )
-    y = selector(get => (get(ay) % 2 === 0 ? 0 : get(x)), { name: "cyc-mount.y" })
+    y = selector(get => (get(ay) % 2 === 0 ? 0 : get(x)), {
+        name: "cyc-mount.y",
+    })
 
     const s = store("cyc-mount")
     const unsub = s.sub(x, () => {}, false)
@@ -46,17 +49,17 @@ test("a cyclic region's onMount cleanup fires when its only subscriber leaves", 
     // x live → reads tracked → tracked mounted.
     expect(mounts).toBe(1)
     expect(cleanups).toBe(0)
-    expect(s.data.liveDependentCount.get(tracked) ?? 0).toBe(1)
-    expect(s.data.cycleRiskInClosure.has(x)).toBe(false)
+    expect(getStoreData(s).liveDependentCount.get(tracked) ?? 0).toBe(1)
+    expect(getStoreData(s).cycleRiskInClosure.has(x)).toBe(false)
 
     // Close the cycle: ay odd makes y read x while x still reads y.
     s.set(ay, 1)
-    expect(s.data.stateDependencies.get(x)).toContain(y)
-    expect(s.data.stateDependencies.get(y)).toContain(x)
+    expect(getStoreData(s).stateDependencies.get(x)).toContain(y)
+    expect(getStoreData(s).stateDependencies.get(y)).toContain(x)
     // y (materialized before x) now points forward to x. That order-violating
     // edge marks the whole x↔y closure as requiring exact cycle detection.
-    expect(s.data.cycleRiskInClosure.has(x)).toBe(true)
-    expect(s.data.cycleRiskInClosure.has(y)).toBe(true)
+    expect(getStoreData(s).cycleRiskInClosure.has(x)).toBe(true)
+    expect(getStoreData(s).cycleRiskInClosure.has(y)).toBe(true)
     // tracked is still read by the (still-subscribed) x.
     expect(cleanups).toBe(0)
 
@@ -64,9 +67,9 @@ test("a cyclic region's onMount cleanup fires when its only subscriber leaves", 
     // (each keeps the other's count > 0), so the unsubscribe reconcile must mark
     // both non-live AND unmount `tracked`, firing its cleanup.
     unsub()
-    expect(s.data.liveDependentCount.get(tracked) ?? 0).toBe(0)
-    expect(s.data.liveDependentCount.get(x) ?? 0).toBe(0)
-    expect(s.data.liveDependentCount.get(y) ?? 0).toBe(0)
+    expect(getStoreData(s).liveDependentCount.get(tracked) ?? 0).toBe(0)
+    expect(getStoreData(s).liveDependentCount.get(x) ?? 0).toBe(0)
+    expect(getStoreData(s).liveDependentCount.get(y) ?? 0).toBe(0)
     // The actual resource release: every mount was cleaned up — no leaked
     // subscription left running on the collected cyclic group.
     expect(cleanups).toBe(mounts)
@@ -90,28 +93,27 @@ test("a nested cyclic region is collected when its subscribed parent leaves", ()
         },
         { name: "nested-cycle.x" },
     )
-    y = selector(
-        get => (get(closeCycle) ? get(x) : 0),
-        { name: "nested-cycle.y" },
-    )
+    y = selector(get => (get(closeCycle) ? get(x) : 0), {
+        name: "nested-cycle.y",
+    })
     const root = selector(get => get(x), { name: "nested-cycle.root" })
 
     const s = store("nested-cycle")
     const unsubscribeRoot = s.sub(root, () => {}, false)
     s.set(closeCycle, true)
 
-    expect(s.data.stateDependencies.get(x)).toContain(y)
-    expect(s.data.stateDependencies.get(y)).toContain(x)
-    expect(s.data.liveDependentCount.get(x)).toBe(2)
+    expect(getStoreData(s).stateDependencies.get(x)).toContain(y)
+    expect(getStoreData(s).stateDependencies.get(y)).toContain(x)
+    expect(getStoreData(s).liveDependentCount.get(x)).toBe(2)
 
     // Removing root decrements x from 2 -> 1 and stops the incremental walk at
     // the nested x↔y cycle. The cycle-risk marker forces an exact reconcile,
     // which collects the cycle and releases its resource.
     unsubscribeRoot()
 
-    expect(s.data.liveDependentCount.get(x) ?? 0).toBe(0)
-    expect(s.data.liveDependentCount.get(y) ?? 0).toBe(0)
-    expect(s.data.liveDependentCount.get(tracked) ?? 0).toBe(0)
+    expect(getStoreData(s).liveDependentCount.get(x) ?? 0).toBe(0)
+    expect(getStoreData(s).liveDependentCount.get(y) ?? 0).toBe(0)
+    expect(getStoreData(s).liveDependentCount.get(tracked) ?? 0).toBe(0)
     expect(cleanups).toBe(1)
 })
 
@@ -140,17 +142,17 @@ test("a throwing cyclic cleanup still queues orphaned graph cleanup", async () =
     const unsubscribe = s.sub(root, () => {}, false)
     s.set(closeCycle, true)
 
-    expect(s.data.stateDependencies.get(x)).toContain(y)
-    expect(s.data.stateDependencies.get(y)).toContain(x)
+    expect(getStoreData(s).stateDependencies.get(x)).toContain(y)
+    expect(getStoreData(s).stateDependencies.get(y)).toContain(x)
     expect(() => unsubscribe()).toThrow("cleanup boom")
 
     await Promise.resolve()
-    expect(s.data.stateDependencies.has(root)).toBe(false)
-    expect(s.data.stateDependencies.has(x)).toBe(false)
-    expect(s.data.stateDependencies.has(y)).toBe(false)
-    expect(s.data.values.has(root)).toBe(false)
-    expect(s.data.values.has(x)).toBe(false)
-    expect(s.data.values.has(y)).toBe(false)
+    expect(getStoreData(s).stateDependencies.has(root)).toBe(false)
+    expect(getStoreData(s).stateDependencies.has(x)).toBe(false)
+    expect(getStoreData(s).stateDependencies.has(y)).toBe(false)
+    expect(getStoreData(s).values.has(root)).toBe(false)
+    expect(getStoreData(s).values.has(x)).toBe(false)
+    expect(getStoreData(s).values.has(y)).toBe(false)
 })
 
 test("acyclic dependency removals skip the exact cycle DFS", async () => {
@@ -172,9 +174,9 @@ test("acyclic dependency removals skip the exact cycle DFS", async () => {
     s.get(left)
     s.get(right)
     const unsubscribe = s.sub(root, () => {}, false)
-    expect(s.data.cycleRiskInClosure.has(dynamic)).toBe(false)
+    expect(getStoreData(s).cycleRiskInClosure.has(dynamic)).toBe(false)
 
-    const proofs = s.data.acyclicDependencyVersion
+    const proofs = getStoreData(s).acyclicDependencyVersion
     const writeProof = proofs.set.bind(proofs)
     let proofWrites = 0
     proofs.set = (key: WeakKey, version: number) => {

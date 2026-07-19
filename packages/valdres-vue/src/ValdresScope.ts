@@ -1,4 +1,11 @@
-import { defineComponent, inject, provide, onScopeDispose, type PropType } from "vue"
+import {
+    defineComponent,
+    inject,
+    provide,
+    onScopeDispose,
+    type PropType,
+} from "vue"
+import { storeAdapter } from "valdres/adapter-internals/v1"
 import { ValdresKey } from "./lib/storeKey"
 import { hydrate } from "./lib/hydrate"
 import type { InitializeCallback } from "./types/InitializeCallback"
@@ -24,7 +31,10 @@ export const ValdresScope = defineComponent({
             )
         }
 
-        const scopeCreated = !parentCtx.current.data.scopes?.has(props.scopeId)
+        const scopeCreated = !storeAdapter.hasScope(
+            parentCtx.current,
+            props.scopeId,
+        )
         const scopedStore = parentCtx.current.scope(props.scopeId)
 
         if (props.initialize) {
@@ -40,8 +50,8 @@ export const ValdresScope = defineComponent({
             current: scopedStore,
             stores: {
                 ...parentCtx.stores,
-                [parentCtx.current.data.id]: parentCtx.current,
-                [scopedStore.data.id]: scopedStore,
+                [parentCtx.current.id]: parentCtx.current,
+                [scopedStore.id]: scopedStore,
             },
         })
 

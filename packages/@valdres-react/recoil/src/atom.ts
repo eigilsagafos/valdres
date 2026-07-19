@@ -14,7 +14,7 @@ export const atom = <T>(args: AtomOptions<T>): RecoilState<T> => {
             for (const effect of args.effects) {
                 effect({
                     node: atom,
-                    storeID: store.data.id,
+                    storeID: store.id,
                     onSet: cb => {
                         onSetCallbacks.push(cb)
                     },

@@ -1,4 +1,4 @@
-import type { GlobalAtom } from "../types/GlobalAtom"
+import type { InternalGlobalAtom } from "../types/InternalGlobalAtom"
 
-export const isGlobalAtom = <V>(state: any): state is GlobalAtom<V> =>
+export const isGlobalAtom = <V>(state: any): state is InternalGlobalAtom<V> =>
     state && Object.hasOwn(state, "stores")

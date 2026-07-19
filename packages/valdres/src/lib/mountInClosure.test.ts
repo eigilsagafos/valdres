@@ -1,3 +1,4 @@
+import { getStoreData } from "./getStoreData"
 import { expect, test } from "bun:test"
 import { atom } from "../atom"
 import { selector } from "../selector"
@@ -37,7 +38,7 @@ test("onMount fires through a deep chain of mount-free selectors", () => {
     expect(mounts).toBe(1)
     expect(cleanups).toBe(0)
     // The marker reached the top across all 40 hops — no false negative.
-    expect(s.data.mountInClosure.has(node)).toBe(true)
+    expect(getStoreData(s).mountInClosure.has(node)).toBe(true)
 
     unsub()
     expect(cleanups).toBe(1)
@@ -65,14 +66,14 @@ test("onMount mounts when a live selector dynamically gains the dep during propa
     const unsub = s.sub(sel, () => {}, false)
     // No mountable node in the closure yet, so no marker and nothing mounted.
     expect(mounts).toBe(0)
-    expect(s.data.mountInClosure.has(sel)).toBe(false)
+    expect(getStoreData(s).mountInClosure.has(sel)).toBe(false)
 
     // Propagation re-evaluates `sel`, adds the sel→tracked edge, and must mark
     // + mount through it (noteDependencyAdded armed the marker; the loop walks).
     s.set(toggle, true)
     expect(mounts).toBe(1)
     expect(cleanups).toBe(0)
-    expect(s.data.mountInClosure.has(sel)).toBe(true)
+    expect(getStoreData(s).mountInClosure.has(sel)).toBe(true)
 
     // Dropping the edge unmounts `tracked` (no longer live). The marker is
     // allowed to stay stale-true here — that only risks a redundant walk.
@@ -82,7 +83,7 @@ test("onMount mounts when a live selector dynamically gains the dep during propa
     // Unsubscribe walks `sel`'s now mount-free closure with a fresh visited set,
     // which recomputes and CLEARS the stale marker.
     unsub()
-    expect(s.data.mountInClosure.has(sel)).toBe(false)
+    expect(getStoreData(s).mountInClosure.has(sel)).toBe(false)
 })
 
 test("marker stays correct (no false negative) across churn in a cyclic region", () => {
@@ -115,17 +116,17 @@ test("marker stays correct (no false negative) across churn in a cyclic region",
     const s = store("mic.cyc")
     const unsub = s.sub(x, () => {}, false)
     expect(mounts).toBe(1)
-    expect(s.data.mountInClosure.has(x)).toBe(true)
+    expect(getStoreData(s).mountInClosure.has(x)).toBe(true)
 
     // Close the cycle (y now reads x) — y gains a mount-relevant dep.
     s.set(ay, 1)
-    expect(s.data.mountInClosure.has(y)).toBe(true)
+    expect(getStoreData(s).mountInClosure.has(y)).toBe(true)
     // Churn the other edge a few times; the mount must never drop while x lives.
     s.set(ax, 1)
     s.set(ax, 2)
     s.set(ay, 0)
     expect(cleanups).toBe(0)
-    expect(s.data.liveDependentCount.get(tracked) ?? 0).toBe(1)
+    expect(getStoreData(s).liveDependentCount.get(tracked) ?? 0).toBe(1)
 
     // Only when x's subscriber leaves does `tracked` unmount.
     unsub()
@@ -158,7 +159,7 @@ test("onMount assigned after atom() but before first store use still mounts", ()
     const unsub = s.sub(sel, () => {}, false)
     expect(mounts).toBe(1)
     expect(cleanups).toBe(0)
-    expect(s.data.mountInClosure.has(sel)).toBe(true)
+    expect(getStoreData(s).mountInClosure.has(sel)).toBe(true)
 
     unsub()
     expect(cleanups).toBe(1)

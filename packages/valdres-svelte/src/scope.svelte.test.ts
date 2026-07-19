@@ -1,6 +1,7 @@
 import { describe, test, expect, spyOn, mock } from "bun:test"
 import { mount, unmount, flushSync } from "svelte"
 import { atom, store, type Store } from "valdres"
+import { storeAdapter } from "valdres/adapter-internals/v1"
 import { scope } from "./scope"
 import ScopeProbe from "../test/components/ScopeProbe.svelte"
 import ScopeLifecycle from "../test/components/ScopeLifecycle.svelte"
@@ -36,12 +37,12 @@ describe("scope", () => {
         })
         flushSync() // complete the initial mount so onDestroy will fire later
 
-        expect(rootStore.data.scopes?.has("detach-me")).toBe(true)
+        expect(storeAdapter.hasScope(rootStore, "detach-me")).toBe(true)
 
         unmount(comp)
         flushSync() // onDestroy runs on the unmount flush
         // onDestroy → scopedStore.detach() drops the last consumer.
-        expect(rootStore.data.scopes?.has("detach-me")).toBe(false)
+        expect(storeAdapter.hasScope(rootStore, "detach-me")).toBe(false)
     })
 
     test("reuses an existing scope of the same id (ref-counted detach)", () => {
@@ -62,7 +63,7 @@ describe("scope", () => {
         flushSync() // complete both mounts so onDestroy fires on unmount
 
         // Both resolve the same scoped store data.
-        expect(a!.data.id).toBe(b!.data.id)
+        expect(a!.id).toBe(b!.id)
 
         // Two consumers: unmounting one keeps the scope alive. The creator
         // detaching while a consumer remains logs an expected core warning.
@@ -70,11 +71,11 @@ describe("scope", () => {
         try {
             unmount(compA)
             flushSync()
-            expect(rootStore.data.scopes?.has("shared")).toBe(true)
+            expect(storeAdapter.hasScope(rootStore, "shared")).toBe(true)
             // ...and the last consumer's destroy detaches it.
             unmount(compB)
             flushSync()
-            expect(rootStore.data.scopes?.has("shared")).toBe(false)
+            expect(storeAdapter.hasScope(rootStore, "shared")).toBe(false)
         } finally {
             warn.mockRestore()
         }

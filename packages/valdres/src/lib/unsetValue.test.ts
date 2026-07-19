@@ -1,3 +1,4 @@
+import { getStoreData } from "./getStoreData"
 import { describe, test, expect, mock } from "bun:test"
 import { store } from "../store"
 import { atom } from "../atom"
@@ -48,11 +49,15 @@ describe("scope.unset — bookkeeping cleanup", () => {
         const scoped = root.scope("child")
         const a = atom(1)
         scoped.set(a, 2)
-        expect(root.data.scopeValueIndex.get(a)?.has(scoped.data)).toBe(true)
+        expect(
+            getStoreData(root)
+                .scopeValueIndex.get(a)
+                ?.has(getStoreData(scoped)),
+        ).toBe(true)
 
         scoped.unset(a)
         // The set is emptied and the key removed entirely.
-        expect(root.data.scopeValueIndex.get(a)).toBeUndefined()
+        expect(getStoreData(root).scopeValueIndex.get(a)).toBeUndefined()
     })
 
     test("scope scopeIndexKeys no longer references the atom", () => {
@@ -60,10 +65,10 @@ describe("scope.unset — bookkeeping cleanup", () => {
         const scoped = root.scope("child")
         const a = atom(1)
         scoped.set(a, 2)
-        expect(scoped.data.scopeIndexKeys!.has(a)).toBe(true)
+        expect(getStoreData(scoped).scopeIndexKeys!.has(a)).toBe(true)
 
         scoped.unset(a)
-        expect(scoped.data.scopeIndexKeys!.has(a)).toBe(false)
+        expect(getStoreData(scoped).scopeIndexKeys!.has(a)).toBe(false)
     })
 
     test("the scope's own value entry is removed from data.values", () => {
@@ -71,10 +76,10 @@ describe("scope.unset — bookkeeping cleanup", () => {
         const scoped = root.scope("child")
         const a = atom(1)
         scoped.set(a, 2)
-        expect(scoped.data.values.has(a)).toBe(true)
+        expect(getStoreData(scoped).values.has(a)).toBe(true)
 
         scoped.unset(a)
-        expect(scoped.data.values.has(a)).toBe(false)
+        expect(getStoreData(scoped).values.has(a)).toBe(false)
     })
 
     test("unsetting one shadow leaves a sibling scope's shadow intact", () => {
@@ -87,9 +92,9 @@ describe("scope.unset — bookkeeping cleanup", () => {
 
         scopeA.unset(a)
         // scopeValueIndex still references scopeB, not scopeA
-        const set = root.data.scopeValueIndex.get(a)
-        expect(set?.has(scopeA.data)).toBe(false)
-        expect(set?.has(scopeB.data)).toBe(true)
+        const set = getStoreData(root).scopeValueIndex.get(a)
+        expect(set?.has(getStoreData(scopeA))).toBe(false)
+        expect(set?.has(getStoreData(scopeB))).toBe(true)
         expect(scopeB.get(a)).toBe(200)
     })
 })
@@ -238,10 +243,10 @@ describe("unset — root store", () => {
         const root = store()
         const a = atom<object>({ d: true })
         root.set(a, { v: 1 })
-        expect(root.data.values.has(a)).toBe(true)
+        expect(getStoreData(root).values.has(a)).toBe(true)
 
         root.unset(a)
-        expect(root.data.values.has(a)).toBe(false)
+        expect(getStoreData(root).values.has(a)).toBe(false)
     })
 
     test("unset is a no-op when the atom has no stored value", () => {
@@ -251,7 +256,7 @@ describe("unset — root store", () => {
         root.onChange(cb)
         root.unset(a) // never set or read
         expect(cb).toHaveBeenCalledTimes(0)
-        expect(root.data.values.has(a)).toBe(false)
+        expect(getStoreData(root).values.has(a)).toBe(false)
     })
 
     test("onChange does not evaluate a lazy default solely to report a root unset", () => {
@@ -266,7 +271,7 @@ describe("unset — root store", () => {
         root.unset(a)
 
         expect(initCount).toBe(1)
-        expect(root.data.values.has(a)).toBe(false)
+        expect(getStoreData(root).values.has(a)).toBe(false)
         expect(received).toEqual([
             { type: "atom", kind: "unset", state: a, scope: [] },
         ])
@@ -289,7 +294,7 @@ describe("unset — root store", () => {
         root.unset(a)
 
         expect(initCount).toBe(1)
-        expect(root.data.values.has(a)).toBe(false)
+        expect(getStoreData(root).values.has(a)).toBe(false)
         expect(received).toEqual([
             { type: "atom", kind: "unset", state: a, scope: [] },
         ])
@@ -344,7 +349,7 @@ describe("unset — root store", () => {
 
         root.txn(t => t.unset(a))
         // De-materialized first (a read would re-initialize it), then reverts.
-        expect(root.data.values.has(a)).toBe(false)
+        expect(getStoreData(root).values.has(a)).toBe(false)
         expect(root.get(a)).toBe(1)
     })
 
@@ -360,7 +365,7 @@ describe("unset — root store", () => {
         root.txn(t => t.unset(a))
 
         expect(initCount).toBe(1)
-        expect(root.data.values.has(a)).toBe(false)
+        expect(getStoreData(root).values.has(a)).toBe(false)
         expect(received).toEqual([
             { type: "atom", kind: "unset", state: a, scope: [] },
         ])
@@ -391,7 +396,7 @@ describe("unset — root store", () => {
             t.set(a, 9)
         })
         expect(root.get(a)).toBe(9)
-        expect(root.data.values.get(a)).toBe(9)
+        expect(getStoreData(root).values.get(a)).toBe(9)
     })
 })
 
@@ -471,7 +476,13 @@ describe("scope.unset — onChange", () => {
         expect(calls.length).toBe(1)
         expect(calls[0]!.meta.source).toBe("unset")
         expect(calls[0]!.changes).toEqual([
-            { type: "atom", kind: "unset", state: a, value: 10, scope: ["child"] },
+            {
+                type: "atom",
+                kind: "unset",
+                state: a,
+                value: 10,
+                scope: ["child"],
+            },
         ])
     })
 
@@ -525,8 +536,8 @@ describe("scope.unset — transaction form", () => {
         })
 
         expect(scoped.get(a)).toBe(10)
-        expect(scoped.data.values.has(a)).toBe(false)
-        expect(root.data.scopeValueIndex.get(a)).toBeUndefined()
+        expect(getStoreData(scoped).values.has(a)).toBe(false)
+        expect(getStoreData(root).scopeValueIndex.get(a)).toBeUndefined()
     })
 
     test("an unset inside a txn reports kind 'unset' per-change (source stays 'transaction')", () => {
@@ -601,7 +612,7 @@ describe("scope.unset — transaction form", () => {
         })
         // The later set must win — the atom is re-shadowed at 5, not re-inherited.
         expect(scoped.get(a)).toBe(5)
-        expect(scoped.data.values.get(a)).toBe(5)
+        expect(getStoreData(scoped).values.get(a)).toBe(5)
     })
 
     test("an unset after a set in the same txn wins (re-inherits)", () => {
@@ -618,7 +629,7 @@ describe("scope.unset — transaction form", () => {
             })
         })
         expect(scoped.get(a)).toBe(10)
-        expect(scoped.data.values.has(a)).toBe(false)
+        expect(getStoreData(scoped).values.has(a)).toBe(false)
     })
 
     test("reading an unset atom mid-txn returns the inherited value, not the stale shadow", () => {
@@ -702,7 +713,7 @@ describe("scope.unset — notifies on value-equal shadow", () => {
         root.set(a, 10)
         scoped.set(a, 99) // create a real shadow (differs from parent's 10)
         root.set(a, 99) // parent drifts to match — shadow now equals inherited
-        expect(scoped.data.values.get(a)).toBe(99)
+        expect(getStoreData(scoped).values.get(a)).toBe(99)
 
         const sub = mock(() => {})
         scoped.sub(a, sub)
@@ -715,6 +726,6 @@ describe("scope.unset — notifies on value-equal shadow", () => {
         // effective value is unchanged (matches reset's unconditional notify).
         expect(sub).toHaveBeenCalledTimes(1)
         expect(onChange).toHaveBeenCalledTimes(1)
-        expect(scoped.data.values.has(a)).toBe(false)
+        expect(getStoreData(scoped).values.has(a)).toBe(false)
     })
 })

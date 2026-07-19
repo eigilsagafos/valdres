@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { mkdtemp, readdir, rm } from "node:fs/promises"
+import { mkdir, mkdtemp, readdir, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { buildOptions, removeStaleBuildJavaScript } from "../build"
@@ -23,7 +23,9 @@ describe("build output", () => {
         // The runtime reference must survive; if it were folded we'd see
         // `typeof process !== "undefined" && true` (or `&& false`) instead.
         expect(code).toContain("process.env.NODE_ENV")
-        expect(code).not.toMatch(/typeof process !== "undefined" && (true|false)/)
+        expect(code).not.toMatch(
+            /typeof process !== "undefined" && (true|false)/,
+        )
     })
 
     test("public and adapter entrypoints share one transaction runtime", async () => {
@@ -37,13 +39,18 @@ describe("build output", () => {
             output.path.endsWith("/index.js"),
         )
         const adapterInternals = result.outputs.findIndex(output =>
-            output.path.endsWith("/adapter-internals.js"),
+            output.path.endsWith("adapter-internals/v1.js"),
         )
 
         expect(index).toBeGreaterThanOrEqual(0)
         expect(adapterInternals).toBeGreaterThanOrEqual(0)
         expect(
             outputs.filter(code => code.includes("class TransactionContext")),
+        ).toHaveLength(1)
+        expect(
+            outputs.filter(code =>
+                code.includes('Symbol("valdres.storeDataAccess")'),
+            ),
         ).toHaveLength(1)
         expect(outputs[index]).not.toContain("Transaction")
         expect(outputs[adapterInternals]).toContain("Transaction")
@@ -52,10 +59,15 @@ describe("build output", () => {
     test("removes stale split chunks without deleting type output", async () => {
         const outdir = await mkdtemp(join(tmpdir(), "valdres-build-"))
         try {
+            await mkdir(join(outdir, "adapter-internals"))
             await Promise.all([
                 Bun.write(join(outdir, "index.js"), "old index"),
                 Bun.write(join(outdir, "chunk-old.js"), "old chunk"),
                 Bun.write(join(outdir, "chunk-old.js.map"), "old map"),
+                Bun.write(
+                    join(outdir, "adapter-internals", "v1.js"),
+                    "old adapter",
+                ),
                 Bun.write(join(outdir, "index.d.ts"), "export {}"),
             ])
 

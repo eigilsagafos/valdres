@@ -1,5 +1,5 @@
 import { StoreDisposedError } from "../errors/StoreDisposedError"
-import type { GlobalAtom } from "../types/GlobalAtom"
+import type { InternalGlobalAtom } from "../types/InternalGlobalAtom"
 import type { State } from "../types/State"
 import type { Store } from "../types/Store"
 import type { StoreData } from "../types/StoreData"
@@ -12,7 +12,7 @@ import type { TransactionContext } from "./transaction"
  */
 export type StoreResources = {
     disposed?: true
-    globals?: Set<GlobalAtom<any>>
+    globals?: Set<InternalGlobalAtom<any>>
     cleanups?: Set<() => void>
     mounts?: Set<State>
     abortControllers?: Set<AbortController>
@@ -168,7 +168,7 @@ export const getStoreDisposedErrorToken = (
 
 export const trackTouchedGlobal = (
     data: StoreData,
-    atom: GlobalAtom<any>,
+    atom: InternalGlobalAtom<any>,
 ): boolean => {
     if (isStoreDisposed(data)) return false
     const resources = getOrCreateStoreResources(data)
@@ -178,7 +178,7 @@ export const trackTouchedGlobal = (
 
 export const untrackTouchedGlobal = (
     data: StoreData,
-    atom: GlobalAtom<any>,
+    atom: InternalGlobalAtom<any>,
 ): void => {
     const resources = resourcesFor(data)
     const globals = resources?.globals
@@ -189,7 +189,8 @@ export const untrackTouchedGlobal = (
 
 export const getTouchedGlobals = (
     data: StoreData,
-): ReadonlySet<GlobalAtom<any>> | undefined => resourcesFor(data)?.globals
+): ReadonlySet<InternalGlobalAtom<any>> | undefined =>
+    resourcesFor(data)?.globals
 
 /**
  * Register an idempotent resource disposer. Registration after terminal

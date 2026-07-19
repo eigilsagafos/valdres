@@ -17,9 +17,9 @@ type CountedSubscriptions = Set<Subscription> & {
     [equalCheckCount]?: number
 }
 
-// StoreData exposes the legacy boolean map publicly. Keep it accurate without
-// a survivor scan or a second state index: the subscription Set already has
-// exactly the lifetime and identity needed to own the private O(1) count.
+// Keep the equality flag map accurate without a survivor scan or a second state
+// index: the subscription Set already has exactly the lifetime and identity
+// needed to own the private O(1) count.
 export const addSubscriptionEqualCheck = (
     state: State,
     subscriptions: Set<Subscription>,

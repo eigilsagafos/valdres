@@ -1,5 +1,6 @@
 import { useContext, type JSX } from "solid-js"
 import { store as createStore, type Store } from "valdres"
+import { storeAdapter } from "valdres/adapter-internals/v1"
 import { StoreContext } from "./lib/storeContext"
 import { hydrate } from "./lib/hydrate"
 import type { InitializeCallback } from "./types/InitializeCallback"
@@ -15,7 +16,7 @@ export const ValdresProvider = (props: ValdresProviderProps) => {
 
     let store = props.store
     if (store) {
-        if (!store.data.batchUpdates) {
+        if (!storeAdapter.isBatching(store)) {
             console.warn(
                 "valdres-solid: The store passed to ValdresProvider was not created " +
                     "with { batchUpdates: true }. Sequential store.set() calls " +
@@ -28,9 +29,9 @@ export const ValdresProvider = (props: ValdresProviderProps) => {
     }
 
     if (parentCtx) {
-        if (store.data.id in parentCtx.stores) {
+        if (store.id in parentCtx.stores) {
             throw new Error(
-                `store with id ${store.data.id} is already defined further up the tree`,
+                `store with id ${store.id} is already defined further up the tree`,
             )
         }
     }
@@ -49,7 +50,7 @@ export const ValdresProvider = (props: ValdresProviderProps) => {
             current: store,
             stores: {
                 ...(parentCtx?.stores ?? {}),
-                [store.data.id]: store,
+                [store.id]: store,
             },
         },
         get children() {

@@ -1,3 +1,4 @@
+import { getStoreData } from "./getStoreData"
 import { describe, expect, mock, test } from "bun:test"
 import { store } from "../store"
 import { atomFamily } from "../atomFamily"
@@ -15,7 +16,7 @@ describe("deleteFamilyAtom", () => {
         expect(rootStore.get(allUserIds)).toStrictEqual([])
         rootStore.set(user(1), { id: 1 })
         expect(rootStore.get(allUserIds)).toStrictEqual([1])
-        deleteFamilyAtom(user(1), rootStore.data)
+        deleteFamilyAtom(user(1), getStoreData(rootStore))
         expect(rootStore.get(allUserIds)).toStrictEqual([])
     })
     test("selector subscribing to family and all family atoms", () => {
@@ -27,9 +28,9 @@ describe("deleteFamilyAtom", () => {
         expect(rootStore.get(allUsers)).toStrictEqual([{ id: 1 }])
         rootStore.set(user(2), { id: 2 })
         expect(rootStore.get(allUsers)).toStrictEqual([{ id: 1 }, { id: 2 }])
-        deleteFamilyAtom(user(1), rootStore.data)
+        deleteFamilyAtom(user(1), getStoreData(rootStore))
         expect(rootStore.get(allUsers)).toStrictEqual([{ id: 2 }])
-        deleteFamilyAtom(user(2), rootStore.data)
+        deleteFamilyAtom(user(2), getStoreData(rootStore))
         expect(rootStore.get(allUsers)).toStrictEqual([])
     })
 

@@ -7,7 +7,7 @@ describe("useStoreId", () => {
     test("Provider", () => {
         const [store, renderHook] = generateStoreAndRenderHook()
         const { result } = renderHook(() => useStoreId())
-        expect(result.current).toBe(store.data.id)
+        expect(result.current).toBe(store.id)
     })
 
     test("Error when no <Provider>", () => {
