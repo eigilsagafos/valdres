@@ -7,8 +7,8 @@ import { store as valdresCreateStore } from "../../src/store"
 
 // Valdres-only scope-propagation scaling (jotai has no scopes, so there is no
 // competitor here). Recorded as `latency` benchmarks via measureOne so Bencher
-// tracks and t-test-gates them like the rest of the suite, rather than only
-// printing to the console.
+// tracks them, gates PRs against the same-runner base, and includes them in the
+// runner-normalized main history rather than only printing to the console.
 describe("scope propagation", () => {
     test("acquire and detach another handle for an existing scope", async () => {
         const root = valdresCreateStore()
