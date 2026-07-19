@@ -6,15 +6,23 @@ description: Create and interact with a valdres store
 # store
 
 <div className="not-prose mb-8 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50 p-4">
-  <div className="text-xs font-medium text-zinc-400 dark:text-zinc-500 mb-2 uppercase tracking-wider">Signature</div>
-  <code className="text-sm font-mono text-accent-500">store(id?: string, options?: StoreOptions): Store</code>
+    <div className="text-xs font-medium text-zinc-400 dark:text-zinc-500 mb-2 uppercase tracking-wider">
+        Signature
+    </div>
+    <code className="text-sm font-mono text-accent-500">
+        store(id?: string, options?: StoreOptions): Store
+    </code>
   <div className="mt-3 text-xs text-zinc-500 dark:text-zinc-400">
-    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-zinc-200 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 font-medium mr-2">valdres</span>
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-zinc-200 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 font-medium mr-2">
+            valdres
+        </span>
     Create a store to hold all state
   </div>
 </div>
 
-Creates a store instance that holds all atom and selector state and manages subscriptions. The store is the central hub for reading, writing, and subscribing to state.
+Creates a store instance that holds all atom and selector state and manages
+subscriptions. The store is the central hub for reading, writing, and
+subscribing to state.
 
 ## Usage
 
@@ -28,7 +36,7 @@ const countAtom = atom(0)
 ## Options
 
 | Option | Type | Description |
-|--------|------|-------------|
+| ------------------ | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `batchUpdates` | `boolean` | Batch sequential `set()` calls within a tick into one notification pass (recommended for React) |
 | `enumerable` | `boolean` | Retain values enumerably so `store.snapshot()` can list current state |
 | `schemaValidation` | `boolean` | Validate atom/selector values against their `schema` (off by default). Inherited by scoped stores. See [Schema Validation](/guides/schema-validation). |
@@ -79,7 +87,9 @@ myStore.txn(set => {
 
 <div className="callout callout-warning">
   <div className="callout-title">Warning</div>
-  Selectors that depend on atoms updated in a transaction will only recompute once, after all updates are applied. This is the intended behavior for performance.
+    Selectors that depend on atoms updated in a transaction will only recompute
+    once, after all updates are applied. This is the intended behavior for
+    performance.
 </div>
 
 ## Disposing request stores
@@ -98,15 +108,22 @@ try {
 }
 ```
 
-`dispose()` unregisters the store and all of its descendant scopes from only the
-global atoms they touched, so cleanup is proportional to work that store did.
+`dispose()` is terminal. It drains the store and all descendant scopes of active
+subscriptions, atom mounts and their timers, `onChange` / `onCommitEnd`
+listeners, pending batched writes, async selector work, and registrations on the
+global atoms they touched. Cleanup stays proportional to lifecycle resources the
+store actually created.
+
 Detached scopes are disposed automatically when their last consumer calls
-`detach()`. Treat a disposed store as finished; create a new store for later
-work.
+`detach()`. Every later operation on a disposed store throws
+`StoreDisposedError`; calling `dispose()` again is a no-op. Create a new store
+for later work.
 
 ## The global store
 
-`valdres` exports a shared `globalStore` — the store that global atoms synchronize through. Import it when you need store access outside of a component (scripts, tests, workers, cross-framework code):
+`valdres` exports a shared `globalStore` — the store that global atoms
+synchronize through. Import it when you need store access outside of a component
+(scripts, tests, workers, cross-framework code):
 
 ```ts
 import { globalStore } from "valdres"
@@ -122,10 +139,12 @@ globalStore.set(myAtom, 1)
   that your application creates with `store()`.
 </div>
 
-Inside a component you normally read and write through your framework's provider/context instead — see [Provider](/react/Provider).
+Inside a component you normally read and write through your framework's
+provider/context instead — see [Provider](/react/Provider).
 
 ## See also
 
 - [Provider](/react/Provider) — provide a store to your component tree
 - [useStore](/react/useStore) — access the current store in your components
-- [Schema Validation](/guides/schema-validation) — opt-in runtime validation via the `schemaValidation` option
+- [Schema Validation](/guides/schema-validation) — opt-in runtime validation via
+  the `schemaValidation` option

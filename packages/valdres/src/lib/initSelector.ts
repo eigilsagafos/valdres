@@ -5,10 +5,7 @@ import type { Atom } from "../types/Atom"
 import type { GetValue } from "../types/GetValue"
 import type { Selector } from "../types/Selector"
 import type { State } from "../types/State"
-import type {
-    SelectorEvaluationContext,
-    StoreData,
-} from "../types/StoreData"
+import type { SelectorEvaluationContext, StoreData } from "../types/StoreData"
 import { isPromiseLike } from "../utils/isPromiseLike"
 import { isSelector } from "../utils/isSelector"
 import {
@@ -48,6 +45,12 @@ import {
     recordColdSelectorCache,
     trackStateRevision,
 } from "./stateRevisions"
+import {
+    createStoreDisposedError,
+    isStoreDisposed,
+    trackAbortController,
+    untrackAbortController,
+} from "./storeLifecycle"
 import { validateResolvedValue } from "./validateResolvedValue"
 import { validateSchema } from "./validateSchema"
 
@@ -97,6 +100,9 @@ class SelectorEvaluation implements SelectorEvaluationContext {
                 if (!this.#preserveSignalOnRevoke) controller.abort()
             } else if (!this.#preserveSignalOnRevoke) {
                 this.#abortControllers.set(this.#selector, controller)
+                if (!this.#runtimeAbortControllers) {
+                    trackAbortController(this.#data, controller)
+                }
             }
         }
         return controller.signal
@@ -107,6 +113,9 @@ class SelectorEvaluation implements SelectorEvaluationContext {
         if (!this.#preserveSignalOnRevoke && this.#abortController) {
             this.#abortController.abort()
             this.#abortControllers.delete(this.#selector)
+            if (!this.#runtimeAbortControllers) {
+                untrackAbortController(this.#data, this.#abortController)
+            }
         }
     }
 
@@ -114,6 +123,9 @@ class SelectorEvaluation implements SelectorEvaluationContext {
         this.#preserveSignalOnRevoke = true
         if (this.#abortController) {
             this.#abortControllers.delete(this.#selector)
+            if (!this.#runtimeAbortControllers) {
+                untrackAbortController(this.#data, this.#abortController)
+            }
         }
     }
 
@@ -258,8 +270,7 @@ const evaluateLiveOnlySelector = <V>(
                 if (data.values.has(state)) {
                     value = data.values.get(state)
                 } else if (isSelector(state)) {
-                    const wasMaterialized =
-                        data.stateDependencies.has(state)
+                    const wasMaterialized = data.stateDependencies.has(state)
                     value = initFreshActiveSelector(
                         state,
                         data,
@@ -352,11 +363,10 @@ const evaluateLiveOnlySelector = <V>(
                     if (!updatedDependencies.has(state)) {
                         const set = getOrInitDependentsSet(state, data)
                         set.delete(selector)
-                        if (
-                            data.livenessPassActive &&
-                            isSelector(state)
-                        ) {
-                            ;(data.livenessSeeds ??= new Set<State>()).add(state)
+                        if (data.livenessPassActive && isSelector(state)) {
+                            ;(data.livenessSeeds ??= new Set<State>()).add(
+                                state,
+                            )
                             data.livenessRemovalArmed = true
                         }
                     }
@@ -384,7 +394,8 @@ export const evaluateSelector = <V>(
     readOverlay?: GetValue,
     runtime?: SelectorEvaluationRuntime,
 ) => {
-    const stateDependencies = runtime?.stateDependencies ?? data.stateDependencies
+    const stateDependencies =
+        runtime?.stateDependencies ?? data.stateDependencies
     const currentDependencies = stateDependencies.get(selector)
     const tracksReverseEdges = !runtime && selectorGraphActive
     // A store that has never materialized a cold selector needs neither cache
@@ -409,7 +420,8 @@ export const evaluateSelector = <V>(
 
     // Revoke any previous late-binding closure for this selector so that
     // deferred get calls from old evaluations become read-only.
-    const latestEvalContext = runtime?.latestEvalContext ?? data.latestEvalContext
+    const latestEvalContext =
+        runtime?.latestEvalContext ?? data.latestEvalContext
     const prevCtx = latestEvalContext.get(selector)
     if (prevCtx) prevCtx.revoke()
     const evalCtx = new SelectorEvaluation(
@@ -431,6 +443,9 @@ export const evaluateSelector = <V>(
             result = selector.get(state => {
                 // Deferred get calls (setTimeout, after await) use late binding
                 if (evaluationComplete) {
+                    if (isStoreDisposed(data)) {
+                        throw createStoreDisposedError(data)
+                    }
                     // Track for reconciliation (unless this is a stale closure)
                     if (!evalCtx.revoked && evalCtx.asyncDeps) {
                         evalCtx.asyncDeps.add(state)
@@ -541,7 +556,10 @@ export const evaluateSelector = <V>(
                     }
                 }
                 updatedDeps.add(state)
-                if (!depsChanged && (!currentDependencies || !currentDependencies.has(state))) {
+                if (
+                    !depsChanged &&
+                    (!currentDependencies || !currentDependencies.has(state))
+                ) {
                     depsChanged = true
                 }
                 if (isPromiseLike(value))
@@ -565,12 +583,18 @@ export const evaluateSelector = <V>(
         evaluationComplete = true
 
         const isAsyncResult =
-            result instanceof SuspendAndWaitForResolveError || isPromiseLike(result)
+            result instanceof SuspendAndWaitForResolveError ||
+            isPromiseLike(result)
 
         // For sync selectors, check if dep count changed (handles removed deps).
         // For async selectors, skip — the dep count is incomplete until the
         // promise resolves.
-        if (!isAsyncResult && !depsChanged && currentDependencies && currentDependencies.size !== updatedDeps.size) {
+        if (
+            !isAsyncResult &&
+            !depsChanged &&
+            currentDependencies &&
+            currentDependencies.size !== updatedDeps.size
+        ) {
             depsChanged = true
         }
 
@@ -689,7 +713,9 @@ export const evaluateSelector = <V>(
                             data.livenessPassActive &&
                             isSelector(state)
                         ) {
-                            ;(data.livenessSeeds ??= new Set<State>()).add(state)
+                            ;(data.livenessSeeds ??= new Set<State>()).add(
+                                state,
+                            )
                             data.livenessRemovalArmed = true
                         }
                     }
@@ -763,9 +789,12 @@ export const handleSelectorResult = <Value>(
         if (evaluationContext) {
             evaluationContext.preserveSignal()
         } else {
+            untrackAbortController(data, data.abortControllers.get(selector))
             data.abortControllers.delete(selector)
         }
-        promise.then(() => {
+        promise
+            .then(() => {
+                if (isStoreDisposed(data)) return
             // Dependency presence alone is not an evaluation identity: a stale
             // late `get` or a newer evaluation can recreate the selector's graph.
             // Only the context that installed this handler may retry/commit.
@@ -773,25 +802,39 @@ export const handleSelectorResult = <Value>(
                 !evaluationContext ||
                 evaluationContext.revoked ||
                 data.latestEvalContext.get(selector) !== evaluationContext
-            ) return
+                )
+                    return
             // Guard against stale promise — if the selector's value has been
             // replaced with a different value, this resolution is outdated.
             // If the value was deleted (e.g. moved to expired), still proceed.
             // If deps were cleaned up (unsubscribe GC), bail entirely.
             if (!data.stateDependencies.has(selector)) return
-            if (data.values.has(selector) && data.values.get(selector) !== promise) return
+                if (
+                    data.values.has(selector) &&
+                    data.values.get(selector) !== promise
+                )
+                    return
             const initializedAtomsSet = new Set<Atom>()
             const res = initSelector(selector, data, initializedAtomsSet)
             if (initializedAtomsSet.size > 0) {
-                propagateAtomUpdate([...initializedAtomsSet], data, false, undefined, "async-set")
+                    propagateAtomUpdate(
+                        [...initializedAtomsSet],
+                        data,
+                        false,
+                        undefined,
+                        "async-set",
+                    )
             }
             return res
-        }).catch(err => {
+            })
+            .catch(err => {
+                if (isStoreDisposed(data)) return
             cleanUpRejectedPromise(selector, data, promise)
             // Report schema validation failures (thrown from the sync
             // re-evaluation inside initSelector) instead of swallowing them,
             // consistent with the native-promise path below.
-            if (err instanceof SchemaValidationError) reportAsyncSchemaError(err)
+                if (err instanceof SchemaValidationError)
+                    reportAsyncSchemaError(err)
         })
         if (!tracksCommittedGraph) {
             const dependencies = data.stateDependencies.get(selector)
@@ -802,18 +845,24 @@ export const handleSelectorResult = <Value>(
     } else if (isPromiseLike(value)) {
         if (runtime) {
             const evaluationContext = runtime.latestEvalContext.get(selector)
-            value.then(resolved => {
+            value
+                .then(resolved => {
+                    if (isStoreDisposed(data)) return
                 const evalDeps = evaluationContext?.asyncDeps
-                if (evaluationContext) evaluationContext.asyncDeps = undefined
+                    if (evaluationContext)
+                        evaluationContext.asyncDeps = undefined
                 if (
                     !evaluationContext ||
                     evaluationContext.revoked ||
-                    runtime.latestEvalContext.get(selector) !== evaluationContext
-                ) return
+                        runtime.latestEvalContext.get(selector) !==
+                            evaluationContext
+                    )
+                        return
 
                 // Reconcile carried async dependencies in the private graph.
                 if (evalDeps) {
-                    const currentDeps = runtime.stateDependencies.get(selector)
+                        const currentDeps =
+                            runtime.stateDependencies.get(selector)
                     if (currentDeps) {
                         for (const dep of currentDeps) {
                             if (!evalDeps.has(dep)) currentDeps.delete(dep)
@@ -821,15 +870,20 @@ export const handleSelectorResult = <Value>(
                     }
                 }
                 validateResolvedValue(selector, resolved, data)
-            }).catch(() => {
-                if (evaluationContext) evaluationContext.asyncDeps = undefined
+                })
+                .catch(() => {
+                    if (isStoreDisposed(data)) return
+                    if (evaluationContext)
+                        evaluationContext.asyncDeps = undefined
             })
             return value
         }
         // When a promise is returned when initializing a selector we suspend,
         // then we retry when the promise resolves.
         const evaluationContext = data.latestEvalContext.get(selector)
-        value.then(resolved => {
+        value.then(
+            resolved => {
+                if (isStoreDisposed(data)) return
             // Take and clear this evaluation's dependency set up front. The
             // latest context remains cached after resolution, so retaining the
             // Set there would keep its dependency states alive unnecessarily.
@@ -846,11 +900,16 @@ export const handleSelectorResult = <Value>(
                 !evaluationContext ||
                 evaluationContext.revoked ||
                 data.latestEvalContext.get(selector) !== evaluationContext
-            ) return
+                )
+                    return
             // Guard: selector was cleaned up by unsubscribe GC
             if (!data.stateDependencies.has(selector)) return
             // Guard against stale promise
-            if (data.values.has(selector) && data.values.get(selector) !== value) return
+                if (
+                    data.values.has(selector) &&
+                    data.values.get(selector) !== value
+                )
+                    return
 
             // Reconcile deps: remove any that were carried forward from a
             // previous evaluation but not read in this one.
@@ -869,7 +928,8 @@ export const handleSelectorResult = <Value>(
                             }
                             currentDeps.delete(dep)
                             if (tracksReverseEdges) {
-                                const dependents = data.stateDependents.get(dep)
+                                    const dependents =
+                                        data.stateDependents.get(dep)
                                 if (dependents) dependents.delete(selector)
                                 if (selectorIsLive) {
                                     onLiveDependencyRemoved(dep, data)
@@ -885,7 +945,11 @@ export const handleSelectorResult = <Value>(
             // reported and we clean up so the invalid value never commits.
             // Consistent with the atom async paths.
             if (!validateResolvedValue(selector, resolved, data)) {
-                cleanUpRejectedPromise(selector, data, value as Promise<any>)
+                    cleanUpRejectedPromise(
+                        selector,
+                        data,
+                        value as Promise<any>,
+                    )
                 return
             }
             // Promise settlement is a standalone commit: the resolved value,
@@ -894,12 +958,14 @@ export const handleSelectorResult = <Value>(
             // path used by synchronous propagation: one global counter read,
             // with no root walk or tracking when nobody observes commit ends.
             let commitRoot: StoreData | undefined
-            if (commitEndRegistry.count !== 0) commitRoot = beginCommit(data)
+                if (commitEndRegistry.count !== 0)
+                    commitRoot = beginCommit(data)
             let completed = false
             try {
                 // @ts-ignore
                 setValueInData(selector, resolved, data)
-                const resolvedDependencies = data.stateDependencies.get(selector)
+                    const resolvedDependencies =
+                        data.stateDependencies.get(selector)
                 if (
                     resolvedDependencies &&
                     !data.selectorGraphActive.has(selector)
@@ -910,7 +976,8 @@ export const handleSelectorResult = <Value>(
                         data,
                         evalDependencyRevisions,
                     )
-                    if (current) markColdSelectorCacheValidated(selector, data)
+                        if (current)
+                            markColdSelectorCacheValidated(selector, data)
                 }
                 const dependents = data.stateDependents.get(selector)
                 const subs = data.subscriptions.get(selector)
@@ -942,19 +1009,27 @@ export const handleSelectorResult = <Value>(
                         // to `resolved` — a genuine value change. Report it (and the
                         // downstream it triggered) as an "async-set" batch.
                         changedSelectors.add(selector)
-                        reportSelectorChanges(changedSelectors, data, "async-set")
+                            reportSelectorChanges(
+                                changedSelectors,
+                                data,
+                                "async-set",
+                            )
                     }
                 }
                 completed = true
             } finally {
-                if (commitRoot !== undefined) endCommit(commitRoot, !completed)
+                    if (commitRoot !== undefined)
+                        endCommit(commitRoot, !completed)
             }
-        }, () => {
+            },
+            () => {
+                if (isStoreDisposed(data)) return
             if (evaluationContext) evaluationContext.asyncDeps = undefined
             if (evaluationContext)
                 evaluationContext.asyncDependencyRevisions = undefined
             cleanUpRejectedPromise(selector, data, value as Promise<any>)
-        })
+            },
+        )
         if (!tracksCommittedGraph) {
             const dependencies = data.stateDependencies.get(selector)
             if (dependencies)
@@ -989,8 +1064,7 @@ const evaluateCommittedSelectorValue = <V>(
     let value
     try {
         value =
-            selectorGraphActive &&
-            !data.coldSelectorCachesEnabled
+            selectorGraphActive && !data.coldSelectorCachesEnabled
                 ? evaluateLiveOnlySelector(
                       selector,
                       data,
@@ -1037,7 +1111,8 @@ export const initSelector = <V>(
 
     // Promises should use reference equality — deep equal treats all
     // promises as structurally identical (both have zero own keys).
-    const areEqual = isPromiseLike(existingValue) || isPromiseLike(updatedValue)
+    const areEqual =
+        isPromiseLike(existingValue) || isPromiseLike(updatedValue)
         ? existingValue === updatedValue
         : selector.equal(existingValue as V, updatedValue as V)
 

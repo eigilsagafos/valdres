@@ -30,9 +30,19 @@ import { setAtom } from "./setAtom"
 import { setValueInData } from "./setValueInData"
 import { snapshot } from "./snapshot"
 import { STORE_RUNTIME } from "./storeRuntimeKey"
-import { isStoreDisposed, STORE_LIFECYCLE } from "./storeLifecycle"
+import {
+    createStoreDisposedError,
+    DISPOSED_STORE_PENDING,
+    isPendingStoreLifecycle,
+    lifecycleFromPendingStore,
+    STORE_LIFECYCLE,
+    trackStoreCleanup,
+    untrackStoreCleanup,
+} from "./storeLifecycle"
+import type { StoreLifecycle } from "./storeLifecycle"
+import type { PendingStoreLifecycle } from "./storeLifecycle"
 import { subscribe } from "./subscribe"
-import { Transaction, transaction } from "./transaction"
+import { cancelTransaction, Transaction, transaction } from "./transaction"
 
 const SelectorProvidedToSetError = `Invalid state object passed to set().
 You provided a \`selector\`.
@@ -80,12 +90,18 @@ export function storeFromStoreData(
 ): ScopedStore
 export function storeFromStoreData(data: StoreData): Store
 export function storeFromStoreData(data: StoreData, detach?: () => void) {
-    const runtimeData = data as StoreData & { [STORE_RUNTIME]?: Store }
-    let runtime = runtimeData[STORE_RUNTIME]
-    if (!runtime) {
+    const runtimeData = data as StoreData & {
+        [STORE_RUNTIME]?: Store | PendingStoreLifecycle
+    }
+    const slot = runtimeData[STORE_RUNTIME]
+    let runtime: Store
+    if (!slot) {
         runtime = createStoreRuntime(data)
         runtimeData[STORE_RUNTIME] = runtime
-    }
+    } else if (isPendingStoreLifecycle(slot)) {
+        runtime = createStoreRuntime(data, lifecycleFromPendingStore(slot))
+        runtimeData[STORE_RUNTIME] = runtime
+    } else runtime = slot
     return detach ? createScopeLease(runtime, detach) : runtime
 }
 
@@ -95,7 +111,12 @@ export function storeFromStoreData(data: StoreData, detach?: () => void) {
  * implicit transaction authoritative for every handle that reaches the same
  * store data (including the internal handle mountAtom requests).
  */
-const createStoreRuntime = (data: StoreData): Store => {
+const createStoreRuntime = (
+    data: StoreData,
+    initialLifecycle?: StoreLifecycle,
+): Store => {
+    // Public methods that already flush orphan work reuse that same hot guard
+    // for terminal detection. Active stores therefore pay no second branch.
     const _initSet = new Set<Atom>()
     let _initDepth = 0
 
@@ -104,15 +125,24 @@ const createStoreRuntime = (data: StoreData): Store => {
     // the same microtask are batched into a single transaction whose commit
     // (selector re-evaluation + subscriber notification) is deferred.
     let _pendingTxn: Transaction | null = null
+    let _pendingTxnCleanup: (() => void) | undefined
 
     const flushPendingTxn = () => {
-        if (isStoreDisposed(data)) {
+        if (data.pendingOrphanCleanup === DISPOSED_STORE_PENDING) {
             _pendingTxn = null
+            if (_pendingTxnCleanup) {
+                untrackStoreCleanup(data, _pendingTxnCleanup)
+                _pendingTxnCleanup = undefined
+            }
             return
         }
         if (_pendingTxn) {
             const txnToCommit = _pendingTxn
             _pendingTxn = null
+            if (_pendingTxnCleanup) {
+                untrackStoreCleanup(data, _pendingTxnCleanup)
+                _pendingTxnCleanup = undefined
+            }
             txnToCommit.commit()
         }
     }
@@ -120,6 +150,13 @@ const createStoreRuntime = (data: StoreData): Store => {
     const ensurePendingTxn = () => {
         if (!_pendingTxn) {
             _pendingTxn = new Transaction(data)
+            const cancelPendingTxn = () => {
+                const pendingTxn = _pendingTxn
+                _pendingTxn = null
+                _pendingTxnCleanup = undefined
+                if (pendingTxn) cancelTransaction(pendingTxn)
+            }
+            _pendingTxnCleanup = trackStoreCleanup(data, cancelPendingTxn)
             queueMicrotask(() => {
                 try {
                     flushPendingTxn()
@@ -138,7 +175,12 @@ const createStoreRuntime = (data: StoreData): Store => {
 
     // --- get ---
     const getDefault: GetValue = (state: State) => {
-        if (data.pendingOrphanCleanup) flushPendingOrphanCleanup(data)
+        if (data.pendingOrphanCleanup) {
+            if (data.pendingOrphanCleanup === DISPOSED_STORE_PENDING) {
+                throw createStoreDisposedError(data)
+            }
+            flushPendingOrphanCleanup(data)
+        }
         // Cold selectors are the only cached states that need to pass through
         // getState for revision validation. Preserve the original atom/active-
         // selector cache-hit path. The eager scalar keeps atom-only stores from
@@ -153,8 +195,7 @@ const createStoreRuntime = (data: StoreData): Store => {
                 // reads avoid opening a liveness pass only to collect no seeds.
                 const coldCache = data.coldSelectorCaches.get(state)
                 if (
-                    coldCache?.validatedAt ===
-                    data.stateRevisionClock.current
+                    coldCache?.validatedAt === data.stateRevisionClock.current
                 ) {
                     return data.values.get(state)
                 }
@@ -197,7 +238,8 @@ const createStoreRuntime = (data: StoreData): Store => {
             // still releases it); reconcile the returned region after the try.
             if (ownsLivenessSeeds) seedsToReconcile = endLivenessPass(data)
         }
-        if (seedsToReconcile) reconcileLivenessAfterChurn(seedsToReconcile, data)
+        if (seedsToReconcile)
+            reconcileLivenessAfterChurn(seedsToReconcile, data)
         // The init-only propagation above walks the dependents of the just-
         // initialized atoms and, for any selector with no live consumer, drops
         // its cached value "for lazy re-eval on next read". When that selector is
@@ -221,8 +263,13 @@ const createStoreRuntime = (data: StoreData): Store => {
     }
 
     const getBatched: GetValue = (state: State) => {
+        if (data.pendingOrphanCleanup) {
+            if (data.pendingOrphanCleanup === DISPOSED_STORE_PENDING) {
+                throw createStoreDisposedError(data)
+            }
+            flushPendingOrphanCleanup(data)
+        }
         if (_pendingTxn) {
-            if (data.pendingOrphanCleanup) flushPendingOrphanCleanup(data)
             return _pendingTxn.get(state)
         }
         return getDefault(state)
@@ -233,7 +280,12 @@ const createStoreRuntime = (data: StoreData): Store => {
     // --- set ---
     // @ts-ignore @ts-todo
     const setDefault: SetAtom = (state, value) => {
-        if (data.pendingOrphanCleanup) flushPendingOrphanCleanup(data)
+        if (data.pendingOrphanCleanup) {
+            if (data.pendingOrphanCleanup === DISPOSED_STORE_PENDING) {
+                throw createStoreDisposedError(data)
+            }
+            flushPendingOrphanCleanup(data)
+        }
         if (isAtom(state)) return setAtom(state, value, data)
         if (isSelector(state)) throw new Error(SelectorProvidedToSetError)
         throw new Error(InvalidStateSetError)
@@ -241,7 +293,12 @@ const createStoreRuntime = (data: StoreData): Store => {
 
     // @ts-ignore @ts-todo
     const setBatched: SetAtom = (state, value) => {
-        if (data.pendingOrphanCleanup) flushPendingOrphanCleanup(data)
+        if (data.pendingOrphanCleanup) {
+            if (data.pendingOrphanCleanup === DISPOSED_STORE_PENDING) {
+                throw createStoreDisposedError(data)
+            }
+            flushPendingOrphanCleanup(data)
+        }
         if (isAtom(state)) {
             return ensurePendingTxn().set(state, value)
         }
@@ -253,7 +310,12 @@ const createStoreRuntime = (data: StoreData): Store => {
 
     // --- reset ---
     const reset = <V>(atom: Atom<V>) => {
-        if (data.pendingOrphanCleanup) flushPendingOrphanCleanup(data)
+        if (data.pendingOrphanCleanup) {
+            if (data.pendingOrphanCleanup === DISPOSED_STORE_PENDING) {
+                throw createStoreDisposedError(data)
+            }
+            flushPendingOrphanCleanup(data)
+        }
         if (data.batchUpdates) flushPendingTxn()
         return resetAtom(atom, data)
     }
@@ -265,7 +327,12 @@ const createStoreRuntime = (data: StoreData): Store => {
     >(
         atom: AtomFamilyAtom<Value, Args>,
     ) => {
-        if (data.pendingOrphanCleanup) flushPendingOrphanCleanup(data)
+        if (data.pendingOrphanCleanup) {
+            if (data.pendingOrphanCleanup === DISPOSED_STORE_PENDING) {
+                throw createStoreDisposedError(data)
+            }
+            flushPendingOrphanCleanup(data)
+        }
         if (data.batchUpdates) flushPendingTxn()
         return deleteFamilyAtom(atom, data)
     }
@@ -278,7 +345,12 @@ const createStoreRuntime = (data: StoreData): Store => {
     // which eagerly writes the default back). Distinct from `del` (removes a
     // family member).
     const unset = <V>(atom: Atom<V>) => {
-        if (data.pendingOrphanCleanup) flushPendingOrphanCleanup(data)
+        if (data.pendingOrphanCleanup) {
+            if (data.pendingOrphanCleanup === DISPOSED_STORE_PENDING) {
+                throw createStoreDisposedError(data)
+            }
+            flushPendingOrphanCleanup(data)
+        }
         if (data.batchUpdates) flushPendingTxn()
         return unsetValue(atom, data)
     }
@@ -288,12 +360,16 @@ const createStoreRuntime = (data: StoreData): Store => {
         callback: () => void,
         deepEqualCheckBeforeCallback: boolean = true,
     ) => {
-        if (data.pendingOrphanCleanup) flushPendingOrphanCleanup(data)
         return subscribe(state, callback, deepEqualCheckBeforeCallback, data)
     }
 
     const txn = (callback: TransactionFn, name?: string) => {
-        if (data.pendingOrphanCleanup) flushPendingOrphanCleanup(data)
+        if (data.pendingOrphanCleanup) {
+            if (data.pendingOrphanCleanup === DISPOSED_STORE_PENDING) {
+                throw createStoreDisposedError(data)
+            }
+            flushPendingOrphanCleanup(data)
+        }
         if (data.batchUpdates) flushPendingTxn()
         return transaction(callback, data, name)
     }
@@ -303,19 +379,42 @@ const createStoreRuntime = (data: StoreData): Store => {
     const onChange = ((
         callback: any,
         options?: { atoms?: boolean; selectors?: boolean },
-    ) => onStoreChange(callback, data, options)) as Store["onChange"]
+    ) => {
+        if (data.pendingOrphanCleanup === DISPOSED_STORE_PENDING) {
+            throw createStoreDisposedError(data)
+        }
+        return onStoreChange(callback, data, options)
+    }) as Store["onChange"]
 
-    const storeOnCommitEnd = (callback: () => void) =>
-        onCommitEnd(callback, data)
+    const storeOnCommitEnd = (callback: () => void) => {
+        if (data.pendingOrphanCleanup === DISPOSED_STORE_PENDING) {
+            throw createStoreDisposedError(data)
+        }
+        return onCommitEnd(callback, data)
+    }
 
     const storeSnapshot = () => {
-        if (data.pendingOrphanCleanup) flushPendingOrphanCleanup(data)
+        if (data.pendingOrphanCleanup) {
+            if (data.pendingOrphanCleanup === DISPOSED_STORE_PENDING) {
+                throw createStoreDisposedError(data)
+            }
+            flushPendingOrphanCleanup(data)
+        }
         return snapshot(data)
     }
 
-    const dispose = () => disposeStoreData(data)
+    const dispose = () => {
+        if (data.pendingOrphanCleanup === DISPOSED_STORE_PENDING) return
+        disposeStoreData(data)
+    }
 
     const scope: ScopeFn = ((scopeId: string, callback?: any) => {
+        if (data.pendingOrphanCleanup) {
+            if (data.pendingOrphanCleanup === DISPOSED_STORE_PENDING) {
+                throw createStoreDisposedError(data)
+            }
+            flushPendingOrphanCleanup(data)
+        }
         if (callback) {
             if (!data.scopes.has(scopeId)) {
                 throw new Error(`Scope ${scopeId} does not exist`)
@@ -355,12 +454,15 @@ const createStoreRuntime = (data: StoreData): Store => {
             }
 
             consumers.add(detach)
-            const newStore = storeFromStoreData(data.scopes.get(scopeId)!, detach)
+            const newStore = storeFromStoreData(
+                data.scopes.get(scopeId)!,
+                detach,
+            )
             return newStore
         }
     }) as ScopeFn
 
-    return {
+    const runtime = {
         get,
         set,
         sub,
@@ -374,10 +476,14 @@ const createStoreRuntime = (data: StoreData): Store => {
         onCommitEnd: storeOnCommitEnd,
         snapshot: storeSnapshot,
         dispose,
-        // Reserve the lazy lifecycle slot without adding fields to StoreData's
-        // atom-hot hidden class. Global first-touch can populate it in place.
-        [STORE_LIFECYCLE]: undefined,
-    } as Store
+    } as Store & { [STORE_LIFECYCLE]?: StoreLifecycle }
+    // The ordinary facade carries no lifecycle property. Add the slot only
+    // when raw StoreData acquired resources before its canonical facade
+    // existed; later lifecycle work remains a cold, one-time shape transition.
+    if (initialLifecycle !== undefined) {
+        runtime[STORE_LIFECYCLE] = initialLifecycle
+    }
+    return runtime
 }
 
 /** A scope consumer owns only its detach lease; all operations share runtime. */

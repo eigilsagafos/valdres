@@ -1,6 +1,7 @@
 import type { State } from "../types/State"
 import type { StoreData } from "../types/StoreData"
 import { flushPendingOrphanCleanup } from "./flushPendingOrphanCleanup"
+import { isStoreDisposed } from "./storeLifecycle"
 
 /**
  * Batch orphan graph/value cleanup across a synchronous unsubscribe burst.
@@ -9,6 +10,7 @@ import { flushPendingOrphanCleanup } from "./flushPendingOrphanCleanup"
  * can observe or mutate selector caches.
  */
 export const queueOrphanCleanup = (state: State, data: StoreData) => {
+    if (isStoreDisposed(data)) return
     // Plain atoms with no dependents have no dependency edges or selector cache
     // for the orphan sweep to remove. Avoid allocating a Set and scheduling a
     // microtask on the common subscribe/unsubscribe fast path.

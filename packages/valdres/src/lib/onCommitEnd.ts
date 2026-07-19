@@ -1,4 +1,5 @@
 import type { StoreData } from "../types/StoreData"
+import { trackStoreCleanup, untrackStoreCleanup } from "./storeLifecycle"
 
 /** Global count of `onCommitEnd` listeners across every store — the cheap
  *  "is anyone listening" gate, mirroring `changeListenerRegistry`. Every commit
@@ -81,9 +82,10 @@ export const onCommitEnd = (
     listeners.add(callback)
     commitEndRegistry.count++
     let active = true
-    return () => {
+    const cleanup = () => {
         if (!active) return
         active = false
+        untrackStoreCleanup(data, cleanup)
         const current = root.commitEndListeners
         if (current?.delete(callback)) {
             commitEndRegistry.count--
@@ -91,4 +93,6 @@ export const onCommitEnd = (
             if (current.size === 0) root.commitEndListeners = undefined
         }
     }
+    trackStoreCleanup(data, cleanup)
+    return cleanup
 }

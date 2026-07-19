@@ -1,6 +1,7 @@
 import type { StoreChangeCallback } from "../types/StoreChangeCallback"
 import type { StoreData } from "../types/StoreData"
 import { changeListenerRegistry } from "./notifyChangeListeners"
+import { trackStoreCleanup, untrackStoreCleanup } from "./storeLifecycle"
 
 /** Register a store-wide change listener on `data`. The listener fires once per
  *  committed operation with the changes in this store or any descendant scope.
@@ -40,7 +41,8 @@ export const onStoreChange = (
     if (selectors && !prevSelectors) changeListenerRegistry.selectorCount++
     else if (!selectors && prevSelectors) changeListenerRegistry.selectorCount--
 
-    return () => {
+    const cleanup = () => {
+        untrackStoreCleanup(data, cleanup)
         const current = data.changeListeners
         if (!current) return
         const flags = current.get(callback)
@@ -52,4 +54,6 @@ export const onStoreChange = (
             if (current.size === 0) data.changeListeners = undefined
         }
     }
+    trackStoreCleanup(data, cleanup)
+    return cleanup
 }

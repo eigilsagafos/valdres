@@ -1,4 +1,5 @@
 import type { StoreData } from "../types/StoreData"
+import { trackStoreCleanup, untrackStoreCleanup } from "./storeLifecycle"
 
 // Per-store maxAge cleanup functions, keyed by (data, state).
 // Stored here so any subscription's unsub can trigger cleanup when
@@ -15,7 +16,17 @@ export const setMaxAgeCleanup = (
         storeMap = new WeakMap()
         maxAgeCleanups.set(data, storeMap)
     }
-    storeMap.set(state, cleanup)
+    const previous = storeMap.get(state)
+    if (previous) untrackStoreCleanup(data, previous)
+    let active = true
+    const trackedCleanup = () => {
+        if (!active) return
+        active = false
+        untrackStoreCleanup(data, trackedCleanup)
+        cleanup()
+    }
+    storeMap.set(state, trackedCleanup)
+    trackStoreCleanup(data, trackedCleanup)
 }
 
 export const getMaxAgeCleanup = (
@@ -26,5 +37,8 @@ export const getMaxAgeCleanup = (
 }
 
 export const deleteMaxAgeCleanup = (data: StoreData, state: WeakKey) => {
-    maxAgeCleanups.get(data)?.delete(state)
+    const storeMap = maxAgeCleanups.get(data)
+    const cleanup = storeMap?.get(state)
+    if (cleanup) untrackStoreCleanup(data, cleanup)
+    storeMap?.delete(state)
 }

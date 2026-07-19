@@ -23,7 +23,9 @@ function makeLazyGetter(key: string, factory: () => any = () => new WeakMap()) {
 const lazyProto = Object.create(Object.prototype)
 Object.defineProperties(lazyProto, {
     subscriptions: makeLazyGetter("subscriptions"),
-    subscriptionsRequireEqualCheck: makeLazyGetter("subscriptionsRequireEqualCheck"),
+    subscriptionsRequireEqualCheck: makeLazyGetter(
+        "subscriptionsRequireEqualCheck",
+    ),
     stateDependents: makeLazyGetter("stateDependents"),
     stateDependencies: makeLazyGetter("stateDependencies"),
     selectorGraphActive: makeLazyGetter(

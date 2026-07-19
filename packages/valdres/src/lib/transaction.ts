@@ -10,6 +10,10 @@ import type { TransactionFn } from "../types/TransactionFn"
 import { SchemaValidationError } from "../errors/SchemaValidationError"
 import { deepFreeze } from "../utils/deepFreeze"
 import { validateSchema } from "./validateSchema"
+import {
+    createStoreDisposedError,
+    DISPOSED_STORE_PENDING,
+} from "./storeLifecycle"
 import { isAtom } from "../utils/isAtom"
 import { isAtomFamily } from "../utils/isAtomFamily"
 import { isFamilyAtom } from "../utils/isFamilyAtom"
@@ -71,6 +75,13 @@ type CommitWrite = {
     deleted: AtomFamilyAtom<any, any>[] | undefined
     unsetAtoms: Atom[] | undefined
     onSets: DeferredOnSet[]
+}
+
+const CANCEL_TRANSACTION = Symbol("valdres.cancelTransaction")
+
+/** Internal cancellation entry point for queued transactions. */
+export const cancelTransaction = (transaction: Transaction): void => {
+    ;(transaction as any)[CANCEL_TRANSACTION]()
 }
 
 // const findDependencies = (
@@ -144,6 +155,41 @@ export class Transaction {
         }
     }
 
+    private assertActive() {
+        if (this.data.pendingOrphanCleanup === DISPOSED_STORE_PENDING) {
+            throw createStoreDisposedError(this.data)
+        }
+    }
+
+    /** Cancel speculative work owned only by an uncommitted transaction. */
+    private [CANCEL_TRANSACTION]() {
+        if (this._scopedTransactions) {
+            for (const transaction of this._scopedTransactions.values()) {
+                transaction[CANCEL_TRANSACTION]()
+            }
+            this._scopedTransactions.clear()
+        }
+        const runtime = this._selectorRuntime
+        if (runtime) {
+            runtime.readOverlayActive = false
+            for (const context of runtime.latestEvalContext.values()) {
+                context.revoke()
+            }
+            for (const controller of runtime.abortControllers.values()) {
+                controller.abort()
+            }
+            runtime.latestEvalContext.clear()
+            runtime.abortControllers.clear()
+            runtime.stateDependencies.clear()
+        }
+        this._atomMap.clear()
+        this._initializedAtomsSet?.clear()
+        this._deleteSet?.clear()
+        this._unsetSet?.clear()
+        this._selectorCache?.clear()
+        this._dirtyFamilyIndexes?.clear()
+    }
+
     private hasTxnOrData = (state: State): boolean => {
         if (this._atomMap.has(state)) return true
         // An unset buffered at this level (and not superseded by a later set)
@@ -157,7 +203,8 @@ export class Transaction {
                 : false
         }
         if (this.data.values.has(state)) return true
-        if (this.parentTransaction) return this.parentTransaction.hasTxnOrData(state)
+        if (this.parentTransaction)
+            return this.parentTransaction.hasTxnOrData(state)
         return false
     }
 
@@ -179,6 +226,7 @@ export class Transaction {
     }
 
     get: GetValue = (state: State<any>) => {
+        this.assertActive()
         if (isAtom(state) || isAtomFamily(state)) {
             if (this.hasTxnOrData(state)) {
                 const value = this.valueFromTxnOrData(state)
@@ -208,7 +256,11 @@ export class Transaction {
             // the atom's default (root) instead.
             if (this._unsetSet?.has(state)) {
                 return this.data.parent
-                    ? getState(state, this.data.parent, this.initializedAtomsSet)
+                    ? getState(
+                          state,
+                          this.data.parent,
+                          this.initializedAtomsSet,
+                      )
                     : getAtomInitValue(
                           state as Atom,
                           this.data,
@@ -241,6 +293,7 @@ export class Transaction {
     }
 
     set = <V>(atom: Atom<V>, value: SetAtomValue<V>): V => {
+        this.assertActive()
         if (!isAtom(atom)) throw new Error("Not an atom")
         let resolved: V | PromiseLike<V>
         if (isFunction(value)) {
@@ -314,6 +367,7 @@ export class Transaction {
             | ((error: SchemaValidationError) => void)
             | undefined = undefined,
     ) => {
+        this.assertActive()
         let ownFamilyValue = this._atomMap.has(family)
             ? this._atomMap.get(family)
             : this.data.values.has(family)
@@ -383,6 +437,7 @@ export class Transaction {
     }
 
     del = (atom: AtomFamilyAtom<any, any>) => {
+        this.assertActive()
         if (!this._atomMap.has(atom.family)) {
             // @ts-ignore
             this.cloneFamilyIntoTxn(atom.family)
@@ -401,6 +456,7 @@ export class Transaction {
     }
 
     unset = (atom: Atom) => {
+        this.assertActive()
         if (!isAtom(atom)) throw new Error("unset() expects an atom.")
         // An unset in the same txn supersedes a set of the same atom — drop any
         // buffered write so the atom reverts (re-inherits on a scope / reverts to
@@ -424,6 +480,7 @@ export class Transaction {
     }
 
     scope = (scopeId: string, callback: (txn: Transaction) => any) => {
+        this.assertActive()
         if (this.data.scopes.has(scopeId)) {
             // @ts-ignore
             return this.scopedTransaction(scopeId).execute(callback, false)
@@ -435,6 +492,7 @@ export class Transaction {
     }
 
     parentScope = (callback: (txn: Transaction) => any) => {
+        this.assertActive()
         if (!this.parentTransaction) {
             if (!this.data.parent) {
                 throw new Error("Cannot access parentScope on root store")
@@ -451,6 +509,7 @@ export class Transaction {
     // Generic like ResetAtom so a Transaction is structurally assignable to
     // TransactionInterface (what `InitializeCallback` is typed against).
     reset = <V>(atom: Atom<V>): V | Promise<V> => {
+        this.assertActive()
         const value = getAtomInitValue(
             atom,
             this.data,
@@ -470,7 +529,9 @@ export class Transaction {
         callback: Callback,
         autoCommit = true,
     ): ReturnType<Callback> => {
-        if (this._selectorRuntime) this._selectorRuntime.readOverlayActive = true
+        this.assertActive()
+        if (this._selectorRuntime)
+            this._selectorRuntime.readOverlayActive = true
         try {
             const result = callback(this) as ReturnType<Callback>
             if (isPromiseLike(result)) {
@@ -497,6 +558,7 @@ export class Transaction {
     }
 
     commit = (source?: StoreChangeSource) => {
+        this.assertActive()
         // Commit boundary for store.onCommitEnd: listeners fire once, when the
         // outermost boundary closes — after every subscriber callback and after
         // the onChange flush below. The inner propagation passes also open
@@ -504,7 +566,8 @@ export class Transaction {
         // they just move the depth counter. With no listener anywhere this is a
         // single counter read, so the Bencher-gated txn hot path is unchanged.
         let commitEndRoot: StoreData | undefined
-        if (commitEndRegistry.count !== 0) commitEndRoot = beginCommit(this.data)
+        if (commitEndRegistry.count !== 0)
+            commitEndRoot = beginCommit(this.data)
         let succeeded = false
         try {
             // When nothing is watching, commit directly — no sink allocation, so
@@ -780,13 +843,7 @@ export class Transaction {
         if (globalUpdates) {
             for (const [data, atoms] of globalUpdates) {
                 try {
-                    propagateAtomUpdate(
-                        atoms,
-                        data,
-                        false,
-                        notify,
-                        globalSink,
-                    )
+                    propagateAtomUpdate(atoms, data, false, notify, globalSink)
                 } catch (error) {
                     recordCommitError(errors, error)
                 }

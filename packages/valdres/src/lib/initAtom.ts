@@ -8,6 +8,7 @@ import { propagateAtomUpdate } from "./propagateUpdatedAtoms"
 import { setAtom } from "./setAtom"
 import { setValueInData } from "./setValueInData"
 import { noteStateValueChanged } from "./stateRevisions"
+import { isStoreDisposed } from "./storeLifecycle"
 import { validateResolvedValue } from "./validateResolvedValue"
 import { validateSchema } from "./validateSchema"
 
@@ -29,6 +30,7 @@ export const getAtomInitValue = <V = any>(
         if (isPromiseLike(value)) {
             value.then(
                 resolvedValue => {
+                    if (isStoreDisposed(data)) return
                     // Stale-promise guard: if a newer evaluation (e.g.
                     // from lazy maxAge revalidation or resetSelf+re-init)
                     // replaced our promise as the cached value, swallow
@@ -47,9 +49,16 @@ export const getAtomInitValue = <V = any>(
                     }
                     // @ts-ignore @ts-todo
                     setValueInData(atom, resolvedValue, data)
-                    propagateAtomUpdate([atom], data, false, undefined, "async-set")
+                    propagateAtomUpdate(
+                        [atom],
+                        data,
+                        false,
+                        undefined,
+                        "async-set",
+                    )
                 },
                 () => {
+                    if (isStoreDisposed(data)) return
                     // On rejection, remove the rejected promise from the
                     // store so that re-subscribing triggers a fresh init
                     // rather than being stuck with a rejected promise.
@@ -79,7 +88,11 @@ export const getAtomInitValue = <V = any>(
             // allocation (validateResolvedValue re-checks the full gate).
             if (atom.schema) {
                 value.then(
-                    resolved => validateResolvedValue(atom, resolved, data),
+                    resolved => {
+                        if (!isStoreDisposed(data)) {
+                            validateResolvedValue(atom, resolved, data)
+                        }
+                    },
                     () => {}, // genuine rejection is handled by the selector's path
                 )
             }
@@ -105,6 +118,7 @@ export const initAtom = <
     let value = setValueInData(atom, tmpVal, data)
     if (atom.onInit)
         atom.onInit((newVal: Value) => {
+            if (isStoreDisposed(data)) return
             value = newVal
             setAtom(atom, newVal, data, true)
         }, data)
