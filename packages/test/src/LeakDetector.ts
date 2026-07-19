@@ -22,8 +22,9 @@ import { releaseWeakRefs } from "bun:jsc"
  *   someObject = undefined
  *   expect(await detector.isLeaking()).toBe(false)
  *
- * Pass a larger `maxRounds` only when deferred cleanup has just returned and
- * the test needs a wider bounded window for JSC's conservative stack scan.
+ * Pass a smaller `maxRounds` when deliberately asserting that a strong
+ * reference remains; dead-object checks use the wider default because JSC's
+ * conservative stack scan can retain stale slots for many rounds under load.
  */
 export class LeakDetector {
     private _ref: WeakRef<object>
@@ -32,7 +33,12 @@ export class LeakDetector {
         this._ref = new WeakRef(value)
     }
 
-    async isLeaking(maxRounds = 10): Promise<boolean> {
+    async isLeaking(maxRounds = 50): Promise<boolean> {
+        // Start from a fresh macrotask so the caller that just dropped its last
+        // strong reference has unwound before JSC conservatively scans stack
+        // and register spill slots. Without this first gap, full-suite pressure
+        // can make a dead object survive every otherwise-identical GC round.
+        await Bun.sleep(0)
         for (let round = 0; round < maxRounds; round++) {
             releaseWeakRefs()
             Bun.gc(true)

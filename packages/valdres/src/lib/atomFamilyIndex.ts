@@ -1,6 +1,7 @@
 import type { AtomFamilyAtom } from "../types/AtomFamilyAtom"
 import type { Family } from "../types/Family"
 import type { StoreData } from "../types/StoreData"
+import { noteStateValueChanged } from "./stateRevisions"
 import { trackScopeValue } from "./trackScopeValue"
 
 // @ts-ignore
@@ -105,6 +106,7 @@ export const deleteFamilyAtomsFromSet = (
     index.rendered = null
     index.renderedArray = null
     data.values.set(family, renderAtomFamilyIndex(index))
+    noteStateValueChanged(family, data)
     recursivelyUpdateIndexes(data, family)
 }
 
@@ -122,6 +124,7 @@ export const initFamilyIndex = (family: Family<any>, data: StoreData) => {
     }
     const index = createAtomFamilyIndex(parentIndex)
     data.values.set(family, renderAtomFamilyIndex(index))
+    noteStateValueChanged(family, data)
     if (data.parent) {
         trackScopeValue(family, data)
     }
@@ -160,6 +163,7 @@ export const recursivelyUpdateIndexes = (
         index.rendered = null
         index.renderedArray = null
         scopedData.values.set(family, renderAtomFamilyIndex(index))
+        noteStateValueChanged(family, scopedData)
         recursivelyUpdateIndexes(scopedData, family)
     }
 }
@@ -189,6 +193,7 @@ export const ensureFamilyAncestorChain = (
         own.rendered = null
         own.renderedArray = null
         data.values.set(family, renderAtomFamilyIndex(own))
+        noteStateValueChanged(family, data)
         recursivelyUpdateIndexes(data, family)
     }
 }
@@ -225,6 +230,7 @@ export const addFamilyAtomsToSet = (
     index.rendered = null
     index.renderedArray = null
     data.values.set(family, renderAtomFamilyIndex(index))
+    noteStateValueChanged(family, data)
     recursivelyUpdateIndexes(data, family)
     return membershipChanged
 }

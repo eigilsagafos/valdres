@@ -11,6 +11,7 @@ import {
 } from "./notifyChangeListeners"
 import { beginCommit, commitEndRegistry, endCommit } from "./onCommitEnd"
 import { propagateAtomUpdate } from "./propagateUpdatedAtoms"
+import { noteStateValueChanged } from "./stateRevisions"
 
 const InvalidStateError = "unset() expects an atom."
 
@@ -27,6 +28,7 @@ export const detachOwnValue = (atom: Atom<any>, data: StoreData): boolean => {
     if (!data.values.has(atom)) return false
 
     data.values.delete(atom)
+    noteStateValueChanged(atom, data)
     // Only present for maxAge atoms; guard to avoid materializing the lazy
     // WeakMap getter for the common (non-maxAge) atom.
     if (atom.maxAge !== undefined) data.lastValueWriteAt.delete(atom)

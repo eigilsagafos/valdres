@@ -3,8 +3,15 @@ import type { Selector } from "../types/Selector"
 import type { State } from "../types/State"
 import type { StoreData } from "../types/StoreData"
 import { getState } from "./getState"
-import { isLive, mountTransitiveDeps, noteDependencyAdded, onLiveDependencyAdded } from "./mountAtom"
+import {
+    activateSelectorGraph,
+    isLive,
+    mountTransitiveDeps,
+    noteDependencyAdded,
+    onLiveDependencyAdded,
+} from "./mountAtom"
 import { noteDependencyGraphChanged } from "./noteDependencyGraphChanged"
+import { noteStateValueChanged } from "./stateRevisions"
 
 export class SuspendAndWaitForResolveError extends Error {
     promise: Promise<any>
@@ -52,12 +59,19 @@ export const lateGet = (
     }
     const isNewDep = !deps.has(state)
     if (isNewDep) {
-        noteDependencyGraphChanged(selector, data)
         deps.add(state)
-        const dependents = getOrInitDependentsSet(state, data)
-        dependents.add(selector)
-        // New edge: keep the mount-closure marker's no-false-negative invariant.
-        noteDependencyAdded(selector, state, data)
+        if (data.selectorGraphActive.has(selector)) {
+            noteDependencyGraphChanged(selector, data)
+            const dependents = getOrInitDependentsSet(state, data)
+            dependents.add(selector)
+            // New edge: keep the mount-closure marker's no-false-negative invariant.
+            noteDependencyAdded(selector, state, data)
+        } else {
+            // The dependency list no longer aligns with the cold cache's
+            // revision array. Force validation/re-evaluation on the next read.
+            const cache = data.coldSelectorCaches.get(selector)
+            if (cache) cache.validatedAt = -1
+        }
     }
 
     // Get the value (may throw for error-throwing selectors).
@@ -67,10 +81,15 @@ export const lateGet = (
     try {
         return getState(state, data, lateInitSet)
     } finally {
-        // Mount new dependencies if the selector is live
-        if (isNewDep && isLive(selector, data)) {
-            onLiveDependencyAdded(state, data)
-            mountTransitiveDeps(state, data)
+        // Validate/read a cold selector before promoting its dependency graph;
+        // promotion deliberately bypasses cold-cache validation thereafter.
+        if (isNewDep && data.selectorGraphActive.has(selector)) {
+            activateSelectorGraph(state, data)
+            // Mount new dependencies if the selector is live.
+            if (isLive(selector, data)) {
+                onLiveDependencyAdded(state, data)
+                mountTransitiveDeps(state, data)
+            }
         }
     }
 }
@@ -81,5 +100,7 @@ export const cleanUpRejectedPromise = <Value>(
     promise: Promise<any>,
 ) => {
     if (data.values.has(selector) && data.values.get(selector) !== promise) return
-    data.values.delete(selector)
+    if (data.values.delete(selector)) {
+        noteStateValueChanged(selector, data)
+    }
 }

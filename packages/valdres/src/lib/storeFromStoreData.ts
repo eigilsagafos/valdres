@@ -139,23 +139,42 @@ const createStoreRuntime = (data: StoreData): Store => {
     // --- get ---
     const getDefault: GetValue = (state: State) => {
         if (data.pendingOrphanCleanup) flushPendingOrphanCleanup(data)
+        // Cold selectors are the only cached states that need to pass through
+        // getState for revision validation. Preserve the original atom/active-
+        // selector cache-hit path. The eager scalar keeps atom-only stores from
+        // touching the lazy cache WeakMap or checking the state object's shape.
         if (data.values.has(state)) {
-            if (!isCachedValueStale(state, data)) {
-                return data.values.get(state)
+            const hasColdCache =
+                data.coldSelectorCachesEnabled &&
+                data.coldSelectorCaches.has(state)
+            if (hasColdCache) {
+                // No state observed by this cache has changed since its last
+                // validation. Return at the store boundary so steady cold
+                // reads avoid opening a liveness pass only to collect no seeds.
+                const coldCache = data.coldSelectorCaches.get(state)
+                if (
+                    coldCache?.validatedAt ===
+                    data.stateRevisionClock.current
+                ) {
+                    return data.values.get(state)
+                }
+            } else {
+                if (!isCachedValueStale(state, data)) {
+                    return data.values.get(state)
+                }
+                data.values.delete(state)
+                data.lastValueWriteAt.delete(state)
             }
-            data.values.delete(state)
-            data.lastValueWriteAt.delete(state)
         }
         let res
         let initialized = false
-        // A read can lazily re-materialize a selector whose value was dropped
-        // (orphan-invalidation, a throwing eval, …), committing new dependency
-        // edges WITHOUT going through propagation's liveness bookkeeping. Own the
-        // pass-scoped liveness-seed collector around the read so that re-wire is
-        // reconciled from ground-truth reachability afterwards. The ownership
-        // guard composes with propagation (the init-propagation below sees the
-        // collector already owned and defers its reconcile to us). Only the
-        // cache-miss path reaches here; cache hits returned above.
+        // A read can lazily re-materialize an active selector whose value was
+        // dropped (orphan-invalidation, a throwing eval, …), committing new live
+        // dependency edges WITHOUT going through propagation's liveness
+        // bookkeeping. Own the pass-scoped liveness-seed collector around the
+        // read so that re-wire is reconciled from ground-truth reachability
+        // afterwards. Cold cache hits also pass through here for revision
+        // validation, but they never seed the live graph collector.
         const ownsLivenessSeeds = beginLivenessPass(data)
         let seedsToReconcile: Set<State> | null = null
         _initDepth++

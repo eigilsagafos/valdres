@@ -251,6 +251,21 @@ describe("transaction", () => {
         expect(store1.data.values.has(asyncSelected)).toBe(false)
     })
 
+    test("transaction selector reads do not validate a stale committed cold cache", () => {
+        const store1 = store()
+        const count = atom(1)
+        const doubled = selector(get => get(count) * 2)
+
+        expect(store1.get(doubled)).toBe(2)
+        store1.set(count, 2)
+
+        store1.txn(txn => {
+            expect(txn.get(doubled)).toBe(4)
+        })
+
+        expect(store1.get(doubled)).toBe(4)
+    })
+
     test("transaction evaluator tracks async dependencies and aborts superseded work locally", async () => {
         const store1 = store()
         const count = atom(1)

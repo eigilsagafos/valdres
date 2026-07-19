@@ -59,6 +59,7 @@ import {
     evaluateSelectorValue,
     type SelectorEvaluationRuntime,
 } from "./initSelector"
+import { noteStateValueChanged } from "./stateRevisions"
 
 /** One store's slot in a cross-scope commit. Collected root-first; written
  *  leaf-first (see commit) but notified root-first. */
@@ -93,7 +94,9 @@ const deleteAtomFamilyAtoms = (
     data: StoreData,
 ) => {
     set.forEach(atom => {
-        data.values.delete(atom)
+        if (data.values.delete(atom)) {
+            noteStateValueChanged(atom, data)
+        }
     })
 }
 

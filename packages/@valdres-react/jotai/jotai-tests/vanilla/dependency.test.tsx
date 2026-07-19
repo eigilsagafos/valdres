@@ -282,7 +282,12 @@ test("refreshes deps for each async read", async () => {
     store.get(asyncAtom)
     store.set(countAtom, c => c + 1)
     resolve.splice(0).forEach(fn => fn())
-    expect(await store.get(asyncAtom)).toBe(1)
+    // Unmounted Valdres selectors stay out of the live reverse graph. The
+    // dependency write invalidates this pending cold read by revision, and the
+    // next read starts its replacement lazily.
+    const refreshed = store.get(asyncAtom)
+    resolve.splice(0).forEach(fn => fn())
+    expect(await refreshed).toBe(1)
     store.set(depAtom, true)
     store.get(asyncAtom)
     resolve.splice(0).forEach(fn => fn())

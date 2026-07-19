@@ -33,6 +33,65 @@ describe("subscribe", () => {
         expect(callback).toHaveBeenCalledTimes(1)
     })
 
+    test("fresh selector subscriptions initialize directly in the live graph", () => {
+        const store1 = store()
+        const source = atom(1)
+        const child = selector(get => get(source) + 1)
+        const root = selector(get => get(child) + 1)
+
+        const unsubscribe = store1.sub(root, () => {})
+
+        expect(store1.data.selectorGraphActive.has(root)).toBe(true)
+        expect(store1.data.selectorGraphActive.has(child)).toBe(true)
+        expect(store1.data.stateDependents.get(source)).toContain(child)
+        expect(store1.data.stateDependents.get(child)).toContain(root)
+        // A selector that is known-live before its first evaluation never needs
+        // a forward-only revision snapshot or the associated write bookkeeping.
+        expect(store1.data.stateRevisionClock.enabled).toBe(false)
+
+        unsubscribe()
+    })
+
+    test("a failed fresh selector subscription rolls back live graph activation", () => {
+        const store1 = store()
+        const source = atom(1)
+        const child = selector(get => get(source) + 1)
+        const root = selector(get => {
+            get(child)
+            throw new Error("subscription failed")
+        })
+
+        expect(() => store1.sub(root, () => {})).toThrow()
+        expect(store1.data.selectorGraphActive.has(root)).toBe(false)
+        expect(store1.data.selectorGraphActive.has(child)).toBe(false)
+        expect(store1.data.stateDependents.get(source)?.has(child) ?? false).toBe(
+            false,
+        )
+    })
+
+    test("a caught nested selector error rolls back its live graph activation", () => {
+        const store1 = store()
+        const source = atom(1)
+        const failingChild = selector(() => {
+            throw new Error("child failed")
+        })
+        const root = selector(get => {
+            try {
+                get(failingChild)
+            } catch {}
+            return get(source)
+        })
+
+        const unsubscribe = store1.sub(root, () => {})
+
+        expect(store1.data.selectorGraphActive.has(root)).toBe(true)
+        expect(store1.data.selectorGraphActive.has(failingChild)).toBe(false)
+        expect(store1.data.stateDependencies.has(failingChild)).toBe(false)
+        expect(store1.data.stateDependents.get(source)).toContain(root)
+
+        unsubscribe()
+    })
+
     test("subscription to selector with non-primitive value", () => {
         const store1 = store()
         const atom1 = atom(1)
@@ -396,6 +455,52 @@ describe("subscribe", () => {
 
         rootStore.set(source, 2)
         expect(intermediateCallback).toHaveBeenCalledTimes(1)
+    })
+
+    test("subscription promotes a freshly validated dynamic cold cache", () => {
+        const rootStore = store()
+        const chooseLeft = atom(true)
+        const left = atom(1)
+        const right = atom(2)
+        const evaluate = mock(get => (get(chooseLeft) ? get(left) : get(right)))
+        const dynamic = selector(evaluate)
+
+        expect(rootStore.get(dynamic)).toBe(1)
+        expect(rootStore.data.stateDependents.get(left)).toBeUndefined()
+
+        // This invalidates the cold dependency snapshot without eagerly
+        // evaluating or inserting a reverse edge.
+        rootStore.set(chooseLeft, false)
+        expect(evaluate).toHaveBeenCalledTimes(1)
+
+        const callback = mock(() => {})
+        const unsubscribe = rootStore.sub(dynamic, callback, false)
+        expect(evaluate).toHaveBeenCalledTimes(2)
+        expect(
+            rootStore.data.stateDependents.get(left)?.has(dynamic) ?? false,
+        ).toBe(false)
+        expect(rootStore.data.stateDependents.get(right)).toContain(dynamic)
+
+        rootStore.set(right, 3)
+        expect(callback).toHaveBeenCalledTimes(1)
+        expect(rootStore.get(dynamic)).toBe(3)
+        unsubscribe()
+    })
+
+    test("tearing down a live child invalidates a cold parent cache", async () => {
+        const rootStore = store()
+        const source = atom(1)
+        const child = selector(get => get(source) * 2)
+        const parent = selector(get => get(child) + 1)
+
+        const unsubscribe = rootStore.sub(child, () => {})
+        expect(rootStore.get(parent)).toBe(3)
+
+        unsubscribe()
+        await Promise.resolve()
+        rootStore.set(source, 2)
+
+        expect(rootStore.get(parent)).toBe(5)
     })
 
     test("plain atom unsubscribe skips an empty orphan cleanup", () => {

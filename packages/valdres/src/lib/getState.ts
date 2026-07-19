@@ -3,7 +3,8 @@ import type { AtomFamily } from "../types/AtomFamily"
 import type { AtomFamilyAtom } from "../types/AtomFamilyAtom"
 import type { Family } from "../types/Family"
 import type { Selector } from "../types/Selector"
-import type { StoreData } from "../types/StoreData"
+import type { State } from "../types/State"
+import type { ColdSelectorCache, StoreData } from "../types/StoreData"
 import { isAtom } from "../utils/isAtom"
 import { isAtomFamily } from "../utils/isAtomFamily"
 import { isPromiseLike } from "../utils/isPromiseLike"
@@ -16,12 +17,102 @@ import { initSelector } from "./initSelector"
 import { propagateAtomUpdate } from "./propagateUpdatedAtoms"
 import { resolveAtomDefaultValue } from "./resolveAtomDefaultValue"
 import { setValueInData } from "./setValueInData"
+import { getStateRevision, noteStateValueChanged } from "./stateRevisions"
 import { validateResolvedValue } from "./validateResolvedValue"
 import { validateSchema } from "./validateSchema"
 import {
     createAtomFamilyIndex,
     renderAtomFamilyIndex,
 } from "./atomFamilyIndex"
+
+const isColdSelectorCacheFresh = (
+    selector: Selector,
+    cache: ColdSelectorCache,
+    data: StoreData,
+    initializedAtomsSet: Set<Atom>,
+    circularDependencySet?: WeakSet<Selector>,
+): boolean => {
+    if (cache.validatedAt === data.stateRevisionClock.current) return true
+    // Negative snapshots are deliberately non-validatable: either a late async
+    // read changed the dependency set before its revision array was rebuilt, or
+    // the evaluation observed a dependency revision that is no longer current.
+    if (cache.validatedAt < 0) return false
+
+    const dependencies = cache.dependencies
+    if (dependencies.length !== cache.dependencyRevisions.length) return false
+
+    // A dependency set containing no selectors cannot recurse back into this
+    // cache. This is the overwhelmingly common shape (a derived value reading
+    // one or a few atoms), so validate it without three WeakSet operations and
+    // without looking the dependency Set up again in stateDependencies.
+    if (!cache.hasSelectorDependencies) {
+        for (let index = 0; index < dependencies.length; index++) {
+            const dependency = dependencies[index]
+            if (
+                getStateRevision(dependency, data) !==
+                cache.dependencyRevisions[index]
+            ) {
+                return false
+            }
+        }
+        cache.validatedAt = data.stateRevisionClock.current
+        return true
+    }
+
+    // Cached async/dynamic selector graphs can be cyclic. Treat a cache already
+    // being validated as provisionally fresh; the outer walk still compares its
+    // state revision and every reachable non-cyclic source revision.
+    if (data.coldCacheValidationSet.has(selector)) return true
+    data.coldCacheValidationSet.add(selector)
+    try {
+        for (let index = 0; index < dependencies.length; index++) {
+            const dependency = dependencies[index]
+            if (isSelector(dependency)) {
+                getState(
+                    dependency,
+                    data,
+                    initializedAtomsSet,
+                    circularDependencySet,
+                )
+            }
+            if (
+                getStateRevision(dependency, data) !==
+                cache.dependencyRevisions[index]
+            ) {
+                return false
+            }
+        }
+        // Dependency validation can itself materialize values and advance the
+        // shared clock. This snapshot is current through the end of that walk.
+        cache.validatedAt = data.stateRevisionClock.current
+        return true
+    } finally {
+        data.coldCacheValidationSet.delete(selector)
+    }
+}
+
+/** Validate a cache entry already resolved by the caller while retaining the
+ * normal recursive selector-validation path. */
+const getColdSelectorState = <Value>(
+    selector: Selector<Value>,
+    cache: ColdSelectorCache,
+    data: StoreData,
+    initializedAtomsSet: Set<Atom>,
+    circularDependencySet?: WeakSet<Selector>,
+): Value => {
+    if (
+        !isColdSelectorCacheFresh(
+            selector,
+            cache,
+            data,
+            initializedAtomsSet,
+            circularDependencySet,
+        )
+    ) {
+        initSelector(selector, data, initializedAtomsSet, circularDependencySet)
+    }
+    return data.values.get(selector)
+}
 
 export function getState<
     Value extends any,
@@ -62,7 +153,24 @@ export function getState<
     initializedAtomsSet: Set<Atom<any>>,
     circularDependencySet?: WeakSet<Selector>,
 ) {
-    if (data.values.has(state)) return data.values.get(state)
+    if (data.values.has(state)) {
+        // Atom-only stores retain the original has/get fast path. Once this
+        // store has materialized any cold selector, only a state with matching
+        // metadata needs validation; active selectors have no such entry.
+        const coldCache = data.coldSelectorCachesEnabled
+            ? data.coldSelectorCaches.get(state)
+            : undefined
+        if (!coldCache) {
+            return data.values.get(state)
+        }
+        return getColdSelectorState(
+            state as Selector,
+            coldCache,
+            data,
+            initializedAtomsSet,
+            circularDependencySet,
+        )
+    }
     if (isAtom<Value>(state)) {
         if (data.parent)
             return getState<Value, Args>(
@@ -110,6 +218,7 @@ export function getState<
                                     // read re-inits rather than committing it.
                                     if (data.values.get(state) === cached) {
                                         data.values.delete(state)
+                                        noteStateValueChanged(state, data)
                                     }
                                     return
                                 }
@@ -126,6 +235,7 @@ export function getState<
                             () => {
                                 if (data.values.get(state) === cached) {
                                     data.values.delete(state)
+                                    noteStateValueChanged(state, data)
                                 }
                             },
                         )
@@ -139,6 +249,14 @@ export function getState<
         return data.values.get(state)
     }
     if (isSelector<Value>(state)) {
+        // Orphan cleanup may leave the weak active marker behind to keep
+        // teardown cheap. With no forward graph this is a fresh read, not a
+        // live re-evaluation, so clear the stale marker before selecting the
+        // evaluation mode. Fresh live subscriptions bypass this path and call
+        // initFreshActiveSelector directly.
+        if (!data.stateDependencies.has(state)) {
+            data.selectorGraphActive.delete(state)
+        }
         initSelector<Value>(
             state,
             data,
@@ -158,6 +276,9 @@ export function getState<
             )
         }
         data.values.set(state, renderAtomFamilyIndex(createAtomFamilyIndex()))
+        // Family indexes bypass setValueInData because their mutable internal
+        // bookkeeping must not be deep-frozen.
+        noteStateValueChanged(state, data)
         initializedAtomsSet.add(state)
         return data.values.get(state)
     }

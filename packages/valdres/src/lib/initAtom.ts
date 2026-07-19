@@ -7,6 +7,7 @@ import { getState } from "./getState"
 import { propagateAtomUpdate } from "./propagateUpdatedAtoms"
 import { setAtom } from "./setAtom"
 import { setValueInData } from "./setValueInData"
+import { noteStateValueChanged } from "./stateRevisions"
 import { validateResolvedValue } from "./validateResolvedValue"
 import { validateSchema } from "./validateSchema"
 
@@ -40,6 +41,7 @@ export const getAtomInitValue = <V = any>(
                         // stuck on an unvalidated promise.
                         if (data.values.get(atom) === value) {
                             data.values.delete(atom)
+                            noteStateValueChanged(atom, data)
                         }
                         return
                     }
@@ -53,6 +55,7 @@ export const getAtomInitValue = <V = any>(
                     // rather than being stuck with a rejected promise.
                     if (data.values.get(atom) === value) {
                         data.values.delete(atom)
+                        noteStateValueChanged(atom, data)
                     }
                 },
             )

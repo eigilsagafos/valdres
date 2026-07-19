@@ -10,6 +10,22 @@ export type SelectorEvaluationContext = {
     /** All dependencies read by this async evaluation. Kept on the evaluation
      *  identity so two stores/selectors may safely return the same Promise. */
     asyncDeps?: Set<State>
+    /** Revision observed by each deferred async dependency read. This keeps a
+     *  cold async result from claiming freshness if a dependency changed while
+     *  its Promise was in flight. */
+    asyncDependencyRevisions?: Map<State, number>
+}
+
+export type ColdSelectorCache = {
+    /** Weak-key-owned forward references aligned with `dependencyRevisions`.
+     * The array is reused across evaluations and disappears with the selector;
+     * unlike a reverse edge, no long-lived dependency points back to it. */
+    dependencies: State[]
+    dependencyRevisions: number[]
+    validatedAt: number
+    /** Atom/family-only dependency sets cannot contain a selector cycle, so
+     * their validation skips the recursive cycle guard entirely. */
+    hasSelectorDependencies: boolean
 }
 
 export type StoreData = {
@@ -26,6 +42,30 @@ export type StoreData = {
     subscriptionsRequireEqualCheck: WeakMap<WeakKey, boolean>
     stateDependents: WeakMap<WeakKey, any>
     stateDependencies: WeakMap<WeakKey, any>
+    /** Selectors whose forward dependency sets are currently mirrored into the
+     *  iterable reverse graph. Cold selectors are deliberately absent. */
+    selectorGraphActive: WeakSet<WeakKey>
+    /** Dependency-revision snapshots for cached, non-live selectors. */
+    coldSelectorCaches: WeakMap<WeakKey, ColdSelectorCache>
+    /** Set on this store after its first cold selector cache. Kept as an eager
+     *  scalar so atom-only cache hits can skip the lazy WeakMap without a state
+     *  shape check or nested revision-clock lookup. */
+    coldSelectorCachesEnabled: boolean
+    /** Per-state value revision. Scoped reads fall through to an ancestor when
+     *  the state has no local value/revision. */
+    stateRevisions: WeakMap<WeakKey, number>
+    /** Shared by a root store and every scope. It is enabled lazily by the first
+     *  cold selector so atom-only stores don't maintain revision entries. */
+    stateRevisionClock: {
+        current: number
+        enabled: boolean
+        /** States directly referenced by at least one cold cache. Weak
+         *  membership lets writes skip revision-map churn for unrelated states
+         *  without retaining either side of the dependency. */
+        tracked?: WeakSet<WeakKey>
+    }
+    /** Cycle guard for recursive validation of cached selector dependencies. */
+    coldCacheValidationSet: WeakSet<WeakKey>
     /** Stable per-store order assigned when a selector first materializes its
      *  dependency set. An edge to an equal/newer selector violates this order,
      *  making a directed cycle possible in that closure. */
@@ -36,11 +76,12 @@ export type StoreData = {
      *  at least one such edge, so absence proves the closure acyclic in O(1).
      *  Stale positives after edge removal only cost a fallback DFS. */
     cycleRiskInClosure: WeakMap<WeakKey, true>
-    /** Monotonic generation for dependency-graph materialization/churn. Selector
-     *  evaluation increments it when a dependency set is created or changed.
-     *  Orphan teardown only removes edges and deliberately leaves it unchanged:
-     *  deletion cannot create a cycle, so a synchronous unsubscribe burst can
-     *  reuse both negative cycle proofs and completed orphan-walk visits. */
+    /** Monotonic generation for live dependency-graph materialization/churn.
+     *  Active selector evaluation and cold-to-live promotion increment it.
+     *  Cold forward caches do not. Orphan teardown only removes edges and
+     *  deliberately leaves it unchanged: deletion cannot create a cycle, so a
+     *  synchronous unsubscribe burst can reuse both negative cycle proofs and
+     *  completed orphan-walk visits. */
     dependencyGraphVersion: number
     /** `state -> dependencyGraphVersion` for closures proven acyclic. A cached
      *  negative remains valid while teardown only deletes edges; any normal graph

@@ -2,6 +2,7 @@ import type { State } from "../types/State"
 import type { StoreData } from "../types/StoreData"
 import type { Selector } from "../types/Selector"
 import { isLive } from "./mountAtom"
+import { noteStateValueChanged } from "./stateRevisions"
 
 /**
  * Remove non-live states from the dependency graph, clear selector caches, and
@@ -51,7 +52,21 @@ export const cleanupOrphanedDeps = (state: State, data: StoreData) => {
                 data.stateDependents.get(dep)?.delete(current)
             }
             data.stateDependencies.delete(current)
-            data.values.delete(current)
+            // The active marker is weak and can remain through teardown. A
+            // later subscription overwrites it while rebuilding the live graph;
+            // a later cold read clears it on the cache-miss path before
+            // evaluation. Deferring that delete keeps synchronous unsubscribe
+            // bursts from paying one extra WeakSet mutation per selector.
+            // Live-only stores never instantiate the cold-cache WeakMap. Keep
+            // their batched teardown to the original graph/value work.
+            if (data.coldSelectorCachesEnabled) {
+                data.coldSelectorCaches.delete(current)
+            }
+            if (data.values.delete(current)) {
+                if (data.stateRevisionClock.enabled) {
+                    noteStateValueChanged(current, data)
+                }
+            }
             data.abortControllers.delete(current)
 
             if (dependents) {

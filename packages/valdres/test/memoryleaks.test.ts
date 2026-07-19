@@ -79,6 +79,19 @@ describe("memory leaks (global atoms)", () => {
 })
 
 describe("memory leaks (selectors)", () => {
+    test("cold selector reads do not retain reverse dependency edges", () => {
+        const s = store()
+        const baseAtom = atom(1)
+        const selectorCount = 1_000
+
+        for (let i = 0; i < selectorCount; i++) {
+            const coldSelector = selector(get => get(baseAtom) + i)
+            expect(s.get(coldSelector)).toBe(i + 1)
+        }
+
+        expect(s.data.stateDependents.get(baseAtom)?.size ?? 0).toBe(0)
+    })
+
     test("unreferenced selector value is collected", async () => {
         const sel = (() => {
             const a = atom(1)
@@ -178,40 +191,58 @@ describe("memory leaks (subscriptions)", () => {
         expect(!after || !after.has(sel)).toBe(true)
     })
 
-    test("stateDependents are cleaned up after base atom unsubscribe", async () => {
+    test("a cold read after live teardown does not restore reverse edges", async () => {
         const s = store()
         const baseAtom = atom(1)
         const sel = selector(get => get(baseAtom) + 1)
-        // Evaluate sel so the dep graph is established
+
+        const unsubscribe = s.sub(sel, () => {})
+        expect(s.data.stateDependents.get(baseAtom)).toContain(sel)
+        unsubscribe()
+        await Promise.resolve()
+
+        expect(s.get(sel)).toBe(2)
+        expect(s.data.stateDependents.get(baseAtom)?.has(sel) ?? false).toBe(
+            false,
+        )
+    })
+
+    test("subscribing to a base atom does not promote its cold selectors", async () => {
+        const s = store()
+        const baseAtom = atom(1)
+        const sel = selector(get => get(baseAtom) + 1)
+        // A cold evaluation records only the forward dependency.
         s.get(sel)
-        expect(s.data.stateDependents.get(baseAtom)?.has(sel)).toBe(true)
+        expect(s.data.stateDependents.get(baseAtom)?.has(sel) ?? false).toBe(
+            false,
+        )
         // Subscribe to the base atom, then unsubscribe
         const unsub = s.sub(baseAtom, () => {})
         unsub()
         await Promise.resolve()
-        // After unsubscribe, sel should be removed from baseAtom's dependents
+        // The unrelated base subscription never inserted the selector.
         const after = s.data.stateDependents.get(baseAtom)
         expect(!after || !after.has(sel)).toBe(true)
     })
 
-    test("invalidated selector value is not retained in store data", () => {
+    test("cold selector cache is revision-invalidated without a reverse edge", () => {
         const s = store()
         const baseAtom = atom(1)
         const sel = selector(get => get(baseAtom) + 1)
         expect(s.get(sel)).toBe(2)
-        // The freshly-computed value of the READ selector is kept cached after
-        // init-time propagation (getDefault restores it) so repeated unsubscribed
-        // reads are reference-stable — same as if it had been read twice. The GC
-        // that matters happens on a real change with no live consumer (below) and
-        // on unsubscribe, not on read.
+        // A cold value stays cached for reference-stable reads. The cache lives
+        // behind weak selector keys and has no strong reverse edge, so it does
+        // not prevent an otherwise-unreferenced selector from being collected.
         expect(s.data.values.has(sel)).toBe(true)
-        // Subscribe to baseAtom (not sel) so propagation runs on change
+        // Subscribe to baseAtom (not sel) so propagation runs on change.
         const unsub = s.sub(baseAtom, () => {})
         s.set(baseAtom, 2)
-        // A genuine change with no live consumer DOES drop the value (this is the
-        // non-init propagation path) — not stashed in any secondary cache.
-        expect(s.data.values.has(sel)).toBe(false)
-        // Lazy re-evaluation on next read still works
+        // The cached value remains, but no reverse edge made this write visit it.
+        // Its dependency revision makes the next read re-evaluate lazily.
+        expect(s.data.values.has(sel)).toBe(true)
+        expect(s.data.stateDependents.get(baseAtom)?.has(sel) ?? false).toBe(
+            false,
+        )
         expect(s.get(sel)).toBe(3)
         unsub()
     })
@@ -268,9 +299,9 @@ describe("memory leaks (subscriptions)", () => {
             // Plain atom teardown deliberately has no orphan-cleanup microtask.
             // After this tight loop, JSC's conservative stack scan can retain a
             // stale callback register under full-suite heap pressure even though
-            // the subscription entry is gone. Use the wider bounded window that
-            // LeakDetector exposes for exactly this post-teardown shape.
-            expect(await detector.isLeaking(50)).toBe(false)
+            // the subscription entry is gone. The detector's default bounded
+            // window accounts for exactly this post-teardown shape.
+            expect(await detector.isLeaking()).toBe(false)
         }
     })
 })
@@ -278,14 +309,20 @@ describe("memory leaks (subscriptions)", () => {
 describe("memory leaks (atom families)", () => {
     test("released family atom is collected", async () => {
         const detector = (() => {
-            const s = store()
-            const family = atomFamily<{ name: string }, [string]>(
+            let s: any = store()
+            let family: any = atomFamily<{ name: string }, [string]>(
                 (...args) => ({ name: args[0] }),
             )
             let familyAtom: any = family("alice")
             const d = new LeakDetector(familyAtom)
             s.get(familyAtom)
             family.release("alice")
+            // Clear the local owner chain explicitly before returning the
+            // detector; JSC's conservative scan can otherwise treat the ended
+            // scope's store/index slots as roots for the whole bounded window.
+            familyAtom = undefined
+            family = undefined
+            s = undefined
             return d
         })()
         expect(await detector.isLeaking()).toBe(false)
@@ -358,7 +395,9 @@ describe("memory leaks (selector families)", () => {
         let sel: any = family(3)
         const detector = new LeakDetector(sel)
         sel = undefined
-        expect(await detector.isLeaking()).toBe(true)
+        // A real strong reference does not need the detector's wider
+        // dead-object window; keep this intentional-leak assertion fast.
+        expect(await detector.isLeaking(10)).toBe(true)
         // Clean up
         family.release(3)
     })

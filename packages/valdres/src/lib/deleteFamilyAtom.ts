@@ -1,6 +1,7 @@
 import type { AtomFamilyAtom } from "../types/AtomFamilyAtom"
 import type { StoreData } from "../types/StoreData"
 import { propagateDeletedAtoms } from "./propagateUpdatedAtoms"
+import { noteStateValueChanged } from "./stateRevisions"
 
 export const deleteFamilyAtom = <
     Value extends unknown,
@@ -9,7 +10,9 @@ export const deleteFamilyAtom = <
     atom: AtomFamilyAtom<Value, Args>,
     data: StoreData,
 ) => {
-    data.values.delete(atom)
+    if (data.values.delete(atom)) {
+        noteStateValueChanged(atom, data)
+    }
     // Membership is store-local, while the family's identity cache is shared.
     // Releasing here could strand another store on this member while
     // family(...args) starts returning a different object for the same key.

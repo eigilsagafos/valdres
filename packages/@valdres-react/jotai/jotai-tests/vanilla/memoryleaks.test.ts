@@ -80,11 +80,7 @@ describe("memory leaks (with subscribe)", () => {
         unsub = undefined
         objAtom = undefined
         derivedAtom = undefined
-        // Deferred cleanup has only just returned. Under full-suite heap
-        // pressure JSC can conservatively retain its stale stack slots beyond
-        // the detector's normal 10-round window; a true strong reference still
-        // survives this longer bounded check and fails.
-        expect(await detector1.isLeaking(50)).toBe(false)
+        expect(await detector1.isLeaking()).toBe(false)
         expect(await detector2.isLeaking()).toBe(false)
     })
 

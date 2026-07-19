@@ -3,6 +3,7 @@ import { store } from "../store"
 import { atom } from "../atom"
 import { selector } from "../selector"
 import { wait } from "../../test/utils/wait"
+import { withFakeClock } from "../../test/utils/fakeClock"
 
 describe("globalAtom", () => {
     test("set in one store, read from both", () => {
@@ -613,28 +614,29 @@ describe("globalAtom", () => {
         expect(fresh).not.toBe(initial)
     })
 
-    test("get within maxAge window returns cached value without re-eval", async () => {
-        let calls = 0
-        const a = atom<number>(
-            () => {
-                calls++
-                return calls
-            },
-            {
-                global: true,
-                name: "test/lazy-revalidate-fresh-cache",
-                maxAge: 60_000,
-            },
-        )
-        const s = store()
-        const initial = s.get(a)
-        const callsAfterInit = calls
+    test("get within maxAge window returns cached value without re-eval", () =>
+        withFakeClock(async clock => {
+            let calls = 0
+            const a = atom<number>(
+                () => {
+                    calls++
+                    return calls
+                },
+                {
+                    global: true,
+                    name: "test/lazy-revalidate-fresh-cache",
+                    maxAge: 200,
+                },
+            )
+            const s = store()
+            const initial = s.get(a)
+            const callsAfterInit = calls
 
-        await wait(20) // well within maxAge, including on contended CI workers
+            await clock.advance(20) // well within maxAge
 
-        expect(s.get(a)).toBe(initial)
-        expect(calls).toBe(callsAfterInit)
-    })
+            expect(s.get(a)).toBe(initial)
+            expect(calls).toBe(callsAfterInit)
+        }))
 
     test("global onMount receives (store, state) args like non-global atoms", () => {
         let receivedStore: unknown = null

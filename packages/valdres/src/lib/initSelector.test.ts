@@ -52,7 +52,7 @@ describe("initSelector", () => {
         const callback2 = mock(get => get(selector1) + 1)
         const selector2 = selector(callback2)
         expect(store1.get(selector2)).toBe(3)
-        expect(callback1).toHaveBeenCalledTimes(2) // This could be 1 if we optimize
+        expect(callback1).toHaveBeenCalledTimes(1)
         expect(callback2).toHaveBeenCalledTimes(1)
         store1.set(atom1, 2)
         // expect(callback1).toHaveBeenCalledTimes(3)
