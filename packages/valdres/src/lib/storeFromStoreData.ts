@@ -287,15 +287,13 @@ const createStoreRuntime = (data: StoreData): Store => {
         return unsetValue(atom, data)
     }
 
-    // Keep the third argument in the public call shape for compatibility.
-    // Equality is handled during propagation and needs no subscription metadata.
     const sub = <V>(
         state: State<V> | Family<V, any>,
         callback: () => void,
-        _deepEqualCheckBeforeCallback: boolean = true,
+        deepEqualCheckBeforeCallback: boolean = true,
     ) => {
         if (data.pendingOrphanCleanup) flushPendingOrphanCleanup(data)
-        return subscribe(state, callback, data)
+        return subscribe(state, callback, deepEqualCheckBeforeCallback, data)
     }
 
     const txn = (callback: TransactionFn, name?: string) => {

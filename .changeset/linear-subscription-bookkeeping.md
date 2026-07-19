@@ -2,5 +2,6 @@
 "valdres": patch
 ---
 
-Remove unused equality bookkeeping so tearing down many subscriptions to the
-same state is linear instead of quadratic.
+Maintain exported subscription equality metadata with an O(1) reference count
+so tearing down many subscriptions to the same state is linear instead of
+quadratic.

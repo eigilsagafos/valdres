@@ -12,6 +12,7 @@ import {
     unmountOrphanedDeps,
 } from "./mountAtom"
 import { queueOrphanCleanup } from "./queueOrphanCleanup"
+import { removeSubscriptionEqualCheck } from "./subscriptionEqualCheckCounts"
 
 export const unsubscribe = <V>(
     state: State<V> | Family<V>,
@@ -20,7 +21,13 @@ export const unsubscribe = <V>(
 ) => {
     const subscribers = data.subscriptions.get(state)
     if (subscribers) {
-        subscribers.delete(subscription)
+        const wasSubscribed = subscribers.delete(subscription)
+        if (
+            wasSubscribed &&
+            subscription.requireDeepEqualCheckBeforeCallback
+        ) {
+            removeSubscriptionEqualCheck(state, data)
+        }
         if (subscribers.size === 0) {
             const maxAgeCleanup = getMaxAgeCleanup(data, state)
             if (maxAgeCleanup) {

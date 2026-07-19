@@ -211,6 +211,39 @@ describe("subscribe", () => {
         unsubscribeWithEqualityCheck()
     })
 
+    test("keeps public equality metadata accurate without scanning", () => {
+        const store1 = store()
+        const atom1 = atom(1)
+        const unsubscribeWithoutEqualityCheck = store1.sub(
+            atom1,
+            () => {},
+            false,
+        )
+        expect(
+            store1.data.subscriptionsRequireEqualCheck.get(atom1),
+        ).toBeUndefined()
+        const unsubscribeWithEqualityCheck1 = store1.sub(atom1, () => {})
+        const unsubscribeWithEqualityCheck2 = store1.sub(atom1, () => {})
+
+        expect(
+            [...store1.data.subscriptions.get(atom1)!].map(
+                subscription =>
+                    subscription.requireDeepEqualCheckBeforeCallback,
+            ),
+        ).toStrictEqual([false, true, true])
+        expect(store1.data.subscriptionsRequireEqualCheck.get(atom1)).toBe(true)
+
+        unsubscribeWithoutEqualityCheck()
+        unsubscribeWithEqualityCheck1()
+        unsubscribeWithEqualityCheck1()
+        expect(store1.data.subscriptionsRequireEqualCheck.get(atom1)).toBe(true)
+
+        unsubscribeWithEqualityCheck2()
+        expect(
+            store1.data.subscriptionsRequireEqualCheck.get(atom1),
+        ).toBeUndefined()
+    })
+
     test("subscribe to atom in scoped store", () => {
         const level1store = store()
         const level2store = level1store.scope("child")

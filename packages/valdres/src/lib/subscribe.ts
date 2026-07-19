@@ -21,6 +21,7 @@ import { propagateAtomUpdate } from "./propagateUpdatedAtoms"
 import { setValueInData } from "./setValueInData"
 import { setMaxAgeCleanup } from "./maxAgeCleanups"
 import { mountTransitiveDeps, onFirstDirectSubscriber } from "./mountAtom"
+import { addSubscriptionEqualCheck } from "./subscriptionEqualCheckCounts"
 import { unsubscribe } from "./unsubscribe"
 import { validateResolvedValue } from "./validateResolvedValue"
 
@@ -284,6 +285,7 @@ export const installMaxAgeTimer = (state: Atom<any>, data: StoreData) => {
                     startInterval()
                     updateMeta()
                 },
+                false,
                 data,
             ),
         )
@@ -293,13 +295,14 @@ export const installMaxAgeTimer = (state: Atom<any>, data: StoreData) => {
             subscribe(
                 state.staleWhileRevalidate as any,
                 () => updateMeta(),
+                false,
                 data,
             ),
         )
     }
     if (state.staleIfError && isReactive(state.staleIfError)) {
         configUnsubs.push(
-            subscribe(state.staleIfError as any, () => updateMeta(), data),
+            subscribe(state.staleIfError as any, () => updateMeta(), false, data),
         )
     }
 
@@ -332,6 +335,7 @@ export const installMaxAgeTimer = (state: Atom<any>, data: StoreData) => {
 export const subscribe = <V>(
     state: State<V> | Family<V>,
     callback: (arg?: any) => void,
+    requireDeepEqualCheckBeforeCallback: boolean,
     data: StoreData,
 ) => {
     let parentUnsubscribe: undefined | (() => void)
@@ -348,7 +352,12 @@ export const subscribe = <V>(
          */
         const originalCallback = callback
         const delegateToParent = () =>
-            subscribe(state, originalCallback, data.parent!)
+            subscribe(
+                state,
+                originalCallback,
+                requireDeepEqualCheckBeforeCallback,
+                data.parent!,
+            )
         // A family always reads through (no own value); an atom delegates only
         // while this scope does not shadow it.
         if (isAtomFamily(state) || !data.values.has(state)) {
@@ -422,12 +431,14 @@ export const subscribe = <V>(
         subscription = {
             callback,
             state,
+            requireDeepEqualCheckBeforeCallback,
             reRoot: dropDelegate,
             reDelegate,
         }
     } else {
         subscription = {
             callback,
+            requireDeepEqualCheckBeforeCallback,
             reRoot: dropDelegate,
             reDelegate,
         }
@@ -476,6 +487,10 @@ export const subscribe = <V>(
             } catch {}
             throw error
         }
+    }
+
+    if (requireDeepEqualCheckBeforeCallback) {
+        addSubscriptionEqualCheck(state, data)
     }
 
     return unsubscribeSubscription
