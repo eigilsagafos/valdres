@@ -4,8 +4,14 @@ import { createStore } from "../../src/createStore"
 import { atom } from "../../src/atom"
 import type { Atom } from "jotai/vanilla"
 
+// JSC may conservatively retain a dead stack slot for an entire GC window.
+// A retry creates a fresh target; a real strong reference fails every attempt.
+// The timeout leaves room for LeakDetector's 50-round slow path to complete.
+const leakTest = (name: string, run: () => void | Promise<unknown>): void =>
+    test(name, run, { retry: 3, timeout: 15_000 })
+
 describe("memory leaks (get & set only)", () => {
-    test("one atom", async () => {
+    leakTest("one atom", async () => {
         const store = createStore()
         let objAtom: Atom<object> | undefined = atom({})
         const detector = new LeakDetector(store.get(objAtom))
@@ -13,7 +19,7 @@ describe("memory leaks (get & set only)", () => {
         expect(await detector.isLeaking()).toBe(false)
     })
 
-    test("two atoms", async () => {
+    leakTest("two atoms", async () => {
         const store = createStore()
         let objAtom: Atom<object> | undefined = atom({})
         const detector1 = new LeakDetector(store.get(objAtom))
@@ -28,18 +34,23 @@ describe("memory leaks (get & set only)", () => {
     })
 
     // Also todo in upstream jotai
-    test.todo("should not hold onto dependent atoms that are not mounted", async () => {
-        const store = createStore()
-        const objAtom = atom({})
-        let depAtom: Atom<unknown> | undefined = atom((get: any) => get(objAtom))
-        const detector = new LeakDetector(depAtom!)
-        store.get(depAtom!)
-        depAtom = undefined
-        await Promise.resolve()
-        expect(await detector.isLeaking()).toBe(false)
-    })
+    test.todo(
+        "should not hold onto dependent atoms that are not mounted",
+        async () => {
+            const store = createStore()
+            const objAtom = atom({})
+            let depAtom: Atom<unknown> | undefined = atom((get: any) =>
+                get(objAtom),
+            )
+            const detector = new LeakDetector(depAtom!)
+            store.get(depAtom!)
+            depAtom = undefined
+            await Promise.resolve()
+            expect(await detector.isLeaking()).toBe(false)
+        },
+    )
 
-    test("with a long-lived base atom", async () => {
+    leakTest("with a long-lived base atom", async () => {
         const store = createStore()
         const objAtom = atom({})
         let derivedAtom: Atom<object> | undefined = atom(get => ({
@@ -52,7 +63,7 @@ describe("memory leaks (get & set only)", () => {
 })
 
 describe("memory leaks (with subscribe)", () => {
-    test("one atom", async () => {
+    leakTest("one atom", async () => {
         const store = createStore()
         let objAtom: Atom<object> | undefined = atom({})
         const detector = new LeakDetector(store.get(objAtom))
@@ -66,7 +77,7 @@ describe("memory leaks (with subscribe)", () => {
         expect(await detector.isLeaking(50)).toBe(false)
     })
 
-    test("two atoms", async () => {
+    leakTest("two atoms", async () => {
         const store = createStore()
         let objAtom: Atom<object> | undefined = atom({})
         const detector1 = new LeakDetector(store.get(objAtom))
@@ -84,7 +95,7 @@ describe("memory leaks (with subscribe)", () => {
         expect(await detector2.isLeaking()).toBe(false)
     })
 
-    test("with a long-lived base atom", async () => {
+    leakTest("with a long-lived base atom", async () => {
         const store = createStore()
         const objAtom = atom({})
         let derivedAtom: Atom<object> | undefined = atom(get => ({
@@ -109,7 +120,9 @@ describe("memory leaks (with dependencies)", () => {
         let objAtom: Atom<object> | undefined = atom({})
         const detector = new LeakDetector(store.get(objAtom))
         const atom1 = atom(0)
-        const atom2 = atom((get: any) => get(atom1) || (objAtom && get(objAtom)))
+        const atom2 = atom(
+            (get: any) => get(atom1) || (objAtom && get(objAtom)),
+        )
         store.sub(atom2, () => {})
         store.set(atom1, 1)
         objAtom = undefined
@@ -122,7 +135,9 @@ describe("memory leaks (with dependencies)", () => {
         let objAtom: Atom<object> | undefined = atom({})
         const detector = new LeakDetector(store.get(objAtom))
         const atom1 = atom(0)
-        const atom2 = atom(async (get: any) => get(atom1) || (objAtom && get(objAtom)))
+        const atom2 = atom(
+            async (get: any) => get(atom1) || (objAtom && get(objAtom)),
+        )
         store.sub(atom2, () => {})
         store.set(atom1, 1)
         objAtom = undefined
