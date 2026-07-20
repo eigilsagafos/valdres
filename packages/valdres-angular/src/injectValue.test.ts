@@ -17,7 +17,7 @@ const createInjector = (storeInstance = createStore()) => {
                 provide: VALDRES_STORE,
                 useValue: {
                     current: storeInstance,
-                    stores: { [storeInstance.data.id]: storeInstance },
+                    stores: { [storeInstance.id]: storeInstance },
                 },
             },
         ],
@@ -231,16 +231,14 @@ describe("injectValue", () => {
 
     test("stale promise does not overwrite newer value", async () => {
         const idAtom = atom(1)
-        const userSelector = selector(
-            get => {
-                const id = get(idAtom)
-                // First call is slow (30ms), second is fast (5ms)
-                const delay = id === 1 ? 30 : 5
-                return new Promise<string>(r =>
-                    setTimeout(() => r("User " + id), delay),
-                )
-            },
-        )
+        const userSelector = selector(get => {
+            const id = get(idAtom)
+            // First call is slow (30ms), second is fast (5ms)
+            const delay = id === 1 ? 30 : 5
+            return new Promise<string>(r =>
+                setTimeout(() => r("User " + id), delay),
+            )
+        })
         const { injector, store } = createInjector()
         let result: ValueState<string>
         runInInjectionContext(injector, () => {

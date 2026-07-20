@@ -6,6 +6,6 @@ describe("useStore", () => {
     test("Provider", () => {
         const [store, renderHook] = generateStoreAndRenderHook()
         const { result } = renderHook(() => useStore())
-        expect(result.current.data.id).toBe(store.data.id)
+        expect(result.current.id).toBe(store.id)
     })
 })

@@ -5,8 +5,9 @@ import type { GlobalAtomResetSelfFunc } from "../types/GlobalAtomResetSelfFunc"
 import type { GlobalAtomSetSelfFunc } from "../types/GlobalAtomSetSelfFunc"
 import type { AtomOnSet } from "./../types/AtomOnSet"
 import type { AtomOptions } from "./../types/AtomOptions"
-import type { GlobalAtom } from "./../types/GlobalAtom"
+import type { InternalGlobalAtom } from "./../types/InternalGlobalAtom"
 import type { StoreData } from "./../types/StoreData"
+import { globalOnSetMarker } from "./globalOnSetMarker"
 import { isLive, mountAtom, unmountAtom } from "./mountAtom"
 import { propagateAtomUpdate } from "./propagateUpdatedAtoms"
 import { noteStateValueChanged } from "./stateRevisions"
@@ -18,19 +19,14 @@ import {
     trackTouchedGlobal,
     untrackTouchedGlobal,
 } from "./storeLifecycle"
-
-// Every global atom carries an onSet function, even when the user did not
-// provide one. This lets the write hot path use the existing `atom.onSet`
-// property as its single fast/slow discriminator: ordinary atoms without hooks
-// stay on the original inline propagation path, while global atoms enter the
-// phased fan-out path. Shared across atoms so the marker itself allocates once.
-const globalOnSetMarker: AtomOnSet<any> = () => {}
+import { getStoreData } from "./getStoreData"
 
 export const globalAtom = <Value = unknown>(
     defaultValue: AtomDefaultValue<Value>,
     options: AtomOptions<Value>,
 ) => {
     const stores = new Set<StoreData>()
+    const globalStoreData = getStoreData(globalStore)
     const userOnSet = options.onSet
 
     const attach = (data: StoreData) => {
@@ -38,7 +34,7 @@ export const globalAtom = <Value = unknown>(
         // A terminal store must never acquire a new strong registration.
         // globalStore is permanent. Reverse-tracking it would make that store
         // retain every otherwise-unreferenced global atom forever.
-        if (data === globalStore.data) {
+        if (data === globalStoreData) {
             if (isStoreDisposed(data)) return
         } else if (!trackTouchedGlobal(data, atom)) {
             return
@@ -160,7 +156,10 @@ export const globalAtom = <Value = unknown>(
             // Match subscribe.ts: maxAge timer is installed only when the
             // atom has a DIRECT subscriber. Transitive (selector-only)
             // subscribers go through the lazy-revalidation path on read.
-            if (atom.maxAge !== undefined && (s.subscriptions.get(atom)?.size ?? 0) > 0) {
+            if (
+                atom.maxAge !== undefined &&
+                (s.subscriptions.get(atom)?.size ?? 0) > 0
+            ) {
                 installMaxAgeTimer(atom, s)
             }
             try {
@@ -176,7 +175,7 @@ export const globalAtom = <Value = unknown>(
     // `stores` is a plain data property. A getter wasn't buying anything —
     // the Set reference never changes, and accessor properties take a slower
     // IC path than data properties at every read site in subscribe.ts.
-    const atom: GlobalAtom<Value> = {
+    const atom: InternalGlobalAtom<Value> = {
         equal,
         ...options,
         defaultValue,

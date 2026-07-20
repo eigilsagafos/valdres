@@ -1,6 +1,7 @@
 import { describe, test, expect } from "bun:test"
 import { createRoot } from "solid-js"
 import { atom, store as createStore } from "valdres"
+import { storeAdapter } from "valdres/adapter-internals/v1"
 import { ValdresProvider } from "./ValdresProvider"
 import { ValdresScope } from "./ValdresScope"
 import { createValue } from "./createValue"
@@ -100,7 +101,7 @@ describe("ValdresScope", () => {
                         scopeId: "my-scope",
                         get children() {
                             const root = useStore("root")
-                            expect(root.data.id).toBe("root")
+                            expect(root.id).toBe("root")
                             return null
                         },
                     })
@@ -124,10 +125,14 @@ describe("ValdresScope", () => {
                                 return null
                             },
                         })
-                        expect(rootStore.data.scopes?.has("cleanup-scope")).toBe(true)
+                        expect(
+                            storeAdapter.hasScope(rootStore, "cleanup-scope"),
+                        ).toBe(true)
                         innerDispose()
                     })
-                    expect(rootStore.data.scopes?.has("cleanup-scope")).toBe(false)
+                    expect(
+                        storeAdapter.hasScope(rootStore, "cleanup-scope"),
+                    ).toBe(false)
                     return null
                 },
             })

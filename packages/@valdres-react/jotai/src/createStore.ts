@@ -1,17 +1,12 @@
 import { store as valdresCreateStore, isPromiseLike, isSelector } from "valdres"
-import { Transaction } from "valdres/adapter-internals"
+import { Transaction } from "valdres/adapter-internals/v1"
 import { registerStore } from "./storeRegistry"
 
 export const createStore = (id?: string) => {
     const store = valdresCreateStore(id)
 
-    // Ensure mountAtom uses this store (with all wrappings) for onMount callbacks
-    ;(store.data as any).storeRef = store
-
-    // Register for setSelf lookup (selectors use data.id to find the store)
-    registerStore(store.data.id, store)
-
-    const data = store.data as any
+    // Register for setSelf lookup.
+    registerStore(store.id, store)
 
     // --- Transaction-based write batching ---
     // Jotai defers all subscriber notifications until the entire write batch
@@ -42,7 +37,12 @@ export const createStore = (id?: string) => {
             hasWrites = true
             return (store.set as (...a: any[]) => any)(target, ...setArgs)
         }
-        return (selector.set as (...a: any[]) => any)(wrappedSet, wrappedGet, store.reset, ...args)
+        return (selector.set as (...a: any[]) => any)(
+            wrappedSet,
+            wrappedGet,
+            store.reset,
+            ...args,
+        )
     }
 
     // Commit deferred transactions that accumulated during propagation
@@ -101,7 +101,7 @@ export const createStore = (id?: string) => {
     // Wrap sub with a transaction so onMount setSelf calls defer
     // notifications until after the subscription setup completes.
     store.sub = (state: any, callback: () => void, ...rest: any[]) => {
-        const txn = new Transaction(data)
+        const txn = new Transaction(store)
         const prevTxn = activeTxn
         activeTxn = txn
         try {
@@ -123,7 +123,7 @@ export const createStore = (id?: string) => {
                 // Already inside a transaction — reuse it
                 return executeWriteInTxn(activeTxn, state, args)
             }
-            const txn = new Transaction(data)
+            const txn = new Transaction(store)
             activeTxn = txn
             try {
                 return executeWriteInTxn(txn, state, args)

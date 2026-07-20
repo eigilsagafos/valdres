@@ -1,5 +1,6 @@
 import { getContext, onDestroy, setContext } from "svelte"
 import { applyInitialize, type InitializeCallback, type Store } from "valdres"
+import { storeAdapter } from "valdres/adapter-internals/v1"
 import { VALDRES_CONTEXT_KEY, type ValdresContext } from "./lib/storeContext"
 import { getValdresContext } from "./getValdresContext"
 
@@ -32,7 +33,7 @@ export function scope(
     options?: ScopeOptions,
 ): Store {
     const parentStore = getValdresContext()
-    const scopeCreated = !parentStore.data.scopes?.has(scopeId)
+    const scopeCreated = !storeAdapter.hasScope(parentStore, scopeId)
     const scopedStore = parentStore.scope(scopeId)
 
     if (options?.initialize) {
@@ -46,8 +47,8 @@ export function scope(
         current: scopedStore,
         stores: {
             ...(parentCtx?.stores ?? {}),
-            [parentStore.data.id]: parentStore,
-            [scopedStore.data.id]: scopedStore,
+            [parentStore.id]: parentStore,
+            [scopedStore.id]: scopedStore,
         },
     }
     setContext(VALDRES_CONTEXT_KEY, ctx)

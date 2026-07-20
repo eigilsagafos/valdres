@@ -1,3 +1,4 @@
+import { getStoreData } from "./getStoreData"
 import { describe, test, expect, mock } from "bun:test"
 import { store } from "../store"
 import { atom } from "../atom"
@@ -17,12 +18,12 @@ describe("setAtoms", () => {
             [atomA, 2],
             [atomB, "b"],
         ])
-        setAtoms(pairs, store1.data, new Set())
+        setAtoms(pairs, getStoreData(store1), new Set())
 
         expect(onSetA).toHaveBeenCalledTimes(1)
-        expect(onSetA).toHaveBeenCalledWith(2, store1.data)
+        expect(onSetA).toHaveBeenCalledWith(2, store1)
         expect(onSetB).toHaveBeenCalledTimes(1)
-        expect(onSetB).toHaveBeenCalledWith("b", store1.data)
+        expect(onSetB).toHaveBeenCalledWith("b", store1)
     })
 
     test("skipOnSet=true suppresses atom.onSet invocations", () => {
@@ -38,12 +39,12 @@ describe("setAtoms", () => {
             [atomA, 2],
             [atomB, "b"],
         ])
-        setAtoms(pairs, store1.data, new Set(), true)
+        setAtoms(pairs, getStoreData(store1), new Set(), true)
 
         expect(onSetA).toHaveBeenCalledTimes(0)
         expect(onSetB).toHaveBeenCalledTimes(0)
         // Values still get written
-        expect(store1.data.values.get(atomA)).toBe(2)
-        expect(store1.data.values.get(atomB)).toBe("b")
+        expect(getStoreData(store1).values.get(atomA)).toBe(2)
+        expect(getStoreData(store1).values.get(atomB)).toBe("b")
     })
 })

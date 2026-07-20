@@ -8,6 +8,7 @@ import {
     type InitializeCallback,
     type Store,
 } from "valdres"
+import { storeAdapter } from "valdres/adapter-internals/v1"
 import { VALDRES_CONTEXT_KEY, type ValdresContext } from "./lib/storeContext"
 
 /** Options for {@link setValdresContext}. All optional — the no-arg form
@@ -30,7 +31,7 @@ export interface SetValdresContextOptions {
 const isStore = (value: unknown): value is Store =>
     typeof value === "object" &&
     value !== null &&
-    "data" in value &&
+    "id" in value &&
     typeof (value as Store).txn === "function"
 
 /** Create (or adopt) a valdres store and expose it to descendants via Svelte
@@ -69,7 +70,7 @@ export function setValdresContext(
 
     let store = options.store
     if (store) {
-        if (!store.data.batchUpdates) {
+        if (!storeAdapter.isBatching(store)) {
             console.warn(
                 "valdres-svelte: The store passed to setValdresContext was not " +
                     "created with { batchUpdates: true }. Sequential store.set() " +
@@ -94,7 +95,7 @@ export function setValdresContext(
     )
     const ctx: ValdresContext = {
         current: store,
-        stores: { ...(parentCtx?.stores ?? {}), [store.data.id]: store },
+        stores: { ...(parentCtx?.stores ?? {}), [store.id]: store },
     }
     setContext(VALDRES_CONTEXT_KEY, ctx)
     return store

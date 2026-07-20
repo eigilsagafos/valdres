@@ -1,6 +1,7 @@
 import { describe, test, expect, mock } from "bun:test"
 import { createRoot } from "solid-js"
 import { atom, store as createStore } from "valdres"
+import { storeAdapter } from "valdres/adapter-internals/v1"
 import { ValdresProvider } from "./ValdresProvider"
 import { useStore } from "./useStore"
 import { createValue } from "./createValue"
@@ -12,7 +13,7 @@ describe("ValdresProvider", () => {
                 get children() {
                     const store = useStore()
                     expect(store).toBeDefined()
-                    expect(store.data.batchUpdates).toBe(true)
+                    expect(storeAdapter.isBatching(store)).toBe(true)
                     return null
                 },
             })
@@ -21,13 +22,16 @@ describe("ValdresProvider", () => {
     })
 
     test("accepts existing store", () => {
-        const storeInstance = createStore({ id: "test-store", batchUpdates: true })
+        const storeInstance = createStore({
+            id: "test-store",
+            batchUpdates: true,
+        })
         createRoot(dispose => {
             ValdresProvider({
                 store: storeInstance,
                 get children() {
                     const store = useStore()
-                    expect(store.data.id).toBe("test-store")
+                    expect(store.id).toBe("test-store")
                     return null
                 },
             })
@@ -96,9 +100,9 @@ describe("ValdresProvider", () => {
                         store: storeB,
                         get children() {
                             const current = useStore()
-                            expect(current.data.id).toBe("B")
+                            expect(current.id).toBe("B")
                             const ancestor = useStore("A")
-                            expect(ancestor.data.id).toBe("A")
+                            expect(ancestor.id).toBe("A")
                             return null
                         },
                     })

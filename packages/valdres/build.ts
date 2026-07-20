@@ -1,11 +1,11 @@
-import { readdir, unlink } from "node:fs/promises"
+import { readdir, rmdir, unlink } from "node:fs/promises"
 import { join } from "node:path"
 
 const pkg = await Bun.file("package.json").json()
 const version = pkg.version
 
 export const buildOptions = {
-    entrypoints: ["./src/index.ts", "./src/adapter-internals.ts"],
+    entrypoints: ["./src/index.ts", "./src/adapter-internals/v1.ts"],
     outdir: "./dist",
     // The adapter-internals entrypoint must share the exact transaction module
     // instance used by the public store bundle. Without splitting, Bun would
@@ -39,14 +39,26 @@ export const removeStaleBuildJavaScript = async (outdir: string) => {
     }
 
     await Promise.all(
-        entries
-            .filter(
-                entry =>
-                    entry.isFile() &&
-                    (entry.name.endsWith(".js") ||
-                        entry.name.endsWith(".js.map")),
-            )
-            .map(entry => unlink(join(outdir, entry.name))),
+        entries.map(async entry => {
+            const path = join(outdir, entry.name)
+            if (entry.isDirectory()) {
+                await removeStaleBuildJavaScript(path)
+                try {
+                    await rmdir(path)
+                } catch (error) {
+                    if ((error as { code?: string }).code !== "ENOTEMPTY") {
+                        throw error
+                    }
+                }
+                return
+            }
+            if (
+                entry.isFile() &&
+                (entry.name.endsWith(".js") || entry.name.endsWith(".js.map"))
+            ) {
+                await unlink(path)
+            }
+        }),
     )
 }
 

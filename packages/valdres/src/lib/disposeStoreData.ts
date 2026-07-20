@@ -1,4 +1,4 @@
-import type { GlobalAtom } from "../types/GlobalAtom"
+import type { InternalGlobalAtom } from "../types/InternalGlobalAtom"
 import type { StoreData } from "../types/StoreData"
 import { detachInheritedDependencyBranches } from "./inheritedDependencyBranches"
 import { unmountAtom } from "./mountAtom"
@@ -18,7 +18,7 @@ import {
 } from "./storeLifecycle"
 import { cancelTransaction } from "./transaction"
 
-type StoreGlobals = [StoreData, GlobalAtom<any>[]]
+type StoreGlobals = [StoreData, InternalGlobalAtom<any>[]]
 
 /**
  * Dispose one store tree in time proportional to its scopes and touched global

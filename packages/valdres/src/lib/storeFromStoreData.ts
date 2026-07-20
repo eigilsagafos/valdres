@@ -28,6 +28,7 @@ import { resetAtom } from "./resetAtom"
 import { setAtom } from "./setAtom"
 import { setValueInData } from "./setValueInData"
 import { snapshot } from "./snapshot"
+import { STORE_DATA_ACCESS } from "./storeDataAccessToken"
 import { STORE_RUNTIME } from "./storeRuntimeKey"
 import {
     createStoreDisposedError,
@@ -367,7 +368,14 @@ const createStoreRuntime = (
         return subscribe(state, callback, deepEqualCheckBeforeCallback, data)
     }
 
-    const txn = (callback: TransactionFn, name?: string) => {
+    const txn = (
+        callback: TransactionFn | typeof STORE_DATA_ACCESS,
+        name?: string,
+    ) => {
+        // Adapter-only closure handshake. The token is not reachable from the
+        // public facade or package root, so StoreData never becomes a runtime
+        // property and ordinary store creation needs no side registry.
+        if (callback === STORE_DATA_ACCESS) return data
         if (data.pendingOrphanCleanup) {
             if (data.pendingOrphanCleanup === DISPOSED_STORE_PENDING) {
                 throw createStoreDisposedError(data)
@@ -467,6 +475,7 @@ const createStoreRuntime = (
     }) as ScopeFn
 
     const runtime = {
+        id: data.id,
         get,
         set,
         sub,
@@ -474,7 +483,6 @@ const createStoreRuntime = (
         reset,
         del,
         unset,
-        data,
         scope,
         onChange,
         onCommitEnd: storeOnCommitEnd,
@@ -491,19 +499,22 @@ const createStoreRuntime = (
 }
 
 /** A scope consumer owns only its detach lease; all operations share runtime. */
-const createScopeLease = (runtime: Store, detach: () => void): ScopedStore => ({
-    get: runtime.get,
-    set: runtime.set,
-    sub: runtime.sub,
-    txn: runtime.txn,
-    reset: runtime.reset,
-    del: runtime.del,
-    unset: runtime.unset,
-    data: runtime.data,
-    scope: runtime.scope,
-    onChange: runtime.onChange,
-    onCommitEnd: runtime.onCommitEnd,
-    snapshot: runtime.snapshot,
-    dispose: detach,
-    detach,
-})
+const createScopeLease = (runtime: Store, detach: () => void): ScopedStore => {
+    const lease: ScopedStore = {
+        id: runtime.id,
+        get: runtime.get,
+        set: runtime.set,
+        sub: runtime.sub,
+        txn: runtime.txn,
+        reset: runtime.reset,
+        del: runtime.del,
+        unset: runtime.unset,
+        scope: runtime.scope,
+        onChange: runtime.onChange,
+        onCommitEnd: runtime.onCommitEnd,
+        snapshot: runtime.snapshot,
+        dispose: detach,
+        detach,
+    }
+    return lease
+}

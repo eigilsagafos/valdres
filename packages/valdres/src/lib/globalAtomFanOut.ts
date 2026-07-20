@@ -1,5 +1,5 @@
 import type { Atom } from "../types/Atom"
-import type { GlobalAtom } from "../types/GlobalAtom"
+import type { InternalGlobalAtom } from "../types/InternalGlobalAtom"
 import type { StoreData } from "../types/StoreData"
 import { isGlobalAtom } from "../utils/isGlobalAtom"
 import { isPromiseLike } from "../utils/isPromiseLike"
@@ -18,7 +18,7 @@ import { validateSchema } from "./validateSchema"
 import type { DeferredOnSet } from "./writeAtoms"
 
 /** A changed global atom whose value still needs to be applied to its peers. */
-export type DeferredGlobalSet = [GlobalAtom<any>, any, StoreData]
+export type DeferredGlobalSet = [InternalGlobalAtom<any>, any, StoreData]
 
 export type StoreAtomUpdates = Map<StoreData, Atom<any>[]>
 
@@ -65,7 +65,7 @@ const addUpdates = (
  * propagation. The enclosing commit owns those later phases.
  */
 const applyPeerValue = (
-    atom: GlobalAtom<any>,
+    atom: InternalGlobalAtom<any>,
     value: any,
     data: StoreData,
 ): Atom<any>[] => {
@@ -103,7 +103,7 @@ const applyPeerValue = (
  * peers. Returned updates are grouped by store for the propagation phase.
  */
 const applyGlobalSet = (
-    atom: GlobalAtom<any>,
+    atom: InternalGlobalAtom<any>,
     value: any,
     origin: StoreData,
     updates: StoreAtomUpdates,

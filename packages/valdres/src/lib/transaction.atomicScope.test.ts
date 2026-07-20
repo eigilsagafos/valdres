@@ -1,3 +1,4 @@
+import { getStoreData } from "./getStoreData"
 import { describe, test, expect, mock } from "bun:test"
 import { store } from "../store"
 import { atom } from "../atom"
@@ -189,10 +190,9 @@ describe("cross-scope transactions are atomically observable", () => {
             S.set(s, 0)
             N.set(n, 0)
 
-            const span = selector(
-                get => `${get(r)}-${get(s)}-${get(n)}`,
-                { name: "n-span" },
-            )
+            const span = selector(get => `${get(r)}-${get(s)}-${get(n)}`, {
+                name: "n-span",
+            })
             const seen: string[] = []
             N.sub(span, () => seen.push(N.get(span)))
             expect(N.get(span)).toBe("0-0-0")
@@ -370,12 +370,7 @@ describe("cross-scope transactions are atomically observable", () => {
             })
 
             // `a`'s hook sees `b`'s write even though `a` was staged first.
-            expect(order).toEqual([
-                "onSet:a:b=1",
-                "onSet:b",
-                "sub:a",
-                "sub:b",
-            ])
+            expect(order).toEqual(["onSet:a:b=1", "onSet:b", "sub:a", "sub:b"])
         })
     })
 
@@ -426,14 +421,14 @@ describe("cross-scope transactions are atomically observable", () => {
             const sAtom = atom(0, { name: "cd-s" })
             const m2cb = mock(() => {})
             root.sub(m2, m2cb)
-            expect(root.data.values.has(m2)).toBe(true)
+            expect(getStoreData(root).values.has(m2)).toBe(true)
 
             root.txn(t => {
                 t.del(m2)
                 t.scope("S", st => st.set(sAtom, 9))
             })
 
-            expect(root.data.values.has(m2)).toBe(false) // value evicted
+            expect(getStoreData(root).values.has(m2)).toBe(false) // value evicted
             expect(m2cb).toHaveBeenCalledTimes(1) // deletion notified
         })
 

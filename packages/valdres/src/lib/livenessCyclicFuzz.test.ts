@@ -1,3 +1,4 @@
+import { getStoreData } from "./getStoreData"
 import { expect, test } from "bun:test"
 import { atom } from "../atom"
 import { selector } from "../selector"
@@ -37,7 +38,7 @@ const mulberry32 = (seed: number) => () => {
 // first mismatch (UNDER = freeze-class undercount, OVER = leak-class overcount), or
 // null if every count matches.
 const check = (s: any, states: any[]): Mismatch | null => {
-    const data = s.data
+    const data = getStoreData(s)
 
     // 1. Live set = directly-subscribed states, then fixpoint-propagated down
     //    through dependencies (a live state's deps are live).
@@ -127,10 +128,15 @@ test("cyclic dynamic-dep liveness invariant holds across churn", () => {
                 selector(
                     (get: any) => {
                         let acc = get(atoms[def.aa])
-                        if ((get(atoms[def.g0]) + get(atoms[def.g1])) % 2 === 0) {
-                            for (const j of def.A) if (j !== i) acc += get(sels[j])
+                        if (
+                            (get(atoms[def.g0]) + get(atoms[def.g1])) % 2 ===
+                            0
+                        ) {
+                            for (const j of def.A)
+                                if (j !== i) acc += get(sels[j])
                         } else {
-                            for (const j of def.B) if (j !== i) acc += get(sels[j]) * 2
+                            for (const j of def.B)
+                                if (j !== i) acc += get(sels[j]) * 2
                         }
                         return acc % 97
                     },
@@ -150,7 +156,10 @@ test("cyclic dynamic-dep liveness invariant holds across churn", () => {
                 subs.get(si)!()
                 subs.delete(si)
             } else {
-                subs.set(si, ctx.sub(sels[si], () => {}, false))
+                subs.set(
+                    si,
+                    ctx.sub(sels[si], () => {}, false),
+                )
             }
         }
 
@@ -173,7 +182,10 @@ test("cyclic dynamic-dep liveness invariant holds across churn", () => {
                 const w = 1 + Math.floor(rnd() * nA)
                 ctx.txn((t: any) => {
                     for (let k = 0; k < w; k++) {
-                        t.set(atoms[Math.floor(rnd() * nA)], Math.floor(rnd() * 4))
+                        t.set(
+                            atoms[Math.floor(rnd() * nA)],
+                            Math.floor(rnd() * 4),
+                        )
                     }
                 })
                 if (rnd() < 0.5) toggle(Math.floor(rnd() * nS))

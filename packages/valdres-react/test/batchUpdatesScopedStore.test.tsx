@@ -1,12 +1,13 @@
 import { describe, test, expect, mock } from "bun:test"
 import { atom, selector, store } from "valdres"
+import { storeAdapter } from "valdres/adapter-internals/v1"
 
 describe("batchUpdates with scoped stores", () => {
     test("scoped store inherits batchUpdates from parent", () => {
         const parentStore = store({ batchUpdates: true })
         const scopedStore = parentStore.scope("child")
 
-        expect(scopedStore.data.batchUpdates).toBe(true)
+        expect(storeAdapter.isBatching(scopedStore)).toBe(true)
     })
 
     test("scoped store batches set calls like parent", () => {

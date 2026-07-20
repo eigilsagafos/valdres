@@ -546,7 +546,7 @@ export const mountAtom = (state: State, data: StoreData) => {
         data.mounts.delete(state)
         return
     }
-    const store = data.storeRef ?? storeFromStoreData(data)
+    const store = storeFromStoreData(data)
     try {
         const result = onMountFn(store, state)
         if (typeof result === "function") {

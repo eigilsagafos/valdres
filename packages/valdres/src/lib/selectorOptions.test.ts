@@ -9,19 +9,19 @@ describe("selector options object", () => {
     test("options.storeId is the real store id", () => {
         const s = store()
         const sel = selector((_get, opts) => opts.storeId)
-        expect(s.get(sel)).toBe(s.data.id)
+        expect(s.get(sel)).toBe(s.id)
     })
 
     test("defaulted options param receives the real store id", () => {
         const s = store()
         const sel = selector((_get, opts: any = {}) => opts.storeId)
-        expect(s.get(sel)).toBe(s.data.id)
+        expect(s.get(sel)).toBe(s.id)
     })
 
     test("rest options param receives the real store id", () => {
         const s = store()
         const sel = selector((_get, ...rest: any[]) => rest[0].storeId)
-        expect(s.get(sel)).toBe(s.data.id)
+        expect(s.get(sel)).toBe(s.id)
     })
 
     test("defaulted options param receives a valid signal", () => {
@@ -34,8 +34,8 @@ describe("selector options object", () => {
         const a = store()
         const b = store()
         const sel = selector((_get, opts: any = {}) => opts.storeId)
-        expect(a.get(sel)).toBe(a.data.id)
-        expect(b.get(sel)).toBe(b.data.id)
-        expect(a.data.id).not.toBe(b.data.id)
+        expect(a.get(sel)).toBe(a.id)
+        expect(b.get(sel)).toBe(b.id)
+        expect(a.id).not.toBe(b.id)
     })
 })

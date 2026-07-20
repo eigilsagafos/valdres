@@ -3,6 +3,7 @@ import { z } from "zod"
 import { atom } from "../atom"
 import { atomFamily } from "../atomFamily"
 import { SchemaValidationError } from "../errors/SchemaValidationError"
+import { getStoreData } from "../lib/getStoreData"
 import { getNamedStateIndex } from "../lib/namedStateIndex"
 import { valdresGlobal } from "../lib/valdresGlobal"
 import { selector } from "../selector"
@@ -38,6 +39,23 @@ describe("dehydrate", () => {
         store2.set(b, 20)
         expect(dehydrate(store1).atoms).toEqual([["dh-own-a", 10]])
         expect(dehydrate(store2).atoms).toEqual([["dh-own-b", 20]])
+    })
+
+    test("includes present atom and family values that are undefined", () => {
+        const maybe = atom<number | undefined>(0, {
+            name: "dh-undefined-atom",
+        })
+        const family = atomFamily<number | undefined, [string]>(0, {
+            name: "dh-undefined-family",
+        })
+        const store1 = store()
+        store1.set(maybe, undefined)
+        store1.set(family("member"), undefined)
+
+        expect(dehydrate(store1)).toEqual({
+            atoms: [["dh-undefined-atom", undefined]],
+            families: [["dh-undefined-family", ["member"], undefined]],
+        })
     })
 
     test("a read-initialized atom (default materialized) is included", () => {
@@ -123,16 +141,15 @@ describe("dehydrate", () => {
         store1.set(kept, 1)
         store1.set(removed, 2)
 
-        expect([...getNamedStateIndex(store1.data)!.values()]).toEqual([
-            "dh-local-index-kept",
-            "dh-local-index-removed",
-        ])
+        expect([...getNamedStateIndex(getStoreData(store1))!.values()]).toEqual(
+            ["dh-local-index-kept", "dh-local-index-removed"],
+        )
 
         store1.unset(removed)
 
-        expect([...getNamedStateIndex(store1.data)!.values()]).toEqual([
-            "dh-local-index-kept",
-        ])
+        expect([...getNamedStateIndex(getStoreData(store1))!.values()]).toEqual(
+            ["dh-local-index-kept"],
+        )
         expect(dehydrate(store1).atoms).toEqual([["dh-local-index-kept", 1]])
     })
 
@@ -171,15 +188,17 @@ describe("dehydrate", () => {
             )
             const store1 = store()
             expect(store1.get(stale)).toBe(1)
-            expect(getNamedStateIndex(store1.data)?.has(stale)).toBe(true)
+            expect(getNamedStateIndex(getStoreData(store1))?.has(stale)).toBe(
+                true,
+            )
 
             now = 1
             expect(() => store1.get(stale)).toThrow("stale init failed")
 
-            expect(store1.data.values.has(stale)).toBe(false)
-            expect(getNamedStateIndex(store1.data)?.has(stale) ?? false).toBe(
-                false,
-            )
+            expect(getStoreData(store1).values.has(stale)).toBe(false)
+            expect(
+                getNamedStateIndex(getStoreData(store1))?.has(stale) ?? false,
+            ).toBe(false)
         } finally {
             nowSpy.mockRestore()
         }

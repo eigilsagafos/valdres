@@ -1,4 +1,5 @@
 import { useContext, onCleanup, createUniqueId, type JSX } from "solid-js"
+import { storeAdapter } from "valdres/adapter-internals/v1"
 import { StoreContext } from "./lib/storeContext"
 import { hydrate } from "./lib/hydrate"
 import type { InitializeCallback } from "./types/InitializeCallback"
@@ -18,7 +19,7 @@ export const ValdresScope = (props: ValdresScopeProps) => {
     }
 
     const scopeId = props.scopeId || createUniqueId()
-    const scopeCreated = !parentCtx.current.data.scopes?.has(scopeId)
+    const scopeCreated = !storeAdapter.hasScope(parentCtx.current, scopeId)
     const scopedStore = parentCtx.current.scope(scopeId)
 
     if (props.initialize) {
@@ -39,8 +40,8 @@ export const ValdresScope = (props: ValdresScopeProps) => {
             current: scopedStore,
             stores: {
                 ...parentCtx.stores,
-                [parentCtx.current.data.id]: parentCtx.current,
-                [scopedStore.data.id]: scopedStore,
+                [parentCtx.current.id]: parentCtx.current,
+                [scopedStore.id]: scopedStore,
             },
         },
         get children() {

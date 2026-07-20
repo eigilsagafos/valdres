@@ -1,3 +1,4 @@
+import { getStoreData } from "./getStoreData"
 import { describe, test, expect, mock } from "bun:test"
 import { store } from "../store"
 import { atom } from "../atom"
@@ -8,27 +9,27 @@ describe("initAtom", () => {
     test("Atom with simple defaultValue", () => {
         const store1 = store()
         const numberAtom = atom(1)
-        expect(store1.data.values.get(numberAtom)).toBeUndefined()
-        initAtom(numberAtom, store1.data)
-        expect(store1.data.values.get(numberAtom)).toBe(1)
+        expect(getStoreData(store1).values.get(numberAtom)).toBeUndefined()
+        initAtom(numberAtom, getStoreData(store1))
+        expect(getStoreData(store1).values.get(numberAtom)).toBe(1)
     })
 
     test("Atom with sync callback default value", () => {
         const store1 = store()
         const callback = mock(() => "Foo")
         const callbackAtom = atom(callback)
-        expect(store1.data.values.get(callbackAtom)).toBeUndefined()
-        initAtom(callbackAtom, store1.data)
+        expect(getStoreData(store1).values.get(callbackAtom)).toBeUndefined()
+        initAtom(callbackAtom, getStoreData(store1))
         expect(callback).toHaveBeenCalledTimes(1)
-        expect(store1.data.values.get(callbackAtom)).toBe("Foo")
+        expect(getStoreData(store1).values.get(callbackAtom)).toBe("Foo")
     })
 
     test("Atom with no default value", async () => {
         const store1 = store()
         const emptyAtom = atom()
-        expect(store1.data.values.get(emptyAtom)).toBeUndefined()
-        initAtom(emptyAtom, store1.data)
-        const res = store1.data.values.get(emptyAtom)
+        expect(getStoreData(store1).values.get(emptyAtom)).toBeUndefined()
+        initAtom(emptyAtom, getStoreData(store1))
+        const res = getStoreData(store1).values.get(emptyAtom)
         expect(res).toBeInstanceOf(Promise)
 
         expect(res).toBeInstanceOf(Promise)
@@ -51,9 +52,13 @@ describe("initAtom", () => {
         const res = await value
         expect(res).toBe("Bar")
         expect(subscriptionCallback).toHaveBeenCalledTimes(1)
-        expect(store1.data.subscriptions.get(callbackAtom)).toHaveLength(1)
+        expect(
+            getStoreData(store1).subscriptions.get(callbackAtom),
+        ).toHaveLength(1)
         unsubscribe()
-        expect(store1.data.subscriptions.get(callbackAtom)).toBeUndefined()
+        expect(
+            getStoreData(store1).subscriptions.get(callbackAtom),
+        ).toBeUndefined()
     })
 
     // onSet means "on set" — a user write. An async default resolving its own

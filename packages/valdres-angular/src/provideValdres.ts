@@ -1,5 +1,6 @@
 import { makeEnvironmentProviders } from "@angular/core"
 import { store as createStore, type Store } from "valdres"
+import { storeAdapter } from "valdres/adapter-internals/v1"
 import { VALDRES_STORE } from "./lib/VALDRES_STORE"
 import { hydrate } from "./lib/hydrate"
 import type { InitializeCallback } from "./types/InitializeCallback"
@@ -16,7 +17,7 @@ export const provideValdres = (options: ValdresOptions = {}) => {
             useFactory: () => {
                 let store = options.store
                 if (store) {
-                    if (!store.data.batchUpdates) {
+                    if (!storeAdapter.isBatching(store)) {
                         console.warn(
                             "valdres-angular: The store passed to provideValdres() was not created " +
                                 "with { batchUpdates: true }. Sequential store.set() calls " +
@@ -37,7 +38,7 @@ export const provideValdres = (options: ValdresOptions = {}) => {
                 }
                 return {
                     current: store,
-                    stores: { [store.data.id]: store },
+                    stores: { [store.id]: store },
                 }
             },
         },

@@ -1,3 +1,4 @@
+import { getStoreData } from "./getStoreData"
 import { expect, test } from "bun:test"
 import { atom } from "../atom"
 import { selector } from "../selector"
@@ -50,20 +51,17 @@ test("live selector re-adds a dependency after transitional cyclic churn", () =>
     )
     newBranch = selector(
         get =>
-            (get(a0) + get(a1)) % 2 === 0
-                ? get(a0) + get(a1)
-                : get(newCycle),
+            (get(a0) + get(a1)) % 2 === 0 ? get(a0) + get(a1) : get(newCycle),
         { name: "live-churn:new-branch" },
     )
     newCycle = selector(
         get =>
-            (get(a2) + get(a0)) % 2 === 0
-                ? get(a2) + get(a0)
-                : get(newBranch),
+            (get(a2) + get(a0)) % 2 === 0 ? get(a2) + get(a0) : get(newBranch),
         { name: "live-churn:new-cycle" },
     )
     root = selector(
-        get => ((get(a2) + get(a1)) % 2 === 0 ? get(newBranch) : get(oldBranch)),
+        get =>
+            (get(a2) + get(a1)) % 2 === 0 ? get(newBranch) : get(oldBranch),
         { name: "live-churn:root" },
     )
 
@@ -89,7 +87,7 @@ test("live selector re-adds a dependency after transitional cyclic churn", () =>
     })
     s.set(a0, 3)
 
-    expect(s.data.stateDependencies.get(root)).toContain(newBranch)
-    expect(s.data.stateDependents.get(newBranch)).toContain(root)
-    expect(s.data.liveDependentCount.get(newBranch)).toBe(1)
+    expect(getStoreData(s).stateDependencies.get(root)).toContain(newBranch)
+    expect(getStoreData(s).stateDependents.get(newBranch)).toContain(root)
+    expect(getStoreData(s).liveDependentCount.get(newBranch)).toBe(1)
 })

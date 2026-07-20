@@ -1,6 +1,5 @@
 import type { Selector } from "./Selector"
 import type { State } from "./State"
-import type { Store } from "./Store"
 import type { StoreChangeCallback } from "./StoreChangeCallback"
 import type { Subscription } from "./Subscription"
 
@@ -190,7 +189,6 @@ export type StoreData = {
         WeakKey,
         { promise: Promise<any>; resolve: (value: any) => void }
     >
-    storeRef?: Store
     /** True when this store was created with `{ enumerable: true }`: `values` is
      *  a `Map` (not a `WeakMap`) so `store.snapshot()` can list current state.
      *  Set once at creation and inherited by every (nested) scope. */

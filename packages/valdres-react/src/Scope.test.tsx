@@ -1,6 +1,7 @@
 import { describe, test, expect } from "bun:test"
 import { render } from "@testing-library/react"
 import { atom, store, type Atom } from "valdres"
+import { storeAdapter } from "valdres/adapter-internals/v1"
 import { Provider } from "./Provider"
 import { Scope } from "./Scope"
 import { useSetAtom } from "./useSetAtom"
@@ -47,9 +48,9 @@ describe("Scope", () => {
                 <Scope scopeId="Foo" />
             </Provider>,
         )
-        expect([...rootStore.data.scopes.keys()]).toStrictEqual(["Foo"])
+        expect(storeAdapter.hasScope(rootStore, "Foo")).toBe(true)
         await res.unmount()
-        expect([...rootStore.data.scopes.keys()]).toStrictEqual([])
+        expect(storeAdapter.hasScope(rootStore, "Foo")).toBe(false)
     })
 
     test("Scope with initialize", async () => {
@@ -174,8 +175,8 @@ describe("Scope", () => {
             </Provider>,
         )
 
-        const FooStore = store1.data.scopes.Foo
-        expect(FooStore.values.get(atom1)).toBeUndefined()
+        const FooStore = store1.scope("Foo", scoped => scoped)
+        expect(FooStore.get(atom1)).toBe("root")
         const divA = await res.findByTestId("a")
         expect(divA.innerText).toBe("Foo")
         const valueA = await res.findByTestId("valueA")
@@ -185,10 +186,8 @@ describe("Scope", () => {
         // console.log(FooStore.values.get(atom1))
         const valueA2 = await res.findByTestId("valueA")
         expect(valueA2.innerText).toBe("In Foo")
-        const BarStore = store1.data.scopes.Bar
-        console.log(store1.data.scopes.Foo.values.get(atom1))
-        console.log(store1.data.scopes.Bar.values.get(atom1))
-        // store1.data
+        const BarStore = store1.scope("Bar", scoped => scoped)
+        expect(BarStore.get(atom1)).toBe("root")
         // const divB = await res.findByTestId("b")
         // expect(divB.innerText).toBe("Bar")
         // const valueB = await res.findByTestId("valueB")
@@ -213,13 +212,13 @@ describe("Scope", () => {
         //     },
         // )
         // console.log(result.current)
-        // expect(result.current.data.id).toBe("C")
+        // expect(result.current.id).toBe("C")
         // rerender("A")
-        // expect(result.current.data.id).toBe("A")
+        // expect(result.current.id).toBe("A")
         // rerender("B")
-        // expect(result.current.data.id).toBe("B")
+        // expect(result.current.id).toBe("B")
         // rerender("C")
-        // expect(result.current.data.id).toBe("C")
+        // expect(result.current.id).toBe("C")
     })
 
     // test("global atom works as expected when initializing store", () => {

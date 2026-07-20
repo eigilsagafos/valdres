@@ -1,3 +1,4 @@
+import { getStoreData } from "../src/lib/getStoreData"
 import { describe, test, expect, mock } from "bun:test"
 import { atom } from "../src/atom"
 import { selector } from "../src/selector"
@@ -166,7 +167,7 @@ describe("promise rejection handling in selectors", () => {
         await new Promise<void>(r => setTimeout(r, 50))
 
         // The undefined value should NOT have been deleted by the rejection handler
-        expect(s.data.values.has(sel)).toBe(true)
+        expect(getStoreData(s).values.has(sel)).toBe(true)
         expect(s.get(sel)).toBe(undefined)
     })
 

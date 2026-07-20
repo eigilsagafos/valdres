@@ -5,6 +5,8 @@ import { coordinateAsyncWrite } from "./coordinateAsyncWrite"
 import type { CommitErrors } from "./commitErrors"
 import { recordCommitError } from "./commitErrors"
 import { getState } from "./getState"
+import { getStoreRuntime } from "./getStoreRuntime"
+import { globalOnSetMarker } from "./globalOnSetMarker"
 import { resolvePendingDefault } from "./resolvePendingDefault"
 import { setValueInData } from "./setValueInData"
 
@@ -15,7 +17,9 @@ export type DeferredOnSet = [Atom<any>, any, StoreData]
 export const runOnSets = (onSets: DeferredOnSet[], errors: CommitErrors) => {
     for (const [atom, value, data] of onSets) {
         try {
-            atom.onSet!(value, data)
+            if (atom.onSet !== globalOnSetMarker) {
+                atom.onSet!(value, getStoreRuntime(data))
+            }
         } catch (error) {
             recordCommitError(errors, error)
         }

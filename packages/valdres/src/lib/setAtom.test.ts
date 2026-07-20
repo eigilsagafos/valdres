@@ -1,3 +1,4 @@
+import { getStoreData } from "./getStoreData"
 import { describe, test, expect, mock } from "bun:test"
 import { store } from "../store"
 import { atom } from "../atom"
@@ -9,17 +10,17 @@ describe("setAtom", () => {
     test("set with direct value", () => {
         const store1 = store()
         const numberAtom = atom(1)
-        expect(store1.data.values.get(numberAtom)).toBeUndefined()
-        setAtom(numberAtom, 2, store1.data)
-        expect(store1.data.values.get(numberAtom)).toBe(2)
+        expect(getStoreData(store1).values.get(numberAtom)).toBeUndefined()
+        setAtom(numberAtom, 2, getStoreData(store1))
+        expect(getStoreData(store1).values.get(numberAtom)).toBe(2)
     })
 
     test("set with callback", () => {
         const store1 = store()
         const numberAtom = atom(1)
-        expect(store1.data.values.get(numberAtom)).toBeUndefined()
-        setAtom(numberAtom, current => current + 1, store1.data)
-        expect(store1.data.values.get(numberAtom)).toBe(2)
+        expect(getStoreData(store1).values.get(numberAtom)).toBeUndefined()
+        setAtom(numberAtom, current => current + 1, getStoreData(store1))
+        expect(getStoreData(store1).values.get(numberAtom)).toBe(2)
     })
 
     test("set returns the new value", () => {
@@ -28,7 +29,7 @@ describe("setAtom", () => {
         const returnedValue = setAtom(
             numberAtom,
             current => current + 1,
-            store1.data,
+            getStoreData(store1),
         )
         expect(returnedValue).toBe(2)
     })
@@ -66,11 +67,11 @@ describe("setAtom", () => {
         const stringAtom = atom("initial")
         store1.get(stringAtom)
         const promise = Promise.resolve("updated")
-        const result = setAtom(stringAtom, promise, store1.data)
+        const result = setAtom(stringAtom, promise, getStoreData(store1))
         expect(isPromiseLike(result)).toBe(true)
-        expect(store1.data.values.get(stringAtom)).toBe(promise)
+        expect(getStoreData(store1).values.get(stringAtom)).toBe(promise)
         await result
-        expect(store1.data.values.get(stringAtom)).toBe("updated")
+        expect(getStoreData(store1).values.get(stringAtom)).toBe("updated")
     })
 
     test("set with bare rejected promise reverts to previous value", async () => {
@@ -80,9 +81,11 @@ describe("setAtom", () => {
         const result = setAtom(
             stringAtom,
             Promise.reject(new Error("boom")),
-            store1.data,
+            getStoreData(store1),
         )
-        try { await result } catch {}
+        try {
+            await result
+        } catch {}
         await Promise.resolve()
         expect(store1.get(stringAtom)).toBe("initial")
     })
@@ -99,7 +102,7 @@ describe("setAtom", () => {
                 ) as any
             },
         }
-        const result = setAtom(stringAtom, thenable, store1.data)
+        const result = setAtom(stringAtom, thenable, getStoreData(store1))
         expect(result instanceof Promise).toBe(true)
         await result
         expect(store1.get(stringAtom)).toBe("adopted")
@@ -112,11 +115,13 @@ describe("setAtom", () => {
         const result = setAtom(
             stringAtom,
             current => Promise.resolve(current + " updated"),
-            store1.data,
+            getStoreData(store1),
         )
         expect(isPromiseLike(result)).toBe(true)
         await result
-        expect(store1.data.values.get(stringAtom)).toBe("initial updated")
+        expect(getStoreData(store1).values.get(stringAtom)).toBe(
+            "initial updated",
+        )
     })
 
     test("async updater notifies subscribers after resolution", async () => {
@@ -128,7 +133,7 @@ describe("setAtom", () => {
         const result = setAtom(
             stringAtom,
             () => Promise.resolve("world"),
-            store1.data,
+            getStoreData(store1),
         )
         // Subscriber called once with the promise value
         expect(callback).toHaveBeenCalledTimes(1)
@@ -145,11 +150,15 @@ describe("setAtom", () => {
 
         let resolveFirst!: (v: string) => void
         let resolveSecond!: (v: string) => void
-        const first = new Promise<string>(r => { resolveFirst = r })
-        const second = new Promise<string>(r => { resolveSecond = r })
+        const first = new Promise<string>(r => {
+            resolveFirst = r
+        })
+        const second = new Promise<string>(r => {
+            resolveSecond = r
+        })
 
-        setAtom(stringAtom, () => first, store1.data)
-        setAtom(stringAtom, () => second, store1.data)
+        setAtom(stringAtom, () => first, getStoreData(store1))
+        setAtom(stringAtom, () => second, getStoreData(store1))
 
         // Resolve first call AFTER second was already issued
         resolveSecond("second")
@@ -169,10 +178,12 @@ describe("setAtom", () => {
         const result = setAtom(
             stringAtom,
             () => Promise.reject(new Error("boom")),
-            store1.data,
+            getStoreData(store1),
         )
 
-        try { await result } catch {}
+        try {
+            await result
+        } catch {}
         // Allow the .catch() handler microtask to run
         await Promise.resolve()
 
@@ -189,7 +200,7 @@ describe("setAtom", () => {
         const result = setAtom(
             stringAtom,
             () => Promise.resolve("updated"),
-            store1.data,
+            getStoreData(store1),
         )
         // onSet should NOT be called synchronously with the promise
         expect(onSetMock).toHaveBeenCalledTimes(0)
@@ -197,7 +208,7 @@ describe("setAtom", () => {
         await result
         // onSet should be called once the resolved value is set
         expect(onSetMock).toHaveBeenCalledTimes(1)
-        expect(onSetMock).toHaveBeenCalledWith("updated", store1.data)
+        expect(onSetMock).toHaveBeenCalledWith("updated", store1)
     })
 
     test("async updater resolves pending-default suspense promise", async () => {
@@ -210,7 +221,7 @@ describe("setAtom", () => {
         const result = setAtom(
             emptyAtom,
             () => Promise.resolve("resolved"),
-            store1.data,
+            getStoreData(store1),
         )
 
         await result
@@ -229,7 +240,7 @@ describe("setAtom", () => {
         store1.sub(promiseAtom, callback)
 
         // Updater returns the exact same promise reference
-        setAtom(promiseAtom, () => shared, store1.data)
+        setAtom(promiseAtom, () => shared, getStoreData(store1))
         // Should be a no-op — no subscriber notification
         expect(callback).toHaveBeenCalledTimes(0)
     })
@@ -243,11 +254,15 @@ describe("setAtom", () => {
 
         let resolveFirst!: (v: string) => void
         let resolveSecond!: (v: string) => void
-        const first = new Promise<string>(r => { resolveFirst = r })
-        const second = new Promise<string>(r => { resolveSecond = r })
+        const first = new Promise<string>(r => {
+            resolveFirst = r
+        })
+        const second = new Promise<string>(r => {
+            resolveSecond = r
+        })
 
-        setAtom(emptyAtom, () => first, store1.data)
-        setAtom(emptyAtom, () => second, store1.data)
+        setAtom(emptyAtom, () => first, getStoreData(store1))
+        setAtom(emptyAtom, () => second, getStoreData(store1))
 
         // Resolve stale first, then the winner
         resolveFirst("first")
@@ -271,11 +286,11 @@ describe("setAtom", () => {
         // In-flight async set overwrites the placeholder in values with a
         // user-supplied promise that never resolves.
         const pending = new Promise<string>(() => {})
-        setAtom(emptyAtom, () => pending, store1.data)
+        setAtom(emptyAtom, () => pending, getStoreData(store1))
 
         // Sync set lands a real value. The placeholder must still resolve,
         // even though currentValue is now the user promise, not the placeholder.
-        setAtom(emptyAtom, "done", store1.data)
+        setAtom(emptyAtom, "done", getStoreData(store1))
 
         const suspenseResult = await suspensePromise
         expect(suspenseResult).toBe("done")
@@ -314,7 +329,7 @@ describe("setAtom", () => {
             const result = setAtom(
                 stringAtom,
                 () => Promise.resolve("updated"),
-                store1.data,
+                getStoreData(store1),
             )
             const callsWhilePending = subscriber.mock.calls.length
             await result
@@ -339,8 +354,8 @@ describe("setAtom", () => {
         expect(val()).toBe("hello")
         // Functions with own properties should be frozen in dev mode,
         // preventing mutation of their attached state.
-        expect(() => { val.count = 1 }).toThrowError(
-            "Attempted to assign to readonly property",
-        )
+        expect(() => {
+            val.count = 1
+        }).toThrowError("Attempted to assign to readonly property")
     })
 })

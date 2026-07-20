@@ -1,3 +1,4 @@
+import { getStoreData } from "./getStoreData"
 import { describe, expect, test } from "bun:test"
 import { atom } from "../atom"
 import { atomFamily } from "../atomFamily"
@@ -30,7 +31,7 @@ const mulberry32 = (seed: number) => () => {
 
 // Ground-truth liveness check over a known set of states.
 const checkInvariant = (s: any, states: any[], label: string) => {
-    const data = s.data
+    const data = getStoreData(s)
     const liveTrue = new Set<any>()
     for (const st of states) {
         const subs = data.subscriptions.get(st)
@@ -127,7 +128,11 @@ describe("liveDependentCount stays consistent across dynamic-dep churn", () => {
                 if (subs.has(si)) {
                     subs.get(si)!()
                     subs.delete(si)
-                } else subs.set(si, ctx.sub(sels[si], () => {}))
+                } else
+                    subs.set(
+                        si,
+                        ctx.sub(sels[si], () => {}),
+                    )
             }
             for (let si = 0; si < nSel; si++) if (rnd() < 0.5) toggle(si)
             checkInvariant(ctx, states, `seed=${seed} init`)
@@ -135,7 +140,10 @@ describe("liveDependentCount stays consistent across dynamic-dep churn", () => {
                 const writes = 1 + Math.floor(rnd() * nAtoms)
                 ctx.txn((t: any) => {
                     for (let w = 0; w < writes; w++)
-                        t.set(atoms[Math.floor(rnd() * nAtoms)], Math.floor(rnd() * 6))
+                        t.set(
+                            atoms[Math.floor(rnd() * nAtoms)],
+                            Math.floor(rnd() * 6),
+                        )
                 })
                 const churn = Math.floor(rnd() * 3)
                 for (let c = 0; c < churn; c++) toggle(Math.floor(rnd() * nSel))
@@ -195,14 +203,20 @@ describe("liveDependentCount stays consistent across dynamic-dep churn", () => {
             const states = [...ctrls, ...layers.flat()]
             const root = store("ll_gs" + run)
             const ctx: any = rnd() < 0.5 ? root.scope("draft") : root
-            const unsubs = top.filter(() => rnd() < 0.8).map(sel => ctx.sub(sel, () => {}))
+            const unsubs = top
+                .filter(() => rnd() < 0.8)
+                .map(sel => ctx.sub(sel, () => {}))
             if (unsubs.length === 0) unsubs.push(ctx.sub(top[0], () => {}))
             checkInvariant(ctx, states, `seed=${seed} init`)
             for (let step = 0; step < 10; step++) {
                 ctx.txn((t: any) => {
                     for (const c of ctrls) if (rnd() < 0.7) t.set(c, 0)
                 })
-                checkInvariant(ctx, states, `seed=${seed} step=${step} collapse`)
+                checkInvariant(
+                    ctx,
+                    states,
+                    `seed=${seed} step=${step} collapse`,
+                )
                 ctx.txn((t: any) => {
                     for (const c of ctrls) t.set(c, 1 + Math.floor(rnd() * 4))
                 })
@@ -242,7 +256,9 @@ describe("liveDependentCount stays consistent across dynamic-dep churn", () => {
         s.set(list, ["a", "b", "c"])
         expect(s.get(root)).toBe(6)
         for (const id of ["a", "b", "c"])
-            expect(typeof s.data.liveDependentCount.get(leaf(id))).toBe("number")
+            expect(
+                typeof getStoreData(s).liveDependentCount.get(leaf(id)),
+            ).toBe("number")
         // collapse to empty
         s.txn(t => {
             t.set(list, [])
@@ -255,8 +271,12 @@ describe("liveDependentCount stays consistent across dynamic-dep churn", () => {
         })
         // shared leaf must be live again, and a deep change must propagate
         for (const id of ["a", "b", "c"]) {
-            expect(typeof s.data.liveDependentCount.get(leaf(id))).toBe("number")
-            expect(s.data.liveDependentCount.get(leaf(id))).toBeGreaterThan(0)
+            expect(
+                typeof getStoreData(s).liveDependentCount.get(leaf(id)),
+            ).toBe("number")
+            expect(
+                getStoreData(s).liveDependentCount.get(leaf(id)),
+            ).toBeGreaterThan(0)
         }
         s.set(ent("a"), { v: 99 })
         expect(s.get(root)).toBe(6 - 2 + 198)
@@ -280,24 +300,24 @@ describe("liveDependentCount stays consistent across dynamic-dep churn", () => {
         s.sub(root, () => {})
         s.get(root)
         // healthy: every link counts exactly one live dependent
-        expect(s.data.liveDependentCount.get(mid)).toBe(1)
-        expect(s.data.liveDependentCount.get(leaf)).toBe(1)
-        expect(s.data.liveDependentCount.get(a)).toBe(1)
+        expect(getStoreData(s).liveDependentCount.get(mid)).toBe(1)
+        expect(getStoreData(s).liveDependentCount.get(leaf)).toBe(1)
+        expect(getStoreData(s).liveDependentCount.get(a)).toBe(1)
 
         // simulate the bug: a teardown dropped the subtree's counts and the
         // re-add was skipped, so mid/leaf/a read as non-live though `root`
         // (subscribed, outside the churn) still transitively reads them.
-        s.data.liveDependentCount.delete(mid)
-        s.data.liveDependentCount.delete(leaf)
-        s.data.liveDependentCount.delete(a)
-        expect(isLive(leaf, s.data)).toBe(false) // corrupted
+        getStoreData(s).liveDependentCount.delete(mid)
+        getStoreData(s).liveDependentCount.delete(leaf)
+        getStoreData(s).liveDependentCount.delete(a)
+        expect(isLive(leaf, getStoreData(s))).toBe(false) // corrupted
 
         // reconcile the region seeded by the "removed" intermediate.
-        reconcileLivenessAfterChurn(new Set([mid as any]), s.data)
+        reconcileLivenessAfterChurn(new Set([mid as any]), getStoreData(s))
 
-        expect(s.data.liveDependentCount.get(mid)).toBe(1)
-        expect(s.data.liveDependentCount.get(leaf)).toBe(1)
-        expect(s.data.liveDependentCount.get(a)).toBe(1)
-        expect(isLive(leaf, s.data)).toBe(true)
+        expect(getStoreData(s).liveDependentCount.get(mid)).toBe(1)
+        expect(getStoreData(s).liveDependentCount.get(leaf)).toBe(1)
+        expect(getStoreData(s).liveDependentCount.get(a)).toBe(1)
+        expect(isLive(leaf, getStoreData(s))).toBe(true)
     })
 })

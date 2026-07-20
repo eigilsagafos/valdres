@@ -1,14 +1,17 @@
 import { describe, test, expect, mock } from "bun:test"
 import { mount } from "@vue/test-utils"
 import { defineComponent, type Readonly, type Ref } from "vue"
-import { atom, atomFamily, selector, selectorFamily, store as createStore } from "valdres"
+import {
+    atom,
+    atomFamily,
+    selector,
+    selectorFamily,
+    store as createStore,
+} from "valdres"
 import { useValue } from "./useValue"
 import { ValdresKey } from "./lib/storeKey"
 
-const mountWithStore = (
-    setup: () => any,
-    storeInstance = createStore(),
-) => {
+const mountWithStore = (setup: () => any, storeInstance = createStore()) => {
     const Comp = defineComponent({
         setup,
         template: "<div></div>",
@@ -18,7 +21,7 @@ const mountWithStore = (
             provide: {
                 [ValdresKey as symbol]: {
                     current: storeInstance,
-                    stores: { [storeInstance.data.id]: storeInstance },
+                    stores: { [storeInstance.id]: storeInstance },
                 },
             },
         },
@@ -136,7 +139,7 @@ describe("useValue", () => {
         const provide = {
             [ValdresKey as symbol]: {
                 current: storeInstance,
-                stores: { [storeInstance.data.id]: storeInstance },
+                stores: { [storeInstance.id]: storeInstance },
             },
         }
         mount(CompA, { global: { provide } })

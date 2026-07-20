@@ -1,3 +1,4 @@
+import { getStoreData } from "./getStoreData"
 import { expect, test } from "bun:test"
 import { atom } from "../atom"
 import { selector } from "../selector"
@@ -21,7 +22,9 @@ test("a throwing onMount during propagation releases the liveness collector", ()
             throw new Error("boom")
         },
     })
-    const s = selector(get => (get(flag) ? get(boom) : 0), { name: "release:s" })
+    const s = selector(get => (get(flag) ? get(boom) : 0), {
+        name: "release:s",
+    })
     const st = store("release-test")
     st.sub(s, () => {}, false)
 
@@ -31,10 +34,10 @@ test("a throwing onMount during propagation releases the liveness collector", ()
 
     // The collector MUST be released despite the throw — otherwise liveness
     // tracking is permanently disabled for this store.
-    expect(st.data.livenessSeeds).toBeUndefined()
+    expect(getStoreData(st).livenessSeeds).toBeUndefined()
 
     // And the store stays usable: a later pass can own the collector again and
     // settle liveness (switching back off `boom` is a clean, non-throwing churn).
     expect(() => st.set(flag, false)).not.toThrow()
-    expect(st.data.livenessSeeds).toBeUndefined()
+    expect(getStoreData(st).livenessSeeds).toBeUndefined()
 })

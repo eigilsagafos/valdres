@@ -1,3 +1,4 @@
+import { getStoreData } from "./getStoreData"
 import { describe, expect, test } from "bun:test"
 import { atom } from "../atom"
 import { selector } from "../selector"
@@ -16,11 +17,7 @@ type DynamicSelectorDef = {
 
 const stateName = (state: any) => state?.name ?? "<anon>"
 
-const assertLiveDependentCounts = (
-    data: any,
-    states: any[],
-    label: string,
-) => {
+const assertLiveDependentCounts = (data: any, states: any[], label: string) => {
     const live = new Set<any>()
     for (const state of states) {
         const subs = data.subscriptions.get(state)
@@ -55,8 +52,12 @@ const assertLiveDependentCounts = (
         const actual = data.liveDependentCount.get(state) ?? 0
         const exp = expected.get(state) ?? 0
         if (actual !== exp) {
-            const deps = [...(data.stateDependencies.get(state) ?? [])].map(stateName)
-            const dependents = [...(data.stateDependents.get(state) ?? [])].map(stateName)
+            const deps = [...(data.stateDependencies.get(state) ?? [])].map(
+                stateName,
+            )
+            const dependents = [...(data.stateDependents.get(state) ?? [])].map(
+                stateName,
+            )
             mismatches.push(
                 `${stateName(state)} expected liveDependentCount=${exp}, got ${actual}; deps=${JSON.stringify(deps)}; dependents=${JSON.stringify(dependents)}`,
             )
@@ -174,7 +175,7 @@ const runDynamicLiveCountSeed = (
 
         const states = [...atoms, ...selectors]
         for (const root of spec.rootIndexes) s.get(selectors[root])
-        assertLiveDependentCounts(s.data, states, `seed ${seed} init`)
+        assertLiveDependentCounts(getStoreData(s), states, `seed ${seed} init`)
 
         for (let step = 0; step < spec.ops.length; step++) {
             s.txn(t => {
@@ -182,7 +183,11 @@ const runDynamicLiveCountSeed = (
                     t.set(atoms[op.atom], op.value)
                 }
             })
-            assertLiveDependentCounts(s.data, states, `seed ${seed} step ${step}`)
+            assertLiveDependentCounts(
+                getStoreData(s),
+                states,
+                `seed ${seed} step ${step}`,
+            )
         }
     } finally {
         for (const unsub of unsubs) unsub()
@@ -218,10 +223,10 @@ describe("liveDependentCount follow-up regressions", () => {
         s.set(ready, true)
 
         expect(s.get(root)).toBe(2)
-        expect(s.data.stateDependencies.get(root)).toContain(newBranch)
-        expect(s.data.stateDependents.get(newBranch)).toContain(root)
-        expect(s.data.liveDependentCount.get(newBranch) ?? 0).toBe(1)
-        expect(s.data.liveDependentCount.get(oldBranch) ?? 0).toBe(0)
+        expect(getStoreData(s).stateDependencies.get(root)).toContain(newBranch)
+        expect(getStoreData(s).stateDependents.get(newBranch)).toContain(root)
+        expect(getStoreData(s).liveDependentCount.get(newBranch) ?? 0).toBe(1)
+        expect(getStoreData(s).liveDependentCount.get(oldBranch) ?? 0).toBe(0)
     })
 
     test("cyclic dynamic dependency churn preserves live counts", () => {

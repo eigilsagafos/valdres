@@ -1,3 +1,4 @@
+import { getStoreData } from "./getStoreData"
 import { describe, test, expect, mock, spyOn } from "bun:test"
 import { store } from "../store"
 import { atom } from "../atom"
@@ -25,8 +26,8 @@ describe("globalAtom", () => {
         store1.set(numberAtom, 1)
 
         expect(store2.get(numberAtom)).toBe(1)
-        expect(numberAtom.stores.has(store1.data)).toBe(true)
-        expect(numberAtom.stores.has(store2.data)).toBe(true)
+        expect(numberAtom.stores.has(getStoreData(store1))).toBe(true)
+        expect(numberAtom.stores.has(getStoreData(store2))).toBe(true)
     })
 
     test("disposing a store unregisters it from every global atom it touched", () => {
@@ -36,13 +37,13 @@ describe("globalAtom", () => {
 
         requestStore.get(firstAtom)
         requestStore.get(secondAtom)
-        expect(firstAtom.stores.has(requestStore.data)).toBe(true)
-        expect(secondAtom.stores.has(requestStore.data)).toBe(true)
+        expect(firstAtom.stores.has(getStoreData(requestStore))).toBe(true)
+        expect(secondAtom.stores.has(getStoreData(requestStore))).toBe(true)
 
         requestStore.dispose()
 
-        expect(firstAtom.stores.has(requestStore.data)).toBe(false)
-        expect(secondAtom.stores.has(requestStore.data)).toBe(false)
+        expect(firstAtom.stores.has(getStoreData(requestStore))).toBe(false)
+        expect(secondAtom.stores.has(getStoreData(requestStore))).toBe(false)
     })
 
     test("disposed request stores do not accumulate in global write fan-out", () => {
@@ -70,7 +71,7 @@ describe("globalAtom", () => {
         await new Promise<void>(resolve => queueMicrotask(resolve))
 
         expect(liveStore.get(requestAtom)).toBe(0)
-        expect(requestAtom.stores.has(requestStore.data)).toBe(false)
+        expect(requestAtom.stores.has(getStoreData(requestStore))).toBe(false)
     })
 
     test("dispose cancels a pending async global settlement", async () => {
@@ -91,7 +92,7 @@ describe("globalAtom", () => {
         await Promise.resolve()
 
         expect(liveStore.get(requestAtom)).toBe(0)
-        expect(requestAtom.stores.has(requestStore.data)).toBe(false)
+        expect(requestAtom.stores.has(getStoreData(requestStore))).toBe(false)
     })
 
     test("dispose balances a mounted global atom lifecycle", () => {
@@ -141,8 +142,8 @@ describe("globalAtom", () => {
         requestStore.get(trailingAtom)
 
         expect(() => requestStore.dispose()).toThrow(cleanupError)
-        expect(throwingAtom.stores.has(requestStore.data)).toBe(false)
-        expect(trailingAtom.stores.has(requestStore.data)).toBe(false)
+        expect(throwingAtom.stores.has(getStoreData(requestStore))).toBe(false)
+        expect(trailingAtom.stores.has(getStoreData(requestStore))).toBe(false)
     })
 
     test("dispose cleanup cannot register a new global atom", () => {
@@ -158,7 +159,7 @@ describe("globalAtom", () => {
 
         requestStore.dispose()
 
-        expect(cleanupAtom.stores.has(requestStore.data)).toBe(false)
+        expect(cleanupAtom.stores.has(getStoreData(requestStore))).toBe(false)
     })
 
     test("detaching the last scope consumer unregisters touched global atoms", () => {
@@ -168,12 +169,12 @@ describe("globalAtom", () => {
 
         // A scope normally inherits atoms from its parent. Register it directly
         // to cover stores that materialized a global before becoming detached.
-        requestAtom.onInit!(() => {}, scoped.data)
-        expect(requestAtom.stores.has(scoped.data)).toBe(true)
+        requestAtom.onInit!(() => {}, getStoreData(scoped))
+        expect(requestAtom.stores.has(getStoreData(scoped))).toBe(true)
 
         scoped.detach()
 
-        expect(requestAtom.stores.has(scoped.data)).toBe(false)
+        expect(requestAtom.stores.has(getStoreData(scoped))).toBe(false)
     })
 
     test("a scope remains registered until its final consumer detaches", () => {
@@ -181,15 +182,15 @@ describe("globalAtom", () => {
         const firstConsumer = root.scope("shared")
         const secondConsumer = root.scope("shared")
         const requestAtom = atom(0, { global: true })
-        requestAtom.onInit!(() => {}, firstConsumer.data)
+        requestAtom.onInit!(() => {}, getStoreData(firstConsumer))
 
         firstConsumer.detach()
-        expect(requestAtom.stores.has(firstConsumer.data)).toBe(true)
-        expect(root.data.scopes.has("shared")).toBe(true)
+        expect(requestAtom.stores.has(getStoreData(firstConsumer))).toBe(true)
+        expect(getStoreData(root).scopes.has("shared")).toBe(true)
 
         secondConsumer.detach()
-        expect(requestAtom.stores.has(firstConsumer.data)).toBe(false)
-        expect(root.data.scopes.has("shared")).toBe(false)
+        expect(requestAtom.stores.has(getStoreData(firstConsumer))).toBe(false)
+        expect(getStoreData(root).scopes.has("shared")).toBe(false)
     })
 
     test("disposing a root unregisters all descendant scopes", () => {
@@ -197,17 +198,17 @@ describe("globalAtom", () => {
         const child = root.scope("child")
         const grandchild = child.scope("grandchild")
         const requestAtom = atom(0, { global: true })
-        requestAtom.onInit!(() => {}, root.data)
-        requestAtom.onInit!(() => {}, child.data)
-        requestAtom.onInit!(() => {}, grandchild.data)
+        requestAtom.onInit!(() => {}, getStoreData(root))
+        requestAtom.onInit!(() => {}, getStoreData(child))
+        requestAtom.onInit!(() => {}, getStoreData(grandchild))
 
         root.dispose()
 
-        expect(requestAtom.stores.has(root.data)).toBe(false)
-        expect(requestAtom.stores.has(child.data)).toBe(false)
-        expect(requestAtom.stores.has(grandchild.data)).toBe(false)
-        expect(root.data.scopes.size).toBe(0)
-        expect(child.data.scopes.size).toBe(0)
+        expect(requestAtom.stores.has(getStoreData(root))).toBe(false)
+        expect(requestAtom.stores.has(getStoreData(child))).toBe(false)
+        expect(requestAtom.stores.has(getStoreData(grandchild))).toBe(false)
+        expect(getStoreData(root).scopes.size).toBe(0)
+        expect(getStoreData(child).scopes.size).toBe(0)
     })
 
     test("set in txn", () => {
@@ -390,7 +391,7 @@ describe("globalAtom", () => {
         // Both stores should be tracked (plus globalStore)
         const storesBefore = testAtom.stores.size
         expect(storesBefore).toBeGreaterThanOrEqual(2)
-        testAtom.detach(store1.data)
+        testAtom.detach(getStoreData(store1))
         expect(testAtom.stores.size).toBe(storesBefore - 1)
     })
 
@@ -400,7 +401,7 @@ describe("globalAtom", () => {
         const testAtom = atom(0, { global: true })
         store1.get(testAtom)
         store2.get(testAtom)
-        testAtom.detach(store1.data)
+        testAtom.detach(getStoreData(store1))
         store2.set(testAtom, 42)
         // store1 should NOT have been updated since it's detached
         expect(store1.get(testAtom)).not.toBe(42)
@@ -532,7 +533,10 @@ describe("globalAtom", () => {
     })
 
     test("after resetSelf, globalStore is re-added to stores on next interaction", () => {
-        const a = atom("foo", { global: true, name: "test/reset-globalStore-readd" })
+        const a = atom("foo", {
+            global: true,
+            name: "test/reset-globalStore-readd",
+        })
         const s1 = store()
         const s2 = store()
 
@@ -943,11 +947,11 @@ describe("globalAtom", () => {
 
         // User hook fires once, in the originating store, with the new value
         expect(onSet).toHaveBeenCalledTimes(1)
-        expect(onSet).toHaveBeenCalledWith(1, store1.data)
+        expect(onSet).toHaveBeenCalledWith(1, store1)
 
         store2.set(numberAtom, 2)
         expect(onSet).toHaveBeenCalledTimes(2)
-        expect(onSet).toHaveBeenLastCalledWith(2, store2.data)
+        expect(onSet).toHaveBeenLastCalledWith(2, store2)
     })
 
     test("user-provided onSet fires once on setSelf with globalStore as originator", async () => {
@@ -966,6 +970,6 @@ describe("globalAtom", () => {
         expect(store1.get(numberAtom)).toBe(7)
         expect(store2.get(numberAtom)).toBe(7)
         expect(onSet).toHaveBeenCalledTimes(1)
-        expect(onSet).toHaveBeenCalledWith(7, globalStore.data)
+        expect(onSet).toHaveBeenCalledWith(7, globalStore)
     })
 })

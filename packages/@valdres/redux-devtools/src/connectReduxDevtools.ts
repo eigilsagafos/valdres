@@ -5,6 +5,7 @@ import type {
     StoreChangeMeta,
     StoreChangeSource,
 } from "valdres"
+import { storeAdapter } from "valdres/adapter-internals/v1"
 import type {
     ConnectReduxDevtoolsOptions,
     ReduxDevtoolsHandle,
@@ -114,7 +115,7 @@ export const connectReduxDevtools = (
     // (`store(id, { enumerable: true })`) can be enumerated — a default store's
     // values live in a WeakMap, so we skip (no `snapshot()` call, no warning)
     // and the model fills in via onChange as state first changes.
-    if (store.data.enumerable) {
+    if (storeAdapter.isEnumerable(store)) {
         for (const entry of store.snapshot()) {
             if (entry.scope.length > 0 && !includeScopes) continue
             if (isExcluded(entry.state)) continue
@@ -214,7 +215,9 @@ export const connectReduxDevtools = (
 
             scopesTouched.add(scopeKey === null ? "root" : scopeKey)
             lastBareName = atomName
-            qualified.push(scopeKey === null ? atomName : `${scopeKey}/${atomName}`)
+            qualified.push(
+                scopeKey === null ? atomName : `${scopeKey}/${atomName}`,
+            )
         }
         if (qualified.length === 0 && !computedTouched) return
         // Recording paused from the monitor: keep the model current (so the next
@@ -254,7 +257,13 @@ export const connectReduxDevtools = (
             }
             isRestoring = true
             try {
-                restoreSnapshot(store, target, model, resolveAtom, includeScopes)
+                restoreSnapshot(
+                    store,
+                    target,
+                    model,
+                    resolveAtom,
+                    includeScopes,
+                )
                 overwriteModel(target)
             } finally {
                 isRestoring = false
@@ -290,9 +299,8 @@ export const connectReduxDevtools = (
                 // history back via `send(null, lifted)` so the monitor shows it.
                 // (We can't replay the history action-by-action — valdres has no
                 // reducer — but the store + timeline end up consistent.)
-                const lifted = (
-                    message.payload as { nextLiftedState?: any }
-                ).nextLiftedState
+                const lifted = (message.payload as { nextLiftedState?: any })
+                    .nextLiftedState
                 const states = lifted?.computedStates
                 if (!Array.isArray(states) || states.length === 0) break
                 const idx =

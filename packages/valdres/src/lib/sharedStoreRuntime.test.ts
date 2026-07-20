@@ -1,3 +1,4 @@
+import { getStoreData } from "./getStoreData"
 import { describe, expect, mock, test } from "bun:test"
 import { atom } from "../atom"
 import { selector } from "../selector"
@@ -32,7 +33,7 @@ describe("shared StoreData runtime", () => {
 
         await nextMicrotask()
 
-        expect(first.data.values.get(count)).toBe(2)
+        expect(getStoreData(first).values.get(count)).toBe(2)
     })
 
     test("a synchronous operation through another lease flushes the shared transaction", async () => {
@@ -84,14 +85,14 @@ describe("shared StoreData runtime", () => {
         // Both handles share initialization coordination. Cold selectors now
         // remain revision-validated forward caches, so init propagation keeps
         // both values without promoting either dependency into the live graph.
-        expect(first.data.values.has(outer)).toBe(true)
-        expect(first.data.values.has(inner)).toBe(true)
-        expect(first.data.stateDependents.get(left)?.has(outer) ?? false).toBe(
-            false,
-        )
-        expect(first.data.stateDependents.get(right)?.has(inner) ?? false).toBe(
-            false,
-        )
+        expect(getStoreData(first).values.has(outer)).toBe(true)
+        expect(getStoreData(first).values.has(inner)).toBe(true)
+        expect(
+            getStoreData(first).stateDependents.get(left)?.has(outer) ?? false,
+        ).toBe(false)
+        expect(
+            getStoreData(first).stateDependents.get(right)?.has(inner) ?? false,
+        ).toBe(false)
     })
 
     test("the facade created for onMount shares pending writes", async () => {

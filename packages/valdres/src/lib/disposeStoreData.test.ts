@@ -5,6 +5,7 @@ import { selector } from "../selector"
 import { store } from "../store"
 import { StoreDisposedError } from "../errors/StoreDisposedError"
 import { withFakeClock } from "../../test/utils/fakeClock"
+import { getStoreData } from "./getStoreData"
 import { commitEndRegistry } from "./onCommitEnd"
 import { changeListenerRegistry } from "./notifyChangeListeners"
 
@@ -25,14 +26,18 @@ describe("store.dispose", () => {
             const unsubscribe = targetStore.sub(target, () => {})
             const clearsBeforeDispose = clearIntervalSpy.mock.calls.length
 
-            expect(targetStore.data.subscriptions.get(target)?.size).toBe(1)
+            expect(
+                getStoreData(targetStore).subscriptions.get(target)?.size,
+            ).toBe(1)
             targetStore.dispose()
 
             expect(cleanup).toHaveBeenCalledTimes(1)
             expect(clearIntervalSpy.mock.calls.length).toBe(
                 clearsBeforeDispose + 1,
             )
-            expect(targetStore.data.subscriptions.get(target)).toBeUndefined()
+            expect(
+                getStoreData(targetStore).subscriptions.get(target),
+            ).toBeUndefined()
 
             // Disposers handed out before terminal disposal stay idempotent.
             unsubscribe()
@@ -52,18 +57,24 @@ describe("store.dispose", () => {
         const unsubscribeSecondB = targetStore.sub(second, () => {})
         const unsubscribeThird = targetStore.sub(third, () => {}, false)
 
-        expect(targetStore.data.subscriptionsRequireEqualCheck.has(third)).toBe(
-            true,
-        )
+        expect(
+            getStoreData(targetStore).subscriptionsRequireEqualCheck.has(third),
+        ).toBe(true)
 
         // Remove one active-state key while a second still has multiple
         // subscriptions and a third has opted out of structural equality.
         unsubscribeFirst()
         targetStore.dispose()
 
-        expect(targetStore.data.subscriptions.get(first)).toBeUndefined()
-        expect(targetStore.data.subscriptions.get(second)).toBeUndefined()
-        expect(targetStore.data.subscriptions.get(third)).toBeUndefined()
+        expect(
+            getStoreData(targetStore).subscriptions.get(first),
+        ).toBeUndefined()
+        expect(
+            getStoreData(targetStore).subscriptions.get(second),
+        ).toBeUndefined()
+        expect(
+            getStoreData(targetStore).subscriptions.get(third),
+        ).toBeUndefined()
 
         unsubscribeSecondA()
         unsubscribeSecondB()
@@ -191,8 +202,12 @@ describe("store.dispose", () => {
         resolveSelector(1)
         await settle()
         expect(atomSubscriber).not.toHaveBeenCalled()
-        expect(targetStore.data.values.get(asyncAtom)).toBe(pendingAtom)
-        expect(targetStore.data.values.get(asyncSelector)).toBe(pendingSelector)
+        expect(getStoreData(targetStore).values.get(asyncAtom)).toBe(
+            pendingAtom,
+        )
+        expect(getStoreData(targetStore).values.get(asyncSelector)).toBe(
+            pendingSelector,
+        )
     })
 
     test("cancels speculative selector work in a queued batch", async () => {
@@ -213,7 +228,7 @@ describe("store.dispose", () => {
         targetStore.dispose()
         expect(signal.aborted).toBe(true)
         await settle()
-        expect(targetStore.data.values.get(source)).toBeUndefined()
+        expect(getStoreData(targetStore).values.get(source)).toBeUndefined()
     })
 
     test("aborts async selector work retained by a completed transaction", () => {

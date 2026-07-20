@@ -11,6 +11,8 @@ import {
     beginGlobalCommit,
     endGlobalCommit,
 } from "./globalAtomFanOut"
+import { getStoreRuntime } from "./getStoreRuntime"
+import { globalOnSetMarker } from "./globalOnSetMarker"
 import { createChangeSink, flushChangeSink } from "./notifyChangeListeners"
 import {
     notifyDeferred,
@@ -35,7 +37,7 @@ export const finishAtomSet = <Value>(
         let hasHookError = false
         let hookError: unknown
         try {
-            atom.onSet!(value, data)
+            atom.onSet!(value, getStoreRuntime(data))
         } catch (error) {
             hasHookError = true
             hookError = error
@@ -54,7 +56,9 @@ export const finishAtomSet = <Value>(
     const globalUpdates = applyGlobalSets([[atom, value, data]], errors)
 
     try {
-        atom.onSet!(value, data)
+        if (atom.onSet !== globalOnSetMarker) {
+            atom.onSet!(value, getStoreRuntime(data))
+        }
     } catch (error) {
         recordCommitError(errors, error)
     }

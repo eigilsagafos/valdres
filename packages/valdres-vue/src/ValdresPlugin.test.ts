@@ -22,7 +22,7 @@ describe("createValdres", () => {
             },
         })
         expect(result).toBeDefined()
-        expect(result.data.id).toBeDefined()
+        expect(result.id).toBeDefined()
     })
 
     test("accepts existing store", () => {
@@ -40,7 +40,7 @@ describe("createValdres", () => {
                 plugins: [createValdres({ store: storeInstance })],
             },
         })
-        expect(result.data.id).toBe(storeInstance.data.id)
+        expect(result.id).toBe(storeInstance.id)
     })
 
     test("initialize with array return", () => {

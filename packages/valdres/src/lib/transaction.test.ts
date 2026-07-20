@@ -1,3 +1,4 @@
+import { getStoreData } from "./getStoreData"
 import { describe, expect, mock, test } from "bun:test"
 import { atom } from "../atom"
 import { atomFamily } from "../atomFamily"
@@ -33,7 +34,7 @@ describe("transaction", () => {
         const atom1 = atom(1)
         transaction(({ set }) => {
             set(atom1, 2)
-        }, store1.data)
+        }, getStoreData(store1))
         expect(store1.get(atom1)).toBe(2)
     })
     test("txn set with callback", () => {
@@ -41,7 +42,7 @@ describe("transaction", () => {
         const atom1 = atom(1)
         transaction(({ set }) => {
             set(atom1, curr => curr + 1)
-        }, store1.data)
+        }, getStoreData(store1))
         expect(store1.get(atom1)).toBe(2)
     })
 
@@ -119,7 +120,7 @@ describe("transaction", () => {
         const atom1 = atom(1)
         transaction(({ get }) => {
             expect(get(atom1)).toBe(1)
-        }, store1.data)
+        }, getStoreData(store1))
     })
     test("txn get after set", () => {
         const store1 = store()
@@ -127,7 +128,7 @@ describe("transaction", () => {
         transaction(({ set, get }) => {
             set(atom1, 2)
             expect(get(atom1)).toBe(2)
-        }, store1.data)
+        }, getStoreData(store1))
     })
 
     test("txn reset", () => {
@@ -138,7 +139,7 @@ describe("transaction", () => {
             expect(get(atom1)).toBe(2)
             reset(atom1)
             expect(get(atom1)).toBe(1)
-        }, store1.data)
+        }, getStoreData(store1))
         expect(store1.get(atom1)).toBe(1)
     })
 
@@ -164,7 +165,7 @@ describe("transaction", () => {
             expect(get(product)).toBe(6_000_000)
             expect(store1.get(sum)).toBe(60)
             expect(store1.get(product)).toBe(6_000)
-        }, store1.data)
+        }, getStoreData(store1))
 
         expect(store1.get(sum)).toBe(600)
         expect(store1.get(product)).toBe(6_000_000)
@@ -248,7 +249,7 @@ describe("transaction", () => {
         store1.txn(({ get }) => {
             expect(get(optionsSelector)).toBe(1)
             expect(receivedOptions.signal).toBeInstanceOf(AbortSignal)
-            expect(receivedOptions.storeId).toBe(store1.data.id)
+            expect(receivedOptions.storeId).toBe(store1.id)
 
             try {
                 get(invalidSelector)
@@ -298,7 +299,7 @@ describe("transaction", () => {
 
         expect(store1.get(selected)).toBe("right")
         const committedDependencies = new Set(
-            store1.data.stateDependencies.get(selected),
+            getStoreData(store1).stateDependencies.get(selected),
         )
 
         expect(() =>
@@ -313,11 +314,13 @@ describe("transaction", () => {
         await Promise.resolve()
         expect(store1.get(useLeft)).toBe(false)
         expect(store1.get(selected)).toBe("right")
-        expect(store1.data.stateDependencies.get(selected)).toEqual(
+        expect(getStoreData(store1).stateDependencies.get(selected)).toEqual(
             committedDependencies,
         )
-        expect(store1.data.stateDependencies.has(asyncSelected)).toBe(false)
-        expect(store1.data.values.has(asyncSelected)).toBe(false)
+        expect(getStoreData(store1).stateDependencies.has(asyncSelected)).toBe(
+            false,
+        )
+        expect(getStoreData(store1).values.has(asyncSelected)).toBe(false)
     })
 
     test("transaction selector reads do not validate a stale committed cold cache", () => {
@@ -368,8 +371,10 @@ describe("transaction", () => {
                 .get(asyncCount)
                 .has(count),
         ).toBe(true)
-        expect(store1.data.stateDependencies.has(asyncCount)).toBe(false)
-        expect(store1.data.values.has(asyncCount)).toBe(false)
+        expect(getStoreData(store1).stateDependencies.has(asyncCount)).toBe(
+            false,
+        )
+        expect(getStoreData(store1).values.has(asyncCount)).toBe(false)
     })
 
     test("transaction selector continuations read current committed state", async () => {
@@ -568,7 +573,7 @@ describe("transaction", () => {
         const user4atom = user(4)
         rootStore.set(user1atom, { id: 1, name: "Foo" })
         rootStore.set(user2atom, { id: 2, name: "Bar" })
-        expect(rootStore.data.values.get(user)).toStrictEqual([
+        expect(getStoreData(rootStore).values.get(user)).toStrictEqual([
             user1atom,
             user2atom,
         ])
@@ -589,14 +594,14 @@ describe("transaction", () => {
             del(user3atom)
             expect(get(user)).toStrictEqual([user2atom, user4atom])
         })
-        expect(rootStore.data.values.get(user)).toStrictEqual([
+        expect(getStoreData(rootStore).values.get(user)).toStrictEqual([
             user2atom,
             user4atom,
         ])
-        expect(rootStore.data.values.has(user1atom)).toBe(false)
-        expect(rootStore.data.values.has(user2atom)).toBe(true)
-        expect(rootStore.data.values.has(user3atom)).toBe(false)
-        expect(rootStore.data.values.has(user4atom)).toBe(true)
+        expect(getStoreData(rootStore).values.has(user1atom)).toBe(false)
+        expect(getStoreData(rootStore).values.has(user2atom)).toBe(true)
+        expect(getStoreData(rootStore).values.has(user3atom)).toBe(false)
+        expect(getStoreData(rootStore).values.has(user4atom)).toBe(true)
     })
 
     test("transaction in scope", () => {
@@ -893,12 +898,15 @@ describe("transaction", () => {
             })
         })
 
-        expect(store1.data.values.get(doc1)).toStrictEqual([1, 2])
-        expect(store1.data.scopes.get("foo")!.values.get(doc1)).toStrictEqual([
-            1, 2, 3,
-        ])
+        expect(getStoreData(store1).values.get(doc1)).toStrictEqual([1, 2])
         expect(
-            store1.data.scopes.get("foo")!.scopes.get("bar")!.values.get(doc1),
+            getStoreData(store1).scopes.get("foo")!.values.get(doc1),
+        ).toStrictEqual([1, 2, 3])
+        expect(
+            getStoreData(store1)
+                .scopes.get("foo")!
+                .scopes.get("bar")!
+                .values.get(doc1),
         ).toStrictEqual([1, 2, 3, 4])
 
         store1.txn(txn => {

@@ -1,3 +1,4 @@
+import { getStoreData } from "./lib/getStoreData"
 import { describe, expect, mock, test } from "bun:test"
 import { wait } from "../test/utils/wait"
 import { atom } from "./atom"
@@ -64,17 +65,17 @@ describe("selector", () => {
 
         expect(rootStore.get(derived)).toBe(first)
         expect(callback).toHaveBeenCalledTimes(1)
-        expect(rootStore.data.stateRevisionClock.current).toBe(0)
+        expect(getStoreData(rootStore).stateRevisionClock.current).toBe(0)
 
         rootStore.set(source, 2)
-        expect(rootStore.data.stateRevisionClock.current).toBe(1)
+        expect(getStoreData(rootStore).stateRevisionClock.current).toBe(1)
         // The source write did not eagerly visit the cold selector.
         expect(callback).toHaveBeenCalledTimes(1)
         expect(rootStore.get(derived)).toStrictEqual({ value: 2 })
         expect(callback).toHaveBeenCalledTimes(2)
         // Recomputing an unreferenced selector does not maintain its own
         // revision unless another cold cache directly depends on it.
-        expect(rootStore.data.stateRevisionClock.current).toBe(1)
+        expect(getStoreData(rootStore).stateRevisionClock.current).toBe(1)
     })
 
     test("dependents/dependencies are correctly handled for selector dependent on atom", () => {
@@ -85,7 +86,7 @@ describe("selector", () => {
         })
 
         rootStore.get(time100Selector)
-        const { stateDependents, stateDependencies } = rootStore.data
+        const { stateDependents, stateDependencies } = getStoreData(rootStore)
 
         // A cold read keeps its forward dependency for revision validation but
         // stays out of the strongly-held, iterable reverse graph.
@@ -106,7 +107,7 @@ describe("selector", () => {
         })
 
         rootStore.get(allUserIds)
-        const { stateDependents, stateDependencies } = rootStore.data
+        const { stateDependents, stateDependencies } = getStoreData(rootStore)
 
         expect(stateDependents.get(usersFamily)).toBeUndefined()
         expect(stateDependents.get(allUserIds)).toBeUndefined()
@@ -180,7 +181,6 @@ describe("selector", () => {
         expect(callback1).toHaveBeenCalledTimes(2)
     })
 
-
     // test("selector with promise",async () => {
     //     const store1 = store()
     //     const baseAtom = atom(10)
@@ -226,25 +226,33 @@ describe("selector", () => {
             { name: "selector1" },
         )
         expect(store1.get(selector1)).toBeInstanceOf(Promise)
-        expect(store1.data.values.get(asyncAtom1)).toBeInstanceOf(Promise)
-        expect(store1.data.values.get(asyncAtom2)).toBeUndefined()
-        expect(store1.data.values.get(selector1)).toBeInstanceOf(Promise)
+        expect(getStoreData(store1).values.get(asyncAtom1)).toBeInstanceOf(
+            Promise,
+        )
+        expect(getStoreData(store1).values.get(asyncAtom2)).toBeUndefined()
+        expect(getStoreData(store1).values.get(selector1)).toBeInstanceOf(
+            Promise,
+        )
         await wait(1)
-        expect(store1.data.values.get(asyncAtom1)).toBe(1)
-        expect(store1.data.values.get(asyncAtom2)).toBeInstanceOf(Promise)
-        expect(store1.data.values.get(selector1)).toBeInstanceOf(Promise)
+        expect(getStoreData(store1).values.get(asyncAtom1)).toBe(1)
+        expect(getStoreData(store1).values.get(asyncAtom2)).toBeInstanceOf(
+            Promise,
+        )
+        expect(getStoreData(store1).values.get(selector1)).toBeInstanceOf(
+            Promise,
+        )
         await wait(1)
-        expect(store1.data.values.get(asyncAtom1)).toBe(1)
-        expect(store1.data.values.get(asyncAtom2)).toBe(2)
-        expect(store1.data.values.get(selector1)).toStrictEqual([1, 2])
+        expect(getStoreData(store1).values.get(asyncAtom1)).toBe(1)
+        expect(getStoreData(store1).values.get(asyncAtom2)).toBe(2)
+        expect(getStoreData(store1).values.get(selector1)).toStrictEqual([1, 2])
 
         store1.set(asyncAtom1, 3)
         store1.set(asyncAtom2, 4)
         // Cold caches stay materialized but outside the live reverse graph. The
         // dependency revisions make the next read re-evaluate lazily.
-        expect(store1.data.values.get(selector1)).toStrictEqual([1, 2])
+        expect(getStoreData(store1).values.get(selector1)).toStrictEqual([1, 2])
         expect(store1.get(selector1)).toStrictEqual([3, 4])
-        expect(store1.data.values.get(selector1)).toStrictEqual([3, 4])
+        expect(getStoreData(store1).values.get(selector1)).toStrictEqual([3, 4])
     })
 
     test("selector that returns promise is handled correctly", async () => {
@@ -444,9 +452,7 @@ describe("selector", () => {
             name: "outer",
         })
 
-        expect(() => store1.get(outerSelector)).toThrow(
-            "Selector eval crashed",
-        )
+        expect(() => store1.get(outerSelector)).toThrow("Selector eval crashed")
 
         shouldThrow = false
 
@@ -504,7 +510,9 @@ describe("selector", () => {
             throw new Error("boom")
         })
 
-        expect(() => store1.get(crashingSelector)).toThrow("Selector eval crashed")
+        expect(() => store1.get(crashingSelector)).toThrow(
+            "Selector eval crashed",
+        )
 
         // Now set up a selector + subscriber that depends on atom1
         const goodSelector = selector(get => get(atom1) * 2)
@@ -797,7 +805,11 @@ describe("async selector", () => {
                 let depth = 0
                 const d = (): number => {
                     ++depth
-                    try { return d() } catch { return depth }
+                    try {
+                        return d()
+                    } catch {
+                        return depth
+                    }
                 }
                 return d()
             }

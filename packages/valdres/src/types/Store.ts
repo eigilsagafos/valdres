@@ -5,7 +5,6 @@ import type { ResetAtom } from "./ResetAtom"
 import type { SnapshotEntry } from "./SnapshotEntry"
 import type { AtomChange, SelectorChange, StoreChange } from "./StoreChange"
 import type { StoreChangeMeta } from "./StoreChangeMeta"
-import type { StoreData } from "./StoreData"
 import type { SetAtom } from "./SetAtom"
 import type { SubscribeFn } from "./SubscribeFn"
 import type { TransactionFn } from "./TransactionFn"
@@ -38,8 +37,9 @@ export type ScopeFn = {
     ): Result
 }
 
-export type Store<T = StoreData> = {
-    data: T
+export type Store = {
+    /** Stable identity for this store or scope. Runtime internals are private. */
+    readonly id: string
     /** Terminally release this store and its descendant scopes. Disposal drains
      *  subscriptions, mounts, timers, change/commit listeners, pending batches,
      *  async selector work, and global-atom registrations. Every later store

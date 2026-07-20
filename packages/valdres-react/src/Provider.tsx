@@ -1,5 +1,6 @@
 import { useContext, useRef, type ReactNode } from "react"
 import { store as createStore, type Store } from "valdres"
+import { storeAdapter } from "valdres/adapter-internals/v1"
 import { StoreContext, type ProviderContext } from "./lib/StoreContext"
 import type { InitializeCallback } from "./types/InitializeCallback"
 import { hydrate } from "./lib/hydrate"
@@ -10,12 +11,12 @@ const initStore = (
     initialize?: InitializeCallback,
 ) => {
     if (store) {
-        if (!store.data.batchUpdates) {
+        if (!storeAdapter.isBatching(store)) {
             console.warn(
                 "valdres-react: The store passed to <Provider> was not created " +
-                "with { batchUpdates: true }. Sequential store.set() calls " +
-                "will trigger intermediate selector evaluations. Consider " +
-                "using store({ batchUpdates: true }) for optimal React performance.",
+                    "with { batchUpdates: true }. Sequential store.set() calls " +
+                    "will trigger intermediate selector evaluations. Consider " +
+                    "using store({ batchUpdates: true }) for optimal React performance.",
             )
         }
     } else {
@@ -31,23 +32,23 @@ const initStore = (
     }
     if (parentContext) {
         const [, allStores] = parentContext
-        if (store.data.id in allStores) {
+        if (store.id in allStores) {
             throw new Error(
-                `store with id ${store.data.id} is already defined further up the tree`,
+                `store with id ${store.id} is already defined further up the tree`,
             )
         }
         return [
             store,
             {
                 ...allStores,
-                [store.data.id]: store,
+                [store.id]: store,
             },
         ]
     }
     return [
         store,
         {
-            [store.data.id]: store,
+            [store.id]: store,
         },
     ]
 }

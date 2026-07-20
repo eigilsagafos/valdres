@@ -14,7 +14,7 @@ describe("provideValdres", () => {
         })
         expect(ctx!).toBeDefined()
         expect(ctx!.current).toBeDefined()
-        expect(ctx!.current.data.id).toBeDefined()
+        expect(ctx!.current.id).toBeDefined()
     })
 
     test("accepts existing store", () => {
@@ -22,7 +22,7 @@ describe("provideValdres", () => {
         const providers = provideValdres({ store: storeInstance })
         const injector = Injector.create({ providers: [providers] as any[] })
         const ctx = injector.get(VALDRES_STORE)
-        expect(ctx.current.data.id).toBe(storeInstance.data.id)
+        expect(ctx.current.id).toBe(storeInstance.id)
     })
 
     test("initialize with array return", () => {

@@ -1,5 +1,6 @@
-import type { StoreData } from "../types/StoreData"
+import type { Store } from "../types/Store"
 import type { StoreChangeSource } from "../types/StoreChangeSource"
+import { getStoreData } from "./getStoreData"
 import {
     abortTransaction,
     commitTransaction,
@@ -9,8 +10,8 @@ import {
 /** Manually controlled transaction for framework compatibility adapters.
  * Application code should use `store.txn`, which owns commit/rollback. */
 export class Transaction extends TransactionContext {
-    constructor(data: StoreData) {
-        super(data)
+    constructor(store: Store) {
+        super(getStoreData(store))
     }
 
     commit(source?: StoreChangeSource): void {

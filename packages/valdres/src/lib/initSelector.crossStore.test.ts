@@ -1,3 +1,4 @@
+import { getStoreData } from "./getStoreData"
 import { describe, test, expect } from "bun:test"
 import { store } from "../store"
 import { atom } from "../atom"
@@ -77,7 +78,9 @@ describe("cross-store selector eval — module-level state audit", () => {
 
         // After the deferred get(b) in store1, `b` should be a registered
         // dependency of `sel` in store1. With the bug, it isn't.
-        const deps = s1.data.stateDependencies.get(sel) as Set<unknown> | undefined
+        const deps = getStoreData(s1).stateDependencies.get(sel) as
+            | Set<unknown>
+            | undefined
         expect(deps).toBeDefined()
         expect(deps!.has(b)).toBe(true)
     })
@@ -90,7 +93,7 @@ describe("cross-store selector eval — module-level state audit", () => {
         let resolve!: (value: number) => void
         const sharedPromise = new Promise<number>(r => (resolve = r))
         const sel = selector((get, { storeId }) => {
-            get(storeId === s1.data.id ? dep1 : dep2)
+            get(storeId === s1.id ? dep1 : dep2)
             return sharedPromise
         })
 
@@ -101,8 +104,12 @@ describe("cross-store selector eval — module-level state audit", () => {
         await sharedPromise
         await Promise.resolve()
 
-        const deps1 = s1.data.stateDependencies.get(sel) as Set<unknown>
-        const deps2 = s2.data.stateDependencies.get(sel) as Set<unknown>
+        const deps1 = getStoreData(s1).stateDependencies.get(
+            sel,
+        ) as Set<unknown>
+        const deps2 = getStoreData(s2).stateDependencies.get(
+            sel,
+        ) as Set<unknown>
         expect(deps1.has(dep1)).toBe(true)
         expect(deps1.has(dep2)).toBe(false)
         expect(deps2.has(dep1)).toBe(false)

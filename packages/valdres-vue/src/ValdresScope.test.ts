@@ -2,6 +2,7 @@ import { describe, test, expect } from "bun:test"
 import { mount } from "@vue/test-utils"
 import { defineComponent, h } from "vue"
 import { atom, store as createStore } from "valdres"
+import { storeAdapter } from "valdres/adapter-internals/v1"
 import { ValdresScope } from "./ValdresScope"
 import { createValdres } from "./ValdresPlugin"
 import { useValue } from "./useValue"
@@ -52,7 +53,8 @@ describe("ValdresScope", () => {
         const wrapper = mount(
             defineComponent({
                 setup() {
-                    return () => h(ValdresScope, { scopeId: "temp" }, () => h("div"))
+                    return () =>
+                        h(ValdresScope, { scopeId: "temp" }, () => h("div"))
                 },
             }),
             {
@@ -62,9 +64,9 @@ describe("ValdresScope", () => {
             },
         )
 
-        expect([...rootStore.data.scopes.keys()]).toStrictEqual(["temp"])
+        expect(storeAdapter.hasScope(rootStore, "temp")).toBe(true)
         wrapper.unmount()
-        expect([...rootStore.data.scopes.keys()]).toStrictEqual([])
+        expect(storeAdapter.hasScope(rootStore, "temp")).toBe(false)
     })
 
     test("initialize with array return", () => {
@@ -150,7 +152,7 @@ describe("ValdresScope", () => {
 
     test("useStore(id) accesses parent store from within scope", () => {
         const rootStore = createStore({ batchUpdates: true })
-        const rootId = rootStore.data.id
+        const rootId = rootStore.id
 
         let scopedStoreResult: any
         let parentStoreResult: any
@@ -176,8 +178,8 @@ describe("ValdresScope", () => {
             },
         )
 
-        expect(scopedStoreResult.data.id).not.toBe(rootId)
-        expect(parentStoreResult.data.id).toBe(rootId)
+        expect(scopedStoreResult.id).not.toBe(rootId)
+        expect(parentStoreResult.id).toBe(rootId)
     })
 
     test("scoped set does not leak to parent", async () => {
@@ -230,7 +232,7 @@ describe("ValdresScope", () => {
 
     test("nested scopes build up store chain", () => {
         const rootStore = createStore({ batchUpdates: true })
-        const rootId = rootStore.data.id
+        const rootId = rootStore.id
 
         let innerStore: any
         let rootFromInner: any
@@ -260,7 +262,7 @@ describe("ValdresScope", () => {
             },
         )
 
-        expect(innerStore.data.id).not.toBe(rootId)
-        expect(rootFromInner.data.id).toBe(rootId)
+        expect(innerStore.id).not.toBe(rootId)
+        expect(rootFromInner.id).toBe(rootId)
     })
 })

@@ -1,3 +1,4 @@
+import { getStoreData } from "./getStoreData"
 import { describe, expect, test } from "bun:test"
 import { atom } from "../atom"
 import { selector } from "../selector"
@@ -49,9 +50,9 @@ const countTeardownDependencyReads = async (
         targetStore.get(aggregator)
     }
 
-    const dependencies = targetStore.data.stateDependencies
+    const dependencies = getStoreData(targetStore).stateDependencies
     let dependencyReads = 0
-    targetStore.data.stateDependencies = {
+    getStoreData(targetStore).stateDependencies = {
         get(key: WeakKey) {
             dependencyReads++
             return dependencies.get(key)
@@ -67,8 +68,8 @@ const countTeardownDependencyReads = async (
     // work, not merely what remains on each individual unsubscribe stack.
     await Promise.resolve()
     const graphWasCleaned =
-        !targetStore.data.stateDependencies.has(leaves[0]) &&
-        !targetStore.data.stateDependencies.has(spineTop)
+        !getStoreData(targetStore).stateDependencies.has(leaves[0]) &&
+        !getStoreData(targetStore).stateDependencies.has(spineTop)
     return {
         count,
         dependencyReads,
