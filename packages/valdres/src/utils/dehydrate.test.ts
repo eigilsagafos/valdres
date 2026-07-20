@@ -41,6 +41,23 @@ describe("dehydrate", () => {
         expect(dehydrate(store2).atoms).toEqual([["dh-own-b", 20]])
     })
 
+    test("includes present atom and family values that are undefined", () => {
+        const maybe = atom<number | undefined>(0, {
+            name: "dh-undefined-atom",
+        })
+        const family = atomFamily<number | undefined, [string]>(0, {
+            name: "dh-undefined-family",
+        })
+        const store1 = store()
+        store1.set(maybe, undefined)
+        store1.set(family("member"), undefined)
+
+        expect(dehydrate(store1)).toEqual({
+            atoms: [["dh-undefined-atom", undefined]],
+            families: [["dh-undefined-family", ["member"], undefined]],
+        })
+    })
+
     test("a read-initialized atom (default materialized) is included", () => {
         const a = atom("default-value", { name: "dh-read-a" })
         const store1 = store()

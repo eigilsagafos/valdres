@@ -59,7 +59,11 @@ export const dehydrate = (store: Store): DehydratedState => {
             const members = data.values.get(state)
             if (members === undefined) continue
             for (const member of members) {
-                if (!data.values.has(member)) continue
+                const value = data.values.get(member)
+                // Most values are defined, so avoid probing the backing map
+                // twice on the serializer's common path. `has` is still needed
+                // to distinguish a present atom whose value is `undefined`.
+                if (value === undefined && !data.values.has(member)) continue
                 // The payload contracts args as a non-empty tuple (mirroring
                 // atomFamily's Args), and hydrate skips empty-args entries.
                 // A zero-arg member can only exist via an untyped JS call —
@@ -71,7 +75,6 @@ export const dehydrate = (store: Store): DehydratedState => {
                         )
                     continue
                 }
-                const value = data.values.get(member)
                 if (isPromiseLike(value)) {
                     if (!IS_PROD)
                         console.warn(
@@ -79,16 +82,22 @@ export const dehydrate = (store: Store): DehydratedState => {
                         )
                     continue
                 }
-                const wire = encodeWireValue(member, value)
-                families.push(
-                    wire.encoded
-                        ? [name, member.familyArgs, wire.value, 1]
-                        : [name, member.familyArgs, wire.value],
-                )
+                if (member.schema === undefined) {
+                    // Schemas are opt-in. Keep the overwhelmingly common raw
+                    // path allocation-free apart from the payload tuple itself.
+                    families.push([name, member.familyArgs, value])
+                } else {
+                    const wire = encodeWireValue(member, value)
+                    families.push(
+                        wire.encoded
+                            ? [name, member.familyArgs, wire.value, 1]
+                            : [name, member.familyArgs, wire.value],
+                    )
+                }
             }
         } else {
-            if (!data.values.has(state)) continue
             const value = data.values.get(state)
+            if (value === undefined && !data.values.has(state)) continue
             if (isPromiseLike(value)) {
                 if (!IS_PROD)
                     console.warn(
@@ -96,10 +105,14 @@ export const dehydrate = (store: Store): DehydratedState => {
                     )
                 continue
             }
-            const wire = encodeWireValue(state, value)
-            atoms.push(
-                wire.encoded ? [name, wire.value, 1] : [name, wire.value],
-            )
+            if (state.schema === undefined) {
+                atoms.push([name, value])
+            } else {
+                const wire = encodeWireValue(state, value)
+                atoms.push(
+                    wire.encoded ? [name, wire.value, 1] : [name, wire.value],
+                )
+            }
         }
     }
     return { atoms, families }
