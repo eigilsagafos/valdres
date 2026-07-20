@@ -18,7 +18,14 @@ import type { Framework } from "./frameworks"
 
 const PERFORMANCE_ROUTE = "/guides/performance"
 
-const coreApiNames = ["atom", "selector", "atomFamily", "selectorFamily", "store"]
+const coreApiNames = [
+    "atom",
+    "selector",
+    "atomFamily",
+    "selectorFamily",
+    "index",
+    "store",
+]
 
 function rewriteLink(href: string, framework: Framework): { href: string; apiName?: string } {
     // Rewrite /valdres/X → /${framework}/X for core API names

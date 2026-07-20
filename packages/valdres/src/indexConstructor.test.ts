@@ -4,6 +4,41 @@ import { atomFamily } from "./atomFamily"
 import { store } from "./store"
 
 describe("index", () => {
+    test("uses collision-safe structural term identity", () => {
+        const family = atomFamily<{ kind?: string }, [string]>(null)
+        const byTerm = index<unknown, { kind?: string }, [string]>(
+            family,
+            () => false,
+        )
+
+        expect(byTerm(undefined)).not.toBe(byTerm(""))
+        expect(byTerm({})).not.toBe(byTerm({ missing: undefined }))
+        expect(byTerm({ b: 2, a: 1 })).toBe(byTerm({ a: 1, b: 2 }))
+    })
+
+    test("keyOf defines term selector identity", () => {
+        type Query = { id: string; owner?: Query }
+        const family = atomFamily<{ id: string }, [string]>(null)
+        const byQuery = index<Query, { id: string }, [string]>(
+            family,
+            (value, query) => value.id === query.id,
+            { keyOf: query => query.id },
+        )
+
+        const first: Query = { id: "same" }
+        first.owner = first
+        expect(byQuery(first)).toBe(byQuery({ id: "same" }))
+        expect(byQuery(first)).not.toBe(byQuery({ id: "other" }))
+    })
+
+    test("unsupported terms require keyOf", () => {
+        const family = atomFamily<null, [string]>(null)
+        const byTerm = index(family, () => false)
+
+        expect(() => byTerm(Symbol("query"))).toThrow(TypeError)
+        expect(() => byTerm(() => "query")).toThrow(TypeError)
+    })
+
     test("crud", () => {
         const defaultStore = store()
         const post = atomFamily<{ title: string; tags: string[] }, [string]>(
@@ -22,7 +57,8 @@ describe("index", () => {
             tags: ["foo"],
         })
 
-        expect(defaultStore.get(postsByTag("foo"))).toHaveLength(1)
+        const initialResult = defaultStore.get(postsByTag("foo"))
+        expect(initialResult).toHaveLength(1)
 
         expect(indexCallback).toHaveBeenCalledTimes(1)
 
@@ -43,6 +79,7 @@ describe("index", () => {
         // eagerly running predicate selectors.
         expect(indexCallback).toHaveBeenCalledTimes(1)
         expect(defaultStore.get(postsByTag("foo"))).toHaveLength(1)
+        expect(defaultStore.get(postsByTag("foo"))).toBe(initialResult)
         expect(indexCallback).toHaveBeenCalledTimes(2)
 
         // Delete works

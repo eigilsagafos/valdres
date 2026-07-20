@@ -1,0 +1,82 @@
+---
+title: index
+description: Reactively filter an atom family by a memoized term
+---
+
+# index
+
+<div className="not-prose mb-8 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50 p-4">
+  <div className="text-xs font-medium text-zinc-400 dark:text-zinc-500 mb-2 uppercase tracking-wider">Signature</div>
+  <code className="text-sm font-mono text-accent-500">index&lt;Term, Value&gt;(family: AtomFamily&lt;Value&gt;, predicate: (value: Value, term: Term) =&gt; boolean, options?: IndexOptions&lt;Term&gt;): (term: Term) =&gt; Selector&lt;Atom&lt;Value&gt;[]&gt;</code>
+  <div className="mt-3 text-xs text-zinc-500 dark:text-zinc-400">
+    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-zinc-200 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 font-medium mr-2">valdres</span>
+    Create memoized reactive family filters
+  </div>
+</div>
+
+`index` creates a memoized selector for each search term. Each selector returns
+the atoms in an `atomFamily` whose current values satisfy the predicate.
+
+```ts
+import { atomFamily, index, store } from "valdres"
+
+const post = atomFamily<{ title: string; tags: string[] }, [string]>(null)
+const postsByTag = index(
+    post,
+    (value, tag: string) => value.tags.includes(tag),
+    { name: "postsByTag" },
+)
+
+const app = store()
+app.set(post("one"), { title: "First post", tags: ["news"] })
+app.get(postsByTag("news")) // [post("one")]
+```
+
+## Reactive-filter semantics
+
+Despite its name, `index` is a reactive filter rather than a materialized
+database index. The first read for a term is O(n) in the number of family
+members. After a member changes, its predicate selector is the only predicate
+that recomputes. If its boolean result is unchanged, equality pruning stops
+there in O(1). If the result flips, the term selector walks the family to
+preserve the ordered array result, so a membership-changing update is O(n).
+
+This is a good fit for modest collections and for queries whose predicate is
+more expensive than walking the family. For large, frequently updated
+collections that require sublinear writes, maintain a lookup structure in store
+state as part of the same transaction that changes the source family.
+
+Term selectors are cached weakly. Repeated calls return the same selector while
+a caller or live store dependency graph retains it, but querying many one-off
+terms does not retain every selector and term for the lifetime of the `index`
+function.
+
+## Term identity and `keyOf`
+
+Terms use the same collision-safe structural key codec as `atomFamily` and
+`selectorFamily`. Primitive types remain distinct, while plain Object property
+order and Map/Set insertion order do not affect identity. Symbols, functions,
+Promises, class instances, accessor properties, and cyclic structures are not
+supported by default.
+
+Use `keyOf` to derive supported identity for one of those terms, or to
+intentionally group multiple term objects:
+
+```ts
+type Query = { tag: string; uiState: Map<string, unknown> }
+
+const postsByQuery = index(
+    post,
+    (value, query: Query) => value.tags.includes(query.tag),
+    { keyOf: query => query.tag },
+)
+```
+
+`keyOf` receives the term and its result is encoded by the canonical family-key
+codec.
+
+## See also
+
+- [atomFamily](/valdres/atomFamily) — create the source collection
+- [selectorFamily](/valdres/selectorFamily) — create arbitrary keyed derivations
+- [selector](/valdres/selector) — derive a single value

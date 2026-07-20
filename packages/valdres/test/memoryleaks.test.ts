@@ -6,6 +6,7 @@ import { selector } from "../src/selector"
 import { atomFamily } from "../src/atomFamily"
 import { selectorFamily } from "../src/selectorFamily"
 import { familyKey } from "../src/lib/familyKey"
+import { index } from "../src/indexConstructor"
 
 // All leak tests that check if a value is collected use an IIFE to ensure
 // the store goes fully out of scope before asserting. When bun runs many
@@ -398,6 +399,42 @@ describe("memory leaks (selector families)", () => {
         expect(await detector.isLeaking(10)).toBe(true)
         // Clean up
         family.release(3)
+    })
+})
+
+describe("memory leaks (indexes)", () => {
+    test("unreferenced term selector leaves the weak index cache", async () => {
+        const family = atomFamily<{ kind: string }, [string]>(null)
+        const byKind = index(
+            family,
+            (value, kind: string) => value.kind === kind,
+        )
+        let termSelector: any = byKind("archived")
+        const detector = new LeakDetector(termSelector)
+        termSelector = undefined
+
+        expect(await detector.isLeaking()).toBe(false)
+        expect((byKind as any).map.has(familyKey(["archived"]))).toBe(false)
+    })
+
+    test("a live store graph preserves cached term identity", async () => {
+        const store1 = store()
+        const family = atomFamily<{ kind: string }, [string]>(null)
+        const byKind = index(
+            family,
+            (value, kind: string) => value.kind === kind,
+        )
+        let termSelector: any = byKind("active")
+        const ref = new WeakRef(termSelector)
+        const detector = new LeakDetector(termSelector)
+        const unsubscribe = store1.sub(termSelector, () => {})
+        termSelector = undefined
+
+        expect(await detector.isLeaking(10)).toBe(true)
+        expect(byKind("active")).toBe(ref.deref())
+
+        unsubscribe()
+        store1.dispose()
     })
 })
 
