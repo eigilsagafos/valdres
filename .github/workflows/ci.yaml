@@ -23,6 +23,9 @@ jobs:
             - uses: oven-sh/setup-bun@v2
               with:
                   bun-version: 1.3.13
+            - uses: actions/setup-node@v6
+              with:
+                  node-version: "22.17"
             - name: Install
               run: bun install
             - name: Require changeset
@@ -34,6 +37,12 @@ jobs:
               run: bun run build:types
             - name: Typecheck type-level tests
               run: bun --filter 'valdres' typecheck:types
+            - name: Deterministic architecture gates
+              run: bun --filter 'valdres' test:architecture
+            - name: Retained-memory gates (Bun)
+              run: bun --filter 'valdres' test:memory:bun
+            - name: Retained-memory gates (Node)
+              run: bun --filter 'valdres' test:memory:node
             - name: Lint valdres-svelte publish artifact
               # Svelte libraries must ship uncompiled source + the `svelte` export
               # condition; publint packs the real tarball and svelte-check

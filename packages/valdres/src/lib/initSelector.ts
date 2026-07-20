@@ -56,6 +56,8 @@ import {
 } from "./storeLifecycle"
 import { validateResolvedValue } from "./validateResolvedValue"
 import { validateSchema } from "./validateSchema"
+import { recordSelectorEvaluation } from "./architectureInstrumentation"
+import { IS_PROD } from "./IS_PROD"
 
 export { isSuspendError } from "./asyncDependencyTracking"
 
@@ -236,6 +238,8 @@ const evaluateLiveOnlySelector = <V>(
     initializedAtomsSet: Set<Atom>,
     circularDependencySet: WeakSet<Selector>,
 ) => {
+    if (!IS_PROD && data.architectureInstrumentation)
+        recordSelectorEvaluation(data)
     const currentDependencies = data.stateDependencies.get(selector)
     const updatedDeps = new Set<State<any>>()
     let depsChanged = false
@@ -393,6 +397,8 @@ export const evaluateSelector = <V>(
     readOverlay?: GetValue,
     runtime?: SelectorEvaluationRuntime,
 ) => {
+    if (!IS_PROD && data.architectureInstrumentation)
+        recordSelectorEvaluation(data)
     const stateDependencies =
         runtime?.stateDependencies ?? data.stateDependencies
     const currentDependencies = stateDependencies.get(selector)

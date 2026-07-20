@@ -14,10 +14,7 @@ import {
     recursivelyUpdateIndexes,
 } from "./atomFamilyIndex"
 import type { DepsChange } from "./initSelector"
-import {
-    evaluateSelector,
-    handleSelectorResult,
-} from "./initSelector"
+import { evaluateSelector, handleSelectorResult } from "./initSelector"
 import {
     beginLivenessPass,
     endLivenessPass,
@@ -43,10 +40,16 @@ import { beginCommit, commitEndRegistry, endCommit } from "./onCommitEnd"
 import { hasInheritedDependencyBranches } from "./inheritedDependencyBranches"
 import { setValueInData } from "./setValueInData"
 import { noteStateValueChanged } from "./stateRevisions"
+import {
+    recordDependencyEdgeVisit,
+    recordSchedulerQueueDequeue,
+    recordSchedulerQueueEnqueue,
+    recordSelectorSettlement,
+    recordStoreSettlement,
+} from "./architectureInstrumentation"
+import { IS_PROD } from "./IS_PROD"
 
-export type {
-    AtomFamilyIndex,
-} from "./atomFamilyIndex"
+export type { AtomFamilyIndex } from "./atomFamilyIndex"
 export {
     cloneAtomFamilyIndex,
     createAtomFamilyIndex,
@@ -120,6 +123,8 @@ const reEvaluateSelector = (
     depsChange: DepsChange,
     existingValue: unknown,
 ): boolean => {
+    if (!IS_PROD && data.architectureInstrumentation)
+        recordSelectorSettlement(selector, data)
     try {
         const rawValue = evaluateSelector(
             selector,
@@ -272,19 +277,30 @@ const addSetToSet = (fromSet: Set<any> | undefined, toSet: Set<any>) => {
     }
 }
 
-const findClosestStoreWithAtomInitialized = (
-    atom: State,
+const addDependentsToSet = (
+    fromSet: Set<any> | undefined,
+    toSet: Set<any>,
     data: StoreData,
 ) => {
+    if (IS_PROD || !data.architectureInstrumentation) {
+        addSetToSet(fromSet, toSet)
+        return
+    }
+    if (fromSet && fromSet.size > 0) {
+        for (const item of fromSet) {
+            recordDependencyEdgeVisit(data)
+            toSet.add(item)
+        }
+    }
+}
+
+const findClosestStoreWithAtomInitialized = (atom: State, data: StoreData) => {
     if (!data.parent) return data
     if (data.values.has(atom)) return data
     return findClosestStoreWithAtomInitialized(atom, data.parent)
 }
 
-const findInClosestStore = (
-    state: State<any>,
-    data: StoreData,
-) => {
+const findInClosestStore = (state: State<any>, data: StoreData) => {
     const store = findClosestStoreWithAtomInitialized(state, data)
     return store.values.get(state)
 }
@@ -327,7 +343,7 @@ export const propagateDeletedAtoms = (
         }
         const selectors = new Set<Selector>()
         for (const atom of atoms) {
-            addSetToSet(data.stateDependents.get(atom), selectors)
+            addDependentsToSet(data.stateDependents.get(atom), selectors, data)
             addSetToSet(data.subscriptions.get(atom), subscriptions)
 
             if (isFamilyAtom(atom)) {
@@ -340,7 +356,11 @@ export const propagateDeletedAtoms = (
         }
         if (deletedFamilyAtoms.size > 0) {
             for (const [family, familyAtoms] of deletedFamilyAtoms) {
-                addSetToSet(data.stateDependents.get(family), selectors)
+                addDependentsToSet(
+                    data.stateDependents.get(family),
+                    selectors,
+                    data,
+                )
                 addSetToSet(data.subscriptions.get(family), subscriptions)
                 if (familyAtoms.size === 0)
                     throw new Error("Should not be possible")
@@ -371,8 +391,19 @@ export const propagateDeletedAtoms = (
             report !== undefined &&
             changeListenerRegistry.selectorCount !== 0 &&
             hasSelectorChangeListener(data)
-        const changedSelectors = selectorActive ? new Set<Selector>() : undefined
-        propagateDirtySelectors(atoms, selectors, data, subscriptions, deletedFamilyAtoms, false, effectiveNotify, changedSelectors)
+        const changedSelectors = selectorActive
+            ? new Set<Selector>()
+            : undefined
+        propagateDirtySelectors(
+            atoms,
+            selectors,
+            data,
+            subscriptions,
+            deletedFamilyAtoms,
+            false,
+            effectiveNotify,
+            changedSelectors,
+        )
         if (effectiveNotify)
             collectForNotify(
                 effectiveNotify,
@@ -380,7 +411,8 @@ export const propagateDeletedAtoms = (
                 subscriptions,
                 deletedFamilyAtoms,
             )
-        const watching = report !== undefined && changeListenerRegistry.count !== 0
+        const watching =
+            report !== undefined && changeListenerRegistry.count !== 0
 
         // When any selector listener exists and this delete cascades into scopes,
         // the origin group + each scope's selector group must coalesce behind the
@@ -405,7 +437,12 @@ export const propagateDeletedAtoms = (
         const reportIsSink =
             effectiveReport !== undefined && typeof effectiveReport !== "string"
         if (watching && reportIsSink)
-            reportDeletedAtoms(atoms, data, effectiveReport as ChangeReport, changedSelectors)
+            reportDeletedAtoms(
+                atoms,
+                data,
+                effectiveReport as ChangeReport,
+                changedSelectors,
+            )
 
         // Cross-propagate the deletion into descendant scopes, mirroring the update
         // path (propagateAtomUpdate → propagateToScopes), and thread `effectiveReport`
@@ -417,12 +454,23 @@ export const propagateDeletedAtoms = (
         // selector reads the family list (get(family)). Members skip scopes that
         // shadow them (visible value unchanged); families always propagate.
         if (hasScopeCascade) {
-            propagateToScopes(scopeAtoms, data, false, effectiveNotify, effectiveReport)
+            propagateToScopes(
+                scopeAtoms,
+                data,
+                false,
+                effectiveNotify,
+                effectiveReport,
+            )
         }
 
         if (localNotify) notifyDeferred(localNotify)
         if (watching && !reportIsSink)
-            reportDeletedAtoms(atoms, data, effectiveReport as ChangeReport, changedSelectors)
+            reportDeletedAtoms(
+                atoms,
+                data,
+                effectiveReport as ChangeReport,
+                changedSelectors,
+            )
         if (localSink) flushChangeSink(localSink)
         completed = true
     } finally {
@@ -501,12 +549,21 @@ export const propagateAtomUpdate = (
                         // when actually firing (size > 0, already gated). The
                         // deferred path collects into a fresh accumulator and is
                         // already effectively snapshotted — leave it alone.
-                        if (notify) addSetToSet(subs, notifyEntryFor(notify, data).subscriptions)
+                        if (notify)
+                            addSetToSet(
+                                subs,
+                                notifyEntryFor(notify, data).subscriptions,
+                            )
                         else callSubscribers([...subs])
                     }
                     // No dependents here, so there are no selectors to report; only
                     // the atom would be, and only when reportAtoms is set.
-                    if (reportAtoms && report !== undefined && changeListenerRegistry.count !== 0 && !isInitOnly) {
+                    if (
+                        reportAtoms &&
+                        report !== undefined &&
+                        changeListenerRegistry.count !== 0 &&
+                        !isInitOnly
+                    ) {
                         reportAtomChanges(atoms, data, report)
                     }
                     completed = true
@@ -532,7 +589,7 @@ export const propagateAtomUpdate = (
         const selectors = new Set<Selector>()
 
         for (const atom of atoms) {
-            addSetToSet(data.stateDependents.get(atom), selectors)
+            addDependentsToSet(data.stateDependents.get(atom), selectors, data)
             addSetToSet(data.subscriptions.get(atom), subscriptions)
             if (isFamilyAtom(atom) && !skipFamilyIndexUpdate) {
                 if (!updatedFamilyAtoms.has(atom.family)) {
@@ -560,7 +617,11 @@ export const propagateAtomUpdate = (
                 if (familyAtoms.size === 0)
                     throw new Error("Should not be possible")
                 if (addFamilyAtomsToSet(family, familyAtoms, data, timestamp)) {
-                    addSetToSet(data.stateDependents.get(family), selectors)
+                    addDependentsToSet(
+                        data.stateDependents.get(family),
+                        selectors,
+                        data,
+                    )
                     if (!membershipChanged) membershipChanged = new Set()
                     membershipChanged.add(family)
                 }
@@ -611,8 +672,19 @@ export const propagateAtomUpdate = (
             !isInitOnly &&
             changeListenerRegistry.selectorCount !== 0 &&
             hasSelectorChangeListener(data)
-        const changedSelectors = selectorActive ? new Set<Selector>() : undefined
-        propagateDirtySelectors(atoms, selectors, data, subscriptions, updatedFamilyAtoms, isInitOnly, effectiveNotify, changedSelectors)
+        const changedSelectors = selectorActive
+            ? new Set<Selector>()
+            : undefined
+        propagateDirtySelectors(
+            atoms,
+            selectors,
+            data,
+            subscriptions,
+            updatedFamilyAtoms,
+            isInitOnly,
+            effectiveNotify,
+            changedSelectors,
+        )
         if (effectiveNotify)
             collectForNotify(
                 effectiveNotify,
@@ -622,7 +694,9 @@ export const propagateAtomUpdate = (
             )
 
         const watching =
-            report !== undefined && changeListenerRegistry.count !== 0 && !isInitOnly
+            report !== undefined &&
+            changeListenerRegistry.count !== 0 &&
+            !isInitOnly
 
         // When any selector listener exists and this update cascades into scopes,
         // the origin group (atoms + its selectors) and each descendant scope's
@@ -660,7 +734,8 @@ export const propagateAtomUpdate = (
                 reportSelectorChanges(changedSelectors, data, rpt)
             }
         }
-        if (watching && reportIsSink) emitOrigin(effectiveReport as ChangeReport)
+        if (watching && reportIsSink)
+            emitOrigin(effectiveReport as ChangeReport)
         if (hasScopeCascade) {
             // A scope selector that reads get(family) depends on the FAMILY object,
             // not the individual member atoms. When the parent's MEMBERSHIP changes (a
@@ -673,10 +748,17 @@ export const propagateAtomUpdate = (
             // deliberately NOT included — its scope-side effect reaches selectors via
             // the member atom already in `atoms`, so it keeps the single-atom scope
             // fast path. That gate is `membershipChanged`.
-            propagateToScopes(scopeAtoms, data, isInitOnly, effectiveNotify, effectiveReport)
+            propagateToScopes(
+                scopeAtoms,
+                data,
+                isInitOnly,
+                effectiveNotify,
+                effectiveReport,
+            )
         }
         if (localNotify) notifyDeferred(localNotify)
-        if (watching && !reportIsSink) emitOrigin(effectiveReport as ChangeReport)
+        if (watching && !reportIsSink)
+            emitOrigin(effectiveReport as ChangeReport)
         if (localSink) flushChangeSink(localSink)
         completed = true
     } finally {
@@ -706,7 +788,7 @@ export const propagateInScope = (
     const selectors = new Set<Selector>()
 
     for (const atom of atoms) {
-        addSetToSet(data.stateDependents.get(atom), selectors)
+        addDependentsToSet(data.stateDependents.get(atom), selectors, data)
     }
 
     // No atom value changes in a cascaded scope (the atom is inherited) — only
@@ -720,7 +802,16 @@ export const propagateInScope = (
             ? new Set<Selector>()
             : undefined
 
-    propagateDirtySelectors(atoms, selectors, data, subscriptions, families, isInitOnly, notify, changedSelectors)
+    propagateDirtySelectors(
+        atoms,
+        selectors,
+        data,
+        subscriptions,
+        families,
+        isInitOnly,
+        notify,
+        changedSelectors,
+    )
     if (notify) collectForNotify(notify, data, subscriptions, families)
 
     if (changedSelectors && changedSelectors.size > 0) {
@@ -787,6 +878,8 @@ export const propagateDirtySelectors = (
 ) => {
     const updatedInitializedAtoms = new Set<Atom>(updatedAtoms)
     if (selectors.size > 0) {
+        if (!IS_PROD && data.architectureInstrumentation)
+            recordStoreSettlement(data)
         // At this point we have the first level of selectors that are dependent on
         // the atoms that changed. We now traverse the tree of selectors and collect
         // subscribers to those that change.
@@ -805,7 +898,6 @@ export const propagateDirtySelectors = (
         callSubscribers(subscriptions, families)
     }
 }
-
 
 // Topological evaluation of a downstream subgraph. The main ready queue visits
 // each selector in `seeds` (and everything transitively reachable from them) at
@@ -834,6 +926,8 @@ const propagateDownstreamTopo = (
             const downstream = data.stateDependents.get(s)
             if (downstream) {
                 for (const d of downstream) {
+                    if (!IS_PROD && data.architectureInstrumentation)
+                        recordDependencyEdgeVisit(data)
                     if (!closure.has(d)) {
                         closure.add(d)
                         stack.push(d)
@@ -854,11 +948,17 @@ const propagateDownstreamTopo = (
         let count = 0
         if (deps) {
             for (const d of deps) {
+                if (!IS_PROD && data.architectureInstrumentation)
+                    recordDependencyEdgeVisit(data)
                 if (closure.has(d as Selector)) count++
             }
         }
         pending.set(s, count)
-        if (count === 0) ready.push(s)
+        if (count === 0) {
+            ready.push(s)
+            if (!IS_PROD && data.architectureInstrumentation)
+                recordSchedulerQueueEnqueue(data)
+        }
     }
     // A closure member only needs re-evaluation if at least one of its
     // upstream parents actually changed value. Seeds reach here because
@@ -880,9 +980,15 @@ const propagateDownstreamTopo = (
             const s = stack[i]
             if (resweep.has(s)) continue
             resweep.add(s)
+            if (!IS_PROD && data.architectureInstrumentation)
+                recordSchedulerQueueEnqueue(data)
             const downstream = data.stateDependents.get(s)
             if (downstream) {
-                for (const d of downstream) stack.push(d)
+                for (const d of downstream) {
+                    if (!IS_PROD && data.architectureInstrumentation)
+                        recordDependencyEdgeVisit(data)
+                    stack.push(d)
+                }
             }
         }
     }
@@ -891,6 +997,8 @@ const propagateDownstreamTopo = (
         const downstream = data.stateDependents.get(selector)
         if (!downstream) return
         for (const d of downstream) {
+            if (!IS_PROD && data.architectureInstrumentation)
+                recordDependencyEdgeVisit(data)
             if (!closure.has(d)) {
                 // `d` is downstream of a just-changed selector but absent from
                 // the static closure, which means it was materialized AFTER the
@@ -908,6 +1016,8 @@ const propagateDownstreamTopo = (
                     pending.set(d, 0)
                     needsEval.add(d)
                     ready.push(d)
+                    if (!IS_PROD && data.architectureInstrumentation)
+                        recordSchedulerQueueEnqueue(data)
                 }
                 continue
             }
@@ -919,7 +1029,11 @@ const propagateDownstreamTopo = (
             const c = cur - 1
             pending.set(d, c)
             if (propagateChange) needsEval.add(d)
-            if (c <= 0) ready.push(d)
+            if (c <= 0) {
+                ready.push(d)
+                if (!IS_PROD && data.architectureInstrumentation)
+                    recordSchedulerQueueEnqueue(data)
+            }
         }
     }
 
@@ -932,6 +1046,8 @@ const propagateDownstreamTopo = (
     let head = 0
     while (head < ready.length) {
         const selector = ready[head++]
+        if (!IS_PROD && data.architectureInstrumentation)
+            recordSchedulerQueueDequeue(data)
         if (resweep?.has(selector)) continue
         if (!pending.has(selector)) continue
 
@@ -1027,7 +1143,11 @@ const propagateDownstreamTopo = (
     for (const s of closure) {
         if (needsEval.has(s) && pending.has(s)) {
             if (!stranded) stranded = new Set()
-            stranded.add(s)
+            if (!stranded.has(s)) {
+                stranded.add(s)
+                if (!IS_PROD && data.architectureInstrumentation)
+                    recordSchedulerQueueEnqueue(data)
+            }
         }
     }
     if (!stranded) return
@@ -1037,6 +1157,8 @@ const propagateDownstreamTopo = (
         const deps = data.stateDependencies.get(selector)
         if (!deps) return false
         for (const dep of deps) {
+            if (!IS_PROD && data.architectureInstrumentation)
+                recordDependencyEdgeVisit(data)
             if (dep !== selector && work.has(dep as Selector)) return true
         }
         return false
@@ -1045,7 +1167,13 @@ const propagateDownstreamTopo = (
         const downstream = data.stateDependents.get(selector)
         if (!downstream) return
         for (const d of downstream) {
-            work.add(d)
+            if (!IS_PROD && data.architectureInstrumentation)
+                recordDependencyEdgeVisit(data)
+            if (!work.has(d)) {
+                work.add(d)
+                if (!IS_PROD && data.architectureInstrumentation)
+                    recordSchedulerQueueEnqueue(data)
+            }
         }
     }
     const evaluateStrandedSelector = (selector: Selector) => {
@@ -1103,6 +1231,8 @@ const propagateDownstreamTopo = (
             if (!work.has(selector)) continue
             if (hasUnsettledDependency(selector)) continue
             work.delete(selector)
+            if (!IS_PROD && data.architectureInstrumentation)
+                recordSchedulerQueueDequeue(data)
             progressed = true
             evaluateStrandedSelector(selector)
         }
@@ -1114,6 +1244,8 @@ const propagateDownstreamTopo = (
         const cyclicBatch = [...work]
         work = new Set()
         for (const selector of cyclicBatch) {
+            if (!IS_PROD && data.architectureInstrumentation)
+                recordSchedulerQueueDequeue(data)
             evaluateStrandedSelector(selector)
         }
     }
@@ -1134,6 +1266,8 @@ const orderInitialSelectors = (
         const deps = data.stateDependencies.get(selector)
         if (deps) {
             for (const dep of deps) {
+                if (!IS_PROD && data.architectureInstrumentation)
+                    recordDependencyEdgeVisit(data)
                 if (!selectors.has(dep as Selector)) continue
                 count++
                 let list = downstream.get(dep as Selector)
@@ -1145,20 +1279,32 @@ const orderInitialSelectors = (
             }
         }
         pending.set(selector, count)
-        if (count === 0) ready.push(selector)
+        if (count === 0) {
+            ready.push(selector)
+            if (!IS_PROD && data.architectureInstrumentation)
+                recordSchedulerQueueEnqueue(data)
+        }
     }
 
     const ordered: Selector[] = []
     let head = 0
     while (head < ready.length) {
         const selector = ready[head++]
+        if (!IS_PROD && data.architectureInstrumentation)
+            recordSchedulerQueueDequeue(data)
         ordered.push(selector)
         const children = downstream.get(selector)
         if (!children) continue
         for (const child of children) {
+            if (!IS_PROD && data.architectureInstrumentation)
+                recordDependencyEdgeVisit(data)
             const count = (pending.get(child) ?? 0) - 1
             pending.set(child, count)
-            if (count === 0) ready.push(child)
+            if (count === 0) {
+                ready.push(child)
+                if (!IS_PROD && data.architectureInstrumentation)
+                    recordSchedulerQueueEnqueue(data)
+            }
         }
     }
 
@@ -1236,6 +1382,8 @@ const propagateSelectorUpdatesLinearFirst = (
         if (downstream && downstream.size > 0) {
             if (!downstreamSeeds) downstreamSeeds = new Set()
             for (const d of downstream) {
+                if (!IS_PROD && data.architectureInstrumentation)
+                    recordDependencyEdgeVisit(data)
                 if (selectors.has(d) && !processedInitialSelectors.has(d)) {
                     continue
                 }

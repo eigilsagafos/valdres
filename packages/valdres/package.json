@@ -24,8 +24,11 @@
         "build:types": "rm -rf dist/types && bunx tsgo",
         "typecheck:types": "bunx tsc -p tsconfig.types-test.json",
         "test": "bun test --reporter=dots",
-        "test:bench": "rm -f test/performance/bench-results.ndjson && NODE_ENV=production bun test --timeout 60000 --concurrency 1 ./test/performance/*.bench.ts",
-        "test:bench:node": "rm -f test/performance/bench-results-node.ndjson && NODE_ENV=production npx vitest run --config vitest.bench.config.ts"
+        "test:bench": "rm -f test/performance/bench-results.ndjson && NODE_ENV=production bun test --timeout 60000 --concurrency 1 ./test/performance/*.bench.ts && NODE_ENV=production bun test --timeout 60000 --concurrency 1 ./test/performance/architecture.timing.ts",
+        "test:bench:node": "rm -f test/performance/bench-results-node.ndjson && NODE_ENV=production npx vitest run --config vitest.bench.config.ts && NODE_ENV=production npx vitest run --config vitest.architecture-bench.config.ts",
+        "test:architecture": "bun test ./src/lib/architecturePerformance.test.ts",
+        "test:memory:bun": "NODE_ENV=production bun test --timeout 120000 --concurrency 1 ./test/performance/*.memory.ts",
+        "test:memory:node": "NODE_OPTIONS=--expose-gc NODE_ENV=production npx vitest run --config vitest.memory.config.ts"
     },
     "devDependencies": {
         "@testing-library/react": "16.3.0",

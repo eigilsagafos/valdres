@@ -2,6 +2,7 @@ import type { Selector } from "./Selector"
 import type { State } from "./State"
 import type { StoreChangeCallback } from "./StoreChangeCallback"
 import type { Subscription } from "./Subscription"
+import type { ArchitectureInstrumentation } from "../lib/architectureInstrumentation"
 
 export type SelectorEvaluationContext = {
     readonly revoked: boolean
@@ -232,4 +233,7 @@ export type StoreData = {
      *  anywhere; listeners fire when the OUTERMOST boundary closes, so writes a
      *  subscriber performs during a commit coalesce into one notification. */
     commitDepth?: number
+    /** Opt-in structural counters used only by architecture tests/benchmarks.
+     * Absent on normal stores and intentionally not part of the public API. */
+    architectureInstrumentation?: ArchitectureInstrumentation
 }
