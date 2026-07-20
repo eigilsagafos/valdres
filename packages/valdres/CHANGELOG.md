@@ -1,5 +1,307 @@
 # valdres
 
+## 1.0.0-beta.17
+
+### Minor Changes
+
+- [#231](https://github.com/eigilsagafos/valdres/pull/231)
+  [`888f868`](https://github.com/eigilsagafos/valdres/commit/888f868246adadac653517755c04821afc75d5cd)
+  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! - Add
+  `store.dispose()` and make scoped-store `detach()` dispose the scope when its
+  final consumer leaves. Stores now keep a lazy reverse index of only the global
+  atoms they touch, allowing disposal in O(touched global atoms) while removing
+  every strong global-atom registration, balancing global `onMount` and `maxAge`
+  lifecycles, and keeping future global writes independent of completed
+  SSR/request stores. Queued batched writes and async settlements are discarded
+  once their source store is disposed.
+
+    Global fan-out now identifies its origin by `StoreData` identity rather than
+    a user-provided store id, so separately-created stores with duplicate ids
+    still synchronize. The identity fast path also skips redundant validation
+    and equality work for the already-written origin store.
+
+    The process-wide `globalStore` now rejects disposal so it remains available
+    as the synchronization anchor for global atoms created later.
+
+- [#251](https://github.com/eigilsagafos/valdres/pull/251)
+  [`d11de95`](https://github.com/eigilsagafos/valdres/commit/d11de95881d0548fbf47add4a942aecb8fef6b0c)
+  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! - Make Store runtimes
+  opaque. Stores now expose stable public identity through `store.id` instead of
+  publishing mutable `StoreData`; `StoreData` is no longer exported from
+  `valdres`, and `onSet` receives the public Store facade. Framework and tooling
+  adapters now use the capability-based, versioned
+  `valdres/adapter-internals/v1` boundary, which keeps adapter lookups off atom
+  get/set hot paths. Engine-only atom/global-atom synchronization fields and the
+  `MaxAgeInterval` timer type are no longer part of the public type surface.
+
+- [#242](https://github.com/eigilsagafos/valdres/pull/242)
+  [`165cdc4`](https://github.com/eigilsagafos/valdres/commit/165cdc4346091f860c193a686f4ea55e1e955671)
+  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! - Make `store.txn`
+  own its complete atomic lifecycle. Transaction callbacks now receive a
+  restricted, type-only `Transaction` surface with no manual `commit()` or
+  backing `data`; a thrown callback always discards staged writes. Captured
+  operations reject use while the transaction is committing or after it closes.
+
+    Move manually controlled transactions to the explicit
+    `valdres/adapter-internals` boundary, and update the Jotai compatibility
+    adapter to use that boundary while preserving its adapter-specific
+    commit-on-error semantics.
+
+### Patch Changes
+
+- [#247](https://github.com/eigilsagafos/valdres/pull/247)
+  [`c8faa24`](https://github.com/eigilsagafos/valdres/commit/c8faa244800025ddd1756c6a17386ef84906a25e)
+  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! - Align the `Store`
+  type contract with runtime behavior: `store.set()` now types its existing
+  return value, while callback-form `scope()` exposes a borrowed store without
+  `dispose()` or `detach()` lifecycle ownership. Correct subscription and
+  transaction examples across the documentation.
+
+- [#233](https://github.com/eigilsagafos/valdres/pull/233)
+  [`ca00a89`](https://github.com/eigilsagafos/valdres/commit/ca00a896025a42bf31528e505234a7bb929f292c)
+  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! - Treat successful
+  async selector settlement as a commit. `onCommitEnd` now fires once after
+  selector subscribers and `onChange`, while observer failures remain distinct
+  from source-Promise rejection and are no longer swallowed.
+
+- [#222](https://github.com/eigilsagafos/valdres/pull/222)
+  [`9ba01a1`](https://github.com/eigilsagafos/valdres/commit/9ba01a10dc4350247dec174b2ea0bdf99ed72942)
+  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! - Keep async selector
+  dependency reconciliation isolated per evaluation when multiple selectors or
+  stores return the same Promise. Dependency data now lives on the existing
+  evaluation context instead of a Promise-keyed global WeakMap, preventing one
+  resolution handler from removing another evaluation's real edge while also
+  reducing async tracking overhead.
+
+- [#229](https://github.com/eigilsagafos/valdres/pull/229)
+  [`20b253f`](https://github.com/eigilsagafos/valdres/commit/20b253fe91007ae8961ecc423b2d27c9420c68c7)
+  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! - Make `atomFamily`
+  and `selectorFamily` cache identity collision-free with a type- and
+  arity-tagged canonical key codec. Raw strings no longer overlap serialized
+  objects, Arrays, or Promise markers; a single Array argument remains distinct
+  from multiple arguments; BigInt keys are supported; and Map, Set, and
+  plain-object keys remain order-independent.
+
+    Family keys now reject Symbols, functions, Promises, class instances,
+    accessor properties, and cyclic structures with a descriptive `TypeError`
+    instead of silently merging them or overflowing the stack. Both family APIs
+    accept an optional typed `keyOf(...args)` option for deriving supported
+    deterministic identity from those arguments.
+
+    Structured member debug names now reuse the canonical key instead of running
+    a second display-only serialization on cache misses. Primitive names remain
+    concise.
+
+- [#227](https://github.com/eigilsagafos/valdres/pull/227)
+  [`967bb03`](https://github.com/eigilsagafos/valdres/commit/967bb038855fe0d032cf3bd6f7810ad952d75e30)
+  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! - Keep selectors that
+  are read without a live subscriber out of the strong reverse dependency graph.
+  Cold selector caches now validate forward dependency revisions on demand and
+  promote their dependency closure only when they become subscribed, so dropped
+  cold selectors can be collected and unrelated atom writes remain constant-time
+  regardless of prior cold reads.
+
+- [#226](https://github.com/eigilsagafos/valdres/pull/226)
+  [`cdcb6a2`](https://github.com/eigilsagafos/valdres/commit/cdcb6a2bdd615d7ba04e32f43c68ed1551276eec)
+  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! - Roll back
+  subscription and liveness state when `onMount` throws so a later subscription
+  retries the mount. Keep orphaned selector graph and cache cleanup queued when
+  lifecycle cleanup throws during unsubscribe.
+
+- [#236](https://github.com/eigilsagafos/valdres/pull/236)
+  [`9278b66`](https://github.com/eigilsagafos/valdres/commit/9278b6635ebde1df9f4320e474ce54b41a0a64d9)
+  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! - Route direct atom
+  resets through the shared transaction commit pipeline so hooks, global
+  synchronization, and notifications match transactional resets.
+
+- [#250](https://github.com/eigilsagafos/valdres/pull/250)
+  [`2d31b16`](https://github.com/eigilsagafos/valdres/commit/2d31b162fd2875cbb264620d59ce01a925cc1794)
+  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! - Make
+  `dehydrate(store)` proportional to that store's named state. Named atoms are
+  indexed lazily per store, and named family entries now iterate the store's own
+  family membership instead of the process-global registry and identity cache.
+
+- [#230](https://github.com/eigilsagafos/valdres/pull/230)
+  [`e584913`](https://github.com/eigilsagafos/valdres/commit/e5849132a360c6224fbc66ed1236ddfc3f1fdbcc)
+  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! - Make atom-family
+  membership maintenance linear for repeated transaction and hydration writes by
+  skipping value-only index churn, rendering dirty indices once, and batching
+  hydrated members per family.
+
+- [#253](https://github.com/eigilsagafos/valdres/pull/253)
+  [`01529e5`](https://github.com/eigilsagafos/valdres/commit/01529e523bbf26df6e3c188c052c44ef64303ec8)
+  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! - Update Jotai
+  compatibility coverage to Jotai 2.20.2. Preserve dependency read order when
+  mounting sibling atoms, and surface original atom-read errors from the Jotai
+  adapter instead of Valdres diagnostic wrappers. Support Jotai's per-store
+  `INTERNAL_onInit` hook for primitive atoms.
+
+- [#237](https://github.com/eigilsagafos/valdres/pull/237)
+  [`7a59614`](https://github.com/eigilsagafos/valdres/commit/7a596146a8cdf64907ceb45871a60c56fc0391aa)
+  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! - Fix fresh atom
+  subscriptions whose selector defaults initialize other atoms by finishing
+  nested initialization through the normal init-only propagation path. Also
+  register atom-family members initialized by their first subscription in the
+  family index, matching initialization through `store.get`.
+
+- [#240](https://github.com/eigilsagafos/valdres/pull/240)
+  [`2556617`](https://github.com/eigilsagafos/valdres/commit/255661708bd27cad9581cf0e47c5c8610fc86c8b)
+  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! - Return atom-family
+  membership as cached, frozen, readonly snapshots and keep internal index
+  metadata non-enumerable, preventing callers from corrupting later family
+  reads.
+
+- [#246](https://github.com/eigilsagafos/valdres/pull/246)
+  [`27340c5`](https://github.com/eigilsagafos/valdres/commit/27340c5e250e0fdf313e670c506cd209b229b9d1)
+  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! - Index active
+  inherited dependencies by immediate scope branch so parent atom updates
+  traverse only subtrees with affected selectors. The index follows dynamic
+  dependency churn, nested atom shadows, `unset`, unsubscribe cleanup, and scope
+  detach; atom-family membership inheritance remains branch-aware.
+
+    Root atom-set latency with 10,000 idle scopes is now effectively flat
+    against the no-scope path (~90ns in the Bun benchmark), instead of scaling
+    into hundreds of microseconds by visiting every scope.
+
+- [#234](https://github.com/eigilsagafos/valdres/pull/234)
+  [`ebbaff5`](https://github.com/eigilsagafos/valdres/commit/ebbaff5ec885a82d45c01badabd2f89e430a1f5f)
+  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! - Validate maxAge
+  revalidation results against atom schemas, preserve the last valid cache value
+  on validation failure, and suppress subscriber notifications for equal
+  refreshes while updating freshness metadata.
+
+- [#241](https://github.com/eigilsagafos/valdres/pull/241)
+  [`8d882e0`](https://github.com/eigilsagafos/valdres/commit/8d882e0993aa3ed87a27840accb91d261d0f0244)
+  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! - Keep root `unset()`
+  lazy when `store.onChange` is active. Reporting an unset no longer evaluates a
+  function or async default just to populate the event; a root unset omits
+  `value` unless propagation already rematerialized it. Redux DevTools now
+  removes cold root entries when that optional value is absent.
+
+- [#248](https://github.com/eigilsagafos/valdres/pull/248)
+  [`4648c40`](https://github.com/eigilsagafos/valdres/commit/4648c40c3ec3c6ab67b7d1d8b47f2b0a3762980e)
+  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! - Maintain exported
+  subscription equality metadata with an O(1) reference count so tearing down
+  many subscriptions to the same state is linear instead of quadratic.
+
+- [#235](https://github.com/eigilsagafos/valdres/pull/235)
+  [`f0e657c`](https://github.com/eigilsagafos/valdres/commit/f0e657cc569b652ae3c27e5ad7c0a6f09e11543f)
+  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! - Give every selector
+  evaluation its own lazily-created abort signal. Selectors using default or
+  rest option parameters now receive abortable signals, and a selector may
+  switch from a synchronous result to an asynchronous result without being
+  permanently classified as synchronous.
+
+- [#220](https://github.com/eigilsagafos/valdres/pull/220)
+  [`26064d2`](https://github.com/eigilsagafos/valdres/commit/26064d2945be405a6f3909445b1da72f2f6c7158)
+  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! - Finish atom writes,
+  `onSet` hooks, selector propagation, and subscriber notification across direct
+  sets, transactions, scopes, and global stores before rethrowing the first hook
+  error.
+
+- [#249](https://github.com/eigilsagafos/valdres/pull/249)
+  [`2100bb3`](https://github.com/eigilsagafos/valdres/commit/2100bb35c138e4b145938bfdd3630fcb3468e9c4)
+  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! - Make
+  selector-family objects identity-cached factories rather than readable or
+  subscribable store state. Remove the untyped O(K) family-key enumeration path,
+  narrow family subscriptions to `atomFamily`, and reject invalid runtime
+  subscriptions consistently.
+
+    Align async construction with `selector()`: selector-family member getters
+    must be synchronous functions, but may return Promises. Cache hits remain
+    unchanged; the native-async guard runs only when a new member is created.
+
+- [#243](https://github.com/eigilsagafos/valdres/pull/243)
+  [`b7536ab`](https://github.com/eigilsagafos/valdres/commit/b7536ab3bf4e2face50dda54a232242dd87a02f0)
+  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! - Compare
+  ArrayBuffer, SharedArrayBuffer, DataView, and typed-array values by their
+  visible bytes, fixing unequal buffers being treated as equal and DataView
+  comparisons hanging.
+
+    Development deep-freezing now rejects mutable built-ins and host objects
+    with an actionable `{ mutable: true }` requirement instead of throwing
+    native typed-array errors or leaving Map, Set, Date, and binary contents
+    mutable behind a frozen facade. The explicit opt-out is available on atoms
+    and selectors; Error objects and Promise handles remain supported.
+
+- [#223](https://github.com/eigilsagafos/valdres/pull/223)
+  [`eafa72c`](https://github.com/eigilsagafos/valdres/commit/eafa72c78d41b6fcc2ae321244fecb26209a1410)
+  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! - Settle Promise-like
+  atom writes consistently in direct, batched, and explicit transaction writes.
+  Batched stores now replace the pending Promise with its validated resolved
+  value, roll back rejected or invalid writes, ignore stale settlements, and
+  notify subscribed selectors without leaving them in a retry loop.
+
+- [#238](https://github.com/eigilsagafos/valdres/pull/238)
+  [`b8a82e5`](https://github.com/eigilsagafos/valdres/commit/b8a82e512f446f5f80970573cb0a8986392ddcdf)
+  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! - Finish propagating
+  atom updates and family-member deletions through descendant scopes before
+  invoking any store-tree subscribers. A throwing root subscriber can no longer
+  interrupt propagation and leave a child selector stale; every affected store
+  settles first, all collected subscribers are attempted, and the first callback
+  error is rethrown after notification completes.
+
+    Keep descendant selector-aware `onChange` listeners ordered after
+    subscribers, and allocate deferred notification entries only for stores that
+    actually have callbacks to dispatch.
+
+- [#228](https://github.com/eigilsagafos/valdres/pull/228)
+  [`8c2531c`](https://github.com/eigilsagafos/valdres/commit/8c2531cef47d199cdcdb163347498029ad4fab05)
+  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! - Share one internal
+  runtime across every store facade backed by the same `StoreData`. Scope
+  handles now act as lightweight detach leases over shared operations, so
+  batched functional updates compose correctly, synchronous operations flush the
+  common pending transaction, subscriber notifications coalesce once per
+  microtask, and `onMount` writes participate in the same batch.
+
+- [#221](https://github.com/eigilsagafos/valdres/pull/221)
+  [`2046b87`](https://github.com/eigilsagafos/valdres/commit/2046b87f254666909528912a2dade380bd16b864)
+  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! - Preserve
+  atom-family member identity when a member is deleted from one store or scope
+  but remains in another. `store.del(member)` now removes only that store's
+  membership instead of globally releasing the family's shared identity,
+  matching transactional deletion and preventing two member objects for the same
+  logical key.
+
+    Atom-family identity caches now hold members weakly, so keeping identities
+    stable across stores does not make the family retain every unused member
+    forever. The legacy `atomFamily.release()` method is now a deprecated no-op:
+    explicit eviction is unnecessary with the weak cache and could create a
+    second live member for arguments whose original member is still retained by
+    a store.
+
+- [#244](https://github.com/eigilsagafos/valdres/pull/244)
+  [`2d21f06`](https://github.com/eigilsagafos/valdres/commit/2d21f06a66277e760e65de57b3f8b528d3ed9cc6)
+  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! - Make
+  `store.dispose()` terminal and comprehensive. Disposal now drains ordinary and
+  delegated subscriptions, mounts and timers, change and commit listeners,
+  pending batches, async selector work, descendant scopes, and global atom
+  registrations while balancing shared lifecycle counters. Later operations
+  throw `StoreDisposedError`, and stale cleanup handles remain idempotent.
+
+- [#225](https://github.com/eigilsagafos/valdres/pull/225)
+  [`5dcd530`](https://github.com/eigilsagafos/valdres/commit/5dcd5309381f4f78f87038bd638ee9b3ce22bc5e)
+  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! - Make transaction
+  selector reads use the standard selector evaluation boundary, including schema
+  validation, cycle detection, abort options, wrapped errors, and async
+  dependency tracking. Keep selector bookkeeping isolated from committed store
+  state, invalidate transaction selector caches for every write operation, and
+  reject Promise-like transaction callbacks before automatic commit.
+
+- [#252](https://github.com/eigilsagafos/valdres/pull/252)
+  [`f092e71`](https://github.com/eigilsagafos/valdres/commit/f092e71eb3604c57552ced5058693766732330eb)
+  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! - Make `index()` term
+  identity collision-safe and stop one-off queries from being retained for the
+  lifetime of the index. Terms now use the same canonical key codec as atom and
+  selector families, with a new `keyOf` option for unsupported or intentionally
+  grouped terms. Cached term selectors are weakly held and their serialized keys
+  are removed after collection.
+
+    Document `index()` as a reactive family filter rather than a materialized
+    database index: predicate work is incremental and unchanged results stop in
+    O(1), but preserving its ordered array result requires an O(family size)
+    walk when query membership changes.
+
 ## 1.0.0-beta.16
 
 ### Patch Changes

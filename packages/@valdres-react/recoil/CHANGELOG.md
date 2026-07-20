@@ -1,5 +1,23 @@
 # @valdres-react/recoil
 
+## 1.0.0-beta.2
+
+### Patch Changes
+
+- [#251](https://github.com/eigilsagafos/valdres/pull/251)
+  [`d11de95`](https://github.com/eigilsagafos/valdres/commit/d11de95881d0548fbf47add4a942aecb8fef6b0c)
+  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! - Make Store runtimes
+  opaque. Stores now expose stable public identity through `store.id` instead of
+  publishing mutable `StoreData`; `StoreData` is no longer exported from
+  `valdres`, and `onSet` receives the public Store facade. Framework and tooling
+  adapters now use the capability-based, versioned
+  `valdres/adapter-internals/v1` boundary, which keeps adapter lookups off atom
+  get/set hot paths. Engine-only atom/global-atom synchronization fields and the
+  `MaxAgeInterval` timer type are no longer part of the public type surface.
+- Updated dependencies
+  [[`d11de95`](https://github.com/eigilsagafos/valdres/commit/d11de95881d0548fbf47add4a942aecb8fef6b0c)]:
+    - valdres-react@1.0.0-beta.3
+
 ## 1.0.0-beta.1
 
 ### Patch Changes
