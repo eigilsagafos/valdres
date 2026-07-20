@@ -1,0 +1,165 @@
+/** Trace oracle · reset / unset / delete.
+ *
+ *  These three verbs are easy to conflate in a refactor but have distinct
+ *  observable semantics:
+ *    - reset  → eagerly writes the default back (source "reset", kind "set")
+ *    - unset  → drops the store's own value (source "unset", kind "unset");
+ *               a root reverts to default, a scope re-inherits its parent
+ *    - delete → removes a family member (source "delete", kind "delete")
+ *  Each is one commit; a no-op unset must not commit. */
+import { expect } from "bun:test"
+import { atom } from "../../src/atom"
+import { atomFamily } from "../../src/atomFamily"
+import { store } from "../../src/store"
+import type { Store } from "../../src/types/Store"
+import type { StoreChange } from "../../src/types/StoreChange"
+import { runTraceTable, type TraceCase } from "./runTable"
+import {
+    type ChangeCall,
+    traceChange,
+    traceCommitEnd,
+    tracedAtom,
+    traceSub,
+} from "./traceRecorder"
+
+type Ctx = {
+    store: Store
+    changes: ChangeCall[]
+    act: () => void
+    /** value read back after the op */
+    read: () => unknown
+}
+
+/** Convenience: the `kind` discriminators reported to onChange, in order. */
+const kinds = (calls: ChangeCall[]): string[] =>
+    calls.flatMap(c =>
+        c.changes.map(ch => (ch as Extract<StoreChange, { kind: string }>).kind),
+    )
+
+const cases: TraceCase<Ctx>[] = [
+    {
+        name: "reset — eagerly writes default back (onSet fires), source 'reset'",
+        build: rec => {
+            const s = store()
+            const a = tracedAtom(rec, "a", 1)
+            s.set(a, 5)
+            traceSub(rec, s, a, "a")
+            const { calls } = traceChange(rec, s)
+            traceCommitEnd(rec, s)
+            return {
+                store: s,
+                changes: calls,
+                act: () => s.reset(a),
+                read: () => s.get(a),
+            }
+        },
+        act: ctx => ctx.act(),
+        trace: ["onSet:a", "sub:a", "onChange", "commitEnd"],
+        assert: ({ changes, read }) => {
+            expect(read()).toBe(1)
+            expect(changes.map(c => c.meta.source)).toEqual(["reset"])
+            expect(kinds(changes)).toEqual(["set"])
+        },
+    },
+    {
+        name: "unset on root — reverts to default, no onSet, kind 'unset'",
+        build: rec => {
+            const s = store()
+            const a = tracedAtom(rec, "a", 1)
+            s.set(a, 5)
+            traceSub(rec, s, a, "a")
+            const { calls } = traceChange(rec, s)
+            traceCommitEnd(rec, s)
+            return {
+                store: s,
+                changes: calls,
+                act: () => s.unset(a),
+                read: () => s.get(a),
+            }
+        },
+        act: ctx => ctx.act(),
+        trace: ["sub:a", "onChange", "commitEnd"],
+        assert: ({ changes, read }) => {
+            expect(read()).toBe(1)
+            expect(changes.map(c => c.meta.source)).toEqual(["unset"])
+            expect(kinds(changes)).toEqual(["unset"])
+        },
+    },
+    {
+        name: "unset with no own value — no-op, empty trace",
+        build: rec => {
+            const s = store()
+            // Never read/subscribe `a` before the unset: reading OR subscribing
+            // materializes the default into the store's own values, which would
+            // make the unset a real change. An untouched atom has no own value.
+            const a = tracedAtom(rec, "a", 1)
+            const { calls } = traceChange(rec, s)
+            traceCommitEnd(rec, s)
+            return {
+                store: s,
+                changes: calls,
+                act: () => s.unset(a),
+                read: () => s.get(a),
+            }
+        },
+        act: ctx => ctx.act(),
+        trace: [],
+        assert: ({ changes, read }) => {
+            expect(read()).toBe(1)
+            expect(changes).toHaveLength(0)
+        },
+    },
+    {
+        name: "unset on scope — re-inherits the parent value, kind 'unset'",
+        build: rec => {
+            const root = store()
+            const a = atom(1)
+            root.set(a, 7) // parent value
+            const child = root.scope("rud-unset-scope")
+            child.set(a, 99) // shadow in the scope
+            traceSub(rec, child, a, "a")
+            const { calls } = traceChange(rec, child)
+            traceCommitEnd(rec, child)
+            return {
+                store: child,
+                changes: calls,
+                act: () => child.unset(a),
+                read: () => child.get(a),
+            }
+        },
+        act: ctx => ctx.act(),
+        trace: ["sub:a", "onChange", "commitEnd"],
+        assert: ({ changes, read }) => {
+            expect(read()).toBe(7) // re-inherited the parent's current value
+            expect(changes.map(c => c.meta.source)).toEqual(["unset"])
+            expect(kinds(changes)).toEqual(["unset"])
+        },
+    },
+    {
+        name: "delete a family member — source 'delete', kind 'delete'",
+        build: rec => {
+            const s = store()
+            const fam = atomFamily<number, [string]>(0)
+            const x = fam("x")
+            s.set(x, 1)
+            traceSub(rec, s, x, "x")
+            const { calls } = traceChange(rec, s)
+            traceCommitEnd(rec, s)
+            return {
+                store: s,
+                changes: calls,
+                act: () => s.del(x),
+                read: () => s.get(x),
+            }
+        },
+        act: ctx => ctx.act(),
+        trace: ["sub:x", "onChange", "commitEnd"],
+        assert: ({ changes, read }) => {
+            expect(read()).toBe(0) // reverts to the family default
+            expect(changes.map(c => c.meta.source)).toEqual(["delete"])
+            expect(kinds(changes)).toEqual(["delete"])
+        },
+    },
+]
+
+runTraceTable("trace oracle · reset / unset / delete", cases)
