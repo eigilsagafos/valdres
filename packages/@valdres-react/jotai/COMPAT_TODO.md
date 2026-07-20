@@ -1,6 +1,6 @@
 # Jotai Compatibility - Todo Tests
 
-## Currently Failing (10 tests)
+## Resolved compatibility gaps
 
 ### onMount/onUnmount not called on error (2)
 When `onMount`/`onUnmount` throws, valdres skips remaining lifecycle hooks:
@@ -16,7 +16,7 @@ Valdres notifies listeners at different points in the write cycle:
 
 ### Deep recursion / stack overflow (1)
 Deeply nested or circular selector graphs blow the stack:
-- [ ] `processes deep atom a graph beyond maxDepth` — skipped; valdres now matches jotai's behavior here (plain recursion, JS stack ceiling applies). Removing the iterative trampoline eliminated a 26x perf cliff at depth >100.
+- [x] `surfaces a stack overflow for a graph too deep to read synchronously` — valdres matches jotai's behavior here (plain recursion, JS stack ceiling applies) and recovers after callers warm the graph bottom-up.
 - [x] `should not inf on subscribe or unsubscribe`
 
 ### Error resilience in listeners (1)
@@ -29,24 +29,20 @@ Related to how pending state is handled during unsubscribe:
 
 ---
 
-## Safe to Ignore (5 tests)
-
-### Jotai Internals (3)
-Not part of the public API (`INTERNAL_onInit`, `createDevStore`, `deriveStore`):
-- [ ] `should call onInit only once per atom`
-- [ ] `should call onInit only once per store`
-- [ ] `should pass store and atomState to the atom initializer`
+## Safe to Ignore (1 test)
 
 ### DEV-ONLY (1)
 Debug/development warning, not functional behavior:
 - [ ] `[DEV-ONLY] should warn store mutation during read`
 
-### Memory Leak — upstream todo (1)
-- [ ] `memory leaks (get & set only) > should not hold onto dependent atoms that are not mounted` (todo in upstream jotai)
-
 ---
 
-## Should Support (50 tests)
+## Supported compatibility coverage
+
+### Jotai initialization hook — now passing (3)
+- [x] `should call onInit only once per atom`
+- [x] `should call onInit only once per store`
+- [x] `should pass store and atomState to the atom initializer`
 
 ### Async Atoms — HIGH priority (16)
 Core jotai feature, most common migration blocker:
@@ -107,18 +103,19 @@ React rendering patterns with atoms:
 - [x] `uses a writable atom without read function`
 - [x] `write self atom (undocumented usage)`
 
-### Memory Leak Detection — now passing (6)
+### Memory Leak Detection — now passing (10)
 Using Bun-native LeakDetector (`Bun.gc` + `FinalizationRegistry`) instead of `jest-leak-detector`:
 - [x] `memory leaks (get & set only) > one atom`
 - [x] `memory leaks (get & set only) > two atoms`
+- [x] `memory leaks (get & set only) > should not hold onto dependent atoms that are not mounted` (still todo in upstream jotai; passing in valdres)
 - [x] `memory leaks (get & set only) > with a long-lived base atom`
 - [x] `memory leaks (with subscribe) > one atom`
 - [x] `memory leaks (with subscribe) > two atoms`
 - [x] `memory leaks (with subscribe) > with a long-lived base atom`
-- [ ] `memory leaks (with dependencies) > sync dependency` (valdres retains cached dependency values after re-eval)
-- [ ] `memory leaks (with dependencies) > async dependency` (same)
-- [ ] `memory leaks (with dependencies) > async await dependency` (same)
+- [x] `memory leaks (with dependencies) > sync dependency`
+- [x] `memory leaks (with dependencies) > async dependency`
+- [x] `memory leaks (with dependencies) > async await dependency`
 
 ### Dev Store / Mounted Atoms — LOW priority (2)
-- [ ] `should unmount with store.get`
-- [ ] `should unmount dependencies with store.get`
+- [x] `should unmount with store.get`
+- [x] `should unmount dependencies with store.get`

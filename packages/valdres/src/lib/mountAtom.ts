@@ -629,7 +629,11 @@ export const mountTransitiveDeps = (
         }
         const deps = data.stateDependencies.get(current)
         if (deps) {
-            for (const dep of deps) {
+            // Dependencies are recorded in read order. Push them in reverse so
+            // the LIFO traversal mounts siblings in that same observable order.
+            const orderedDeps = Array.from(deps) as State[]
+            for (let i = orderedDeps.length - 1; i >= 0; i--) {
+                const dep = orderedDeps[i]!
                 if (!seen.has(dep)) stack.push(dep)
             }
         }

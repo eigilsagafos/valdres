@@ -36,29 +36,31 @@ test("should not fire subscription if derived atom value is the same", () => {
     expect(callback).toHaveBeenCalledTimes(calledTimes)
 })
 
-// Requires createDevStore + get_mounted_atoms (jotai internals)
-test.todo("should unmount with store.get", () => {
-    const store = createStore() // jotai uses createDevStore()
+test("should unmount with store.get", () => {
+    const store = createStore()
     const countAtom = atom(0)
+    const cleanup = mock(() => {})
+    countAtom.onMount = () => cleanup
     const callback = mock(() => {})
     const unsub = store.sub(countAtom, callback)
 
     store.get(countAtom)
     unsub()
-    // jotai asserts: Array.from(store.get_mounted_atoms()) === []
+    expect(cleanup).toHaveBeenCalledTimes(1)
 })
 
-// Requires createDevStore + get_mounted_atoms (jotai internals)
-test.todo("should unmount dependencies with store.get", () => {
-    const store = createStore() // jotai uses createDevStore()
+test("should unmount dependencies with store.get", () => {
+    const store = createStore()
     const countAtom = atom(0)
+    const cleanup = mock(() => {})
+    countAtom.onMount = () => cleanup
     const derivedAtom = atom((get) => get(countAtom) * 2)
     const callback = mock(() => {})
     const unsub = store.sub(derivedAtom, callback)
 
     store.get(derivedAtom)
     unsub()
-    // jotai asserts: Array.from(store.get_mounted_atoms()) === []
+    expect(cleanup).toHaveBeenCalledTimes(1)
 })
 
 test("should update async atom with delay (#1813)", async () => {
@@ -397,6 +399,27 @@ test("should mount once with atom creator atom (#2314)", () => {
     const store = createStore()
     store.sub(atomCreatorAtom, () => {})
     expect(countAtom.onMount).toHaveBeenCalledTimes(1)
+})
+
+test("should mount sibling dependencies in read order", () => {
+    const store = createStore()
+    const mounted: string[] = []
+    const firstAtom = atom(0)
+    firstAtom.onMount = () => {
+        mounted.push("first")
+    }
+    const secondAtom = atom(0)
+    secondAtom.onMount = () => {
+        mounted.push("second")
+    }
+    const derivedAtom = atom((get) => {
+        get(firstAtom)
+        get(secondAtom)
+    })
+
+    const unsub = store.sub(derivedAtom, () => {})
+    expect(mounted).toEqual(["first", "second"])
+    unsub()
 })
 
 // Requires async atoms
@@ -988,13 +1011,7 @@ test("should call subscribers after setAtom updates atom value on mount but not 
     expect(listener).toHaveBeenCalledTimes(0)
 })
 
-// Valdres previously used an iterative trampoline to handle arbitrarily
-// deep selector chains, which let it pass this test where jotai itself
-// throws. The trampoline was removed in favor of plain recursion (matching
-// jotai's strategy and removing a 26x perf cliff at depth >100); the
-// failure mode at extreme depths is now the JS engine's stack limit, the
-// same as jotai.
-test.skip("processes deep atom a graph beyond maxDepth", () => {
+test("surfaces a stack overflow for a graph too deep to read synchronously", () => {
     function getMaxDepth() {
         let depth = 0
         function d(): number {
@@ -1007,7 +1024,7 @@ test.skip("processes deep atom a graph beyond maxDepth", () => {
         }
         return d()
     }
-    const maxDepth = Math.min(getMaxDepth(), 5000)
+    const maxDepth = getMaxDepth()
     const store = createStore()
     const baseAtom = atom(0)
     const atoms: any[] = [baseAtom]
@@ -1017,8 +1034,11 @@ test.skip("processes deep atom a graph beyond maxDepth", () => {
         atoms.push(a)
     })
     const lastAtom = atoms[maxDepth]!
-    expect(() => store.sub(lastAtom, () => {})).not.toThrow()
+    expect(() => store.get(lastAtom)).toThrow(/call stack|recursion/i)
+    expect(() => store.sub(lastAtom, () => {})).toThrow(/call stack|recursion/i)
     expect(() => store.set(baseAtom, 1)).not.toThrow()
+    atoms.forEach((a) => store.get(a))
+    expect(store.get(lastAtom)).toBe(1)
 }, 10_000)
 
 test("mounted atom should be recomputed eagerly", () => {
@@ -1082,8 +1102,7 @@ test("should process all atom listeners even if some of them throw errors", () =
     expect(listenerC).toHaveBeenCalledTimes(1)
 })
 
-// Requires INTERNAL_onInit (jotai internal)
-test.todo("should call onInit only once per atom", () => {
+test("should call onInit only once per atom", () => {
     const store = createStore()
     const a = atom(0)
     const onInit = mock(() => {})
@@ -1106,8 +1125,7 @@ test.todo("should call onInit only once per atom", () => {
     expect(onInit).not.toHaveBeenCalled()
 })
 
-// Requires INTERNAL_onInit + deriveStore (jotai internals)
-test.todo("should call onInit only once per store", () => {
+test("should call onInit only once per store", () => {
     const a = atom(0)
     const aOnInit = mock(() => {})
     ;(a as any).INTERNAL_onInit = aOnInit
@@ -1126,11 +1144,10 @@ test.todo("should call onInit only once per store", () => {
     }
     testInStore(createStore())
     testInStore(createStore())
-    // jotai also tests with deriveStore(store, ...) which is not implemented
+    // Jotai also tests deriveStore(store, ...), which this adapter does not expose.
 })
 
-// Requires INTERNAL_onInit (jotai internal)
-test.todo("should pass store and atomState to the atom initializer", () => {
+test("should pass store and atomState to the atom initializer", () => {
     const store = createStore()
     const a = atom(null)
 
@@ -1534,4 +1551,61 @@ test("does not recompute derived atom redundantly when store.set in read uses re
 
     expect(store.get(derivedAtom)).toBe(1)
     expect(listener).toHaveBeenCalledTimes(1)
+})
+
+test("notifies subscriber when a nested no-op store.set and a subscription happen inside the outer write (#3353)", () => {
+    const store = createStore()
+    const a = atom(0)
+    const derivedAtom = atom((get) => get(a))
+    const b = atom(0)
+
+    const listener = mock(() => {})
+    store.sub(derivedAtom, listener)
+
+    const w = atom(null, (_get, set) => {
+        set(a, 1)
+        store.set(b, store.get(b))
+        store.sub(b, () => {})()
+    })
+    store.set(w)
+
+    expect(store.get(derivedAtom)).toBe(1)
+    expect(listener).toHaveBeenCalledTimes(1)
+})
+
+test("notifies subscriber of interrupt-derived atom after a synchronous event cascade of nested store.set (#3353)", () => {
+    const store = createStore()
+    const interruptAtom = atom<{ resume: () => void } | undefined>(undefined)
+    const isInterruptedAtom = atom((get) => get(interruptAtom) !== undefined)
+    const dataAtom = atom(0)
+
+    const emitterListeners = new Set<() => void>()
+    const externalState = 0
+
+    let unsub = store.sub(dataAtom, () => {})
+    emitterListeners.add(() => {
+        store.set(dataAtom, externalState)
+        unsub()
+        unsub = store.sub(dataAtom, () => {})
+    })
+
+    const listener = mock(() => {})
+    store.sub(isInterruptedAtom, listener)
+
+    const startInterruptAtom = atom(null, (_get, set) => {
+        set(interruptAtom, {
+            resume: () => emitterListeners.forEach((l) => l()),
+        })
+    })
+    const finishInterruptActionAtom = atom(null, (get, set) => {
+        const interrupt = get(interruptAtom)
+        set(interruptAtom, undefined)
+        interrupt?.resume()
+    })
+
+    store.set(startInterruptAtom)
+    expect(listener).toHaveBeenCalledTimes(1)
+    store.set(finishInterruptActionAtom)
+    expect(store.get(isInterruptedAtom)).toBe(false)
+    expect(listener).toHaveBeenCalledTimes(2)
 })

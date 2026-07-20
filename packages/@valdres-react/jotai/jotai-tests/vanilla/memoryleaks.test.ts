@@ -33,8 +33,8 @@ describe("memory leaks (get & set only)", () => {
         expect(await detector2.isLeaking()).toBe(false)
     })
 
-    // Also todo in upstream jotai
-    test.todo(
+    // Still todo upstream, but Valdres keeps cold dependency metadata weak.
+    leakTest(
         "should not hold onto dependent atoms that are not mounted",
         async () => {
             const store = createStore()
@@ -113,9 +113,8 @@ describe("memory leaks (with subscribe)", () => {
 
 describe("memory leaks (with dependencies)", () => {
     // These tests verify that atoms dropped as dependencies (via conditional
-    // short-circuit) can be GC'd. Valdres still retains the old dependency's
-    // cached value after re-evaluation, preventing collection.
-    test.todo("sync dependency", async () => {
+    // short-circuit) can be GC'd.
+    leakTest("sync dependency", async () => {
         const store = createStore()
         let objAtom: Atom<object> | undefined = atom({})
         const detector = new LeakDetector(store.get(objAtom))
@@ -130,7 +129,7 @@ describe("memory leaks (with dependencies)", () => {
         expect(await detector.isLeaking()).toBe(false)
     })
 
-    test.todo("async dependency", async () => {
+    leakTest("async dependency", async () => {
         const store = createStore()
         let objAtom: Atom<object> | undefined = atom({})
         const detector = new LeakDetector(store.get(objAtom))
@@ -145,7 +144,7 @@ describe("memory leaks (with dependencies)", () => {
         expect(await detector.isLeaking()).toBe(false)
     })
 
-    test.todo("async await dependency", async () => {
+    leakTest("async await dependency", async () => {
         const store = createStore()
         let objAtom: Atom<object> | undefined = atom({})
         const detector = new LeakDetector(store.get(objAtom))

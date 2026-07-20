@@ -1,5 +1,8 @@
 import { store as valdresCreateStore, isPromiseLike, isSelector } from "valdres"
-import { Transaction } from "valdres/adapter-internals/v1"
+import {
+    SelectorEvaluationError,
+    Transaction,
+} from "valdres/adapter-internals/v1"
 import { registerStore } from "./storeRegistry"
 
 export const createStore = (id?: string) => {
@@ -7,6 +10,16 @@ export const createStore = (id?: string) => {
 
     // Register for setSelf lookup.
     registerStore(store.id, store)
+
+    const throwJotaiAtomError = (error: unknown): never => {
+        if (
+            error instanceof SelectorEvaluationError &&
+            Object.getPrototypeOf(error) === SelectorEvaluationError.prototype
+        ) {
+            throw error.cause
+        }
+        throw error
+    }
 
     // --- Transaction-based write batching ---
     // Jotai defers all subscriber notifications until the entire write batch
@@ -66,7 +79,18 @@ export const createStore = (id?: string) => {
     // internally, and returning Promise.resolve() breaks useSyncExternalStore
     // (new Promise object each call → infinite re-render, plus Suspense throws
     // on any Promise value including resolved ones).
-    const rawGet = store.get
+    const valdresGet = store.get
+
+    // Jotai surfaces the original error thrown by an atom read. Valdres wraps
+    // selector failures with a diagnostic trace, so unwrap that adapter-facing
+    // boundary while preserving the richer error for native Valdres callers.
+    const rawGet = ((state: any) => {
+        try {
+            return valdresGet(state)
+        } catch (error) {
+            throwJotaiAtomError(error)
+        }
+    }) as typeof store.get
 
     // Jotai's store.get() returns a Promise for async atoms even after
     // resolution. Valdres unwraps resolved values, so we re-wrap them.
@@ -105,11 +129,15 @@ export const createStore = (id?: string) => {
         const prevTxn = activeTxn
         activeTxn = txn
         try {
-            return jotaiWrappedSub(state, callback, ...rest)
-        } finally {
-            activeTxn = prevTxn
-            txn.commit()
-            flushDeferred()
+            try {
+                return jotaiWrappedSub(state, callback, ...rest)
+            } finally {
+                activeTxn = prevTxn
+                txn.commit()
+                flushDeferred()
+            }
+        } catch (error) {
+            return throwJotaiAtomError(error)
         }
     }
 
