@@ -1,4 +1,7 @@
-import { familyKey, type FamilyKey } from "./lib/familyKey"
+import {
+    familyKey,
+    type FamilyKey as EncodedFamilyKey,
+} from "./lib/familyKey"
 import { WeakSelectorCache } from "./lib/WeakSelectorCache"
 import { selector } from "./selector"
 import type { AtomFamily } from "./types/AtomFamily"
@@ -27,7 +30,7 @@ export const index = <
     options?: IndexOptions<Term>,
 ): ((term: Term) => Selector<AtomFamilyAtom<Value, FamilyArgs>[]>) => {
     const map = new WeakSelectorCache<
-        FamilyKey,
+        EncodedFamilyKey,
         Selector<AtomFamilyAtom<Value, FamilyArgs>[]>
     >()
     const keyOf = options?.keyOf
