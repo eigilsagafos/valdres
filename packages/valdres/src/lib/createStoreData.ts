@@ -121,6 +121,12 @@ export function createStoreData(
         data.scopeConsumers = new Set()
         data.scopeIndexKeys = new Set()
         data.inheritedDependencyKeys = undefined
+        // Measurement windows attach this only in architecture tests. Scopes
+        // created during a window participate in the same logical commit.
+        if (parent.architectureInstrumentation) {
+            data.architectureInstrumentation =
+                parent.architectureInstrumentation
+        }
     }
     return data
 }
