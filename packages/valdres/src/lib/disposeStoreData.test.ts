@@ -8,6 +8,7 @@ import { withFakeClock } from "../../test/utils/fakeClock"
 import { getStoreData } from "./getStoreData"
 import { commitEndRegistry } from "./onCommitEnd"
 import { changeListenerRegistry } from "./notifyChangeListeners"
+import { assertStoreInvariants } from "../../test/invariants/checkStoreInvariants"
 
 const settle = async () => {
     for (let i = 0; i < 4; i++) await Promise.resolve()
@@ -38,6 +39,9 @@ describe("store.dispose", () => {
             expect(
                 getStoreData(targetStore).subscriptions.get(target),
             ).toBeUndefined()
+            // The disposed store must be terminal: no retained resources,
+            // subscriptions, mounts, or listeners anywhere in the tree.
+            assertStoreInvariants(targetStore)
 
             // Disposers handed out before terminal disposal stay idempotent.
             unsubscribe()
@@ -168,6 +172,8 @@ describe("store.dispose", () => {
         expect(changeListenerRegistry.count).toBe(changeCount)
         expect(changeListenerRegistry.selectorCount).toBe(selectorCount)
         expect(commitEndRegistry.count).toBe(commitEndCount)
+        // The whole disposed tree (root + child scope) must be terminal.
+        assertStoreInvariants(root)
         for (const cleanup of cleanups) cleanup()
         expect(changeListenerRegistry.count).toBe(changeCount)
         expect(changeListenerRegistry.selectorCount).toBe(selectorCount)
@@ -201,6 +207,9 @@ describe("store.dispose", () => {
         resolveAtom(1)
         resolveSelector(1)
         await settle()
+        // Terminal after async settlement: aborted controllers, drained
+        // resources, and no re-registration from the late resolutions.
+        assertStoreInvariants(targetStore)
         expect(atomSubscriber).not.toHaveBeenCalled()
         expect(getStoreData(targetStore).values.get(asyncAtom)).toBe(
             pendingAtom,

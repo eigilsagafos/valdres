@@ -4,6 +4,7 @@ import { atomFamily } from "../atomFamily"
 import { selector } from "../selector"
 import { store } from "../store"
 import { index } from "../indexConstructor"
+import { checkStoreInvariants } from "../../test/invariants/checkStoreInvariants"
 
 // Differential soundness fuzzer for atom-family × scope × transaction
 // propagation — the deliverable backbone of the propagation audit, distilled to
@@ -98,6 +99,13 @@ const runSeed = (seed: number): string | null => {
         `${lvl}:${w.kind}${w.kind === "index" ? w.term : ""}`
 
     const verify = (): string | null => {
+        for (let i = 0; i < L; i++) {
+            // Structural invariants across the scope chain: symmetric edges,
+            // branch/value indexes, liveness counts, resource ledgers — asserted
+            // alongside the membership/selector oracle after every committed op.
+            const violations = checkStoreInvariants(stores[i])
+            if (violations.length > 0) return `L${i} invariant: ${violations[0]}`
+        }
         for (let i = 0; i < L; i++) {
             const data = getStoreData(stores[i])
             const ks = keysAt(i)

@@ -3,6 +3,7 @@ import { describe, expect, mock, test } from "bun:test"
 import { atom } from "../atom"
 import { selector } from "../selector"
 import { store } from "../store"
+import { assertStoreInvariants } from "../../test/invariants/checkStoreInvariants"
 
 describe("async selector unmount cleanup", () => {
     test("late post-await get cannot resurrect a cleaned selector", async () => {
@@ -49,6 +50,12 @@ describe("async selector unmount cleanup", () => {
             getStoreData(targetStore).stateDependents.get(late)?.has(derived) ??
                 false,
         ).toBe(false)
+        // Fully settled after a late async resolution: nothing the async path
+        // touched (derived, first, late) may retain a registration.
+        assertStoreInvariants(targetStore, {
+            quiescent: true,
+            states: [first, late, derived],
+        })
     })
 
     test("signal first accessed after cleanup remains active", async () => {
@@ -142,6 +149,10 @@ describe("async selector unmount cleanup", () => {
         expect(getStoreData(targetStore).stateDependencies.has(derived)).toBe(
             false,
         )
+        assertStoreInvariants(targetStore, {
+            quiescent: true,
+            states: [asyncDependency, derived],
+        })
     })
 
     test("old Promise cannot commit through a newer evaluation's graph", async () => {

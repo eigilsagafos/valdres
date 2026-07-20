@@ -350,3 +350,14 @@ export const takeAbortControllers = (
     if (resources) resources.abortControllers = undefined
     return controllers
 }
+
+/**
+ * Development/test-only: read a store's live resource collections without
+ * draining them. Consumed exclusively by the invariant checker in tests
+ * (test/invariants/checkStoreInvariants.ts); every production caller uses the
+ * typed track/untrack/take helpers above, so no ordinary path enumerates these
+ * sets or pays for this accessor. Returned object is read-only by contract.
+ */
+export const peekStoreResources = (
+    data: StoreData,
+): Readonly<StoreResources> | undefined => resourcesFor(data)

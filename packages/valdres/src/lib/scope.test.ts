@@ -5,6 +5,7 @@ import { atom } from "../atom"
 import { atomFamily } from "../atomFamily"
 import { selector } from "../selector"
 import { trackScopeValue } from "./setValueInData"
+import { assertStoreInvariants } from "../../test/invariants/checkStoreInvariants"
 
 const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
 
@@ -363,6 +364,9 @@ describe("subscribe / unsubscribe / resubscribe across scopes", () => {
         expect(B.get(sel)).toBe(31)
         // cb1 still not re-fired
         expect(cb1).toHaveBeenCalledTimes(1)
+        // Parent + scope tree stays structurally consistent through the
+        // resubscribe cycle (symmetric edges, branch/value indexes, liveness).
+        assertStoreInvariants(A)
 
         unsub2()
     })
@@ -394,6 +398,9 @@ describe("subscribe / unsubscribe / resubscribe across scopes", () => {
         // But B writes still do
         B.set(a, "from-B-2")
         expect(cb).toHaveBeenCalledTimes(3)
+        // The delegated-then-re-rooted subscription must leave the scope value
+        // index and active-state index balanced across A and B.
+        assertStoreInvariants(A)
     })
 
     test("two subscriptions in same scope — unsubscribing one leaves the other functional", () => {

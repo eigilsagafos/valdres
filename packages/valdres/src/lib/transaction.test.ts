@@ -9,6 +9,7 @@ import { index } from "../indexConstructor"
 import { SchemaValidationError } from "../errors/SchemaValidationError"
 import { SelectorCircularDependencyError } from "../errors/SelectorCircularDependencyError"
 import { SelectorEvaluationError } from "../errors/SelectorEvaluationError"
+import { assertStoreInvariants } from "../../test/invariants/checkStoreInvariants"
 
 /** Resolve to a promise's value if it settles within `ms`, else report it
  *  still pending — a bounded race so a hung suspense promise fails fast
@@ -629,6 +630,8 @@ describe("transaction", () => {
         expect(fooScope.get(nameAtom)).toBe("Set in Foo")
         expect(barScope.get(nameAtom)).toBe("Set in Bar")
         expect(barNestedScope.get(nameAtom)).toBe("Set in Bar Nested")
+        // Committed nested-scope transaction leaves the whole tree consistent.
+        assertStoreInvariants(store1)
 
         expect(() => {
             store1.txn(({ set, scope }) => {
@@ -651,6 +654,8 @@ describe("transaction", () => {
                 })
             })
         }).toThrow("Scope 'Missing' not found. Registered scopes: Foo, Bar")
+        // Rolled-back transactions must not corrupt the tree either.
+        assertStoreInvariants(store1)
     })
 
     test("parentScope atom", () => {
