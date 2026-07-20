@@ -61,12 +61,8 @@ import {
     propagateDeletedAtoms,
     type NotifyTarget,
 } from "./propagateUpdatedAtoms"
-import { setAtoms } from "./setAtoms"
-import {
-    BULK_NO_EFFECTS_SILENT,
-    BULK_WITH_EFFECTS_SILENT,
-} from "./commitIntents"
 import { runOnSets, type DeferredOnSet } from "./runOnSets"
+import { setTransactionAtoms } from "./setAtoms"
 import { writeAtoms } from "./writeAtoms"
 import {
     evaluateSelectorValue,
@@ -749,21 +745,13 @@ export class TransactionContext {
             this.renderDirtyAtomFamilyIndexes()
             const initializedAtomsSet = new Set<Atom>()
             if (!this._unsetSet?.size && !this._deleteSet?.size) {
-                // Typed replacement for the historical positional
-                // (skipOnSet=false, sink, hasCommitEffects) triple: shared
-                // consts when unwatched, a tiny intent object only on the
-                // sink-allocating watched path.
-                setAtoms(
+                setTransactionAtoms(
                     this._atomMap,
                     this._data,
                     initializedAtomsSet,
-                    this._hasCommitEffects
-                        ? sink
-                            ? { onSet: "collect", report: sink }
-                            : BULK_WITH_EFFECTS_SILENT
-                        : sink
-                          ? { onSet: "skip", report: sink }
-                          : BULK_NO_EFFECTS_SILENT,
+                    false,
+                    sink,
+                    this._hasCommitEffects,
                 )
                 return
             }
@@ -775,7 +763,7 @@ export class TransactionContext {
                 this._atomMap,
                 this._data,
                 initializedAtomsSet,
-                "collect",
+                false,
                 onSets,
             )
             const deleted = this._deleteSet?.size
@@ -923,7 +911,7 @@ export class TransactionContext {
                 txn._atomMap,
                 entry.data,
                 new Set<Atom>(),
-                "collect",
+                false,
                 entry.onSets,
             )
             if (txn._deleteSet?.size) {

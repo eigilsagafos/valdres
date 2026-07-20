@@ -9,6 +9,7 @@ import { index } from "../indexConstructor"
 import { SchemaValidationError } from "../errors/SchemaValidationError"
 import { SelectorCircularDependencyError } from "../errors/SelectorCircularDependencyError"
 import { SelectorEvaluationError } from "../errors/SelectorEvaluationError"
+import type { InternalAtom } from "../types/InternalAtom"
 import { assertStoreInvariants } from "../../test/invariants/checkStoreInvariants"
 
 /** Resolve to a promise's value if it settles within `ms`, else report it
@@ -38,6 +39,37 @@ describe("transaction", () => {
         }, getStoreData(store1))
         expect(store1.get(atom1)).toBe(2)
     })
+
+    test("large fresh unobserved writes still close one commit boundary", () => {
+        const store1 = store()
+        const atoms = Array.from({ length: 256 }, () => atom(0))
+        const onCommitEnd = mock(() => {})
+        const unsubscribe = store1.onCommitEnd(onCommitEnd)
+
+        store1.txn(txn => {
+            for (let index = 0; index < atoms.length; index++) {
+                txn.set(atoms[index]!, index + 1)
+            }
+        })
+
+        expect(store1.get(atoms[0]!)).toBe(1)
+        expect(store1.get(atoms[atoms.length - 1]!)).toBe(256)
+        expect(onCommitEnd).toHaveBeenCalledTimes(1)
+        unsubscribe()
+    })
+
+    test("fresh atoms with initialization behavior stay on the full path", () => {
+        const store1 = store()
+        const atom1 = atom(0) as InternalAtom<number>
+        const onInit = mock(() => {})
+        atom1.onInit = onInit
+
+        store1.txn(txn => txn.set(atom1, 1))
+
+        expect(onInit).toHaveBeenCalledTimes(1)
+        expect(store1.get(atom1)).toBe(1)
+    })
+
     test("txn set with callback", () => {
         const store1 = store()
         const atom1 = atom(1)

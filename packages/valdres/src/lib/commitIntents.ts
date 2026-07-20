@@ -53,22 +53,3 @@ export const SETTLE_SKIP_FAMILY_INDEX = flags(false, true, true)
 
 /** Initialization-only settle: no observer reporting. */
 export const SETTLE_INIT_ONLY = flags(true, false, true)
-
-/**
- * TOTAL mapping of the 3-bit flag space onto shared frozen consts, for the
- * legacy positional `propagateAtomUpdate` adapter:
- * index = (isInitOnly ? 4 : 0) | (skipFamilyIndexUpdate ? 2 : 0) | (reportAtoms ? 1 : 0).
- * Totality is the point — no positional combination can be silently coerced to
- * a different one, and no combination ever allocates. The four unnamed entries
- * have no current caller but must exist so the mapping stays total.
- */
-export const SETTLE_FLAGS_BY_BITS: readonly SettleFlags[] = Object.freeze([
-    SETTLE_UNSET, // 000
-    SETTLE_DEFAULT, // 001
-    flags(false, true, false), // 010 (no current caller)
-    SETTLE_SKIP_FAMILY_INDEX, // 011
-    flags(true, false, false), // 100 (no current caller)
-    SETTLE_INIT_ONLY, // 101
-    flags(true, true, false), // 110 (no current caller)
-    flags(true, true, true), // 111 (no current caller)
-])

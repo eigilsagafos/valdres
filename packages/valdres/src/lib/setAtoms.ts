@@ -1,19 +1,27 @@
 import type { Atom } from "../types/Atom"
 import type { BulkWriteIntent } from "../types/CommitIntent"
+import type { InternalAtom } from "../types/InternalAtom"
 import type { StoreData } from "../types/StoreData"
+import { isFamilyAtom } from "../utils/isFamilyAtom"
+import { isPromiseLike } from "../utils/isPromiseLike"
 import { runCommitPlan } from "./commitEngine"
-import { SETTLE_DEFAULT } from "./commitIntents"
+import { BULK_WITH_EFFECTS_SILENT, SETTLE_DEFAULT } from "./commitIntents"
 import {
     createCommitErrors,
     recordCommitError,
     throwCommitError,
 } from "./commitErrors"
+import { equal } from "./equal"
 import {
     applyGlobalOnSets,
     beginGlobalCommit,
     endGlobalCommit,
 } from "./globalAtomFanOut"
-import { createChangeSink, flushChangeSink } from "./notifyChangeListeners"
+import {
+    createChangeSink,
+    flushChangeSink,
+    type ChangeReport,
+} from "./notifyChangeListeners"
 import {
     notifyDeferred,
     propagateAtomUpdate,
@@ -21,12 +29,13 @@ import {
     type NotifyTarget,
 } from "./propagateUpdatedAtoms"
 import { runOnSets, type DeferredOnSet } from "./runOnSets"
+import { setValueInData } from "./setValueInData"
 import { writeAtoms } from "./writeAtoms"
 
-// Safe only with writeAtoms(onSet: "skip"), which cannot mutate this queue.
-// Reusing it keeps transactions without hooks/globals on the pre-fix
-// allocation profile.
+// Safe only with writeAtoms(skipOnSet=true), which cannot mutate this queue.
+// Reusing it keeps hook-free bulk writes allocation-light.
 const noOnSets: DeferredOnSet[] = []
+const FRESH_ATOM_FAST_PATH_MIN = 256
 
 /**
  * Bulk-write coordinator of the commit engine: the single-store transaction
@@ -48,7 +57,7 @@ export const setAtoms = (
             pairs,
             data,
             initializedAtomsSet,
-            "skip",
+            true,
             noOnSets,
         )
         if (updatedAtoms.length > 0) {
@@ -68,7 +77,7 @@ export const setAtoms = (
         pairs,
         data,
         initializedAtomsSet,
-        "collect",
+        false,
         onSets,
     )
     const errors = createCommitErrors()
@@ -110,7 +119,13 @@ export const setAtoms = (
     }
     if (updatedAtoms.length > 0) {
         try {
-            propagateAtomUpdate(updatedAtoms, data, false, notify, intent.report)
+            propagateAtomUpdate(
+                updatedAtoms,
+                data,
+                false,
+                notify,
+                intent.report,
+            )
         } catch (error) {
             recordCommitError(errors, error)
         }
@@ -128,4 +143,95 @@ export const setAtoms = (
     endGlobalCommit(commitRoots, errors)
 
     throwCommitError(errors)
+}
+
+/**
+ * An unobserved root transaction can avoid retaining both a large
+ * initialization Set and a duplicate propagation array when every write is to
+ * a fresh ordinary atom with a side-effect-free primitive default. Such atoms
+ * cannot have subscribers or selector dependents (either would already have
+ * initialized them), so the write phase is also the final phase. The strict,
+ * all-or-nothing qualification keeps every extensible atom shape on the
+ * established path.
+ */
+const tryWriteFreshSimpleAtoms = (
+    pairs: Map<Atom<any>, any>,
+    data: StoreData,
+): boolean => {
+    // Keep ordinary/small transactions byte-for-byte on the established path;
+    // only large initialization batches create the retained-capacity problem
+    // this specialization exists to avoid.
+    if (data.parent || pairs.size < FRESH_ATOM_FAST_PATH_MIN) return false
+    for (const [atom, value] of pairs) {
+        if (data.values.has(atom) || isPromiseLike(value)) return false
+        const defaultValue = atom.defaultValue
+        const defaultType = typeof defaultValue
+        if (
+            defaultValue === undefined ||
+            (defaultValue !== null &&
+                (defaultType === "object" || defaultType === "function")) ||
+            isFamilyAtom(atom) ||
+            atom.equal !== equal ||
+            atom.onSet !== undefined ||
+            atom.name !== undefined ||
+            atom.schema !== undefined ||
+            atom.maxAge !== undefined ||
+            data.subscriptions.has(atom) ||
+            data.stateDependents.has(atom) ||
+            data.stateRevisionClock.tracked?.has(atom) ||
+            data.inheritedDependencyBranches.has(atom) ||
+            (atom as InternalAtom).onInit !== undefined
+        ) {
+            return false
+        }
+    }
+    for (const [atom, value] of pairs) {
+        // Match initAtom's primitive landing before equality. If equality ever
+        // throws, the initialized default remains just as it did previously.
+        data.values.set(atom, atom.defaultValue)
+        atom.equal(atom.defaultValue, value)
+        setValueInData(atom, value, data)
+    }
+    return true
+}
+
+/**
+ * TEMPORARY TRANSACTION ADAPTER — transactions are intentionally outside this
+ * commit-engine migration. Preserve their established hook-free fast path and
+ * positional call shape; only the effectful slow path delegates to the typed
+ * bulk coordinator, which remains the sole owner of hook/error/notification
+ * sequencing. This adapter can disappear when transactions are migrated as a
+ * dedicated change.
+ */
+export const setTransactionAtoms = (
+    pairs: Map<Atom<any>, any>,
+    data: StoreData,
+    initializedAtomsSet: Set<Atom>,
+    skipOnSet = false,
+    report?: ChangeReport,
+    hasCommitEffects = true,
+) => {
+    if (skipOnSet || !hasCommitEffects) {
+        if (report === undefined && tryWriteFreshSimpleAtoms(pairs, data)) {
+            return
+        }
+        const updatedAtoms = writeAtoms(
+            pairs,
+            data,
+            initializedAtomsSet,
+            true,
+            noOnSets,
+        )
+        if (updatedAtoms.length > 0) {
+            propagateAtomUpdate(updatedAtoms, data, false, undefined, report)
+        }
+        return
+    }
+
+    setAtoms(
+        pairs,
+        data,
+        initializedAtomsSet,
+        report ? { onSet: "collect", report } : BULK_WITH_EFFECTS_SILENT,
+    )
 }

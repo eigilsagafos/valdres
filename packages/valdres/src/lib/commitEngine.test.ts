@@ -10,7 +10,6 @@ import {
     DIRECT_WRITE,
     SEED_WRITE,
     SETTLE_DEFAULT,
-    SETTLE_FLAGS_BY_BITS,
     SETTLE_INIT_ONLY,
     SETTLE_SKIP_FAMILY_INDEX,
     SETTLE_UNSET,
@@ -142,26 +141,9 @@ describe("commitEngine", () => {
                 SETTLE_INIT_ONLY,
                 SETTLE_SKIP_FAMILY_INDEX,
                 SETTLE_UNSET,
-                SETTLE_FLAGS_BY_BITS,
-                ...SETTLE_FLAGS_BY_BITS,
             ]) {
                 expect(Object.isFrozen(value)).toBe(true)
             }
-        })
-
-        test("the flag table is total and faithful to its bit index", () => {
-            expect(SETTLE_FLAGS_BY_BITS).toHaveLength(8)
-            for (let bits = 0; bits < 8; bits++) {
-                const flags = SETTLE_FLAGS_BY_BITS[bits]
-                expect(flags.isInitOnly).toBe(Boolean(bits & 4))
-                expect(flags.skipFamilyIndexUpdate).toBe(Boolean(bits & 2))
-                expect(flags.reportAtoms).toBe(Boolean(bits & 1))
-            }
-            // The named consts sit at their own bit positions.
-            expect(SETTLE_FLAGS_BY_BITS[1]).toBe(SETTLE_DEFAULT)
-            expect(SETTLE_FLAGS_BY_BITS[0]).toBe(SETTLE_UNSET)
-            expect(SETTLE_FLAGS_BY_BITS[3]).toBe(SETTLE_SKIP_FAMILY_INDEX)
-            expect(SETTLE_FLAGS_BY_BITS[5]).toBe(SETTLE_INIT_ONLY)
         })
     })
 })

@@ -1,5 +1,4 @@
 import type { Atom } from "../types/Atom"
-import type { OnSetPolicy } from "../types/CommitIntent"
 import type { StoreData } from "../types/StoreData"
 import { isPromiseLike } from "../utils/isPromiseLike"
 import { coordinateAsyncWrite } from "./coordinateAsyncWrite"
@@ -15,20 +14,20 @@ import { setValueInData } from "./setValueInData"
  * equality checks. This does NOT propagate — see `setAtoms` (single-store
  * fast path) or the transaction commit pipeline (cross-scope path) for notify.
  *
- * Hook and global handling are deliberately collection-only (`onSet:
- * "collect"` queues deferred hooks into `onSetQueue`; `"skip"` writes values
- * only). The caller first completes every local/global write, then runs the
- * queue, then propagates. This keeps a throwing hook from interrupting either
- * the write or propagation phase.
+ * Hook and global handling are deliberately collection-only. The caller first
+ * completes every local/global write, then runs `onSetQueue`, then propagates.
+ * This keeps a throwing hook from interrupting either the write or propagation
+ * phase. The boolean remains here because transactions are not migrated by the
+ * commit-engine change; typed bulk coordinators translate their intent at their
+ * own boundary.
  */
 export const writeAtoms = (
     pairs: Map<Atom<any>, any>,
     data: StoreData,
     initializedAtomsSet: Set<Atom>,
-    onSet: OnSetPolicy,
+    skipOnSet: boolean,
     onSetQueue: DeferredOnSet[],
 ): Atom[] => {
-    const skipOnSet = onSet === "skip"
     const updatedAtoms: Atom[] = []
     for (let [atom, value] of pairs) {
         const currentValue = getState(atom, data, initializedAtomsSet)
