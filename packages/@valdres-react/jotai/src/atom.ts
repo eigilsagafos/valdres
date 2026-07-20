@@ -42,6 +42,42 @@ const addOnMountInterceptor = (target: any) => {
     return target
 }
 
+// Jotai libraries can attach an INTERNAL_onInit hook that receives the store
+// the first time an atom is touched in that store. Valdres already has an
+// equivalent per-store primitive-atom hook, but its callback receives internal
+// store data. Bridge the two while preserving Valdres hooks such as atomWithLazy.
+const addOnInitInterceptor = (target: any) => {
+    let coreOnInit = target.onInit
+    let jotaiOnInit: ((store: any) => void) | undefined
+    const combinedOnInit = (setSelf: any, data: any) => {
+        coreOnInit?.(setSelf, data)
+        const store = getStoreById(data.id)
+        if (store) jotaiOnInit?.(store)
+    }
+
+    Object.defineProperty(target, "onInit", {
+        get() {
+            return coreOnInit || jotaiOnInit ? combinedOnInit : undefined
+        },
+        set(onInit) {
+            coreOnInit = onInit
+        },
+        configurable: true,
+        enumerable: true,
+    })
+    Object.defineProperty(target, "INTERNAL_onInit", {
+        get() {
+            return jotaiOnInit
+        },
+        set(onInit) {
+            jotaiOnInit = onInit
+        },
+        configurable: true,
+        enumerable: true,
+    })
+    return target
+}
+
 const isAsyncFunction = (fn: Function) =>
     Object.prototype.toString.call(fn) === "[object AsyncFunction]"
 
@@ -120,6 +156,6 @@ export const atom = (get: any, set?: any) => {
         return addOnMountInterceptor(selector)
     } else {
         const newAtom = valdresAtom(get, { equal: Object.is })
-        return addOnMountInterceptor(newAtom)
+        return addOnMountInterceptor(addOnInitInterceptor(newAtom))
     }
 }
