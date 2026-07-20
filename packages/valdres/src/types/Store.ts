@@ -40,9 +40,12 @@ export type ScopeFn = {
 
 export type Store<T = StoreData> = {
     data: T
-    /** Release this store and its descendant scopes from every global atom they
-     *  touched. Call this for request/SSR stores when the request completes.
-     *  The process-wide `globalStore` cannot be disposed. */
+    /** Terminally release this store and its descendant scopes. Disposal drains
+     *  subscriptions, mounts, timers, change/commit listeners, pending batches,
+     *  async selector work, and global-atom registrations. Every later store
+     *  operation throws `StoreDisposedError`; repeated disposal is a no-op. Call
+     *  this for request/SSR stores when the request completes. The process-wide
+     *  `globalStore` cannot be disposed. */
     dispose: () => void
     get: GetValue
     set: SetAtom

@@ -21,7 +21,7 @@ type CountedSubscriptions = Set<Subscription> & {
 // a survivor scan or a second state index: the subscription Set already has
 // exactly the lifetime and identity needed to own the private O(1) count.
 export const addSubscriptionEqualCheck = (
-    state: WeakKey,
+    state: State,
     subscriptions: Set<Subscription>,
     data: StoreData,
 ) => {
@@ -36,7 +36,7 @@ export const addSubscriptionEqualCheck = (
 }
 
 const removeSubscriptionEqualCheck = (
-    state: WeakKey,
+    state: State,
     subscriptions: Set<Subscription>,
     data: StoreData,
 ) => {
@@ -47,7 +47,11 @@ const removeSubscriptionEqualCheck = (
         // Retain the Set's shape; the Set itself is discarded with its last
         // subscriber, and a later equality subscription can reuse this slot.
         countedSubscriptions[equalCheckCount] = 0
-        data.subscriptionsRequireEqualCheck.delete(state)
+        // A key with an undefined value remains disposal's active-state index.
+        // The final-unsubscribe path below deletes the key outright.
+        if (subscriptions.size !== 0) {
+            data.subscriptionsRequireEqualCheck.set(state, undefined)
+        }
         return
     }
     countedSubscriptions[equalCheckCount] = count - 1
@@ -61,13 +65,11 @@ export const unsubscribe = <V>(
     const subscribers = data.subscriptions.get(state)
     if (subscribers) {
         const wasSubscribed = subscribers.delete(subscription)
-        if (
-            wasSubscribed &&
-            subscription.requireDeepEqualCheckBeforeCallback
-        ) {
+        if (wasSubscribed && subscription.requireDeepEqualCheckBeforeCallback) {
             removeSubscriptionEqualCheck(state, subscribers, data)
         }
         if (subscribers.size === 0) {
+            data.subscriptionsRequireEqualCheck.delete(state)
             const maxAgeCleanup = getMaxAgeCleanup(data, state)
             if (maxAgeCleanup) {
                 maxAgeCleanup()

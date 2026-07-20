@@ -2,6 +2,8 @@ import { describe, expect, test } from "bun:test"
 import { atom } from "../atom"
 import { atomFamily } from "../atomFamily"
 import { Transaction } from "../adapter-internals"
+import { StoreDisposedError } from "../errors/StoreDisposedError"
+import { selector } from "../selector"
 import { store } from "../store"
 
 describe("adapter transaction lifecycle", () => {
@@ -78,5 +80,52 @@ describe("adapter transaction lifecycle", () => {
 
         expect(sources).toEqual(["reset"])
         unsubscribe()
+    })
+
+    test("store disposal cancels an open adapter transaction", () => {
+        const store1 = store()
+        const pending = new Promise<number>(() => {})
+        let signal!: AbortSignal
+        const selected = selector((_get, options) => {
+            signal = options.signal
+            return pending
+        })
+        const txn = new Transaction(store1.data)
+
+        txn.get(selected)
+        expect(signal.aborted).toBe(false)
+
+        store1.dispose()
+
+        expect(signal.aborted).toBe(true)
+        expect(() => txn.commit()).toThrow(StoreDisposedError)
+        expect(() => txn.get(selected)).toThrow(StoreDisposedError)
+    })
+
+    test("disposing a touched scope cancels the adapter transaction tree", () => {
+        const root = store()
+        const child = root.scope("child")
+        const pending = new Promise<number>(() => {})
+        let signal!: AbortSignal
+        let childTxn: any
+        const selected = selector((_get, options) => {
+            signal = options.signal
+            return pending
+        })
+        const txn = new Transaction(root.data)
+
+        txn.scope("child", scopedTxn => {
+            childTxn = scopedTxn
+            scopedTxn.get(selected)
+        })
+        expect(signal.aborted).toBe(false)
+
+        child.dispose()
+
+        expect(signal.aborted).toBe(true)
+        expect(() => childTxn.get(selected)).toThrow(StoreDisposedError)
+        expect(() => txn.commit()).toThrow(
+            "Cannot commit transaction while it is closed",
+        )
     })
 })

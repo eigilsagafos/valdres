@@ -4,6 +4,11 @@ import { isSelector } from "../utils/isSelector"
 import { addStateDependent } from "./inheritedDependencyBranches"
 import { noteDependencyGraphChanged } from "./noteDependencyGraphChanged"
 import { storeFromStoreData } from "./storeFromStoreData"
+import {
+    isStoreDisposed,
+    trackStoreMount,
+    untrackStoreMount,
+} from "./storeLifecycle"
 
 // Shared immutable empty set — a missing stateDependencies entry (atoms and
 // atom-family members are graph sinks) yields a zero-length iterator without
@@ -301,7 +306,10 @@ const seedClosureHasCycle = (
     // node is a back-edge. Positive results are never cached because a later
     // teardown edge deletion could break the cycle without bumping the version.
     const stack: { node: State; it: Iterator<State> }[] = [
-        { node: seed, it: (data.stateDependencies.get(seed) ?? EMPTY).values() },
+        {
+            node: seed,
+            it: (data.stateDependencies.get(seed) ?? EMPTY).values(),
+        },
     ]
     onPath.add(seed)
     while (stack.length > 0) {
@@ -534,12 +542,30 @@ export const mountAtom = (state: State, data: StoreData) => {
     // (onMount may call setSelf which triggers propagation and dep changes)
     const mountEntry: { cleanup?: () => void } = {}
     data.mounts.set(state, mountEntry)
+    if (!trackStoreMount(data, state)) {
+        data.mounts.delete(state)
+        return
+    }
     const store = data.storeRef ?? storeFromStoreData(data)
     try {
         const result = onMountFn(store, state)
-        if (typeof result === "function") mountEntry.cleanup = result
+        if (typeof result === "function") {
+            // onMount may dispose its own store re-entrantly. Disposal sees the
+            // provisional mount entry and removes it before the callback
+            // returns, so run a cleanup returned afterwards immediately rather
+            // than stranding a resource outside the lifecycle ledger.
+            if (
+                isStoreDisposed(data) ||
+                data.mounts.get(state) !== mountEntry
+            ) {
+                result()
+            } else {
+                mountEntry.cleanup = result
+            }
+        }
     } catch (error) {
-        data.mounts.delete(state)
+        if (data.mounts.get(state) === mountEntry) data.mounts.delete(state)
+        untrackStoreMount(data, state)
         throw error
     }
 }
@@ -550,8 +576,12 @@ export const mountAtom = (state: State, data: StoreData) => {
  */
 export const unmountAtom = (state: State, data: StoreData) => {
     const mount = data.mounts.get(state)
-    if (!mount) return
+    if (!mount) {
+        untrackStoreMount(data, state)
+        return
+    }
     data.mounts.delete(state)
+    untrackStoreMount(data, state)
     if (typeof mount.cleanup === "function") {
         mount.cleanup()
     }

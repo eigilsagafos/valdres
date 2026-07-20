@@ -18,6 +18,10 @@ import { propagateAtomUpdate } from "./propagateUpdatedAtoms"
 import { setValueInData } from "./setValueInData"
 import { setMaxAgeCleanup } from "./maxAgeCleanups"
 import { mountTransitiveDeps, onFirstDirectSubscriber } from "./mountAtom"
+import {
+    createStoreDisposedError,
+    DISPOSED_STORE_PENDING,
+} from "./storeLifecycle"
 import { addSubscriptionEqualCheck, unsubscribe } from "./unsubscribe"
 import { validateResolvedValue } from "./validateResolvedValue"
 
@@ -36,11 +40,21 @@ export const installMaxAgeTimer = (state: Atom<any>, data: StoreData) => {
         // Another store already owns the interval — just bump refCount
         existing.refCount++
         // Seed the cache meta in this store from an existing store
-        const metaAtom = (state.__cacheMeta ??= { equal, defaultValue: null, __valdresInternal: true })
+        const metaAtom = (state.__cacheMeta ??= {
+            equal,
+            defaultValue: null,
+            __valdresInternal: true,
+        })
         for (const s of globalState!.stores) {
             if (s !== data && s.values.has(metaAtom)) {
                 setValueInData(metaAtom, s.values.get(metaAtom), data)
-                propagateAtomUpdate([metaAtom], data, false, undefined, "revalidate")
+                propagateAtomUpdate(
+                    [metaAtom],
+                    data,
+                    false,
+                    undefined,
+                    "revalidate",
+                )
                 break
             }
         }
@@ -75,7 +89,11 @@ export const installMaxAgeTimer = (state: Atom<any>, data: StoreData) => {
             ? resolveReactive(state.staleIfError, data)
             : Infinity
 
-    const metaAtom = (state.__cacheMeta ??= { equal, defaultValue: null, __valdresInternal: true })
+    const metaAtom = (state.__cacheMeta ??= {
+        equal,
+        defaultValue: null,
+        __valdresInternal: true,
+    })
     const updateMeta = () => {
         const meta: CacheMeta = {
             isRevalidating: revalidating,
@@ -87,11 +105,23 @@ export const installMaxAgeTimer = (state: Atom<any>, data: StoreData) => {
         if (globalState) {
             for (const store of globalState.stores) {
                 setValueInData(metaAtom, meta, store)
-                propagateAtomUpdate([metaAtom], store, false, undefined, "revalidate")
+                propagateAtomUpdate(
+                    [metaAtom],
+                    store,
+                    false,
+                    undefined,
+                    "revalidate",
+                )
             }
         } else {
             setValueInData(metaAtom, meta, data)
-            propagateAtomUpdate([metaAtom], data, false, undefined, "revalidate")
+            propagateAtomUpdate(
+                [metaAtom],
+                data,
+                false,
+                undefined,
+                "revalidate",
+            )
         }
     }
 
@@ -208,10 +238,7 @@ export const installMaxAgeTimer = (state: Atom<any>, data: StoreData) => {
             const handleReject = () => {
                 if (cancelled) return
                 revalidating = false
-                if (
-                    !isPastStaleIfErrorWindow() &&
-                    lastGoodValue !== NO_VALUE
-                ) {
+                if (!isPastStaleIfErrorWindow() && lastGoodValue !== NO_VALUE) {
                     setAndPropagate(lastGoodValue)
                 } else {
                     setAndPropagate(value)
@@ -288,12 +315,22 @@ export const installMaxAgeTimer = (state: Atom<any>, data: StoreData) => {
     }
     if (state.staleWhileRevalidate && isReactive(state.staleWhileRevalidate)) {
         configUnsubs.push(
-            subscribe(state.staleWhileRevalidate as any, () => updateMeta(), false, data),
+            subscribe(
+                state.staleWhileRevalidate as any,
+                () => updateMeta(),
+                false,
+                data,
+            ),
         )
     }
     if (state.staleIfError && isReactive(state.staleIfError)) {
         configUnsubs.push(
-            subscribe(state.staleIfError as any, () => updateMeta(), false, data),
+            subscribe(
+                state.staleIfError as any,
+                () => updateMeta(),
+                false,
+                data,
+            ),
         )
     }
 
@@ -302,7 +339,19 @@ export const installMaxAgeTimer = (state: Atom<any>, data: StoreData) => {
         clearInterval(currentInterval)
         for (const t of pendingTimeouts) clearTimeout(t)
         pendingTimeouts.clear()
-        for (const unsub of configUnsubs) unsub()
+        let firstError: unknown
+        let hasError = false
+        for (const unsub of configUnsubs) {
+            try {
+                unsub()
+            } catch (error) {
+                if (!hasError) {
+                    firstError = error
+                    hasError = true
+                }
+            }
+        }
+        if (hasError) throw firstError
     }
 
     if (globalState) {
@@ -316,7 +365,48 @@ export const installMaxAgeTimer = (state: Atom<any>, data: StoreData) => {
                 if (globalState.maxAgeInterval === entry) {
                     globalState.maxAgeInterval = undefined
                 }
+                return
             }
+
+            // The store that created the shared interval also owns its
+            // reactive config subscriptions. If that owner leaves while other
+            // direct subscribers remain, rebuild the single interval through
+            // those live stores so no lifecycle resource stays attached to the
+            // terminal owner. The first survivor creates the interval and the
+            // rest join its ref-counted entry.
+            const survivors: StoreData[] = []
+            for (const store of globalState.stores) {
+                if (
+                    store !== data &&
+                    (store.subscriptions.get(state)?.size ?? 0) > 0
+                ) {
+                    survivors.push(store)
+                }
+            }
+
+            let firstError: unknown
+            let hasError = false
+            try {
+                entry.cleanup()
+            } catch (error) {
+                firstError = error
+                hasError = true
+            }
+            entry.refCount = 0
+            if (globalState.maxAgeInterval === entry) {
+                globalState.maxAgeInterval = undefined
+            }
+            for (const survivor of survivors) {
+                try {
+                    installMaxAgeTimer(state, survivor)
+                } catch (error) {
+                    if (!hasError) {
+                        firstError = error
+                        hasError = true
+                    }
+                }
+            }
+            if (hasError) throw firstError
         })
     } else {
         setMaxAgeCleanup(data, state, cleanup)
@@ -329,13 +419,15 @@ export const subscribe = <V>(
     requireDeepEqualCheckBeforeCallback: boolean,
     data: StoreData,
 ) => {
+    if (data.pendingOrphanCleanup === DISPOSED_STORE_PENDING) {
+        throw createStoreDisposedError(data)
+    }
     // Classify once. Besides rejecting selector-family factory objects at the
     // runtime boundary, this avoids repeating Object.hasOwn checks throughout
     // the subscription setup hot path.
     const atomState = isAtom(state)
     const atomFamilyState = !atomState && isAtomFamily(state)
-    const selectorState =
-        !atomState && !atomFamilyState && isSelector(state)
+    const selectorState = !atomState && !atomFamilyState && isSelector(state)
     if (!atomState && !atomFamilyState && !selectorState) {
         throw new Error("Invalid object passed to sub")
     }
@@ -445,6 +537,15 @@ export const subscribe = <V>(
         }
     }
     subscribers.add(subscription)
+    // This public equality table also serves as disposal's iterable active-state
+    // index. Equality counts live on the subscriber Set, so the map remains one
+    // O(1) write per state transition rather than a second bookkeeping structure.
+    if (subscribers.size === 1 && !requireDeepEqualCheckBeforeCallback) {
+        data.subscriptionsRequireEqualCheck.set(state, undefined)
+    }
+    if (requireDeepEqualCheckBeforeCallback) {
+        addSubscriptionEqualCheck(state, subscribers, data)
+    }
     const unsubscribeSubscription = () => {
         if (!parentUnsubscribe) {
             unsubscribe(state, subscription, data)
@@ -488,10 +589,6 @@ export const subscribe = <V>(
             } catch {}
             throw error
         }
-    }
-
-    if (requireDeepEqualCheckBeforeCallback) {
-        addSubscriptionEqualCheck(state, subscribers, data)
     }
 
     return unsubscribeSubscription

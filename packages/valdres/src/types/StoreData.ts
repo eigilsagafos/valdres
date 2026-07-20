@@ -43,7 +43,11 @@ export type StoreData = {
      *  creation — no per-call branch on the hot path. */
     values: WeakMap<WeakKey, any> | Map<WeakKey, any>
     subscriptions: WeakMap<WeakKey, Set<Subscription>>
-    subscriptionsRequireEqualCheck: WeakMap<WeakKey, boolean>
+    /** Active subscribed states, with `true` only when at least one callback
+     *  requires structural equality. The iterable keys also let terminal
+     *  disposal drain the otherwise-weak subscription table. Entries are
+     *  deleted synchronously with the final subscriber. */
+    subscriptionsRequireEqualCheck: Map<State, true | undefined>
     stateDependents: WeakMap<WeakKey, any>
     stateDependencies: WeakMap<WeakKey, any>
     /** Selectors whose forward dependency sets are currently mirrored into the
@@ -182,7 +186,10 @@ export type StoreData = {
      *  next `setAtom` resolves it with the eventual value. Keyed by atom
      *  identity so the lifecycle is independent of the promise stored in
      *  `values` (which may be replaced by user-supplied async sets). */
-    pendingDefaults: WeakMap<WeakKey, { promise: Promise<any>; resolve: (value: any) => void }>
+    pendingDefaults: WeakMap<
+        WeakKey,
+        { promise: Promise<any>; resolve: (value: any) => void }
+    >
     storeRef?: Store
     /** True when this store was created with `{ enumerable: true }`: `values` is
      *  a `Map` (not a `WeakMap`) so `store.snapshot()` can list current state.

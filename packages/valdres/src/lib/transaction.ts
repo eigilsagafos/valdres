@@ -10,6 +10,13 @@ import type { TransactionFn } from "../types/TransactionFn"
 import { SchemaValidationError } from "../errors/SchemaValidationError"
 import { deepFreeze } from "../utils/deepFreeze"
 import { validateSchema } from "./validateSchema"
+import {
+    createStoreDisposedError,
+    DISPOSED_STORE_PENDING,
+    trackStoreTransaction,
+    untrackStoreTransaction,
+} from "./storeLifecycle"
+import type { StoreResources } from "./storeLifecycle"
 import { isAtom } from "../utils/isAtom"
 import { isAtomFamily } from "../utils/isAtomFamily"
 import { isFamilyAtom } from "../utils/isFamilyAtom"
@@ -105,7 +112,7 @@ const throwTransactionStateError = (
 const EXECUTE_TRANSACTION = Symbol("executeTransaction")
 const COMMIT_TRANSACTION = Symbol("commitTransaction")
 const ABORT_TRANSACTION = Symbol("abortTransaction")
-
+const CANCEL_TRANSACTION = Symbol("cancelTransaction")
 // const findDependencies = (
 //     state: State,
 //     data: StoreData,
@@ -148,6 +155,7 @@ export class TransactionContext {
     private _selectorRuntime: SelectorEvaluationRuntime | undefined
     private _selectorCircularDependencySet: WeakSet<any> | undefined
     private _atomMap: Map<any, any>
+    private _lifecycleResources: StoreResources | undefined
     // Allocated only for transactions that clone/mutate family membership.
     // Ordinary-atom and existing-family-member transactions keep their commit
     // path allocation-free and never scan `_atomMap` looking for families.
@@ -173,6 +181,81 @@ export class TransactionContext {
                 [childTransaction._data.id, childTransaction],
             ])
         }
+        this._lifecycleResources = trackStoreTransaction(data, this)
+        if (!this._lifecycleResources) this.cancelTree()
+    }
+
+    private assertOpen(operation: string): void {
+        // Keep the active path identical to the transaction state guard: store
+        // disposal closes every registered open context through cancelTree().
+        // Only a terminal handle pays the extra lifecycle read, which also lets
+        // a retained, previously committed handle report disposal precisely.
+        if (this._state === TRANSACTION_OPEN) return
+        if (this._data.pendingOrphanCleanup === DISPOSED_STORE_PENDING) {
+            throw createStoreDisposedError(this._data)
+        }
+        throwTransactionStateError(this._state, operation)
+    }
+
+    /** Close a working tree and release resources that were never committed. */
+    private cancelTree(): void {
+        this._state = TRANSACTION_CLOSED
+        this.untrackLifecycle()
+        if (this._scopedTransactions) {
+            for (const transaction of this._scopedTransactions.values()) {
+                transaction.cancelTree()
+            }
+            this._scopedTransactions.clear()
+        }
+        const runtime = this._selectorRuntime
+        if (runtime) {
+            runtime.readOverlayActive = false
+            for (const context of runtime.latestEvalContext.values()) {
+                context.revoke()
+            }
+            for (const controller of runtime.abortControllers.values()) {
+                controller.abort()
+            }
+            runtime.latestEvalContext.clear()
+            runtime.abortControllers.clear()
+            runtime.stateDependencies.clear()
+            this._selectorRuntime = undefined
+        }
+        this._atomMap.clear()
+        this._initializedAtomsSet?.clear()
+        this._initializedAtomsSet = undefined
+        this._deleteSet?.clear()
+        this._deleteSet = undefined
+        this._unsetSet?.clear()
+        this._unsetSet = undefined
+        this._selectorCache?.clear()
+        this._selectorCache = undefined
+        this._selectorCircularDependencySet = undefined
+        this._dirtyFamilyIndexes?.clear()
+        this._dirtyFamilyIndexes = undefined
+        this._dirty = false
+        this._hasCommitEffects = false
+    }
+
+    private untrackLifecycle(): void {
+        const resources = this._lifecycleResources
+        if (!resources) return
+        this._lifecycleResources = undefined
+        untrackStoreTransaction(resources, this)
+    }
+
+    private untrackTree(): void {
+        this.untrackLifecycle()
+        if (!this._scopedTransactions) return
+        for (const transaction of this._scopedTransactions.values()) {
+            transaction.untrackTree()
+        }
+    }
+
+    /** Disposal-only cancellation: idempotent and valid after terminal mark. */
+    [CANCEL_TRANSACTION](): void {
+        const root = this._parentTransaction ? this.rootTransaction() : this
+        root.cancelTree()
     }
 
     private hasTxnOrData = (state: State): boolean => {
@@ -211,9 +294,7 @@ export class TransactionContext {
     }
 
     get: GetValue = (state: State<any>) => {
-        if (this._state !== TRANSACTION_OPEN) {
-            throwTransactionStateError(this._state, "read from")
-        }
+        this.assertOpen("read from")
         if (isAtom(state) || isAtomFamily(state)) {
             if (this.hasTxnOrData(state)) {
                 const value = this.valueFromTxnOrData(state)
@@ -280,9 +361,7 @@ export class TransactionContext {
     }
 
     set = <V>(atom: Atom<V>, value: SetAtomValue<V>): V => {
-        if (this._state !== TRANSACTION_OPEN) {
-            throwTransactionStateError(this._state, "write to")
-        }
+        this.assertOpen("write to")
         if (!isAtom(atom)) throw new Error("Not an atom")
         let resolved: V | PromiseLike<V>
         if (isFunction(value)) {
@@ -356,9 +435,7 @@ export class TransactionContext {
             | ((error: SchemaValidationError) => void)
             | undefined = undefined,
     ) => {
-        if (this._state !== TRANSACTION_OPEN) {
-            throwTransactionStateError(this._state, "write to")
-        }
+        this.assertOpen("write to")
         let ownFamilyValue = this._atomMap.has(family)
             ? this._atomMap.get(family)
             : this._data.values.has(family)
@@ -428,9 +505,7 @@ export class TransactionContext {
     }
 
     del = (atom: AtomFamilyAtom<any, any>) => {
-        if (this._state !== TRANSACTION_OPEN) {
-            throwTransactionStateError(this._state, "write to")
-        }
+        this.assertOpen("write to")
         if (!this._atomMap.has(atom.family)) {
             // @ts-ignore
             this.cloneFamilyIntoTxn(atom.family)
@@ -449,9 +524,7 @@ export class TransactionContext {
     }
 
     unset = (atom: Atom) => {
-        if (this._state !== TRANSACTION_OPEN) {
-            throwTransactionStateError(this._state, "write to")
-        }
+        this.assertOpen("write to")
         if (!isAtom(atom)) throw new Error("unset() expects an atom.")
         // An unset in the same txn supersedes a set of the same atom — drop any
         // buffered write so the atom reverts (re-inherits on a scope / reverts to
@@ -478,9 +551,7 @@ export class TransactionContext {
         scopeId: string,
         callback: Callback,
     ): ReturnType<Callback> => {
-        if (this._state !== TRANSACTION_OPEN) {
-            throwTransactionStateError(this._state, "open a scope on")
-        }
+        this.assertOpen("open a scope on")
         if (this._data.scopes.has(scopeId)) {
             return this.scopedTransaction(scopeId)[EXECUTE_TRANSACTION](
                 callback,
@@ -496,9 +567,7 @@ export class TransactionContext {
     parentScope = <Callback extends TransactionFn>(
         callback: Callback,
     ): ReturnType<Callback> => {
-        if (this._state !== TRANSACTION_OPEN) {
-            throwTransactionStateError(this._state, "open a parent scope on")
-        }
+        this.assertOpen("open a parent scope on")
         if (!this._parentTransaction) {
             if (!this._data.parent) {
                 throw new Error("Cannot access parentScope on root store")
@@ -513,9 +582,7 @@ export class TransactionContext {
     }
 
     reset = <V>(atom: Atom<V>): V | Promise<V> => {
-        if (this._state !== TRANSACTION_OPEN) {
-            throwTransactionStateError(this._state, "write to")
-        }
+        this.assertOpen("write to")
         const value = getAtomInitValue(
             atom,
             this._data,
@@ -535,9 +602,7 @@ export class TransactionContext {
         callback: Callback,
         autoCommit = true,
     ): ReturnType<Callback> {
-        if (this._state !== TRANSACTION_OPEN) {
-            throwTransactionStateError(this._state, "execute")
-        }
+        this.assertOpen("execute")
         if (this._selectorRuntime)
             this._selectorRuntime.readOverlayActive = true
         try {
@@ -556,7 +621,10 @@ export class TransactionContext {
             // decide whether a caught nested error should abort its own work.
             const root = this._parentTransaction ? this.rootTransaction() : this
             if (autoCommit && root._state === TRANSACTION_OPEN) {
-                root[ABORT_TRANSACTION]()
+                // Preserve the callback error even if it disposed the store.
+                // This internal cancellation intentionally bypasses the public
+                // lifecycle assertion while still draining speculative work.
+                root[CANCEL_TRANSACTION]()
             }
             throw error
         } finally {
@@ -568,9 +636,7 @@ export class TransactionContext {
 
     [COMMIT_TRANSACTION](source?: StoreChangeSource): void {
         const root = this._parentTransaction ? this.rootTransaction() : this
-        if (root._state !== TRANSACTION_OPEN) {
-            throwTransactionStateError(root._state, "commit")
-        }
+        root.assertOpen("commit")
         // The overwhelmingly common single-store path changes two scalar
         // fields and never calls or allocates a tree helper. Cross-scope
         // transactions validate every child before changing any state.
@@ -586,21 +652,17 @@ export class TransactionContext {
             if (root._scopedTransactions) {
                 root.setScopedTreeState(TRANSACTION_CLOSED)
             }
+            root.untrackTree()
         }
     }
 
     [ABORT_TRANSACTION](): void {
         const root = this._parentTransaction ? this.rootTransaction() : this
-        if (root._state !== TRANSACTION_OPEN) {
-            throwTransactionStateError(root._state, "abort")
-        }
+        root.assertOpen("abort")
         if (root._scopedTransactions) {
             root.assertScopedTreeOpen("abort")
         }
-        root._state = TRANSACTION_CLOSED
-        if (root._scopedTransactions) {
-            root.setScopedTreeState(TRANSACTION_CLOSED)
-        }
+        root.cancelTree()
     }
 
     private rootTransaction(): TransactionContext {
@@ -612,9 +674,7 @@ export class TransactionContext {
     private assertScopedTreeOpen(operation: string): void {
         if (this._scopedTransactions) {
             for (const [, scopedTxn] of this._scopedTransactions) {
-                if (scopedTxn._state !== TRANSACTION_OPEN) {
-                    throwTransactionStateError(scopedTxn._state, operation)
-                }
+                scopedTxn.assertOpen(operation)
                 scopedTxn.assertScopedTreeOpen(operation)
             }
         }
@@ -1194,6 +1254,11 @@ export const commitTransaction = (
 /** Adapter-internal rollback for manually controlled contexts. */
 export const abortTransaction = (txn: TransactionContext): void =>
     txn[ABORT_TRANSACTION]()
+
+/** Store-lifecycle cancellation. Unlike a consumer abort, disposal has already
+ *  marked the store terminal, so this path deliberately bypasses assertions. */
+export const cancelTransaction = (txn: TransactionContext): void =>
+    txn[CANCEL_TRANSACTION]()
 
 export const transaction = (
     callback: TransactionFn,

@@ -25,6 +25,7 @@ export { selectorFamily } from "./selectorFamily"
 export { store } from "./store"
 
 export { SchemaValidationError } from "./errors/SchemaValidationError"
+export { StoreDisposedError } from "./errors/StoreDisposedError"
 export { deepFreeze } from "./utils/deepFreeze"
 export { dehydrate } from "./utils/dehydrate"
 export { hydrate } from "./utils/hydrate"
