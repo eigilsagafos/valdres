@@ -48,6 +48,8 @@ import {
     recordStoreSettlement,
 } from "./architectureInstrumentation"
 import { IS_PROD } from "./IS_PROD"
+import { SETTLE_FLAGS_BY_BITS } from "./commitIntents"
+import type { SettleFlags } from "../types/SettleFlags"
 
 export type { AtomFamilyIndex } from "./atomFamilyIndex"
 export {
@@ -482,29 +484,29 @@ export const propagateDeletedAtoms = (
 // then cross-propagate into scopes. A scoped immediate update notifies only
 // after the full affected tree has settled.
 //
+// This is the typed settle composite of the commit engine — phases 4–7 of a
+// commit (settle selectors → deliver subscribers → flush onChange → commit
+// boundary). Migrated callers (setAtom, setAtoms, lib/commitEngine) call it
+// directly with a shared frozen SettleFlags const from lib/commitIntents (one
+// hidden class, zero per-call allocation; field docs live on the type).
+// Everything else still enters through the positional propagateAtomUpdate
+// adapter below.
+//
 // `notify` (multi-pass commit only): see NotifyTarget. When provided, subscribers
 // are collected into it instead of fired, so the commit can fire them once at
 // the end. An immediate update that reaches scopes creates its own target, settles
 // the whole store tree, then fires it. The single-store / non-scoped hot path
 // stays inline and allocation-free with respect to deferred notification.
-export const propagateAtomUpdate = (
+export const settleCommit = (
     atoms: AtomInput[],
     data: StoreData,
-    isInitOnly = false,
-    notify?: NotifyTarget,
-    report?: ChangeReport,
-    // When true, family-atom members in `atoms` are propagated to their
-    // dependent selectors/subscribers but NOT registered in the family index.
-    // Used by the deleted-member async-default swap (see getState): the resolved
-    // value must reach dependents, but re-adding the member to the index would
-    // resurrect a deleted member.
-    skipFamilyIndexUpdate = false,
-    // When false, the trigger `atoms` are NOT reported to onChange here — only
-    // the selectors they cause to recompute are. The caller reports the atoms
-    // itself (the `unset` path emits them as `kind: "unset"` via reportUnsetAtom,
-    // so they must not also surface as a `"set"`).
-    reportAtoms = true,
+    notify: NotifyTarget | undefined,
+    report: ChangeReport | undefined,
+    flags: SettleFlags,
 ) => {
+    const isInitOnly = flags.isInitOnly
+    const skipFamilyIndexUpdate = flags.skipFamilyIndexUpdate
+    const reportAtoms = flags.reportAtoms
     // Commit boundary for store.onCommitEnd. With no listener anywhere this
     // is a single global counter read on the Bencher-gated propagation hot
     // path — no tracking, no allocation, no extra call frame. When listeners
@@ -765,6 +767,37 @@ export const propagateAtomUpdate = (
         if (commitRoot !== undefined) endCommit(commitRoot, !completed)
     }
 }
+
+/** LEGACY ADAPTER — the historical positional entry to the settle composite,
+ *  kept only for unmigrated callers (subscribe revalidation, the transaction
+ *  commit passes, coordinateAsyncWrite, unsetValue, getState/initSelector/
+ *  initAtom async defaults, globalAtom reset, and the global fan-out blocks).
+ *  Pure pass-through: `notify`/`report` forward positionally; the three
+ *  booleans select a shared frozen SettleFlags const from a TOTAL 8-entry
+ *  table, so no flag combination can be silently coerced to another and no
+ *  call ever allocates. Migrated code calls `settleCommit` with a named const
+ *  instead. Do not add new callers — this adapter disappears as the remaining
+ *  write paths move onto the commit engine. */
+export const propagateAtomUpdate = (
+    atoms: AtomInput[],
+    data: StoreData,
+    isInitOnly = false,
+    notify?: NotifyTarget,
+    report?: ChangeReport,
+    skipFamilyIndexUpdate = false,
+    reportAtoms = true,
+) =>
+    settleCommit(
+        atoms,
+        data,
+        notify,
+        report,
+        SETTLE_FLAGS_BY_BITS[
+            (isInitOnly ? 4 : 0) |
+                (skipFamilyIndexUpdate ? 2 : 0) |
+                (reportAtoms ? 1 : 0)
+        ],
+    )
 
 // Scope-recursive entry: re-evaluate selectors that depend on these atoms in
 // this scope and cross into nested scopes. Skips collecting direct atom and
