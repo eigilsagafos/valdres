@@ -62,7 +62,7 @@ import {
     type NotifyTarget,
 } from "./propagateUpdatedAtoms"
 import { runOnSets, type DeferredOnSet } from "./runOnSets"
-import { setTransactionAtoms } from "./setAtoms"
+import { setAtoms } from "./setAtoms"
 import { writeAtoms } from "./writeAtoms"
 import {
     evaluateSelectorValue,
@@ -745,7 +745,7 @@ export class TransactionContext {
             this.renderDirtyAtomFamilyIndexes()
             const initializedAtomsSet = new Set<Atom>()
             if (!this._unsetSet?.size && !this._deleteSet?.size) {
-                setTransactionAtoms(
+                setAtoms(
                     this._atomMap,
                     this._data,
                     initializedAtomsSet,

@@ -46,7 +46,7 @@ const FRESH_ATOM_FAST_PATH_MIN = 256
  * belong to the write phase), and when any peer changed, the multi-store
  * sequencing below runs as a legacy adapter.
  */
-export const setAtoms = (
+export const commitAtoms = (
     pairs: Map<Atom<any>, any>,
     data: StoreData,
     initializedAtomsSet: Set<Atom>,
@@ -203,7 +203,7 @@ const tryWriteFreshSimpleAtoms = (
  * sequencing. This adapter can disappear when transactions are migrated as a
  * dedicated change.
  */
-export const setTransactionAtoms = (
+export const setAtoms = (
     pairs: Map<Atom<any>, any>,
     data: StoreData,
     initializedAtomsSet: Set<Atom>,
@@ -212,7 +212,11 @@ export const setTransactionAtoms = (
     hasCommitEffects = true,
 ) => {
     if (skipOnSet || !hasCommitEffects) {
-        if (report === undefined && tryWriteFreshSimpleAtoms(pairs, data)) {
+        if (
+            report === undefined &&
+            pairs.size >= FRESH_ATOM_FAST_PATH_MIN &&
+            tryWriteFreshSimpleAtoms(pairs, data)
+        ) {
             return
         }
         const updatedAtoms = writeAtoms(
@@ -228,7 +232,7 @@ export const setTransactionAtoms = (
         return
     }
 
-    setAtoms(
+    commitAtoms(
         pairs,
         data,
         initializedAtomsSet,
