@@ -76,7 +76,14 @@ const apiRoles: Record<string, ApiMapping> = {
 
 // Core valdres API pages exist at /<fw>/atom, /<fw>/selector, etc.
 // These share the same name across all frameworks.
-const coreApiNames = ["atom", "selector", "atomFamily", "selectorFamily", "store"]
+const coreApiNames = [
+    "atom",
+    "selector",
+    "atomFamily",
+    "selectorFamily",
+    "index",
+    "store",
+]
 
 // Given a route like /react/useAtom, find the equivalent route for another framework.
 export function getEquivalentRoute(

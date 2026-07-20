@@ -44,7 +44,14 @@ const examples: NavGroup = {
 }
 
 // Core valdres API names — routes are framework-scoped
-const coreApiNames = ["atom", "selector", "atomFamily", "selectorFamily", "store"]
+const coreApiNames = [
+    "atom",
+    "selector",
+    "atomFamily",
+    "selectorFamily",
+    "index",
+    "store",
+]
 
 // Extra Getting Started items per framework
 const frameworkGettingStarted: Partial<Record<Framework, NavItem[]>> = {
