@@ -1,0 +1,34 @@
+{
+    "note": "Import-cycle baseline for valdres core production modules. Regenerate with UPDATE_CYCLE_BASELINE=1 bun test test/import-cycles/importCycles.test.ts. The guard fails only when a change introduces a NEW cycle or GROWS an existing SCC — see importCycles.test.ts. Existing cycles are recorded, not required to be eliminated.",
+    "moduleCount": 144,
+    "edgeCount": 333,
+    "sccs": [
+        [
+            "src/lib/asyncDependencyTracking.ts",
+            "src/lib/cleanupOrphanedDeps.ts",
+            "src/lib/coordinateAsyncWrite.ts",
+            "src/lib/deleteFamilyAtom.ts",
+            "src/lib/disposeStoreData.ts",
+            "src/lib/finishAtomSet.ts",
+            "src/lib/flushPendingOrphanCleanup.ts",
+            "src/lib/getState.ts",
+            "src/lib/globalAtomFanOut.ts",
+            "src/lib/initAtom.ts",
+            "src/lib/initSelector.ts",
+            "src/lib/mountAtom.ts",
+            "src/lib/propagateUpdatedAtoms.ts",
+            "src/lib/queueOrphanCleanup.ts",
+            "src/lib/resetAtom.ts",
+            "src/lib/resolveAtomDefaultValue.ts",
+            "src/lib/setAtom.ts",
+            "src/lib/setAtoms.ts",
+            "src/lib/storeFromStoreData.ts",
+            "src/lib/subscribe.ts",
+            "src/lib/transaction.ts",
+            "src/lib/unsetValue.ts",
+            "src/lib/unsubscribe.ts",
+            "src/lib/writeAtoms.ts",
+            "src/utils/resolveReactive.ts"
+        ]
+    ]
+}

@@ -3,6 +3,7 @@ import { expect, test } from "bun:test"
 import { atom } from "../atom"
 import { selector } from "../selector"
 import { store } from "../store"
+import { checkStoreInvariants } from "../../test/invariants/checkStoreInvariants"
 
 // Differential fuzzer for the cycle-gated liveness reconcile. Selectors read ANY
 // other selector (CYCLES allowed), with a parity-gated branch so only one of two
@@ -98,6 +99,7 @@ test("cyclic dynamic-dep liveness invariant holds across churn", () => {
     let ran = 0
     let firstUnder = ""
     let firstOver = ""
+    let firstInvariant = ""
 
     for (let seed = 1; seed <= 8000; seed++) {
         const rnd = mulberry32(seed)
@@ -164,6 +166,15 @@ test("cyclic dynamic-dep liveness invariant holds across churn", () => {
         }
 
         const record = (where: string) => {
+            // Cross-check the full structural invariant set against the same
+            // churn the bespoke liveness tally above exercises: symmetric edges,
+            // mounts, resource ledgers, branch indexes — not just counts.
+            if (!firstInvariant) {
+                const violations = checkStoreInvariants(ctx, { states })
+                if (violations.length > 0) {
+                    firstInvariant = `seed=${seed} ${where} ${violations[0]}`
+                }
+            }
             const bad = check(ctx, states)
             if (!bad) return
             if (bad.dir === "UNDER") {
@@ -210,4 +221,6 @@ test("cyclic dynamic-dep liveness invariant holds across churn", () => {
     expect(firstOver).toBe("")
     expect(under).toBe(0)
     expect(over).toBe(0)
+    // The structural invariant checker must agree across the same churn.
+    expect(firstInvariant).toBe("")
 }, 30000)
