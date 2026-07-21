@@ -15,7 +15,7 @@ import {
 import { resolvePendingDefault } from "./resolvePendingDefault"
 import { setValueInData } from "./setValueInData"
 import { validateSchema } from "./validateSchema"
-import type { DeferredOnSet } from "./writeAtoms"
+import type { DeferredOnSet } from "./runOnSets"
 
 /** A changed global atom whose value still needs to be applied to its peers. */
 export type DeferredGlobalSet = [InternalGlobalAtom<any>, any, StoreData]

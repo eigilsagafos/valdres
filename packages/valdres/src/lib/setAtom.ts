@@ -1,21 +1,35 @@
 import type { Atom } from "../types/Atom"
+import type { DirectWriteIntent } from "../types/CommitIntent"
 import type { SetAtomValue } from "../types/SetAtomValue"
 import type { StoreData } from "../types/StoreData"
+import { isGlobalAtom } from "../utils/isGlobalAtom"
 import { isPromiseLike } from "../utils/isPromiseLike"
+import { runHookedDirectWrite } from "./commitEngine"
+import { DIRECT_WRITE, SETTLE_DEFAULT } from "./commitIntents"
 import { coordinateAsyncWrite } from "./coordinateAsyncWrite"
 import { finishAtomSet } from "./finishAtomSet"
 import { getState } from "./getState"
-import { propagateAtomUpdate } from "./propagateUpdatedAtoms"
+import { settleCommit } from "./propagateUpdatedAtoms"
 import { isFunction } from "./isFunction"
 import { resolvePendingDefault } from "./resolvePendingDefault"
 import { setValueInData } from "./setValueInData"
 import { validateSchema } from "./validateSchema"
 
+/**
+ * Direct-write coordinator of the commit engine: one atom, one store. Phases
+ * 1–2 run inline (normalize/validate/equality-bail → apply), then dispatch:
+ * the ordinary write (no hook — which also means non-global, since global
+ * atoms always carry at least the marker hook) settles immediately with a
+ * shared frozen flags const — no plan object, no allocation; a hooked
+ * non-global write runs phases 3–9 through the engine; global fan-out and
+ * async settlement stay on their unmigrated adapters (finishAtomSet /
+ * coordinateAsyncWrite).
+ */
 export const setAtom = <Value = any>(
     atom: Atom<Value>,
     newValue: SetAtomValue<Value>,
     data: StoreData,
-    skipOnSet = false,
+    intent: DirectWriteIntent = DIRECT_WRITE,
 ) => {
     let initializedAtomsSet: Set<Atom<any>> | undefined
     let currentValue: Value
@@ -39,16 +53,34 @@ export const setAtom = <Value = any>(
         // shadow just like the settled-value branch below.
         if (currentValue === promise) {
             if (data.parent && !data.values.has(atom)) {
-                coordinateAsyncWrite(atom, promise, currentValue, data, skipOnSet)
+                coordinateAsyncWrite(
+                    atom,
+                    promise,
+                    currentValue,
+                    data,
+                    intent.effects === "skip",
+                )
             }
             return promise as Value
         }
-        coordinateAsyncWrite(atom, promise, currentValue, data, skipOnSet)
+        coordinateAsyncWrite(
+            atom,
+            promise,
+            currentValue,
+            data,
+            intent.effects === "skip",
+        )
         if (initializedAtomsSet && initializedAtomsSet.size > 0) {
             initializedAtomsSet.add(atom)
-            propagateAtomUpdate([...initializedAtomsSet], data, false, undefined, "set")
+            settleCommit(
+                [...initializedAtomsSet],
+                data,
+                undefined,
+                "set",
+                SETTLE_DEFAULT,
+            )
         } else {
-            propagateAtomUpdate([atom], data, false, undefined, "set")
+            settleCommit([atom], data, undefined, "set", SETTLE_DEFAULT)
         }
         return promise as Value
     }
@@ -84,10 +116,25 @@ export const setAtom = <Value = any>(
     } else {
         updatedAtoms = [atom]
     }
-    if (atom.onSet && !skipOnSet) {
-        finishAtomSet(atom, syncValue, data, updatedAtoms, "set")
+    if (atom.onSet && intent.effects === "run") {
+        // Global atoms always carry (at least) the marker hook, so this branch
+        // is the only route to global fan-out; a seed (effects: "skip") falls
+        // through below — no hooks, no fan-out, exactly the historical
+        // skipOnSet semantics.
+        if (isGlobalAtom(atom)) {
+            finishAtomSet(atom, syncValue, data, updatedAtoms, "set")
+        } else {
+            runHookedDirectWrite(
+                atom,
+                syncValue,
+                data,
+                updatedAtoms,
+                "set",
+                settleCommit,
+            )
+        }
     } else {
-        propagateAtomUpdate(updatedAtoms, data, false, undefined, "set")
+        settleCommit(updatedAtoms, data, undefined, "set", SETTLE_DEFAULT)
     }
     return syncValue
 }

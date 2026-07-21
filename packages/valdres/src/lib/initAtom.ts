@@ -4,6 +4,7 @@ import type { InternalAtom } from "../types/InternalAtom"
 import type { StoreData } from "../types/StoreData"
 import { isPromiseLike } from "../utils/isPromiseLike"
 import { isSelector } from "../utils/isSelector"
+import { SEED_WRITE } from "./commitIntents"
 import { getState } from "./getState"
 import { propagateAtomUpdate } from "./propagateUpdatedAtoms"
 import { setAtom } from "./setAtom"
@@ -139,6 +140,8 @@ export const initAtom = <
         onInit((newVal: Value) => {
             if (isStoreDisposed(data)) return
             value = newVal
-            setAtom(atom, newVal, data, true)
+            // Seed the store's own value only: no onSet hook, no global
+            // fan-out (a global atom's onInit setSelf must not re-broadcast).
+            setAtom(atom, newVal, data, SEED_WRITE)
         }, data)
 }

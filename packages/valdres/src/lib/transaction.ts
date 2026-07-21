@@ -61,8 +61,9 @@ import {
     propagateDeletedAtoms,
     type NotifyTarget,
 } from "./propagateUpdatedAtoms"
+import { runOnSets, type DeferredOnSet } from "./runOnSets"
 import { setAtoms } from "./setAtoms"
-import { runOnSets, writeAtoms, type DeferredOnSet } from "./writeAtoms"
+import { writeAtoms } from "./writeAtoms"
 import {
     evaluateSelectorValue,
     type SelectorEvaluationRuntime,

@@ -2,10 +2,14 @@ import { getStoreData } from "./getStoreData"
 import { describe, test, expect, mock } from "bun:test"
 import { store } from "../store"
 import { atom } from "../atom"
-import { setAtoms } from "./setAtoms"
+import { commitAtoms } from "./setAtoms"
+import {
+    BULK_NO_EFFECTS_SILENT,
+    BULK_WITH_EFFECTS_SILENT,
+} from "./commitIntents"
 
-describe("setAtoms", () => {
-    test("invokes atom.onSet for each updated atom by default", () => {
+describe("commitAtoms", () => {
+    test("invokes atom.onSet for each updated atom with a collecting intent", () => {
         const store1 = store()
         const onSetA = mock(() => {})
         const onSetB = mock(() => {})
@@ -18,7 +22,12 @@ describe("setAtoms", () => {
             [atomA, 2],
             [atomB, "b"],
         ])
-        setAtoms(pairs, getStoreData(store1), new Set())
+        commitAtoms(
+            pairs,
+            getStoreData(store1),
+            new Set(),
+            BULK_WITH_EFFECTS_SILENT,
+        )
 
         expect(onSetA).toHaveBeenCalledTimes(1)
         expect(onSetA).toHaveBeenCalledWith(2, store1)
@@ -26,7 +35,7 @@ describe("setAtoms", () => {
         expect(onSetB).toHaveBeenCalledWith("b", store1)
     })
 
-    test("skipOnSet=true suppresses atom.onSet invocations", () => {
+    test('onSet: "skip" suppresses atom.onSet invocations', () => {
         const store1 = store()
         const onSetA = mock(() => {})
         const onSetB = mock(() => {})
@@ -39,7 +48,12 @@ describe("setAtoms", () => {
             [atomA, 2],
             [atomB, "b"],
         ])
-        setAtoms(pairs, getStoreData(store1), new Set(), true)
+        commitAtoms(
+            pairs,
+            getStoreData(store1),
+            new Set(),
+            BULK_NO_EFFECTS_SILENT,
+        )
 
         expect(onSetA).toHaveBeenCalledTimes(0)
         expect(onSetB).toHaveBeenCalledTimes(0)

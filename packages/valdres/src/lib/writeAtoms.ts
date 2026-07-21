@@ -2,41 +2,24 @@ import type { Atom } from "../types/Atom"
 import type { StoreData } from "../types/StoreData"
 import { isPromiseLike } from "../utils/isPromiseLike"
 import { coordinateAsyncWrite } from "./coordinateAsyncWrite"
-import type { CommitErrors } from "./commitErrors"
-import { recordCommitError } from "./commitErrors"
 import { getState } from "./getState"
-import { getStoreRuntime } from "./getStoreRuntime"
-import { globalOnSetMarker } from "./globalOnSetMarker"
 import { resolvePendingDefault } from "./resolvePendingDefault"
+import type { DeferredOnSet } from "./runOnSets"
 import { setValueInData } from "./setValueInData"
 
-/** A deferred onSet invocation: the atom, written value, and originating store. */
-export type DeferredOnSet = [Atom<any>, any, StoreData]
-
-/** Run every hook in insertion order, retaining the first failure. */
-export const runOnSets = (onSets: DeferredOnSet[], errors: CommitErrors) => {
-    for (const [atom, value, data] of onSets) {
-        try {
-            if (atom.onSet !== globalOnSetMarker) {
-                atom.onSet!(value, getStoreRuntime(data))
-            }
-        } catch (error) {
-            recordCommitError(errors, error)
-        }
-    }
-}
-
 /**
- * Write phase for a single store. Applies every value in `pairs` to
- * `data.values`, returning the atoms whose value actually changed (the
- * propagation set), merged with any atoms lazily initialized during the
+ * Write phase (commit phases 1–2) for a single store. Applies every value in
+ * `pairs` to `data.values`, returning the atoms whose value actually changed
+ * (the propagation set), merged with any atoms lazily initialized during the
  * equality checks. This does NOT propagate — see `setAtoms` (single-store
  * fast path) or the transaction commit pipeline (cross-scope path) for notify.
  *
  * Hook and global handling are deliberately collection-only. The caller first
  * completes every local/global write, then runs `onSetQueue`, then propagates.
  * This keeps a throwing hook from interrupting either the write or propagation
- * phase.
+ * phase. The boolean remains here because transactions are not migrated by the
+ * commit-engine change; typed bulk coordinators translate their intent at their
+ * own boundary.
  */
 export const writeAtoms = (
     pairs: Map<Atom<any>, any>,

@@ -48,6 +48,7 @@ import {
     recordStoreSettlement,
 } from "./architectureInstrumentation"
 import { IS_PROD } from "./IS_PROD"
+import type { SettleFlags } from "../types/SettleFlags"
 
 export type { AtomFamilyIndex } from "./atomFamilyIndex"
 export {
@@ -765,6 +766,28 @@ export const propagateAtomUpdate = (
         if (commitRoot !== undefined) endCommit(commitRoot, !completed)
     }
 }
+
+/** Typed commit-engine entry for phases 4–7. The established positional
+ *  primitive above remains the direct entry for unmigrated transaction, async,
+ *  global, reset, and initialization paths. Migrated callers provide one of the
+ *  shared frozen SettleFlags singletons; translating it here allocates nothing
+ *  and keeps the out-of-scope hot paths byte-for-byte on their prior call shape. */
+export const settleCommit = (
+    atoms: AtomInput[],
+    data: StoreData,
+    notify: NotifyTarget | undefined,
+    report: ChangeReport | undefined,
+    flags: SettleFlags,
+) =>
+    propagateAtomUpdate(
+        atoms,
+        data,
+        flags.isInitOnly,
+        notify,
+        report,
+        flags.skipFamilyIndexUpdate,
+        flags.reportAtoms,
+    )
 
 // Scope-recursive entry: re-evaluate selectors that depend on these atoms in
 // this scope and cross into nested scopes. Skips collecting direct atom and

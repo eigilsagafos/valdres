@@ -1,6 +1,7 @@
 import type { Atom } from "../types/Atom"
 import type { StoreData } from "../types/StoreData"
 import { isGlobalAtom } from "../utils/isGlobalAtom"
+import { runHookedDirectWrite } from "./commitEngine"
 import {
     createCommitErrors,
     recordCommitError,
@@ -17,14 +18,19 @@ import { createChangeSink, flushChangeSink } from "./notifyChangeListeners"
 import {
     notifyDeferred,
     propagateAtomUpdate,
+    settleCommit,
     type NotifyTarget,
 } from "./propagateUpdatedAtoms"
 
 /**
- * Slow path for a settled write carrying an onSet hook (global atoms always
- * carry a no-op marker hook). Global peer writes are applied first, then the
- * hook runs, then every store propagates and notifies. Errors never interrupt a
- * later phase; the first is rethrown last.
+ * LEGACY ADAPTER — slow path for a settled hooked write that is GLOBAL (peer
+ * fan-out, unmigrated) or arrives from ASYNC settlement (coordinateAsyncWrite,
+ * unmigrated). The non-global branch is a pure delegation into the commit
+ * engine — observer sequencing lives once, in runHookedDirectWrite — and is
+ * kept only because coordinateAsyncWrite still enters here; the direct path
+ * (setAtom) calls the engine without this hop. For a global atom, peer writes
+ * are applied first, then the hook runs, then every store propagates and
+ * notifies. Errors never interrupt a later phase; the first is rethrown last.
  */
 export const finishAtomSet = <Value>(
     atom: Atom<Value>,
@@ -34,22 +40,14 @@ export const finishAtomSet = <Value>(
     source: "set" | "async-set",
 ) => {
     if (!isGlobalAtom(atom)) {
-        let hasHookError = false
-        let hookError: unknown
-        try {
-            atom.onSet!(value, getStoreRuntime(data))
-        } catch (error) {
-            hasHookError = true
-            hookError = error
-        }
-        try {
-            propagateAtomUpdate(updatedAtoms, data, false, undefined, source)
-        } catch (error) {
-            if (hasHookError) throw hookError
-            throw error
-        }
-        if (hasHookError) throw hookError
-        return
+        return runHookedDirectWrite(
+            atom,
+            value,
+            data,
+            updatedAtoms,
+            source,
+            settleCommit,
+        )
     }
 
     const errors = createCommitErrors()
