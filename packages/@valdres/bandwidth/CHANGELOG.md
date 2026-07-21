@@ -1,5 +1,42 @@
 # @valdres/bandwidth
 
+## 1.0.0-beta.6
+
+### Patch Changes
+
+- Updated dependencies
+  [[`c8faa24`](https://github.com/eigilsagafos/valdres/commit/c8faa244800025ddd1756c6a17386ef84906a25e),
+  [`ca00a89`](https://github.com/eigilsagafos/valdres/commit/ca00a896025a42bf31528e505234a7bb929f292c),
+  [`9ba01a1`](https://github.com/eigilsagafos/valdres/commit/9ba01a10dc4350247dec174b2ea0bdf99ed72942),
+  [`20b253f`](https://github.com/eigilsagafos/valdres/commit/20b253fe91007ae8961ecc423b2d27c9420c68c7),
+  [`967bb03`](https://github.com/eigilsagafos/valdres/commit/967bb038855fe0d032cf3bd6f7810ad952d75e30),
+  [`888f868`](https://github.com/eigilsagafos/valdres/commit/888f868246adadac653517755c04821afc75d5cd),
+  [`cdcb6a2`](https://github.com/eigilsagafos/valdres/commit/cdcb6a2bdd615d7ba04e32f43c68ed1551276eec),
+  [`9278b66`](https://github.com/eigilsagafos/valdres/commit/9278b6635ebde1df9f4320e474ce54b41a0a64d9),
+  [`2d31b16`](https://github.com/eigilsagafos/valdres/commit/2d31b162fd2875cbb264620d59ce01a925cc1794),
+  [`e584913`](https://github.com/eigilsagafos/valdres/commit/e5849132a360c6224fbc66ed1236ddfc3f1fdbcc),
+  [`01529e5`](https://github.com/eigilsagafos/valdres/commit/01529e523bbf26df6e3c188c052c44ef64303ec8),
+  [`7a59614`](https://github.com/eigilsagafos/valdres/commit/7a596146a8cdf64907ceb45871a60c56fc0391aa),
+  [`2556617`](https://github.com/eigilsagafos/valdres/commit/255661708bd27cad9581cf0e47c5c8610fc86c8b),
+  [`27340c5`](https://github.com/eigilsagafos/valdres/commit/27340c5e250e0fdf313e670c506cd209b229b9d1),
+  [`ebbaff5`](https://github.com/eigilsagafos/valdres/commit/ebbaff5ec885a82d45c01badabd2f89e430a1f5f),
+  [`8d882e0`](https://github.com/eigilsagafos/valdres/commit/8d882e0993aa3ed87a27840accb91d261d0f0244),
+  [`4648c40`](https://github.com/eigilsagafos/valdres/commit/4648c40c3ec3c6ab67b7d1d8b47f2b0a3762980e),
+  [`f0e657c`](https://github.com/eigilsagafos/valdres/commit/f0e657cc569b652ae3c27e5ad7c0a6f09e11543f),
+  [`26064d2`](https://github.com/eigilsagafos/valdres/commit/26064d2945be405a6f3909445b1da72f2f6c7158),
+  [`d11de95`](https://github.com/eigilsagafos/valdres/commit/d11de95881d0548fbf47add4a942aecb8fef6b0c),
+  [`2100bb3`](https://github.com/eigilsagafos/valdres/commit/2100bb35c138e4b145938bfdd3630fcb3468e9c4),
+  [`b7536ab`](https://github.com/eigilsagafos/valdres/commit/b7536ab3bf4e2face50dda54a232242dd87a02f0),
+  [`eafa72c`](https://github.com/eigilsagafos/valdres/commit/eafa72c78d41b6fcc2ae321244fecb26209a1410),
+  [`b8a82e5`](https://github.com/eigilsagafos/valdres/commit/b8a82e512f446f5f80970573cb0a8986392ddcdf),
+  [`8c2531c`](https://github.com/eigilsagafos/valdres/commit/8c2531cef47d199cdcdb163347498029ad4fab05),
+  [`2046b87`](https://github.com/eigilsagafos/valdres/commit/2046b87f254666909528912a2dade380bd16b864),
+  [`2d21f06`](https://github.com/eigilsagafos/valdres/commit/2d21f06a66277e760e65de57b3f8b528d3ed9cc6),
+  [`5dcd530`](https://github.com/eigilsagafos/valdres/commit/5dcd5309381f4f78f87038bd638ee9b3ce22bc5e),
+  [`f092e71`](https://github.com/eigilsagafos/valdres/commit/f092e71eb3604c57552ced5058693766732330eb),
+  [`165cdc4`](https://github.com/eigilsagafos/valdres/commit/165cdc4346091f860c193a686f4ea55e1e955671)]:
+    - valdres@1.0.0-beta.17
+
 ## 1.0.0-beta.5
 
 ### Patch Changes
