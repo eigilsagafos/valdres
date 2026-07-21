@@ -2,6 +2,7 @@ import type { Atom } from "../types/Atom"
 import type { CommitPlan } from "../types/CommitPlan"
 import type { SettleFn } from "../types/SettleFn"
 import type { StoreData } from "../types/StoreData"
+import { recordCommitPlanRun } from "./architectureInstrumentation"
 import { recordCommitError, throwCommitError } from "./commitErrors"
 import { SETTLE_DEFAULT } from "./commitIntents"
 import { getStoreRuntime } from "./getStoreRuntime"
@@ -9,10 +10,10 @@ import { runOnSets } from "./runOnSets"
 
 /**
  * The commit engine: the single owner of commit sequencing for the migrated
- * write shapes (ordinary direct writes, non-global bulk writes, and local
- * reset/unset/delete operations). A commit
- * has nine phases; this header is the honest map of where each one lives —
- * the engine does NOT execute all nine itself:
+ * write shapes (ordinary direct writes, non-global bulk writes, local
+ * reset/unset/delete operations, and single-store transaction commits). A
+ * commit has nine phases; this header is the honest map of where each one
+ * lives — the engine does NOT execute all nine itself:
  *
  *   1. Validate/normalize staged writes — in the coordinators: `setAtom`
  *      inline (updater resolve, schema, equality bail incl. the scope-shadow
@@ -37,7 +38,8 @@ import { runOnSets } from "./runOnSets"
  * (see test/import-cycles) — the sequencer must not be hard-wired to the
  * propagation layer it sequences.
  *
- * Global transaction fan-out remains behind its existing adapter. Async atom,
+ * Global and cross-scope transaction fan-out remain behind their existing
+ * adapters. Async atom,
  * native async selector, and revalidation settlement enter this coordinator;
  * simple no-hook shapes use module-static entries from `createScalarCommit`
  * below; their bound operation owns any required apply, propagation,
@@ -76,6 +78,18 @@ export const runHookedDirectWrite = <Value>(
     if (hasHookError) throw hookError
 }
 
+// Module-level phase gates: runCommitPlan is on the per-commit hot path of
+// every migrated write shape, so its guards must not allocate per run.
+const settlementHasWork = (settlement: CommitPlan["settlement"]) =>
+    settlement.kind === "none" ||
+    settlement.kind === "selector" ||
+    settlement.atoms.length > 0 ||
+    (settlement.kind === "transaction" &&
+        (settlement.deleted !== undefined || settlement.unset !== undefined))
+
+const planShouldContinue = (plan: CommitPlan) =>
+    plan.continueAfterError !== false || !plan.errors.hasError
+
 /**
  * Execute a prepared local commit: phase 3 (deferred hooks, first error
  * retained) → optional pre-settle reporting → phases 4–7 (one typed settlement)
@@ -89,12 +103,6 @@ export const runHookedDirectWrite = <Value>(
  */
 export const runCommitPlan = (plan: CommitPlan) => {
     const settlement = plan.settlement
-    const hasWork = () =>
-        settlement.kind === "none" ||
-        settlement.kind === "selector" ||
-        settlement.atoms.length > 0
-    const shouldContinue = () =>
-        plan.continueAfterError !== false || !plan.errors.hasError
     let commitRoot: StoreData | undefined
     let completed = false
 
@@ -102,6 +110,7 @@ export const runCommitPlan = (plan: CommitPlan) => {
     // cancelled, or disposed async result cannot open a commit boundary or run
     // any user code merely by arriving late.
     if (plan.admit && !plan.admit()) return false
+    recordCommitPlanRun(plan.data)
     if (plan.beginCommit) commitRoot = plan.beginCommit(plan.data)
     try {
         let applied = true
@@ -118,8 +127,8 @@ export const runCommitPlan = (plan: CommitPlan) => {
 
         if (
             applied &&
-            hasWork() &&
-            shouldContinue() &&
+            settlementHasWork(settlement) &&
+            planShouldContinue(plan) &&
             plan.beforeSettle &&
             plan.report
         ) {
@@ -130,7 +139,7 @@ export const runCommitPlan = (plan: CommitPlan) => {
             }
         }
 
-        if (applied && hasWork() && shouldContinue()) {
+        if (applied && settlementHasWork(settlement) && planShouldContinue(plan)) {
             try {
                 if (settlement.kind === "update") {
                     settlement.settle(
@@ -147,6 +156,15 @@ export const runCommitPlan = (plan: CommitPlan) => {
                         undefined,
                         plan.report,
                     )
+                } else if (settlement.kind === "transaction") {
+                    settlement.settle(
+                        settlement.atoms,
+                        settlement.deleted,
+                        settlement.unset,
+                        plan.data,
+                        plan.report,
+                        plan.errors,
+                    )
                 } else if (settlement.kind === "selector") {
                     settlement.settle(
                         settlement.selector,
@@ -159,7 +177,7 @@ export const runCommitPlan = (plan: CommitPlan) => {
             }
         }
 
-        if (applied && hasWork() && shouldContinue() && plan.afterSettle) {
+        if (applied && settlementHasWork(settlement) && planShouldContinue(plan) && plan.afterSettle) {
             try {
                 plan.afterSettle()
             } catch (error) {
@@ -167,7 +185,7 @@ export const runCommitPlan = (plan: CommitPlan) => {
             }
         }
 
-        if (shouldContinue() && plan.flushReport) {
+        if (planShouldContinue(plan) && plan.flushReport) {
             try {
                 plan.flushReport()
             } catch (error) {

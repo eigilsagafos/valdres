@@ -2,14 +2,13 @@ import type { Atom } from "../types/Atom"
 import type { AtomFamily } from "../types/AtomFamily"
 import type { AtomFamilyAtom } from "../types/AtomFamilyAtom"
 import type { GetValue } from "../types/GetValue"
+import type { MutationDraft } from "../types/MutationDraft"
 import type { State } from "../types/State"
 import type { SetAtomValue } from "../types/SetAtomValue"
 import type { StoreData } from "../types/StoreData"
 import type { StoreChangeSource } from "../types/StoreChangeSource"
 import type { TransactionFn } from "../types/TransactionFn"
 import { SchemaValidationError } from "../errors/SchemaValidationError"
-import { deepFreeze } from "../utils/deepFreeze"
-import { validateSchema } from "./validateSchema"
 import {
     createStoreDisposedError,
     DISPOSED_STORE_PENDING,
@@ -30,6 +29,7 @@ import {
 import { getState } from "./getState"
 import { getAtomInitValue } from "./initAtom"
 import { isFunction } from "./isFunction"
+import { normalizeStagedValue } from "./normalizeStagedValue"
 import {
     changeListenerRegistry,
     createChangeSink,
@@ -38,16 +38,19 @@ import {
     type ChangeSink,
 } from "./notifyChangeListeners"
 import { beginCommit, commitEndRegistry, endCommit } from "./onCommitEnd"
-import { IS_PROD } from "./IS_PROD"
+import { runCommitPlan } from "./commitEngine"
 import {
     createCommitErrors,
     recordCommitError,
     throwCommitError,
+    type CommitErrors,
 } from "./commitErrors"
+import { BULK_WITH_EFFECTS_SILENT } from "./commitIntents"
 import {
     applyGlobalOnSets,
     beginGlobalCommit,
     endGlobalCommit,
+    type StoreAtomUpdates,
 } from "./globalAtomFanOut"
 import {
     cloneAtomFamilyIndex,
@@ -56,13 +59,19 @@ import {
     renderAtomFamilyIndex,
 } from "./atomFamilyIndex"
 import {
+    createMutationDraft,
+    draftHasCleanupMutations,
+    resetMutationDraft,
+} from "./mutationDraft"
+import {
     notifyDeferred,
     propagateAtomUpdate,
     propagateDeletedAtoms,
+    settleTransactionCommit,
     type NotifyTarget,
 } from "./propagateUpdatedAtoms"
 import { runOnSets, type DeferredOnSet } from "./runOnSets"
-import { setAtoms } from "./setAtoms"
+import { commitAtoms, commitHookFreeAtoms } from "./setAtoms"
 import { writeAtoms } from "./writeAtoms"
 import {
     evaluateSelectorValue,
@@ -83,19 +92,32 @@ type CommitWrite = {
 
 const TRANSACTION_OPEN = 0
 const TRANSACTION_COMMITTING = 1
-const TRANSACTION_CLOSED = 2
+const TRANSACTION_COMMITTED = 2
+const TRANSACTION_ABORTED = 3
+const TRANSACTION_DISPOSED = 4
 
 type TransactionState =
     | typeof TRANSACTION_OPEN
     | typeof TRANSACTION_COMMITTING
-    | typeof TRANSACTION_CLOSED
+    | typeof TRANSACTION_COMMITTED
+    | typeof TRANSACTION_ABORTED
+    | typeof TRANSACTION_DISPOSED
+
+/** How a working tree ended without committing: consumer abort (including a
+ *  throwing callback) or store disposal. */
+type TerminalCancelState =
+    | typeof TRANSACTION_ABORTED
+    | typeof TRANSACTION_DISPOSED
 
 const transactionStateName = (state: TransactionState) =>
     state === TRANSACTION_OPEN
         ? "open"
         : state === TRANSACTION_COMMITTING
           ? "committing"
-          : "closed"
+          : // Committed, aborted, and disposed are tracked distinctly for
+            // lifecycle ownership, but every terminal handle reports the
+            // historical "closed" so misuse errors stay byte-identical.
+            "closed"
 
 const throwTransactionStateError = (
     state: TransactionState,
@@ -114,22 +136,6 @@ const EXECUTE_TRANSACTION = Symbol("executeTransaction")
 const COMMIT_TRANSACTION = Symbol("commitTransaction")
 const ABORT_TRANSACTION = Symbol("abortTransaction")
 const CANCEL_TRANSACTION = Symbol("cancelTransaction")
-// const findDependencies = (
-//     state: State,
-//     data: StoreData,
-//     result = new Set(),
-// ) => {
-//     const dependents = data.stateDependents.get(state)
-//     if (dependents?.size) {
-//         for (const dependent of dependents) {
-//             if (!result.has(dependent)) {
-//                 result.add(dependent)
-//                 findDependencies(dependent, data, result)
-//             }
-//         }
-//     }
-//     return result
-// }
 
 const deleteAtomFamilyAtoms = (
     set: Set<AtomFamilyAtom<any, any>>,
@@ -142,31 +148,30 @@ const deleteAtomFamilyAtoms = (
     })
 }
 
+// Detach the own value + bookkeeping for each unset atom that actually had
+// one; returns those atoms so the commit can propagate and report them.
+// Called in the write phase so every store's values are final before any
+// propagation pass runs.
+const applyUnsets = (unsetSet: Set<Atom>, data: StoreData): Atom[] => {
+    const unsetAtoms: Atom[] = []
+    for (const atom of unsetSet) {
+        if (detachOwnValue(atom, data)) unsetAtoms.push(atom)
+    }
+    return unsetAtoms
+}
+
+
 export class TransactionContext {
     private readonly _data: StoreData
     private _parentTransaction: TransactionContext | undefined
-    private _dirty = false
     private readonly _name: string | undefined
     private _state: TransactionState = TRANSACTION_OPEN
     private _scopedTransactions: undefined | Map<string, TransactionContext>
-    private _initializedAtomsSet: any
-    private _deleteSet: any
-    private _unsetSet: Set<Atom<any>> | undefined
-    private _selectorCache: any
-    private _selectorRuntime: SelectorEvaluationRuntime | undefined
-    private _selectorCircularDependencySet: WeakSet<any> | undefined
-    private _atomMap: Map<any, any>
+    // Everything this level stages before commit lives in one write overlay —
+    // see MutationDraft. The context itself keeps only lifecycle and tree
+    // structure, so staging can be read independently from commit execution.
+    private readonly _draft: MutationDraft
     private _lifecycleResources: StoreResources | undefined
-    // Allocated only for transactions that clone/mutate family membership.
-    // Ordinary-atom and existing-family-member transactions keep their commit
-    // path allocation-free and never scan `_atomMap` looking for families.
-    private _dirtyFamilyIndexes:
-        | Set<AtomFamily<any, [any, ...any[]]>>
-        | undefined
-    // Global atoms always carry an onSet marker, so this one bit covers every
-    // write that needs phased hook/fan-out handling. Transactions containing
-    // only ordinary atoms retain the original allocation-light commit path.
-    private _hasCommitEffects = false
     constructor(
         data: StoreData,
         parentTransaction?: TransactionContext,
@@ -176,14 +181,14 @@ export class TransactionContext {
         this._data = data
         this._parentTransaction = parentTransaction
         this._name = name
-        this._atomMap = new Map()
+        this._draft = createMutationDraft()
         if (childTransaction) {
             this._scopedTransactions = new Map([
                 [childTransaction._data.id, childTransaction],
             ])
         }
         this._lifecycleResources = trackStoreTransaction(data, this)
-        if (!this._lifecycleResources) this.cancelTree()
+        if (!this._lifecycleResources) this.cancelTree(TRANSACTION_DISPOSED)
     }
 
     private assertOpen(operation: string): void {
@@ -198,44 +203,18 @@ export class TransactionContext {
         throwTransactionStateError(this._state, operation)
     }
 
-    /** Close a working tree and release resources that were never committed. */
-    private cancelTree(): void {
-        this._state = TRANSACTION_CLOSED
+    /** Close a working tree and release resources that were never committed.
+     *  `terminal` records why: consumer abort or store disposal. */
+    private cancelTree(terminal: TerminalCancelState): void {
+        this._state = terminal
         this.untrackLifecycle()
         if (this._scopedTransactions) {
             for (const transaction of this._scopedTransactions.values()) {
-                transaction.cancelTree()
+                transaction.cancelTree(terminal)
             }
             this._scopedTransactions.clear()
         }
-        const runtime = this._selectorRuntime
-        if (runtime) {
-            runtime.readOverlayActive = false
-            for (const context of runtime.latestEvalContext.values()) {
-                context.revoke()
-            }
-            for (const controller of runtime.abortControllers.values()) {
-                controller.abort()
-            }
-            runtime.latestEvalContext.clear()
-            runtime.abortControllers.clear()
-            runtime.stateDependencies.clear()
-            this._selectorRuntime = undefined
-        }
-        this._atomMap.clear()
-        this._initializedAtomsSet?.clear()
-        this._initializedAtomsSet = undefined
-        this._deleteSet?.clear()
-        this._deleteSet = undefined
-        this._unsetSet?.clear()
-        this._unsetSet = undefined
-        this._selectorCache?.clear()
-        this._selectorCache = undefined
-        this._selectorCircularDependencySet = undefined
-        this._dirtyFamilyIndexes?.clear()
-        this._dirtyFamilyIndexes = undefined
-        this._dirty = false
-        this._hasCommitEffects = false
+        resetMutationDraft(this._draft)
     }
 
     private untrackLifecycle(): void {
@@ -256,17 +235,18 @@ export class TransactionContext {
     /** Disposal-only cancellation: idempotent and valid after terminal mark. */
     [CANCEL_TRANSACTION](): void {
         const root = this._parentTransaction ? this.rootTransaction() : this
-        root.cancelTree()
+        root.cancelTree(TRANSACTION_DISPOSED)
     }
 
     private hasTxnOrData = (state: State): boolean => {
-        if (this._atomMap.has(state)) return true
+        const draft = this._draft
+        if (draft.values.has(state)) return true
         // An unset buffered at this level (and not superseded by a later set)
         // makes this scope provide no value: the committed shadow still sits in
         // this._data.values until commit, so we must NOT read it — fall through
         // to a parent transaction, or report "not here" so `get` reads through
         // the committed parent chain.
-        if (this._unsetSet?.has(state)) {
+        if (draft.unsets?.has(state)) {
             return this._parentTransaction
                 ? this._parentTransaction.hasTxnOrData(state)
                 : false
@@ -278,10 +258,11 @@ export class TransactionContext {
     }
 
     private valueFromTxnOrData: GetValue = (state: State) => {
-        if (this._atomMap.has(state)) {
-            return this._atomMap.get(state)
+        const draft = this._draft
+        if (draft.values.has(state)) {
+            return draft.values.get(state)
         }
-        if (this._unsetSet?.has(state)) {
+        if (draft.unsets?.has(state)) {
             return this._parentTransaction
                 ? this._parentTransaction.valueFromTxnOrData(state)
                 : undefined
@@ -306,13 +287,13 @@ export class TransactionContext {
                     // boundary, so materialize the latest membership here.
                     const rendered = renderAtomFamilyIndex(value.__index)
                     if (
-                        this._atomMap.get(state) === value &&
+                        this._draft.values.get(state) === value &&
                         rendered !== value
                     ) {
-                        this._atomMap.set(state, rendered)
-                        this._dirtyFamilyIndexes?.delete(state)
-                        if (this._dirtyFamilyIndexes?.size === 0) {
-                            this._dirtyFamilyIndexes = undefined
+                        this._draft.values.set(state, rendered)
+                        this._draft.dirtyFamilyIndexes?.delete(state)
+                        if (this._draft.dirtyFamilyIndexes?.size === 0) {
+                            this._draft.dirtyFamilyIndexes = undefined
                         }
                     }
                     return rendered
@@ -323,7 +304,7 @@ export class TransactionContext {
             // committed value is still in this._data.values until commit, so we
             // must NOT read it: read through the parent chain (scope) or compute
             // the atom's default (root) instead.
-            if (this._unsetSet?.has(state)) {
+            if (this._draft.unsets?.has(state)) {
                 return this._data.parent
                     ? getState(
                           state,
@@ -338,9 +319,9 @@ export class TransactionContext {
             }
             return getState(state, this._data, this.initializedAtomsSet)
         } else if (isSelector(state)) {
-            if (this._dirty) {
+            if (this._draft.dirty) {
                 this.selectorCache.clear()
-                this._dirty = false
+                this._draft.dirty = false
             } else if (this.selectorCache.has(state)) {
                 // If the selector is cached and not dirty, return the cached value
                 return this.selectorCache.get(state)
@@ -372,39 +353,27 @@ export class TransactionContext {
             resolved = value
         }
 
-        // Freeze settled non-primitives so values are immutable within the
-        // transaction. Promise-like inputs are normalized by the async-write
-        // coordinator at commit and must remain usable until then. Respect
-        // atom.mutable and production mode. Kept inline (not shared, to avoid a
-        // call on the write hot path).
-        if (
-            !atom.mutable &&
-            !IS_PROD &&
-            resolved !== null &&
-            (typeof resolved === "object" || typeof resolved === "function") &&
-            !isPromiseLike(resolved)
-        ) {
-            resolved = deepFreeze(resolved)
-        }
-        // Validate at staging time (inside the txn body), not at commit: a
-        // failure throws here, so the user's callback aborts and commit never
-        // runs — the transaction stays atomic. Promise-like values are skipped
-        // here and validated after settlement by coordinateAsyncWrite during the
-        // commit path. This also covers stores using implicit batched txns.
-        resolved = validateSchema(atom, resolved, this._data)
-        this._atomMap.set(atom, resolved)
-        if (!this._hasCommitEffects && atom.onSet) {
-            this._hasCommitEffects = true
+        // Staging-time freeze + validation (see normalizeStagedValue): a schema
+        // failure throws inside the user's callback, so commit never runs and
+        // the transaction stays atomic. This also covers stores using implicit
+        // batched txns.
+        resolved = normalizeStagedValue(atom, resolved, this._data)
+        // One draft load for the whole staging body: bulk staging loops (5k+
+        // member updates) are Bencher-gated, so keep the per-set load profile
+        // identical to the historical direct fields.
+        const draft = this._draft
+        draft.values.set(atom, resolved)
+        if (!draft.hasCommitEffects && atom.onSet) {
+            draft.hasCommitEffects = true
         }
         // A set supersedes an unset of the same atom buffered earlier in this txn
         // (last write wins, regardless of order). Symmetric to `unset` dropping
         // any buffered set.
-        this._unsetSet?.delete(atom)
-        this.invalidateSelectorCache()
-
+        draft.unsets?.delete(atom)
+        if (!draft.dirty) draft.dirty = true
         if (isFamilyAtom(atom)) {
-            const ownFamilyValue = this._atomMap.has(atom.family)
-                ? this._atomMap.get(atom.family)
+            const ownFamilyValue = draft.values.has(atom.family)
+                ? draft.values.get(atom.family)
                 : this._data.values.has(atom.family)
                   ? this._data.values.get(atom.family)
                   : undefined
@@ -416,11 +385,11 @@ export class TransactionContext {
                 !ownFamilyValue?.__index ||
                 !hasOwnFamilyAtom(ownFamilyValue.__index, atom)
             ) {
-                if (!this._atomMap.has(atom.family)) {
+                if (!draft.values.has(atom.family)) {
                     // @ts-ignore
                     this.cloneFamilyIntoTxn(atom.family)
                 }
-                const index = this._atomMap.get(atom.family).__index
+                const index = draft.values.get(atom.family).__index
                 index.created.set(atom, performance.now())
                 index.deleted.delete(atom)
                 this.recursivelyUpdateAtomFamilyIndexes(atom.family)
@@ -437,8 +406,10 @@ export class TransactionContext {
             | undefined = undefined,
     ) => {
         this.assertOpen("write to")
-        let ownFamilyValue = this._atomMap.has(family)
-            ? this._atomMap.get(family)
+        // One draft load for the whole bulk loop (see Transaction.set).
+        const draft = this._draft
+        let ownFamilyValue = draft.values.has(family)
+            ? draft.values.get(family)
             : this._data.values.has(family)
               ? this._data.values.get(family)
               : undefined
@@ -450,49 +421,37 @@ export class TransactionContext {
                 throw new Error("Atom does not belong to the provided family")
             }
             let resolved = value
-            // Match Transaction.set's immutability contract. The branch stays
-            // allocation-free for primitives, which dominate hydration and the
-            // existing bulk benchmark.
-            if (
-                !atom.mutable &&
-                !IS_PROD &&
-                resolved !== null &&
-                (typeof resolved === "object" ||
-                    typeof resolved === "function") &&
-                !isPromiseLike(resolved)
-            ) {
-                resolved = deepFreeze(resolved)
-            }
-            // Validate like Transaction.set so this public bulk path cannot be
-            // used to bypass a store's schema boundary. Hydrate's lenient mode
-            // supplies a per-entry handler so invalid members can be skipped
-            // without giving up one grouped write per family.
+            // Freeze + validate like Transaction.set (normalizeStagedValue) so
+            // this public bulk path cannot be used to bypass a store's schema
+            // boundary. Hydrate's lenient mode supplies a per-entry handler so
+            // invalid members can be skipped without giving up one grouped
+            // write per family.
             if (!onSchemaError) {
-                resolved = validateSchema(atom, resolved, this._data)
+                resolved = normalizeStagedValue(atom, resolved, this._data)
             } else {
                 try {
-                    resolved = validateSchema(atom, resolved, this._data)
+                    resolved = normalizeStagedValue(atom, resolved, this._data)
                 } catch (error) {
                     if (!(error instanceof SchemaValidationError)) throw error
                     onSchemaError(error)
                     continue
                 }
             }
-            this._atomMap.set(atom, resolved)
+            draft.values.set(atom, resolved)
             if (!staged) {
                 staged = true
-                this.invalidateSelectorCache()
+                if (!draft.dirty) draft.dirty = true
             }
-            if (!this._hasCommitEffects && atom.onSet) {
-                this._hasCommitEffects = true
+            if (!draft.hasCommitEffects && atom.onSet) {
+                draft.hasCommitEffects = true
             }
-            this._unsetSet?.delete(atom)
+            draft.unsets?.delete(atom)
 
             if (!index || !hasOwnFamilyAtom(index, atom)) {
-                if (!this._atomMap.has(family)) {
+                if (!draft.values.has(family)) {
                     // @ts-ignore
                     this.cloneFamilyIntoTxn(family)
-                    ownFamilyValue = this._atomMap.get(family)
+                    ownFamilyValue = draft.values.get(family)
                     index = ownFamilyValue.__index
                 }
                 index.created.set(atom, performance.now())
@@ -507,19 +466,19 @@ export class TransactionContext {
 
     del = (atom: AtomFamilyAtom<any, any>) => {
         this.assertOpen("write to")
-        if (!this._atomMap.has(atom.family)) {
+        if (!this._draft.values.has(atom.family)) {
             // @ts-ignore
             this.cloneFamilyIntoTxn(atom.family)
         }
-        const index = this._atomMap.get(atom.family).__index
+        const index = this._draft.values.get(atom.family).__index
         index.created.delete(atom)
         index.deleted.set(atom, performance.now())
         this.recursivelyUpdateAtomFamilyIndexes(atom.family)
         if (this._data.values.has(atom)) {
             this.deleteSet.add(atom)
         }
-        if (this._atomMap.has(atom)) {
-            this._atomMap.delete(atom)
+        if (this._draft.values.has(atom)) {
+            this._draft.values.delete(atom)
         }
         this.invalidateSelectorCache()
     }
@@ -530,22 +489,10 @@ export class TransactionContext {
         // An unset in the same txn supersedes a set of the same atom — drop any
         // buffered write so the atom reverts (re-inherits on a scope / reverts to
         // its default on a root) rather than being re-written.
-        this._atomMap.delete(atom)
-        if (!this._unsetSet) this._unsetSet = new Set()
-        this._unsetSet.add(atom)
+        this._draft.values.delete(atom)
+        if (!this._draft.unsets) this._draft.unsets = new Set()
+        this._draft.unsets.add(atom)
         this.invalidateSelectorCache()
-    }
-
-    // Detach the own value + bookkeeping for each unset atom that actually had
-    // one; returns those atoms so the commit can propagate and report them.
-    // Called in the write phase so every store's values are final before any
-    // propagation pass runs.
-    private applyUnsets = (unsetSet: Set<Atom>, data: StoreData): Atom[] => {
-        const unsetAtoms: Atom[] = []
-        for (const atom of unsetSet) {
-            if (detachOwnValue(atom, data)) unsetAtoms.push(atom)
-        }
-        return unsetAtoms
     }
 
     scope = <Callback extends TransactionFn>(
@@ -589,12 +536,12 @@ export class TransactionContext {
             this._data,
             this.initializedAtomsSet,
         ) as V | Promise<V>
-        this._atomMap.set(atom, value)
-        if (!this._hasCommitEffects && atom.onSet) {
-            this._hasCommitEffects = true
+        this._draft.values.set(atom, value)
+        if (!this._draft.hasCommitEffects && atom.onSet) {
+            this._draft.hasCommitEffects = true
         }
         // reset writes the default; it supersedes a buffered unset of the atom.
-        this._unsetSet?.delete(atom)
+        this._draft.unsets?.delete(atom)
         this.invalidateSelectorCache()
         return value
     };
@@ -604,8 +551,8 @@ export class TransactionContext {
         autoCommit = true,
     ): ReturnType<Callback> {
         this.assertOpen("execute")
-        if (this._selectorRuntime)
-            this._selectorRuntime.readOverlayActive = true
+        if (this._draft.selectorRuntime)
+            this._draft.selectorRuntime.readOverlayActive = true
         try {
             const result = callback(this) as ReturnType<Callback>
             if (isPromiseLike(result)) {
@@ -625,12 +572,12 @@ export class TransactionContext {
                 // Preserve the callback error even if it disposed the store.
                 // This internal cancellation intentionally bypasses the public
                 // lifecycle assertion while still draining speculative work.
-                root[CANCEL_TRANSACTION]()
+                root.cancelTree(TRANSACTION_ABORTED)
             }
             throw error
         } finally {
-            if (this._selectorRuntime) {
-                this._selectorRuntime.readOverlayActive = false
+            if (this._draft.selectorRuntime) {
+                this._draft.selectorRuntime.readOverlayActive = false
             }
         }
     }
@@ -649,9 +596,13 @@ export class TransactionContext {
         try {
             root.commitOpenTransaction(source)
         } finally {
-            root._state = TRANSACTION_CLOSED
+            // Terminal mark only: a committed tree keeps its (already applied)
+            // staging state, exactly as the historical fields did — retained
+            // handles may still be inspected, and in-flight speculative async
+            // selector work settles through the overlay runtime.
+            root._state = TRANSACTION_COMMITTED
             if (root._scopedTransactions) {
-                root.setScopedTreeState(TRANSACTION_CLOSED)
+                root.setScopedTreeState(TRANSACTION_COMMITTED)
             }
             root.untrackTree()
         }
@@ -663,7 +614,7 @@ export class TransactionContext {
         if (root._scopedTransactions) {
             root.assertScopedTreeOpen("abort")
         }
-        root.cancelTree()
+        root.cancelTree(TRANSACTION_ABORTED)
     }
 
     private rootTransaction(): TransactionContext {
@@ -691,6 +642,35 @@ export class TransactionContext {
     }
 
     private commitOpenTransaction(source?: StoreChangeSource): void {
+        // The ordinary single-store arm — no hooks (and therefore no globals:
+        // every global atom carries a marker onSet) and no cleanup mutations —
+        // translates its whole commit into one CommitPlan that owns the outer
+        // commit-end boundary and the deferred onChange flush. The remaining
+        // arms share their write phase with the unmigrated global fan-out
+        // adapter, whose branch is only known after that phase, so their outer
+        // boundary and flush stay below until the cross-scope/global migration.
+        if (
+            !this._scopedTransactions &&
+            !this._draft.hasCommitEffects &&
+            !draftHasCleanupMutations(this._draft)
+        ) {
+            // Staging materialization only (one copy + sort per dirty family
+            // working index) — unobservable, so it may precede the boundary.
+            this.renderDirtyAtomFamilyIndexes()
+            // With no listener anywhere no sink is allocated, so the
+            // Bencher-gated txn hot path keeps its shape.
+            const sink =
+                changeListenerRegistry.count === 0
+                    ? undefined
+                    : createChangeSink(this._name, source)
+            commitHookFreeAtoms(
+                this._draft.values,
+                this._data,
+                new Set<Atom>(),
+                sink,
+            )
+            return
+        }
         // Commit boundary for store.onCommitEnd: listeners fire once, when the
         // outermost boundary closes — after every subscriber callback and after
         // the onChange flush below. The inner propagation passes also open
@@ -740,148 +720,87 @@ export class TransactionContext {
     }
 
     private commitWork = (sink: ChangeSink | undefined) => {
-        // Single-store fast path: no scoped transactions to coordinate.
+        // Single-store path: no scoped transactions to coordinate. Translate
+        // the finalized overlay into the commit engine — the bulk coordinator,
+        // or a CommitPlan for cleanup mutations. (The hook-free arm committed
+        // its own plan from commitOpenTransaction.) Only global peer fan-out
+        // stays on its legacy adapter (see below).
         if (!this._scopedTransactions) {
             this.renderDirtyAtomFamilyIndexes()
+            const draft = this._draft
+            // Commit-scoped initialization set — deliberately NOT the draft's
+            // body-read set: atoms lazily initialized while the callback ran
+            // must not be re-propagated by the write phase.
             const initializedAtomsSet = new Set<Atom>()
-            if (!this._unsetSet?.size && !this._deleteSet?.size) {
-                setAtoms(
-                    this._atomMap,
+            if (!draftHasCleanupMutations(draft)) {
+                commitAtoms(
+                    draft.values,
                     this._data,
                     initializedAtomsSet,
-                    false,
-                    sink,
-                    this._hasCommitEffects,
+                    sink
+                        ? { onSet: "collect", report: sink }
+                        : BULK_WITH_EFFECTS_SILENT,
                 )
                 return
             }
 
-            // Deletes/unsets require multiple propagation passes. Complete ALL
-            // mutations first, then hooks, then every propagation/notification.
+            // Cleanup commit: deletes/unsets require multiple propagation
+            // passes. Complete ALL mutations first (phases 1–2 inline), then
+            // hand the plan to the engine for hooks, settlement, cleanup
+            // ordering, and error arbitration.
             const onSets: DeferredOnSet[] = []
             const updatedAtoms = writeAtoms(
-                this._atomMap,
+                draft.values,
                 this._data,
                 initializedAtomsSet,
                 false,
                 onSets,
             )
-            const deleted = this._deleteSet?.size
-                ? [...this._deleteSet]
+            const deleted = draft.deletes?.size
+                ? [...draft.deletes]
                 : undefined
-            if (this._deleteSet?.size) {
-                deleteAtomFamilyAtoms(this._deleteSet, this._data)
+            if (draft.deletes?.size) {
+                deleteAtomFamilyAtoms(draft.deletes, this._data)
             }
-            const unsetAtoms = this._unsetSet?.size
-                ? this.applyUnsets(this._unsetSet, this._data)
+            const unsetAtoms = draft.unsets?.size
+                ? applyUnsets(draft.unsets, this._data)
                 : []
 
             const errors = createCommitErrors()
+            // Global peers are writes too: apply them all while still in the
+            // write phase. An empty map means every peer was value-equal — a
+            // local plan handles that exactly like no globals at all.
             const globalUpdates = applyGlobalOnSets(onSets, errors)
-            runOnSets(onSets, errors)
+            if (globalUpdates && globalUpdates.size > 0) {
+                // Hooks fire after every local and peer write, before any
+                // propagation — same order the plan path gets from the engine.
+                runOnSets(onSets, errors)
+                this.commitCleanupWithGlobalFanOut(
+                    updatedAtoms,
+                    deleted,
+                    unsetAtoms,
+                    sink,
+                    errors,
+                    globalUpdates,
+                )
+                return
+            }
 
-            const notify: NotifyTarget = new Map()
-            const globalSink =
-                globalUpdates && globalUpdates.size > 0
-                    ? createChangeSink(undefined, "set")
-                    : undefined
-            const commitRoots = globalSink
-                ? beginGlobalCommit(this._data, globalUpdates!)
-                : []
-            // Global peers historically surface as direct `set` changes and
-            // report before the transaction origin.
-            if (globalUpdates) {
-                for (const [peer, atoms] of globalUpdates) {
-                    try {
-                        propagateAtomUpdate(
-                            atoms,
-                            peer,
-                            false,
-                            notify,
-                            globalSink,
-                        )
-                    } catch (error) {
-                        recordCommitError(errors, error)
-                    }
-                }
-            }
-            if (updatedAtoms.length > 0) {
-                try {
-                    propagateAtomUpdate(
-                        updatedAtoms,
-                        this._data,
-                        false,
-                        notify,
-                        sink,
-                    )
-                } catch (error) {
-                    recordCommitError(errors, error)
-                }
-            }
-            if (deleted) {
-                try {
-                    propagateDeletedAtoms(
-                        deleted,
-                        this._data,
-                        undefined,
-                        undefined,
-                        undefined,
-                        notify,
-                        sink,
-                    )
-                } catch (error) {
-                    recordCommitError(errors, error)
-                }
-            }
-            if (unsetAtoms.length > 0) {
-                if (sink) {
-                    for (const atom of unsetAtoms) {
-                        reportUnsetAtom(
-                            atom,
-                            this._data,
-                            effectiveValueAfterUnset(atom, this._data),
-                            sink,
-                        )
-                    }
-                }
-                try {
-                    propagateAtomUpdate(
-                        unsetAtoms,
-                        this._data,
-                        false,
-                        notify,
-                        sink,
-                        false,
-                        false,
-                    )
-                } catch (error) {
-                    recordCommitError(errors, error)
-                }
-            }
-            try {
-                notifyDeferred(notify)
-            } catch (error) {
-                recordCommitError(errors, error)
-            }
-            if (globalSink) {
-                try {
-                    flushChangeSink(globalSink)
-                } catch (error) {
-                    recordCommitError(errors, error)
-                }
-                endGlobalCommit(commitRoots, errors)
-            }
-            // Re-delegate AFTER firing: the deferred scope-local callback
-            // idempotently drops its delegate, so the fresh parent delegate is
-            // established last even when a callback threw.
-            for (const atom of unsetAtoms) {
-                try {
-                    reDelegateScopeSubscriptions(atom, this._data)
-                } catch (error) {
-                    recordCommitError(errors, error)
-                }
-            }
-            throwCommitError(errors)
+            runCommitPlan({
+                data: this._data,
+                settlement: {
+                    kind: "transaction",
+                    atoms: updatedAtoms,
+                    deleted,
+                    unset: unsetAtoms.length > 0 ? unsetAtoms : undefined,
+                    settle: settleTransactionCommit,
+                },
+                onSets,
+                errors,
+                report: sink,
+                // continueAfterError stays default: a hook error must not
+                // starve settlement of already-applied writes.
+            })
             return
         }
 
@@ -908,20 +827,20 @@ export class TransactionContext {
             const txn = entry.txn
             txn.renderDirtyAtomFamilyIndexes()
             entry.updatedAtoms = writeAtoms(
-                txn._atomMap,
+                txn._draft.values,
                 entry.data,
                 new Set<Atom>(),
                 false,
                 entry.onSets,
             )
-            if (txn._deleteSet?.size) {
-                deleteAtomFamilyAtoms(txn._deleteSet, entry.data)
-                entry.deleted = [...txn._deleteSet]
+            if (txn._draft.deletes?.size) {
+                deleteAtomFamilyAtoms(txn._draft.deletes, entry.data)
+                entry.deleted = [...txn._draft.deletes]
             }
-            if (txn._unsetSet?.size) {
+            if (txn._draft.unsets?.size) {
                 // Detach shadows in the write phase so every store's values are
                 // final before any propagation pass reads through the chain.
-                entry.unsetAtoms = txn.applyUnsets(txn._unsetSet, entry.data)
+                entry.unsetAtoms = applyUnsets(txn._draft.unsets, entry.data)
             }
         }
 
@@ -1064,6 +983,112 @@ export class TransactionContext {
         throwCommitError(errors)
     }
 
+    /**
+     * LEGACY GLOBAL FAN-OUT ADAPTER (unmigrated). A single-store cleanup
+     * commit whose staged writes changed at least one global peer settles the
+     * whole multi-store unit here instead of through a CommitPlan: every
+     * store's selectors settle before any subscriber fires, and no store's
+     * error starves a later store. Callers have already applied every local
+     * and peer value and run the deferred hooks. Global write planning moves
+     * onto the engine with the cross-scope migration.
+     */
+    private commitCleanupWithGlobalFanOut(
+        updatedAtoms: Atom[],
+        deleted: AtomFamilyAtom<any, any>[] | undefined,
+        unsetAtoms: Atom[],
+        sink: ChangeSink | undefined,
+        errors: CommitErrors,
+        globalUpdates: StoreAtomUpdates,
+    ): void {
+        const notify: NotifyTarget = new Map()
+        const globalSink = createChangeSink(undefined, "set")
+        const commitRoots = beginGlobalCommit(this._data, globalUpdates)
+        // Global peers historically surface as direct `set` changes and
+        // report before the transaction origin.
+        for (const [peer, atoms] of globalUpdates) {
+            try {
+                propagateAtomUpdate(atoms, peer, false, notify, globalSink)
+            } catch (error) {
+                recordCommitError(errors, error)
+            }
+        }
+        if (updatedAtoms.length > 0) {
+            try {
+                propagateAtomUpdate(
+                    updatedAtoms,
+                    this._data,
+                    false,
+                    notify,
+                    sink,
+                )
+            } catch (error) {
+                recordCommitError(errors, error)
+            }
+        }
+        if (deleted) {
+            try {
+                propagateDeletedAtoms(
+                    deleted,
+                    this._data,
+                    undefined,
+                    undefined,
+                    undefined,
+                    notify,
+                    sink,
+                )
+            } catch (error) {
+                recordCommitError(errors, error)
+            }
+        }
+        if (unsetAtoms.length > 0) {
+            if (sink) {
+                for (const atom of unsetAtoms) {
+                    reportUnsetAtom(
+                        atom,
+                        this._data,
+                        effectiveValueAfterUnset(atom, this._data),
+                        sink,
+                    )
+                }
+            }
+            try {
+                propagateAtomUpdate(
+                    unsetAtoms,
+                    this._data,
+                    false,
+                    notify,
+                    sink,
+                    false,
+                    false,
+                )
+            } catch (error) {
+                recordCommitError(errors, error)
+            }
+        }
+        try {
+            notifyDeferred(notify)
+        } catch (error) {
+            recordCommitError(errors, error)
+        }
+        try {
+            flushChangeSink(globalSink)
+        } catch (error) {
+            recordCommitError(errors, error)
+        }
+        endGlobalCommit(commitRoots, errors)
+        // Re-delegate AFTER firing: the deferred scope-local callback
+        // idempotently drops its delegate, so the fresh parent delegate is
+        // established last even when a callback threw.
+        for (const atom of unsetAtoms) {
+            try {
+                reDelegateScopeSubscriptions(atom, this._data)
+            } catch (error) {
+                recordCommitError(errors, error)
+            }
+        }
+        throwCommitError(errors)
+    }
+
     // Depth-first pre-order: this store, then each nested scope. Produces a
     // root-first plan used directly for the notify pass and reversed for the
     // write pass (so descendants are written before their ancestors).
@@ -1084,40 +1109,42 @@ export class TransactionContext {
     }
 
     private get selectorCache() {
-        if (!this._selectorCache) this._selectorCache = new Map()
-        return this._selectorCache
+        if (!this._draft.selectorCache) this._draft.selectorCache = new Map()
+        return this._draft.selectorCache
     }
 
     private invalidateSelectorCache() {
-        if (!this._dirty) this._dirty = true
+        if (!this._draft.dirty) this._draft.dirty = true
     }
 
     private get selectorRuntime(): SelectorEvaluationRuntime {
-        if (!this._selectorRuntime) {
-            this._selectorRuntime = {
+        if (!this._draft.selectorRuntime) {
+            this._draft.selectorRuntime = {
                 abortControllers: new Map(),
                 latestEvalContext: new Map(),
                 stateDependencies: new Map(),
                 readOverlayActive: true,
             }
         }
-        return this._selectorRuntime
+        return this._draft.selectorRuntime
     }
 
     private get selectorCircularDependencySet() {
-        if (!this._selectorCircularDependencySet) {
-            this._selectorCircularDependencySet = new WeakSet()
+        if (!this._draft.selectorCircularDependencies) {
+            this._draft.selectorCircularDependencies = new WeakSet()
         }
-        return this._selectorCircularDependencySet
+        return this._draft.selectorCircularDependencies
     }
     private get deleteSet() {
-        if (!this._deleteSet) this._deleteSet = new Set()
-        return this._deleteSet
+        if (!this._draft.deletes) this._draft.deletes = new Set()
+        return this._draft.deletes
     }
 
     private get initializedAtomsSet() {
-        if (!this._initializedAtomsSet) this._initializedAtomsSet = new Set()
-        return this._initializedAtomsSet
+        if (!this._draft.initializedAtoms) {
+            this._draft.initializedAtoms = new Set()
+        }
+        return this._draft.initializedAtoms
     }
 
     private scopedTransaction(scopeId: string) {
@@ -1142,8 +1169,8 @@ export class TransactionContext {
                 parentIndex,
                 moveUpIfParent,
             )
-        const currentFamilyIndex = this._atomMap.has(family)
-            ? this._atomMap.get(family).__index
+        const currentFamilyIndex = this._draft.values.has(family)
+            ? this._draft.values.get(family).__index
             : this._data.values.has(family)
               ? this._data.values.get(family).__index
               : (this.get(family) as any).__index
@@ -1161,15 +1188,15 @@ export class TransactionContext {
         // it — permanently stale. Registering in scopeValueIndex (trackScopeValue)
         // and keeping the parentIndex link mirrors initFamilyIndex exactly.
         // TRUE first materialization: the scope has no working index for this
-        // family yet — neither in this txn (_atomMap) nor committed (data.values).
-        // The `!_atomMap.has` guard is essential: cloneFamilyIntoTxn is re-invoked
-        // on a scoped txn via the recursion below whenever an ancestor re-clones,
-        // and at that point the scope may already hold its own accumulated
-        // created/deleted in _atomMap — which must be preserved (cloned), not
-        // reset to an empty child index.
+        // family yet — neither staged in this txn's draft nor committed
+        // (data.values). The `!draft.values.has` guard is essential:
+        // cloneFamilyIntoTxn is re-invoked on a scoped txn via the recursion
+        // below whenever an ancestor re-clones, and at that point the scope may
+        // already hold its own accumulated created/deleted in its draft — which
+        // must be preserved (cloned), not reset to an empty child index.
         const scopeFirstMaterialization =
             this._data.parent &&
-            !this._atomMap.has(family) &&
+            !this._draft.values.has(family) &&
             !this._data.values.has(family)
         let clonedIndex
         if (scopeFirstMaterialization) {
@@ -1206,7 +1233,7 @@ export class TransactionContext {
         const unrenderedFamilyValue: any[] = []
         // @ts-ignore
         unrenderedFamilyValue.__index = clonedIndex
-        this._atomMap.set(family, unrenderedFamilyValue)
+        this._draft.values.set(family, unrenderedFamilyValue)
         this.markAtomFamilyIndexDirty(family)
     }
 
@@ -1223,25 +1250,27 @@ export class TransactionContext {
     }
 
     private markAtomFamilyIndexDirty(atomFamily: AtomFamily<any, any>) {
-        const currentIndex = this._atomMap.get(atomFamily).__index
+        const currentIndex = this._draft.values.get(atomFamily).__index
         currentIndex.rendered = null
         currentIndex.renderedArray = null
-        if (!this._dirtyFamilyIndexes) this._dirtyFamilyIndexes = new Set()
-        this._dirtyFamilyIndexes.add(atomFamily)
+        if (!this._draft.dirtyFamilyIndexes) {
+            this._draft.dirtyFamilyIndexes = new Set()
+        }
+        this._draft.dirtyFamilyIndexes.add(atomFamily)
     }
 
     /** Materialize every dirty family working index immediately before this
      *  transaction writes. Updating a Map value does not disturb insertion
      *  order, so atom/family propagation order remains unchanged. */
     private renderDirtyAtomFamilyIndexes() {
-        const dirtyFamilyIndexes = this._dirtyFamilyIndexes
+        const dirtyFamilyIndexes = this._draft.dirtyFamilyIndexes
         if (!dirtyFamilyIndexes) return
         for (const state of dirtyFamilyIndexes) {
-            const value = this._atomMap.get(state)
+            const value = this._draft.values.get(state)
             const rendered = renderAtomFamilyIndex(value.__index)
-            if (rendered !== value) this._atomMap.set(state, rendered)
+            if (rendered !== value) this._draft.values.set(state, rendered)
         }
-        this._dirtyFamilyIndexes = undefined
+        this._draft.dirtyFamilyIndexes = undefined
     }
 }
 

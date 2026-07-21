@@ -1,11 +1,12 @@
 import type { Atom } from "../types/Atom"
 import type { BulkWriteIntent } from "../types/CommitIntent"
+import type { CommitPlan } from "../types/CommitPlan"
 import type { InternalAtom } from "../types/InternalAtom"
 import type { StoreData } from "../types/StoreData"
 import { isFamilyAtom } from "../utils/isFamilyAtom"
 import { isPromiseLike } from "../utils/isPromiseLike"
 import { runCommitPlan } from "./commitEngine"
-import { BULK_WITH_EFFECTS_SILENT, SETTLE_DEFAULT } from "./commitIntents"
+import { SETTLE_DEFAULT } from "./commitIntents"
 import {
     createCommitErrors,
     recordCommitError,
@@ -20,8 +21,9 @@ import {
 import {
     createChangeSink,
     flushChangeSink,
-    type ChangeReport,
+    type ChangeSink,
 } from "./notifyChangeListeners"
+import { beginCommit, commitEndRegistry, endCommit } from "./onCommitEnd"
 import {
     notifyDeferred,
     propagateAtomUpdate,
@@ -38,13 +40,14 @@ const noOnSets: DeferredOnSet[] = []
 const FRESH_ATOM_FAST_PATH_MIN = 256
 
 /**
- * Bulk-write coordinator of the commit engine: the single-store transaction
- * commit delegate. Phases 1–2 run through writeAtoms; a hook-free commit
- * settles immediately (allocation-free — shared empty queue, shared frozen
- * flags); a hooked non-global commit runs phases 3–9 through runCommitPlan.
- * Global fan-out is unmigrated: peer values are still applied here (they
- * belong to the write phase), and when any peer changed, the multi-store
- * sequencing below runs as a legacy adapter.
+ * Bulk-write coordinator of the commit engine, invoked directly by a
+ * single-store transaction commit whose overlay stages effectful writes but no
+ * cleanup mutations. Phases 1–2 run through writeAtoms; an explicitly hook-free
+ * intent settles immediately (allocation-free — shared empty queue, shared
+ * frozen flags); a hooked non-global commit runs phases 3–9 through
+ * runCommitPlan. Global fan-out is unmigrated: peer values are still applied
+ * here (they belong to the write phase), and when any peer changed, the
+ * multi-store sequencing below runs as a legacy adapter.
  */
 export const commitAtoms = (
     pairs: Map<Atom<any>, any>,
@@ -199,47 +202,146 @@ const tryWriteFreshSimpleAtoms = (
     return true
 }
 
+// ——— Reusable hook-free transaction plan ———
+// The dominant transaction shape (no hooks, no cleanup mutations) commits
+// through runCommitPlan with ZERO per-commit allocations: one module-static
+// plan/settlement/errors trio plus static apply/flush operations reading
+// module-static arguments — the plan-shaped sibling of the engine's
+// `createScalarCommit` entries. At most one such commit is in flight per
+// synchronous frame in the common case; a nested commit (a subscriber opening
+// a new transaction while an outer commit is delivering) finds the statics
+// busy and falls back to a fresh plan. Every field is reset in `finally` so
+// the statics never retain a store, sink, or atom list past their commit.
+const EMPTY_UPDATED_ATOMS: Atom<any>[] = []
+let hookFreeBusy = false
+let hookFreePairs: Map<Atom<any>, any> = undefined!
+let hookFreeData: StoreData = undefined!
+let hookFreeInitialized: Set<Atom> = undefined!
+let hookFreeSink: ChangeSink | undefined
+
+const hookFreeSettlement = {
+    kind: "update" as const,
+    atoms: EMPTY_UPDATED_ATOMS,
+    settle: settleCommit,
+    flags: SETTLE_DEFAULT,
+}
+
+const hookFreeApply = () => {
+    if (
+        hookFreeSink === undefined &&
+        hookFreePairs.size >= FRESH_ATOM_FAST_PATH_MIN &&
+        tryWriteFreshSimpleAtoms(hookFreePairs, hookFreeData)
+    ) {
+        return
+    }
+    // Assigned (not pushed) so a large batch pays no second copy.
+    hookFreeSettlement.atoms = writeAtoms(
+        hookFreePairs,
+        hookFreeData,
+        hookFreeInitialized,
+        true,
+        noOnSets,
+    )
+}
+
+const hookFreeFlushReport = () => flushChangeSink(hookFreeSink!)
+
+const hookFreeErrors = createCommitErrors()
+
+const hookFreePlan: CommitPlan = {
+    data: undefined as unknown as StoreData,
+    settlement: hookFreeSettlement,
+    apply: hookFreeApply,
+    onSets: noOnSets,
+    errors: hookFreeErrors,
+    report: undefined,
+    flushReport: undefined,
+    beginCommit: undefined,
+    endCommit: undefined,
+}
+
 /**
- * TEMPORARY TRANSACTION ADAPTER — transactions are intentionally outside this
- * commit-engine migration. Preserve their established hook-free fast path and
- * positional call shape; only the effectful slow path delegates to the typed
- * bulk coordinator, which remains the sole owner of hook/error/notification
- * sequencing. This adapter can disappear when transactions are migrated as a
- * dedicated change.
+ * Hook-free bulk commit entry, invoked directly by a single-store transaction
+ * commit whose overlay carries no onSet-bearing atoms (and therefore no
+ * globals — every global atom carries a marker hook) and no cleanup
+ * mutations. The whole commit is one CommitPlan: the write phase runs as the
+ * plan's `apply` (inside the boundary, exactly where the historical inline
+ * sequencing put it), settlement is the shared update primitive, and the plan
+ * owns the outer commit-end boundary and the deferred onChange flush. Large
+ * unobserved initialization batches take the fresh-atom specialization above
+ * as the apply fast path. Sharing the frozen empty onSet queue is safe:
+ * writeAtoms(skipOnSet=true) never enqueues, and runOnSets only reads.
  */
-export const setAtoms = (
+export const commitHookFreeAtoms = (
     pairs: Map<Atom<any>, any>,
     data: StoreData,
     initializedAtomsSet: Set<Atom>,
-    skipOnSet = false,
-    report?: ChangeReport,
-    hasCommitEffects = true,
+    sink: ChangeSink | undefined,
 ) => {
-    if (skipOnSet || !hasCommitEffects) {
-        if (
-            report === undefined &&
-            pairs.size >= FRESH_ATOM_FAST_PATH_MIN &&
-            tryWriteFreshSimpleAtoms(pairs, data)
-        ) {
-            return
+    if (hookFreeBusy) {
+        // Nested hook-free commit: the statics are mid-flight for the outer
+        // commit, so this (rare) shape pays the per-commit plan allocation.
+        const settlement = {
+            kind: "update" as const,
+            atoms: [] as Atom<any>[],
+            settle: settleCommit,
+            flags: SETTLE_DEFAULT,
         }
-        const updatedAtoms = writeAtoms(
-            pairs,
+        runCommitPlan({
             data,
-            initializedAtomsSet,
-            true,
-            noOnSets,
-        )
-        if (updatedAtoms.length > 0) {
-            propagateAtomUpdate(updatedAtoms, data, false, undefined, report)
-        }
+            settlement,
+            apply: () => {
+                if (
+                    sink === undefined &&
+                    pairs.size >= FRESH_ATOM_FAST_PATH_MIN &&
+                    tryWriteFreshSimpleAtoms(pairs, data)
+                ) {
+                    return
+                }
+                settlement.atoms = writeAtoms(
+                    pairs,
+                    data,
+                    initializedAtomsSet,
+                    true,
+                    noOnSets,
+                )
+            },
+            onSets: noOnSets,
+            errors: createCommitErrors(),
+            report: sink,
+            flushReport: sink ? () => flushChangeSink(sink) : undefined,
+            beginCommit:
+                commitEndRegistry.count === 0 ? undefined : beginCommit,
+            endCommit: commitEndRegistry.count === 0 ? undefined : endCommit,
+        })
         return
     }
-
-    commitAtoms(
-        pairs,
-        data,
-        initializedAtomsSet,
-        report ? { onSet: "collect", report } : BULK_WITH_EFFECTS_SILENT,
-    )
+    hookFreeBusy = true
+    hookFreePairs = pairs
+    hookFreeData = data
+    hookFreeInitialized = initializedAtomsSet
+    hookFreeSink = sink
+    hookFreePlan.data = data
+    hookFreePlan.report = sink
+    hookFreePlan.flushReport = sink === undefined ? undefined : hookFreeFlushReport
+    const withBoundary = commitEndRegistry.count !== 0
+    hookFreePlan.beginCommit = withBoundary ? beginCommit : undefined
+    hookFreePlan.endCommit = withBoundary ? endCommit : undefined
+    try {
+        runCommitPlan(hookFreePlan)
+    } finally {
+        hookFreeBusy = false
+        hookFreePairs = undefined!
+        hookFreeData = undefined!
+        hookFreeInitialized = undefined!
+        hookFreeSink = undefined
+        hookFreeSettlement.atoms = EMPTY_UPDATED_ATOMS
+        hookFreePlan.data = undefined as unknown as StoreData
+        hookFreePlan.report = undefined
+        hookFreePlan.flushReport = undefined
+        hookFreePlan.beginCommit = undefined
+        hookFreePlan.endCommit = undefined
+        hookFreeErrors.hasError = false
+        hookFreeErrors.firstError = undefined
+    }
 }

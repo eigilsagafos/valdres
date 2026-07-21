@@ -44,6 +44,9 @@ one side of a PR comparison.
 - `schedulerQueueEnqueues` / `schedulerQueueDequeues`: ready/resweep selector
   queue work where a queue exists. The one-selector linear fast path correctly
   reports zero.
+- `commitPlanRuns`: admitted `runCommitPlan` executions. Every single-store
+  transaction commit shape (ordinary, hooked, cleanup) must execute exactly
+  one plan; scalar direct writes correctly report zero.
 
 The collector is an internal optional `StoreData` field. It is attached only for
 one synchronous test/benchmark window, inherited by scopes created during that

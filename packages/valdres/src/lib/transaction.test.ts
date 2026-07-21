@@ -400,7 +400,7 @@ describe("transaction", () => {
         release()
         expect(await latest).toBe(2)
         expect(
-            transactionRef._selectorRuntime.stateDependencies
+            transactionRef._draft.selectorRuntime.stateDependencies
                 .get(asyncCount)
                 .has(count),
         ).toBe(true)
@@ -576,12 +576,14 @@ describe("transaction", () => {
             txn.set(a, 1)
             const familyValue = (
                 txn as unknown as {
-                    _atomMap: Map<
-                        unknown,
-                        { __index: { renderedArray: unknown } }
-                    >
+                    _draft: {
+                        values: Map<
+                            unknown,
+                            { __index: { renderedArray: unknown } }
+                        >
+                    }
                 }
-            )._atomMap.get(family)!
+            )._draft.values.get(family)!
 
             // Staging membership only dirties the index. Rendering here would
             // copy + sort after every set and make K staged members superlinear.
@@ -1157,5 +1159,200 @@ describe("transaction", () => {
         const settled = await settleWithin(suspense)
         expect(settled).toEqual({ kind: "resolved", value: "done" })
         expect(store1.get(emptyAtom)).toBe("done")
+    })
+})
+
+describe("single-store cleanup commits through the commit engine", () => {
+    test("a cleanup transaction with a global write runs the user onSet before any subscriber and reports onChange last", () => {
+        const store1 = store()
+        const store2 = store()
+        const events: string[] = []
+        const globalCounter = atom(0, {
+            global: true,
+            onSet: () => events.push("onSet"),
+        })
+        const localAtom = atom(1)
+        store1.set(localAtom, 2)
+        store2.get(globalCounter)
+        store1.sub(globalCounter, () => events.push("sub:global@store1"))
+        store2.sub(globalCounter, () => events.push("sub:global@store2"))
+        store1.sub(localAtom, () => events.push("sub:local"))
+        store1.onChange(() => events.push("onChange"))
+
+        store1.txn(txn => {
+            txn.set(globalCounter, 5)
+            txn.unset(localAtom)
+        })
+
+        // Hooks fire after every local and peer write, before any delivery;
+        // the origin store's onChange flushes after every subscriber. The
+        // relative order of independent subscribers is incidental (a bag).
+        expect(events[0]).toBe("onSet")
+        expect(events.at(-1)).toBe("onChange")
+        expect(events.slice(1, -1).sort()).toEqual([
+            "sub:global@store1",
+            "sub:global@store2",
+            "sub:local",
+        ])
+        expect(store2.get(globalCounter)).toBe(5)
+        expect(store1.get(localAtom)).toBe(1)
+    })
+
+    test("a throwing user hook in a global cleanup transaction surfaces without starving peer or unset-dependent notifications", () => {
+        const store1 = store()
+        const store2 = store()
+        const seen: string[] = []
+        const globalCounter = atom(0, {
+            global: true,
+            onSet: () => {
+                throw new Error("hook boom")
+            },
+        })
+        const localAtom = atom(1)
+        const localTenfold = selector(get => get(localAtom) * 10)
+        store1.set(localAtom, 2)
+        store2.get(globalCounter)
+        store2.sub(globalCounter, () => seen.push("sub:global@store2"))
+        store1.sub(localTenfold, () => seen.push("sub:selector"))
+
+        expect(() =>
+            store1.txn(txn => {
+                txn.set(globalCounter, 7)
+                txn.unset(localAtom)
+            }),
+        ).toThrow("hook boom")
+
+        expect(store2.get(globalCounter)).toBe(7)
+        expect(store1.get(localAtom)).toBe(1)
+        expect(store1.get(localTenfold)).toBe(10)
+        expect(seen.sort()).toEqual(["sub:global@store2", "sub:selector"])
+    })
+
+    test("a global write combined with a family delete (no unsets) commits atomically through the fan-out arm", () => {
+        const store1 = store()
+        const store2 = store()
+        const family = atomFamily<number, [string]>(0)
+        const globalCounter = atom(0, { global: true })
+        const member = family("a")
+        const seen: string[] = []
+        store1.set(member, 1)
+        store2.get(globalCounter)
+        store2.sub(globalCounter, () => seen.push("sub:global@store2"))
+        store1.sub(family, () => seen.push("sub:family"))
+
+        store1.txn(txn => {
+            txn.set(globalCounter, 3)
+            txn.del(member)
+        })
+
+        expect(store2.get(globalCounter)).toBe(3)
+        expect(store1.get(family)).toEqual([])
+        expect(seen.sort()).toEqual(["sub:family", "sub:global@store2"])
+    })
+
+    test("a transaction started by a subscriber during a hook-free commit falls back safely", () => {
+        // The reusable static hook-free plan must detect the nested commit
+        // and fall back to a fresh plan without cross-contaminating state.
+        const store1 = store()
+        const outer = atom(0)
+        const inner = atom(0)
+        const commitEnds = mock(() => {})
+        let cascaded = false
+        store1.onCommitEnd(commitEnds)
+        store1.sub(outer, () => {
+            if (!cascaded) {
+                cascaded = true
+                store1.txn(txn => txn.set(inner, 42))
+            }
+        })
+
+        store1.txn(txn => txn.set(outer, 1))
+
+        expect(store1.get(outer)).toBe(1)
+        expect(store1.get(inner)).toBe(42)
+        // The nested boundary coalesces into the outer commit.
+        expect(commitEnds).toHaveBeenCalledTimes(1)
+    })
+
+    test("schema validators observe the same unfrozen representation across direct, staged, and family-batch writes", () => {
+        // Guards the shared normalizeStagedValue contract: validation runs
+        // BEFORE the staging-time dev-freeze, exactly as setAtom validates the
+        // raw value before setValueInData freezes at write.
+        const observedFrozen: boolean[] = []
+        const recordingSchema = {
+            parse(value: unknown) {
+                if ((value as { probe?: boolean })?.probe) {
+                    observedFrozen.push(Object.isFrozen(value))
+                }
+                return value
+            },
+        }
+        const store1 = store()
+        const directAtom = atom(
+            { probe: false, n: 0 },
+            { schemaValidation: true, schema: recordingSchema as any },
+        )
+        const stagedAtom = atom(
+            { probe: false, n: 0 },
+            { schemaValidation: true, schema: recordingSchema as any },
+        )
+        const family = atomFamily<{ probe: boolean; n: number }, [string]>(
+            { probe: false, n: 0 },
+            { schemaValidation: true, schema: recordingSchema as any },
+        )
+
+        store1.set(directAtom, { probe: true, n: 1 })
+        store1.txn(txn => txn.set(stagedAtom, { probe: true, n: 2 }))
+        store1.txn(txn =>
+            txn.batchSetFamilyAtoms(family, [
+                [family("a"), { probe: true, n: 3 }],
+            ]),
+        )
+
+        expect(observedFrozen).toEqual([false, false, false])
+        expect(Object.isFrozen(store1.get(directAtom))).toBe(true)
+        expect(Object.isFrozen(store1.get(stagedAtom))).toBe(true)
+        expect(Object.isFrozen(store1.get(family("a")))).toBe(true)
+        expect(store1.get(directAtom)).toEqual({ probe: true, n: 1 })
+        expect(store1.get(stagedAtom)).toEqual({ probe: true, n: 2 })
+        expect(store1.get(family("a"))).toEqual({ probe: true, n: 3 })
+    })
+
+    test("an unset-report failure surfaces the first captured commit error instead of masking it", () => {
+        // Pins the deliberate arbitration change documented on
+        // settleTransactionCommit: historically the report read-through's own
+        // error escaped raw and masked an earlier recorded hook error.
+        let defaultEvaluations = 0
+        const boom = atom(() => {
+            defaultEvaluations += 1
+            if (defaultEvaluations > 1) throw new Error("default boom")
+            return 1
+        })
+        const hooked = atom(0, {
+            onSet: () => {
+                throw new Error("hook boom")
+            },
+        })
+        const store1 = store()
+        const scoped = store1.scope("request")
+        const changes: unknown[] = []
+
+        // The scope claims its own shadow; the root's default materializes at
+        // most once. De-materialize the root so the unset report's parent
+        // read-through must re-evaluate the (now throwing) default.
+        scoped.txn(txn => txn.set(boom, 5))
+        store1.unset(boom)
+        scoped.onChange(change => changes.push(change))
+
+        expect(() =>
+            scoped.txn(txn => {
+                txn.set(hooked, 1)
+                txn.unset(boom)
+            }),
+        ).toThrow("hook boom")
+
+        expect(defaultEvaluations).toBeGreaterThan(1)
+        expect(scoped.get(hooked)).toBe(1)
+        expect(changes.length).toBeGreaterThan(0)
     })
 })
