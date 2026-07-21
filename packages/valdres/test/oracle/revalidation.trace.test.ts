@@ -7,6 +7,7 @@
  *  clock's install/restore lifecycle wraps the whole build→act→assert. */
 import { describe, expect, test } from "bun:test"
 import { store } from "../../src/store"
+import { getStoreData } from "../../src/lib/getStoreData"
 import { mockAsyncSource, withFakeClock } from "../utils/fakeClock"
 import {
     assertTrace,
@@ -23,9 +24,14 @@ describe("trace oracle · revalidation", () => {
             const rec = createRecorder()
             const s = store()
             const source = mockAsyncSource<number>()
-            const a = tracedAtom(rec, "a", source.fn as unknown as () => number, {
-                maxAge: 100,
-            })
+            const a = tracedAtom(
+                rec,
+                "a",
+                source.fn as unknown as () => number,
+                {
+                    maxAge: 100,
+                },
+            )
             traceSub(rec, s, a, "a") // direct subscriber installs the maxAge timer
             const { calls } = traceChange(rec, s)
             traceCommitEnd(rec, s)
@@ -64,10 +70,15 @@ describe("trace oracle · revalidation", () => {
             const rec = createRecorder()
             const s = store()
             const source = mockAsyncSource<number>()
-            const a = tracedAtom(rec, "a", source.fn as unknown as () => number, {
-                maxAge: 100,
-                staleIfError: 10_000,
-            })
+            const a = tracedAtom(
+                rec,
+                "a",
+                source.fn as unknown as () => number,
+                {
+                    maxAge: 100,
+                    staleIfError: 10_000,
+                },
+            )
             traceSub(rec, s, a, "a")
             const { calls } = traceChange(rec, s)
             traceCommitEnd(rec, s)
@@ -90,6 +101,78 @@ describe("trace oracle · revalidation", () => {
             assertTrace(rec.events, ["commitEnd", "commitEnd"])
             expect(calls).toHaveLength(0)
             expect(rec.events).not.toContain("sub:a")
+        })
+    })
+
+    test("equal refresh advances freshness with only meta-on/meta-off boundaries", async () => {
+        await withFakeClock(async clock => {
+            const rec = createRecorder()
+            const s = store()
+            const source = mockAsyncSource<{ value: number }>()
+            const a = tracedAtom(
+                rec,
+                "a",
+                source.fn as unknown as () => { value: number },
+                {
+                    maxAge: 100,
+                    equal: (left, right) => left.value === right.value,
+                },
+            )
+            traceSub(rec, s, a, "a")
+            const { calls } = traceChange(rec, s)
+            traceCommitEnd(rec, s)
+            const first = { value: 1 }
+
+            await source.resolve(first)
+            const data = getStoreData(s)
+            const initialWriteAt = data.lastValueWriteAt.get(a)
+            rec.clear()
+            calls.length = 0
+
+            await clock.advance(100)
+            await source.resolve({ value: 1 })
+
+            expect(s.get(a)).toBe(first)
+            expect(data.lastValueWriteAt.get(a)).toBeGreaterThan(
+                initialWriteAt!,
+            )
+            assertTrace(rec.events, ["commitEnd", "commitEnd"])
+            expect(calls).toHaveLength(0)
+            expect(rec.events).not.toContain("sub:a")
+            expect(rec.events).not.toContain("onChange")
+        })
+    })
+
+    test("unsubscribe after meta-on cancels the in-flight result", async () => {
+        await withFakeClock(async clock => {
+            const rec = createRecorder()
+            const s = store()
+            const source = mockAsyncSource<number>()
+            const a = tracedAtom(
+                rec,
+                "a",
+                source.fn as unknown as () => number,
+                {
+                    maxAge: 100,
+                },
+            )
+            const unsub = traceSub(rec, s, a, "a")
+            const { calls } = traceChange(rec, s)
+            traceCommitEnd(rec, s)
+
+            await source.resolve(1)
+            rec.clear()
+            calls.length = 0
+
+            await clock.advance(100)
+            assertTrace(rec.events, ["commitEnd"])
+            unsub()
+            rec.clear()
+            await source.resolve(2)
+
+            expect(rec.events).toEqual([])
+            expect(calls).toHaveLength(0)
+            expect(s.get(a)).toBe(1)
         })
     })
 })

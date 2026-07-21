@@ -9,18 +9,164 @@ import { isAtomFamily } from "../utils/isAtomFamily"
 import { isPromiseLike } from "../utils/isPromiseLike"
 import { isFamilyAtom } from "../utils/isFamilyAtom"
 import { isSelector } from "../utils/isSelector"
+import { createScalarCommit, runCommitPlan } from "./commitEngine"
+import { createCommitErrors } from "./commitErrors"
+import { SETTLE_SKIP_FAMILY_INDEX } from "./commitIntents"
+import { hasAtomCommitObservers } from "./hasAtomCommitObservers"
 import { initAtom } from "./initAtom"
 import { initSelector } from "./initSelector"
-import { propagateAtomUpdate } from "./propagateUpdatedAtoms"
+import { settleCommit } from "./propagateUpdatedAtoms"
 import { resolveAtomDefaultValue } from "./resolveAtomDefaultValue"
 import { setValueInData } from "./setValueInData"
 import { getStateRevision, noteStateValueChanged } from "./stateRevisions"
+import { isStoreDisposed } from "./storeLifecycle"
 import { validateResolvedValue } from "./validateResolvedValue"
 import { validateSchema } from "./validateSchema"
-import {
-    createAtomFamilyIndex,
-    renderAtomFamilyIndex,
-} from "./atomFamilyIndex"
+import { createAtomFamilyIndex, renderAtomFamilyIndex } from "./atomFamilyIndex"
+
+const admitDeletedMemberDefaultTransition = <Value>(
+    state: AtomFamilyAtom<Value, any>,
+    _resolvedValue: Value | undefined,
+    promise: PromiseLike<Value>,
+    data: StoreData,
+    _unused1: undefined,
+    _unused2: undefined,
+): boolean => !isStoreDisposed(data) && data.values.get(state) === promise
+
+const applyDeletedMemberDefaultResolution = <Value>(
+    state: AtomFamilyAtom<Value, any>,
+    resolvedValue: Value,
+    _promise: PromiseLike<Value>,
+    data: StoreData,
+    _unused1: undefined,
+    _unused2: undefined,
+) => {
+    setValueInData(state, resolvedValue, data)
+}
+
+const applyDeletedMemberDefaultCleanup = <Value>(
+    state: AtomFamilyAtom<Value, any>,
+    _resolvedValue: Value | undefined,
+    _promise: PromiseLike<Value>,
+    data: StoreData,
+    _unused1: undefined,
+    _unused2: undefined,
+) => {
+    data.values.delete(state)
+    noteStateValueChanged(state, data)
+}
+
+const commitDeletedMemberDefaultResolution = createScalarCommit(
+    applyDeletedMemberDefaultResolution,
+)
+const commitDeletedMemberDefaultCleanup = createScalarCommit(
+    applyDeletedMemberDefaultCleanup,
+)
+
+/** Attach the cold async-deleted-member settlement outside getState itself.
+ * Keeping these reaction closures out of the read primitive preserves V8's
+ * optimization tier for transaction loops that call getState thousands of
+ * times without ever entering this branch. */
+const coordinateDeletedMemberDefault = <Value>(
+    state: AtomFamilyAtom<Value, any>,
+    cached: PromiseLike<Value>,
+    data: StoreData,
+) => {
+    cached.then(
+        resolvedValue => {
+            if (data.values.get(state) !== cached) return
+            if (!validateResolvedValue(state, resolvedValue, data)) {
+                // Invalid: failure reported; drop so a later read re-inits
+                // rather than committing it.
+                commitDeletedMemberDefaultCleanup(
+                    admitDeletedMemberDefaultTransition(
+                        state,
+                        resolvedValue,
+                        cached,
+                        data,
+                        undefined,
+                        undefined,
+                    ),
+                    state,
+                    resolvedValue,
+                    cached,
+                    data,
+                    undefined,
+                    undefined,
+                )
+                return
+            }
+            const admitted = admitDeletedMemberDefaultTransition(
+                state,
+                resolvedValue,
+                cached,
+                data,
+                undefined,
+                undefined,
+            )
+            if (!hasAtomCommitObservers(state, data)) {
+                commitDeletedMemberDefaultResolution(
+                    admitted,
+                    state,
+                    resolvedValue,
+                    cached,
+                    data,
+                    undefined,
+                    undefined,
+                )
+                return
+            }
+            runCommitPlan({
+                data,
+                settlement: {
+                    kind: "update",
+                    atoms: [state],
+                    settle: settleCommit,
+                    flags: SETTLE_SKIP_FAMILY_INDEX,
+                },
+                admit: () =>
+                    admitDeletedMemberDefaultTransition(
+                        state,
+                        resolvedValue,
+                        cached,
+                        data,
+                        undefined,
+                        undefined,
+                    ),
+                apply: () =>
+                    applyDeletedMemberDefaultResolution(
+                        state,
+                        resolvedValue,
+                        cached,
+                        data,
+                        undefined,
+                        undefined,
+                    ),
+                onSets: [],
+                errors: createCommitErrors(),
+                report: undefined,
+            })
+        },
+        () => {
+            commitDeletedMemberDefaultCleanup(
+                admitDeletedMemberDefaultTransition(
+                    state,
+                    undefined,
+                    cached,
+                    data,
+                    undefined,
+                    undefined,
+                ),
+                state,
+                undefined,
+                cached,
+                data,
+                undefined,
+                undefined,
+            )
+        },
+    )
+}
 
 const isColdSelectorCacheFresh = (
     selector: Selector,
@@ -196,7 +342,8 @@ export function getState<
                     // Validate the deleted-member default like any other
                     // boundary: sync values throw here; the async value is
                     // validated on resolve below.
-                    if (!isPromiseLike(value)) validateSchema(state, value, data)
+                    if (!isPromiseLike(value))
+                        validateSchema(state, value, data)
                     const cached = setValueInData(state, value, data)
                     // Async default: mirror getAtomInitValue and swap the cached
                     // promise for its resolved value once it settles, so later
@@ -206,37 +353,8 @@ export function getState<
                     // skipFamilyIndexUpdate so dependent selectors/subscribers see
                     // the resolved value WITHOUT re-registering (resurrecting) the
                     // deleted member in the family index.
-                    if (isPromiseLike(cached)) {
-                        cached.then(
-                            resolvedValue => {
-                                if (data.values.get(state) !== cached) return
-                                if (!validateResolvedValue(state, resolvedValue, data)) {
-                                    // Invalid: failure reported; drop so a later
-                                    // read re-inits rather than committing it.
-                                    if (data.values.get(state) === cached) {
-                                        data.values.delete(state)
-                                        noteStateValueChanged(state, data)
-                                    }
-                                    return
-                                }
-                                setValueInData(state, resolvedValue, data)
-                                propagateAtomUpdate(
-                                    [state],
-                                    data,
-                                    false,
-                                    undefined,
-                                    undefined,
-                                    true,
-                                )
-                            },
-                            () => {
-                                if (data.values.get(state) === cached) {
-                                    data.values.delete(state)
-                                    noteStateValueChanged(state, data)
-                                }
-                            },
-                        )
-                    }
+                    if (isPromiseLike(cached))
+                        coordinateDeletedMemberDefault(state, cached, data)
                     return cached as Value
                 }
             }

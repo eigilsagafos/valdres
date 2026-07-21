@@ -3,6 +3,7 @@ import {
     NORMALIZED_LATENCY_MEASURE,
     RUNNER_CONTROL_BENCHMARKS,
     toBmf,
+    toPairedBmf,
 } from "./bench-to-bmf"
 import type { BenchResult } from "./lib/read-bench-results"
 
@@ -99,6 +100,8 @@ describe("bench-to-bmf", () => {
                 latency("get 1000 atoms / valdres", 100),
                 latency("get 1000 atoms / jotai", 200),
                 latency("store.get(atom) / valdres", 20),
+                latency("atomFamily(id) / valdres", 150),
+                latency("selectorFamily(id) / valdres", 300),
             ],
             { excludeRefs: true, excludeTiny: true },
         )
@@ -106,5 +109,35 @@ describe("bench-to-bmf", () => {
         expect(bmf).toEqual({
             "get 1000 atoms / valdres": { latency: { value: 100 } },
         })
+    })
+
+    test("converts the median paired ratio rather than a ratio of medians", () => {
+        const name = "async settle: selector resolve observed"
+        const paired = toPairedBmf(
+            [latency(name, 5_300), latency(name, 5_500), latency(name, 7_200)],
+            [latency(name, 10_300), latency(name, 6_800), latency(name, 8_400)],
+        )
+
+        // The middle paired ratio is 6_800 / 5_500, so Bencher comparing this
+        // synthetic head value with the separately uploaded 5_500ns base median
+        // reports +23.6%. Independent medians would incorrectly report +52.7%.
+        expect(paired[name].latency.value).toBeCloseTo(6_800)
+    })
+
+    test("fails closed when paired samples are missing", () => {
+        const name = "async settle: selector resolve observed"
+
+        expect(() =>
+            toPairedBmf(
+                [latency(name, 5_300), latency(name, 5_500)],
+                [latency(name, 6_800)],
+            ),
+        ).toThrow(`Mismatched paired sample count for ${name}: base=2, head=1`)
+        expect(() =>
+            toPairedBmf(
+                [latency(name, 5_300)],
+                [latency("async settle: atom resolve observed", 6_800)],
+            ),
+        ).toThrow(`missing from head: ${name}`)
     })
 })

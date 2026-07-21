@@ -30,15 +30,12 @@ import {
     noteDependencyMaterialized,
 } from "./noteDependencyGraphChanged"
 import { cleanupOrphanedDeps } from "./cleanupOrphanedDeps"
-import {
-    changeListenerRegistry,
-    hasSelectorChangeListener,
-    reportSelectorChanges,
-} from "./notifyChangeListeners"
+import { createGuardedScalarCommit, runCommitPlan } from "./commitEngine"
+import { createCommitErrors } from "./commitErrors"
 import { beginCommit, commitEndRegistry, endCommit } from "./onCommitEnd"
 import {
     propagateAtomUpdate,
-    propagateDirtySelectors,
+    settleAsyncSelectorCommit,
 } from "./propagateUpdatedAtoms"
 import { reportAsyncSchemaError } from "./reportAsyncSchemaError"
 import { setValueInData } from "./setValueInData"
@@ -60,6 +57,77 @@ import { recordSelectorEvaluation } from "./architectureInstrumentation"
 import { IS_PROD } from "./IS_PROD"
 
 export { isSuspendError } from "./asyncDependencyTracking"
+
+const admitNativeSelectorSettlement = (
+    selector: Selector,
+    _resolved: unknown,
+    promise: Promise<any>,
+    data: StoreData,
+    evaluationContext: SelectorEvaluationContext | undefined,
+    _dependencyRevisions: Map<State, number> | undefined,
+): boolean => {
+    const currentValue = data.values.get(selector)
+    return (
+        !isStoreDisposed(data) &&
+        !!evaluationContext &&
+        !evaluationContext.revoked &&
+        data.latestEvalContext.get(selector) === evaluationContext &&
+        data.stateDependencies.has(selector) &&
+        (currentValue === promise ||
+            (currentValue === undefined && !data.values.has(selector)))
+    )
+}
+
+const applyNativeSelectorSettlement = (
+    selector: Selector,
+    resolved: unknown,
+    _promise: Promise<any>,
+    data: StoreData,
+    _evaluationContext: SelectorEvaluationContext | undefined,
+    dependencyRevisions: Map<State, number> | undefined,
+) => {
+    setValueInData(selector, resolved, data)
+    const resolvedDependencies = data.stateDependencies.get(selector)
+    if (resolvedDependencies && !data.selectorGraphActive.has(selector)) {
+        const current = recordColdSelectorCache(
+            selector,
+            resolvedDependencies,
+            data,
+            dependencyRevisions,
+        )
+        if (current) markColdSelectorCacheValidated(selector, data)
+    }
+}
+
+const commitNativeSelectorSettlement = createGuardedScalarCommit(
+    admitNativeSelectorSettlement,
+    applyNativeSelectorSettlement,
+)
+
+const admitNativeSelectorCleanup = (
+    selector: Selector,
+    _resolved: unknown,
+    promise: Promise<any>,
+    data: StoreData,
+    _evaluationContext: SelectorEvaluationContext | undefined,
+    _dependencyRevisions: Map<State, number> | undefined,
+): boolean => {
+    const currentValue = data.values.get(selector)
+    return (
+        !isStoreDisposed(data) &&
+        (currentValue === promise ||
+            (currentValue === undefined && !data.values.has(selector)))
+    )
+}
+
+const applyNativeSelectorCleanup = (
+    selector: Selector,
+    _resolved: unknown,
+    promise: Promise<any>,
+    data: StoreData,
+    _evaluationContext: SelectorEvaluationContext | undefined,
+    _dependencyRevisions: Map<State, number> | undefined,
+) => cleanUpRejectedPromise(selector, data, promise)
 
 /**
  * The selector's public options object and its internal evaluation identity are
@@ -946,89 +1014,113 @@ export const handleSelectorResult = <Value>(
                 // reported and we clean up so the invalid value never commits.
                 // Consistent with the atom async paths.
                 if (!validateResolvedValue(selector, resolved, data)) {
-                    cleanUpRejectedPromise(
-                        selector,
+                    runCommitPlan({
                         data,
+                        settlement: { kind: "none" },
+                        admit: () =>
+                            admitNativeSelectorCleanup(
+                                selector,
+                                resolved,
+                                value as Promise<any>,
+                                data,
+                                evaluationContext,
+                                evalDependencyRevisions,
+                            ),
+                        apply: () =>
+                            applyNativeSelectorCleanup(
+                                selector,
+                                resolved,
+                                value as Promise<any>,
+                                data,
+                                evaluationContext,
+                                evalDependencyRevisions,
+                            ),
+                        onSets: [],
+                        errors: createCommitErrors(),
+                        report: undefined,
+                    })
+                    return
+                }
+                const dependents = data.stateDependents.get(selector)
+                const subs = data.subscriptions.get(selector)
+                const hasSettlementObservers =
+                    commitEndRegistry.count !== 0 ||
+                    (subs?.size ?? 0) !== 0 ||
+                    (dependents?.size ?? 0) !== 0
+                if (!hasSettlementObservers) {
+                    commitNativeSelectorSettlement(
+                        selector,
+                        resolved,
                         value as Promise<any>,
+                        data,
+                        evaluationContext,
+                        evalDependencyRevisions,
                     )
                     return
                 }
-                // Promise settlement is a standalone commit: the resolved value,
-                // downstream recomputation, subscribers, and onChange all precede
-                // one onCommitEnd notification. Preserve the zero-listener fast
-                // path used by synchronous propagation: one global counter read,
-                // with no root walk or tracking when nobody observes commit ends.
-                let commitRoot: StoreData | undefined
-                if (commitEndRegistry.count !== 0)
-                    commitRoot = beginCommit(data)
-                let completed = false
-                try {
-                    // @ts-ignore
-                    setValueInData(selector, resolved, data)
-                    const resolvedDependencies =
-                        data.stateDependencies.get(selector)
-                    if (
-                        resolvedDependencies &&
-                        !data.selectorGraphActive.has(selector)
-                    ) {
-                        const current = recordColdSelectorCache(
+                runCommitPlan({
+                    data,
+                    settlement: {
+                        kind: "selector",
+                        selector,
+                        settle: settleAsyncSelectorCommit,
+                    },
+                    admit: () =>
+                        admitNativeSelectorSettlement(
                             selector,
-                            resolvedDependencies,
+                            resolved,
+                            value as Promise<any>,
                             data,
+                            evaluationContext,
                             evalDependencyRevisions,
-                        )
-                        if (current)
-                            markColdSelectorCacheValidated(selector, data)
-                    }
-                    const dependents = data.stateDependents.get(selector)
-                    const subs = data.subscriptions.get(selector)
-                    if (
-                        (subs && subs.size > 0) ||
-                        (dependents && dependents.size > 0)
-                    ) {
-                        // Collect downstream selectors that recompute as a result, so a
-                        // `{ selectors: true }` listener sees them alongside this
-                        // selector. Off the hot path unless a selector listener exists on
-                        // this store's chain (not merely some unrelated root store).
-                        const changedSelectors =
-                            changeListenerRegistry.selectorCount !== 0 &&
-                            hasSelectorChangeListener(data)
-                                ? new Set<Selector>()
-                                : undefined
-                        propagateDirtySelectors(
-                            [],
-                            new Set(dependents),
+                        ),
+                    apply: () =>
+                        applyNativeSelectorSettlement(
+                            selector,
+                            resolved,
+                            value as Promise<any>,
                             data,
-                            new Set(subs),
-                            new Map(),
-                            false,
-                            undefined,
-                            changedSelectors,
-                        )
-                        if (changedSelectors) {
-                            // This selector itself just resolved from a pending promise
-                            // to `resolved` — a genuine value change. Report it (and the
-                            // downstream it triggered) as an "async-set" batch.
-                            changedSelectors.add(selector)
-                            reportSelectorChanges(
-                                changedSelectors,
-                                data,
-                                "async-set",
-                            )
-                        }
-                    }
-                    completed = true
-                } finally {
-                    if (commitRoot !== undefined)
-                        endCommit(commitRoot, !completed)
-                }
+                            evaluationContext,
+                            evalDependencyRevisions,
+                        ),
+                    onSets: [],
+                    errors: createCommitErrors(),
+                    report: "async-set",
+                    beginCommit:
+                        commitEndRegistry.count === 0 ? undefined : beginCommit,
+                    endCommit:
+                        commitEndRegistry.count === 0 ? undefined : endCommit,
+                })
             },
             () => {
-                if (isStoreDisposed(data)) return
                 if (evaluationContext) evaluationContext.asyncDeps = undefined
                 if (evaluationContext)
                     evaluationContext.asyncDependencyRevisions = undefined
-                cleanUpRejectedPromise(selector, data, value as Promise<any>)
+                runCommitPlan({
+                    data,
+                    settlement: { kind: "none" },
+                    admit: () =>
+                        admitNativeSelectorCleanup(
+                            selector,
+                            undefined,
+                            value as Promise<any>,
+                            data,
+                            evaluationContext,
+                            undefined,
+                        ),
+                    apply: () =>
+                        applyNativeSelectorCleanup(
+                            selector,
+                            undefined,
+                            value as Promise<any>,
+                            data,
+                            evaluationContext,
+                            undefined,
+                        ),
+                    onSets: [],
+                    errors: createCommitErrors(),
+                    report: undefined,
+                })
             },
         )
         if (!tracksCommittedGraph) {

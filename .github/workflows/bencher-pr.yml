@@ -53,79 +53,123 @@ jobs:
                   fetch-depth: 0
             - uses: oven-sh/setup-bun@v2
               with:
-                  bun-version: 1.3.13
+                  bun-version: 1.3.14
             - uses: actions/setup-node@v6
               with:
-                  node-version: "22.17"
+                  node-version: "24.16.0"
             - uses: bencherdev/bencher@v0.6.6
 
             # Install both checkouts up front so the PR and base benchmark runs
             # happen back-to-back (no heavy install between them to skew timing).
             - name: Install (PR)
               run: bun install --frozen-lockfile
-            - name: Build base SHA in a worktree
+            - name: Build base SHA with the PR benchmark harness
               run: |
                   git worktree add --detach /tmp/base '${{ github.event.pull_request.base.sha }}'
-                  cd /tmp/base && bun install --frozen-lockfile
+                  (cd /tmp/base && bun install --frozen-lockfile)
+                  cp "${GITHUB_WORKSPACE}/packages/valdres/test/performance/asyncSettlement.timing.ts" /tmp/base/packages/valdres/test/performance/asyncSettlement.timing.ts
+                  cp "${GITHUB_WORKSPACE}/packages/valdres/test/performance/bench-utils.ts" /tmp/base/packages/valdres/test/performance/bench-utils.ts
+                  cp "${GITHUB_WORKSPACE}/packages/valdres/vitest.async-bench.config.ts" /tmp/base/packages/valdres/vitest.async-bench.config.ts
 
-            # --- Measure the base SHA FIRST on this runner ---
-            # Order matters: the first benchmark pass runs on a hotter/just-loaded
-            # runner (right after the worktree install) and measures slower. We
-            # measure base first so that systematic first-pass penalty lands on
-            # base, not the PR — the gate is upper-boundary only, so a PR that
-            # looks faster never alerts. (Matches Bencher's documented order:
-            # bench main, then bench the feature branch.)
+            # Run the same benchmark harness against both implementations. New
+            # target files are copied into the base worktree above, but their
+            # relative imports still resolve to the base source. Targeted async
+            # measurements run in their own process so Promise-heavy warm-up
+            # cannot alter Bun's JIT profile for the standard synchronous suite.
             #
-            # Each side runs 3× and bench-to-bmf takes the MEDIAN p50 per
-            # benchmark. The Node/vitest lane's single-run p50 is heavy-tailed;
-            # median-of-3 rejects either one slow GC sample or one anomalously
-            # fast JIT sample. The package scripts rewrite their NDJSON each
-            # run, so we concatenate each run's output into a per-side accumulator.
+            # Each runtime gets three base/PR pairs in alternating B-P, P-B, B-P
+            # order. Every suite invocation is a fresh process. The converter
+            # gates the median of each benchmark's three paired PR/base ratios,
+            # which controls order, thermal, GC, scheduler, and JIT-tier skew.
             #
             # BENCH_VALDRES_ONLY skips the jotai/map reference measurements — the
             # gate is valdres-only, so measuring them here is wasted time. (The
             # base worktree honors this only once a PR's base SHA includes the
             # flag support; older base SHAs just measure them and bench-to-bmf
             # drops them via BENCH_EXCLUDE_REFS below.)
-            - name: Run benchmarks — base (Bun + Node, 3×)
-              working-directory: /tmp/base/packages/valdres
-              env:
-                  BENCH_VALDRES_ONLY: "1"
+            - name: Run interleaved base/PR benchmarks (Bun + Node, 3×)
               run: |
-                  rm -f /tmp/base_bun.ndjson /tmp/base_node.ndjson
-                  for i in 1 2 3; do
-                    bun run test:bench
-                    cat test/performance/bench-results.ndjson >> /tmp/base_bun.ndjson
-                    bun run test:bench:node
-                    cat test/performance/bench-results-node.ndjson >> /tmp/base_node.ndjson
-                  done
+                  set -euo pipefail
+                  rm -f \
+                    /tmp/base_bun.ndjson \
+                    /tmp/base_node.ndjson \
+                    /tmp/pr_bun.ndjson \
+                    /tmp/pr_node.ndjson
 
-            # --- Measure the PR head on this runner, back-to-back ---
-            - name: Run benchmarks — PR (Bun + Node, 3×)
-              working-directory: packages/valdres
-              env:
-                  BENCH_VALDRES_ONLY: "1"
-              run: |
-                  rm -f /tmp/pr_bun.ndjson /tmp/pr_node.ndjson
-                  for i in 1 2 3; do
-                    bun run test:bench
-                    cat test/performance/bench-results.ndjson >> /tmp/pr_bun.ndjson
-                    bun run test:bench:node
-                    cat test/performance/bench-results-node.ndjson >> /tmp/pr_node.ndjson
+                  run_suite() {
+                    local runtime="$1"
+                    local suite="$2"
+                    local side="$3"
+                    local checkout
+                    local output
+                    local result
+
+                    if [[ "$side" == "base" ]]; then
+                      checkout="/tmp/base/packages/valdres"
+                      output="/tmp/base_${runtime}.ndjson"
+                    else
+                      checkout="${GITHUB_WORKSPACE}/packages/valdres"
+                      output="/tmp/pr_${runtime}.ndjson"
+                    fi
+
+                    if [[ "$runtime" == "bun" ]]; then
+                      result="test/performance/bench-results.ndjson"
+                    else
+                      result="test/performance/bench-results-node.ndjson"
+                    fi
+
+                    (
+                      cd "$checkout"
+                      if [[ "$suite" == "standard" ]]; then
+                        if [[ "$runtime" == "bun" ]]; then
+                          BENCH_VALDRES_ONLY=1 bun run test:bench
+                        else
+                          BENCH_VALDRES_ONLY=1 bun run test:bench:node
+                        fi
+                      elif [[ "$runtime" == "bun" ]]; then
+                        rm -f "$result"
+                        BENCH_VALDRES_ONLY=1 NODE_ENV=production \
+                          bun test --timeout 60000 --concurrency 1 \
+                          ./test/performance/asyncSettlement.timing.ts
+                      else
+                        rm -f "$result"
+                        BENCH_VALDRES_ONLY=1 NODE_ENV=production \
+                          npx vitest run --config vitest.async-bench.config.ts
+                      fi
+                      cat "$result" >> "$output"
+                    )
+                  }
+
+                  for pair in 1 2 3; do
+                    if [[ "$pair" == "2" ]]; then
+                      pair_order=(pr base)
+                    else
+                      pair_order=(base pr)
+                    fi
+
+                    for runtime in bun node; do
+                      for suite in standard async; do
+                        for side in "${pair_order[@]}"; do
+                          run_suite "$runtime" "$suite" "$side"
+                        done
+                      done
+                    done
                   done
 
             # Convert both sides with the PR-checkout script (the base worktree's
-            # older bench-to-bmf rejects the repeated names). MEDIAN across
-            # repeats, and BENCH_EXCLUDE_REFS drops the jotai/map reference
-            # sides: they
-            # can't regress from a valdres change, so gating them only adds noise
+            # older bench-to-bmf rejects the repeated names). The base upload is
+            # its median latency; each PR value is that base median scaled by the
+            # median of the three paired PR/base ratios. That lets Bencher apply
+            # its percentage threshold to the paired statistic directly.
+            # BENCH_EXCLUDE_REFS drops the jotai/map reference sides: they can't
+            # regress from a valdres change, so gating them only adds noise
             # (every false positive we saw was a reference bench). They're still
             # measured + plotted via the base lane for the head-to-head perf page.
             #
-            # BENCH_EXCLUDE_TINY additionally drops sub-~10ns ops whose +50%
-            # boundary is below the runner's noise floor. All are still measured
-            # and plotted by the base lane — tracked, just not blocking.
-            - name: Convert base + PR results -> BMF (valdres-only, median)
+            # BENCH_EXCLUDE_TINY additionally drops nanosecond-scale ops whose
+            # +50% boundary is below the runner's JIT/noise floor. All are still
+            # measured and plotted by the base lane — tracked, just not blocking.
+            - name: Convert base + paired PR results -> BMF (valdres-only)
               env:
                   BENCH_EXCLUDE_REFS: "1"
                   BENCH_EXCLUDE_TINY: "1"
@@ -137,6 +181,8 @@ jobs:
                     bun run scripts/bench-to-bmf.ts
                   BENCH_NDJSON_BUN=/tmp/pr_bun.ndjson \
                   BENCH_NDJSON_NODE=/tmp/pr_node.ndjson \
+                  BENCH_PAIRED_BASE_BUN=/tmp/base_bun.ndjson \
+                  BENCH_PAIRED_BASE_NODE=/tmp/base_node.ndjson \
                   BENCH_OUT_BUN=/tmp/pr_bun_results.json \
                   BENCH_OUT_NODE=/tmp/pr_node_results.json \
                     bun run scripts/bench-to-bmf.ts
@@ -165,11 +211,13 @@ jobs:
             # Percentage test: alert if a benchmark is >50% slower than the base
             # measurement on THIS runner. Variance-independent and immune to the
             # cross-runner global-slowdown that flaked the old t-test gate. The
-            # median-of-3 measurement above filters the one-off fast/slow samples
-            # that made single-shot p50s swing ~2x, so +50% is a trustworthy
-            # boundary on both lanes — a real same-runner regression is a large,
+            # median of three paired ratios above filters a one-off fast/slow
+            # sample and accounts for order effects, so +50% is a trustworthy
+            # boundary on both lanes. A real same-runner regression is a large,
             # consistent shift well within reach. --err fails on any alert.
             - name: Gate Bun PR vs base
+              id: gate_bun
+              continue-on-error: true
               run: |
                   bencher run \
                     --branch '${{ github.head_ref }}' \
@@ -183,6 +231,8 @@ jobs:
                     --github-actions '${{ secrets.GITHUB_TOKEN }}' \
                     --file /tmp/pr_bun_results.json
             - name: Gate Node PR vs base
+              id: gate_node
+              continue-on-error: true
               run: |
                   bencher run \
                     --branch '${{ github.head_ref }}' \
@@ -195,3 +245,10 @@ jobs:
                     --adapter json \
                     --github-actions '${{ secrets.GITHUB_TOKEN }}' \
                     --file /tmp/pr_node_results.json
+            - name: Enforce benchmark gates
+              if:
+                  ${{ steps.gate_bun.outcome == 'failure' ||
+                  steps.gate_node.outcome == 'failure' }}
+              run: |
+                  echo "::error::Benchmark alerts: Bun=${{ steps.gate_bun.outcome }}, Node=${{ steps.gate_node.outcome }}"
+                  exit 1

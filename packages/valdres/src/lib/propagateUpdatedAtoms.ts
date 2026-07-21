@@ -49,6 +49,7 @@ import {
 } from "./architectureInstrumentation"
 import { IS_PROD } from "./IS_PROD"
 import type { SettleFlags } from "../types/SettleFlags"
+import type { SelectorSettleFn } from "../types/SelectorSettleFn"
 
 export type { AtomFamilyIndex } from "./atomFamilyIndex"
 export {
@@ -787,8 +788,8 @@ export const propagateAtomUpdate = (
 }
 
 /** Typed commit-engine update entry for phases 4–7. The established positional
- *  primitive above remains the direct entry for unmigrated transaction, async,
- *  global, and initialization paths. Migrated callers provide one of the
+ *  primitive above remains the direct entry for transaction, ordinary global,
+ *  and initialization adapters. Migrated callers provide one of the
  *  shared frozen SettleFlags singletons; translating it here allocates nothing
  *  and keeps the out-of-scope hot paths byte-for-byte on their prior call shape. */
 export const settleCommit = (
@@ -938,6 +939,44 @@ export const propagateDirtySelectors = (
     // owns `subscriptions` / `families` and fires them once after every pass.
     if (!notify && subscriptions.size > 0) {
         callSubscribers(subscriptions, families)
+    }
+}
+
+/** Commit-engine settlement for a native async selector. Its own getter has
+ * already resolved and been applied, so only downstream selectors recompute.
+ * The resolving selector is then included in the same selector-change report.
+ * A subscriber failure escapes before reporting, preserving the historical
+ * child-Promise rejection disposition and first-error arbitration. */
+export const settleAsyncSelectorCommit: SelectorSettleFn = (
+    selector,
+    data,
+    report,
+) => {
+    const dependents = data.stateDependents.get(selector)
+    const subs = data.subscriptions.get(selector)
+    if ((!subs || subs.size === 0) && (!dependents || dependents.size === 0)) {
+        return
+    }
+
+    const changedSelectors =
+        report !== undefined &&
+        changeListenerRegistry.selectorCount !== 0 &&
+        hasSelectorChangeListener(data)
+            ? new Set<Selector>()
+            : undefined
+    propagateDirtySelectors(
+        [],
+        new Set<Selector>(dependents),
+        data,
+        new Set<Subscription>(subs),
+        new Map(),
+        false,
+        undefined,
+        changedSelectors,
+    )
+    if (changedSelectors && report !== undefined) {
+        changedSelectors.add(selector)
+        reportSelectorChanges(changedSelectors, data, report)
     }
 }
 

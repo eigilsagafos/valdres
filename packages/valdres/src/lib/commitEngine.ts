@@ -17,8 +17,8 @@ import { runOnSets } from "./runOnSets"
  *   1. Validate/normalize staged writes — in the coordinators: `setAtom`
  *      inline (updater resolve, schema, equality bail incl. the scope-shadow
  *      pin), `writeAtoms` per pair for bulk.
- *   2. Apply final values — same coordinators, via `setValueInData` +
- *      `resolvePendingDefault`.
+ *   2. Apply final values — synchronous coordinators inline; standalone async
+ *      transitions through the plan's admitted `apply` callback.
  *   3. Run onSet behavior — OWNED HERE (`runHookedDirectWrite` for the single
  *      hooked write, `runOnSets` inside `runCommitPlan` for planned commits).
  *   4. Settle affected selectors      ┐
@@ -37,9 +37,11 @@ import { runOnSets } from "./runOnSets"
  * (see test/import-cycles) — the sequencer must not be hard-wired to the
  * propagation layer it sequences.
  *
- * Unmigrated writers (transaction commitWork branches, async settlement, and
- * global fan-out) keep their historical sequencing behind clearly-marked
- * adapters; none of it is duplicated here.
+ * Global transaction fan-out remains behind its existing adapter. Async atom,
+ * native async selector, and revalidation settlement enter this coordinator;
+ * simple no-hook shapes use module-static entries from `createScalarCommit`
+ * below; their bound operation owns any required apply, propagation,
+ * observers, reporting, and local boundary.
  */
 
 /**
@@ -87,12 +89,19 @@ export const runHookedDirectWrite = <Value>(
  */
 export const runCommitPlan = (plan: CommitPlan) => {
     const settlement = plan.settlement
-    const hasWork = () => settlement.atoms.length > 0
+    const hasWork = () =>
+        settlement.kind === "none" ||
+        settlement.kind === "selector" ||
+        settlement.atoms.length > 0
     const shouldContinue = () =>
         plan.continueAfterError !== false || !plan.errors.hasError
     let commitRoot: StoreData | undefined
     let completed = false
 
+    // Admission is deliberately the very first observable operation. A stale,
+    // cancelled, or disposed async result cannot open a commit boundary or run
+    // any user code merely by arriving late.
+    if (plan.admit && !plan.admit()) return false
     if (plan.beginCommit) commitRoot = plan.beginCommit(plan.data)
     try {
         let applied = true
@@ -131,11 +140,17 @@ export const runCommitPlan = (plan: CommitPlan) => {
                         plan.report,
                         settlement.flags,
                     )
-                } else {
+                } else if (settlement.kind === "delete") {
                     settlement.settle(
                         settlement.atoms,
                         plan.data,
                         undefined,
+                        plan.report,
+                    )
+                } else if (settlement.kind === "selector") {
+                    settlement.settle(
+                        settlement.selector,
+                        plan.data,
                         plan.report,
                     )
                 }
@@ -171,4 +186,37 @@ export const runCommitPlan = (plan: CommitPlan) => {
     }
 
     throwCommitError(plan.errors)
+    return true
 }
+
+/** Create an allocation-free coordinator entry for a final async transition
+ * with no engine-owned hooks, deferred reports, or outer boundary. Callers bind
+ * the static operation once at module initialization, producing a monomorphic
+ * settlement call with no per-commit closure, plan, hook queue, or error
+ * accumulator. The operation owns apply and any required propagation,
+ * observers, reporting, and local boundary. `admitted` is evaluated immediately
+ * before the synchronous operation, so no JavaScript work can interleave. */
+export const createScalarCommit =
+    <A, B, C, D, E, F>(
+        operation: (a: A, b: B, c: C, d: D, e: E, f: F) => void,
+    ) =>
+    (admitted: boolean, a: A, b: B, c: C, d: D, e: E, f: F): boolean => {
+        if (!admitted) return false
+        operation(a, b, c, d, e, f)
+        return true
+    }
+
+/** Create a scalar coordinator entry whose admission check can share the same
+ * module-static, monomorphic call site as its operation. This keeps guarded
+ * settlements allocation-free while ensuring the coordinator evaluates the
+ * predicate immediately before applying the transition. */
+export const createGuardedScalarCommit =
+    <A, B, C, D, E, F>(
+        admit: (a: A, b: B, c: C, d: D, e: E, f: F) => boolean,
+        operation: (a: A, b: B, c: C, d: D, e: E, f: F) => void,
+    ) =>
+    (a: A, b: B, c: C, d: D, e: E, f: F): boolean => {
+        if (!admit(a, b, c, d, e, f)) return false
+        operation(a, b, c, d, e, f)
+        return true
+    }

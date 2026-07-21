@@ -1,12 +1,261 @@
 import type { Atom } from "../types/Atom"
 import type { StoreData } from "../types/StoreData"
-import { finishAtomSet } from "./finishAtomSet"
-import { propagateAtomUpdate } from "./propagateUpdatedAtoms"
+import { isGlobalAtom } from "../utils/isGlobalAtom"
+import { createScalarCommit, runCommitPlan } from "./commitEngine"
+import { createCommitErrors } from "./commitErrors"
+import { SETTLE_DEFAULT } from "./commitIntents"
+import {
+    applyGlobalSets,
+    settleGlobalAtomSet,
+    type StoreAtomUpdates,
+} from "./globalAtomFanOut"
+import { hasAtomCommitObservers } from "./hasAtomCommitObservers"
+import { propagateAtomUpdate, settleCommit } from "./propagateUpdatedAtoms"
 import { resolvePendingDefault } from "./resolvePendingDefault"
 import { setValueInData } from "./setValueInData"
 import { isStoreDisposed } from "./storeLifecycle"
 import { unsetValue } from "./unsetValue"
 import { validateResolvedValue } from "./validateResolvedValue"
+
+const admitAsyncAtomTransition = <Value>(
+    atom: Atom<Value>,
+    _nextValue: Value,
+    promise: Promise<Value>,
+    data: StoreData,
+    _fallback: Value,
+    _unused: undefined,
+): boolean => !isStoreDisposed(data) && data.values.get(atom) === promise
+
+const applyAsyncAtomResolution = <Value>(
+    atom: Atom<Value>,
+    resolvedValue: Value,
+    _promise: Promise<Value>,
+    data: StoreData,
+    _fallback: Value,
+    _unused: undefined,
+) => {
+    setValueInData(atom, resolvedValue, data)
+    resolvePendingDefault(atom, data, resolvedValue)
+}
+
+const applyAsyncAtomRollback = <Value>(
+    atom: Atom<Value>,
+    _nextValue: Value,
+    _promise: Promise<Value>,
+    data: StoreData,
+    fallback: Value,
+    _unused: undefined,
+) => {
+    setValueInData(atom, fallback, data)
+}
+
+// Keep observed and unobserved scalar transitions in separate static
+// operations. A shared boolean settlement branch is trained as always-false by
+// the unobserved path, then deoptimizes when an observed settlement arrives on
+// some V8 tiers. Distinct coordinator entries keep both shapes monomorphic.
+const commitObservedAsyncAtomResolution = <Value>(
+    atom: Atom<Value>,
+    resolvedValue: Value,
+    _promise: Promise<Value>,
+    data: StoreData,
+    _fallback: Value,
+    _unused: undefined,
+) => {
+    setValueInData(atom, resolvedValue, data)
+    resolvePendingDefault(atom, data, resolvedValue)
+    propagateAtomUpdate([atom], data, false, undefined, "async-set")
+}
+
+const commitObservedAsyncAtomRollback = <Value>(
+    atom: Atom<Value>,
+    _nextValue: Value,
+    _promise: Promise<Value>,
+    data: StoreData,
+    fallback: Value,
+    _unused: undefined,
+) => {
+    setValueInData(atom, fallback, data)
+    propagateAtomUpdate([atom], data, false, undefined, "async-set")
+}
+
+const runUnobservedAsyncAtomResolution = createScalarCommit(
+    applyAsyncAtomResolution,
+)
+const runObservedAsyncAtomResolution = createScalarCommit(
+    commitObservedAsyncAtomResolution,
+)
+const runUnobservedAsyncAtomRollback = createScalarCommit(
+    applyAsyncAtomRollback,
+)
+const runObservedAsyncAtomRollback = createScalarCommit(
+    commitObservedAsyncAtomRollback,
+)
+
+const rollbackAsyncAtomTransition = <Value>(
+    atom: Atom<Value>,
+    currentValue: Value,
+    promise: Promise<Value>,
+    data: StoreData,
+    rollbackInheritedWrite: boolean,
+) => {
+    const admitted = admitAsyncAtomTransition(
+        atom,
+        currentValue,
+        promise,
+        data,
+        currentValue,
+        undefined,
+    )
+    if (!admitted) return
+    if (rollbackInheritedWrite) {
+        // Promise reactions run in registration order. Defer the unset one
+        // turn so the ancestor coordinator gets to restore its own fallback
+        // first even when a cross-scope transaction registered this child
+        // coordinator before the parent's (writes are leaf-first).
+        queueMicrotask(() => {
+            if (isStoreDisposed(data)) return
+            if (data.values.get(atom) === promise) unsetValue(atom, data)
+        })
+        return
+    }
+    if (hasAtomCommitObservers(atom, data)) {
+        runObservedAsyncAtomRollback(
+            admitted,
+            atom,
+            currentValue,
+            promise,
+            data,
+            currentValue,
+            undefined,
+        )
+    } else {
+        runUnobservedAsyncAtomRollback(
+            admitted,
+            atom,
+            currentValue,
+            promise,
+            data,
+            currentValue,
+            undefined,
+        )
+    }
+}
+
+/** Keep the Promise fulfillment reaction itself tiny. This module-static
+ * coordinator is shared by every async write, allowing V8 to optimize observed
+ * settlement independently of the per-write closure that preserves rejection
+ * and Promise-identity behavior. */
+const settleAsyncAtomResolution = <Value>(
+    atom: Atom<Value>,
+    resolvedValue: Value,
+    promise: Promise<Value>,
+    data: StoreData,
+    currentValue: Value,
+    skipOnSet: boolean,
+    rollback: () => void,
+) => {
+    // Last write wins, not last Promise to settle.
+    if (
+        !admitAsyncAtomTransition(
+            atom,
+            resolvedValue,
+            promise,
+            data,
+            currentValue,
+            undefined,
+        )
+    )
+        return
+    // Async validation cannot throw back to the original caller. Report the
+    // error and restore the value observed before this write.
+    if (!validateResolvedValue(atom, resolvedValue, data)) {
+        rollback()
+        return
+    }
+    const hasOnSet = !!atom.onSet && !skipOnSet
+    if (!hasOnSet) {
+        const admitted = admitAsyncAtomTransition(
+            atom,
+            resolvedValue,
+            promise,
+            data,
+            currentValue,
+            undefined,
+        )
+        if (hasAtomCommitObservers(atom, data)) {
+            runObservedAsyncAtomResolution(
+                admitted,
+                atom,
+                resolvedValue,
+                promise,
+                data,
+                currentValue,
+                undefined,
+            )
+        } else {
+            runUnobservedAsyncAtomResolution(
+                admitted,
+                atom,
+                resolvedValue,
+                promise,
+                data,
+                currentValue,
+                undefined,
+            )
+        }
+        return
+    }
+
+    const errors = createCommitErrors()
+    let globalUpdates: StoreAtomUpdates | undefined
+    const isGlobal = hasOnSet && isGlobalAtom(atom)
+    runCommitPlan({
+        data,
+        settlement: {
+            kind: "update",
+            atoms: [atom],
+            settle: isGlobal
+                ? () =>
+                      settleGlobalAtomSet(
+                          data,
+                          [atom],
+                          globalUpdates!,
+                          "async-set",
+                          errors,
+                      )
+                : settleCommit,
+            flags: SETTLE_DEFAULT,
+        },
+        admit: () =>
+            admitAsyncAtomTransition(
+                atom,
+                resolvedValue,
+                promise,
+                data,
+                currentValue,
+                undefined,
+            ),
+        apply: () => {
+            applyAsyncAtomResolution(
+                atom,
+                resolvedValue,
+                promise,
+                data,
+                currentValue,
+                undefined,
+            )
+            if (isGlobal) {
+                globalUpdates = applyGlobalSets(
+                    [[atom, resolvedValue, data]],
+                    errors,
+                )
+            }
+        },
+        onSets: hasOnSet ? [[atom, resolvedValue, data]] : [],
+        errors,
+        report: isGlobal ? undefined : "async-set",
+    })
+}
 
 /**
  * Install and settle one asynchronous atom write.
@@ -32,49 +281,26 @@ export const coordinateAsyncWrite = <Value>(
     const rollbackInheritedWrite =
         !!data.parent && !data.values.has(atom) && currentValue === value
     setValueInData(atom, promise as Value, data)
-    const rollback = () => {
-        if (isStoreDisposed(data)) return
-        if (data.values.get(atom) !== promise) return
-        if (rollbackInheritedWrite) {
-            // Promise reactions run in registration order. Defer the unset one
-            // turn so the ancestor coordinator gets to restore its own fallback
-            // first even when a cross-scope transaction registered this child
-            // coordinator before the parent's (writes are leaf-first).
-            queueMicrotask(() => {
-                if (isStoreDisposed(data)) return
-                if (data.values.get(atom) === promise) unsetValue(atom, data)
-            })
-            return
-        }
-        setValueInData(atom, currentValue, data)
-        propagateAtomUpdate([atom], data, false, undefined, "async-set")
-    }
+    const rollback = () =>
+        rollbackAsyncAtomTransition(
+            atom,
+            currentValue,
+            promise,
+            data,
+            rollbackInheritedWrite,
+        )
     promise
-        .then(resolvedValue => {
-            // Last write wins, not last Promise to settle.
-            if (isStoreDisposed(data) || data.values.get(atom) !== promise) return
-            // Async validation cannot throw back to the original caller. Report
-            // the error and restore the value observed before this write.
-            if (!validateResolvedValue(atom, resolvedValue, data)) {
-                rollback()
-                return
-            }
-            setValueInData(atom, resolvedValue, data)
-            resolvePendingDefault(atom, data, resolvedValue)
-            if (atom.onSet && !skipOnSet) {
-                finishAtomSet(atom, resolvedValue, data, [atom], "async-set")
-            } else {
-                // Ordinary atoms retain the inline, allocation-free propagation
-                // path. Only hook/global writes pay for phased error handling.
-                propagateAtomUpdate(
-                    [atom],
-                    data,
-                    false,
-                    undefined,
-                    "async-set",
-                )
-            }
-        })
+        .then(resolvedValue =>
+            settleAsyncAtomResolution(
+                atom,
+                resolvedValue,
+                promise,
+                data,
+                currentValue,
+                skipOnSet,
+                rollback,
+            ),
+        )
         // Chaining catch also contains errors from the fulfilled handler (for
         // example, an onSet hook throwing) instead of leaking an unhandled
         // rejection. Only an unresolved current write is eligible for rollback.

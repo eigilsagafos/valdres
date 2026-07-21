@@ -10,7 +10,9 @@ import { isPromiseLike } from "../utils/isPromiseLike"
 import { isSelector } from "../utils/isSelector"
 import { isReactive, resolveReactive } from "../utils/resolveReactive"
 import type { CacheMeta } from "../types/Atom"
+import { createScalarCommit } from "./commitEngine"
 import { equal } from "./equal"
+import { hasAtomCommitObservers } from "./hasAtomCommitObservers"
 import { initAtom } from "./initAtom"
 import { initFreshActiveSelector } from "./initSelector"
 import { getState } from "./getState"
@@ -24,6 +26,23 @@ import {
 } from "./storeLifecycle"
 import { addSubscriptionEqualCheck, unsubscribe } from "./unsubscribe"
 import { validateResolvedValue } from "./validateResolvedValue"
+
+const commitRevalidationWriteOperation = (
+    state: Atom<any>,
+    value: any,
+    data: StoreData,
+    _unused1: undefined,
+    _unused2: undefined,
+    settle: boolean,
+) => {
+    setValueInData(state, value, data)
+    if (settle)
+        propagateAtomUpdate([state], data, false, undefined, "revalidate")
+}
+
+const runRevalidationWrite = createScalarCommit(
+    commitRevalidationWriteOperation,
+)
 
 const initSubscribers = <V>(state: State<V>, data: StoreData) => {
     const set = new Set<Subscription>()
@@ -78,7 +97,6 @@ export const installMaxAgeTimer = (state: Atom<any>, data: StoreData) => {
     const NO_VALUE = Symbol()
     let lastGoodValue: any = NO_VALUE
     let currentInterval: ReturnType<typeof setInterval>
-
     const getMaxAge = (): number => resolveReactive(state.maxAge!, data)
     const getSWR = (): number =>
         state.staleWhileRevalidate !== undefined
@@ -94,6 +112,21 @@ export const installMaxAgeTimer = (state: Atom<any>, data: StoreData) => {
         defaultValue: null,
         __valdresInternal: true,
     })
+    const commitRevalidationWrite = (
+        target: Atom<any>,
+        value: any,
+        store: StoreData,
+    ) => {
+        runRevalidationWrite(
+            !cancelled,
+            target,
+            value,
+            store,
+            undefined,
+            undefined,
+            hasAtomCommitObservers(target, store),
+        )
+    }
     const updateMeta = () => {
         const meta: CacheMeta = {
             isRevalidating: revalidating,
@@ -104,24 +137,10 @@ export const installMaxAgeTimer = (state: Atom<any>, data: StoreData) => {
         }
         if (globalState) {
             for (const store of globalState.stores) {
-                setValueInData(metaAtom, meta, store)
-                propagateAtomUpdate(
-                    [metaAtom],
-                    store,
-                    false,
-                    undefined,
-                    "revalidate",
-                )
+                commitRevalidationWrite(metaAtom, meta, store)
             }
         } else {
-            setValueInData(metaAtom, meta, data)
-            propagateAtomUpdate(
-                [metaAtom],
-                data,
-                false,
-                undefined,
-                "revalidate",
-            )
+            commitRevalidationWrite(metaAtom, meta, data)
         }
     }
 
@@ -177,8 +196,7 @@ export const installMaxAgeTimer = (state: Atom<any>, data: StoreData) => {
             }
             return
         }
-        setValueInData(state, val, store)
-        propagateAtomUpdate([state], store, false, undefined, "revalidate")
+        commitRevalidationWrite(state, val, store)
     }
 
     const setAndPropagate = (val: any, refreshedAt?: number) => {

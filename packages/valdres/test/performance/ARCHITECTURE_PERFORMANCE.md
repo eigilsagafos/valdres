@@ -95,7 +95,7 @@ disposal. These are retained-heap leak/regression gates, not total-allocation or
 RSS measurements.
 
 Observed medians below are bytes per retained unit from repeated local runs on
-Bun 1.3.14 and Node 24.16.0. CI pins Bun 1.3.13 and Node 22.17. Ceilings are
+Bun 1.3.14 and Node 24.16.0; benchmark CI pins the same versions. Ceilings are
 runtime-specific because the heaps differ, but are normalized per scenario unit
 and leave roughly 25–30% above the observed median. Released heap has a fixed
 ceiling: 512 KiB on Bun and 256 KiB on Node.

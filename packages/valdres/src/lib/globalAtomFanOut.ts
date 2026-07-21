@@ -5,6 +5,7 @@ import { isGlobalAtom } from "../utils/isGlobalAtom"
 import { isPromiseLike } from "../utils/isPromiseLike"
 import type { CommitErrors } from "./commitErrors"
 import { recordCommitError } from "./commitErrors"
+import { createChangeSink, flushChangeSink } from "./notifyChangeListeners"
 import { getState } from "./getState"
 import {
     beginCommit,
@@ -16,6 +17,11 @@ import { resolvePendingDefault } from "./resolvePendingDefault"
 import { setValueInData } from "./setValueInData"
 import { validateSchema } from "./validateSchema"
 import type { DeferredOnSet } from "./runOnSets"
+import {
+    notifyDeferred,
+    propagateAtomUpdate,
+    type NotifyTarget,
+} from "./propagateUpdatedAtoms"
 
 /** A changed global atom whose value still needs to be applied to its peers. */
 export type DeferredGlobalSet = [InternalGlobalAtom<any>, any, StoreData]
@@ -144,6 +150,53 @@ export const applyGlobalSets = (
         applyGlobalSet(atom, value, origin, updates, errors)
     }
     return updates
+}
+
+/** Existing multi-store settlement adapter, split from the global write/apply
+ * and hook phases so a CommitPlan can share their first-error accumulator. */
+export const settleGlobalAtomSet = (
+    data: StoreData,
+    updatedAtoms: Atom<any>[],
+    globalUpdates: StoreAtomUpdates,
+    source: "set" | "async-set",
+    errors: CommitErrors,
+) => {
+    if (globalUpdates.size === 0) {
+        try {
+            propagateAtomUpdate(updatedAtoms, data, false, undefined, source)
+        } catch (error) {
+            recordCommitError(errors, error)
+        }
+        return
+    }
+
+    const notify: NotifyTarget = new Map()
+    const changeSink = createChangeSink(undefined, source)
+    const commitRoots = beginGlobalCommit(data, globalUpdates)
+    // Preserve global onChange ordering: peers report before the origin.
+    for (const [peer, peerAtoms] of globalUpdates) {
+        try {
+            propagateAtomUpdate(peerAtoms, peer, false, notify, changeSink)
+        } catch (error) {
+            recordCommitError(errors, error)
+        }
+    }
+    try {
+        propagateAtomUpdate(updatedAtoms, data, false, notify, changeSink)
+    } catch (error) {
+        recordCommitError(errors, error)
+    }
+    try {
+        notifyDeferred(notify)
+    } catch (error) {
+        recordCommitError(errors, error)
+    }
+    try {
+        flushChangeSink(changeSink)
+    } catch (error) {
+        recordCommitError(errors, error)
+    }
+    endGlobalCommit(commitRoots, errors)
 }
 
 /**
