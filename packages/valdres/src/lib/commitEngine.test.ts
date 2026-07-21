@@ -1,7 +1,9 @@
 import { describe, expect, mock, test } from "bun:test"
 import { atom } from "../atom"
+import { atomFamily } from "../atomFamily"
 import { store } from "../store"
 import type { SettleFn } from "../types/SettleFn"
+import type { TransactionSettleFn } from "../types/TransactionSettleFn"
 import {
     createGuardedScalarCommit,
     runCommitPlan,
@@ -319,6 +321,109 @@ describe("commitEngine", () => {
             ).toThrow(hookError)
             expect(settle).toHaveBeenCalledTimes(1)
             expect(flush).toHaveBeenCalledTimes(1)
+        })
+    })
+
+    describe("transaction settlement", () => {
+        test("dispatches atoms, cleanup lists, report, and errors to the settle fn verbatim", () => {
+            const store1 = store()
+            const data = getStoreData(store1)
+            const a = atom(1)
+            const unset = [atom(2)]
+            const errors = createCommitErrors()
+            const settle = mock((() => {}) as TransactionSettleFn)
+
+            runCommitPlan({
+                data,
+                settlement: {
+                    kind: "transaction",
+                    atoms: [a],
+                    deleted: undefined,
+                    unset,
+                    settle,
+                },
+                onSets: [],
+                errors,
+                report: "set",
+            })
+
+            expect(settle).toHaveBeenCalledTimes(1)
+            expect(settle).toHaveBeenCalledWith(
+                [a],
+                undefined,
+                unset,
+                data,
+                "set",
+                errors,
+            )
+        })
+
+        test("a no-work transaction settlement skips settle but still runs hooks and rethrows their first error", () => {
+            const store1 = store()
+            const data = getStoreData(store1)
+            const hookError = new Error("hook")
+            const hooked = atom(0, {
+                onSet: () => {
+                    throw hookError
+                },
+            })
+            const settle = mock((() => {}) as TransactionSettleFn)
+
+            expect(() =>
+                runCommitPlan({
+                    data,
+                    settlement: {
+                        kind: "transaction",
+                        atoms: [],
+                        deleted: undefined,
+                        unset: undefined,
+                        settle,
+                    },
+                    onSets: [[hooked, 1, data]],
+                    errors: createCommitErrors(),
+                    report: undefined,
+                }),
+            ).toThrow(hookError)
+            expect(settle).not.toHaveBeenCalled()
+        })
+
+        test("cleanup-only settlements (deleted or unset, no updated atoms) still settle", () => {
+            const store1 = store()
+            const data = getStoreData(store1)
+            const family = atomFamily<number, [string]>(0)
+            const member = family("x")
+
+            const deleteSettle = mock((() => {}) as TransactionSettleFn)
+            runCommitPlan({
+                data,
+                settlement: {
+                    kind: "transaction",
+                    atoms: [],
+                    deleted: [member],
+                    unset: undefined,
+                    settle: deleteSettle,
+                },
+                onSets: [],
+                errors: createCommitErrors(),
+                report: undefined,
+            })
+            expect(deleteSettle).toHaveBeenCalledTimes(1)
+
+            const unsetSettle = mock((() => {}) as TransactionSettleFn)
+            runCommitPlan({
+                data,
+                settlement: {
+                    kind: "transaction",
+                    atoms: [],
+                    deleted: undefined,
+                    unset: [atom(0)],
+                    settle: unsetSettle,
+                },
+                onSets: [],
+                errors: createCommitErrors(),
+                report: undefined,
+            })
+            expect(unsetSettle).toHaveBeenCalledTimes(1)
         })
     })
 

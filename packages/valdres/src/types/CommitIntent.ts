@@ -17,10 +17,11 @@ export type DirectWriteIntent = {
 export type OnSetPolicy = "collect" | "skip"
 
 /**
- * Intent for a staged bulk write (`setAtoms` — the single-store transaction
- * commit delegate). Collapses the historical implicit `skipOnSet` ×
- * `hasCommitEffects` mode combination into one field, and carries the phase-6
- * delivery target explicitly (undefined = no onChange listener anywhere).
+ * Intent for a staged bulk write (`commitAtoms` — invoked directly by a
+ * single-store transaction commit). Collapses the historical implicit
+ * `skipOnSet` × `hasCommitEffects` mode combination into one field, and
+ * carries the phase-6 delivery target explicitly (undefined = no onChange
+ * listener anywhere).
  */
 export type BulkWriteIntent = {
     readonly onSet: OnSetPolicy

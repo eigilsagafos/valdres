@@ -9,6 +9,7 @@ import type { SettleFn } from "./SettleFn"
 import type { Selector } from "./Selector"
 import type { SelectorSettleFn } from "./SelectorSettleFn"
 import type { StoreData } from "./StoreData"
+import type { TransactionSettleFn } from "./TransactionSettleFn"
 
 type UpdateSettlement = {
     kind: "update"
@@ -34,6 +35,18 @@ type SelectorSettlement = {
     settle: SelectorSettleFn
 }
 
+/** A single-store transaction commit with cleanup mutations: updated atoms,
+ *  deleted family members, and unset atoms settle as one deferred-notification
+ *  unit. `deleted`/`unset` are undefined (never empty) when absent so the
+ *  engine's has-work guard stays a plain presence check. */
+type TransactionSettlement = {
+    kind: "transaction"
+    atoms: Atom<any>[]
+    deleted: AtomFamilyAtom<any, any>[] | undefined
+    unset: Atom<any>[] | undefined
+    settle: TransactionSettleFn
+}
+
 type NoSettlement = {
     kind: "none"
 }
@@ -42,6 +55,7 @@ type CommitSettlement =
     | UpdateSettlement
     | DeleteSettlement
     | SelectorSettlement
+    | TransactionSettlement
     | NoSettlement
 
 /**
@@ -52,8 +66,9 @@ type CommitSettlement =
  *
  * `settlement` is a typed description of an existing propagation primitive.
  * Update/reset/unset plans use `settleCommit` with shared `SettleFlags`;
- * deletion uses `settleDeletedCommit`; native async selectors use their
- * downstream-only settlement; guarded cleanup uses `kind: "none"`.
+ * deletion uses `settleDeletedCommit`; a single-store transaction commit with
+ * cleanup mutations uses `settleTransactionCommit`; native async selectors use
+ * their downstream-only settlement; guarded cleanup uses `kind: "none"`.
  *
  * Optional phase callbacks stay declarative: the engine owns their order.
  * `beforeSettle` lets unset prepend its distinct removal change record;
@@ -61,10 +76,11 @@ type CommitSettlement =
  * re-delegation; `flushReport` drains a deliberately deferred onChange sink.
  * The callbacks are absent from ordinary bulk plans.
  *
- * Scope note: local plans still model one store and one settlement. Cross-scope
- * transactions and ordinary global writes remain behind their adapters; async
- * global settlement delegates its multi-store phase without adding a local
- * begin/end boundary.
+ * Scope note: local plans still model one store and one settlement — including
+ * single-store transaction commits, whose finalized overlay translates into a
+ * plan. Cross-scope transactions and ordinary global writes remain behind
+ * their adapters; async global settlement delegates its multi-store phase
+ * without adding a local begin/end boundary.
  */
 export type CommitPlan = {
     data: StoreData

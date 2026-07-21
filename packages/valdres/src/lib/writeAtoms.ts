@@ -11,15 +11,16 @@ import { setValueInData } from "./setValueInData"
  * Write phase (commit phases 1–2) for a single store. Applies every value in
  * `pairs` to `data.values`, returning the atoms whose value actually changed
  * (the propagation set), merged with any atoms lazily initialized during the
- * equality checks. This does NOT propagate — see `setAtoms` (single-store
- * fast path) or the transaction commit pipeline (cross-scope path) for notify.
+ * equality checks. This does NOT propagate — the bulk coordinators in
+ * `setAtoms.ts`, the transaction CommitPlan, and the cross-scope transaction
+ * pipeline own notify.
  *
  * Hook and global handling are deliberately collection-only. The caller first
  * completes every local/global write, then runs `onSetQueue`, then propagates.
  * This keeps a throwing hook from interrupting either the write or propagation
- * phase. The boolean remains here because transactions are not migrated by the
- * commit-engine change; typed bulk coordinators translate their intent at their
- * own boundary.
+ * phase. The boolean remains positional because the unmigrated cross-scope
+ * transaction arm still calls it directly; typed bulk coordinators translate
+ * their intent at their own boundary.
  */
 export const writeAtoms = (
     pairs: Map<Atom<any>, any>,

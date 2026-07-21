@@ -16,6 +16,8 @@ export type ArchitectureCounters = {
     dependencyEdgeVisits: number
     schedulerQueueEnqueues: number
     schedulerQueueDequeues: number
+    /** Admitted `runCommitPlan` executions — one per engine-sequenced commit. */
+    commitPlanRuns: number
 }
 
 export type ArchitectureInstrumentation = {
@@ -36,6 +38,7 @@ export const createArchitectureInstrumentation =
             dependencyEdgeVisits: 0,
             schedulerQueueEnqueues: 0,
             schedulerQueueDequeues: 0,
+            commitPlanRuns: 0,
         },
         settledSelectors: new WeakMap(),
         settledStores: new WeakSet(),
@@ -44,6 +47,11 @@ export const createArchitectureInstrumentation =
 export const recordSelectorEvaluation = (data: StoreData): void => {
     const instrumentation = data.architectureInstrumentation
     if (instrumentation) instrumentation.counters.selectorEvaluations++
+}
+
+export const recordCommitPlanRun = (data: StoreData): void => {
+    const instrumentation = data.architectureInstrumentation
+    if (instrumentation) instrumentation.counters.commitPlanRuns++
 }
 
 export const recordSelectorSettlement = (

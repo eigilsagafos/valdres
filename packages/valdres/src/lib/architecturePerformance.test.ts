@@ -76,6 +76,8 @@ describe("deterministic architecture performance gates", () => {
             dependencyEdgeVisits: 0,
             schedulerQueueEnqueues: 0,
             schedulerQueueDequeues: 0,
+            // A scalar direct write settles without an engine plan.
+            commitPlanRuns: 0,
         })
     })
 
@@ -166,6 +168,34 @@ describe("deterministic architecture performance gates", () => {
         )
 
         for (const cleanup of cleanups) cleanup()
+    })
+
+    test("single-store transactions execute exactly one commit plan per shape", () => {
+        const ordinaryStore = store()
+        const ordinaryAtom = atom(0)
+        const ordinary = measureArchitecture(ordinaryStore, () => {
+            ordinaryStore.txn(txn => txn.set(ordinaryAtom, 1))
+        })
+        expect(ordinary.commitPlanRuns).toBe(1)
+
+        const hookedStore = store()
+        const hookedAtom = atom(0, { onSet: noop })
+        const hooked = measureArchitecture(hookedStore, () => {
+            hookedStore.txn(txn => txn.set(hookedAtom, 1))
+        })
+        expect(hooked.commitPlanRuns).toBe(1)
+
+        const cleanupStore = store()
+        const cleanupAtom = atom(0)
+        const removedAtom = atom(1)
+        cleanupStore.set(removedAtom, 2)
+        const cleanup = measureArchitecture(cleanupStore, () => {
+            cleanupStore.txn(txn => {
+                txn.set(cleanupAtom, 1)
+                txn.unset(removedAtom)
+            })
+        })
+        expect(cleanup.commitPlanRuns).toBe(1)
     })
 
     test("a deliberately duplicated single-store settlement is detected", () => {
