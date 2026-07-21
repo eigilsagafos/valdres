@@ -2,7 +2,11 @@ import { describe, expect, mock, test } from "bun:test"
 import { atom } from "../atom"
 import { store } from "../store"
 import type { SettleFn } from "../types/SettleFn"
-import { runCommitPlan, runHookedDirectWrite } from "./commitEngine"
+import {
+    createGuardedScalarCommit,
+    runCommitPlan,
+    runHookedDirectWrite,
+} from "./commitEngine"
 import { createCommitErrors } from "./commitErrors"
 import {
     BULK_NO_EFFECTS_SILENT,
@@ -17,6 +21,30 @@ import {
 import { getStoreData } from "./getStoreData"
 
 describe("commitEngine", () => {
+    describe("createGuardedScalarCommit", () => {
+        test("admits immediately before apply and suppresses rejected entries", () => {
+            const events: string[] = []
+            const commit = createGuardedScalarCommit(
+                (admitted: boolean) => {
+                    events.push(`admit:${admitted}`)
+                    return admitted
+                },
+                () => events.push("apply"),
+            )
+            const unusedArgs = [
+                undefined,
+                undefined,
+                undefined,
+                undefined,
+                undefined,
+            ] as const
+
+            expect(commit(false, ...unusedArgs)).toBe(false)
+            expect(commit(true, ...unusedArgs)).toBe(true)
+            expect(events).toEqual(["admit:false", "admit:true", "apply"])
+        })
+    })
+
     describe("runHookedDirectWrite", () => {
         test("runs the hook, then settles with the shared default flags", () => {
             const store1 = store()
@@ -135,6 +163,50 @@ describe("commitEngine", () => {
             })
             expect(settle).toHaveBeenCalledTimes(0)
             expect(commitEnds).toHaveBeenCalledTimes(0)
+        })
+
+        test("failed admission runs no phase and opens no boundary", () => {
+            const store1 = store()
+            const data = getStoreData(store1)
+            const events: string[] = []
+            store1.onCommitEnd(() => events.push("commitEnd"))
+
+            const admitted = runCommitPlan({
+                data,
+                settlement: { kind: "none" },
+                admit: () => false,
+                apply: () => events.push("apply"),
+                onSets: [],
+                errors: createCommitErrors(),
+                report: undefined,
+                afterSettle: () => events.push("after"),
+                beginCommit: root => {
+                    events.push("begin")
+                    return root
+                },
+                endCommit: () => events.push("end"),
+            })
+
+            expect(admitted).toBe(false)
+            expect(events).toEqual([])
+        })
+
+        test("a no-settlement plan applies without dispatching observers", () => {
+            const store1 = store()
+            const data = getStoreData(store1)
+            const events: string[] = []
+
+            expect(
+                runCommitPlan({
+                    data,
+                    settlement: { kind: "none" },
+                    apply: () => events.push("apply"),
+                    onSets: [],
+                    errors: createCommitErrors(),
+                    report: undefined,
+                }),
+            ).toBe(true)
+            expect(events).toEqual(["apply"])
         })
 
         test("owns the local pre-report → settle → cleanup → flush → boundary order", () => {

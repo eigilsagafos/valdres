@@ -4,9 +4,12 @@ import type { InternalAtom } from "../types/InternalAtom"
 import type { StoreData } from "../types/StoreData"
 import { isPromiseLike } from "../utils/isPromiseLike"
 import { isSelector } from "../utils/isSelector"
-import { SEED_WRITE } from "./commitIntents"
+import { createScalarCommit, runCommitPlan } from "./commitEngine"
+import { createCommitErrors } from "./commitErrors"
+import { SEED_WRITE, SETTLE_DEFAULT } from "./commitIntents"
 import { getState } from "./getState"
-import { propagateAtomUpdate } from "./propagateUpdatedAtoms"
+import { hasAtomCommitObservers } from "./hasAtomCommitObservers"
+import { settleCommit } from "./propagateUpdatedAtoms"
 import { setAtom } from "./setAtom"
 import { setValueInData } from "./setValueInData"
 import { noteStateValueChanged } from "./stateRevisions"
@@ -14,6 +17,46 @@ import { isStoreDisposed } from "./storeLifecycle"
 import { trackNamedState, untrackNamedAtom } from "./namedStateIndex"
 import { validateResolvedValue } from "./validateResolvedValue"
 import { validateSchema } from "./validateSchema"
+
+const admitFunctionDefaultTransition = (
+    atom: Atom<any>,
+    _resolvedValue: any,
+    promise: PromiseLike<any>,
+    data: StoreData,
+    _unused1: undefined,
+    _unused2: undefined,
+): boolean => !isStoreDisposed(data) && data.values.get(atom) === promise
+
+const applyFunctionDefaultResolution = (
+    atom: Atom<any>,
+    resolvedValue: any,
+    _promise: PromiseLike<any>,
+    data: StoreData,
+    _unused1: undefined,
+    _unused2: undefined,
+) => {
+    setValueInData(atom, resolvedValue, data)
+}
+
+const applyFunctionDefaultCleanup = (
+    atom: Atom<any>,
+    _resolvedValue: any,
+    _promise: PromiseLike<any>,
+    data: StoreData,
+    _unused1: undefined,
+    _unused2: undefined,
+) => {
+    data.values.delete(atom)
+    untrackNamedAtom(atom, data)
+    noteStateValueChanged(atom, data)
+}
+
+const commitFunctionDefaultResolution = createScalarCommit(
+    applyFunctionDefaultResolution,
+)
+const commitFunctionDefaultCleanup = createScalarCommit(
+    applyFunctionDefaultCleanup,
+)
 
 export const getAtomInitValue = <V = any>(
     atom: Atom<V>,
@@ -44,33 +87,95 @@ export const getAtomInitValue = <V = any>(
                         // promise so a re-subscribe re-inits, rather than
                         // committing the invalid value or leaving the atom
                         // stuck on an unvalidated promise.
-                        if (data.values.get(atom) === value) {
-                            data.values.delete(atom)
-                            untrackNamedAtom(atom, data)
-                            noteStateValueChanged(atom, data)
-                        }
+                        commitFunctionDefaultCleanup(
+                            admitFunctionDefaultTransition(
+                                atom,
+                                resolvedValue,
+                                value,
+                                data,
+                                undefined,
+                                undefined,
+                            ),
+                            atom,
+                            resolvedValue,
+                            value,
+                            data,
+                            undefined,
+                            undefined,
+                        )
                         return
                     }
-                    // @ts-ignore @ts-todo
-                    setValueInData(atom, resolvedValue, data)
-                    propagateAtomUpdate(
-                        [atom],
+                    const admitted = admitFunctionDefaultTransition(
+                        atom,
+                        resolvedValue,
+                        value,
                         data,
-                        false,
                         undefined,
-                        "async-set",
+                        undefined,
                     )
+                    if (!hasAtomCommitObservers(atom, data)) {
+                        commitFunctionDefaultResolution(
+                            admitted,
+                            atom,
+                            resolvedValue,
+                            value,
+                            data,
+                            undefined,
+                            undefined,
+                        )
+                        return
+                    }
+                    runCommitPlan({
+                        data,
+                        settlement: {
+                            kind: "update",
+                            atoms: [atom],
+                            settle: settleCommit,
+                            flags: SETTLE_DEFAULT,
+                        },
+                        admit: () =>
+                            admitFunctionDefaultTransition(
+                                atom,
+                                resolvedValue,
+                                value,
+                                data,
+                                undefined,
+                                undefined,
+                            ),
+                        apply: () =>
+                            applyFunctionDefaultResolution(
+                                atom,
+                                resolvedValue,
+                                value,
+                                data,
+                                undefined,
+                                undefined,
+                            ),
+                        onSets: [],
+                        errors: createCommitErrors(),
+                        report: "async-set",
+                    })
                 },
                 () => {
-                    if (isStoreDisposed(data)) return
                     // On rejection, remove the rejected promise from the
                     // store so that re-subscribing triggers a fresh init
                     // rather than being stuck with a rejected promise.
-                    if (data.values.get(atom) === value) {
-                        data.values.delete(atom)
-                        untrackNamedAtom(atom, data)
-                        noteStateValueChanged(atom, data)
-                    }
+                    commitFunctionDefaultCleanup(
+                        admitFunctionDefaultTransition(
+                            atom,
+                            undefined,
+                            value,
+                            data,
+                            undefined,
+                            undefined,
+                        ),
+                        atom,
+                        undefined,
+                        value,
+                        data,
+                        undefined,
+                        undefined,
+                    )
                 },
             )
             return value

@@ -7,11 +7,14 @@
  *  process-wide globalStore cannot be disposed. */
 import { describe, expect, test } from "bun:test"
 import { atom } from "../../src/atom"
+import { atomFamily } from "../../src/atomFamily"
 import { globalStore } from "../../src/globalStore"
 import { store } from "../../src/store"
 import { StoreDisposedError } from "../../src/errors/StoreDisposedError"
+import { getStoreData } from "../../src/lib/getStoreData"
 import {
     createRecorder,
+    tracedGlobalAtom,
     tracedSelector,
     traceChange,
     traceCommitEnd,
@@ -63,13 +66,71 @@ describe("trace oracle · disposal & cancellation", () => {
         // onChange / commitEnd and must not throw.
         const before = [...rec.events]
         resolve(1)
-        await Promise.resolve()
-        await Promise.resolve()
+        // The selector registered its reaction before this await, so resuming
+        // proves the disposed settlement guard has run without turn-counting.
+        await promise
         expect(rec.events).toEqual(before)
         expect(rec.events).not.toContain("sub:sel")
         expect(rec.events).not.toContain("onChange")
         expect(rec.events).not.toContain("commitEnd")
     })
+
+    for (const outcome of ["resolve", "reject"] as const) {
+        test(`disposing an async atom's origin suppresses later global ${outcome}`, async () => {
+            const rec = createRecorder()
+            const source = store()
+            const peer = store()
+            const value = tracedGlobalAtom(rec, "value", 0)
+            source.get(value)
+            traceSub(rec, peer, value, "peer")
+            traceChange(rec, peer, "peer")
+            traceCommitEnd(rec, peer, "peer")
+            let resolve!: (next: number) => void
+            let reject!: (error: unknown) => void
+            const pending = new Promise<number>((done, fail) => {
+                resolve = done
+                reject = fail
+            })
+
+            const returned = source.set(value, pending)
+            const settled = Promise.resolve(returned).catch(() => undefined)
+            source.dispose()
+            rec.clear()
+            if (outcome === "resolve") resolve(9)
+            else reject(new Error("disposed async atom"))
+            await settled
+
+            expect(rec.events).toEqual([])
+            expect(peer.get(value)).toBe(0)
+            peer.dispose()
+        })
+
+        test(`disposing a deleted family member suppresses default ${outcome}`, async () => {
+            let resolve!: (next: number) => void
+            let reject!: (error: unknown) => void
+            const pending = new Promise<number>((done, fail) => {
+                resolve = done
+                reject = fail
+            })
+            const family = atomFamily(() => pending)
+            const member = family("disposed")
+            const s = store()
+            s.set(member, 1)
+            s.del(member)
+            expect(s.get(member)).toBe(pending)
+            const data = getStoreData(s)
+
+            s.dispose()
+            if (outcome === "resolve") resolve(2)
+            else reject(new Error("disposed deleted-member default"))
+            await pending.catch(() => undefined)
+
+            // The settlement reaction is registered before this test's catch,
+            // so reaching here proves admission ran. The disposed store keeps
+            // the orphaned Promise rather than accepting or cleaning it up.
+            expect(data.values.get(member)).toBe(pending)
+        })
+    }
 
     test("onMount cleanup runs when the store is disposed", () => {
         const s = store()

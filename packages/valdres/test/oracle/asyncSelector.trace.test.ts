@@ -5,12 +5,13 @@
  *    - a downstream selector DOES recompute on the settle.
  *  Settlement is reported to a `{ selectors: true }` onChange as source
  *  "async-set", and the settle is a separate commitEnd boundary. */
-import { expect } from "bun:test"
+import { describe, expect, test } from "bun:test"
 import { store } from "../../src/store"
 import type { Store } from "../../src/types/Store"
 import { runTraceTable, type TraceCase } from "./runTable"
 import {
     type ChangeCall,
+    createRecorder,
     nextCommit,
     traceChange,
     traceCommitEnd,
@@ -102,4 +103,115 @@ const downstreamCase: TraceCase<Ctx> = {
     },
 }
 
-runTraceTable("trace oracle · async selectors", [settleSelfCase, downstreamCase])
+runTraceTable("trace oracle · async selectors", [
+    settleSelfCase,
+    downstreamCase,
+])
+
+describe("trace oracle · async selector error disposition", () => {
+    test("all subscribers run, first error wins, and source rejection is not reused", () => {
+        const rec = createRecorder()
+        const events = rec.events
+        const s = store()
+        let fulfill!: (value: number) => unknown
+        let rejectSource: ((error: unknown) => unknown) | undefined
+        let rejectChained: ((error: unknown) => unknown) | undefined
+        const chainedPromise = {
+            catch: (onRejected: (error: unknown) => unknown) => {
+                rejectChained = onRejected
+                return chainedPromise
+            },
+        }
+        const sourcePromise = {
+            then: (
+                onFulfilled: (value: number) => unknown,
+                onRejected?: (error: unknown) => unknown,
+            ) => {
+                fulfill = onFulfilled
+                rejectSource = onRejected
+                return chainedPromise
+            },
+        } as unknown as Promise<number>
+        const asyncSel = tracedSelector(rec, "asyncSel", () => sourcePromise)
+        const firstError = new Error("subscriber one")
+        const secondError = new Error("subscriber two")
+        const unsubFirst = s.sub(asyncSel, () => {
+            events.push("sub:1")
+            throw firstError
+        })
+        const unsubSecond = s.sub(asyncSel, () => {
+            events.push("sub:2")
+            throw secondError
+        })
+        const unsubChange = s.onChange(() => events.push("onChange"), {
+            atoms: false,
+            selectors: true,
+        })
+        const unsubCommit = s.onCommitEnd(() => events.push("commitEnd"))
+        events.length = 0
+        let surfaced: unknown
+
+        try {
+            try {
+                fulfill(42)
+            } catch (error) {
+                // Model the rejected child returned by Promise.then without
+                // creating a process-level unhandled rejection in the runner.
+                if (rejectChained) rejectChained(error)
+                else surfaced = error
+            }
+
+            expect(events).toEqual(["sub:1", "sub:2", "commitEnd"])
+            expect(events).not.toContain("onChange")
+            expect(rejectSource).toBeDefined()
+            expect(rejectChained).toBeUndefined()
+            expect(surfaced).toBe(firstError)
+            expect(s.get(asyncSel)).toBe(42)
+        } finally {
+            unsubFirst()
+            unsubSecond()
+            unsubChange()
+            unsubCommit()
+        }
+    })
+
+    test("rejection cleanup is silent and the next public read re-evaluates", () => {
+        const rec = createRecorder()
+        const s = store()
+        let rejectSource!: (error: unknown) => unknown
+        const sourcePromise = {
+            then: (
+                _onFulfilled: (value: number) => unknown,
+                onRejected?: (error: unknown) => unknown,
+            ) => {
+                rejectSource = onRejected!
+                return sourcePromise
+            },
+        } as unknown as Promise<number>
+        let evaluations = 0
+        const asyncSel = tracedSelector(rec, "asyncSel", () => {
+            evaluations++
+            return evaluations === 1 ? sourcePromise : 7
+        })
+        const unsubSub = traceSub(rec, s, asyncSel, "asyncSel")
+        const unsubChange = traceChange(rec, s, undefined, {
+            atoms: false,
+            selectors: true,
+        }).unsub
+        const unsubCommit = traceCommitEnd(rec, s)
+        rec.clear()
+
+        try {
+            rejectSource(new Error("selector boom"))
+            expect(rec.events).toEqual([])
+
+            expect(s.get(asyncSel)).toBe(7)
+            expect(rec.events).toEqual(["eval:asyncSel"])
+            expect(evaluations).toBe(2)
+        } finally {
+            unsubSub()
+            unsubChange()
+            unsubCommit()
+        }
+    })
+})

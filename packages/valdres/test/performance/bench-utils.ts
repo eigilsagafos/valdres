@@ -13,23 +13,34 @@ const RESULTS_FILE =
 const RESULTS_PATH = join(__dir, RESULTS_FILE)
 
 // Measurement budget. 100ms per benchmark keeps the suite cheap enough to run
-// 3× per side in the relative-CB gate (bencher-pr.yml), where bench-to-bmf takes
-// the MEDIAN p50 across the repeats. Median-of-3 rejects one slow GC/scheduler
-// sample or one anomalously fast JIT sample, taming the Node/vitest lane's
-// single-run jitter far better than one longer run would.
+// 3× per side in the relative-CB gate. Operations slower than mitata's 65µs
+// batch threshold get 20 warm-up calls so Node reaches a stable JIT tier before
+// sampling; fast operations enter batched measurement after the first warm-up
+// regardless of this ceiling. The paired median then rejects one remaining
+// GC/scheduler or anomalous JIT sample.
 //
 // NOTE: every result is appended to one shared NDJSON file, so the suite MUST
 // run serially — bun via `--concurrency 1`, vitest via pool=forks + singleFork.
 const MEASURE_ONE_OPTS = {
     min_samples: 12,
     min_cpu_time: 100 * 1e6,
-    warmup_samples: 2,
+    warmup_samples: 20,
 }
 
 // Record one absolute latency (ns) for a benchmark. mitata's measure() already
-// returns a robust, tail-trimmed p50. The CI workflows repeat the suite and
-// bench-to-bmf takes the cross-run median before Bencher evaluates it.
-export async function measureOne(name: string, fn: () => void) {
+// returns a robust, tail-trimmed p50. CI repeats the suite; the base lane takes
+// the cross-run median, while the PR lane takes the median paired ratio.
+export async function measureOne(
+    name: string,
+    fn: () => void | Promise<void>,
+    options?: { warmupRuns?: number },
+) {
+    // Mitata moves fast operations directly into batched measurement after one
+    // warm-up, regardless of warmup_samples. Promise-heavy benchmarks can then
+    // compare different JIT tiers across fresh processes. A targeted benchmark
+    // may request explicit unmeasured calls so both base and head reach their
+    // steady tier before Mitata samples them.
+    for (let i = 0; i < (options?.warmupRuns ?? 0); i++) await fn()
     const stats = await measure(fn, MEASURE_ONE_OPTS)
     console.log(`  ${name}: ${fmtNs(stats.p50)}`)
 

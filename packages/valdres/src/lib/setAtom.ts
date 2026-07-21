@@ -21,9 +21,9 @@ import { validateSchema } from "./validateSchema"
  * the ordinary write (no hook — which also means non-global, since global
  * atoms always carry at least the marker hook) settles immediately with a
  * shared frozen flags const — no plan object, no allocation; a hooked
- * non-global write runs phases 3–9 through the engine; global fan-out and
- * async settlement stay on their unmigrated adapters (finishAtomSet /
- * coordinateAsyncWrite).
+ * non-global write runs phases 3–9 through the engine; ordinary global fan-out
+ * stays on finishAtomSet, while coordinateAsyncWrite routes final async
+ * transitions through the same engine.
  */
 export const setAtom = <Value = any>(
     atom: Atom<Value>,

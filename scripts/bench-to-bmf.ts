@@ -32,6 +32,16 @@ export interface BmfOptions {
     normalize?: boolean
 }
 
+function samplesByName(results: BenchResult[]): Map<string, number[]> {
+    const samples = new Map<string, number[]>()
+    for (const result of results) {
+        const values = samples.get(result.name)
+        if (values) values.push(result.ns)
+        else samples.set(result.name, [result.ns])
+    }
+    return samples
+}
+
 const ROOT = join(import.meta.dir, "..")
 const PERF_DIR = join(ROOT, "packages/valdres/test/performance")
 
@@ -49,12 +59,15 @@ function opName(name: string): string {
     return m ? m[1] : name
 }
 
-// Operations too small to gate reliably. Their +50% relative boundary is only a
-// few nanoseconds — below the CI runner's measurement noise even after
-// median-of-3. They remain measured and plotted by the base lane.
+// Operations too small to gate reliably. Their +50% relative boundary is only
+// nanoseconds to low hundreds of nanoseconds — below the CI runner's JIT and
+// measurement noise even after median-of-3. They remain measured and plotted
+// by the base lane.
 const UNGATEABLE_OPS = new Set([
     "atom(1)", // ~2ns
     "selector(fn)", // ~5ns
+    "atomFamily(id)", // ~100-250ns; constructor JIT tier varies by ~100ns
+    "selectorFamily(id)", // ~300ns-1.5us; covered by aggregated family workloads
     "atomFamily(id) cache hit", // ~10ns
     "atomFamily(string) cache hit", // ~25ns
     "selectorFamily(string) cache hit", // ~60ns
@@ -113,14 +126,11 @@ export function toBmf(results: BenchResult[], options: BmfOptions = {}): Bmf {
         excludeTiny = false,
         normalize = false,
     } = options
-    const samples: Record<string, number[]> = {}
-    for (const r of results) {
-        samples[r.name] ??= []
-        samples[r.name].push(r.ns)
-    }
-
     const latencies = new Map(
-        Object.entries(samples).map(([name, values]) => [name, median(values)]),
+        [...samplesByName(results)].map(([name, values]) => [
+            name,
+            median(values),
+        ]),
     )
     let runnerControlIndex: number | undefined
     if (normalize) {
@@ -160,6 +170,78 @@ export function toBmf(results: BenchResult[], options: BmfOptions = {}): Bmf {
     return bmf
 }
 
+/**
+ * Produces the head-side BMF for an interleaved relative benchmark run.
+ *
+ * Bencher compares this value with a separately uploaded base BMF. Scaling the
+ * base median by the median of the paired head/base ratios makes that comparison
+ * evaluate the paired statistic directly. Taking independent base and head
+ * medians first can manufacture a regression when an order or runner effect
+ * moves both measurements in only one pair.
+ */
+export function toPairedBmf(
+    baseResults: BenchResult[],
+    headResults: BenchResult[],
+    options: BmfOptions = {},
+): Bmf {
+    if (options.normalize) {
+        throw new Error("Paired BMF does not support runner normalization")
+    }
+
+    const baseBmf = toBmf(baseResults, options)
+    const headBmf = toBmf(headResults, options)
+    const baseNames = Object.keys(baseBmf)
+    const headNames = Object.keys(headBmf)
+    const missingFromHead = baseNames.filter(name => !(name in headBmf))
+    const missingFromBase = headNames.filter(name => !(name in baseBmf))
+    if (missingFromHead.length > 0 || missingFromBase.length > 0) {
+        throw new Error(
+            [
+                missingFromHead.length > 0
+                    ? `missing from head: ${missingFromHead.join(", ")}`
+                    : "",
+                missingFromBase.length > 0
+                    ? `missing from base: ${missingFromBase.join(", ")}`
+                    : "",
+            ]
+                .filter(Boolean)
+                .join("; "),
+        )
+    }
+
+    const baseSamples = samplesByName(baseResults)
+    const headSamples = samplesByName(headResults)
+    const paired: Bmf = {}
+    for (const name of baseNames) {
+        const base = baseSamples.get(name)!
+        const head = headSamples.get(name)!
+        if (base.length !== head.length) {
+            throw new Error(
+                `Mismatched paired sample count for ${name}: base=${base.length}, head=${head.length}`,
+            )
+        }
+        if (
+            base.length === 0 ||
+            base.some(value => !Number.isFinite(value) || value <= 0) ||
+            head.some(value => !Number.isFinite(value) || value <= 0)
+        ) {
+            throw new Error(
+                `Paired samples for ${name} must be finite and positive`,
+            )
+        }
+
+        const pairedRatio = median(
+            head.map((value, index) => value / base[index]),
+        )
+        paired[name] = {
+            latency: {
+                value: baseBmf[name].latency.value * pairedRatio,
+            },
+        }
+    }
+    return paired
+}
+
 // Input NDJSON and output BMF paths are overridable via env so the relative-CB
 // gate can run THIS (PR-checkout) script against the base worktree's results —
 // the base SHA ships an older bench-to-bmf that would reject the repeated names.
@@ -168,6 +250,7 @@ const lanes = [
         ndjson:
             process.env.BENCH_NDJSON_BUN ??
             join(PERF_DIR, "bench-results.ndjson"),
+        pairedBase: process.env.BENCH_PAIRED_BASE_BUN,
         out:
             process.env.BENCH_OUT_BUN ??
             join(ROOT, "packages/valdres/bun_results.json"),
@@ -176,6 +259,7 @@ const lanes = [
         ndjson:
             process.env.BENCH_NDJSON_NODE ??
             join(PERF_DIR, "bench-results-node.ndjson"),
+        pairedBase: process.env.BENCH_PAIRED_BASE_NODE,
         out:
             process.env.BENCH_OUT_NODE ??
             join(ROOT, "packages/valdres/node_results.json"),
@@ -194,7 +278,15 @@ if (import.meta.main) {
             console.warn(`No results in ${lane.ndjson} — skipping ${lane.out}`)
             continue
         }
-        const bmf = toBmf(results, options)
+        const pairedBase = lane.pairedBase
+            ? readBenchResults(lane.pairedBase)
+            : undefined
+        if (pairedBase && pairedBase.length === 0) {
+            throw new Error(`No paired base results in ${lane.pairedBase}`)
+        }
+        const bmf = pairedBase
+            ? toPairedBmf(pairedBase, results, options)
+            : toBmf(results, options)
         writeFileSync(lane.out, JSON.stringify(bmf, null, 2))
         const normalized = options.normalize
             ? ` with ${NORMALIZED_LATENCY_MEASURE}`

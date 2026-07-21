@@ -6,6 +6,8 @@ import type { Atom } from "./Atom"
 import type { AtomFamilyAtom } from "./AtomFamilyAtom"
 import type { SettleFlags } from "./SettleFlags"
 import type { SettleFn } from "./SettleFn"
+import type { Selector } from "./Selector"
+import type { SelectorSettleFn } from "./SelectorSettleFn"
 import type { StoreData } from "./StoreData"
 
 type UpdateSettlement = {
@@ -26,7 +28,21 @@ type DeleteSettlement = {
     ) => void
 }
 
-type CommitSettlement = UpdateSettlement | DeleteSettlement
+type SelectorSettlement = {
+    kind: "selector"
+    selector: Selector<any>
+    settle: SelectorSettleFn
+}
+
+type NoSettlement = {
+    kind: "none"
+}
+
+type CommitSettlement =
+    | UpdateSettlement
+    | DeleteSettlement
+    | SelectorSettlement
+    | NoSettlement
 
 /**
  * A normalized local commit executed by `runCommitPlan`. Most plans are built
@@ -34,10 +50,10 @@ type CommitSettlement = UpdateSettlement | DeleteSettlement
  * lifecycle boundary already covered its write phase (direct reset) keep that
  * exact boundary without moving observer sequencing back into its entry point.
  *
- * `settlement` is a typed description of the existing propagation primitive,
- * not an operation-specific observer pipeline. Update/reset/unset plans use
- * `settleCommit` with one of the shared `SettleFlags`; deletion plans use the
- * typed `settleDeletedCommit` wrapper around the established delete primitive.
+ * `settlement` is a typed description of an existing propagation primitive.
+ * Update/reset/unset plans use `settleCommit` with shared `SettleFlags`;
+ * deletion uses `settleDeletedCommit`; native async selectors use their
+ * downstream-only settlement; guarded cleanup uses `kind: "none"`.
  *
  * Optional phase callbacks stay declarative: the engine owns their order.
  * `beforeSettle` lets unset prepend its distinct removal change record;
@@ -45,13 +61,17 @@ type CommitSettlement = UpdateSettlement | DeleteSettlement
  * re-delegation; `flushReport` drains a deliberately deferred onChange sink.
  * The callbacks are absent from ordinary bulk plans.
  *
- * Scope note: this still models a SINGLE-STORE, SINGLE-SETTLEMENT commit.
- * Cross-scope transactions and global fan-out remain behind their temporary
- * adapters until their dedicated migrations.
+ * Scope note: local plans still model one store and one settlement. Cross-scope
+ * transactions and ordinary global writes remain behind their adapters; async
+ * global settlement delegates its multi-store phase without adding a local
+ * begin/end boundary.
  */
 export type CommitPlan = {
     data: StoreData
     settlement: CommitSettlement
+    /** Final stale/cancel/dispose admission check. A false result is a total
+     *  no-op: no boundary, apply, hook, settlement, report, or cleanup runs. */
+    admit?: () => boolean
     /** Optional phases 1–2 callback. An apply error skips hooks/settlement but
      *  still permits a deferred sink/boundary to finish best-effort. */
     apply?: () => void
