@@ -2,10 +2,11 @@ import type { ChangeReport } from "../lib/notifyChangeListeners"
 
 /**
  * Intent for one direct atom write (`store.set` → `setAtom`). A named 1:1
- * replacement for the historical `skipOnSet` boolean whose value is honest
- * naming: "skip" never meant just the hook — it skips commit effects entirely,
- * hooks AND global fan-out ("seed the store locally"). Passed as one of the
- * frozen singletons `DIRECT_WRITE` / `SEED_WRITE` in `lib/commitIntents`.
+ * replacement for the historical `skipOnSet` boolean. "skip" suppresses onSet
+ * behavior, including marker-driven global fan-out, while preserving normal
+ * local selector settlement, subscriber delivery, onChange reporting, and
+ * commit boundaries. Passed as one of the frozen singletons `DIRECT_WRITE` /
+ * `SEED_WRITE` in `lib/commitIntents`.
  */
 export type DirectWriteIntent = {
     readonly effects: "run" | "skip"
