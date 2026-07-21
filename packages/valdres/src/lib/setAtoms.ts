@@ -92,10 +92,14 @@ export const commitAtoms = (
     if (!globalUpdates || globalUpdates.size === 0) {
         runCommitPlan({
             data,
-            updatedAtoms,
+            settlement: {
+                kind: "update",
+                atoms: updatedAtoms,
+                settle: settleCommit,
+                flags: SETTLE_DEFAULT,
+            },
             onSets,
             errors,
-            settle: settleCommit,
             report: intent.report,
         })
         return

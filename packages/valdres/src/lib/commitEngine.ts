@@ -9,7 +9,8 @@ import { runOnSets } from "./runOnSets"
 
 /**
  * The commit engine: the single owner of commit sequencing for the migrated
- * write shapes (ordinary direct writes and non-global bulk writes). A commit
+ * write shapes (ordinary direct writes, non-global bulk writes, and local
+ * reset/unset/delete operations). A commit
  * has nine phases; this header is the honest map of where each one lives —
  * the engine does NOT execute all nine itself:
  *
@@ -19,17 +20,15 @@ import { runOnSets } from "./runOnSets"
  *   2. Apply final values — same coordinators, via `setValueInData` +
  *      `resolvePendingDefault`.
  *   3. Run onSet behavior — OWNED HERE (`runHookedDirectWrite` for the single
- *      hooked write, `runOnSets` inside `runCommitPlan` for bulk).
+ *      hooked write, `runOnSets` inside `runCommitPlan` for planned commits).
  *   4. Settle affected selectors      ┐
- *   5. Deliver subscribers            │ DELEGATED to the injected `settle`
- *   6. Flush onChange                 │ composite (statically `settleCommit`),
- *   7. Fire onCommitEnd               ┘ whose internal begin/endCommit bracket
- *      and onChange emit/buffer placement are deliberately not interposable in
- *      this iteration — the trace oracle locks their positions.
- *   8. Post-notification cleanup — VACANT for migrated shapes. It exists on
- *      the unmigrated paths (`reDelegateScopeSubscriptions` after unset/txn
- *      notify) and stays owned there; the slot is documented so its later
- *      migration lands here, not in an adapter.
+ *   5. Deliver subscribers            │ DELEGATED to the injected settlement
+ *   6. Flush/buffer onChange           │ primitive. A standalone plan may defer
+ *   7. Fire onCommitEnd               ┘ its flush and outer boundary to the
+ *      engine when later phases must remain inside the same logical commit.
+ *   8. Post-notification cleanup — OWNED HERE for plans that provide it. Local
+ *      unset preserves its established order: re-delegate after subscribers
+ *      but before the deferred onChange flush and outer commit-end callback.
  *   9. Rethrow the first captured error — OWNED HERE (hook-error preference
  *      for the single write; `CommitErrors` first-error for bulk).
  *
@@ -38,9 +37,9 @@ import { runOnSets } from "./runOnSets"
  * (see test/import-cycles) — the sequencer must not be hard-wired to the
  * propagation layer it sequences.
  *
- * Unmigrated writers (transaction commitWork branches, async settlement,
- * global fan-out, unset/delete/reset) keep their own historical sequencing
- * behind clearly-marked adapters; none of it is duplicated here.
+ * Unmigrated writers (transaction commitWork branches, async settlement, and
+ * global fan-out) keep their historical sequencing behind clearly-marked
+ * adapters; none of it is duplicated here.
  */
 
 /**
@@ -76,29 +75,100 @@ export const runHookedDirectWrite = <Value>(
 }
 
 /**
- * Execute a prepared non-global bulk commit: phase 3 (deferred hooks, first
- * error retained) → phases 4–7 (settle; its error is recorded, never
- * interrupting) → phase 9 (first captured error rethrown).
+ * Execute a prepared local commit: phase 3 (deferred hooks, first error
+ * retained) → optional pre-settle reporting → phases 4–7 (one typed settlement)
+ * → phase 8 cleanup/deferred flush → phase 9 (first captured error rethrown).
  *
- * The `updatedAtoms.length > 0` guard is contractual, not an optimization: a
- * commit whose every write was value-equal must not settle — settling would
- * open a commit-end boundary and fire a spurious `commitEnd` on a no-op commit
- * (the trace oracle requires a no-op to produce zero events).
+ * The settlement's non-empty atom-list guard is contractual, not an
+ * optimization: a plan whose every write was value-equal must not settle.
+ * Standalone reset may still own an explicit outer boundary because its public
+ * historical behavior treats the reset call itself as a commit; ordinary bulk
+ * plans do not, so their no-op trace remains empty.
  */
 export const runCommitPlan = (plan: CommitPlan) => {
-    runOnSets(plan.onSets, plan.errors)
-    if (plan.updatedAtoms.length > 0) {
-        try {
-            plan.settle(
-                plan.updatedAtoms,
-                plan.data,
-                undefined,
-                plan.report,
-                SETTLE_DEFAULT,
-            )
-        } catch (error) {
-            recordCommitError(plan.errors, error)
+    const settlement = plan.settlement
+    const hasWork = () => settlement.atoms.length > 0
+    const shouldContinue = () =>
+        plan.continueAfterError !== false || !plan.errors.hasError
+    let commitRoot: StoreData | undefined
+    let completed = false
+
+    if (plan.beginCommit) commitRoot = plan.beginCommit(plan.data)
+    try {
+        let applied = true
+        if (plan.apply) {
+            try {
+                plan.apply()
+            } catch (error) {
+                applied = false
+                recordCommitError(plan.errors, error)
+            }
+        }
+
+        if (applied) runOnSets(plan.onSets, plan.errors)
+
+        if (
+            applied &&
+            hasWork() &&
+            shouldContinue() &&
+            plan.beforeSettle &&
+            plan.report
+        ) {
+            try {
+                plan.beforeSettle(plan.report)
+            } catch (error) {
+                recordCommitError(plan.errors, error)
+            }
+        }
+
+        if (applied && hasWork() && shouldContinue()) {
+            try {
+                if (settlement.kind === "update") {
+                    settlement.settle(
+                        settlement.atoms,
+                        plan.data,
+                        undefined,
+                        plan.report,
+                        settlement.flags,
+                    )
+                } else {
+                    settlement.settle(
+                        settlement.atoms,
+                        plan.data,
+                        undefined,
+                        plan.report,
+                    )
+                }
+            } catch (error) {
+                recordCommitError(plan.errors, error)
+            }
+        }
+
+        if (applied && hasWork() && shouldContinue() && plan.afterSettle) {
+            try {
+                plan.afterSettle()
+            } catch (error) {
+                recordCommitError(plan.errors, error)
+            }
+        }
+
+        if (shouldContinue() && plan.flushReport) {
+            try {
+                plan.flushReport()
+            } catch (error) {
+                recordCommitError(plan.errors, error)
+            }
+        }
+        completed = true
+    } finally {
+        if (commitRoot && plan.endCommit) {
+            try {
+                plan.endCommit(commitRoot, plan.errors.hasError || !completed)
+            } catch (error) {
+                recordCommitError(plan.errors, error)
+            }
         }
     }
+
     throwCommitError(plan.errors)
 }

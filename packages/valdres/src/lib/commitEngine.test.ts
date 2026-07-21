@@ -100,10 +100,14 @@ describe("commitEngine", () => {
             expect(() =>
                 runCommitPlan({
                     data,
-                    updatedAtoms: [a],
+                    settlement: {
+                        kind: "update",
+                        atoms: [a],
+                        settle,
+                        flags: SETTLE_DEFAULT,
+                    },
                     onSets: [[a, 1, data]],
                     errors: createCommitErrors(),
-                    settle,
                     report: undefined,
                 }),
             ).toThrow(hookError)
@@ -119,14 +123,130 @@ describe("commitEngine", () => {
             const settle = mock((() => {}) as SettleFn)
             runCommitPlan({
                 data,
-                updatedAtoms: [],
+                settlement: {
+                    kind: "update",
+                    atoms: [],
+                    settle,
+                    flags: SETTLE_DEFAULT,
+                },
                 onSets: [],
                 errors: createCommitErrors(),
-                settle,
                 report: undefined,
             })
             expect(settle).toHaveBeenCalledTimes(0)
             expect(commitEnds).toHaveBeenCalledTimes(0)
+        })
+
+        test("owns the local pre-report → settle → cleanup → flush → boundary order", () => {
+            const store1 = store()
+            const data = getStoreData(store1)
+            const a = atom(0)
+            const order: string[] = []
+            const settle = mock((() => order.push("settle")) as SettleFn)
+
+            runCommitPlan({
+                data,
+                settlement: {
+                    kind: "update",
+                    atoms: [a],
+                    settle,
+                    flags: SETTLE_UNSET,
+                },
+                apply: () => order.push("apply"),
+                onSets: [],
+                errors: createCommitErrors(),
+                report: "unset",
+                beforeSettle: () => order.push("report"),
+                afterSettle: () => order.push("cleanup"),
+                flushReport: () => order.push("flush"),
+                beginCommit: root => {
+                    order.push("begin")
+                    return root
+                },
+                endCommit: (_root, swallowErrors) =>
+                    order.push(`end:${swallowErrors}`),
+            })
+
+            expect(order).toEqual([
+                "begin",
+                "apply",
+                "report",
+                "settle",
+                "cleanup",
+                "flush",
+                "end:false",
+            ])
+        })
+
+        test("a short-circuiting cleanup plan preserves its settle error and skips later phases", () => {
+            const store1 = store()
+            const data = getStoreData(store1)
+            const a = atom(0)
+            const settleError = new Error("settle")
+            const cleanup = mock(() => {})
+            const flush = mock(() => {})
+            const endStates: boolean[] = []
+
+            expect(() =>
+                runCommitPlan({
+                    data,
+                    settlement: {
+                        kind: "update",
+                        atoms: [a],
+                        settle: (() => {
+                            throw settleError
+                        }) as SettleFn,
+                        flags: SETTLE_UNSET,
+                    },
+                    onSets: [],
+                    errors: createCommitErrors(),
+                    report: "unset",
+                    afterSettle: cleanup,
+                    flushReport: flush,
+                    beginCommit: root => root,
+                    endCommit: (_root, swallowErrors) =>
+                        endStates.push(swallowErrors),
+                    continueAfterError: false,
+                }),
+            ).toThrow(settleError)
+            expect(cleanup).toHaveBeenCalledTimes(0)
+            expect(flush).toHaveBeenCalledTimes(0)
+            expect(endStates).toEqual([true])
+        })
+
+        test("a hook error remains first while settlement and deferred flush still run", () => {
+            const store1 = store()
+            const data = getStoreData(store1)
+            const hookError = new Error("hook")
+            const a = atom(0, {
+                onSet: () => {
+                    throw hookError
+                },
+            })
+            const settle = mock((() => {
+                throw new Error("settle")
+            }) as SettleFn)
+            const flush = mock(() => {
+                throw new Error("flush")
+            })
+
+            expect(() =>
+                runCommitPlan({
+                    data,
+                    settlement: {
+                        kind: "update",
+                        atoms: [a],
+                        settle,
+                        flags: SETTLE_DEFAULT,
+                    },
+                    onSets: [[a, 1, data]],
+                    errors: createCommitErrors(),
+                    report: undefined,
+                    flushReport: flush,
+                }),
+            ).toThrow(hookError)
+            expect(settle).toHaveBeenCalledTimes(1)
+            expect(flush).toHaveBeenCalledTimes(1)
         })
     })
 
