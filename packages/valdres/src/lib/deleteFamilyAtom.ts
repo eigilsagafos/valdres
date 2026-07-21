@@ -1,6 +1,8 @@
 import type { AtomFamilyAtom } from "../types/AtomFamilyAtom"
 import type { StoreData } from "../types/StoreData"
-import { propagateDeletedAtoms } from "./propagateUpdatedAtoms"
+import { runCommitPlan } from "./commitEngine"
+import { createCommitErrors } from "./commitErrors"
+import { settleDeletedCommit } from "./propagateUpdatedAtoms"
 import { noteStateValueChanged } from "./stateRevisions"
 
 export const deleteFamilyAtom = <
@@ -16,13 +18,16 @@ export const deleteFamilyAtom = <
     // Membership is store-local, while the family's identity cache is shared.
     // Releasing here could strand another store on this member while
     // family(...args) starts returning a different object for the same key.
-    propagateDeletedAtoms(
-        [atom],
+    runCommitPlan({
         data,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        "delete",
-    )
+        settlement: {
+            kind: "delete",
+            atoms: [atom],
+            settle: settleDeletedCommit,
+        },
+        onSets: [],
+        errors: createCommitErrors(),
+        report: "delete",
+        continueAfterError: false,
+    })
 }

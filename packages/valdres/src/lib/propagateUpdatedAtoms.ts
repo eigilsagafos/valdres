@@ -479,6 +479,25 @@ export const propagateDeletedAtoms = (
     }
 }
 
+/** Typed commit-engine entry for a local family-member deletion. The positional
+ * primitive remains for transaction adapters; migrated direct deletion passes
+ * this function reference through its CommitPlan. */
+export const settleDeletedCommit = (
+    atoms: AtomFamilyAtom<any, any>[],
+    data: StoreData,
+    notify: NotifyTarget | undefined,
+    report: ChangeReport | undefined,
+) =>
+    propagateDeletedAtoms(
+        atoms,
+        data,
+        undefined,
+        undefined,
+        undefined,
+        notify,
+        report,
+    )
+
 // Top-level entry: collect direct atom subscribers, walk dependent selectors,
 // then cross-propagate into scopes. A scoped immediate update notifies only
 // after the full affected tree has settled.
@@ -767,9 +786,9 @@ export const propagateAtomUpdate = (
     }
 }
 
-/** Typed commit-engine entry for phases 4–7. The established positional
+/** Typed commit-engine update entry for phases 4–7. The established positional
  *  primitive above remains the direct entry for unmigrated transaction, async,
- *  global, reset, and initialization paths. Migrated callers provide one of the
+ *  global, and initialization paths. Migrated callers provide one of the
  *  shared frozen SettleFlags singletons; translating it here allocates nothing
  *  and keeps the out-of-scope hot paths byte-for-byte on their prior call shape. */
 export const settleCommit = (

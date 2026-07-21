@@ -19,6 +19,7 @@ import {
     traceChange,
     traceCommitEnd,
     tracedAtom,
+    tracedSelector,
     traceSub,
 } from "./traceRecorder"
 
@@ -33,7 +34,9 @@ type Ctx = {
 /** Convenience: the `kind` discriminators reported to onChange, in order. */
 const kinds = (calls: ChangeCall[]): string[] =>
     calls.flatMap(c =>
-        c.changes.map(ch => (ch as Extract<StoreChange, { kind: string }>).kind),
+        c.changes.map(
+            ch => (ch as Extract<StoreChange, { kind: string }>).kind,
+        ),
     )
 
 const cases: TraceCase<Ctx>[] = [
@@ -42,8 +45,46 @@ const cases: TraceCase<Ctx>[] = [
         build: rec => {
             const s = store()
             const a = tracedAtom(rec, "a", 1)
+            const double = tracedSelector(rec, "double", get => get(a) * 2)
             s.set(a, 5)
             traceSub(rec, s, a, "a")
+            traceSub(rec, s, double, "double")
+            const { calls } = traceChange(rec, s, undefined, {
+                selectors: true,
+            })
+            traceCommitEnd(rec, s)
+            return {
+                store: s,
+                changes: calls,
+                act: () => s.reset(a),
+                read: () => s.get(a),
+            }
+        },
+        act: ctx => ctx.act(),
+        trace: [
+            "onSet:a",
+            "eval:double",
+            ["sub:a", "sub:double"],
+            "onChange",
+            "commitEnd",
+        ],
+        assert: ({ changes, read }) => {
+            expect(read()).toBe(1)
+            expect(changes.map(c => c.meta.source)).toEqual(["reset"])
+            expect(kinds(changes)).toEqual(["set"])
+        },
+    },
+    {
+        name: "reset never-materialized selector default reports only reset atom",
+        build: rec => {
+            const s = store()
+            const dependency = atom(10)
+            const defaultValue = tracedSelector(
+                rec,
+                "default",
+                get => get(dependency) + 1,
+            )
+            const a = atom(defaultValue)
             const { calls } = traceChange(rec, s)
             traceCommitEnd(rec, s)
             return {
@@ -54,11 +95,18 @@ const cases: TraceCase<Ctx>[] = [
             }
         },
         act: ctx => ctx.act(),
-        trace: ["onSet:a", "sub:a", "onChange", "commitEnd"],
+        trace: ["eval:default", "onChange", "commitEnd"],
         assert: ({ changes, read }) => {
-            expect(read()).toBe(1)
-            expect(changes.map(c => c.meta.source)).toEqual(["reset"])
-            expect(kinds(changes)).toEqual(["set"])
+            expect(read()).toBe(11)
+            expect(changes).toHaveLength(1)
+            expect(changes[0]?.meta.source).toBe("reset")
+            expect(changes[0]?.changes).toHaveLength(1)
+            expect(changes[0]?.changes[0]).toMatchObject({
+                type: "atom",
+                kind: "set",
+                value: 11,
+                scope: [],
+            })
         },
     },
     {
@@ -66,9 +114,12 @@ const cases: TraceCase<Ctx>[] = [
         build: rec => {
             const s = store()
             const a = tracedAtom(rec, "a", 1)
+            const double = tracedSelector(rec, "double", get => get(a) * 2)
             s.set(a, 5)
-            traceSub(rec, s, a, "a")
-            const { calls } = traceChange(rec, s)
+            traceSub(rec, s, double, "double")
+            const { calls } = traceChange(rec, s, undefined, {
+                selectors: true,
+            })
             traceCommitEnd(rec, s)
             return {
                 store: s,
@@ -78,7 +129,7 @@ const cases: TraceCase<Ctx>[] = [
             }
         },
         act: ctx => ctx.act(),
-        trace: ["sub:a", "onChange", "commitEnd"],
+        trace: ["eval:double", "sub:double", "onChange", "commitEnd"],
         assert: ({ changes, read }) => {
             expect(read()).toBe(1)
             expect(changes.map(c => c.meta.source)).toEqual(["unset"])
@@ -141,9 +192,13 @@ const cases: TraceCase<Ctx>[] = [
             const s = store()
             const fam = atomFamily<number, [string]>(0)
             const x = fam("x")
+            const count = tracedSelector(rec, "count", get => get(fam).length)
             s.set(x, 1)
             traceSub(rec, s, x, "x")
-            const { calls } = traceChange(rec, s)
+            traceSub(rec, s, count, "count")
+            const { calls } = traceChange(rec, s, undefined, {
+                selectors: true,
+            })
             traceCommitEnd(rec, s)
             return {
                 store: s,
@@ -153,7 +208,7 @@ const cases: TraceCase<Ctx>[] = [
             }
         },
         act: ctx => ctx.act(),
-        trace: ["sub:x", "onChange", "commitEnd"],
+        trace: ["eval:count", ["sub:x", "sub:count"], "onChange", "commitEnd"],
         assert: ({ changes, read }) => {
             expect(read()).toBe(0) // reverts to the family default
             expect(changes.map(c => c.meta.source)).toEqual(["delete"])

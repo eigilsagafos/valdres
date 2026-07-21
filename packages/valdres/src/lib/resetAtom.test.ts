@@ -1,6 +1,7 @@
 import { describe, expect, mock, test } from "bun:test"
 import { atom } from "../atom"
 import { SchemaValidationError } from "../errors/SchemaValidationError"
+import { StoreDisposedError } from "../errors/StoreDisposedError"
 import { selector } from "../selector"
 import { store } from "../store"
 
@@ -119,5 +120,20 @@ describe("direct reset commit pipeline", () => {
 
         expect(() => store1.reset(value)).toThrow(SchemaValidationError)
         expect(store1.get(value)).toBe(2)
+    })
+
+    test("disposal from a default keeps the reset terminal and skips its write", () => {
+        const store1 = store()
+        let disposeDuringDefault = false
+        const value = atom(() => {
+            if (disposeDuringDefault) store1.dispose()
+            return 1
+        })
+
+        expect(store1.get(value)).toBe(1)
+        store1.set(value, 2)
+        disposeDuringDefault = true
+
+        expect(() => store1.reset(value)).toThrow(StoreDisposedError)
     })
 })
