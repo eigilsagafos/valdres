@@ -4,12 +4,16 @@ import type { SetAtomValue } from "../types/SetAtomValue"
 import type { StoreData } from "../types/StoreData"
 import { isGlobalAtom } from "../utils/isGlobalAtom"
 import { isPromiseLike } from "../utils/isPromiseLike"
-import { runHookedDirectWrite } from "./commitEngine"
+import { runHookedDirectWrite, runCommitPlan } from "./commitEngine"
 import { DIRECT_WRITE, SETTLE_DEFAULT } from "./commitIntents"
+import { createCommitErrors } from "./commitErrors"
 import { coordinateAsyncWrite } from "./coordinateAsyncWrite"
-import { finishAtomSet } from "./finishAtomSet"
+import {
+    applyGlobalSets,
+    tryApplyUnobservedGlobalSet,
+} from "./globalAtomFanOut"
 import { getState } from "./getState"
-import { settleCommit } from "./propagateUpdatedAtoms"
+import { settleCommit, settleCommitForest } from "./propagateUpdatedAtoms"
 import { isFunction } from "./isFunction"
 import { resolvePendingDefault } from "./resolvePendingDefault"
 import { setValueInData } from "./setValueInData"
@@ -21,9 +25,8 @@ import { validateSchema } from "./validateSchema"
  * the ordinary write (no hook — which also means non-global, since global
  * atoms always carry at least the marker hook) settles immediately with a
  * shared frozen flags const — no plan object, no allocation; a hooked
- * non-global write runs phases 3–9 through the engine; ordinary global fan-out
- * stays on finishAtomSet, while coordinateAsyncWrite routes final async
- * transitions through the same engine.
+ * non-global write runs phases 3–9 through the engine; global fan-out and final
+ * async transitions enter the same CommitPlan/forest engine.
  */
 export const setAtom = <Value = any>(
     atom: Atom<Value>,
@@ -53,23 +56,11 @@ export const setAtom = <Value = any>(
         // shadow just like the settled-value branch below.
         if (currentValue === promise) {
             if (data.parent && !data.values.has(atom)) {
-                coordinateAsyncWrite(
-                    atom,
-                    promise,
-                    currentValue,
-                    data,
-                    intent.effects === "skip",
-                )
+                coordinateAsyncWrite(atom, promise, currentValue, data, intent)
             }
             return promise as Value
         }
-        coordinateAsyncWrite(
-            atom,
-            promise,
-            currentValue,
-            data,
-            intent.effects === "skip",
-        )
+        coordinateAsyncWrite(atom, promise, currentValue, data, intent)
         if (initializedAtomsSet && initializedAtomsSet.size > 0) {
             initializedAtomsSet.add(atom)
             settleCommit(
@@ -103,6 +94,9 @@ export const setAtom = <Value = any>(
         // commit path. On a root (no parent) or an already-shadowed scope atom
         // this is a true no-op, so the write hot path is untouched.
         if (data.parent && !data.values.has(atom)) {
+            if (isGlobalAtom(atom) && intent.effects === "run") {
+                atom.attach(data)
+            }
             return setValueInData(atom, syncValue, data)
         }
         return syncValue
@@ -120,9 +114,41 @@ export const setAtom = <Value = any>(
         // Global atoms always carry (at least) the marker hook, so this branch
         // is the only route to global fan-out; a seed (effects: "skip") falls
         // through below — no hooks, no fan-out, exactly the historical
-        // skipOnSet semantics.
+        // seed-write semantics.
         if (isGlobalAtom(atom)) {
-            finishAtomSet(atom, syncValue, data, updatedAtoms, "set")
+            if (
+                updatedAtoms.length === 1 &&
+                tryApplyUnobservedGlobalSet(atom, syncValue, data)
+            ) {
+                return syncValue
+            }
+            const errors = createCommitErrors()
+            runCommitPlan({
+                data,
+                globalEffects: {
+                    sets: [[atom, syncValue, data]],
+                    source: "set",
+                    updates: undefined,
+                    apply: applyGlobalSets,
+                },
+                settlement: {
+                    kind: "forest",
+                    entries: [
+                        {
+                            data,
+                            updatedAtoms,
+                            deleted: undefined,
+                            unsetAtoms: undefined,
+                            children: undefined,
+                        },
+                    ],
+                    globalUpdates: undefined,
+                    settle: settleCommitForest,
+                },
+                onSets: [[atom, syncValue, data]],
+                errors,
+                report: "set",
+            })
         } else {
             runHookedDirectWrite(
                 atom,

@@ -32,9 +32,10 @@ import {
 import { cleanupOrphanedDeps } from "./cleanupOrphanedDeps"
 import { createGuardedScalarCommit, runCommitPlan } from "./commitEngine"
 import { createCommitErrors } from "./commitErrors"
+import { SETTLE_DEFAULT } from "./commitIntents"
 import { beginCommit, commitEndRegistry, endCommit } from "./onCommitEnd"
 import {
-    propagateAtomUpdate,
+    settleCommit,
     settleAsyncSelectorCommit,
 } from "./propagateUpdatedAtoms"
 import { reportAsyncSchemaError } from "./reportAsyncSchemaError"
@@ -888,12 +889,12 @@ export const handleSelectorResult = <Value>(
                 const initializedAtomsSet = new Set<Atom>()
                 const res = initSelector(selector, data, initializedAtomsSet)
                 if (initializedAtomsSet.size > 0) {
-                    propagateAtomUpdate(
+                    settleCommit(
                         [...initializedAtomsSet],
                         data,
-                        false,
                         undefined,
                         "async-set",
+                        SETTLE_DEFAULT,
                     )
                 }
                 return res

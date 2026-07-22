@@ -23,7 +23,8 @@ import {
 } from "./mountAtom"
 import { onCommitEnd } from "./onCommitEnd"
 import { onStoreChange } from "./onStoreChange"
-import { propagateAtomUpdate } from "./propagateUpdatedAtoms"
+import { SETTLE_INIT_ONLY } from "./commitIntents"
+import { settleCommit } from "./propagateUpdatedAtoms"
 import { resetAtom } from "./resetAtom"
 import { setAtom } from "./setAtom"
 import { setValueInData } from "./setValueInData"
@@ -236,7 +237,13 @@ const createStoreRuntime = (
             if (_initDepth === 0 && _initSet.size) {
                 const atoms = [..._initSet]
                 _initSet.clear()
-                propagateAtomUpdate(atoms, data, true)
+                settleCommit(
+                    atoms,
+                    data,
+                    undefined,
+                    undefined,
+                    SETTLE_INIT_ONLY,
+                )
                 initialized = true
             }
             // Release the collector in the finally (a throwing getState/onMount

@@ -7,12 +7,13 @@ import type { AtomOnSet } from "./../types/AtomOnSet"
 import type { AtomOptions } from "./../types/AtomOptions"
 import type { InternalGlobalAtom } from "./../types/InternalGlobalAtom"
 import type { StoreData } from "./../types/StoreData"
+import { runCommitPlan } from "./commitEngine"
+import { createCommitErrors, recordCommitError } from "./commitErrors"
 import { globalOnSetMarker } from "./globalOnSetMarker"
 import { isLive, mountAtom, unmountAtom } from "./mountAtom"
-import { propagateAtomUpdate } from "./propagateUpdatedAtoms"
-import { noteStateValueChanged } from "./stateRevisions"
+import { settleCommitForest } from "./propagateUpdatedAtoms"
 import { installMaxAgeTimer } from "./subscribe"
-import { untrackNamedAtom } from "./namedStateIndex"
+import { detachOwnValue } from "./unsetValue"
 import { globalStore } from "../globalStore"
 import {
     isStoreDisposed,
@@ -119,57 +120,78 @@ export const globalAtom = <Value = unknown>(
             }
         }
 
-        let firstError: unknown
-        const recordError = (e: unknown) => {
-            if (!firstError) firstError = e
-        }
+        const errors = createCommitErrors()
 
         for (const s of snapshot) {
             try {
                 unmountAtom(atom, s)
             } catch (e) {
-                recordError(e)
+                recordCommitError(errors, e)
             }
         }
 
         if (atom.maxAgeInterval) {
-            atom.maxAgeInterval.cleanup()
+            try {
+                atom.maxAgeInterval.cleanup()
+            } catch (e) {
+                recordCommitError(errors, e)
+            }
             atom.maxAgeInterval.refCount = 0
             atom.maxAgeInterval = undefined
         }
 
+        const entries = []
         for (const store of snapshot) {
             detach(store)
-            if (store.values.delete(atom)) {
-                untrackNamedAtom(atom, store)
-                noteStateValueChanged(atom, store)
-            }
-            try {
-                propagateAtomUpdate([atom], store, false, undefined, "reset")
-            } catch (e) {
-                recordError(e)
-            }
+            detachOwnValue(atom, store)
+            entries.push({
+                data: store,
+                updatedAtoms: [atom],
+                deleted: undefined,
+                unsetAtoms: undefined,
+                children: undefined,
+            })
         }
 
-        for (const s of subscribedStores) {
-            attach(s)
-            // Match subscribe.ts: maxAge timer is installed only when the
-            // atom has a DIRECT subscriber. Transitive (selector-only)
-            // subscribers go through the lazy-revalidation path on read.
-            if (
-                atom.maxAge !== undefined &&
-                (s.subscriptions.get(atom)?.size ?? 0) > 0
-            ) {
-                installMaxAgeTimer(atom, s)
-            }
-            try {
-                mountAtom(atom, s)
-            } catch (e) {
-                recordError(e)
-            }
-        }
-
-        if (firstError) throw firstError
+        runCommitPlan({
+            data: subscribedStores[0] ?? snapshot[0] ?? globalStoreData,
+            settlement: {
+                kind: "forest",
+                entries,
+                globalUpdates: undefined,
+                settle: settleCommitForest,
+            },
+            onSets: [],
+            errors,
+            report: "reset",
+            afterCommit: () => {
+                for (const s of subscribedStores) {
+                    try {
+                        attach(s)
+                    } catch (e) {
+                        recordCommitError(errors, e)
+                    }
+                    // Match subscribe.ts: maxAge timer is installed only when
+                    // the atom has a DIRECT subscriber. Transitive
+                    // (selector-only) subscribers revalidate lazily on read.
+                    if (
+                        atom.maxAge !== undefined &&
+                        (s.subscriptions.get(atom)?.size ?? 0) > 0
+                    ) {
+                        try {
+                            installMaxAgeTimer(atom, s)
+                        } catch (e) {
+                            recordCommitError(errors, e)
+                        }
+                    }
+                    try {
+                        mountAtom(atom, s)
+                    } catch (e) {
+                        recordCommitError(errors, e)
+                    }
+                }
+            },
+        })
     }
 
     // `stores` is a plain data property. A getter wasn't buying anything —
@@ -185,6 +207,7 @@ export const globalAtom = <Value = unknown>(
         setSelf,
         getSelf,
         resetSelf,
+        attach,
         detach,
         stores,
         maxAgeInterval: undefined,

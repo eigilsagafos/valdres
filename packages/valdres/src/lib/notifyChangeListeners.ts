@@ -240,7 +240,8 @@ const buildChangeGroup = (
     if (changedSelectors) {
         for (const selector of changedSelectors) {
             if (
-                (selector as { __valdresInternal?: boolean }).__valdresInternal ||
+                (selector as { __valdresInternal?: boolean })
+                    .__valdresInternal ||
                 isSelectorFamily(selector)
             )
                 continue
@@ -269,7 +270,7 @@ const emitGroup = (group: ChangeGroup, report: ChangeReport) => {
 }
 
 /** Report the atoms whose values just changed in `data` (called from
- *  propagateAtomUpdate, after values are written), plus any selectors that
+ *  settleCommit, after values are written), plus any selectors that
  *  recomputed in the same pass. Guards on the precise ancestor check so a store
  *  nobody watches does no allocation; selectors are appended only when an
  *  ancestor actually wants them. */
@@ -281,7 +282,9 @@ export const reportAtomChanges = (
 ) => {
     if (!hasChangeListener(data)) return
     const selectors =
-        changedSelectors && changedSelectors.size > 0 && hasSelectorChangeListener(data)
+        changedSelectors &&
+        changedSelectors.size > 0 &&
+        hasSelectorChangeListener(data)
             ? changedSelectors
             : undefined
     emitGroup(buildChangeGroup(data, atoms, undefined, selectors), report)
@@ -328,7 +331,7 @@ export const reportUnsetAtom = (
     emitGroup(group, report)
 }
 
-/** Report deleted family atoms in `data` (called from propagateDeletedAtoms),
+/** Report deleted family atoms in `data` (called from deleted settlement),
  *  plus any selectors the deletion recomputed. */
 export const reportDeletedAtoms = (
     atoms: (Atom<any> | AtomFamilyAtom<any, any>)[],
@@ -338,7 +341,9 @@ export const reportDeletedAtoms = (
 ) => {
     if (!hasChangeListener(data)) return
     const selectors =
-        changedSelectors && changedSelectors.size > 0 && hasSelectorChangeListener(data)
+        changedSelectors &&
+        changedSelectors.size > 0 &&
+        hasSelectorChangeListener(data)
             ? changedSelectors
             : undefined
     emitGroup(buildChangeGroup(data, undefined, atoms, selectors), report)
@@ -354,7 +359,10 @@ export const reportSelectorChanges = (
 ) => {
     if (changedSelectors.size === 0) return
     if (!hasSelectorChangeListener(data)) return
-    emitGroup(buildChangeGroup(data, undefined, undefined, changedSelectors), report)
+    emitGroup(
+        buildChangeGroup(data, undefined, undefined, changedSelectors),
+        report,
+    )
 }
 
 /** Create a change sink. `source` defaults to `"transaction"` (the txn commit
@@ -379,6 +387,9 @@ export const flushChangeSink = (sink: ChangeSink) => {
         }
     }
     if (sink.groups.length > 0) {
-        notifyChangeListeners(sink.groups, { source: sink.source, name: sink.name })
+        notifyChangeListeners(sink.groups, {
+            source: sink.source,
+            name: sink.name,
+        })
     }
 }

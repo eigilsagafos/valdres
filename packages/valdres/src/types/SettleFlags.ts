@@ -2,7 +2,7 @@
  * The three behavioral mode flags of a settle pass (phases 4–7 of a commit:
  * settle selectors → deliver subscribers → flush onChange → commit boundary).
  * Typed replacement for the trailing positional booleans of the historical
- * `propagateAtomUpdate` signature. Always passed as one of the shared frozen
+ * `settleCommit` signature. Always passed as one of the shared frozen
  * singletons in `lib/commitIntents` — never allocated per call — so the settle
  * entry stays monomorphic on a single hidden class.
  *

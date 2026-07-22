@@ -1,16 +1,13 @@
 import type { Atom } from "../types/Atom"
+import type { DirectWriteIntent } from "../types/CommitIntent"
 import type { StoreData } from "../types/StoreData"
 import { isGlobalAtom } from "../utils/isGlobalAtom"
 import { createScalarCommit, runCommitPlan } from "./commitEngine"
 import { createCommitErrors } from "./commitErrors"
 import { SETTLE_DEFAULT } from "./commitIntents"
-import {
-    applyGlobalSets,
-    settleGlobalAtomSet,
-    type StoreAtomUpdates,
-} from "./globalAtomFanOut"
+import { applyGlobalSets } from "./globalAtomFanOut"
 import { hasAtomCommitObservers } from "./hasAtomCommitObservers"
-import { propagateAtomUpdate, settleCommit } from "./propagateUpdatedAtoms"
+import { settleCommit, settleCommitForest } from "./propagateUpdatedAtoms"
 import { resolvePendingDefault } from "./resolvePendingDefault"
 import { setValueInData } from "./setValueInData"
 import { isStoreDisposed } from "./storeLifecycle"
@@ -63,7 +60,7 @@ const commitObservedAsyncAtomResolution = <Value>(
 ) => {
     setValueInData(atom, resolvedValue, data)
     resolvePendingDefault(atom, data, resolvedValue)
-    propagateAtomUpdate([atom], data, false, undefined, "async-set")
+    settleCommit([atom], data, undefined, "async-set", SETTLE_DEFAULT)
 }
 
 const commitObservedAsyncAtomRollback = <Value>(
@@ -75,7 +72,7 @@ const commitObservedAsyncAtomRollback = <Value>(
     _unused: undefined,
 ) => {
     setValueInData(atom, fallback, data)
-    propagateAtomUpdate([atom], data, false, undefined, "async-set")
+    settleCommit([atom], data, undefined, "async-set", SETTLE_DEFAULT)
 }
 
 const runUnobservedAsyncAtomResolution = createScalarCommit(
@@ -151,7 +148,7 @@ const settleAsyncAtomResolution = <Value>(
     promise: Promise<Value>,
     data: StoreData,
     currentValue: Value,
-    skipOnSet: boolean,
+    intent: DirectWriteIntent,
     rollback: () => void,
 ) => {
     // Last write wins, not last Promise to settle.
@@ -172,7 +169,7 @@ const settleAsyncAtomResolution = <Value>(
         rollback()
         return
     }
-    const hasOnSet = !!atom.onSet && !skipOnSet
+    const hasOnSet = !!atom.onSet && intent.effects === "run"
     if (!hasOnSet) {
         const admitted = admitAsyncAtomTransition(
             atom,
@@ -207,23 +204,64 @@ const settleAsyncAtomResolution = <Value>(
     }
 
     const errors = createCommitErrors()
-    let globalUpdates: StoreAtomUpdates | undefined
     const isGlobal = hasOnSet && isGlobalAtom(atom)
+    if (isGlobal) {
+        const settlement = {
+            kind: "forest" as const,
+            entries: [
+                {
+                    data,
+                    updatedAtoms: [atom] as Atom<any>[],
+                    deleted: undefined,
+                    unsetAtoms: undefined,
+                    children: undefined,
+                },
+            ],
+            globalUpdates: undefined as
+                | ReturnType<typeof applyGlobalSets>
+                | undefined,
+            settle: settleCommitForest,
+        }
+        runCommitPlan({
+            data,
+            settlement,
+            globalEffects: {
+                sets: [[atom, resolvedValue, data]],
+                source: "async-set",
+                updates: undefined,
+                apply: applyGlobalSets,
+            },
+            admit: () =>
+                admitAsyncAtomTransition(
+                    atom,
+                    resolvedValue,
+                    promise,
+                    data,
+                    currentValue,
+                    undefined,
+                ),
+            apply: () => {
+                applyAsyncAtomResolution(
+                    atom,
+                    resolvedValue,
+                    promise,
+                    data,
+                    currentValue,
+                    undefined,
+                )
+            },
+            onSets: [[atom, resolvedValue, data]],
+            errors,
+            report: "async-set",
+        })
+        return
+    }
     runCommitPlan({
         data,
         settlement: {
             kind: "update",
             atoms: [atom],
-            settle: isGlobal
-                ? () =>
-                      settleGlobalAtomSet(
-                          data,
-                          [atom],
-                          globalUpdates!,
-                          "async-set",
-                          errors,
-                      )
-                : settleCommit,
+            settle: settleCommit,
             flags: SETTLE_DEFAULT,
         },
         admit: () =>
@@ -244,16 +282,10 @@ const settleAsyncAtomResolution = <Value>(
                 currentValue,
                 undefined,
             )
-            if (isGlobal) {
-                globalUpdates = applyGlobalSets(
-                    [[atom, resolvedValue, data]],
-                    errors,
-                )
-            }
         },
         onSets: hasOnSet ? [[atom, resolvedValue, data]] : [],
         errors,
-        report: isGlobal ? undefined : "async-set",
+        report: "async-set",
     })
 }
 
@@ -270,7 +302,7 @@ export const coordinateAsyncWrite = <Value>(
     value: PromiseLike<Value>,
     currentValue: Value,
     data: StoreData,
-    skipOnSet: boolean,
+    intent: DirectWriteIntent,
 ): Promise<Value> => {
     // Promise.resolve(realPromise) preserves the reference; bare thenables are
     // normalized so the chained rejection handler below is always available.
@@ -280,6 +312,7 @@ export const coordinateAsyncWrite = <Value>(
     // fallback to pin; restore the pre-write structure by re-inheriting instead.
     const rollbackInheritedWrite =
         !!data.parent && !data.values.has(atom) && currentValue === value
+    if (isGlobalAtom(atom) && intent.effects === "run") atom.attach(data)
     setValueInData(atom, promise as Value, data)
     const rollback = () =>
         rollbackAsyncAtomTransition(
@@ -297,7 +330,7 @@ export const coordinateAsyncWrite = <Value>(
                 promise,
                 data,
                 currentValue,
-                skipOnSet,
+                intent,
                 rollback,
             ),
         )

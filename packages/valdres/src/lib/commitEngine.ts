@@ -39,11 +39,10 @@ import { runOnSets } from "./runOnSets"
  * propagation layer it sequences.
  *
  * Cross-scope transaction commits enter the engine through the
- * `transactionTree` settlement (their global peer updates ride the settlement,
- * so the whole multi-store unit is one plan). Ordinary direct global writes
- * and single-store global cleanup remain behind their existing adapters.
- * Async atom, native async selector, and revalidation settlement enter this
- * coordinator; simple no-hook shapes use module-static entries from
+ * commit-forest settlement (global peer updates ride the settlement, so each
+ * multi-store unit is one plan). Async atom, native async selector, and
+ * revalidation settlement enter this coordinator; simple no-hook shapes use
+ * module-static entries from
  * `createScalarCommit` below; their bound operation owns any required apply,
  * propagation, observers, reporting, and local boundary.
  */
@@ -53,7 +52,7 @@ import { runOnSets } from "./runOnSets"
  * the hook, capturing its error) → phases 4–7 (`settle` always runs — a
  * throwing hook must not starve propagation of an applied write) → phase 9
  * (the hook error is rethrown preferentially over a settle error).
- * Byte-equivalent to the historical non-global branch of `finishAtomSet`.
+ * The allocation-free non-global direct-write path.
  */
 export const runHookedDirectWrite = <Value>(
     atom: Atom<Value>,
@@ -83,10 +82,7 @@ export const runHookedDirectWrite = <Value>(
 // Module-level phase gates: runCommitPlan is on the per-commit hot path of
 // every migrated write shape, so its guards must not allocate per run.
 const treeHasWork = (
-    entries: Extract<
-        CommitPlan["settlement"],
-        { kind: "transactionTree" }
-    >["entries"],
+    entries: Extract<CommitPlan["settlement"], { kind: "forest" }>["entries"],
 ) => {
     for (const entry of entries) {
         if (
@@ -103,7 +99,7 @@ const treeHasWork = (
 const settlementHasWork = (settlement: CommitPlan["settlement"]) =>
     settlement.kind === "none" ||
     settlement.kind === "selector" ||
-    (settlement.kind === "transactionTree"
+    (settlement.kind === "forest"
         ? // Changed global peers are settlement work even when every write in
           // the local tree was value-equal.
           settlement.globalUpdates !== undefined ||
@@ -149,6 +145,22 @@ export const runCommitPlan = (plan: CommitPlan) => {
             }
         }
 
+        if (applied && plan.globalEffects) {
+            try {
+                const updates = plan.globalEffects.apply(
+                    plan.globalEffects.sets,
+                    plan.errors,
+                )
+                plan.globalEffects.updates =
+                    updates.size > 0 ? updates : undefined
+                if (settlement.kind === "forest") {
+                    settlement.globalUpdates = plan.globalEffects.updates
+                }
+            } catch (error) {
+                recordCommitError(plan.errors, error)
+            }
+        }
+
         if (applied) runOnSets(plan.onSets, plan.errors)
 
         if (
@@ -165,7 +177,11 @@ export const runCommitPlan = (plan: CommitPlan) => {
             }
         }
 
-        if (applied && settlementHasWork(settlement) && planShouldContinue(plan)) {
+        if (
+            applied &&
+            settlementHasWork(settlement) &&
+            planShouldContinue(plan)
+        ) {
             try {
                 if (settlement.kind === "update") {
                     settlement.settle(
@@ -191,10 +207,11 @@ export const runCommitPlan = (plan: CommitPlan) => {
                         plan.report,
                         plan.errors,
                     )
-                } else if (settlement.kind === "transactionTree") {
+                } else if (settlement.kind === "forest") {
                     settlement.settle(
                         settlement.entries,
                         settlement.globalUpdates,
+                        plan.globalEffects?.source,
                         plan.report,
                         plan.errors,
                     )
@@ -210,7 +227,12 @@ export const runCommitPlan = (plan: CommitPlan) => {
             }
         }
 
-        if (applied && settlementHasWork(settlement) && planShouldContinue(plan) && plan.afterSettle) {
+        if (
+            applied &&
+            settlementHasWork(settlement) &&
+            planShouldContinue(plan) &&
+            plan.afterSettle
+        ) {
             try {
                 plan.afterSettle()
             } catch (error) {
@@ -233,6 +255,14 @@ export const runCommitPlan = (plan: CommitPlan) => {
             } catch (error) {
                 recordCommitError(plan.errors, error)
             }
+        }
+    }
+
+    if (plan.afterCommit) {
+        try {
+            plan.afterCommit()
+        } catch (error) {
+            recordCommitError(plan.errors, error)
         }
     }
 

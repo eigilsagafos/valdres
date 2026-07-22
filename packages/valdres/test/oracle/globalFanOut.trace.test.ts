@@ -12,6 +12,7 @@ import {
     createRecorder,
     traceChange,
     traceCommitEnd,
+    traceSub,
     tracedGlobalAtom,
 } from "./traceRecorder"
 
@@ -81,6 +82,91 @@ describe("trace oracle · global fan-out", () => {
         // the root too — both stores observe 99.
         expect(child.get(g)).toBe(99)
         expect(root.get(g)).toBe(99)
+        // The explicit scope write is now a registered global shadow. A later
+        // root write must update it rather than strand the old scoped value.
+        root.set(g, 100)
+        expect(child.get(g)).toBe(100)
         child.detach()
+    })
+
+    test("async global settlement preserves peer-before-origin observers", async () => {
+        const rec = createRecorder()
+        const origin = store()
+        const peer = store()
+        const g = tracedGlobalAtom<number>(rec, "async-g", 0)
+        origin.get(g)
+        peer.get(g)
+        traceSub(rec, origin, g, "origin")
+        traceSub(rec, peer, g, "peer")
+        traceChange(rec, origin, "origin")
+        traceChange(rec, peer, "peer")
+
+        let resolve!: (value: number) => void
+        const pending = new Promise<number>(done => {
+            resolve = done
+        })
+        origin.set(g, pending)
+        rec.clear()
+        resolve(7)
+        await pending
+        await Promise.resolve()
+
+        assertTrace(rec.events, [
+            "onSet:async-g",
+            "sub:peer",
+            "sub:origin",
+            "onChange:peer",
+            "onChange:origin",
+        ])
+    })
+
+    test("global reset keeps peer reports ahead of the origin reset report", () => {
+        const rec = createRecorder()
+        const origin = store()
+        const peer = store()
+        const g = tracedGlobalAtom<number>(rec, "reset-g", 0)
+        origin.set(g, 3)
+        peer.get(g)
+        traceSub(rec, origin, g, "origin")
+        traceSub(rec, peer, g, "peer")
+        traceChange(rec, origin, "origin")
+        traceChange(rec, peer, "peer")
+
+        rec.clear()
+        origin.reset(g)
+
+        assertTrace(rec.events, [
+            "onSet:reset-g",
+            "sub:peer",
+            "sub:origin",
+            "onChange:peer",
+            "onChange:origin",
+        ])
+    })
+
+    test("resetSelf brackets one settlement with cleanup and remount", () => {
+        const rec = createRecorder()
+        const first = store()
+        const second = store()
+        const g = tracedGlobalAtom<number>(rec, "restart-g", 0, {
+            onMount: () => {
+                rec.push("mount")
+                return () => rec.push("cleanup")
+            },
+        })
+        traceSub(rec, first, g, "first")
+        traceSub(rec, second, g, "second")
+        traceCommitEnd(rec, first, "first")
+        traceCommitEnd(rec, second, "second")
+
+        rec.clear()
+        g.resetSelf()
+
+        assertTrace(rec.events, [
+            "cleanup",
+            ["sub:first", "sub:second"],
+            ["commitEnd:first", "commitEnd:second"],
+            "mount",
+        ])
     })
 })
