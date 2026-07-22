@@ -4,7 +4,9 @@ import type { StoreData } from "../types/StoreData"
 import { deepFreeze } from "../utils/deepFreeze"
 import { isAtomFamily } from "../utils/isAtomFamily"
 import { ensureFamilyAncestorChain } from "./atomFamilyIndex"
-import { refreshInheritedDependencyBranch } from "./inheritedDependencyBranches"
+import {
+    refreshInheritedDependencyBranch,
+} from "./graph"
 import { IS_PROD } from "./IS_PROD"
 import { trackScopeValue } from "./trackScopeValue"
 

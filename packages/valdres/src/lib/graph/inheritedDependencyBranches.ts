@@ -1,7 +1,7 @@
-import type { State } from "../types/State"
-import type { StoreData } from "../types/StoreData"
-import { isAtom } from "../utils/isAtom"
-import { isAtomFamily } from "../utils/isAtomFamily"
+import type { State } from "../../types/State"
+import type { StoreData } from "../../types/StoreData"
+import { isAtom } from "../../utils/isAtom"
+import { isAtomFamily } from "../../utils/isAtomFamily"
 
 /** Only atoms and atom families read through a scope boundary. Selectors are
  * evaluated per store, so their reverse edges never belong in the branch index. */

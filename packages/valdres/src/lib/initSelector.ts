@@ -11,25 +11,20 @@ import { isSelector } from "../utils/isSelector"
 import {
     SuspendAndWaitForResolveError,
     cleanUpRejectedPromise,
-    lateGet,
 } from "./asyncDependencyTracking"
 import { getState } from "./getState"
 import {
-    addStateDependent,
-    removeStateDependent,
-} from "./inheritedDependencyBranches"
-import {
-    activateSelectorGraph,
-    isLive,
-    noteDependencyAdded,
-    onLiveDependencyRemoved,
-    unmountOrphanedDeps,
-} from "./mountAtom"
-import {
-    noteDependencyGraphChanged,
-    noteDependencyMaterialized,
-} from "./noteDependencyGraphChanged"
-import { cleanupOrphanedDeps } from "./cleanupOrphanedDeps"
+    type EvaluationOutcome,
+    acquireEvaluationOutcome,
+    installEvaluationDeps,
+    installEvaluationDepsLiveOnly,
+    installLateDependency,
+    markSelectorGraphActive,
+    reconcileAsyncDeps,
+    releaseEvaluationOutcome,
+    rollbackSelectorActivation,
+    settleLateDependency,
+} from "./graph"
 import { createGuardedScalarCommit, runCommitPlan } from "./commitEngine"
 import { createCommitErrors } from "./commitErrors"
 import { SETTLE_DEFAULT } from "./commitIntents"
@@ -206,24 +201,13 @@ class SelectorEvaluation implements SelectorEvaluationContext {
     }
 }
 
-const rollbackFreshSelectorActivation = (
-    selector: Selector,
-    data: StoreData,
-) => {
-    cleanupOrphanedDeps(selector, data)
-    // A selector that threw before committing its dependency set has no graph
-    // for cleanupOrphanedDeps to remove, but the active marker is still owned
-    // by the evaluation that speculatively added it.
-    if (!isLive(selector, data)) data.selectorGraphActive.delete(selector)
-}
-
 export const initFreshActiveSelector = <V>(
     selector: Selector<V>,
     data: StoreData,
     initializedAtomsSet: Set<Atom>,
     circularDependencySet: WeakSet<Selector>,
 ): V => {
-    data.selectorGraphActive.add(selector)
+    markSelectorGraphActive(selector, data)
     try {
         initSelector(
             selector,
@@ -234,7 +218,7 @@ export const initFreshActiveSelector = <V>(
         )
         return data.values.get(selector)
     } catch (error) {
-        rollbackFreshSelectorActivation(selector, data)
+        rollbackSelectorActivation(selector, data)
         throw error
     }
 }
@@ -245,11 +229,32 @@ const rollbackFreshSelectorActivations = (
 ) => {
     if (!selectors) return
     if (!Array.isArray(selectors)) {
-        rollbackFreshSelectorActivation(selectors, data)
+        rollbackSelectorActivation(selectors, data)
         return
     }
     for (let i = selectors.length - 1; i >= 0; i--) {
-        rollbackFreshSelectorActivation(selectors[i], data)
+        rollbackSelectorActivation(selectors[i], data)
+    }
+}
+
+/**
+ * Handle a deferred `get` call — one that runs after the synchronous
+ * evaluation of the selector has already completed (e.g. inside a
+ * setTimeout or after an await). Registers the dependency through the graph
+ * runtime, reads the value, and settles (promotes/mounts) ONLY a genuinely
+ * new edge — settling an existing one would double-count its liveness.
+ * The read stays sandwiched between the two graph calls: a cold selector is
+ * validated/read before its dependency graph is promoted.
+ */
+const lateGet = (state: State, selector: Selector, data: StoreData) => {
+    const added = installLateDependency(selector, state, data)
+    // Atoms lazily initialized here are first-time accesses — no other
+    // selector depends on them yet, so propagation is unnecessary.
+    const lateInitSet = new Set<Atom>()
+    try {
+        return getState(state, data, lateInitSet)
+    } finally {
+        if (added) settleLateDependency(selector, state, data)
     }
 }
 
@@ -271,17 +276,6 @@ const lateGetWithRevisionSnapshot = (
             revisions.set(state, getStateRevision(state, data))
         }
     }
-}
-
-/**
- * Holder for dep-change tracking during propagation. The Sets inside are
- * allocated lazily by `evaluateSelector` only when deps actually changed —
- * the steady-state case (same deps re-evaluated) does no allocation here.
- * Callers should clear `added` / `removed` to `undefined` before reuse.
- */
-export type DepsChange = {
-    added?: Set<State>
-    removed?: Set<State>
 }
 
 /** Selector bookkeeping owned by a read overlay rather than the committed
@@ -306,6 +300,7 @@ const evaluateLiveOnlySelector = <V>(
     data: StoreData,
     initializedAtomsSet: Set<Atom>,
     circularDependencySet: WeakSet<Selector>,
+    outcome: EvaluationOutcome,
 ) => {
     if (!IS_PROD && data.architectureInstrumentation)
         recordSelectorEvaluation(data)
@@ -397,9 +392,14 @@ const evaluateLiveOnlySelector = <V>(
         }
 
         evaluationComplete = true
+        // Probe the user-visible `then` exactly once: a getter there can run
+        // a deferred `get` (installing edges through lateGet), so no second
+        // probe may happen between capture and the dispatcher's install —
+        // that window would let the install overwrite the late edge's
+        // forward set and strand its reverse edge.
+        const isPromiseResult = isPromiseLike(result)
         const isAsyncResult =
-            result instanceof SuspendAndWaitForResolveError ||
-            isPromiseLike(result)
+            result instanceof SuspendAndWaitForResolveError || isPromiseResult
 
         if (
             !isAsyncResult &&
@@ -410,44 +410,13 @@ const evaluateLiveOnlySelector = <V>(
             depsChanged = true
         }
 
-        if (depsChanged || !currentDependencies) {
-            noteDependencyGraphChanged(selector, data)
-            if (data.livenessPassActive && currentDependencies) {
-                ;(data.livenessSeeds ??= new Set<State>()).add(selector)
-                data.livenessLazyArmed = true
-            }
-            const updatedDependencies = isAsyncResult
-                ? new Set<State<any>>(updatedDeps)
-                : updatedDeps
-            if (isAsyncResult && currentDependencies) {
-                for (const dep of currentDependencies) {
-                    updatedDependencies.add(dep)
-                }
-            }
-            const prev = currentDependencies ?? new Set<State<any>>()
-            for (const state of updatedDependencies) {
-                if (!prev.has(state)) {
-                    addStateDependent(state, selector, data)
-                    noteDependencyAdded(selector, state, data)
-                }
-            }
-            if (!isAsyncResult) {
-                for (const state of prev) {
-                    if (!updatedDependencies.has(state)) {
-                        removeStateDependent(state, selector, data)
-                        if (data.livenessPassActive && isSelector(state)) {
-                            ;(data.livenessSeeds ??= new Set<State>()).add(
-                                state,
-                            )
-                            data.livenessRemovalArmed = true
-                        }
-                    }
-                }
-            }
-            data.stateDependencies.set(selector, updatedDependencies)
-        }
+        outcome.deps = updatedDeps
+        outcome.prevDeps = currentDependencies
+        outcome.depsChanged = depsChanged
+        outcome.isAsync = isAsyncResult
+        outcome.needsInstall = depsChanged || !currentDependencies
 
-        if (isPromiseLike(result)) {
+        if (isPromiseResult) {
             evalCtx.asyncDeps = new Set<State>(updatedDeps)
         }
         return result
@@ -462,7 +431,7 @@ export const evaluateSelector = <V>(
     initializedAtomsSet: Set<Atom>,
     circularDependencySet: WeakSet<Selector> = data.circularDepSet,
     selectorGraphActive: boolean = false,
-    depsChangeOut?: DepsChange,
+    outcome: EvaluationOutcome,
     readOverlay?: GetValue,
     runtime?: SelectorEvaluationRuntime,
 ) => {
@@ -656,9 +625,12 @@ export const evaluateSelector = <V>(
 
         evaluationComplete = true
 
+        // Probe the user-visible `then` exactly once — see the identical note
+        // in evaluateLiveOnlySelector: a second probe before the dispatcher
+        // installs would let a `then`-getter's deferred `get` be overwritten.
+        const isPromiseResult = isPromiseLike(result)
         const isAsyncResult =
-            result instanceof SuspendAndWaitForResolveError ||
-            isPromiseLike(result)
+            result instanceof SuspendAndWaitForResolveError || isPromiseResult
 
         // For sync selectors, check if dep count changed (handles removed deps).
         // For async selectors, skip — the dep count is incomplete until the
@@ -672,129 +644,15 @@ export const evaluateSelector = <V>(
             depsChanged = true
         }
 
-        if (runtime && (depsChanged || !currentDependencies)) {
-            // The overlay graph tracks async dependencies and re-evaluations,
-            // but deliberately has no committed reverse edges or liveness.
-            const updatedDependencies = isAsyncResult
-                ? new Set<State<any>>(updatedDeps)
-                : updatedDeps
-            if (isAsyncResult && currentDependencies) {
-                for (const dep of currentDependencies) {
-                    updatedDependencies.add(dep)
-                }
-            }
-            stateDependencies.set(selector, updatedDependencies)
-        }
-
-        if (!runtime && (depsChanged || !currentDependencies)) {
-            // Invalidate topology-sensitive teardown caches once for this
-            // dependency-set materialization or change (including an empty
-            // selector re-materialized after cleanup).
-            if (tracksReverseEdges) {
-                noteDependencyGraphChanged(selector, data)
-            } else {
-                noteDependencyMaterialized(selector, data)
-            }
-            // Seed the active selector-update pass's liveness reconcile with this
-            // selector whenever its dep SET changed — covering BOTH the
-            // propagation-loop path and lazy re-inits through `get`. Added deps
-            // are covered via this selector's downward closure; removed deps are
-            // seeded individually below to cover torn-down subtrees. Only when an
-            // EXISTING selector changed — a first init is reached (and seeded)
-            // through whatever live selector just read it.
-            if (
-                tracksReverseEdges &&
-                data.livenessPassActive &&
-                currentDependencies
-            ) {
-                // Allocate the collector lazily on first seed — a no-churn pass
-                // never reaches here, so it stays allocation-free.
-                ;(data.livenessSeeds ??= new Set<State>()).add(selector)
-                // A lazy re-init (no depsChangeOut) commits these edges without
-                // going through the propagation loop's onLiveDependency* calls,
-                // so the incremental count never sees them — arm the reconcile
-                // UNCONDITIONALLY (it can mis-count even an acyclic graph because
-                // the incremental path never ran for it).
-                if (!depsChangeOut) data.livenessLazyArmed = true
-            }
-            // Sync selectors store the freshly-read dep set directly — no copy.
-            // Async selectors need a separate set so previous deps can be merged
-            // in (below) without mutating `updatedDeps`, which is still read as
-            // the promise-tracking seed (`allDepsThisEval`) further down.
-            const updatedDependencies = isAsyncResult
-                ? new Set<State<any>>(updatedDeps)
-                : updatedDeps
-            // For async selectors, retain all previous deps so they aren't
-            // prematurely removed (and unmounted) before the continuation runs.
-            // Stale deps are cleaned up when the promise resolves (see
-            // the reconciliation logic in handleSelectorResult).
-            if (isAsyncResult && currentDependencies) {
-                for (const dep of currentDependencies) {
-                    updatedDependencies.add(dep)
-                }
-            }
-            const prev = currentDependencies ?? new Set<State<any>>()
-            for (const state of updatedDependencies) {
-                if (!prev.has(state)) {
-                    if (tracksReverseEdges) {
-                        addStateDependent(state, selector, data)
-                        // New edge: propagate the mount-closure marker up so the
-                        // mount/unmount walk-skip stays free of false negatives.
-                        noteDependencyAdded(selector, state, data)
-                        // A newly-read selector may itself have been only cold-
-                        // cached. Promote its closure before liveness bookkeeping
-                        // treats it as a live dependency. Stores that have never
-                        // built a cold cache have nothing to promote; keep that
-                        // dominant live-only path to one scalar branch rather
-                        // than a helper call plus a state-shape check per edge.
-                        if (data.coldSelectorCachesEnabled) {
-                            activateSelectorGraph(state, data)
-                        }
-                        if (depsChangeOut) {
-                            if (!depsChangeOut.added)
-                                depsChangeOut.added = new Set<State>()
-                            depsChangeOut.added.add(state)
-                        }
-                    }
-                }
-            }
-            if (!isAsyncResult) {
-                for (const state of prev) {
-                    if (!updatedDependencies.has(state)) {
-                        if (tracksReverseEdges) {
-                            removeStateDependent(state, selector, data)
-                            if (depsChangeOut) {
-                                if (!depsChangeOut.removed)
-                                    depsChangeOut.removed = new Set<State>()
-                                depsChangeOut.removed.add(state)
-                            }
-                        }
-                        // Removed dep: arm the removal path only when the dropped
-                        // dep is a SELECTOR. A directed cycle is selector-only —
-                        // only selectors are keyed in stateDependencies; atoms and
-                        // atom-family members are graph sinks (no out-edges), so
-                        // removing one can be on no cycle and the incremental
-                        // teardown is already exact. (selectorFamily members ARE
-                        // selectors — isSelector is true for them, so they take
-                        // this gated path.) For a selector dep we seed its
-                        // torn-down subtree and arm; the end-of-pass reconcile is
-                        // then still gated on regionHasCycle, so an acyclic selector
-                        // removal also stays on the incremental path.
-                        if (
-                            tracksReverseEdges &&
-                            data.livenessPassActive &&
-                            isSelector(state)
-                        ) {
-                            ;(data.livenessSeeds ??= new Set<State>()).add(
-                                state,
-                            )
-                            data.livenessRemovalArmed = true
-                        }
-                    }
-                }
-            }
-            data.stateDependencies.set(selector, updatedDependencies)
-        }
+        // Hand the discovered dep set to the dispatcher, which installs it
+        // through the graph runtime (overlay or committed) after this
+        // evaluator returns. The evaluator itself no longer writes any graph
+        // table.
+        outcome.deps = updatedDeps
+        outcome.prevDeps = currentDependencies
+        outcome.depsChanged = depsChanged
+        outcome.isAsync = isAsyncResult
+        outcome.needsInstall = depsChanged || !currentDependencies
 
         // Store the tracking set on this evaluation's identity so
         // handleSelectorResult can reconcile when the promise resolves. A
@@ -802,7 +660,7 @@ export const evaluateSelector = <V>(
         // not a safe owner for this data. Only needed for native-promise
         // selectors — SuspendAndWaitForResolveError re-evaluates via
         // initSelector instead.
-        if (isPromiseLike(result)) {
+        if (isPromiseResult) {
             // Build the tracking set from sync deps discovered so far. Late
             // `get` calls (after await) will add to this set dynamically.
             evalCtx.asyncDeps = new Set<State>(updatedDeps)
@@ -986,29 +844,7 @@ export const handleSelectorResult = <Value>(
                 // Reconcile deps: remove any that were carried forward from a
                 // previous evaluation but not read in this one.
                 if (evalDeps) {
-                    const currentDeps = data.stateDependencies.get(selector)
-                    if (currentDeps) {
-                        const tracksReverseEdges =
-                            data.selectorGraphActive.has(selector)
-                        const selectorIsLive = isLive(selector, data)
-                        let graphChangeNoted = false
-                        for (const dep of currentDeps) {
-                            if (!evalDeps.has(dep)) {
-                                if (tracksReverseEdges && !graphChangeNoted) {
-                                    noteDependencyGraphChanged(selector, data)
-                                    graphChangeNoted = true
-                                }
-                                currentDeps.delete(dep)
-                                if (tracksReverseEdges) {
-                                    removeStateDependent(dep, selector, data)
-                                    if (selectorIsLive) {
-                                        onLiveDependencyRemoved(dep, data)
-                                    }
-                                    unmountOrphanedDeps(dep, data)
-                                }
-                            }
-                        }
-                    }
+                    reconcileAsyncDeps(selector, evalDeps, data)
                 }
 
                 // Async validation can't throw to a caller; on failure it's
@@ -1144,10 +980,81 @@ export const handleSelectorResult = <Value>(
     }
 }
 
+/** Install a transaction overlay evaluation into the draft's private forward
+ * map. The overlay graph tracks async dependencies and re-evaluations, but
+ * deliberately has no committed reverse edges or liveness — it never touches
+ * the committed graph tables, so it lives with the evaluator, not the graph
+ * runtime. */
+const installOverlayDeps = (
+    selector: Selector,
+    runtime: SelectorEvaluationRuntime,
+    outcome: EvaluationOutcome,
+) => {
+    const updatedDeps = outcome.deps!
+    const currentDependencies = outcome.prevDeps
+    const updatedDependencies = outcome.isAsync
+        ? new Set<State<any>>(updatedDeps)
+        : updatedDeps
+    if (outcome.isAsync && currentDependencies) {
+        for (const dep of currentDependencies) {
+            updatedDependencies.add(dep)
+        }
+    }
+    runtime.stateDependencies.set(selector, updatedDependencies)
+}
+
+/** Out-of-line installer choice for the committed dispatcher. Uses the SAME
+ * predicate value that selected the evaluator, so the twin evaluator and twin
+ * installer can never diverge. Kept out of the dispatcher body so the
+ * no-churn hot path stays small enough for V8 to inline. */
+const installCommittedOutcome = (
+    selector: Selector,
+    data: StoreData,
+    selectorGraphActive: boolean,
+    liveOnly: boolean,
+    outcome: EvaluationOutcome,
+) => {
+    if (liveOnly) {
+        installEvaluationDepsLiveOnly(
+            selector,
+            data,
+            outcome.deps!,
+            outcome.prevDeps,
+            outcome.isAsync,
+        )
+    } else {
+        installEvaluationDeps(
+            selector,
+            data,
+            outcome.deps!,
+            outcome.prevDeps,
+            selectorGraphActive,
+            outcome.isAsync,
+            undefined,
+        )
+    }
+}
+
+/** Cold path of the dispatcher's catch: keep the carrier release and error
+ * tracking out of the hot body. Returns the error to rethrow. */
+const releaseAfterEvaluationThrow = (
+    selector: Selector,
+    outcome: EvaluationOutcome,
+    error: unknown,
+): unknown => {
+    // Release here rather than in a wrapping finally: the extra exception
+    // scope measurably hurt V8's re-init hot path, and the installers run no
+    // user code, so the throw paths end at the evaluator.
+    releaseEvaluationOutcome(outcome)
+    if (error instanceof SelectorEvaluationError) error.track(selector)
+    return error
+}
+
 // Keep the committed call shape monomorphic: passing unused overlay/runtime
 // arguments measurably deoptimizes Bun's ordinary selector hot path. This is a
 // thin boundary only; both committed and transactional reads still delegate to
-// the same evaluator and result handler below.
+// the same evaluator and result handler below. The dispatcher — not the
+// evaluator — commits discovered dependencies into the graph.
 const evaluateCommittedSelectorValue = <V>(
     selector: Selector<V>,
     data: StoreData,
@@ -1155,27 +1062,39 @@ const evaluateCommittedSelectorValue = <V>(
     circularDependencySet: WeakSet<Selector>,
     selectorGraphActive: boolean,
 ) => {
+    const liveOnly = selectorGraphActive && !data.coldSelectorCachesEnabled
+    const outcome = acquireEvaluationOutcome()
     let value
     try {
-        value =
-            selectorGraphActive && !data.coldSelectorCachesEnabled
-                ? evaluateLiveOnlySelector(
-                      selector,
-                      data,
-                      initializedAtomsSet,
-                      circularDependencySet,
-                  )
-                : evaluateSelector(
-                      selector,
-                      data,
-                      initializedAtomsSet,
-                      circularDependencySet,
-                      selectorGraphActive,
-                  )
+        value = liveOnly
+            ? evaluateLiveOnlySelector(
+                  selector,
+                  data,
+                  initializedAtomsSet,
+                  circularDependencySet,
+                  outcome,
+              )
+            : evaluateSelector(
+                  selector,
+                  data,
+                  initializedAtomsSet,
+                  circularDependencySet,
+                  selectorGraphActive,
+                  outcome,
+              )
     } catch (error) {
-        if (error instanceof SelectorEvaluationError) error.track(selector)
-        throw error
+        throw releaseAfterEvaluationThrow(selector, outcome, error)
     }
+    if (outcome.needsInstall) {
+        installCommittedOutcome(
+            selector,
+            data,
+            selectorGraphActive,
+            liveOnly,
+            outcome,
+        )
+    }
+    releaseEvaluationOutcome(outcome)
     return handleSelectorResult(
         value,
         selector,
@@ -1236,6 +1155,7 @@ export const evaluateSelectorValue = <V>(
 ) => {
     const selectorGraphActive =
         !runtime && data.selectorGraphActive.has(selector)
+    const outcome = acquireEvaluationOutcome()
     let value
     try {
         value = evaluateSelector(
@@ -1244,13 +1164,26 @@ export const evaluateSelectorValue = <V>(
             initializedAtomsSet,
             circularDependencySet,
             selectorGraphActive,
-            undefined,
+            outcome,
             readOverlay,
             runtime,
         )
     } catch (error) {
-        if (error instanceof SelectorEvaluationError) error.track(selector)
-        throw error
+        throw releaseAfterEvaluationThrow(selector, outcome, error)
     }
+    if (outcome.needsInstall) {
+        if (runtime) {
+            installOverlayDeps(selector, runtime, outcome)
+        } else {
+            installCommittedOutcome(
+                selector,
+                data,
+                selectorGraphActive,
+                false,
+                outcome,
+            )
+        }
+    }
+    releaseEvaluationOutcome(outcome)
     return handleSelectorResult(value, selector, data, runtime)
 }

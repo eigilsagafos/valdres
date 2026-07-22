@@ -1,10 +1,10 @@
-import type { State } from "../types/State"
-import type { StoreData } from "../types/StoreData"
-import type { Selector } from "../types/Selector"
+import type { State } from "../../types/State"
+import type { StoreData } from "../../types/StoreData"
+import type { Selector } from "../../types/Selector"
 import { removeStateDependent } from "./inheritedDependencyBranches"
 import { isLive } from "./mountAtom"
-import { noteStateValueChanged } from "./stateRevisions"
-import { untrackAbortController } from "./storeLifecycle"
+import { noteStateValueChanged } from "../stateRevisions"
+import { untrackAbortController } from "../storeLifecycle"
 
 /**
  * Remove non-live states from the dependency graph, clear selector caches, and

@@ -5,7 +5,9 @@ import { runCommitPlan } from "./commitEngine"
 import { createCommitErrors } from "./commitErrors"
 import { SETTLE_INIT_ONLY, SETTLE_UNSET } from "./commitIntents"
 import { getState } from "./getState"
-import { refreshInheritedDependencyBranch } from "./inheritedDependencyBranches"
+import {
+    refreshInheritedDependencyBranch,
+} from "./graph"
 import {
     createChangeSink,
     flushChangeSink,

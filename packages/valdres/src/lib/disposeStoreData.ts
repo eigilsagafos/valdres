@@ -1,12 +1,16 @@
 import type { InternalGlobalAtom } from "../types/InternalGlobalAtom"
 import type { StoreData } from "../types/StoreData"
-import { detachInheritedDependencyBranches } from "./inheritedDependencyBranches"
-import { unmountAtom } from "./mountAtom"
+import {
+    detachInheritedDependencyBranches,
+    dropQueuedOrphanWork,
+    resetLivenessScratch,
+    sealGraphForDisposal,
+    unmountAtom,
+} from "./graph"
 import { commitEndRegistry } from "./onCommitEnd"
 import { changeListenerRegistry } from "./notifyChangeListeners"
 import { unsubscribe } from "./unsubscribe"
 import {
-    DISPOSED_STORE_PENDING,
     getStoreDisposedErrorToken,
     getTouchedGlobals,
     markStoreDisposed,
@@ -40,9 +44,7 @@ export const disposeStoreData = (data: StoreData): void => {
         const touched = getTouchedGlobals(current)
         if (touched?.size) globalsByStore.push([current, [...touched]])
         markStoreDisposed(current, disposalToken)
-        // Reuse the existing public-operation orphan guard as the terminal
-        // facade marker. This also replaces and releases any queued roots.
-        current.pendingOrphanCleanup = DISPOSED_STORE_PENDING
+        sealGraphForDisposal(current)
 
         // Unlink scopes while their scopeIndexKeys are still available. This is
         // also what the ref-counted ScopedStore.detach() path needs to release.
@@ -91,7 +93,7 @@ export const disposeStoreData = (data: StoreData): void => {
         // roots now; the already-enqueued microtask observes the terminal marker
         // and becomes a no-op. Batched transactions, maxAge timers, onChange,
         // and onCommitEnd own tracked cleanup entries below.
-        current.orphanCleanupScheduled = false
+        dropQueuedOrphanWork(current)
 
         const transactions = takeStoreTransactions(current)
         if (transactions) {
@@ -170,12 +172,7 @@ export const disposeStoreData = (data: StoreData): void => {
             }
         }
 
-        // These are transient scratch owners rather than external resources,
-        // but clearing them releases any strong states immediately.
-        current.livenessPassActive = false
-        current.livenessSeeds = undefined
-        current.livenessRemovalArmed = false
-        current.livenessLazyArmed = false
+        resetLivenessScratch(current)
     }
 
     // Defensive counter repair for lifecycle entries created by raw internal

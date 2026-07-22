@@ -1,7 +1,7 @@
-import type { State } from "../types/State"
-import type { StoreData } from "../types/StoreData"
+import type { State } from "../../types/State"
+import type { StoreData } from "../../types/StoreData"
 import { cleanupOrphanedDeps } from "./cleanupOrphanedDeps"
-import { DISPOSED_STORE_PENDING } from "./storeLifecycle"
+import { DISPOSED_STORE_PENDING } from "../storeLifecycle"
 
 /**
  * Drain this store's queued orphan roots synchronously. Public store operations

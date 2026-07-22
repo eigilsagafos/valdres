@@ -1,7 +1,7 @@
-import type { State } from "../types/State"
-import type { StoreData } from "../types/StoreData"
+import type { State } from "../../types/State"
+import type { StoreData } from "../../types/StoreData"
 import { flushPendingOrphanCleanup } from "./flushPendingOrphanCleanup"
-import { isStoreDisposed } from "./storeLifecycle"
+import { isStoreDisposed } from "../storeLifecycle"
 
 /**
  * Batch orphan graph/value cleanup across a synchronous unsubscribe burst.
