@@ -18,9 +18,9 @@ import { setValueInData } from "./setValueInData"
  * Hook and global handling are deliberately collection-only. The caller first
  * completes every local/global write, then runs `onSetQueue`, then propagates.
  * This keeps a throwing hook from interrupting either the write or propagation
- * phase. The boolean remains positional because the unmigrated cross-scope
- * transaction arm still calls it directly; typed bulk coordinators translate
- * their intent at their own boundary.
+ * phase. The boolean remains positional because the cross-scope transaction
+ * write loop calls it directly per store before building its tree CommitPlan;
+ * typed bulk coordinators translate their intent at their own boundary.
  */
 export const writeAtoms = (
     pairs: Map<Atom<any>, any>,

@@ -57,6 +57,33 @@ describe("adapter transaction lifecycle", () => {
         )
     })
 
+    test("abort discards a cross-scope working tree without any observable event", () => {
+        const root = store()
+        const child = root.scope("abort-scope")
+        const rootAtom = atom(1)
+        const scopeAtom = atom(10)
+        child.set(scopeAtom, 10)
+        const rootCb: number[] = []
+        const scopeCb: number[] = []
+        root.sub(rootAtom, () => rootCb.push(root.get(rootAtom)))
+        child.sub(scopeAtom, () => scopeCb.push(child.get(scopeAtom)))
+
+        const txn = new Transaction(root)
+        txn.set(rootAtom, 2)
+        txn.scope("abort-scope", scoped => scoped.set(scopeAtom, 20))
+        expect(txn.get(rootAtom)).toBe(2) // read-your-writes before abort
+        txn.abort()
+
+        // Every level's draft is discarded; nothing committed, nothing fired.
+        expect(root.get(rootAtom)).toBe(1)
+        expect(child.get(scopeAtom)).toBe(10)
+        expect(rootCb).toEqual([])
+        expect(scopeCb).toEqual([])
+        expect(() => txn.commit()).toThrow(
+            "Cannot commit transaction while it is closed",
+        )
+    })
+
     test("every callback operation rejects use after close", () => {
         const store1 = store()
         store1.scope("child")

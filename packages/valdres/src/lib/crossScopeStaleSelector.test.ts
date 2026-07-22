@@ -13,21 +13,25 @@ const mulberry32 = (seed: number) => () => {
 
 // Regression for the "stale position / stale connector line" bug.
 //
-// A cross-scope commit (and the single-store update+delete commit) runs one
-// propagation pass per store. The original cross-scope work (beta.5 #168) added
-// a per-commit dedup guard so a selector reachable by more than one pass
-// evaluated once — but it (a) keyed by selector object, skipping a scope's copy
-// of a selector also live in the root, and (b) locked in a value an early pass
-// computed from an intermediate selector a later pass corrected. Either way the
-// selector (and its whole subtree) was left stale — e.g. drag a node and drop
-// it back outside any dropzone (a pure revert) and the subtree settles one row
-// too low because a layout selector kept a value derived from a now-stale input.
+// The original cross-scope work (beta.5 #168) ran one propagation pass per
+// store and added a per-commit dedup guard so a selector reachable by more
+// than one pass evaluated once — but it (a) keyed by selector object, skipping
+// a scope's copy of a selector also live in the root, and (b) locked in a
+// value an early pass computed from an intermediate selector a later pass
+// corrected. Either way the selector (and its whole subtree) was left stale —
+// e.g. drag a node and drop it back outside any dropzone (a pure revert) and
+// the subtree settles one row too low because a layout selector kept a value
+// derived from a now-stale input.
 //
-// The fix removed the cross-pass dedup guard entirely: every value is written
-// first, then each store re-derives its OWN selectors against that final state
-// (a selector reachable by two passes is recomputed in each — the equality
-// check prunes the redundant result), and subscribers are notified once at the
-// end. So each store's copy of a selector ends on its correct final value.
+// The fix removed the cross-pass dedup guard entirely; the cross-scope commit
+// now goes further and settles each store exactly ONCE through the tree-level
+// CommitPlan: every value across the tree is written first, then each store
+// collects the COMPLETE union of its own and inherited triggers before one
+// topologically-ordered evaluation, and subscribers are notified once at the
+// end. Each store's copy of a selector is evaluated once, on its correct final
+// value — a restructure, not a skip guard, so neither #168 failure mode can
+// recur. (The single-store update+delete commit keeps its per-kind passes; see
+// the NotifyTarget warning in propagateUpdatedAtoms.)
 
 describe("cross-scope stale intermediate selector", () => {
     test("scope selector spanning a root atom + an intermediate scope selector stays fresh", () => {
@@ -213,23 +217,35 @@ describe("cross-scope stale intermediate selector", () => {
 
             for (let step = 0; step < 12; step++) {
                 const rc: [number, number][] = []
-                const sc: [number, number][] = []
+                // Scope ops mix sets with shadow-removing unsets ("unset" of a
+                // non-shadowed atom is a legal no-op); applied in list order in
+                // both the txn and the model, so intra-txn set/unset sequences
+                // match the draft's last-op-wins semantics.
+                const sc: [number, number | "unset"][] = []
                 const m = 1 + Math.floor(rnd() * 3)
                 for (let j = 0; j < m; j++) {
                     const ai = Math.floor(rnd() * nAtoms)
-                    const v = Math.floor(rnd() * 30)
-                    if (rnd() < 0.5) rc.push([ai, v])
-                    else sc.push([ai, v])
+                    if (rnd() < 0.5) {
+                        rc.push([ai, Math.floor(rnd() * 30)])
+                    } else if (rnd() < 0.2) {
+                        sc.push([ai, "unset"])
+                    } else {
+                        sc.push([ai, Math.floor(rnd() * 30)])
+                    }
                 }
                 root.txn(t => {
                     for (const [ai, v] of rc) t.set(I.atoms[ai], v)
                     if (sc.length)
                         t.scope("S", st => {
-                            for (const [ai, v] of sc) st.set(I.atoms[ai], v)
+                            for (const [ai, v] of sc) {
+                                if (v === "unset") st.unset(I.atoms[ai])
+                                else st.set(I.atoms[ai], v)
+                            }
                         })
                 })
                 for (const [ai, v] of rc) rootVal[ai] = v
-                for (const [ai, v] of sc) scopeVal[ai] = v
+                for (const [ai, v] of sc)
+                    scopeVal[ai] = v === "unset" ? undefined : v
             }
 
             // independent oracle

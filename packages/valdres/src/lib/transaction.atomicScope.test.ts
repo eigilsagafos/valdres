@@ -561,14 +561,12 @@ describe("cross-scope transactions are atomically observable", () => {
 
     describe("union-propagation: serializable single notification", () => {
         test("a root+scope spanning selector is notified once with the final value", () => {
-            // The selector is reachable both via the root's propagateToScopes
-            // and via the scope's own propagation pass. With no cross-pass dedup
-            // guard it is recomputed in each reaching pass (the later pass
-            // reading the now-final inputs), but notification is deferred to the
-            // end of the commit — so the subscriber fires exactly once, with the
-            // fully-applied value. (The body running once per pass is the cost
-            // of dropping the dedup; the guarantee that matters is the single,
-            // final-valued notification.)
+            // The selector is reachable both via the root's write (inherited)
+            // and via the scope's own write. The tree-level commit visits the
+            // scope ONCE with the union of both triggers, so the body runs
+            // exactly once against the fully-applied state, and the deferred
+            // notification fires the subscriber exactly once with the final
+            // value.
             const root = store()
             const S = root.scope("S")
             const r = atom(1, { name: "dd-r" })
@@ -594,13 +592,14 @@ describe("cross-scope transactions are atomically observable", () => {
             })
 
             expect(S.get(sum)).toBe(22)
-            expect(evals - before).toBe(2) // recomputed once per reaching pass
+            expect(evals - before).toBe(1) // settled once against the union
             expect(cb).toHaveBeenCalledTimes(1) // single, final-valued notification
         })
 
         test("deeper spanning chain: each selector is notified once with its final value", () => {
             // r (root) and s (scope) feed a → b. Both a and b span the two
-            // stores; each is recomputed in both passes but observed once, final.
+            // stores; the single scope visit evaluates each once, in
+            // dependency order, against the final values.
             const root = store()
             const S = root.scope("S")
             const r = atom(1, { name: "dd2-r" })
@@ -635,9 +634,9 @@ describe("cross-scope transactions are atomically observable", () => {
 
             expect(S.get(a)).toBe(22)
             expect(S.get(b)).toBe(42)
-            // Final values are correct; bodies recompute per reaching pass.
-            expect(aEvals - aBefore).toBe(2)
-            expect(bEvals - bBefore).toBe(2)
+            // One evaluation each, on final values.
+            expect(aEvals - aBefore).toBe(1)
+            expect(bEvals - bBefore).toBe(1)
         })
 
         test("single-store update + delete: spanning selector is notified once with its final value", () => {
@@ -677,16 +676,18 @@ describe("cross-scope transactions are atomically observable", () => {
             expect(cb).toHaveBeenCalledTimes(1) // single, final-valued notification
         })
 
-        test("cross-scope: scope selector spanning a root atom + a root-deleted family recomputes per reaching pass, notified once", () => {
+        test("single-store txn cascading into a scope: spanning selector recomputes per pass, notified once", () => {
             // A selector in S depends on a root atom (updated) and a root family
-            // (member deleted), with S NOT shadowing the family. Both the update
-            // pass (propagateAtomUpdate, via the root atom) and the delete pass
-            // (propagateDeletedAtoms, via the family) cross-propagate into S, so
-            // the selector recomputes once per reaching pass — the same
-            // recompute-in-each-pass behavior the single-store root case above
-            // exhibits. Both passes read the fully-written state (writeAtoms has
-            // already rendered the deleted member out), so each lands on the
-            // final value and the equality check prunes the redundant result;
+            // (member deleted), with S NOT shadowing the family. The txn writes
+            // ONLY the root (no t.scope call), so it commits through the
+            // SINGLE-STORE cleanup settlement (settleTransactionCommit), whose
+            // update pass (propagateAtomUpdate, via the root atom) and delete
+            // pass (propagateDeletedAtoms, via the family) each cross-propagate
+            // into S — the selector recomputes once per reaching pass, exactly
+            // like the single-store root case above. (A txn that ALSO touched a
+            // scope would take the tree-level plan and evaluate once.) Both
+            // passes read the fully-written state, so each lands on the final
+            // value and the equality check prunes the redundant result;
             // deferred notification fires the subscriber exactly once.
             const root = store()
             const fam = atomFamily<string>(undefined, { name: "cud-fam" })
@@ -899,6 +900,522 @@ describe("cross-scope transactions are atomically observable", () => {
 
             expect(rootFires).toEqual([["c"]]) // never ["d"]
             expect(scopeFires).toEqual([["c"], ["d"]]) // sees root "c" (read-through) + own "d", once each
+        })
+    })
+
+    // Shadow REMOVAL inside a transaction: an unset staged in a scoped txn
+    // detaches the scope's own value in the write phase, so settlement (and
+    // every observer) sees the re-inherited chain value — including a value
+    // the SAME transaction wrote to an ancestor.
+    describe("unset inside a cross-scope txn (shadow removal)", () => {
+        test("scope-only unset re-inherits the pre-txn parent value", () => {
+            const root = store()
+            const S = root.scope("S")
+            const X = atom(1, { name: "su-x" })
+            S.set(X, 10) // shadow
+            const cb = mock(() => {})
+            S.sub(X, cb)
+
+            root.txn(t => {
+                t.scope("S", st => st.unset(X))
+            })
+
+            expect(S.get(X)).toBe(1) // re-inherited
+            expect(root.get(X)).toBe(1)
+            expect(cb).toHaveBeenCalledTimes(1)
+
+            // Delegate re-established AFTER the notification: a later root
+            // write still reaches the scope subscriber through the chain.
+            root.set(X, 5)
+            expect(S.get(X)).toBe(5)
+            expect(cb).toHaveBeenCalledTimes(2)
+        })
+
+        test("root set + scope unset of the same atom lands on the NEW root value", () => {
+            // The leaf-first write phase detaches the scope shadow (re-opening
+            // the branch) BEFORE the root's write, so the scope's settlement
+            // and subscriber observe the root's new value — the atom reaches
+            // the scope both as its own unset and as an inherited change, and
+            // still settles once.
+            const root = store()
+            const S = root.scope("S")
+            const X = atom(1, { name: "su2-x" })
+            S.set(X, 10)
+
+            let evals = 0
+            const derived = selector(
+                get => {
+                    evals++
+                    return get(X) * 2
+                },
+                { name: "su2-derived" },
+            )
+            const cb = mock(() => {})
+            S.sub(derived, cb)
+            S.get(derived)
+            const before = evals
+
+            root.txn(t => {
+                t.set(X, 5)
+                t.scope("S", st => st.unset(X))
+            })
+
+            expect(root.get(X)).toBe(5)
+            expect(S.get(X)).toBe(5) // re-inherits the value written this txn
+            expect(S.get(derived)).toBe(10)
+            expect(evals - before).toBe(1) // one settlement despite two triggers
+            expect(cb).toHaveBeenCalledTimes(1)
+
+            root.set(X, 6)
+            expect(S.get(derived)).toBe(12) // delegate survived
+        })
+
+        test("root-entry unset in a cross-scope txn de-materializes the root value", () => {
+            const root = store()
+            const S = root.scope("S")
+            const X = atom(1, { name: "su3-x" })
+            const Y = atom(0, { name: "su3-y" })
+            S.set(Y, 0)
+            root.set(X, 5)
+            const cb = mock(() => {})
+            S.sub(Y, cb)
+
+            root.txn(t => {
+                t.unset(X)
+                t.scope("S", st => st.set(Y, 2))
+            })
+
+            expect(root.get(X)).toBe(1) // default re-initialized lazily
+            expect(S.get(Y)).toBe(2)
+            expect(cb).toHaveBeenCalledTimes(1)
+        })
+    })
+
+    // The public equal contract across the tree-level commit: the selector
+    // body runs ONCE, but `equal` still sees the same per-reaching-pass
+    // trigger sets the historical multi-pass commit delivered — ancestor
+    // groups root-first, the store's own group last — committing on the first
+    // group that reports a change.
+    describe("selector.equal receives per-reaching-group trigger sets", () => {
+        const build = (
+            name: string,
+            equal: (a: number, b: number, updated?: Set<any>) => boolean,
+        ) => {
+            const root = store()
+            const S = root.scope("S")
+            const R = atom(1, { name: `${name}-r` })
+            const A = atom(10, { name: `${name}-a` })
+            S.set(A, 10)
+            const seen: Set<any>[] = []
+            const spanning = selector(
+                get => get(R) + get(A) * 1000,
+                {
+                    name: `${name}-span`,
+                    equal: (a: number, b: number, updated?: Set<any>) => {
+                        seen.push(new Set(updated))
+                        return equal(a, b, updated)
+                    },
+                },
+            )
+            const cb = mock(() => {})
+            S.sub(spanning, cb)
+            S.get(spanning)
+            seen.length = 0
+            return { root, S, R, A, spanning, seen, cb }
+        }
+
+        test("an equality ignoring scope-only triggers cannot suppress a root-triggered update", () => {
+            // Treat any change whose trigger set is ONLY the scope atom as
+            // equal. The first (root) group contains the root atom, so the
+            // update commits on the first group and the own group is never
+            // consulted — the reviewer scenario for the flat-union hazard.
+            const { S, root, R, A, spanning, seen, cb } = build(
+                "eqg1",
+                (_a, _b, updated) => !updated?.has(R) && !!updated?.has(A),
+            )
+            const { R: r, A: a } = { R, A } // narrow closure use
+            root.txn(t => {
+                t.set(r, 2)
+                t.scope("S", st => st.set(a, 20))
+            })
+
+            expect(S.get(spanning)).toBe(20002)
+            expect(cb).toHaveBeenCalledTimes(1)
+            expect(seen).toHaveLength(1) // committed on the first group
+            expect(seen[0]!.has(r)).toBe(true)
+            expect(seen[0]!.has(a)).toBe(false)
+        })
+
+        test("groups are consulted root-first until one reports a change", () => {
+            // Suppress the root-only group; commit on the group containing the
+            // scope atom — locking both the group order and their contents.
+            const refs: { R?: any; A?: any } = {}
+            const { S, root, R, A, spanning, seen } = build(
+                "eqg2",
+                (_a, _b, updated) => !updated?.has(refs.A),
+            )
+            refs.R = R
+            refs.A = A
+            root.txn(t => {
+                t.set(R, 2)
+                t.scope("S", st => st.set(A, 20))
+            })
+
+            expect(seen).toHaveLength(2)
+            expect([...seen[0]!]).toEqual([R]) // ancestor group, root-first
+            expect([...seen[1]!]).toEqual([A]) // the store's own group
+            expect(S.get(spanning)).toBe(20002)
+        })
+
+        test("only when every group reports equality is the update suppressed", () => {
+            const { root, R, A, seen, cb } = build("eqg3", () => true)
+            root.txn(t => {
+                t.set(R, 2)
+                t.scope("S", st => st.set(A, 20))
+            })
+
+            expect(seen).toHaveLength(2) // both groups consulted, in order
+            expect([...seen[0]!]).toEqual([R])
+            expect([...seen[1]!]).toEqual([A])
+            expect(cb).toHaveBeenCalledTimes(0) // suppressed by the custom equal
+        })
+
+        test("a group that never reached a selector is not consulted (default equality)", () => {
+            // The default deep equal treats any value found in the trigger set
+            // as unequal. A child selector that depends ONLY on the root atom
+            // but RETURNS the scope atom object must not be spuriously
+            // notified just because the same transaction also wrote that scope
+            // atom — the scope-atom group never reached this selector.
+            const root = store()
+            const S = root.scope("S")
+            const R = atom(1, { name: "eqp1-r" })
+            const A = atom(10, { name: "eqp1-a" })
+            S.set(A, 10)
+            const listSel = selector(
+                get => {
+                    get(R)
+                    return [A]
+                },
+                { name: "eqp1-list" },
+            )
+            const cb = mock(() => {})
+            S.sub(listSel, cb)
+            S.get(listSel)
+
+            root.txn(t => {
+                t.set(R, 2)
+                t.scope("S", st => st.set(A, 20))
+            })
+
+            // deep-equal([A], [A], {R}) — A is not in the reaching set, the
+            // arrays are element-identical, so the value is unchanged.
+            expect(cb).toHaveBeenCalledTimes(0)
+            expect(S.get(listSel)).toEqual([A])
+        })
+
+        test("an atom lazily initialized during evaluation joins the consulted set", () => {
+            // A dynamic dependency initialized mid-settlement historically
+            // joined the reaching pass's mutating trigger set — the default
+            // equality must still see it and report the embedded-atom change.
+            const root = store()
+            const S = root.scope("S")
+            const R = atom(1, { name: "eqp2-r" })
+            const A = atom(10, { name: "eqp2-a" })
+            const L = atom(99, { name: "eqp2-l" })
+            S.set(A, 10)
+            const listSel = selector(
+                get => {
+                    if (get(R) === 2) get(L) // lazily initializes L
+                    return [L]
+                },
+                { name: "eqp2-list" },
+            )
+            const cb = mock(() => {})
+            S.sub(listSel, cb)
+            S.get(listSel)
+
+            root.txn(t => {
+                t.set(R, 2)
+                t.scope("S", st => st.set(A, 20))
+            })
+
+            // The evaluation initialized L, so the consulted set is {R, L} and
+            // the embedded L makes the default equality report a change.
+            expect(cb).toHaveBeenCalledTimes(1)
+        })
+    })
+
+    // Causal delivery order across the tree commit: a selector FIRST reached
+    // by an inherited trigger keeps its historical position before the
+    // store's own-atom subscribers — in the deferred subscriber sequence, in
+    // first-error arbitration, and in the onChange payload.
+    describe("causal ordering for inherited-first selectors", () => {
+        test("subscriber order and first-error arbitration follow reaching order", () => {
+            const root = store()
+            const S = root.scope("S")
+            const R = atom(1, { name: "co-r" })
+            const A = atom(10, { name: "co-a" })
+            S.set(A, 10)
+            const span = selector(get => get(R) + get(A), { name: "co-span" })
+            const order: string[] = []
+            S.sub(span, () => {
+                order.push("selector")
+                throw new Error("selector boom")
+            })
+            S.sub(A, () => {
+                order.push("atom")
+                throw new Error("atom boom")
+            })
+            S.get(span)
+
+            // The selector's first trigger is the inherited root write, so its
+            // subscriber precedes the scope's own-atom subscriber — and when
+            // both throw, the selector's error is the surfaced first error.
+            expect(() =>
+                root.txn(t => {
+                    t.set(R, 2)
+                    t.scope("S", st => st.set(A, 20))
+                }),
+            ).toThrow("selector boom")
+            expect(order).toEqual(["selector", "atom"])
+        })
+
+        test("onChange places an inherited-first selector before the store's own atoms", () => {
+            const root = store()
+            const S = root.scope("S")
+            const R = atom(1, { name: "co2-r" })
+            const A = atom(10, { name: "co2-a" })
+            S.set(A, 10)
+            const span = selector(get => get(R) + get(A), { name: "co2-span" })
+            S.sub(span, () => {})
+            S.get(span)
+            const calls: any[] = []
+            const unsub = root.onChange((changes: any) => calls.push(changes), {
+                selectors: true,
+            })
+
+            root.txn(t => {
+                t.set(R, 2)
+                t.scope("S", st => st.set(A, 20))
+            })
+
+            expect(calls).toHaveLength(1)
+            expect(
+                calls[0].map((c: any) => [c.kind ?? c.type, c.state]),
+            ).toEqual([
+                ["set", R],
+                ["selector", span],
+                ["set", A],
+            ])
+            unsub()
+        })
+    })
+
+    // Exact onChange payload order for cross-scope commits. Root-first
+    // per-store groups; within a store, selector entries ride the leading own
+    // group when one exists, and a pure unset store keeps its historical
+    // record-then-selectors order.
+    describe("cross-scope onChange payload order", () => {
+        test("scoped unset-only txn: unset record precedes the selector change", () => {
+            const root = store()
+            const S = root.scope("S")
+            const X = atom(1, { name: "cpo1-x" })
+            S.set(X, 10)
+            const derived = selector(get => get(X) * 2, { name: "cpo1-d" })
+            S.sub(derived, () => {})
+            S.get(derived)
+            const calls: any[] = []
+            const unsub = root.onChange((changes: any) => calls.push(changes), {
+                selectors: true,
+            })
+
+            root.txn(t => {
+                t.scope("S", st => st.unset(X))
+            })
+
+            expect(calls).toHaveLength(1)
+            expect(
+                calls[0].map((c: any) => [c.kind ?? c.type, c.state]),
+            ).toEqual([
+                ["unset", X],
+                ["selector", derived],
+            ])
+            unsub()
+        })
+
+        test("root+scope txn: root group (atom then selector) precedes the scope group", () => {
+            const root = store()
+            const S = root.scope("S")
+            const R = atom(1, { name: "cpo2-r" })
+            const A = atom(10, { name: "cpo2-a" })
+            S.set(A, 10)
+            const rootSel = selector(get => get(R) + 1, { name: "cpo2-rs" })
+            const scopeSel = selector(get => get(A) + 1, { name: "cpo2-ss" })
+            root.sub(rootSel, () => {})
+            S.sub(scopeSel, () => {})
+            root.get(rootSel)
+            S.get(scopeSel)
+            const calls: any[] = []
+            const unsub = root.onChange((changes: any) => calls.push(changes), {
+                selectors: true,
+            })
+
+            root.txn(t => {
+                t.set(R, 2)
+                t.scope("S", st => st.set(A, 20))
+            })
+
+            expect(calls).toHaveLength(1)
+            expect(
+                calls[0].map((c: any) => [c.kind ?? c.type, c.state]),
+            ).toEqual([
+                ["set", R],
+                ["selector", rootSel],
+                ["set", A],
+                ["selector", scopeSel],
+            ])
+            unsub()
+        })
+
+        test("update+unset in one scope: selector entries ride the update group, unset records follow", () => {
+            // The consolidated order is the tree-plan contract: with one
+            // evaluation per store there is one selector group per store, and
+            // it rides the leading updated-atom group.
+            const root = store()
+            const S = root.scope("S")
+            const X = atom(1, { name: "cpo3-x" })
+            const Y = atom(0, { name: "cpo3-y" })
+            S.set(X, 10)
+            S.set(Y, 0)
+            const span = selector(get => get(X) + get(Y), { name: "cpo3-s" })
+            S.sub(span, () => {})
+            S.get(span)
+            const calls: any[] = []
+            const unsub = root.onChange((changes: any) => calls.push(changes), {
+                selectors: true,
+            })
+
+            root.txn(t => {
+                t.scope("S", st => {
+                    st.set(Y, 7)
+                    st.unset(X)
+                })
+            })
+
+            expect(calls).toHaveLength(1)
+            expect(
+                calls[0].map((c: any) => [c.kind ?? c.type, c.state]),
+            ).toEqual([
+                ["set", Y],
+                ["selector", span],
+                ["unset", X],
+            ])
+            expect(S.get(span)).toBe(8) // X re-inherited (1) + Y (7)
+            unsub()
+        })
+    })
+
+    // A failing per-store phase must not starve settlement or delivery of the
+    // REST of the tree — including scopes the transaction never touched.
+    describe("cross-scope commit error continuation", () => {
+        test("a throwing unset report does not starve an untouched descendant scope", () => {
+            const root = store()
+            const S = root.scope("S")
+            const G = S.scope("G")
+            const R = atom(1, { name: "ec-r" })
+            // Function default that throws once armed: reporting the unset's
+            // effective value walks the chain and re-initializes it (the scope
+            // shadow was the only settled value).
+            let armed = false
+            const X = atom(
+                () => {
+                    if (armed) throw new Error("default boom")
+                    return 1
+                },
+                { name: "ec-x" },
+            )
+            S.set(X, 10) // scope shadow (initializes root X = 1 on the way)
+            root.unset(X) // drop the root's own value back to the lazy default
+            armed = true
+            const gSel = selector(get => get(R) * 100, { name: "ec-gsel" })
+            const gCb = mock(() => {})
+            G.sub(gSel, gCb)
+            G.get(gSel)
+            // A change listener forces the reporting phase to run.
+            const unsub = root.onChange(() => {})
+
+            expect(() =>
+                root.txn(t => {
+                    t.set(R, 2)
+                    t.scope("S", st => st.unset(X))
+                }),
+            ).toThrow("default boom")
+
+            // Writes were applied and the untouched grandchild still settled
+            // and was notified, despite the throwing report in S.
+            expect(root.get(R)).toBe(2)
+            expect(G.get(gSel)).toBe(200)
+            expect(gCb).toHaveBeenCalledTimes(1)
+            unsub()
+        })
+
+        test("a throwing subscriber in one store does not starve another store's delivery", () => {
+            const root = store()
+            const S = root.scope("S")
+            const R = atom(1, { name: "es-r" })
+            const A = atom(10, { name: "es-a" })
+            S.set(A, 10)
+            const rootCb = mock(() => {
+                throw new Error("root sub boom")
+            })
+            const scopeCb = mock(() => {})
+            root.sub(R, rootCb)
+            S.sub(A, scopeCb)
+
+            expect(() =>
+                root.txn(t => {
+                    t.set(R, 2)
+                    t.scope("S", st => st.set(A, 20))
+                }),
+            ).toThrow("root sub boom")
+
+            expect(rootCb).toHaveBeenCalledTimes(1)
+            expect(scopeCb).toHaveBeenCalledTimes(1) // still delivered
+            expect(root.get(R)).toBe(2)
+            expect(S.get(A)).toBe(20)
+        })
+    })
+
+    describe("nested-scope rollback", () => {
+        test("a throw inside a nested scope callback rolls back the whole tree", () => {
+            const root = store()
+            const S = root.scope("S")
+            const N = S.scope("N")
+            const R = atom(1, { name: "nr-r" })
+            const A = atom(10, { name: "nr-a" })
+            const B = atom(100, { name: "nr-b" })
+            S.set(A, 10)
+            N.set(B, 100)
+            const cb = mock(() => {})
+            root.sub(R, cb)
+
+            expect(() =>
+                root.txn(t => {
+                    t.set(R, 2)
+                    t.scope("S", st => {
+                        st.set(A, 20)
+                        st.scope("N", nt => {
+                            nt.set(B, 200)
+                            throw new Error("nested boom")
+                        })
+                    })
+                }),
+            ).toThrow("nested boom")
+
+            expect(root.get(R)).toBe(1)
+            expect(S.get(A)).toBe(10)
+            expect(N.get(B)).toBe(100)
+            expect(cb).toHaveBeenCalledTimes(0)
         })
     })
 })

@@ -41,8 +41,15 @@ const limits: Record<string, Record<typeof runtime, MemoryLimit>> = {
         bun: { retainedBytesPerUnit: 3_200, releasedBytes: 512 * 1024 },
         node: { retainedBytesPerUnit: 3_400, releasedBytes: 256 * 1024 },
     },
+    // Bun ceiling recalibrated with the cross-scope tree-commit change: JSC's
+    // heapSize+extraMemorySize is sensitive to the byte layout of the commit
+    // engine module — adding a NEVER-CALLED function to a pristine
+    // commitEngine.ts moved this scenario 157 → 229 B/unit while the Node/V8
+    // lane stayed at 85 B/unit, so the shift is measurement layout, not
+    // retention. 360 keeps a real per-transaction pin (e.g. a retained
+    // MutationDraft, ~+220 B/unit here) detectable.
     "single-store transactions": {
-        bun: { retainedBytesPerUnit: 200, releasedBytes: 512 * 1024 },
+        bun: { retainedBytesPerUnit: 360, releasedBytes: 512 * 1024 },
         node: { retainedBytesPerUnit: 120, releasedBytes: 256 * 1024 },
     },
     "deep cross-scope transactions": {

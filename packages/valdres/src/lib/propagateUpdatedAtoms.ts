@@ -45,6 +45,17 @@ import {
     effectiveValueAfterUnset,
     reDelegateScopeSubscriptions,
 } from "./unsetValue"
+// Intra-cycle edge (same recorded core SCC): the tree settlement brackets its
+// walk with the global peer sequencing the cross-scope transaction commit
+// previously hand-rolled inline.
+import {
+    beginGlobalCommit,
+    endGlobalCommit,
+} from "./globalAtomFanOut"
+import type {
+    TransactionTreeEntry,
+    TransactionTreeSettleFn,
+} from "../types/TransactionTreeSettleFn"
 import { beginCommit, commitEndRegistry, endCommit } from "./onCommitEnd"
 import { hasInheritedDependencyBranches } from "./inheritedDependencyBranches"
 import { setValueInData } from "./setValueInData"
@@ -98,17 +109,23 @@ type AtomInput = Atom<any> | AtomFamilyAtom<any, any> | AtomFamily<any, any>
 //      was also live in the root (different value per store) — left stale.
 //   2. It locked in a value an early pass computed from an intermediate selector
 //      that a LATER pass corrected — also left stale.
-// The model here is deliberately dumb and robust instead: write every value
-// first, then each store re-derives its OWN selectors against that final state
-// (a selector reachable by two passes is simply recomputed in each — the
-// equality check discards the redundant result), then notify once. A selector's
-// value is a pure function of the committed atom state, and running passes
-// root-first means read-through ancestor values are already final, so the last
-// pass to touch a selector always lands on the correct value — no outer fixpoint
-// loop needed. If cross-scope-commit CPU ever matters, add dedup ONLY as a pure
-// optimization *behind* this guarantee: keyed per (store, selector), skipping
-// only a re-eval that is provably value-identical — never as a correctness
-// shortcut that suppresses a needed recompute.
+// Two models coexist behind the shared write-all-then-settle guarantee:
+//   - MULTI-PASS (single-store cleanup commits, global fan-out, immediate
+//     scoped updates): deliberately dumb and robust — each pass re-derives a
+//     store's selectors against final state; a selector reachable by two
+//     passes is simply recomputed in each (the equality check discards the
+//     redundant result), and passes run root-first so the last pass to touch a
+//     selector always lands on the correct value. Any future dedup here must
+//     be keyed per (store, selector) and provably value-identical — never a
+//     correctness shortcut that suppresses a needed recompute.
+//   - VISIT-ONCE (settleTransactionTreeCommit, the cross-scope transaction
+//     commit): each store is visited exactly once with the COMPLETE union of
+//     its own and inherited triggers collected before evaluation, so the
+//     topological order puts intermediate selectors before spanning ones and
+//     one evaluation lands on the final value. That is a restructure, not a
+//     skip guard — nothing reachable is ever skipped, so neither #168 failure
+//     mode applies.
+// In both models notification is deferred and fires once per subscriber.
 type NotifyStoreEntry = {
     subscriptions: Set<Subscription>
     families: Map<AtomFamily<any>, Set<AtomFamilyAtom<any>>>
@@ -127,12 +144,122 @@ const notifyEntryFor = (
     return entry
 }
 
+// One reaching pass's triggers at one store during the cross-scope settlement
+// walk. `report` is the sink the group's changes historically targeted (the
+// global sink for peer-originated groups and their cascades; undefined = the
+// transaction's own sink). `set` is the lazily-built equality view.
+type TreeTriggerGroup = {
+    kind:
+        | typeof TREE_GROUP_INHERITED
+        | typeof TREE_GROUP_GLOBAL
+        | typeof TREE_GROUP_UPDATED
+        | typeof TREE_GROUP_DELETED
+        | typeof TREE_GROUP_UNSET
+    atoms: AtomInput[]
+    set: Set<any> | undefined
+    report: ChangeReport | undefined
+}
+const TREE_GROUP_INHERITED = 0
+const TREE_GROUP_GLOBAL = 1
+const TREE_GROUP_UPDATED = 2
+const TREE_GROUP_DELETED = 3
+const TREE_GROUP_UNSET = 4
+
+// Per-store settlement context for the cross-scope walk: the reaching-pass
+// groups in historical order and, per selector, WHICH groups reached it (its
+// trigger provenance — ascending group indices, first-reached first). Both the
+// public equal contract and report/subscriber causal ordering key off it.
+type TreeSettleContext = {
+    groups: TreeTriggerGroup[]
+    provenance: Map<Selector, number[]>
+    /** The static pre-settlement trigger union; atoms the evaluation lazily
+     *  initializes are exactly those in the live set but not here. */
+    baseUnion: Set<any>
+}
+
+const appendTreeProvenance = (
+    provenance: Map<Selector, number[]>,
+    selector: Selector,
+    groupIndex: number,
+) => {
+    const existing = provenance.get(selector)
+    if (!existing) provenance.set(selector, [groupIndex])
+    else if (!existing.includes(groupIndex)) {
+        // Collection runs groups in ascending order and downstream merges
+        // insert-sort, so `existing` stays ascending: first = first-reached.
+        let at = existing.length
+        while (at > 0 && existing[at - 1]! > groupIndex) at--
+        existing.splice(at, 0, groupIndex)
+    }
+}
+
+// Downstream provenance flow: a changed selector hands its reaching groups to
+// every dependent it dirties, mirroring how each historical pass reached the
+// dependent transitively.
+const mergeTreeProvenance = (
+    ctx: TreeSettleContext,
+    target: Selector,
+    source: Selector,
+) => {
+    const from = ctx.provenance.get(source)
+    if (!from) return
+    for (const groupIndex of from) {
+        appendTreeProvenance(ctx.provenance, target, groupIndex)
+    }
+}
+
+// Group-sequential equality for the cross-scope settlement walk. The selector
+// body ran ONCE (against final state), but its public `equal` contract still
+// sees the same per-reaching-pass trigger sets the historical multi-pass
+// commit delivered — consulted in reaching order for exactly the groups whose
+// dirty chain reached THIS selector, committing on the first group that
+// reports a change. Only when every reaching group reports equality is the
+// update suppressed, matching the historical chain where one pass's
+// suppression left the next pass's trigger set to decide. Atoms lazily
+// initialized during the settlement (present in the live evaluation set but
+// not in the static union) join the final consulted set, mirroring how they
+// joined the historical pass's mutating set. (Residue for impure predicates: a
+// group after the first "changed" is no longer consulted.)
+const treeEqualAcrossGroups = (
+    ctx: TreeSettleContext,
+    selector: Selector,
+    existingValue: unknown,
+    updatedValue: unknown,
+    liveAtoms: Set<Atom>,
+): boolean => {
+    const provenance = ctx.provenance.get(selector)
+    if (!provenance || provenance.length === 0) {
+        // Defensive: a selector with no recorded provenance (unreachable in
+        // practice) sees the full live set — the conservative superset.
+        return selector.equal(existingValue, updatedValue, liveAtoms)
+    }
+    const last = provenance.length - 1
+    for (let i = 0; i <= last; i++) {
+        const group = ctx.groups[provenance[i]!]!
+        let set = group.set
+        if (set === undefined) {
+            set = new Set(group.atoms)
+            group.set = set
+        }
+        if (i === last && liveAtoms.size > ctx.baseUnion.size) {
+            const augmented = new Set(set)
+            for (const atom of liveAtoms) {
+                if (!ctx.baseUnion.has(atom)) augmented.add(atom)
+            }
+            set = augmented
+        }
+        if (!selector.equal(existingValue, updatedValue, set)) return false
+    }
+    return true
+}
+
 const reEvaluateSelector = (
     selector: Selector,
     data: StoreData,
     updatedAtoms: Set<Atom>,
     depsChange: DepsChange,
     existingValue: unknown,
+    treeCtx?: TreeSettleContext,
 ): boolean => {
     if (!IS_PROD && data.architectureInstrumentation)
         recordSelectorSettlement(selector, data)
@@ -161,7 +288,15 @@ const reEvaluateSelector = (
         const areEqual =
             isPromiseLike(existingValue) || isPromiseLike(updatedValue)
                 ? existingValue === updatedValue
-                : selector.equal(existingValue, updatedValue, updatedAtoms)
+                : treeCtx === undefined
+                  ? selector.equal(existingValue, updatedValue, updatedAtoms)
+                  : treeEqualAcrossGroups(
+                        treeCtx,
+                        selector,
+                        existingValue,
+                        updatedValue,
+                        updatedAtoms,
+                    )
         if (areEqual) return false
         setValueInData(selector, updatedValue, data)
         return true
@@ -915,6 +1050,677 @@ export const settleTransactionCommit = (
     }
 }
 
+/**
+ * Settlement (phases 4–7) of a cross-scope transaction commit: ONE root-first
+ * walk over the affected store tree. Each store is visited exactly once and
+ * settled against the union of its own updated/deleted/unset writes and every
+ * inherited change that reaches it, so a selector evaluates at most once per
+ * (store, commit) — the proven-safe replacement for the historical
+ * one-propagation-pass-per-store model (see the NotifyTarget warning above:
+ * this is a visit-once restructure behind the write-all-then-settle guarantee,
+ * not a skip guard; nothing is deduplicated away, work is simply not repeated).
+ *
+ * Global peers (already written in the write phase) bracket the walk with the
+ * exact sequencing the transaction commit previously hand-rolled inline: peer
+ * propagation first (their fan-out retains its public direct-set metadata and
+ * precedes the originating transaction's reports), one deferred notify for
+ * peers + tree together, global sink flush, then the peer trees' commit-end
+ * boundaries. Unset re-delegation runs strictly last — the deferred
+ * scope-local callback idempotently drops its delegate, so the fresh parent
+ * delegate must be (re)established after firing.
+ *
+ * Error contract: each store's settlement and reporting record into `errors`
+ * and the walk continues — one store failing must not starve later stores,
+ * descendants, or subscriber delivery. Descent is constructed in the
+ * collection phase (no user code) so a throwing selector body, custom equal,
+ * onMount cleanup, or unset report can never hide an affected descendant.
+ *
+ * Boundary note: the caller's outer commit boundary governs; the walk opens no
+ * per-store boundaries (the historical inner per-pass boundaries were nested
+ * depth-counter no-ops). An onCommitEnd listener registered mid-commit by a
+ * hook therefore joins from the next commit, as on the single-store plan path.
+ */
+export const settleTransactionTreeCommit: TransactionTreeSettleFn = (
+    entries,
+    globalUpdates,
+    report,
+    errors,
+) => {
+    const notify: NotifyTarget = new Map()
+    const globalSink = globalUpdates
+        ? createChangeSink(undefined, "set")
+        : undefined
+    const commitRoots = globalUpdates
+        ? beginGlobalCommit(entries[0].data, globalUpdates)
+        : undefined
+    // Peers that are themselves plan stores fold into the walk (their global
+    // group settles together with the store's own and inherited triggers —
+    // one settlement per store, the plan's core guarantee). Only peers
+    // OUTSIDE the plan keep the per-tree propagation pass.
+    let foldedPeerAtoms: Map<StoreData, Atom[]> | undefined
+    if (globalUpdates) {
+        let planStores: Set<StoreData> | undefined
+        for (const [peer, atoms] of globalUpdates) {
+            if (!planStores) {
+                planStores = new Set()
+                for (const entry of entries) planStores.add(entry.data)
+            }
+            if (planStores.has(peer)) {
+                if (!foldedPeerAtoms) foldedPeerAtoms = new Map()
+                foldedPeerAtoms.set(peer, atoms)
+                continue
+            }
+            try {
+                propagateAtomUpdate(atoms, peer, false, notify, globalSink)
+            } catch (error) {
+                recordCommitError(errors, error)
+            }
+        }
+    }
+    const timestamp = performance.now()
+    settleTreeStore(
+        entries[0],
+        entries[0].data,
+        undefined,
+        foldedPeerAtoms,
+        globalSink,
+        notify,
+        report,
+        errors,
+        timestamp,
+    )
+    try {
+        notifyDeferred(notify)
+    } catch (error) {
+        recordCommitError(errors, error)
+    }
+    if (globalSink) {
+        try {
+            flushChangeSink(globalSink)
+        } catch (error) {
+            recordCommitError(errors, error)
+        }
+        endGlobalCommit(commitRoots!, errors)
+    }
+    // Re-delegate AFTER firing: the deferred scope-local callback idempotently
+    // drops its delegate, so the fresh parent delegate is established last.
+    for (const entry of entries) {
+        if (entry.unsetAtoms) {
+            for (const atom of entry.unsetAtoms) {
+                try {
+                    reDelegateScopeSubscriptions(atom, entry.data)
+                } catch (error) {
+                    recordCommitError(errors, error)
+                }
+            }
+        }
+    }
+}
+
+/** Per-store visit of the cross-scope settlement walk. Three phases:
+ *   A) collection + index bookkeeping + descent construction — no user code,
+ *      so the descent set exists even when a later phase throws;
+ *   B) one dirty-selector settlement against the union of every trigger, with
+ *      per-selector reaching-group provenance threaded through the dependency
+ *      graph for the public `equal` contract (see treeEqualAcrossGroups);
+ *   C) causal assembly: deferred subscribers are inserted and reports emitted
+ *      in reaching-group order — a selector first reached by an inherited (or
+ *      global-peer) trigger keeps its historical position BEFORE the store's
+ *      own-atom entries, and peer-originated groups keep reporting into the
+ *      global sink.
+ * Then recurse into children (plan entries ∪ branch-index scopes), root-first,
+ * each child receiving the group-structured subset of triggers that reach it. */
+const settleTreeStore = (
+    entry: TransactionTreeEntry | undefined,
+    data: StoreData,
+    inheritedGroups: TreeTriggerGroup[] | undefined,
+    foldedPeerAtoms: Map<StoreData, Atom[]> | undefined,
+    globalSink: ChangeSink | undefined,
+    notify: NotifyTarget,
+    report: ChangeReport | undefined,
+    errors: CommitErrors,
+    timestamp: number,
+) => {
+    // ---- Phase A: collection + bookkeeping (no user code) ----
+    const groups: TreeTriggerGroup[] = []
+    const provenance = new Map<Selector, number[]>()
+    const selectors = new Set<Selector>()
+    const triggerUnion = new Set<any>()
+    // Direct atom/family subscribers per group index (own-write and folded
+    // global groups only — inherited triggers reach only dependents; their
+    // direct subscriptions are delegated to the owning ancestor store).
+    const directSubs: (Set<Subscription> | undefined)[] = []
+
+    const peerAtoms = foldedPeerAtoms?.get(data)
+
+    const pushGroup = (group: TreeTriggerGroup): number => {
+        const index = groups.length
+        groups.push(group)
+        directSubs.push(undefined)
+        membershipChangedByGroup.push(undefined)
+        return index
+    }
+
+    const collectInheritedGroup = (group: TreeTriggerGroup) => {
+        const index = pushGroup(group)
+        for (const atom of group.atoms) {
+            const dependents = data.stateDependents.get(atom)
+            if (dependents && dependents.size > 0) {
+                for (const dependent of dependents) {
+                    if (!IS_PROD && data.architectureInstrumentation)
+                        recordDependencyEdgeVisit(data)
+                    selectors.add(dependent as Selector)
+                    appendTreeProvenance(
+                        provenance,
+                        dependent as Selector,
+                        index,
+                    )
+                }
+            }
+            triggerUnion.add(atom)
+        }
+    }
+
+    let updatedFamilyAtoms:
+        | Map<AtomFamily<any>, Set<AtomFamilyAtom<any>>>
+        | undefined
+    let deletedFamilyAtoms:
+        | Map<AtomFamily<any>, Set<AtomFamilyAtom<any>>>
+        | undefined
+    let unsetFamilyAtoms:
+        | Map<AtomFamily<any>, Set<AtomFamilyAtom<any>>>
+        | undefined
+    let peerFamilyAtoms:
+        | Map<AtomFamily<any>, Set<AtomFamilyAtom<any>>>
+        | undefined
+    // Families whose MEMBERSHIP changed, per group — each group's descent
+    // carries its own membership changes (and its own report sink).
+    const membershipChangedByGroup: (Set<AtomFamily<any>> | undefined)[] = []
+
+    // Own-write and folded-peer groups collect identically (deps + direct subs
+    // + family grouping) — exactly what the historical per-pass
+    // propagateAtomUpdate did; only reporting differs (phase C).
+    const collectOwnStyleGroup = (
+        group: TreeTriggerGroup,
+    ): {
+        index: number
+        familyAtoms: Map<AtomFamily<any>, Set<AtomFamilyAtom<any>>> | undefined
+    } => {
+        const index = pushGroup(group)
+        const subs = new Set<Subscription>()
+        directSubs[index] = subs
+        let familyAtoms:
+            | Map<AtomFamily<any>, Set<AtomFamilyAtom<any>>>
+            | undefined
+        for (const atom of group.atoms) {
+            const dependents = data.stateDependents.get(atom)
+            if (dependents && dependents.size > 0) {
+                for (const dependent of dependents) {
+                    if (!IS_PROD && data.architectureInstrumentation)
+                        recordDependencyEdgeVisit(data)
+                    selectors.add(dependent as Selector)
+                    appendTreeProvenance(
+                        provenance,
+                        dependent as Selector,
+                        index,
+                    )
+                }
+            }
+            addSetToSet(data.subscriptions.get(atom), subs)
+            triggerUnion.add(atom)
+            if (isFamilyAtom(atom)) {
+                if (!familyAtoms) familyAtoms = new Map()
+                let set = familyAtoms.get(atom.family)
+                if (!set) {
+                    set = new Set()
+                    familyAtoms.set(atom.family, set)
+                }
+                set.add(atom)
+            }
+        }
+        return { index, familyAtoms }
+    }
+    // Family ADD bookkeeping (mirrors propagateAtomUpdate): family
+    // subscriptions are member-change subscriptions and always collect; family
+    // DEPENDENTS run only when membership actually changed.
+    const applyFamilyAdds = (
+        familyAtoms: Map<AtomFamily<any>, Set<AtomFamilyAtom<any>>>,
+        groupIndex: number,
+    ) => {
+        const subs = directSubs[groupIndex]!
+        for (const [family, atoms] of familyAtoms) {
+            addSetToSet(data.subscriptions.get(family), subs)
+            if (addFamilyAtomsToSet(family, atoms, data, timestamp)) {
+                const dependents = data.stateDependents.get(family)
+                if (dependents && dependents.size > 0) {
+                    for (const dependent of dependents) {
+                        if (!IS_PROD && data.architectureInstrumentation)
+                            recordDependencyEdgeVisit(data)
+                        selectors.add(dependent as Selector)
+                        appendTreeProvenance(
+                            provenance,
+                            dependent as Selector,
+                            groupIndex,
+                        )
+                    }
+                }
+                let changed = membershipChangedByGroup[groupIndex]
+                if (!changed) {
+                    changed = new Set()
+                    membershipChangedByGroup[groupIndex] = changed
+                }
+                changed.add(family)
+            }
+        }
+    }
+
+    // The folded global-peer group comes FIRST: the historical global loop
+    // propagated every peer before any per-store transaction pass.
+    let peerGroupIndex = -1
+    if (peerAtoms) {
+        const collected = collectOwnStyleGroup({
+            kind: TREE_GROUP_GLOBAL,
+            atoms: peerAtoms,
+            set: undefined,
+            report: globalSink,
+        })
+        peerGroupIndex = collected.index
+        peerFamilyAtoms = collected.familyAtoms
+        if (peerFamilyAtoms) applyFamilyAdds(peerFamilyAtoms, peerGroupIndex)
+    }
+
+    if (inheritedGroups) {
+        for (const group of inheritedGroups) collectInheritedGroup(group)
+    }
+
+    const ownUpdated =
+        entry !== undefined && entry.updatedAtoms.length > 0
+            ? entry.updatedAtoms
+            : undefined
+    const ownDeleted = entry?.deleted
+    const ownUnset =
+        entry?.unsetAtoms !== undefined && entry.unsetAtoms.length > 0
+            ? entry.unsetAtoms
+            : undefined
+
+    let updatedGroupIndex = -1
+    if (ownUpdated) {
+        const collected = collectOwnStyleGroup({
+            kind: TREE_GROUP_UPDATED,
+            atoms: ownUpdated,
+            set: undefined,
+            report: undefined,
+        })
+        updatedGroupIndex = collected.index
+        updatedFamilyAtoms = collected.familyAtoms
+        if (updatedFamilyAtoms)
+            applyFamilyAdds(updatedFamilyAtoms, updatedGroupIndex)
+        // Committed family indexes may be freshly cloned transaction indexes:
+        // re-link shadowing child scopes before any evaluation (theirs happens
+        // later in the walk, but the delete bookkeeping below also reads them).
+        if (data.scopes.size > 0) {
+            for (const atom of ownUpdated) {
+                if (isAtomFamily(atom)) {
+                    recursivelyUpdateIndexes(data, atom)
+                }
+            }
+        }
+    }
+
+    let deletedGroupIndex = -1
+    if (ownDeleted) {
+        // Mirrors propagateDeletedAtoms: member deps + subs, then per-family
+        // deps + subs + index removal. A deleted member changes both its own
+        // value and family membership.
+        deletedGroupIndex = pushGroup({
+            kind: TREE_GROUP_DELETED,
+            atoms: ownDeleted,
+            set: undefined,
+            report: undefined,
+        })
+        const subs = new Set<Subscription>()
+        directSubs[deletedGroupIndex] = subs
+        for (const atom of ownDeleted) {
+            const dependents = data.stateDependents.get(atom)
+            if (dependents && dependents.size > 0) {
+                for (const dependent of dependents) {
+                    if (!IS_PROD && data.architectureInstrumentation)
+                        recordDependencyEdgeVisit(data)
+                    selectors.add(dependent as Selector)
+                    appendTreeProvenance(
+                        provenance,
+                        dependent as Selector,
+                        deletedGroupIndex,
+                    )
+                }
+            }
+            addSetToSet(data.subscriptions.get(atom), subs)
+            triggerUnion.add(atom)
+            if (isFamilyAtom(atom)) {
+                if (!deletedFamilyAtoms) deletedFamilyAtoms = new Map()
+                let set = deletedFamilyAtoms.get(atom.family)
+                if (!set) {
+                    set = new Set()
+                    deletedFamilyAtoms.set(atom.family, set)
+                }
+                set.add(atom)
+            }
+        }
+        if (deletedFamilyAtoms) {
+            for (const [family, familyAtoms] of deletedFamilyAtoms) {
+                const dependents = data.stateDependents.get(family)
+                if (dependents && dependents.size > 0) {
+                    for (const dependent of dependents) {
+                        if (!IS_PROD && data.architectureInstrumentation)
+                            recordDependencyEdgeVisit(data)
+                        selectors.add(dependent as Selector)
+                        appendTreeProvenance(
+                            provenance,
+                            dependent as Selector,
+                            deletedGroupIndex,
+                        )
+                    }
+                }
+                addSetToSet(data.subscriptions.get(family), subs)
+                deleteFamilyAtomsFromSet(family, familyAtoms, data, timestamp)
+            }
+        }
+    }
+
+    let unsetGroupIndex = -1
+    if (ownUnset) {
+        const collected = collectOwnStyleGroup({
+            kind: TREE_GROUP_UNSET,
+            atoms: ownUnset,
+            set: undefined,
+            report: undefined,
+        })
+        unsetGroupIndex = collected.index
+        unsetFamilyAtoms = collected.familyAtoms
+        if (unsetFamilyAtoms) applyFamilyAdds(unsetFamilyAtoms, unsetGroupIndex)
+    }
+
+    // Descent: plan children always; branch-index scopes for any trigger with
+    // registered inherited-dependency branches. Per-child group structure
+    // preserves reaching-pass granularity and each group's report sink.
+    let childGroups: Map<StoreData, TreeTriggerGroup[]> | undefined
+    const spreadGroup = (
+        atoms: AtomInput[],
+        groupReport: ChangeReport | undefined,
+    ) => {
+        let perChild: Map<StoreData, AtomInput[]> | undefined
+        for (const atom of atoms) {
+            const branches = data.inheritedDependencyBranches.get(atom)
+            if (!branches) continue
+            for (const scope of branches) {
+                if (!perChild) perChild = new Map()
+                const scopeAtoms = perChild.get(scope)
+                if (scopeAtoms) scopeAtoms.push(atom)
+                else perChild.set(scope, [atom])
+            }
+        }
+        if (perChild) {
+            if (!childGroups) childGroups = new Map()
+            for (const [scope, scopeAtoms] of perChild) {
+                const group: TreeTriggerGroup = {
+                    kind: TREE_GROUP_INHERITED,
+                    atoms: scopeAtoms,
+                    set: undefined,
+                    report: groupReport,
+                }
+                const list = childGroups.get(scope)
+                if (list) list.push(group)
+                else childGroups.set(scope, [group])
+            }
+        }
+    }
+    // A family OBJECT is scope-relevant only when its membership changed — a
+    // value-only member update reaches scope selectors via the member atom
+    // (the "family update, 100 scopes" hot path). Each group descends with its
+    // own membership changes and its own report sink.
+    const spreadValueGroup = (
+        atoms: AtomInput[],
+        groupIndex: number,
+        groupReport: ChangeReport | undefined,
+    ) => {
+        const changedFamilies = membershipChangedByGroup[groupIndex]
+        if (changedFamilies) {
+            const descent: AtomInput[] = atoms.slice()
+            for (const family of changedFamilies) {
+                if (!descent.includes(family)) descent.push(family)
+            }
+            spreadGroup(descent, groupReport)
+        } else {
+            spreadGroup(atoms, groupReport)
+        }
+    }
+    if (peerGroupIndex !== -1) {
+        // Peer cascades historically reported into the global sink.
+        spreadValueGroup(peerAtoms!, peerGroupIndex, globalSink)
+    }
+    if (inheritedGroups) {
+        for (const group of inheritedGroups) {
+            spreadGroup(group.atoms, group.report)
+        }
+    }
+    if (ownUpdated) {
+        spreadValueGroup(ownUpdated, updatedGroupIndex, undefined)
+    }
+    if (ownDeleted) {
+        // Members skip scopes that shadow them (branch index is pruned at atom
+        // shadows); families always propagate — a scope selector may observe
+        // only get(family), not the member.
+        const deleteDescent: AtomInput[] = ownDeleted.slice()
+        if (deletedFamilyAtoms) {
+            for (const family of deletedFamilyAtoms.keys()) {
+                if (!deleteDescent.includes(family)) deleteDescent.push(family)
+            }
+        }
+        spreadGroup(deleteDescent, undefined)
+    }
+    if (ownUnset) spreadValueGroup(ownUnset, unsetGroupIndex, undefined)
+
+    // ---- Phase B: one settlement against the union (selector bodies, custom
+    // equal, and liveness onMount/cleanup — user code, recorded + contained).
+    // Changed selectors are always tracked (evaluation order) — they drive the
+    // causal subscriber/report assembly below, not just onChange payloads. ----
+    const changedSelectors = new Set<Selector>()
+    const machineSubs = new Set<Subscription>()
+    if (selectors.size > 0) {
+        const treeCtx: TreeSettleContext = {
+            groups,
+            provenance,
+            baseUnion: triggerUnion,
+        }
+        try {
+            propagateDirtySelectors(
+                triggerUnion,
+                selectors,
+                data,
+                machineSubs,
+                updatedFamilyAtoms ?? new Map(),
+                false,
+                notify,
+                changedSelectors,
+                treeCtx,
+            )
+        } catch (error) {
+            recordCommitError(errors, error)
+        }
+    }
+
+    // ---- Phase C: causal assembly. Deferred subscribers are inserted in
+    // reaching-group order — for each group: its direct atom/family subs, then
+    // the subs of selectors FIRST reached by it (evaluation order) — so a
+    // selector first dirtied by an inherited trigger keeps its historical
+    // position before this store's own-atom subscribers, and first-error
+    // arbitration among throwing subscribers is unchanged. Reports follow the
+    // same order, each group into its own sink. ----
+    const firstProvenanceOf = (selector: Selector): number => {
+        const chain = provenance.get(selector)
+        return chain && chain.length > 0 ? chain[0]! : -1
+    }
+    let hasDirectSubs = false
+    for (const set of directSubs) {
+        if (set && set.size > 0) {
+            hasDirectSubs = true
+            break
+        }
+    }
+    let orderedSubs: Set<Subscription> | undefined
+    if (machineSubs.size > 0 || hasDirectSubs) {
+        orderedSubs = notify.get(data)?.subscriptions ?? new Set<Subscription>()
+        for (let index = 0; index < groups.length; index++) {
+            const direct = directSubs[index]
+            if (direct) addSetToSet(direct, orderedSubs)
+            for (const selector of changedSelectors) {
+                if (firstProvenanceOf(selector) === index) {
+                    addSetToSet(
+                        data.subscriptions.get(selector),
+                        orderedSubs,
+                    )
+                }
+            }
+        }
+        // Defensive remainder: anything the attribution missed (e.g. a
+        // subscription added mid-evaluation) keeps its delivery, deduped by
+        // the Set.
+        addSetToSet(machineSubs, orderedSubs)
+    }
+    // Promote this store's collected subscribers + changed family members into
+    // the tree accumulator (bookkeeping maps stay per-role — see
+    // collectFamilyAtomsForNotify — and merge here for notification only).
+    if (orderedSubs && orderedSubs.size > 0) {
+        collectForNotify(
+            notify,
+            data,
+            orderedSubs,
+            peerFamilyAtoms ?? updatedFamilyAtoms ?? new Map(),
+        )
+        if (peerFamilyAtoms && updatedFamilyAtoms)
+            collectForNotify(notify, data, orderedSubs, updatedFamilyAtoms)
+        if (deletedFamilyAtoms)
+            collectForNotify(notify, data, orderedSubs, deletedFamilyAtoms)
+        if (unsetFamilyAtoms)
+            collectForNotify(notify, data, orderedSubs, unsetFamilyAtoms)
+    }
+
+    // Reports, in the same reaching-group order. Selector entries are
+    // attributed to the group that FIRST reached them (the historical pass
+    // that reported them); each group reports into its own sink, so folded
+    // peer groups and their cascades keep the global sink's direct-set
+    // metadata.
+    if (changeListenerRegistry.count !== 0) {
+        const selectorActive =
+            changeListenerRegistry.selectorCount !== 0 &&
+            hasSelectorChangeListener(data)
+        const selectorsFirstReachedBy = (
+            index: number,
+        ): Set<Selector> | undefined => {
+            if (!selectorActive) return undefined
+            let result: Set<Selector> | undefined
+            for (const selector of changedSelectors) {
+                if (firstProvenanceOf(selector) === index) {
+                    if (!result) result = new Set()
+                    result.add(selector)
+                }
+            }
+            return result
+        }
+        try {
+            for (let index = 0; index < groups.length; index++) {
+                const group = groups[index]!
+                const groupReport = group.report ?? report
+                if (groupReport === undefined) continue
+                const changed = selectorsFirstReachedBy(index)
+                switch (group.kind) {
+                    case TREE_GROUP_INHERITED: {
+                        if (changed && changed.size > 0) {
+                            reportSelectorChanges(changed, data, groupReport)
+                        }
+                        break
+                    }
+                    case TREE_GROUP_GLOBAL:
+                    case TREE_GROUP_UPDATED: {
+                        reportAtomChanges(
+                            group.atoms as Atom[],
+                            data,
+                            groupReport,
+                            changed,
+                        )
+                        break
+                    }
+                    case TREE_GROUP_DELETED: {
+                        reportDeletedAtoms(
+                            group.atoms as AtomFamilyAtom<any, any>[],
+                            data,
+                            groupReport,
+                            changed,
+                        )
+                        break
+                    }
+                    case TREE_GROUP_UNSET: {
+                        for (const atom of group.atoms) {
+                            reportUnsetAtom(
+                                atom as Atom,
+                                data,
+                                effectiveValueAfterUnset(atom as Atom, data),
+                                groupReport,
+                            )
+                        }
+                        if (changed && changed.size > 0) {
+                            reportSelectorChanges(changed, data, groupReport)
+                        }
+                        break
+                    }
+                }
+            }
+        } catch (error) {
+            recordCommitError(errors, error)
+        }
+    }
+
+    // ---- Recurse: plan children merged with branch-index children, each
+    // visited exactly once. ----
+    if (entry?.children) {
+        for (const child of entry.children) {
+            if (!childGroups) childGroups = new Map()
+            if (!childGroups.has(child.data)) {
+                childGroups.set(child.data, EMPTY_GROUPS)
+            }
+        }
+    }
+    if (childGroups) {
+        for (const [childData, groupList] of childGroups) {
+            let childEntry: TransactionTreeEntry | undefined
+            if (entry?.children) {
+                for (const child of entry.children) {
+                    if (child.data === childData) {
+                        childEntry = child
+                        break
+                    }
+                }
+            }
+            settleTreeStore(
+                childEntry,
+                childData,
+                groupList === EMPTY_GROUPS ? undefined : groupList,
+                foldedPeerAtoms,
+                globalSink,
+                notify,
+                report,
+                errors,
+                timestamp,
+            )
+        }
+    }
+}
+
+// Shared frozen sentinel for plan children reached with no branch-visible
+// triggers — never mutated (spreadGroup only appends to lists it created).
+const EMPTY_GROUPS: TreeTriggerGroup[] = []
+
+
 // Scope-recursive entry: re-evaluate selectors that depend on these atoms in
 // this scope and cross into nested scopes. Skips collecting direct atom and
 // family subscribers — the parent scope already collected those, and family
@@ -1013,7 +1819,7 @@ const propagateToScopes = (
 }
 
 export const propagateDirtySelectors = (
-    updatedAtoms: Atom[],
+    updatedAtoms: Atom[] | ReadonlySet<Atom>,
     selectors: Set<Selector>,
     data: StoreData,
     subscriptions: Set<Subscription>,
@@ -1024,6 +1830,10 @@ export const propagateDirtySelectors = (
     // actually changed this pass, so the caller can report it via onChange.
     // Undefined on the hot path (no selector listener) — zero overhead.
     changedSelectors?: Set<Selector>,
+    // Cross-scope walk only: reaching-pass groups + per-selector provenance
+    // for the public `equal` contract (see treeEqualAcrossGroups). Undefined
+    // everywhere else — the single-set equality path is unchanged.
+    treeCtx?: TreeSettleContext,
 ) => {
     const updatedInitializedAtoms = new Set<Atom>(updatedAtoms)
     if (selectors.size > 0) {
@@ -1039,6 +1849,7 @@ export const propagateDirtySelectors = (
             updatedInitializedAtoms,
             isInitOnly,
             changedSelectors,
+            treeCtx,
         )
     }
     // When deferring a store-tree propagation or multi-pass commit, the caller
@@ -1104,6 +1915,7 @@ const propagateDownstreamTopo = (
     updatedInitializedAtoms: Set<Atom>,
     isInitOnly: boolean,
     changedSelectors?: Set<Selector>,
+    treeCtx?: TreeSettleContext,
 ) => {
     const closure = new Set<Selector>(seeds)
     {
@@ -1186,6 +1998,7 @@ const propagateDownstreamTopo = (
         for (const d of downstream) {
             if (!IS_PROD && data.architectureInstrumentation)
                 recordDependencyEdgeVisit(data)
+            if (propagateChange && treeCtx) mergeTreeProvenance(treeCtx, d, selector)
             if (!closure.has(d)) {
                 // `d` is downstream of a just-changed selector but absent from
                 // the static closure, which means it was materialized AFTER the
@@ -1277,6 +2090,7 @@ const propagateDownstreamTopo = (
             updatedInitializedAtoms,
             depsChange,
             currentValue,
+            treeCtx,
         )
         // Casts work around a tsgo control-flow narrowing quirk where
         // property accesses lose their narrowing after a function call.
@@ -1356,6 +2170,7 @@ const propagateDownstreamTopo = (
         for (const d of downstream) {
             if (!IS_PROD && data.architectureInstrumentation)
                 recordDependencyEdgeVisit(data)
+            if (treeCtx) mergeTreeProvenance(treeCtx, d, selector)
             if (!work.has(d)) {
                 work.add(d)
                 if (!IS_PROD && data.architectureInstrumentation)
@@ -1386,6 +2201,7 @@ const propagateDownstreamTopo = (
             updatedInitializedAtoms,
             depsChange,
             currentValue,
+            treeCtx,
         )
         const added = depsChange.added as Set<State> | undefined
         const removed = depsChange.removed as Set<State> | undefined
@@ -1507,6 +2323,7 @@ const propagateSelectorUpdatesLinearFirst = (
     updatedInitializedAtoms: Set<Atom>,
     isInitOnly: boolean,
     changedSelectors?: Set<Selector>,
+    treeCtx?: TreeSettleContext,
 ) => {
     let downstreamSeeds: Set<Selector> | undefined
     const orderedSelectors = orderInitialSelectors(selectors, data)
@@ -1541,6 +2358,7 @@ const propagateSelectorUpdatesLinearFirst = (
             updatedInitializedAtoms,
             depsChange,
             currentValue,
+            treeCtx,
         )
         // Casts work around a tsgo control-flow narrowing quirk where
         // property accesses lose their narrowing after a function call.
@@ -1571,6 +2389,7 @@ const propagateSelectorUpdatesLinearFirst = (
             for (const d of downstream) {
                 if (!IS_PROD && data.architectureInstrumentation)
                     recordDependencyEdgeVisit(data)
+                if (treeCtx) mergeTreeProvenance(treeCtx, d, selector)
                 if (selectors.has(d) && !processedInitialSelectors.has(d)) {
                     continue
                 }
@@ -1587,6 +2406,7 @@ const propagateSelectorUpdatesLinearFirst = (
             updatedInitializedAtoms,
             isInitOnly,
             changedSelectors,
+            treeCtx,
         )
     }
 }
@@ -1605,6 +2425,7 @@ const propagateSelectorUpdates = (
     updatedInitializedAtoms: Set<Atom>,
     isInitOnly = false,
     changedSelectors?: Set<Selector>,
+    treeCtx?: TreeSettleContext,
 ) => {
     if (selectors.size === 0) return
 
@@ -1632,6 +2453,7 @@ const propagateSelectorUpdates = (
             updatedInitializedAtoms,
             isInitOnly,
             changedSelectors,
+            treeCtx,
         )
     } finally {
         // Always release the collector — even if a user onMount/cleanup above threw
