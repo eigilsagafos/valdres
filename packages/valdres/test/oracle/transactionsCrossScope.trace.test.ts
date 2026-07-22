@@ -150,3 +150,136 @@ runTraceTable("trace oracle · cross-scope transactions", [
     atomicCase,
     scopeSelectorCase,
 ])
+
+type TreeCtx = {
+    root: Store
+    mid: Store
+    leaf: Store
+    states: Record<string, Atom<any> | Selector<any>>
+    rootChanges: ChangeCall[]
+    observed: { spanning?: number }
+    run: () => void
+    cleanup: () => void
+}
+
+/** Depth-3 nested txn: the tree-level commit settles the leaf store once, so
+ *  the spanning selector's body runs EXACTLY once — a second `eval:` in the
+ *  spine fails this case. Cross-store members of each phase stay bagged. */
+const depth3Case: TraceCase<TreeCtx> = {
+    name: "depth-3 txn — leaf spanning selector evaluates once, phases block",
+    build: (rec: Recorder) => {
+        const root = store()
+        const mid = root.scope("x3-mid")
+        const leaf = mid.scope("x3-leaf")
+        const a = tracedAtom(rec, "a", 0)
+        const b = tracedAtom(rec, "b", 0)
+        const c = tracedAtom(rec, "c", 0)
+        mid.set(b, 0)
+        leaf.set(c, 0)
+        const spanning = tracedSelector(
+            rec,
+            "leafSel",
+            get =>
+                (get(a) as number) + (get(b) as number) + (get(c) as number),
+        )
+        const observed: { spanning?: number } = {}
+        leaf.sub(spanning, () => {
+            rec.push("sub:leafSel")
+            observed.spanning = leaf.get(spanning) as number
+        })
+        const { calls: rootChanges } = traceChange(rec, root, "root")
+        traceCommitEnd(rec, root, "root")
+
+        return {
+            root,
+            mid,
+            leaf,
+            states: { a, b, c, spanning },
+            rootChanges,
+            observed,
+            run: () =>
+                root.txn(txn => {
+                    txn.set(a, 1)
+                    txn.scope("x3-mid", midTxn => {
+                        midTxn.set(b, 2)
+                        midTxn.scope("x3-leaf", leafTxn => {
+                            leafTxn.set(c, 3)
+                        })
+                    })
+                }),
+            cleanup: () => {
+                leaf.detach()
+                mid.detach()
+            },
+        }
+    },
+    act: ctx => ctx.run(),
+    trace: [
+        ["onSet:a", "onSet:b", "onSet:c"],
+        "eval:leafSel",
+        "sub:leafSel",
+        "onChange:root",
+        "commitEnd:root",
+    ],
+    assert: ctx => {
+        expect(ctx.observed.spanning).toBe(6) // final, fully-applied snapshot
+        expect(ctx.rootChanges).toHaveLength(1)
+        expect(ctx.rootChanges[0]!.changes).toHaveLength(3)
+        ctx.cleanup()
+    },
+}
+
+/** Root set + scope unset of the same atom in one txn: the scope re-inherits
+ *  the value the SAME transaction wrote to the root, the subscriber fires once
+ *  with that final value, and the delegate survives for later root writes. */
+const setPlusUnsetCase: TraceCase<TreeCtx> = {
+    name: "root set + scope unset — re-inherits the new value, one notification",
+    build: (rec: Recorder) => {
+        const root = store()
+        const mid = root.scope("xu-scope")
+        const b = tracedAtom(rec, "b", 1)
+        mid.set(b, 5) // pre-existing scope shadow
+        const observed: { spanning?: number } = {}
+        mid.sub(b, () => {
+            rec.push("sub:b")
+            observed.spanning = mid.get(b) as number
+        })
+        const { calls: rootChanges } = traceChange(rec, root, "root")
+        traceCommitEnd(rec, root, "root")
+
+        return {
+            root,
+            mid,
+            leaf: mid,
+            states: { b },
+            rootChanges,
+            observed,
+            run: () =>
+                root.txn(txn => {
+                    txn.set(b, 7)
+                    txn.scope("xu-scope", scoped => scoped.unset(b))
+                }),
+            cleanup: () => mid.detach(),
+        }
+    },
+    act: ctx => ctx.run(),
+    trace: ["onSet:b", "sub:b", "onChange:root", "commitEnd:root"],
+    assert: ctx => {
+        expect(ctx.root.get(ctx.states.b)).toBe(7)
+        expect(ctx.mid.get(ctx.states.b)).toBe(7) // re-inherited the txn's value
+        expect(ctx.observed.spanning).toBe(7) // never the stale shadow 5
+        // Root group first (set), then the scope's unset record.
+        expect(
+            ctx.rootChanges[0]!.changes.map((c: any) => c.kind),
+        ).toEqual(["set", "unset"])
+        // Delegate survives: a later root write still notifies the scope sub.
+        ctx.root.set(ctx.states.b, 9)
+        expect(ctx.observed.spanning).toBe(9)
+        ctx.cleanup()
+    },
+}
+
+runTraceTable("trace oracle · cross-scope tree commit", [
+    depth3Case,
+    setPlusUnsetCase,
+])

@@ -60,23 +60,35 @@ changes. Columns are evaluations, settlements, duplicate settlements, unique
 stores, store passes, duplicate store passes, edge visits, enqueues, and
 dequeues.
 
-| Scenario                         | Eval | Settle | Dup sel | Stores | Passes | Dup store | Edges | Enq | Deq |
-| -------------------------------- | ---: | -----: | ------: | -----: | -----: | --------: | ----: | --: | --: |
-| Atom-only write                  |    0 |      0 |       0 |      0 |      0 |         0 |     0 |   0 |   0 |
-| Live fan-out, width 8            |    8 |      8 |       0 |      1 |      1 |         0 |    16 |   8 |   8 |
-| Asymmetric DAG, depth 6          |    8 |      8 |       1 |      1 |      1 |         0 |    43 |   8 |   8 |
-| Dynamic churn, width 6           |    6 |      6 |       0 |      1 |      1 |         0 |    18 |   6 |   6 |
-| Single-store update + delete     |    2 |      2 |       1 |      1 |      2 |         1 |     3 |   0 |   0 |
-| Cross-scope transaction, depth 3 |    3 |      3 |       2 |      1 |      3 |         2 |     3 |   0 |   0 |
-| Global fan-out, width 6          |    6 |      6 |       0 |      6 |      6 |         0 |     6 |   0 |   0 |
+| Scenario                             | Eval | Settle | Dup sel | Stores | Passes | Dup store | Edges | Enq | Deq |
+| ------------------------------------ | ---: | -----: | ------: | -----: | -----: | --------: | ----: | --: | --: |
+| Atom-only write                      |    0 |      0 |       0 |      0 |      0 |         0 |     0 |   0 |   0 |
+| Live fan-out, width 8                |    8 |      8 |       0 |      1 |      1 |         0 |    16 |   8 |   8 |
+| Asymmetric DAG, depth 6              |    8 |      8 |       1 |      1 |      1 |         0 |    43 |   8 |   8 |
+| Dynamic churn, width 6               |    6 |      6 |       0 |      1 |      1 |         0 |    18 |   6 |   6 |
+| Single-store update + delete         |    2 |      2 |       1 |      1 |      2 |         1 |     3 |   0 |   0 |
+| Cross-scope transaction, depth 3     |    1 |      1 |       0 |      1 |      1 |         0 |     3 |   0 |   0 |
+| Cross-scope update + delete + unset  |    1 |      1 |       0 |      1 |      1 |         0 |     4 |   0 |   0 |
+| Cross-scope txn, plan/peer overlap   |    1 |      1 |       0 |      1 |      1 |         0 |     2 |   0 |   0 |
+| Global fan-out, width 6              |    6 |      6 |       0 |      6 |      6 |         0 |     6 |   0 |   0 |
 
 Selector/store counts that express current commit behavior are exact. Edge and
 queue gates allow narrow structural headroom: 0–25% for linear shapes and
 approximately ±16% for the asymmetric DAG. Queue enqueues must equal dequeues.
 These are engine-independent algorithm counts, not JavaScript object-layout or
 nanosecond assertions. The update-plus-delete case deliberately reaches the same
-selector twice and proves both duplicate detectors are live. A future
-proven-safe deduplication may lower these baselines, but increasing them
+selector twice through the single-store cleanup settlement's per-kind passes and
+proves both duplicate detectors are live. The cross-scope rows record the
+proven-safe deduplication this table previously anticipated: the tree-level
+CommitPlan (`settleTransactionTreeCommit`) visits each affected store once with
+the union of its own and inherited triggers, so the depth-3 spanning selector
+dropped from three evaluations (one per reaching ancestor pass) to one, with
+zero duplicate settlements; the mixed-kind row proves the union spans update,
+delete, and unset triggers; and the plan/peer-overlap row proves a global peer
+that is itself a plan store folds into that single settlement instead of also
+running a separate peer pass. Cross-scope transaction commits (with or without
+global peers) additionally gate on exactly one `commitPlanRuns`. Lowering
+baselines further requires the same proven-safe standard; increasing them
 requires review.
 
 ## Retained-memory methodology and baseline
@@ -103,14 +115,22 @@ runtime-specific because the heaps differ, but are normalized per scenario unit
 and leave roughly 25–30% above the observed median. Released heap has a fixed
 ceiling: 512 KiB on Bun and 256 KiB on Node.
 
+Calibration note (single-store transactions, Bun): JSC's
+`heapSize + extraMemorySize` is sensitive to the byte layout of the commit
+engine module — adding a never-called function to a pristine `commitEngine.ts`
+alone moved this scenario 157 → 229 B/unit while the Node/V8 lane stayed at
+85 B/unit. The Bun observed/ceiling values therefore absorb code-layout shifts
+(360 still detects a real per-transaction pin such as a retained MutationDraft,
+~+220 B/unit here); the Node lane is the layout-insensitive cross-check.
+
 | Scenario                            | Units | Bun B/unit | Bun ceiling | Node B/unit | Node ceiling |
 | ----------------------------------- | ----: | ---------: | ----------: | ----------: | -----------: |
 | Atom-only stores                    | 4,000 |        111 |         160 |          84 |          120 |
 | Live selector graphs                | 1,500 |      1,873 |       2,400 |       1,169 |        1,500 |
 | Dynamic dependency churn            | 1,000 |      1,581 |       2,100 |       1,179 |        1,400 |
 | Scope creation and disposal         | 1,500 |      2,474 |       3,200 |       2,668 |        3,400 |
-| Single-store transactions           | 2,500 |        157 |         200 |          82 |          120 |
-| Deep cross-scope transactions       |    64 |     22,949 |      30,000 |      10,569 |       14,000 |
+| Single-store transactions           | 2,500 |        230 |         360 |          85 |          120 |
+| Deep cross-scope transactions       |    64 |     22,969 |      30,000 |      10,601 |       14,000 |
 | Global fan-out                      | 1,000 |      2,870 |       3,700 |       2,629 |        3,400 |
 | Store disposal + async cancellation |   500 |      5,834 |       7,500 |       5,889 |        7,500 |
 
@@ -127,7 +147,7 @@ three times and compares the cross-run median, avoiding fixed nanosecond gates.
 | Dependency churn 100                | 120.2 µs | 142.0 µs |
 | Create + dispose scope              |   542 ns |   1.3 µs |
 | Single-store transaction, 20 writes |   6.7 µs |   8.5 µs |
-| Cross-scope transaction, depth 8    |  36.9 µs |  42.0 µs |
+| Cross-scope transaction, depth 8    |  20.5 µs |  19.0 µs |
 | Global fan-out 100                  |  26.6 µs |  36.9 µs |
 | Dispose pending selector            |   3.5 µs |   6.7 µs |
 

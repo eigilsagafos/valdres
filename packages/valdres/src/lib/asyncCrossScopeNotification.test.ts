@@ -6,12 +6,12 @@ import { store } from "../store"
 // An ASYNC (Promise-returning) selector spanning a root atom and a scope atom,
 // observed by a scope subscriber across a single cross-scope transaction.
 //
-// The cross-scope commit writes the whole tree, then runs ONE propagation pass
-// per store (root-first), deferring all subscriber notification to commit-end
-// (see propagateUpdatedAtoms.NotifyTarget / transaction.commit). The PR's
-// "fires exactly once with the final value" guarantee is for SYNCHRONOUS
-// selectors. A Promise-returning selector cannot honor that at commit time — its
-// committed value IS a pending promise — so its observable contract is:
+// The cross-scope commit writes the whole tree, then settles each affected
+// store ONCE through the tree-level CommitPlan (settleTransactionTreeCommit),
+// deferring all subscriber notification to commit-end. The "fires exactly once
+// with the final value" guarantee is for SYNCHRONOUS selectors. A
+// Promise-returning selector cannot honor that at commit time — its committed
+// value IS a pending promise — so its observable contract is:
 //
 //   1 commit-end fire (delivering the pending promise) + 1 resolution fire
 //   (delivering the resolved final value, from handleSelectorResult's .then,
@@ -85,18 +85,16 @@ describe("async selector spanning root + scope under a cross-scope txn", () => {
         })
 
         // CRUCIAL: the commit-end notification fires EXACTLY ONCE, even though
-        // the async selector is reachable by two store-passes (root's
-        // propagateToScopes + the scope's own pass). The deferred NotifyTarget
-        // accumulates the subscriber into one per-store set and fires it once.
+        // the async selector's triggers span two stores. The tree-level commit
+        // visits the scope once and the deferred NotifyTarget fires the
+        // subscriber once.
         expect(cb.mock.calls.length - callsBeforeCommit).toBe(1)
 
-        // The selector BODY ran once per reaching pass (no cross-pass dedup for
-        // promise selectors — the reference-equality check never prunes a fresh
-        // promise), so two new promises were created during the commit. This is
-        // the documented cost of dropping the dedup guard, not a notification
-        // duplication.
-        expect(evals - evalsBeforeCommit).toBe(2)
-        expect(resolvers.length - resolversBeforeCommit).toBe(2)
+        // The selector BODY also ran exactly once — the scope's single visit
+        // collects both the inherited root trigger and the scope's own trigger
+        // before evaluating — so ONE new promise was created by the commit.
+        expect(evals - evalsBeforeCommit).toBe(1)
+        expect(resolvers.length - resolversBeforeCommit).toBe(1)
 
         // What the single commit-end fire delivered: a PENDING PROMISE (the
         // committed value of an async selector mid-flight). NOT a stale numeric
@@ -105,9 +103,6 @@ describe("async selector spanning root + scope under a cross-scope txn", () => {
         expect(S.get(sum)).toBeInstanceOf(Promise)
 
         // --- the eventual promise RESOLUTION (separate, later microtask) ---
-        // Resolve every promise created during the commit. Only the last-stored
-        // one is the live value; handleSelectorResult's stale-promise guard
-        // drops the others, so resolution notifies exactly once regardless.
         for (let i = resolversBeforeCommit; i < resolvers.length; i++) {
             resolvers[i]()
         }
@@ -120,12 +115,14 @@ describe("async selector spanning root + scope under a cross-scope txn", () => {
         expect(S.get(sum)).toBe(22)
     })
 
-    test("resolution notifies exactly once and with the final value, whichever commit-promise resolves first", async () => {
-        // The selector body runs twice during the commit, producing two promises
-        // with identical inputs (r=2, s=20). Only the last-stored promise is the
-        // live value. This pins that resolving them in REVERSE order still yields
-        // exactly one resolution fire delivering 22 — the stale-promise guard
-        // discards the non-live promise's resolution.
+    test("resolution notifies once with the final value, whichever in-flight promise resolves first", async () => {
+        // Each cross-scope commit creates ONE promise (the scope settles once),
+        // so two back-to-back commits leave two in-flight promises with
+        // different inputs. Only the last-stored promise is the live value.
+        // This pins that resolving them in REVERSE order — the live one first,
+        // then the superseded one — still yields exactly one resolution fire
+        // delivering the final value: the stale-promise guard discards the
+        // superseded promise's resolution.
         const root = store()
         const S = root.scope("S")
         const r = atom(1, { name: "acs2-r" })
@@ -160,22 +157,27 @@ describe("async selector spanning root + scope under a cross-scope txn", () => {
             t.set(r, 2)
             t.scope("S", st => st.set(s, 20))
         })
+        root.txn(t => {
+            t.set(r, 3)
+            t.scope("S", st => st.set(s, 30))
+        })
+        // One promise per commit (each commit settles the scope once), and one
+        // commit-end fire per commit, each delivering the then-pending promise.
         expect(resolvers.length - resolversBeforeCommit).toBe(2)
-        // one commit-end fire, delivering the pending promise
-        expect(cb.mock.calls.length - callsBeforeCommit).toBe(1)
+        expect(cb.mock.calls.length - callsBeforeCommit).toBe(2)
         expect(observed[observed.length - 1]).toBe("PROMISE")
 
-        // Resolve REVERSE: last-created first, then the earlier (non-live) one.
+        // Resolve REVERSE: last-created (live) first, then the superseded one.
         resolvers[resolvers.length - 1]()
         await flush()
         resolvers[resolversBeforeCommit]()
         await flush()
 
-        // Exactly one resolution fire total (the second commit-promise's
-        // resolution is dropped as stale), and the final value is 22.
-        expect(cb.mock.calls.length - callsBeforeCommit).toBe(2)
-        expect(observed).toEqual([11, "PROMISE", 22])
-        expect(S.get(sum)).toBe(22)
+        // Exactly one resolution fire total (the superseded promise's
+        // resolution is dropped as stale), and the final value is 33.
+        expect(cb.mock.calls.length - callsBeforeCommit).toBe(3)
+        expect(observed).toEqual([11, "PROMISE", "PROMISE", 33])
+        expect(S.get(sum)).toBe(33)
     })
 
     test("deterministic via awaiting the committed promise (no controlled resolvers)", async () => {

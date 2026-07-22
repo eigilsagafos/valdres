@@ -226,7 +226,7 @@ describe("deterministic architecture performance gates", () => {
         cleanup()
     })
 
-    test("deep cross-scope transactions expose repeated settlement passes", () => {
+    test("deep cross-scope transactions settle each affected store once", () => {
         const root = store()
         const level1 = root.scope("level-1")
         const level2 = level1.scope("level-2")
@@ -253,14 +253,121 @@ describe("deterministic architecture performance gates", () => {
         })
         reportCounts("Cross-scope transaction, depth 3", counts)
 
-        expect(counts.selectorEvaluations).toBe(3)
-        expect(counts.selectorSettlements).toBe(3)
-        expect(counts.duplicateSelectorSettlements).toBe(2)
+        // The tree-level CommitPlan visits each store once with the union of
+        // its own and inherited triggers, so the spanning selector evaluates
+        // once for the whole commit — not once per reaching ancestor pass.
+        expect(counts.selectorEvaluations).toBe(1)
+        expect(counts.selectorSettlements).toBe(1)
+        expect(counts.duplicateSelectorSettlements).toBe(0)
         expect(counts.affectedStoresSettled).toBe(1)
-        expect(counts.storeSettlementPasses).toBe(3)
-        expect(counts.duplicateStoreSettlements).toBe(2)
+        expect(counts.storeSettlementPasses).toBe(1)
+        expect(counts.duplicateStoreSettlements).toBe(0)
+        expect(counts.commitPlanRuns).toBe(1)
         cleanup()
         root.dispose()
+    })
+
+    test("cross-scope update + delete + unset settles the spanning selector once", () => {
+        // The union walk covers every mutation kind in one per-store
+        // settlement: a selector depending on an updated root atom, a
+        // root-deleted family member, AND a scope-unset atom evaluates once.
+        const root = store()
+        const scope = root.scope("mixed")
+        const family = atomFamily<string>(undefined)
+        const first = family("first")
+        const second = family("second")
+        root.set(first, "a")
+        root.set(second, "b")
+        const rootValue = atom(0)
+        const scopeValue = atom(0)
+        scope.set(scopeValue, 7)
+        const spanning = selector(
+            get => `${get(family).length}:${get(rootValue)}:${get(scopeValue)}`,
+        )
+        const cleanup = scope.sub(spanning, noop)
+        expect(scope.get(spanning)).toBe("2:0:7")
+
+        const counts = measureArchitecture(root, () => {
+            root.txn(txn => {
+                txn.del(second)
+                txn.set(rootValue, 1)
+                txn.scope("mixed", scopeTxn => scopeTxn.unset(scopeValue))
+            })
+        })
+        reportCounts("Cross-scope update + delete + unset", counts)
+
+        expect(scope.get(spanning)).toBe("1:1:0")
+        expect(counts.selectorEvaluations).toBe(1)
+        expect(counts.selectorSettlements).toBe(1)
+        expect(counts.duplicateSelectorSettlements).toBe(0)
+        expect(counts.storeSettlementPasses).toBe(1)
+        expect(counts.duplicateStoreSettlements).toBe(0)
+        expect(counts.commitPlanRuns).toBe(1)
+        cleanup()
+        root.dispose()
+    })
+
+    test("global-containing cross-scope transactions run one commit plan", () => {
+        const shared = atom(0, { global: true })
+        const origin = store()
+        const scope = origin.scope("g-scope")
+        const scoped = atom(0)
+        scope.set(scoped, 0)
+        const peer = store()
+        peer.get(shared)
+
+        const counts = measureArchitecture([origin, peer], () => {
+            origin.txn(txn => {
+                txn.set(shared, 1)
+                txn.scope("g-scope", scopeTxn => scopeTxn.set(scoped, 2))
+            })
+        })
+        reportCounts("Cross-scope transaction with global peer", counts)
+
+        expect(counts.commitPlanRuns).toBe(1)
+        expect(peer.get(shared)).toBe(1)
+        expect(scope.get(scoped)).toBe(2)
+        origin.dispose()
+        peer.dispose()
+    })
+
+    test("a global peer that is also a plan store settles once", () => {
+        // The plan root touches the global atom (making it a fan-out peer of
+        // the scope's write) AND carries its own local write. The peer update
+        // folds into the root's single tree-walk settlement — a spanning
+        // selector evaluates once, never once in a peer pass plus once in the
+        // walk.
+        const shared = atom(0, { global: true })
+        const origin = store()
+        const scope = origin.scope("gp-scope")
+        const local = atom(0)
+        origin.get(shared) // origin is now an attached peer of `shared`
+        const outside = store()
+        outside.get(shared) // a genuine non-plan peer keeps the legacy pass
+        const spanning = selector(get => get(local) + get(shared))
+        const cleanup = origin.sub(spanning, noop)
+        origin.get(spanning)
+
+        const counts = measureArchitecture([origin, outside], () => {
+            origin.txn(txn => {
+                txn.set(local, 1)
+                txn.scope("gp-scope", scopeTxn => scopeTxn.set(shared, 5))
+            })
+        })
+        reportCounts("Cross-scope txn, overlapping plan/peer store", counts)
+
+        expect(origin.get(shared)).toBe(5)
+        expect(outside.get(shared)).toBe(5)
+        expect(origin.get(spanning)).toBe(6)
+        expect(counts.selectorEvaluations).toBe(1)
+        expect(counts.selectorSettlements).toBe(1)
+        expect(counts.duplicateSelectorSettlements).toBe(0)
+        expect(counts.storeSettlementPasses).toBe(1)
+        expect(counts.duplicateStoreSettlements).toBe(0)
+        expect(counts.commitPlanRuns).toBe(1)
+        cleanup()
+        origin.dispose()
+        outside.dispose()
     })
 
     test("global fan-out settles each affected store once", () => {

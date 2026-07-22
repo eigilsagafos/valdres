@@ -38,12 +38,14 @@ import { runOnSets } from "./runOnSets"
  * (see test/import-cycles) — the sequencer must not be hard-wired to the
  * propagation layer it sequences.
  *
- * Global and cross-scope transaction fan-out remain behind their existing
- * adapters. Async atom,
- * native async selector, and revalidation settlement enter this coordinator;
- * simple no-hook shapes use module-static entries from `createScalarCommit`
- * below; their bound operation owns any required apply, propagation,
- * observers, reporting, and local boundary.
+ * Cross-scope transaction commits enter the engine through the
+ * `transactionTree` settlement (their global peer updates ride the settlement,
+ * so the whole multi-store unit is one plan). Ordinary direct global writes
+ * and single-store global cleanup remain behind their existing adapters.
+ * Async atom, native async selector, and revalidation settlement enter this
+ * coordinator; simple no-hook shapes use module-static entries from
+ * `createScalarCommit` below; their bound operation owns any required apply,
+ * propagation, observers, reporting, and local boundary.
  */
 
 /**
@@ -80,12 +82,36 @@ export const runHookedDirectWrite = <Value>(
 
 // Module-level phase gates: runCommitPlan is on the per-commit hot path of
 // every migrated write shape, so its guards must not allocate per run.
+const treeHasWork = (
+    entries: Extract<
+        CommitPlan["settlement"],
+        { kind: "transactionTree" }
+    >["entries"],
+) => {
+    for (const entry of entries) {
+        if (
+            entry.updatedAtoms.length > 0 ||
+            entry.deleted !== undefined ||
+            (entry.unsetAtoms !== undefined && entry.unsetAtoms.length > 0)
+        ) {
+            return true
+        }
+    }
+    return false
+}
+
 const settlementHasWork = (settlement: CommitPlan["settlement"]) =>
     settlement.kind === "none" ||
     settlement.kind === "selector" ||
-    settlement.atoms.length > 0 ||
-    (settlement.kind === "transaction" &&
-        (settlement.deleted !== undefined || settlement.unset !== undefined))
+    (settlement.kind === "transactionTree"
+        ? // Changed global peers are settlement work even when every write in
+          // the local tree was value-equal.
+          settlement.globalUpdates !== undefined ||
+          treeHasWork(settlement.entries)
+        : settlement.atoms.length > 0 ||
+          (settlement.kind === "transaction" &&
+              (settlement.deleted !== undefined ||
+                  settlement.unset !== undefined)))
 
 const planShouldContinue = (plan: CommitPlan) =>
     plan.continueAfterError !== false || !plan.errors.hasError
@@ -162,6 +188,13 @@ export const runCommitPlan = (plan: CommitPlan) => {
                         settlement.deleted,
                         settlement.unset,
                         plan.data,
+                        plan.report,
+                        plan.errors,
+                    )
+                } else if (settlement.kind === "transactionTree") {
+                    settlement.settle(
+                        settlement.entries,
+                        settlement.globalUpdates,
                         plan.report,
                         plan.errors,
                     )

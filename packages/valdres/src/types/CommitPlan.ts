@@ -1,4 +1,5 @@
 import type { CommitErrors } from "../lib/commitErrors"
+import type { StoreAtomUpdates } from "../lib/globalAtomFanOut"
 import type { ChangeReport } from "../lib/notifyChangeListeners"
 import type { NotifyTarget } from "../lib/propagateUpdatedAtoms"
 import type { DeferredOnSet } from "../lib/runOnSets"
@@ -10,6 +11,10 @@ import type { Selector } from "./Selector"
 import type { SelectorSettleFn } from "./SelectorSettleFn"
 import type { StoreData } from "./StoreData"
 import type { TransactionSettleFn } from "./TransactionSettleFn"
+import type {
+    TransactionTreeEntry,
+    TransactionTreeSettleFn,
+} from "./TransactionTreeSettleFn"
 
 type UpdateSettlement = {
     kind: "update"
@@ -47,6 +52,17 @@ type TransactionSettlement = {
     settle: TransactionSettleFn
 }
 
+/** A cross-scope transaction commit: the whole affected store tree settles as
+ *  one root-first walk, each store exactly once against the union of its own
+ *  writes and inherited changes. `entries` is the flat root-first plan;
+ *  `globalUpdates` is undefined (never empty) when no global peer changed. */
+type TransactionTreeSettlement = {
+    kind: "transactionTree"
+    entries: TransactionTreeEntry[]
+    globalUpdates: StoreAtomUpdates | undefined
+    settle: TransactionTreeSettleFn
+}
+
 type NoSettlement = {
     kind: "none"
 }
@@ -56,6 +72,7 @@ type CommitSettlement =
     | DeleteSettlement
     | SelectorSettlement
     | TransactionSettlement
+    | TransactionTreeSettlement
     | NoSettlement
 
 /**
@@ -67,8 +84,9 @@ type CommitSettlement =
  * `settlement` is a typed description of an existing propagation primitive.
  * Update/reset/unset plans use `settleCommit` with shared `SettleFlags`;
  * deletion uses `settleDeletedCommit`; a single-store transaction commit with
- * cleanup mutations uses `settleTransactionCommit`; native async selectors use
- * their downstream-only settlement; guarded cleanup uses `kind: "none"`.
+ * cleanup mutations uses `settleTransactionCommit`; a cross-scope transaction
+ * commit uses `settleTransactionTreeCommit`; native async selectors use their
+ * downstream-only settlement; guarded cleanup uses `kind: "none"`.
  *
  * Optional phase callbacks stay declarative: the engine owns their order.
  * `beforeSettle` lets unset prepend its distinct removal change record;
@@ -76,11 +94,14 @@ type CommitSettlement =
  * re-delegation; `flushReport` drains a deliberately deferred onChange sink.
  * The callbacks are absent from ordinary bulk plans.
  *
- * Scope note: local plans still model one store and one settlement — including
+ * Scope note: most plans model one store and one settlement — including
  * single-store transaction commits, whose finalized overlay translates into a
- * plan. Cross-scope transactions and ordinary global writes remain behind
- * their adapters; async global settlement delegates its multi-store phase
- * without adding a local begin/end boundary.
+ * plan. A cross-scope transaction commit models the whole affected store tree
+ * through the `transactionTree` settlement (its global peer updates ride the
+ * settlement so the entire commit stays one plan). Ordinary direct global
+ * writes and single-store global cleanup remain behind their adapters; async
+ * global settlement delegates its multi-store phase without adding a local
+ * begin/end boundary.
  */
 export type CommitPlan = {
     data: StoreData

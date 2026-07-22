@@ -68,8 +68,10 @@ import {
     propagateAtomUpdate,
     propagateDeletedAtoms,
     settleTransactionCommit,
+    settleTransactionTreeCommit,
     type NotifyTarget,
 } from "./propagateUpdatedAtoms"
+import type { TransactionTreeEntry } from "../types/TransactionTreeSettleFn"
 import { runOnSets, type DeferredOnSet } from "./runOnSets"
 import { commitAtoms, commitHookFreeAtoms } from "./setAtoms"
 import { writeAtoms } from "./writeAtoms"
@@ -80,13 +82,13 @@ import {
 import { noteStateValueChanged } from "./stateRevisions"
 
 /** One store's slot in a cross-scope commit. Collected root-first; written
- *  leaf-first (see commit) but notified root-first. */
-type CommitWrite = {
+ *  leaf-first (see commit) but settled root-first. Extends the settlement's
+ *  entry shape structurally so the finalized array is handed to the tree
+ *  CommitPlan zero-copy; `children` links direct scoped entries so the
+ *  settlement walk visits plan stores without reconstructing the tree. */
+type CommitWrite = TransactionTreeEntry & {
     txn: TransactionContext
-    data: StoreData
-    updatedAtoms: Atom[]
-    deleted: AtomFamilyAtom<any, any>[] | undefined
-    unsetAtoms: Atom[] | undefined
+    children: CommitWrite[] | undefined
     onSets: DeferredOnSet[]
 }
 
@@ -646,9 +648,10 @@ export class TransactionContext {
         // every global atom carries a marker onSet) and no cleanup mutations —
         // translates its whole commit into one CommitPlan that owns the outer
         // commit-end boundary and the deferred onChange flush. The remaining
-        // arms share their write phase with the unmigrated global fan-out
-        // adapter, whose branch is only known after that phase, so their outer
-        // boundary and flush stay below until the cross-scope/global migration.
+        // arms (including the cross-scope tree plan) keep their outer boundary
+        // and flush below: the single-store cleanup shape still shares its
+        // write phase with the unmigrated single-store global fan-out adapter,
+        // whose branch is only known after that phase.
         if (
             !this._scopedTransactions &&
             !this._draft.hasCommitEffects &&
@@ -805,11 +808,10 @@ export class TransactionContext {
         }
 
         // Cross-scope path: write the whole tree (root + every nested scope)
-        // first, then run a single notification pass per store. This guarantees
-        // no subscriber, onSet hook, or selector ever observes a half-applied
-        // transaction — root written while a scope isn't, or scope A written
-        // while scope B isn't. The final committed state is identical to the
-        // old sequential model; only the observation point moves.
+        // first, then settle each affected store exactly once through one
+        // tree-level CommitPlan. This guarantees no subscriber, onSet hook, or
+        // selector ever observes a half-applied transaction — root written
+        // while a scope isn't, or scope A written while scope B isn't.
         const plan: CommitWrite[] = []
         this.collectStores(plan)
 
@@ -858,129 +860,35 @@ export class TransactionContext {
         }
 
         // Every value across the tree and every global peer is now applied.
-        // Hooks fire root-first, all are attempted, and their first error is
-        // retained until propagation and notification have also completed.
+        // Hand the finalized plan to the commit engine as ONE tree-level
+        // CommitPlan: hooks fire root-first in phase 3 (the flatten preserves
+        // the historical per-entry order), then settleTransactionTreeCommit
+        // settles each affected store exactly once against the union of its
+        // own writes and inherited changes, fires every subscriber once, and
+        // brackets any global peer fan-out — see the walk's header. The outer
+        // commit-end boundary and the sink flush stay with
+        // commitOpenTransaction, exactly like the single-store cleanup plan.
+        const onSets: DeferredOnSet[] = []
         for (const entry of plan) {
-            runOnSets(entry.onSets, errors)
+            for (const deferred of entry.onSets) onSets.push(deferred)
         }
-
-        // One propagation pass per store, root-first (ancestors before
-        // descendants). Order matters: an ancestor's pass cross-propagates its
-        // atom changes into descendant scopes (propagateToScopes), so a scope
-        // selector that transitively depends on an ancestor atom is recomputed
-        // with final upstream values before — or again in — the scope's own pass.
-        //
-        // Defer all subscriber notification to the end of the commit. Each
-        // store's pass settles its own selectors against the fully-written
-        // state (root-first, so read-through ancestor values are final); firing
-        // only after every pass has run means every observer reads the final,
-        // consistent snapshot — never a value a later pass still corrects
-        // (serializable observation). There is deliberately NO cross-pass dedup
-        // guard: a selector reachable by two passes is simply recomputed in each
-        // (the equality check prunes the redundant result), and the deferred
-        // notification fires its subscriber exactly once. See the warning on
-        // NotifyTarget for why a dedup guard must not come back.
-        const notify: NotifyTarget = new Map()
-        const globalSink =
-            globalUpdates && globalUpdates.size > 0
-                ? createChangeSink(undefined, "set")
-                : undefined
-        const commitRoots = globalSink
-            ? beginGlobalCommit(this._data, globalUpdates!)
-            : []
-        // Global fan-out retains its public direct-set metadata and precedes
-        // the originating transaction's reports, as it did when fan-out lived
-        // inside the global atom's onSet wrapper.
-        if (globalUpdates) {
-            for (const [data, atoms] of globalUpdates) {
-                try {
-                    propagateAtomUpdate(atoms, data, false, notify, globalSink)
-                } catch (error) {
-                    recordCommitError(errors, error)
-                }
-            }
-        }
-        for (const { data, updatedAtoms, deleted, unsetAtoms } of plan) {
-            if (updatedAtoms.length > 0) {
-                try {
-                    propagateAtomUpdate(updatedAtoms, data, false, notify, sink)
-                } catch (error) {
-                    recordCommitError(errors, error)
-                }
-            }
-            if (deleted) {
-                try {
-                    propagateDeletedAtoms(
-                        deleted,
-                        data,
-                        undefined,
-                        undefined,
-                        undefined,
-                        notify,
-                        sink,
-                    )
-                } catch (error) {
-                    recordCommitError(errors, error)
-                }
-            }
-            if (unsetAtoms && unsetAtoms.length > 0) {
-                // Atoms first (emitted as "unset" via reportUnsetAtom), then
-                // propagate with reportAtoms=false so dependent-selector recomputes
-                // are reported too — without re-surfacing the atom (its value is
-                // gone from data.values) as a "set".
-                if (sink) {
-                    for (const atom of unsetAtoms) {
-                        reportUnsetAtom(
-                            atom,
-                            data,
-                            effectiveValueAfterUnset(atom, data),
-                            sink,
-                        )
-                    }
-                }
-                try {
-                    propagateAtomUpdate(
-                        unsetAtoms,
-                        data,
-                        false,
-                        notify,
-                        sink,
-                        false,
-                        false,
-                    )
-                } catch (error) {
-                    recordCommitError(errors, error)
-                }
-            }
-        }
-        try {
-            notifyDeferred(notify)
-        } catch (error) {
-            recordCommitError(errors, error)
-        }
-        if (globalSink) {
-            try {
-                flushChangeSink(globalSink)
-            } catch (error) {
-                recordCommitError(errors, error)
-            }
-            endGlobalCommit(commitRoots, errors)
-        }
-        // Re-delegate AFTER firing (notifyDeferred): the scope-local callback
-        // idempotently drops its delegate when it fires, so the fresh parent
-        // delegate must be (re)established last.
-        for (const { data, unsetAtoms } of plan) {
-            if (unsetAtoms) {
-                for (const atom of unsetAtoms) {
-                    try {
-                        reDelegateScopeSubscriptions(atom, data)
-                    } catch (error) {
-                        recordCommitError(errors, error)
-                    }
-                }
-            }
-        }
-        throwCommitError(errors)
+        runCommitPlan({
+            data: this._data,
+            settlement: {
+                kind: "transactionTree",
+                entries: plan,
+                globalUpdates:
+                    globalUpdates && globalUpdates.size > 0
+                        ? globalUpdates
+                        : undefined,
+                settle: settleTransactionTreeCommit,
+            },
+            onSets,
+            errors,
+            report: sink,
+            // continueAfterError stays default: a hook error must not starve
+            // settlement of already-applied writes.
+        })
     }
 
     /**
@@ -1090,20 +998,27 @@ export class TransactionContext {
     }
 
     // Depth-first pre-order: this store, then each nested scope. Produces a
-    // root-first plan used directly for the notify pass and reversed for the
-    // write pass (so descendants are written before their ancestors).
-    private collectStores = (plan: CommitWrite[]) => {
-        plan.push({
+    // root-first plan used directly for the settlement walk and reversed for
+    // the write pass (so descendants are written before their ancestors).
+    // `parent.children` links direct scoped entries for the walk.
+    private collectStores = (plan: CommitWrite[], parent?: CommitWrite) => {
+        const entry: CommitWrite = {
             txn: this,
             data: this._data,
             updatedAtoms: [],
             deleted: undefined,
             unsetAtoms: undefined,
+            children: undefined,
             onSets: [],
-        })
+        }
+        plan.push(entry)
+        if (parent) {
+            if (parent.children) parent.children.push(entry)
+            else parent.children = [entry]
+        }
         if (this._scopedTransactions) {
             for (const [, scopedTxn] of this._scopedTransactions) {
-                scopedTxn.collectStores(plan)
+                scopedTxn.collectStores(plan, entry)
             }
         }
     }
