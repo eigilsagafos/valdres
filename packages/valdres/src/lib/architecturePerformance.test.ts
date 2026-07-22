@@ -10,6 +10,7 @@ import {
     type ArchitectureCounters,
 } from "./architectureInstrumentation"
 import { getStoreData } from "./getStoreData"
+import { mockAsyncSource, withFakeClock } from "../../test/utils/fakeClock"
 
 const noop = () => {}
 
@@ -391,10 +392,100 @@ describe("deterministic architecture performance gates", () => {
         expect(counts.affectedStoresSettled).toBe(width)
         expect(counts.storeSettlementPasses).toBe(width)
         expect(counts.duplicateStoreSettlements).toBe(0)
+        expect(counts.commitPlanRuns).toBe(1)
         expectBetween(counts.dependencyEdgeVisits, width, width + 2)
         expect(selectors.map((derived, i) => stores[i]!.get(derived))).toEqual(
             Array.from({ length: width }, (_, i) => i + 1),
         )
         for (const target of stores) target.dispose()
     })
+
+    test("unobserved global roots use the no-graph fast path", () => {
+        const shared = atom(0, { global: true })
+        const stores = Array.from({ length: 6 }, () => store())
+        stores.forEach(target => target.get(shared))
+
+        const counts = measureArchitecture(stores, () =>
+            stores[0]!.set(shared, 1),
+        )
+
+        expect(counts.commitPlanRuns).toBe(0)
+        expect(counts.storeSettlementPasses).toBe(0)
+        expect(counts.selectorSettlements).toBe(0)
+        expect(stores.map(target => target.get(shared))).toEqual(
+            Array(stores.length).fill(1),
+        )
+        for (const target of stores) target.dispose()
+    })
+
+    test("global reset and resetSelf each admit one visit-once forest plan", () => {
+        const shared = atom(0, { global: true })
+        const first = store()
+        const child = first.scope("reset-child")
+        const peer = store()
+        const stores = [first, child, peer]
+        const selectors = stores.map(target => {
+            const derived = selector(get => get(shared) + 1)
+            target.sub(derived, noop)
+            return derived
+        })
+        first.set(shared, 4)
+
+        const reset = measureArchitecture([first, peer], () =>
+            first.reset(shared),
+        )
+        expect(reset.commitPlanRuns).toBe(1)
+        expect(reset.duplicateStoreSettlements).toBe(0)
+        expect(reset.duplicateSelectorSettlements).toBe(0)
+
+        first.set(shared, 9)
+        const resetSelf = measureArchitecture([first, peer], () =>
+            shared.resetSelf(),
+        )
+        expect(resetSelf.commitPlanRuns).toBe(1)
+        expect(resetSelf.duplicateStoreSettlements).toBe(0)
+        expect(resetSelf.duplicateSelectorSettlements).toBe(0)
+        expect(selectors.map((derived, i) => stores[i]!.get(derived))).toEqual([
+            1, 1, 1,
+        ])
+        first.dispose()
+        peer.dispose()
+    })
+
+    test("global max-age meta-on, value, and meta-off are three forest plans", () =>
+        withFakeClock(async clock => {
+            const source = mockAsyncSource<number>()
+            const shared = atom(source.fn as unknown as () => number, {
+                global: true,
+                maxAge: 100,
+            })
+            const first = store()
+            const second = store()
+            const unsubFirst = first.sub(shared, noop)
+            const unsubSecond = second.sub(shared, noop)
+            await source.resolve(1)
+
+            const instrumentation = createArchitectureInstrumentation()
+            const firstData = getStoreData(first)
+            const secondData = getStoreData(second)
+            firstData.architectureInstrumentation = instrumentation
+            secondData.architectureInstrumentation = instrumentation
+            try {
+                await clock.advance(100)
+                await source.resolve(2)
+            } finally {
+                delete firstData.architectureInstrumentation
+                delete secondData.architectureInstrumentation
+            }
+
+            expect(instrumentation.counters.commitPlanRuns).toBe(3)
+            expect(instrumentation.counters.duplicateStoreSettlements).toBe(0)
+            expect(instrumentation.counters.duplicateSelectorSettlements).toBe(
+                0,
+            )
+            unsubFirst()
+            unsubSecond()
+            first.dispose()
+            second.dispose()
+        }))
 })

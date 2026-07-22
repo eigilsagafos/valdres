@@ -7,34 +7,17 @@ import { isFamilyAtom } from "../utils/isFamilyAtom"
 import { isPromiseLike } from "../utils/isPromiseLike"
 import { runCommitPlan } from "./commitEngine"
 import { SETTLE_DEFAULT } from "./commitIntents"
-import {
-    createCommitErrors,
-    recordCommitError,
-    throwCommitError,
-} from "./commitErrors"
+import { createCommitErrors } from "./commitErrors"
 import { equal } from "./equal"
-import {
-    applyGlobalOnSets,
-    beginGlobalCommit,
-    endGlobalCommit,
-} from "./globalAtomFanOut"
-import {
-    createChangeSink,
-    flushChangeSink,
-    type ChangeSink,
-} from "./notifyChangeListeners"
+import { applyGlobalSets, collectGlobalOnSets } from "./globalAtomFanOut"
+import { flushChangeSink, type ChangeSink } from "./notifyChangeListeners"
 import { beginCommit, commitEndRegistry, endCommit } from "./onCommitEnd"
-import {
-    notifyDeferred,
-    propagateAtomUpdate,
-    settleCommit,
-    type NotifyTarget,
-} from "./propagateUpdatedAtoms"
-import { runOnSets, type DeferredOnSet } from "./runOnSets"
+import { settleCommit, settleCommitForest } from "./propagateUpdatedAtoms"
+import type { DeferredOnSet } from "./runOnSets"
 import { setValueInData } from "./setValueInData"
 import { writeAtoms } from "./writeAtoms"
 
-// Safe only with writeAtoms(skipOnSet=true), which cannot mutate this queue.
+// Safe only with writeAtoms("skip"), which cannot mutate this queue.
 // Reusing it keeps hook-free bulk writes allocation-light.
 const noOnSets: DeferredOnSet[] = []
 const FRESH_ATOM_FAST_PATH_MIN = 256
@@ -45,9 +28,8 @@ const FRESH_ATOM_FAST_PATH_MIN = 256
  * cleanup mutations. Phases 1–2 run through writeAtoms; an explicitly hook-free
  * intent settles immediately (allocation-free — shared empty queue, shared
  * frozen flags); a hooked non-global commit runs phases 3–9 through
- * runCommitPlan. Global fan-out is unmigrated: peer values are still applied
- * here (they belong to the write phase), and when any peer changed, the
- * multi-store sequencing below runs as a legacy adapter.
+ * runCommitPlan. Global peer values are applied before that plan begins and
+ * ride the same canonical commit forest as the origin write.
  */
 export const commitAtoms = (
     pairs: Map<Atom<any>, any>,
@@ -60,7 +42,7 @@ export const commitAtoms = (
             pairs,
             data,
             initializedAtomsSet,
-            true,
+            "skip",
             noOnSets,
         )
         if (updatedAtoms.length > 0) {
@@ -80,19 +62,18 @@ export const commitAtoms = (
         pairs,
         data,
         initializedAtomsSet,
-        false,
+        "collect",
         onSets,
     )
     const errors = createCommitErrors()
 
     // Complete global fan-out while still in the write phase. Only after every
-    // peer has been attempted do user hooks run — on the non-global arm inside
-    // runCommitPlan, on the global arm explicitly below. Both arms branch on
-    // the map applyGlobalOnSets already returned (runOnSets cannot mutate it),
-    // so hook order relative to peer writes is unchanged.
-    const globalUpdates = applyGlobalOnSets(onSets, errors)
+    // peer has been attempted do user hooks run. CommitPlan owns that phase-two
+    // application and exposes the resulting per-store trigger groups to its
+    // forest settlement.
+    const globalSets = collectGlobalOnSets(onSets)
 
-    if (!globalUpdates || globalUpdates.size === 0) {
+    if (!globalSets) {
         runCommitPlan({
             data,
             settlement: {
@@ -107,49 +88,32 @@ export const commitAtoms = (
         })
         return
     }
-
-    // —— LEGACY GLOBAL FAN-OUT ADAPTER (unmigrated) ——
-    // Fan-out is one logical commit: settle every store's selectors before
-    // firing any subscriber, and let no store's error starve a later store.
-    runOnSets(onSets, errors)
-    const notify: NotifyTarget = new Map()
-    const globalSink = createChangeSink(undefined, "set")
-    const commitRoots = beginGlobalCommit(data, globalUpdates)
-    // Global peer changes retain their historical direct-set metadata and
-    // are reported before the transaction origin.
-    for (const [peer, atoms] of globalUpdates) {
-        try {
-            propagateAtomUpdate(atoms, peer, false, notify, globalSink)
-        } catch (error) {
-            recordCommitError(errors, error)
-        }
-    }
-    if (updatedAtoms.length > 0) {
-        try {
-            propagateAtomUpdate(
-                updatedAtoms,
-                data,
-                false,
-                notify,
-                intent.report,
-            )
-        } catch (error) {
-            recordCommitError(errors, error)
-        }
-    }
-    try {
-        notifyDeferred(notify)
-    } catch (error) {
-        recordCommitError(errors, error)
-    }
-    try {
-        flushChangeSink(globalSink)
-    } catch (error) {
-        recordCommitError(errors, error)
-    }
-    endGlobalCommit(commitRoots, errors)
-
-    throwCommitError(errors)
+    runCommitPlan({
+        data,
+        globalEffects: {
+            sets: globalSets,
+            source: "set",
+            updates: undefined,
+            apply: applyGlobalSets,
+        },
+        settlement: {
+            kind: "forest",
+            entries: [
+                {
+                    data,
+                    updatedAtoms,
+                    deleted: undefined,
+                    unsetAtoms: undefined,
+                    children: undefined,
+                },
+            ],
+            globalUpdates: undefined,
+            settle: settleCommitForest,
+        },
+        onSets,
+        errors,
+        report: intent.report,
+    })
 }
 
 /**
@@ -239,7 +203,7 @@ const hookFreeApply = () => {
         hookFreePairs,
         hookFreeData,
         hookFreeInitialized,
-        true,
+        "skip",
         noOnSets,
     )
 }
@@ -270,7 +234,7 @@ const hookFreePlan: CommitPlan = {
  * owns the outer commit-end boundary and the deferred onChange flush. Large
  * unobserved initialization batches take the fresh-atom specialization above
  * as the apply fast path. Sharing the frozen empty onSet queue is safe:
- * writeAtoms(skipOnSet=true) never enqueues, and runOnSets only reads.
+ * writeAtoms("skip") never enqueues, and runOnSets only reads.
  */
 export const commitHookFreeAtoms = (
     pairs: Map<Atom<any>, any>,
@@ -302,7 +266,7 @@ export const commitHookFreeAtoms = (
                     pairs,
                     data,
                     initializedAtomsSet,
-                    true,
+                    "skip",
                     noOnSets,
                 )
             },
@@ -323,7 +287,8 @@ export const commitHookFreeAtoms = (
     hookFreeSink = sink
     hookFreePlan.data = data
     hookFreePlan.report = sink
-    hookFreePlan.flushReport = sink === undefined ? undefined : hookFreeFlushReport
+    hookFreePlan.flushReport =
+        sink === undefined ? undefined : hookFreeFlushReport
     const withBoundary = commitEndRegistry.count !== 0
     hookFreePlan.beginCommit = withBoundary ? beginCommit : undefined
     hookFreePlan.endCommit = withBoundary ? endCommit : undefined

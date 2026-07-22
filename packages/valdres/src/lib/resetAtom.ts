@@ -1,9 +1,11 @@
 import type { Atom } from "../types/Atom"
+import type { PlannedGlobalEffects } from "../types/CommitPlan"
 import type { StoreData } from "../types/StoreData"
 import { isGlobalAtom } from "../utils/isGlobalAtom"
 import { runCommitPlan } from "./commitEngine"
 import { createCommitErrors } from "./commitErrors"
 import { SETTLE_DEFAULT } from "./commitIntents"
+import { applyGlobalSets, collectGlobalOnSets } from "./globalAtomFanOut"
 import { getAtomInitValue } from "./initAtom"
 import {
     changeListenerRegistry,
@@ -11,41 +13,18 @@ import {
     flushChangeSink,
 } from "./notifyChangeListeners"
 import { beginCommit, commitEndRegistry, endCommit } from "./onCommitEnd"
-import { settleCommit } from "./propagateUpdatedAtoms"
+import { settleCommit, settleCommitForest } from "./propagateUpdatedAtoms"
 import type { DeferredOnSet } from "./runOnSets"
 import {
     createStoreDisposedError,
     DISPOSED_STORE_PENDING,
 } from "./storeLifecycle"
-import {
-    abortTransaction,
-    commitTransaction,
-    TransactionContext,
-} from "./transaction"
 import { writeAtoms } from "./writeAtoms"
-
-const resetGlobalAtom = <V>(atom: Atom<V>, data: StoreData): V | Promise<V> => {
-    // TEMPORARY GLOBAL FAN-OUT ADAPTER — global reset remains on the transaction
-    // path until the multi-store coordinator migration.
-    const txn = new TransactionContext(data)
-    try {
-        const value = txn.reset(atom)
-        commitTransaction(txn, "reset")
-        return value
-    } catch (error) {
-        try {
-            abortTransaction(txn)
-        } catch {}
-        throw error
-    }
-}
 
 export const resetAtom = <V>(
     atom: Atom<V>,
     data: StoreData,
 ): V | Promise<V> => {
-    if (isGlobalAtom(atom)) return resetGlobalAtom(atom as Atom<V>, data)
-
     // Phases 1–2: resolve/validate the default, then apply it with the same
     // normalization primitive used by bulk writes. This preserves equality,
     // pending-default, async-placeholder, scope-shadow, and family-index rules.
@@ -77,26 +56,56 @@ export const resetAtom = <V>(
         changeListenerRegistry.count === 0
             ? undefined
             : createChangeSink(undefined, "reset")
+    const errors = createCommitErrors()
+    const globalEffects: PlannedGlobalEffects | undefined = isGlobalAtom(atom)
+        ? {
+              sets: [],
+              source: "set",
+              updates: undefined,
+              apply: applyGlobalSets,
+          }
+        : undefined
     runCommitPlan({
         data,
-        settlement: {
-            kind: "update",
-            atoms: updatedAtoms,
-            settle: settleCommit,
-            flags: SETTLE_DEFAULT,
-        },
-        apply: () =>
+        globalEffects,
+        settlement: globalEffects
+            ? {
+                  kind: "forest",
+                  entries: [
+                      {
+                          data,
+                          updatedAtoms,
+                          deleted: undefined,
+                          unsetAtoms: undefined,
+                          children: undefined,
+                      },
+                  ],
+                  globalUpdates: undefined,
+                  settle: settleCommitForest,
+              }
+            : {
+                  kind: "update",
+                  atoms: updatedAtoms,
+                  settle: settleCommit,
+                  flags: SETTLE_DEFAULT,
+              },
+        apply: () => {
             updatedAtoms.push(
                 ...writeAtoms(
                     pairs,
                     data,
                     writeInitializedAtoms,
-                    false,
+                    "collect",
                     onSets,
                 ),
-            ),
+            )
+            if (globalEffects) {
+                const sets = collectGlobalOnSets(onSets)
+                if (sets) globalEffects.sets.push(...sets)
+            }
+        },
         onSets,
-        errors: createCommitErrors(),
+        errors,
         report: changeSink,
         flushReport: changeSink ? () => flushChangeSink(changeSink) : undefined,
         beginCommit: commitEndRegistry.count === 0 ? undefined : beginCommit,

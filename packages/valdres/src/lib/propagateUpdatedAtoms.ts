@@ -45,18 +45,16 @@ import {
     effectiveValueAfterUnset,
     reDelegateScopeSubscriptions,
 } from "./unsetValue"
-// Intra-cycle edge (same recorded core SCC): the tree settlement brackets its
-// walk with the global peer sequencing the cross-scope transaction commit
-// previously hand-rolled inline.
-import {
-    beginGlobalCommit,
-    endGlobalCommit,
-} from "./globalAtomFanOut"
 import type {
-    TransactionTreeEntry,
-    TransactionTreeSettleFn,
-} from "../types/TransactionTreeSettleFn"
-import { beginCommit, commitEndRegistry, endCommit } from "./onCommitEnd"
+    CommitForestEntry,
+    CommitForestSettleFn,
+} from "../types/CommitForestSettleFn"
+import {
+    beginCommit,
+    commitEndRegistry,
+    commitRootOf,
+    endCommit,
+} from "./onCommitEnd"
 import { hasInheritedDependencyBranches } from "./inheritedDependencyBranches"
 import { setValueInData } from "./setValueInData"
 import { noteStateValueChanged } from "./stateRevisions"
@@ -70,6 +68,7 @@ import {
 import { IS_PROD } from "./IS_PROD"
 import type { SettleFlags } from "../types/SettleFlags"
 import type { SelectorSettleFn } from "../types/SelectorSettleFn"
+import { SETTLE_DEFAULT, SETTLE_UNSET } from "./commitIntents"
 
 export type { AtomFamilyIndex } from "./atomFamilyIndex"
 export {
@@ -118,7 +117,7 @@ type AtomInput = Atom<any> | AtomFamilyAtom<any, any> | AtomFamily<any, any>
 //     selector always lands on the correct value. Any future dedup here must
 //     be keyed per (store, selector) and provably value-identical — never a
 //     correctness shortcut that suppresses a needed recompute.
-//   - VISIT-ONCE (settleTransactionTreeCommit, the cross-scope transaction
+//   - VISIT-ONCE (settleCommitForest, the cross-scope/global
 //     commit): each store is visited exactly once with the COMPLETE union of
 //     its own and inherited triggers collected before evaluation, so the
 //     topological order puts intermediate selectors before spanning ones and
@@ -451,7 +450,7 @@ const findInClosestStore = (state: State<any>, data: StoreData) => {
     return store.values.get(state)
 }
 
-export const propagateDeletedAtoms = (
+const settleDeletedAtoms = (
     atoms: AtomFamilyAtom<any, any>[],
     data: StoreData,
     subscriptions: Set<Subscription> = new Set(),
@@ -565,7 +564,7 @@ export const propagateDeletedAtoms = (
         // tree's subscriber notify phase. A listener may live only in a descendant
         // (and therefore be invisible to selectorActive's ancestor walk), so use the
         // O(1) global gate rather than scanning the scope tree. The txn path already
-        // passes a sink. (Mirror of the wrap in propagateAtomUpdate.)
+        // passes a sink. (Mirror of the wrap in settleCommit.)
         let localSink: ChangeSink | undefined
         let effectiveReport: ChangeReport | undefined = report
         if (
@@ -591,7 +590,7 @@ export const propagateDeletedAtoms = (
             )
 
         // Cross-propagate the deletion into descendant scopes, mirroring the update
-        // path (propagateAtomUpdate → propagateToScopes), and thread `effectiveReport`
+        // path (settleCommit → propagateToScopes), and thread `effectiveReport`
         // so the scoped selector recomputes are reported too. deleteFamilyAtomsFromSet
         // already re-rendered each shadowing scope's family index; this re-evaluates
         // the dependent selectors so their subscribers fire. Two kinds of scope
@@ -633,7 +632,7 @@ export const settleDeletedCommit = (
     notify: NotifyTarget | undefined,
     report: ChangeReport | undefined,
 ) =>
-    propagateDeletedAtoms(
+    settleDeletedAtoms(
         atoms,
         data,
         undefined,
@@ -652,24 +651,14 @@ export const settleDeletedCommit = (
 // the end. An immediate update that reaches scopes creates its own target, settles
 // the whole store tree, then fires it. The single-store / non-scoped hot path
 // stays inline and allocation-free with respect to deferred notification.
-export const propagateAtomUpdate = (
+export const settleCommit = (
     atoms: AtomInput[],
     data: StoreData,
-    isInitOnly = false,
-    notify?: NotifyTarget,
-    report?: ChangeReport,
-    // When true, family-atom members in `atoms` are propagated to their
-    // dependent selectors/subscribers but NOT registered in the family index.
-    // Used by the deleted-member async-default swap (see getState): the resolved
-    // value must reach dependents, but re-adding the member to the index would
-    // resurrect a deleted member.
-    skipFamilyIndexUpdate = false,
-    // When false, the trigger `atoms` are NOT reported to onChange here — only
-    // the selectors they cause to recompute are. The caller reports the atoms
-    // itself (the `unset` path emits them as `kind: "unset"` via reportUnsetAtom,
-    // so they must not also surface as a `"set"`).
-    reportAtoms = true,
+    notify: NotifyTarget | undefined,
+    report: ChangeReport | undefined,
+    flags: SettleFlags,
 ) => {
+    const { isInitOnly, skipFamilyIndexUpdate, reportAtoms } = flags
     // Commit boundary for store.onCommitEnd. With no listener anywhere this
     // is a single global counter read on the Bencher-gated propagation hot
     // path — no tracking, no allocation, no extra call frame. When listeners
@@ -907,7 +896,7 @@ export const propagateAtomUpdate = (
             // member added/removed), propagating only the changed members into scopes
             // (as `atoms` holds) re-renders each scope's family index via
             // recursivelyUpdateIndexes above but never re-evaluates those selectors —
-            // leaving them stale. So mirror the delete path (propagateDeletedAtoms
+            // leaving them stale. So mirror the delete settlement path
             // pushes the family onto its scopeAtoms): also propagate each family whose
             // membership changed. A pure member VALUE-update (membership unchanged) is
             // deliberately NOT included — its scope-side effect reaches selectors via
@@ -930,28 +919,6 @@ export const propagateAtomUpdate = (
         if (commitRoot !== undefined) endCommit(commitRoot, !completed)
     }
 }
-
-/** Typed commit-engine update entry for phases 4–7. The established positional
- *  primitive above remains the direct entry for transaction, ordinary global,
- *  and initialization adapters. Migrated callers provide one of the
- *  shared frozen SettleFlags singletons; translating it here allocates nothing
- *  and keeps the out-of-scope hot paths byte-for-byte on their prior call shape. */
-export const settleCommit = (
-    atoms: AtomInput[],
-    data: StoreData,
-    notify: NotifyTarget | undefined,
-    report: ChangeReport | undefined,
-    flags: SettleFlags,
-) =>
-    propagateAtomUpdate(
-        atoms,
-        data,
-        flags.isInitOnly,
-        notify,
-        report,
-        flags.skipFamilyIndexUpdate,
-        flags.reportAtoms,
-    )
 
 /**
  * Typed commit-engine entry (phases 4–7) for a single-store transaction commit
@@ -982,14 +949,14 @@ export const settleTransactionCommit = (
     const notify: NotifyTarget = new Map()
     if (updatedAtoms.length > 0) {
         try {
-            propagateAtomUpdate(updatedAtoms, data, false, notify, report)
+            settleCommit(updatedAtoms, data, notify, report, SETTLE_DEFAULT)
         } catch (error) {
             recordCommitError(errors, error)
         }
     }
     if (deletedAtoms) {
         try {
-            propagateDeletedAtoms(
+            settleDeletedAtoms(
                 deletedAtoms,
                 data,
                 undefined,
@@ -1018,15 +985,7 @@ export const settleTransactionCommit = (
             }
         }
         try {
-            propagateAtomUpdate(
-                unsetAtoms,
-                data,
-                false,
-                notify,
-                report,
-                false,
-                false,
-            )
+            settleCommit(unsetAtoms, data, notify, report, SETTLE_UNSET)
         } catch (error) {
             recordCommitError(errors, error)
         }
@@ -1080,57 +1039,134 @@ export const settleTransactionCommit = (
  * depth-counter no-ops). An onCommitEnd listener registered mid-commit by a
  * hook therefore joins from the next commit, as on the single-store plan path.
  */
-export const settleTransactionTreeCommit: TransactionTreeSettleFn = (
+type ForestNode = CommitForestEntry
+
+/** Canonicalize local plan entries and global peer updates into one sparse
+ * forest node per physical StoreData. Ancestor placeholders carry no mutation
+ * groups; they exist only to make overlapping peer/origin paths one structural
+ * walk rather than a selector-level skip guard. */
+const buildCommitForest = (
+    entries: CommitForestEntry[],
+    globalUpdates: Map<StoreData, Atom<any>[]> | undefined,
+): {
+    roots: ForestNode[]
+    peerAtoms: Map<StoreData, Atom<any>[]> | undefined
+} => {
+    const nodes = new Map<StoreData, ForestNode>()
+    const ensureNode = (data: StoreData): ForestNode => {
+        const existing = nodes.get(data)
+        if (existing) return existing
+        const node: ForestNode = {
+            data,
+            updatedAtoms: [],
+            deleted: undefined,
+            unsetAtoms: undefined,
+            children: undefined,
+        }
+        nodes.set(data, node)
+        if (data.parent) {
+            const parent = ensureNode(data.parent)
+            if (parent.children) parent.children.push(node)
+            else parent.children = [node]
+        }
+        return node
+    }
+
+    for (const entry of entries) {
+        const node = ensureNode(entry.data)
+        if (entry.updatedAtoms.length > 0)
+            node.updatedAtoms.push(...entry.updatedAtoms)
+        if (entry.deleted) {
+            if (node.deleted) node.deleted.push(...entry.deleted)
+            else node.deleted = entry.deleted
+        }
+        if (entry.unsetAtoms) {
+            if (node.unsetAtoms) node.unsetAtoms.push(...entry.unsetAtoms)
+            else node.unsetAtoms = entry.unsetAtoms
+        }
+    }
+    if (globalUpdates) {
+        for (const peer of globalUpdates.keys()) ensureNode(peer)
+    }
+
+    const roots: ForestNode[] = []
+    const added = new Set<StoreData>()
+    const addRoot = (data: StoreData) => {
+        const root = commitRootOf(data)
+        if (!added.has(root)) {
+            added.add(root)
+            roots.push(ensureNode(root))
+        }
+    }
+    const originRoot =
+        entries.length > 0 ? commitRootOf(entries[0].data) : undefined
+    if (globalUpdates) {
+        for (const peer of globalUpdates.keys()) {
+            if (commitRootOf(peer) !== originRoot) addRoot(peer)
+        }
+    }
+    for (const entry of entries) {
+        if (commitRootOf(entry.data) !== originRoot) addRoot(entry.data)
+    }
+    if (originRoot) addRoot(originRoot)
+    if (!originRoot && globalUpdates) {
+        for (const peer of globalUpdates.keys()) addRoot(peer)
+    }
+    return { roots, peerAtoms: globalUpdates }
+}
+
+export const settleCommitForest: CommitForestSettleFn = (
     entries,
     globalUpdates,
+    globalSource,
     report,
     errors,
 ) => {
+    const forest = buildCommitForest(entries, globalUpdates)
     const notify: NotifyTarget = new Map()
     const globalSink = globalUpdates
-        ? createChangeSink(undefined, "set")
+        ? createChangeSink(undefined, globalSource ?? "set")
         : undefined
-    const commitRoots = globalUpdates
-        ? beginGlobalCommit(entries[0].data, globalUpdates)
-        : undefined
-    // Peers that are themselves plan stores fold into the walk (their global
-    // group settles together with the store's own and inherited triggers —
-    // one settlement per store, the plan's core guarantee). Only peers
-    // OUTSIDE the plan keep the per-tree propagation pass.
-    let foldedPeerAtoms: Map<StoreData, Atom[]> | undefined
-    if (globalUpdates) {
-        let planStores: Set<StoreData> | undefined
-        for (const [peer, atoms] of globalUpdates) {
-            if (!planStores) {
-                planStores = new Set()
-                for (const entry of entries) planStores.add(entry.data)
-            }
-            if (planStores.has(peer)) {
-                if (!foldedPeerAtoms) foldedPeerAtoms = new Map()
-                foldedPeerAtoms.set(peer, atoms)
-                continue
-            }
-            try {
-                propagateAtomUpdate(atoms, peer, false, notify, globalSink)
-            } catch (error) {
-                recordCommitError(errors, error)
-            }
-        }
+    const localSink =
+        typeof report === "string"
+            ? createChangeSink(undefined, report)
+            : undefined
+    const effectiveReport = localSink ?? report
+    const commitRoots: StoreData[] = []
+    if (commitEndRegistry.count !== 0) {
+        for (const root of forest.roots)
+            commitRoots.push(beginCommit(root.data))
     }
     const timestamp = performance.now()
-    settleTreeStore(
-        entries[0],
-        entries[0].data,
-        undefined,
-        foldedPeerAtoms,
-        globalSink,
-        notify,
-        report,
-        errors,
-        timestamp,
-    )
+    for (const root of forest.roots) {
+        settleTreeStore(
+            root,
+            root.data,
+            undefined,
+            forest.peerAtoms,
+            globalSink,
+            notify,
+            effectiveReport,
+            errors,
+            timestamp,
+        )
+    }
+    // Preserve the locked cross-store observer contract: changed peers precede
+    // local/origin stores. Remaining inherited-only scope entries retain their
+    // forest-walk insertion order.
+    const orderedNotify: NotifyTarget = new Map()
+    const appendNotify = (data: StoreData) => {
+        const entry = notify.get(data)
+        if (entry && !orderedNotify.has(data)) orderedNotify.set(data, entry)
+    }
+    if (globalUpdates)
+        for (const peer of globalUpdates.keys()) appendNotify(peer)
+    for (const entry of entries) appendNotify(entry.data)
+    for (const [data, entry] of notify) {
+        if (!orderedNotify.has(data)) orderedNotify.set(data, entry)
+    }
     try {
-        notifyDeferred(notify)
+        notifyDeferred(orderedNotify)
     } catch (error) {
         recordCommitError(errors, error)
     }
@@ -1140,7 +1176,13 @@ export const settleTransactionTreeCommit: TransactionTreeSettleFn = (
         } catch (error) {
             recordCommitError(errors, error)
         }
-        endGlobalCommit(commitRoots!, errors)
+    }
+    if (localSink) {
+        try {
+            flushChangeSink(localSink)
+        } catch (error) {
+            recordCommitError(errors, error)
+        }
     }
     // Re-delegate AFTER firing: the deferred scope-local callback idempotently
     // drops its delegate, so the fresh parent delegate is established last.
@@ -1153,6 +1195,13 @@ export const settleTransactionTreeCommit: TransactionTreeSettleFn = (
                     recordCommitError(errors, error)
                 }
             }
+        }
+    }
+    for (const root of commitRoots) {
+        try {
+            endCommit(root, errors.hasError)
+        } catch (error) {
+            recordCommitError(errors, error)
         }
     }
 }
@@ -1171,7 +1220,7 @@ export const settleTransactionTreeCommit: TransactionTreeSettleFn = (
  * Then recurse into children (plan entries ∪ branch-index scopes), root-first,
  * each child receiving the group-structured subset of triggers that reach it. */
 const settleTreeStore = (
-    entry: TransactionTreeEntry | undefined,
+    entry: CommitForestEntry | undefined,
     data: StoreData,
     inheritedGroups: TreeTriggerGroup[] | undefined,
     foldedPeerAtoms: Map<StoreData, Atom[]> | undefined,
@@ -1239,7 +1288,7 @@ const settleTreeStore = (
 
     // Own-write and folded-peer groups collect identically (deps + direct subs
     // + family grouping) — exactly what the historical per-pass
-    // propagateAtomUpdate did; only reporting differs (phase C).
+    // settleCommit did; only reporting differs (phase C).
     const collectOwnStyleGroup = (
         group: TreeTriggerGroup,
     ): {
@@ -1280,7 +1329,7 @@ const settleTreeStore = (
         }
         return { index, familyAtoms }
     }
-    // Family ADD bookkeeping (mirrors propagateAtomUpdate): family
+    // Family ADD bookkeeping (mirrors settleCommit): family
     // subscriptions are member-change subscriptions and always collect; family
     // DEPENDENTS run only when membership actually changed.
     const applyFamilyAdds = (
@@ -1369,7 +1418,7 @@ const settleTreeStore = (
 
     let deletedGroupIndex = -1
     if (ownDeleted) {
-        // Mirrors propagateDeletedAtoms: member deps + subs, then per-family
+        // Mirrors deleted-atom settlement: member deps + subs, then per-family
         // deps + subs + index removal. A deleted member changes both its own
         // value and family membership.
         deletedGroupIndex = pushGroup({
@@ -1575,10 +1624,7 @@ const settleTreeStore = (
             if (direct) addSetToSet(direct, orderedSubs)
             for (const selector of changedSelectors) {
                 if (firstProvenanceOf(selector) === index) {
-                    addSetToSet(
-                        data.subscriptions.get(selector),
-                        orderedSubs,
-                    )
+                    addSetToSet(data.subscriptions.get(selector), orderedSubs)
                 }
             }
         }
@@ -1692,7 +1738,7 @@ const settleTreeStore = (
     }
     if (childGroups) {
         for (const [childData, groupList] of childGroups) {
-            let childEntry: TransactionTreeEntry | undefined
+            let childEntry: CommitForestEntry | undefined
             if (entry?.children) {
                 for (const child of entry.children) {
                     if (child.data === childData) {
@@ -1719,7 +1765,6 @@ const settleTreeStore = (
 // Shared frozen sentinel for plan children reached with no branch-visible
 // triggers — never mutated (spreadGroup only appends to lists it created).
 const EMPTY_GROUPS: TreeTriggerGroup[] = []
-
 
 // Scope-recursive entry: re-evaluate selectors that depend on these atoms in
 // this scope and cross into nested scopes. Skips collecting direct atom and
@@ -1998,7 +2043,8 @@ const propagateDownstreamTopo = (
         for (const d of downstream) {
             if (!IS_PROD && data.architectureInstrumentation)
                 recordDependencyEdgeVisit(data)
-            if (propagateChange && treeCtx) mergeTreeProvenance(treeCtx, d, selector)
+            if (propagateChange && treeCtx)
+                mergeTreeProvenance(treeCtx, d, selector)
             if (!closure.has(d)) {
                 // `d` is downstream of a just-changed selector but absent from
                 // the static closure, which means it was materialized AFTER the

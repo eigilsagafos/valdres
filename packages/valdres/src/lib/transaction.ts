@@ -21,11 +21,7 @@ import { isAtomFamily } from "../utils/isAtomFamily"
 import { isFamilyAtom } from "../utils/isFamilyAtom"
 import { isPromiseLike } from "../utils/isPromiseLike"
 import { isSelector } from "../utils/isSelector"
-import {
-    detachOwnValue,
-    effectiveValueAfterUnset,
-    reDelegateScopeSubscriptions,
-} from "./unsetValue"
+import { detachOwnValue } from "./unsetValue"
 import { getState } from "./getState"
 import { getAtomInitValue } from "./initAtom"
 import { isFunction } from "./isFunction"
@@ -34,23 +30,16 @@ import {
     changeListenerRegistry,
     createChangeSink,
     flushChangeSink,
-    reportUnsetAtom,
     type ChangeSink,
 } from "./notifyChangeListeners"
 import { beginCommit, commitEndRegistry, endCommit } from "./onCommitEnd"
 import { runCommitPlan } from "./commitEngine"
-import {
-    createCommitErrors,
-    recordCommitError,
-    throwCommitError,
-    type CommitErrors,
-} from "./commitErrors"
+import { createCommitErrors } from "./commitErrors"
 import { BULK_WITH_EFFECTS_SILENT } from "./commitIntents"
 import {
-    applyGlobalOnSets,
-    beginGlobalCommit,
-    endGlobalCommit,
-    type StoreAtomUpdates,
+    applyGlobalSets,
+    collectGlobalOnSets,
+    type DeferredGlobalSet,
 } from "./globalAtomFanOut"
 import {
     cloneAtomFamilyIndex,
@@ -64,15 +53,11 @@ import {
     resetMutationDraft,
 } from "./mutationDraft"
 import {
-    notifyDeferred,
-    propagateAtomUpdate,
-    propagateDeletedAtoms,
     settleTransactionCommit,
-    settleTransactionTreeCommit,
-    type NotifyTarget,
+    settleCommitForest,
 } from "./propagateUpdatedAtoms"
-import type { TransactionTreeEntry } from "../types/TransactionTreeSettleFn"
-import { runOnSets, type DeferredOnSet } from "./runOnSets"
+import type { CommitForestEntry } from "../types/CommitForestSettleFn"
+import type { DeferredOnSet } from "./runOnSets"
 import { commitAtoms, commitHookFreeAtoms } from "./setAtoms"
 import { writeAtoms } from "./writeAtoms"
 import {
@@ -86,7 +71,7 @@ import { noteStateValueChanged } from "./stateRevisions"
  *  entry shape structurally so the finalized array is handed to the tree
  *  CommitPlan zero-copy; `children` links direct scoped entries so the
  *  settlement walk visits plan stores without reconstructing the tree. */
-type CommitWrite = TransactionTreeEntry & {
+type CommitWrite = CommitForestEntry & {
     txn: TransactionContext
     children: CommitWrite[] | undefined
     onSets: DeferredOnSet[]
@@ -161,7 +146,6 @@ const applyUnsets = (unsetSet: Set<Atom>, data: StoreData): Atom[] => {
     }
     return unsetAtoms
 }
-
 
 export class TransactionContext {
     private readonly _data: StoreData
@@ -677,7 +661,7 @@ export class TransactionContext {
         // Commit boundary for store.onCommitEnd: listeners fire once, when the
         // outermost boundary closes — after every subscriber callback and after
         // the onChange flush below. The inner propagation passes also open
-        // boundaries (see propagateAtomUpdate's wrapper); nested inside this one
+        // boundaries (see settleCommit's wrapper); nested inside this one
         // they just move the depth counter. With no listener anywhere this is a
         // single counter read, so the Bencher-gated txn hot path is unchanged.
         let commitEndRoot: StoreData | undefined
@@ -726,8 +710,9 @@ export class TransactionContext {
         // Single-store path: no scoped transactions to coordinate. Translate
         // the finalized overlay into the commit engine — the bulk coordinator,
         // or a CommitPlan for cleanup mutations. (The hook-free arm committed
-        // its own plan from commitOpenTransaction.) Only global peer fan-out
-        // stays on its legacy adapter (see below).
+        // its own plan from commitOpenTransaction.) Global peer fan-out rides
+        // the same CommitPlan: globalEffects applies peer values before hooks,
+        // then settleCommitForest settles them with the local work.
         if (!this._scopedTransactions) {
             this.renderDirtyAtomFamilyIndexes()
             const draft = this._draft
@@ -756,12 +741,10 @@ export class TransactionContext {
                 draft.values,
                 this._data,
                 initializedAtomsSet,
-                false,
+                "collect",
                 onSets,
             )
-            const deleted = draft.deletes?.size
-                ? [...draft.deletes]
-                : undefined
+            const deleted = draft.deletes?.size ? [...draft.deletes] : undefined
             if (draft.deletes?.size) {
                 deleteAtomFamilyAtoms(draft.deletes, this._data)
             }
@@ -773,31 +756,42 @@ export class TransactionContext {
             // Global peers are writes too: apply them all while still in the
             // write phase. An empty map means every peer was value-equal — a
             // local plan handles that exactly like no globals at all.
-            const globalUpdates = applyGlobalOnSets(onSets, errors)
-            if (globalUpdates && globalUpdates.size > 0) {
-                // Hooks fire after every local and peer write, before any
-                // propagation — same order the plan path gets from the engine.
-                runOnSets(onSets, errors)
-                this.commitCleanupWithGlobalFanOut(
-                    updatedAtoms,
-                    deleted,
-                    unsetAtoms,
-                    sink,
-                    errors,
-                    globalUpdates,
-                )
-                return
-            }
-
+            const globalSets = collectGlobalOnSets(onSets)
             runCommitPlan({
                 data: this._data,
-                settlement: {
-                    kind: "transaction",
-                    atoms: updatedAtoms,
-                    deleted,
-                    unset: unsetAtoms.length > 0 ? unsetAtoms : undefined,
-                    settle: settleTransactionCommit,
-                },
+                globalEffects: globalSets
+                    ? {
+                          sets: globalSets,
+                          source: "set",
+                          updates: undefined,
+                          apply: applyGlobalSets,
+                      }
+                    : undefined,
+                settlement: globalSets
+                    ? {
+                          kind: "forest",
+                          entries: [
+                              {
+                                  data: this._data,
+                                  updatedAtoms,
+                                  deleted,
+                                  unsetAtoms:
+                                      unsetAtoms.length > 0
+                                          ? unsetAtoms
+                                          : undefined,
+                                  children: undefined,
+                              },
+                          ],
+                          globalUpdates: undefined,
+                          settle: settleCommitForest,
+                      }
+                    : {
+                          kind: "transaction",
+                          atoms: updatedAtoms,
+                          deleted,
+                          unset: unsetAtoms.length > 0 ? unsetAtoms : undefined,
+                          settle: settleTransactionCommit,
+                      },
                 onSets,
                 errors,
                 report: sink,
@@ -809,7 +803,7 @@ export class TransactionContext {
 
         // Cross-scope path: write the whole tree (root + every nested scope)
         // first, then settle each affected store exactly once through one
-        // tree-level CommitPlan. This guarantees no subscriber, onSet hook, or
+        // forest CommitPlan. This guarantees no subscriber, onSet hook, or
         // selector ever observes a half-applied transaction — root written
         // while a scope isn't, or scope A written while scope B isn't.
         const plan: CommitWrite[] = []
@@ -832,7 +826,7 @@ export class TransactionContext {
                 txn._draft.values,
                 entry.data,
                 new Set<Atom>(),
-                false,
+                "collect",
                 entry.onSets,
             )
             if (txn._draft.deletes?.size) {
@@ -850,19 +844,18 @@ export class TransactionContext {
 
         // Global peers are writes too. Apply them all before entering the hook
         // phase, preserving the root-first hook/fan-out order of the plan.
-        let globalUpdates
+        let globalSets: DeferredGlobalSet[] | undefined
         for (const entry of plan) {
-            globalUpdates = applyGlobalOnSets(
-                entry.onSets,
-                errors,
-                globalUpdates,
-            )
+            const entrySets = collectGlobalOnSets(entry.onSets)
+            if (!entrySets) continue
+            if (globalSets) globalSets.push(...entrySets)
+            else globalSets = entrySets
         }
 
         // Every value across the tree and every global peer is now applied.
-        // Hand the finalized plan to the commit engine as ONE tree-level
+        // Hand the finalized plan to the commit engine as ONE commit-forest
         // CommitPlan: hooks fire root-first in phase 3 (the flatten preserves
-        // the historical per-entry order), then settleTransactionTreeCommit
+        // the historical per-entry order), then settleCommitForest
         // settles each affected store exactly once against the union of its
         // own writes and inherited changes, fires every subscriber once, and
         // brackets any global peer fan-out — see the walk's header. The outer
@@ -874,14 +867,19 @@ export class TransactionContext {
         }
         runCommitPlan({
             data: this._data,
+            globalEffects: globalSets
+                ? {
+                      sets: globalSets,
+                      source: "set",
+                      updates: undefined,
+                      apply: applyGlobalSets,
+                  }
+                : undefined,
             settlement: {
-                kind: "transactionTree",
+                kind: "forest",
                 entries: plan,
-                globalUpdates:
-                    globalUpdates && globalUpdates.size > 0
-                        ? globalUpdates
-                        : undefined,
-                settle: settleTransactionTreeCommit,
+                globalUpdates: undefined,
+                settle: settleCommitForest,
             },
             onSets,
             errors,
@@ -889,112 +887,6 @@ export class TransactionContext {
             // continueAfterError stays default: a hook error must not starve
             // settlement of already-applied writes.
         })
-    }
-
-    /**
-     * LEGACY GLOBAL FAN-OUT ADAPTER (unmigrated). A single-store cleanup
-     * commit whose staged writes changed at least one global peer settles the
-     * whole multi-store unit here instead of through a CommitPlan: every
-     * store's selectors settle before any subscriber fires, and no store's
-     * error starves a later store. Callers have already applied every local
-     * and peer value and run the deferred hooks. Global write planning moves
-     * onto the engine with the cross-scope migration.
-     */
-    private commitCleanupWithGlobalFanOut(
-        updatedAtoms: Atom[],
-        deleted: AtomFamilyAtom<any, any>[] | undefined,
-        unsetAtoms: Atom[],
-        sink: ChangeSink | undefined,
-        errors: CommitErrors,
-        globalUpdates: StoreAtomUpdates,
-    ): void {
-        const notify: NotifyTarget = new Map()
-        const globalSink = createChangeSink(undefined, "set")
-        const commitRoots = beginGlobalCommit(this._data, globalUpdates)
-        // Global peers historically surface as direct `set` changes and
-        // report before the transaction origin.
-        for (const [peer, atoms] of globalUpdates) {
-            try {
-                propagateAtomUpdate(atoms, peer, false, notify, globalSink)
-            } catch (error) {
-                recordCommitError(errors, error)
-            }
-        }
-        if (updatedAtoms.length > 0) {
-            try {
-                propagateAtomUpdate(
-                    updatedAtoms,
-                    this._data,
-                    false,
-                    notify,
-                    sink,
-                )
-            } catch (error) {
-                recordCommitError(errors, error)
-            }
-        }
-        if (deleted) {
-            try {
-                propagateDeletedAtoms(
-                    deleted,
-                    this._data,
-                    undefined,
-                    undefined,
-                    undefined,
-                    notify,
-                    sink,
-                )
-            } catch (error) {
-                recordCommitError(errors, error)
-            }
-        }
-        if (unsetAtoms.length > 0) {
-            if (sink) {
-                for (const atom of unsetAtoms) {
-                    reportUnsetAtom(
-                        atom,
-                        this._data,
-                        effectiveValueAfterUnset(atom, this._data),
-                        sink,
-                    )
-                }
-            }
-            try {
-                propagateAtomUpdate(
-                    unsetAtoms,
-                    this._data,
-                    false,
-                    notify,
-                    sink,
-                    false,
-                    false,
-                )
-            } catch (error) {
-                recordCommitError(errors, error)
-            }
-        }
-        try {
-            notifyDeferred(notify)
-        } catch (error) {
-            recordCommitError(errors, error)
-        }
-        try {
-            flushChangeSink(globalSink)
-        } catch (error) {
-            recordCommitError(errors, error)
-        }
-        endGlobalCommit(commitRoots, errors)
-        // Re-delegate AFTER firing: the deferred scope-local callback
-        // idempotently drops its delegate, so the fresh parent delegate is
-        // established last even when a callback threw.
-        for (const atom of unsetAtoms) {
-            try {
-                reDelegateScopeSubscriptions(atom, this._data)
-            } catch (error) {
-                recordCommitError(errors, error)
-            }
-        }
-        throwCommitError(errors)
     }
 
     // Depth-first pre-order: this store, then each nested scope. Produces a

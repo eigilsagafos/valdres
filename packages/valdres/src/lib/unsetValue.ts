@@ -3,7 +3,7 @@ import type { StoreData } from "../types/StoreData"
 import { isAtom } from "../utils/isAtom"
 import { runCommitPlan } from "./commitEngine"
 import { createCommitErrors } from "./commitErrors"
-import { SETTLE_UNSET } from "./commitIntents"
+import { SETTLE_INIT_ONLY, SETTLE_UNSET } from "./commitIntents"
 import { getState } from "./getState"
 import { refreshInheritedDependencyBranch } from "./inheritedDependencyBranches"
 import {
@@ -14,7 +14,7 @@ import {
 } from "./notifyChangeListeners"
 import { beginCommit, commitEndRegistry, endCommit } from "./onCommitEnd"
 import { untrackNamedAtom } from "./namedStateIndex"
-import { propagateAtomUpdate, settleCommit } from "./propagateUpdatedAtoms"
+import { settleCommit } from "./propagateUpdatedAtoms"
 import { noteStateValueChanged } from "./stateRevisions"
 
 const InvalidStateError = "unset() expects an atom."
@@ -88,7 +88,14 @@ export const effectiveValueAfterUnset = (
     if (!parent) return undefined
     const initSet = new Set<Atom>()
     const value = getState(atom, parent, initSet)
-    if (initSet.size > 0) propagateAtomUpdate([...initSet], parent, true)
+    if (initSet.size > 0)
+        settleCommit(
+            [...initSet],
+            parent,
+            undefined,
+            undefined,
+            SETTLE_INIT_ONLY,
+        )
     return value
 }
 

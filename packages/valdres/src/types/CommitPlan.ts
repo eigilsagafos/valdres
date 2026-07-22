@@ -1,5 +1,8 @@
 import type { CommitErrors } from "../lib/commitErrors"
-import type { StoreAtomUpdates } from "../lib/globalAtomFanOut"
+import type {
+    DeferredGlobalSet,
+    StoreAtomUpdates,
+} from "../lib/globalAtomFanOut"
 import type { ChangeReport } from "../lib/notifyChangeListeners"
 import type { NotifyTarget } from "../lib/propagateUpdatedAtoms"
 import type { DeferredOnSet } from "../lib/runOnSets"
@@ -12,9 +15,10 @@ import type { SelectorSettleFn } from "./SelectorSettleFn"
 import type { StoreData } from "./StoreData"
 import type { TransactionSettleFn } from "./TransactionSettleFn"
 import type {
-    TransactionTreeEntry,
-    TransactionTreeSettleFn,
-} from "./TransactionTreeSettleFn"
+    CommitForestEntry,
+    CommitForestSettleFn,
+} from "./CommitForestSettleFn"
+import type { StoreChangeSource } from "./StoreChangeSource"
 
 type UpdateSettlement = {
     kind: "update"
@@ -52,15 +56,15 @@ type TransactionSettlement = {
     settle: TransactionSettleFn
 }
 
-/** A cross-scope transaction commit: the whole affected store tree settles as
- *  one root-first walk, each store exactly once against the union of its own
- *  writes and inherited changes. `entries` is the flat root-first plan;
- *  `globalUpdates` is undefined (never empty) when no global peer changed. */
-type TransactionTreeSettlement = {
-    kind: "transactionTree"
-    entries: TransactionTreeEntry[]
+/** A multi-root commit forest: every physical store appears in one canonical
+ *  sparse tree node and settles exactly once against local, inherited, and
+ *  global trigger groups. `globalUpdates` is populated by the engine after it
+ *  applies the plan's ordered global effects. */
+type CommitForestSettlement = {
+    kind: "forest"
+    entries: CommitForestEntry[]
     globalUpdates: StoreAtomUpdates | undefined
-    settle: TransactionTreeSettleFn
+    settle: CommitForestSettleFn
 }
 
 type NoSettlement = {
@@ -72,8 +76,18 @@ type CommitSettlement =
     | DeleteSettlement
     | SelectorSettlement
     | TransactionSettlement
-    | TransactionTreeSettlement
+    | CommitForestSettlement
     | NoSettlement
+
+export type PlannedGlobalEffects = {
+    /** Ordered, finalized atom/value/origin descriptors. */
+    sets: DeferredGlobalSet[]
+    /** Metadata attached to peer reports from these effects. */
+    source: StoreChangeSource
+    /** Phase-two result populated by the engine before hooks run. */
+    updates: StoreAtomUpdates | undefined
+    apply: (sets: DeferredGlobalSet[], errors: CommitErrors) => StoreAtomUpdates
+}
 
 /**
  * A normalized local commit executed by `runCommitPlan`. Most plans are built
@@ -85,7 +99,7 @@ type CommitSettlement =
  * Update/reset/unset plans use `settleCommit` with shared `SettleFlags`;
  * deletion uses `settleDeletedCommit`; a single-store transaction commit with
  * cleanup mutations uses `settleTransactionCommit`; a cross-scope transaction
- * commit uses `settleTransactionTreeCommit`; native async selectors use their
+ * commit uses `settleCommitForest`; native async selectors use their
  * downstream-only settlement; guarded cleanup uses `kind: "none"`.
  *
  * Optional phase callbacks stay declarative: the engine owns their order.
@@ -97,15 +111,17 @@ type CommitSettlement =
  * Scope note: most plans model one store and one settlement — including
  * single-store transaction commits, whose finalized overlay translates into a
  * plan. A cross-scope transaction commit models the whole affected store tree
- * through the `transactionTree` settlement (its global peer updates ride the
+ * through the `forest` settlement (its global peer updates ride the
  * settlement so the entire commit stays one plan). Ordinary direct global
- * writes and single-store global cleanup remain behind their adapters; async
- * global settlement delegates its multi-store phase without adding a local
- * begin/end boundary.
+ * writes, cleanup, reset, async resolution, revalidation, and resetSelf all use
+ * the same forest owner when they affect multiple stores.
  */
 export type CommitPlan = {
     data: StoreData
     settlement: CommitSettlement
+    /** Ordered global fan-out effects, applied by the engine after local values
+     *  are final and before any hook or graph settlement. */
+    globalEffects?: PlannedGlobalEffects
     /** Final stale/cancel/dispose admission check. A false result is a total
      *  no-op: no boundary, apply, hook, settlement, report, or cleanup runs. */
     admit?: () => boolean
@@ -127,6 +143,9 @@ export type CommitPlan = {
     /** Optional outer commit boundary for standalone local operations. */
     beginCommit?: (data: StoreData) => StoreData
     endCommit?: (root: StoreData, swallowErrors: boolean) => void
+    /** Final lifecycle work that must occur after commit-end boundaries close
+     *  but before the first captured error is rethrown (global resetSelf). */
+    afterCommit?: () => void
     /** Hook errors normally do not starve later phases. Cleanup operations with
      *  no hooks use false to retain their historical short-circuit behavior. */
     continueAfterError?: boolean

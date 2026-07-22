@@ -10,13 +10,15 @@ import { isPromiseLike } from "../utils/isPromiseLike"
 import { isSelector } from "../utils/isSelector"
 import { isReactive, resolveReactive } from "../utils/resolveReactive"
 import type { CacheMeta } from "../types/Atom"
-import { createScalarCommit } from "./commitEngine"
+import { createScalarCommit, runCommitPlan } from "./commitEngine"
+import { createCommitErrors, recordCommitError } from "./commitErrors"
+import { SETTLE_DEFAULT, SETTLE_INIT_ONLY } from "./commitIntents"
 import { equal } from "./equal"
 import { hasAtomCommitObservers } from "./hasAtomCommitObservers"
 import { initAtom } from "./initAtom"
 import { initFreshActiveSelector } from "./initSelector"
 import { getState } from "./getState"
-import { propagateAtomUpdate } from "./propagateUpdatedAtoms"
+import { settleCommit, settleCommitForest } from "./propagateUpdatedAtoms"
 import { setValueInData } from "./setValueInData"
 import { setMaxAgeCleanup } from "./maxAgeCleanups"
 import { mountTransitiveDeps, onFirstDirectSubscriber } from "./mountAtom"
@@ -37,7 +39,7 @@ const commitRevalidationWriteOperation = (
 ) => {
     setValueInData(state, value, data)
     if (settle)
-        propagateAtomUpdate([state], data, false, undefined, "revalidate")
+        settleCommit([state], data, undefined, "revalidate", SETTLE_DEFAULT)
 }
 
 const runRevalidationWrite = createScalarCommit(
@@ -67,12 +69,12 @@ export const installMaxAgeTimer = (state: Atom<any>, data: StoreData) => {
         for (const s of globalState!.stores) {
             if (s !== data && s.values.has(metaAtom)) {
                 setValueInData(metaAtom, s.values.get(metaAtom), data)
-                propagateAtomUpdate(
+                settleCommit(
                     [metaAtom],
                     data,
-                    false,
                     undefined,
                     "revalidate",
+                    SETTLE_DEFAULT,
                 )
                 break
             }
@@ -127,6 +129,72 @@ export const installMaxAgeTimer = (state: Atom<any>, data: StoreData) => {
             hasAtomCommitObservers(target, store),
         )
     }
+    const commitGlobalRevalidationWrite = (
+        target: Atom<any>,
+        value: any,
+        refreshedAt?: number,
+    ) => {
+        const snapshot = [...globalState!.stores]
+        const entries: {
+            data: StoreData
+            updatedAtoms: Atom<any>[]
+            deleted: undefined
+            unsetAtoms: undefined
+            children: undefined
+        }[] = []
+        const errors = createCommitErrors()
+        runCommitPlan({
+            data,
+            settlement: {
+                kind: "forest",
+                entries,
+                globalUpdates: undefined,
+                settle: settleCommitForest,
+            },
+            admit: () => !cancelled,
+            apply: () => {
+                for (const store of snapshot) {
+                    // The old scalar coordinator admitted once per store. Keep
+                    // that cancellation point even though the accepted writes
+                    // now share one forest settlement.
+                    if (cancelled) break
+                    try {
+                        const currentValue = store.values.get(target)
+                        const hasCurrentValue =
+                            currentValue !== undefined ||
+                            store.values.has(target)
+                        const valueIsPromise = isPromiseLike(value)
+                        const areEqual =
+                            hasCurrentValue &&
+                            (valueIsPromise || isPromiseLike(currentValue)
+                                ? currentValue === value
+                                : target.equal(currentValue, value))
+                        if (areEqual) {
+                            if (refreshedAt !== undefined) {
+                                store.lastValueWriteAt.set(target, refreshedAt)
+                            }
+                            continue
+                        }
+                        setValueInData(target, value, store)
+                        if (hasAtomCommitObservers(target, store)) {
+                            entries.push({
+                                data: store,
+                                updatedAtoms: [target],
+                                deleted: undefined,
+                                unsetAtoms: undefined,
+                                children: undefined,
+                            })
+                        }
+                    } catch (error) {
+                        recordCommitError(errors, error)
+                    }
+                }
+            },
+            onSets: [],
+            errors,
+            report: "revalidate",
+        })
+    }
     const updateMeta = () => {
         const meta: CacheMeta = {
             isRevalidating: revalidating,
@@ -136,9 +204,7 @@ export const installMaxAgeTimer = (state: Atom<any>, data: StoreData) => {
             staleIfError: getStaleIfError(),
         }
         if (globalState) {
-            for (const store of globalState.stores) {
-                commitRevalidationWrite(metaAtom, meta, store)
-            }
+            commitGlobalRevalidationWrite(metaAtom, meta)
         } else {
             commitRevalidationWrite(metaAtom, meta, data)
         }
@@ -202,9 +268,7 @@ export const installMaxAgeTimer = (state: Atom<any>, data: StoreData) => {
     const setAndPropagate = (val: any, refreshedAt?: number) => {
         const valueIsPromise = isPromiseLike(val)
         if (globalState) {
-            for (const store of globalState.stores) {
-                writeRevalidatedValue(store, val, valueIsPromise, refreshedAt)
-            }
+            commitGlobalRevalidationWrite(state, val, refreshedAt)
         } else {
             writeRevalidatedValue(data, val, valueIsPromise, refreshedAt)
         }
@@ -508,9 +572,15 @@ export const subscribe = <V>(
         initAtom(state, data, initializedAtomsSet)
         if (initializedAtomsSet.size) {
             initializedAtomsSet.add(state)
-            propagateAtomUpdate([...initializedAtomsSet], data, true)
+            settleCommit(
+                [...initializedAtomsSet],
+                data,
+                undefined,
+                undefined,
+                SETTLE_INIT_ONLY,
+            )
         } else if (isFamilyAtom(state)) {
-            propagateAtomUpdate([state], data, true)
+            settleCommit([state], data, undefined, undefined, SETTLE_INIT_ONLY)
         }
     }
     // A selector may have a revision-validated cold cache. Read through

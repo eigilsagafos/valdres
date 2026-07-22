@@ -252,6 +252,52 @@ describe("commitEngine", () => {
             ])
         })
 
+        test("runs post-boundary finalizers before rethrowing the first error", () => {
+            const store1 = store()
+            const data = getStoreData(store1)
+            const firstError = new Error("hook")
+            const order: string[] = []
+            const a = atom(0, {
+                onSet: () => {
+                    order.push("hook")
+                    throw firstError
+                },
+            })
+            expect(() =>
+                runCommitPlan({
+                    data,
+                    settlement: {
+                        kind: "update",
+                        atoms: [a],
+                        settle: (() => order.push("settle")) as SettleFn,
+                        flags: SETTLE_DEFAULT,
+                    },
+                    onSets: [[a, 1, data]],
+                    errors: createCommitErrors(),
+                    report: undefined,
+                    beginCommit: root => {
+                        order.push("begin")
+                        return root
+                    },
+                    endCommit: () => {
+                        order.push("end")
+                        throw new Error("end")
+                    },
+                    afterCommit: () => {
+                        order.push("finalize")
+                        throw new Error("finalize")
+                    },
+                }),
+            ).toThrow(firstError)
+            expect(order).toEqual([
+                "begin",
+                "hook",
+                "settle",
+                "end",
+                "finalize",
+            ])
+        })
+
         test("a short-circuiting cleanup plan preserves its settle error and skips later phases", () => {
             const store1 = store()
             const data = getStoreData(store1)

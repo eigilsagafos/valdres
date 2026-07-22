@@ -5,54 +5,31 @@ import { isGlobalAtom } from "../utils/isGlobalAtom"
 import { isPromiseLike } from "../utils/isPromiseLike"
 import type { CommitErrors } from "./commitErrors"
 import { recordCommitError } from "./commitErrors"
-import { createChangeSink, flushChangeSink } from "./notifyChangeListeners"
+import { equal } from "./equal"
 import { getState } from "./getState"
-import {
-    beginCommit,
-    commitEndRegistry,
-    commitRootOf,
-    endCommit,
-} from "./onCommitEnd"
+import { globalOnSetMarker } from "./globalOnSetMarker"
+import { hasAtomCommitObservers } from "./hasAtomCommitObservers"
 import { resolvePendingDefault } from "./resolvePendingDefault"
 import { setValueInData } from "./setValueInData"
 import { validateSchema } from "./validateSchema"
 import type { DeferredOnSet } from "./runOnSets"
-import {
-    notifyDeferred,
-    propagateAtomUpdate,
-    type NotifyTarget,
-} from "./propagateUpdatedAtoms"
 
 /** A changed global atom whose value still needs to be applied to its peers. */
 export type DeferredGlobalSet = [InternalGlobalAtom<any>, any, StoreData]
 
 export type StoreAtomUpdates = Map<StoreData, Atom<any>[]>
 
-/** Hold every affected store tree's commit-end boundary across the shared
- * propagation/notification phase of a global write. */
-export const beginGlobalCommit = (
-    origin: StoreData,
-    updates: StoreAtomUpdates,
-): Iterable<StoreData> => {
-    if (commitEndRegistry.count === 0) return []
-    const roots = new Set<StoreData>([commitRootOf(origin)])
-    for (const data of updates.keys()) roots.add(commitRootOf(data))
-    for (const root of roots) beginCommit(root)
-    return roots
-}
-
-export const endGlobalCommit = (
-    roots: Iterable<StoreData>,
-    errors: CommitErrors,
-) => {
-    for (const root of roots) {
-        try {
-            // Once an earlier phase failed, commit-end errors must not mask it.
-            endCommit(root, errors.hasError)
-        } catch (error) {
-            recordCommitError(errors, error)
-        }
+/** Extract ordered finalized global descriptors without applying them. */
+export const collectGlobalOnSets = (
+    onSets: DeferredOnSet[],
+): DeferredGlobalSet[] | undefined => {
+    let sets: DeferredGlobalSet[] | undefined
+    for (const deferred of onSets) {
+        if (!isGlobalAtom(deferred[0])) continue
+        if (sets) sets.push(deferred as DeferredGlobalSet)
+        else sets = [deferred as DeferredGlobalSet]
     }
+    return sets
 }
 
 const addUpdates = (
@@ -70,11 +47,20 @@ const addUpdates = (
  * Apply one already-resolved global value to a peer without running hooks or
  * propagation. The enclosing commit owns those later phases.
  */
-const applyPeerValue = (
+type PreparedPeerValue = {
+    atom: InternalGlobalAtom<any>
+    value: any
+    data: StoreData
+    currentIsPromise: boolean
+    areEqual: boolean
+    initializedAtoms: Set<Atom<any>>
+}
+
+const preparePeerValue = (
     atom: InternalGlobalAtom<any>,
     value: any,
     data: StoreData,
-): Atom<any>[] => {
+): PreparedPeerValue => {
     const initializedAtoms = new Set<Atom<any>>()
     const currentValue = getState(atom, data, initializedAtoms)
     value = validateSchema(atom, value, data)
@@ -84,12 +70,25 @@ const applyPeerValue = (
             ? currentValue === value
             : atom.equal(currentValue, value)
 
+    return {
+        atom,
+        value,
+        data,
+        currentIsPromise,
+        areEqual,
+        initializedAtoms,
+    }
+}
+
+const applyPeerValue = (prepared: PreparedPeerValue): Atom<any>[] => {
+    const { atom, data, currentIsPromise, areEqual, initializedAtoms } =
+        prepared
+    let { value } = prepared
     if (areEqual) {
-        // Preserve the transaction/direct-set rule that an equal write in a
-        // scope still establishes an own shadow.
-        if (data.parent && !data.values.has(atom)) {
-            setValueInData(atom, value, data)
-        }
+        // Peer synchronization must not create a new scope shadow merely
+        // because its parent already holds this commit's finalized value. An
+        // explicit equal scope write was applied locally before fan-out and
+        // already established its own shadow.
         return []
     }
 
@@ -115,8 +114,13 @@ const applyGlobalSet = (
     updates: StoreAtomUpdates,
     errors: CommitErrors,
 ): void => {
+    // A scope can create its first own global shadow by writing an inherited
+    // value, without running onInit locally. Register that origin before the
+    // immutable peer snapshot so later global writes cannot strand the shadow.
+    atom.attach(origin)
     // Snapshot: initializing or user code in a later phase may mutate the
     // registration set, but it must not change this commit's fan-out list.
+    const prepared: PreparedPeerValue[] = []
     for (const peer of [...atom.stores]) {
         try {
             // Store ids are user-provided labels and need not be unique. The
@@ -131,10 +135,20 @@ const applyGlobalSet = (
             ) {
                 continue
             }
-            // An origin reaches here only when an earlier write in the same
-            // commit overwrote it. Applying it again makes the last queued
-            // value win EVERYWHERE instead of leaving origins divergent.
-            addUpdates(updates, peer, applyPeerValue(atom, value, peer))
+            // Snapshot equality before applying any peer. A parent root may
+            // precede its shadowing scope in registration order; reading the
+            // scope after writing the parent would mask a real scope change.
+            prepared.push(preparePeerValue(atom, value, peer))
+        } catch (error) {
+            recordCommitError(errors, error)
+        }
+    }
+    // An origin reaches here only when an earlier write in the same commit
+    // overwrote it. Applying it again makes the last queued value win
+    // everywhere. Every peer was finalized above before the first is applied.
+    for (const peer of prepared) {
+        try {
+            addUpdates(updates, peer.data, applyPeerValue(peer))
         } catch (error) {
             recordCommitError(errors, error)
         }
@@ -147,74 +161,52 @@ export const applyGlobalSets = (
 ): StoreAtomUpdates => {
     const updates: StoreAtomUpdates = new Map()
     for (const [atom, value, origin] of globalSets) {
-        applyGlobalSet(atom, value, origin, updates, errors)
-    }
-    return updates
-}
-
-/** Existing multi-store settlement adapter, split from the global write/apply
- * and hook phases so a CommitPlan can share their first-error accumulator. */
-export const settleGlobalAtomSet = (
-    data: StoreData,
-    updatedAtoms: Atom<any>[],
-    globalUpdates: StoreAtomUpdates,
-    source: "set" | "async-set",
-    errors: CommitErrors,
-) => {
-    if (globalUpdates.size === 0) {
         try {
-            propagateAtomUpdate(updatedAtoms, data, false, undefined, source)
-        } catch (error) {
-            recordCommitError(errors, error)
-        }
-        return
-    }
-
-    const notify: NotifyTarget = new Map()
-    const changeSink = createChangeSink(undefined, source)
-    const commitRoots = beginGlobalCommit(data, globalUpdates)
-    // Preserve global onChange ordering: peers report before the origin.
-    for (const [peer, peerAtoms] of globalUpdates) {
-        try {
-            propagateAtomUpdate(peerAtoms, peer, false, notify, changeSink)
+            applyGlobalSet(atom, value, origin, updates, errors)
         } catch (error) {
             recordCommitError(errors, error)
         }
     }
-    try {
-        propagateAtomUpdate(updatedAtoms, data, false, notify, changeSink)
-    } catch (error) {
-        recordCommitError(errors, error)
-    }
-    try {
-        notifyDeferred(notify)
-    } catch (error) {
-        recordCommitError(errors, error)
-    }
-    try {
-        flushChangeSink(changeSink)
-    } catch (error) {
-        recordCommitError(errors, error)
-    }
-    endGlobalCommit(commitRoots, errors)
+    return updates
 }
 
-/**
- * Apply only the global writes from a deferred-hook queue. Global atoms carry
- * an onSet marker even without a user hook, so the queue is also the complete
- * set of commit-sensitive writes. The updates map is created lazily: a
- * transaction containing ordinary user hooks but no globals allocates no
- * global fan-out state.
- */
-export const applyGlobalOnSets = (
-    onSets: DeferredOnSet[],
-    errors: CommitErrors,
-    updates?: StoreAtomUpdates,
-): StoreAtomUpdates | undefined => {
-    for (const [atom, value, origin] of onSets) {
-        if (!isGlobalAtom(atom)) continue
-        updates ??= new Map()
-        applyGlobalSet(atom, value, origin, updates, errors)
+/** Allocation-free global fast path for the strict primitive/no-observer
+ * shape. All stores must already own the atom, use the built-in equality, and
+ * require no per-store schema validation. Those gates make a direct Set walk
+ * equivalent to phase-two application without allocating a CommitPlan,
+ * update map, peer snapshot, or error accumulator. */
+export const tryApplyUnobservedGlobalSet = (
+    atom: InternalGlobalAtom<any>,
+    value: any,
+    origin: StoreData,
+): boolean => {
+    if (
+        atom.onSet !== globalOnSetMarker ||
+        atom.equal !== equal ||
+        (value !== null &&
+            (typeof value === "object" || typeof value === "function"))
+    ) {
+        return false
     }
-    return updates
+    atom.attach(origin)
+    for (const store of atom.stores) {
+        if (
+            !store.values.has(atom) ||
+            hasAtomCommitObservers(atom, store) ||
+            (atom.schema !== undefined &&
+                (atom.schemaValidation ?? store.schemaValidation ?? false))
+        ) {
+            return false
+        }
+    }
+    for (const store of atom.stores) {
+        const currentValue = store.values.get(atom)
+        if (!atom.equal(currentValue, value)) {
+            setValueInData(atom, value, store)
+            if (isPromiseLike(currentValue)) {
+                resolvePendingDefault(atom, store, value)
+            }
+        }
+    }
+    return true
 }
