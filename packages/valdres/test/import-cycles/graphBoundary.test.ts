@@ -244,6 +244,47 @@ describe("mutation-scan fixtures", () => {
         ).toEqual(["stateDependents"])
     })
 
+    test("catches writes through bracket access", () => {
+        expect(
+            flagged(`export const f = (data: StoreData, s: object) => {
+                data["stateDependents"].set(s, new Set())
+                data[\`liveDependentCount\`].set(s, 1)
+            }`),
+        ).toEqual(["stateDependents", "liveDependentCount"])
+        // A computed non-literal string key on a StoreData receiver cannot be
+        // proven safe — flagged conservatively in mutating positions.
+        expect(
+            flagged(`export const f = (
+                data: StoreData,
+                key: "stateDependents" | "stateDependencies",
+                s: object,
+            ) => {
+                data[key].set(s, new Set())
+            }`),
+        ).toEqual(["<computed>"])
+        // Bracket-keyed destructuring records the alias like dot access does.
+        expect(
+            flagged(`export const f = (data: StoreData, s: object) => {
+                const { ["mountInClosure"]: table } = data
+                table.delete(s)
+            }`),
+        ).toEqual(["mountInClosure"])
+    })
+
+    test("ignores symbol-keyed slots and unowned bracket planes", () => {
+        expect(
+            flagged(`declare const SLOT: unique symbol
+            export const f = (
+                data: StoreData & { [SLOT]?: number },
+                s: object,
+                v: unknown,
+            ) => {
+                data[SLOT] = 1
+                data["values"].set(s, v)
+            }`),
+        ).toEqual([])
+    })
+
     test("catches writes through a generic StoreData-constrained receiver", () => {
         expect(
             flagged(`export const f = <T extends StoreData>(data: T, s: State) => {

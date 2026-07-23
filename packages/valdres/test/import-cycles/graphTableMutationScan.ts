@@ -10,7 +10,9 @@ import { PACKAGE_ROOT } from "./importGraph"
  * A regex over receivers cannot carry this guarantee: real mutation shapes in
  * the codebase flow through aliased Sets/Maps (`deps.add(...)` where `deps`
  * came from `data.stateDependencies.get(...)`), destructuring, renamed
- * receivers, and optional chains. This scan instead resolves the RECEIVER'S
+ * receivers, bracket access (`data["stateDependents"]`, including computed
+ * string keys — flagged conservatively; symbol-keyed slots are exempt), and
+ * optional chains. This scan instead resolves the RECEIVER'S
  * TYPE with the compiler — any expression whose type is `StoreData` counts,
  * however it is named — and tracks local aliases of graph tables and of their
  * contained Sets syntactically. The transaction overlay
@@ -131,23 +133,53 @@ export const scanSourceFileForGraphMutations = (
         })
     }
 
-    /** `expr.prop` where prop is an owned name and expr resolves to StoreData
-     *  (or is untyped). Returns the property name, else undefined. */
+    /** `expr.prop` / `expr["prop"]` where prop is an owned name and expr
+     *  resolves to StoreData (or is untyped). Returns the property name, else
+     *  undefined. A computed access with a NON-literal key on a StoreData
+     *  receiver is flagged conservatively as `<computed>` when it appears in
+     *  a mutating position — the key cannot be proven safe statically, and
+     *  production code has no legitimate reason to mutate StoreData through
+     *  a dynamic key. */
     const graphTableAccess = (
         node: ts.Expression,
         names: Set<string>,
     ): string | undefined => {
         const expr = stripWrappers(node)
-        if (!ts.isPropertyAccessExpression(expr)) return undefined
-        const property = expr.name.text
-        if (!names.has(property)) return undefined
-        const base = stripWrappers(expr.expression)
+        let property: string | undefined
+        let baseNode: ts.Expression
+        if (ts.isPropertyAccessExpression(expr)) {
+            property = expr.name.text
+            baseNode = expr.expression
+        } else if (ts.isElementAccessExpression(expr)) {
+            const argument = stripWrappers(expr.argumentExpression)
+            if (ts.isStringLiteralLike(argument)) {
+                property = argument.text
+            } else {
+                // Symbol-keyed slots (e.g. the STORE_RUNTIME facade slot)
+                // cannot name a string-keyed graph table — exempt them.
+                const keyType = checker.getTypeAtLocation(argument)
+                if (
+                    (keyType.flags &
+                        (ts.TypeFlags.ESSymbol |
+                            ts.TypeFlags.UniqueESSymbol)) !==
+                    0
+                ) {
+                    return undefined
+                }
+                property = undefined
+            }
+            baseNode = expr.expression
+        } else {
+            return undefined
+        }
+        if (property !== undefined && !names.has(property)) return undefined
+        const base = stripWrappers(baseNode)
         const baseType = checker.getTypeAtLocation(base)
         if (
             typeMatches(checker, baseType, "StoreData") ||
             isAnyOrUnknown(baseType)
         ) {
-            return property
+            return property ?? "<computed>"
         }
         return undefined
     }
@@ -210,7 +242,8 @@ export const scanSourceFileForGraphMutations = (
             return
         }
         // Destructuring a graph table straight off a StoreData-typed object:
-        // `const { stateDependents } = data`.
+        // `const { stateDependents } = data`, including string-literal and
+        // computed-literal keys (`const { ["stateDependents"]: t } = data`).
         if (ts.isObjectBindingPattern(declaration.name)) {
             const initType = checker.getTypeAtLocation(stripWrappers(init))
             if (
@@ -219,9 +252,20 @@ export const scanSourceFileForGraphMutations = (
             )
                 return
             for (const element of declaration.name.elements) {
-                const property = ts.isIdentifier(element.propertyName ?? element.name)
-                    ? (element.propertyName ?? element.name).getText(sourceFile)
-                    : undefined
+                const key = element.propertyName ?? element.name
+                let property: string | undefined
+                if (ts.isIdentifier(key)) {
+                    property = key.text
+                } else if (ts.isStringLiteralLike(key)) {
+                    property = key.text
+                } else if (
+                    ts.isComputedPropertyName(key) &&
+                    ts.isStringLiteralLike(stripWrappers(key.expression))
+                ) {
+                    property = (
+                        stripWrappers(key.expression) as ts.StringLiteralLike
+                    ).text
+                }
                 if (
                     property &&
                     GRAPH_TABLES.has(property) &&
