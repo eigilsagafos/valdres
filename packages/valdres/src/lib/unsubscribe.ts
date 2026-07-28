@@ -6,11 +6,11 @@ import { getMaxAgeCleanup, deleteMaxAgeCleanup } from "./maxAgeCleanups"
 import {
     isLive,
     onLastDirectSubscriber,
+    queueOrphanCleanup,
     reconcileLivenessAfterChurn,
     regionHasCycle,
     unmountOrphanedDeps,
-} from "./mountAtom"
-import { queueOrphanCleanup } from "./queueOrphanCleanup"
+} from "./graph"
 
 const equalCheckCount = Symbol()
 type CountedSubscriptions = Set<Subscription> & {

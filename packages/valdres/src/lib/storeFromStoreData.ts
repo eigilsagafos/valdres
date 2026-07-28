@@ -14,13 +14,13 @@ import { unsetValue } from "./unsetValue"
 import { createStoreData } from "./createStoreData"
 import { deleteFamilyAtom } from "./deleteFamilyAtom"
 import { disposeStoreData } from "./disposeStoreData"
-import { flushPendingOrphanCleanup } from "./flushPendingOrphanCleanup"
-import { getState } from "./getState"
 import {
     beginLivenessPass,
     endLivenessPass,
+    flushPendingOrphanCleanup,
     reconcileLivenessAfterChurn,
-} from "./mountAtom"
+} from "./graph"
+import { getState } from "./getState"
 import { onCommitEnd } from "./onCommitEnd"
 import { onStoreChange } from "./onStoreChange"
 import { SETTLE_INIT_ONLY } from "./commitIntents"

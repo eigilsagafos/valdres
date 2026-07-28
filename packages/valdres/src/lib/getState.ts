@@ -12,6 +12,9 @@ import { isSelector } from "../utils/isSelector"
 import { createScalarCommit, runCommitPlan } from "./commitEngine"
 import { createCommitErrors } from "./commitErrors"
 import { SETTLE_SKIP_FAMILY_INDEX } from "./commitIntents"
+import {
+    clearStaleSelectorActivation,
+} from "./graph"
 import { hasAtomCommitObservers } from "./hasAtomCommitObservers"
 import { initAtom } from "./initAtom"
 import { initSelector } from "./initSelector"
@@ -364,13 +367,13 @@ export function getState<
         return data.values.get(state)
     }
     if (isSelector<Value>(state)) {
-        // Orphan cleanup may leave the weak active marker behind to keep
-        // teardown cheap. With no forward graph this is a fresh read, not a
-        // live re-evaluation, so clear the stale marker before selecting the
-        // evaluation mode. Fresh live subscriptions bypass this path and call
-        // initFreshActiveSelector directly.
+        // Fresh live subscriptions bypass this path and call
+        // initFreshActiveSelector directly; a graph-less read must first shed
+        // any stale active marker left behind by cheap orphan teardown. The
+        // presence CHECK is a plain read (unrestricted); only the rare stale
+        // path crosses into the graph runtime to write.
         if (!data.stateDependencies.has(state)) {
-            data.selectorGraphActive.delete(state)
+            clearStaleSelectorActivation(state, data)
         }
         initSelector<Value>(
             state,

@@ -21,7 +21,10 @@ import { getState } from "./getState"
 import { settleCommit, settleCommitForest } from "./propagateUpdatedAtoms"
 import { setValueInData } from "./setValueInData"
 import { setMaxAgeCleanup } from "./maxAgeCleanups"
-import { mountTransitiveDeps, onFirstDirectSubscriber } from "./mountAtom"
+import {
+    mountTransitiveDeps,
+    onFirstDirectSubscriber,
+} from "./graph"
 import {
     createStoreDisposedError,
     DISPOSED_STORE_PENDING,

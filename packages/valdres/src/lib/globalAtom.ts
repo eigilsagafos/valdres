@@ -10,7 +10,11 @@ import type { StoreData } from "./../types/StoreData"
 import { runCommitPlan } from "./commitEngine"
 import { createCommitErrors, recordCommitError } from "./commitErrors"
 import { globalOnSetMarker } from "./globalOnSetMarker"
-import { isLive, mountAtom, unmountAtom } from "./mountAtom"
+import {
+    isLive,
+    mountAtom,
+    unmountAtom,
+} from "./graph"
 import { settleCommitForest } from "./propagateUpdatedAtoms"
 import { installMaxAgeTimer } from "./subscribe"
 import { detachOwnValue } from "./unsetValue"

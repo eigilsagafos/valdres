@@ -1,14 +1,14 @@
-import type { State } from "../types/State"
-import type { StoreData } from "../types/StoreData"
-import { isSelector } from "../utils/isSelector"
+import type { State } from "../../types/State"
+import type { StoreData } from "../../types/StoreData"
+import { isSelector } from "../../utils/isSelector"
 import { addStateDependent } from "./inheritedDependencyBranches"
 import { noteDependencyGraphChanged } from "./noteDependencyGraphChanged"
-import { storeFromStoreData } from "./storeFromStoreData"
+import { getStoreRuntime } from "../getStoreRuntime"
 import {
     isStoreDisposed,
     trackStoreMount,
     untrackStoreMount,
-} from "./storeLifecycle"
+} from "../storeLifecycle"
 
 // Shared immutable empty set — a missing stateDependencies entry (atoms and
 // atom-family members are graph sinks) yields a zero-length iterator without
@@ -546,7 +546,7 @@ export const mountAtom = (state: State, data: StoreData) => {
         data.mounts.delete(state)
         return
     }
-    const store = storeFromStoreData(data)
+    const store = getStoreRuntime(data)
     try {
         const result = onMountFn(store, state)
         if (typeof result === "function") {

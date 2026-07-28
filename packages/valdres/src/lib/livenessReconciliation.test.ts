@@ -5,7 +5,7 @@ import { atomFamily } from "../atomFamily"
 import { selector } from "../selector"
 import { selectorFamily } from "../selectorFamily"
 import { store } from "../store"
-import { isLive, reconcileLivenessAfterChurn } from "./mountAtom"
+import { isLive, reconcileLivenessAfterChurn } from "./graph/mountAtom"
 
 // Regression coverage for the `liveDependentCount` desync fixed by
 // `reconcileLivenessAfterChurn`: a selector transitively read by a live

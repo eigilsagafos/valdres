@@ -52,7 +52,13 @@ describe("build output", () => {
                 code.includes('Symbol("valdres.storeDataAccess")'),
             ),
         ).toHaveLength(1)
-        expect(outputs[index]).not.toContain("Transaction")
+        // The single runtime must live in a shared chunk, not be duplicated
+        // into (or defined by) either entry. The public entry may still
+        // reference it by name: since the graph runtime stopped importing the
+        // store constructor, the adapter graph no longer reaches
+        // storeFromStoreData, which is therefore bundled index-only and imports
+        // TransactionContext from the chunk under its real name.
+        expect(outputs[index]).not.toContain("class TransactionContext")
         expect(outputs[adapterInternals]).toContain("Transaction")
     })
 

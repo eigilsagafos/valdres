@@ -13,18 +13,19 @@ import {
     deleteFamilyAtomsFromSet,
     recursivelyUpdateIndexes,
 } from "./atomFamilyIndex"
-import type { DepsChange } from "./initSelector"
+import type { DepsChange } from "../types/DepsChange"
 import { evaluateSelector, handleSelectorResult } from "./initSelector"
 import {
+    applyLiveDependencyDiff,
     beginLivenessPass,
+    createEvaluationOutcome,
     endLivenessPass,
+    hasInheritedDependencyBranches,
+    installEvaluationDeps,
     isLive,
-    mountTransitiveDeps,
-    onLiveDependencyAdded,
-    onLiveDependencyRemoved,
     reconcileLivenessAfterChurn,
-    unmountOrphanedDeps,
-} from "./mountAtom"
+    type EvaluationOutcome,
+} from "./graph"
 import { recordCommitError, type CommitErrors } from "./commitErrors"
 import {
     changeListenerRegistry,
@@ -55,7 +56,6 @@ import {
     commitRootOf,
     endCommit,
 } from "./onCommitEnd"
-import { hasInheritedDependencyBranches } from "./inheritedDependencyBranches"
 import { setValueInData } from "./setValueInData"
 import { noteStateValueChanged } from "./stateRevisions"
 import {
@@ -257,6 +257,7 @@ const reEvaluateSelector = (
     data: StoreData,
     updatedAtoms: Set<Atom>,
     depsChange: DepsChange,
+    outcome: EvaluationOutcome,
     existingValue: unknown,
     treeCtx?: TreeSettleContext,
 ): boolean => {
@@ -269,8 +270,25 @@ const reEvaluateSelector = (
             updatedAtoms,
             undefined,
             true,
-            depsChange,
+            outcome,
         )
+        // The carrier is owned per PASS (like the reusable depsChange), not
+        // per re-eval: the evaluator overwrites every field before returning
+        // and the install consumes them immediately, so the steady-state loop
+        // pays no pool traffic. Passing the loop's depsChange keeps the
+        // lazy-arm OFF for loop-driven re-evals: their dependency diff is
+        // applied incrementally by the caller via applyLiveDependencyDiff.
+        if (outcome.needsInstall) {
+            installEvaluationDeps(
+                selector,
+                data,
+                outcome.deps!,
+                outcome.prevDeps,
+                true,
+                outcome.isAsync,
+                depsChange,
+            )
+        }
         // This evaluator is reached from the committed reverse graph; cold
         // selectors are deliberately absent from that graph. Passing the known
         // mode avoids a second WeakSet lookup for every propagated selector.
@@ -2087,8 +2105,10 @@ const propagateDownstreamTopo = (
     // writes that side-effect into peer selectors during eval depend on it.
     // Reused across every re-evaluated selector. evaluateSelector only
     // allocates the inner Sets when deps actually changed, so steady-state
-    // settling does zero allocation here.
+    // settling does zero allocation here. The outcome carrier is likewise
+    // owned per pass: each re-eval overwrites and consumes it in place.
     const depsChange: DepsChange = {}
+    const outcome = createEvaluationOutcome()
     let head = 0
     while (head < ready.length) {
         const selector = ready[head++]
@@ -2135,6 +2155,7 @@ const propagateDownstreamTopo = (
             data,
             updatedInitializedAtoms,
             depsChange,
+            outcome,
             currentValue,
             treeCtx,
         )
@@ -2145,20 +2166,7 @@ const propagateDownstreamTopo = (
         if (added || removed) {
             // The graph changed under the walk — a node may now be stranded.
             graphMutated = true
-            if (isLive(selector, data)) {
-                if (added) {
-                    for (const dep of added) {
-                        onLiveDependencyAdded(dep, data)
-                        mountTransitiveDeps(dep, data)
-                    }
-                }
-                if (removed) {
-                    for (const dep of removed) {
-                        onLiveDependencyRemoved(dep, data)
-                        unmountOrphanedDeps(dep, data)
-                    }
-                }
-            }
+            applyLiveDependencyDiff(selector, added, removed, data)
         }
 
         pending.delete(selector)
@@ -2246,24 +2254,14 @@ const propagateDownstreamTopo = (
             data,
             updatedInitializedAtoms,
             depsChange,
+            outcome,
             currentValue,
             treeCtx,
         )
         const added = depsChange.added as Set<State> | undefined
         const removed = depsChange.removed as Set<State> | undefined
-        if ((added || removed) && isLive(selector, data)) {
-            if (added) {
-                for (const dep of added) {
-                    onLiveDependencyAdded(dep, data)
-                    mountTransitiveDeps(dep, data)
-                }
-            }
-            if (removed) {
-                for (const dep of removed) {
-                    onLiveDependencyRemoved(dep, data)
-                    unmountOrphanedDeps(dep, data)
-                }
-            }
+        if (added || removed) {
+            applyLiveDependencyDiff(selector, added, removed, data)
         }
         if (wasValueUpdated) {
             if (changedSelectors) changedSelectors.add(selector)
@@ -2376,6 +2374,7 @@ const propagateSelectorUpdatesLinearFirst = (
     const processedInitialSelectors = new Set<Selector>()
     // Reused across every re-evaluated selector — see propagateDownstreamTopo.
     const depsChange: DepsChange = {}
+    const outcome = createEvaluationOutcome()
     for (const selector of orderedSelectors) {
         const currentValue = data.values.get(selector)
         if (isPromiseLike(currentValue) && isInitOnly) {
@@ -2403,6 +2402,7 @@ const propagateSelectorUpdatesLinearFirst = (
             data,
             updatedInitializedAtoms,
             depsChange,
+            outcome,
             currentValue,
             treeCtx,
         )
@@ -2410,19 +2410,8 @@ const propagateSelectorUpdatesLinearFirst = (
         // property accesses lose their narrowing after a function call.
         const added = depsChange.added as Set<State> | undefined
         const removed = depsChange.removed as Set<State> | undefined
-        if ((added || removed) && isLive(selector, data)) {
-            if (added) {
-                for (const dep of added) {
-                    onLiveDependencyAdded(dep, data)
-                    mountTransitiveDeps(dep, data)
-                }
-            }
-            if (removed) {
-                for (const dep of removed) {
-                    onLiveDependencyRemoved(dep, data)
-                    unmountOrphanedDeps(dep, data)
-                }
-            }
+        if (added || removed) {
+            applyLiveDependencyDiff(selector, added, removed, data)
         }
         processedInitialSelectors.add(selector)
         if (!wasValueUpdated) continue

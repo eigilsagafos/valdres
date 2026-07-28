@@ -1,5 +1,5 @@
-import type { State } from "../types/State"
-import type { StoreData } from "../types/StoreData"
+import type { State } from "../../types/State"
+import type { StoreData } from "../../types/StoreData"
 
 /**
  * Invalidate topology-sensitive teardown caches after graph construction or
