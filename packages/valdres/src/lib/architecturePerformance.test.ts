@@ -77,6 +77,13 @@ describe("deterministic architecture performance gates", () => {
             dependencyEdgeVisits: 0,
             schedulerQueueEnqueues: 0,
             schedulerQueueDequeues: 0,
+            schedulerWorkAllocations: 0,
+            livenessWorkAllocations: 0,
+            schedulerCycleFallbacks: 0,
+            livenessEdgeVisits: 0,
+            mountEdgeVisits: 0,
+            mountTransitions: 0,
+            unmountTransitions: 0,
             // A scalar direct write settles without an engine plan.
             commitPlanRuns: 0,
         })
@@ -90,6 +97,7 @@ describe("deterministic architecture performance gates", () => {
             selector(get => get(source) + offset),
         )
         const cleanups = selectors.map(derived => target.sub(derived, noop))
+        target.set(source, -1)
 
         const counts = measureArchitecture(target, () => target.set(source, 1))
         reportCounts("Live fan-out, width 8", counts)
@@ -100,13 +108,49 @@ describe("deterministic architecture performance gates", () => {
         expect(counts.affectedStoresSettled).toBe(1)
         expect(counts.storeSettlementPasses).toBe(1)
         expect(counts.duplicateStoreSettlements).toBe(0)
-        expectBetween(counts.dependencyEdgeVisits, width * 2, width * 2.5)
-        expectBetween(counts.schedulerQueueEnqueues, width, width + 2)
-        expect(counts.schedulerQueueDequeues).toBe(
-            counts.schedulerQueueEnqueues,
-        )
+        expectBetween(counts.dependencyEdgeVisits, width, width * 1.5)
+        expect(counts.schedulerQueueEnqueues).toBe(0)
+        expect(counts.schedulerQueueDequeues).toBe(0)
+        expect(counts.schedulerWorkAllocations).toBe(0)
+        expect(counts.livenessWorkAllocations).toBe(0)
 
         for (const cleanup of cleanups) cleanup()
+    })
+
+    test("unchanged multi-seed writes do not discover downstream closure", () => {
+        const depth = 200
+        const target = store()
+        const source = atom(0)
+        const left = selector(get => {
+            get(source)
+            return 0
+        })
+        const right = selector(get => {
+            get(source)
+            return 0
+        })
+        let sink: any = left
+        for (let index = 0; index < depth; index++) {
+            const dependency = sink
+            sink = selector(get => get(dependency) + 1)
+        }
+        const cleanupSink = target.sub(sink, noop)
+        const cleanupRight = target.sub(right, noop)
+        target.set(source, -1)
+
+        const counts = measureArchitecture(target, () => target.set(source, 1))
+        reportCounts("Unchanged multi-seed closure", counts)
+
+        expect(counts.selectorEvaluations).toBe(2)
+        expect(counts.selectorSettlements).toBe(2)
+        expect(counts.duplicateSelectorSettlements).toBe(0)
+        expectBetween(counts.dependencyEdgeVisits, 2, 8)
+        expect(counts.schedulerQueueEnqueues).toBe(0)
+        expect(counts.schedulerQueueDequeues).toBe(0)
+        expect(counts.schedulerWorkAllocations).toBe(0)
+
+        cleanupRight()
+        cleanupSink()
     })
 
     test("asymmetric DAG queue and edge work remains bounded", () => {
@@ -124,21 +168,23 @@ describe("deterministic architecture performance gates", () => {
             chain.reduce((sum, derived) => sum + get(derived), get(source)),
         )
         const cleanup = target.sub(sink, noop)
+        target.set(source, -1)
 
         const counts = measureArchitecture(target, () => target.set(source, 1))
         reportCounts("Asymmetric DAG, depth 6", counts)
 
-        // The wide sink is reached in the initial sweep and once after its
-        // chain settles. That one repeat is the current correctness-preserving
-        // baseline; the gate prevents it from growing with path count.
-        expect(counts.selectorEvaluations).toBe(8)
-        expect(counts.selectorSettlements).toBe(8)
-        expect(counts.duplicateSelectorSettlements).toBe(1)
-        expectBetween(counts.dependencyEdgeVisits, 36, 50)
-        expectBetween(counts.schedulerQueueEnqueues, 7, 10)
+        // The closure scheduler waits for every in-closure dependency, so the
+        // wide sink settles once against the finalized six-link chain.
+        expect(counts.selectorEvaluations).toBe(7)
+        expect(counts.selectorSettlements).toBe(7)
+        expect(counts.duplicateSelectorSettlements).toBe(0)
+        expectBetween(counts.dependencyEdgeVisits, 37, 42)
+        expect(counts.schedulerQueueEnqueues).toBe(8)
         expect(counts.schedulerQueueDequeues).toBe(
             counts.schedulerQueueEnqueues,
         )
+        expect(counts.schedulerWorkAllocations).toBe(0)
+        expect(counts.schedulerCycleFallbacks).toBe(0)
         cleanup()
     })
 
@@ -152,9 +198,10 @@ describe("deterministic architecture performance gates", () => {
             selector(get => (get(toggle) ? get(left) : get(right))),
         )
         const cleanups = selectors.map(derived => target.sub(derived, noop))
+        target.set(toggle, false)
 
         const counts = measureArchitecture(target, () =>
-            target.set(toggle, false),
+            target.set(toggle, true),
         )
         reportCounts("Dynamic churn, width 6", counts)
 
@@ -162,13 +209,144 @@ describe("deterministic architecture performance gates", () => {
         expect(counts.selectorSettlements).toBe(width)
         expect(counts.duplicateSelectorSettlements).toBe(0)
         expect(counts.affectedStoresSettled).toBe(1)
-        expectBetween(counts.dependencyEdgeVisits, width * 3, width * 4)
-        expectBetween(counts.schedulerQueueEnqueues, width, width + 2)
-        expect(counts.schedulerQueueDequeues).toBe(
-            counts.schedulerQueueEnqueues,
-        )
+        expectBetween(counts.dependencyEdgeVisits, width, width * 2)
+        expect(counts.schedulerQueueEnqueues).toBe(0)
+        expect(counts.schedulerQueueDequeues).toBe(0)
+        expect(counts.schedulerWorkAllocations).toBe(0)
+        // The one-array count walks intentionally stay local: pooling them
+        // regresses subscribe/unsubscribe despite avoiding these two arrays.
+        expect(counts.livenessWorkAllocations).toBe(2)
 
         for (const cleanup of cleanups) cleanup()
+    })
+
+    test("dynamic mount churn keeps lifecycle transitions exact", () => {
+        let mounts = 0
+        let cleanups = 0
+        const target = store()
+        const toggle = atom(true)
+        const left = atom(1, {
+            onMount: () => {
+                mounts++
+                return () => {
+                    cleanups++
+                }
+            },
+        })
+        const right = atom(2, {
+            onMount: () => {
+                mounts++
+                return () => {
+                    cleanups++
+                }
+            },
+        })
+        const dynamic = selector(get => (get(toggle) ? get(left) : get(right)))
+        const cleanup = target.sub(dynamic, noop)
+        target.set(toggle, false)
+        const mountsBefore = mounts
+        const cleanupsBefore = cleanups
+
+        const counts = measureArchitecture(target, () =>
+            target.set(toggle, true),
+        )
+        reportCounts("Dynamic mount churn", counts)
+
+        expect(mounts - mountsBefore).toBe(1)
+        expect(cleanups - cleanupsBefore).toBe(1)
+        expect(counts.mountTransitions).toBe(1)
+        expect(counts.unmountTransitions).toBe(1)
+        expect(counts.schedulerWorkAllocations).toBe(0)
+        // The measured-faster local count and mount walks keep their six
+        // short-lived containers; only multi-container reconciliation is pooled.
+        expect(counts.livenessWorkAllocations).toBe(6)
+        expect(counts.livenessEdgeVisits).toBe(0)
+        expect(counts.mountEdgeVisits).toBe(0)
+
+        cleanup()
+    })
+
+    test("re-entrant mount writes use a distinct warm scheduler frame", () => {
+        let mounts = 0
+        let cleanups = 0
+        const target = store()
+        const gate = atom(false)
+        const innerSource = atom(0)
+        const innerLeft = selector(get => get(innerSource) + 1)
+        const innerRight = selector(get => get(innerLeft) + 1)
+        const innerSink = selector(get => get(innerLeft) + get(innerRight))
+        const mounted = atom(10, {
+            onMount: () => {
+                mounts++
+                target.set(innerSource, mounts)
+                return () => {
+                    cleanups++
+                }
+            },
+        })
+        const dynamic = selector(get => (get(gate) ? get(mounted) : 0))
+        const peer = selector(get => get(dynamic) + (get(gate) ? 1 : 0))
+        const outerSink = selector(get => get(dynamic) + get(peer))
+        const cleanupInner = target.sub(innerSink, noop)
+        const cleanupOuter = target.sub(outerSink, noop)
+
+        // First pass creates the outer and nested frames; the false transition
+        // releases both before the measured warm re-entry.
+        target.set(gate, true)
+        target.set(gate, false)
+        const counts = measureArchitecture(target, () => target.set(gate, true))
+        reportCounts("Re-entrant mount write", counts)
+
+        expect(mounts).toBe(2)
+        expect(cleanups).toBe(1)
+        expect(target.get(dynamic)).toBe(10)
+        expect(target.get(peer)).toBe(11)
+        expect(target.get(innerLeft)).toBe(3)
+        expect(target.get(innerRight)).toBe(4)
+        expect(target.get(innerSink)).toBe(7)
+        expect(target.get(outerSink)).toBe(21)
+        expect(counts.selectorEvaluations).toBe(6)
+        expect(counts.duplicateSelectorSettlements).toBe(0)
+        expect(counts.schedulerWorkAllocations).toBe(0)
+        expect(counts.livenessWorkAllocations).toBe(3)
+        expect(counts.mountTransitions).toBe(1)
+        expect(counts.unmountTransitions).toBe(0)
+
+        cleanupOuter()
+        cleanupInner()
+    })
+
+    test("cyclic closures iterate fallback waves to a stable fixpoint", () => {
+        const target = store()
+        const warmSource = atom(0)
+        const warmLeft = selector(get => get(warmSource))
+        const warmRight = selector(get => get(warmSource))
+        const warmSink = selector(get => get(warmLeft) + get(warmRight))
+        const cleanupWarm = target.sub(warmSink, noop)
+        target.set(warmSource, 1)
+
+        const drive = atom(0)
+        const entry = selector(get => get(drive))
+        let cyclicRight: any
+        const cyclicLeft = selector(get =>
+            get(entry) > 0 ? get(cyclicRight) : 0,
+        )
+        cyclicRight = selector(get => Math.min(get(cyclicLeft) + 1, 9))
+        const cleanupLeft = target.sub(cyclicLeft, noop)
+        const cleanupRight = target.sub(cyclicRight, noop)
+
+        const counts = measureArchitecture(target, () => target.set(drive, 1))
+        reportCounts("Cyclic closure fallback", counts)
+
+        expect(target.get(entry)).toBe(1)
+        expect(target.get(cyclicLeft)).toBe(9)
+        expect(target.get(cyclicRight)).toBe(9)
+        expect(counts.schedulerCycleFallbacks).toBeGreaterThan(0)
+        expect(counts.schedulerWorkAllocations).toBe(0)
+
+        cleanupRight()
+        cleanupLeft()
+        cleanupWarm()
     })
 
     test("single-store transactions execute exactly one commit plan per shape", () => {

@@ -22,6 +22,7 @@ import {
     noteDependencyGraphChanged,
     noteDependencyMaterialized,
 } from "./noteDependencyGraphChanged"
+import { dropGraphWorkspaces } from "./workspace"
 
 /**
  * Graph-runtime installers: the write API evaluation and settlement code use
@@ -402,4 +403,5 @@ export const resetLivenessScratch = (data: StoreData): void => {
     data.livenessSeeds = undefined
     data.livenessRemovalArmed = false
     data.livenessLazyArmed = false
+    dropGraphWorkspaces(data)
 }

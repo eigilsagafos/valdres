@@ -45,6 +45,7 @@ const CORE_SCC_MEMBERS = new Set([
  *  an import that escapes this set risks re-entering the write-path cycle —
  *  extend it only for genuine leaves, consciously. */
 const GRAPH_LEAF_ALLOWLIST = new Set([
+    "src/lib/IS_PROD.ts",
     "src/lib/storeLifecycle.ts",
     "src/lib/stateRevisions.ts",
     "src/lib/getStoreRuntime.ts",
@@ -75,9 +76,7 @@ describe("graph import structure", () => {
 
     test("every SCC is a subset of the verified nine-module core", () => {
         for (const scc of sccs) {
-            const escapees = scc.filter(
-                module => !CORE_SCC_MEMBERS.has(module),
-            )
+            const escapees = scc.filter(module => !CORE_SCC_MEMBERS.has(module))
             expect(escapees).toEqual([])
         }
         expect(Math.max(0, ...sccs.map(scc => scc.length))).toBeLessThanOrEqual(
