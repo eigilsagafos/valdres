@@ -1135,6 +1135,24 @@ const buildCommitForest = (
     return { roots, peerAtoms: globalUpdates }
 }
 
+/** Close every commit boundary a forest settlement opened. Each one gets its
+ *  own try/catch so a throwing listener cannot strand the trees queued behind
+ *  it — the failure mode this exists to prevent is a depth counter stuck above
+ *  zero, which silences that tree's onCommitEnd for the rest of the process. */
+const closeCommitBoundaries = (
+    commitTrees: StoreTreeRuntime[],
+    errors: CommitErrors,
+    swallowErrors: boolean,
+) => {
+    for (const tree of commitTrees) {
+        try {
+            endCommit(tree, swallowErrors)
+        } catch (error) {
+            recordCommitError(errors, error)
+        }
+    }
+}
+
 export const settleCommitForest: CommitForestSettleFn = (
     entries,
     globalUpdates,
@@ -1158,11 +1176,13 @@ export const settleCommitForest: CommitForestSettleFn = (
             commitTrees.push(beginCommit(root.data))
     }
     const timestamp = performance.now()
-    // Collection phases run before any error accumulator exists, so an internal
-    // failure escapes this function. Every boundary opened above must still
-    // close (matching settleCommit's own try/finally): a stranded depth counter
-    // silences onCommitEnd for that whole store tree, permanently.
-    let completed = false
+    // The settlement walk is the ONLY region here that can throw past the
+    // boundary close below: its collection phases run before any error
+    // accumulator exists, while every step after it carries its own try/catch.
+    // A boundary left open strands the tree's depth counter and silences
+    // onCommitEnd for that whole tree, permanently — so release in the catch
+    // and rethrow, which keeps the common (no-listener) path free of a
+    // try/finally wrapping the whole body.
     try {
         for (const root of forest.roots) {
             settleTreeStore(
@@ -1177,65 +1197,59 @@ export const settleCommitForest: CommitForestSettleFn = (
                 timestamp,
             )
         }
-        // Preserve the locked cross-store observer contract: changed peers
-        // precede local/origin stores. Remaining inherited-only scope entries
-        // retain their forest-walk insertion order.
-        const orderedNotify: NotifyTarget = new Map()
-        const appendNotify = (data: StoreData) => {
-            const entry = notify.get(data)
-            if (entry && !orderedNotify.has(data)) orderedNotify.set(data, entry)
-        }
-        if (globalUpdates)
-            for (const peer of globalUpdates.keys()) appendNotify(peer)
-        for (const entry of entries) appendNotify(entry.data)
-        for (const [data, entry] of notify) {
-            if (!orderedNotify.has(data)) orderedNotify.set(data, entry)
-        }
+    } catch (error) {
+        // The commit is already failing, so listener errors are swallowed —
+        // they must never mask this one.
+        closeCommitBoundaries(commitTrees, errors, true)
+        throw error
+    }
+    // Preserve the locked cross-store observer contract: changed peers precede
+    // local/origin stores. Remaining inherited-only scope entries retain their
+    // forest-walk insertion order.
+    const orderedNotify: NotifyTarget = new Map()
+    const appendNotify = (data: StoreData) => {
+        const entry = notify.get(data)
+        if (entry && !orderedNotify.has(data)) orderedNotify.set(data, entry)
+    }
+    if (globalUpdates)
+        for (const peer of globalUpdates.keys()) appendNotify(peer)
+    for (const entry of entries) appendNotify(entry.data)
+    for (const [data, entry] of notify) {
+        if (!orderedNotify.has(data)) orderedNotify.set(data, entry)
+    }
+    try {
+        notifyDeferred(orderedNotify)
+    } catch (error) {
+        recordCommitError(errors, error)
+    }
+    if (globalSink) {
         try {
-            notifyDeferred(orderedNotify)
+            flushChangeSink(globalSink)
         } catch (error) {
             recordCommitError(errors, error)
         }
-        if (globalSink) {
-            try {
-                flushChangeSink(globalSink)
-            } catch (error) {
-                recordCommitError(errors, error)
-            }
+    }
+    if (localSink) {
+        try {
+            flushChangeSink(localSink)
+        } catch (error) {
+            recordCommitError(errors, error)
         }
-        if (localSink) {
-            try {
-                flushChangeSink(localSink)
-            } catch (error) {
-                recordCommitError(errors, error)
-            }
-        }
-        // Re-delegate AFTER firing: the deferred scope-local callback
-        // idempotently drops its delegate, so the fresh parent delegate is
-        // established last.
-        for (const entry of entries) {
-            if (entry.unsetAtoms) {
-                for (const atom of entry.unsetAtoms) {
-                    try {
-                        reDelegateScopeSubscriptions(atom, entry.data)
-                    } catch (error) {
-                        recordCommitError(errors, error)
-                    }
+    }
+    // Re-delegate AFTER firing: the deferred scope-local callback idempotently
+    // drops its delegate, so the fresh parent delegate is established last.
+    for (const entry of entries) {
+        if (entry.unsetAtoms) {
+            for (const atom of entry.unsetAtoms) {
+                try {
+                    reDelegateScopeSubscriptions(atom, entry.data)
+                } catch (error) {
+                    recordCommitError(errors, error)
                 }
             }
         }
-        completed = true
-    } finally {
-        // Per-root catch: one throwing listener must not strand the roots
-        // queued behind it.
-        for (const tree of commitTrees) {
-            try {
-                endCommit(tree, errors.hasError || !completed)
-            } catch (error) {
-                recordCommitError(errors, error)
-            }
-        }
     }
+    closeCommitBoundaries(commitTrees, errors, errors.hasError)
 }
 
 /** Per-store visit of the cross-scope settlement walk. Three phases:
