@@ -36,6 +36,33 @@ describe("architecture timing confirmations", () => {
         })
     })
 
+    test("unchanged multi-seed closure", async () => {
+        const target = store()
+        const source = atom(0)
+        const left = selector(get => {
+            get(source)
+            return 0
+        })
+        const right = selector(get => {
+            get(source)
+            return 0
+        })
+        let sink = left
+        for (let index = 0; index < 200; index++) {
+            const dependency = sink
+            sink = selector(get => get(dependency) + 1)
+        }
+        target.sub(sink, noop)
+        target.sub(right, noop)
+        let next = 0
+        await measureOne(
+            "architecture: unchanged multi-seed closure 200",
+            () => {
+                target.set(source, ++next)
+            },
+        )
+    })
+
     test("dynamic dependency churn", async () => {
         const target = store()
         const toggle = atom(true)

@@ -27,6 +27,12 @@
  * (SelectorEvaluationRuntime): its private forward map mirrors this shape but
  * is evaluation-session state owned by the draft, never the committed graph.
  *
+ * Scheduler and multi-container cyclic-liveness worklists live in the leaf
+ * `workspace` module, weakly keyed by StoreData rather than stored on it. At
+ * most four frames per store are pooled for re-entrant user code; every release
+ * clears strong state references and drops backing containers above 1,024
+ * entries. Measured-faster single-array count and mount walks remain local.
+ *
  * Invariants owned here:
  * - Edge CONSTRUCTION bumps dependencyGraphVersion (noteDependencyGraphChanged);
  *   orphan-teardown edge DELETION deliberately does not, preserving memoized
@@ -96,3 +102,8 @@ export {
     sealGraphForDisposal,
     settleLateDependency,
 } from "./runtime"
+export {
+    scheduleSelectors,
+    SCHEDULE_CHANGED,
+    SCHEDULE_GRAPH_CHANGED,
+} from "./scheduler"

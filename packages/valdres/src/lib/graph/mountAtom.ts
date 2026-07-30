@@ -1,8 +1,20 @@
 import type { State } from "../../types/State"
 import type { StoreData } from "../../types/StoreData"
 import { isSelector } from "../../utils/isSelector"
+import { IS_PROD } from "../IS_PROD"
 import { addStateDependent } from "./inheritedDependencyBranches"
 import { noteDependencyGraphChanged } from "./noteDependencyGraphChanged"
+import {
+    acquireLivenessWorkspace,
+    ensureLive,
+    ensureMountVisited,
+    ensureOnPath,
+    ensureRegion,
+    ensureUnmountVisited,
+    ensureWasLive,
+    noteLivenessWorkspaceSize,
+    releaseLivenessWorkspace,
+} from "./workspace"
 import { getStoreRuntime } from "../getStoreRuntime"
 import {
     isStoreDisposed,
@@ -14,6 +26,21 @@ import {
 // atom-family members are graph sinks) yields a zero-length iterator without
 // allocating. Never mutated.
 const EMPTY: Set<State> = new Set()
+
+const recordLivenessEdge = (data: StoreData) => {
+    const instrumentation = data.architectureInstrumentation
+    if (instrumentation) instrumentation.counters.livenessEdgeVisits++
+}
+
+const recordMount = (data: StoreData) => {
+    const instrumentation = data.architectureInstrumentation
+    if (instrumentation) instrumentation.counters.mountTransitions++
+}
+
+const recordUnmount = (data: StoreData) => {
+    const instrumentation = data.architectureInstrumentation
+    if (instrumentation) instrumentation.counters.unmountTransitions++
+}
 
 const hasDirectSubscribers = (state: State, data: StoreData): boolean => {
     const subs = data.subscriptions.get(state)
@@ -174,11 +201,16 @@ export const isLive = (state: State, data: StoreData): boolean => {
  */
 const propagateLive = (root: State, data: StoreData) => {
     const stack: State[] = [root]
+    const instrumentation = !IS_PROD
+        ? data.architectureInstrumentation
+        : undefined
+    if (instrumentation) instrumentation.counters.livenessWorkAllocations++
     while (stack.length > 0) {
         const current = stack.pop()!
         const deps = data.stateDependencies.get(current)
         if (!deps) continue
         for (const dep of deps) {
+            if (instrumentation) instrumentation.counters.livenessEdgeVisits++
             const prev = data.liveDependentCount.get(dep) ?? 0
             data.liveDependentCount.set(dep, prev + 1)
             if (prev === 0 && !hasDirectSubscribers(dep, data)) {
@@ -194,11 +226,16 @@ const propagateLive = (root: State, data: StoreData) => {
  */
 const propagateNotLive = (root: State, data: StoreData) => {
     const stack: State[] = [root]
+    const instrumentation = !IS_PROD
+        ? data.architectureInstrumentation
+        : undefined
+    if (instrumentation) instrumentation.counters.livenessWorkAllocations++
     while (stack.length > 0) {
         const current = stack.pop()!
         const deps = data.stateDependencies.get(current)
         if (!deps) continue
         for (const dep of deps) {
+            if (instrumentation) instrumentation.counters.livenessEdgeVisits++
             const prev = data.liveDependentCount.get(dep) ?? 0
             const next = prev - 1
             if (next <= 0) {
@@ -299,38 +336,44 @@ const seedClosureHasCycle = (
     // across every sibling unsubscribe in the burst.
     if (acyclicAtVersion.get(seed) === graphVersion) return false
 
-    const onPath = new Set<State>()
+    const workspace = acquireLivenessWorkspace(data)
+    const onPath = ensureOnPath(workspace, data)
+    const stack = workspace.dfs
     // Explicit stack of frames: { node, iterator over its deps }. A frame is
     // pushed onto `onPath` when entered. Once its deps are exhausted, its whole
     // closure is proven acyclic at this graph version. Encountering an `onPath`
     // node is a back-edge. Positive results are never cached because a later
     // teardown edge deletion could break the cycle without bumping the version.
-    const stack: { node: State; it: Iterator<State> }[] = [
-        {
-            node: seed,
-            it: (data.stateDependencies.get(seed) ?? EMPTY).values(),
-        },
-    ]
+    stack.push({
+        node: seed,
+        it: (data.stateDependencies.get(seed) ?? EMPTY).values(),
+    })
     onPath.add(seed)
-    while (stack.length > 0) {
-        const frame = stack[stack.length - 1]!
-        const next = frame.it.next()
-        if (next.done) {
-            onPath.delete(frame.node)
-            acyclicAtVersion.set(frame.node, graphVersion)
-            stack.pop()
-            continue
+    try {
+        while (stack.length > 0) {
+            const frame = stack[stack.length - 1]!
+            const next = frame.it.next()
+            if (next.done) {
+                onPath.delete(frame.node)
+                acyclicAtVersion.set(frame.node, graphVersion)
+                stack.pop()
+                continue
+            }
+            const dep = next.value as State
+            if (!IS_PROD) recordLivenessEdge(data)
+            if (onPath.has(dep)) return true // back-edge → cycle
+            if (acyclicAtVersion.get(dep) === graphVersion) continue
+            onPath.add(dep)
+            stack.push({
+                node: dep,
+                it: (data.stateDependencies.get(dep) ?? EMPTY).values(),
+            })
+            noteLivenessWorkspaceSize(workspace)
         }
-        const dep = next.value as State
-        if (onPath.has(dep)) return true // back-edge → cycle
-        if (acyclicAtVersion.get(dep) === graphVersion) continue
-        onPath.add(dep)
-        stack.push({
-            node: dep,
-            it: (data.stateDependencies.get(dep) ?? EMPTY).values(),
-        })
+        return false
+    } finally {
+        releaseLivenessWorkspace(workspace)
     }
-    return false
 }
 
 export const regionHasCycle = (
@@ -447,84 +490,100 @@ export const reconcileLivenessAfterChurn = (
     seeds: Set<State>,
     data: StoreData,
 ) => {
-    // 1. region = downward dependency closure of the seeds.
-    const region = new Set<State>()
-    const stack: State[] = [...seeds]
-    while (stack.length > 0) {
-        const s = stack.pop()!
-        if (region.has(s)) continue
-        region.add(s)
-        const deps = data.stateDependencies.get(s)
-        if (deps) for (const d of deps) if (!region.has(d)) stack.push(d)
-    }
+    const workspace = acquireLivenessWorkspace(data)
+    const region = ensureRegion(workspace, data)
+    const live = ensureLive(workspace, data)
+    const wasLive = ensureWasLive(workspace, data)
+    const mountVisited = ensureMountVisited(workspace, data)
+    const unmountVisited = ensureUnmountVisited(workspace, data)
+    const stack = workspace.stack
+    const work = workspace.ordered
+    try {
+        // 1. region = downward dependency closure of the seeds.
+        for (const seed of seeds) stack.push(seed)
+        noteLivenessWorkspaceSize(workspace)
+        while (stack.length > 0) {
+            const s = stack.pop()!
+            if (region.has(s)) continue
+            region.add(s)
+            const deps = data.stateDependencies.get(s)
+            if (deps)
+                for (const d of deps) {
+                    if (!IS_PROD) recordLivenessEdge(data)
+                    if (!region.has(d)) stack.push(d)
+                }
+            noteLivenessWorkspaceSize(workspace)
+        }
 
-    // 2. Ground-truth liveness for the region. Seed from direct subscribers and
-    //    from dependents OUTSIDE the region (their liveness is unaffected by
-    //    this churn, so the cached isLive() is authoritative). Then push
-    //    liveness DOWN: a live state's dependencies each gain a live dependent.
-    const live = new Set<State>()
-    const work: State[] = []
-    for (const D of region) {
-        let isit = hasDirectSubscribers(D, data)
-        if (!isit) {
-            const dependents = data.stateDependents.get(D)
-            if (dependents) {
-                for (const T of dependents) {
-                    if (!region.has(T) && isLive(T, data)) {
-                        isit = true
-                        break
+        // 2. Ground-truth liveness for the region. Seed from direct subscribers
+        //    and from dependents OUTSIDE the region (their liveness is unaffected
+        //    by this churn, so the cached isLive() is authoritative). Then push
+        //    liveness DOWN: a live state's dependencies gain a live dependent.
+        for (const D of region) {
+            let isit = hasDirectSubscribers(D, data)
+            if (!isit) {
+                const dependents = data.stateDependents.get(D)
+                if (dependents) {
+                    for (const T of dependents) {
+                        if (!IS_PROD) recordLivenessEdge(data)
+                        if (!region.has(T) && isLive(T, data)) {
+                            isit = true
+                            break
+                        }
                     }
                 }
             }
-        }
-        if (isit) {
-            live.add(D)
-            work.push(D)
-        }
-    }
-    while (work.length > 0) {
-        const T = work.pop()!
-        const deps = data.stateDependencies.get(T)
-        if (!deps) continue
-        for (const D of deps) {
-            if (region.has(D) && !live.has(D)) {
+            if (isit) {
                 live.add(D)
                 work.push(D)
+                noteLivenessWorkspaceSize(workspace)
             }
         }
-    }
+        while (work.length > 0) {
+            const T = work.pop()!
+            const deps = data.stateDependencies.get(T)
+            if (!deps) continue
+            for (const D of deps) {
+                if (!IS_PROD) recordLivenessEdge(data)
+                if (region.has(D) && !live.has(D)) {
+                    live.add(D)
+                    work.push(D)
+                    noteLivenessWorkspaceSize(workspace)
+                }
+            }
+        }
 
-    // 3. Recompute counts from ground truth, snapshotting prior liveness so we
-    //    can mount/unmount on genuine transitions afterwards (idempotent).
-    const wasLive = new Map<State, boolean>()
-    for (const D of region) wasLive.set(D, isLive(D, data))
-    for (const D of region) {
-        const dependents = data.stateDependents.get(D)
-        let count = 0
-        if (dependents) {
-            for (const T of dependents) {
-                if (region.has(T) ? live.has(T) : isLive(T, data)) count++
+        // 3. Recompute counts from ground truth, snapshotting prior liveness so
+        //    mount/unmount only run on genuine transitions (idempotent).
+        for (const D of region) wasLive.set(D, isLive(D, data))
+        for (const D of region) {
+            const dependents = data.stateDependents.get(D)
+            let count = 0
+            if (dependents) {
+                for (const T of dependents) {
+                    if (!IS_PROD) recordLivenessEdge(data)
+                    if (region.has(T) ? live.has(T) : isLive(T, data)) count++
+                }
             }
+            // liveDependentCount never stores 0 (entries are deleted at <= 0),
+            // so a missing entry IS count 0 — only touch on a genuine change.
+            const prev = data.liveDependentCount.get(D) ?? 0
+            if (count === prev) continue
+            if (count <= 0) data.liveDependentCount.delete(D)
+            else data.liveDependentCount.set(D, count)
         }
-        // liveDependentCount never stores 0 (entries are deleted at <= 0), so a
-        // missing entry IS count 0 — only touch the map on a genuine change.
-        const prev = data.liveDependentCount.get(D) ?? 0
-        if (count === prev) continue
-        if (count <= 0) data.liveDependentCount.delete(D)
-        else data.liveDependentCount.set(D, count)
-    }
-    // Share a visited set across all mount calls (and a separate one across all
-    // unmount calls) so overlapping transitive subtrees are walked once total, not
-    // once per transitioning region node — O(region + edges), not O(region *
-    // edges). Mount and unmount must NOT share a set: a node skipped by an unmount
-    // walk must still be reachable by a mount walk, and vice versa.
-    const mountVisited = new Set<State>()
-    const unmountVisited = new Set<State>()
-    for (const D of region) {
-        const now = live.has(D)
-        if (now && !wasLive.get(D)) mountTransitiveDeps(D, data, mountVisited)
-        else if (!now && wasLive.get(D))
-            unmountOrphanedDeps(D, data, unmountVisited)
+        // Share one visited set across all mounts and a different set across all
+        // unmounts. They cannot be shared with each other: a node skipped by one
+        // transition direction must remain reachable from the other.
+        for (const D of region) {
+            const now = live.has(D)
+            if (now && !wasLive.get(D))
+                mountTransitiveDeps(D, data, mountVisited)
+            else if (!now && wasLive.get(D))
+                unmountOrphanedDeps(D, data, unmountVisited)
+        }
+    } finally {
+        releaseLivenessWorkspace(workspace)
     }
 }
 
@@ -563,6 +622,13 @@ export const mountAtom = (state: State, data: StoreData) => {
                 mountEntry.cleanup = result
             }
         }
+        if (
+            !IS_PROD &&
+            data.architectureInstrumentation &&
+            data.mounts.get(state) === mountEntry
+        ) {
+            recordMount(data)
+        }
     } catch (error) {
         if (data.mounts.get(state) === mountEntry) data.mounts.delete(state)
         untrackStoreMount(data, state)
@@ -582,6 +648,7 @@ export const unmountAtom = (state: State, data: StoreData) => {
     }
     data.mounts.delete(state)
     untrackStoreMount(data, state)
+    if (!IS_PROD && data.architectureInstrumentation) recordUnmount(data)
     if (typeof mount.cleanup === "function") {
         mount.cleanup()
     }
@@ -615,6 +682,11 @@ export const mountTransitiveDeps = (
     const seen = visited ?? new Set<State>()
     let firstError: { value: unknown } | null = null
     const stack: State[] = [state]
+    const instrumentation = !IS_PROD
+        ? data.architectureInstrumentation
+        : undefined
+    if (instrumentation)
+        instrumentation.counters.livenessWorkAllocations += visited ? 1 : 2
     while (stack.length > 0) {
         const current = stack.pop()!
         if (seen.has(current)) continue
@@ -632,8 +704,11 @@ export const mountTransitiveDeps = (
             // Dependencies are recorded in read order. Push them in reverse so
             // the LIFO traversal mounts siblings in that same observable order.
             const orderedDeps = Array.from(deps) as State[]
+            if (instrumentation)
+                instrumentation.counters.livenessWorkAllocations++
             for (let i = orderedDeps.length - 1; i >= 0; i--) {
                 const dep = orderedDeps[i]!
+                if (instrumentation) instrumentation.counters.mountEdgeVisits++
                 if (!seen.has(dep)) stack.push(dep)
             }
         }
@@ -666,6 +741,11 @@ export const unmountOrphanedDeps = (
     const seen = visited ?? new Set<State>()
     let firstError: { value: unknown } | null = null
     const stack: State[] = [state]
+    const instrumentation = !IS_PROD
+        ? data.architectureInstrumentation
+        : undefined
+    if (instrumentation)
+        instrumentation.counters.livenessWorkAllocations += visited ? 1 : 2
     while (stack.length > 0) {
         const current = stack.pop()!
         if (seen.has(current)) continue
@@ -683,6 +763,7 @@ export const unmountOrphanedDeps = (
         const deps = data.stateDependencies.get(current)
         if (deps) {
             for (const dep of deps) {
+                if (instrumentation) instrumentation.counters.mountEdgeVisits++
                 if (!seen.has(dep)) stack.push(dep)
             }
         }

@@ -16,6 +16,20 @@ export type ArchitectureCounters = {
     dependencyEdgeVisits: number
     schedulerQueueEnqueues: number
     schedulerQueueDequeues: number
+    /** Scheduler-owned Set/Map/Array work containers created in the window. */
+    schedulerWorkAllocations: number
+    /** Liveness/mount-owned Set/Map/Array work containers created in the window. */
+    livenessWorkAllocations: number
+    /** Selector regions that required the insertion-order cyclic fallback. */
+    schedulerCycleFallbacks: number
+    /** Dependency edges examined while propagating/reconciling liveness. */
+    livenessEdgeVisits: number
+    /** Dependency edges examined by mount/unmount closure walks. */
+    mountEdgeVisits: number
+    /** Successful absent -> mounted lifecycle transitions. */
+    mountTransitions: number
+    /** Successful mounted -> absent lifecycle transitions. */
+    unmountTransitions: number
     /** Admitted `runCommitPlan` executions — one per engine-sequenced commit. */
     commitPlanRuns: number
 }
@@ -38,6 +52,13 @@ export const createArchitectureInstrumentation =
             dependencyEdgeVisits: 0,
             schedulerQueueEnqueues: 0,
             schedulerQueueDequeues: 0,
+            schedulerWorkAllocations: 0,
+            livenessWorkAllocations: 0,
+            schedulerCycleFallbacks: 0,
+            livenessEdgeVisits: 0,
+            mountEdgeVisits: 0,
+            mountTransitions: 0,
+            unmountTransitions: 0,
             commitPlanRuns: 0,
         },
         settledSelectors: new WeakMap(),

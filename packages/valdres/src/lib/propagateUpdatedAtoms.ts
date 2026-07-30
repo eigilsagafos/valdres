@@ -24,6 +24,9 @@ import {
     installEvaluationDeps,
     isLive,
     reconcileLivenessAfterChurn,
+    scheduleSelectors,
+    SCHEDULE_CHANGED,
+    SCHEDULE_GRAPH_CHANGED,
     type EvaluationOutcome,
 } from "./graph"
 import { recordCommitError, type CommitErrors } from "./commitErrors"
@@ -60,8 +63,6 @@ import { setValueInData } from "./setValueInData"
 import { noteStateValueChanged } from "./stateRevisions"
 import {
     recordDependencyEdgeVisit,
-    recordSchedulerQueueDequeue,
-    recordSchedulerQueueEnqueue,
     recordSelectorSettlement,
     recordStoreSettlement,
 } from "./architectureInstrumentation"
@@ -1960,499 +1961,80 @@ export const settleAsyncSelectorCommit: SelectorSettleFn = (
     }
 }
 
-// Topological evaluation of a downstream subgraph. The main ready queue visits
-// each selector in `seeds` (and everything transitively reachable from them) at
-// most once, in dependency order. A finalized node is deleted from `pending`,
-// which caps duplicate pushes caused by dynamic dependency churn without a
-// separate queued/evaluated Set. If churn later proves that a settled selector
-// must run again, that selector and its downstream closure are deferred to the
-// settle phase below so wide aggregates run after upstream revisits rather than
-// once per transient wave. The seeds are direct dependents of initial selectors
-// whose values just changed in the first sweep — i.e. "level-2" selectors. We
-// only enter the topo path when there's actual downstream work, since the
-// bookkeeping (closure + pending count) is material relative to a simple BFS pass.
-const propagateDownstreamTopo = (
-    seeds: Set<Selector>,
+type SelectorScheduleContext = DepsChange & {
+    collectedSubscribers: Set<any>
+    updatedInitializedAtoms: Set<Atom>
+    isInitOnly: boolean
+    changedSelectors?: Set<Selector>
+    treeCtx?: TreeSettleContext
+    outcome: EvaluationOutcome
+}
+
+const settleScheduledSelector = (
+    selector: Selector,
     data: StoreData,
-    collectedSubscribers: Set<any>,
-    updatedInitializedAtoms: Set<Atom>,
-    isInitOnly: boolean,
-    changedSelectors?: Set<Selector>,
-    treeCtx?: TreeSettleContext,
+    context: SelectorScheduleContext,
+): number => {
+    const currentValue = data.values.get(selector)
+    if (isPromiseLike(currentValue) && context.isInitOnly) return 0
+
+    const dependents = data.stateDependents.get(selector)
+    const subscribers = data.subscriptions.get(selector)
+    if (
+        !isPromiseLike(currentValue) &&
+        (!dependents || dependents.size === 0) &&
+        (!subscribers || subscribers.size === 0)
+    ) {
+        // No live consumer — invalidate for lazy re-eval on next read.
+        if (data.values.delete(selector)) {
+            noteStateValueChanged(selector, data)
+        }
+        return 0
+    }
+
+    context.added = undefined
+    context.removed = undefined
+    const wasValueUpdated = reEvaluateSelector(
+        selector,
+        data,
+        context.updatedInitializedAtoms,
+        context,
+        context.outcome,
+        currentValue,
+        context.treeCtx,
+    )
+    const added = context.added as Set<State> | undefined
+    const removed = context.removed as Set<State> | undefined
+    let result = 0
+    if (added || removed) {
+        applyLiveDependencyDiff(selector, added, removed, data)
+        result |= SCHEDULE_GRAPH_CHANGED
+    }
+    if (wasValueUpdated) {
+        result |= SCHEDULE_CHANGED
+        if (context.changedSelectors) {
+            context.changedSelectors.add(selector)
+        }
+        if (subscribers) {
+            addSetToSet(subscribers, context.collectedSubscribers)
+        }
+    }
+    return result
+}
+
+const propagateScheduledSelector = (
+    parent: Selector,
+    child: Selector,
+    context: SelectorScheduleContext,
 ) => {
-    const closure = new Set<Selector>(seeds)
-    {
-        const stack: Selector[] = [...seeds]
-        while (stack.length > 0) {
-            const s = stack.pop() as Selector
-            const downstream = data.stateDependents.get(s)
-            if (downstream) {
-                for (const d of downstream) {
-                    if (!IS_PROD && data.architectureInstrumentation)
-                        recordDependencyEdgeVisit(data)
-                    if (!closure.has(d)) {
-                        closure.add(d)
-                        stack.push(d)
-                    }
-                }
-            }
-        }
-    }
-
-    // Pending: number of direct deps of `s` that are also in the closure
-    // (i.e. still-dirty parents). Count 0 → ready to evaluate. Atoms and
-    // out-of-closure selectors are already resolved (atoms were just
-    // updated; outside selectors are stable for this propagation).
-    const pending = new Map<Selector, number>()
-    const ready: Selector[] = []
-    for (const s of closure) {
-        const deps = data.stateDependencies.get(s)
-        let count = 0
-        if (deps) {
-            for (const d of deps) {
-                if (!IS_PROD && data.architectureInstrumentation)
-                    recordDependencyEdgeVisit(data)
-                if (closure.has(d as Selector)) count++
-            }
-        }
-        pending.set(s, count)
-        if (count === 0) {
-            ready.push(s)
-            if (!IS_PROD && data.architectureInstrumentation)
-                recordSchedulerQueueEnqueue(data)
-        }
-    }
-    // A closure member only needs re-evaluation if at least one of its
-    // upstream parents actually changed value. Seeds reach here because
-    // a first-pass parent changed, so they start as needing eval. Pure
-    // downstream gets flagged as parents propagate change.
-    const needsEval = new Set<Selector>(seeds)
-
-    // Set when the dependency graph changes during the walk (a selector's deps
-    // were added/removed, or an out-of-closure dependent was pulled in). Only
-    // then can a node need the settle scan below, so the steady-state fast path
-    // skips it entirely.
-    let graphMutated = false
-    let resweep: Set<Selector> | undefined
-    const markForResweep = (selector: Selector) => {
-        graphMutated = true
-        if (!resweep) resweep = new Set()
-        const stack = [selector]
-        for (let i = 0; i < stack.length; i++) {
-            const s = stack[i]
-            if (resweep.has(s)) continue
-            resweep.add(s)
-            if (!IS_PROD && data.architectureInstrumentation)
-                recordSchedulerQueueEnqueue(data)
-            const downstream = data.stateDependents.get(s)
-            if (downstream) {
-                for (const d of downstream) {
-                    if (!IS_PROD && data.architectureInstrumentation)
-                        recordDependencyEdgeVisit(data)
-                    stack.push(d)
-                }
-            }
-        }
-    }
-
-    const advance = (selector: Selector, propagateChange: boolean) => {
-        const downstream = data.stateDependents.get(selector)
-        if (!downstream) return
-        for (const d of downstream) {
-            if (!IS_PROD && data.architectureInstrumentation)
-                recordDependencyEdgeVisit(data)
-            if (propagateChange && treeCtx)
-                mergeTreeProvenance(treeCtx, d, selector)
-            if (!closure.has(d)) {
-                // `d` is downstream of a just-changed selector but absent from
-                // the static closure, which means it was materialized AFTER the
-                // closure was built — e.g. an orphaned selector whose value was
-                // dropped by unsubscribe GC and then lazily re-initialized when
-                // a closure selector read it mid-propagation. Such a node may
-                // have read a not-yet-settled (stale) value of `selector`, and
-                // because it's untracked, a later change here would never reach
-                // it. Pull it into the closure so the topo walk re-evaluates it
-                // once `selector` settles. (Only when there is an actual change
-                // to propagate; an unchanged parent needs no re-eval.)
-                if (propagateChange) {
-                    graphMutated = true
-                    closure.add(d)
-                    pending.set(d, 0)
-                    needsEval.add(d)
-                    ready.push(d)
-                    if (!IS_PROD && data.architectureInstrumentation)
-                        recordSchedulerQueueEnqueue(data)
-                }
-                continue
-            }
-            const cur = pending.get(d)
-            if (cur === undefined) {
-                if (propagateChange) markForResweep(d)
-                continue
-            }
-            const c = cur - 1
-            pending.set(d, c)
-            if (propagateChange) needsEval.add(d)
-            if (c <= 0) {
-                ready.push(d)
-                if (!IS_PROD && data.architectureInstrumentation)
-                    recordSchedulerQueueEnqueue(data)
-            }
-        }
-    }
-
-    // FIFO head pointer preserves the original BFS sibling order — nested
-    // writes that side-effect into peer selectors during eval depend on it.
-    // Reused across every re-evaluated selector. evaluateSelector only
-    // allocates the inner Sets when deps actually changed, so steady-state
-    // settling does zero allocation here. The outcome carrier is likewise
-    // owned per pass: each re-eval overwrites and consumes it in place.
-    const depsChange: DepsChange = {}
-    const outcome = createEvaluationOutcome()
-    let head = 0
-    while (head < ready.length) {
-        const selector = ready[head++]
-        if (!IS_PROD && data.architectureInstrumentation)
-            recordSchedulerQueueDequeue(data)
-        if (resweep?.has(selector)) continue
-        if (!pending.has(selector)) continue
-
-        const currentValue = data.values.get(selector)
-
-        if (isPromiseLike(currentValue) && isInitOnly) {
-            pending.delete(selector)
-            advance(selector, false)
-            continue
-        }
-
-        if (!needsEval.has(selector)) {
-            pending.delete(selector)
-            advance(selector, false)
-            continue
-        }
-
-        const dependents = data.stateDependents.get(selector)
-        const subscribers = data.subscriptions.get(selector)
-
-        if (
-            !isPromiseLike(currentValue) &&
-            (!dependents || dependents.size === 0) &&
-            (!subscribers || subscribers.size === 0)
-        ) {
-            // No live consumer — invalidate for lazy re-eval on next read.
-            if (data.values.delete(selector)) {
-                noteStateValueChanged(selector, data)
-            }
-            pending.delete(selector)
-            advance(selector, false)
-            continue
-        }
-
-        depsChange.added = undefined
-        depsChange.removed = undefined
-        const wasValueUpdated = reEvaluateSelector(
-            selector,
-            data,
-            updatedInitializedAtoms,
-            depsChange,
-            outcome,
-            currentValue,
-            treeCtx,
-        )
-        // Casts work around a tsgo control-flow narrowing quirk where
-        // property accesses lose their narrowing after a function call.
-        const added = depsChange.added as Set<State> | undefined
-        const removed = depsChange.removed as Set<State> | undefined
-        if (added || removed) {
-            // The graph changed under the walk — a node may now be stranded.
-            graphMutated = true
-            applyLiveDependencyDiff(selector, added, removed, data)
-        }
-
-        pending.delete(selector)
-        advance(selector, wasValueUpdated)
-        if (wasValueUpdated) {
-            if (changedSelectors) changedSelectors.add(selector)
-            if (subscribers) addSetToSet(subscribers, collectedSubscribers)
-        }
-    }
-
-    // Settle stranded/resweep nodes. The `pending` counts are a snapshot taken
-    // before the walk; they assume the dependency graph is fixed for its
-    // duration. But a selector can be re-evaluated out-of-band DURING the walk —
-    // most commonly lazily re-initialized via getState when another selector
-    // reads it (after its value was dropped by an earlier
-    // orphan-invalidation/unsubscribe). If that re-eval drops a dependency it
-    // was snapshotted with, the dropped parent's reverse edge is gone, so it
-    // never decrements this node's `pending`, which then stalls above 0 and the
-    // node is never processed. Also, a node already settled by the main ready
-    // queue can receive another real changed-parent signal after graph churn; it
-    // has no `pending` entry, so it is recorded in `resweep`. Re-settle those
-    // nodes and their downstream closure with a dynamic topo fixpoint. That lets
-    // upstream revisits settle before wide downstream aggregates run, while
-    // still falling back to wave settling for cyclic regions. Guarded by
-    // `graphMutated`, so the steady-state fast path skips it entirely.
-    if (!graphMutated) return
-
-    let stranded: Set<Selector> | undefined = resweep
-    for (const s of closure) {
-        if (needsEval.has(s) && pending.has(s)) {
-            if (!stranded) stranded = new Set()
-            if (!stranded.has(s)) {
-                stranded.add(s)
-                if (!IS_PROD && data.architectureInstrumentation)
-                    recordSchedulerQueueEnqueue(data)
-            }
-        }
-    }
-    if (!stranded) return
-
-    let work = stranded
-    const hasUnsettledDependency = (selector: Selector) => {
-        const deps = data.stateDependencies.get(selector)
-        if (!deps) return false
-        for (const dep of deps) {
-            if (!IS_PROD && data.architectureInstrumentation)
-                recordDependencyEdgeVisit(data)
-            if (dep !== selector && work.has(dep as Selector)) return true
-        }
-        return false
-    }
-    const enqueueDownstream = (selector: Selector) => {
-        const downstream = data.stateDependents.get(selector)
-        if (!downstream) return
-        for (const d of downstream) {
-            if (!IS_PROD && data.architectureInstrumentation)
-                recordDependencyEdgeVisit(data)
-            if (treeCtx) mergeTreeProvenance(treeCtx, d, selector)
-            if (!work.has(d)) {
-                work.add(d)
-                if (!IS_PROD && data.architectureInstrumentation)
-                    recordSchedulerQueueEnqueue(data)
-            }
-        }
-    }
-    const evaluateStrandedSelector = (selector: Selector) => {
-        const currentValue = data.values.get(selector)
-        if (isPromiseLike(currentValue) && isInitOnly) return false
-        const dependents = data.stateDependents.get(selector)
-        const subscribers = data.subscriptions.get(selector)
-        if (
-            !isPromiseLike(currentValue) &&
-            (!dependents || dependents.size === 0) &&
-            (!subscribers || subscribers.size === 0)
-        ) {
-            if (data.values.delete(selector)) {
-                noteStateValueChanged(selector, data)
-            }
-            return false
-        }
-        depsChange.added = undefined
-        depsChange.removed = undefined
-        const wasValueUpdated = reEvaluateSelector(
-            selector,
-            data,
-            updatedInitializedAtoms,
-            depsChange,
-            outcome,
-            currentValue,
-            treeCtx,
-        )
-        const added = depsChange.added as Set<State> | undefined
-        const removed = depsChange.removed as Set<State> | undefined
-        if (added || removed) {
-            applyLiveDependencyDiff(selector, added, removed, data)
-        }
-        if (wasValueUpdated) {
-            if (changedSelectors) changedSelectors.add(selector)
-            if (subscribers) addSetToSet(subscribers, collectedSubscribers)
-            // Re-fetch dependents — eval may have changed them.
-            enqueueDownstream(selector)
-        }
-        return wasValueUpdated
-    }
-    while (work.size > 0) {
-        let progressed = false
-        const batch = [...work]
-        for (const selector of batch) {
-            if (!work.has(selector)) continue
-            if (hasUnsettledDependency(selector)) continue
-            work.delete(selector)
-            if (!IS_PROD && data.architectureInstrumentation)
-                recordSchedulerQueueDequeue(data)
-            progressed = true
-            evaluateStrandedSelector(selector)
-        }
-        if (progressed) continue
-
-        // Cyclic stranded regions have no dependency-free node. Fall back to the
-        // previous wave behavior for that region so cyclic dynamic graphs still
-        // get a chance to settle instead of stalling behind the topo gate.
-        const cyclicBatch = [...work]
-        work = new Set()
-        for (const selector of cyclicBatch) {
-            if (!IS_PROD && data.architectureInstrumentation)
-                recordSchedulerQueueDequeue(data)
-            evaluateStrandedSelector(selector)
-        }
+    if (context.treeCtx) {
+        mergeTreeProvenance(context.treeCtx, child, parent)
     }
 }
 
-const orderInitialSelectors = (
-    selectors: Set<Selector>,
-    data: StoreData,
-): Selector[] => {
-    if (selectors.size < 2) return [...selectors]
-
-    const pending = new Map<Selector, number>()
-    const downstream = new Map<Selector, Selector[]>()
-    const ready: Selector[] = []
-
-    for (const selector of selectors) {
-        let count = 0
-        const deps = data.stateDependencies.get(selector)
-        if (deps) {
-            for (const dep of deps) {
-                if (!IS_PROD && data.architectureInstrumentation)
-                    recordDependencyEdgeVisit(data)
-                if (!selectors.has(dep as Selector)) continue
-                count++
-                let list = downstream.get(dep as Selector)
-                if (!list) {
-                    list = []
-                    downstream.set(dep as Selector, list)
-                }
-                list.push(selector)
-            }
-        }
-        pending.set(selector, count)
-        if (count === 0) {
-            ready.push(selector)
-            if (!IS_PROD && data.architectureInstrumentation)
-                recordSchedulerQueueEnqueue(data)
-        }
-    }
-
-    const ordered: Selector[] = []
-    let head = 0
-    while (head < ready.length) {
-        const selector = ready[head++]
-        if (!IS_PROD && data.architectureInstrumentation)
-            recordSchedulerQueueDequeue(data)
-        ordered.push(selector)
-        const children = downstream.get(selector)
-        if (!children) continue
-        for (const child of children) {
-            if (!IS_PROD && data.architectureInstrumentation)
-                recordDependencyEdgeVisit(data)
-            const count = (pending.get(child) ?? 0) - 1
-            pending.set(child, count)
-            if (count === 0) {
-                ready.push(child)
-                if (!IS_PROD && data.architectureInstrumentation)
-                    recordSchedulerQueueEnqueue(data)
-            }
-        }
-    }
-
-    // Cyclic initial regions rely on the old insertion-order behavior plus the
-    // liveness reconcile. Only reorder when the initial subgraph is acyclic.
-    return ordered.length === selectors.size ? ordered : [...selectors]
-}
-
-const propagateSelectorUpdatesLinearFirst = (
-    selectors: Set<Selector>,
-    data: StoreData,
-    collectedSubscribers: Set<any>,
-    updatedInitializedAtoms: Set<Atom>,
-    isInitOnly: boolean,
-    changedSelectors?: Set<Selector>,
-    treeCtx?: TreeSettleContext,
-) => {
-    let downstreamSeeds: Set<Selector> | undefined
-    const orderedSelectors = orderInitialSelectors(selectors, data)
-    const processedInitialSelectors = new Set<Selector>()
-    // Reused across every re-evaluated selector — see propagateDownstreamTopo.
-    const depsChange: DepsChange = {}
-    const outcome = createEvaluationOutcome()
-    for (const selector of orderedSelectors) {
-        const currentValue = data.values.get(selector)
-        if (isPromiseLike(currentValue) && isInitOnly) {
-            processedInitialSelectors.add(selector)
-            continue
-        }
-        const dependents = data.stateDependents.get(selector)
-        const subscribers = data.subscriptions.get(selector)
-        if (
-            !isPromiseLike(currentValue) &&
-            (!dependents || dependents.size === 0) &&
-            (!subscribers || subscribers.size === 0)
-        ) {
-            // No live consumer — invalidate for lazy re-eval on next read.
-            if (data.values.delete(selector)) {
-                noteStateValueChanged(selector, data)
-            }
-            processedInitialSelectors.add(selector)
-            continue
-        }
-        depsChange.added = undefined
-        depsChange.removed = undefined
-        const wasValueUpdated = reEvaluateSelector(
-            selector,
-            data,
-            updatedInitializedAtoms,
-            depsChange,
-            outcome,
-            currentValue,
-            treeCtx,
-        )
-        // Casts work around a tsgo control-flow narrowing quirk where
-        // property accesses lose their narrowing after a function call.
-        const added = depsChange.added as Set<State> | undefined
-        const removed = depsChange.removed as Set<State> | undefined
-        if (added || removed) {
-            applyLiveDependencyDiff(selector, added, removed, data)
-        }
-        processedInitialSelectors.add(selector)
-        if (!wasValueUpdated) continue
-        if (changedSelectors) changedSelectors.add(selector)
-        if (subscribers) addSetToSet(subscribers, collectedSubscribers)
-        // Re-fetch dependents — eval may have changed them.
-        const downstream = data.stateDependents.get(selector)
-        if (downstream && downstream.size > 0) {
-            if (!downstreamSeeds) downstreamSeeds = new Set()
-            for (const d of downstream) {
-                if (!IS_PROD && data.architectureInstrumentation)
-                    recordDependencyEdgeVisit(data)
-                if (treeCtx) mergeTreeProvenance(treeCtx, d, selector)
-                if (selectors.has(d) && !processedInitialSelectors.has(d)) {
-                    continue
-                }
-                downstreamSeeds.add(d)
-            }
-        }
-    }
-
-    if (downstreamSeeds && downstreamSeeds.size > 0) {
-        propagateDownstreamTopo(
-            downstreamSeeds,
-            data,
-            collectedSubscribers,
-            updatedInitializedAtoms,
-            isInitOnly,
-            changedSelectors,
-            treeCtx,
-        )
-    }
-}
-
-// Re-evaluate the initial dirty selectors, then topologically evaluate anything
-// downstream of selectors whose values actually shifted. The initial sweep is
-// ordered topologically when that initial subgraph is acyclic, and a downstream
-// selector already scheduled later in the same initial sweep is not queued for a
-// second topo pass. Cyclic regions keep the old insertion-order behavior because
-// the liveness churn tests rely on those transitional cycles being evaluated
-// and reconciled by the existing backstop.
+// Re-evaluate the dirty selector closure in dependency order. The graph scheduler
+// owns ordinary Kahn ordering, dynamic-dependency resweeps, and the isolated
+// insertion-order fallback for cyclic regions.
 const propagateSelectorUpdates = (
     selectors: Set<Selector>,
     data: StoreData,
@@ -2471,24 +2053,30 @@ const propagateSelectorUpdates = (
     // outside the loop — unconditional). A purely-additive loop-driven pass is
     // correct incrementally (even through cycles), so it arms neither. Allocated
     // only when a dep-set actually changes — the no-churn fast path never trips it.
-    // Take ownership of the liveness collector. The loop and
-    // propagateDownstreamTopo below run user onMount/cleanup (via
-    // mountTransitiveDeps / unmountOrphanedDeps) that can throw, so endLivenessPass
-    // runs in the `finally` (else a throwing onMount would strand the collector and
-    // permanently disable the reconcile) — and the returned region is reconciled
-    // AFTER the try, so a throwing pass doesn't re-enter user code and mask its
-    // error.
+    // Take ownership of the liveness collector. Selector settlement can run user
+    // onMount/cleanup code that throws, so endLivenessPass runs in the `finally`
+    // (else a throwing hook would strand the collector and permanently disable
+    // reconcile). Reconcile the returned region AFTER the try so a throwing pass
+    // never re-enters user code and masks its original error.
     const ownsLivenessSeeds = beginLivenessPass(data)
     let seedsToReconcile: Set<State> | null = null
     try {
-        propagateSelectorUpdatesLinearFirst(
-            selectors,
-            data,
+        const context: SelectorScheduleContext = {
+            added: undefined,
+            removed: undefined,
             collectedSubscribers,
             updatedInitializedAtoms,
             isInitOnly,
             changedSelectors,
             treeCtx,
+            outcome: createEvaluationOutcome(),
+        }
+        scheduleSelectors(
+            selectors,
+            data,
+            context,
+            settleScheduledSelector,
+            propagateScheduledSelector,
         )
     } finally {
         // Always release the collector — even if a user onMount/cleanup above threw

@@ -67,8 +67,10 @@ jobs:
               run: |
                   git worktree add --detach /tmp/base '${{ github.event.pull_request.base.sha }}'
                   (cd /tmp/base && bun install --frozen-lockfile)
+                  cp "${GITHUB_WORKSPACE}/packages/valdres/test/performance/architecture.timing.ts" /tmp/base/packages/valdres/test/performance/architecture.timing.ts
                   cp "${GITHUB_WORKSPACE}/packages/valdres/test/performance/asyncSettlement.timing.ts" /tmp/base/packages/valdres/test/performance/asyncSettlement.timing.ts
                   cp "${GITHUB_WORKSPACE}/packages/valdres/test/performance/bench-utils.ts" /tmp/base/packages/valdres/test/performance/bench-utils.ts
+                  cp "${GITHUB_WORKSPACE}/packages/valdres/vitest.architecture-bench.config.ts" /tmp/base/packages/valdres/vitest.architecture-bench.config.ts
                   cp "${GITHUB_WORKSPACE}/packages/valdres/vitest.async-bench.config.ts" /tmp/base/packages/valdres/vitest.async-bench.config.ts
 
             # Run the same benchmark harness against both implementations. New

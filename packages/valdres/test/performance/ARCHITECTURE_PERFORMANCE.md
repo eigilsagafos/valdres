@@ -1,6 +1,6 @@
 # Architecture performance gates
 
-These gates measure the current Valdres architecture without changing it.
+These gates measure Valdres graph scheduling and commit architecture.
 Deterministic structural counts are the blocking signal; end-to-end latency and
 retained heap are confirmation signals. Index construction and indexing are
 explicitly out of scope.
@@ -44,9 +44,22 @@ one side of a PR comparison.
 - `schedulerQueueEnqueues` / `schedulerQueueDequeues`: ready/resweep selector
   queue work where a queue exists. The one-selector linear fast path correctly
   reports zero.
+- `schedulerWorkAllocations`: scheduler-owned `Map`/`Set`/array containers
+  created inside the measured window. Warm graph commits should reuse their
+  frame-local workspace and report zero.
+- `livenessWorkAllocations`: liveness/mount-owned work containers created inside
+  the window. Warm multi-container cyclic/reconciliation walks reuse their
+  workspace; measured-faster one-array count and mount walks remain local and
+  still report their short-lived containers.
+- `schedulerCycleFallbacks`: stalled cyclic regions settled by the isolated
+  insertion-order fallback. Ordinary acyclic graphs must report zero.
+- `livenessEdgeVisits` / `mountEdgeVisits`: dependency edges examined by
+  liveness reconciliation and mount/unmount closure walks, respectively.
+- `mountTransitions` / `unmountTransitions`: successful lifecycle state
+  transitions. These distinguish allocation savings from skipped lifecycle work.
 - `commitPlanRuns`: admitted `runCommitPlan` executions. Every single-store
-  transaction commit shape (ordinary, hooked, cleanup) must execute exactly
-  one plan; scalar direct writes correctly report zero.
+  transaction commit shape (ordinary, hooked, cleanup) must execute exactly one
+  plan; scalar direct writes correctly report zero.
 
 The collector is an internal optional `StoreData` field. It is attached only for
 one synchronous test/benchmark window, inherited by scopes created during that
@@ -55,41 +68,71 @@ instrumentation is disabled outside tests/benchmarks and is not public API.
 
 ## Deterministic baseline
 
-Baseline captured on 2026-07-20 from `origin/main` plus measurement-only
-changes. Columns are evaluations, settlements, duplicate settlements, unique
-stores, store passes, duplicate store passes, edge visits, enqueues, and
-dequeues.
+Baseline recaptured on 2026-07-29 from `b85d858d` (`origin/main`) before the
+worklist rewrite, then updated to the optimized gates. Columns are evaluations,
+settlements, duplicate settlements, unique stores, store passes, duplicate store
+passes, edge visits, enqueues, and dequeues.
 
-| Scenario                             | Eval | Settle | Dup sel | Stores | Passes | Dup store | Edges | Enq | Deq |
-| ------------------------------------ | ---: | -----: | ------: | -----: | -----: | --------: | ----: | --: | --: |
-| Atom-only write                      |    0 |      0 |       0 |      0 |      0 |         0 |     0 |   0 |   0 |
-| Live fan-out, width 8                |    8 |      8 |       0 |      1 |      1 |         0 |    16 |   8 |   8 |
-| Asymmetric DAG, depth 6              |    8 |      8 |       1 |      1 |      1 |         0 |    43 |   8 |   8 |
-| Dynamic churn, width 6               |    6 |      6 |       0 |      1 |      1 |         0 |    18 |   6 |   6 |
-| Single-store update + delete         |    2 |      2 |       1 |      1 |      2 |         1 |     3 |   0 |   0 |
-| Cross-scope transaction, depth 3     |    1 |      1 |       0 |      1 |      1 |         0 |     3 |   0 |   0 |
-| Cross-scope update + delete + unset  |    1 |      1 |       0 |      1 |      1 |         0 |     4 |   0 |   0 |
-| Cross-scope txn, plan/peer overlap   |    1 |      1 |       0 |      1 |      1 |         0 |     2 |   0 |   0 |
-| Global fan-out, width 6              |    6 |      6 |       0 |      6 |      6 |         0 |     6 |   0 |   0 |
+| Scenario                            | Eval | Settle | Dup sel | Stores | Passes | Dup store | Edges | Enq | Deq |
+| ----------------------------------- | ---: | -----: | ------: | -----: | -----: | --------: | ----: | --: | --: |
+| Atom-only write                     |    0 |      0 |       0 |      0 |      0 |         0 |     0 |   0 |   0 |
+| Live fan-out, width 8               |    8 |      8 |       0 |      1 |      1 |         0 |     8 |   0 |   0 |
+| Unchanged multi-seed closure, 200   |    2 |      2 |       0 |      1 |      1 |         0 |     4 |   0 |   0 |
+| Asymmetric DAG, depth 6             |    7 |      7 |       0 |      1 |      1 |         0 |    40 |   8 |   8 |
+| Dynamic churn, width 6              |    6 |      6 |       0 |      1 |      1 |         0 |     6 |   0 |   0 |
+| Single-store update + delete        |    2 |      2 |       1 |      1 |      2 |         1 |     3 |   0 |   0 |
+| Cross-scope transaction, depth 3    |    1 |      1 |       0 |      1 |      1 |         0 |     3 |   0 |   0 |
+| Cross-scope update + delete + unset |    1 |      1 |       0 |      1 |      1 |         0 |     4 |   0 |   0 |
+| Cross-scope txn, plan/peer overlap  |    1 |      1 |       0 |      1 |      1 |         0 |     2 |   0 |   0 |
+| Global fan-out, width 6             |    6 |      6 |       0 |      6 |      6 |         0 |     6 |   0 |   0 |
+
+The allocation instrumentation captured these before/after deterministic
+results. Every "after" row is measured after one warm commit so container
+creation, rather than logical queue work, is isolated.
+
+| Scenario                | Scheduler allocs before | Scheduler allocs after | Liveness allocs before | Liveness allocs after |
+| ----------------------- | ----------------------: | ---------------------: | ---------------------: | --------------------: |
+| Live fan-out, width 8   |                       5 |                      0 |                      0 |                     0 |
+| Asymmetric DAG, depth 6 |                      12 |                      0 |                      0 |                     0 |
+| Dynamic churn, width 6  |                       5 |                      0 |                      2 |                     2 |
+| Dynamic mount churn     |                       2 |                      0 |                      6 |                     6 |
+
+The unchanged multi-seed gate has two dirty selectors over a 200-node downstream
+chain whose values remain equal. It requires the write to stop after four edge
+visits rather than discovering all 200 descendants. Leaf fan-out and churn stay
+off the graph workspace entirely. The re-entrant mount-write gate warms nested
+scheduler frames, then requires a write during `onMount` to produce final inner
+and outer values with zero new scheduler containers.
+
+The cyclic-closure gate requires the insertion-order fallback to iterate to the
+stable `9 / 9` fixpoint. Value-divergent cycles retain a bounded settlement
+budget before cycle-closing signals are suppressed; this prevents the
+synchronous scheduler from running forever without truncating practical
+convergent cycles.
+
+Pooling the single-array live-count walks, and later the mount/unmount closure
+walks, reduced deterministic allocation counts but regressed at least one
+runtime. Those paths deliberately keep their measured-faster local containers.
+Only the multi-container cyclic DFS and exact reconciliation paths retain pooled
+liveness storage.
 
 Selector/store counts that express current commit behavior are exact. Edge and
-queue gates allow narrow structural headroom: 0–25% for linear shapes and
-approximately ±16% for the asymmetric DAG. Queue enqueues must equal dequeues.
-These are engine-independent algorithm counts, not JavaScript object-layout or
-nanosecond assertions. The update-plus-delete case deliberately reaches the same
-selector twice through the single-store cleanup settlement's per-kind passes and
-proves both duplicate detectors are live. The cross-scope rows record the
-proven-safe deduplication this table previously anticipated: the tree-level
-CommitPlan (`settleTransactionTreeCommit`) visits each affected store once with
-the union of its own and inherited triggers, so the depth-3 spanning selector
-dropped from three evaluations (one per reaching ancestor pass) to one, with
-zero duplicate settlements; the mixed-kind row proves the union spans update,
-delete, and unset triggers; and the plan/peer-overlap row proves a global peer
-that is itself a plan store folds into that single settlement instead of also
-running a separate peer pass. Cross-scope transaction commits (with or without
-global peers) additionally gate on exactly one `commitPlanRuns`. Lowering
-baselines further requires the same proven-safe standard; increasing them
-requires review.
+queue gates allow narrow structural headroom: 0–25% for linear shapes and 37–42
+visits for the asymmetric DAG. Queue enqueues must equal dequeues. These are
+engine-independent algorithm counts, not JavaScript object-layout or nanosecond
+assertions. The update-plus-delete case deliberately reaches the same selector
+twice through the single-store cleanup settlement's per-kind passes and proves
+both duplicate detectors are live. The cross-scope rows record the proven-safe
+deduplication this table previously anticipated: the tree-level CommitPlan
+(`settleTransactionTreeCommit`) visits each affected store once with the union
+of its own and inherited triggers, so the depth-3 spanning selector dropped from
+three evaluations (one per reaching ancestor pass) to one, with zero duplicate
+settlements; the mixed-kind row proves the union spans update, delete, and unset
+triggers; and the plan/peer-overlap row proves a global peer that is itself a
+plan store folds into that single settlement instead of also running a separate
+peer pass. Cross-scope transaction commits (with or without global peers)
+additionally gate on exactly one `commitPlanRuns`. Lowering baselines further
+requires the same proven-safe standard; increasing them requires review.
 
 ## Retained-memory methodology and baseline
 
@@ -109,54 +152,64 @@ also asserts every evaluation signal is live before disposal and aborted after
 disposal. These are retained-heap leak/regression gates, not total-allocation or
 RSS measurements.
 
-Observed medians below are bytes per retained unit from repeated local runs on
-Bun 1.3.14 and Node 24.16.0; benchmark CI pins the same versions. Ceilings are
-runtime-specific because the heaps differ, but are normalized per scenario unit
-and leave roughly 25–30% above the observed median. Released heap has a fixed
-ceiling: 512 KiB on Bun and 256 KiB on Node.
+Observed medians below are bytes per retained unit from an interleaved local
+base/head comparison on Bun 1.3.14 and Node 24.16.0; benchmark CI pins the same
+versions. Ceilings are runtime-specific because the heaps differ, but are
+normalized per scenario unit and leave roughly 25–30% above the observed median.
+Released heap has a fixed ceiling: 512 KiB on Bun and 256 KiB on Node.
 
 Calibration note (single-store transactions, Bun): JSC's
 `heapSize + extraMemorySize` is sensitive to the byte layout of the commit
 engine module — adding a never-called function to a pristine `commitEngine.ts`
-alone moved this scenario 157 → 229 B/unit while the Node/V8 lane stayed at
-85 B/unit. The Bun observed/ceiling values therefore absorb code-layout shifts
-(360 still detects a real per-transaction pin such as a retained MutationDraft,
-~+220 B/unit here); the Node lane is the layout-insensitive cross-check.
+alone moved this scenario 157 → 229 B/unit while the Node/V8 lane stayed at 85
+B/unit. The Bun observed/ceiling values therefore absorb code-layout shifts (360
+still detects a real per-transaction pin such as a retained MutationDraft, ~+220
+B/unit here); the Node lane is the layout-insensitive cross-check.
 
-| Scenario                            | Units | Bun B/unit | Bun ceiling | Node B/unit | Node ceiling |
-| ----------------------------------- | ----: | ---------: | ----------: | ----------: | -----------: |
-| Atom-only stores                    | 4,000 |        111 |         160 |          84 |          120 |
-| Live selector graphs                | 1,500 |      1,873 |       2,400 |       1,169 |        1,500 |
-| Dynamic dependency churn            | 1,000 |      1,581 |       2,100 |       1,179 |        1,400 |
-| Scope creation and disposal         | 1,500 |      2,474 |       3,200 |       2,668 |        3,400 |
-| Single-store transactions           | 2,500 |        230 |         360 |          85 |          120 |
-| Deep cross-scope transactions       |    64 |     22,969 |      30,000 |      10,601 |       14,000 |
-| Global fan-out                      | 1,000 |      2,870 |       3,700 |       2,629 |        3,400 |
-| Store disposal + async cancellation |   500 |      5,834 |       7,500 |       5,889 |        7,500 |
+| Scenario                            | Units | Bun base → head B/unit | Bun ceiling | Node base → head B/unit | Node ceiling |
+| ----------------------------------- | ----: | ---------------------: | ----------: | ----------------------: | -----------: |
+| Atom-only stores                    | 4,000 |              111 → 111 |         160 |                 84 → 84 |          120 |
+| Live selector graphs                | 1,500 |          1,866 → 1,858 |       2,400 |           1,169 → 1,169 |        1,500 |
+| Dynamic dependency churn            | 1,000 |          1,608 → 1,610 |       2,100 |           1,174 → 1,157 |        1,400 |
+| Scope creation and disposal         | 1,500 |          2,459 → 2,459 |       3,200 |           2,668 → 2,668 |        3,400 |
+| Single-store transactions           | 2,500 |              232 → 232 |         360 |                 85 → 85 |          120 |
+| Deep cross-scope transactions       |    64 |        23,063 → 23,117 |      30,000 |         10,603 → 10,603 |       14,000 |
+| Global fan-out                      | 1,000 |          2,920 → 2,921 |       3,700 |           2,763 → 2,763 |        3,400 |
+| Store disposal + async cancellation |   500 |          5,887 → 5,890 |       7,500 |           5,885 → 5,886 |        7,500 |
+
+The largest released-heap medians after disposal were 247,344 B on Bun and
+68,752 B on Node, below their 512 KiB and 256 KiB gates.
 
 ## Timing confirmation baseline
 
-Single-run diagnostic p50s from the same machine are below. CI's existing
-Bencher workflow remains authoritative: it runs base and head on the same runner
-three times and compares the cross-run median, avoiding fixed nanosecond gates.
+Three interleaved base/head pairs were run locally against `b85d858d` after the
+final fast-path and liveness decisions. The table reports only directly affected
+shapes, avoiding performance claims from unrelated machine drift. Atom-only uses
+five additional interleaved pairs because nanosecond rounding dominates three
+samples.
 
-| Scenario                            |  Bun p50 | Node p50 |
-| ----------------------------------- | -------: | -------: |
-| Atom-only set                       |    78 ns |   332 ns |
-| Live graph fan-out 100              |  57.3 µs |  87.3 µs |
-| Dependency churn 100                | 120.2 µs | 142.0 µs |
-| Create + dispose scope              |   542 ns |   1.3 µs |
-| Single-store transaction, 20 writes |   6.7 µs |   8.5 µs |
-| Cross-scope transaction, depth 8    |  20.5 µs |  19.0 µs |
-| Global fan-out 100                  |  26.6 µs |  36.9 µs |
-| Dispose pending selector            |   3.5 µs |   6.7 µs |
+| Scenario                                       |  Bun base → head | Node base → head |
+| ---------------------------------------------- | ---------------: | ---------------: |
+| Atom-only set                                  |       47 → 48 ns |     125 → 127 ns |
+| Live graph fan-out 100                         |   28.5 → 23.9 µs |   33.0 → 28.1 µs |
+| Unchanged multi-seed closure 200               |     578 → 503 ns |     737 → 677 ns |
+| Dependency churn 100                           |   49.2 → 43.8 µs |   72.5 → 64.0 µs |
+| Subscribe/unsubscribe 100 shared pairs         | 176.5 → 176.7 µs | 331.0 → 335.1 µs |
+| Subscribe/unsubscribe + fan-in                 | 177.4 → 181.1 µs | 337.8 → 338.0 µs |
+| Subscribe/unsubscribe + fan-in + mounted spine | 481.8 → 484.1 µs | 638.6 → 661.4 µs |
+
+Selector scheduling targets improve on both engines; atom-only remains flat and
+all three teardown medians remain within the 5% non-regression limit. CI's
+existing Bencher workflow remains authoritative: it runs base and head on the
+same runner three times and compares the cross-run median.
 
 ## Limitations
 
 - Instrumentation is disabled, rather than compiled away, on normal stores; the
   Node/Bun end-to-end lanes confirm the inactive checks in the real hot paths.
-- Edge counts intentionally cover propagation scheduling, not every selector
-  `get`, subscription callback, mount/liveness walk, or scope-tree traversal.
+- Scheduler edge counts intentionally exclude selector `get`, subscription
+  callback, mount/liveness walk, and scope-tree traversal; liveness and mount
+  edges have their own counters.
 - Microtask scheduling is counted only where Valdres owns a selector work queue.
   Host runtime queue internals and async timing are not asserted.
 - Explicit GC reduces noise but cannot make heap layout portable.
