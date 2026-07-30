@@ -149,7 +149,7 @@ const tryWriteFreshSimpleAtoms = (
             atom.maxAge !== undefined ||
             data.subscriptions.has(atom) ||
             data.stateDependents.has(atom) ||
-            data.stateRevisionClock.tracked?.has(atom) ||
+            data.tree.trackedRevisions?.has(atom) ||
             data.inheritedDependencyBranches.has(atom) ||
             (atom as InternalAtom).onInit !== undefined
         ) {

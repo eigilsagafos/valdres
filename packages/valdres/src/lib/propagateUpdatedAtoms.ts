@@ -4,6 +4,7 @@ import type { AtomFamilyAtom } from "../types/AtomFamilyAtom"
 import type { Selector } from "../types/Selector"
 import type { State } from "../types/State"
 import type { StoreData } from "../types/StoreData"
+import type { StoreTreeRuntime } from "./storeTreeRuntime"
 import type { Subscription } from "../types/Subscription"
 import { isAtomFamily } from "../utils/isAtomFamily"
 import { isFamilyAtom } from "../utils/isFamilyAtom"
@@ -56,7 +57,6 @@ import type {
 import {
     beginCommit,
     commitEndRegistry,
-    commitRootOf,
     endCommit,
 } from "./onCommitEnd"
 import { setValueInData } from "./setValueInData"
@@ -495,8 +495,8 @@ const settleDeletedAtoms = (
     // move the tree's depth counter. On a throw the listeners still fire
     // (writes were applied) but their own errors are swallowed so they never
     // mask the original failure.
-    let commitRoot: StoreData | undefined
-    if (commitEndRegistry.count !== 0) commitRoot = beginCommit(data)
+    let commitTree: StoreTreeRuntime | undefined
+    if (commitEndRegistry.count !== 0) commitTree = beginCommit(data)
     let completed = false
     try {
         // Reuse an entry from an earlier pass. The first pass stays local until
@@ -638,7 +638,7 @@ const settleDeletedAtoms = (
         if (localSink) flushChangeSink(localSink)
         completed = true
     } finally {
-        if (commitRoot !== undefined) endCommit(commitRoot, !completed)
+        if (commitTree !== undefined) endCommit(commitTree, !completed)
     }
 }
 
@@ -687,8 +687,8 @@ export const settleCommit = (
     // move the tree's depth counter. On a throw the listeners still fire
     // (writes were applied) but their own errors are swallowed so they never
     // mask the original failure.
-    let commitRoot: StoreData | undefined
-    if (commitEndRegistry.count !== 0) commitRoot = beginCommit(data)
+    let commitTree: StoreTreeRuntime | undefined
+    if (commitEndRegistry.count !== 0) commitTree = beginCommit(data)
     let completed = false
     try {
         // Keep the no-scope gate at this call site even though the helper also
@@ -935,7 +935,7 @@ export const settleCommit = (
         if (localSink) flushChangeSink(localSink)
         completed = true
     } finally {
-        if (commitRoot !== undefined) endCommit(commitRoot, !completed)
+        if (commitTree !== undefined) endCommit(commitTree, !completed)
     }
 }
 
@@ -1110,25 +1110,26 @@ const buildCommitForest = (
 
     const roots: ForestNode[] = []
     const added = new Set<StoreData>()
+    // One tree ⇔ one root, so tree identity is the dedupe key and `tree.root`
+    // resolves the owner without walking `parent`.
     const addRoot = (data: StoreData) => {
-        const root = commitRootOf(data)
+        const root = data.tree.root
         if (!added.has(root)) {
             added.add(root)
             roots.push(ensureNode(root))
         }
     }
-    const originRoot =
-        entries.length > 0 ? commitRootOf(entries[0].data) : undefined
+    const originTree = entries.length > 0 ? entries[0].data.tree : undefined
     if (globalUpdates) {
         for (const peer of globalUpdates.keys()) {
-            if (commitRootOf(peer) !== originRoot) addRoot(peer)
+            if (peer.tree !== originTree) addRoot(peer)
         }
     }
     for (const entry of entries) {
-        if (commitRootOf(entry.data) !== originRoot) addRoot(entry.data)
+        if (entry.data.tree !== originTree) addRoot(entry.data)
     }
-    if (originRoot) addRoot(originRoot)
-    if (!originRoot && globalUpdates) {
+    if (originTree) addRoot(originTree.root)
+    if (!originTree && globalUpdates) {
         for (const peer of globalUpdates.keys()) addRoot(peer)
     }
     return { roots, peerAtoms: globalUpdates }
@@ -1151,76 +1152,88 @@ export const settleCommitForest: CommitForestSettleFn = (
             ? createChangeSink(undefined, report)
             : undefined
     const effectiveReport = localSink ?? report
-    const commitRoots: StoreData[] = []
+    const commitTrees: StoreTreeRuntime[] = []
     if (commitEndRegistry.count !== 0) {
         for (const root of forest.roots)
-            commitRoots.push(beginCommit(root.data))
+            commitTrees.push(beginCommit(root.data))
     }
     const timestamp = performance.now()
-    for (const root of forest.roots) {
-        settleTreeStore(
-            root,
-            root.data,
-            undefined,
-            forest.peerAtoms,
-            globalSink,
-            notify,
-            effectiveReport,
-            errors,
-            timestamp,
-        )
-    }
-    // Preserve the locked cross-store observer contract: changed peers precede
-    // local/origin stores. Remaining inherited-only scope entries retain their
-    // forest-walk insertion order.
-    const orderedNotify: NotifyTarget = new Map()
-    const appendNotify = (data: StoreData) => {
-        const entry = notify.get(data)
-        if (entry && !orderedNotify.has(data)) orderedNotify.set(data, entry)
-    }
-    if (globalUpdates)
-        for (const peer of globalUpdates.keys()) appendNotify(peer)
-    for (const entry of entries) appendNotify(entry.data)
-    for (const [data, entry] of notify) {
-        if (!orderedNotify.has(data)) orderedNotify.set(data, entry)
-    }
+    // Collection phases run before any error accumulator exists, so an internal
+    // failure escapes this function. Every boundary opened above must still
+    // close (matching settleCommit's own try/finally): a stranded depth counter
+    // silences onCommitEnd for that whole store tree, permanently.
+    let completed = false
     try {
-        notifyDeferred(orderedNotify)
-    } catch (error) {
-        recordCommitError(errors, error)
-    }
-    if (globalSink) {
+        for (const root of forest.roots) {
+            settleTreeStore(
+                root,
+                root.data,
+                undefined,
+                forest.peerAtoms,
+                globalSink,
+                notify,
+                effectiveReport,
+                errors,
+                timestamp,
+            )
+        }
+        // Preserve the locked cross-store observer contract: changed peers
+        // precede local/origin stores. Remaining inherited-only scope entries
+        // retain their forest-walk insertion order.
+        const orderedNotify: NotifyTarget = new Map()
+        const appendNotify = (data: StoreData) => {
+            const entry = notify.get(data)
+            if (entry && !orderedNotify.has(data)) orderedNotify.set(data, entry)
+        }
+        if (globalUpdates)
+            for (const peer of globalUpdates.keys()) appendNotify(peer)
+        for (const entry of entries) appendNotify(entry.data)
+        for (const [data, entry] of notify) {
+            if (!orderedNotify.has(data)) orderedNotify.set(data, entry)
+        }
         try {
-            flushChangeSink(globalSink)
+            notifyDeferred(orderedNotify)
         } catch (error) {
             recordCommitError(errors, error)
         }
-    }
-    if (localSink) {
-        try {
-            flushChangeSink(localSink)
-        } catch (error) {
-            recordCommitError(errors, error)
+        if (globalSink) {
+            try {
+                flushChangeSink(globalSink)
+            } catch (error) {
+                recordCommitError(errors, error)
+            }
         }
-    }
-    // Re-delegate AFTER firing: the deferred scope-local callback idempotently
-    // drops its delegate, so the fresh parent delegate is established last.
-    for (const entry of entries) {
-        if (entry.unsetAtoms) {
-            for (const atom of entry.unsetAtoms) {
-                try {
-                    reDelegateScopeSubscriptions(atom, entry.data)
-                } catch (error) {
-                    recordCommitError(errors, error)
+        if (localSink) {
+            try {
+                flushChangeSink(localSink)
+            } catch (error) {
+                recordCommitError(errors, error)
+            }
+        }
+        // Re-delegate AFTER firing: the deferred scope-local callback
+        // idempotently drops its delegate, so the fresh parent delegate is
+        // established last.
+        for (const entry of entries) {
+            if (entry.unsetAtoms) {
+                for (const atom of entry.unsetAtoms) {
+                    try {
+                        reDelegateScopeSubscriptions(atom, entry.data)
+                    } catch (error) {
+                        recordCommitError(errors, error)
+                    }
                 }
             }
         }
-    }
-    for (const root of commitRoots) {
-        try {
-            endCommit(root, errors.hasError)
-        } catch (error) {
-            recordCommitError(errors, error)
+        completed = true
+    } finally {
+        // Per-root catch: one throwing listener must not strand the roots
+        // queued behind it.
+        for (const tree of commitTrees) {
+            try {
+                endCommit(tree, errors.hasError || !completed)
+            } catch (error) {
+                recordCommitError(errors, error)
+            }
         }
     }
 }

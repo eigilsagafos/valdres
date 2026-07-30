@@ -220,7 +220,7 @@ const checkStore = (
                 "mounts",
                 "cleanups",
                 "abortControllers",
-                "transactions",
+                "cancellables",
                 "globals",
             ] as const) {
                 const value = resources[key]
@@ -244,11 +244,22 @@ const checkStore = (
                 `${at}: disposed store retains changeListeners`,
             )
         }
-        if (data.commitEndListeners !== undefined) {
-            push(
-                "disposed-terminal",
-                `${at}: disposed store retains commitEndListeners`,
-            )
+        // Commit-end state is TREE-owned, so it is only terminal when the
+        // disposed store IS its tree's root: detaching a scope must leave a
+        // live root's listeners and in-flight depth untouched.
+        if (data.tree.root === data) {
+            if (data.tree.commitEndListeners !== undefined) {
+                push(
+                    "disposed-terminal",
+                    `${at}: disposed store tree retains commitEndListeners`,
+                )
+            }
+            if (data.tree.commitDepth !== 0) {
+                push(
+                    "disposed-terminal",
+                    `${at}: disposed store tree retains commitDepth ${data.tree.commitDepth}`,
+                )
+            }
         }
         // Disposal clears the iterable indexes, but a leak can hide in a WeakMap
         // whose index was already drained. Audit every discovered/explicit state

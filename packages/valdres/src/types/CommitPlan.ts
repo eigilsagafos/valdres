@@ -1,4 +1,5 @@
 import type { CommitErrors } from "../lib/commitErrors"
+import type { StoreTreeRuntime } from "../lib/storeTreeRuntime"
 import type {
     DeferredGlobalSet,
     StoreAtomUpdates,
@@ -140,9 +141,10 @@ export type CommitPlan = {
     afterSettle?: () => void
     /** Flush a report sink after settlement/cleanup. */
     flushReport?: () => void
-    /** Optional outer commit boundary for standalone local operations. */
-    beginCommit?: (data: StoreData) => StoreData
-    endCommit?: (root: StoreData, swallowErrors: boolean) => void
+    /** Optional outer commit boundary for standalone local operations. The
+     *  token is the store TREE, which owns the depth counter and listeners. */
+    beginCommit?: (data: StoreData) => StoreTreeRuntime
+    endCommit?: (tree: StoreTreeRuntime, swallowErrors: boolean) => void
     /** Final lifecycle work that must occur after commit-end boundaries close
      *  but before the first captured error is rethrown (global resetSelf). */
     afterCommit?: () => void

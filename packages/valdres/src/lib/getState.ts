@@ -178,7 +178,7 @@ const isColdSelectorCacheFresh = (
     initializedAtomsSet: Set<Atom>,
     circularDependencySet?: WeakSet<Selector>,
 ): boolean => {
-    if (cache.validatedAt === data.stateRevisionClock.current) return true
+    if (cache.validatedAt === data.tree.revision) return true
     // Negative snapshots are deliberately non-validatable: either a late async
     // read changed the dependency set before its revision array was rebuilt, or
     // the evaluation observed a dependency revision that is no longer current.
@@ -201,7 +201,7 @@ const isColdSelectorCacheFresh = (
                 return false
             }
         }
-        cache.validatedAt = data.stateRevisionClock.current
+        cache.validatedAt = data.tree.revision
         return true
     }
 
@@ -230,7 +230,7 @@ const isColdSelectorCacheFresh = (
         }
         // Dependency validation can itself materialize values and advance the
         // shared clock. This snapshot is current through the end of that walk.
-        cache.validatedAt = data.stateRevisionClock.current
+        cache.validatedAt = data.tree.revision
         return true
     } finally {
         data.coldCacheValidationSet.delete(selector)

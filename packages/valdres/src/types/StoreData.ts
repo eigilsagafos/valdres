@@ -3,6 +3,8 @@ import type { State } from "./State"
 import type { StoreChangeCallback } from "./StoreChangeCallback"
 import type { Subscription } from "./Subscription"
 import type { ArchitectureInstrumentation } from "../lib/architectureInstrumentation"
+import type { StoreLifecycle } from "../lib/storeLifecycle"
+import type { StoreTreeRuntime } from "../lib/storeTreeRuntime"
 
 export type SelectorEvaluationContext = {
     readonly revoked: boolean
@@ -34,6 +36,21 @@ export type ColdSelectorCache = {
 
 export type StoreData = {
     id: string
+    /** Tree-wide state: the root reference, the value-revision clock, and
+     *  commit-end coordination. Created with the root store and shared BY
+     *  REFERENCE with every scope, so `data.tree` is the same object for every
+     *  store in a tree — reading tree state never walks `parent`, and tree
+     *  identity doubles as the root-dedupe key. See lib/storeTreeRuntime.ts for
+     *  the per-field write owners. */
+    tree: StoreTreeRuntime
+    /** Lifecycle resources this store has acquired (cleanups, mounts, abort
+     *  controllers, cancellables, touched global atoms) plus its terminal
+     *  status. `undefined` until the first resource; replaced by the disposed
+     *  sentinel once drained. lib/storeLifecycle.ts is the ONLY writer — every
+     *  other module goes through its track/untrack/take helpers. Kept off the
+     *  public facade so acquiring a resource cannot transition the shape of the
+     *  object handed to user `onSet`/`onMount` hooks. */
+    resources: StoreLifecycle
     /** The store's materialized values, keyed by state identity. A `WeakMap` by
      *  default so unreferenced atoms/selectors are collected (guarded by
      *  test/memoryleaks.test.ts); a `Map` when the store was created with
@@ -60,18 +77,9 @@ export type StoreData = {
      *  shape check or nested revision-clock lookup. */
     coldSelectorCachesEnabled: boolean
     /** Per-state value revision. Scoped reads fall through to an ancestor when
-     *  the state has no local value/revision. */
+     *  the state has no local value/revision. The clock these are stamped from
+     *  is tree-wide — see `tree.revision`. */
     stateRevisions: WeakMap<WeakKey, number>
-    /** Shared by a root store and every scope. It is enabled lazily by the first
-     *  cold selector so atom-only stores don't maintain revision entries. */
-    stateRevisionClock: {
-        current: number
-        enabled: boolean
-        /** States directly referenced by at least one cold cache. Weak
-         *  membership lets writes skip revision-map churn for unrelated states
-         *  without retaining either side of the dependency. */
-        tracked?: WeakSet<WeakKey>
-    }
     /** Cycle guard for recursive validation of cached selector dependencies. */
     coldCacheValidationSet: WeakSet<WeakKey>
     /** Stable per-store order assigned when a selector first materializes its
@@ -222,17 +230,6 @@ export type StoreData = {
         StoreChangeCallback,
         { atoms: boolean; selectors: boolean }
     >
-    /** Commit-end listeners registered via `store.onCommitEnd`. Root stores
-     *  only — a listener registered through a scoped store is attached to the
-     *  tree's root, and a commit anywhere in the tree fires the root's set.
-     *  Absent until the first listener is added and reset to undefined when the
-     *  last one leaves (see lib/onCommitEnd.ts). */
-    commitEndListeners?: Set<() => void>
-    /** Re-entrancy depth of in-flight commit boundaries for this store TREE
-     *  (root stores only). Tracked only while `onCommitEnd` listeners exist
-     *  anywhere; listeners fire when the OUTERMOST boundary closes, so writes a
-     *  subscriber performs during a commit coalesce into one notification. */
-    commitDepth?: number
     /** Opt-in structural counters used only by architecture tests/benchmarks.
      * Absent on normal stores and intentionally not part of the public API. */
     architectureInstrumentation?: ArchitectureInstrumentation

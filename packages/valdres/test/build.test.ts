@@ -52,6 +52,15 @@ describe("build output", () => {
                 code.includes('Symbol("valdres.storeDataAccess")'),
             ),
         ).toHaveLength(1)
+        // Cross-module protocol symbol: store lifecycle cancels open resources
+        // through it while TransactionContext implements it. Two copies would
+        // silently make the method lookup `undefined` and turn every
+        // disposal-with-open-transaction into a TypeError.
+        expect(
+            outputs.filter(code =>
+                code.includes('Symbol("valdres.cancelOnStoreDispose")'),
+            ),
+        ).toHaveLength(1)
         // The single runtime must live in a shared chunk, not be duplicated
         // into (or defined by) either entry. The public entry may still
         // reference it by name: since the graph runtime stopped importing the

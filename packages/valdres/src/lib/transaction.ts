@@ -12,10 +12,10 @@ import { SchemaValidationError } from "../errors/SchemaValidationError"
 import {
     createStoreDisposedError,
     DISPOSED_STORE_PENDING,
-    trackStoreTransaction,
-    untrackStoreTransaction,
+    trackStoreCancellable,
+    untrackStoreCancellable,
 } from "./storeLifecycle"
-import type { StoreResources } from "./storeLifecycle"
+import { CANCEL_ON_STORE_DISPOSE } from "./storeCancellableKey"
 import { isAtom } from "../utils/isAtom"
 import { isAtomFamily } from "../utils/isAtomFamily"
 import { isFamilyAtom } from "../utils/isFamilyAtom"
@@ -33,6 +33,7 @@ import {
     type ChangeSink,
 } from "./notifyChangeListeners"
 import { beginCommit, commitEndRegistry, endCommit } from "./onCommitEnd"
+import type { StoreTreeRuntime } from "./storeTreeRuntime"
 import { runCommitPlan } from "./commitEngine"
 import { createCommitErrors } from "./commitErrors"
 import { BULK_WITH_EFFECTS_SILENT } from "./commitIntents"
@@ -122,7 +123,6 @@ const throwTransactionStateError = (
 const EXECUTE_TRANSACTION = Symbol("executeTransaction")
 const COMMIT_TRANSACTION = Symbol("commitTransaction")
 const ABORT_TRANSACTION = Symbol("abortTransaction")
-const CANCEL_TRANSACTION = Symbol("cancelTransaction")
 
 const deleteAtomFamilyAtoms = (
     set: Set<AtomFamilyAtom<any, any>>,
@@ -157,7 +157,9 @@ export class TransactionContext {
     // see MutationDraft. The context itself keeps only lifecycle and tree
     // structure, so staging can be read independently from commit execution.
     private readonly _draft: MutationDraft
-    private _lifecycleResources: StoreResources | undefined
+    /** True while this context is registered with its store's resource ledger
+     *  as a cancel-on-dispose entry. */
+    private _lifecycleTracked = false
     constructor(
         data: StoreData,
         parentTransaction?: TransactionContext,
@@ -173,8 +175,8 @@ export class TransactionContext {
                 [childTransaction._data.id, childTransaction],
             ])
         }
-        this._lifecycleResources = trackStoreTransaction(data, this)
-        if (!this._lifecycleResources) this.cancelTree(TRANSACTION_DISPOSED)
+        this._lifecycleTracked = trackStoreCancellable(data, this)
+        if (!this._lifecycleTracked) this.cancelTree(TRANSACTION_DISPOSED)
     }
 
     private assertOpen(operation: string): void {
@@ -204,10 +206,9 @@ export class TransactionContext {
     }
 
     private untrackLifecycle(): void {
-        const resources = this._lifecycleResources
-        if (!resources) return
-        this._lifecycleResources = undefined
-        untrackStoreTransaction(resources, this)
+        if (!this._lifecycleTracked) return
+        this._lifecycleTracked = false
+        untrackStoreCancellable(this._data, this)
     }
 
     private untrackTree(): void {
@@ -218,8 +219,10 @@ export class TransactionContext {
         }
     }
 
-    /** Disposal-only cancellation: idempotent and valid after terminal mark. */
-    [CANCEL_TRANSACTION](): void {
+    /** Disposal-only cancellation: idempotent and valid after terminal mark.
+     *  This is the `StoreCancellable` contract — store lifecycle code cancels
+     *  through the symbol and never names this class. */
+    [CANCEL_ON_STORE_DISPOSE](): void {
         const root = this._parentTransaction ? this.rootTransaction() : this
         root.cancelTree(TRANSACTION_DISPOSED)
     }
@@ -664,9 +667,9 @@ export class TransactionContext {
         // boundaries (see settleCommit's wrapper); nested inside this one
         // they just move the depth counter. With no listener anywhere this is a
         // single counter read, so the Bencher-gated txn hot path is unchanged.
-        let commitEndRoot: StoreData | undefined
+        let commitEndTree: StoreTreeRuntime | undefined
         if (commitEndRegistry.count !== 0)
-            commitEndRoot = beginCommit(this._data)
+            commitEndTree = beginCommit(this._data)
         let succeeded = false
         try {
             // When nothing is watching, commit directly — no sink allocation, so
@@ -702,7 +705,7 @@ export class TransactionContext {
             // On failure, listener errors are swallowed so they never mask the
             // commit's own error; the writes were applied either way, so
             // listeners still fire.
-            if (commitEndRoot) endCommit(commitEndRoot, !succeeded)
+            if (commitEndTree) endCommit(commitEndTree, !succeeded)
         }
     }
 
@@ -1095,7 +1098,7 @@ export const abortTransaction = (txn: TransactionContext): void =>
 /** Store-lifecycle cancellation. Unlike a consumer abort, disposal has already
  *  marked the store terminal, so this path deliberately bypasses assertions. */
 export const cancelTransaction = (txn: TransactionContext): void =>
-    txn[CANCEL_TRANSACTION]()
+    txn[CANCEL_ON_STORE_DISPOSE]()
 
 export const transaction = (
     callback: TransactionFn,

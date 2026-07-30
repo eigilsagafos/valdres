@@ -57,9 +57,9 @@ export const setValueInData = <Value extends unknown>(
     }
     // Cold-selector revision tracking is enabled lazily. Keep the atom-only
     // write hot path to this one predictable branch and avoid a helper frame.
-    const revisionClock = data.stateRevisionClock
-    if (revisionClock.enabled && revisionClock.tracked!.has(atom)) {
-        data.stateRevisions.set(atom, ++revisionClock.current)
+    const tree = data.tree
+    if (tree.revisionEnabled && tree.trackedRevisions!.has(atom)) {
+        data.stateRevisions.set(atom, ++tree.revision)
     }
     if (isNewAtomInScope) {
         trackScopeValue(atom, data)

@@ -166,12 +166,17 @@ describe("store.dispose", () => {
         expect(changeListenerRegistry.count).toBe(changeCount + 2)
         expect(changeListenerRegistry.selectorCount).toBe(selectorCount + 1)
         expect(commitEndRegistry.count).toBe(commitEndCount + 2)
+        // Both registrations land on the ONE tree-owned set, whichever store
+        // they were made through.
+        expect(getStoreData(root).tree.commitEndListeners?.size).toBe(2)
+        expect(getStoreData(child).tree).toBe(getStoreData(root).tree)
 
         root.dispose()
 
         expect(changeListenerRegistry.count).toBe(changeCount)
         expect(changeListenerRegistry.selectorCount).toBe(selectorCount)
         expect(commitEndRegistry.count).toBe(commitEndCount)
+        expect(getStoreData(root).tree.commitEndListeners).toBeUndefined()
         // The whole disposed tree (root + child scope) must be terminal.
         assertStoreInvariants(root)
         for (const cleanup of cleanups) cleanup()

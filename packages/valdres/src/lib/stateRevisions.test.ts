@@ -17,10 +17,10 @@ describe("state revisions", () => {
         trackStateRevision(member, getStoreData(rootStore))
 
         deleteFamilyAtom(member, getStoreData(rootStore))
-        expect(getStoreData(rootStore).stateRevisionClock.current).toBe(1)
+        expect(getStoreData(rootStore).tree.revision).toBe(1)
 
         deleteFamilyAtom(member, getStoreData(rootStore))
-        expect(getStoreData(rootStore).stateRevisionClock.current).toBe(1)
+        expect(getStoreData(rootStore).tree.revision).toBe(1)
     })
 
     test("a repeated transaction deletion does not record a no-op", () => {
@@ -32,12 +32,12 @@ describe("state revisions", () => {
 
         rootStore.txn(({ del }) => {
             del(member)
-            expect(getStoreData(rootStore).stateRevisionClock.current).toBe(0)
+            expect(getStoreData(rootStore).tree.revision).toBe(0)
         })
-        expect(getStoreData(rootStore).stateRevisionClock.current).toBe(1)
+        expect(getStoreData(rootStore).tree.revision).toBe(1)
 
         rootStore.txn(({ del }) => del(member))
-        expect(getStoreData(rootStore).stateRevisionClock.current).toBe(1)
+        expect(getStoreData(rootStore).tree.revision).toBe(1)
     })
 
     test("global reset does not record a value that was already absent", () => {
@@ -49,7 +49,7 @@ describe("state revisions", () => {
 
         valueAtom.resetSelf()
 
-        expect(getStoreData(rootStore).stateRevisionClock.current).toBe(0)
+        expect(getStoreData(rootStore).tree.revision).toBe(0)
     })
 
     test("rejected selector cleanup does not record an absent value", () => {
@@ -61,6 +61,6 @@ describe("state revisions", () => {
 
         cleanUpRejectedPromise(valueSelector, getStoreData(rootStore), rejected)
 
-        expect(getStoreData(rootStore).stateRevisionClock.current).toBe(0)
+        expect(getStoreData(rootStore).tree.revision).toBe(0)
     })
 })

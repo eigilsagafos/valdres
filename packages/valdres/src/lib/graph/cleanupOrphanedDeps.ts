@@ -65,7 +65,7 @@ export const cleanupOrphanedDeps = (state: State, data: StoreData) => {
                 data.coldSelectorCaches.delete(current)
             }
             if (data.values.delete(current)) {
-                if (data.stateRevisionClock.enabled) {
+                if (data.tree.revisionEnabled) {
                     noteStateValueChanged(current, data)
                 }
             }

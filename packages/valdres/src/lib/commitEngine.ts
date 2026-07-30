@@ -2,6 +2,7 @@ import type { Atom } from "../types/Atom"
 import type { CommitPlan } from "../types/CommitPlan"
 import type { SettleFn } from "../types/SettleFn"
 import type { StoreData } from "../types/StoreData"
+import type { StoreTreeRuntime } from "./storeTreeRuntime"
 import { recordCommitPlanRun } from "./architectureInstrumentation"
 import { recordCommitError, throwCommitError } from "./commitErrors"
 import { SETTLE_DEFAULT } from "./commitIntents"
@@ -125,7 +126,7 @@ const planShouldContinue = (plan: CommitPlan) =>
  */
 export const runCommitPlan = (plan: CommitPlan) => {
     const settlement = plan.settlement
-    let commitRoot: StoreData | undefined
+    let commitTree: StoreTreeRuntime | undefined
     let completed = false
 
     // Admission is deliberately the very first observable operation. A stale,
@@ -133,7 +134,7 @@ export const runCommitPlan = (plan: CommitPlan) => {
     // any user code merely by arriving late.
     if (plan.admit && !plan.admit()) return false
     recordCommitPlanRun(plan.data)
-    if (plan.beginCommit) commitRoot = plan.beginCommit(plan.data)
+    if (plan.beginCommit) commitTree = plan.beginCommit(plan.data)
     try {
         let applied = true
         if (plan.apply) {
@@ -249,9 +250,9 @@ export const runCommitPlan = (plan: CommitPlan) => {
         }
         completed = true
     } finally {
-        if (commitRoot && plan.endCommit) {
+        if (commitTree && plan.endCommit) {
             try {
-                plan.endCommit(commitRoot, plan.errors.hasError || !completed)
+                plan.endCommit(commitTree, plan.errors.hasError || !completed)
             } catch (error) {
                 recordCommitError(plan.errors, error)
             }
