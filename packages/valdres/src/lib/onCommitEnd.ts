@@ -16,6 +16,13 @@ export const commitRootOf = (data: StoreData): StoreData => {
     return root
 }
 
+/** True iff the store tree containing `data` has a commit-end listener. The
+ * process-wide count keeps the common zero-listener path to one property read;
+ * only a process with some listener pays to resolve this store's root. */
+export const hasCommitEndListener = (data: StoreData): boolean =>
+    commitEndRegistry.count !== 0 &&
+    (commitRootOf(data).commitEndListeners?.size ?? 0) !== 0
+
 /** Open a commit boundary for the store tree `data` belongs to and return the
  *  tree's root (whose depth counter was incremented). Only called when
  *  `commitEndRegistry.count !== 0`; the caller MUST balance with `endCommit`
