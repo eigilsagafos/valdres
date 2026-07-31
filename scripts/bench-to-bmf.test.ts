@@ -111,17 +111,44 @@ describe("bench-to-bmf", () => {
         })
     })
 
-    test("converts the median paired ratio rather than a ratio of medians", () => {
+    test("converts a paired ratio rather than a ratio of medians", () => {
         const name = "async settle: selector resolve observed"
         const paired = toPairedBmf(
             [latency(name, 5_300), latency(name, 5_500), latency(name, 7_200)],
             [latency(name, 10_300), latency(name, 6_800), latency(name, 8_400)],
         )
 
-        // The middle paired ratio is 6_800 / 5_500, so Bencher comparing this
-        // synthetic head value with the separately uploaded 5_500ns base median
-        // reports +23.6%. Independent medians would incorrectly report +52.7%.
-        expect(paired[name].latency.value).toBeCloseTo(6_800)
+        // Ratios are 1.943, 1.236, 1.167; the smallest is 8_400 / 7_200. Against
+        // the separately uploaded 5_500ns base median that reports +16.7%.
+        // Independent medians would incorrectly report +52.7%.
+        expect(paired[name].latency.value).toBeCloseTo(5_500 * (8_400 / 7_200))
+    })
+
+    test("a stall in most pairs cannot manufacture a regression", () => {
+        const name = "set(atom, value) / valdres"
+        // Real shape observed in one CI job: the head side was measured at
+        // 131ns, 351ns, 131ns while the base side stayed flat. Two of three
+        // pairs are contaminated, so a median would report ~+168% and alert.
+        const paired = toPairedBmf(
+            [latency(name, 131), latency(name, 131), latency(name, 131)],
+            [latency(name, 351), latency(name, 351), latency(name, 131)],
+        )
+
+        // The clean pair wins: no change reported, no alert.
+        expect(paired[name].latency.value).toBeCloseTo(131)
+    })
+
+    test("a genuine regression present in every pair still gates", () => {
+        const name = "set(atom, value) / valdres"
+        // A real same-runner regression shifts every pair, so even the least
+        // contaminated one is over the +50% boundary this gate enforces.
+        const paired = toPairedBmf(
+            [latency(name, 100), latency(name, 100), latency(name, 100)],
+            [latency(name, 210), latency(name, 175), latency(name, 190)],
+        )
+
+        expect(paired[name].latency.value).toBeCloseTo(175)
+        expect(paired[name].latency.value).toBeGreaterThan(100 * 1.5)
     })
 
     test("fails closed when paired samples are missing", () => {
