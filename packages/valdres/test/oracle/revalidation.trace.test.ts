@@ -7,6 +7,8 @@
  *  clock's install/restore lifecycle wraps the whole build→act→assert. */
 import { describe, expect, test } from "bun:test"
 import { store } from "../../src/store"
+import { cacheState } from "../../src/lib/cacheState"
+import { createArchitectureInstrumentation } from "../../src/lib/architectureInstrumentation"
 import { getStoreData } from "../../src/lib/getStoreData"
 import { mockAsyncSource, withFakeClock } from "../utils/fakeClock"
 import {
@@ -125,21 +127,28 @@ describe("trace oracle · revalidation", () => {
 
             await source.resolve(first)
             const data = getStoreData(s)
-            const initialWriteAt = data.lastValueWriteAt.get(a)
+            const initialWriteAt = cacheState.peek(a, data)?.lastWriteAt
             rec.clear()
             calls.length = 0
 
-            await clock.advance(100)
-            await source.resolve({ value: 1 })
+            const instrumentation = createArchitectureInstrumentation()
+            data.architectureInstrumentation = instrumentation
+            try {
+                await clock.advance(100)
+                await source.resolve({ value: 1 })
+            } finally {
+                delete data.architectureInstrumentation
+            }
 
             expect(s.get(a)).toBe(first)
-            expect(data.lastValueWriteAt.get(a)).toBeGreaterThan(
+            expect(cacheState.peek(a, data)?.lastWriteAt).toBeGreaterThan(
                 initialWriteAt!,
             )
             assertTrace(rec.events, ["commitEnd", "commitEnd"])
             expect(calls).toHaveLength(0)
             expect(rec.events).not.toContain("sub:a")
             expect(rec.events).not.toContain("onChange")
+            expect(instrumentation.counters.commitPlanRuns).toBe(3)
         })
     })
 
@@ -173,6 +182,57 @@ describe("trace oracle · revalidation", () => {
             expect(rec.events).toEqual([])
             expect(calls).toHaveLength(0)
             expect(s.get(a)).toBe(1)
+        })
+    })
+
+    test("a superseded controller rejects its late result before CommitPlan", async () => {
+        await withFakeClock(async clock => {
+            const rec = createRecorder()
+            const s = store()
+            const source = mockAsyncSource<number>()
+            const a = tracedAtom(
+                rec,
+                "a",
+                source.fn as unknown as () => number,
+                { maxAge: 100 },
+            )
+            const { calls } = traceChange(rec, s)
+            traceCommitEnd(rec, s)
+            let unsub = traceSub(rec, s, a, "a")
+
+            await source.resolve(1, 0)
+            await clock.advance(100) // request N
+            expect(source.callCount).toBe(2)
+
+            unsub() // cancel N and its controller generation
+            unsub = traceSub(rec, s, a, "a")
+            await clock.advance(100) // request N+1
+            expect(source.callCount).toBe(3)
+
+            rec.clear()
+            calls.length = 0
+            await source.resolve(3, 2)
+            expect(s.get(a)).toBe(3)
+            expect(rec.events.filter(event => event === "sub:a")).toHaveLength(
+                1,
+            )
+
+            rec.clear()
+            calls.length = 0
+            const data = getStoreData(s)
+            const instrumentation = createArchitectureInstrumentation()
+            data.architectureInstrumentation = instrumentation
+            try {
+                await source.resolve(2, 1) // N settles after N+1
+            } finally {
+                delete data.architectureInstrumentation
+            }
+
+            expect(s.get(a)).toBe(3)
+            expect(rec.events).toEqual([])
+            expect(calls).toHaveLength(0)
+            expect(instrumentation.counters.commitPlanRuns).toBe(0)
+            unsub()
         })
     })
 })

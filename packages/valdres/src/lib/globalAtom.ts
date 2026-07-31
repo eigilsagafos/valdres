@@ -7,6 +7,7 @@ import type { AtomOnSet } from "./../types/AtomOnSet"
 import type { AtomOptions } from "./../types/AtomOptions"
 import type { InternalGlobalAtom } from "./../types/InternalGlobalAtom"
 import type { StoreData } from "./../types/StoreData"
+import { cacheController } from "./cacheController"
 import { runCommitPlan } from "./commitEngine"
 import { createCommitErrors, recordCommitError } from "./commitErrors"
 import { globalOnSetMarker } from "./globalOnSetMarker"
@@ -16,7 +17,7 @@ import {
     unmountAtom,
 } from "./graph"
 import { settleCommitForest } from "./propagateUpdatedAtoms"
-import { installMaxAgeTimer } from "./subscribe"
+import { subscribe } from "./subscribe"
 import { detachOwnValue } from "./unsetValue"
 import { globalStore } from "../globalStore"
 import {
@@ -134,14 +135,12 @@ export const globalAtom = <Value = unknown>(
             }
         }
 
-        if (atom.maxAgeInterval) {
+        if (atom.cacheController) {
             try {
-                atom.maxAgeInterval.cleanup()
+                cacheController.stopGlobal(atom)
             } catch (e) {
                 recordCommitError(errors, e)
             }
-            atom.maxAgeInterval.refCount = 0
-            atom.maxAgeInterval = undefined
         }
 
         const entries = []
@@ -175,7 +174,7 @@ export const globalAtom = <Value = unknown>(
                     } catch (e) {
                         recordCommitError(errors, e)
                     }
-                    // Match subscribe.ts: maxAge timer is installed only when
+                    // Match subscribe.ts: cache policy is retained only when
                     // the atom has a DIRECT subscriber. Transitive
                     // (selector-only) subscribers revalidate lazily on read.
                     if (
@@ -183,7 +182,7 @@ export const globalAtom = <Value = unknown>(
                         (s.subscriptions.get(atom)?.size ?? 0) > 0
                     ) {
                         try {
-                            installMaxAgeTimer(atom, s)
+                            cacheController.retain(atom, s, subscribe)
                         } catch (e) {
                             recordCommitError(errors, e)
                         }
@@ -214,7 +213,7 @@ export const globalAtom = <Value = unknown>(
         attach,
         detach,
         stores,
-        maxAgeInterval: undefined,
+        cacheController: undefined,
     }
     return atom
 }

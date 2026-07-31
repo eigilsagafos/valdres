@@ -2,7 +2,7 @@ import type { State } from "../types/State"
 import type { StoreData } from "../types/StoreData"
 import type { Subscription } from "../types/Subscription"
 import { isSelector } from "../utils/isSelector"
-import { getMaxAgeCleanup, deleteMaxAgeCleanup } from "./maxAgeCleanups"
+import { cacheController } from "./cacheController"
 import {
     isLive,
     onLastDirectSubscriber,
@@ -70,11 +70,7 @@ export const unsubscribe = <V>(
         }
         if (subscribers.size === 0) {
             data.subscriptionsRequireEqualCheck.delete(state)
-            const maxAgeCleanup = getMaxAgeCleanup(data, state)
-            if (maxAgeCleanup) {
-                maxAgeCleanup()
-                deleteMaxAgeCleanup(data, state)
-            }
+            cacheController.release(state, data)
             data.subscriptions.delete(state)
             // Last direct subscriber removed: if there are no live dependents
             // either, the state transitions to not-live and we propagate to

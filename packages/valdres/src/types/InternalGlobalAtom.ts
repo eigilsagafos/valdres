@@ -1,11 +1,7 @@
 import type { AtomOnInit } from "./AtomOnInit"
 import type { GlobalAtom } from "./GlobalAtom"
 import type { StoreData } from "./StoreData"
-
-type MaxAgeInterval = {
-    cleanup: () => void
-    refCount: number
-}
+import type { CacheController } from "./CacheController"
 
 /** Engine-only global atom state; never exported from the package entrypoint. */
 export type InternalGlobalAtom<Value = unknown> = GlobalAtom<Value> & {
@@ -13,5 +9,5 @@ export type InternalGlobalAtom<Value = unknown> = GlobalAtom<Value> & {
     attach: (storeData: StoreData) => void
     detach: (storeData: StoreData) => void
     readonly stores: Set<StoreData>
-    maxAgeInterval?: MaxAgeInterval
+    cacheController?: CacheController
 }

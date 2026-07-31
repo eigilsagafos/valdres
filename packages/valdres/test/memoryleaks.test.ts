@@ -78,6 +78,41 @@ describe("memory leaks (global atoms)", () => {
 
         expect(await detector.isLeaking()).toBe(false)
     })
+
+    test("cache-controller handoff does not retain its former owner store", async () => {
+        const cached = atom(() => 1, { global: true, maxAge: 60_000 })
+        const survivor = store()
+        const detector = (() => {
+            let owner: ReturnType<typeof store> | undefined = store()
+            const detector = new LeakDetector(getStoreData(owner))
+            owner.sub(cached, () => {})
+            survivor.sub(cached, () => {})
+            owner.dispose()
+            owner = undefined
+            return detector
+        })()
+
+        expect(await detector.isLeaking()).toBe(false)
+        survivor.dispose()
+    })
+
+    test("final cache-controller release does not retain its global atom", async () => {
+        const detector = (() => {
+            let requestStore: ReturnType<typeof store> | undefined = store()
+            let cached: ReturnType<typeof atom<number>> | undefined = atom(
+                () => 1,
+                { global: true, maxAge: 60_000 },
+            )
+            const detector = new LeakDetector(cached)
+            requestStore.sub(cached, () => {})
+            requestStore.dispose()
+            cached = undefined
+            requestStore = undefined
+            return detector
+        })()
+
+        expect(await detector.isLeaking()).toBe(false)
+    })
 })
 
 describe("memory leaks (selectors)", () => {

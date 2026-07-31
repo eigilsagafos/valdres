@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test"
+import { describe, expect, mock, test } from "bun:test"
 import { atom } from "../atom"
 import { atomFamily } from "../atomFamily"
 import { selector } from "../selector"
@@ -9,6 +9,7 @@ import {
     createArchitectureInstrumentation,
     type ArchitectureCounters,
 } from "./architectureInstrumentation"
+import { cacheController } from "./cacheController"
 import { getStoreData } from "./getStoreData"
 import { mockAsyncSource, withFakeClock } from "../../test/utils/fakeClock"
 
@@ -666,4 +667,87 @@ describe("deterministic architecture performance gates", () => {
             first.dispose()
             second.dispose()
         }))
+
+    test("local max-age meta-on, value, and meta-off are three plans", () =>
+        withFakeClock(async clock => {
+            const source = mockAsyncSource<number>()
+            const cached = atom(source.fn as unknown as () => number, {
+                maxAge: 100,
+            })
+            const target = store()
+            const unsubscribe = target.sub(cached, noop)
+            await source.resolve(1)
+
+            const instrumentation = createArchitectureInstrumentation()
+            const data = getStoreData(target)
+            data.architectureInstrumentation = instrumentation
+            try {
+                await clock.advance(100)
+                await source.resolve(2)
+            } finally {
+                delete data.architectureInstrumentation
+            }
+
+            expect(instrumentation.counters.commitPlanRuns).toBe(3)
+            expect(instrumentation.counters.duplicateStoreSettlements).toBe(0)
+            unsubscribe()
+            target.dispose()
+        }))
+
+    test("lazy max-age expiry stays outside CommitPlan and notifications", () =>
+        withFakeClock(async clock => {
+            let reads = 0
+            const cached = atom(() => ++reads, { maxAge: 100 })
+            const unrelated = atom(0)
+            const target = store()
+            const initial = target.get(cached)
+            const subscriber = mock(() => {})
+            const unsubscribeState = target.sub(unrelated, subscriber)
+            const onChange = mock(() => {})
+            const unsubscribeChange = target.onChange(onChange)
+            const onCommitEnd = mock(() => {})
+            const unsubscribeCommit = target.onCommitEnd(onCommitEnd)
+
+            await clock.advance(101)
+            const instrumentation = createArchitectureInstrumentation()
+            const data = getStoreData(target)
+            data.architectureInstrumentation = instrumentation
+            let expired: boolean
+            try {
+                expired = cacheController.expireIfStale(cached, data)
+            } finally {
+                delete data.architectureInstrumentation
+            }
+
+            expect(expired!).toBe(true)
+            expect(data.values.has(cached)).toBe(false)
+            expect(reads).toBe(1)
+            expect(subscriber).not.toHaveBeenCalled()
+            expect(onChange).not.toHaveBeenCalled()
+            expect(onCommitEnd).not.toHaveBeenCalled()
+            expect(instrumentation.counters.commitPlanRuns).toBe(0)
+
+            // The following ordinary initialization owns any publication.
+            expect(target.get(cached)).not.toBe(initial)
+            expect(reads).toBe(2)
+
+            unsubscribeState()
+            unsubscribeChange()
+            unsubscribeCommit()
+            target.dispose()
+        }))
+
+    test("ordinary subscriptions do not materialize the cache sidecar", () => {
+        const target = store()
+        const plain = atom(0)
+        const data = getStoreData(target)
+        expect(Object.hasOwn(data, "cache")).toBe(false)
+
+        const unsubscribe = target.sub(plain, noop)
+        expect(Object.hasOwn(data, "cache")).toBe(false)
+
+        unsubscribe()
+        expect(Object.hasOwn(data, "cache")).toBe(false)
+        target.dispose()
+    })
 })

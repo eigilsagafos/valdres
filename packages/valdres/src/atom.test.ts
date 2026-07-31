@@ -792,6 +792,62 @@ describe("atom", () => {
             unsubscribe()
         }))
 
+    test("throwing subscriber cannot shorten the staleIfError window", async () => {
+        const store1 = store()
+        let now = 0
+        let runInterval: (() => void) | undefined
+        const dateSpy = spyOn(Date, "now").mockImplementation(() => now)
+        const intervalSpy = spyOn(globalThis, "setInterval").mockImplementation(
+            ((callback: () => void) => {
+                runInterval = callback
+                return 1 as any
+            }) as any,
+        )
+        const clearIntervalSpy = spyOn(
+            globalThis,
+            "clearInterval",
+        ).mockImplementation(() => {})
+        let unsubscribe = () => {}
+        try {
+            let calls = 0
+            const atom1 = atom(
+                () => {
+                    calls++
+                    if (calls === 1) return 1
+                    if (calls === 2) return 2
+                    return Promise.reject(new Error("network error"))
+                },
+                { maxAge: 100, staleIfError: 100 },
+            )
+            let shouldThrow = true
+            unsubscribe = store1.sub(atom1, () => {
+                if (shouldThrow && store1.get(atom1) === 2) {
+                    shouldThrow = false
+                    throw new Error("subscriber error")
+                }
+            })
+
+            // The successful refresh is applied before delivery throws. Its
+            // timestamp must still become the stale-if-error window origin.
+            now = 100
+            expect(() => runInterval!()).toThrow("subscriber error")
+            expect(store1.get(atom1)).toBe(2)
+
+            // At t=200 the failed refresh is still inside the 200ms window
+            // measured from the t=100 success, so value 2 remains visible.
+            now = 200
+            runInterval!()
+            for (let i = 0; i < 4; i++) await Promise.resolve()
+            expect(store1.get(atom1)).toBe(2)
+            expect(store1.get(atom1)).not.toBeInstanceOf(Promise)
+        } finally {
+            unsubscribe()
+            clearIntervalSpy.mockRestore()
+            intervalSpy.mockRestore()
+            dateSpy.mockRestore()
+        }
+    })
+
     test("staleIfError window expiration stops serving stale on error", () =>
         withFakeClock(async clock => {
             const store1 = store()

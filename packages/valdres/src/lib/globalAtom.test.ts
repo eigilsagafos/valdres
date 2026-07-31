@@ -118,11 +118,11 @@ describe("globalAtom", () => {
         const unsubscribe1 = store1.sub(requestAtom, () => {})
         const unsubscribe2 = store2.sub(requestAtom, () => {})
 
-        expect(requestAtom.maxAgeInterval?.refCount).toBe(2)
+        expect(requestAtom.cacheController?.refCount).toBe(2)
         store1.dispose()
-        expect(requestAtom.maxAgeInterval?.refCount).toBe(1)
+        expect(requestAtom.cacheController?.refCount).toBe(1)
         store2.dispose()
-        expect(requestAtom.maxAgeInterval).toBeUndefined()
+        expect(requestAtom.cacheController).toBeUndefined()
 
         unsubscribe1()
         unsubscribe2()
@@ -580,43 +580,44 @@ describe("globalAtom", () => {
 
         // Selector subscribed but the atom has no direct subscribers,
         // so no maxAge timer should be installed before or after reset.
-        expect(a.maxAgeInterval).toBeUndefined()
+        expect(a.cacheController).toBeUndefined()
 
         a.resetSelf()
 
         // After reset, still no direct sub on the atom — no timer.
-        expect(a.maxAgeInterval).toBeUndefined()
+        expect(a.cacheController).toBeUndefined()
     })
 
-    test("get on unmounted atom past maxAge re-runs defaultValue (lazy revalidation)", async () => {
-        let calls = 0
-        const a = atom<number>(
-            () => {
-                calls++
-                return calls
-            },
-            {
-                global: true,
-                name: "test/lazy-revalidate-on-stale-get",
-                maxAge: 50,
-            },
-        )
-        const s = store()
-        const initial = s.get(a)
-        const callsAfterInit = calls
+    test("get on unmounted atom past maxAge re-runs defaultValue (lazy revalidation)", () =>
+        withFakeClock(async clock => {
+            let calls = 0
+            const a = atom<number>(
+                () => {
+                    calls++
+                    return calls
+                },
+                {
+                    global: true,
+                    name: "test/lazy-revalidate-on-stale-get",
+                    maxAge: 50,
+                },
+            )
+            const s = store()
+            const initial = s.get(a)
+            const callsAfterInit = calls
 
-        // Re-read inside the freshness window: cached, no re-eval.
-        expect(s.get(a)).toBe(initial)
-        expect(calls).toBe(callsAfterInit)
+            // Re-read inside the freshness window: cached, no re-eval.
+            expect(s.get(a)).toBe(initial)
+            expect(calls).toBe(callsAfterInit)
 
-        await wait(75) // past maxAge
+            await clock.advance(75) // past maxAge
 
-        // Lazy revalidation: cache is stale; reading should re-run
-        // defaultValue and surface a newer value.
-        const fresh = s.get(a)
-        expect(calls).toBeGreaterThan(callsAfterInit)
-        expect(fresh).not.toBe(initial)
-    })
+            // Lazy revalidation: cache is stale; reading should re-run
+            // defaultValue and surface a newer value.
+            const fresh = s.get(a)
+            expect(calls).toBeGreaterThan(callsAfterInit)
+            expect(fresh).not.toBe(initial)
+        }))
 
     test("get within maxAge window returns cached value without re-eval", () =>
         withFakeClock(async clock => {
@@ -846,92 +847,95 @@ describe("globalAtom", () => {
         expect(store2.get(testAtom)).toBe("previous")
     })
 
-    test("resetSelf rebuilds maxAge interval while subscribers remain", async () => {
-        let callCount = 0
-        const testAtom = atom(
-            () => {
-                callCount++
-                return callCount
-            },
-            { global: true, maxAge: 50 },
-        )
+    test("resetSelf rebuilds maxAge interval while subscribers remain", () =>
+        withFakeClock(async clock => {
+            let callCount = 0
+            const testAtom = atom(
+                () => {
+                    callCount++
+                    return callCount
+                },
+                { global: true, maxAge: 50 },
+            )
 
-        const store1 = store()
+            const store1 = store()
 
-        const unsub1 = store1.sub(testAtom, () => {
+            const unsub1 = store1.sub(testAtom, () => {
+                store1.get(testAtom)
+            })
+
+            // Force initialization so the first defaultValue() call is counted.
             store1.get(testAtom)
-        })
 
-        // Force initialization so the first defaultValue() call is counted.
-        store1.get(testAtom)
+            // Baseline: the interval fires once before reset.
+            await clock.advance(75)
+            const countBeforeReset = callCount
+            expect(countBeforeReset).toBeGreaterThanOrEqual(2)
 
-        // Baseline: the interval fires once before reset.
-        await wait(75)
-        const countBeforeReset = callCount
-        expect(countBeforeReset).toBeGreaterThanOrEqual(2)
+            testAtom.resetSelf()
 
-        testAtom.resetSelf()
+            const countAfterReset = callCount
 
-        const countAfterReset = callCount
+            // After reset, the timer should be rebuilt for the still-subscribed
+            // store so revalidation continues.
+            await clock.advance(75)
 
-        // After reset, the timer should be rebuilt for the still-subscribed
-        // store so revalidation continues.
-        await wait(75)
+            expect(callCount).toBeGreaterThan(countAfterReset)
 
-        expect(callCount).toBeGreaterThan(countAfterReset)
+            unsub1()
+        }))
 
-        unsub1()
-    })
+    test("resetSelf revives maxAge for passive subscribers that don't re-read", () =>
+        withFakeClock(async clock => {
+            let defaultValueCalls = 0
+            const testAtom = atom(
+                () => {
+                    defaultValueCalls++
+                    return defaultValueCalls
+                },
+                { global: true, maxAge: 50 },
+            )
 
-    test("resetSelf revives maxAge for passive subscribers that don't re-read", async () => {
-        let defaultValueCalls = 0
-        const testAtom = atom(
-            () => {
-                defaultValueCalls++
-                return defaultValueCalls
-            },
-            { global: true, maxAge: 50 },
-        )
+            const store1 = store()
+            let callbackCalls = 0
+            const unsub = store1.sub(testAtom, () => {
+                callbackCalls++
+            })
+            store1.get(testAtom)
 
-        const store1 = store()
-        let callbackCalls = 0
-        const unsub = store1.sub(testAtom, () => {
-            callbackCalls++
-        })
-        store1.get(testAtom)
+            testAtom.resetSelf()
 
-        testAtom.resetSelf()
+            const callbackCallsAfterReset = callbackCalls
+            await clock.advance(75)
 
-        const callbackCallsAfterReset = callbackCalls
-        await wait(75)
+            // Timer should fire and notify the subscriber even though its
+            // callback never re-reads (so onInit isn't re-run via sync read).
+            expect(callbackCalls).toBeGreaterThan(callbackCallsAfterReset)
 
-        // Timer should fire and notify the subscriber even though its
-        // callback never re-reads (so onInit isn't re-run via sync read).
-        expect(callbackCalls).toBeGreaterThan(callbackCallsAfterReset)
+            unsub()
+        }))
 
-        unsub()
-    })
+    test("resetSelf stops maxAge interval when no subscribers remain", () =>
+        withFakeClock(async clock => {
+            let callCount = 0
+            const testAtom = atom(
+                () => {
+                    callCount++
+                    return callCount
+                },
+                { global: true, maxAge: 50 },
+            )
 
-    test("resetSelf stops maxAge interval when no subscribers remain", async () => {
-        let callCount = 0
-        const testAtom = atom(
-            () => {
-                callCount++
-                return callCount
-            },
-            { global: true, maxAge: 50 },
-        )
+            const store1 = store()
+            store1.get(testAtom)
 
-        const store1 = store()
-        store1.get(testAtom)
+            testAtom.resetSelf()
 
-        testAtom.resetSelf()
+            const countAfterReset = callCount
+            await clock.advance(75)
 
-        const countAfterReset = callCount
-        await wait(75)
-
-        expect(callCount).toBe(countAfterReset)
-    })
+            expect(callCount).toBe(countAfterReset)
+        }))
 
     test("user-provided onSet fires alongside cross-store sync", () => {
         const store1 = store()

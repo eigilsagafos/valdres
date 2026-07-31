@@ -9,6 +9,7 @@ import {
 } from "./graph"
 import { IS_PROD } from "./IS_PROD"
 import { trackScopeValue } from "./trackScopeValue"
+import { cacheState } from "./cacheState"
 
 // Re-exported for existing importers; the definition lives in ./trackScopeValue
 // so the family-index module can depend on it without an import cycle.
@@ -90,7 +91,7 @@ export const setValueInData = <Value extends unknown>(
     // Record the write timestamp for atoms with maxAge so unmounted reads
     // can lazily revalidate once the freshness window has elapsed.
     if ((atom as Atom<Value>).maxAge !== undefined) {
-        data.lastValueWriteAt.set(atom, Date.now())
+        cacheState.recordWrite(atom as Atom<Value>, data)
     }
     return written
 }

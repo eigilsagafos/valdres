@@ -5,6 +5,7 @@ import type { Subscription } from "./Subscription"
 import type { ArchitectureInstrumentation } from "../lib/architectureInstrumentation"
 import type { StoreLifecycle } from "../lib/storeLifecycle"
 import type { StoreTreeRuntime } from "../lib/storeTreeRuntime"
+import type { CacheEntry } from "./CacheEntry"
 
 export type SelectorEvaluationContext = {
     readonly revoked: boolean
@@ -184,10 +185,10 @@ export type StoreData = {
      *  Per-store so one store evaluating a shared selector cannot interfere
      *  with another store's in-flight async evaluation. */
     latestEvalContext: WeakMap<Selector, SelectorEvaluationContext>
-    /** Per-atom timestamp of the last value write, used for lazy
-     *  maxAge revalidation when the atom is unmounted (no active timer
-     *  to keep the cache fresh). Only populated for atoms with `maxAge`. */
-    lastValueWriteAt: WeakMap<WeakKey, number>
+    /** Lazy per-state cache sidecar. Absent until the first maxAge atom is
+     * materialized; cache policy is the only owner of its freshness and
+     * controller-lease entries. */
+    cache?: WeakMap<WeakKey, CacheEntry>
     /** Per-atom suspense placeholder for atoms declared with no
      *  `defaultValue`. The first read creates an unresolved promise that
      *  external readers (Suspense, `await store.get(atom)`) hold; the

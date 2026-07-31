@@ -7,9 +7,8 @@ import type { ScopedStore, ScopeFn, Store } from "../types/Store"
 import type { StoreData } from "../types/StoreData"
 import type { TransactionFn } from "../types/TransactionFn"
 import { isAtom } from "../utils/isAtom"
-import { isGlobalAtom } from "../utils/isGlobalAtom"
 import { isSelector } from "../utils/isSelector"
-import { resolveReactive } from "../utils/resolveReactive"
+import { cacheController } from "./cacheController"
 import { unsetValue } from "./unsetValue"
 import { createStoreData } from "./createStoreData"
 import { deleteFamilyAtom } from "./deleteFamilyAtom"
@@ -52,38 +51,6 @@ Only \`atom\` cam be set.
 const InvalidStateSetError = `Invalid state object passed to set().
 Only \`atom\` can be set.
 `
-
-/**
- * Lazy maxAge revalidation guard. The maxAge timer (installMaxAgeTimer)
- * is the source of truth for freshness while an atom has subscribers —
- * during that time we leave the cache alone (otherwise we'd undo the
- * stale-while-revalidate window that the timer relies on). When there's
- * no active timer, we drop a cached value past its freshness window so
- * the next read re-evaluates the default.
- *
- * Scope shadows are exempt: a value present in `data.values` for a scoped
- * store is always a deliberate pin from `set()` — the scope never runs
- * its own revalidation timer for maxAge atoms (see subscribe.ts). Evicting
- * the shadow would silently fall back to the parent and defeat the
- * user-visible override.
- */
-const isCachedValueStale = (state: State, data: StoreData): boolean => {
-    const atom = state as Atom
-    const maxAge = atom.maxAge
-    if (maxAge === undefined) return false
-    if (data.parent) return false
-    if (isGlobalAtom(atom)) {
-        if (atom.maxAgeInterval !== undefined) return false
-    } else {
-        const subs = data.subscriptions.get(state)
-        if (subs && subs.size > 0) return false
-    }
-    const lastWrite = data.lastValueWriteAt.get(state)
-    if (lastWrite === undefined) return false
-    const ttl =
-        typeof maxAge === "number" ? maxAge : resolveReactive(maxAge, data)
-    return Date.now() - lastWrite > ttl
-}
 
 export function storeFromStoreData(
     data: StoreData,
@@ -192,11 +159,15 @@ const createStoreRuntime = (data: StoreData): Store => {
                     return data.values.get(state)
                 }
             } else {
-                if (!isCachedValueStale(state, data)) {
+                // Keep ordinary cached reads off the controller module. The
+                // property check replaces the one expireIfStale would perform,
+                // but avoids its cross-module call for every non-cache state.
+                if (
+                    (state as Atom).maxAge === undefined ||
+                    !cacheController.expireIfStale(state, data)
+                ) {
                     return data.values.get(state)
                 }
-                data.values.delete(state)
-                data.lastValueWriteAt.delete(state)
             }
         }
         let res
