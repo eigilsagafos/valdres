@@ -174,10 +174,14 @@ export function toBmf(results: BenchResult[], options: BmfOptions = {}): Bmf {
  * Produces the head-side BMF for an interleaved relative benchmark run.
  *
  * Bencher compares this value with a separately uploaded base BMF. Scaling the
- * base median by the median of the paired head/base ratios makes that comparison
- * evaluate the paired statistic directly. Taking independent base and head
- * medians first can manufacture a regression when an order or runner effect
- * moves both measurements in only one pair.
+ * base median by the paired head/base ratio makes that comparison evaluate the
+ * paired statistic directly. Taking independent base and head medians first can
+ * manufacture a regression when an order or runner effect moves both
+ * measurements in only one pair.
+ *
+ * The ratio across pairs is combined with `min` — see the comment at the call
+ * site for why the one-directional nature of runner interference makes that the
+ * robust choice.
  */
 export function toPairedBmf(
     baseResults: BenchResult[],
@@ -230,8 +234,23 @@ export function toPairedBmf(
             )
         }
 
-        const pairedRatio = median(
-            head.map((value, index) => value / base[index]),
+        // MINIMUM, not median, of the paired ratios. Runner interference is
+        // one-directional: a stall, a noisy neighbour, or an unlucky JIT tier
+        // makes a sample SLOWER and never faster. So every contaminated pair
+        // pushes its ratio up, and the smallest ratio is the least contaminated
+        // estimate of the true one. Median only survives one bad pair out of
+        // three; sub-microsecond benchmarks routinely lost two (observed: a
+        // single CI job measuring `set(atom, value)` at 131ns, 351ns, 131ns,
+        // and a whole sample window running +34% with 20 of 59 benchmarks more
+        // than 50% slow), which is what made this gate flake on unrelated PRs.
+        //
+        // This costs nothing in sensitivity at the boundary this gate uses: a
+        // genuine >50% same-runner regression is present in EVERY pair, so its
+        // minimum ratio is still over the line. What it gives up is the ability
+        // to detect a regression smaller than the runner's own noise — which
+        // this gate never claimed to have.
+        const pairedRatio = Math.min(
+            ...head.map((value, index) => value / base[index]),
         )
         paired[name] = {
             latency: {
