@@ -6,8 +6,8 @@ import { atomFamily } from "../atomFamily"
 import { selector } from "../selector"
 import { trackScopeValue } from "./setValueInData"
 import { assertStoreInvariants } from "../../test/invariants/checkStoreInvariants"
-
-const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
+import { withFakeClock } from "../../test/utils/fakeClock"
+import { cacheState } from "./cacheState"
 
 describe("deep nesting (4+ levels)", () => {
     test("grandparent atom read from great-grandchild walks the chain", () => {
@@ -569,106 +569,115 @@ describe("scope set pins even when value equals the inherited value", () => {
 })
 
 describe("maxAge interaction with scopes", () => {
-    test("scope reading a maxAge atom inherits root's cached value, no separate timer", async () => {
-        const A = store("A")
-        let count = 0
-        const a = atom(() => ++count, { maxAge: 20 })
+    test("scope reading a maxAge atom inherits root's cached value, no separate timer", () =>
+        withFakeClock(async clock => {
+            const A = store("A")
+            let count = 0
+            const a = atom(() => ++count, { maxAge: 20 })
 
-        const B = A.scope("B")
+            const B = A.scope("B")
 
-        // Root subscribes — this installs the maxAge timer at root
-        const aCb = mock(() => {})
-        const unsub = A.sub(a, aCb)
+            // Root subscribes — this installs the maxAge timer at root
+            const aCb = mock(() => {})
+            const unsub = A.sub(a, aCb)
+            const bUnsub = B.sub(a, () => {})
 
-        expect(A.get(a)).toBe(1)
-        expect(B.get(a)).toBe(1) // inherits from A
+            expect(A.get(a)).toBe(1)
+            expect(B.get(a)).toBe(1) // inherits from A
+            expect(cacheState.peek(a, getStoreData(A))?.release).toBeDefined()
+            expect(Object.hasOwn(getStoreData(B), "cache")).toBe(false)
 
-        // Wait long enough for the timer to fire twice
-        await wait(60)
-        unsub()
+            // Wait long enough for the timer to fire twice
+            await clock.advance(60)
+            unsub()
 
-        // Multiple ticks should have happened at root and B reads the latest
-        expect(count).toBeGreaterThan(1)
-        const latest = A.get(a)
-        expect(B.get(a)).toBe(latest)
-    })
+            // Multiple ticks should have happened at root and B reads the latest
+            expect(count).toBeGreaterThan(1)
+            const latest = A.get(a)
+            expect(B.get(a)).toBe(latest)
+            bUnsub()
+        }))
 
-    test("scope.set(maxAgeAtom, value) pins the value — no scope-local timer runs", async () => {
-        // Setting a maxAge atom in a scope is a deliberate override. No
-        // scope-local revalidation timer is installed even when the scope
-        // subscribes, so the shadow survives indefinitely.
-        const A = store("A")
-        let count = 0
-        const a = atom(() => ++count, { maxAge: 15 })
+    test("scope.set(maxAgeAtom, value) pins the value — no scope-local timer runs", () =>
+        withFakeClock(async clock => {
+            // Setting a maxAge atom in a scope is a deliberate override. No
+            // scope-local revalidation timer is installed even when the scope
+            // subscribes, so the shadow survives indefinitely.
+            const A = store("A")
+            let count = 0
+            const a = atom(() => ++count, { maxAge: 15 })
 
-        const B = A.scope("B")
-        B.set(a, 999)
-        expect(getStoreData(B).values.get(a)).toBe(999)
+            const B = A.scope("B")
+            B.set(a, 999)
+            expect(getStoreData(B).values.get(a)).toBe(999)
 
-        const bUnsub = B.sub(a, () => {})
+            const bUnsub = B.sub(a, () => {})
+            expect(cacheState.peek(a, getStoreData(B))?.release).toBeUndefined()
 
-        await wait(50)
-        bUnsub()
+            await clock.advance(50)
+            bUnsub()
 
-        // B's shadow survived — no scope-local timer overwrote it.
-        expect(getStoreData(B).values.get(a)).toBe(999)
-        expect(B.get(a)).toBe(999)
-        // defaultValue() ran only during set() initialization (to read the
-        // prior value), not from any scope-local revalidation tick.
-        expect(count).toBe(1)
-    })
+            // B's shadow survived — no scope-local timer overwrote it.
+            expect(getStoreData(B).values.get(a)).toBe(999)
+            expect(B.get(a)).toBe(999)
+            // defaultValue() ran only during set() initialization (to read the
+            // prior value), not from any scope-local revalidation tick.
+            expect(count).toBe(1)
+        }))
 
-    test("scope.set on maxAge atom: shadow survives past the freshness window without a subscriber", async () => {
-        // The lazy revalidation eviction in isCachedValueStale is skipped
-        // for scoped stores. Without this, an unsubscribed scope shadow
-        // would be dropped on the next stale read and silently fall back
-        // to the parent.
-        const A = store("A")
-        let count = 0
-        const a = atom(() => ++count, { maxAge: 10 })
+    test("scope.set on maxAge atom: shadow survives past the freshness window without a subscriber", () =>
+        withFakeClock(async clock => {
+            // The lazy revalidation eviction in the cache controller is skipped
+            // for scoped stores. Without this, an unsubscribed scope shadow
+            // would be dropped on the next stale read and silently fall back
+            // to the parent.
+            const A = store("A")
+            let count = 0
+            const a = atom(() => ++count, { maxAge: 10 })
 
-        const B = A.scope("B")
-        B.set(a, 999)
+            const B = A.scope("B")
+            B.set(a, 999)
 
-        const aUnsub = A.sub(a, () => {})
-        await wait(40)
-        aUnsub()
+            const aUnsub = A.sub(a, () => {})
+            await clock.advance(40)
+            aUnsub()
 
-        // B's shadow is pinned regardless of TTL.
-        expect(B.get(a)).toBe(999)
-    })
+            // B's shadow is pinned regardless of TTL.
+            expect(B.get(a)).toBe(999)
+        }))
 
-    test("non-shadowed scope read of a maxAge atom inherits root's revalidated value", async () => {
-        // No scope shadow: the scope simply walks up to the parent and sees
-        // the latest revalidated value. This confirms that the eviction
-        // exemption for scopes (in isCachedValueStale) does not break the
-        // normal inherited-read path.
-        const A = store("A")
-        let count = 0
-        const a = atom(() => ++count, { maxAge: 20 })
+    test("non-shadowed scope read of a maxAge atom inherits root's revalidated value", () =>
+        withFakeClock(async clock => {
+            // No scope shadow: the scope simply walks up to the parent and sees
+            // the latest revalidated value. This confirms that the eviction
+            // exemption for scopes does not break the
+            // normal inherited-read path.
+            const A = store("A")
+            let count = 0
+            const a = atom(() => ++count, { maxAge: 20 })
 
-        const B = A.scope("B")
+            const B = A.scope("B")
 
-        const aUnsub = A.sub(a, () => {})
-        await wait(100)
-        aUnsub()
+            const aUnsub = A.sub(a, () => {})
+            await clock.advance(100)
+            aUnsub()
 
-        // Settle the root read FIRST. With no subscriber the timer is stopped,
-        // so reading A runs the lazy TTL revalidation (isCachedValueStale) and
-        // pins A's freshest value. The scope then walks up and must observe
-        // that exact value. Reading A first avoids an evaluation-order race:
-        // if `B.get(a)` were evaluated before `A.get(a)`, the scope would read
-        // A's still-cached value while the subsequent root read straddled a
-        // revalidation tick — an off-by-one that has nothing to do with the
-        // inherited-read invariant this test asserts.
-        const rootValue = A.get(a)
-        const countAfterRoot = count
-        expect(B.get(a)).toBe(rootValue)
-        // The scope read inherited the parent's value — it did NOT re-evaluate
-        // the default in its own context (that would bump count and diverge).
-        expect(count).toBe(countAfterRoot)
-        expect(count).toBeGreaterThan(1)
-    })
+            // Settle the root read FIRST. With no subscriber the timer is stopped,
+            // so reading A runs the controller-owned lazy TTL revalidation and
+            // pins A's freshest value. The scope then walks up and must observe
+            // that exact value. Reading A first avoids an evaluation-order race:
+            // if `B.get(a)` were evaluated before `A.get(a)`, the scope would read
+            // A's still-cached value while the subsequent root read straddled a
+            // revalidation tick — an off-by-one that has nothing to do with the
+            // inherited-read invariant this test asserts.
+            const rootValue = A.get(a)
+            const countAfterRoot = count
+            expect(B.get(a)).toBe(rootValue)
+            // The scope read inherited the parent's value — it did NOT re-evaluate
+            // the default in its own context (that would bump count and diverge).
+            expect(count).toBe(countAfterRoot)
+            expect(count).toBeGreaterThan(1)
+        }))
 })
 
 describe("batchUpdates and scopes", () => {

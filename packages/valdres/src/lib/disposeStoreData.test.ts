@@ -4,7 +4,8 @@ import { atomFamily } from "../atomFamily"
 import { selector } from "../selector"
 import { store } from "../store"
 import { StoreDisposedError } from "../errors/StoreDisposedError"
-import { withFakeClock } from "../../test/utils/fakeClock"
+import { mockAsyncSource, withFakeClock } from "../../test/utils/fakeClock"
+import { cacheState } from "./cacheState"
 import { getStoreData } from "./getStoreData"
 import { commitEndRegistry } from "./onCommitEnd"
 import { changeListenerRegistry } from "./notifyChangeListeners"
@@ -50,6 +51,54 @@ describe("store.dispose", () => {
             clearIntervalSpy.mockRestore()
         }
     })
+
+    test("disposal cancels cache revalidation and rejects late publication", () =>
+        withFakeClock(async clock => {
+            const clearIntervalSpy = spyOn(globalThis, "clearInterval")
+            const clearTimeoutSpy = spyOn(globalThis, "clearTimeout")
+            try {
+                const maxAge = atom(20)
+                const source = mockAsyncSource<number>()
+                const cached = atom(source.fn, {
+                    maxAge,
+                    staleWhileRevalidate: 50,
+                })
+                const targetStore = store()
+                const callback = mock(() => {})
+                const unsubscribe = targetStore.sub(cached, callback)
+                const data = getStoreData(targetStore)
+
+                await source.resolve(1)
+                await clock.advance(20)
+                expect(source.callCount).toBe(2)
+                const callsBeforeDispose = callback.mock.calls.length
+                const intervalsBeforeDispose =
+                    clearIntervalSpy.mock.calls.length
+                const timeoutsBeforeDispose = clearTimeoutSpy.mock.calls.length
+
+                targetStore.dispose()
+
+                expect(clearIntervalSpy.mock.calls.length).toBeGreaterThan(
+                    intervalsBeforeDispose,
+                )
+                expect(clearTimeoutSpy.mock.calls.length).toBeGreaterThan(
+                    timeoutsBeforeDispose,
+                )
+                expect(cacheState.peek(cached, data)?.release).toBeUndefined()
+                assertStoreInvariants(targetStore, { states: [cached, maxAge] })
+
+                await source.resolve(2, 1)
+                await clock.advance(100)
+                expect(data.values.get(cached)).toBe(1)
+                expect(callback).toHaveBeenCalledTimes(callsBeforeDispose)
+                expect(source.callCount).toBe(2)
+
+                unsubscribe()
+            } finally {
+                clearIntervalSpy.mockRestore()
+                clearTimeoutSpy.mockRestore()
+            }
+        }))
 
     test("drains every subscription after active-state churn", () => {
         const targetStore = store()
@@ -105,10 +154,10 @@ describe("store.dispose", () => {
             await clock.advance(100)
 
             expect(fetchCount).toBe(countAfterHandoff)
-            expect(target.maxAgeInterval?.refCount).toBe(1)
+            expect(target.cacheController?.refCount).toBe(1)
 
             survivor.dispose()
-            expect(target.maxAgeInterval).toBeUndefined()
+            expect(target.cacheController).toBeUndefined()
         }))
 
     test("a disposed mount cannot mutate a global atom in a live store", () => {

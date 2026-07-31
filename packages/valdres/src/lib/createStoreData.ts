@@ -49,7 +49,7 @@ Object.defineProperties(lazyProto, {
     liveDependentCount: makeLazyGetter("liveDependentCount"),
     mountInClosure: makeLazyGetter("mountInClosure"),
     abortControllers: makeLazyGetter("abortControllers"),
-    lastValueWriteAt: makeLazyGetter("lastValueWriteAt"),
+    cache: makeLazyGetter("cache"),
     circularDepSet: makeLazyGetter("circularDepSet", () => new WeakSet()),
     latestEvalContext: makeLazyGetter("latestEvalContext"),
 })

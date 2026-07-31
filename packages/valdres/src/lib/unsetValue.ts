@@ -2,6 +2,7 @@ import type { Atom } from "../types/Atom"
 import type { StoreData } from "../types/StoreData"
 import { isAtom } from "../utils/isAtom"
 import { runCommitPlan } from "./commitEngine"
+import { cacheState } from "./cacheState"
 import { createCommitErrors } from "./commitErrors"
 import { SETTLE_INIT_ONLY, SETTLE_UNSET } from "./commitIntents"
 import { getState } from "./getState"
@@ -38,7 +39,7 @@ export const detachOwnValue = (atom: Atom<any>, data: StoreData): boolean => {
     noteStateValueChanged(atom, data)
     // Only present for maxAge atoms; guard to avoid materializing the lazy
     // WeakMap getter for the common (non-maxAge) atom.
-    if (atom.maxAge !== undefined) data.lastValueWriteAt.delete(atom)
+    if (atom.maxAge !== undefined) cacheState.clearWrite(atom, data)
 
     const parent = data.parent
     if (parent) {
