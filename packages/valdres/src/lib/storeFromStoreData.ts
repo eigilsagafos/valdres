@@ -34,14 +34,9 @@ import { STORE_RUNTIME } from "./storeRuntimeKey"
 import {
     createStoreDisposedError,
     DISPOSED_STORE_PENDING,
-    isPendingStoreLifecycle,
-    lifecycleFromPendingStore,
-    STORE_LIFECYCLE,
     trackStoreCleanup,
     untrackStoreCleanup,
 } from "./storeLifecycle"
-import type { StoreLifecycle } from "./storeLifecycle"
-import type { PendingStoreLifecycle } from "./storeLifecycle"
 import { subscribe } from "./subscribe"
 import {
     cancelTransaction,
@@ -96,18 +91,12 @@ export function storeFromStoreData(
 ): ScopedStore
 export function storeFromStoreData(data: StoreData): Store
 export function storeFromStoreData(data: StoreData, detach?: () => void) {
-    const runtimeData = data as StoreData & {
-        [STORE_RUNTIME]?: Store | PendingStoreLifecycle
-    }
-    const slot = runtimeData[STORE_RUNTIME]
-    let runtime: Store
-    if (!slot) {
+    const runtimeData = data as StoreData & { [STORE_RUNTIME]?: Store }
+    let runtime = runtimeData[STORE_RUNTIME]
+    if (!runtime) {
         runtime = createStoreRuntime(data)
         runtimeData[STORE_RUNTIME] = runtime
-    } else if (isPendingStoreLifecycle(slot)) {
-        runtime = createStoreRuntime(data, lifecycleFromPendingStore(slot))
-        runtimeData[STORE_RUNTIME] = runtime
-    } else runtime = slot
+    }
     return detach ? createScopeLease(runtime, detach) : runtime
 }
 
@@ -117,10 +106,7 @@ export function storeFromStoreData(data: StoreData, detach?: () => void) {
  * implicit transaction authoritative for every handle that reaches the same
  * store data (including the internal handle mountAtom requests).
  */
-const createStoreRuntime = (
-    data: StoreData,
-    initialLifecycle?: StoreLifecycle,
-): Store => {
+const createStoreRuntime = (data: StoreData): Store => {
     // Public methods that already flush orphan work reuse that same hot guard
     // for terminal detection. Active stores therefore pay no second branch.
     const _initSet = new Set<Atom>()
@@ -201,7 +187,7 @@ const createStoreRuntime = (
                 // reads avoid opening a liveness pass only to collect no seeds.
                 const coldCache = data.coldSelectorCaches.get(state)
                 if (
-                    coldCache?.validatedAt === data.stateRevisionClock.current
+                    coldCache?.validatedAt === data.tree.revision
                 ) {
                     return data.values.get(state)
                 }
@@ -495,13 +481,9 @@ const createStoreRuntime = (
         onCommitEnd: storeOnCommitEnd,
         snapshot: storeSnapshot,
         dispose,
-    } as Store & { [STORE_LIFECYCLE]?: StoreLifecycle }
-    // The ordinary facade carries no lifecycle property. Add the slot only
-    // when raw StoreData acquired resources before its canonical facade
-    // existed; later lifecycle work remains a cold, one-time shape transition.
-    if (initialLifecycle !== undefined) {
-        runtime[STORE_LIFECYCLE] = initialLifecycle
     }
+    // The facade carries no internal state at all: lifecycle resources live in
+    // StoreData.resources, so nothing here ever changes shape.
     return runtime
 }
 

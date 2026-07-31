@@ -1,37 +1,37 @@
 import type { StoreData } from "../types/StoreData"
+import type { StoreTreeRuntime } from "./storeTreeRuntime"
 import { trackStoreCleanup, untrackStoreCleanup } from "./storeLifecycle"
 
 /** Global count of `onCommitEnd` listeners across every store — the cheap
  *  "is anyone listening" gate, mirroring `changeListenerRegistry`. Every commit
  *  boundary checks `count !== 0` first, so with no listener anywhere (the
  *  common case) a commit pays a single property read and does no tracking and
- *  no allocation. */
+ *  no allocation.
+ *
+ *  The listener set and depth counter themselves are tree-owned
+ *  (`StoreTreeRuntime`), but this counter deliberately is NOT: it is read
+ *  before the commit forest is known, and a commit can span trees through
+ *  global-atom fan-out, so the origin tree's own set is not a sound substitute.
+ *  Narrowing this to per-tree admission would also change which boundaries open
+ *  for a listener registered mid-commit. */
 export const commitEndRegistry = { count: 0 }
-
-/** Resolve the root that owns commit state for a store tree. Exported for
- * multi-store commits so they can de-duplicate scopes before opening roots. */
-export const commitRootOf = (data: StoreData): StoreData => {
-    let root = data
-    while (root.parent) root = root.parent
-    return root
-}
 
 /** True iff the store tree containing `data` has a commit-end listener. The
  * process-wide count keeps the common zero-listener path to one property read;
- * only a process with some listener pays to resolve this store's root. */
+ * only a process with some listener pays the tree dereference. */
 export const hasCommitEndListener = (data: StoreData): boolean =>
     commitEndRegistry.count !== 0 &&
-    (commitRootOf(data).commitEndListeners?.size ?? 0) !== 0
+    (data.tree.commitEndListeners?.size ?? 0) !== 0
 
-/** Open a commit boundary for the store tree `data` belongs to and return the
- *  tree's root (whose depth counter was incremented). Only called when
+/** Open a commit boundary for the store tree `data` belongs to and return that
+ *  tree (whose depth counter was incremented). Only called when
  *  `commitEndRegistry.count !== 0`; the caller MUST balance with `endCommit`
- *  on every path (including throws) using the returned root, so a listener
+ *  on every path (including throws) using the returned tree, so a listener
  *  unsubscribing mid-commit can't strand the depth counter. */
-export const beginCommit = (data: StoreData): StoreData => {
-    const root = commitRootOf(data)
-    root.commitDepth = (root.commitDepth ?? 0) + 1
-    return root
+export const beginCommit = (data: StoreData): StoreTreeRuntime => {
+    const tree = data.tree
+    tree.commitDepth++
+    return tree
 }
 
 /** Close a commit boundary opened by `beginCommit`. When this closes the
@@ -45,9 +45,11 @@ export const beginCommit = (data: StoreData): StoreData => {
  *  `swallowErrors` — used when the commit itself is already throwing, so a
  *  listener error never masks the original failure (same contract as the
  *  onChange flush in the transaction commit pipeline). */
-export const endCommit = (root: StoreData, swallowErrors: boolean) => {
-    if ((root.commitDepth = root.commitDepth! - 1) !== 0) return
-    const listeners = root.commitEndListeners
+export const endCommit = (tree: StoreTreeRuntime, swallowErrors: boolean) => {
+    if (--tree.commitDepth !== 0) return
+    const listeners = tree.commitEndListeners
+    // The size re-check is the backstop for the `undefined ⟺ empty` invariant
+    // the registration path maintains below.
     if (listeners === undefined || listeners.size === 0) return
     let firstError: unknown
     let hasError = false
@@ -77,11 +79,11 @@ export const onCommitEnd = (
     callback: () => void,
     data: StoreData,
 ): (() => void) => {
-    const root = commitRootOf(data)
-    let listeners = root.commitEndListeners
+    const tree = data.tree
+    let listeners = tree.commitEndListeners
     if (!listeners) {
         listeners = new Set()
-        root.commitEndListeners = listeners
+        tree.commitEndListeners = listeners
     }
     // Set semantics make re-registering the same callback a no-op; only count
     // (and hand out an active unsubscribe for) a callback we actually added.
@@ -93,11 +95,11 @@ export const onCommitEnd = (
         if (!active) return
         active = false
         untrackStoreCleanup(data, cleanup)
-        const current = root.commitEndListeners
+        const current = tree.commitEndListeners
         if (current?.delete(callback)) {
             commitEndRegistry.count--
             // Drop the empty set so an idle tree holds no listener allocation.
-            if (current.size === 0) root.commitEndListeners = undefined
+            if (current.size === 0) tree.commitEndListeners = undefined
         }
     }
     trackStoreCleanup(data, cleanup)

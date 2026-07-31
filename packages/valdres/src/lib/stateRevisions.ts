@@ -9,19 +9,19 @@ import { isSelector } from "../utils/isSelector"
  * keep the write hot path to one predictable boolean branch.
  */
 export const noteStateValueChanged = (state: WeakKey, data: StoreData) => {
-    const clock = data.stateRevisionClock
-    if (!clock.enabled || !clock.tracked!.has(state)) return
-    data.stateRevisions.set(state, ++clock.current)
+    const tree = data.tree
+    if (!tree.revisionEnabled || !tree.trackedRevisions!.has(state)) return
+    data.stateRevisions.set(state, ++tree.revision)
 }
 
 /** Start maintaining a revision for a state newly discovered by a cold async
  * selector. This must happen at read time, not promise settlement, so a write
  * between those events advances beyond the revision the evaluation observed. */
 export const trackStateRevision = (state: WeakKey, data: StoreData) => {
-    const clock = data.stateRevisionClock
-    const tracked = (clock.tracked ??= new WeakSet())
+    const tree = data.tree
+    const tracked = (tree.trackedRevisions ??= new WeakSet())
     tracked.add(state)
-    clock.enabled = true
+    tree.revisionEnabled = true
 }
 
 /** Resolve the revision of the value this store would actually read. Scoped
@@ -49,9 +49,9 @@ export const recordColdSelectorCache = (
     }
 
     data.coldSelectorCachesEnabled = true
-    const clock = data.stateRevisionClock
-    const tracked = (clock.tracked ??= new WeakSet())
-    clock.enabled = true
+    const tree = data.tree
+    const tracked = (tree.trackedRevisions ??= new WeakSet())
+    tree.revisionEnabled = true
     const existingCache = data.coldSelectorCaches.get(selector)
     const dependencyStates = existingCache?.dependencies ?? []
     const dependencyRevisions = existingCache?.dependencyRevisions ?? []
@@ -74,7 +74,7 @@ export const recordColdSelectorCache = (
         index++
     }
     dependencyStates.length = index
-    const validatedAt = matchesCurrentValues ? clock.current : -1
+    const validatedAt = matchesCurrentValues ? tree.revision : -1
     if (existingCache) {
         existingCache.hasSelectorDependencies = hasSelectorDependencies
         existingCache.validatedAt = validatedAt
@@ -96,5 +96,5 @@ export const markColdSelectorCacheValidated = (
     data: StoreData,
 ) => {
     const cache = data.coldSelectorCaches.get(selector)
-    if (cache) cache.validatedAt = data.stateRevisionClock.current
+    if (cache) cache.validatedAt = data.tree.revision
 }

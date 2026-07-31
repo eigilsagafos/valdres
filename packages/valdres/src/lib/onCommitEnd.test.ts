@@ -4,6 +4,8 @@ import { atom } from "../atom"
 import { atomFamily } from "../atomFamily"
 import { selector } from "../selector"
 import { store } from "../store"
+import type { State } from "../types/State"
+import type { StoreData } from "../types/StoreData"
 
 describe("store.onCommitEnd", () => {
     test("plain set: fires exactly once, strictly after subscribers and onChange", () => {
@@ -199,14 +201,14 @@ describe("store.onCommitEnd", () => {
             const subscriberDepths: number[] = []
             root.get(value)
             const unsubValue = scoped.sub(value, () => {
-                subscriberDepths.push(getStoreData(root).commitDepth ?? 0)
+                subscriberDepths.push(getStoreData(root).tree.commitDepth)
             })
             const unsubCommit = root.onCommitEnd(() => {})
 
             scoped.set(value, 1)
 
             expect(subscriberDepths).toEqual([1])
-            expect(getStoreData(root).commitDepth).toBe(0)
+            expect(getStoreData(root).tree.commitDepth).toBe(0)
             unsubValue()
             unsubCommit()
             scoped.detach()
@@ -292,7 +294,7 @@ describe("store.onCommitEnd", () => {
         const subscriberDepths: number[] = []
         const unsubSelector = store1.sub(asyncValue, () => {
             events.push("subscriber")
-            subscriberDepths.push(getStoreData(store1).commitDepth ?? 0)
+            subscriberDepths.push(getStoreData(store1).tree.commitDepth)
         })
         const unsubChange = store1.onChange(() => events.push("onChange"), {
             atoms: false,
@@ -356,5 +358,69 @@ describe("store.onCommitEnd", () => {
         } finally {
             unsub()
         }
+    })
+
+    describe("boundary balance under settlement failure", () => {
+        /** Force the cross-scope/global settlement's collection phase to throw.
+         *  That phase runs before any user code and has no error accumulator, so
+         *  it is the sharpest probe for "is every opened boundary closed". */
+        const poisonDependents = (data: StoreData, state: State) => {
+            data.stateDependents.set(state, {
+                size: 1,
+                [Symbol.iterator]() {
+                    throw new Error("settlement boom")
+                },
+            })
+            return () => data.stateDependents.delete(state)
+        }
+
+        test("a throwing forest settlement closes the boundary and still delivers", () => {
+            const store1 = store()
+            const value = atom(0, { global: true })
+            const fired: string[] = []
+            // Initialize before registering: the first read of a global atom is
+            // itself a commit.
+            store1.get(value)
+            const unsub = store1.onCommitEnd(() => fired.push("commit-end"))
+            const data = getStoreData(store1)
+            const restore = poisonDependents(data, value)
+
+            expect(() => store1.set(value, 1)).toThrow("settlement boom")
+            // The depth counter must return to zero immediately: a stranded
+            // depth silences onCommitEnd on this tree for the whole process.
+            expect(data.tree.commitDepth).toBe(0)
+            // Writes were applied, so the boundary still reports (same contract
+            // as the throwing-subscriber case above).
+            expect(fired).toEqual(["commit-end"])
+
+            restore()
+            store1.set(value, 2)
+            expect(fired).toEqual(["commit-end", "commit-end"])
+            unsub()
+        })
+
+        test("a multi-root forest closes every tree when the first listener throws", () => {
+            const store1 = store()
+            const store2 = store()
+            const value = atom(0, { global: true })
+            const second = mock(() => {})
+            // Initialize before registering: the first read of a global atom is
+            // itself a commit.
+            store1.get(value)
+            store2.get(value)
+            const unsubFirst = store1.onCommitEnd(() => {
+                throw new Error("listener boom")
+            })
+            const unsubSecond = store2.onCommitEnd(second)
+
+            expect(() => store1.set(value, 1)).toThrow("listener boom")
+            // A listener that throws must not strand the roots closed after it.
+            expect(second).toHaveBeenCalledTimes(1)
+            expect(getStoreData(store1).tree.commitDepth).toBe(0)
+            expect(getStoreData(store2).tree.commitDepth).toBe(0)
+
+            unsubFirst()
+            unsubSecond()
+        })
     })
 })

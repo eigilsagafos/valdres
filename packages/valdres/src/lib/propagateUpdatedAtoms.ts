@@ -4,6 +4,7 @@ import type { AtomFamilyAtom } from "../types/AtomFamilyAtom"
 import type { Selector } from "../types/Selector"
 import type { State } from "../types/State"
 import type { StoreData } from "../types/StoreData"
+import type { StoreTreeRuntime } from "./storeTreeRuntime"
 import type { Subscription } from "../types/Subscription"
 import { isAtomFamily } from "../utils/isAtomFamily"
 import { isFamilyAtom } from "../utils/isFamilyAtom"
@@ -56,7 +57,6 @@ import type {
 import {
     beginCommit,
     commitEndRegistry,
-    commitRootOf,
     endCommit,
 } from "./onCommitEnd"
 import { setValueInData } from "./setValueInData"
@@ -495,8 +495,8 @@ const settleDeletedAtoms = (
     // move the tree's depth counter. On a throw the listeners still fire
     // (writes were applied) but their own errors are swallowed so they never
     // mask the original failure.
-    let commitRoot: StoreData | undefined
-    if (commitEndRegistry.count !== 0) commitRoot = beginCommit(data)
+    let commitTree: StoreTreeRuntime | undefined
+    if (commitEndRegistry.count !== 0) commitTree = beginCommit(data)
     let completed = false
     try {
         // Reuse an entry from an earlier pass. The first pass stays local until
@@ -638,7 +638,7 @@ const settleDeletedAtoms = (
         if (localSink) flushChangeSink(localSink)
         completed = true
     } finally {
-        if (commitRoot !== undefined) endCommit(commitRoot, !completed)
+        if (commitTree !== undefined) endCommit(commitTree, !completed)
     }
 }
 
@@ -687,8 +687,8 @@ export const settleCommit = (
     // move the tree's depth counter. On a throw the listeners still fire
     // (writes were applied) but their own errors are swallowed so they never
     // mask the original failure.
-    let commitRoot: StoreData | undefined
-    if (commitEndRegistry.count !== 0) commitRoot = beginCommit(data)
+    let commitTree: StoreTreeRuntime | undefined
+    if (commitEndRegistry.count !== 0) commitTree = beginCommit(data)
     let completed = false
     try {
         // Keep the no-scope gate at this call site even though the helper also
@@ -935,7 +935,7 @@ export const settleCommit = (
         if (localSink) flushChangeSink(localSink)
         completed = true
     } finally {
-        if (commitRoot !== undefined) endCommit(commitRoot, !completed)
+        if (commitTree !== undefined) endCommit(commitTree, !completed)
     }
 }
 
@@ -1110,28 +1110,47 @@ const buildCommitForest = (
 
     const roots: ForestNode[] = []
     const added = new Set<StoreData>()
+    // One tree ⇔ one root, so tree identity is the dedupe key and `tree.root`
+    // resolves the owner without walking `parent`.
     const addRoot = (data: StoreData) => {
-        const root = commitRootOf(data)
+        const root = data.tree.root
         if (!added.has(root)) {
             added.add(root)
             roots.push(ensureNode(root))
         }
     }
-    const originRoot =
-        entries.length > 0 ? commitRootOf(entries[0].data) : undefined
+    const originTree = entries.length > 0 ? entries[0].data.tree : undefined
     if (globalUpdates) {
         for (const peer of globalUpdates.keys()) {
-            if (commitRootOf(peer) !== originRoot) addRoot(peer)
+            if (peer.tree !== originTree) addRoot(peer)
         }
     }
     for (const entry of entries) {
-        if (commitRootOf(entry.data) !== originRoot) addRoot(entry.data)
+        if (entry.data.tree !== originTree) addRoot(entry.data)
     }
-    if (originRoot) addRoot(originRoot)
-    if (!originRoot && globalUpdates) {
+    if (originTree) addRoot(originTree.root)
+    if (!originTree && globalUpdates) {
         for (const peer of globalUpdates.keys()) addRoot(peer)
     }
     return { roots, peerAtoms: globalUpdates }
+}
+
+/** Close every commit boundary a forest settlement opened. Each one gets its
+ *  own try/catch so a throwing listener cannot strand the trees queued behind
+ *  it — the failure mode this exists to prevent is a depth counter stuck above
+ *  zero, which silences that tree's onCommitEnd for the rest of the process. */
+const closeCommitBoundaries = (
+    commitTrees: StoreTreeRuntime[],
+    errors: CommitErrors,
+    swallowErrors: boolean,
+) => {
+    for (const tree of commitTrees) {
+        try {
+            endCommit(tree, swallowErrors)
+        } catch (error) {
+            recordCommitError(errors, error)
+        }
+    }
 }
 
 export const settleCommitForest: CommitForestSettleFn = (
@@ -1151,24 +1170,38 @@ export const settleCommitForest: CommitForestSettleFn = (
             ? createChangeSink(undefined, report)
             : undefined
     const effectiveReport = localSink ?? report
-    const commitRoots: StoreData[] = []
+    const commitTrees: StoreTreeRuntime[] = []
     if (commitEndRegistry.count !== 0) {
         for (const root of forest.roots)
-            commitRoots.push(beginCommit(root.data))
+            commitTrees.push(beginCommit(root.data))
     }
     const timestamp = performance.now()
-    for (const root of forest.roots) {
-        settleTreeStore(
-            root,
-            root.data,
-            undefined,
-            forest.peerAtoms,
-            globalSink,
-            notify,
-            effectiveReport,
-            errors,
-            timestamp,
-        )
+    // The settlement walk is the ONLY region here that can throw past the
+    // boundary close below: its collection phases run before any error
+    // accumulator exists, while every step after it carries its own try/catch.
+    // A boundary left open strands the tree's depth counter and silences
+    // onCommitEnd for that whole tree, permanently — so release in the catch
+    // and rethrow, which keeps the common (no-listener) path free of a
+    // try/finally wrapping the whole body.
+    try {
+        for (const root of forest.roots) {
+            settleTreeStore(
+                root,
+                root.data,
+                undefined,
+                forest.peerAtoms,
+                globalSink,
+                notify,
+                effectiveReport,
+                errors,
+                timestamp,
+            )
+        }
+    } catch (error) {
+        // The commit is already failing, so listener errors are swallowed —
+        // they must never mask this one.
+        closeCommitBoundaries(commitTrees, errors, true)
+        throw error
     }
     // Preserve the locked cross-store observer contract: changed peers precede
     // local/origin stores. Remaining inherited-only scope entries retain their
@@ -1216,13 +1249,7 @@ export const settleCommitForest: CommitForestSettleFn = (
             }
         }
     }
-    for (const root of commitRoots) {
-        try {
-            endCommit(root, errors.hasError)
-        } catch (error) {
-            recordCommitError(errors, error)
-        }
-    }
+    closeCommitBoundaries(commitTrees, errors, errors.hasError)
 }
 
 /** Per-store visit of the cross-scope settlement walk. Three phases:

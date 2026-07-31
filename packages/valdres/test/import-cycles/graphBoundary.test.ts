@@ -50,6 +50,9 @@ const GRAPH_LEAF_ALLOWLIST = new Set([
     "src/lib/stateRevisions.ts",
     "src/lib/getStoreRuntime.ts",
     "src/lib/storeRuntimeKey.ts",
+    // Symbol-only leaf, zero imports of its own — reached via storeLifecycle,
+    // exactly like storeRuntimeKey.
+    "src/lib/storeCancellableKey.ts",
     "src/utils/isSelector.ts",
     "src/utils/isAtom.ts",
     "src/utils/isAtomFamily.ts",

@@ -11,16 +11,16 @@ import { commitEndRegistry } from "./onCommitEnd"
 import { changeListenerRegistry } from "./notifyChangeListeners"
 import { unsubscribe } from "./unsubscribe"
 import {
+    cancelStoreCancellables,
     getStoreDisposedErrorToken,
     getTouchedGlobals,
     markStoreDisposed,
     releaseStoreResources,
     takeAbortControllers,
     takeStoreCleanups,
+    takeStoreCancellables,
     takeStoreMounts,
-    takeStoreTransactions,
 } from "./storeLifecycle"
-import { cancelTransaction } from "./transaction"
 
 type StoreGlobals = [StoreData, InternalGlobalAtom<any>[]]
 
@@ -95,21 +95,8 @@ export const disposeStoreData = (data: StoreData): void => {
         // and onCommitEnd own tracked cleanup entries below.
         dropQueuedOrphanWork(current)
 
-        const transactions = takeStoreTransactions(current)
-        if (transactions) {
-            const cancel = (
-                transaction: Parameters<typeof cancelTransaction>[0],
-            ) => {
-                try {
-                    cancelTransaction(transaction)
-                } catch (error) {
-                    recordError(error)
-                }
-            }
-            if (transactions instanceof Set) {
-                for (const transaction of transactions) cancel(transaction)
-            } else cancel(transactions)
-        }
+        const cancellables = takeStoreCancellables(current)
+        if (cancellables) cancelStoreCancellables(cancellables, recordError)
 
         const controllers = takeAbortControllers(current)
         if (controllers) {
@@ -187,12 +174,20 @@ export const disposeStoreData = (data: StoreData): void => {
             current.changeListeners.clear()
             current.changeListeners = undefined
         }
-        if (current.commitEndListeners?.size) {
-            commitEndRegistry.count -= current.commitEndListeners.size
-            current.commitEndListeners.clear()
-            current.commitEndListeners = undefined
-        }
         releaseStoreResources(current)
+    }
+    // Commit-end listeners belong to the TREE, so they are repaired once — and
+    // only when the store being disposed IS its tree's root. Detaching a scope
+    // must leave a live root's listeners intact. `commitDepth` is deliberately
+    // never touched here: a scope disposed from inside a commit would drive the
+    // live tree's counter negative and silence it permanently.
+    if (data.tree.root === data) {
+        const listeners = data.tree.commitEndListeners
+        if (listeners?.size) {
+            commitEndRegistry.count -= listeners.size
+            listeners.clear()
+            data.tree.commitEndListeners = undefined
+        }
     }
 
     if (hasError) throw firstError

@@ -1,5 +1,6 @@
 import type { StoreData } from "../types/StoreData"
 import { STORE_RUNTIME } from "./storeRuntimeKey"
+import { createStoreTreeRuntime } from "./storeTreeRuntime"
 
 let nextId = 0
 const generateId = () => "__valdres_store_" + nextId++
@@ -77,11 +78,9 @@ export function createStoreData(
     const enumerable = options?.enumerable ?? parent?.enumerable ?? false
     if (enumerable) data.enumerable = true
     data.values = enumerable ? new Map() : new WeakMap()
-    data.stateRevisionClock = parent?.stateRevisionClock ?? {
-        current: 0,
-        enabled: false,
-        tracked: undefined,
-    }
+    // Tree-wide state: a scope shares its root's object by reference, so no
+    // store-tree lookup ever walks `parent`.
+    data.tree = parent ? parent.tree : createStoreTreeRuntime(data)
     data.coldSelectorCachesEnabled = false
     data.nextDependencyOrder = 0
     data.dependencyGraphVersion = 0
@@ -97,6 +96,9 @@ export function createStoreData(
     // Reserve the private runtime slot eagerly to keep StoreData's hidden class
     // stable. storeFromStoreData fills it immediately after creation.
     data[STORE_RUNTIME] = undefined
+    // Same reason: a store that later acquires a cleanup, mount, or open
+    // transaction must not transition its shape to gain the slot.
+    data.resources = undefined
     // Liveness-pass scratch, initialized here (not added lazily during the first
     // pass) so the StoreData hidden class is fixed at construction. Otherwise the
     // first getDefault/propagation pass adds these fields at runtime, transitions

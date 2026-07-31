@@ -1,7 +1,7 @@
 {
     "note": "Import-cycle baseline for valdres core production modules. Regenerate with UPDATE_CYCLE_BASELINE=1 bun test test/import-cycles/importCycles.test.ts. The guard fails only when a change introduces a NEW cycle or GROWS an existing SCC — see importCycles.test.ts. Existing cycles are recorded, not required to be eliminated.",
-    "moduleCount": 162,
-    "edgeCount": 400,
+    "moduleCount": 166,
+    "edgeCount": 407,
     "sccs": [
         [
             "src/lib/coordinateAsyncWrite.ts",

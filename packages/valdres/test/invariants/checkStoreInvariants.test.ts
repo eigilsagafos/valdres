@@ -238,6 +238,50 @@ describe("checkStoreInvariants — corrupted fixtures", () => {
         expect(has(checkStoreInvariants(st), "disposed-terminal")).toBe(true)
     })
 
+    test("disposed-terminal: a retained cancellable and tree state are caught", () => {
+        const st = store()
+        st.dispose()
+        expect(checkStoreInvariants(st)).toEqual([])
+
+        const data = getStoreData(st)
+        // The resource ledger is drained AND released on disposal, so model the
+        // leak by putting a live ledger back with an un-cancelled entry.
+        data.resources = { disposed: true, cancellables: {} as any }
+        let violations = checkStoreInvariants(st)
+        expect(has(violations, "disposed-terminal")).toBe(true)
+        expect(
+            violations.some(v => v.includes("1 cancellables resource(s)")),
+        ).toBe(true)
+
+        // Tree-owned commit state is terminal too — but only for a root. Keep
+        // the store disposed (an empty, flagged ledger) so only the tree state
+        // is the corruption under test.
+        data.resources = { disposed: true }
+        data.tree.commitEndListeners = new Set()
+        data.tree.commitDepth = 1
+        violations = checkStoreInvariants(st)
+        expect(
+            violations.some(v => v.includes("retains commitEndListeners")),
+        ).toBe(true)
+        expect(violations.some(v => v.includes("retains commitDepth 1"))).toBe(
+            true,
+        )
+    })
+
+    test("disposed-terminal: a detached scope is not blamed for its live root's tree state", () => {
+        const root = store()
+        const scoped = root.scope("invariant-scope")
+        const scopedData = getStoreData(scoped)
+        const unsub = root.onCommitEnd(() => {})
+        scoped.detach()
+
+        // The scope shares the still-live root's tree object. Its commit-end
+        // listeners belong to the root, so the disposed scope must not report.
+        expect(scopedData.tree.commitEndListeners?.size).toBe(1)
+        expect(checkStoreInvariants(scoped)).toEqual([])
+        unsub()
+    })
+
     test("disposed-terminal: a WeakMap registration behind a cleared index is caught", () => {
         const a = atom(1, { name: n("a") })
         const s1 = selector(get => get(a), { name: n("s1") })

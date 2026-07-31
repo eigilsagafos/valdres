@@ -86,7 +86,7 @@ describe("subscribe", () => {
         expect(getStoreData(store1).stateDependents.get(child)).toContain(root)
         // A selector that is known-live before its first evaluation never needs
         // a forward-only revision snapshot or the associated write bookkeeping.
-        expect(getStoreData(store1).stateRevisionClock.enabled).toBe(false)
+        expect(getStoreData(store1).tree.revisionEnabled).toBe(false)
 
         unsubscribe()
     })
