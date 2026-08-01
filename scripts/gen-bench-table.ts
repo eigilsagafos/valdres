@@ -12,7 +12,12 @@
  */
 import { readFileSync, writeFileSync } from "fs"
 import { join } from "path"
-import { TESTBEDS, latestLatencies, pairByOp } from "./lib/bencher"
+import {
+    TESTBEDS,
+    latestLatencies,
+    pairByOp,
+    requirePairedOps,
+} from "./lib/bencher"
 
 const TABLE_TESTBEDS = [TESTBEDS.jsc, TESTBEDS.v8]
 const README = join(import.meta.dir, "..", "README.md")
@@ -46,7 +51,7 @@ async function renderTestbed(tb: {
             `| \`${op}\` | ${fmtNs(valdres)} | ${fmtNs(jotai)} | ${speedup(valdres, jotai)} |`,
         )
     }
-    if (rows.length === 0) return `#### ${tb.label}\n\n_No data yet._`
+    requirePairedOps(rows.length, `README table (${tb.slug})`)
     return [
         `#### ${tb.label}`,
         "",
