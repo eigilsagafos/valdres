@@ -39,6 +39,8 @@ jobs:
               run: bun --filter 'valdres' typecheck:types
             - name: Deterministic architecture gates
               run: bun --filter 'valdres' test:architecture
+            - name: Deterministic package-size gates
+              run: bun run check-size
             - name: Retained-memory gates (Bun)
               run: bun --filter 'valdres' test:memory:bun
             - name: Retained-memory gates (Node)
