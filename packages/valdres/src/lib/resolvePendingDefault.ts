@@ -30,6 +30,35 @@ import type { StoreData } from "../types/StoreData"
  *  only schedules the placeholder's `.then` microtasks — it runs no subscriber
  *  code synchronously — so calling it during a transaction's write phase
  *  cannot expose a half-applied commit. */
+/** The suspense placeholder still outstanding for `atom`, if any, found by the
+ *  SAME scope-chain walk `resolvePendingDefault` uses to resolve it.
+ *
+ *  Re-initialization must hand back this promise rather than minting a fresh
+ *  one: `pendingDefaults` is a WeakMap keyed by the atom, so a second
+ *  placeholder REPLACES the first, and the reader already suspended on it could
+ *  never be resolved by any later write. That is reachable whenever a store's
+ *  own value is removed while a placeholder is live — `unset`, or `reset` on an
+ *  atom with no default — after which the next read re-inits.
+ *
+ *  Keeping the two walks identical is the invariant: whichever entry this
+ *  returns is exactly the entry a later `resolvePendingDefault` will settle.
+ *  Today's re-init paths land in the same store that holds the entry, so the
+ *  local hit is the one that fires; the walk is there so a re-init from a
+ *  descendant (a scoped read of a deleted family member, say) can't mint a
+ *  competing entry that the resolver would then settle in its place. */
+export const pendingDefaultPromise = (
+    atom: Atom<any>,
+    data: StoreData,
+): Promise<any> | undefined => {
+    let cur: StoreData | undefined = data
+    while (cur) {
+        const entry = cur.pendingDefaults.get(atom)
+        if (entry) return entry.promise
+        cur = "parent" in cur ? cur.parent : undefined
+    }
+    return undefined
+}
+
 export const resolvePendingDefault = <Value>(
     atom: Atom<Value>,
     data: StoreData,

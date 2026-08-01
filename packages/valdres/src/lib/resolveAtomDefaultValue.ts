@@ -2,6 +2,7 @@ import type { Atom } from "../types/Atom"
 import type { StoreData } from "../types/StoreData"
 import { isSelector } from "../utils/isSelector"
 import { getState } from "./getState"
+import { pendingDefaultPromise } from "./resolvePendingDefault"
 
 // Resolve an atom's default for a deleted-member read, mirroring
 // getAtomInitValue's resolution order: no-default → suspense placeholder,
@@ -21,6 +22,10 @@ export const resolveAtomDefaultValue = <V = any>(
     initializedAtomsSet: Set<Atom>,
 ) => {
     if (atom.defaultValue === undefined) {
+        // Reuse a live placeholder (see pendingDefaultPromise) rather than
+        // replacing it and orphaning an already-suspended reader.
+        const outstanding = pendingDefaultPromise(atom, data)
+        if (outstanding) return outstanding
         let resolve!: (value: any) => void
         const promise = new Promise(r => {
             resolve = r
