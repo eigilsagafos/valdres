@@ -7,6 +7,8 @@ import type { Store } from "../types/Store"
 import type { StoreData } from "../types/StoreData"
 import {
     createArchitectureInstrumentation,
+    recordSelectorSettlement,
+    recordStoreSettlement,
     type ArchitectureCounters,
 } from "./architectureInstrumentation"
 import { cacheController } from "./cacheController"
@@ -378,6 +380,13 @@ describe("deterministic architecture performance gates", () => {
         expect(cleanup.commitPlanRuns).toBe(1)
     })
 
+    // T4: this scenario's duplicates are INCIDENTAL — they exist only because
+    // `settleTransactionCommit` runs the update pass and the delete pass
+    // separately over the same store. Mixed-settlement union is expected to
+    // drive both duplicate counts to 0 and `storeSettlementPasses` to 1 here.
+    // The direct control below keeps proving the detectors work when it does,
+    // and `test/oracle/mixedSingleStoreSettlement.trace.test.ts` pins the
+    // observable trace this duplication currently produces.
     test("a deliberately duplicated single-store settlement is detected", () => {
         const target = store()
         const family = atomFamily<string>(undefined)
@@ -404,6 +413,108 @@ describe("deterministic architecture performance gates", () => {
         expect(counts.storeSettlementPasses).toBe(2)
         expect(counts.duplicateStoreSettlements).toBe(1)
         cleanup()
+    })
+
+    test("duplicate settlement counters are proven by a direct control", () => {
+        // A POSITIVE CONTROL for the duplicate detectors themselves, decoupled
+        // from any engine sequencing. Every other duplicate assertion in this
+        // file is incidental to how a commit currently sequences its passes and
+        // may legitimately go to 0; this one may not. Without it, a future
+        // `duplicateStoreSettlements === 0` everywhere would be ambiguous
+        // between "the union landed" and "the counter silently stopped
+        // counting".
+        //
+        // Deliberately NOT a nested subscriber write: that is two legitimate
+        // commits, so duplicates there would indicate a leaky measurement
+        // window rather than a duplicated settlement of one commit.
+        const target = store()
+        const value = atom(0)
+        const derived = selector(get => get(value) + 1)
+        const cleanup = target.sub(derived, noop)
+        const data = getStoreData(target)
+
+        const counts = measureArchitecture(target, () => {
+            // One measured window standing in for one logical commit: report
+            // the same store settled twice...
+            recordStoreSettlement(data)
+            recordStoreSettlement(data)
+            // ...and the same (store, selector) pair settled twice.
+            recordSelectorSettlement(derived, data)
+            recordSelectorSettlement(derived, data)
+        })
+
+        // The second report of each is recognized as a repeat, not a new unit.
+        expect(counts.storeSettlementPasses).toBe(2)
+        expect(counts.affectedStoresSettled).toBe(1)
+        expect(counts.selectorSettlements).toBe(2)
+        expect(counts.duplicateStoreSettlements).toBeGreaterThan(0)
+        expect(counts.duplicateSelectorSettlements).toBeGreaterThan(0)
+        cleanup()
+    })
+
+    test("T4: a scoped unset that materializes its parent settles the child twice — but only when observed", () => {
+        // `effectiveValueAfterUnset` reads through to a de-materialized parent
+        // to fill the unset report's value. That read-through re-runs the
+        // parent's lazy default and settles the parent init-only, and the
+        // parent settlement cascades into the child — so the child's dependent
+        // selector is evaluated once by the cascade and AGAIN by the child's
+        // own unset pass, inside a single CommitPlan.
+        //
+        // The read-through only happens when a change sink exists, so an
+        // `onChange` listener is what makes the commit do the extra work.
+        // Both arms are measured to keep that dependency explicit.
+        const build = (scopeId: string) => {
+            const root = store()
+            const child = root.scope(scopeId)
+            let inits = 0
+            const lazy = atom(() => 100 + ++inits)
+            root.set(lazy, 7)
+            child.set(lazy, 99)
+            // No live root consumer, so dropping the root's own value leaves
+            // the atom de-materialized and a later child unset must
+            // re-initialize it to report the value it reverted to.
+            root.unset(lazy)
+            const derived = selector(get => get(lazy) * 2)
+            const cleanup = child.sub(derived, noop)
+            expect(child.get(derived)).toBe(198)
+            return { root, child, lazy, cleanup }
+        }
+
+        const unobserved = build("unset-materializes-parent-quiet")
+        const quiet = measureArchitecture(unobserved.root, () =>
+            unobserved.child.unset(unobserved.lazy),
+        )
+        reportCounts("Scoped unset materializing parent (unobserved)", quiet)
+        expect(unobserved.child.get(unobserved.lazy)).toBe(102)
+        expect(quiet.commitPlanRuns).toBe(1)
+        expect(quiet.selectorEvaluations).toBe(1)
+        expect(quiet.storeSettlementPasses).toBe(1)
+        expect(quiet.duplicateSelectorSettlements).toBe(0)
+        expect(quiet.duplicateStoreSettlements).toBe(0)
+        unobserved.cleanup()
+        unobserved.root.dispose()
+
+        const observed = build("unset-materializes-parent-observed")
+        const unsubChange = observed.child.onChange(noop)
+        const counts = measureArchitecture(observed.root, () =>
+            observed.child.unset(observed.lazy),
+        )
+        reportCounts("Scoped unset materializing parent (observed)", counts)
+
+        expect(observed.child.get(observed.lazy)).toBe(102)
+        expect(counts.commitPlanRuns).toBe(1)
+        // T4: one logical commit, two settlement passes over the same child.
+        expect(counts.selectorEvaluations).toBe(2)
+        expect(counts.duplicateSelectorSettlements).toBe(1)
+        expect(counts.storeSettlementPasses).toBe(2)
+        expect(counts.duplicateStoreSettlements).toBe(1)
+        // The parent's init-only settlement has no dirty selectors of its own,
+        // so it never reaches the store-settlement counter: only the child is
+        // ever counted as an affected store.
+        expect(counts.affectedStoresSettled).toBe(1)
+        unsubChange()
+        observed.cleanup()
+        observed.root.dispose()
     })
 
     test("deep cross-scope transactions settle each affected store once", () => {
