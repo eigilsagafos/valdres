@@ -16,8 +16,8 @@ const RESULTS_PATH = join(__dir, RESULTS_FILE)
 // 3× per side in the relative-CB gate. Operations slower than mitata's 65µs
 // batch threshold get 20 warm-up calls so Node reaches a stable JIT tier before
 // sampling; fast operations enter batched measurement after the first warm-up
-// regardless of this ceiling. The paired median then rejects one remaining
-// GC/scheduler or anomalous JIT sample.
+// regardless of this ceiling. The smallest paired ratio across the repeats
+// then discards remaining GC/scheduler or anomalous JIT contamination.
 //
 // NOTE: every result is appended to one shared NDJSON file, so the suite MUST
 // run serially — bun via `--concurrency 1`, vitest via pool=forks + singleFork.
@@ -29,7 +29,8 @@ const MEASURE_ONE_OPTS = {
 
 // Record one absolute latency (ns) for a benchmark. mitata's measure() already
 // returns a robust, tail-trimmed p50. CI repeats the suite; the base lane takes
-// the cross-run median, while the PR lane takes the median paired ratio.
+// the cross-run median, while the PR lane gates on the smallest paired ratio
+// (see toPairedBmf in scripts/bench-to-bmf.ts).
 export async function measureOne(
     name: string,
     fn: () => void | Promise<void>,

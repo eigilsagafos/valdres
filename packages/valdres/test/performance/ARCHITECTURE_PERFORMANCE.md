@@ -200,8 +200,10 @@ samples.
 
 Selector scheduling targets improve on both engines; atom-only remains flat and
 all three teardown medians remain within the 5% non-regression limit. CI's
-existing Bencher workflow remains authoritative: it runs base and head on the
-same runner three times and compares the cross-run median.
+existing Bencher workflow remains authoritative: it runs base and head
+interleaved on the same runner three times and gates on the smallest of the
+three paired head/base ratios per benchmark (the least runner-contaminated
+estimate — see `scripts/bench-to-bmf.ts`).
 
 ## Limitations
 

@@ -22,10 +22,13 @@ jobs:
                   fetch-depth: ${{ github.event_name == 'pull_request' && '0' || '1' }}
             - uses: oven-sh/setup-bun@v2
               with:
-                  bun-version: 1.3.13
+                  # Pinned to the Bencher benchmark runners (bencher-{base,pr}.yml)
+                  # so the architecture/memory gates measure the same engines the
+                  # perf lanes and their committed baselines are calibrated on.
+                  bun-version: 1.3.14
             - uses: actions/setup-node@v6
               with:
-                  node-version: "22.17"
+                  node-version: "24.16"
             - name: Install
               run: bun install
             - name: Require changeset
@@ -53,6 +56,11 @@ jobs:
               run: bun --filter 'valdres-svelte' lint:publish
             - name: Verify publish (dry-run)
               run: DRY_RUN=1 bash scripts/ci-publish.sh
+            - name: Benchmark tooling tests
+              # scripts/ is intentionally not a workspace, so the root
+              # `bun --filter '*' test` sweep never reaches these; run the
+              # benchmark converter + Bencher fetch tests explicitly.
+              run: bun test scripts/
             - name: Test
               id: test
               run: bun run test:ci

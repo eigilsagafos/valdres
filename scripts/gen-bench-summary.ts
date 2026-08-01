@@ -16,7 +16,12 @@
  */
 import { existsSync, readFileSync, writeFileSync } from "fs"
 import { dirname, join } from "path"
-import { TESTBEDS, latestLatencies, pairByOp } from "./lib/bencher"
+import {
+    TESTBEDS,
+    latestLatencies,
+    pairByOp,
+    requirePairedOps,
+} from "./lib/bencher"
 
 const ROOT = join(import.meta.dir, "..")
 const OUT = join(ROOT, "docs/content/bench-summary.json")
@@ -109,9 +114,25 @@ const categories = order
     .filter(c => byCategory.has(c))
     .map(name => ({ name, benchmarks: byCategory.get(name)! }))
 
+// Refuse to publish an undersized or averageless summary — the docs landing
+// page renders these numbers, so a partial upload must fail here, not ship.
+requirePairedOps(opNames.size, "bench-summary.json")
+requirePairedOps(jscSpeedups.length, "bench-summary.json (JSC speedups)")
+requirePairedOps(v8Speedups.length, "bench-summary.json (V8 speedups)")
+
+const jscAverage = geometricMean(jscSpeedups)
+const v8Average = geometricMean(v8Speedups)
+// Belt and braces: a non-finite average would JSON-serialize to null, and the
+// docs landing page must never render a null headline number again.
+if (!Number.isFinite(jscAverage) || !Number.isFinite(v8Average)) {
+    throw new Error(
+        `bench-summary.json: non-finite averages (JSC ${jscAverage}, V8 ${v8Average})`,
+    )
+}
+
 const summary = {
-    jscAverage: jscSpeedups.length ? geometricMean(jscSpeedups) : null,
-    v8Average: v8Speedups.length ? geometricMean(v8Speedups) : null,
+    jscAverage,
+    v8Average,
     jotaiVersion: jotaiVersion(),
     date: new Date().toISOString().split("T")[0],
     categories,
