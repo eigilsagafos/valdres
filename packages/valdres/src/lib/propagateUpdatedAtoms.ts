@@ -69,7 +69,6 @@ import {
 import { IS_PROD } from "./IS_PROD"
 import type { SettleFlags } from "../types/SettleFlags"
 import type { SelectorSettleFn } from "../types/SelectorSettleFn"
-import { SETTLE_DEFAULT, SETTLE_UNSET } from "./commitIntents"
 
 export type { AtomFamilyIndex } from "./atomFamilyIndex"
 export {
@@ -940,103 +939,20 @@ export const settleCommit = (
 }
 
 /**
- * Typed commit-engine entry (phases 4–7) for a single-store transaction commit
- * that includes cleanup mutations. One deferred-notification unit: propagate
- * the updated atoms, then the deleted family members, then the unset atoms
- * (reporting each unset's distinct removal record first), fire every collected
- * subscriber once, and re-establish parent delegates for the unset atoms LAST
- * so a firing scope-local callback's idempotent delegate drop cannot undo the
- * fresh delegate. Each pass records its own error and lets the later passes
- * run — one pass failing must not starve delivery of already-applied writes.
+ * Settlement (phases 4–7) of any commit with cleanup mutations, global peers,
+ * or nested scopes: ONE root-first walk over the affected store tree. Each
+ * store is visited exactly once and settled against the union of its own
+ * updated/deleted/unset writes and every inherited change that reaches it, so a
+ * selector evaluates at most once per (store, commit) — the proven-safe
+ * replacement for the historical one-propagation-pass-per-store model (see the
+ * NotifyTarget warning above: this is a visit-once restructure behind the
+ * write-all-then-settle guarantee, not a skip guard; nothing is deduplicated
+ * away, work is simply not repeated).
  *
- * The unset report loop is deliberately unwrapped: a throw there (reachable
- * when a scope's parent read-through evaluates a throwing function default)
- * skips the remaining passes exactly as the historical inline sequencing did.
- * Under the engine that error is recorded into the plan's `CommitErrors`
- * rather than escaping raw, so the FIRST captured commit error (e.g. an
- * earlier onSet hook error) is the one that surfaces — a deliberate
- * consistency fix over the historical masking behavior.
- */
-export const settleTransactionCommit = (
-    updatedAtoms: Atom<any>[],
-    deletedAtoms: AtomFamilyAtom<any, any>[] | undefined,
-    unsetAtoms: Atom<any>[] | undefined,
-    data: StoreData,
-    report: ChangeReport | undefined,
-    errors: CommitErrors,
-) => {
-    const notify: NotifyTarget = new Map()
-    if (updatedAtoms.length > 0) {
-        try {
-            settleCommit(updatedAtoms, data, notify, report, SETTLE_DEFAULT)
-        } catch (error) {
-            recordCommitError(errors, error)
-        }
-    }
-    if (deletedAtoms) {
-        try {
-            settleDeletedAtoms(
-                deletedAtoms,
-                data,
-                undefined,
-                undefined,
-                undefined,
-                notify,
-                report,
-            )
-        } catch (error) {
-            recordCommitError(errors, error)
-        }
-    }
-    if (unsetAtoms) {
-        // Atoms first (emitted as "unset" via reportUnsetAtom), then propagate
-        // with reportAtoms=false so dependent-selector recomputes are reported
-        // too — without re-surfacing the atom (its value is gone from
-        // data.values) as a "set".
-        if (report) {
-            for (const atom of unsetAtoms) {
-                reportUnsetAtom(
-                    atom,
-                    data,
-                    effectiveValueAfterUnset(atom, data),
-                    report,
-                )
-            }
-        }
-        try {
-            settleCommit(unsetAtoms, data, notify, report, SETTLE_UNSET)
-        } catch (error) {
-            recordCommitError(errors, error)
-        }
-    }
-    try {
-        notifyDeferred(notify)
-    } catch (error) {
-        recordCommitError(errors, error)
-    }
-    if (unsetAtoms) {
-        // Re-delegate AFTER firing: the deferred scope-local callback
-        // idempotently drops its delegate, so the fresh parent delegate is
-        // established last even when a callback threw.
-        for (const atom of unsetAtoms) {
-            try {
-                reDelegateScopeSubscriptions(atom, data)
-            } catch (error) {
-                recordCommitError(errors, error)
-            }
-        }
-    }
-}
-
-/**
- * Settlement (phases 4–7) of a cross-scope transaction commit: ONE root-first
- * walk over the affected store tree. Each store is visited exactly once and
- * settled against the union of its own updated/deleted/unset writes and every
- * inherited change that reaches it, so a selector evaluates at most once per
- * (store, commit) — the proven-safe replacement for the historical
- * one-propagation-pass-per-store model (see the NotifyTarget warning above:
- * this is a visit-once restructure behind the write-all-then-settle guarantee,
- * not a skip guard; nothing is deduplicated away, work is simply not repeated).
+ * A non-global single-store transaction is simply the degenerate forest: one
+ * entry, one root, no descent. Its update/delete/unset triggers are three
+ * groups on the SAME node rather than three sequential passes over it, so the
+ * mutation KIND no longer decides how many times a store settles.
  *
  * Global peers (already written in the write phase) bracket the walk with the
  * exact sequencing the transaction commit previously hand-rolled inline: peer

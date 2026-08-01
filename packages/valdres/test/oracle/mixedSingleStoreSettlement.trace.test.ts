@@ -1,30 +1,39 @@
-/** Trace oracle · mixed single-store settlement (pre-union baseline).
+/** Trace oracle · mixed single-store settlement (canonical forest semantics).
  *
  *  A single-store `txn` that mixes ordinary writes with CLEANUP mutations
- *  (`del` / `unset`) does not settle once. `settleTransactionCommit` runs up to
- *  three sequential passes over the SAME store — update, then delete, then
- *  unset — sharing only one `NotifyTarget` and one `ChangeReport` sink. The
- *  cross-scope commit forest already visits each store once against the union
- *  of its writes; the single-store path does not.
+ *  (`del` / `unset`) settles through the SAME commit forest as the cross-scope
+ *  and global-peer shapes. Its update, delete, and unset writes are three
+ *  trigger GROUPS on one forest node, not three sequential passes over the same
+ *  store, so the store is visited once and a selector spanning several groups
+ *  evaluates once, on final values.
  *
- *  This file is the exact behavioral baseline taken BEFORE that union lands.
- *  Every case here passes against unchanged `main`.
+ *  This file was written as the pre-union baseline and then re-derived against
+ *  the union. Three behaviors moved, all of them consequences of the walk's
+ *  Phase-A collect → Phase-B settle → Phase-C report shape:
  *
- *  ## Reading the `T4:` markers
+ *    1. A throwing unset report (the parent read-through that materializes the
+ *       value an unset reverted to) is Phase C, and Phase C records into the
+ *       commit's `CommitErrors` rather than escaping. Settlement, subscriber
+ *       delivery, and unset re-delegation all still happen; the report's error
+ *       still surfaces unless an earlier phase already recorded one.
+ *    2. A mixed update + family delete evaluates its spanning selector once and
+ *       reports the commit's FINAL value, from the group that first reached it —
+ *       there is no longer an intermediate pass to report from.
+ *    3. A scope's own txn unset materializes the parent from INSIDE the Phase-B
+ *       settlement (the selector's own read-through) rather than from a
+ *       pre-settlement report, so the recomputed selector is reported as a
+ *       change of this commit instead of being consumed by a silent cascade.
  *
- *  A case whose NAME starts with `T4:` contains at least one expectation the
- *  mixed-settlement union is expected to CHANGE, so it will fail on the T4 diff
- *  by design — that failure is a decision to make, not a regression. Inside such
- *  a case the individual assertions are marked too: `T4:` for the ones expected
- *  to move, `Invariant:` for the ones that must survive regardless. A case with
- *  no `T4:` in its name should keep passing untouched.
+ *  `store.unset` is deliberately NOT a transaction and keeps its own
+ *  report-before-settle plan; the direct/txn pairs below are what make that
+ *  boundary visible.
  *
  *  ## Order convention (inherited from `traceRecorder`)
  *
  *  Exact tags lock a position; nested arrays are order-free bags. This file
  *  locks two parent/child orderings EXACTLY, for opposite reasons, and the two
- *  scoped-unset cases differ only in listener registration order to establish
- *  which is which:
+ *  DIRECT scoped-unset cases differ only in listener registration order to
+ *  establish which is which:
  *
  *    - `onChange` — origin store before its ancestors in BOTH cases, so the
  *      order is a real contract.
@@ -123,7 +132,7 @@ type MixedCtx = {
 
 const mixedCases: TraceCase<MixedCtx>[] = [
     {
-        name: "T4: update + family delete — spanning selector evaluates TWICE, reports once",
+        name: "update + family delete — spanning selector evaluates ONCE, reports once",
         build: rec => {
             const s = store()
             const fam = atomFamily<string, [string]>(undefined)
@@ -160,30 +169,27 @@ const mixedCases: TraceCase<MixedCtx>[] = [
             }
         },
         act: ctx => ctx.act(),
-        // T4: the two `eval:view` tags are the update pass and the delete pass
-        // settling the SAME store; a union settlement collapses them into one.
-        // The single deferred notify (one bag) and the single onChange are
-        // already union-shaped and must NOT change.
+        // ONE `eval:view`: the update group and the delete group both reach the
+        // selector, but they are groups of a single forest node, so it settles
+        // once. The single deferred notify (one bag) and the single onChange
+        // were already union-shaped and are unchanged.
         trace: [
-            "eval:view",
             "eval:view",
             ["sub:view", "sub:value", "sub:second"],
             "onChange",
             "commitEnd",
         ],
         assert: ({ changes, evals, read }) => {
-            // Every staged write is applied BEFORE any pass settles, so the
-            // "intermediate" value the update pass observed already reflects
-            // the delete. The second evaluation is pure waste: same inputs,
-            // same output, no extra record. That equality is exactly what makes
-            // the T4 union safe — no observer can currently see a half-applied
-            // value, so collapsing the passes removes work, not information.
-            expect(evals).toEqual(["1:1", "1:1"])
+            // Every staged write is applied before the store settles, so the
+            // one evaluation already reflects BOTH the delete and the update.
+            // The pre-union second evaluation produced the identical value —
+            // it was waste, not information, which is what made the union safe.
+            expect(evals).toEqual(["1:1"])
             expect(read()).toBe("1:1")
 
-            // Invariant — cardinality and provenance. ONE onChange for the whole
-            // transaction, carrying the update pass's records (the atom, then
-            // its recomputed selector) followed by the delete pass's record.
+            // Cardinality and provenance. ONE onChange for the whole
+            // transaction, carrying the update group's records (the atom, then
+            // its recomputed selector) followed by the delete group's record.
             expect(changes).toHaveLength(1)
             expect(changes[0]!.meta.source).toBe("transaction")
             expect(records(changes)).toEqual([
@@ -204,7 +210,7 @@ const mixedCases: TraceCase<MixedCtx>[] = [
         },
     },
     {
-        name: "T4: update + family delete — record order follows PASS order, not statement order",
+        name: "update + family delete — record order follows GROUP order, not statement order",
         build: rec => {
             const s = store()
             const fam = atomFamily<string, [string]>(undefined)
@@ -241,24 +247,21 @@ const mixedCases: TraceCase<MixedCtx>[] = [
         },
         act: ctx => ctx.act(),
         assert: ({ changes, evals, read }) => {
-            // Invariant: whatever the union does to sequencing, a mixed txn is
-            // still ONE onChange and the final value is still fully applied.
+            // A mixed txn is still ONE onChange and the final value is still
+            // fully applied.
             expect(read()).toBe("1:1")
             expect(changes).toHaveLength(1)
 
-            // T4: the double evaluation is present here too — reversing the
-            // statement order does not avoid it, because the passes are keyed
-            // by mutation KIND, not by the order the body staged them. The
-            // union collapses this to a single "1:1".
-            expect(evals).toEqual(["1:1", "1:1"])
+            // Reversing the statement order changes nothing: the groups are
+            // keyed by mutation KIND, not by the order the body staged them.
+            expect(evals).toEqual(["1:1"])
 
-            // T4: the surviving claim is the NEGATIVE one — statement order
-            // does not decide record order (this case emits the same sequence
-            // as the delete-first case above). The specific sequence, however,
-            // is a consequence of update-pass-then-delete-pass: `buildChangeGroup`
-            // appends selectors after atoms WITHIN a group, so one unioned pass
-            // may well emit "atom:set, atom:delete, selector" instead. Re-derive
-            // this expectation from the union's grouping rather than porting it.
+            // The negative claim survives — statement order does not decide
+            // record order (this case emits the same sequence as the
+            // delete-first case above). The sequence itself is the group order
+            // (updated, then deleted) with each group reporting its atoms
+            // followed by the selectors it FIRST reached; `view` is first
+            // reached by the update group, so it lands there.
             expect(records(changes).map(r => `${r.type}:${r.kind}`)).toEqual([
                 "atom:set",
                 "selector:undefined",
@@ -279,7 +282,7 @@ type ScopeCtx = {
 
 const scopedUnsetCases: TraceCase<ScopeCtx>[] = [
     {
-        name: "T4: scoped unset materializing the parent — the parent cascade settles the child BEFORE the child's own pass",
+        name: "direct scoped unset materializing the parent — the parent cascade settles the child BEFORE the child's own pass",
         build: rec => {
             const { a, root, child } = scopeOverDematerializedParent(rec, "mat")
             const view = selector(get => {
@@ -309,14 +312,21 @@ const scopedUnsetCases: TraceCase<ScopeCtx>[] = [
             }
         },
         act: ctx => ctx.act(),
-        // The exact parent-versus-child order. `effectiveValueAfterUnset` runs
-        // BEFORE the child settles: it re-runs the parent's lazy default
-        // (`init:a`) and settles the parent init-only — and that parent
-        // settlement CASCADES into the child, evaluating `view` and delivering
-        // `sub:child:view` immediately, outside the child's own deferred notify.
-        // Only then does the child's unset pass run, re-evaluating `view`
-        // (T4: the redundant second evaluation, whose value is unchanged so it
-        // delivers nothing) and flushing its own deferred subscribers.
+        // The exact parent-versus-child order. This is `store.unset`, NOT a
+        // transaction: `unsetValue` builds a `kind: "update"` plan whose
+        // `beforeSettle` runs `effectiveValueAfterUnset` BEFORE the child
+        // settles. That re-runs the parent's lazy default (`init:a`) and
+        // settles the parent init-only — and the parent settlement CASCADES
+        // into the child, evaluating `view` and delivering `sub:child:view`
+        // immediately, outside the child's own deferred notify. Only then does
+        // the child's own settlement run, re-evaluating `view` (whose value is
+        // unchanged, so it delivers nothing) and flushing its subscribers.
+        //
+        // The forest union does not reach here — the duplicate evaluation is a
+        // property of report-before-settle in the direct-unset plan, not of the
+        // mixed-settlement composer. The txn counterpart below shows the
+        // contrast: under the forest walk the report is Phase C, after
+        // settlement.
         trace: [
             "init:a",
             "eval:view",
@@ -343,14 +353,14 @@ const scopedUnsetCases: TraceCase<ScopeCtx>[] = [
             // A SCOPE unset carries the inherited value it reverted to — the
             // value `effectiveValueAfterUnset` had to materialize to report.
             //
-            // T4: `view` DID change (view:99 → view:102) and DID recompute, yet
-            // no selector record is reported. The recompute was performed by the
+            // `view` DID change (view:99 → view:102) and DID recompute, yet no
+            // selector record is reported. The recompute was performed by the
             // parent's init-only cascade, which settles with `report: undefined`
-            // and so reports nothing; by the time the child's own unset pass
+            // and so reports nothing; by the time the child's own settlement
             // re-evaluated, the value already matched and was not "changed".
             // The observable effect is a selector subscriber that fired without
-            // a corresponding onChange entry. Unioning the passes must state
-            // explicitly whether this record starts being emitted.
+            // a corresponding onChange entry — an artifact of the direct-unset
+            // plan, unchanged by the mixed-settlement union.
             expect(records(childChanges)).toEqual([
                 { type: "atom", kind: "unset", hasValue: true, value: 102 },
             ])
@@ -358,7 +368,7 @@ const scopedUnsetCases: TraceCase<ScopeCtx>[] = [
         },
     },
     {
-        name: "T4: scoped unset materializing the parent — commitEnd order follows listener registration; onChange order does not",
+        name: "direct scoped unset materializing the parent — commitEnd order follows listener registration; onChange order does not",
         build: rec => {
             const { a, root, child } = scopeOverDematerializedParent(
                 rec,
@@ -390,8 +400,8 @@ const scopedUnsetCases: TraceCase<ScopeCtx>[] = [
         act: ctx => ctx.act(),
         trace: [
             "init:a",
-            // T4: the second `eval:view` is the same redundant re-evaluation
-            // the case above pins; it is expected to disappear here too.
+            // The second `eval:view` is the same report-before-settle
+            // re-evaluation the case above pins.
             "eval:view",
             "sub:child:view",
             "eval:view",
@@ -407,6 +417,71 @@ const scopedUnsetCases: TraceCase<ScopeCtx>[] = [
             "commitEnd:root",
         ],
         assert: ({ read }) => expect(read()).toBe(102),
+    },
+    {
+        name: "txn scoped unset materializing the parent — forest Phase B settles, Phase C reports, and the selector record IS emitted",
+        build: rec => {
+            const { a, root, child } = scopeOverDematerializedParent(rec, "txn")
+            const view = selector(get => {
+                rec.push("eval:view")
+                return `view:${get(a)}`
+            })
+            traceSub(rec, child, view, "child:view")
+            traceSub(rec, child, a, "child:a")
+            expect(child.get(view)).toBe("view:99")
+            const rootChange = traceChange(rec, root, "root", {
+                selectors: true,
+            })
+            const childChange = traceChange(rec, child, "child", {
+                selectors: true,
+            })
+            traceCommitEnd(rec, root, "root")
+            traceCommitEnd(rec, child, "child")
+            return {
+                rootChanges: rootChange.calls,
+                childChanges: childChange.calls,
+                // Identical mutation to the two cases above, staged as a
+                // TRANSACTION so it settles through the commit forest.
+                act: () => child.txn(txn => txn.unset(a)),
+                read: () => child.get(a),
+            }
+        },
+        act: ctx => ctx.act(),
+        // The whole point of the phase split. Phase B settles the unset group
+        // first, so `view` evaluates ONCE — and its own `get(a)` is what reads
+        // through and materializes the parent (`init:a` nested inside the
+        // evaluation), rather than a separate pre-settlement read-through.
+        // Phase C then reports against already-final state, Phase D-equivalent
+        // notification fires the subscribers, and the sink flushes last.
+        trace: [
+            "eval:view",
+            "init:a",
+            ["sub:child:a", "sub:child:view"],
+            "onChange:child",
+            "onChange:root",
+            "commitEnd:root",
+            "commitEnd:child",
+        ],
+        assert: ({ childChanges, rootChanges, read }) => {
+            expect(read()).toBe(102)
+            expect(childChanges).toHaveLength(1)
+            expect(rootChanges).toHaveLength(1)
+            expect(childChanges[0]!.meta.source).toBe("transaction")
+            // Reporting after settlement is what closes the direct path's gap:
+            // the recomputed selector IS a change of this commit, so it is
+            // reported alongside the unset record instead of being silently
+            // consumed by a pre-settlement parent cascade.
+            expect(records(childChanges)).toEqual([
+                { type: "atom", kind: "unset", hasValue: true, value: 102 },
+                {
+                    type: "selector",
+                    kind: undefined,
+                    hasValue: true,
+                    value: "view:102",
+                },
+            ])
+            expect(records(rootChanges)).toEqual(records(childChanges))
+        },
     },
 ]
 
@@ -445,7 +520,7 @@ const throwProbe = (rec: Recorder, a: Atom<number>, root: Store) => {
 
 const throwingReportCases: TraceCase<ThrowCtx>[] = [
     {
-        name: "T4: direct scoped unset whose effective-value report throws — settlement, delivery AND re-delegation are all skipped",
+        name: "direct scoped unset whose effective-value report throws — settlement, delivery AND re-delegation are all skipped",
         build: rec => {
             const { a, root, child } = scopeOverDematerializedParent(
                 rec,
@@ -478,15 +553,17 @@ const throwingReportCases: TraceCase<ThrowCtx>[] = [
             // Settlement did not continue and no subscriber fired (the empty
             // spine above); no onChange was flushed either.
             expect(ctx.changes).toHaveLength(0)
-            // T4: re-delegation is the plan's `afterSettle`, so it is skipped
-            // too — while `detachOwnValue` already ran BEFORE the plan. The
-            // scope is left with no own value and a subscription still re-rooted
-            // to it, so subsequent PARENT writes go unobserved.
+            // Re-delegation is the plan's `afterSettle`, so it is skipped too —
+            // while `detachOwnValue` already ran BEFORE the plan. The scope is
+            // left with no own value and a subscription still re-rooted to it,
+            // so subsequent PARENT writes go unobserved. The txn counterpart
+            // below no longer behaves this way: under the forest walk the
+            // report is Phase C and cannot starve re-delegation.
             expect(ctx.parentWriteIsObserved()).toBe(false)
         },
     },
     {
-        name: "T4: txn unset whose report throws — onChange still reports the update pass, but its subscribers NEVER fire",
+        name: "txn unset whose report throws — settlement, delivery and re-delegation all continue; the error joins commit arbitration",
         build: rec => {
             const { a, root, child } = scopeOverDematerializedParent(
                 rec,
@@ -515,29 +592,40 @@ const throwingReportCases: TraceCase<ThrowCtx>[] = [
             }
         },
         act: ctx => ctx.act(),
-        // The unset report loop inside `settleTransactionCommit` is deliberately
-        // NOT wrapped in try/catch, so its throw escapes the whole settlement —
-        // skipping the unset pass AND the shared `notifyDeferred`, which is what
-        // the already-completed UPDATE pass was waiting on. The plan's
-        // `flushReport` still runs (a txn does not set `continueAfterError:
-        // false`), so onChange reports a write no subscriber was told about.
-        trace: ["init:a", "onChange:child", "commitEnd:child"],
+        // Forest phase order for the scope's own node: Phase B settles the
+        // union of the update and unset groups (no selectors here), then Phase
+        // C emits each group's records. The unset group's record needs the
+        // inherited value, so `effectiveValueAfterUnset` re-runs the parent's
+        // lazy default (`init:a`) and it throws.
+        //
+        // That throw is contained by Phase C's own try/catch and recorded into
+        // the commit's `CommitErrors`. Everything downstream still runs: the
+        // deferred subscribers fire (`sub:child:other`, `sub:child:a`), the
+        // sink flushes, and re-delegation re-establishes the parent delegate —
+        // which reads the parent through once more (the second `init:a`, no
+        // longer throwing). onChange and `store.sub` now agree.
+        trace: [
+            "init:a",
+            ["sub:child:other", "sub:child:a"],
+            "init:a",
+            "onChange:child",
+            "commitEnd:child",
+        ],
         assert: ctx => {
+            // No earlier phase recorded an error, so the report's own error is
+            // the first captured one and surfaces.
             expect((ctx.thrown() as Error).message).toBe("report boom")
-            // The update IS applied and IS reported to onChange...
+            // The update is applied, reported, AND delivered.
             expect(ctx.read!()).toBe(42)
             expect(ctx.changes).toHaveLength(1)
             expect(ctx.changes[0]!.meta.source).toBe("transaction")
+            // The unset's own record is the casualty — its value could not be
+            // materialized — but nothing else is starved by it.
             expect(records(ctx.changes)).toEqual([
                 { type: "atom", kind: "set", hasValue: true, value: 42 },
             ])
-            // T4: ...but `sub:child:other` is absent from the spine above.
-            // Subscriber delivery for an applied, reported write was starved by
-            // an UNRELATED pass throwing — onChange and store.sub disagree about
-            // whether the write happened. The union must state which one wins.
-            //
-            // And as in the direct case, re-delegation never ran either.
-            expect(ctx.parentWriteIsObserved()).toBe(false)
+            // Re-delegation ran, so the scope observes parent writes again.
+            expect(ctx.parentWriteIsObserved()).toBe(true)
         },
     },
     {

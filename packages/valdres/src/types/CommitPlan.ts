@@ -14,7 +14,6 @@ import type { SettleFn } from "./SettleFn"
 import type { Selector } from "./Selector"
 import type { SelectorSettleFn } from "./SelectorSettleFn"
 import type { StoreData } from "./StoreData"
-import type { TransactionSettleFn } from "./TransactionSettleFn"
 import type {
     CommitForestEntry,
     CommitForestSettleFn,
@@ -45,22 +44,12 @@ type SelectorSettlement = {
     settle: SelectorSettleFn
 }
 
-/** A single-store transaction commit with cleanup mutations: updated atoms,
- *  deleted family members, and unset atoms settle as one deferred-notification
- *  unit. `deleted`/`unset` are undefined (never empty) when absent so the
- *  engine's has-work guard stays a plain presence check. */
-type TransactionSettlement = {
-    kind: "transaction"
-    atoms: Atom<any>[]
-    deleted: AtomFamilyAtom<any, any>[] | undefined
-    unset: Atom<any>[] | undefined
-    settle: TransactionSettleFn
-}
-
 /** A multi-root commit forest: every physical store appears in one canonical
  *  sparse tree node and settles exactly once against local, inherited, and
  *  global trigger groups. `globalUpdates` is populated by the engine after it
- *  applies the plan's ordered global effects. */
+ *  applies the plan's ordered global effects. A single-store transaction with
+ *  cleanup mutations is the degenerate one-entry, one-root case: its
+ *  update/delete/unset writes are trigger GROUPS on one node, not passes. */
 type CommitForestSettlement = {
     kind: "forest"
     entries: CommitForestEntry[]
@@ -76,7 +65,6 @@ type CommitSettlement =
     | UpdateSettlement
     | DeleteSettlement
     | SelectorSettlement
-    | TransactionSettlement
     | CommitForestSettlement
     | NoSettlement
 
@@ -98,10 +86,10 @@ export type PlannedGlobalEffects = {
  *
  * `settlement` is a typed description of an existing propagation primitive.
  * Update/reset/unset plans use `settleCommit` with shared `SettleFlags`;
- * deletion uses `settleDeletedCommit`; a single-store transaction commit with
- * cleanup mutations uses `settleTransactionCommit`; a cross-scope transaction
- * commit uses `settleCommitForest`; native async selectors use their
- * downstream-only settlement; guarded cleanup uses `kind: "none"`.
+ * deletion uses `settleDeletedCommit`; every transaction commit carrying
+ * cleanup mutations — single-store or cross-scope — uses `settleCommitForest`;
+ * native async selectors use their downstream-only settlement; guarded cleanup
+ * uses `kind: "none"`.
  *
  * Optional phase callbacks stay declarative: the engine owns their order.
  * `beforeSettle` lets unset prepend its distinct removal change record;
@@ -109,13 +97,14 @@ export type PlannedGlobalEffects = {
  * re-delegation; `flushReport` drains a deliberately deferred onChange sink.
  * The callbacks are absent from ordinary bulk plans.
  *
- * Scope note: most plans model one store and one settlement — including
- * single-store transaction commits, whose finalized overlay translates into a
- * plan. A cross-scope transaction commit models the whole affected store tree
- * through the `forest` settlement (its global peer updates ride the
- * settlement so the entire commit stays one plan). Ordinary direct global
- * writes, cleanup, reset, async resolution, revalidation, and resetSelf all use
- * the same forest owner when they affect multiple stores.
+ * Scope note: most plans model one store and one settlement. Anything whose
+ * settlement spans more than one trigger group — a cross-scope transaction, a
+ * commit with global peers, or a single-store transaction mixing updates with
+ * deletes/unsets — models its affected stores through the `forest` settlement
+ * (global peer updates ride the settlement so the whole commit stays one
+ * plan). Ordinary direct global writes, cleanup, reset, async resolution,
+ * revalidation, and resetSelf all use the same forest owner when they affect
+ * multiple stores.
  */
 export type CommitPlan = {
     data: StoreData

@@ -53,10 +53,7 @@ import {
     draftHasCleanupMutations,
     resetMutationDraft,
 } from "./mutationDraft"
-import {
-    settleTransactionCommit,
-    settleCommitForest,
-} from "./propagateUpdatedAtoms"
+import { settleCommitForest } from "./propagateUpdatedAtoms"
 import type { CommitForestEntry } from "../types/CommitForestSettleFn"
 import type { DeferredOnSet } from "./runOnSets"
 import { commitAtoms, commitHookFreeAtoms } from "./setAtoms"
@@ -712,10 +709,11 @@ export class TransactionContext {
     private commitWork = (sink: ChangeSink | undefined) => {
         // Single-store path: no scoped transactions to coordinate. Translate
         // the finalized overlay into the commit engine — the bulk coordinator,
-        // or a CommitPlan for cleanup mutations. (The hook-free arm committed
-        // its own plan from commitOpenTransaction.) Global peer fan-out rides
-        // the same CommitPlan: globalEffects applies peer values before hooks,
-        // then settleCommitForest settles them with the local work.
+        // or a single-entry commit-forest CommitPlan for cleanup mutations.
+        // (The hook-free arm committed its own plan from commitOpenTransaction.)
+        // Global peer fan-out rides the same CommitPlan: globalEffects applies
+        // peer values before hooks, then settleCommitForest settles them with
+        // the local work.
         if (!this._scopedTransactions) {
             this.renderDirtyAtomFamilyIndexes()
             const draft = this._draft
@@ -735,10 +733,12 @@ export class TransactionContext {
                 return
             }
 
-            // Cleanup commit: deletes/unsets require multiple propagation
-            // passes. Complete ALL mutations first (phases 1–2 inline), then
-            // hand the plan to the engine for hooks, settlement, cleanup
-            // ordering, and error arbitration.
+            // Cleanup commit: complete ALL mutations first (phases 1–2
+            // inline), then hand the plan to the engine for hooks, settlement,
+            // cleanup ordering, and error arbitration. The store is ONE forest
+            // entry carrying its update/delete/unset trigger groups, so it is
+            // visited once against their union — the same canonical settlement
+            // the cross-scope and global-peer shapes already use.
             const onSets: DeferredOnSet[] = []
             const updatedAtoms = writeAtoms(
                 draft.values,
@@ -770,31 +770,21 @@ export class TransactionContext {
                           apply: applyGlobalSets,
                       }
                     : undefined,
-                settlement: globalSets
-                    ? {
-                          kind: "forest",
-                          entries: [
-                              {
-                                  data: this._data,
-                                  updatedAtoms,
-                                  deleted,
-                                  unsetAtoms:
-                                      unsetAtoms.length > 0
-                                          ? unsetAtoms
-                                          : undefined,
-                                  children: undefined,
-                              },
-                          ],
-                          globalUpdates: undefined,
-                          settle: settleCommitForest,
-                      }
-                    : {
-                          kind: "transaction",
-                          atoms: updatedAtoms,
-                          deleted,
-                          unset: unsetAtoms.length > 0 ? unsetAtoms : undefined,
-                          settle: settleTransactionCommit,
-                      },
+                settlement: {
+                    kind: "forest",
+                    entries: [
+                        {
+                            data: this._data,
+                            updatedAtoms,
+                            deleted,
+                            unsetAtoms:
+                                unsetAtoms.length > 0 ? unsetAtoms : undefined,
+                            children: undefined,
+                        },
+                    ],
+                    globalUpdates: undefined,
+                    settle: settleCommitForest,
+                },
                 onSets,
                 errors,
                 report: sink,
