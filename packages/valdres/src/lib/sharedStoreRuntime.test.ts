@@ -10,13 +10,31 @@ const nextMicrotask = () =>
 describe("shared StoreData runtime", () => {
     test("scope consumers are leases over shared operations", () => {
         const root = store()
+        expect(() => root.scope("missing", scope => scope.id)).toThrow(
+            "Scope missing does not exist",
+        )
+
         const first = root.scope("shared")
         const second = root.scope("shared")
+        const scopedData = getStoreData(first)
 
         expect(first.get).toBe(second.get)
         expect(first.set).toBe(second.set)
         expect(first.scope).toBe(second.scope)
         expect(first.detach).not.toBe(second.detach)
+        expect(scopedData.scopeConsumers?.size).toBe(2)
+
+        first.detach()
+        expect(scopedData.scopeConsumers?.size).toBe(1)
+        expect(root.scope("shared", scope => scope.id)).toBe("shared")
+
+        second.detach()
+        expect(scopedData.scopeConsumers?.size).toBe(0)
+        expect(getStoreData(root).scopes.has("shared")).toBe(false)
+        expect(() => root.scope("shared", scope => scope.id)).toThrow(
+            "Scope shared does not exist",
+        )
+        expect(() => second.get(atom(0))).toThrow(/disposed/i)
     })
 
     test("scope leases compose functional updates in one pending transaction", async () => {

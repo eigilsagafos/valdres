@@ -395,17 +395,17 @@ const createStoreRuntime = (data: StoreData): Store => {
             flushPendingOrphanCleanup(data)
         }
         if (callback) {
-            if (!data.scopes.has(scopeId)) {
+            const scopedStoreData = data.scopes.get(scopeId)
+            if (scopedStoreData === undefined) {
                 throw new Error(`Scope ${scopeId} does not exist`)
             }
-            const scopedStoreData = data.scopes.get(scopeId)!
             const scopedStore = storeFromStoreData(scopedStoreData)
             return callback(scopedStore)
         } else {
-            let scopedStoreData
-            if (data.scopes.has(scopeId)) {
-                scopedStoreData = data.scopes.get(scopeId)!
-            } else {
+            // Scope maps contain StoreData only, so undefined unambiguously
+            // means absence; state values are never consulted here.
+            let scopedStoreData = data.scopes.get(scopeId)
+            if (scopedStoreData === undefined) {
                 // schemaValidation and enumerable are inherited from the parent
                 // inside createStoreData; only batchUpdates needs forwarding here.
                 const scopeOptions = data.batchUpdates
@@ -430,10 +430,7 @@ const createStoreRuntime = (data: StoreData): Store => {
             }
 
             consumers.add(detach)
-            const newStore = storeFromStoreData(
-                data.scopes.get(scopeId)!,
-                detach,
-            )
+            const newStore = storeFromStoreData(scopedStoreData, detach)
             return newStore
         }
     }) as ScopeFn
