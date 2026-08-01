@@ -380,14 +380,15 @@ describe("deterministic architecture performance gates", () => {
         expect(cleanup.commitPlanRuns).toBe(1)
     })
 
-    // T4: this scenario's duplicates are INCIDENTAL — they exist only because
-    // `settleTransactionCommit` runs the update pass and the delete pass
-    // separately over the same store. Mixed-settlement union is expected to
-    // drive both duplicate counts to 0 and `storeSettlementPasses` to 1 here.
-    // The direct control below keeps proving the detectors work when it does,
-    // and `test/oracle/mixedSingleStoreSettlement.trace.test.ts` pins the
-    // observable trace this duplication currently produces.
-    test("a deliberately duplicated single-store settlement is detected", () => {
+    // A mixed single-store transaction now settles through the same commit
+    // forest as the cross-scope and global-peer shapes: update/delete/unset are
+    // trigger GROUPS on one node, so the store is visited once and a selector
+    // spanning two of those groups evaluates once. The duplicate counters going
+    // to 0 here is the point — the positive control below is what proves they
+    // are still capable of firing, and
+    // `test/oracle/mixedSingleStoreSettlement.trace.test.ts` pins the
+    // observable trace the union produces.
+    test("a mixed single-store transaction settles its store exactly once", () => {
         const target = store()
         const family = atomFamily<string>(undefined)
         const first = family("first")
@@ -406,12 +407,13 @@ describe("deterministic architecture performance gates", () => {
         })
         reportCounts("Single-store update + delete", counts)
 
-        expect(counts.selectorEvaluations).toBe(2)
-        expect(counts.selectorSettlements).toBe(2)
-        expect(counts.duplicateSelectorSettlements).toBe(1)
+        expect(counts.commitPlanRuns).toBe(1)
+        expect(counts.selectorEvaluations).toBe(1)
+        expect(counts.selectorSettlements).toBe(1)
+        expect(counts.duplicateSelectorSettlements).toBe(0)
         expect(counts.affectedStoresSettled).toBe(1)
-        expect(counts.storeSettlementPasses).toBe(2)
-        expect(counts.duplicateStoreSettlements).toBe(1)
+        expect(counts.storeSettlementPasses).toBe(1)
+        expect(counts.duplicateStoreSettlements).toBe(0)
         cleanup()
     })
 
@@ -452,13 +454,19 @@ describe("deterministic architecture performance gates", () => {
         cleanup()
     })
 
-    test("T4: a scoped unset that materializes its parent settles the child twice — but only when observed", () => {
-        // `effectiveValueAfterUnset` reads through to a de-materialized parent
-        // to fill the unset report's value. That read-through re-runs the
-        // parent's lazy default and settles the parent init-only, and the
-        // parent settlement cascades into the child — so the child's dependent
-        // selector is evaluated once by the cascade and AGAIN by the child's
-        // own unset pass, inside a single CommitPlan.
+    test("a direct scoped unset that materializes its parent settles the child twice — but only when observed", () => {
+        // `store.unset` is NOT a transaction: it builds a `kind: "update"` plan
+        // whose `beforeSettle` runs `effectiveValueAfterUnset` to fill the unset
+        // report's value. That read-through re-runs a de-materialized parent's
+        // lazy default and settles the parent init-only, and the parent
+        // settlement cascades into the child — so the child's dependent selector
+        // is evaluated once by the cascade and AGAIN by the child's own
+        // settlement, inside a single CommitPlan.
+        //
+        // The commit-forest union does not reach here: this duplication is a
+        // property of report-before-settle in the direct-unset plan, not of any
+        // per-mutation-kind pass. The txn counterpart is in
+        // `test/oracle/mixedSingleStoreSettlement.trace.test.ts`.
         //
         // The read-through only happens when a change sink exists, so an
         // `onChange` listener is what makes the commit do the extra work.
@@ -503,7 +511,7 @@ describe("deterministic architecture performance gates", () => {
 
         expect(observed.child.get(observed.lazy)).toBe(102)
         expect(counts.commitPlanRuns).toBe(1)
-        // T4: one logical commit, two settlement passes over the same child.
+        // One logical commit, two settlement passes over the same child.
         expect(counts.selectorEvaluations).toBe(2)
         expect(counts.duplicateSelectorSettlements).toBe(1)
         expect(counts.storeSettlementPasses).toBe(2)

@@ -2,8 +2,8 @@ import { describe, expect, mock, test } from "bun:test"
 import { atom } from "../atom"
 import { atomFamily } from "../atomFamily"
 import { store } from "../store"
+import type { CommitForestSettleFn } from "../types/CommitForestSettleFn"
 import type { SettleFn } from "../types/SettleFn"
-import type { TransactionSettleFn } from "../types/TransactionSettleFn"
 import {
     createGuardedScalarCommit,
     runCommitPlan,
@@ -370,22 +370,33 @@ describe("commitEngine", () => {
         })
     })
 
-    describe("transaction settlement", () => {
-        test("dispatches atoms, cleanup lists, report, and errors to the settle fn verbatim", () => {
+    // A transaction carrying cleanup mutations is a commit-forest plan whether
+    // it spans one store or a whole tree, so these pin the engine's forest
+    // dispatch and its has-work guard on the single-entry shape.
+    describe("commit-forest settlement", () => {
+        test("dispatches entries, global updates, report, and errors to the settle fn verbatim", () => {
             const store1 = store()
             const data = getStoreData(store1)
             const a = atom(1)
-            const unset = [atom(2)]
+            const unsetAtoms = [atom(2)]
             const errors = createCommitErrors()
-            const settle = mock((() => {}) as TransactionSettleFn)
+            const settle = mock((() => {}) as CommitForestSettleFn)
+            const entries = [
+                {
+                    data,
+                    updatedAtoms: [a],
+                    deleted: undefined,
+                    unsetAtoms,
+                    children: undefined,
+                },
+            ]
 
             runCommitPlan({
                 data,
                 settlement: {
-                    kind: "transaction",
-                    atoms: [a],
-                    deleted: undefined,
-                    unset,
+                    kind: "forest",
+                    entries,
+                    globalUpdates: undefined,
                     settle,
                 },
                 onSets: [],
@@ -395,16 +406,15 @@ describe("commitEngine", () => {
 
             expect(settle).toHaveBeenCalledTimes(1)
             expect(settle).toHaveBeenCalledWith(
-                [a],
+                entries,
                 undefined,
-                unset,
-                data,
+                undefined,
                 "set",
                 errors,
             )
         })
 
-        test("a no-work transaction settlement skips settle but still runs hooks and rethrows their first error", () => {
+        test("a no-work forest settlement skips settle but still runs hooks and rethrows their first error", () => {
             const store1 = store()
             const data = getStoreData(store1)
             const hookError = new Error("hook")
@@ -413,16 +423,23 @@ describe("commitEngine", () => {
                     throw hookError
                 },
             })
-            const settle = mock((() => {}) as TransactionSettleFn)
+            const settle = mock((() => {}) as CommitForestSettleFn)
 
             expect(() =>
                 runCommitPlan({
                     data,
                     settlement: {
-                        kind: "transaction",
-                        atoms: [],
-                        deleted: undefined,
-                        unset: undefined,
+                        kind: "forest",
+                        entries: [
+                            {
+                                data,
+                                updatedAtoms: [],
+                                deleted: undefined,
+                                unsetAtoms: undefined,
+                                children: undefined,
+                            },
+                        ],
+                        globalUpdates: undefined,
                         settle,
                     },
                     onSets: [[hooked, 1, data]],
@@ -439,14 +456,21 @@ describe("commitEngine", () => {
             const family = atomFamily<number, [string]>(0)
             const member = family("x")
 
-            const deleteSettle = mock((() => {}) as TransactionSettleFn)
+            const deleteSettle = mock((() => {}) as CommitForestSettleFn)
             runCommitPlan({
                 data,
                 settlement: {
-                    kind: "transaction",
-                    atoms: [],
-                    deleted: [member],
-                    unset: undefined,
+                    kind: "forest",
+                    entries: [
+                        {
+                            data,
+                            updatedAtoms: [],
+                            deleted: [member],
+                            unsetAtoms: undefined,
+                            children: undefined,
+                        },
+                    ],
+                    globalUpdates: undefined,
                     settle: deleteSettle,
                 },
                 onSets: [],
@@ -455,14 +479,21 @@ describe("commitEngine", () => {
             })
             expect(deleteSettle).toHaveBeenCalledTimes(1)
 
-            const unsetSettle = mock((() => {}) as TransactionSettleFn)
+            const unsetSettle = mock((() => {}) as CommitForestSettleFn)
             runCommitPlan({
                 data,
                 settlement: {
-                    kind: "transaction",
-                    atoms: [],
-                    deleted: undefined,
-                    unset: [atom(0)],
+                    kind: "forest",
+                    entries: [
+                        {
+                            data,
+                            updatedAtoms: [],
+                            deleted: undefined,
+                            unsetAtoms: [atom(0)],
+                            children: undefined,
+                        },
+                    ],
+                    globalUpdates: undefined,
                     settle: unsetSettle,
                 },
                 onSets: [],

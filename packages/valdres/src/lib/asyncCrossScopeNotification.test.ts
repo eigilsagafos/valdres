@@ -7,7 +7,7 @@ import { store } from "../store"
 // observed by a scope subscriber across a single cross-scope transaction.
 //
 // The cross-scope commit writes the whole tree, then settles each affected
-// store ONCE through the tree-level CommitPlan (settleTransactionTreeCommit),
+// store ONCE through the commit-forest CommitPlan (settleCommitForest),
 // deferring all subscriber notification to commit-end. The "fires exactly once
 // with the final value" guarantee is for SYNCHRONOUS selectors. A
 // Promise-returning selector cannot honor that at commit time — its committed

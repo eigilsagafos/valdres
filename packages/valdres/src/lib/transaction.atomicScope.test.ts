@@ -639,12 +639,11 @@ describe("cross-scope transactions are atomically observable", () => {
             expect(bEvals - bBefore).toBe(1)
         })
 
-        test("single-store update + delete: spanning selector is notified once with its final value", () => {
+        test("single-store update + delete: spanning selector evaluates once with its final value", () => {
             // A selector depending on both an updated atom AND a deleted family
-            // is reachable by the commit's update pass (propagateAtomUpdate) and
-            // its delete pass (propagateDeletedAtoms). It recomputes in each, but
-            // deferred notification fires its subscriber once, with the final
-            // value.
+            // is reached by two trigger groups of the SAME forest node, so the
+            // union settles it once against both — one evaluation, on final
+            // values, and one deferred notification.
             const root = store()
             const fam = atomFamily<string>(undefined, { name: "ud-fam" })
             const m1 = fam("1")
@@ -672,23 +671,19 @@ describe("cross-scope transactions are atomically observable", () => {
             })
 
             expect(root.get(span)).toBe("1:9")
-            expect(evals - before).toBe(2) // recomputed in the update and delete passes
+            expect(evals - before).toBe(1) // one settlement over the union of both groups
             expect(cb).toHaveBeenCalledTimes(1) // single, final-valued notification
         })
 
-        test("single-store txn cascading into a scope: spanning selector recomputes per pass, notified once", () => {
+        test("single-store txn cascading into a scope: spanning selector evaluates once, notified once", () => {
             // A selector in S depends on a root atom (updated) and a root family
             // (member deleted), with S NOT shadowing the family. The txn writes
-            // ONLY the root (no t.scope call), so it commits through the
-            // SINGLE-STORE cleanup settlement (settleTransactionCommit), whose
-            // update pass (propagateAtomUpdate, via the root atom) and delete
-            // pass (propagateDeletedAtoms, via the family) each cross-propagate
-            // into S — the selector recomputes once per reaching pass, exactly
-            // like the single-store root case above. (A txn that ALSO touched a
-            // scope would take the tree-level plan and evaluate once.) Both
-            // passes read the fully-written state, so each lands on the final
-            // value and the equality check prunes the redundant result;
-            // deferred notification fires the subscriber exactly once.
+            // ONLY the root (no t.scope call), so it commits as a SINGLE-ENTRY
+            // commit forest. The root node carries an update group and a delete
+            // group; both descend into S as inherited groups of ONE child visit,
+            // so the scope selector recomputes once — the same guarantee a txn
+            // that also touched the scope has always had. Deferred notification
+            // fires the subscriber exactly once.
             const root = store()
             const fam = atomFamily<string>(undefined, { name: "cud-fam" })
             const m1 = fam("1")
@@ -717,7 +712,7 @@ describe("cross-scope transactions are atomically observable", () => {
             })
 
             expect(S.get(span)).toBe("1:9")
-            expect(evals - before).toBe(2) // recomputed in the update and delete passes
+            expect(evals - before).toBe(1) // one child visit against both inherited groups
             expect(cb).toHaveBeenCalledTimes(1) // single, final-valued notification
         })
     })

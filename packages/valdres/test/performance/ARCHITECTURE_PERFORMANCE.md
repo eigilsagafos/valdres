@@ -120,19 +120,23 @@ Selector/store counts that express current commit behavior are exact. Edge and
 queue gates allow narrow structural headroom: 0–25% for linear shapes and 37–42
 visits for the asymmetric DAG. Queue enqueues must equal dequeues. These are
 engine-independent algorithm counts, not JavaScript object-layout or nanosecond
-assertions. The update-plus-delete case deliberately reaches the same selector
-twice through the single-store cleanup settlement's per-kind passes and proves
-both duplicate detectors are live. The cross-scope rows record the proven-safe
-deduplication this table previously anticipated: the tree-level CommitPlan
-(`settleTransactionTreeCommit`) visits each affected store once with the union
-of its own and inherited triggers, so the depth-3 spanning selector dropped from
-three evaluations (one per reaching ancestor pass) to one, with zero duplicate
-settlements; the mixed-kind row proves the union spans update, delete, and unset
-triggers; and the plan/peer-overlap row proves a global peer that is itself a
-plan store folds into that single settlement instead of also running a separate
-peer pass. Cross-scope transaction commits (with or without global peers)
-additionally gate on exactly one `commitPlanRuns`. Lowering baselines further
-requires the same proven-safe standard; increasing them requires review.
+assertions. The rows record the proven-safe deduplication this table previously
+anticipated: the commit-forest CommitPlan (`settleCommitForest`) visits each
+affected store once with the union of its own and inherited triggers, so the
+depth-3 cross-scope spanning selector dropped from three evaluations (one per
+reaching ancestor pass) to one, with zero duplicate settlements; the mixed-kind
+row proves the union spans update, delete, and unset triggers; and the
+plan/peer-overlap row proves a global peer that is itself a plan store folds
+into that single settlement instead of also running a separate peer pass. A
+non-global single-store transaction with cleanup mutations is the same
+settlement's one-entry case, so the update-plus-delete row is now `1` selector
+evaluation with zero duplicates — the duplicate detectors are kept honest by the
+direct positive control instead, which reports the same store and the same
+(store, selector) pair twice inside one measured window. Transaction commits
+carrying cleanup mutations (with or without global peers, single-store or
+cross-scope) additionally gate on exactly one `commitPlanRuns`. Lowering
+baselines further requires the same proven-safe standard; increasing them
+requires review.
 
 ## Retained-memory methodology and baseline
 

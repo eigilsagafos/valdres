@@ -1319,9 +1319,10 @@ describe("single-store cleanup commits through the commit engine", () => {
     })
 
     test("an unset-report failure surfaces the first captured commit error instead of masking it", () => {
-        // Pins the deliberate arbitration change documented on
-        // settleTransactionCommit: historically the report read-through's own
-        // error escaped raw and masked an earlier recorded hook error.
+        // The unset report is Phase C of the commit-forest walk, which records
+        // into the commit's CommitErrors rather than letting the throw escape.
+        // So an earlier recorded error (here the phase-3 hook error) wins,
+        // instead of being masked by the report read-through's own error.
         let defaultEvaluations = 0
         const boom = atom(() => {
             defaultEvaluations += 1

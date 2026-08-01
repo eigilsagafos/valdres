@@ -39,9 +39,11 @@ import { runOnSets } from "./runOnSets"
  * (see test/import-cycles) — the sequencer must not be hard-wired to the
  * propagation layer it sequences.
  *
- * Cross-scope transaction commits enter the engine through the
+ * Transaction commits carrying cleanup mutations enter the engine through the
  * commit-forest settlement (global peer updates ride the settlement, so each
- * multi-store unit is one plan). Async atom, native async selector, and
+ * multi-store unit is one plan) — a non-global single-store one as a
+ * single-entry forest, so no shape needs a multi-pass composer of its own.
+ * Async atom, native async selector, and
  * revalidation settlement enter this coordinator; simple no-hook shapes use
  * module-static entries from
  * `createScalarCommit` below; their bound operation owns any required apply,
@@ -105,10 +107,7 @@ const settlementHasWork = (settlement: CommitPlan["settlement"]) =>
           // the local tree was value-equal.
           settlement.globalUpdates !== undefined ||
           treeHasWork(settlement.entries)
-        : settlement.atoms.length > 0 ||
-          (settlement.kind === "transaction" &&
-              (settlement.deleted !== undefined ||
-                  settlement.unset !== undefined)))
+        : settlement.atoms.length > 0)
 
 const planShouldContinue = (plan: CommitPlan) =>
     plan.continueAfterError !== false || !plan.errors.hasError
@@ -198,15 +197,6 @@ export const runCommitPlan = (plan: CommitPlan) => {
                         plan.data,
                         undefined,
                         plan.report,
-                    )
-                } else if (settlement.kind === "transaction") {
-                    settlement.settle(
-                        settlement.atoms,
-                        settlement.deleted,
-                        settlement.unset,
-                        plan.data,
-                        plan.report,
-                        plan.errors,
                     )
                 } else if (settlement.kind === "forest") {
                     settlement.settle(
