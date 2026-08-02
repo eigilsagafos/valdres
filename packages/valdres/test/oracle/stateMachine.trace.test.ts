@@ -61,18 +61,16 @@ const genStep = (rng: { int: (bound: number) => number }): Step => {
     return { kind: "txn", writes }
 }
 
-/** Assert the invariants that hold on any commit given whether it changed state
- *  and whether the op is a transaction (a txn commits even with no change). */
-const assertStructuralInvariants = (
-    rec: Recorder,
-    changed: boolean,
-    isTxn: boolean,
-) => {
+/** Assert the invariants that hold on any commit, given whether it changed
+ *  state. The op KIND does not enter into it: a direct `set` and a `txn` that
+ *  both write only values the store already holds are equally no-ops, and
+ *  neither commits. */
+const assertStructuralInvariants = (rec: Recorder, changed: boolean) => {
     const events = rec.events
     const commitEnds = events.filter(e => e === "commitEnd")
 
-    if (!changed && !isTxn) {
-        // A no-op direct set does not commit at all.
+    if (!changed) {
+        // Nothing changed, so nothing committed — no boundary, no listener.
         expect(events).toEqual([])
         return
     }
@@ -128,7 +126,7 @@ const runSeed = (seed: number, steps: number) => {
         }
 
         const changed = model.some((v, i) => v !== before[i])
-        assertStructuralInvariants(rec, changed, op.kind === "txn")
+        assertStructuralInvariants(rec, changed)
 
         // Value equivalence: atoms and the derived selector match the model.
         for (let i = 0; i < N; i++) {

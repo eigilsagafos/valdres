@@ -5,6 +5,12 @@ import { isGlobalAtom } from "../utils/isGlobalAtom"
 import { runCommitPlan } from "./commitEngine"
 import { createCommitErrors } from "./commitErrors"
 import { SETTLE_DEFAULT } from "./commitIntents"
+import {
+    forestSettlement,
+    pendingGlobalEffects,
+    singleStoreForest,
+    updateSettlement,
+} from "./commitPlans"
 import { applyGlobalSets, collectGlobalOnSets } from "./globalAtomFanOut"
 import { getAtomInitValue } from "./initAtom"
 import {
@@ -12,7 +18,7 @@ import {
     createChangeSink,
     flushChangeSink,
 } from "./notifyChangeListeners"
-import { beginCommit, commitEndRegistry, endCommit } from "./onCommitEnd"
+import { activeCommitBoundary } from "./onCommitEnd"
 import { settleCommit, settleCommitForest } from "./propagateUpdatedAtoms"
 import type { DeferredOnSet } from "./runOnSets"
 import {
@@ -57,38 +63,26 @@ export const resetAtom = <V>(
             ? undefined
             : createChangeSink(undefined, "reset")
     const errors = createCommitErrors()
+    // A global reset discovers its peer descriptors during its own write phase,
+    // so it hands the forest the queue it is about to fill.
     const globalEffects: PlannedGlobalEffects | undefined = isGlobalAtom(atom)
-        ? {
-              sets: [],
-              source: "set",
-              updates: undefined,
-              apply: applyGlobalSets,
-          }
+        ? pendingGlobalEffects(data, "set", applyGlobalSets)
         : undefined
     runCommitPlan({
         data,
-        globalEffects,
         settlement: globalEffects
-            ? {
-                  kind: "forest",
-                  entries: [
-                      {
-                          data,
-                          updatedAtoms,
-                          deleted: undefined,
-                          unsetAtoms: undefined,
-                          children: undefined,
-                      },
-                  ],
-                  globalUpdates: undefined,
-                  settle: settleCommitForest,
-              }
-            : {
-                  kind: "update",
-                  atoms: updatedAtoms,
-                  settle: settleCommit,
-                  flags: SETTLE_DEFAULT,
-              },
+            ? forestSettlement(
+                  data,
+                  singleStoreForest(data, updatedAtoms),
+                  globalEffects,
+                  settleCommitForest,
+              )
+            : updateSettlement(
+                  data,
+                  updatedAtoms,
+                  settleCommit,
+                  SETTLE_DEFAULT,
+              ),
         apply: () => {
             updatedAtoms.push(
                 ...writeAtoms(
@@ -108,8 +102,7 @@ export const resetAtom = <V>(
         errors,
         report: changeSink,
         flushReport: changeSink ? () => flushChangeSink(changeSink) : undefined,
-        beginCommit: commitEndRegistry.count === 0 ? undefined : beginCommit,
-        endCommit: commitEndRegistry.count === 0 ? undefined : endCommit,
+        boundary: activeCommitBoundary(),
     })
     return value
 }

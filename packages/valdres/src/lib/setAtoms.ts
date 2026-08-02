@@ -1,6 +1,6 @@
 import type { Atom } from "../types/Atom"
 import type { BulkWriteIntent } from "../types/CommitIntent"
-import type { CommitPlan } from "../types/CommitPlan"
+import type { UnreportedCommitPlan } from "../types/CommitPlan"
 import type { InternalAtom } from "../types/InternalAtom"
 import type { StoreData } from "../types/StoreData"
 import { isFamilyAtom } from "../utils/isFamilyAtom"
@@ -8,10 +8,16 @@ import { isPromiseLike } from "../utils/isPromiseLike"
 import { runCommitPlan } from "./commitEngine"
 import { SETTLE_DEFAULT } from "./commitIntents"
 import { createCommitErrors } from "./commitErrors"
+import {
+    globalEffects,
+    forestSettlement,
+    singleStoreForest,
+    updateSettlement,
+} from "./commitPlans"
 import { equal } from "./equal"
 import { applyGlobalSets, collectGlobalOnSets } from "./globalAtomFanOut"
 import { flushChangeSink, type ChangeSink } from "./notifyChangeListeners"
-import { beginCommit, commitEndRegistry, endCommit } from "./onCommitEnd"
+import { activeCommitBoundary } from "./onCommitEnd"
 import { settleCommit, settleCommitForest } from "./propagateUpdatedAtoms"
 import type { DeferredOnSet } from "./runOnSets"
 import { setValueInData } from "./setValueInData"
@@ -76,12 +82,12 @@ export const commitAtoms = (
     if (!globalSets) {
         runCommitPlan({
             data,
-            settlement: {
-                kind: "update",
-                atoms: updatedAtoms,
-                settle: settleCommit,
-                flags: SETTLE_DEFAULT,
-            },
+            settlement: updateSettlement(
+                data,
+                updatedAtoms,
+                settleCommit,
+                SETTLE_DEFAULT,
+            ),
             onSets,
             errors,
             report: intent.report,
@@ -90,26 +96,12 @@ export const commitAtoms = (
     }
     runCommitPlan({
         data,
-        globalEffects: {
-            sets: globalSets,
-            source: "set",
-            updates: undefined,
-            apply: applyGlobalSets,
-        },
-        settlement: {
-            kind: "forest",
-            entries: [
-                {
-                    data,
-                    updatedAtoms,
-                    deleted: undefined,
-                    unsetAtoms: undefined,
-                    children: undefined,
-                },
-            ],
-            globalUpdates: undefined,
-            settle: settleCommitForest,
-        },
+        settlement: forestSettlement(
+            data,
+            singleStoreForest(data, updatedAtoms),
+            globalEffects(data, globalSets, "set", applyGlobalSets),
+            settleCommitForest,
+        ),
         onSets,
         errors,
         report: intent.report,
@@ -183,12 +175,12 @@ let hookFreeData: StoreData = undefined!
 let hookFreeInitialized: Set<Atom> = undefined!
 let hookFreeSink: ChangeSink | undefined
 
-const hookFreeSettlement = {
-    kind: "update" as const,
-    atoms: EMPTY_UPDATED_ATOMS,
-    settle: settleCommit,
-    flags: SETTLE_DEFAULT,
-}
+const hookFreeSettlement = updateSettlement(
+    undefined,
+    EMPTY_UPDATED_ATOMS,
+    settleCommit,
+    SETTLE_DEFAULT,
+)
 
 const hookFreeApply = () => {
     if (
@@ -212,7 +204,7 @@ const hookFreeFlushReport = () => flushChangeSink(hookFreeSink!)
 
 const hookFreeErrors = createCommitErrors()
 
-const hookFreePlan: CommitPlan = {
+const hookFreePlan: UnreportedCommitPlan = {
     data: undefined as unknown as StoreData,
     settlement: hookFreeSettlement,
     apply: hookFreeApply,
@@ -220,8 +212,7 @@ const hookFreePlan: CommitPlan = {
     errors: hookFreeErrors,
     report: undefined,
     flushReport: undefined,
-    beginCommit: undefined,
-    endCommit: undefined,
+    boundary: undefined,
 }
 
 /**
@@ -245,12 +236,12 @@ export const commitHookFreeAtoms = (
     if (hookFreeBusy) {
         // Nested hook-free commit: the statics are mid-flight for the outer
         // commit, so this (rare) shape pays the per-commit plan allocation.
-        const settlement = {
-            kind: "update" as const,
-            atoms: [] as Atom<any>[],
-            settle: settleCommit,
-            flags: SETTLE_DEFAULT,
-        }
+        const settlement = updateSettlement(
+            data,
+            [] as Atom<any>[],
+            settleCommit,
+            SETTLE_DEFAULT,
+        )
         runCommitPlan({
             data,
             settlement,
@@ -274,9 +265,7 @@ export const commitHookFreeAtoms = (
             errors: createCommitErrors(),
             report: sink,
             flushReport: sink ? () => flushChangeSink(sink) : undefined,
-            beginCommit:
-                commitEndRegistry.count === 0 ? undefined : beginCommit,
-            endCommit: commitEndRegistry.count === 0 ? undefined : endCommit,
+            boundary: activeCommitBoundary(),
         })
         return
     }
@@ -289,9 +278,7 @@ export const commitHookFreeAtoms = (
     hookFreePlan.report = sink
     hookFreePlan.flushReport =
         sink === undefined ? undefined : hookFreeFlushReport
-    const withBoundary = commitEndRegistry.count !== 0
-    hookFreePlan.beginCommit = withBoundary ? beginCommit : undefined
-    hookFreePlan.endCommit = withBoundary ? endCommit : undefined
+    hookFreePlan.boundary = activeCommitBoundary()
     try {
         runCommitPlan(hookFreePlan)
     } finally {
@@ -304,8 +291,7 @@ export const commitHookFreeAtoms = (
         hookFreePlan.data = undefined as unknown as StoreData
         hookFreePlan.report = undefined
         hookFreePlan.flushReport = undefined
-        hookFreePlan.beginCommit = undefined
-        hookFreePlan.endCommit = undefined
+        hookFreePlan.boundary = undefined
         hookFreeErrors.hasError = false
         hookFreeErrors.firstError = undefined
     }

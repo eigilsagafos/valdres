@@ -19,8 +19,9 @@ import type { StoreData } from "../types/StoreData"
  *   root                     lib/createStoreData.ts (construction only)
  *   revision / revisionEnabled / trackedRevisions
  *                            lib/stateRevisions.ts, lib/setValueInData.ts
- *   commitDepth              lib/onCommitEnd.ts (beginCommit/endCommit only —
- *                            disposal must never reset it; a scope disposed
+ *   commitDepth / commitDidWork
+ *                            lib/onCommitEnd.ts (beginCommit/endCommit only —
+ *                            disposal must never reset either; a scope disposed
  *                            mid-commit would drive the live tree negative)
  *   commitEndListeners       lib/onCommitEnd.ts, plus root-only teardown in
  *                            lib/disposeStoreData.ts
@@ -50,6 +51,14 @@ export type StoreTreeRuntime = {
      *  Listeners fire when the OUTERMOST boundary closes, so writes performed
      *  by a subscriber coalesce into one notification. */
     commitDepth: number
+    /** Whether anything inside the currently open boundary chain actually
+     *  committed. A boundary whose write phase runs INSIDE it (reset, a
+     *  transaction commit) has to open before it can know, so it reports the
+     *  answer on close instead; a no-op then closes silently. Nested boundaries
+     *  record their own work here, so a subscriber writing during delivery
+     *  still produces exactly one notification. Reset when the outermost
+     *  boundary closes. */
+    commitDidWork: boolean
     /** Commit-end listeners for the whole tree: a listener registered through
      *  any store fires for a commit originating in any store of that tree.
      *  Undefined until the first listener and reset to undefined when the last
@@ -65,5 +74,6 @@ export const createStoreTreeRuntime = (root: StoreData): StoreTreeRuntime => ({
     revisionEnabled: false,
     trackedRevisions: undefined,
     commitDepth: 0,
+    commitDidWork: false,
     commitEndListeners: undefined,
 })

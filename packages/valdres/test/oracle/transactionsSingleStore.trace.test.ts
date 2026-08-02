@@ -60,7 +60,7 @@ const cases: TraceCase<Ctx>[] = [
         },
     },
     {
-        name: "no-op txn (all writes equal) — commits (commitEnd) but reports no change",
+        name: "no-op txn (all writes equal) — does not commit at all",
         build: rec => {
             const s = store()
             const a = tracedAtom(rec, "a", 1)
@@ -78,10 +78,12 @@ const cases: TraceCase<Ctx>[] = [
                 set(states.a, 1) // unchanged
                 set(states.b, 2) // unchanged
             }),
-        // Asymmetry worth pinning: a no-op direct `set` does NOT commit, but a
-        // `txn` opens a commit boundary unconditionally, so commitEnd still
-        // fires once — while no atom changed, so no subscribers and no onChange.
-        trace: ["commitEnd"],
+        // Symmetry worth pinning: a `txn` whose every write is value-equal is
+        // no more a commit than a no-op direct `set`. Its boundary has to be
+        // opened before the write phase can tell, but it closes without
+        // announcing anything — no onSet, no subscriber, no onChange, no
+        // commitEnd.
+        trace: [],
         assert: ({ changes }) => expect(changes).toHaveLength(0),
     },
     {

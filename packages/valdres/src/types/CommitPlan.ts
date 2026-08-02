@@ -20,14 +20,14 @@ import type {
 } from "./CommitForestSettleFn"
 import type { StoreChangeSource } from "./StoreChangeSource"
 
-type UpdateSettlement = {
+export type UpdateSettlement = {
     kind: "update"
     atoms: Atom<any>[]
     settle: SettleFn
     flags: SettleFlags
 }
 
-type DeleteSettlement = {
+export type DeleteSettlement = {
     kind: "delete"
     atoms: AtomFamilyAtom<any, any>[]
     settle: (
@@ -38,44 +38,87 @@ type DeleteSettlement = {
     ) => void
 }
 
-type SelectorSettlement = {
+export type SelectorSettlement = {
     kind: "selector"
     selector: Selector<any>
     settle: SelectorSettleFn
 }
 
+/** Apply every ordered global descriptor to its peers, returning the per-store
+ *  atom groups the settlement must fold in. */
+export type GlobalEffectsApply = (
+    sets: DeferredGlobalSet[],
+    errors: CommitErrors,
+) => StoreAtomUpdates
+
+/** Ordered global fan-out for one commit: the finalized atom/value/origin
+ *  descriptors, the metadata attached to the resulting peer reports, and the
+ *  application primitive. A plan that discovers its globals during its own
+ *  write phase passes the queue it will fill. */
+export type PlannedGlobalEffects = {
+    sets: DeferredGlobalSet[]
+    source: StoreChangeSource
+    apply: GlobalEffectsApply
+}
+
 /** A multi-root commit forest: every physical store appears in one canonical
  *  sparse tree node and settles exactly once against local, inherited, and
- *  global trigger groups. `globalUpdates` is populated by the engine after it
- *  applies the plan's ordered global effects. A single-store transaction with
- *  cleanup mutations is the degenerate one-entry, one-root case: its
- *  update/delete/unset writes are trigger GROUPS on one node, not passes. */
-type CommitForestSettlement = {
+ *  global trigger groups. A single-store transaction with cleanup mutations is
+ *  the degenerate one-entry, one-root case: its update/delete/unset writes are
+ *  trigger GROUPS on one node, not passes.
+ *
+ *  Global fan-out belongs to the forest and only to the forest — a commit whose
+ *  peers span other stores is by definition multi-store. The two variants below
+ *  make that the only expressible arrangement: without `global` there are no
+ *  peer `globalUpdates` to fold in, and with it the engine populates them from
+ *  `global.apply` before any hook or graph settlement runs. */
+export type LocalForestSettlement = {
     kind: "forest"
     entries: CommitForestEntry[]
+    global: undefined
+    globalUpdates: undefined
+    settle: CommitForestSettleFn
+}
+
+export type GlobalForestSettlement = {
+    kind: "forest"
+    entries: CommitForestEntry[]
+    global: PlannedGlobalEffects
+    /** Phase-two result, populated by the engine before hooks run. */
     globalUpdates: StoreAtomUpdates | undefined
     settle: CommitForestSettleFn
 }
 
-type NoSettlement = {
-    kind: "none"
+export type CommitForestSettlement =
+    | LocalForestSettlement
+    | GlobalForestSettlement
+
+export type NoSettlement = {
+    readonly kind: "none"
 }
 
-type CommitSettlement =
+export type CommitSettlement =
     | UpdateSettlement
     | DeleteSettlement
     | SelectorSettlement
     | CommitForestSettlement
     | NoSettlement
 
-export type PlannedGlobalEffects = {
-    /** Ordered, finalized atom/value/origin descriptors. */
-    sets: DeferredGlobalSet[]
-    /** Metadata attached to peer reports from these effects. */
-    source: StoreChangeSource
-    /** Phase-two result populated by the engine before hooks run. */
-    updates: StoreAtomUpdates | undefined
-    apply: (sets: DeferredGlobalSet[], errors: CommitErrors) => StoreAtomUpdates
+/** The outer commit boundary of a standalone local operation, as ONE
+ *  capability: `begin` and `end` are inseparable, so a plan cannot open a
+ *  boundary it never closes (or promise to close one it never opened). The
+ *  token is the store TREE, which owns the depth counter and listeners.
+ *
+ *  `end` takes `didWork` because a boundary that wraps its own write phase
+ *  cannot know at `begin` whether the commit will produce anything; a false
+ *  answer closes the boundary without announcing a commit. */
+export type CommitBoundary = {
+    begin: (data: StoreData) => StoreTreeRuntime
+    end: (
+        tree: StoreTreeRuntime,
+        swallowErrors: boolean,
+        didWork: boolean,
+    ) => void
 }
 
 /**
@@ -101,17 +144,20 @@ export type PlannedGlobalEffects = {
  * settlement spans more than one trigger group — a cross-scope transaction, a
  * commit with global peers, or a single-store transaction mixing updates with
  * deletes/unsets — models its affected stores through the `forest` settlement
- * (global peer updates ride the settlement so the whole commit stays one
+ * (global peer updates ride the settlement, so the whole commit stays one
  * plan). Ordinary direct global writes, cleanup, reset, async resolution,
  * revalidation, and resetSelf all use the same forest owner when they affect
  * multiple stores.
+ *
+ * Plans are deliberately MUTABLE: the hot shapes reuse one module-static plan
+ * graph per commit, and the engine writes phase-two results back into the
+ * settlement. Legality is therefore enforced by construction (see
+ * `lib/commitPlans.ts`) and re-checked by the dev-only `assertPlanLegal`, not
+ * by freezing.
  */
-export type CommitPlan = {
+type CommitPlanShared = {
     data: StoreData
     settlement: CommitSettlement
-    /** Ordered global fan-out effects, applied by the engine after local values
-     *  are final and before any hook or graph settlement. */
-    globalEffects?: PlannedGlobalEffects
     /** Final stale/cancel/dispose admission check. A false result is a total
      *  no-op: no boundary, apply, hook, settlement, report, or cleanup runs. */
     admit?: () => boolean
@@ -122,18 +168,12 @@ export type CommitPlan = {
     onSets: DeferredOnSet[]
     /** First-error accumulator threaded through phases 3–8; phase 9 rethrows. */
     errors: CommitErrors
-    /** Phase-6 delivery target (undefined = no onChange listener anywhere). */
-    report: ChangeReport | undefined
-    /** Operation-specific report preparation, executed by the shared engine. */
-    beforeSettle?: (report: ChangeReport) => void
     /** Phase-8 cleanup, executed only after successful settlement. */
     afterSettle?: () => void
     /** Flush a report sink after settlement/cleanup. */
     flushReport?: () => void
-    /** Optional outer commit boundary for standalone local operations. The
-     *  token is the store TREE, which owns the depth counter and listeners. */
-    beginCommit?: (data: StoreData) => StoreTreeRuntime
-    endCommit?: (tree: StoreTreeRuntime, swallowErrors: boolean) => void
+    /** Optional paired outer commit boundary for standalone local operations. */
+    boundary?: CommitBoundary
     /** Final lifecycle work that must occur after commit-end boundaries close
      *  but before the first captured error is rethrown (global resetSelf). */
     afterCommit?: () => void
@@ -141,3 +181,22 @@ export type CommitPlan = {
      *  no hooks use false to retain their historical short-circuit behavior. */
     continueAfterError?: boolean
 }
+
+/** The ordinary plan: it may or may not have an onChange delivery target, and
+ *  it never prepares its own record. */
+export type UnreportedCommitPlan = CommitPlanShared & {
+    /** Phase-6 delivery target (undefined = no onChange listener anywhere). */
+    report: ChangeReport | undefined
+    beforeSettle?: undefined
+}
+
+/** A plan whose operation contributes its own change record before settlement.
+ *  `beforeSettle` receives the report, so the delivery target is REQUIRED — an
+ *  optional one would silently discard the preparation. */
+export type ReportingCommitPlan = CommitPlanShared & {
+    report: ChangeReport
+    /** Operation-specific report preparation, executed by the shared engine. */
+    beforeSettle: (report: ChangeReport) => void
+}
+
+export type CommitPlan = UnreportedCommitPlan | ReportingCommitPlan

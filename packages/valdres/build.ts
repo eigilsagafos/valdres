@@ -15,6 +15,10 @@ export const buildOptions = {
     packages: "external" as const,
     define: {
         "process.env.VALDRES_VERSION": JSON.stringify(version),
+        // Compile out the engine self-checks (see src/lib/ENGINE_ASSERTIONS.ts).
+        // They assert invariants only valdres's own code can violate, so they
+        // belong to this repo's test loop, not to a consumer's bundle.
+        "process.env.VALDRES_ENGINE_SELF_CHECKS": JSON.stringify("off"),
         // Map NODE_ENV to itself so Bun does NOT inline it at *our* build time.
         // valdres is built once under NODE_ENV=production; without this, Bun folds
         // `process.env.NODE_ENV === "production"` to `true` in the dist, baking

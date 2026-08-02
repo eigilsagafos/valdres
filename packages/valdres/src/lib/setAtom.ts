@@ -1,5 +1,8 @@
 import type { Atom } from "../types/Atom"
 import type { DirectWriteIntent } from "../types/CommitIntent"
+import type { CommitForestEntry } from "../types/CommitForestSettleFn"
+import type { UnreportedCommitPlan } from "../types/CommitPlan"
+import type { InternalGlobalAtom } from "../types/InternalGlobalAtom"
 import type { SetAtomValue } from "../types/SetAtomValue"
 import type { StoreData } from "../types/StoreData"
 import { isGlobalAtom } from "../utils/isGlobalAtom"
@@ -7,7 +10,14 @@ import { isPromiseLike } from "../utils/isPromiseLike"
 import { runHookedDirectWrite, runCommitPlan } from "./commitEngine"
 import { DIRECT_WRITE, SETTLE_DEFAULT } from "./commitIntents"
 import { createCommitErrors } from "./commitErrors"
+import {
+    forestSettlement,
+    globalEffects,
+    globalWriteQueue,
+    singleStoreForest,
+} from "./commitPlans"
 import { coordinateAsyncWrite } from "./coordinateAsyncWrite"
+import type { DeferredGlobalSet } from "./globalAtomFanOut"
 import {
     applyGlobalSets,
     tryApplyUnobservedGlobalSet,
@@ -18,6 +28,37 @@ import { isFunction } from "./isFunction"
 import { resolvePendingDefault } from "./resolvePendingDefault"
 import { setValueInData } from "./setValueInData"
 import { validateSchema } from "./validateSchema"
+
+// ——— Direct global-write plan ———
+// `store.set(globalAtom, value)` is the one plan-bearing shape on the direct
+// write path, and the only one that fans out to peer stores. Six objects carry
+// it: the [atom, value, origin] descriptor and the one-element queue that
+// serves BOTH the ordered global sets and the deferred onSet queue (they
+// describe the same write, so there is one of each, not two), the forest entry
+// and its list, the global effects, and the settlement.
+//
+// A module-static, borrow-and-restore plan graph would take that to four, but
+// it costs ~0.5% of a consumer's gzipped bundle plus a reentrancy guard, to
+// save two objects on a path that already fans out to N stores and runs user
+// hooks. The bytes lose. The hot shapes that DO reuse a static plan — the
+// scalar write (no plan at all) and the hook-free bulk commit — are the ones
+// where a plan per commit would actually show up.
+const globalWritePlanFor = (
+    data: StoreData,
+    queue: DeferredGlobalSet[],
+    entries: CommitForestEntry[],
+): UnreportedCommitPlan => ({
+    data,
+    settlement: forestSettlement(
+        data,
+        entries,
+        globalEffects(data, queue, "set", applyGlobalSets),
+        settleCommitForest,
+    ),
+    onSets: queue,
+    errors: createCommitErrors(),
+    report: "set",
+})
 
 /**
  * Direct-write coordinator of the commit engine: one atom, one store. Phases
@@ -122,33 +163,13 @@ export const setAtom = <Value = any>(
             ) {
                 return syncValue
             }
-            const errors = createCommitErrors()
-            runCommitPlan({
-                data,
-                globalEffects: {
-                    sets: [[atom, syncValue, data]],
-                    source: "set",
-                    updates: undefined,
-                    apply: applyGlobalSets,
-                },
-                settlement: {
-                    kind: "forest",
-                    entries: [
-                        {
-                            data,
-                            updatedAtoms,
-                            deleted: undefined,
-                            unsetAtoms: undefined,
-                            children: undefined,
-                        },
-                    ],
-                    globalUpdates: undefined,
-                    settle: settleCommitForest,
-                },
-                onSets: [[atom, syncValue, data]],
-                errors,
-                report: "set",
-            })
+            runCommitPlan(
+                globalWritePlanFor(
+                    data,
+                    globalWriteQueue(atom, syncValue, data),
+                    singleStoreForest(data, updatedAtoms),
+                ),
+            )
         } else {
             runHookedDirectWrite(
                 atom,

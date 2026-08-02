@@ -28,7 +28,7 @@ import {
 import { createGuardedScalarCommit, runCommitPlan } from "./commitEngine"
 import { createCommitErrors } from "./commitErrors"
 import { SETTLE_DEFAULT } from "./commitIntents"
-import { beginCommit, commitEndRegistry, endCommit } from "./onCommitEnd"
+import { activeCommitBoundary, commitEndRegistry } from "./onCommitEnd"
 import {
     settleCommit,
     settleAsyncSelectorCommit,
@@ -51,6 +51,7 @@ import { validateResolvedValue } from "./validateResolvedValue"
 import { validateSchema } from "./validateSchema"
 import { recordSelectorEvaluation } from "./architectureInstrumentation"
 import { IS_PROD } from "./IS_PROD"
+import { NO_ON_SETS, NO_SETTLEMENT, selectorSettlement } from "./commitPlans"
 
 export { isSuspendError } from "./asyncDependencyTracking"
 
@@ -853,7 +854,7 @@ export const handleSelectorResult = <Value>(
                 if (!validateResolvedValue(selector, resolved, data)) {
                     runCommitPlan({
                         data,
-                        settlement: { kind: "none" },
+                        settlement: NO_SETTLEMENT,
                         admit: () =>
                             admitNativeSelectorCleanup(
                                 selector,
@@ -872,7 +873,7 @@ export const handleSelectorResult = <Value>(
                                 evaluationContext,
                                 evalDependencyRevisions,
                             ),
-                        onSets: [],
+                        onSets: NO_ON_SETS,
                         errors: createCommitErrors(),
                         report: undefined,
                     })
@@ -897,11 +898,11 @@ export const handleSelectorResult = <Value>(
                 }
                 runCommitPlan({
                     data,
-                    settlement: {
-                        kind: "selector",
+                    settlement: selectorSettlement(
+                        data,
                         selector,
-                        settle: settleAsyncSelectorCommit,
-                    },
+                        settleAsyncSelectorCommit,
+                    ),
                     admit: () =>
                         admitNativeSelectorSettlement(
                             selector,
@@ -920,13 +921,10 @@ export const handleSelectorResult = <Value>(
                             evaluationContext,
                             evalDependencyRevisions,
                         ),
-                    onSets: [],
+                    onSets: NO_ON_SETS,
                     errors: createCommitErrors(),
                     report: "async-set",
-                    beginCommit:
-                        commitEndRegistry.count === 0 ? undefined : beginCommit,
-                    endCommit:
-                        commitEndRegistry.count === 0 ? undefined : endCommit,
+                    boundary: activeCommitBoundary(),
                 })
             },
             () => {
@@ -935,7 +933,7 @@ export const handleSelectorResult = <Value>(
                     evaluationContext.asyncDependencyRevisions = undefined
                 runCommitPlan({
                     data,
-                    settlement: { kind: "none" },
+                    settlement: NO_SETTLEMENT,
                     admit: () =>
                         admitNativeSelectorCleanup(
                             selector,
@@ -954,7 +952,7 @@ export const handleSelectorResult = <Value>(
                             evaluationContext,
                             undefined,
                         ),
-                    onSets: [],
+                    onSets: NO_ON_SETS,
                     errors: createCommitErrors(),
                     report: undefined,
                 })

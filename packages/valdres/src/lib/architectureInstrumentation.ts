@@ -32,6 +32,15 @@ export type ArchitectureCounters = {
     unmountTransitions: number
     /** Admitted `runCommitPlan` executions — one per engine-sequenced commit. */
     commitPlanRuns: number
+    /** Plan-graph containers — settlements, forest entries and entry lists,
+     *  global effects, descriptor queues — built through `lib/commitPlans.ts`
+     *  in the window. A module-static plan graph is allocated once at module
+     *  load and passes `undefined`, so it never counts; what remains is the
+     *  per-commit allocation cost of the shape under measurement. The plan
+     *  object itself is an inline literal at each call site and is outside this
+     *  count. Like `assertPlanLegal`, this is an engine self-check and is
+     *  compiled out of the published bundle. */
+    commitPlanAllocations: number
 }
 
 export type ArchitectureInstrumentation = {
@@ -60,6 +69,7 @@ export const createArchitectureInstrumentation =
             mountTransitions: 0,
             unmountTransitions: 0,
             commitPlanRuns: 0,
+            commitPlanAllocations: 0,
         },
         settledSelectors: new WeakMap(),
         settledStores: new WeakSet(),
@@ -73,6 +83,17 @@ export const recordSelectorEvaluation = (data: StoreData): void => {
 export const recordCommitPlanRun = (data: StoreData): void => {
     const instrumentation = data.architectureInstrumentation
     if (instrumentation) instrumentation.counters.commitPlanRuns++
+}
+
+/** Count plan-graph containers built for one commit. `data` is undefined for a
+ *  module-static plan graph: it is allocated once at module load, so it is
+ *  deliberately outside every measurement window. */
+export const recordCommitPlanAllocations = (
+    data: StoreData | undefined,
+    count: number,
+): void => {
+    const instrumentation = data?.architectureInstrumentation
+    if (instrumentation) instrumentation.counters.commitPlanAllocations += count
 }
 
 export const recordSelectorSettlement = (

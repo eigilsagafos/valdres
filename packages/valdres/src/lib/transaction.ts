@@ -36,6 +36,12 @@ import { beginCommit, commitEndRegistry, endCommit } from "./onCommitEnd"
 import type { StoreTreeRuntime } from "./storeTreeRuntime"
 import { runCommitPlan } from "./commitEngine"
 import { createCommitErrors } from "./commitErrors"
+import {
+    forestSettlement,
+    globalEffects,
+    singleStoreForest,
+    workGroup,
+} from "./commitPlans"
 import { BULK_WITH_EFFECTS_SILENT } from "./commitIntents"
 import {
     applyGlobalSets,
@@ -664,6 +670,11 @@ export class TransactionContext {
         // boundaries (see settleCommit's wrapper); nested inside this one
         // they just move the depth counter. With no listener anywhere this is a
         // single counter read, so the Bencher-gated txn hot path is unchanged.
+        //
+        // This boundary is opened before the write phase can tell whether the
+        // overlay changes anything, so it closes with `didWork: false` and lets
+        // the nested boundary of whatever actually settles decide. An all-equal
+        // commit settles nothing, opens no inner boundary, and notifies nobody.
         let commitEndTree: StoreTreeRuntime | undefined
         if (commitEndRegistry.count !== 0)
             commitEndTree = beginCommit(this._data)
@@ -702,7 +713,7 @@ export class TransactionContext {
             // On failure, listener errors are swallowed so they never mask the
             // commit's own error; the writes were applied either way, so
             // listeners still fire.
-            if (commitEndTree) endCommit(commitEndTree, !succeeded)
+            if (commitEndTree) endCommit(commitEndTree, !succeeded, !succeeded)
         }
     }
 
@@ -747,44 +758,41 @@ export class TransactionContext {
                 "collect",
                 onSets,
             )
-            const deleted = draft.deletes?.size ? [...draft.deletes] : undefined
+            const deleted = draft.deletes?.size
+                ? workGroup([...draft.deletes])
+                : undefined
             if (draft.deletes?.size) {
                 deleteAtomFamilyAtoms(draft.deletes, this._data)
             }
             const unsetAtoms = draft.unsets?.size
-                ? applyUnsets(draft.unsets, this._data)
-                : []
+                ? workGroup(applyUnsets(draft.unsets, this._data))
+                : undefined
 
             const errors = createCommitErrors()
             // Global peers are writes too: apply them all while still in the
             // write phase. An empty map means every peer was value-equal — a
             // local plan handles that exactly like no globals at all.
             const globalSets = collectGlobalOnSets(onSets)
+            const entries = singleStoreForest(
+                this._data,
+                updatedAtoms,
+                deleted,
+                unsetAtoms,
+            )
             runCommitPlan({
                 data: this._data,
-                globalEffects: globalSets
-                    ? {
-                          sets: globalSets,
-                          source: "set",
-                          updates: undefined,
-                          apply: applyGlobalSets,
-                      }
-                    : undefined,
-                settlement: {
-                    kind: "forest",
-                    entries: [
-                        {
-                            data: this._data,
-                            updatedAtoms,
-                            deleted,
-                            unsetAtoms:
-                                unsetAtoms.length > 0 ? unsetAtoms : undefined,
-                            children: undefined,
-                        },
-                    ],
-                    globalUpdates: undefined,
-                    settle: settleCommitForest,
-                },
+                settlement: forestSettlement(
+                    this._data,
+                    entries,
+                    globalSets &&
+                        globalEffects(
+                            this._data,
+                            globalSets,
+                            "set",
+                            applyGlobalSets,
+                        ),
+                    settleCommitForest,
+                ),
                 onSets,
                 errors,
                 report: sink,
@@ -824,12 +832,14 @@ export class TransactionContext {
             )
             if (txn._draft.deletes?.size) {
                 deleteAtomFamilyAtoms(txn._draft.deletes, entry.data)
-                entry.deleted = [...txn._draft.deletes]
+                entry.deleted = workGroup([...txn._draft.deletes])
             }
             if (txn._draft.unsets?.size) {
                 // Detach shadows in the write phase so every store's values are
                 // final before any propagation pass reads through the chain.
-                entry.unsetAtoms = applyUnsets(txn._draft.unsets, entry.data)
+                entry.unsetAtoms = workGroup(
+                    applyUnsets(txn._draft.unsets, entry.data),
+                )
             }
         }
 
@@ -860,20 +870,18 @@ export class TransactionContext {
         }
         runCommitPlan({
             data: this._data,
-            globalEffects: globalSets
-                ? {
-                      sets: globalSets,
-                      source: "set",
-                      updates: undefined,
-                      apply: applyGlobalSets,
-                  }
-                : undefined,
-            settlement: {
-                kind: "forest",
-                entries: plan,
-                globalUpdates: undefined,
-                settle: settleCommitForest,
-            },
+            settlement: forestSettlement(
+                this._data,
+                plan,
+                globalSets &&
+                    globalEffects(
+                        this._data,
+                        globalSets,
+                        "set",
+                        applyGlobalSets,
+                    ),
+                settleCommitForest,
+            ),
             onSets,
             errors,
             report: sink,

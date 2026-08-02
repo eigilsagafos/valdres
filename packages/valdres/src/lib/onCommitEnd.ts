@@ -1,3 +1,4 @@
+import type { CommitBoundary } from "../types/CommitPlan"
 import type { StoreData } from "../types/StoreData"
 import type { StoreTreeRuntime } from "./storeTreeRuntime"
 import { trackStoreCleanup, untrackStoreCleanup } from "./storeLifecycle"
@@ -41,12 +42,29 @@ export const beginCommit = (data: StoreData): StoreTreeRuntime => {
  *  hook writing during the commit) just decrement: their writes coalesce into
  *  the outermost commit's single notification.
  *
+ *  `didWork` is false when the closing boundary's own commit turned out to be a
+ *  no-op — a reset to the value already held, a transaction whose every write
+ *  was value-equal. Such a boundary MUST be opened before its write phase can
+ *  answer the question (the write phase runs inside it), so it answers on close
+ *  instead, and a tree with no work anywhere in the chain notifies nobody. That
+ *  makes `onCommitEnd` consistent with the no-op `set` and no-op `unset` it
+ *  already stays silent for. Every other caller opens its boundary around work
+ *  it has already committed to doing, hence the default.
+ *
  *  Every listener fires even if one throws; the first error is rethrown unless
  *  `swallowErrors` — used when the commit itself is already throwing, so a
  *  listener error never masks the original failure (same contract as the
  *  onChange flush in the transaction commit pipeline). */
-export const endCommit = (tree: StoreTreeRuntime, swallowErrors: boolean) => {
+export const endCommit = (
+    tree: StoreTreeRuntime,
+    swallowErrors: boolean,
+    didWork = true,
+) => {
+    if (didWork) tree.commitDidWork = true
     if (--tree.commitDepth !== 0) return
+    const committed = tree.commitDidWork
+    tree.commitDidWork = false
+    if (!committed) return
     const listeners = tree.commitEndListeners
     // The size re-check is the backstop for the `undefined ⟺ empty` invariant
     // the registration path maintains below.
@@ -67,6 +85,21 @@ export const endCommit = (tree: StoreTreeRuntime, swallowErrors: boolean) => {
     }
     if (hasError && !swallowErrors) throw firstError
 }
+
+/** The one paired boundary every engine-sequenced commit uses. Begin and end
+ *  ship together as a single frozen capability, so a plan can neither open a
+ *  boundary it won't close nor claim a close it never opened. Module-static:
+ *  taking a boundary costs no allocation. */
+const COMMIT_END_BOUNDARY: CommitBoundary = Object.freeze({
+    begin: beginCommit,
+    end: endCommit,
+})
+
+/** The outer commit boundary a standalone local operation should carry, or
+ *  undefined when no `onCommitEnd` listener exists anywhere — a single counter
+ *  read on the common path. */
+export const activeCommitBoundary = (): CommitBoundary | undefined =>
+    commitEndRegistry.count === 0 ? undefined : COMMIT_END_BOUNDARY
 
 /** Register a commit-end listener on `data`'s store tree — the implementation
  *  behind `store.onCommitEnd`. Listeners live on the tree's ROOT store: a
