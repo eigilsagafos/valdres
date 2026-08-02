@@ -12,6 +12,7 @@ import { hasAtomCommitObservers } from "./hasAtomCommitObservers"
 import { settleCommit } from "./propagateUpdatedAtoms"
 import { setAtom } from "./setAtom"
 import { setValueInData } from "./setValueInData"
+import { pendingDefaultPromise } from "./resolvePendingDefault"
 import { noteStateValueChanged } from "./stateRevisions"
 import { isStoreDisposed } from "./storeLifecycle"
 import { trackNamedState, untrackNamedAtom } from "./namedStateIndex"
@@ -64,6 +65,10 @@ export const getAtomInitValue = <V = any>(
     initializedAtomsSet: Set<Atom>,
 ) => {
     if (atom.defaultValue === undefined) {
+        // Reuse a live placeholder (re-init after unset/reset) so the reader
+        // already suspended on it is the one a later write resolves.
+        const outstanding = pendingDefaultPromise(atom, data)
+        if (outstanding) return outstanding
         let resolve!: (value: any) => void
         const promise = new Promise(r => {
             resolve = r
