@@ -32,6 +32,12 @@ export type ArchitectureCounters = {
     unmountTransitions: number
     /** Admitted `runCommitPlan` executions — one per engine-sequenced commit. */
     commitPlanRuns: number
+    /** Cache metadata snapshots allocated during the measurement window. */
+    cacheMetaAllocations: number
+    /** Sidecar lookups performed through `cacheState.peek`. */
+    cacheStatePeeks: number
+    /** Copies of a global atom's attached-store list. */
+    globalStoreListCopies: number
     /** Plan-graph containers — settlements, forest entries and entry lists,
      *  global effects, descriptor queues — built through `lib/commitPlans.ts`
      *  in the window. A module-static plan graph is allocated once at module
@@ -69,6 +75,9 @@ export const createArchitectureInstrumentation =
             mountTransitions: 0,
             unmountTransitions: 0,
             commitPlanRuns: 0,
+            cacheMetaAllocations: 0,
+            cacheStatePeeks: 0,
+            globalStoreListCopies: 0,
             commitPlanAllocations: 0,
         },
         settledSelectors: new WeakMap(),
@@ -83,6 +92,21 @@ export const recordSelectorEvaluation = (data: StoreData): void => {
 export const recordCommitPlanRun = (data: StoreData): void => {
     const instrumentation = data.architectureInstrumentation
     if (instrumentation) instrumentation.counters.commitPlanRuns++
+}
+
+export const recordCacheMetaAllocation = (data: StoreData): void => {
+    const instrumentation = data.architectureInstrumentation
+    if (instrumentation) instrumentation.counters.cacheMetaAllocations++
+}
+
+export const recordCacheStatePeek = (data: StoreData): void => {
+    const instrumentation = data.architectureInstrumentation
+    if (instrumentation) instrumentation.counters.cacheStatePeeks++
+}
+
+export const recordGlobalStoreListCopy = (data: StoreData): void => {
+    const instrumentation = data.architectureInstrumentation
+    if (instrumentation) instrumentation.counters.globalStoreListCopies++
 }
 
 /** Count plan-graph containers built for one commit. `data` is undefined for a

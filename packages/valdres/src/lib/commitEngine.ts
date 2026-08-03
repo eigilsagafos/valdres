@@ -46,8 +46,11 @@ import { runOnSets } from "./runOnSets"
  * commit-forest settlement (global peer updates ride the settlement, so each
  * multi-store unit is one plan) — a non-global single-store one as a
  * single-entry forest, so no shape needs a multi-pass composer of its own.
- * Async atom, native async selector, and
- * revalidation settlement enter this coordinator; simple no-hook shapes use
+ * Async atom, native async selector, and resolved revalidation settlement
+ * enter this coordinator. A timer's metadata-on and optional pending-value
+ * publications remain separate propagation boundaries outside the coordinator:
+ * they occur before the asynchronous result exists, while the resolved value
+ * and metadata-off transition share one plan. Simple no-hook shapes use
  * module-static entries from
  * `createScalarCommit` below; their bound operation owns any required apply,
  * propagation, observers, reporting, and local boundary.

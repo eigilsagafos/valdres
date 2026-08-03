@@ -1,9 +1,10 @@
-import { describe, test, expect, mock } from "bun:test"
+import { describe, test, expect, mock, spyOn } from "bun:test"
 import { atom } from "./atom"
 import { cacheMeta } from "./cacheMeta"
 import { selector } from "./selector"
 import { store } from "./store"
 import { withFakeClock, mockAsyncSource } from "../test/utils/fakeClock"
+import { getStoreData } from "./lib/getStoreData"
 
 describe("cacheMeta", () => {
     test("returns cache metadata for atom with maxAge", async () => {
@@ -114,6 +115,107 @@ describe("cacheMeta", () => {
         expect(meta!.staleWhileRevalidate).toBe(Infinity)
         expect(meta!.staleIfError).toBe(Infinity)
     })
+
+    test("published metadata remains an immutable point-in-time snapshot", () =>
+        withFakeClock(async clock => {
+            const store1 = store()
+            const source = mockAsyncSource<number>()
+            const atom1 = atom(source.fn, { maxAge: 100 })
+            const unsubscribe = store1.sub(atom1, () => {})
+            await source.resolve(1)
+
+            const before = store1.get(cacheMeta(atom1))!
+            const beforeSuccessAt = before.lastSuccessAt
+            expect(Object.isFrozen(before)).toBe(true)
+
+            await clock.advance(100)
+            const during = store1.get(cacheMeta(atom1))!
+            const duringSuccessAt = during.lastSuccessAt
+            expect(during.isRevalidating).toBe(true)
+
+            await source.resolve(2)
+            const after = store1.get(cacheMeta(atom1))!
+
+            expect(before.lastSuccessAt).toBe(beforeSuccessAt)
+            expect(during.lastSuccessAt).toBe(duringSuccessAt)
+            expect(after.lastSuccessAt).toBeGreaterThan(beforeSuccessAt)
+            expect(after.isRevalidating).toBe(false)
+            unsubscribe()
+        }))
+
+    test("global metadata publication preserves the first recorded error", async () => {
+        let runInterval: (() => void) | undefined
+        const intervalSpy = spyOn(globalThis, "setInterval").mockImplementation(
+            ((callback: () => void) => {
+                runInterval = callback
+                return 1 as any
+            }) as any,
+        )
+        const clearIntervalSpy = spyOn(
+            globalThis,
+            "clearInterval",
+        ).mockImplementation(() => {})
+        try {
+            const store1 = store()
+            const store2 = store()
+            const source = mockAsyncSource<number>()
+            const atom1 = atom(source.fn, { global: true, maxAge: 100 })
+            const unsubscribe1 = store1.sub(atom1, () => {})
+            const unsubscribe2 = store2.sub(atom1, () => {})
+            const unsubscribeMeta1 = store1.sub(cacheMeta(atom1), () => {})
+            const unsubscribeMeta2 = store2.sub(cacheMeta(atom1), () => {})
+            await source.resolve(1)
+
+            const metaAtom = atom1.__cacheMeta!
+            const originalEqual = metaAtom.equal
+            const firstError = new Error("metadata equality failed")
+            const settlementError = new Error("metadata settlement failed")
+            let equalityCalls = 0
+            metaAtom.equal = (current, next, updatedAtoms) => {
+                equalityCalls++
+                if (equalityCalls === 1) throw firstError
+                return originalEqual(current, next, updatedAtoms)
+            }
+
+            const data1 = getStoreData(store1)
+            const data2 = getStoreData(store2)
+            const poison = {
+                size: 1,
+                [Symbol.iterator]() {
+                    throw settlementError
+                },
+            }
+            const dependents1 = data1.stateDependents.get(metaAtom)
+            const dependents2 = data2.stateDependents.get(metaAtom)
+            data1.stateDependents.set(metaAtom, poison)
+            data2.stateDependents.set(metaAtom, poison)
+            try {
+                let surfaced: unknown
+                try {
+                    runInterval!()
+                } catch (error) {
+                    surfaced = error
+                }
+
+                expect(surfaced).toBe(firstError)
+            } finally {
+                metaAtom.equal = originalEqual
+                if (dependents1)
+                    data1.stateDependents.set(metaAtom, dependents1)
+                else data1.stateDependents.delete(metaAtom)
+                if (dependents2)
+                    data2.stateDependents.set(metaAtom, dependents2)
+                else data2.stateDependents.delete(metaAtom)
+                unsubscribeMeta2()
+                unsubscribeMeta1()
+                unsubscribe2()
+                unsubscribe1()
+            }
+        } finally {
+            intervalSpy.mockRestore()
+            clearIntervalSpy.mockRestore()
+        }
+    })
 })
 
 describe("reactive maxAge", () => {
@@ -155,6 +257,73 @@ describe("reactive maxAge", () => {
 
         expect(store1.get(cacheMeta(atom1))!.maxAge).toBe(200)
     })
+
+    test("captured metadata does not change with reactive config", async () => {
+        const store1 = store()
+        const maxAgeAtom = atom(50)
+        const atom1 = atom(() => 42, { maxAge: maxAgeAtom })
+        const unsubscribe = store1.sub(atom1, () => {})
+        const captured = store1.get(cacheMeta(atom1))!
+
+        store1.set(maxAgeAtom, 200)
+
+        expect(captured.maxAge).toBe(50)
+        expect(store1.get(cacheMeta(atom1))!.maxAge).toBe(200)
+        unsubscribe()
+    })
+
+    test("batched reactive config publishes one deduplicated metadata edge", () =>
+        withFakeClock(async clock => {
+            const store1 = store()
+            const source = mockAsyncSource<number>()
+            const maxAgeAtom = atom(100)
+            const staleIfErrorAtom = atom(1000)
+            const atom1 = atom(source.fn, {
+                maxAge: maxAgeAtom,
+                staleIfError: staleIfErrorAtom,
+            })
+            const unsubscribe = store1.sub(atom1, () => {})
+            await source.resolve(1)
+            const seen: string[] = []
+            const metaSelector = cacheMeta(atom1)
+            const unsubscribeMeta = store1.sub(metaSelector, () => {
+                const meta = store1.get(metaSelector)!
+                seen.push(`${meta.maxAge}/${meta.staleIfError}`)
+            })
+
+            store1.txn(txn => {
+                txn.set(maxAgeAtom, 200)
+                txn.set(staleIfErrorAtom, 5000)
+            })
+            await clock.settle()
+
+            expect(seen).toEqual(["200/5000"])
+            unsubscribeMeta()
+            unsubscribe()
+        }))
+
+    test("global reactive config publishes one deduplicated metadata edge", () =>
+        withFakeClock(async clock => {
+            const store1 = store()
+            const source = mockAsyncSource<number>()
+            const config = atom(100, { global: true })
+            const atom1 = atom(source.fn, {
+                global: true,
+                maxAge: config,
+                staleWhileRevalidate: config,
+            })
+            const unsubscribe = store1.sub(atom1, () => {})
+            await source.resolve(1)
+            const metaSubscriber = mock(() => {})
+            const unsubscribeMeta = store1.sub(cacheMeta(atom1), metaSubscriber)
+
+            store1.set(config, 500)
+            await clock.settle()
+
+            expect(metaSubscriber).toHaveBeenCalledTimes(1)
+            unsubscribeMeta()
+            unsubscribe()
+        }))
 
     test("maxAge as selector", () =>
         withFakeClock(async clock => {
