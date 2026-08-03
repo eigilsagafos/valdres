@@ -5,7 +5,12 @@ import {
     toBmf,
     toPairedBmf,
 } from "./bench-to-bmf"
-import type { BenchResult } from "./lib/read-bench-results"
+import {
+    BENCHMARK_RESULT_SCHEMA_VERSION,
+    type BenchmarkObservation,
+    type BenchResult,
+} from "./lib/read-bench-results"
+import { parseBenchmarkObservation } from "../packages/valdres/test/performance/benchmark-result-schema"
 
 const latency = (name: string, ns: number): BenchResult => ({
     kind: "latency",
@@ -15,6 +20,46 @@ const latency = (name: string, ns: number): BenchResult => ({
 
 const controls = (ns: number): BenchResult[] =>
     RUNNER_CONTROL_BENCHMARKS.map(name => latency(name, ns))
+
+const observation = (
+    benchmark: string,
+    p50: number,
+    overrides: Partial<BenchmarkObservation> &
+        Pick<BenchmarkObservation, "pairId" | "side">,
+): BenchmarkObservation => {
+    const { pairId, side, ...rest } = overrides
+    const order = overrides.order ?? (side === "base" ? 1 : 2)
+    return {
+        schemaVersion: BENCHMARK_RESULT_SCHEMA_VERSION,
+        kind: "latency",
+        unit: "ns",
+        benchmark,
+        pairId,
+        side,
+        order,
+        runtime: "bun",
+        suite: "standard",
+        runId: `${pairId}-${side}`,
+        processId: side === "base" ? 100 : 200,
+        p25: p50 * 0.8,
+        p50,
+        p75: p50 * 1.2,
+        p99: p50 * 1.5,
+        ticks: 1_000,
+        sampleCount: 100,
+        ...rest,
+    }
+}
+
+const pair = (
+    benchmark: string,
+    pairId: string,
+    base: number,
+    head: number,
+): [BenchmarkObservation, BenchmarkObservation] => [
+    observation(benchmark, base, { pairId, side: "base" }),
+    observation(benchmark, head, { pairId, side: "head" }),
+]
 
 describe("bench-to-bmf", () => {
     test("normalizes gateable Valdres benchmarks with the fixed control index", () => {
@@ -111,11 +156,40 @@ describe("bench-to-bmf", () => {
         })
     })
 
-    test("converts a paired ratio rather than a ratio of medians", () => {
+    test("validates schema version and rejects raw Mitata samples", () => {
+        const result = observation("set 1000 atoms / valdres", 250, {
+            pairId: "pair-1",
+            side: "base",
+        })
+
+        expect(parseBenchmarkObservation(result, "test row")).toEqual(result)
+        expect(() =>
+            parseBenchmarkObservation(
+                { ...result, samples: [200, 250, 300] },
+                "test row",
+            ),
+        ).toThrow("raw Mitata samples must not be serialized")
+        expect(() =>
+            parseBenchmarkObservation(
+                { ...result, schemaVersion: 999 },
+                "test row",
+            ),
+        ).toThrow("unsupported benchmark schema version 999")
+        expect(() =>
+            parseBenchmarkObservation({ ...result, side: "pr" }, "test row"),
+        ).toThrow("side must be base or head")
+    })
+
+    test("pairs reordered observations by benchmark and pair ID", () => {
         const name = "async settle: selector resolve observed"
+        const [base1, head1] = pair(name, "pair-1", 5_300, 10_300)
+        const [base2, head2] = pair(name, "pair-2", 5_500, 6_800)
+        const [base3, head3] = pair(name, "pair-3", 7_200, 8_400)
         const paired = toPairedBmf(
-            [latency(name, 5_300), latency(name, 5_500), latency(name, 7_200)],
-            [latency(name, 10_300), latency(name, 6_800), latency(name, 8_400)],
+            // Files and lines are deliberately mixed: side metadata, not array
+            // identity or position, determines each pair.
+            [head3, base1, head2],
+            [base3, head1, base2],
         )
 
         // Ratios are 1.943, 1.236, 1.167; the smallest is 8_400 / 7_200. Against
@@ -124,14 +198,37 @@ describe("bench-to-bmf", () => {
         expect(paired[name].latency.value).toBeCloseTo(5_500 * (8_400 / 7_200))
     })
 
+    test("paired conversion rejects unsupported versioned observations", () => {
+        const current = observation("set 1000 atoms / valdres", 250, {
+            pairId: "pair-1",
+            side: "base",
+        })
+        const future = {
+            ...current,
+            schemaVersion: BENCHMARK_RESULT_SCHEMA_VERSION + 1,
+        } as unknown as BenchResult
+
+        expect(() => toPairedBmf([future], [])).toThrow(
+            `Paired benchmark conversion requires schemaVersion ${BENCHMARK_RESULT_SCHEMA_VERSION} observations`,
+        )
+    })
+
     test("a stall in most pairs cannot manufacture a regression", () => {
         const name = "set(atom, value) / valdres"
         // Real shape observed in one CI job: the head side was measured at
         // 131ns, 351ns, 131ns while the base side stayed flat. Two of three
         // pairs are contaminated, so a median would report ~+168% and alert.
         const paired = toPairedBmf(
-            [latency(name, 131), latency(name, 131), latency(name, 131)],
-            [latency(name, 351), latency(name, 351), latency(name, 131)],
+            [
+                pair(name, "pair-1", 131, 351)[0],
+                pair(name, "pair-2", 131, 351)[0],
+                pair(name, "pair-3", 131, 131)[0],
+            ],
+            [
+                pair(name, "pair-1", 131, 351)[1],
+                pair(name, "pair-2", 131, 351)[1],
+                pair(name, "pair-3", 131, 131)[1],
+            ],
         )
 
         // The clean pair wins: no change reported, no alert.
@@ -143,28 +240,143 @@ describe("bench-to-bmf", () => {
         // A real same-runner regression shifts every pair, so even the least
         // contaminated one is over the +50% boundary this gate enforces.
         const paired = toPairedBmf(
-            [latency(name, 100), latency(name, 100), latency(name, 100)],
-            [latency(name, 210), latency(name, 175), latency(name, 190)],
+            [
+                pair(name, "pair-1", 100, 210)[0],
+                pair(name, "pair-2", 100, 175)[0],
+                pair(name, "pair-3", 100, 190)[0],
+            ],
+            [
+                pair(name, "pair-1", 100, 210)[1],
+                pair(name, "pair-2", 100, 175)[1],
+                pair(name, "pair-3", 100, 190)[1],
+            ],
         )
 
         expect(paired[name].latency.value).toBeCloseTo(175)
         expect(paired[name].latency.value).toBeGreaterThan(100 * 1.5)
     })
 
-    test("fails closed when paired samples are missing", () => {
+    test("fails closed on duplicate observations", () => {
+        const name = "async settle: selector resolve observed"
+        const [base, head] = pair(name, "pair-1", 5_300, 6_800)
+
+        expect(() => toPairedBmf([base, base], [head])).toThrow(
+            `Duplicate base observation for ${name} in pair pair-1`,
+        )
+    })
+
+    test("fails closed when a paired observation is missing", () => {
+        const name = "async settle: selector resolve observed"
+        const base = observation(name, 5_300, {
+            pairId: "pair-1",
+            side: "base",
+        })
+
+        expect(() => toPairedBmf([base], [])).toThrow(
+            `Missing head side for ${name} in pair pair-1`,
+        )
+    })
+
+    test("validates diagnostics even when a benchmark is excluded from gating", () => {
+        const name = "atom(1) / valdres"
+        const base = observation(name, 5, {
+            pairId: "pair-1",
+            side: "base",
+        })
+
+        expect(() => toPairedBmf([base], [], { excludeTiny: true })).toThrow(
+            `Missing head side for ${name} in pair pair-1`,
+        )
+    })
+
+    test("fails closed on mismatched pair IDs", () => {
+        const name = "async settle: selector resolve observed"
+        const base = observation(name, 5_300, {
+            pairId: "pair-1",
+            side: "base",
+        })
+        const head = observation(name, 6_800, {
+            pairId: "pair-2",
+            side: "head",
+        })
+
+        expect(() => toPairedBmf([base], [head])).toThrow(
+            `Mismatched pair IDs for ${name}: base=pair-1; head=pair-2`,
+        )
+    })
+
+    test("fails closed on mixed runtime or suite metadata", () => {
+        const name = "async settle: selector resolve observed"
+        const [base, head] = pair(name, "pair-1", 5_300, 6_800)
+
+        expect(() =>
+            toPairedBmf([base], [{ ...head, runtime: "node" }]),
+        ).toThrow("Inconsistent runtime/suite metadata for pair pair-1")
+        expect(() =>
+            toPairedBmf([base], [{ ...head, suite: "async" }]),
+        ).toThrow("Inconsistent runtime/suite metadata for pair pair-1")
+    })
+
+    test("fails closed on invalid execution order metadata", () => {
+        const name = "async settle: selector resolve observed"
+        const [base, head] = pair(name, "pair-1", 5_300, 6_800)
+
+        expect(() =>
+            toPairedBmf([base], [{ ...head, order: base.order }]),
+        ).toThrow("Invalid execution order metadata for pair pair-1")
+    })
+
+    test("fails closed on duplicate run identity", () => {
+        const name = "async settle: selector resolve observed"
+        const [base, head] = pair(name, "pair-1", 5_300, 6_800)
+
+        expect(() =>
+            toPairedBmf([base], [{ ...head, runId: base.runId }]),
+        ).toThrow(`Duplicate run identity ${base.runId}`)
+    })
+
+    test("fails closed on incomplete process blocks", () => {
+        const first = "async settle: selector resolve observed"
+        const second = "async settle: atom resolve observed"
+        const baseRun = "base-process"
+        const base = [
+            observation(first, 5_300, {
+                pairId: "pair-1",
+                side: "base",
+                runId: baseRun,
+            }),
+            observation(second, 4_300, {
+                pairId: "pair-1",
+                side: "base",
+                runId: baseRun,
+            }),
+        ]
+        const head = [
+            observation(first, 6_800, {
+                pairId: "pair-1",
+                side: "head",
+                runId: "head-process-1",
+            }),
+            observation(second, 5_800, {
+                pairId: "pair-1",
+                side: "head",
+                runId: "head-process-2",
+                processId: 201,
+            }),
+        ]
+
+        expect(() => toPairedBmf(base, head)).toThrow(
+            "Incomplete process blocks for pair pair-1",
+        )
+    })
+
+    test("gives legacy paired observations an explicit migration error", () => {
         const name = "async settle: selector resolve observed"
 
         expect(() =>
-            toPairedBmf(
-                [latency(name, 5_300), latency(name, 5_500)],
-                [latency(name, 6_800)],
-            ),
-        ).toThrow(`Mismatched paired sample count for ${name}: base=2, head=1`)
-        expect(() =>
-            toPairedBmf(
-                [latency(name, 5_300)],
-                [latency("async settle: atom resolve observed", 6_800)],
-            ),
-        ).toThrow(`missing from head: ${name}`)
+            toPairedBmf([latency(name, 5_300)], [latency(name, 6_800)]),
+        ).toThrow(
+            "Paired benchmark conversion requires schemaVersion 2 observations",
+        )
     })
 })

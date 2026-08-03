@@ -1,7 +1,13 @@
 import { measure } from "mitata"
 import { appendFileSync } from "fs"
+import { randomUUID } from "crypto"
 import { join } from "path"
 import { fileURLToPath } from "url"
+import {
+    BENCHMARK_RESULT_SCHEMA_VERSION,
+    type BenchmarkObservation,
+    type BenchmarkSide,
+} from "./benchmark-result-schema"
 
 const RUNTIME = typeof Bun !== "undefined" ? "bun" : "node"
 const __dir =
@@ -11,6 +17,66 @@ const __dir =
 const RESULTS_FILE =
     RUNTIME === "bun" ? "bench-results.ndjson" : "bench-results-node.ndjson"
 const RESULTS_PATH = join(__dir, RESULTS_FILE)
+const RUN_ID = `${RUNTIME}-${process.pid}-${randomUUID()}`
+
+function positiveIntegerEnv(name: string, fallback: number): number {
+    const raw = process.env[name]
+    if (raw === undefined) return fallback
+    const value = Number(raw)
+    if (!Number.isInteger(value) || value <= 0) {
+        throw new Error(`${name} must be a positive integer, received ${raw}`)
+    }
+    return value
+}
+
+function nonEmptyEnv(name: string, fallback: string): string {
+    const value = process.env[name] ?? fallback
+    if (value.length === 0) throw new Error(`${name} must not be empty`)
+    return value
+}
+
+function benchmarkSide(): BenchmarkSide {
+    const side = process.env.BENCH_SIDE ?? "head"
+    if (side !== "base" && side !== "head") {
+        throw new Error(`BENCH_SIDE must be base or head, received ${side}`)
+    }
+    return side
+}
+
+const RUN_CONTEXT = {
+    pairId: nonEmptyEnv("BENCH_PAIR_ID", "local"),
+    side: benchmarkSide(),
+    order: positiveIntegerEnv("BENCH_ORDER", 1),
+    suite: nonEmptyEnv("BENCH_SUITE", "local"),
+}
+
+type ObservationStats = Pick<
+    Awaited<ReturnType<typeof measure>>,
+    "p25" | "p50" | "p75" | "p99" | "ticks" | "samples"
+>
+
+/** Convert Mitata stats to the compact, versioned row written to NDJSON. */
+export function toBenchmarkObservation(
+    benchmark: string,
+    stats: ObservationStats,
+): BenchmarkObservation {
+    return {
+        schemaVersion: BENCHMARK_RESULT_SCHEMA_VERSION,
+        kind: "latency",
+        unit: "ns",
+        benchmark,
+        ...RUN_CONTEXT,
+        runtime: RUNTIME,
+        runId: RUN_ID,
+        processId: process.pid,
+        p25: stats.p25,
+        p50: stats.p50,
+        p75: stats.p75,
+        p99: stats.p99,
+        ticks: stats.ticks,
+        sampleCount: stats.samples.length,
+    }
+}
 
 // Measurement budget. 100ms per benchmark keeps the suite cheap enough to run
 // 3× per side in the relative-CB gate. Operations slower than mitata's 65µs
@@ -27,10 +93,11 @@ const MEASURE_ONE_OPTS = {
     warmup_samples: 20,
 }
 
-// Record one absolute latency (ns) for a benchmark. mitata's measure() already
-// returns a robust, tail-trimmed p50. CI repeats the suite; the base lane takes
-// the cross-run median, while the PR lane gates on the smallest paired ratio
-// (see toPairedBmf in scripts/bench-to-bmf.ts).
+// Record compact percentile diagnostics for one benchmark. mitata's measure()
+// already returns a robust, tail-trimmed p50. CI repeats the suite; the base lane
+// takes the cross-run median, while the PR lane gates on the smallest paired
+// p50 ratio (see toPairedBmf in scripts/bench-to-bmf.ts). The raw sample array
+// stays in-process and is represented in NDJSON only by sampleCount.
 export async function measureOne(
     name: string,
     fn: () => void | Promise<void>,
@@ -45,7 +112,7 @@ export async function measureOne(
     const stats = await measure(fn, MEASURE_ONE_OPTS)
     console.log(`  ${name}: ${fmtNs(stats.p50)}`)
 
-    const result = { kind: "latency", name, ns: stats.p50 }
+    const result = toBenchmarkObservation(name, stats)
     appendFileSync(RESULTS_PATH, JSON.stringify(result) + "\n")
     return stats
 }
