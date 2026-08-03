@@ -1454,7 +1454,12 @@ const settleTreeStore = (
     // Descent: plan children always; branch-index scopes for any trigger with
     // registered inherited-dependency branches. Per-child group structure
     // preserves reaching-pass granularity and each group's report sink.
-    let childGroups: Map<StoreData, TreeTriggerGroup[]> | undefined
+    // A child mapped to `undefined` is reached with no branch-visible triggers.
+    // Absence is represented by the value itself rather than a shared empty
+    // array: `spreadGroup` below treats a missing/undefined list as "allocate a
+    // fresh one", so no ordering between the two writers can ever append into
+    // state shared beyond this frame.
+    let childGroups: Map<StoreData, TreeTriggerGroup[] | undefined> | undefined
     const spreadGroup = (
         atoms: AtomInput[],
         groupReport: ChangeReport | undefined,
@@ -1694,7 +1699,7 @@ const settleTreeStore = (
         for (const child of entry.children) {
             if (!childGroups) childGroups = new Map()
             if (!childGroups.has(child.data)) {
-                childGroups.set(child.data, EMPTY_GROUPS)
+                childGroups.set(child.data, undefined)
             }
         }
     }
@@ -1712,7 +1717,7 @@ const settleTreeStore = (
             settleTreeStore(
                 childEntry,
                 childData,
-                groupList === EMPTY_GROUPS ? undefined : groupList,
+                groupList,
                 foldedPeerAtoms,
                 globalSink,
                 notify,
@@ -1723,10 +1728,6 @@ const settleTreeStore = (
         }
     }
 }
-
-// Shared frozen sentinel for plan children reached with no branch-visible
-// triggers — never mutated (spreadGroup only appends to lists it created).
-const EMPTY_GROUPS: TreeTriggerGroup[] = []
 
 // Scope-recursive entry: re-evaluate selectors that depend on these atoms in
 // this scope and cross into nested scopes. Skips collecting direct atom and
