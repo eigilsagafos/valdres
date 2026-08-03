@@ -1,4 +1,4 @@
-import { describe, expect, mock, test } from "bun:test"
+import { describe, expect, mock, spyOn, test } from "bun:test"
 import { atom } from "../atom"
 import { atomFamily } from "../atomFamily"
 import { selector } from "../selector"
@@ -959,5 +959,27 @@ describe("deterministic architecture performance gates", () => {
         unsubscribe()
         expect(Object.hasOwn(data, "cache")).toBe(false)
         target.dispose()
+    })
+
+    test("ordinary cached reads stay outside cache policy", () => {
+        const target = store()
+        const plain = atom(0)
+        const cached = atom(0, { maxAge: 100 })
+        const expireSpy = spyOn(cacheController, "expireIfStale")
+        try {
+            target.get(plain)
+            expireSpy.mockClear()
+
+            for (let i = 0; i < 1_000; i++) target.get(plain)
+            expect(expireSpy).not.toHaveBeenCalled()
+
+            target.get(cached)
+            expireSpy.mockClear()
+            target.get(cached)
+            expect(expireSpy).toHaveBeenCalledTimes(1)
+        } finally {
+            expireSpy.mockRestore()
+            target.dispose()
+        }
     })
 })
