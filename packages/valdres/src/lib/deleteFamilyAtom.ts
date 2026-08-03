@@ -2,6 +2,7 @@ import type { AtomFamilyAtom } from "../types/AtomFamilyAtom"
 import type { StoreData } from "../types/StoreData"
 import { runCommitPlan } from "./commitEngine"
 import { createCommitErrors } from "./commitErrors"
+import { deleteSettlement, NO_ON_SETS } from "./commitPlans"
 import { settleDeletedCommit } from "./propagateUpdatedAtoms"
 import { noteStateValueChanged } from "./stateRevisions"
 
@@ -20,12 +21,8 @@ export const deleteFamilyAtom = <
     // family(...args) starts returning a different object for the same key.
     runCommitPlan({
         data,
-        settlement: {
-            kind: "delete",
-            atoms: [atom],
-            settle: settleDeletedCommit,
-        },
-        onSets: [],
+        settlement: deleteSettlement(data, [atom], settleDeletedCommit),
+        onSets: NO_ON_SETS,
         errors: createCommitErrors(),
         report: "delete",
         continueAfterError: false,

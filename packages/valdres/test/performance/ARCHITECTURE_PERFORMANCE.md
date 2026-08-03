@@ -60,6 +60,17 @@ one side of a PR comparison.
 - `commitPlanRuns`: admitted `runCommitPlan` executions. Every single-store
   transaction commit shape (ordinary, hooked, cleanup) must execute exactly one
   plan; scalar direct writes correctly report zero.
+- `commitPlanAllocations`: plan-graph containers — settlements, forest entries
+  and entry lists, global effects, descriptor queues — built through
+  `lib/commitPlans.ts` inside the window. A scalar write (no plan at all), a
+  hooked direct write, and a hook-free transaction commit all report zero: the
+  hook-free bulk shape reuses one module-static plan graph. A direct global
+  write reports exactly `6` — ONE `[atom, value, origin]` descriptor and ONE
+  queue, shared by the ordered global sets and the deferred onSet queue because
+  they describe the same write, plus the forest entry, its list, the global
+  effects, and the settlement. A plan object built as an inline literal at a
+  call site is outside this count. Like `assertPlanLegal`, this counter is an
+  engine self-check and is compiled out of the published bundle.
 
 The collector is an internal optional `StoreData` field. It is attached only for
 one synchronous test/benchmark window, inherited by scopes created during that

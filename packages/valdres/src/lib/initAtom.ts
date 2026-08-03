@@ -7,6 +7,7 @@ import { isSelector } from "../utils/isSelector"
 import { createScalarCommit, runCommitPlan } from "./commitEngine"
 import { createCommitErrors } from "./commitErrors"
 import { SEED_WRITE, SETTLE_DEFAULT } from "./commitIntents"
+import { NO_ON_SETS, updateSettlement } from "./commitPlans"
 import { getState } from "./getState"
 import { hasAtomCommitObservers } from "./hasAtomCommitObservers"
 import { settleCommit } from "./propagateUpdatedAtoms"
@@ -132,12 +133,12 @@ export const getAtomInitValue = <V = any>(
                     }
                     runCommitPlan({
                         data,
-                        settlement: {
-                            kind: "update",
-                            atoms: [atom],
-                            settle: settleCommit,
-                            flags: SETTLE_DEFAULT,
-                        },
+                        settlement: updateSettlement(
+                            data,
+                            [atom],
+                            settleCommit,
+                            SETTLE_DEFAULT,
+                        ),
                         admit: () =>
                             admitFunctionDefaultTransition(
                                 atom,
@@ -156,7 +157,7 @@ export const getAtomInitValue = <V = any>(
                                 undefined,
                                 undefined,
                             ),
-                        onSets: [],
+                        onSets: NO_ON_SETS,
                         errors: createCommitErrors(),
                         report: "async-set",
                     })

@@ -111,6 +111,94 @@ describe("store.onCommitEnd", () => {
         unsub()
     })
 
+    test("a no-op txn (every write value-equal) does not commit, so it does not fire", () => {
+        const store1 = store()
+        const a = atom(1)
+        const b = atom(2)
+        store1.get(a)
+        store1.get(b)
+        const fired = mock(() => {})
+        const unsub = store1.onCommitEnd(fired)
+        store1.txn(txn => {
+            txn.set(a, 1)
+            txn.set(b, 2)
+        })
+        expect(fired).toHaveBeenCalledTimes(0)
+        unsub()
+    })
+
+    test("a no-op reset (already at the default) does not fire", () => {
+        const store1 = store()
+        const a = atom(1)
+        store1.get(a)
+        const fired = mock(() => {})
+        const unsub = store1.onCommitEnd(fired)
+        store1.reset(a)
+        expect(fired).toHaveBeenCalledTimes(0)
+        store1.set(a, 2)
+        store1.reset(a)
+        expect(fired).toHaveBeenCalledTimes(2)
+        unsub()
+    })
+
+    // The boundary of a commit whose write phase runs inside it is opened
+    // before its emptiness is known, so these pin the two halves of the answer
+    // it reports on close.
+    test("a hooked txn that changes something still fires exactly once", () => {
+        const store1 = store()
+        const hooked = atom(0, { onSet: () => {} })
+        const plain = atom(0)
+        const fired = mock(() => {})
+        const unsub = store1.onCommitEnd(fired)
+        store1.txn(txn => {
+            txn.set(hooked, 1)
+            txn.set(plain, 1)
+        })
+        expect(fired).toHaveBeenCalledTimes(1)
+        unsub()
+    })
+
+    test("a commit whose subscriber throws still fires — the writes landed", () => {
+        const store1 = store()
+        const a = atom(0)
+        const fired = mock(() => {})
+        store1.sub(a, () => {
+            throw new Error("subscriber boom")
+        })
+        const unsub = store1.onCommitEnd(fired)
+        expect(() => store1.txn(txn => txn.set(a, 1))).toThrow(
+            "subscriber boom",
+        )
+        expect(store1.get(a)).toBe(1)
+        expect(fired).toHaveBeenCalledTimes(1)
+        unsub()
+    })
+
+    test("a no-op outer commit still fires once for work a nested commit does", () => {
+        const store1 = store()
+        const trigger = atom(0)
+        const nested = atom(0)
+        const events: string[] = []
+        let cascaded = false
+        // The hook runs inside the outer commit; its write is the only work.
+        const hooked = atom(0, {
+            onSet: () => {
+                if (cascaded) return
+                cascaded = true
+                store1.set(nested, 99)
+            },
+        })
+        store1.sub(nested, () => events.push("sub-nested"))
+        const unsub = store1.onCommitEnd(() => events.push("commit-end"))
+        store1.txn(txn => {
+            txn.set(hooked, 1)
+            txn.set(trigger, 0) // value-equal, contributes nothing
+        })
+        expect(store1.get(nested)).toBe(99)
+        expect(events).toEqual(["sub-nested", "commit-end"])
+        unsub()
+    })
+
     test("unset with no own value is a no-op and does not fire", () => {
         const store1 = store()
         const a = atom(0)

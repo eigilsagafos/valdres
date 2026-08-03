@@ -12,6 +12,7 @@ import { isSelector } from "../utils/isSelector"
 import { createScalarCommit, runCommitPlan } from "./commitEngine"
 import { createCommitErrors } from "./commitErrors"
 import { SETTLE_SKIP_FAMILY_INDEX } from "./commitIntents"
+import { NO_ON_SETS, updateSettlement } from "./commitPlans"
 import {
     clearStaleSelectorActivation,
 } from "./graph"
@@ -121,12 +122,12 @@ const coordinateDeletedMemberDefault = <Value>(
             }
             runCommitPlan({
                 data,
-                settlement: {
-                    kind: "update",
-                    atoms: [state],
-                    settle: settleCommit,
-                    flags: SETTLE_SKIP_FAMILY_INDEX,
-                },
+                settlement: updateSettlement(
+                    data,
+                    [state],
+                    settleCommit,
+                    SETTLE_SKIP_FAMILY_INDEX,
+                ),
                 admit: () =>
                     admitDeletedMemberDefaultTransition(
                         state,
@@ -145,7 +146,7 @@ const coordinateDeletedMemberDefault = <Value>(
                         undefined,
                         undefined,
                     ),
-                onSets: [],
+                onSets: NO_ON_SETS,
                 errors: createCommitErrors(),
                 report: undefined,
             })

@@ -1,42 +1,42 @@
 {
     "dist": {
-        "raw": 287155,
-        "gzip": 53123
+        "raw": 285797,
+        "gzip": 53203
     },
     "distFiles": {
         "adapter-internals/v1.js": {
             "raw": 1015,
-            "gzip": 420
+            "gzip": 417
         },
-        "chunk-nz3eh9tm.js": {
-            "raw": 213459,
-            "gzip": 37613
+        "chunk-pwppbtvj.js": {
+            "raw": 212701,
+            "gzip": 37771
         },
         "index.js": {
-            "raw": 72681,
-            "gzip": 15090
+            "raw": 72081,
+            "gzip": 15015
         }
     },
     "packed": {
-        "raw": 486473,
-        "gzip": 109302
+        "raw": 493321,
+        "gzip": 111782
     },
     "fixtures": {
         "atom": {
-            "raw": 100841,
-            "gzip": 30178
+            "raw": 99848,
+            "gzip": 30348
         },
         "atom-selector-store": {
-            "raw": 101110,
-            "gzip": 30296
+            "raw": 100117,
+            "gzip": 30462
         },
         "all-exports": {
-            "raw": 112940,
-            "gzip": 33891
+            "raw": 111947,
+            "gzip": 34067
         },
         "adapter-internals": {
-            "raw": 80027,
-            "gzip": 23735
+            "raw": 78475,
+            "gzip": 23617
         }
     }
 }

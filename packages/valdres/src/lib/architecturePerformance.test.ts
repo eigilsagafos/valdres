@@ -89,6 +89,7 @@ describe("deterministic architecture performance gates", () => {
             unmountTransitions: 0,
             // A scalar direct write settles without an engine plan.
             commitPlanRuns: 0,
+            commitPlanAllocations: 0,
         })
     })
 
@@ -378,6 +379,78 @@ describe("deterministic architecture performance gates", () => {
             })
         })
         expect(cleanup.commitPlanRuns).toBe(1)
+    })
+
+    // The plan graph of a hot commit shape is module-static, so the only thing
+    // a commit may allocate is the data describing THAT write. These are exact
+    // gates, not budgets: a regression here means a shape started building its
+    // plan per call again.
+    test("hot commit shapes build no per-commit plan graph", () => {
+        const target = store()
+        const value = atom(0)
+        const hooked = atom(0, { onSet: noop })
+        target.sub(value, noop)
+        target.sub(hooked, noop)
+
+        // No plan at all: the scalar write settles directly.
+        const scalar = measureArchitecture(target, () => target.set(value, 1))
+        expect(scalar.commitPlanAllocations).toBe(0)
+
+        // A hooked non-global write is the allocation-free direct path.
+        const withHook = measureArchitecture(target, () =>
+            target.set(hooked, 1),
+        )
+        expect(withHook.commitPlanAllocations).toBe(0)
+
+        // The hook-free transaction singleton runs a plan without building one.
+        const bulk = measureArchitecture(target, () =>
+            target.txn(txn => txn.set(value, 2)),
+        )
+        expect(bulk.commitPlanRuns).toBe(1)
+        expect(bulk.commitPlanAllocations).toBe(0)
+    })
+
+    test("a direct global write allocates only the objects it carries", () => {
+        const origin = store()
+        const peer = store()
+        const shared = atom(0, { global: true })
+        origin.sub(shared, noop)
+        peer.sub(shared, noop)
+        origin.set(shared, 1)
+
+        const counts = measureArchitecture([origin, peer], () =>
+            origin.set(shared, 2),
+        )
+        reportCounts("Direct global write", counts)
+
+        expect(counts.commitPlanRuns).toBe(1)
+        // ONE [atom, value, origin] descriptor and ONE queue — the ordered
+        // global sets and the deferred onSet queue describe the same write, so
+        // they share both instead of allocating a duplicate pair — plus the
+        // forest entry, its list, the global effects, and the settlement.
+        expect(counts.commitPlanAllocations).toBe(6)
+        expect(peer.get(shared)).toBe(2)
+    })
+
+    test("a global write from inside a global fan-out settles independently", () => {
+        const origin = store()
+        const peer = store()
+        const outer = atom(0, { global: true })
+        const inner = atom(0, { global: true })
+        origin.sub(outer, () => origin.set(inner, origin.get(outer) * 10))
+        peer.sub(inner, noop)
+        origin.set(outer, 1)
+
+        const counts = measureArchitecture([origin, peer], () =>
+            origin.set(outer, 2),
+        )
+
+        // Outer commit + the nested one its subscriber opened.
+        expect(counts.commitPlanRuns).toBe(2)
+        // Two independent commits, six objects each — nothing is shared or
+        // borrowed across them.
+        expect(counts.commitPlanAllocations).toBe(12)
+        expect(peer.get(inner)).toBe(20)
     })
 
     // A mixed single-store transaction now settles through the same commit

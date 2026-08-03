@@ -1,4 +1,5 @@
 import type { Atom, CacheMeta } from "../types/Atom"
+import type { CommitForestEntry } from "../types/CommitForestSettleFn"
 import type { InternalGlobalAtom } from "../types/InternalGlobalAtom"
 import type { State } from "../types/State"
 import type { StoreData } from "../types/StoreData"
@@ -9,6 +10,13 @@ import { cacheState } from "./cacheState"
 import { runCommitPlan } from "./commitEngine"
 import { createCommitErrors, recordCommitError } from "./commitErrors"
 import { SETTLE_DEFAULT } from "./commitIntents"
+import {
+    forestEntry,
+    forestSettlement,
+    NO_ON_SETS,
+    NO_SETTLEMENT,
+    updateSettlement,
+} from "./commitPlans"
 import { equal } from "./equal"
 import { hasAtomCommitObservers } from "./hasAtomCommitObservers"
 import { settleCommit, settleCommitForest } from "./propagateUpdatedAtoms"
@@ -34,19 +42,14 @@ const commitLocalWrite = (
     admit: () => boolean,
 ): boolean => {
     const settlement = hasAtomCommitObservers(state, data)
-        ? {
-              kind: "update" as const,
-              atoms: [state],
-              settle: settleCommit,
-              flags: SETTLE_DEFAULT,
-          }
-        : { kind: "none" as const }
+        ? updateSettlement(data, [state], settleCommit, SETTLE_DEFAULT)
+        : NO_SETTLEMENT
     return runCommitPlan({
         data,
         settlement,
         admit,
         apply: () => setValueInData(state, value, data),
-        onSets: [],
+        onSets: NO_ON_SETS,
         errors: createCommitErrors(),
         report: "revalidate",
     })
@@ -60,10 +63,10 @@ const commitFreshness = (
 ): boolean =>
     runCommitPlan({
         data,
-        settlement: { kind: "none" },
+        settlement: NO_SETTLEMENT,
         admit,
         apply: () => cacheState.recordWrite(state, data, refreshedAt),
-        onSets: [],
+        onSets: NO_ON_SETS,
         errors: createCommitErrors(),
         report: undefined,
     })
@@ -191,22 +194,16 @@ const retain = (
         refreshedAt?: number,
     ): boolean => {
         const snapshot = [...globalState!.stores]
-        const entries: {
-            data: StoreData
-            updatedAtoms: Atom<any>[]
-            deleted: undefined
-            unsetAtoms: undefined
-            children: undefined
-        }[] = []
+        const entries: CommitForestEntry[] = []
         const errors = createCommitErrors()
         return runCommitPlan({
             data,
-            settlement: {
-                kind: "forest",
+            settlement: forestSettlement(
+                data,
                 entries,
-                globalUpdates: undefined,
-                settle: settleCommitForest,
-            },
+                undefined,
+                settleCommitForest,
+            ),
             admit: () => current(requestGeneration),
             apply: () => {
                 for (const store of snapshot) {
@@ -234,20 +231,22 @@ const retain = (
                         }
                         setValueInData(target, value, store)
                         if (hasAtomCommitObservers(target, store)) {
-                            entries.push({
-                                data: store,
-                                updatedAtoms: [target],
-                                deleted: undefined,
-                                unsetAtoms: undefined,
-                                children: undefined,
-                            })
+                            entries.push(
+                                forestEntry(
+                                    store,
+                                    [target],
+                                    undefined,
+                                    undefined,
+                                    undefined,
+                                ),
+                            )
                         }
                     } catch (error) {
                         recordCommitError(errors, error)
                     }
                 }
             },
-            onSets: [],
+            onSets: NO_ON_SETS,
             errors,
             report: "revalidate",
         })

@@ -28,6 +28,28 @@ describe("build output", () => {
         )
     })
 
+    // Companion guard for the engine self-checks — `assertPlanLegal` and the
+    // `commitPlanAllocations` counter. Both observe invariants and costs only
+    // valdres's own code can affect, so they are compiled OUT of the published
+    // bundle rather than shipped behind a runtime flag: build.ts defines
+    // `process.env.VALDRES_ENGINE_SELF_CHECKS` as "off" and the branches fold
+    // to constants a consumer's bundler drops. If that define were ever lost,
+    // the dist would ship both graphs AND unguarded `process.env` reads that
+    // throw on module load in raw browser ESM — so assert every half here,
+    // where a source test cannot see them.
+    test("compiles out the engine self-checks", async () => {
+        const { outdir, ...inMemory } = buildOptions
+        const result = await Bun.build(inMemory)
+        expect(result.success).toBe(true)
+        const code = (
+            await Promise.all(result.outputs.map(output => output.text()))
+        ).join("\n")
+        expect(code).not.toContain("VALDRES_ENGINE_SELF_CHECKS")
+        expect(code).toContain("if (!IS_PROD && false)")
+        expect(code).not.toContain("illegal CommitPlan")
+        expect(code).not.toContain("commitPlanAllocations")
+    })
+
     test("public and adapter entrypoints share one transaction runtime", async () => {
         const { outdir, ...inMemory } = buildOptions
         const result = await Bun.build(inMemory)

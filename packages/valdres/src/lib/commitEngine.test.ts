@@ -1,5 +1,6 @@
 import { describe, expect, mock, test } from "bun:test"
 import { atom } from "../atom"
+import type { Atom } from "../types/Atom"
 import { atomFamily } from "../atomFamily"
 import { store } from "../store"
 import type { CommitForestSettleFn } from "../types/CommitForestSettleFn"
@@ -167,6 +168,102 @@ describe("commitEngine", () => {
             expect(commitEnds).toHaveBeenCalledTimes(0)
         })
 
+        test("an all-empty plan opens no boundary of its own", () => {
+            const store1 = store()
+            const data = getStoreData(store1)
+            const events: string[] = []
+            store1.onCommitEnd(() => events.push("commitEnd"))
+
+            runCommitPlan({
+                data,
+                settlement: {
+                    kind: "update",
+                    atoms: [],
+                    settle: (() => events.push("settle")) as SettleFn,
+                    flags: SETTLE_DEFAULT,
+                },
+                onSets: [],
+                errors: createCommitErrors(),
+                report: undefined,
+                boundary: {
+                    begin: root => {
+                        events.push("begin")
+                        return root.tree
+                    },
+                    end: () => events.push("end"),
+                },
+            })
+
+            // Nothing to apply, fan out, run, settle, or flush is not a commit,
+            // so onCommitEnd must not fire for it.
+            expect(events).toEqual([])
+        })
+
+        test("a plan with deferred work opens its boundary even when nothing settles", () => {
+            const store1 = store()
+            const data = getStoreData(store1)
+            const events: string[] = []
+            const hooked = atom(0, { onSet: () => events.push("hook") })
+
+            runCommitPlan({
+                data,
+                settlement: {
+                    kind: "update",
+                    atoms: [],
+                    settle: (() => events.push("settle")) as SettleFn,
+                    flags: SETTLE_DEFAULT,
+                },
+                onSets: [[hooked, 1, data]],
+                errors: createCommitErrors(),
+                report: undefined,
+                flushReport: () => events.push("flush"),
+                boundary: {
+                    begin: root => {
+                        events.push("begin")
+                        return root.tree
+                    },
+                    end: () => events.push("end"),
+                },
+            })
+
+            expect(events).toEqual(["begin", "hook", "flush", "end"])
+        })
+
+        test("the settlement gate is evaluated once, after apply and fan-out", () => {
+            const store1 = store()
+            const data = getStoreData(store1)
+            const a = atom(0)
+            const order: string[] = []
+            const settlement = {
+                kind: "update" as const,
+                atoms: [] as Atom<any>[],
+                // A settle that empties its own trigger list must not retract
+                // the cleanup phase that the same commit already qualified for.
+                settle: (() => {
+                    order.push("settle")
+                    settlement.atoms = []
+                }) as SettleFn,
+                flags: SETTLE_DEFAULT,
+            }
+
+            runCommitPlan({
+                data,
+                settlement,
+                // Work appears during apply — the gate cannot be answered before
+                // the write phase, only once after it.
+                apply: () => {
+                    order.push("apply")
+                    settlement.atoms = [a]
+                },
+                onSets: [],
+                errors: createCommitErrors(),
+                report: undefined,
+                afterSettle: () => order.push("cleanup"),
+            })
+
+            expect(order).toEqual(["apply", "settle", "cleanup"])
+        })
+
         test("failed admission runs no phase and opens no boundary", () => {
             const store1 = store()
             const data = getStoreData(store1)
@@ -182,11 +279,13 @@ describe("commitEngine", () => {
                 errors: createCommitErrors(),
                 report: undefined,
                 afterSettle: () => events.push("after"),
-                beginCommit: root => {
-                    events.push("begin")
-                    return root
+                boundary: {
+                    begin: root => {
+                        events.push("begin")
+                        return root.tree
+                    },
+                    end: () => events.push("end"),
                 },
-                endCommit: () => events.push("end"),
             })
 
             expect(admitted).toBe(false)
@@ -233,12 +332,14 @@ describe("commitEngine", () => {
                 beforeSettle: () => order.push("report"),
                 afterSettle: () => order.push("cleanup"),
                 flushReport: () => order.push("flush"),
-                beginCommit: root => {
-                    order.push("begin")
-                    return root
+                boundary: {
+                    begin: root => {
+                        order.push("begin")
+                        return root.tree
+                    },
+                    end: (_tree, swallowErrors) =>
+                        order.push(`end:${swallowErrors}`),
                 },
-                endCommit: (_root, swallowErrors) =>
-                    order.push(`end:${swallowErrors}`),
             })
 
             expect(order).toEqual([
@@ -275,13 +376,15 @@ describe("commitEngine", () => {
                     onSets: [[a, 1, data]],
                     errors: createCommitErrors(),
                     report: undefined,
-                    beginCommit: root => {
-                        order.push("begin")
-                        return root
-                    },
-                    endCommit: () => {
-                        order.push("end")
-                        throw new Error("end")
+                    boundary: {
+                        begin: root => {
+                            order.push("begin")
+                            return root.tree
+                        },
+                        end: () => {
+                            order.push("end")
+                            throw new Error("end")
+                        },
                     },
                     afterCommit: () => {
                         order.push("finalize")
@@ -323,9 +426,11 @@ describe("commitEngine", () => {
                     report: "unset",
                     afterSettle: cleanup,
                     flushReport: flush,
-                    beginCommit: root => root,
-                    endCommit: (_root, swallowErrors) =>
-                        endStates.push(swallowErrors),
+                    boundary: {
+                        begin: root => root.tree,
+                        end: (_tree, swallowErrors) =>
+                            endStates.push(swallowErrors),
+                    },
                     continueAfterError: false,
                 }),
             ).toThrow(settleError)
@@ -396,6 +501,7 @@ describe("commitEngine", () => {
                 settlement: {
                     kind: "forest",
                     entries,
+                    global: undefined,
                     globalUpdates: undefined,
                     settle,
                 },
@@ -439,6 +545,7 @@ describe("commitEngine", () => {
                                 children: undefined,
                             },
                         ],
+                        global: undefined,
                         globalUpdates: undefined,
                         settle,
                     },
@@ -470,6 +577,7 @@ describe("commitEngine", () => {
                             children: undefined,
                         },
                     ],
+                    global: undefined,
                     globalUpdates: undefined,
                     settle: deleteSettle,
                 },
@@ -493,6 +601,7 @@ describe("commitEngine", () => {
                             children: undefined,
                         },
                     ],
+                    global: undefined,
                     globalUpdates: undefined,
                     settle: unsetSettle,
                 },

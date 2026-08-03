@@ -5,6 +5,14 @@ import { isGlobalAtom } from "../utils/isGlobalAtom"
 import { createScalarCommit, runCommitPlan } from "./commitEngine"
 import { createCommitErrors } from "./commitErrors"
 import { SETTLE_DEFAULT } from "./commitIntents"
+import {
+    globalEffects,
+    forestSettlement,
+    globalWriteQueue,
+    NO_ON_SETS,
+    singleStoreForest,
+    updateSettlement,
+} from "./commitPlans"
 import { applyGlobalSets } from "./globalAtomFanOut"
 import { hasAtomCommitObservers } from "./hasAtomCommitObservers"
 import { settleCommit, settleCommitForest } from "./propagateUpdatedAtoms"
@@ -206,31 +214,17 @@ const settleAsyncAtomResolution = <Value>(
     const errors = createCommitErrors()
     const isGlobal = hasOnSet && isGlobalAtom(atom)
     if (isGlobal) {
-        const settlement = {
-            kind: "forest" as const,
-            entries: [
-                {
-                    data,
-                    updatedAtoms: [atom] as Atom<any>[],
-                    deleted: undefined,
-                    unsetAtoms: undefined,
-                    children: undefined,
-                },
-            ],
-            globalUpdates: undefined as
-                | ReturnType<typeof applyGlobalSets>
-                | undefined,
-            settle: settleCommitForest,
-        }
+        // One atom, one store: the ordered global sets and the deferred onSet
+        // queue describe the same write, so they share one descriptor queue.
+        const queue = globalWriteQueue(atom, resolvedValue, data)
         runCommitPlan({
             data,
-            settlement,
-            globalEffects: {
-                sets: [[atom, resolvedValue, data]],
-                source: "async-set",
-                updates: undefined,
-                apply: applyGlobalSets,
-            },
+            settlement: forestSettlement(
+                data,
+                singleStoreForest(data, [atom]),
+                globalEffects(data, queue, "async-set", applyGlobalSets),
+                settleCommitForest,
+            ),
             admit: () =>
                 admitAsyncAtomTransition(
                     atom,
@@ -250,7 +244,7 @@ const settleAsyncAtomResolution = <Value>(
                     undefined,
                 )
             },
-            onSets: [[atom, resolvedValue, data]],
+            onSets: queue,
             errors,
             report: "async-set",
         })
@@ -258,12 +252,12 @@ const settleAsyncAtomResolution = <Value>(
     }
     runCommitPlan({
         data,
-        settlement: {
-            kind: "update",
-            atoms: [atom],
-            settle: settleCommit,
-            flags: SETTLE_DEFAULT,
-        },
+        settlement: updateSettlement(
+            data,
+            [atom],
+            settleCommit,
+            SETTLE_DEFAULT,
+        ),
         admit: () =>
             admitAsyncAtomTransition(
                 atom,
@@ -283,7 +277,7 @@ const settleAsyncAtomResolution = <Value>(
                 undefined,
             )
         },
-        onSets: hasOnSet ? [[atom, resolvedValue, data]] : [],
+        onSets: hasOnSet ? [[atom, resolvedValue, data]] : NO_ON_SETS,
         errors,
         report: "async-set",
     })

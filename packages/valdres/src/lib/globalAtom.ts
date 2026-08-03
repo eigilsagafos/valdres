@@ -1,6 +1,7 @@
 import { equal } from "./equal"
 import type { AtomDefaultValue } from "../types/AtomDefaultValue"
 import type { AtomOnInit } from "../types/AtomOnInit"
+import type { CommitForestEntry } from "../types/CommitForestSettleFn"
 import type { GlobalAtomResetSelfFunc } from "../types/GlobalAtomResetSelfFunc"
 import type { GlobalAtomSetSelfFunc } from "../types/GlobalAtomSetSelfFunc"
 import type { AtomOnSet } from "./../types/AtomOnSet"
@@ -10,6 +11,11 @@ import type { StoreData } from "./../types/StoreData"
 import { cacheController } from "./cacheController"
 import { runCommitPlan } from "./commitEngine"
 import { createCommitErrors, recordCommitError } from "./commitErrors"
+import {
+    forestEntry,
+    forestSettlement,
+    NO_ON_SETS,
+} from "./commitPlans"
 import { globalOnSetMarker } from "./globalOnSetMarker"
 import {
     isLive,
@@ -143,28 +149,25 @@ export const globalAtom = <Value = unknown>(
             }
         }
 
-        const entries = []
+        const entries: CommitForestEntry[] = []
         for (const store of snapshot) {
             detach(store)
             detachOwnValue(atom, store)
-            entries.push({
-                data: store,
-                updatedAtoms: [atom],
-                deleted: undefined,
-                unsetAtoms: undefined,
-                children: undefined,
-            })
+            entries.push(
+                forestEntry(store, [atom], undefined, undefined, undefined),
+            )
         }
 
+        const origin = subscribedStores[0] ?? snapshot[0] ?? globalStoreData
         runCommitPlan({
-            data: subscribedStores[0] ?? snapshot[0] ?? globalStoreData,
-            settlement: {
-                kind: "forest",
+            data: origin,
+            settlement: forestSettlement(
+                origin,
                 entries,
-                globalUpdates: undefined,
-                settle: settleCommitForest,
-            },
-            onSets: [],
+                undefined,
+                settleCommitForest,
+            ),
+            onSets: NO_ON_SETS,
             errors,
             report: "reset",
             afterCommit: () => {

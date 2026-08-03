@@ -1,4 +1,5 @@
 import type { Atom } from "../types/Atom"
+import type { CommitForestEntry } from "../types/CommitForestSettleFn"
 import type { CommitPlan } from "../types/CommitPlan"
 import type { SettleFn } from "../types/SettleFn"
 import type { StoreData } from "../types/StoreData"
@@ -6,7 +7,9 @@ import type { StoreTreeRuntime } from "./storeTreeRuntime"
 import { recordCommitPlanRun } from "./architectureInstrumentation"
 import { recordCommitError, throwCommitError } from "./commitErrors"
 import { SETTLE_DEFAULT } from "./commitIntents"
+import { assertPlanLegal } from "./commitPlans"
 import { getStoreRuntime } from "./getStoreRuntime"
+import { IS_PROD } from "./IS_PROD"
 import { runOnSets } from "./runOnSets"
 
 /**
@@ -84,14 +87,14 @@ export const runHookedDirectWrite = <Value>(
 
 // Module-level phase gates: runCommitPlan is on the per-commit hot path of
 // every migrated write shape, so its guards must not allocate per run.
-const treeHasWork = (
-    entries: Extract<CommitPlan["settlement"], { kind: "forest" }>["entries"],
-) => {
+const treeHasWork = (entries: CommitForestEntry[]) => {
     for (const entry of entries) {
+        // Every group is now non-empty-or-absent, so all three trigger kinds
+        // answer "is there work here" the same way.
         if (
             entry.updatedAtoms.length > 0 ||
             entry.deleted !== undefined ||
-            (entry.unsetAtoms !== undefined && entry.unsetAtoms.length > 0)
+            entry.unsetAtoms !== undefined
         ) {
             return true
         }
@@ -118,22 +121,72 @@ const planShouldContinue = (plan: CommitPlan) =>
  * → phase 8 cleanup/deferred flush → phase 9 (first captured error rethrown).
  *
  * The settlement's non-empty atom-list guard is contractual, not an
- * optimization: a plan whose every write was value-equal must not settle.
- * Standalone reset may still own an explicit outer boundary because its public
- * historical behavior treats the reset call itself as a commit; ordinary bulk
- * plans do not, so their no-op trace remains empty.
+ * optimization: a plan whose every write was value-equal must not settle. It is
+ * evaluated ONCE per commit — settlement work is final as soon as `apply` and
+ * global fan-out have run — and the same answer gates report preparation,
+ * settlement, and post-notification cleanup.
+ *
+ * A plan with nothing to apply, fan out, run, settle, or flush is not a commit
+ * at all: it opens no boundary, so it cannot fire `onCommitEnd` for a commit
+ * that never happened. Standalone reset may still own an explicit outer
+ * boundary because its public historical behavior treats the reset call itself
+ * as a commit; ordinary bulk plans do not, so their no-op trace remains empty.
  */
+// Declared at module scope (not global) so we don't conflict with a
+// consumer's @types/node or bun-types — mirroring src/lib/IS_PROD.ts.
+declare const process: { env: { VALDRES_ENGINE_SELF_CHECKS?: string } }
+
 export const runCommitPlan = (plan: CommitPlan) => {
-    const settlement = plan.settlement
-    let commitTree: StoreTreeRuntime | undefined
-    let completed = false
+    // Engine self-check. A CommitPlan is never built by user code, so an
+    // illegal one is a bug in THIS package — the audience is valdres
+    // development, not a consumer's dev build. `build.ts` therefore defines
+    // `process.env.VALDRES_ENGINE_SELF_CHECKS` as "off", which folds this to
+    // `if (!IS_PROD && false)`; a consumer's bundler drops the branch and
+    // tree-shakes `assertPlanLegal` and its whole graph, so consumers pay
+    // nothing at all. The env read is written INLINE rather than behind a
+    // shared const because only the inline form folds — bundlers do not
+    // propagate a module-level boolean into this branch. Running against
+    // `src/` leaves the flag unset, so this repo's own test suite checks every
+    // plan the engine executes. `!IS_PROD` is first so the benchmark lane,
+    // which runs `src/` under NODE_ENV=production, short-circuits before the
+    // per-commit `process.env` read and measures what the dist does.
+    if (!IS_PROD && process.env.VALDRES_ENGINE_SELF_CHECKS !== "off")
+        assertPlanLegal(plan)
 
     // Admission is deliberately the very first observable operation. A stale,
     // cancelled, or disposed async result cannot open a commit boundary or run
     // any user code merely by arriving late.
     if (plan.admit && !plan.admit()) return false
     recordCommitPlanRun(plan.data)
-    if (plan.beginCommit) commitTree = plan.beginCommit(plan.data)
+
+    const settlement = plan.settlement
+    const boundary = plan.boundary
+    // The only settlement that owns global fan-out — narrowed once so both the
+    // phase-two write-back and the settle dispatch stay monomorphic.
+    const globalForest =
+        settlement.kind === "forest" && settlement.global !== undefined
+            ? settlement
+            : undefined
+    // Settlement work is fixed once apply and global fan-out have run. A plan
+    // with neither is already final at entry, so its single evaluation happens
+    // here and also answers the boundary question below.
+    const workIsFinal = plan.apply === undefined && globalForest === undefined
+    let hasWork = workIsFinal ? settlementHasWork(settlement) : false
+
+    let commitTree: StoreTreeRuntime | undefined
+    let completed = false
+    // A plan already known to be empty at entry is not a commit at all, so it
+    // opens nothing (a deferred flush alone does not count: an empty sink
+    // notifies nobody). A plan whose emptiness only its own write phase can
+    // decide must open first — the write phase runs inside the boundary — and
+    // reports the answer to `end` below, which is what keeps a no-op reset or
+    // an all-equal transaction from announcing a commit.
+    if (
+        boundary !== undefined &&
+        (!workIsFinal || hasWork || plan.onSets.length > 0)
+    ) {
+        commitTree = boundary.begin(plan.data)
+    }
     try {
         let applied = true
         if (plan.apply) {
@@ -145,17 +198,14 @@ export const runCommitPlan = (plan: CommitPlan) => {
             }
         }
 
-        if (applied && plan.globalEffects) {
+        if (applied && globalForest) {
             try {
-                const updates = plan.globalEffects.apply(
-                    plan.globalEffects.sets,
+                const updates = globalForest.global.apply(
+                    globalForest.global.sets,
                     plan.errors,
                 )
-                plan.globalEffects.updates =
+                globalForest.globalUpdates =
                     updates.size > 0 ? updates : undefined
-                if (settlement.kind === "forest") {
-                    settlement.globalUpdates = plan.globalEffects.updates
-                }
             } catch (error) {
                 recordCommitError(plan.errors, error)
             }
@@ -163,12 +213,13 @@ export const runCommitPlan = (plan: CommitPlan) => {
 
         if (applied) runOnSets(plan.onSets, plan.errors)
 
+        if (applied && !workIsFinal) hasWork = settlementHasWork(settlement)
+
         if (
             applied &&
-            settlementHasWork(settlement) &&
+            hasWork &&
             planShouldContinue(plan) &&
-            plan.beforeSettle &&
-            plan.report
+            plan.beforeSettle !== undefined
         ) {
             try {
                 plan.beforeSettle(plan.report)
@@ -177,11 +228,7 @@ export const runCommitPlan = (plan: CommitPlan) => {
             }
         }
 
-        if (
-            applied &&
-            settlementHasWork(settlement) &&
-            planShouldContinue(plan)
-        ) {
+        if (applied && hasWork && planShouldContinue(plan)) {
             try {
                 if (settlement.kind === "update") {
                     settlement.settle(
@@ -202,7 +249,7 @@ export const runCommitPlan = (plan: CommitPlan) => {
                     settlement.settle(
                         settlement.entries,
                         settlement.globalUpdates,
-                        plan.globalEffects?.source,
+                        settlement.global?.source,
                         plan.report,
                         plan.errors,
                     )
@@ -220,7 +267,7 @@ export const runCommitPlan = (plan: CommitPlan) => {
 
         if (
             applied &&
-            settlementHasWork(settlement) &&
+            hasWork &&
             planShouldContinue(plan) &&
             plan.afterSettle
         ) {
@@ -240,9 +287,21 @@ export const runCommitPlan = (plan: CommitPlan) => {
         }
         completed = true
     } finally {
-        if (commitTree && plan.endCommit) {
+        if (commitTree) {
             try {
-                plan.endCommit(commitTree, plan.errors.hasError || !completed)
+                boundary!.end(
+                    commitTree,
+                    plan.errors.hasError || !completed,
+                    // What the boundary could not know when it opened: a plan
+                    // whose write phase produced no settlement work, ran no
+                    // hook, and captured no error committed nothing, so it
+                    // announces nothing. Work done by a NESTED commit inside it
+                    // is recorded on the tree and still notifies.
+                    hasWork ||
+                        plan.onSets.length > 0 ||
+                        plan.errors.hasError ||
+                        !completed,
+                )
             } catch (error) {
                 recordCommitError(plan.errors, error)
             }

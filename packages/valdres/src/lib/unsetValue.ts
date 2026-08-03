@@ -5,6 +5,7 @@ import { runCommitPlan } from "./commitEngine"
 import { cacheState } from "./cacheState"
 import { createCommitErrors } from "./commitErrors"
 import { SETTLE_INIT_ONLY, SETTLE_UNSET } from "./commitIntents"
+import { NO_ON_SETS, updateSettlement } from "./commitPlans"
 import { getState } from "./getState"
 import {
     refreshInheritedDependencyBranch,
@@ -15,7 +16,7 @@ import {
     hasChangeListener,
     reportUnsetAtom,
 } from "./notifyChangeListeners"
-import { beginCommit, commitEndRegistry, endCommit } from "./onCommitEnd"
+import { activeCommitBoundary } from "./onCommitEnd"
 import { untrackNamedAtom } from "./namedStateIndex"
 import { settleCommit } from "./propagateUpdatedAtoms"
 import { noteStateValueChanged } from "./stateRevisions"
@@ -133,32 +134,47 @@ export const unsetValue = <V>(atom: Atom<V>, data: StoreData): void => {
     const changeSink = hasChangeListener(data)
         ? createChangeSink(undefined, "unset")
         : undefined
+    const settlement = updateSettlement(
+        data,
+        [atom],
+        settleCommit,
+        SETTLE_UNSET,
+    )
+    const afterSettle = () => reDelegateScopeSubscriptions(atom, data)
+    const boundary = activeCommitBoundary()
+    // Historical direct-unset behavior short-circuits cleanup/onChange if
+    // reporting or propagation itself throws.
+    if (changeSink === undefined) {
+        // Nothing listening: the removal record has no delivery target, so the
+        // plan carries no report preparation either.
+        runCommitPlan({
+            data,
+            settlement,
+            onSets: NO_ON_SETS,
+            errors: createCommitErrors(),
+            report: undefined,
+            afterSettle,
+            boundary,
+            continueAfterError: false,
+        })
+        return
+    }
     runCommitPlan({
         data,
-        settlement: {
-            kind: "update",
-            atoms: [atom],
-            settle: settleCommit,
-            flags: SETTLE_UNSET,
-        },
-        onSets: [],
+        settlement,
+        onSets: NO_ON_SETS,
         errors: createCommitErrors(),
         report: changeSink,
-        beforeSettle: changeSink
-            ? report =>
-                  reportUnsetAtom(
-                      atom,
-                      data,
-                      effectiveValueAfterUnset(atom, data),
-                      report,
-                  )
-            : undefined,
-        afterSettle: () => reDelegateScopeSubscriptions(atom, data),
-        flushReport: changeSink ? () => flushChangeSink(changeSink) : undefined,
-        beginCommit: commitEndRegistry.count === 0 ? undefined : beginCommit,
-        endCommit: commitEndRegistry.count === 0 ? undefined : endCommit,
-        // Historical direct-unset behavior short-circuits cleanup/onChange if
-        // reporting or propagation itself throws.
+        beforeSettle: report =>
+            reportUnsetAtom(
+                atom,
+                data,
+                effectiveValueAfterUnset(atom, data),
+                report,
+            ),
+        afterSettle,
+        flushReport: () => flushChangeSink(changeSink),
+        boundary,
         continueAfterError: false,
     })
 }
