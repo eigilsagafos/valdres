@@ -17,7 +17,7 @@
         "test": "bun --filter '*' test",
         "test:ci": "bun --filter '*' test -- --reporter=junit --reporter-outfile=junit.xml",
         "changeset": "changeset",
-        "version-packages": "changeset version",
+        "version-packages": "changeset version && bun install",
         "release": "bash scripts/ci-publish.sh",
         "verify-publish": "bun run scripts/verify-publish.ts",
         "check-size": "bun run scripts/check-package-size.ts",
