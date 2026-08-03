@@ -19,7 +19,7 @@ const getAtomFamilyRenderedMap = (
     for (const [atom, timestamp] of index.created) {
         result.set(atom, timestamp)
     }
-    for (const [atom, timestamp] of index.deleted) {
+    for (const [atom] of index.deleted) {
         result.delete(atom)
     }
     index.rendered = result

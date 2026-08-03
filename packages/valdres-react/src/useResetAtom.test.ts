@@ -17,7 +17,7 @@ const useTestHook = atom => {
 
 describe("useResetAtom", () => {
     test("atom with primitive value", () => {
-        const [store, renderHook] = generateStoreAndRenderHook()
+        const [, renderHook] = generateStoreAndRenderHook()
         const numberAtom = atom(10)
         const { result, rerender } = renderHook(() => useTestHook(numberAtom))
         expect(result.current.value).toBe(10)

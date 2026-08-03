@@ -17,7 +17,7 @@ const metaAtom = isModifierKeyActiveAtom("meta")
 const ctrlAtom = isModifierKeyActiveAtom("ctrl")
 
 const handler = e => {
-    const { altKey, ctrlKey, metaKey, shiftKey, type, code, key } = e
+    const { altKey, ctrlKey, metaKey, shiftKey, type, code } = e
 
     if (code === "Space") {
         const spaceKey = type === "keydown"

@@ -19,8 +19,11 @@
         "skipLibCheck": true,
         "noFallthroughCasesInSwitch": true,
 
-        // Some stricter flags (disabled by default)
-        "noUnusedLocals": false,
+        // Reject unused imports/locals repo-wide (gated in CI via `bun run
+        // typecheck`). noUnusedParameters is left off deliberately: unused
+        // params are common in callbacks/interface implementations and it has a
+        // much wider blast radius.
+        "noUnusedLocals": true,
         "noUnusedParameters": false,
         "noPropertyAccessFromIndexSignature": false
     }

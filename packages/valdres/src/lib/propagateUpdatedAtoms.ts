@@ -23,7 +23,6 @@ import {
     endLivenessPass,
     hasInheritedDependencyBranches,
     installEvaluationDeps,
-    isLive,
     reconcileLivenessAfterChurn,
     scheduleSelectors,
     SCHEDULE_CHANGED,
@@ -455,17 +454,6 @@ const addDependentsToSet = (
             toSet.add(item)
         }
     }
-}
-
-const findClosestStoreWithAtomInitialized = (atom: State, data: StoreData) => {
-    if (!data.parent) return data
-    if (data.values.has(atom)) return data
-    return findClosestStoreWithAtomInitialized(atom, data.parent)
-}
-
-const findInClosestStore = (state: State<any>, data: StoreData) => {
-    const store = findClosestStoreWithAtomInitialized(state, data)
-    return store.values.get(state)
 }
 
 const settleDeletedAtoms = (

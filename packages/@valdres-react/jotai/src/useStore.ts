@@ -3,7 +3,7 @@ import { getDefaultStore } from "./getDefaultStore"
 import { useContext } from "react"
 
 export const useStore = () => {
-    const [currentStore, allStores] = useContext(StoreContext)
+    const [currentStore] = useContext(StoreContext)
     if (!currentStore) return getDefaultStore()
     return useStoreValdres()
 }

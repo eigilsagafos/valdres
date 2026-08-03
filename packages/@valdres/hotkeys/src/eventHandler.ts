@@ -28,17 +28,7 @@ const cleanupMissingKeyups = (
 }
 
 export const eventHandler = (event: KeyboardEvent) => {
-    const {
-        type,
-        code,
-        repeat,
-        ctrlKey,
-        altKey,
-        metaKey,
-        shiftKey,
-        target,
-        timeStamp,
-    } = event
+    const { type, code } = event
 
     const key = event.key.toLowerCase()
 
