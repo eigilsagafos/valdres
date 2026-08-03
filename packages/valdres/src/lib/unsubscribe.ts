@@ -77,9 +77,17 @@ export const unsubscribe = <V>(
             // its dependencies. Done before unmount/cleanup so subsequent
             // isLive checks reflect the updated liveness.
             onLastDirectSubscriber(state as State<V>, data)
-            // Cyclic liveness is reconciled synchronously so onUnmount semantics
-            // remain eager. Negative cycle proofs are topology-versioned: across
-            // a deletion-only sibling burst, each shared acyclic closure is
+            // IMMEDIATE reconciliation — the one call site that does NOT consult
+            // `livenessPassActive` and does not take ownership. Unsubscribing
+            // from inside a subscriber callback therefore reconciles right here,
+            // within someone else's owned pass, instead of deferring to it; that
+            // is what keeps onUnmount semantics eager, and it cannot steal the
+            // token or start a second pass. See the two-calling-modes note on
+            // reconcileLivenessAfterChurn for why the three sites differ and why
+            // unifying them is a behavioural change, not a cleanup.
+            //
+            // Negative cycle proofs are topology-versioned: across a
+            // deletion-only sibling burst, each shared acyclic closure is
             // scanned once total instead of once per unsubscribe.
             if (
                 isSelector(state) &&

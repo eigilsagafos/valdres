@@ -1,5 +1,5 @@
 import type { ChangeReport } from "../lib/notifyChangeListeners"
-import type { NotifyTarget } from "../lib/propagateUpdatedAtoms"
+import type { NotifyTarget } from "../lib/notifySubscribers"
 import type { Atom } from "./Atom"
 import type { SettleFlags } from "./SettleFlags"
 import type { StoreData } from "./StoreData"

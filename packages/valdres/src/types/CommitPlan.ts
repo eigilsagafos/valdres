@@ -5,7 +5,7 @@ import type {
     StoreAtomUpdates,
 } from "../lib/globalAtomFanOut"
 import type { ChangeReport } from "../lib/notifyChangeListeners"
-import type { NotifyTarget } from "../lib/propagateUpdatedAtoms"
+import type { NotifyTarget } from "../lib/notifySubscribers"
 import type { DeferredOnSet } from "../lib/runOnSets"
 import type { Atom } from "./Atom"
 import type { AtomFamilyAtom } from "./AtomFamilyAtom"
