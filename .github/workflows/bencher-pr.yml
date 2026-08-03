@@ -69,6 +69,7 @@ jobs:
                   (cd /tmp/base && bun install --frozen-lockfile)
                   cp "${GITHUB_WORKSPACE}/packages/valdres/test/performance/architecture.timing.ts" /tmp/base/packages/valdres/test/performance/architecture.timing.ts
                   cp "${GITHUB_WORKSPACE}/packages/valdres/test/performance/asyncSettlement.timing.ts" /tmp/base/packages/valdres/test/performance/asyncSettlement.timing.ts
+                  cp "${GITHUB_WORKSPACE}/packages/valdres/test/performance/benchmark-result-schema.ts" /tmp/base/packages/valdres/test/performance/benchmark-result-schema.ts
                   cp "${GITHUB_WORKSPACE}/packages/valdres/test/performance/bench-utils.ts" /tmp/base/packages/valdres/test/performance/bench-utils.ts
                   cp "${GITHUB_WORKSPACE}/packages/valdres/vitest.architecture-bench.config.ts" /tmp/base/packages/valdres/vitest.architecture-bench.config.ts
                   cp "${GITHUB_WORKSPACE}/packages/valdres/vitest.async-bench.config.ts" /tmp/base/packages/valdres/vitest.async-bench.config.ts
@@ -85,10 +86,9 @@ jobs:
             # which controls order, thermal, GC, scheduler, and JIT-tier skew.
             #
             # BENCH_VALDRES_ONLY skips the jotai/map reference measurements — the
-            # gate is valdres-only, so measuring them here is wasted time. (The
-            # base worktree honors this only once a PR's base SHA includes the
-            # flag support; older base SHAs just measure them and bench-to-bmf
-            # drops them via BENCH_EXCLUDE_REFS below.)
+            # gate is valdres-only, so measuring them here is wasted time. The
+            # copied benchmark harness gives both worktrees identical support for
+            # this flag and the versioned observation schema.
             - name: Run interleaved base/PR benchmarks (Bun + Node, 3×)
               run: |
                   set -euo pipefail
@@ -99,9 +99,11 @@ jobs:
                     /tmp/pr_node.ndjson
 
                   run_suite() {
-                    local runtime="$1"
-                    local suite="$2"
-                    local side="$3"
+                    local pair="$1"
+                    local runtime="$2"
+                    local suite="$3"
+                    local side="$4"
+                    local order="$5"
                     local checkout
                     local output
                     local result
@@ -122,6 +124,10 @@ jobs:
 
                     (
                       cd "$checkout"
+                      export BENCH_PAIR_ID="${pair}-${runtime}-${suite}"
+                      export BENCH_SIDE="$side"
+                      export BENCH_ORDER="$order"
+                      export BENCH_SUITE="$suite"
                       if [[ "$suite" == "standard" ]]; then
                         if [[ "$runtime" == "bun" ]]; then
                           BENCH_VALDRES_ONLY=1 bun run test:bench
@@ -144,25 +150,29 @@ jobs:
 
                   for pair in 1 2 3; do
                     if [[ "$pair" == "2" ]]; then
-                      pair_order=(pr base)
+                      pair_order=(head base)
                     else
-                      pair_order=(base pr)
+                      pair_order=(base head)
                     fi
 
                     for runtime in bun node; do
                       for suite in standard async; do
+                        order=0
                         for side in "${pair_order[@]}"; do
-                          run_suite "$runtime" "$suite" "$side"
+                          order=$((order + 1))
+                          run_suite "$pair" "$runtime" "$suite" "$side" "$order"
                         done
                       done
                     done
                   done
 
-            # Convert both sides with the PR-checkout script (the base worktree's
-            # older bench-to-bmf rejects the repeated names). The base upload is
-            # its median latency; each PR value is that base median scaled by the
-            # smallest of the three paired PR/base ratios. That lets Bencher apply
-            # its percentage threshold to the paired statistic directly.
+            # Convert both sides with the PR-checkout script. The copied harness
+            # emits the same versioned schema from both worktrees, and conversion
+            # pairs explicit benchmark + pair IDs rather than NDJSON position.
+            # The base upload is its median latency; each PR value is that base
+            # median scaled by the smallest of the three paired PR/base ratios.
+            # That lets Bencher apply its percentage threshold to the paired
+            # statistic directly.
             # BENCH_EXCLUDE_REFS drops the jotai/map reference sides: they can't
             # regress from a valdres change, so gating them only adds noise
             # (every false positive we saw was a reference bench). They're still
@@ -188,6 +198,23 @@ jobs:
                   BENCH_OUT_BUN=/tmp/pr_bun_results.json \
                   BENCH_OUT_NODE=/tmp/pr_node_results.json \
                     bun run scripts/bench-to-bmf.ts
+
+            # Keep compact identity + dispersion diagnostics available when a
+            # benchmark flakes or the converter fails closed. Raw Mitata sample
+            # arrays are never serialized into these files.
+            - name: Upload benchmark observations
+              if: always()
+              continue-on-error: true
+              uses: actions/upload-artifact@v4
+              with:
+                  name: benchmark-observations
+                  path: |
+                      /tmp/base_bun.ndjson
+                      /tmp/base_node.ndjson
+                      /tmp/pr_bun.ndjson
+                      /tmp/pr_node.ndjson
+                  if-no-files-found: warn
+                  retention-days: 14
 
             # --- Seed the same-runner baseline onto the PR branch ---
             # --start-point-reset wipes the PR branch's prior data so each run is

@@ -20,7 +20,14 @@
  */
 import { writeFileSync } from "fs"
 import { join } from "path"
-import { type BenchResult, readBenchResults } from "./lib/read-bench-results"
+import {
+    BENCHMARK_RESULT_SCHEMA_VERSION,
+    benchmarkName,
+    benchmarkP50,
+    type BenchmarkObservation,
+    type BenchResult,
+    readBenchResults,
+} from "./lib/read-bench-results"
 import { median } from "./lib/median"
 
 type Metric = { value: number; lower_value?: number; upper_value?: number }
@@ -35,11 +42,175 @@ export interface BmfOptions {
 function samplesByName(results: BenchResult[]): Map<string, number[]> {
     const samples = new Map<string, number[]>()
     for (const result of results) {
-        const values = samples.get(result.name)
-        if (values) values.push(result.ns)
-        else samples.set(result.name, [result.ns])
+        const name = benchmarkName(result)
+        const value = benchmarkP50(result)
+        if (!Number.isFinite(value) || value <= 0) {
+            throw new Error(`Latency for ${name} must be finite and positive`)
+        }
+        const values = samples.get(name)
+        if (values) values.push(value)
+        else samples.set(name, [value])
     }
     return samples
+}
+
+function pairedObservationKey(result: BenchmarkObservation): string {
+    return JSON.stringify([result.benchmark, result.pairId])
+}
+
+function processBlockSignature(
+    observations: BenchmarkObservation[],
+    side: "base" | "head",
+): string[] {
+    const byRun = new Map<string, string[]>()
+    for (const observation of observations) {
+        if (observation.side !== side) continue
+        const names = byRun.get(observation.runId)
+        if (names) names.push(observation.benchmark)
+        else byRun.set(observation.runId, [observation.benchmark])
+    }
+    return [...byRun.values()].map(names => names.sort().join("\u0000")).sort()
+}
+
+function sameStrings(left: string[], right: string[]): boolean {
+    return (
+        left.length === right.length &&
+        left.every((value, index) => value === right[index])
+    )
+}
+
+/** Validate the identity protocol before using any paired measurements. */
+function validatePairedObservations(
+    resultSets: BenchResult[][],
+): BenchmarkObservation[] {
+    const results = resultSets.flat()
+    if (
+        results.some(
+            result =>
+                !("schemaVersion" in result) ||
+                result.schemaVersion !== BENCHMARK_RESULT_SCHEMA_VERSION,
+        )
+    ) {
+        throw new Error(
+            `Paired benchmark conversion requires schemaVersion ${BENCHMARK_RESULT_SCHEMA_VERSION} observations; rerun both sides with the current benchmark harness`,
+        )
+    }
+    const observations = results as BenchmarkObservation[]
+    if (observations.length === 0) {
+        throw new Error("Paired benchmark conversion requires observations")
+    }
+
+    const seenSides = new Set<string>()
+    const pairIdsByBenchmark = new Map<
+        string,
+        { base: Set<string>; head: Set<string> }
+    >()
+    const runIdentity = new Map<string, string>()
+    const byPairId = new Map<string, BenchmarkObservation[]>()
+
+    for (const observation of observations) {
+        const pairKey = pairedObservationKey(observation)
+        const sideKey = JSON.stringify([pairKey, observation.side])
+        if (seenSides.has(sideKey)) {
+            throw new Error(
+                `Duplicate ${observation.side} observation for ${observation.benchmark} in pair ${observation.pairId}`,
+            )
+        }
+        seenSides.add(sideKey)
+
+        let pairIds = pairIdsByBenchmark.get(observation.benchmark)
+        if (!pairIds) {
+            pairIds = { base: new Set(), head: new Set() }
+            pairIdsByBenchmark.set(observation.benchmark, pairIds)
+        }
+        pairIds[observation.side].add(observation.pairId)
+
+        // Every observation from one process block intentionally shares a
+        // runId. Reuse is invalid only when it points at a different process or
+        // execution identity.
+        const identity = JSON.stringify([
+            observation.pairId,
+            observation.side,
+            observation.order,
+            observation.runtime,
+            observation.suite,
+            observation.processId,
+        ])
+        const existingIdentity = runIdentity.get(observation.runId)
+        if (existingIdentity !== undefined && existingIdentity !== identity) {
+            throw new Error(
+                `Duplicate run identity ${observation.runId} has inconsistent metadata`,
+            )
+        }
+        runIdentity.set(observation.runId, identity)
+
+        const pair = byPairId.get(observation.pairId)
+        if (pair) pair.push(observation)
+        else byPairId.set(observation.pairId, [observation])
+    }
+
+    for (const [benchmark, pairIds] of pairIdsByBenchmark) {
+        const base = [...pairIds.base].sort()
+        const head = [...pairIds.head].sort()
+        if (base.length > 0 && head.length > 0 && !sameStrings(base, head)) {
+            throw new Error(
+                `Mismatched pair IDs for ${benchmark}: base=${base.join(",")}; head=${head.join(",")}`,
+            )
+        }
+        for (const pairId of new Set([...base, ...head])) {
+            if (!pairIds.base.has(pairId)) {
+                throw new Error(
+                    `Missing base side for ${benchmark} in pair ${pairId}`,
+                )
+            }
+            if (!pairIds.head.has(pairId)) {
+                throw new Error(
+                    `Missing head side for ${benchmark} in pair ${pairId}`,
+                )
+            }
+        }
+    }
+
+    for (const [pairId, pair] of byPairId) {
+        const runtimes = new Set(pair.map(result => result.runtime))
+        const suites = new Set(pair.map(result => result.suite))
+        if (runtimes.size !== 1 || suites.size !== 1) {
+            throw new Error(
+                `Inconsistent runtime/suite metadata for pair ${pairId}`,
+            )
+        }
+
+        const baseOrders = new Set(
+            pair
+                .filter(result => result.side === "base")
+                .map(result => result.order),
+        )
+        const headOrders = new Set(
+            pair
+                .filter(result => result.side === "head")
+                .map(result => result.order),
+        )
+        if (
+            baseOrders.size !== 1 ||
+            headOrders.size !== 1 ||
+            !sameStrings([...baseOrders, ...headOrders].sort().map(String), [
+                "1",
+                "2",
+            ])
+        ) {
+            throw new Error(
+                `Invalid execution order metadata for pair ${pairId}`,
+            )
+        }
+
+        const baseBlocks = processBlockSignature(pair, "base")
+        const headBlocks = processBlockSignature(pair, "head")
+        if (!sameStrings(baseBlocks, headBlocks)) {
+            throw new Error(`Incomplete process blocks for pair ${pairId}`)
+        }
+    }
+
+    return observations
 }
 
 const ROOT = join(import.meta.dir, "..")
@@ -192,8 +363,13 @@ export function toPairedBmf(
         throw new Error("Paired BMF does not support runner normalization")
     }
 
-    const baseBmf = toBmf(baseResults, options)
-    const headBmf = toBmf(headResults, options)
+    // Side identity comes from each observation, not from which file or line it
+    // occupied. The two arrays may therefore be shuffled or even swapped.
+    const observations = validatePairedObservations([baseResults, headResults])
+    const explicitBase = observations.filter(result => result.side === "base")
+    const explicitHead = observations.filter(result => result.side === "head")
+    const baseBmf = toBmf(explicitBase, options)
+    const headBmf = toBmf(explicitHead, options)
     const baseNames = Object.keys(baseBmf)
     const headNames = Object.keys(headBmf)
     const missingFromHead = baseNames.filter(name => !(name in headBmf))
@@ -213,26 +389,24 @@ export function toPairedBmf(
         )
     }
 
-    const baseSamples = samplesByName(baseResults)
-    const headSamples = samplesByName(headResults)
+    const pairs = new Map<
+        string,
+        { base?: BenchmarkObservation; head?: BenchmarkObservation }
+    >()
+    for (const observation of observations) {
+        const key = pairedObservationKey(observation)
+        const pair = pairs.get(key) ?? {}
+        pair[observation.side] = observation
+        pairs.set(key, pair)
+    }
     const paired: Bmf = {}
     for (const name of baseNames) {
-        const base = baseSamples.get(name)!
-        const head = headSamples.get(name)!
-        if (base.length !== head.length) {
-            throw new Error(
-                `Mismatched paired sample count for ${name}: base=${base.length}, head=${head.length}`,
-            )
-        }
-        if (
-            base.length === 0 ||
-            base.some(value => !Number.isFinite(value) || value <= 0) ||
-            head.some(value => !Number.isFinite(value) || value <= 0)
-        ) {
-            throw new Error(
-                `Paired samples for ${name} must be finite and positive`,
-            )
-        }
+        const benchmarkPairs = [...pairs.values()].filter(
+            pair => pair.base?.benchmark === name,
+        ) as Array<{
+            base: BenchmarkObservation
+            head: BenchmarkObservation
+        }>
 
         // MINIMUM, not median, of the paired ratios. Runner interference is
         // one-directional: a stall, a noisy neighbour, or an unlucky JIT tier
@@ -250,7 +424,7 @@ export function toPairedBmf(
         // to detect a regression smaller than the runner's own noise — which
         // this gate never claimed to have.
         const pairedRatio = Math.min(
-            ...head.map((value, index) => value / base[index]),
+            ...benchmarkPairs.map(pair => pair.head.p50 / pair.base.p50),
         )
         paired[name] = {
             latency: {
@@ -262,8 +436,8 @@ export function toPairedBmf(
 }
 
 // Input NDJSON and output BMF paths are overridable via env so the relative-CB
-// gate can run THIS (PR-checkout) script against the base worktree's results —
-// the base SHA ships an older bench-to-bmf that would reject the repeated names.
+// gate can run this PR-checkout converter against both worktrees' versioned
+// observations.
 const lanes = [
     {
         ndjson:

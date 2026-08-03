@@ -51,13 +51,13 @@ jobs:
               run: |
                   rm -f /tmp/main_bun.ndjson /tmp/main_node.ndjson
                   for i in 1 2 3; do
-                    bun run test:bench
+                    BENCH_PAIR_ID="${i}-bun-standard" BENCH_SIDE=base BENCH_ORDER=1 BENCH_SUITE=standard bun run test:bench
                     cat test/performance/bench-results.ndjson >> /tmp/main_bun.ndjson
-                    bun run test:bench:async
+                    BENCH_PAIR_ID="${i}-bun-async" BENCH_SIDE=base BENCH_ORDER=1 BENCH_SUITE=async bun run test:bench:async
                     cat test/performance/bench-results.ndjson >> /tmp/main_bun.ndjson
-                    bun run test:bench:node
+                    BENCH_PAIR_ID="${i}-node-standard" BENCH_SIDE=base BENCH_ORDER=1 BENCH_SUITE=standard bun run test:bench:node
                     cat test/performance/bench-results-node.ndjson >> /tmp/main_node.ndjson
-                    bun run test:bench:async:node
+                    BENCH_PAIR_ID="${i}-node-async" BENCH_SIDE=base BENCH_ORDER=1 BENCH_SUITE=async bun run test:bench:async:node
                     cat test/performance/bench-results-node.ndjson >> /tmp/main_node.ndjson
                   done
 
@@ -73,6 +73,18 @@ jobs:
                   BENCH_NDJSON_NODE: /tmp/main_node.ndjson
                   BENCH_NORMALIZE: "1"
               run: bun run scripts/bench-to-bmf.ts
+
+            - name: Upload benchmark observations
+              if: always()
+              continue-on-error: true
+              uses: actions/upload-artifact@v4
+              with:
+                  name: benchmark-observations
+                  path: |
+                      /tmp/main_bun.ndjson
+                      /tmp/main_node.ndjson
+                  if-no-files-found: warn
+                  retention-days: 14
 
             # Positive ratios are multiplicative, so a log-normal model is a
             # better fit than the old absolute-latency t-test. 0.9999 keeps the
