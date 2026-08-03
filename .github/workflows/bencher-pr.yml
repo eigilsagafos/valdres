@@ -80,23 +80,45 @@ jobs:
             # measurements run in their own process so Promise-heavy warm-up
             # cannot alter Bun's JIT profile for the standard synchronous suite.
             #
-            # Each runtime gets three base/PR pairs in alternating B-P, P-B, B-P
-            # order. Every suite invocation is a fresh process. The converter
-            # gates the SMALLEST of each benchmark's three paired PR/base ratios,
-            # which controls order, thermal, GC, scheduler, and JIT-tier skew.
+            # Measurements come in balanced B-P-P-B blocks. Each block yields two
+            # pairs — (base@1, head@2) and (head@1, base@2) — so head is measured
+            # before base exactly as often as after. A monotonic drift across the
+            # block (thermal, a noisy neighbour ramping, page-cache warming)
+            # enters the two pairs with opposite sign and cancels in the paired
+            # log-ratio, instead of masquerading as a regression the way a
+            # fixed base-then-head order does.
+            #
+            # A round is two blocks = four pairs. Round 1 always runs; rounds 2
+            # and 3 run only for lanes whose PROTECTED benchmarks came back
+            # inconclusive, which is the bounded ladder described in
+            # scripts/PAIRED_DECISION_MODEL.md. The cap is absolute — an
+            # unresolved lane is reported as such rather than retried forever.
+            #
+            # Round 1's first three pairs are additionally written to the
+            # un-prefixed NDJSON files, which are the ONLY input to the shipped
+            # catastrophic gate below. That is exactly the three-pair B-P, P-B,
+            # B-P sequence the gate has always seen, so neither the extra
+            # balancing pair nor any ladder round can dilute its min-of-ratios
+            # statistic.
             #
             # BENCH_VALDRES_ONLY skips the jotai/map reference measurements — the
             # gate is valdres-only, so measuring them here is wasted time. The
             # copied benchmark harness gives both worktrees identical support for
             # this flag and the versioned observation schema.
-            - name: Run interleaved base/PR benchmarks (Bun + Node, 3×)
+            - name: Run balanced base/head blocks with the rerun ladder
+              env:
+                  BENCH_MAX_ROUNDS: "3"
               run: |
                   set -euo pipefail
                   rm -f \
                     /tmp/base_bun.ndjson \
                     /tmp/base_node.ndjson \
                     /tmp/pr_bun.ndjson \
-                    /tmp/pr_node.ndjson
+                    /tmp/pr_node.ndjson \
+                    /tmp/all_base_bun.ndjson \
+                    /tmp/all_base_node.ndjson \
+                    /tmp/all_pr_bun.ndjson \
+                    /tmp/all_pr_node.ndjson
 
                   run_suite() {
                     local pair="$1"
@@ -104,16 +126,17 @@ jobs:
                     local suite="$3"
                     local side="$4"
                     local order="$5"
+                    local gate="$6"
                     local checkout
                     local output
                     local result
 
                     if [[ "$side" == "base" ]]; then
                       checkout="/tmp/base/packages/valdres"
-                      output="/tmp/base_${runtime}.ndjson"
+                      output="base_${runtime}"
                     else
                       checkout="${GITHUB_WORKSPACE}/packages/valdres"
-                      output="/tmp/pr_${runtime}.ndjson"
+                      output="pr_${runtime}"
                     fi
 
                     if [[ "$runtime" == "bun" ]]; then
@@ -124,7 +147,7 @@ jobs:
 
                     (
                       cd "$checkout"
-                      export BENCH_PAIR_ID="${pair}-${runtime}-${suite}"
+                      export BENCH_PAIR_ID="$pair"
                       export BENCH_SIDE="$side"
                       export BENCH_ORDER="$order"
                       export BENCH_SUITE="$suite"
@@ -144,26 +167,87 @@ jobs:
                         BENCH_VALDRES_ONLY=1 NODE_ENV=production \
                           npx vitest run --config vitest.async-bench.config.ts
                       fi
-                      cat "$result" >> "$output"
+                      cat "$result" >> "/tmp/all_${output}.ndjson"
+                      if [[ "$gate" == "1" ]]; then
+                        cat "$result" >> "/tmp/${output}.ndjson"
+                      fi
                     )
                   }
 
-                  for pair in 1 2 3; do
-                    if [[ "$pair" == "2" ]]; then
-                      pair_order=(head base)
-                    else
-                      pair_order=(base head)
-                    fi
+                  # One balanced block: base, head, head, base. Two pairs, `a`
+                  # measured base-first and `b` head-first. Each pair is fed to
+                  # the legacy gate only when its gate flag is 1.
+                  run_block() {
+                    local round="$1" block="$2" runtime="$3" suite="$4"
+                    local gate_a="$5" gate_b="$6"
+                    local a="r${round}b${block}a-${runtime}-${suite}"
+                    local b="r${round}b${block}b-${runtime}-${suite}"
+                    run_suite "$a" "$runtime" "$suite" base 1 "$gate_a"
+                    run_suite "$a" "$runtime" "$suite" head 2 "$gate_a"
+                    run_suite "$b" "$runtime" "$suite" head 1 "$gate_b"
+                    run_suite "$b" "$runtime" "$suite" base 2 "$gate_b"
+                  }
 
-                    for runtime in bun node; do
-                      for suite in standard async; do
-                        order=0
-                        for side in "${pair_order[@]}"; do
-                          order=$((order + 1))
-                          run_suite "$pair" "$runtime" "$suite" "$side" "$order"
-                        done
-                      done
+                  # A round is two blocks = four pairs. In round 1 the FIRST
+                  # THREE pairs — b1a, b1b, b2a — also feed the legacy gate,
+                  # which reproduces its original B-P, P-B, B-P sequence
+                  # exactly. The fourth pair is report-only. Handing the gate a
+                  # fourth ratio would strictly weaken it: min([1.7,1.7,1.7]) is
+                  # 1.7x and blocks, while min([1.7,1.7,1.7,1.0]) is 1.0x and
+                  # passes on the very same three measurements.
+                  run_round() {
+                    local round="$1" runtime="$2" suite="$3"
+                    local gate=0
+                    if [[ "$round" == "1" ]]; then gate=1; fi
+                    run_block "$round" 1 "$runtime" "$suite" "$gate" "$gate"
+                    run_block "$round" 2 "$runtime" "$suite" "$gate" 0
+                  }
+
+                  # The model is report-only, and this step runs under
+                  # `set -euo pipefail` BEFORE the gate steps. An unguarded
+                  # failure here would therefore not just publish nothing — it
+                  # would fail the job and skip the catastrophic gate entirely,
+                  # letting a bug in advisory tooling disable the real check.
+                  # So the analysis is explicitly non-fatal, and the lanes file
+                  # is truncated first: a crashed analysis requests NO reruns
+                  # rather than replaying the previous round's lanes.
+                  analyze() {
+                    : > /tmp/rerun-lanes
+                    if ! BENCH_ROUND="$1" \
+                      BENCH_PAIRED_BASE_BUN=/tmp/all_base_bun.ndjson \
+                      BENCH_PAIRED_HEAD_BUN=/tmp/all_pr_bun.ndjson \
+                      BENCH_PAIRED_BASE_NODE=/tmp/all_base_node.ndjson \
+                      BENCH_PAIRED_HEAD_NODE=/tmp/all_pr_node.ndjson \
+                      BENCH_REPORT_JSON=/tmp/paired-report.json \
+                      BENCH_REPORT_MD=/tmp/paired-report.md \
+                      BENCH_RERUN_LANES_FILE=/tmp/rerun-lanes \
+                        bun run scripts/bench-paired-report.ts > /dev/null; then
+                      echo "::warning::Paired decision report failed for round $1 — continuing, this model does not gate"
+                    fi
+                  }
+
+                  for runtime in bun node; do
+                    for suite in standard async; do
+                      run_round 1 "$runtime" "$suite"
                     done
+                  done
+
+                  # Exactly one analysis per completed round. Arithmetic rather
+                  # than `seq`: BSD seq counts DOWN for `seq 2 1`, so a
+                  # BENCH_MAX_ROUNDS of 1 would silently run rounds 2 and 1 for
+                  # anyone driving this outside GNU coreutils.
+                  completed=1
+                  analyze "$completed"
+                  while [[ "$completed" -lt "$BENCH_MAX_ROUNDS" ]]; do
+                    lanes="$(cat /tmp/rerun-lanes)"
+                    if [[ -z "$lanes" ]]; then break; fi
+                    round=$((completed + 1))
+                    echo "::notice::Round ${round}: adding pairs for ${lanes}"
+                    for lane in $lanes; do
+                      run_round "$round" "${lane%%:*}" "${lane##*:}"
+                    done
+                    completed="$round"
+                    analyze "$completed"
                   done
 
             # Convert both sides with the PR-checkout script. The copied harness
@@ -173,6 +257,12 @@ jobs:
             # median scaled by the smallest of the three paired PR/base ratios.
             # That lets Bencher apply its percentage threshold to the paired
             # statistic directly.
+            #
+            # This is the CATASTROPHIC GATE and it is deliberately unchanged
+            # while the paired decision model is calibrated — same three pairs,
+            # same execution orders, same statistic, same +50% boundary, same
+            # fail-closed conversion. Neither the extra balancing pair nor any
+            # ladder round reaches it.
             # BENCH_EXCLUDE_REFS drops the jotai/map reference sides: they can't
             # regress from a valdres change, so gating them only adds noise
             # (every false positive we saw was a reference bench). They're still
@@ -199,9 +289,26 @@ jobs:
                   BENCH_OUT_NODE=/tmp/pr_node_results.json \
                     bun run scripts/bench-to-bmf.ts
 
+            # Report-only. Publishes the paired decision model's verdicts to the
+            # job summary and never affects the job's result — the gate above and
+            # the one below are the only blocking checks. Ten or so merges of
+            # these reports are what the blocking thresholds will be argued from;
+            # see scripts/PAIRED_DECISION_MODEL.md for the calibration protocol.
+            - name: Publish paired decision report
+              if: always()
+              continue-on-error: true
+              run: |
+                  if [[ ! -f /tmp/paired-report.md ]]; then
+                    echo "_No paired decision report was produced for this run._" \
+                      > /tmp/paired-report.md
+                  fi
+                  cat /tmp/paired-report.md >> "$GITHUB_STEP_SUMMARY"
+
             # Keep compact identity + dispersion diagnostics available when a
             # benchmark flakes or the converter fails closed. Raw Mitata sample
-            # arrays are never serialized into these files.
+            # arrays are never serialized into these files. The all_* files carry
+            # every ladder round; the un-prefixed ones are the gate's round-1
+            # inputs. paired-report.json is the decision record for calibration.
             - name: Upload benchmark observations
               if: always()
               continue-on-error: true
@@ -213,6 +320,12 @@ jobs:
                       /tmp/base_node.ndjson
                       /tmp/pr_bun.ndjson
                       /tmp/pr_node.ndjson
+                      /tmp/all_base_bun.ndjson
+                      /tmp/all_base_node.ndjson
+                      /tmp/all_pr_bun.ndjson
+                      /tmp/all_pr_node.ndjson
+                      /tmp/paired-report.json
+                      /tmp/paired-report.md
                   if-no-files-found: warn
                   retention-days: 14
 
@@ -240,7 +353,7 @@ jobs:
             # Percentage test: alert if a benchmark is >50% slower than the base
             # measurement on THIS runner. Variance-independent and immune to the
             # cross-runner global-slowdown that flaked the old t-test gate. The
-            # minimum of three paired ratios above filters runner interference
+            # minimum of round 1's three paired ratios filters runner interference
             # and accounts for order effects, so +50% is a trustworthy boundary
             # on both lanes. Interference is one-directional (a stall only ever
             # makes a sample slower), so the smallest ratio is the least

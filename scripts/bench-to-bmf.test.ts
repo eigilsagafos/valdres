@@ -140,10 +140,12 @@ describe("bench-to-bmf", () => {
     })
 
     test("preserves PR filtering without requiring normalization", () => {
+        // Latencies are realistic: `get 1000 atoms` is ~9.4µs, the rest are the
+        // nanosecond-scale raw operations the gate must not block on.
         const bmf = toBmf(
             [
-                latency("get 1000 atoms / valdres", 100),
-                latency("get 1000 atoms / jotai", 200),
+                latency("get 1000 atoms / valdres", 9_400),
+                latency("get 1000 atoms / jotai", 573_700),
                 latency("store.get(atom) / valdres", 20),
                 latency("atomFamily(id) / valdres", 150),
                 latency("selectorFamily(id) / valdres", 300),
@@ -152,8 +154,52 @@ describe("bench-to-bmf", () => {
         )
 
         expect(bmf).toEqual({
-            "get 1000 atoms / valdres": { latency: { value: 100 } },
+            "get 1000 atoms / valdres": { latency: { value: 9_400 } },
         })
+    })
+
+    test("excludeTiny blocks nothing below the timing floor", () => {
+        // The hand-curated UNGATEABLE_OPS list omitted these; every one is a
+        // sub-microsecond raw operation, and `set(atom, value)` / `sub + unsub`
+        // are the rows that historically flaked the gate on unrelated PRs.
+        const tiny = [
+            latency("set(atom, value) / valdres", 110),
+            latency("set(atom, curr => curr+1) / valdres", 99),
+            latency("set(atom) with 10 subs / valdres", 141),
+            latency("sub + unsub / valdres", 249),
+            latency("createStore / valdres", 286),
+        ]
+        const bmf = toBmf(
+            [...tiny, latency("set 1000 atoms / valdres", 73_400)],
+            {
+                excludeRefs: true,
+                excludeTiny: true,
+            },
+        )
+
+        expect(Object.keys(bmf)).toEqual(["set 1000 atoms / valdres"])
+    })
+
+    test("a sub-microsecond op stays out of the paired gate even when head crosses the floor", () => {
+        // Base 900ns, head 1.8µs. Deciding the floor per side would keep the
+        // head row, drop the base row, and fail the conversion closed.
+        const bmf = toPairedBmf(
+            [
+                observation("set(atom, value) / valdres", 900, {
+                    pairId: "p1",
+                    side: "base",
+                }),
+            ],
+            [
+                observation("set(atom, value) / valdres", 1_800, {
+                    pairId: "p1",
+                    side: "head",
+                }),
+            ],
+            { excludeRefs: true, excludeTiny: true },
+        )
+
+        expect(bmf).toEqual({})
     })
 
     test("validates schema version and rejects raw Mitata samples", () => {
