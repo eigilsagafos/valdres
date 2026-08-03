@@ -20,6 +20,8 @@
  */
 import { writeFileSync } from "fs"
 import { join } from "path"
+import { isSubMicrosecond } from "./lib/bench-protected-set"
+import { isReference, opName } from "./lib/benchmark-names"
 import {
     BENCHMARK_RESULT_SCHEMA_VERSION,
     benchmarkName,
@@ -216,25 +218,11 @@ function validatePairedObservations(
 const ROOT = join(import.meta.dir, "..")
 const PERF_DIR = join(ROOT, "packages/valdres/test/performance")
 
-// A compare() benchmark is named "<op> / <impl>"; the reference sides are any
-// impl other than valdres (jotai, map, recoil, …). Standalone valdres benches
-// (e.g. "scope: set atom, …") have no " / <impl>" suffix.
-function isReference(name: string): boolean {
-    const m = name.match(/ \/ ([^/]+)$/)
-    return m !== null && m[1] !== "valdres"
-}
-
-// The "<op>" part of a benchmark name, dropping any " / <impl>" suffix.
-function opName(name: string): string {
-    const m = name.match(/^(.*) \/ [^/]+$/)
-    return m ? m[1] : name
-}
-
 // Operations too small to gate reliably. Their +50% relative boundary is only
 // nanoseconds to low hundreds of nanoseconds — below the CI runner's JIT and
 // measurement noise even after median-of-3. They remain measured and plotted
 // by the base lane.
-const UNGATEABLE_OPS = new Set([
+export const UNGATEABLE_OPS = new Set([
     "atom(1)", // ~2ns
     "selector(fn)", // ~5ns
     "atomFamily(id)", // ~100-250ns; constructor JIT tier varies by ~100ns
@@ -247,6 +235,21 @@ const UNGATEABLE_OPS = new Set([
     // whose aggregated window is stable enough for a percentage boundary.
     "store.get(atom)",
 ])
+
+/**
+ * Whether a benchmark is too small to gate, given its MEASURED base latency.
+ *
+ * The name list above is hand-curated and was incomplete: `set(atom, value)`
+ * (~110ns), `set(atom, curr => curr+1)`, `set(atom) with 10 subs`,
+ * `sub + unsub` and `createStore` are all sub-microsecond yet were still
+ * blocking — the first two are precisely the rows that flaked the gate on
+ * unrelated PRs. The measured floor closes that gap and stays closed as
+ * benchmarks are added, while the list keeps excluding named operations that
+ * happen to measure above the floor on a slower runtime.
+ */
+function isUngateable(name: string, latencyNs: number): boolean {
+    return UNGATEABLE_OPS.has(opName(name)) || isSubMicrosecond(latencyNs)
+}
 
 // Versioned because changing the control set changes the scale of every metric.
 // If a control ever needs replacing, create a v2 measure instead of silently
@@ -321,7 +324,7 @@ export function toBmf(results: BenchResult[], options: BmfOptions = {}): Bmf {
     const bmf: Bmf = {}
     for (const [name, latency] of latencies) {
         if (excludeRefs && isReference(name)) continue
-        if (excludeTiny && UNGATEABLE_OPS.has(opName(name))) continue
+        if (excludeTiny && isUngateable(name, latency)) continue
 
         const measures: Record<string, Metric> = { latency: { value: latency } }
         // Raw latency remains available for every benchmark and for the public
@@ -368,8 +371,14 @@ export function toPairedBmf(
     const observations = validatePairedObservations([baseResults, headResults])
     const explicitBase = observations.filter(result => result.side === "base")
     const explicitHead = observations.filter(result => result.side === "head")
-    const baseBmf = toBmf(explicitBase, options)
-    const headBmf = toBmf(explicitHead, options)
+    // The timing floor is applied ONCE, from the base side, after both sides are
+    // built. Letting each side decide independently would drop a benchmark whose
+    // base sits below the floor and whose head crosses it — exactly what a large
+    // regression on a small operation looks like — and the name-set mismatch
+    // below would then fail the conversion closed on a real finding.
+    const sideOptions = { ...options, excludeTiny: false }
+    const baseBmf = toBmf(explicitBase, sideOptions)
+    const headBmf = toBmf(explicitHead, sideOptions)
     const baseNames = Object.keys(baseBmf)
     const headNames = Object.keys(headBmf)
     const missingFromHead = baseNames.filter(name => !(name in headBmf))
@@ -401,6 +410,12 @@ export function toPairedBmf(
     }
     const paired: Bmf = {}
     for (const name of baseNames) {
+        if (
+            options.excludeTiny &&
+            isUngateable(name, baseBmf[name].latency.value)
+        ) {
+            continue
+        }
         const benchmarkPairs = [...pairs.values()].filter(
             pair => pair.base?.benchmark === name,
         ) as Array<{
