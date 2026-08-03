@@ -1,7 +1,4 @@
-import {
-    selectorFamily as valdresSelectorFamily,
-    type SelectorFamily,
-} from "valdres"
+import { selectorFamily as valdresSelectorFamily } from "valdres"
 import {
     type SerializableParam,
     type ReadWriteSelectorFamilyOptions,

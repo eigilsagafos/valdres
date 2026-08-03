@@ -240,7 +240,7 @@ export const initAtom = <
         untrackNamedAtom(atom, data)
         throw error
     }
-    let value = setValueInData(atom, tmpVal, data)
+    setValueInData(atom, tmpVal, data)
     // Cold-path bookkeeping for dehydrate. Resolve registration through the
     // reverse WeakMap instead of probing the optional `name` property: besides
     // being the registry's source of truth, this keeps unnamed atoms on Bun's
@@ -250,7 +250,6 @@ export const initAtom = <
     if (onInit)
         onInit((newVal: Value) => {
             if (isStoreDisposed(data)) return
-            value = newVal
             // Seed the store's own value only: no onSet hook, no global
             // fan-out (a global atom's onInit setSelf must not re-broadcast).
             setAtom(atom, newVal, data, SEED_WRITE)

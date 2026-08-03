@@ -1,5 +1,5 @@
 import { draggableItemAtom } from "@valdres-react/draggable"
-import { atom, type Store, type Transaction } from "valdres"
+import { atom, type Store } from "valdres"
 import type { Size } from "../../../../draggable/types/Size"
 import type { DragAction } from "../../types/DragAction"
 import { calculateRelativeCursorPos } from "../../utils/getCursorPositionRelative"
