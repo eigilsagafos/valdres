@@ -33,14 +33,14 @@ import { join } from "node:path"
 
 const root = join(import.meta.dir, "..")
 
-const workspaceGlobs = ["packages", "packages/@valdres", "packages/@valdres-react"]
+const workspaceDirs = ["packages", "packages/@valdres", "packages/@valdres-react"]
 
 type Pkg = { name: string; dir: string }
 
 const discoverPackages = async (): Promise<Pkg[]> => {
     const pkgs: Pkg[] = []
-    for (const glob of workspaceGlobs) {
-        const base = join(root, glob)
+    for (const workspaceDir of workspaceDirs) {
+        const base = join(root, workspaceDir)
         let entries: string[]
         try {
             entries = await readdir(base)
@@ -48,7 +48,7 @@ const discoverPackages = async (): Promise<Pkg[]> => {
             continue
         }
         for (const entry of entries) {
-            if (entry.startsWith("@")) continue // scope dir, handled by its own glob
+            if (entry.startsWith("@")) continue // scope dir, handled by its own entry
             const dir = join(base, entry)
             const pkgJsonPath = join(dir, "package.json")
             const pkgJsonFile = Bun.file(pkgJsonPath)
