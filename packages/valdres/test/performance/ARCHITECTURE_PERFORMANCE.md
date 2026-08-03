@@ -59,7 +59,20 @@ one side of a PR comparison.
   transitions. These distinguish allocation savings from skipped lifecycle work.
 - `commitPlanRuns`: admitted `runCommitPlan` executions. Every single-store
   transaction commit shape (ordinary, hooked, cleanup) must execute exactly one
-  plan; scalar direct writes correctly report zero.
+  plan; scalar direct writes correctly report zero. A resolved timer tick also
+  admits exactly one plan for value plus metadata-off. Its earlier metadata-on
+  and optional pending-value publications retain their distinct observable
+  commit boundaries through direct propagation, so this counter deliberately
+  does not equal the number of `onCommitEnd` callbacks for that async lifecycle.
+- `cacheMetaAllocations`: public cache-metadata snapshots created in the window.
+  One resolved timer tick creates exactly two cheap immutable literals: the
+  revalidating snapshot and the idle snapshot published after settlement.
+- `cacheStatePeeks`: cache-sidecar lookups. A cold max-age read performs exactly
+  one lookup and threads that entry through stale eviction.
+- `globalStoreListCopies`: snapshots of a global atom's attached stores. Timer
+  metadata walks the live set because its internal equality/write phase cannot
+  re-enter; pending SWR promise publication is likewise identity-only. A
+  resolved user value retains one snapshot for fan-out semantics.
 - `commitPlanAllocations`: plan-graph containers — settlements, forest entries
   and entry lists, global effects, descriptor queues — built through
   `lib/commitPlans.ts` inside the window. A scalar write (no plan at all), a

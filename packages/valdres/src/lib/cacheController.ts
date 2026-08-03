@@ -7,18 +7,22 @@ import { isGlobalAtom } from "../utils/isGlobalAtom"
 import { isPromiseLike } from "../utils/isPromiseLike"
 import { isReactive, resolveReactive } from "../utils/resolveReactive"
 import { cacheState } from "./cacheState"
-import { runCommitPlan } from "./commitEngine"
-import { createCommitErrors, recordCommitError } from "./commitErrors"
-import { SETTLE_DEFAULT } from "./commitIntents"
 import {
-    forestEntry,
-    forestSettlement,
-    NO_ON_SETS,
-    NO_SETTLEMENT,
-    updateSettlement,
-} from "./commitPlans"
+    recordCacheMetaAllocation,
+    recordGlobalStoreListCopy,
+} from "./architectureInstrumentation"
+import { runCommitPlan } from "./commitEngine"
+import {
+    createCommitErrors,
+    recordCommitError,
+    throwCommitError,
+    type CommitErrors,
+} from "./commitErrors"
+import { SETTLE_DEFAULT } from "./commitIntents"
+import { forestEntry, NO_ON_SETS, NO_SETTLEMENT } from "./commitPlans"
 import { equal } from "./equal"
 import { hasAtomCommitObservers } from "./hasAtomCommitObservers"
+import { IS_PROD } from "./IS_PROD"
 import { settleCommit, settleCommitForest } from "./propagateUpdatedAtoms"
 import { setValueInData } from "./setValueInData"
 import {
@@ -35,41 +39,26 @@ type SubscribeReactive = <V>(
     data: StoreData,
 ) => () => void
 
-const commitLocalWrite = (
+const publishLocalWrite = (
+    state: Atom<any>,
+    value: any,
+    data: StoreData,
+): void => {
+    setValueInData(state, value, data)
+    if (hasAtomCommitObservers(state, data))
+        settleCommit([state], data, undefined, "revalidate", SETTLE_DEFAULT)
+}
+
+const publishAdmittedLocalWrite = (
     state: Atom<any>,
     value: any,
     data: StoreData,
     admit: () => boolean,
 ): boolean => {
-    const settlement = hasAtomCommitObservers(state, data)
-        ? updateSettlement(data, [state], settleCommit, SETTLE_DEFAULT)
-        : NO_SETTLEMENT
-    return runCommitPlan({
-        data,
-        settlement,
-        admit,
-        apply: () => setValueInData(state, value, data),
-        onSets: NO_ON_SETS,
-        errors: createCommitErrors(),
-        report: "revalidate",
-    })
+    if (!admit()) return false
+    publishLocalWrite(state, value, data)
+    return true
 }
-
-const commitFreshness = (
-    state: Atom<any>,
-    data: StoreData,
-    refreshedAt: number,
-    admit: () => boolean,
-): boolean =>
-    runCommitPlan({
-        data,
-        settlement: NO_SETTLEMENT,
-        admit,
-        apply: () => cacheState.recordWrite(state, data, refreshedAt),
-        onSets: NO_ON_SETS,
-        errors: createCommitErrors(),
-        report: undefined,
-    })
 
 const installStoreRelease = (
     state: Atom<any>,
@@ -97,12 +86,14 @@ const expireIfStale = (state: State, data: StoreData): boolean => {
     const atom = state as Atom<any>
     const maxAge = atom.maxAge
     if (maxAge === undefined || data.parent) return false
-    if (isGlobalAtom(atom)) {
+    const global = isGlobalAtom(atom)
+    if (global) {
         if (atom.cacheController !== undefined) return false
-    } else if (cacheState.peek(state, data)?.release !== undefined) {
-        return false
     }
     const entry = cacheState.peek(state, data)
+    if (!global && entry?.release !== undefined) {
+        return false
+    }
     const lastWriteAt = entry?.lastWriteAt
     if (lastWriteAt === undefined) return false
     const ttl =
@@ -113,7 +104,7 @@ const expireIfStale = (state: State, data: StoreData): boolean => {
     // immediately falls through to ordinary initialization. Opening a commit
     // here would make store.get() observable through onCommitEnd.
     data.values.delete(state)
-    cacheState.clearWrite(atom, data)
+    cacheState.clearWrite(atom, data, entry)
     return true
 }
 
@@ -148,7 +139,7 @@ const retain = (
         })
         for (const store of globalState!.stores) {
             if (store !== data && store.values.has(metaAtom)) {
-                commitLocalWrite(
+                publishAdmittedLocalWrite(
                     metaAtom,
                     store.values.get(metaAtom),
                     data,
@@ -187,91 +178,118 @@ const retain = (
         __valdresInternal: true,
     })
 
-    const commitGlobalWrite = (
+    const publishGlobalWrite = (
         target: Atom<any>,
         value: any,
         requestGeneration: number,
+        errors: CommitErrors,
+        copyStores: boolean,
         refreshedAt?: number,
-    ): boolean => {
-        const snapshot = [...globalState!.stores]
+    ): void => {
+        if (copyStores && !IS_PROD && data.architectureInstrumentation)
+            recordGlobalStoreListCopy(data)
+        const stores = copyStores
+            ? [...globalState!.stores]
+            : globalState!.stores
         const entries: CommitForestEntry[] = []
-        const errors = createCommitErrors()
-        return runCommitPlan({
-            data,
-            settlement: forestSettlement(
-                data,
-                entries,
-                undefined,
-                settleCommitForest,
-            ),
-            admit: () => current(requestGeneration),
-            apply: () => {
-                for (const store of snapshot) {
-                    if (!current(requestGeneration)) break
-                    try {
-                        const currentValue = store.values.get(target)
-                        const hasCurrentValue =
-                            currentValue !== undefined ||
-                            store.values.has(target)
-                        const valueIsPromise = isPromiseLike(value)
-                        const areEqual =
-                            hasCurrentValue &&
-                            (valueIsPromise || isPromiseLike(currentValue)
-                                ? currentValue === value
-                                : target.equal(currentValue, value))
-                        if (areEqual) {
-                            if (refreshedAt !== undefined) {
-                                cacheState.recordWrite(
-                                    target,
-                                    store,
-                                    refreshedAt,
-                                )
-                            }
-                            continue
-                        }
-                        setValueInData(target, value, store)
-                        if (hasAtomCommitObservers(target, store)) {
-                            entries.push(
-                                forestEntry(
-                                    store,
-                                    [target],
-                                    undefined,
-                                    undefined,
-                                    undefined,
-                                ),
-                            )
-                        }
-                    } catch (error) {
-                        recordCommitError(errors, error)
-                    }
+        for (const store of stores) {
+            if (!current(requestGeneration)) break
+            try {
+                const currentValue = store.values.get(target)
+                const hasCurrentValue =
+                    currentValue !== undefined || store.values.has(target)
+                const valueIsPromise = isPromiseLike(value)
+                const areEqual =
+                    hasCurrentValue &&
+                    (valueIsPromise || isPromiseLike(currentValue)
+                        ? currentValue === value
+                        : target.equal(currentValue, value))
+                if (areEqual) {
+                    if (refreshedAt !== undefined)
+                        cacheState.recordWrite(target, store, refreshedAt)
+                    continue
                 }
-            },
-            onSets: NO_ON_SETS,
-            errors,
-            report: "revalidate",
-        })
+                setValueInData(target, value, store)
+                if (hasAtomCommitObservers(target, store)) {
+                    entries.push(
+                        forestEntry(
+                            store,
+                            [target],
+                            undefined,
+                            undefined,
+                            undefined,
+                        ),
+                    )
+                }
+            } catch (error) {
+                recordCommitError(errors, error)
+            }
+        }
+        if (entries.length !== 0) {
+            try {
+                settleCommitForest(
+                    entries,
+                    undefined,
+                    undefined,
+                    "revalidate",
+                    errors,
+                )
+            } catch (error) {
+                recordCommitError(errors, error)
+            }
+        }
     }
 
-    const commitWrite = (
+    const publishWrite = (
         target: Atom<any>,
         value: any,
         requestGeneration: number,
-    ): boolean =>
-        globalState
-            ? commitGlobalWrite(target, value, requestGeneration)
-            : commitLocalWrite(target, value, data, () =>
-                  current(requestGeneration),
-              )
+        errors: CommitErrors,
+        copyStores: boolean,
+        refreshedAt?: number,
+    ): void => {
+        if (globalState) {
+            publishGlobalWrite(
+                target,
+                value,
+                requestGeneration,
+                errors,
+                copyStores,
+                refreshedAt,
+            )
+        } else {
+            publishLocalWrite(target, value, data)
+        }
+    }
 
-    const updateMeta = (requestGeneration: number): boolean => {
-        const meta: CacheMeta = {
-            isRevalidating: revalidating,
+    const publishAdmittedWrite = (
+        target: Atom<any>,
+        value: any,
+        requestGeneration: number,
+        copyStores: boolean,
+    ): boolean => {
+        if (!current(requestGeneration)) return false
+        const errors = createCommitErrors()
+        publishWrite(target, value, requestGeneration, errors, copyStores)
+        throwCommitError(errors)
+        return true
+    }
+
+    const allocateMeta = (isRevalidating: boolean): CacheMeta => {
+        if (!IS_PROD && data.architectureInstrumentation)
+            recordCacheMetaAllocation(data)
+        return {
+            isRevalidating,
             lastSuccessAt: lastSuccessTime,
             maxAge: getMaxAge(),
             staleWhileRevalidate: getSWR(),
             staleIfError: getStaleIfError(),
         }
-        return commitWrite(metaAtom, meta, requestGeneration)
+    }
+
+    const updateMeta = (requestGeneration: number): boolean => {
+        const meta = allocateMeta(revalidating)
+        return publishAdmittedWrite(metaAtom, meta, requestGeneration, false)
     }
 
     const isPastStaleIfErrorWindow = () =>
@@ -294,15 +312,19 @@ const retain = (
     const setAndPropagate = (
         value: any,
         requestGeneration: number,
+        errors: CommitErrors,
         refreshedAt?: number,
-    ): boolean => {
+    ): void => {
         if (globalState) {
-            return commitGlobalWrite(
+            publishGlobalWrite(
                 state,
                 value,
                 requestGeneration,
+                errors,
+                !isPromiseLike(value),
                 refreshedAt,
             )
+            return
         }
         const currentValue = data.values.get(state)
         const hasCurrentValue =
@@ -314,15 +336,58 @@ const retain = (
                 ? currentValue === value
                 : state.equal(currentValue, value))
         if (areEqual) {
-            return refreshedAt === undefined
-                ? current(requestGeneration)
-                : commitFreshness(state, data, refreshedAt, () =>
-                      current(requestGeneration),
-                  )
+            if (refreshedAt !== undefined)
+                cacheState.recordWrite(state, data, refreshedAt)
+            return
         }
-        return commitLocalWrite(state, value, data, () =>
-            current(requestGeneration),
-        )
+        publishLocalWrite(state, value, data)
+    }
+
+    /**
+     * One resolved timer transition has one monomorphic engine shape. The
+     * operation retains the historical value and metadata commit boundaries
+     * by invoking their propagation primitives in order from the plan's apply
+     * phase; equal-value freshness is recorded in that same phase rather than
+     * opening its own plan.
+     */
+    const commitRevalidation = (
+        value: any,
+        shouldWriteValue: boolean,
+        requestGeneration: number,
+        refreshedAt: number | undefined,
+    ): boolean => {
+        const errors = createCommitErrors()
+        return runCommitPlan({
+            data,
+            settlement: NO_SETTLEMENT,
+            admit: () => current(requestGeneration),
+            apply: () => {
+                if (shouldWriteValue) {
+                    setAndPropagate(
+                        value,
+                        requestGeneration,
+                        errors,
+                        refreshedAt,
+                    )
+                }
+                // A value subscriber can revoke this controller, and global
+                // settlement records rather than throws observer failures.
+                // Both conditions historically prevented metadata-off.
+                if (errors.hasError || !current(requestGeneration)) return
+
+                const idleMeta = allocateMeta(false)
+                publishWrite(
+                    metaAtom,
+                    idleMeta,
+                    requestGeneration,
+                    errors,
+                    false,
+                )
+            },
+            onSets: NO_ON_SETS,
+            errors,
+            report: undefined,
+        })
     }
 
     const getValueStore = (): StoreData => {
@@ -344,37 +409,53 @@ const retain = (
         const value = (state.defaultValue as () => any)()
         if (isPromiseLike(value)) {
             revalidating = true
-            updateMeta(requestGeneration)
-            const swr = getSWR()
+            const activeMeta = allocateMeta(true)
+            publishAdmittedWrite(metaAtom, activeMeta, requestGeneration, false)
+            const swr = activeMeta.staleWhileRevalidate
 
             const handleResolve = (resolved: any) => {
                 if (!current(requestGeneration)) return
                 revalidating = false
                 if (!validateRevalidatedValue(resolved)) {
                     if (!current(requestGeneration)) return
-                    if (lastGoodValue !== NO_VALUE) {
-                        setAndPropagate(lastGoodValue, requestGeneration)
-                    }
-                    updateMeta(requestGeneration)
+                    commitRevalidation(
+                        lastGoodValue,
+                        lastGoodValue !== NO_VALUE,
+                        requestGeneration,
+                        undefined,
+                    )
                     return
                 }
                 if (!current(requestGeneration)) return
                 const refreshedAt = Date.now()
                 lastSuccessTime = refreshedAt
                 lastGoodValue = resolved
-                setAndPropagate(resolved, requestGeneration, refreshedAt)
-                updateMeta(requestGeneration)
+                commitRevalidation(
+                    resolved,
+                    true,
+                    requestGeneration,
+                    refreshedAt,
+                )
             }
 
             const handleReject = () => {
                 if (!current(requestGeneration)) return
                 revalidating = false
                 if (!isPastStaleIfErrorWindow() && lastGoodValue !== NO_VALUE) {
-                    setAndPropagate(lastGoodValue, requestGeneration)
+                    commitRevalidation(
+                        lastGoodValue,
+                        true,
+                        requestGeneration,
+                        undefined,
+                    )
                 } else {
-                    setAndPropagate(value, requestGeneration)
+                    commitRevalidation(
+                        value,
+                        true,
+                        requestGeneration,
+                        undefined,
+                    )
                 }
-                updateMeta(requestGeneration)
             }
 
             if (swr > 0) {
@@ -385,7 +466,12 @@ const retain = (
                         if (!current(requestGeneration) || !revalidating) {
                             return
                         }
-                        setAndPropagate(value, requestGeneration)
+                        publishAdmittedWrite(
+                            state,
+                            value,
+                            requestGeneration,
+                            !isPromiseLike(value),
+                        )
                     }, swr)
                     pendingTimeouts.add(timeoutRef)
                 }
@@ -406,7 +492,12 @@ const retain = (
                     },
                 )
             } else {
-                setAndPropagate(value, requestGeneration)
+                publishAdmittedWrite(
+                    state,
+                    value,
+                    requestGeneration,
+                    !isPromiseLike(value),
+                )
                 value.then(handleResolve, handleReject)
             }
             return
@@ -417,8 +508,7 @@ const retain = (
         const refreshedAt = Date.now()
         lastSuccessTime = refreshedAt
         lastGoodValue = value
-        setAndPropagate(value, requestGeneration, refreshedAt)
-        updateMeta(requestGeneration)
+        commitRevalidation(value, true, requestGeneration, refreshedAt)
     }
 
     const startInterval = () => {

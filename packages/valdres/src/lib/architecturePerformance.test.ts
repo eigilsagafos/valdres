@@ -89,6 +89,9 @@ describe("deterministic architecture performance gates", () => {
             unmountTransitions: 0,
             // A scalar direct write settles without an engine plan.
             commitPlanRuns: 0,
+            cacheMetaAllocations: 0,
+            cacheStatePeeks: 0,
+            globalStoreListCopies: 0,
             commitPlanAllocations: 0,
         })
     })
@@ -823,7 +826,7 @@ describe("deterministic architecture performance gates", () => {
         peer.dispose()
     })
 
-    test("global max-age meta-on, value, and meta-off are three forest plans", () =>
+    test("global max-age resolves through one stable plan", () =>
         withFakeClock(async clock => {
             const source = mockAsyncSource<number>()
             const shared = atom(source.fn as unknown as () => number, {
@@ -849,7 +852,15 @@ describe("deterministic architecture performance gates", () => {
                 delete secondData.architectureInstrumentation
             }
 
-            expect(instrumentation.counters.commitPlanRuns).toBe(3)
+            expect(instrumentation.counters.commitPlanRuns).toBe(1)
+            // Two value forest entries (one per attached store); the plan
+            // itself keeps the shared `none` settlement shape.
+            expect(instrumentation.counters.commitPlanAllocations).toBe(2)
+            expect(instrumentation.counters.cacheMetaAllocations).toBe(2)
+            expect(instrumentation.counters.cacheStatePeeks).toBe(0)
+            expect(instrumentation.counters.globalStoreListCopies).toBe(1)
+            expect(instrumentation.counters.selectorEvaluations).toBe(0)
+            expect(instrumentation.counters.selectorSettlements).toBe(0)
             expect(instrumentation.counters.duplicateStoreSettlements).toBe(0)
             expect(instrumentation.counters.duplicateSelectorSettlements).toBe(
                 0,
@@ -860,7 +871,7 @@ describe("deterministic architecture performance gates", () => {
             second.dispose()
         }))
 
-    test("local max-age meta-on, value, and meta-off are three plans", () =>
+    test("local max-age resolves through one stable plan", () =>
         withFakeClock(async clock => {
             const source = mockAsyncSource<number>()
             const cached = atom(source.fn as unknown as () => number, {
@@ -880,7 +891,13 @@ describe("deterministic architecture performance gates", () => {
                 delete data.architectureInstrumentation
             }
 
-            expect(instrumentation.counters.commitPlanRuns).toBe(3)
+            expect(instrumentation.counters.commitPlanRuns).toBe(1)
+            expect(instrumentation.counters.commitPlanAllocations).toBe(0)
+            expect(instrumentation.counters.cacheMetaAllocations).toBe(2)
+            expect(instrumentation.counters.cacheStatePeeks).toBe(0)
+            expect(instrumentation.counters.globalStoreListCopies).toBe(0)
+            expect(instrumentation.counters.selectorEvaluations).toBe(0)
+            expect(instrumentation.counters.selectorSettlements).toBe(0)
             expect(instrumentation.counters.duplicateStoreSettlements).toBe(0)
             unsubscribe()
             target.dispose()
@@ -918,6 +935,7 @@ describe("deterministic architecture performance gates", () => {
             expect(onChange).not.toHaveBeenCalled()
             expect(onCommitEnd).not.toHaveBeenCalled()
             expect(instrumentation.counters.commitPlanRuns).toBe(0)
+            expect(instrumentation.counters.cacheStatePeeks).toBe(1)
 
             // The following ordinary initialization owns any publication.
             expect(target.get(cached)).not.toBe(initial)

@@ -2,8 +2,11 @@ import type { Atom } from "../types/Atom"
 import type { CacheEntry } from "../types/CacheEntry"
 import type { State } from "../types/State"
 import type { StoreData } from "../types/StoreData"
+import { recordCacheStatePeek } from "./architectureInstrumentation"
+import { IS_PROD } from "./IS_PROD"
 
 const peek = (state: State, data: StoreData): CacheEntry | undefined => {
+    if (!IS_PROD && data.architectureInstrumentation) recordCacheStatePeek(data)
     if (!Object.hasOwn(data, "cache")) return undefined
     return data.cache!.get(state)
 }
@@ -26,8 +29,11 @@ const recordWrite = (
     getOrCreate(state, data).lastWriteAt = writtenAt
 }
 
-const clearWrite = (state: Atom<any>, data: StoreData): void => {
-    const entry = peek(state, data)
+const clearWrite = (
+    state: Atom<any>,
+    data: StoreData,
+    entry = peek(state, data),
+): void => {
     if (!entry) return
     if (entry.release === undefined) {
         data.cache!.delete(state)

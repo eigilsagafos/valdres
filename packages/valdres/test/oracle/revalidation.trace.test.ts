@@ -148,7 +148,9 @@ describe("trace oracle · revalidation", () => {
             expect(calls).toHaveLength(0)
             expect(rec.events).not.toContain("sub:a")
             expect(rec.events).not.toContain("onChange")
-            expect(instrumentation.counters.commitPlanRuns).toBe(3)
+            expect(instrumentation.counters.commitPlanRuns).toBe(1)
+            expect(instrumentation.counters.cacheMetaAllocations).toBe(2)
+            expect(instrumentation.counters.globalStoreListCopies).toBe(0)
         })
     })
 
