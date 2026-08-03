@@ -38,6 +38,12 @@ jobs:
               run: bun run build
             - name: Build types
               run: bun run build:types
+            - name: Typecheck (noUnusedLocals gate)
+              # Type-checks every package's public source graph with noEmit,
+              # enforcing the root tsconfig's noUnusedLocals flag so unused
+              # imports/locals can't reaccumulate. Runs after build/build:types
+              # because cross-package imports resolve through built dist/types.
+              run: bun run typecheck
             - name: Typecheck type-level tests
               run: bun --filter 'valdres' typecheck:types
             - name: Deterministic architecture gates
