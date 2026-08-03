@@ -1502,7 +1502,12 @@ const propagateSelectorUpdates = (
         if (ownsLivenessSeeds) seedsToReconcile = endLivenessPass(data)
     }
 
-    // Reconcile AFTER the owned region is released (an in-flight exception from the
-    // try skips this entirely, so a throwing pass never re-enters user code here).
+    // OWNER-DEFERRED reconciliation (the mode this site and the store read path
+    // use; unsubscribe.ts is the IMMEDIATE one — see the two-calling-modes note
+    // on reconcileLivenessAfterChurn). Only the outermost owner gets a non-null
+    // region back, so a nested propagation reconciles nothing and this runs once
+    // per commit. Reconcile AFTER the owned region is released (an in-flight
+    // exception from the try skips this entirely, so a throwing pass never
+    // re-enters user code here).
     if (seedsToReconcile) reconcileLivenessAfterChurn(seedsToReconcile, data)
 }

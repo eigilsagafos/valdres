@@ -485,6 +485,33 @@ export const endLivenessPass = (data: StoreData): Set<State> | null => {
  * dependents INSIDE it (the region can contain cycles — recursive
  * selectorFamilies). The caller only invokes this when a dep-set actually changed
  * AND a flag was armed, so the steady-state propagation path never reaches here.
+ *
+ * TWO CALLING MODES, deliberately distinct. There are exactly three call sites
+ * and they do NOT all go through the ownership token:
+ *
+ *  - OWNER-DEFERRED (`propagateSelectorUpdates` in propagateUpdatedAtoms.ts, and
+ *    the store read path in storeFromStoreData.ts). Both bracket their work with
+ *    `beginLivenessPass` / `endLivenessPass`: a nested pass returns false from
+ *    begin, contributes its seeds to the in-flight owner's collector, and
+ *    reconciles nothing. The OUTERMOST owner reconciles the accumulated region
+ *    once, after releasing the token. `seeds` here is a whole pass's churn.
+ *
+ *  - IMMEDIATE (`unsubscribe.ts`). It does NOT consult `livenessPassActive` at
+ *    all: it reconciles its own single seed synchronously, unconditionally, even
+ *    when called from inside an owned pass (an unsubscribe from a subscriber
+ *    callback). That is intentional, not an oversight — `onUnmount` semantics
+ *    are eager, so a last-subscriber removal on a cyclic region must tear that
+ *    region down before `unsubscribe` returns rather than at some enclosing
+ *    pass's boundary. It also does not TAKE ownership, so it cannot steal the
+ *    token from an in-flight pass or cause a second one; livenessPassOwnership
+ *    .test.ts pins that ("unsubscribing from inside an owned pass leaves
+ *    ownership intact").
+ *
+ * Do not route unsubscribe through the ownership gate to make the three sites
+ * uniform. Deferring its reconcile to an enclosing owner would delay unmount
+ * past the unsubscribe call and change observable `onUnmount` timing — a
+ * behavioural change that belongs in its own PR with its own coverage, not in a
+ * refactor that consolidates the call sites for tidiness.
  */
 export const reconcileLivenessAfterChurn = (
     seeds: Set<State>,

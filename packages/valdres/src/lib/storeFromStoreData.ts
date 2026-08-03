@@ -207,6 +207,10 @@ const createStoreRuntime = (data: StoreData): Store => {
             // still releases it); reconcile the returned region after the try.
             if (ownsLivenessSeeds) seedsToReconcile = endLivenessPass(data)
         }
+        // OWNER-DEFERRED reconciliation, same mode as propagateSelectorUpdates:
+        // a read nested inside an in-flight pass defers its seeds to that owner
+        // and gets null back here. (unsubscribe.ts is the IMMEDIATE mode — see
+        // the two-calling-modes note on reconcileLivenessAfterChurn.)
         if (seedsToReconcile)
             reconcileLivenessAfterChurn(seedsToReconcile, data)
         // The init-only propagation above walks the dependents of the just-
