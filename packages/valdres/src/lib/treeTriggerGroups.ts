@@ -1,7 +1,3 @@
-// Declared at module scope (not global) so we don't conflict with a consumer's
-// @types/node or bun-types — mirroring src/lib/IS_PROD.ts.
-declare const process: { env: { VALDRES_ENGINE_SELF_CHECKS?: string } }
-
 import type { Atom } from "../types/Atom"
 import type { AtomFamily } from "../types/AtomFamily"
 import type { AtomFamilyAtom } from "../types/AtomFamilyAtom"
