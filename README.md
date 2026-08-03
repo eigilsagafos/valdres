@@ -150,78 +150,78 @@ Latest `main` latency per operation (live, always-current numbers: [bencher.dev/
 
 | Operation | valdres | Jotai | |
 |:----------|--------:|------:|:--|
-| `atom lifecycle (create+100get+100set)` | 12.1µs | 197.9µs | 🟢 16.4× faster |
-| `atom(1)` | 2ns | 57ns | 🟢 24.0× faster |
-| `atomFamily: txn update 5,000 existing members` | 2.49ms | 9.85ms | 🟢 4.0× faster |
-| `atomFamily(id)` | 230ns | 257ns | 🟢 1.1× faster |
-| `atomFamily(id) cache hit` | 17ns | 12ns | 🔴 1.5× slower |
-| `atomFamily(string) cache hit` | 30ns | 24ns | 🔴 1.2× slower |
-| `createStore` | 347ns | 5.4µs | 🟢 15.4× faster |
-| `get 1000 atoms` | 12.5µs | 342.8µs | 🟢 27.5× faster |
-| `selector(fn)` | 7ns | 59ns | 🟢 8.2× faster |
-| `selectorFamily(id)` | 229ns | 412ns | 🟢 1.8× faster |
-| `selectorFamily(string) cache hit` | 40ns | 19ns | 🔴 2.1× slower |
-| `set + read 10 selectors` | 7.4µs | 31.9µs | 🟢 4.3× faster |
-| `set + read 100 selectorFamily entries` | 82.6µs | 224.4µs | 🟢 2.7× faster |
-| `set + read 100 selectors` | 64.3µs | 309.7µs | 🟢 4.8× faster |
-| `set + read through 5 chained selectors` | 5.0µs | 14.4µs | 🟢 2.9× faster |
-| `set 1000 atoms` | 109.0µs | 794.9µs | 🟢 7.3× faster |
-| `set(atom, curr => curr+1)` | 129ns | 2.4µs | 🟢 18.8× faster |
-| `set(atom, value)` | 140ns | 1.5µs | 🟢 10.9× faster |
-| `set(atom) with 10 subs` | 182ns | 2.4µs | 🟢 13.0× faster |
-| `store.get(atom)` | 40ns | 301ns | 🟢 7.5× faster |
-| `sub + unsub` | 348ns | 1.6µs | 🟢 4.6× faster |
-| `sub+unsub on chain of 100 unsubscribed derived deps` | 116.8µs | 120.2µs | 🟢 1.0× faster |
-| `sub+unsub on chain of 50 unsubscribed derived deps` | 60.4µs | 65.4µs | 🟢 1.1× faster |
-| `sub+unsub on chain of 500 unsubscribed derived deps` | 449.1µs | 577.5µs | 🟢 1.3× faster |
-| `subscribe + unsubscribe 100 shared selector pairs` | 784.2µs | 807.4µs | 🟢 1.0× faster |
-| `subscribe + unsubscribe 100 shared selector pairs + fan-in` | 631.3µs | 814.3µs | 🟢 1.3× faster |
-| `subscribe + unsubscribe 100 shared selector pairs + fan-in + mounted spine` | 1.53ms | 1.04ms | 🔴 1.5× slower |
-| `txn: 10 atoms × 10 selectors, set + read` | 100.3µs | 242.7µs | 🟢 2.4× faster |
-| `txn: 10 atoms × 10 selectors, with subs` | 96.7µs | 481.8µs | 🟢 5.0× faster |
-| `txn: 10 atoms × 100 selectors, set + read` | 934.0µs | 3.19ms | 🟢 3.4× faster |
-| `txn: asymmetric DAG shared sink` | 28.6µs | 121.7µs | 🟢 4.2× faster |
-| `txn: cross-atom 1000 selectors, set + read` | 1.14ms | 4.64ms | 🟢 4.1× faster |
-| `txn: cross-atom 1000 selectors, with subs` | 1.12ms | 19.15ms | 🟢 17.0× faster |
-| `txn: large asymmetric DAG (1000 leaves × 50 chain)` | 3.45ms | 17.43ms | 🟢 5.1× faster |
+| `atom lifecycle (create+100get+100set)` | 12.1µs | 194.0µs | 🟢 16.0× faster |
+| `atom(1)` | 2ns | 53ns | 🟢 21.1× faster |
+| `atomFamily: txn update 5,000 existing members` | 2.55ms | 9.10ms | 🟢 3.6× faster |
+| `atomFamily(id)` | 192ns | 259ns | 🟢 1.3× faster |
+| `atomFamily(id) cache hit` | 16ns | 11ns | 🔴 1.5× slower |
+| `atomFamily(string) cache hit` | 32ns | 24ns | 🔴 1.3× slower |
+| `createStore` | 323ns | 5.3µs | 🟢 16.5× faster |
+| `get 1000 atoms` | 12.4µs | 730.5µs | 🟢 58.7× faster |
+| `selector(fn)` | 6ns | 56ns | 🟢 8.7× faster |
+| `selectorFamily(id)` | 229ns | 384ns | 🟢 1.7× faster |
+| `selectorFamily(string) cache hit` | 39ns | 19ns | 🔴 2.1× slower |
+| `set + read 10 selectors` | 8.0µs | 30.8µs | 🟢 3.9× faster |
+| `set + read 100 selectorFamily entries` | 86.1µs | 221.0µs | 🟢 2.6× faster |
+| `set + read 100 selectors` | 69.7µs | 330.8µs | 🟢 4.7× faster |
+| `set + read through 5 chained selectors` | 5.2µs | 12.7µs | 🟢 2.4× faster |
+| `set 1000 atoms` | 117.0µs | 813.6µs | 🟢 7.0× faster |
+| `set(atom, curr => curr+1)` | 135ns | 2.5µs | 🟢 18.3× faster |
+| `set(atom, value)` | 150ns | 1.5µs | 🟢 10.2× faster |
+| `set(atom) with 10 subs` | 186ns | 2.3µs | 🟢 12.4× faster |
+| `store.get(atom)` | 40ns | 291ns | 🟢 7.3× faster |
+| `sub + unsub` | 372ns | 1.9µs | 🟢 5.1× faster |
+| `sub+unsub on chain of 100 unsubscribed derived deps` | 112.2µs | 121.5µs | 🟢 1.1× faster |
+| `sub+unsub on chain of 50 unsubscribed derived deps` | 64.5µs | 66.6µs | 🟢 1.0× faster |
+| `sub+unsub on chain of 500 unsubscribed derived deps` | 480.0µs | 576.6µs | 🟢 1.2× faster |
+| `subscribe + unsubscribe 100 shared selector pairs` | 763.8µs | 801.6µs | 🟢 1.0× faster |
+| `subscribe + unsubscribe 100 shared selector pairs + fan-in` | 673.9µs | 807.2µs | 🟢 1.2× faster |
+| `subscribe + unsubscribe 100 shared selector pairs + fan-in + mounted spine` | 1.54ms | 880.3µs | 🔴 1.7× slower |
+| `txn: 10 atoms × 10 selectors, set + read` | 104.7µs | 338.5µs | 🟢 3.2× faster |
+| `txn: 10 atoms × 10 selectors, with subs` | 107.6µs | 526.5µs | 🟢 4.9× faster |
+| `txn: 10 atoms × 100 selectors, set + read` | 995.9µs | 3.31ms | 🟢 3.3× faster |
+| `txn: asymmetric DAG shared sink` | 32.7µs | 129.7µs | 🟢 4.0× faster |
+| `txn: cross-atom 1000 selectors, set + read` | 1.19ms | 5.17ms | 🟢 4.4× faster |
+| `txn: cross-atom 1000 selectors, with subs` | 1.15ms | 17.83ms | 🟢 15.5× faster |
+| `txn: large asymmetric DAG (1000 leaves × 50 chain)` | 3.26ms | 16.52ms | 🟢 5.1× faster |
 
 #### Node.js (V8)
 
 | Operation | valdres | Jotai | |
 |:----------|--------:|------:|:--|
-| `atom lifecycle (create+100get+100set)` | 35.3µs | 107.4µs | 🟢 3.0× faster |
-| `atom(1)` | 26ns | 50ns | 🟢 1.9× faster |
-| `atomFamily: txn update 5,000 existing members` | 3.94ms | 6.25ms | 🟢 1.6× faster |
-| `atomFamily(id)` | 169ns | 233ns | 🟢 1.4× faster |
-| `atomFamily(id) cache hit` | 132ns | 42ns | 🔴 3.1× slower |
-| `atomFamily(string) cache hit` | 151ns | 27ns | 🔴 5.6× slower |
-| `createStore` | 496ns | 1.1µs | 🟢 2.1× faster |
-| `get 1000 atoms` | 20.6µs | 153.9µs | 🟢 7.5× faster |
-| `selector(fn)` | 55ns | 59ns | 🟢 1.1× faster |
-| `selectorFamily(id)` | 1.5µs | 758ns | 🔴 1.9× slower |
-| `selectorFamily(string) cache hit` | 74ns | 15ns | 🔴 4.9× slower |
-| `set + read 10 selectors` | 11.8µs | 17.1µs | 🟢 1.4× faster |
-| `set + read 100 selectorFamily entries` | 116.9µs | 124.5µs | 🟢 1.1× faster |
-| `set + read 100 selectors` | 116.7µs | 125.2µs | 🟢 1.1× faster |
-| `set + read through 5 chained selectors` | 6.4µs | 9.1µs | 🟢 1.4× faster |
-| `set 1000 atoms` | 112.9µs | 315.2µs | 🟢 2.8× faster |
-| `set(atom, curr => curr+1)` | 319ns | 1.1µs | 🟢 3.3× faster |
-| `set(atom, value)` | 317ns | 869ns | 🟢 2.7× faster |
-| `set(atom) with 10 subs` | 401ns | 1.3µs | 🟢 3.2× faster |
-| `store.get(atom)` | 25ns | 150ns | 🟢 6.1× faster |
-| `sub + unsub` | 858ns | 887ns | 🟢 1.0× faster |
-| `sub+unsub on chain of 100 unsubscribed derived deps` | 162.2µs | 98.6µs | 🔴 1.6× slower |
-| `sub+unsub on chain of 50 unsubscribed derived deps` | 103.4µs | 54.3µs | 🔴 1.9× slower |
-| `sub+unsub on chain of 500 unsubscribed derived deps` | 739.8µs | 489.2µs | 🔴 1.5× slower |
-| `subscribe + unsubscribe 100 shared selector pairs` | 1.02ms | 432.8µs | 🔴 2.4× slower |
-| `subscribe + unsubscribe 100 shared selector pairs + fan-in` | 925.1µs | 464.3µs | 🔴 2.0× slower |
-| `subscribe + unsubscribe 100 shared selector pairs + fan-in + mounted spine` | 1.67ms | 481.2µs | 🔴 3.5× slower |
-| `txn: 10 atoms × 10 selectors, set + read` | 137.1µs | 142.2µs | 🟢 1.0× faster |
-| `txn: 10 atoms × 10 selectors, with subs` | 88.8µs | 229.1µs | 🟢 2.6× faster |
-| `txn: 10 atoms × 100 selectors, set + read` | 1.34ms | 1.27ms | 🔴 1.1× slower |
-| `txn: asymmetric DAG shared sink` | 26.1µs | 50.0µs | 🟢 1.9× faster |
-| `txn: cross-atom 1000 selectors, set + read` | 1.60ms | 1.73ms | 🟢 1.1× faster |
-| `txn: cross-atom 1000 selectors, with subs` | 988.1µs | 8.84ms | 🟢 8.9× faster |
-| `txn: large asymmetric DAG (1000 leaves × 50 chain)` | 3.11ms | 5.91ms | 🟢 1.9× faster |
+| `atom lifecycle (create+100get+100set)` | 36.8µs | 106.3µs | 🟢 2.9× faster |
+| `atom(1)` | 25ns | 49ns | 🟢 2.0× faster |
+| `atomFamily: txn update 5,000 existing members` | 7.92ms | 5.49ms | 🔴 1.4× slower |
+| `atomFamily(id)` | 152ns | 257ns | 🟢 1.7× faster |
+| `atomFamily(id) cache hit` | 166ns | 26ns | 🔴 6.3× slower |
+| `atomFamily(string) cache hit` | 45ns | 11ns | 🔴 4.2× slower |
+| `createStore` | 515ns | 661ns | 🟢 1.3× faster |
+| `get 1000 atoms` | 22.7µs | 153.7µs | 🟢 6.8× faster |
+| `selector(fn)` | 43ns | 57ns | 🟢 1.3× faster |
+| `selectorFamily(id)` | 1.6µs | 273ns | 🔴 6.0× slower |
+| `selectorFamily(string) cache hit` | 92ns | 15ns | 🔴 6.1× slower |
+| `set + read 10 selectors` | 12.1µs | 16.4µs | 🟢 1.4× faster |
+| `set + read 100 selectorFamily entries` | 121.9µs | 122.9µs | 🟢 1.0× faster |
+| `set + read 100 selectors` | 118.3µs | 119.5µs | 🟢 1.0× faster |
+| `set + read through 5 chained selectors` | 6.7µs | 9.4µs | 🟢 1.4× faster |
+| `set 1000 atoms` | 118.0µs | 334.7µs | 🟢 2.8× faster |
+| `set(atom, curr => curr+1)` | 336ns | 1.1µs | 🟢 3.1× faster |
+| `set(atom, value)` | 329ns | 902ns | 🟢 2.7× faster |
+| `set(atom) with 10 subs` | 425ns | 1.3µs | 🟢 3.1× faster |
+| `store.get(atom)` | 24ns | 141ns | 🟢 5.9× faster |
+| `sub + unsub` | 929ns | 904ns | 🔴 1.0× slower |
+| `sub+unsub on chain of 100 unsubscribed derived deps` | 166.9µs | 101.6µs | 🔴 1.6× slower |
+| `sub+unsub on chain of 50 unsubscribed derived deps` | 106.1µs | 55.0µs | 🔴 1.9× slower |
+| `sub+unsub on chain of 500 unsubscribed derived deps` | 783.0µs | 510.2µs | 🔴 1.5× slower |
+| `subscribe + unsubscribe 100 shared selector pairs` | 1.04ms | 458.9µs | 🔴 2.3× slower |
+| `subscribe + unsubscribe 100 shared selector pairs + fan-in` | 949.6µs | 500.7µs | 🔴 1.9× slower |
+| `subscribe + unsubscribe 100 shared selector pairs + fan-in + mounted spine` | 1.73ms | 523.2µs | 🔴 3.3× slower |
+| `txn: 10 atoms × 10 selectors, set + read` | 141.8µs | 146.7µs | 🟢 1.0× faster |
+| `txn: 10 atoms × 10 selectors, with subs` | 97.6µs | 255.0µs | 🟢 2.6× faster |
+| `txn: 10 atoms × 100 selectors, set + read` | 1.42ms | 1.40ms | 🔴 1.0× slower |
+| `txn: asymmetric DAG shared sink` | 28.2µs | 49.9µs | 🟢 1.8× faster |
+| `txn: cross-atom 1000 selectors, set + read` | 1.70ms | 1.87ms | 🟢 1.1× faster |
+| `txn: cross-atom 1000 selectors, with subs` | 1.06ms | 9.29ms | 🟢 8.7× faster |
+| `txn: large asymmetric DAG (1000 leaves × 50 chain)` | 3.23ms | 6.58ms | 🟢 2.0× faster |
 
 <!-- BENCH:END -->
