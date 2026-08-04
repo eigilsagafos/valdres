@@ -10,8 +10,10 @@ name: Bencher (PR)
 on:
     pull_request:
         branches: [main]
+        types: [opened, synchronize, reopened, labeled]
 
 permissions:
+    contents: read
     pull-requests: write
     checks: write
 
@@ -22,11 +24,66 @@ concurrency:
     cancel-in-progress: false
 
 jobs:
-    benchmark_pr:
-        if:
-            ${{ github.event.pull_request.head.repo.full_name ==
-            github.repository && github.actor != 'dependabot[bot]' }}
+    classify_changes:
         runs-on: ubuntu-22.04
+        outputs:
+            run_benchmarks: ${{ steps.scope.outputs.run_benchmarks }}
+        steps:
+            # This job deliberately uses the runner's preinstalled Node. It has
+            # no Bencher environment, Bun setup, dependency install, or secrets.
+            - uses: actions/checkout@v6
+              with:
+                  fetch-depth: 0
+                  persist-credentials: false
+            - name: Classify exact base/head changes
+              id: scope
+              env:
+                  BASE_SHA: ${{ github.event.pull_request.base.sha }}
+                  HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+                  BENCH_FORCE_RUN:
+                      ${{ contains(github.event.pull_request.labels.*.name,
+                      'run-benchmarks') }}
+              run: |
+                  set -euo pipefail
+                  # Execute the classifier from the trusted base revision, not
+                  # a version that the pull request could modify to skip itself.
+                  # The one-time fallback bootstraps the PR that introduces the
+                  # module, because its base revision cannot contain it yet.
+                  classifier=/tmp/benchmark-change-scope.mjs
+                  if git cat-file -e \
+                    "${BASE_SHA}:scripts/lib/benchmark-change-scope.mjs" 2>/dev/null; then
+                    git show \
+                      "${BASE_SHA}:scripts/lib/benchmark-change-scope.mjs" \
+                      > "$classifier"
+                  else
+                    classifier="$GITHUB_WORKSPACE/scripts/lib/benchmark-change-scope.mjs"
+                    echo "::notice::Using checked-out classifier for initial bootstrap"
+                  fi
+                  decision="$(
+                    git diff \
+                      --find-renames \
+                      --find-copies \
+                      --find-copies-harder \
+                      --name-status \
+                      -z \
+                      "$BASE_SHA...$HEAD_SHA" \
+                      -- | node "$classifier"
+                  )"
+                  if [[ "$decision" != "true" && "$decision" != "false" ]]; then
+                    echo "::error::Invalid classifier output: ${decision}"
+                    exit 1
+                  fi
+                  echo "run_benchmarks=${decision}" >> "$GITHUB_OUTPUT"
+
+    run_benchmarks:
+        needs: classify_changes
+        if:
+            ${{ needs.classify_changes.result == 'success' &&
+            needs.classify_changes.outputs.run_benchmarks == 'true' &&
+            github.event.pull_request.head.repo.full_name == github.repository
+            && github.actor != 'dependabot[bot]' }}
+        runs-on: ubuntu-22.04
+        timeout-minutes: 45
         environment: Bencher.dev
         steps:
             # pull_request checkout intentionally measures GitHub's test-merge
@@ -256,4 +313,67 @@ jobs:
                   steps.gate_node.outcome == 'failure' }}
               run: |
                   echo "::error::Benchmark alerts: Bun=${{ steps.gate_bun.outcome }}, Node=${{ steps.gate_node.outcome }}"
+                  exit 1
+
+    # Keep this job ID stable: branch protection requires
+    # `Bencher (PR) / benchmark_pr`. It converts intentional no-secret/no-runtime
+    # skips to success and fails closed for every requested same-repo benchmark.
+    benchmark_pr:
+        needs: [classify_changes, run_benchmarks]
+        if: always()
+        runs-on: ubuntu-22.04
+        steps:
+            - name: Finalize required benchmark check
+              env:
+                  CLASSIFICATION_RESULT: ${{ needs.classify_changes.result }}
+                  RUN_BENCHMARKS:
+                      ${{ needs.classify_changes.outputs.run_benchmarks }}
+                  BENCHMARK_RESULT: ${{ needs.run_benchmarks.result }}
+                  SAME_REPOSITORY:
+                      ${{ github.event.pull_request.head.repo.full_name ==
+                      github.repository }}
+                  IS_DEPENDABOT: ${{ github.actor == 'dependabot[bot]' }}
+              run: |
+                  set -euo pipefail
+
+                  if [[ "$CLASSIFICATION_RESULT" != "success" ]]; then
+                    echo "## Benchmark classification failed" >> "$GITHUB_STEP_SUMMARY"
+                    echo "::error::Change classification result: ${CLASSIFICATION_RESULT}"
+                    exit 1
+                  fi
+
+                  if [[ "$RUN_BENCHMARKS" == "false" ]]; then
+                    if [[ "$BENCHMARK_RESULT" != "skipped" ]]; then
+                      echo "::error::Irrelevant change unexpectedly started benchmarks"
+                      exit 1
+                    fi
+                    echo "## Benchmarks intentionally skipped" >> "$GITHUB_STEP_SUMMARY"
+                    echo "Every changed path is clearly documentation, Changeset metadata, or an ordinary non-performance test." >> "$GITHUB_STEP_SUMMARY"
+                    exit 0
+                  fi
+
+                  if [[ "$RUN_BENCHMARKS" != "true" ]]; then
+                    echo "::error::Missing or invalid classification output: ${RUN_BENCHMARKS}"
+                    exit 1
+                  fi
+
+                  if [[ "$SAME_REPOSITORY" != "true" ]]; then
+                    echo "## Benchmarks skipped for fork pull request" >> "$GITHUB_STEP_SUMMARY"
+                    echo "The untrusted fork cannot access the Bencher environment or secret." >> "$GITHUB_STEP_SUMMARY"
+                    exit 0
+                  fi
+
+                  if [[ "$IS_DEPENDABOT" == "true" ]]; then
+                    echo "## Benchmarks skipped for Dependabot" >> "$GITHUB_STEP_SUMMARY"
+                    echo "Dependabot does not receive the Bencher environment secret." >> "$GITHUB_STEP_SUMMARY"
+                    exit 0
+                  fi
+
+                  if [[ "$BENCHMARK_RESULT" == "success" ]]; then
+                    echo "## Required benchmarks passed" >> "$GITHUB_STEP_SUMMARY"
+                    exit 0
+                  fi
+
+                  echo "## Required benchmarks did not pass" >> "$GITHUB_STEP_SUMMARY"
+                  echo "::error::Requested benchmark result: ${BENCHMARK_RESULT}"
                   exit 1

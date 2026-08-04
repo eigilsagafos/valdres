@@ -18,10 +18,26 @@ function jobNames(workflow: string): string[] {
     )
 }
 
+function jobBlock(workflow: string, name: string): string {
+    const marker = `    ${name}:\n`
+    const start = workflow.indexOf(marker)
+    if (start === -1) return ""
+    const remaining = workflow.slice(start + marker.length)
+    const next = remaining.search(/^    [a-z][a-z0-9_]*:\n/m)
+    return next === -1
+        ? workflow.slice(start)
+        : workflow.slice(start, start + marker.length + next)
+}
+
 describe("fast Bencher PR workflow", () => {
     test("preserves the required workflow and final check identity", () => {
         expect(prWorkflow).toMatch(/^name: Bencher \(PR\)$/m)
-        expect(jobNames(prWorkflow)).toEqual(["benchmark_pr"])
+        expect(jobNames(prWorkflow)).toEqual([
+            "classify_changes",
+            "run_benchmarks",
+            "benchmark_pr",
+        ])
+        expect(jobBlock(prWorkflow, "benchmark_pr")).toContain("if: always()")
     })
 
     test("triggers every PR to main without a workflow path filter", () => {
@@ -29,6 +45,9 @@ describe("fast Bencher PR workflow", () => {
         expect(trigger).not.toBeNull()
         expect(trigger![1]).toContain("pull_request:")
         expect(trigger![1]).toContain("branches: [main]")
+        expect(trigger![1]).toContain(
+            "types: [opened, synchronize, reopened, labeled]",
+        )
         expect(trigger![1]).not.toMatch(/paths(?:-ignore)?:/)
     })
 
@@ -112,6 +131,83 @@ describe("fast Bencher PR workflow", () => {
         )
         expect(prefix).not.toContain("BENCHER_API_KEY")
     })
+
+    test("classifies exact base/head changes with preinstalled Node only", () => {
+        const classify = jobBlock(prWorkflow, "classify_changes")
+        expect(classify).toContain(
+            "BASE_SHA: ${{ github.event.pull_request.base.sha }}",
+        )
+        expect(classify).toContain(
+            "HEAD_SHA: ${{ github.event.pull_request.head.sha }}",
+        )
+        expect(classify).toContain("--name-status")
+        expect(classify).toContain("-z")
+        expect(classify).toContain("--find-copies-harder")
+        expect(classify).toContain('"$BASE_SHA...$HEAD_SHA"')
+        expect(classify).toContain(
+            '"${BASE_SHA}:scripts/lib/benchmark-change-scope.mjs"',
+        )
+        expect(classify).toContain("git cat-file -e")
+        expect(classify).toContain(
+            'classifier="$GITHUB_WORKSPACE/scripts/lib/benchmark-change-scope.mjs"',
+        )
+        expect(classify).toContain('node "$classifier"')
+        expect(classify).not.toContain("setup-bun")
+        expect(classify).not.toContain("setup-node")
+        expect(classify).not.toContain("environment:")
+        expect(classify).not.toContain("${{ secrets.")
+    })
+
+    test("the run-benchmarks label forces classification", () => {
+        expect(jobBlock(prWorkflow, "classify_changes")).toContain(
+            "contains(github.event.pull_request.labels.*.name,",
+        )
+        expect(prWorkflow).toContain("'run-benchmarks'")
+    })
+
+    test("only the measurement job owns the Bencher environment", () => {
+        expect(jobBlock(prWorkflow, "run_benchmarks")).toContain(
+            "environment: Bencher.dev",
+        )
+        expect(jobBlock(prWorkflow, "classify_changes")).not.toContain(
+            "Bencher.dev",
+        )
+        expect(jobBlock(prWorkflow, "benchmark_pr")).not.toContain(
+            "Bencher.dev",
+        )
+    })
+
+    test("the sentinel propagates classification and measurement failures", () => {
+        const sentinel = jobBlock(prWorkflow, "benchmark_pr")
+        expect(sentinel).toContain(
+            'if [[ "$CLASSIFICATION_RESULT" != "success" ]]',
+        )
+        expect(sentinel).toContain('if [[ "$BENCHMARK_RESULT" == "success" ]]')
+        expect(sentinel).toContain(
+            'echo "::error::Requested benchmark result: ${BENCHMARK_RESULT}"',
+        )
+        expect(sentinel.match(/exit 1/g)!.length).toBeGreaterThanOrEqual(4)
+    })
+
+    test("the sentinel succeeds only for explicit safe skips", () => {
+        const sentinel = jobBlock(prWorkflow, "benchmark_pr")
+        expect(sentinel).toContain('if [[ "$RUN_BENCHMARKS" == "false" ]]')
+        expect(sentinel).toContain('if [[ "$SAME_REPOSITORY" != "true" ]]')
+        expect(sentinel).toContain('if [[ "$IS_DEPENDABOT" == "true" ]]')
+        expect(sentinel).toContain("Benchmarks intentionally skipped")
+        expect(sentinel).toContain("Benchmarks skipped for fork pull request")
+        expect(sentinel).toContain("Benchmarks skipped for Dependabot")
+    })
+
+    test("irrelevant changes cannot request the environment or dependencies", () => {
+        const run = jobBlock(prWorkflow, "run_benchmarks")
+        expect(run).toContain(
+            "needs.classify_changes.outputs.run_benchmarks == 'true'",
+        )
+        expect(run).toContain("environment: Bencher.dev")
+        expect(run).toContain("setup-bun")
+        expect(run).toContain("bun install --frozen-lockfile")
+    })
 })
 
 describe("deep benchmark workflow", () => {
@@ -144,6 +240,18 @@ describe("deep benchmark workflow", () => {
         expect(deepWorkflow).toContain('echo "head_sha=${head_sha}"')
         expect(deepWorkflow).toContain(
             '"$EVENT_NAME" == "schedule" && "$base_sha" != "$head_sha"',
+        )
+    })
+
+    test("records inputs before ref validation can fail", () => {
+        const resolve = deepWorkflow.match(
+            /- name: Resolve immutable comparison SHAs[\s\S]*?(?=\n            - name:)/,
+        )
+        expect(resolve).not.toBeNull()
+        expect(resolve![0]).toContain("mkdir -p /tmp/deep-artifacts")
+        expect(resolve![0]).toContain("execution-context.txt")
+        expect(resolve![0].indexOf("execution-context.txt")).toBeLessThan(
+            resolve![0].indexOf("resolve_ref()"),
         )
     })
 

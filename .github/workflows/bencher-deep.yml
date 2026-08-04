@@ -63,6 +63,14 @@ jobs:
                   EVENT_NAME: ${{ github.event_name }}
               run: |
                   set -euo pipefail
+                  mkdir -p /tmp/deep-artifacts
+                  {
+                    echo "event=${EVENT_NAME}"
+                    echo "base_input=${BASE_INPUT}"
+                    echo "head_input=${HEAD_INPUT}"
+                    echo "max_rounds=${MAX_ROUNDS_INPUT}"
+                  } > /tmp/deep-artifacts/execution-context.txt
+
                   git fetch --force --prune origin \
                     '+refs/heads/*:refs/remotes/origin/*'
 
@@ -98,15 +106,10 @@ jobs:
                     echo "head_sha=${head_sha}"
                     echo "max_rounds=${MAX_ROUNDS_INPUT}"
                   } >> "$GITHUB_OUTPUT"
-                  mkdir -p /tmp/deep-artifacts
                   {
-                    echo "event=${EVENT_NAME}"
-                    echo "base_input=${BASE_INPUT}"
-                    echo "head_input=${HEAD_INPUT}"
                     echo "base_sha=${base_sha}"
                     echo "head_sha=${head_sha}"
-                    echo "max_rounds=${MAX_ROUNDS_INPUT}"
-                  } > /tmp/deep-artifacts/execution-context.txt
+                  } >> /tmp/deep-artifacts/execution-context.txt
 
             - name: Create and install comparison worktrees
               env:
@@ -190,6 +193,7 @@ jobs:
 
                     (
                       cd "$checkout"
+                      trap 'echo "::error::${side} ${runtime}/${suite} could not execute the current benchmark harness at this revision"' ERR
                       export BENCH_PAIR_ID="$pair"
                       export BENCH_SIDE="$side"
                       export BENCH_ORDER="$order"

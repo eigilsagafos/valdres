@@ -44,6 +44,13 @@ describe("protected set", () => {
         expect(isSubMicrosecond(131)).toBe(true)
         expect(isSubMicrosecond(TIMING_FLOOR_NS)).toBe(false)
     })
+
+    test("keeps the noisy atom-family workload measured and protected", () => {
+        const workload = "atomFamily: txn update 5,000 existing members"
+        expect(SUITE_SOURCE).toContain(workload)
+        expect(PROTECTED_OPS.has(workload)).toBe(true)
+        expect(UNGATEABLE_OPS.has(workload)).toBe(false)
+    })
 })
 
 describe("aggregated equivalents", () => {
