@@ -104,7 +104,7 @@ passes, edge visits, enqueues, and dequeues.
 | Unchanged multi-seed closure, 200   |    2 |      2 |       0 |      1 |      1 |         0 |     4 |   0 |   0 |
 | Asymmetric DAG, depth 6             |    7 |      7 |       0 |      1 |      1 |         0 |    40 |   8 |   8 |
 | Dynamic churn, width 6              |    6 |      6 |       0 |      1 |      1 |         0 |     6 |   0 |   0 |
-| Single-store update + delete        |    2 |      2 |       1 |      1 |      2 |         1 |     3 |   0 |   0 |
+| Single-store update + delete        |    1 |      1 |       0 |      1 |      1 |         0 |     3 |   0 |   0 |
 | Cross-scope transaction, depth 3    |    1 |      1 |       0 |      1 |      1 |         0 |     3 |   0 |   0 |
 | Cross-scope update + delete + unset |    1 |      1 |       0 |      1 |      1 |         0 |     4 |   0 |   0 |
 | Cross-scope txn, plan/peer overlap  |    1 |      1 |       0 |      1 |      1 |         0 |     2 |   0 |   0 |
