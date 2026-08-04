@@ -3,9 +3,9 @@
  *
  * Reads the base and head observation NDJSON for both runtimes, pairs them by
  * explicit pair identity, runs the decision model in scripts/lib/paired-decision.ts,
- * and writes a markdown report plus a machine-readable JSON artifact. It never
- * fails the job: the shipped `min(head/base)` +50% Bencher gate remains the only
- * blocking check while this model is calibrated against real merges.
+ * and writes a markdown report plus a machine-readable JSON artifact. It runs
+ * in the weekly/manual deep workflow; the shipped three-pair `min(head/base)`
+ * +50% Bencher gate remains isolated in the required PR workflow.
  *
  * Its one side effect on CI control flow is the rerun-lanes file, which asks the
  * workflow to append more pairs to lanes whose PROTECTED benchmarks came back
@@ -314,13 +314,11 @@ if (import.meta.main) {
     }
     const mdPath = process.env.BENCH_REPORT_MD
     if (mdPath) writeFileSync(mdPath, markdown)
-    // The ladder driver in bencher-pr.yml reads this between rounds. Always
+    // The ladder driver in bencher-deep.yml reads this between rounds. Always
     // written, so a stale file from the previous round can never be re-read.
     const lanesPath = process.env.BENCH_RERUN_LANES_FILE
     if (lanesPath) writeFileSync(lanesPath, rerunLanes.join(" "))
-    // Deliberately NOT appended to GITHUB_STEP_SUMMARY here. The ladder runs
-    // this once per round, so appending would leave the summary holding stale
-    // round-1 and round-2 verdicts above the final one. The workflow's publish
-    // step appends the last written markdown exactly once.
+    // Deliberately NOT appended to GITHUB_STEP_SUMMARY here. The deep workflow
+    // publishes only its final round's markdown.
     console.log(markdown)
 }

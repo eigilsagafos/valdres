@@ -5,9 +5,9 @@
  *
  *  - Explicit membership. The set below is one benchmark per subsystem, chosen
  *    to be the aggregated workload that a regression in that subsystem has to
- *    pass through. Everything else in the suite stays informational — measured,
- *    plotted, reported, never blocking. A small family is also what keeps the
- *    FDR adjustment in paired-decision.ts affordable at four to twelve pairs.
+ *    pass through. Everything else in the deep suite stays informational. Both
+ *    families are advisory; a small protected family keeps the FDR adjustment
+ *    in paired-decision.ts affordable at four to twelve pairs.
  *
  *  - A timing floor. A raw operation measured in nanoseconds cannot be gated on
  *    a CI runner: the +10% budget lands inside the JIT-tier and timer noise, and
@@ -66,7 +66,7 @@ export const AGGREGATED_EQUIVALENTS: Record<string, string | null> = {
         "atomFamily: txn update 5,000 existing members",
     // Store construction is not part of any aggregated workload — every other
     // benchmark builds its store outside the measured region. A regression here
-    // shows up on the base lane's plot, not in the PR decision.
+    // shows up on the base lane's plot, not in the paired decision.
     createStore: null,
 }
 
