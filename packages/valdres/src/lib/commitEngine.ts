@@ -160,7 +160,11 @@ export const runCommitPlan = (plan: CommitPlan) => {
     // cancelled, or disposed async result cannot open a commit boundary or run
     // any user code merely by arriving late.
     if (plan.admit && !plan.admit()) return false
-    recordCommitPlanRun(plan.data)
+    // Structural counter, test/benchmark-only like every other `record*` call.
+    // `!IS_PROD` first so a production consumer pays neither the call nor the
+    // `data.architectureInstrumentation` load once per commit — this runs on
+    // the hottest path in the engine.
+    if (!IS_PROD) recordCommitPlanRun(plan.data)
 
     const settlement = plan.settlement
     const boundary = plan.boundary
