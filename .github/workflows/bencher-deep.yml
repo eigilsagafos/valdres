@@ -1,0 +1,292 @@
+# Advisory paired-statistics calibration. This workflow never uploads to
+# Bencher and never participates in pull-request branch protection.
+name: Bencher (deep)
+
+on:
+    workflow_dispatch:
+        inputs:
+            base_ref:
+                description: Base branch name or full 40-character commit SHA
+                required: true
+                default: main
+                type: string
+            head_ref:
+                description: Head branch name or full 40-character commit SHA
+                required: true
+                default: main
+                type: string
+            max_rounds:
+                description: Maximum balanced rounds
+                required: true
+                default: "3"
+                type: choice
+                options:
+                    - "1"
+                    - "2"
+                    - "3"
+    schedule:
+        - cron: "23 4 * * 1"
+
+permissions:
+    contents: read
+
+concurrency:
+    group: bencher-deep
+    cancel-in-progress: false
+
+jobs:
+    benchmark_deep:
+        runs-on: ubuntu-22.04
+        timeout-minutes: 120
+        steps:
+            - uses: actions/checkout@v6
+              with:
+                  fetch-depth: 0
+                  persist-credentials: false
+            - uses: oven-sh/setup-bun@v2
+              with:
+                  bun-version: 1.3.14
+            - uses: actions/setup-node@v6
+              with:
+                  node-version: "24.16.0"
+
+            # Inputs are accepted only as full SHAs or Git-valid branch names.
+            # Every branch is resolved through origin to an immutable commit
+            # before a worktree or dependency is created. Scheduled runs use the
+            # same origin/main SHA on both sides for intentional A/A calibration.
+            - name: Resolve immutable comparison SHAs
+              id: resolve
+              env:
+                  BASE_INPUT: ${{ inputs.base_ref || 'main' }}
+                  HEAD_INPUT: ${{ inputs.head_ref || 'main' }}
+                  MAX_ROUNDS_INPUT: ${{ inputs.max_rounds || '3' }}
+                  EVENT_NAME: ${{ github.event_name }}
+              run: |
+                  set -euo pipefail
+                  mkdir -p /tmp/deep-artifacts
+                  {
+                    echo "event=${EVENT_NAME}"
+                    echo "base_input=${BASE_INPUT}"
+                    echo "head_input=${HEAD_INPUT}"
+                    echo "max_rounds=${MAX_ROUNDS_INPUT}"
+                  } > /tmp/deep-artifacts/execution-context.txt
+
+                  git fetch --force --prune origin \
+                    '+refs/heads/*:refs/remotes/origin/*'
+
+                  resolve_ref() {
+                    local input="$1"
+                    local candidate
+                    if [[ "$input" =~ ^[0-9a-fA-F]{40}$ ]]; then
+                      candidate="$input"
+                    elif [[ "$input" =~ ^[A-Za-z0-9][A-Za-z0-9._/-]*$ ]] && \
+                      git check-ref-format --branch "$input" >/dev/null; then
+                      candidate="refs/remotes/origin/${input}"
+                    else
+                      echo "::error::Invalid benchmark ref: ${input}"
+                      return 1
+                    fi
+                    git rev-parse --verify "${candidate}^{commit}"
+                  }
+
+                  if [[ ! "$MAX_ROUNDS_INPUT" =~ ^[123]$ ]]; then
+                    echo "::error::max_rounds must be 1, 2, or 3"
+                    exit 1
+                  fi
+
+                  base_sha="$(resolve_ref "$BASE_INPUT")"
+                  head_sha="$(resolve_ref "$HEAD_INPUT")"
+                  if [[ "$EVENT_NAME" == "schedule" && "$base_sha" != "$head_sha" ]]; then
+                    echo "::error::Scheduled calibration must be A/A"
+                    exit 1
+                  fi
+
+                  {
+                    echo "base_sha=${base_sha}"
+                    echo "head_sha=${head_sha}"
+                    echo "max_rounds=${MAX_ROUNDS_INPUT}"
+                  } >> "$GITHUB_OUTPUT"
+                  {
+                    echo "base_sha=${base_sha}"
+                    echo "head_sha=${head_sha}"
+                  } >> /tmp/deep-artifacts/execution-context.txt
+
+            - name: Create and install comparison worktrees
+              env:
+                  BASE_SHA: ${{ steps.resolve.outputs.base_sha }}
+                  HEAD_SHA: ${{ steps.resolve.outputs.head_sha }}
+              run: |
+                  set -euo pipefail
+                  git worktree add --detach /tmp/deep-base "$BASE_SHA"
+                  git worktree add --detach /tmp/deep-head "$HEAD_SHA"
+                  (cd /tmp/deep-base && bun install --frozen-lockfile)
+                  (cd /tmp/deep-head && bun install --frozen-lockfile)
+
+                  # Both revisions execute the complete current harness, while
+                  # its relative imports continue to target that worktree's src.
+                  for checkout in /tmp/deep-base /tmp/deep-head; do
+                    rsync -a --delete \
+                      "$GITHUB_WORKSPACE/packages/valdres/test/performance/" \
+                      "$checkout/packages/valdres/test/performance/"
+                    cp \
+                      "$GITHUB_WORKSPACE/packages/valdres/vitest.architecture-bench.config.ts" \
+                      "$checkout/packages/valdres/vitest.architecture-bench.config.ts"
+                    cp \
+                      "$GITHUB_WORKSPACE/packages/valdres/vitest.async-bench.config.ts" \
+                      "$checkout/packages/valdres/vitest.async-bench.config.ts"
+                  done
+
+            - name: Record dependency and toolchain versions
+              run: |
+                  set -euo pipefail
+                  {
+                    echo "bun=$(bun --version)"
+                    echo "node=$(node --version)"
+                    echo "npm=$(npm --version)"
+                    echo "git=$(git --version)"
+                    uname -a
+                  } > /tmp/deep-artifacts/toolchain-versions.txt
+                  (cd /tmp/deep-base && bun pm ls --all) \
+                    > /tmp/deep-artifacts/base-dependencies.txt
+                  (cd /tmp/deep-head && bun pm ls --all) \
+                    > /tmp/deep-artifacts/head-dependencies.txt
+
+            # Round one measures B-P-P-B twice (four pairs) in every lane.
+            # Later rounds repeat only lanes with inconclusive protected rows.
+            # All runtimes, suites, sides, and rounds stay serialized here.
+            - name: Run balanced deep calibration
+              env:
+                  BENCH_MAX_ROUNDS: ${{ steps.resolve.outputs.max_rounds }}
+              run: |
+                  set -euo pipefail
+                  mkdir -p \
+                    /tmp/deep-artifacts/observations \
+                    /tmp/deep-artifacts/decisions
+                  rm -f \
+                    /tmp/deep-artifacts/observations/base_bun.ndjson \
+                    /tmp/deep-artifacts/observations/base_node.ndjson \
+                    /tmp/deep-artifacts/observations/head_bun.ndjson \
+                    /tmp/deep-artifacts/observations/head_node.ndjson
+
+                  run_suite() {
+                    local pair="$1"
+                    local runtime="$2"
+                    local suite="$3"
+                    local side="$4"
+                    local order="$5"
+                    local checkout
+                    local output
+                    local result
+
+                    if [[ "$side" == "base" ]]; then
+                      checkout="/tmp/deep-base/packages/valdres"
+                    else
+                      checkout="/tmp/deep-head/packages/valdres"
+                    fi
+                    output="/tmp/deep-artifacts/observations/${side}_${runtime}.ndjson"
+
+                    if [[ "$runtime" == "bun" ]]; then
+                      result="test/performance/bench-results.ndjson"
+                    else
+                      result="test/performance/bench-results-node.ndjson"
+                    fi
+
+                    (
+                      cd "$checkout"
+                      trap 'echo "::error::${side} ${runtime}/${suite} could not execute the current benchmark harness at this revision"' ERR
+                      export BENCH_PAIR_ID="$pair"
+                      export BENCH_SIDE="$side"
+                      export BENCH_ORDER="$order"
+                      export BENCH_SUITE="$suite"
+                      if [[ "$suite" == "standard" ]]; then
+                        if [[ "$runtime" == "bun" ]]; then
+                          BENCH_VALDRES_ONLY=1 bun run test:bench
+                        else
+                          BENCH_VALDRES_ONLY=1 bun run test:bench:node
+                        fi
+                      elif [[ "$runtime" == "bun" ]]; then
+                        rm -f "$result"
+                        BENCH_VALDRES_ONLY=1 NODE_ENV=production \
+                          bun test --timeout 60000 --concurrency 1 \
+                          ./test/performance/asyncSettlement.timing.ts
+                      else
+                        rm -f "$result"
+                        BENCH_VALDRES_ONLY=1 NODE_ENV=production \
+                          npx vitest run --config vitest.async-bench.config.ts
+                      fi
+                      cat "$result" >> "$output"
+                    )
+                  }
+
+                  run_block() {
+                    local round="$1"
+                    local block="$2"
+                    local runtime="$3"
+                    local suite="$4"
+                    local a="r${round}b${block}a-${runtime}-${suite}"
+                    local b="r${round}b${block}b-${runtime}-${suite}"
+                    run_suite "$a" "$runtime" "$suite" base 1
+                    run_suite "$a" "$runtime" "$suite" head 2
+                    run_suite "$b" "$runtime" "$suite" head 1
+                    run_suite "$b" "$runtime" "$suite" base 2
+                  }
+
+                  run_round() {
+                    local round="$1"
+                    local runtime="$2"
+                    local suite="$3"
+                    run_block "$round" 1 "$runtime" "$suite"
+                    run_block "$round" 2 "$runtime" "$suite"
+                  }
+
+                  analyze_round() {
+                    local round="$1"
+                    BENCH_ROUND="$round" \
+                    BENCH_PAIRED_BASE_BUN=/tmp/deep-artifacts/observations/base_bun.ndjson \
+                    BENCH_PAIRED_HEAD_BUN=/tmp/deep-artifacts/observations/head_bun.ndjson \
+                    BENCH_PAIRED_BASE_NODE=/tmp/deep-artifacts/observations/base_node.ndjson \
+                    BENCH_PAIRED_HEAD_NODE=/tmp/deep-artifacts/observations/head_node.ndjson \
+                    BENCH_REPORT_JSON="/tmp/deep-artifacts/decisions/round-${round}.json" \
+                    BENCH_REPORT_MD="/tmp/deep-report-round-${round}.md" \
+                    BENCH_RERUN_LANES_FILE=/tmp/deep-rerun-lanes \
+                      bun run scripts/bench-paired-report.ts > /dev/null
+                  }
+
+                  for runtime in bun node; do
+                    for suite in standard async; do
+                      run_round 1 "$runtime" "$suite"
+                    done
+                  done
+
+                  completed=1
+                  while true; do
+                    analyze_round "$completed"
+                    lanes="$(cat /tmp/deep-rerun-lanes)"
+                    if [[ -z "$lanes" || "$completed" -ge "$BENCH_MAX_ROUNDS" ]]; then
+                      cp "/tmp/deep-report-round-${completed}.md" \
+                        /tmp/deep-artifacts/paired-report.md
+                      cp "/tmp/deep-artifacts/decisions/round-${completed}.json" \
+                        /tmp/deep-artifacts/paired-report.json
+                      break
+                    fi
+
+                    round=$((completed + 1))
+                    for lane in $lanes; do
+                      run_round "$round" "${lane%%:*}" "${lane##*:}"
+                    done
+                    completed="$round"
+                  done
+
+            - name: Publish final advisory report
+              run:
+                  cat /tmp/deep-artifacts/paired-report.md >>
+                  "$GITHUB_STEP_SUMMARY"
+
+            - name: Upload deep calibration artifacts
+              if: always()
+              uses: actions/upload-artifact@v4
+              with:
+                  name: deep-benchmark-${{ github.run_id }}
+                  path: /tmp/deep-artifacts/
+                  if-no-files-found: error
+                  retention-days: 90

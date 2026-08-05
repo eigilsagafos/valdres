@@ -1,8 +1,9 @@
 # Paired benchmark decision model
 
-Status: **report-only**. This model publishes verdicts to the PR job summary and
-does not gate. The blocking check is still the `min(head/base)` +50% Bencher
-threshold in `.github/workflows/bencher-pr.yml`.
+Status: **report-only**. This model runs only in the weekly/manual
+`.github/workflows/bencher-deep.yml` calibration workflow. Its verdicts never
+gate a pull request. The required lane remains the three-pair `min(head/base)`
++50% Bencher threshold in `.github/workflows/bencher-pr.yml`.
 
 ## Why replace `min(head/base)`
 
@@ -90,8 +91,14 @@ and a lane contaminated in round 1 could never be cleared by rerunning.
 ### Protected set and the timing floor
 
 `lib/bench-protected-set.ts` holds eleven decision-bearing benchmarks, one
-aggregated workload per subsystem. Everything else is informational — measured,
-plotted, reported, never blocking.
+aggregated workload per subsystem. "Decision-bearing" means the row receives an
+advisory statistical verdict and can request a deep-workflow rerun. Everything
+else is informational. Neither family blocks a pull request.
+
+`atomFamily: txn update 5,000 existing members` remains in the raw observations,
+the protected mapping, and the coarse +50% PR gate. It is also a known noisy
+workload. The paired model must not become blocking until that workload is
+separately redesigned or quarantined using evidence from deep-run artifacts.
 
 Independently, any comparison whose base measurement is below **1000 ns** is
 demoted to informational whatever the set says. A +10% budget on a 131 ns
@@ -144,25 +151,22 @@ extra pairs buy almost nothing.
 Only lanes with protected benchmarks can trigger a rerun. The async suite holds
 none, so it always runs exactly one round.
 
-"Report-only" is enforced in the workflow, not just intended. The analysis step
-runs under `set -euo pipefail` and sits **before** the gate steps, so an
-unguarded throw in this tooling would fail the job and skip the catastrophic
-gate — advisory code taking down the real check. `analyze()` is therefore
-explicitly non-fatal, and it truncates the rerun-lanes file before running so a
-crashed analysis requests **no** reruns rather than replaying the previous
-round's lanes. The publish step tolerates the report never having been written.
+"Report-only" is enforced by workflow separation, not just intention. The deep
+workflow has no pull-request trigger, Bencher secret, Bencher upload, threshold,
+or regression gate. A statistical `regression` verdict is artifact data only.
+Benchmark, parsing, schema, and infrastructure failures still fail the deep run
+so calibration data cannot look complete when it is not.
 
-The analyzer runs once per round but writes **files only** — it never appends to
-the job summary. Otherwise a three-round job would publish stale round-1 and
-round-2 verdicts above the final one. The workflow's publish step appends the
-last written markdown exactly once.
+The analyzer runs once per completed round and writes files only. Each round's
+JSON decision is retained, while the workflow publishes the final Markdown
+report exactly once.
 
 ### What the catastrophic gate sees
 
 The shipped `min(head/base)` +50% gate is preserved exactly, and "exactly" is
-load-bearing. It reads only **round 1's first three pairs** — `b1a`, `b1b`,
-`b2a` — which is the same three-pair B-P, P-B, B-P sequence it has always had.
-Round 1's fourth pair and every ladder round go to the report alone.
+load-bearing. The required workflow runs only three pairs in B-P, P-B, B-P
+order. The fourth balanced pair and every ladder round exist only in the
+separate deep workflow, so report tooling cannot alter or interrupt the gate.
 
 Handing it a fourth pair would strictly weaken it, because `min` is monotone
 decreasing in the number of pairs: `min([1.7, 1.7, 1.7])` is 1.7× and blocks,
@@ -317,25 +321,23 @@ order.
 Counted in suite invocations, which is the only part that is not
 runner-dependent:
 
-|                                         | invocations |
-| :-------------------------------------- | ----------: |
-| previous (3 alternating pairs)          |          24 |
-| round 1 (2 balanced blocks x 4 lanes)   |          32 |
-| each ladder round (standard lanes only) |          16 |
-| worst case (cap reached)                |          64 |
+|                                       | invocations |
+| :------------------------------------ | ----------: |
+| required PR gate (3 pairs x 4 lanes)  |          24 |
+| deep round 1 (2 blocks x 4 lanes)     |          32 |
+| each deep rerun (standard lanes only) |          16 |
+| deep worst case (cap reached)         |          64 |
 
-So a quiet PR costs ~33% more benchmark time than before, and a fully
-inconclusive one costs ~2.7x. If PR latency becomes the binding constraint, the
-round cap is the first knob to turn — it is a single env value in the workflow.
-
-Wall-clock is deliberately not quoted here; read it off the first calibration
-runs rather than trusting an estimate.
+The 24-invocation required lane targets the historical 3–4 minute range. That is
+an expectation, not a measured improvement; measure the next three hosted
+relevant PR runs. Deep calibration can spend up to 64 invocations without
+lengthening the merge path.
 
 ## Calibration protocol
 
-Run report-only for **approximately ten merges** before proposing blocking
-thresholds. Each PR job uploads `paired-report.json` in the
-`benchmark-observations` artifact; that is the decision record.
+Collect approximately ten weekly A/A or manual deep runs before proposing any
+new statistical policy. Each run retains its observations, per-round JSON
+decisions, resolved SHAs, and final report for 90 days.
 
 For each merge, collect:
 
@@ -347,17 +349,17 @@ For each merge, collect:
    protect and belongs in the informational set.
 3. **Rows that reach the cap still inconclusive.** These are the model's real
    cost. A benchmark that never resolves is not gateable at any threshold.
-4. **Disagreements with the catastrophic gate.** Both run on every PR. A `min`
-   alert with a `within-budget` verdict, or a `regression` verdict the gate
-   missed, is the most informative event available — record both directions.
+4. **Disagreements with the catastrophic gate.** For a manual deep comparison
+   that matches a relevant PR's resolved revisions, compare its verdicts with
+   the required gate and record both disagreement directions.
 5. **Observed pair-to-pair jitter** per protected benchmark, from `logRatios` in
    the JSON. This is what selects the correct row in the tables above, and it is
    currently the least-known input to the whole design.
 
-Only after that evidence exists should the blocking proposal be written. It
-needs to state the budget, which benchmarks block, and the expected false-block
-rate per 100 PRs derived from the collected reports — not from the synthetic
-corpus.
+Only after that evidence exists should a blocking proposal be considered. It
+must also redesign or quarantine the noisy atom-family workload separately,
+state the budget and protected set, and derive the expected false-block rate per
+100 PRs from collected reports rather than the synthetic corpus.
 
 Do not enable blocking and adjust the budget in the same change.
 
