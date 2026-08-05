@@ -1,3 +1,4 @@
+import { IS_PROD } from "../IS_PROD"
 import type { Selector } from "../../types/Selector"
 import type { State } from "../../types/State"
 import type { StoreData } from "../../types/StoreData"
@@ -63,7 +64,7 @@ const recordLivenessAllocations = (data: StoreData, count: number) => {
 
 const createSchedulerWorkspace = (data: StoreData): SchedulerWorkspace => {
     // One Map plus four reusable arrays.
-    recordSchedulerAllocations(data, 5)
+    if (!IS_PROD) recordSchedulerAllocations(data, 5)
     return {
         meta: new Map(),
         nodes: [],
@@ -76,7 +77,7 @@ const createSchedulerWorkspace = (data: StoreData): SchedulerWorkspace => {
 
 const createLivenessWorkspace = (data: StoreData): LivenessWorkspace => {
     // Stack, reverse-order staging, and DFS arrays; Sets/Maps stay lazy.
-    recordLivenessAllocations(data, 3)
+    if (!IS_PROD) recordLivenessAllocations(data, 3)
     return {
         stack: [],
         ordered: [],

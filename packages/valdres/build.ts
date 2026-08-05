@@ -13,11 +13,30 @@ export const buildOptions = {
     splitting: true,
     external: ["./package.json"],
     packages: "external" as const,
+    // Ship a minified dist. Most consumers bundle valdres and would minify it
+    // themselves, but pre-minifying still pays off twice: the published package
+    // drops ~32% gzip (faster installs, smaller CDN/unpkg payloads for no-build
+    // ESM consumers), and even a bundling consumer ends up ~0.4% smaller,
+    // because mangling our internals here beats what their bundler infers
+    // through the module graph on its own.
+    //
+    // Deliberately NO source maps. They would restore readable stack traces
+    // through valdres internals, but measured at +167% on the packed tarball
+    // (112 KB -> 299 KB gzip) — every consumer pays that download so the rare
+    // one stepping through our internals doesn't see mangled names. Revisit by
+    // publishing maps as a separate artifact if that tradeoff ever inverts.
+    //
+    // Two contracts survive minification and are asserted in test/build.test.ts
+    // against this exact (minified) output: `process.env.NODE_ENV` must remain
+    // a runtime reference, and the engine self-checks must be gone.
+    minify: true,
     define: {
         "process.env.VALDRES_VERSION": JSON.stringify(version),
-        // Compile out the engine self-checks (see src/lib/ENGINE_ASSERTIONS.ts).
-        // They assert invariants only valdres's own code can violate, so they
-        // belong to this repo's test loop, not to a consumer's bundle.
+        // Compile out the engine self-checks (assertPlanLegal in
+        // src/lib/commitPlans.ts, assertTreeTriggersSealed in
+        // src/lib/treeTriggerGroups.ts). They assert invariants only valdres's
+        // own code can violate, so they belong to this repo's test loop, not to
+        // a consumer's bundle.
         "process.env.VALDRES_ENGINE_SELF_CHECKS": JSON.stringify("off"),
         // Map NODE_ENV to itself so Bun does NOT inline it at *our* build time.
         // valdres is built once under NODE_ENV=production; without this, Bun folds
@@ -68,5 +87,9 @@ export const removeStaleBuildJavaScript = async (outdir: string) => {
 
 if (import.meta.main) {
     await removeStaleBuildJavaScript(buildOptions.outdir)
-    await Bun.build(buildOptions)
+    const result = await Bun.build(buildOptions)
+    if (!result.success) {
+        console.error(result.logs.join("\n"))
+        process.exit(1)
+    }
 }
