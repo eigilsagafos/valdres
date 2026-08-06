@@ -362,7 +362,7 @@ export class TransactionContext {
         // (last write wins, regardless of order). Symmetric to `unset` dropping
         // any buffered set.
         draft.unsets?.delete(atom)
-        if (!draft.dirty) draft.dirty = true
+        this.invalidateSelectorCache()
         if (isFamilyAtom(atom)) {
             const ownFamilyValue = draft.values.has(atom.family)
                 ? draft.values.get(atom.family)
@@ -432,7 +432,7 @@ export class TransactionContext {
             draft.values.set(atom, resolved)
             if (!staged) {
                 staged = true
-                if (!draft.dirty) draft.dirty = true
+                this.invalidateSelectorCache()
             }
             if (!draft.hasCommitEffects && atom.onSet) {
                 draft.hasCommitEffects = true
@@ -921,8 +921,30 @@ export class TransactionContext {
         return this._draft.selectorCache
     }
 
+    /** Invalidate every selector cache a write at this level can affect.
+     *
+     *  A scoped context evaluates selectors against its OWN data but resolves
+     *  their atom reads through `this.get` — which falls through to the parent
+     *  transaction's draft. So a write anywhere in a working tree can change
+     *  what a selector cached at another level would return, and a per-level
+     *  dirty flag would keep serving the pre-write value. Mark the whole tree
+     *  instead; each level clears its own cache lazily on its next selector
+     *  read (see `get`).
+     *
+     *  The single-store hot path — no parent, no scopes — never leaves the
+     *  first two lines. */
     private invalidateSelectorCache() {
         if (!this._draft.dirty) this._draft.dirty = true
+        if (!this._parentTransaction && !this._scopedTransactions) return
+        this.rootTransaction().markTreeSelectorCachesDirty()
+    }
+
+    private markTreeSelectorCachesDirty(): void {
+        if (!this._draft.dirty) this._draft.dirty = true
+        if (!this._scopedTransactions) return
+        for (const scopedTxn of this._scopedTransactions.values()) {
+            scopedTxn.markTreeSelectorCachesDirty()
+        }
     }
 
     private get selectorRuntime(): SelectorEvaluationRuntime {
