@@ -733,6 +733,45 @@ describe("transaction", () => {
         })
     })
 
+    test("root-level set invalidates a scoped selector cache in the same txn", () => {
+        const count = atom(1)
+        const doubled = selector(get => get(count) * 2)
+        const rootStore = store()
+        rootStore.scope("Child1")
+
+        rootStore.txn(txn => {
+            txn.scope("Child1", childTxn => {
+                expect(childTxn.get(doubled)).toBe(2)
+            })
+            txn.set(count, 5)
+            // The scope evaluates `doubled` through the root draft, so the
+            // root's write has to invalidate the scope's cache too.
+            txn.scope("Child1", childTxn => {
+                expect(childTxn.get(doubled)).toBe(10)
+            })
+        })
+
+        expect(rootStore.get(doubled)).toBe(10)
+    })
+
+    test("parentScope set invalidates the scoped selector cache in the same txn", () => {
+        const count = atom(1)
+        const doubled = selector(get => get(count) * 2)
+        const rootStore = store()
+        const childStore = rootStore.scope("Child1")
+
+        childStore.txn(txn => {
+            expect(txn.get(doubled)).toBe(2)
+            txn.parentScope(parentTxn => {
+                parentTxn.set(count, 5)
+            })
+            expect(txn.get(doubled)).toBe(10)
+        })
+
+        expect(childStore.get(doubled)).toBe(10)
+        expect(rootStore.get(doubled)).toBe(10)
+    })
+
     test("family in scopes", () => {
         const userAtomFamily = atomFamily()
         const rootStore = store()
