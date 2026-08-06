@@ -173,14 +173,16 @@ describe("hydrate", () => {
         expect(fresh.get(idEqual)).toEqual({ id: 1, rev: 1 })
 
         // hydrate writes through txn.set, so the atom's custom equal applies
-        // exactly as in any transaction: an `equal` incoming value is written
-        // without notifying (no propagation, no subscriber fire).
+        // exactly as in any transaction: an `equal` incoming value is a true
+        // no-op on a root store — the existing reference is kept, nothing is
+        // written, and there is no notification (no propagation, no
+        // subscriber fire). This mirrors direct store.set()'s equal branch.
         const warm = store()
         warm.set(idEqual, { id: 1, rev: 99 })
         const subscriber = mock(() => {})
         warm.sub(idEqual, subscriber)
         hydrate(warm, payload)
-        expect(warm.get(idEqual)).toEqual({ id: 1, rev: 1 })
+        expect(warm.get(idEqual)).toEqual({ id: 1, rev: 99 })
         expect(subscriber).toHaveBeenCalledTimes(0)
     })
 
