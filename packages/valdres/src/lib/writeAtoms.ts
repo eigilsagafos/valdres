@@ -96,7 +96,9 @@ export const writeAtoms = (
                 ) {
                     atom.attach(data)
                 }
-                setValueInData(atom, value, data)
+                if (data.parent && !data.values.has(atom)) {
+                    setValueInData(atom, value, data)
+                }
             }
             // No placeholder to resolve here: equal settled values have none,
             // and an equal own promise is already coordinated by its first write.
