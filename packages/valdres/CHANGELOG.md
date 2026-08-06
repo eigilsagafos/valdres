@@ -1,5 +1,220 @@
 # valdres
 
+## 1.0.0-beta.18
+
+### Patch Changes
+
+- [#277](https://github.com/eigilsagafos/valdres/pull/277)
+  [`fc0c8bb`](https://github.com/eigilsagafos/valdres/commit/fc0c8bbd3617ac73e7158af6638146ea1146cc61)
+  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! - A direct write to a
+  global atom now builds six plan objects per commit instead of nine: the
+  ordered global sets and the deferred onSet queue share one
+  `[atom, value, origin]` descriptor and one queue rather than allocating a
+  duplicate pair, since they describe the same write.
+
+    `store.onCommitEnd` no longer fires for a commit that produced nothing. A
+    transaction whose every write is value-equal, and a `reset` of an atom
+    already holding its default, are now as silent as the no-op `set` and no-op
+    `unset` already were. Real work performed inside such a commit — a
+    subscriber or `onSet` hook writing during delivery — still coalesces into
+    exactly one notification.
+
+    Internally, the illegal `CommitPlan` states are now unrepresentable rather
+    than merely unused: `beginCommit`/`endCommit` are one paired boundary
+    capability, global fan-out exists only as part of a forest settlement,
+    report preparation requires the report it prepares, and delete/unset work
+    groups are non-empty or absent — which also removes an asymmetry where an
+    empty `deleted` group counted as settlement work while an empty `unsetAtoms`
+    group did not. Settlement work is evaluated once per commit instead of three
+    times. The published bundle is unaffected by the accompanying engine
+    self-checks: they are compiled out.
+
+- [#288](https://github.com/eigilsagafos/valdres/pull/288)
+  [`f16ed4e`](https://github.com/eigilsagafos/valdres/commit/f16ed4e65bf5d2ab2f05fdf19ec8cb51a223814f)
+  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! - Fix `writeAtoms` so
+  an equal-value transaction write is a true no-op on a root store: it no longer
+  overwrites the stored reference with the new (deep-equal) value, and no longer
+  bumps the tree revision or invalidates cold selector caches. The scope-shadow
+  pinning behavior on scoped stores is unchanged.
+
+- [#264](https://github.com/eigilsagafos/valdres/pull/264)
+  [`422a7d4`](https://github.com/eigilsagafos/valdres/commit/422a7d410474c1bd8a232ceb99dd545c9d4e6a75)
+  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! - Global writes,
+  resets, async settlement, max-age revalidation, and `resetSelf` now execute
+  through one CommitPlan forest. Each affected physical store is visited once
+  with the union of its local, inherited, shadow, and global trigger groups,
+  reducing repeated selector evaluation and custom-equality work while
+  preserving peer-before-origin observers, reports, cleanup, and first-error
+  ordering.
+
+- [#265](https://github.com/eigilsagafos/valdres/pull/265)
+  [`b394e0f`](https://github.com/eigilsagafos/valdres/commit/b394e0f1a2e51456d0f30aa73cf1372892785d47)
+  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! - Move every write to
+  the dependency-graph tables behind an internal GraphRuntime boundary
+  (`src/lib/graph/`): forward/reverse edges and dependency replacement,
+  scope-branch registration, liveness counters and mount reachability, cycle
+  metadata, orphan-edge cleanup, and the installation of dependencies discovered
+  by async evaluation. Selector evaluators no longer mutate graph state — they
+  report discovered dependencies through a pooled evaluation-outcome carrier and
+  the dispatcher that ran them installs the result, so evaluation and graph
+  bookkeeping are now separable phases with documented invariants at each
+  boundary.
+
+    Internal-only: no public API, semantics, or ordering changes. The core
+    write-path import cycle shrinks from 24 modules to 9 and the
+    `mountAtom ↔ storeFromStoreData` cycle is gone, guarded by a new
+    type-checker-based table-ownership scan and stricter import-boundary tests
+    alongside the existing cycle ratchet.
+
+- [#261](https://github.com/eigilsagafos/valdres/pull/261)
+  [`c4c2e6c`](https://github.com/eigilsagafos/valdres/commit/c4c2e6ce94c57b87bb2af3377ec3feb68f7f7f78)
+  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! - Transaction staging
+  now lives in a dedicated MutationDraft write overlay, and every single-store
+  transaction commit executes through the shared CommitPlan engine. Two
+  deliberate edge-case fixes ride along: (1) when reporting an unset during a
+  transaction commit itself fails (for example a throwing function default
+  evaluated by the report's parent read-through), the first captured commit
+  error — such as an earlier onSet hook error — now surfaces instead of being
+  masked by the reporting failure; (2) transaction staging now validates schemas
+  before dev-freezing, so validators observe the same (unfrozen) value
+  representation as direct writes.
+
+- [#287](https://github.com/eigilsagafos/valdres/pull/287)
+  [`c1a58bc`](https://github.com/eigilsagafos/valdres/commit/c1a58bc9174210e359f26202fc3fadc12bb6d514)
+  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! - Publish a minified
+  `dist`, and stop paying for benchmark-only counters in production.
+
+    The build now minifies. Most consumers bundle valdres and would minify it
+    themselves, so the headline win is in the published package — `dist`
+    JavaScript drops from 53.2 KB to 36.3 KB gzip (−32%) and the packed tarball
+    from 111.8 KB to 96.9 KB gzip (−13%), which every install and every
+    CDN/unpkg fetch pays. Consumer bundles also shrink slightly (≈0.9%, e.g. the
+    `atom + selector + store` fixture 30,462 → 30,079 bytes gzip) because
+    mangling valdres's internals here beats what a bundler infers through the
+    module graph. Source maps are deliberately not shipped: they restore
+    readable stack traces through valdres internals but measured at +167% on the
+    packed tarball (97 KB → 299 KB gzip), which is the wrong default when only a
+    rare consumer steps through our internals.
+
+    Two `architectureInstrumentation` call sites were reachable in production
+    without an `IS_PROD` guard — `recordCommitPlanRun` in the commit engine
+    (once per commit, the hottest path in the engine) and the scheduler/liveness
+    allocation counters in the graph workspace pool. Both now sit behind
+    `!IS_PROD`, matching every other `record*` call site, so a production build
+    pays neither the call nor the `data.architectureInstrumentation` load. These
+    are test/benchmark-only structural counters that production code has no way
+    to enable, so no observable behavior changes.
+
+    The build-output tests now assert the `process.env.NODE_ENV` and engine
+    self-check contracts against the minified artifact that actually ships, with
+    structural chunk-placement assertions kept on an unminified build where
+    identifiers survive.
+
+- [#274](https://github.com/eigilsagafos/valdres/pull/274)
+  [`154b413`](https://github.com/eigilsagafos/valdres/commit/154b413f4b06ea939d7b0cbfbba34cb2d5de34db)
+  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! - Single-store
+  transactions that mix ordinary writes with `del` / `unset` now settle through
+  the same commit forest as cross-scope and global-peer commits. Previously they
+  ran up to three sequential passes over the same store — update, then delete,
+  then unset — so a selector reached by more than one of them was evaluated once
+  per pass. The store is now visited once against the union of its trigger
+  groups.
+
+    Three observable behaviors are corrected as a result:
+
+    - **A throwing unset report no longer starves the rest of the commit.**
+      Filling an `unset` change record can evaluate user code (a scope reads
+      through to a de-materialized parent's lazy default). That report now runs
+      inside the settlement walk's reporting phase, so a throw is recorded into
+      the commit's error arbitration instead of escaping: selector settlement,
+      subscriber delivery, `onChange`, and scope re-delegation all still
+      complete, and the first error captured by the commit is the one rethrown.
+      Previously the throw skipped the shared deferred notification —
+      subscribers never fired for writes that `onChange` had already reported —
+      and left a scope with a dropped parent delegate, silently ignoring later
+      parent writes.
+    - **A mixed update + family delete reports its selector's final value
+      once.** The spanning selector is evaluated a single time, on fully-applied
+      state, and reported from the trigger group that first reached it. Record
+      content and order are unchanged (atoms, then the selectors that group
+      reached, in group order); only the redundant re-evaluation is gone.
+    - **A scoped transaction's `unset` reports its recomputed selectors.** The
+      parent value is now materialized by the selector's own read-through during
+      settlement rather than by a pre-settlement report pass, so a selector that
+      genuinely changed is emitted as part of the commit instead of being
+      consumed by a silent parent cascade.
+
+    `store.unset()` is not a transaction and is unchanged.
+
+- [#276](https://github.com/eigilsagafos/valdres/pull/276)
+  [`02e65c7`](https://github.com/eigilsagafos/valdres/commit/02e65c75328d88947e314933ca211c3da4dec9b7)
+  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! - Fix `unset`/`reset`
+  stranding a suspense placeholder on an atom with no default.
+
+    Reading an atom declared without a default (`atom<T>()`) hands the caller a
+    pending placeholder promise, resolved by the next write. Removing the
+    store's own value while that placeholder was live — `store.unset(atom)`, or
+    `store.reset(atom)` on a no-default atom — left the entry in place, and the
+    re-initialization on the next read minted a **second** placeholder over the
+    same key. Only the new one was ever resolved, so a consumer already
+    suspended on the first (`await store.get(atom)`, or a Suspense boundary)
+    hung forever:
+
+    ```ts
+    const a = atom<number>()
+    const suspense = store.get(a)
+    store.unset(a)
+    store.set(a, 7) // resolved a different placeholder
+    await suspense // hung
+    ```
+
+    Re-initialization now reuses the outstanding placeholder, so the suspended
+    reader is the one a later write resolves.
+
+- [#266](https://github.com/eigilsagafos/valdres/pull/266)
+  [`f672be4`](https://github.com/eigilsagafos/valdres/commit/f672be49cd3cfc2fd0e0b8ae069d8c46f34dcb94)
+  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! - Reuse bounded,
+  frame-local graph worklists for selector scheduling and exact cyclic-liveness
+  reconciliation. A changed-seed closure scheduler evaluates ordinary acyclic
+  selectors once against finalized upstream values while no-op multi-seed writes
+  stop before downstream discovery. Dynamic dependency replacement, re-entrant
+  writes, and convergent cyclic fallback behavior remain supported.
+
+- [#260](https://github.com/eigilsagafos/valdres/pull/260)
+  [`756fd96`](https://github.com/eigilsagafos/valdres/commit/756fd96a31119c72ae4eb69d3b3ca35e1efc8bbc)
+  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! - Async atom
+  settlements no longer take the heavier observer propagation and reporting path
+  when the only `onChange` or `onCommitEnd` listeners are attached to unrelated
+  store trees. An otherwise unobserved async atom now settles on the lightweight
+  path, while listeners on the affected store tree still select the observer
+  path as before.
+
+- [#267](https://github.com/eigilsagafos/valdres/pull/267)
+  [`84d73fc`](https://github.com/eigilsagafos/valdres/commit/84d73fcf6083cd39dfc914b0f2b89328d4ceff7e)
+  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! - A throw during
+  commit-forest settlement collection no longer leaves the commit depth above
+  zero, which previously silenced all future `onCommitEnd` delivery. Multi-root
+  commit boundaries now close even when an earlier root or listener throws, and
+  the first error thrown is still the one propagated.
+
+- [#263](https://github.com/eigilsagafos/valdres/pull/263)
+  [`dddcafd`](https://github.com/eigilsagafos/valdres/commit/dddcafd33a35e7d14934dfb508bbbf4a583922bb)
+  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! - Cross-scope
+  transaction commits now execute one tree-level CommitPlan that settles each
+  affected store exactly once against the union of its own writes, inherited
+  changes, and any folded global-peer updates. Observable deltas: a selector
+  spanning several scopes evaluates once per store per commit instead of once
+  per reaching pass (an async spanning selector creates one promise per commit
+  instead of two); a custom `equal` receives the same per-reaching-pass trigger
+  sets as before — consulted in reaching order for exactly the groups whose
+  dirty chain reached that selector — so an impure predicate counting calls sees
+  fewer of them; a global peer that is itself part of the transaction's store
+  tree settles once instead of once in the peer pass and again in the tree; and
+  an unset-report failure during a cross-scope commit records into first-error
+  commit arbitration (and no longer starves other stores' settlement) instead of
+  escaping raw. Subscriber delivery order, first-error arbitration, and onChange
+  payload order keep their historical per-reaching- group causal positions.
+
 ## 1.0.0-beta.17
 
 ### Minor Changes
