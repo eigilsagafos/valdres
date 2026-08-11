@@ -61,6 +61,20 @@ describe("store.onCommitEnd", () => {
         unsub()
     })
 
+    test("large fresh-only txn still fires without an onChange listener", () => {
+        const store1 = store()
+        const atoms = Array.from({ length: 256 }, () => atom(0))
+        const fired = mock(() => {})
+        const unsub = store1.onCommitEnd(fired)
+
+        store1.txn(txn => {
+            for (const atom of atoms) txn.set(atom, 1)
+        })
+
+        expect(fired).toHaveBeenCalledTimes(1)
+        unsub()
+    })
+
     test("txn with family writes and a delete fires once", () => {
         const fam = atomFamily<number, [string]>(0)
         const store1 = store()
