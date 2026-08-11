@@ -1,0 +1,8 @@
+"$schema" = "https://conductor.build/schemas/settings.repo.schema.json"
+
+# Every new workspace starts from a clean checkout with no node_modules, so
+# install dependencies before the agent runs. Without this, tests that import
+# dev-only deps (jotai, zod, typescript, recoil) fail with "Cannot find
+# package" even though they're in bun.lock.
+[scripts]
+setup = "bun install"
