@@ -1,2 +1,10 @@
 [install]
 linker = "hoisted"
+
+# Hard-fail a root-level `bun test`. The built-in runner bypasses the root
+# "test" script and scans every package from the wrong cwd, fabricating bogus
+# failures. Bun does not load this bunfig from a package subdirectory, so this
+# guard fires only at the root — see scripts/no-root-bun-test.ts. Run tests
+# with `bun run test` (bun --filter '*' test) or per-package instead.
+[test]
+preload = "./scripts/no-root-bun-test.ts"

@@ -2,8 +2,15 @@
 
 ## Runtime
 
-Bun, not Node. Use `bun test`, `bun run <script>`, `bun --filter '*' <script>`
-for all packages. Don't reach for `npm`, `pnpm`, `vitest`, or `jest`.
+Bun, not Node. Don't reach for `npm`, `pnpm`, `vitest`, or `jest`.
+
+- Run tests **per-package** (`cd packages/<pkg> && bun test`) or across all
+  packages via `bun run test` (= `bun --filter '*' test`).
+- **Never run bare `bun test` at the repo root.** The built-in runner scans
+  every package from the wrong cwd and fabricates ~240 bogus failures; a
+  bunfig `[test].preload` guard now hard-fails it with instructions.
+- Fresh checkouts have no `node_modules` — run `bun install` first (Conductor
+  workspaces do this automatically via `.conductor/settings.toml`).
 
 ## Monorepo layout
 
