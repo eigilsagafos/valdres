@@ -17,7 +17,7 @@ import {
 import { equal } from "./equal"
 import { applyGlobalSets, collectGlobalOnSets } from "./globalAtomFanOut"
 import { flushChangeSink, type ChangeSink } from "./notifyChangeListeners"
-import { activeCommitBoundary } from "./onCommitEnd"
+import { activeCommitBoundary, hasCommitEndListener } from "./onCommitEnd"
 import { settleCommit, settleCommitForest } from "./propagateUpdatedAtoms"
 import type { DeferredOnSet } from "./runOnSets"
 import { setValueInData } from "./setValueInData"
@@ -123,8 +123,15 @@ const tryWriteFreshSimpleAtoms = (
 ): boolean => {
     // Keep ordinary/small transactions byte-for-byte on the established path;
     // only large initialization batches create the retained-capacity problem
-    // this specialization exists to avoid.
-    if (data.parent || pairs.size < FRESH_ATOM_FAST_PATH_MIN) return false
+    // this specialization exists to avoid. The specialization produces no
+    // settlement list, so a listener on this tree needs the full path to make
+    // the commit engine observe the completed work and close its boundary.
+    if (
+        data.parent ||
+        pairs.size < FRESH_ATOM_FAST_PATH_MIN ||
+        hasCommitEndListener(data)
+    )
+        return false
     for (const [atom, value] of pairs) {
         if (data.values.has(atom) || isPromiseLike(value)) return false
         const defaultValue = atom.defaultValue
