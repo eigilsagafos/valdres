@@ -14,14 +14,29 @@
 // check, but the freeze branch still largely drops out). The env must be set
 // before this module is first imported (the bench scripts and prod builds do).
 //
-// The guards matter: valdres's own build does NOT replace `process.env.NODE_ENV`
-// (only `VALDRES_VERSION`), so this expression ships as-is and is resolved by the
-// consumer. We guard both `process` (missing in raw browser ESM / some Deno/edge
-// runtimes) and `process.env` (a minimal polyfill may set `process` to `{}`
-// without an `env`); either would otherwise throw at module load and take the
-// whole library down. This is the React/Redux idiom. Plain member access (no
-// optional chaining) keeps `process.env.NODE_ENV` matchable by consumer bundlers
-// for dead-code elimination.
+// The published package ships three graphs (see packages/valdres/build.ts):
+//
+//   - `exports.production`: every `IS_PROD` *use site* is rewritten to the
+//     literal `true` before minify, so the freeze and the architecture
+//     counters DCE. Vite/webpack production builds match this condition. An
+//     imported `const IS_PROD = true` is not enough — Bun does not fold that
+//     binding across modules.
+//   - `exports.import` / `default`: this file ships as-is. Process-less
+//     runtimes default to production. When `process.env` exists, NODE_ENV is
+//     resolved at runtime so Node/Bun/esbuild still freeze in development.
+//   - `exports.development`: this file ships as-is with a process-less
+//     development fallback. Vite/webpack resolve it in `vite dev` / webpack
+//     `--mode development`.
+//
+// The guards matter for the unfolded graphs: valdres's own build does NOT
+// replace `process.env.NODE_ENV` (only `VALDRES_VERSION`), so this expression
+// ships as-is and is resolved by the consumer. We guard both `process` (missing
+// in raw browser ESM / some Deno/edge runtimes) and `process.env` (a minimal
+// polyfill may set `process` to `{}` without an `env`); either would otherwise
+// throw at module load and take the whole library down. This is the
+// React/Redux idiom. Plain member access (no optional chaining) keeps
+// `process.env.NODE_ENV` matchable by consumer bundlers for dead-code
+// elimination.
 //
 // `process` and the build define are declared at module scope (not global) so
 // we don't conflict with consumers' @types/node or bun-types — mirroring

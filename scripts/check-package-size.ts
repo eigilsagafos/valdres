@@ -111,19 +111,33 @@ try {
     await mkdir(join(consumerDir, "node_modules"), { recursive: true })
     await rename(packedDir, join(consumerDir, "node_modules", "valdres"))
 
-    const fixtureSources: Record<string, string> = {
-        atom: `export { atom } from "valdres"`,
-        "atom-selector-store": `export { atom, selector, store } from "valdres"`,
-        "all-exports": `export * from "valdres"`,
-        "adapter-internals": `export * from "valdres/adapter-internals/v1"`,
+    const fixtureSources: Record<
+        string,
+        { source: string; conditions?: string[] }
+    > = {
+        atom: { source: `export { atom } from "valdres"` },
+        "atom-selector-store": {
+            source: `export { atom, selector, store } from "valdres"`,
+        },
+        "all-exports": { source: `export * from "valdres"` },
+        "adapter-internals": {
+            source: `export * from "valdres/adapter-internals/v1"`,
+        },
+        // Vite/webpack production builds match `production` and get the folded
+        // graph. Must stay strictly smaller than atom-selector-store.
+        "atom-selector-store-production": {
+            source: `export { atom, selector, store } from "valdres"`,
+            conditions: ["production", "import"],
+        },
     }
     const fixtures: Record<string, Size> = {}
-    for (const [name, source] of Object.entries(fixtureSources)) {
+    for (const [name, fixture] of Object.entries(fixtureSources)) {
         const entry = join(consumerDir, `${name}.ts`)
-        await Bun.write(entry, source)
+        await Bun.write(entry, fixture.source)
         const result = await Bun.build({
             entrypoints: [entry],
             minify: true,
+            conditions: fixture.conditions,
             define: { "process.env.NODE_ENV": JSON.stringify("production") },
         })
         if (!result.success) {
@@ -157,6 +171,20 @@ try {
     ]
     console.log(lines.join("\n"))
 
+    const defaultFixture = fixtures["atom-selector-store"]
+    const productionFixture = fixtures["atom-selector-store-production"]
+    if (
+        defaultFixture &&
+        productionFixture &&
+        productionFixture.raw >= defaultFixture.raw
+    ) {
+        throw new Error(
+            `production fixture (${productionFixture.raw}) must be smaller than ` +
+                `default fixture (${defaultFixture.raw}) — the production ` +
+                `export condition is not resolving the folded graph`,
+        )
+    }
+
     if (updateBaseline) {
         await Bun.write(baselinePath, JSON.stringify(actual, null, 4) + "\n")
         console.log(`\nBaseline written to ${relative(rootDir, baselinePath)}`)
@@ -171,7 +199,7 @@ async function checkAgainstBaseline(
     dist: Size,
     packed: Size,
     fixtures: Record<string, Size>,
-    fixtureSources: Record<string, string>,
+    fixtureSources: Record<string, { source: string; conditions?: string[] }>,
 ) {
     const baselineFile = Bun.file(baselinePath)
     if (!(await baselineFile.exists())) {

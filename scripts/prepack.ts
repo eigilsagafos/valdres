@@ -37,12 +37,16 @@ if (await packageTmpJsonFile.exists()) {
                 const developmentFolder = ["dist", "development", ...rest].join(
                     "/",
                 )
+                const productionFolder = ["dist", "production", ...rest].join(
+                    "/",
+                )
                 const typesDir = ["dist", "types", ...rest].join("/")
                 const fileName = file.split(".")[0]
                 const targets = {
                     types: `./${typesDir}/${fileName}.d.ts`,
                     ...(json.name === "valdres"
                         ? {
+                              production: `./${productionFolder}/${fileName}.js`,
                               development: `./${developmentFolder}/${fileName}.js`,
                           }
                         : {}),

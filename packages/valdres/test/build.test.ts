@@ -6,6 +6,8 @@ import { pathToFileURL } from "node:url"
 import {
     buildOptions,
     developmentBuildOptions,
+    inlineIsProdSource,
+    productionBuildOptions,
     removeStaleBuildJavaScript,
 } from "../build"
 
@@ -45,6 +47,10 @@ const publishedDist = () =>
             Bun.build({
                 ...developmentBuildOptions,
                 outdir: join(outdir, "development"),
+            }),
+            Bun.build({
+                ...productionBuildOptions,
+                outdir: join(outdir, "production"),
             }),
         ])
         for (const result of results) {
@@ -108,6 +114,31 @@ const probeAcceptedWriteFreeze = async (
     return frozen.root && frozen.nested
 }
 
+describe("inlineIsProdSource", () => {
+    test("drops a lone IS_PROD import and replaces use sites", () => {
+        expect(
+            inlineIsProdSource(
+                `import { IS_PROD } from "./IS_PROD"\nif (!IS_PROD) record()`,
+                true,
+            ),
+        ).toBe(`\nif (!true) record()`)
+    })
+
+    test("keeps sibling imports on the same specifier", () => {
+        expect(
+            inlineIsProdSource(
+                `import { IS_PROD, equal } from "./shared"\nequal(IS_PROD, false)`,
+                false,
+            ),
+        ).toBe(`import { equal } from "./shared"\nequal(false, false)`)
+    })
+
+    test("handles a multiline import", () => {
+        const source = `import {\n    IS_PROD,\n} from "../lib/IS_PROD"\nexport const x = IS_PROD`
+        expect(inlineIsProdSource(source, true)).toBe(`\nexport const x = true`)
+    })
+})
+
 describe("build output", () => {
     test("defaults process-less consumers to production without freezing accepted writes", async () => {
         expect(
@@ -145,6 +176,14 @@ describe("build output", () => {
         expect(
             await probeAcceptedWriteFreeze("development/index.js", {
                 nodeEnv: "production",
+            }),
+        ).toBe(false)
+    })
+
+    test("the production entry never freezes, even under NODE_ENV=development", async () => {
+        expect(
+            await probeAcceptedWriteFreeze("production/index.js", {
+                nodeEnv: "development",
             }),
         ).toBe(false)
     })
@@ -270,6 +309,34 @@ describe("build output", () => {
         // TransactionContext from the chunk under its real name.
         expect(outputs[index]).not.toContain("class TransactionContext")
         expect(outputs[adapterInternals]).toContain("Transaction")
+    })
+
+    test("the production graph compiles out process.env.NODE_ENV", async () => {
+        const { outdir: _outdir, ...inMemory } = productionBuildOptions
+        const { code } = await bundle(inMemory)
+        expect(code).not.toContain("process.env.NODE_ENV")
+        expect(code).not.toMatch(/process\.env\.NODE_ENV\s*===\s*"production"/)
+    })
+
+    test("tree-shakes the freeze out of a production atom/selector/store consumer", async () => {
+        const dir = await mkdtemp(join(tmpdir(), "valdres-prod-consumer-"))
+        try {
+            const entry = join(dir, "entry.ts")
+            await Bun.write(
+                entry,
+                `export { atom, selector, store } from ${JSON.stringify(join(import.meta.dir, "../src/index.ts"))}`,
+            )
+            const { code } = await bundle({
+                entrypoints: [entry],
+                minify: true,
+                plugins: productionBuildOptions.plugins,
+                define: productionBuildOptions.define,
+            })
+            expect(code).not.toContain("cannot make")
+            expect(code).not.toContain("{ mutable: true }")
+        } finally {
+            await rm(dir, { recursive: true, force: true })
+        }
     })
 
     test("removes stale split chunks without deleting type output", async () => {

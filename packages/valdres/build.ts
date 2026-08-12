@@ -4,12 +4,33 @@ import { join } from "node:path"
 const pkg = await Bun.file("package.json").json()
 const version = pkg.version
 
-export const buildOptions = {
+const commonDefine = {
+    "process.env.VALDRES_VERSION": JSON.stringify(version),
+    // Compile out the engine self-checks: assertPlanLegal (defined in
+    // src/lib/commitPlans.ts, called in src/lib/commitEngine.ts) and
+    // assertTreeTriggersSealed (defined in src/lib/treeTriggerGroups.ts,
+    // called in src/lib/propagateUpdatedAtoms.ts). Each is guarded at its
+    // call site by this same env read. They assert invariants only valdres's
+    // own code can violate, so they belong to this repo's test loop, not to
+    // a consumer's bundle.
+    "process.env.VALDRES_ENGINE_SELF_CHECKS": JSON.stringify("off"),
+    // Map NODE_ENV to itself so Bun does NOT inline it at *our* build time.
+    // valdres is built once under NODE_ENV=production; without this, Bun folds
+    // `process.env.NODE_ENV === "production"` to `true` in the dist, baking
+    // "always prod" into the published package — which disables the dev-only
+    // freeze for *every* consumer, even when they run in development. Keeping it
+    // a runtime reference lets the consumer's bundler/runtime resolve it for
+    // their own environment. See src/lib/IS_PROD.ts. Guarded by a build test.
+    "process.env.NODE_ENV": "process.env.NODE_ENV",
+}
+
+const commonBuild = {
     entrypoints: ["./src/index.ts", "./src/adapter-internals/v1.ts"],
-    outdir: "./dist",
     // The adapter-internals entrypoint must share the exact transaction module
     // instance used by the public store bundle. Without splitting, Bun would
     // duplicate commit registries and adapter commits would miss listeners.
+    // Each published graph is its own split build, so a bundler that picks one
+    // export condition gets one shared runtime.
     splitting: true,
     packages: "external" as const,
     // Ship a minified dist. Most consumers bundle valdres and would minify it
@@ -24,34 +45,76 @@ export const buildOptions = {
     // (112 KB -> 299 KB gzip) — every consumer pays that download so the rare
     // one stepping through our internals doesn't see mangled names. Revisit by
     // publishing maps as a separate artifact if that tradeoff ever inverts.
-    //
-    // Two contracts survive minification and are asserted in test/build.test.ts
-    // against this exact (minified) output: `process.env.NODE_ENV` must remain
-    // a runtime reference, and the engine self-checks must be gone.
     minify: true,
+}
+
+/**
+ * Rewrite a source file so every `IS_PROD` use site is the boolean literal
+ * `true` or `false`. An imported `const IS_PROD = true` is NOT enough: Bun
+ * does not fold that binding into other modules, so `if (!IS_PROD)` survives
+ * minify and the freeze / instrumentation graphs stay in the bundle.
+ *
+ * Import specifiers that become empty after dropping `IS_PROD` are removed
+ * so the rewritten file does not import a module it no longer references.
+ */
+export const inlineIsProdSource = (source: string, isProd: boolean): string => {
+    const literal = isProd ? "true" : "false"
+
+    const withoutImport = source.replace(
+        /import\s*\{([^}]*)\}\s*from\s*(["'][^"']+["']);?/g,
+        (full, names: string, from: string) => {
+            const parts = names
+                .split(",")
+                .map(part => part.trim())
+                .filter(Boolean)
+            const kept = parts.filter(part => {
+                const imported = part.split(/\s+as\s+/)[0].trim()
+                return imported !== "IS_PROD"
+            })
+            if (kept.length === parts.length) return full
+            if (kept.length === 0) return ""
+            return `import { ${kept.join(", ")} } from ${from}`
+        },
+    )
+
+    return withoutImport.replace(/\bIS_PROD\b/g, literal)
+}
+
+export const createInlineIsProdPlugin = (
+    isProd: boolean,
+): import("bun").BunPlugin => ({
+    name: "inline-is-prod",
+    setup(build) {
+        build.onLoad({ filter: /\.ts$/ }, async (args: { path: string }) => {
+            const path = args.path.replaceAll("\\", "/")
+            if (!path.includes("/src/") || path.includes(".test.")) return
+            if (path.endsWith("/lib/IS_PROD.ts")) {
+                return {
+                    contents: `export const IS_PROD = ${isProd}\n`,
+                    loader: "ts",
+                }
+            }
+            const text = await Bun.file(args.path).text()
+            if (!text.includes("IS_PROD")) return
+            return {
+                contents: inlineIsProdSource(text, isProd),
+                loader: "ts",
+            }
+        })
+    },
+})
+
+export const buildOptions = {
+    ...commonBuild,
+    outdir: "./dist",
     define: {
-        "process.env.VALDRES_VERSION": JSON.stringify(version),
+        ...commonDefine,
         // Raw CDN/edge runtimes do not expose process. The default artifact
-        // treats that absence as production; a second build below overrides
-        // this define for the explicit development export condition.
+        // treats that absence as production; the development graph overrides
+        // this define. Vite/webpack production builds match `production` and
+        // get the folded graph below instead.
         __VALDRES_PROCESSLESS_DEVELOPMENT__: "false",
         __VALDRES_BUILD_VARIANT__: JSON.stringify("default"),
-        // Compile out the engine self-checks: assertPlanLegal (defined in
-        // src/lib/commitPlans.ts, called in src/lib/commitEngine.ts) and
-        // assertTreeTriggersSealed (defined in src/lib/treeTriggerGroups.ts,
-        // called in src/lib/propagateUpdatedAtoms.ts). Each is guarded at its
-        // call site by this same env read. They assert invariants only valdres's
-        // own code can violate, so they belong to this repo's test loop, not to
-        // a consumer's bundle.
-        "process.env.VALDRES_ENGINE_SELF_CHECKS": JSON.stringify("off"),
-        // Map NODE_ENV to itself so Bun does NOT inline it at *our* build time.
-        // valdres is built once under NODE_ENV=production; without this, Bun folds
-        // `process.env.NODE_ENV === "production"` to `true` in the dist, baking
-        // "always prod" into the published package — which disables the dev-only
-        // freeze for *every* consumer, even when they run in development. Keeping it
-        // a runtime reference lets the consumer's bundler/runtime resolve it for
-        // their own environment. See src/lib/IS_PROD.ts. Guarded by a build test.
-        "process.env.NODE_ENV": "process.env.NODE_ENV",
     },
 }
 
@@ -72,6 +135,22 @@ export const developmentBuildOptions = {
         ...buildOptions.define,
         __VALDRES_PROCESSLESS_DEVELOPMENT__: "true",
         __VALDRES_BUILD_VARIANT__: JSON.stringify("development"),
+    },
+}
+
+/** Folded graph for the `production` export condition. Every `IS_PROD` use
+ * site is the literal `true`, so minify deletes the freeze and the
+ * architecture counters. Vite and webpack production builds match this
+ * condition. The default `import` graph is left unfolded so Node/Bun/esbuild
+ * still honor `NODE_ENV=development`. */
+export const productionBuildOptions = {
+    ...commonBuild,
+    outdir: "./dist/production",
+    plugins: [createInlineIsProdPlugin(true)],
+    define: {
+        ...commonDefine,
+        __VALDRES_PROCESSLESS_DEVELOPMENT__: "false",
+        __VALDRES_BUILD_VARIANT__: JSON.stringify("production"),
     },
 }
 
@@ -113,7 +192,11 @@ export const removeStaleBuildJavaScript = async (outdir: string) => {
 
 if (import.meta.main) {
     await removeStaleBuildJavaScript(buildOptions.outdir)
-    for (const options of [buildOptions, developmentBuildOptions]) {
+    for (const options of [
+        buildOptions,
+        developmentBuildOptions,
+        productionBuildOptions,
+    ]) {
         const result = await Bun.build(options)
         if (!result.success) {
             console.error(result.logs.join("\n"))

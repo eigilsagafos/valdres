@@ -159,6 +159,7 @@ for (const pkg of PUBLIC_PACKAGES) {
         if (packageJson.exports) {
             for (const [exportPath, exportValue] of Object.entries(packageJson.exports)) {
                 const exp = exportValue as {
+                    production?: string
                     development?: string
                     import?: string
                     svelte?: string
@@ -174,34 +175,35 @@ for (const pkg of PUBLIC_PACKAGES) {
                 }
 
                 if (pkgName === "valdres") {
-                    if (!exp.development) {
-                        error(
-                            pkgName,
-                            `export "${exportPath}" missing development field`,
-                        )
-                    } else {
-                        const keys = Object.keys(exp)
+                    const keys = Object.keys(exp)
+                    for (const condition of ["production", "development"] as const) {
+                        const target = exp[condition]
+                        if (!target) {
+                            error(
+                                pkgName,
+                                `export "${exportPath}" missing ${condition} field`,
+                            )
+                            continue
+                        }
                         if (
                             keys.includes("default") &&
-                            keys.indexOf("development") >
-                            keys.indexOf("default")
+                            keys.indexOf(condition) > keys.indexOf("default")
                         ) {
                             error(
                                 pkgName,
-                                `export "${exportPath}" must put development before default`,
+                                `export "${exportPath}" must put ${condition} before default`,
                             )
                         }
-                        const developmentPath = `${pkgDir}/${exp.development}`
-                        const file = Bun.file(developmentPath)
+                        const file = Bun.file(`${pkgDir}/${target}`)
                         if (!(await file.exists())) {
                             error(
                                 pkgName,
-                                `export "${exportPath}" development entry file missing: ${exp.development}`,
+                                `export "${exportPath}" ${condition} entry file missing: ${target}`,
                             )
                         } else if (file.size === 0) {
                             error(
                                 pkgName,
-                                `export "${exportPath}" development entry file is empty: ${exp.development}`,
+                                `export "${exportPath}" ${condition} entry file is empty: ${target}`,
                             )
                         }
                     }

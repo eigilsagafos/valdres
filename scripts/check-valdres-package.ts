@@ -223,6 +223,13 @@ async function checkManifest(
         errors.push("types must be ./dist/types/index.d.ts")
     }
     if (
+        manifest.exports?.["."]?.production !== "./dist/production/index.js"
+    ) {
+        errors.push(
+            "root production export must be ./dist/production/index.js",
+        )
+    }
+    if (
         manifest.exports?.["."]?.development !== "./dist/development/index.js"
     ) {
         errors.push(

@@ -94,6 +94,13 @@ const pendingCount = myStore.set(countAtom, Promise.resolve(43)) // Promise<numb
 await pendingCount
 ```
 
+In development, object atom values are deep-frozen on write so in-place
+mutation throws. Vite and webpack production builds resolve the `production`
+export condition and compile the freeze out. The default `import` graph keeps
+the runtime `NODE_ENV` check, so Node, Bun, and esbuild still freeze whenever
+`NODE_ENV` is not `"production"`. Mark an atom `{ mutable: true }` when
+mutation is intentional.
+
 ## Subscribing to changes
 
 Subscription callbacks are notifications. Read the current value from the store

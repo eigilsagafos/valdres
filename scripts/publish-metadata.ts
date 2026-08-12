@@ -2,6 +2,7 @@ export const MINIMUM_NODE_VERSION = "22.12.0"
 export const NODE_ENGINE_RANGE = `>=${MINIMUM_NODE_VERSION}`
 export const PUBLISH_EXPORT_CONDITION_ORDER = [
     "types",
+    "production",
     "development",
     "import",
     "default",
@@ -9,4 +10,5 @@ export const PUBLISH_EXPORT_CONDITION_ORDER = [
 export const INSTANCE_GUARD_SIDE_EFFECTS = [
     "./dist/index.js",
     "./dist/development/index.js",
+    "./dist/production/index.js",
 ] as const
