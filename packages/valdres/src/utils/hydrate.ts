@@ -31,6 +31,15 @@ export type HydrateOptions = {
  * process hasn't touched it yet). Every value is set inside a single
  * `store.txn`, so subscribers and selectors observe one atomic commit.
  *
+ * Family args are taken from the payload RAW — the wire codec encodes member
+ * values, not keys — so `family(...args)` re-derives the member from whatever
+ * survived JSON. Args that don't round-trip (a `Date` arrives as its ISO
+ * string, `NaN` as `null`, a `Map` as `{}`) therefore resolve to a different
+ * member than the one dehydrated, which is why dev-mode `dehydrate` refuses to
+ * emit them: key transferred families by strings and numbers. A hand-built
+ * payload bypasses that guard, and hydrate cannot detect the substitution —
+ * the args it receives are already JSON-safe by then, just wrong.
+ *
  * Unknown names are warned about and skipped. This is an inherent
  * code-splitting caveat, not always a bug: an atom registers when the module
  * defining it is evaluated, so if the hydrating side never imported that

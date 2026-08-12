@@ -276,6 +276,233 @@ describe("dehydrate", () => {
         }
     })
 
+    // Family args travel as raw JSON (the wire codec covers values only) and
+    // hydrate re-derives the member with `family(...args)`. An arg that changes
+    // across JSON.stringify/parse therefore mints a PHANTOM member on the
+    // hydrating side — silently, and only in the SSR path. Dev-mode dehydrate
+    // makes that a loud failure where the bug is.
+    describe("non-JSON-safe family args (dev)", () => {
+        test("a Date arg throws, naming the family and the arg path", () => {
+            const fam = atomFamily<number, [Date]>(0, { name: "dh-json-date" })
+            const store1 = store()
+            store1.set(fam(new Date("2020-01-01T00:00:00.000Z")), 1)
+            expect(() => dehydrate(store1)).toThrow("dh-json-date")
+            expect(() => dehydrate(store1)).toThrow("args[0]")
+            expect(() => dehydrate(store1)).toThrow("Date")
+        })
+
+        test("a BigInt arg throws (JSON.stringify would throw on the payload)", () => {
+            const fam = atomFamily<number, [bigint]>(0, { name: "dh-json-big" })
+            const store1 = store()
+            store1.set(fam(7n), 1)
+            expect(() => dehydrate(store1)).toThrow("dh-json-big")
+            expect(() => dehydrate(store1)).toThrow("BigInt")
+        })
+
+        test("NaN and Infinity args throw (JSON writes null)", () => {
+            const nan = atomFamily<number, [number]>(0, { name: "dh-json-nan" })
+            const inf = atomFamily<number, [number]>(0, { name: "dh-json-inf" })
+            const store1 = store()
+            store1.set(nan(NaN), 1)
+            expect(() => dehydrate(store1)).toThrow("NaN")
+            const store2 = store()
+            store2.set(inf(Infinity), 1)
+            expect(() => dehydrate(store2)).toThrow("Infinity")
+        })
+
+        test("a -0 arg throws (JSON round-trips it to 0, a different key)", () => {
+            const fam = atomFamily<number, [number]>(0, {
+                name: "dh-json-negzero",
+            })
+            const store1 = store()
+            store1.set(fam(-0), 1)
+            expect(() => dehydrate(store1)).toThrow("-0")
+        })
+
+        test("Map and Set args throw (JSON writes {})", () => {
+            const withMap = atomFamily<number, [Map<string, number>]>(0, {
+                name: "dh-json-map",
+            })
+            const withSet = atomFamily<number, [Set<string>]>(0, {
+                name: "dh-json-set",
+            })
+            const store1 = store()
+            store1.set(withMap(new Map([["a", 1]])), 1)
+            expect(() => dehydrate(store1)).toThrow("Map")
+            const store2 = store()
+            store2.set(withSet(new Set(["a"])), 1)
+            expect(() => dehydrate(store2)).toThrow("Set")
+        })
+
+        test("an undefined arg throws (JSON drops or nulls it)", () => {
+            const fam = atomFamily<number, [string]>(0, { name: "dh-json-undef" })
+            const store1 = store()
+            store1.set((fam as any)(undefined), 1)
+            expect(() => dehydrate(store1)).toThrow("undefined")
+        })
+
+        test("the path points at the offending value inside a nested arg", () => {
+            const fam = atomFamily<number, [string, { at: Date[] }]>(0, {
+                name: "dh-json-nested",
+            })
+            const store1 = store()
+            store1.set(fam("scope", { at: [new Date(0)] }), 1)
+            expect(() => dehydrate(store1)).toThrow("args[1].at[0]")
+        })
+
+        test("the throw names the family even when another member is fine", () => {
+            const fam = atomFamily<number, [any]>(0, { name: "dh-json-mixed" })
+            const store1 = store()
+            store1.set(fam("ok"), 1)
+            store1.set(fam(new Date(0)), 2)
+            expect(() => dehydrate(store1)).toThrow("dh-json-mixed")
+        })
+
+        test("a keyOf family is checked on its raw args, not its derived key", () => {
+            class Entity {
+                constructor(readonly id: string) {}
+            }
+            // keyOf makes the LOCAL key a string, but the payload still carries
+            // the raw Entity — hydrate would re-run keyOf on a plain object.
+            const fam = atomFamily<number, [Entity]>(0, {
+                name: "dh-json-keyof",
+                keyOf: entity => entity.id,
+            })
+            const store1 = store()
+            store1.set(fam(new Entity("e1")), 1)
+            expect(() => dehydrate(store1)).toThrow("dh-json-keyof")
+            expect(() => dehydrate(store1)).toThrow("Entity")
+        })
+
+        // JSON.stringify writes an array's index elements and nothing else, so
+        // an array arg needs the same own-key scrutiny as a plain object —
+        // reachable via keyOf, which hands dehydrate the raw args.
+        describe("array args are checked beyond their elements", () => {
+            const rawArgFamily = (name: string) =>
+                atomFamily<number, [any[]]>(0, {
+                    name,
+                    keyOf: (arg: any[]) => name + ":" + arg.length,
+                })
+
+            test("a toJSON hook throws (it rewrites the serialized value)", () => {
+                const fam = rawArgFamily("dh-json-arr-tojson")
+                const args: any = ["a"]
+                args.toJSON = () => ["rewritten"]
+                const store1 = store()
+                store1.set(fam(args), 1)
+                expect(() => dehydrate(store1)).toThrow("toJSON")
+                // The hook really does change what crosses the wire.
+                expect(JSON.parse(JSON.stringify(args))).toEqual(["rewritten"])
+            })
+
+            test("an expando property throws (JSON drops it)", () => {
+                const fam = atomFamily<number, [any[]]>(0, {
+                    name: "dh-json-arr-expando",
+                    // A keyOf that reads the expando: after the round-trip the
+                    // property is gone, so the member key would differ.
+                    keyOf: (arg: any) => "k:" + arg.owner,
+                })
+                const args: any = ["a"]
+                args.owner = "acme"
+                const store1 = store()
+                store1.set(fam(args), 1)
+                expect(() => dehydrate(store1)).toThrow("args[0].owner")
+                expect(JSON.parse(JSON.stringify(args)).owner).toBeUndefined()
+            })
+
+            test("a symbol-keyed property throws", () => {
+                const fam = rawArgFamily("dh-json-arr-symbol")
+                const args: any = ["a"]
+                args[Symbol("owner")] = "acme"
+                const store1 = store()
+                store1.set(fam(args), 1)
+                expect(() => dehydrate(store1)).toThrow("symbol-keyed")
+            })
+
+            test("an accessor element throws without invoking the getter", () => {
+                const fam = rawArgFamily("dh-json-arr-getter")
+                const args: any[] = []
+                let getterCalls = 0
+                Object.defineProperty(args, 0, {
+                    configurable: true,
+                    enumerable: true,
+                    get: () => {
+                        getterCalls++
+                        return "a"
+                    },
+                })
+                const store1 = store()
+                store1.set(fam(args), 1)
+                expect(() => dehydrate(store1)).toThrow("accessor property")
+                expect(getterCalls).toBe(0)
+            })
+
+            test("a sparse hole throws (JSON writes null)", () => {
+                const fam = rawArgFamily("dh-json-arr-hole")
+                const store1 = store()
+                // eslint-disable-next-line no-sparse-arrays
+                store1.set(fam(["a", , "c"] as any), 1)
+                expect(() => dehydrate(store1)).toThrow("args[0][1]")
+                expect(() => dehydrate(store1)).toThrow("sparse-array hole")
+            })
+
+            test("an object arg with a toJSON hook throws", () => {
+                const fam = atomFamily<number, [any]>(0, {
+                    name: "dh-json-obj-tojson",
+                    keyOf: (arg: any) => "k:" + arg.id,
+                })
+                const store1 = store()
+                store1.set(fam({ id: "a", toJSON: () => ({ id: "b" }) }), 1)
+                expect(() => dehydrate(store1)).toThrow("toJSON")
+            })
+        })
+
+        // The guard runs BEFORE the pending-promise skip: a member's args are
+        // broken whether or not its value happens to be settled right now, and
+        // a timing-dependent error is the worst kind to ship. Deliberate — the
+        // pending skip stays in force for members with transferable args.
+        test("a pending member with unsafe args throws instead of being skipped", () => {
+            const fam = atomFamily<number, [Date]>(undefined, {
+                name: "dh-json-pending",
+            })
+            const store1 = store()
+            store1.set(fam(new Date(0)), new Promise<number>(() => {}))
+            const warn = spyOn(console, "warn").mockImplementation(mock())
+            try {
+                expect(() => dehydrate(store1)).toThrow("dh-json-pending")
+                expect(warn).not.toHaveBeenCalled()
+            } finally {
+                warn.mockRestore()
+            }
+        })
+
+        test("string, number, boolean, null, array and plain-object args pass", () => {
+            const fam = atomFamily<number, [any]>(0, { name: "dh-json-ok" })
+            const store1 = store()
+            store1.set(fam("u1"), 1)
+            store1.set(fam(42), 2)
+            store1.set(fam(true), 3)
+            store1.set(fam(null), 4)
+            store1.set(fam(["a", 1]), 5)
+            store1.set(fam({ org: "acme", tags: ["x"], nested: { n: 1 } }), 6)
+            const payload = dehydrate(store1)
+            expect(payload.families).toHaveLength(6)
+            // The whole point of the guard: this round-trip is lossless.
+            expect(JSON.parse(JSON.stringify(payload))).toEqual(payload)
+        })
+
+        test("multiple JSON-safe args pass", () => {
+            const fam = atomFamily<number, [string, number]>(0, {
+                name: "dh-json-ok-multi",
+            })
+            const store1 = store()
+            store1.set(fam("a", 1), 1)
+            expect(dehydrate(store1).families).toEqual([
+                ["dh-json-ok-multi", ["a", 1], 1],
+            ])
+        })
+    })
+
     test("scoped stores throw (root stores only in v1)", () => {
         const root = store()
         const scoped = root.scope("dh-scope")

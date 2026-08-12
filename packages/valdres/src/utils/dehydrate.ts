@@ -1,3 +1,4 @@
+import { assertJsonSafeFamilyArgs } from "../lib/assertJsonSafeFamilyArgs"
 import { IS_PROD } from "../lib/IS_PROD"
 import { getStoreData } from "../lib/getStoreData"
 import { getNamedStateIndex } from "../lib/namedStateIndex"
@@ -24,6 +25,16 @@ import { isPromiseLike } from "./isPromiseLike"
  *
  * Promise-pending values (in-flight async sets or unresolved async defaults)
  * are skipped with a dev-only warning — settle them before dehydrating.
+ *
+ * Family args are emitted RAW (schemas encode values, not keys), so they must
+ * be JSON-safe: `hydrate` re-derives each member with `family(...args)` from
+ * the parsed payload, and an arg that changes shape across JSON — a `Date`
+ * (→ ISO string), `NaN` (→ null), a `Map` (→ `{}`) — would resolve to a
+ * different, phantom member. Dev builds throw naming the family and the arg
+ * path; production emits them as-is. This check precedes the pending-promise
+ * skip above: such a member's args are broken whether or not its value happens
+ * to be settled at this instant, and an error that appears only once a fetch
+ * resolves is the worst kind to ship.
  *
  * Atoms whose `schema` is bidirectional (zod 4 — every zod schema, and
  * meaningfully `z.codec`) are wire-encoded: the schema's encode direction
@@ -75,6 +86,11 @@ export const dehydrate = (store: Store): DehydratedState => {
                         )
                     continue
                 }
+                // Args are emitted raw, so they must round-trip through JSON
+                // unchanged or the entry hydrates onto a phantom member.
+                // Checked before the promise skip: a pending value must not
+                // hide a broken key until the day it settles.
+                if (!IS_PROD) assertJsonSafeFamilyArgs(name, member.familyArgs)
                 if (isPromiseLike(value)) {
                     if (!IS_PROD)
                         console.warn(

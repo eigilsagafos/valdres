@@ -161,6 +161,26 @@ Wire codecs are a zod ≥ 4.1 feature (any schema exposing
 library; atoms whose schema can't encode — including one-way transform
 schemas — transfer their raw value exactly as without a schema.
 
+**Codecs cover values, not family keys.** `dehydrate` emits an atomFamily
+member's arguments raw, and `hydrate` re-derives the member by calling
+`family(...args)` with the JSON-parsed args. Family keys accept more than JSON
+does — `Date`, `Map`, `Set`, `BigInt`, `NaN` — because key identity is a local
+concern, but those args don't survive the wire: a `Date` comes back as its ISO
+string and resolves to a *different* member, so the hydrated value lands
+somewhere nothing reads while the real member keeps its default. Dev-mode
+`dehydrate` throws on such an entry, naming the family and the argument path;
+key transferred families by strings and numbers instead.
+
+```ts
+const eventsAtom = atomFamily<Event[], [Date]>([], { name: "app/events" })
+eventsAtom(new Date("2024-01-01"))   // fine locally
+dehydrate(store)                     // throws in dev: args[0] is a Date
+
+// ✓ key by a value JSON round-trips unchanged
+const eventsAtom = atomFamily<Event[], [string]>([], { name: "app/events" })
+eventsAtom("2024-01-01")
+```
+
 ## What gets validated
 
 With validation enabled, values are checked at every write boundary:

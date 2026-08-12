@@ -66,6 +66,19 @@ const entityAtom = atomFamily<Entity, [Entity]>(entity => entity, {
 `keyOf` receives the same argument tuple as the family factory. Its result is
 run through the same canonical codec.
 
+<div className="callout callout-warning">
+  <div className="callout-title">Transferred families need JSON-safe args</div>
+  Key identity is wider than JSON on purpose — it is a local, in-process
+  concern. But `dehydrate` emits family args raw (schemas encode *values*, not
+  keys) and `hydrate` re-derives each member with `family(...args)` from the
+  parsed payload. A `Date`, `Map`, `Set`, `BigInt`, `NaN` or `undefined`
+  argument does not survive that round-trip, so the value would land on a
+  phantom member while the real one keeps its default. Dev builds throw from
+  `dehydrate`, naming the family and the argument path. Key transferred
+  families by strings and numbers (`user(id)`, `day(date.toISOString())`) —
+  `keyOf` does not help here, since the raw args are what crosses the wire.
+</div>
+
 The legacy `release(...args)` method is deprecated and has no effect. Family
 members leave the weak identity cache automatically once no caller or store can
 reach them. Manual eviction could otherwise create two live member objects for

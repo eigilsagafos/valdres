@@ -1,7 +1,7 @@
 {
     "dist": {
-        "raw": 121671,
-        "gzip": 38192
+        "raw": 124226,
+        "gzip": 38914
     },
     "distFiles": {
         "adapter-internals/v1.js": {
@@ -13,26 +13,26 @@
             "gzip": 26946
         },
         "index.js": {
-            "raw": 31567,
-            "gzip": 10921
+            "raw": 34122,
+            "gzip": 11643
         }
     },
     "packed": {
-        "raw": 348072,
-        "gzip": 103043
+        "raw": 353356,
+        "gzip": 104826
     },
     "fixtures": {
         "atom": {
             "raw": 107118,
-            "gzip": 31877
+            "gzip": 31874
         },
         "atom-selector-store": {
             "raw": 107387,
-            "gzip": 31992
+            "gzip": 31989
         },
         "all-exports": {
-            "raw": 119211,
-            "gzip": 35534
+            "raw": 121778,
+            "gzip": 36210
         },
         "adapter-internals": {
             "raw": 84746,

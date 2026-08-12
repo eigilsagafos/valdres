@@ -20,7 +20,10 @@
  *
  *  Values without a marker — and family args always — must themselves be
  *  JSON-serializable for the payload to survive `JSON.stringify`/`parse`;
- *  valdres does not transform them. */
+ *  valdres does not transform them. For args this is enforced: dev-mode
+ *  `dehydrate` throws on an arg that JSON cannot round-trip (`Date`, `Map`,
+ *  `Set`, BigInt, `NaN`, `undefined`, …), since the entry would otherwise
+ *  hydrate onto a phantom member. */
 export type DehydratedState = {
     atoms: [name: string, value: unknown, encoded?: 1][]
     families: [
