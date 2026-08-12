@@ -135,8 +135,6 @@ const throwTransactionStateError = (
 const EXECUTE_TRANSACTION = Symbol("executeTransaction")
 const COMMIT_TRANSACTION = Symbol("commitTransaction")
 const ABORT_TRANSACTION = Symbol("abortTransaction")
-const TRANSACTION_FOR_STORE = Symbol("transactionForStore")
-const TRANSACTION_IS_OPEN = Symbol("transactionIsOpen")
 
 const deleteAtomFamilyAtoms = (
     set: Set<AtomFamilyAtom<any, any>>,
@@ -169,7 +167,7 @@ export class TransactionContext {
     /** Implicit microtask batches share a tree for reads/commit, but disposing
      *  one scope cancels only that scope's branch. Explicit transactions remain
      *  atomic across their entire user-authored tree. */
-    private readonly _implicitBatch: boolean
+    private _implicitBatch = false
     private _state: TransactionState = TRANSACTION_OPEN
     private _scopedTransactions: undefined | Map<string, TransactionContext>
     // Everything this level stages before commit lives in one write overlay —
@@ -184,12 +182,10 @@ export class TransactionContext {
         parentTransaction?: TransactionContext,
         childTransaction?: TransactionContext,
         name?: string,
-        implicitBatch = false,
     ) {
         this._data = data
         this._parentTransaction = parentTransaction
         this._name = name
-        this._implicitBatch = implicitBatch
         this._draft = createMutationDraft()
         if (childTransaction) {
             this._scopedTransactions = new Map([
@@ -210,10 +206,6 @@ export class TransactionContext {
             throw createStoreDisposedError(this._data)
         }
         throwTransactionStateError(this._state, operation)
-    }
-
-    [TRANSACTION_IS_OPEN](): boolean {
-        return this._state === TRANSACTION_OPEN
     }
 
     /** Close a working tree and release resources that were never committed.
@@ -275,23 +267,15 @@ export class TransactionContext {
      *  This is the `StoreCancellable` contract — store lifecycle code cancels
      *  through the symbol and never names this class. */
     [CANCEL_ON_STORE_DISPOSE](): void {
-        if (this._implicitBatch && this._parentTransaction) {
-            const parent = this._parentTransaction
-            const scopedTransactions = parent._scopedTransactions
-            if (
-                scopedTransactions &&
-                scopedTransactions.get(this._data.id) === this
-            ) {
-                scopedTransactions.delete(this._data.id)
-                if (scopedTransactions.size === 0) {
-                    parent._scopedTransactions = undefined
-                }
-            }
-            this._parentTransaction = undefined
+        const parent = this._parentTransaction
+        const root = parent ? this.rootTransaction() : this
+        if (root._implicitBatch && parent) {
+            const scopedTransactions = parent._scopedTransactions!
+            scopedTransactions.delete(this._data.id)
+            if (!scopedTransactions.size) parent._scopedTransactions = undefined
             this.cancelTree(TRANSACTION_DISPOSED)
             return
         }
-        const root = this._parentTransaction ? this.rootTransaction() : this
         root.cancelTree(TRANSACTION_DISPOSED)
     }
 
@@ -594,38 +578,9 @@ export class TransactionContext {
                 this._data.parent,
                 undefined,
                 this,
-                undefined,
-                this._implicitBatch,
             )
         }
         return this._parentTransaction[EXECUTE_TRANSACTION](callback, false)
-    };
-
-    /** Return this transaction's context for a descendant store. Batched store
-     *  reads use the same scoped transaction tree as explicit `txn.scope()` so
-     *  inherited pending values are resolved without losing descendant shadows
-     *  or evaluating selectors in the wrong store. */
-    [TRANSACTION_FOR_STORE](data: StoreData): TransactionContext {
-        this.assertOpen("read from")
-        if (data === this._data) return this
-
-        const scopePath: StoreData[] = []
-        let current: StoreData | undefined = data
-        while (current && current !== this._data) {
-            scopePath.push(current)
-            current = current.parent
-        }
-        if (!current) {
-            throw new Error(
-                `Store '${data.id}' is not a descendant of transaction store '${this._data.id}'`,
-            )
-        }
-
-        let transaction: TransactionContext = this
-        for (let index = scopePath.length - 1; index >= 0; index--) {
-            transaction = transaction.scopedTransaction(scopePath[index].id)
-        }
-        return transaction
     }
 
     reset = <V>(atom: Atom<V>): V | Promise<V> => {
@@ -1421,20 +1376,14 @@ export class TransactionContext {
         }
     }
 
-    private scopedTransaction(scopeId: string) {
-        if (!this._scopedTransactions) this._scopedTransactions = new Map()
-        if (!this._scopedTransactions.has(scopeId)) {
+    scopedTransaction(scopeId: string) {
+        let transaction = this._scopedTransactions?.get(scopeId)
+        if (!transaction) {
             const scopedData = this._data.scopes.get(scopeId)!
-            const scopedTransaction = new TransactionContext(
-                scopedData,
-                this,
-                undefined,
-                undefined,
-                this._implicitBatch,
-            )
-            this._scopedTransactions.set(scopeId, scopedTransaction)
+            transaction = new TransactionContext(scopedData, this)
+            ;(this._scopedTransactions ??= new Map()).set(scopeId, transaction)
         }
-        return this._scopedTransactions.get(scopeId)!
+        return transaction
     }
 
     private cloneFamilyIntoTxn(
@@ -1569,16 +1518,6 @@ export const abortTransaction = (txn: TransactionContext): void =>
  *  marked the store terminal, so this path deliberately bypasses assertions. */
 export const cancelTransaction = (txn: TransactionContext): void =>
     txn[CANCEL_ON_STORE_DISPOSE]()
-
-/** Whether an adapter-owned implicit transaction can still accept reads/writes. */
-export const isTransactionOpen = (txn: TransactionContext): boolean =>
-    txn[TRANSACTION_IS_OPEN]()
-
-/** Internal read bridge used by implicit batched transactions. */
-export const transactionForStore = (
-    txn: TransactionContext,
-    data: StoreData,
-): TransactionContext => txn[TRANSACTION_FOR_STORE](data)
 
 export const transaction = (
     callback: TransactionFn,

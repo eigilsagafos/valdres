@@ -5,18 +5,22 @@ import { measureOne } from "./bench-utils"
 import { describe, test } from "./test-compat"
 
 describe("batched reads", () => {
-    test("committed root atom", async () => {
+    test("committed inherited atom from a scope", async () => {
         const root = store({ batchUpdates: true })
+        const child = root.scope("child")
         const value = atom(1)
-        root.get(value)
+        child.get(value)
 
-        await measureOne("batchUpdates: 100 committed root atom reads", () => {
-            let observed = 0
-            for (let index = 0; index < 100; index++) {
-                observed += root.get(value)
-            }
-            do_not_optimize(observed)
-        })
+        await measureOne(
+            "batchUpdates: 100 committed scoped atom reads",
+            () => {
+                let observed = 0
+                for (let index = 0; index < 100; index++) {
+                    observed += child.get(value)
+                }
+                do_not_optimize(observed)
+            },
+        )
     })
 
     test("pending ancestor atom from a scope", async () => {
