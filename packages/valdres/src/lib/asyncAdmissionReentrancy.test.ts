@@ -191,6 +191,247 @@ const record = <T>(store1: Store, state: Atom<T>) => {
     return { observed, changes }
 }
 
+describe("async admission · promise fallback rollback", () => {
+    test("settles a fallback that resolved before the newer write rejected", async () => {
+        const store1 = store()
+        const state = atom(0)
+        const first = defer<number>()
+        const second = defer<number>()
+
+        store1.set(state, first.promise)
+        const returned = store1.set(state, second.promise)
+        const rejected = Promise.resolve(returned).catch(() => undefined)
+
+        // The first coordinator observes that p2 still owns the atom and exits.
+        // Rolling p2 back must restore more than the already-settled Promise:
+        // its settlement still needs to be applied to the atom.
+        first.resolve(1)
+        await first.promise
+        await flushMicrotasks()
+        second.reject(new Error("newer write failed"))
+        await rejected
+        await flushMicrotasks()
+
+        expect(store1.get(state)).toBe(1)
+    })
+
+    test("a dependent async selector converges after promise fallback rollback", async () => {
+        const store1 = store()
+        const state = atom(0)
+        const first = defer<number>()
+        const second = defer<number>()
+
+        store1.set(state, first.promise)
+        const returned = store1.set(state, second.promise)
+        const rejected = Promise.resolve(returned).catch(() => undefined)
+        first.resolve(1)
+        await first.promise
+        await flushMicrotasks()
+        second.reject(new Error("newer write failed"))
+        await rejected
+        await flushMicrotasks()
+
+        let evaluations = 0
+        const dependent = selector(get => {
+            // A broken rollback repeatedly suspends on the same already-resolved
+            // Promise. Bound that retry loop so this regression fails with an
+            // assertion instead of starving Bun's timeout timer forever.
+            if (++evaluations > 10) return Promise.resolve(Number.NaN)
+            return Promise.resolve(get(state) + 1)
+        })
+
+        await store1.get(dependent)
+        await flushMicrotasks()
+
+        expect(store1.get(dependent)).toBe(2)
+        expect(evaluations).toBeLessThanOrEqual(2)
+    })
+
+    test("settles a restored async function default", async () => {
+        const store1 = store()
+        const first = defer<number>()
+        const second = defer<number>()
+        const state = atom(() => first.promise)
+
+        expect(store1.get(state)).toBe(first.promise)
+        const returned = store1.set(state, second.promise)
+        const rejected = Promise.resolve(returned).catch(() => undefined)
+        first.resolve(1)
+        await first.promise
+        await flushMicrotasks()
+        second.reject(new Error("newer write failed"))
+        await rejected
+        await flushMicrotasks()
+
+        expect(store1.get(state)).toBe(1)
+    })
+
+    test("settles a restored async selector default", async () => {
+        const store1 = store()
+        const first = defer<number>()
+        const second = defer<number>()
+        const source = selector(() => first.promise)
+        const state = atom(source)
+
+        expect(store1.get(state)).toBe(first.promise)
+        const returned = store1.set(state, second.promise)
+        const rejected = Promise.resolve(returned).catch(() => undefined)
+        first.resolve(1)
+        await first.promise
+        await flushMicrotasks()
+        second.reject(new Error("newer write failed"))
+        await rejected
+        await flushMicrotasks()
+
+        expect(store1.get(state)).toBe(1)
+    })
+
+    test("settles a restored promise inherited from a parent scope", async () => {
+        const root = store()
+        const scoped = root.scope("child")
+        const state = atom(0)
+        const first = defer<number>()
+        const second = defer<number>()
+
+        root.set(state, first.promise)
+        const returned = scoped.set(state, second.promise)
+        const rejected = Promise.resolve(returned).catch(() => undefined)
+        first.resolve(1)
+        await first.promise
+        await flushMicrotasks()
+        expect(root.get(state)).toBe(1)
+        second.reject(new Error("newer write failed"))
+        await rejected
+        await flushMicrotasks()
+
+        expect(scoped.get(state)).toBe(1)
+    })
+
+    test("does not re-arm a fallback whose original coordinator is still pending", async () => {
+        const store1 = store()
+        const state = atom(0)
+        const first = defer<number>()
+        const second = defer<number>()
+        const originalThen = first.promise.then.bind(first.promise)
+        let thenCalls = 0
+        ;(first.promise as any).then = (...args: any[]) => {
+            thenCalls++
+            return originalThen(...args)
+        }
+
+        store1.set(state, first.promise)
+        expect(thenCalls).toBe(1)
+        const returned = store1.set(state, second.promise)
+        const rejected = Promise.resolve(returned).catch(() => undefined)
+        second.reject(new Error("newer write failed"))
+        await rejected
+        await flushMicrotasks()
+
+        // Restoring p1 is sufficient: its first reaction has not run yet.
+        expect(thenCalls).toBe(1)
+        first.resolve(1)
+        await flushMicrotasks()
+        expect(store1.get(state)).toBe(1)
+    })
+
+    test("re-armed observed settlement runs onSet and converges", async () => {
+        const store1 = store()
+        const events: string[] = []
+        const state = atom(0, {
+            onSet: value => events.push(`onSet:${value}`),
+        })
+        store1.sub(state, () =>
+            events.push(`sub:${describeValue(store1.get(state))}`),
+        )
+        store1.onChange((changes, meta) => {
+            if (changes.some(change => change.type === "atom"))
+                events.push(`change:${meta.source}`)
+        })
+        const first = defer<number>()
+        const second = defer<number>()
+
+        store1.set(state, first.promise)
+        store1.set(state, second.promise)
+        events.length = 0
+        first.resolve(1)
+        await first.promise
+        await flushMicrotasks()
+        second.reject(new Error("newer write failed"))
+        await Promise.resolve(second.promise).catch(() => undefined)
+        await flushMicrotasks()
+
+        expect(store1.get(state)).toBe(1)
+        expect(events.slice(-3)).toEqual([
+            "onSet:1",
+            "sub:1",
+            "change:async-set",
+        ])
+    })
+
+    test("re-armed rejection keeps the fallback's own rollback chain", async () => {
+        const store1 = store()
+        const state = atom(0)
+        const first = defer<number>()
+        const second = defer<number>()
+
+        store1.set(state, first.promise)
+        store1.set(state, second.promise)
+        first.reject(new Error("fallback failed"))
+        await Promise.resolve(first.promise).catch(() => undefined)
+        await flushMicrotasks()
+        second.reject(new Error("newer write failed"))
+        await Promise.resolve(second.promise).catch(() => undefined)
+        await flushMicrotasks()
+
+        expect(store1.get(state)).toBe(0)
+    })
+
+    test("a three-deep rejected write chain converges through its fallbacks", async () => {
+        const store1 = store()
+        const state = atom(0)
+        const first = defer<number>()
+        const second = defer<number>()
+        const third = defer<number>()
+
+        store1.set(state, first.promise)
+        store1.set(state, second.promise)
+        store1.set(state, third.promise)
+        first.resolve(1)
+        await first.promise
+        await flushMicrotasks()
+        second.reject(new Error("middle write failed"))
+        await Promise.resolve(second.promise).catch(() => undefined)
+        await flushMicrotasks()
+        third.reject(new Error("newest write failed"))
+        await Promise.resolve(third.promise).catch(() => undefined)
+        await flushMicrotasks()
+
+        expect(store1.get(state)).toBe(1)
+    })
+
+    test("control: fallback remains coordinated when the newer write rejects first", async () => {
+        const store1 = store()
+        const state = atom(0)
+        const first = defer<number>()
+        const second = defer<number>()
+
+        store1.set(state, first.promise)
+        const returned = store1.set(state, second.promise)
+        const rejected = Promise.resolve(returned).catch(() => undefined)
+
+        // In this order p1's original coordinator is still live when rollback
+        // restores it, so the pre-fix implementation already settles correctly.
+        second.reject(new Error("newer write failed"))
+        await rejected
+        await flushMicrotasks()
+        first.resolve(1)
+        await first.promise
+        await flushMicrotasks()
+
+        expect(store1.get(state)).toBe(1)
+    })
+})
+
 describe("async admission · superseding schema re-entrancy", () => {
     test("control: an admitted resolution publishes once and reports async-set", async () => {
         // The optimized-path mirror of the hooked control. Every other case in

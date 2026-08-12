@@ -6,6 +6,7 @@ import type { SetAtomValue } from "../types/SetAtomValue"
 import type { StoreData } from "../types/StoreData"
 import { isGlobalAtom } from "../utils/isGlobalAtom"
 import { isPromiseLike } from "../utils/isPromiseLike"
+import { clearSupersededAsyncAtomCoordinator } from "./asyncAtomCoordinatorRegistry"
 import { runHookedDirectWrite, runCommitPlan } from "./commitEngine"
 import { DIRECT_WRITE, SETTLE_DEFAULT } from "./commitIntents"
 import { createCommitErrors } from "./commitErrors"
@@ -118,7 +119,8 @@ export const setAtom = <Value = any>(
     // Past the isPromiseLike branch newValue is guaranteed to be a plain
     // Value (TypeScript can't narrow out PromiseLike fully, so we restate it).
     let syncValue = validateSchema(atom, newValue as Value, data)
-    const areEqual = isPromiseLike(currentValue)
+    const currentIsPromise = isPromiseLike(currentValue)
+    const areEqual = currentIsPromise
         ? currentValue === syncValue
         : atom.equal(currentValue, syncValue)
     if (areEqual) {
@@ -141,6 +143,7 @@ export const setAtom = <Value = any>(
         }
         return syncValue
     }
+    if (currentIsPromise) clearSupersededAsyncAtomCoordinator(atom, data)
     syncValue = setValueInData(atom, syncValue, data)
     resolvePendingDefault(atom, data, syncValue)
     let updatedAtoms: Atom<any>[]

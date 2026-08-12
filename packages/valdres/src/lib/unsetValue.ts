@@ -1,6 +1,7 @@
 import type { Atom } from "../types/Atom"
 import type { StoreData } from "../types/StoreData"
 import { isAtom } from "../utils/isAtom"
+import { clearSupersededAsyncAtomCoordinator } from "./asyncAtomCoordinatorRegistry"
 import { runCommitPlan } from "./commitEngine"
 import { cacheState } from "./cacheState"
 import { createCommitErrors } from "./commitErrors"
@@ -35,6 +36,7 @@ const InvalidStateError = "unset() expects an atom."
 export const detachOwnValue = (atom: Atom<any>, data: StoreData): boolean => {
     if (!data.values.has(atom)) return false
 
+    clearSupersededAsyncAtomCoordinator(atom, data)
     data.values.delete(atom)
     untrackNamedAtom(atom, data)
     noteStateValueChanged(atom, data)
