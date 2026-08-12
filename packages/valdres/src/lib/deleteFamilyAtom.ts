@@ -1,5 +1,6 @@
 import type { AtomFamilyAtom } from "../types/AtomFamilyAtom"
 import type { StoreData } from "../types/StoreData"
+import { clearSupersededAsyncAtomCoordinator } from "./asyncAtomCoordinatorRegistry"
 import { runCommitPlan } from "./commitEngine"
 import { createCommitErrors } from "./commitErrors"
 import { deleteSettlement, NO_ON_SETS } from "./commitPlans"
@@ -13,6 +14,7 @@ export const deleteFamilyAtom = <
     atom: AtomFamilyAtom<Value, Args>,
     data: StoreData,
 ) => {
+    clearSupersededAsyncAtomCoordinator(atom, data)
     if (data.values.delete(atom)) {
         noteStateValueChanged(atom, data)
     }

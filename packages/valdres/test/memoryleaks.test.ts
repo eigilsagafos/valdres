@@ -50,6 +50,75 @@ describe("memory leaks (atoms)", () => {
         })()
         expect(await detector.isLeaking()).toBe(false)
     })
+
+    test("settled async write releases its captured fallback value", async () => {
+        const { detector, store1, state } = await (async () => {
+            const store1 = store()
+            const state = atom<object>({})
+            let fallback: object | undefined = { fallback: true }
+            store1.set(state, fallback)
+            const detector = new LeakDetector(fallback)
+            const pending = Promise.resolve({ settled: true })
+            store1.set(state, pending)
+            await pending
+            await Promise.resolve()
+            fallback = undefined
+            return { detector, store1, state }
+        })()
+
+        expect(await detector.isLeaking()).toBe(false)
+        // Keep both WeakMap keys live through the collection probe.
+        expect(store1.get(state)).toEqual({ settled: true })
+    })
+
+    test("settled newer write releases its superseded coordinator chain", async () => {
+        const { detector, store1, state } = await (async () => {
+            const store1 = store()
+            const state = atom<object>({})
+            let resolveFirst!: (value: object) => void
+            let resolveSecond!: (value: object) => void
+            const first = new Promise<object>(resolve => {
+                resolveFirst = resolve
+            })
+            const second = new Promise<object>(resolve => {
+                resolveSecond = resolve
+            })
+            store1.set(state, first)
+            store1.set(state, second)
+            let superseded: object | undefined = { superseded: true }
+            const detector = new LeakDetector(superseded)
+            resolveFirst(superseded)
+            await first
+            await Promise.resolve()
+            resolveSecond({ settled: true })
+            await second
+            await Promise.resolve()
+            superseded = undefined
+            return { detector, store1, state }
+        })()
+
+        expect(await detector.isLeaking()).toBe(false)
+        // Keep both WeakMap keys live through the collection probe.
+        expect(store1.get(state)).toEqual({ settled: true })
+    })
+
+    test("sync supersession releases a never-settling async coordinator", async () => {
+        const { detector, store1, state } = (() => {
+            const store1 = store()
+            const state = atom<object>({})
+            let fallback: object | undefined = { fallback: true }
+            store1.set(state, fallback)
+            const detector = new LeakDetector(fallback)
+            store1.set(state, new Promise<object>(() => {}))
+            store1.set(state, { settled: true })
+            fallback = undefined
+            return { detector, store1, state }
+        })()
+
+        expect(await detector.isLeaking()).toBe(false)
+        // Keep both registry keys live through the collection probe.
+        expect(store1.get(state)).toEqual({ settled: true })
+    })
 })
 
 describe("memory leaks (global atoms)", () => {

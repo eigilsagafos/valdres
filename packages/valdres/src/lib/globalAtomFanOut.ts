@@ -4,6 +4,7 @@ import type { StoreData } from "../types/StoreData"
 import { isGlobalAtom } from "../utils/isGlobalAtom"
 import { isPromiseLike } from "../utils/isPromiseLike"
 import type { CommitErrors } from "./commitErrors"
+import { clearSupersededAsyncAtomCoordinator } from "./asyncAtomCoordinatorRegistry"
 import { recordCommitError } from "./commitErrors"
 import { equal } from "./equal"
 import { getState } from "./getState"
@@ -92,6 +93,7 @@ const applyPeerValue = (prepared: PreparedPeerValue): Atom<any>[] => {
         return []
     }
 
+    if (currentIsPromise) clearSupersededAsyncAtomCoordinator(atom, data)
     value = setValueInData(atom, value, data)
     if (currentIsPromise && !isPromiseLike(value)) {
         resolvePendingDefault(atom, data, value)
@@ -202,6 +204,8 @@ export const tryApplyUnobservedGlobalSet = (
     for (const store of atom.stores) {
         const currentValue = store.values.get(atom)
         if (!atom.equal(currentValue, value)) {
+            if (isPromiseLike(currentValue))
+                clearSupersededAsyncAtomCoordinator(atom, store)
             setValueInData(atom, value, store)
             if (isPromiseLike(currentValue)) {
                 resolvePendingDefault(atom, store, value)

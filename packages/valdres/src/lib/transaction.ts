@@ -22,6 +22,7 @@ import { isAtomFamily } from "../utils/isAtomFamily"
 import { isFamilyAtom } from "../utils/isFamilyAtom"
 import { isPromiseLike } from "../utils/isPromiseLike"
 import { isSelector } from "../utils/isSelector"
+import { clearSupersededAsyncAtomCoordinator } from "./asyncAtomCoordinatorRegistry"
 import { detachOwnValue } from "./unsetValue"
 import { getState, isAtomDeletedInFamilyIndex } from "./getState"
 import { getAtomInitValue } from "./initAtom"
@@ -140,6 +141,7 @@ const deleteAtomFamilyAtoms = (
     data: StoreData,
 ) => {
     set.forEach(atom => {
+        clearSupersededAsyncAtomCoordinator(atom, data)
         if (data.values.delete(atom)) {
             noteStateValueChanged(atom, data)
         }

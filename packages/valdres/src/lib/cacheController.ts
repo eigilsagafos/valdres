@@ -6,6 +6,7 @@ import type { StoreData } from "../types/StoreData"
 import { isGlobalAtom } from "../utils/isGlobalAtom"
 import { isPromiseLike } from "../utils/isPromiseLike"
 import { isReactive, resolveReactive } from "../utils/resolveReactive"
+import { clearSupersededAsyncAtomCoordinator } from "./asyncAtomCoordinatorRegistry"
 import { cacheState } from "./cacheState"
 import {
     recordCacheMetaAllocation,
@@ -44,6 +45,7 @@ const publishLocalWrite = (
     value: any,
     data: StoreData,
 ): void => {
+    clearSupersededAsyncAtomCoordinator(state, data)
     setValueInData(state, value, data)
     if (hasAtomCommitObservers(state, data))
         settleCommit([state], data, undefined, "revalidate", SETTLE_DEFAULT)
@@ -103,6 +105,7 @@ const expireIfStale = (state: State, data: StoreData): boolean => {
     // Deliberately unpublished: a cold read invalidates the stale cache and
     // immediately falls through to ordinary initialization. Opening a commit
     // here would make store.get() observable through onCommitEnd.
+    clearSupersededAsyncAtomCoordinator(atom, data)
     data.values.delete(state)
     cacheState.clearWrite(atom, data, entry)
     return true
@@ -209,6 +212,8 @@ const retain = (
                         cacheState.recordWrite(target, store, refreshedAt)
                     continue
                 }
+                if (hasCurrentValue && isPromiseLike(currentValue))
+                    clearSupersededAsyncAtomCoordinator(target, store)
                 setValueInData(target, value, store)
                 if (hasAtomCommitObservers(target, store)) {
                     entries.push(

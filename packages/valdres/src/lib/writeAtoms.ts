@@ -3,6 +3,7 @@ import type { OnSetPolicy } from "../types/CommitIntent"
 import type { StoreData } from "../types/StoreData"
 import { isPromiseLike } from "../utils/isPromiseLike"
 import { isGlobalAtom } from "../utils/isGlobalAtom"
+import { clearSupersededAsyncAtomCoordinator } from "./asyncAtomCoordinatorRegistry"
 import { coordinateAsyncWrite } from "./coordinateAsyncWrite"
 import { DIRECT_WRITE, SEED_WRITE } from "./commitIntents"
 import { getState } from "./getState"
@@ -57,6 +58,8 @@ export const writeAtoms = (
                 if (promise !== value) pairs.set(atom, promise)
                 value = promise
             } else {
+                if (currentIsPromise)
+                    clearSupersededAsyncAtomCoordinator(atom, data)
                 value = setValueInData(atom, value, data)
                 // Landing a settled value over a suspense placeholder must
                 // resolve the held promise, exactly as setAtom does. The
