@@ -236,6 +236,14 @@ describe("commitPlans", () => {
                 updatedAtoms: [],
                 deleted: undefined,
                 unsetAtoms: undefined,
+                initAtoms: [],
+                children: undefined,
+            })
+            forest({
+                data: store1,
+                updatedAtoms: [],
+                deleted: undefined,
+                unsetAtoms: undefined,
                 children: [
                     {
                         data: store1,

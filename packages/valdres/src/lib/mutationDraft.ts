@@ -17,6 +17,7 @@ export const createMutationDraft = (): MutationDraft => ({
     deletes: undefined,
     dirtyFamilyIndexes: undefined,
     initializedAtoms: undefined,
+    lazyInitMembers: undefined,
     dirty: false,
     selectorCache: undefined,
     selectorRuntime: undefined,
@@ -49,6 +50,7 @@ export const resetMutationDraft = (draft: MutationDraft): void => {
     draft.values.clear()
     draft.initializedAtoms?.clear()
     draft.initializedAtoms = undefined
+    draft.lazyInitMembers = undefined
     draft.deletes?.clear()
     draft.deletes = undefined
     draft.unsets?.clear()

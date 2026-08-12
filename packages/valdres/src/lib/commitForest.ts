@@ -36,6 +36,7 @@ export const buildCommitForest = (
             updatedAtoms: [],
             deleted: undefined,
             unsetAtoms: undefined,
+            initAtoms: undefined,
             children: undefined,
         }
         nodes.set(data, node)
@@ -58,6 +59,10 @@ export const buildCommitForest = (
         if (entry.unsetAtoms) {
             if (node.unsetAtoms) node.unsetAtoms.push(...entry.unsetAtoms)
             else node.unsetAtoms = entry.unsetAtoms
+        }
+        if (entry.initAtoms) {
+            if (node.initAtoms) node.initAtoms.push(...entry.initAtoms)
+            else node.initAtoms = entry.initAtoms
         }
     }
     if (globalUpdates) {

@@ -34,6 +34,12 @@ export type MutationDraft = {
      *  Distinct from the commit-scoped initialization set the write phase
      *  allocates: body-initialized atoms must not be re-propagated. */
     initializedAtoms: Set<Atom<any>> | undefined
+    /** Family members from `initializedAtoms` whose membership the commit staged
+     *  into the working index (set at commit, after the body has closed). The
+     *  write phase hands the ones it did not itself notify to the commit's init
+     *  group, so a lazy read notifies exactly like the direct read it stands in
+     *  for. */
+    lazyInitMembers: Atom<any>[] | undefined
     /** Overlay revision marker. Every staging operation sets it; the next
      *  overlay selector read drops `selectorCache` and clears it. */
     dirty: boolean

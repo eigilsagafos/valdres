@@ -838,6 +838,7 @@ const settleTreeStore = (
     let updatedGroup: OwnStyleGroup | undefined
     let deletedGroup: OwnStyleGroup | undefined
     let unsetGroup: OwnStyleGroup | undefined
+    let initGroup: OwnStyleGroup | undefined
 
     // The folded global-peer group comes FIRST: the historical global loop
     // propagated every peer before any per-store transaction pass.
@@ -913,12 +914,33 @@ const settleTreeStore = (
             applyFamilyAdds(collector, data, unsetGroup, timestamp)
     }
 
+    // Lazily-initialized members settle like an ordinary update — register
+    // membership, notify their family/member subscribers, dirty their dependent
+    // selectors — but report to NOBODY: a lazy read is not a change, and the
+    // direct-read path (SETTLE_INIT_ONLY) reports nothing either. The discard
+    // sink is never flushed, which is what suppresses them; routing through the
+    // group's existing `report` slot keeps phase C's switch untouched. Collected
+    // LAST so a selector also reached by a real write keeps that write's
+    // provenance (first-reached wins) and still reports through the real sink;
+    // only selectors reached SOLELY by an init land in the discarded sink.
+    if (entry?.initAtoms !== undefined && entry.initAtoms.length > 0) {
+        initGroup = collectOwnStyleGroup(collector, data, {
+            kind: TREE_GROUP_UPDATED,
+            atoms: entry.initAtoms,
+            set: undefined,
+            report: createChangeSink(undefined, "set"),
+        })
+        if (initGroup.familyAtoms)
+            applyFamilyAdds(collector, data, initGroup, timestamp)
+    }
+
     // The changed family members each group contributed, read by the descent
     // (phase A) and by the notify promotion (phase C).
     const peerFamilyAtoms = peerGroup?.familyAtoms
     const updatedFamilyAtoms = updatedGroup?.familyAtoms
     const deletedFamilyAtoms = deletedGroup?.familyAtoms
     const unsetFamilyAtoms = unsetGroup?.familyAtoms
+    const initFamilyAtoms = initGroup?.familyAtoms
 
     // Descent: plan children always; branch-index scopes for any trigger with
     // registered inherited-dependency branches. Per-child group structure
@@ -1090,6 +1112,12 @@ const settleTreeStore = (
             collectForNotify(notify, data, orderedSubs, deletedFamilyAtoms)
         if (unsetFamilyAtoms)
             collectForNotify(notify, data, orderedSubs, unsetFamilyAtoms)
+        // A family subscription only fires for members present in the notify
+        // map, so a lazily-initialized member must be promoted like any other
+        // changed member — otherwise its family subscriber is collected above
+        // and then silently skipped at delivery.
+        if (initFamilyAtoms)
+            collectForNotify(notify, data, orderedSubs, initFamilyAtoms)
     }
 
     // Reports, in the same reaching-group order. Selector entries are

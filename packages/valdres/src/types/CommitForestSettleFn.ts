@@ -21,6 +21,13 @@ export type CommitForestEntry = {
     updatedAtoms: Atom<any>[]
     deleted: NonEmpty<AtomFamilyAtom<any, any>> | undefined
     unsetAtoms: NonEmpty<Atom<any>> | undefined
+    /** Family members a transaction body lazily INITIALIZED — their values
+     * landed during the body read, so no write carries them, but the store must
+     * still register their membership and notify their subscribers exactly as a
+     * direct lazy read does. Settled in the commit's own notification phase (so
+     * subscribers precede onChange and the engine's error continuation applies)
+     * but deliberately reported to NOTHING: a lazy read is not a change. */
+    initAtoms: NonEmpty<Atom<any>> | undefined
     children: CommitForestEntry[] | undefined
 }
 

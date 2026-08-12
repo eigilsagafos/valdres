@@ -99,6 +99,7 @@ const assertWorkGroupsAreNonEmpty = () => {
         updatedAtoms: [],
         deleted: [someMember],
         unsetAtoms: [someAtom],
+        initAtoms: [someAtom],
         children: undefined,
     }
     const emptyDeleted: CommitForestEntry = {
@@ -107,6 +108,7 @@ const assertWorkGroupsAreNonEmpty = () => {
         // @ts-expect-error an empty delete group must be undefined, not []
         deleted: [],
         unsetAtoms: undefined,
+        initAtoms: undefined,
         children: undefined,
     }
     const emptyUnset: CommitForestEntry = {
@@ -115,6 +117,7 @@ const assertWorkGroupsAreNonEmpty = () => {
         deleted: undefined,
         // @ts-expect-error an empty unset group must be undefined, not []
         unsetAtoms: [],
+        initAtoms: undefined,
         children: undefined,
     }
     const maybeEmpty: Atom<any>[] = []
@@ -124,8 +127,19 @@ const assertWorkGroupsAreNonEmpty = () => {
         deleted: undefined,
         // @ts-expect-error a possibly-empty list must go through `workGroup`
         unsetAtoms: maybeEmpty,
+        initAtoms: undefined,
         children: undefined,
     }
+    const emptyInit: CommitForestEntry = {
+        data,
+        updatedAtoms: [],
+        deleted: undefined,
+        unsetAtoms: undefined,
+        // @ts-expect-error an empty init group must be undefined, not []
+        initAtoms: [],
+        children: undefined,
+    }
+    void emptyInit
     void legal
     void emptyDeleted
     void emptyUnset
