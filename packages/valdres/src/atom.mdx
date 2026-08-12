@@ -71,6 +71,17 @@ Use replacement updates (or an appropriate custom `equal` function) so writes
 still produce notifications. The default equality function compares binary
 buffers and views by their visible bytes.
 
+It compares every own enumerable property, including symbol-keyed ones and
+properties set alongside the contents of an array, `Map`, or `Set`, so a write
+that changes only one of those is still a change. A custom `valueOf` or
+`toString` narrows the comparison but never replaces it — two values that
+stringify alike but hold different properties are different values.
+
+Binary buffers and views are the one exception: they are compared by their
+bytes alone. Enumerating the keys of a typed array costs time proportional to
+its length, so properties attached beside the bytes are not compared — keep
+such metadata in a separate atom.
+
 ## Async atoms
 
 <div className="callout callout-tip">

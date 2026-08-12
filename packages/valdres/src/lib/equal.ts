@@ -43,6 +43,76 @@ const equalBytes = (
     return true
 }
 
+const hasOwn = Object.prototype.hasOwnProperty
+const isEnumerable = Object.prototype.propertyIsEnumerable
+
+// Own enumerable properties keyed by a symbol are invisible to `Object.keys`,
+// so without this two values differing only in one compare equal — and a `set`
+// carrying that difference is dropped with no warning. Only reached when a
+// symbol key exists on either side, which the caller establishes with an
+// existence check costing ~4ns a call on a plain object (the engine answers it
+// from the shape, without walking indexed storage).
+const equalOwnSymbols = (
+    a: any,
+    b: any,
+    aSymbols: symbol[],
+    bSymbols: symbol[],
+    updatedAtomsSet?: Set<any>,
+) => {
+    let aCount = 0
+    for (let i = aSymbols.length; i-- !== 0; ) {
+        const key = aSymbols[i]!
+        // Non-enumerable symbols are ignored, exactly as non-enumerable string
+        // keys are — `Object.keys` never sees those either.
+        if (!isEnumerable.call(a, key)) continue
+        aCount++
+        if (!isEnumerable.call(b, key)) return false
+        if (!deepEqualFn(a[key], b[key], updatedAtomsSet)) return false
+    }
+    let bCount = 0
+    for (let i = bSymbols.length; i-- !== 0; )
+        if (isEnumerable.call(b, bSymbols[i]!)) bCount++
+    return aCount === bCount
+}
+
+// Whether an array is exactly its elements: `length` dense indices and nothing
+// else. A COUNT alone cannot answer this — a hole offsets an expando exactly,
+// so `[1, , 3]` with a `cursor` prop reports the same number of own keys as a
+// dense 3-element array, and comparing counts silently readmits the write drop
+// this check exists to stop. Own-key order settles it: `length` is created with
+// the array, before any user property, so it directly follows the index keys —
+// finding it at position `length` proves the indices are dense, and the count
+// then proves nothing follows it. Anything else (a hole, an expando, a symbol,
+// an exotic key order from a Proxy) is routed to the exact comparison, so this
+// can only ever be conservative.
+const isDensePlainArray = (a: any, length: number) => {
+    const keys = Reflect.ownKeys(a)
+    return keys.length === length + 1 && keys[length] === "length"
+}
+
+// Full own-enumerable comparison for values carrying more than the state their
+// fast path compares: an array with an expando (`rows.cursor = "..."`), a
+// symbol key or a hole, or a Map/Set/RegExp with properties attached beside its
+// entries. For arrays both sides are re-compared by key, which re-visits the
+// indices — that runs only once the cheap index loop has already reported
+// equality, so the redundancy buys a much cheaper common case.
+const equalOwnEnumerable = (a: any, b: any, updatedAtomsSet?: Set<any>) => {
+    const keys = Object.keys(a)
+    if (keys.length !== Object.keys(b).length) return false
+    for (let i = keys.length; i-- !== 0; ) {
+        const key = keys[i]!
+        if (!hasOwn.call(b, key)) return false
+        if (!deepEqualFn(a[key], b[key], updatedAtomsSet)) return false
+    }
+    return equalOwnSymbols(
+        a,
+        b,
+        Object.getOwnPropertySymbols(a),
+        Object.getOwnPropertySymbols(b),
+        updatedAtomsSet,
+    )
+}
+
 const deepEqualFn = (a: any, b: any, updatedAtomsSet?: Set<any>) => {
     if (updatedAtomsSet) {
         if (updatedAtomsSet.has(a) || updatedAtomsSet.has(b)) return false
@@ -84,6 +154,19 @@ const deepEqualFn = (a: any, b: any, updatedAtomsSet?: Set<any>) => {
             if (length != b.length) return false
             for (i = length; i-- !== 0; )
                 if (!deepEqualFn(a[i], b[i], updatedAtomsSet)) return false
+            // Equal elements is not equal values: an array can also carry
+            // expando and symbol-keyed own props, which the loop above cannot
+            // see. Enumerating an array's keys is O(n) with a large constant
+            // on both engines, because every index has to be materialized as a
+            // string: measured per pair, 106ns on JSC and 185ns on V8 at 3
+            // elements, ~4µs at 100, against 2.3ns/51ns for the loop itself.
+            // No cheaper exact test exists — `getOwnPropertySymbols` is the
+            // only own-key API that skips indexed storage, and it cannot see
+            // an expando. So the cost is spent only here, once the arrays are
+            // otherwise equal; identity and every early-exit rejection above
+            // return before reaching it.
+            if (!isDensePlainArray(a, length) || !isDensePlainArray(b, length))
+                return equalOwnEnumerable(a, b, updatedAtomsSet)
             return true
         }
 
@@ -118,7 +201,11 @@ const deepEqualFn = (a: any, b: any, updatedAtomsSet?: Set<any>) => {
                     !deepEqualFn(i.value[1], b.get(i.value[0]), updatedAtomsSet)
                 )
                     return false
-            return true
+            // Entries are a Map's state but not all of it — a property
+            // attached beside them is a difference too, on the same argument
+            // as an array expando. Neither a Map nor a Set has indexed
+            // storage, so unlike an array this costs ~4ns.
+            return equalOwnEnumerable(a, b, updatedAtomsSet)
         }
 
         if (hasSet && a instanceof Set && b instanceof Set) {
@@ -128,7 +215,7 @@ const deepEqualFn = (a: any, b: any, updatedAtomsSet?: Set<any>) => {
                 if (!b.has(i.value[0])) return false
                 if (updatedAtomsSet?.has(i.value[0])) return false
             }
-            return true
+            return equalOwnEnumerable(a, b, updatedAtomsSet)
         }
         // END: Modifications
 
@@ -220,23 +307,50 @@ const deepEqualFn = (a: any, b: any, updatedAtomsSet?: Set<any>) => {
         }
 
         if (a.constructor === RegExp)
-            return a.source === b.source && a.flags === b.flags
+            return (
+                a.source === b.source &&
+                a.flags === b.flags &&
+                equalOwnEnumerable(a, b, updatedAtomsSet)
+            )
         // START: Modifications:
         // Apply guards for `Object.create(null)` handling. See:
         // - https://github.com/FormidableLabs/react-fast-compare/issues/64
         // - https://github.com/epoberezkin/fast-deep-equal/issues/49
+        // A custom `valueOf`/`toString` describes only PART of a value — a
+        // Date's instant, a wrapper's primitive, a class's display form — so a
+        // mismatch is decisive but a match is not. Returning true on a match
+        // makes `new Money(5, "USD")` equal `new Money(5, "EUR")` and drops
+        // that write, so both now narrow the answer and fall through to the
+        // own-property comparison instead of standing in for it.
         if (
             a.valueOf !== Object.prototype.valueOf &&
             typeof a.valueOf === "function" &&
             typeof b.valueOf === "function"
-        )
-            return a.valueOf() === b.valueOf()
-        if (
+        ) {
+            const aValue = a.valueOf()
+            const bValue = b.valueOf()
+            if (
+                // An object result (`valueOf() { return this }`) says nothing
+                // about equality; only a primitive one is a verdict.
+                (aValue === null || typeof aValue !== "object") &&
+                (bValue === null || typeof bValue !== "object") &&
+                aValue !== bValue &&
+                // Two invalid Dates are one value, not two unequal NaNs.
+                (aValue === aValue || bValue === bValue)
+            )
+                return false
+        } else if (
+            // `else`, so a value with a custom valueOf never also pays for
+            // toString — that is the original control flow, and it matters:
+            // Date.prototype.toString formats a full date string, ~120ns a
+            // call. Anything it could add is now covered by the own-property
+            // comparison below.
             a.toString !== Object.prototype.toString &&
             typeof a.toString === "function" &&
-            typeof b.toString === "function"
+            typeof b.toString === "function" &&
+            a.toString() !== b.toString()
         )
-            return a.toString() === b.toString()
+            return false
         // END: Modifications
 
         keys = Object.keys(a)
@@ -275,6 +389,15 @@ const deepEqualFn = (a: any, b: any, updatedAtomsSet?: Set<any>) => {
                 return false
         }
         // END: react-fast-compare
+
+        // `Object.keys` is blind to symbol-keyed props, so a value differing
+        // only in one would compare equal and its write would be dropped. This
+        // sits last so that a difference in a string-keyed prop — the common
+        // reason two values differ — is found before anything is spent here.
+        const aSymbols = Object.getOwnPropertySymbols(a)
+        const bSymbols = Object.getOwnPropertySymbols(b)
+        if (aSymbols.length !== 0 || bSymbols.length !== 0)
+            return equalOwnSymbols(a, b, aSymbols, bSymbols, updatedAtomsSet)
 
         // START: fast-deep-equal
         return true
