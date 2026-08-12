@@ -92,9 +92,10 @@ export const forestEntry = (
     deleted: NonEmpty<AtomFamilyAtom<any, any>> | undefined,
     unsetAtoms: NonEmpty<Atom<any>> | undefined,
     children: CommitForestEntry[] | undefined,
+    initAtoms?: NonEmpty<Atom<any>>,
 ): CommitForestEntry => {
     count(data, 1)
-    return { data, updatedAtoms, deleted, unsetAtoms, children }
+    return { data, updatedAtoms, deleted, unsetAtoms, initAtoms, children }
 }
 
 /** The one-entry, one-root forest every single-store commit uses — an ordinary
@@ -104,9 +105,17 @@ export const singleStoreForest = (
     updatedAtoms: Atom<any>[],
     deleted?: NonEmpty<AtomFamilyAtom<any, any>>,
     unsetAtoms?: NonEmpty<Atom<any>>,
+    initAtoms?: NonEmpty<Atom<any>>,
 ): CommitForestEntry[] => {
     const entries = [
-        forestEntry(data, updatedAtoms, deleted, unsetAtoms, undefined),
+        forestEntry(
+            data,
+            updatedAtoms,
+            deleted,
+            unsetAtoms,
+            undefined,
+            initAtoms,
+        ),
     ]
     count(data, 1)
     return entries
@@ -244,7 +253,11 @@ const illegal = (code: number): never => {
 }
 
 const assertEntryLegal = (entry: CommitForestEntry) => {
-    if (entry.deleted?.length === 0 || entry.unsetAtoms?.length === 0)
+    if (
+        entry.deleted?.length === 0 ||
+        entry.unsetAtoms?.length === 0 ||
+        entry.initAtoms?.length === 0
+    )
         illegal(6)
     if (entry.children)
         for (const child of entry.children) assertEntryLegal(child)

@@ -92,12 +92,16 @@ export const runHookedDirectWrite = <Value>(
 // every migrated write shape, so its guards must not allocate per run.
 const treeHasWork = (entries: CommitForestEntry[]) => {
     for (const entry of entries) {
-        // Every group is now non-empty-or-absent, so all three trigger kinds
-        // answer "is there work here" the same way.
+        // Every group is now non-empty-or-absent, so all four trigger kinds
+        // answer "is there work here" the same way. `initAtoms` counts: a
+        // lazily-initialized member whose membership already existed (it was
+        // unset, not deleted) contributes no other group, and skipping the plan
+        // would silence the family notification a direct read delivers.
         if (
             entry.updatedAtoms.length > 0 ||
             entry.deleted !== undefined ||
-            entry.unsetAtoms !== undefined
+            entry.unsetAtoms !== undefined ||
+            entry.initAtoms !== undefined
         ) {
             return true
         }

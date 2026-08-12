@@ -1,4 +1,5 @@
 import type { Atom } from "../types/Atom"
+import type { NonEmpty } from "../types/NonEmpty"
 import type { AtomFamily } from "../types/AtomFamily"
 import type { AtomFamilyAtom } from "../types/AtomFamilyAtom"
 import type { GetValue } from "../types/GetValue"
@@ -22,7 +23,7 @@ import { isFamilyAtom } from "../utils/isFamilyAtom"
 import { isPromiseLike } from "../utils/isPromiseLike"
 import { isSelector } from "../utils/isSelector"
 import { detachOwnValue } from "./unsetValue"
-import { getState } from "./getState"
+import { getState, isAtomDeletedInFamilyIndex } from "./getState"
 import { getAtomInitValue } from "./initAtom"
 import { isFunction } from "./isFunction"
 import { normalizeStagedValue } from "./normalizeStagedValue"
@@ -49,6 +50,7 @@ import {
     type DeferredGlobalSet,
 } from "./globalAtomFanOut"
 import {
+    addFamilyAtomsToSet,
     cloneAtomFamilyIndex,
     createAtomFamilyIndex,
     hasOwnFamilyAtom,
@@ -80,6 +82,12 @@ type CommitWrite = CommitForestEntry & {
     children: CommitWrite[] | undefined
     onSets: DeferredOnSet[]
 }
+
+/** One store's read-only lazily-initialized family members, settled init-only
+ *  after the commit's write phase so their family/member subscribers fire once —
+ *  the notification a direct read performs. Membership itself already landed
+ *  with the commit (see stageLazyFamilyMemberships). */
+type LazyInitSettle = { data: StoreData; atoms: Atom[] }
 
 const TRANSACTION_OPEN = 0
 const TRANSACTION_COMMITTING = 1
@@ -195,13 +203,40 @@ export class TransactionContext {
     }
 
     /** Close a working tree and release resources that were never committed.
-     *  `terminal` records why: consumer abort or store disposal. */
+     *  `terminal` records why: consumer abort or store disposal.
+     *
+     *  A consumer abort does not roll back reads: any family member a body read
+     *  lazily initialized already wrote its default into committed data.values,
+     *  so it must be registered in the committed family index — otherwise it
+     *  holds a value while being absent from get(family), and every selector over
+     *  that membership stays permanently stale. The draft (which holds the
+     *  working index) is discarded here, so those members settle straight into
+     *  committed data with the direct read's own init-only settlement.
+     *
+     *  The whole tree is marked terminal and its members COLLECTED first, then
+     *  settled behind ONE boundary with ONE deferred notification phase. That
+     *  ordering is the contract: no callback can reach a still-open context (or
+     *  lazily read another member into a snapshot already taken), every store's
+     *  membership is final before the first callback runs (so a root subscriber
+     *  never observes a scope as empty), and onCommitEnd fires once for the tree
+     *  rather than once per context. Skipped on store disposal — nothing reads
+     *  the store again. */
     private cancelTree(terminal: TerminalCancelState): void {
+        const settles =
+            terminal === TRANSACTION_ABORTED
+                ? this.collectAbortedLazyMembers()
+                : undefined
+        this.markTreeCancelled(terminal)
+        if (settles) this.settleAbortedLazyMembers(settles)
+    }
+
+    /** Terminal mark + resource release for the whole working tree. */
+    private markTreeCancelled(terminal: TerminalCancelState): void {
         this._state = terminal
         this.untrackLifecycle()
         if (this._scopedTransactions) {
             for (const transaction of this._scopedTransactions.values()) {
-                transaction.cancelTree(terminal)
+                transaction.markTreeCancelled(terminal)
             }
             this._scopedTransactions.clear()
         }
@@ -364,30 +399,41 @@ export class TransactionContext {
         draft.unsets?.delete(atom)
         this.invalidateSelectorCache()
         if (isFamilyAtom(atom)) {
-            const ownFamilyValue = draft.values.has(atom.family)
-                ? draft.values.get(atom.family)
-                : this._data.values.has(atom.family)
-                  ? this._data.values.get(atom.family)
-                  : undefined
-            // A root (or already-materialized scope) that already owns this
-            // member needs no family-index write at all. An inherited scoped
-            // member intentionally falls through: the scope must claim local
-            // ownership so it survives a later parent deletion.
-            if (
-                !ownFamilyValue?.__index ||
-                !hasOwnFamilyAtom(ownFamilyValue.__index, atom)
-            ) {
-                if (!draft.values.has(atom.family)) {
-                    // @ts-ignore
-                    this.cloneFamilyIntoTxn(atom.family)
-                }
-                const index = draft.values.get(atom.family).__index
-                index.created.set(atom, performance.now())
-                index.deleted.delete(atom)
-                this.recursivelyUpdateAtomFamilyIndexes(atom.family)
-            }
+            this.noteFamilyWrite(atom.family)
+            this.stageFamilyMembership(atom)
         }
         return resolved as V
+    }
+
+    /** Stage a family member's membership into this level's working index —
+     *  the family-index half of a `set`, shared with the commit-time
+     *  registration of members a body read lazily initialized. Must run while
+     *  the context is OPEN: `cloneFamilyIntoTxn` may read through `this.get` to
+     *  first materialize the family index. */
+    private stageFamilyMembership(atom: AtomFamilyAtom<any, any>): void {
+        const draft = this._draft
+        const ownFamilyValue = draft.values.has(atom.family)
+            ? draft.values.get(atom.family)
+            : this._data.values.has(atom.family)
+              ? this._data.values.get(atom.family)
+              : undefined
+        // A root (or already-materialized scope) that already owns this
+        // member needs no family-index write at all. An inherited scoped
+        // member intentionally falls through: the scope must claim local
+        // ownership so it survives a later parent deletion.
+        if (
+            !ownFamilyValue?.__index ||
+            !hasOwnFamilyAtom(ownFamilyValue.__index, atom)
+        ) {
+            if (!draft.values.has(atom.family)) {
+                // @ts-ignore
+                this.cloneFamilyIntoTxn(atom.family)
+            }
+            const index = draft.values.get(atom.family).__index
+            index.created.set(atom, performance.now())
+            index.deleted.delete(atom)
+            this.recursivelyUpdateAtomFamilyIndexes(atom.family)
+        }
     }
 
     batchSetFamilyAtoms = (
@@ -406,6 +452,7 @@ export class TransactionContext {
               ? this._data.values.get(family)
               : undefined
         let index = ownFamilyValue?.__index
+        this.noteFamilyWrite(family)
         let membershipChanged = false
         let staged = false
         for (const [atom, value] of pairs) {
@@ -462,6 +509,7 @@ export class TransactionContext {
             // @ts-ignore
             this.cloneFamilyIntoTxn(atom.family)
         }
+        this.noteFamilyWrite(atom.family)
         const index = this._draft.values.get(atom.family).__index
         index.created.delete(atom)
         index.deleted.set(atom, performance.now())
@@ -582,11 +630,49 @@ export class TransactionContext {
         // transactions validate every child before changing any state.
         if (root._scopedTransactions) {
             root.assertScopedTreeOpen("commit")
+        }
+        // A family member a body read lazily initialized wrote its default into
+        // committed data.values but was never registered in its family index —
+        // the direct-read path's post-read SETTLE_INIT_ONLY has no analogue here
+        // because the commit discards the body-read set. Fold that registration
+        // into the working index NOW, while every context is still OPEN (staging
+        // may read through this.get to first materialize the family index), so
+        // the ordinary commit settles membership atomically with the txn's own
+        // writes: one notification per family, respecting final intent (a member
+        // the txn also deleted/unset stays out; one it also set is already
+        // staged), and visible to every subscriber the commit releases. The hot
+        // path — a pure-set txn never touches initializedAtoms — is unchanged.
+        root.stageLazyFamilyMemberships()
+        // With lazy inits in play the commit may be followed by the repair pass
+        // below, and each opens its own inner boundary. Span BOTH with one outer
+        // boundary so onCommitEnd still fires exactly once, after the repair —
+        // otherwise the commit's boundary closes first and a failed commit
+        // reports commit-end, then notifies, then reports commit-end again. Only
+        // a lazy-init commit pays for this; the hot path never allocates it.
+        let commitEndTree: StoreTreeRuntime | undefined
+        if (commitEndRegistry.count !== 0 && root.hasLazyInitMembers())
+            commitEndTree = beginCommit(root._data)
+        let succeeded = false
+        if (root._scopedTransactions) {
             root.setScopedTreeState(TRANSACTION_COMMITTING)
         }
         root._state = TRANSACTION_COMMITTING
         try {
             root.commitOpenTransaction(source)
+            succeeded = true
+        } catch (error) {
+            // The commit failed partway — e.g. an unrelated atom's `equal` threw
+            // in the write phase, before the staged family index was written.
+            // The lazily-read members' VALUES landed during the body regardless,
+            // so without this they would again hold a value while being absent
+            // from get(family): the original corruption, reached through the
+            // exceptional path. Register whatever the commit left unregistered,
+            // best-effort, then let the original error propagate untouched.
+            try {
+                const repairs = root.collectAbortedLazyMembers(undefined, true)
+                if (repairs) root.settleAbortedLazyMembers(repairs)
+            } catch {}
+            throw error
         } finally {
             // Terminal mark only: a committed tree keeps its (already applied)
             // staging state, exactly as the historical fields did — retained
@@ -597,7 +683,39 @@ export class TransactionContext {
                 root.setScopedTreeState(TRANSACTION_COMMITTED)
             }
             root.untrackTree()
+            // Closed LAST, after the repair pass, so the tree reports commit-end
+            // once — and strictly after the lifecycle transition above, because
+            // an onCommitEnd listener may throw: closing first would abandon the
+            // rest of this block, stranding the tree in "committing" (a retained
+            // handle would report the wrong state and stay lifecycle-tracked).
+            // On failure listener errors are swallowed: they must never mask the
+            // commit's own error.
+            if (commitEndTree) endCommit(commitEndTree, !succeeded)
         }
+    }
+
+    /** True when this context or any nested scope lazily initialized a family
+     *  member — whether or not staging kept it. This gates the outer commit-end
+     *  boundary, so it must cover every member the repair pass could touch, NOT
+     *  just the staged ones: staging deliberately skips unset and deleted
+     *  members, and gating on the staged list alone would let a repair triggered
+     *  by `get(m); unset(m); <throwing write>` run outside the boundary and
+     *  report commit-end twice. The single-store hot path (nothing lazily
+     *  initialized, no scopes) answers on the first line. */
+    private hasLazyInitMembers(): boolean {
+        if (this._draft.lazyInitMembers !== undefined) return true
+        const initialized = this._draft.initializedAtoms
+        if (initialized) {
+            for (const atom of initialized) {
+                if (isFamilyAtom(atom)) return true
+            }
+        }
+        if (this._scopedTransactions) {
+            for (const scopedTxn of this._scopedTransactions.values()) {
+                if (scopedTxn.hasLazyInitMembers()) return true
+            }
+        }
+        return false
     }
 
     [ABORT_TRANSACTION](): void {
@@ -645,7 +763,11 @@ export class TransactionContext {
         if (
             !this._scopedTransactions &&
             !this._draft.hasCommitEffects &&
-            !draftHasCleanupMutations(this._draft)
+            !draftHasCleanupMutations(this._draft) &&
+            // Lazily-initialized members need the commit's init trigger group,
+            // which only the forest plan below carries — this arm's bulk
+            // coordinator settles nothing but its own staged writes.
+            this._draft.lazyInitMembers === undefined
         ) {
             // Staging materialization only (one copy + sort per dirty family
             // working index) — unobservable, so it may precede the boundary.
@@ -732,7 +854,10 @@ export class TransactionContext {
             // body-read set: atoms lazily initialized while the callback ran
             // must not be re-propagated by the write phase.
             const initializedAtomsSet = new Set<Atom>()
-            if (!draftHasCleanupMutations(draft)) {
+            if (
+                !draftHasCleanupMutations(draft) &&
+                draft.lazyInitMembers === undefined
+            ) {
                 commitAtoms(
                     draft.values,
                     this._data,
@@ -773,11 +898,13 @@ export class TransactionContext {
             // write phase. An empty map means every peer was value-equal — a
             // local plan handles that exactly like no globals at all.
             const globalSets = collectGlobalOnSets(onSets)
+            const initWork = this.partitionInitWork(updatedAtoms)
             const entries = singleStoreForest(
                 this._data,
-                updatedAtoms,
+                initWork.updated,
                 deleted,
                 unsetAtoms,
+                initWork.init,
             )
             runCommitPlan({
                 data: this._data,
@@ -841,6 +968,9 @@ export class TransactionContext {
                     applyUnsets(txn._draft.unsets, entry.data),
                 )
             }
+            const initWork = txn.partitionInitWork(entry.updatedAtoms)
+            entry.updatedAtoms = initWork.updated
+            entry.initAtoms = initWork.init
         }
 
         const errors = createCommitErrors()
@@ -901,6 +1031,7 @@ export class TransactionContext {
             updatedAtoms: [],
             deleted: undefined,
             unsetAtoms: undefined,
+            initAtoms: undefined,
             children: undefined,
             onSets: [],
         }
@@ -975,6 +1106,257 @@ export class TransactionContext {
             this._draft.initializedAtoms = new Set()
         }
         return this._draft.initializedAtoms
+    }
+
+    /** Fold the membership of every family member a body read lazily
+     *  initialized into this context's (and every nested scope's) working index,
+     *  so the ordinary commit settles it atomically with the txn's own writes.
+     *  A member the txn also DELETED is left alone so `del` wins (final intent),
+     *  and the authority on that is the working index's tombstone, walked up the
+     *  inherited chain — not `draft.deletes`, which `del` fills only when the
+     *  member has a LOCAL committed value. A scope's `del` of an inherited member
+     *  writes just a tombstone (the value lives in an ancestor), so reading the
+     *  local set there would resurrect it.
+     *
+     *  Every other member IS staged, `unset` included: unset resets a member to
+     *  its default and keeps its membership, and its own settlement re-registers
+     *  it only where a local value was actually detached — for an inherited
+     *  scoped value there is nothing to detach, so nothing would register it and
+     *  the member would vanish. `reset` likewise writes the draft without staging
+     *  membership. Staging is idempotent, so a member a `set` already staged
+     *  no-ops here.
+     *
+     *  Members whose membership this stages are remembered on the draft, so the
+     *  write phase can hand the ones no write actually notified to the commit's
+     *  init group. Runs while the tree is OPEN — stageFamilyMembership may read
+     *  through this.get. The single-store hot path (a pure-set txn never
+     *  allocates initializedAtoms) short-circuits at once. */
+    private stageLazyFamilyMemberships(): void {
+        const draft = this._draft
+        const initialized = draft.initializedAtoms
+        if (initialized && initialized.size) {
+            let staged: Atom[] | undefined
+            for (const atom of initialized) {
+                if (!isFamilyAtom(atom)) continue
+                const stagedIndex = this.familyIndexFor(atom, draft.values)
+                if (stagedIndex && isAtomDeletedInFamilyIndex(atom, stagedIndex))
+                    continue
+                this.stageFamilyMembership(atom)
+                if (!staged) staged = []
+                staged.push(atom)
+            }
+            draft.lazyInitMembers = staged
+        }
+        if (this._scopedTransactions) {
+            for (const scopedTxn of this._scopedTransactions.values()) {
+                scopedTxn.stageLazyFamilyMemberships()
+            }
+        }
+    }
+
+    /** Record that a real write staged membership for `family`, so the commit
+     *  can tell a family index that changed because of an actual write from one
+     *  that changed only because a lazy read registered a member. */
+    private noteFamilyWrite(family: AtomFamily<any, any>): void {
+        const draft = this._draft
+        if (!draft.writtenFamilies) draft.writtenFamilies = new Set()
+        draft.writtenFamilies.add(family)
+    }
+
+    /** Split the write phase's `updatedAtoms` into what the commit should settle
+     *  as ordinary updates and what it should settle as init work.
+     *
+     *  Two kinds move to the init group. First, lazily-initialized members the
+     *  write phase did not notify for — classified from `updatedAtoms`, the
+     *  write phase's ACTUAL outcome, rather than by re-running `atom.equal` to
+     *  predict it (that would invoke user code twice per member and, for a
+     *  stateful comparator, could disagree with the write phase and notify twice
+     *  or not at all). Second, family objects whose index changed ONLY because
+     *  staging registered such a member: a selector over `get(family)` is reached
+     *  through the family object, so leaving it among the ordinary updates would
+     *  attribute that selector to a real write and report it to `onChange` —
+     *  where the direct read this stands in for reports nothing at all. A family
+     *  a real write also touched stays put and reports normally. */
+    private partitionInitWork(updatedAtoms: Atom[]): {
+        updated: Atom[]
+        init: NonEmpty<Atom<any>> | undefined
+    } {
+        const staged = this._draft.lazyInitMembers
+        if (!staged) return { updated: updatedAtoms, init: undefined }
+        // One pass over updatedAtoms, then O(1) membership tests: a bulk
+        // transaction can stage thousands of members, and scanning the array per
+        // member would make classification quadratic.
+        const updatedSet = new Set<Atom>(updatedAtoms)
+        const written = this._draft.writtenFamilies
+        let init: Atom[] | undefined
+        for (const atom of staged) {
+            if (updatedSet.has(atom)) continue
+            if (!init) init = []
+            init.push(atom)
+        }
+        let updated = updatedAtoms
+        const initOnlyFamily = (atom: Atom) =>
+            isAtomFamily(atom) && !written?.has(atom as AtomFamily<any, any>)
+        if (updatedAtoms.some(initOnlyFamily)) {
+            updated = []
+            for (const atom of updatedAtoms) {
+                if (initOnlyFamily(atom)) {
+                    if (!init) init = []
+                    init.push(atom)
+                } else {
+                    updated.push(atom)
+                }
+            }
+        }
+        return { updated, init: init as NonEmpty<Atom<any>> | undefined }
+    }
+
+    /** Snapshot the lazily-read family members of every context in this working
+     *  tree, before any of it is marked terminal or reset. Each context is paired
+     *  with its OWN store — exactly where a direct read on that store would
+     *  register (a scoped read resolves its value in an ancestor but still
+     *  registers membership in the scope's shadow index). Only freshly
+     *  initialized members reach the set — a deleted-member read is deliberately
+     *  excluded upstream — so every entry warrants settlement.
+     *
+     *  `forRepair` is the failed-COMMIT variant. It repairs the invariant a
+     *  half-applied commit can break — a live member must be visible in
+     *  get(family) — so it skips members already registered (whatever the commit
+     *  landed must not be notified twice) and members whose deletion actually
+     *  APPLIED, read from the committed index's tombstone. What applied, not what
+     *  was intended, is the test: a commit that threw before writing the index
+     *  leaves no tombstone and the member must be registered; one that threw
+     *  after leaves the tombstone and registering would resurrect a phantom.
+     *  Value presence cannot answer this — a scope's `del` removes no ancestor
+     *  value — and delete INTENT gets the first case exactly backwards. On an
+     *  ABORT nothing was applied at all, so every lazily-read member is
+     *  registered exactly as the direct read that landed its value would. */
+    private collectAbortedLazyMembers(
+        settles?: LazyInitSettle[],
+        forRepair = false,
+    ): LazyInitSettle[] | undefined {
+        const initialized = this._draft.initializedAtoms
+        if (initialized && initialized.size) {
+            let members: Atom[] | undefined
+            for (const atom of initialized) {
+                if (!isFamilyAtom(atom)) continue
+                if (forRepair) {
+                    // Skip what the commit already landed (registering again
+                    // would notify twice) and what it actually deleted.
+                    const index = this.familyIndexFor(atom, this._data.values)
+                    if (
+                        index &&
+                        (hasOwnFamilyAtom(
+                            index,
+                            atom as AtomFamilyAtom<any, any>,
+                        ) ||
+                            isAtomDeletedInFamilyIndex(atom, index))
+                    )
+                        continue
+                }
+                if (!members) members = []
+                members.push(atom)
+            }
+            if (members) {
+                if (!settles) settles = []
+                settles.push({ data: this._data, atoms: members })
+            }
+        }
+        if (this._scopedTransactions) {
+            for (const scopedTxn of this._scopedTransactions.values()) {
+                settles = scopedTxn.collectAbortedLazyMembers(
+                    settles,
+                    forRepair,
+                )
+            }
+        }
+        return settles
+    }
+
+    /** This store's family index for `atom`, read out of `values` — the draft
+     *  (what this transaction INTENDED) or committed data (what actually
+     *  APPLIED). The tombstone in that index, not a local cleanup set nor the
+     *  presence of a value up the parent chain, is the authority on whether a
+     *  member is deleted: a scope's `del` of an INHERITED member writes only a
+     *  tombstone, and the value goes on living in the ancestor. */
+    private familyIndexFor(atom: Atom, values: StoreData["values"]) {
+        return values.get((atom as AtomFamilyAtom<any, any>).family)?.__index
+    }
+
+    /** Settle an aborted tree's lazily-read members with the same init-only
+     *  settlement a direct read performs (storeFromStoreData) — registering
+     *  membership AND propagating dependent selectors, which a bare index write
+     *  would leave permanently stale.
+     *
+     *  Two phases, because a settlement pass evaluates selectors: EVERY store's
+     *  membership is registered before ANY propagation begins, then the whole
+     *  tree settles as one commit forest. Settling store-by-store instead would
+     *  let the root's pass cascade into a scope and evaluate that scope's
+     *  family selector against an intermediate tree — before the scope's own
+     *  member is registered — and then evaluate it a second time on the scope's
+     *  own pass. One forest visits each store exactly once, against the union of
+     *  its triggers, behind one boundary and one notification phase.
+     *
+     *  Each store's members go in as init work, together with their family
+     *  objects: registration in phase 1 means the walk's own family bookkeeping
+     *  finds nothing to change, so the family object is what carries a
+     *  `get(family)` selector into the pass. Errors are swallowed — this runs
+     *  while the tree unwinds the callback error that caused the abort, which
+     *  must never be masked. */
+    private settleAbortedLazyMembers(settles: LazyInitSettle[]): void {
+        let commitEndTree: StoreTreeRuntime | undefined
+        if (commitEndRegistry.count !== 0)
+            commitEndTree = beginCommit(this._data)
+        try {
+            const timestamp = performance.now()
+            const entries: CommitForestEntry[] = []
+            for (const settle of settles) {
+                const byFamily = new Map<
+                    AtomFamily<any, any>,
+                    Set<AtomFamilyAtom<any, any>>
+                >()
+                for (const atom of settle.atoms) {
+                    const family = (atom as AtomFamilyAtom<any, any>).family
+                    let members = byFamily.get(family)
+                    if (!members) {
+                        members = new Set()
+                        byFamily.set(family, members)
+                    }
+                    members.add(atom as AtomFamilyAtom<any, any>)
+                }
+                const initAtoms: Atom[] = [...settle.atoms]
+                for (const [family, members] of byFamily) {
+                    try {
+                        addFamilyAtomsToSet(
+                            family,
+                            members,
+                            settle.data,
+                            timestamp,
+                        )
+                    } catch {}
+                    initAtoms.push(family as unknown as Atom)
+                }
+                entries.push({
+                    data: settle.data,
+                    updatedAtoms: [],
+                    deleted: undefined,
+                    unsetAtoms: undefined,
+                    initAtoms: initAtoms as NonEmpty<Atom<any>>,
+                    children: undefined,
+                })
+            }
+            try {
+                settleCommitForest(
+                    entries,
+                    undefined,
+                    undefined,
+                    undefined,
+                    createCommitErrors(),
+                )
+            } catch {}
+        } finally {
+            if (commitEndTree) endCommit(commitEndTree, true)
+        }
     }
 
     private scopedTransaction(scopeId: string) {

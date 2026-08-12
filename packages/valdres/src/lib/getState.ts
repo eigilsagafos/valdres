@@ -413,7 +413,13 @@ const findClosestStoreWithAtomInitialized = (
     return findClosestStoreWithAtomInitialized(atom, data.parent)
 }
 
-const isAtomDeletedInFamilyIndex = (atom: any, index: any): boolean => {
+/** True when `atom` carries a delete tombstone in `index` or, failing an
+ *  explicit local record either way, in any ancestor index it inherits from.
+ *  This — not a local cleanup set or the presence of a value somewhere up the
+ *  parent chain — is the authority on whether a family member is deleted: a
+ *  scope's `del` of an INHERITED member writes only a tombstone (there is no
+ *  local value to remove), and its value goes on living in the ancestor. */
+export const isAtomDeletedInFamilyIndex = (atom: any, index: any): boolean => {
     if (index.deleted.has(atom)) return true
     if (index.created.has(atom)) return false
     if (index.parentIndex)
