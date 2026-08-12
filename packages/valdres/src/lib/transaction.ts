@@ -43,13 +43,14 @@ import {
     singleStoreForest,
     workGroup,
 } from "./commitPlans"
-import { BULK_WITH_EFFECTS_SILENT, SETTLE_INIT_ONLY } from "./commitIntents"
+import { BULK_WITH_EFFECTS_SILENT } from "./commitIntents"
 import {
     applyGlobalSets,
     collectGlobalOnSets,
     type DeferredGlobalSet,
 } from "./globalAtomFanOut"
 import {
+    addFamilyAtomsToSet,
     cloneAtomFamilyIndex,
     createAtomFamilyIndex,
     hasOwnFamilyAtom,
@@ -60,8 +61,7 @@ import {
     draftHasCleanupMutations,
     resetMutationDraft,
 } from "./mutationDraft"
-import { settleCommit, settleCommitForest } from "./propagateUpdatedAtoms"
-import { notifyDeferred, type NotifyTarget } from "./notifySubscribers"
+import { settleCommitForest } from "./propagateUpdatedAtoms"
 import type { CommitForestEntry } from "../types/CommitForestSettleFn"
 import type { DeferredOnSet } from "./runOnSets"
 import { commitAtoms, commitHookFreeAtoms } from "./setAtoms"
@@ -398,7 +398,10 @@ export class TransactionContext {
         // any buffered set.
         draft.unsets?.delete(atom)
         this.invalidateSelectorCache()
-        if (isFamilyAtom(atom)) this.stageFamilyMembership(atom)
+        if (isFamilyAtom(atom)) {
+            this.noteFamilyWrite(atom.family)
+            this.stageFamilyMembership(atom)
+        }
         return resolved as V
     }
 
@@ -449,6 +452,7 @@ export class TransactionContext {
               ? this._data.values.get(family)
               : undefined
         let index = ownFamilyValue?.__index
+        this.noteFamilyWrite(family)
         let membershipChanged = false
         let staged = false
         for (const [atom, value] of pairs) {
@@ -505,6 +509,7 @@ export class TransactionContext {
             // @ts-ignore
             this.cloneFamilyIntoTxn(atom.family)
         }
+        this.noteFamilyWrite(atom.family)
         const index = this._draft.values.get(atom.family).__index
         index.created.delete(atom)
         index.deleted.set(atom, performance.now())
@@ -893,12 +898,13 @@ export class TransactionContext {
             // write phase. An empty map means every peer was value-equal — a
             // local plan handles that exactly like no globals at all.
             const globalSets = collectGlobalOnSets(onSets)
+            const initWork = this.partitionInitWork(updatedAtoms)
             const entries = singleStoreForest(
                 this._data,
-                updatedAtoms,
+                initWork.updated,
                 deleted,
                 unsetAtoms,
-                this.lazyInitGroup(updatedAtoms),
+                initWork.init,
             )
             runCommitPlan({
                 data: this._data,
@@ -962,7 +968,9 @@ export class TransactionContext {
                     applyUnsets(txn._draft.unsets, entry.data),
                 )
             }
-            entry.initAtoms = txn.lazyInitGroup(entry.updatedAtoms)
+            const initWork = txn.partitionInitWork(entry.updatedAtoms)
+            entry.updatedAtoms = initWork.updated
+            entry.initAtoms = initWork.init
         }
 
         const errors = createCommitErrors()
@@ -1146,27 +1154,61 @@ export class TransactionContext {
         }
     }
 
-    /** The lazily-initialized members the write phase did NOT notify for, i.e.
-     *  the commit's init group. Classified from `updatedAtoms` — the write
-     *  phase's ACTUAL outcome — rather than by predicting it: re-running
-     *  `atom.equal` here would invoke user code twice per member and, for a
-     *  stateful comparator, could disagree with the write phase and produce
-     *  either zero or two notifications. A member the txn also wrote to a
-     *  genuinely new value is in `updatedAtoms` and notifies there; one whose
-     *  write turned out value-equal (a `reset` to the default a lazy read just
-     *  landed) is not, and needs the init group. */
-    private lazyInitGroup(
-        updatedAtoms: Atom[],
-    ): NonEmpty<Atom<any>> | undefined {
+    /** Record that a real write staged membership for `family`, so the commit
+     *  can tell a family index that changed because of an actual write from one
+     *  that changed only because a lazy read registered a member. */
+    private noteFamilyWrite(family: AtomFamily<any, any>): void {
+        const draft = this._draft
+        if (!draft.writtenFamilies) draft.writtenFamilies = new Set()
+        draft.writtenFamilies.add(family)
+    }
+
+    /** Split the write phase's `updatedAtoms` into what the commit should settle
+     *  as ordinary updates and what it should settle as init work.
+     *
+     *  Two kinds move to the init group. First, lazily-initialized members the
+     *  write phase did not notify for — classified from `updatedAtoms`, the
+     *  write phase's ACTUAL outcome, rather than by re-running `atom.equal` to
+     *  predict it (that would invoke user code twice per member and, for a
+     *  stateful comparator, could disagree with the write phase and notify twice
+     *  or not at all). Second, family objects whose index changed ONLY because
+     *  staging registered such a member: a selector over `get(family)` is reached
+     *  through the family object, so leaving it among the ordinary updates would
+     *  attribute that selector to a real write and report it to `onChange` —
+     *  where the direct read this stands in for reports nothing at all. A family
+     *  a real write also touched stays put and reports normally. */
+    private partitionInitWork(updatedAtoms: Atom[]): {
+        updated: Atom[]
+        init: NonEmpty<Atom<any>> | undefined
+    } {
         const staged = this._draft.lazyInitMembers
-        if (!staged) return undefined
-        let group: Atom[] | undefined
+        if (!staged) return { updated: updatedAtoms, init: undefined }
+        // One pass over updatedAtoms, then O(1) membership tests: a bulk
+        // transaction can stage thousands of members, and scanning the array per
+        // member would make classification quadratic.
+        const updatedSet = new Set<Atom>(updatedAtoms)
+        const written = this._draft.writtenFamilies
+        let init: Atom[] | undefined
         for (const atom of staged) {
-            if (updatedAtoms.includes(atom)) continue
-            if (!group) group = []
-            group.push(atom)
+            if (updatedSet.has(atom)) continue
+            if (!init) init = []
+            init.push(atom)
         }
-        return group as NonEmpty<Atom<any>> | undefined
+        let updated = updatedAtoms
+        const initOnlyFamily = (atom: Atom) =>
+            isAtomFamily(atom) && !written?.has(atom as AtomFamily<any, any>)
+        if (updatedAtoms.some(initOnlyFamily)) {
+            updated = []
+            for (const atom of updatedAtoms) {
+                if (initOnlyFamily(atom)) {
+                    if (!init) init = []
+                    init.push(atom)
+                } else {
+                    updated.push(atom)
+                }
+            }
+        }
+        return { updated, init: init as NonEmpty<Atom<any>> | undefined }
     }
 
     /** Snapshot the lazily-read family members of every context in this working
@@ -1246,31 +1288,71 @@ export class TransactionContext {
      *  membership AND propagating dependent selectors, which a bare index write
      *  would leave permanently stale.
      *
-     *  Every store registers and collects its subscribers with notification
-     *  DEFERRED into one shared target, which is fired once at the end: so the
-     *  whole tree's membership is final before any callback runs, and the nested
-     *  per-store boundaries close inside one outer boundary, firing onCommitEnd
-     *  once. Errors are swallowed — this runs while the tree unwinds the
-     *  callback error that caused the abort, which must never be masked. */
+     *  Two phases, because a settlement pass evaluates selectors: EVERY store's
+     *  membership is registered before ANY propagation begins, then the whole
+     *  tree settles as one commit forest. Settling store-by-store instead would
+     *  let the root's pass cascade into a scope and evaluate that scope's
+     *  family selector against an intermediate tree — before the scope's own
+     *  member is registered — and then evaluate it a second time on the scope's
+     *  own pass. One forest visits each store exactly once, against the union of
+     *  its triggers, behind one boundary and one notification phase.
+     *
+     *  Each store's members go in as init work, together with their family
+     *  objects: registration in phase 1 means the walk's own family bookkeeping
+     *  finds nothing to change, so the family object is what carries a
+     *  `get(family)` selector into the pass. Errors are swallowed — this runs
+     *  while the tree unwinds the callback error that caused the abort, which
+     *  must never be masked. */
     private settleAbortedLazyMembers(settles: LazyInitSettle[]): void {
         let commitEndTree: StoreTreeRuntime | undefined
         if (commitEndRegistry.count !== 0)
             commitEndTree = beginCommit(this._data)
         try {
-            const notify: NotifyTarget = new Map()
-            for (const entry of settles) {
-                try {
-                    settleCommit(
-                        entry.atoms,
-                        entry.data,
-                        notify,
-                        undefined,
-                        SETTLE_INIT_ONLY,
-                    )
-                } catch {}
+            const timestamp = performance.now()
+            const entries: CommitForestEntry[] = []
+            for (const settle of settles) {
+                const byFamily = new Map<
+                    AtomFamily<any, any>,
+                    Set<AtomFamilyAtom<any, any>>
+                >()
+                for (const atom of settle.atoms) {
+                    const family = (atom as AtomFamilyAtom<any, any>).family
+                    let members = byFamily.get(family)
+                    if (!members) {
+                        members = new Set()
+                        byFamily.set(family, members)
+                    }
+                    members.add(atom as AtomFamilyAtom<any, any>)
+                }
+                const initAtoms: Atom[] = [...settle.atoms]
+                for (const [family, members] of byFamily) {
+                    try {
+                        addFamilyAtomsToSet(
+                            family,
+                            members,
+                            settle.data,
+                            timestamp,
+                        )
+                    } catch {}
+                    initAtoms.push(family as unknown as Atom)
+                }
+                entries.push({
+                    data: settle.data,
+                    updatedAtoms: [],
+                    deleted: undefined,
+                    unsetAtoms: undefined,
+                    initAtoms: initAtoms as NonEmpty<Atom<any>>,
+                    children: undefined,
+                })
             }
             try {
-                notifyDeferred(notify)
+                settleCommitForest(
+                    entries,
+                    undefined,
+                    undefined,
+                    undefined,
+                    createCommitErrors(),
+                )
             } catch {}
         } finally {
             if (commitEndTree) endCommit(commitEndTree, true)

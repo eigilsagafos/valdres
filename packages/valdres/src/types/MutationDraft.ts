@@ -40,6 +40,12 @@ export type MutationDraft = {
      *  group, so a lazy read notifies exactly like the direct read it stands in
      *  for. */
     lazyInitMembers: Atom<any>[] | undefined
+    /** Families whose membership a real write (`set`, `del`, bulk set) staged.
+     *  A family index that changed for any other reason changed only because a
+     *  lazy read registered a member, so its settlement carries init provenance
+     *  and must stay silent on `onChange` — like the direct read it stands in
+     *  for. */
+    writtenFamilies: Set<AtomFamily<any, [any, ...any[]]>> | undefined
     /** Overlay revision marker. Every staging operation sets it; the next
      *  overlay selector read drops `selectorCache` and clears it. */
     dirty: boolean

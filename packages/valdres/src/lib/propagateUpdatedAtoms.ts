@@ -932,6 +932,17 @@ const settleTreeStore = (
         })
         if (initGroup.familyAtoms)
             applyFamilyAdds(collector, data, initGroup, timestamp)
+        // A family OBJECT reaches this group when its index changed only because
+        // a lazy read registered a member. It still carries a freshly cloned
+        // transaction index, so shadowing child scopes must be re-linked exactly
+        // as for an ordinary update — only its REPORTING differs.
+        if (data.scopes.size > 0) {
+            for (const atom of entry.initAtoms) {
+                if (isAtomFamily(atom)) {
+                    recursivelyUpdateIndexes(data, atom)
+                }
+            }
+        }
     }
 
     // The changed family members each group contributed, read by the descent

@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { store } from "../store"
 import { atomFamily } from "../atomFamily"
 import { atom } from "../atom"
+import { selector } from "../selector"
 
 const keys = (s: any, fam: any) =>
     s
@@ -135,5 +136,40 @@ describe("scoped lazy init respects final intent", () => {
         // The tombstone landed, so the member stays deleted even though its
         // value still lives in the ancestor.
         expect(keys(scope, fam)).toStrictEqual([])
+    })
+})
+
+/** An aborted tree settles as ONE forest pass, after every store's membership is
+ *  registered — so a scope selector never sees an intermediate tree and never
+ *  runs twice for one abort. */
+describe("aborted cross-scope lazy init settles atomically", () => {
+    test("a scope family selector evaluates once, against the final tree", () => {
+        const root = store()
+        const scope = root.scope("c")
+        const fam = atomFamily<number, [string]>(() => 0)
+        const evaluations: string[] = []
+        const names = selector(get => {
+            const value = get(fam)
+                .map((a: any) => a.familyArgs[0])
+                .sort()
+                .join(",")
+            evaluations.push(value)
+            return value
+        })
+        scope.sub(names, () => {})
+        evaluations.length = 0
+
+        expect(() => {
+            root.txn((t: any) => {
+                t.get(fam("rootLazy"))
+                t.scope("c", (ct: any) => ct.get(fam("scopeLazy")))
+                throw new Error("abort")
+            })
+        }).toThrow("abort")
+
+        // Exactly one evaluation, and it already saw both members — settling
+        // store-by-store would evaluate against "rootLazy" first, then again.
+        expect(evaluations).toStrictEqual(["rootLazy,scopeLazy"])
+        expect(scope.get(names)).toBe("rootLazy,scopeLazy")
     })
 })

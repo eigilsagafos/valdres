@@ -571,3 +571,72 @@ describe("lazy family-member init repair after a half-applied commit", () => {
         expect(memberKeys(store1.get(fam))).toStrictEqual(["m"])
     })
 })
+
+/** A lazy read is not a change, so it must stay invisible to `onChange` — and
+ *  that has to hold for a listener that opted into selector entries too. The
+ *  family index a lazy init touches carries `get(family)` selectors into the
+ *  commit, so those selectors must be attributed to init provenance unless a
+ *  real write also reached them. */
+describe("lazy family-member init is invisible to onChange", () => {
+    const reportedTypes = (
+        run: (store1: any, fam: any) => void,
+        options?: { selectors: boolean },
+    ) => {
+        const store1 = store()
+        const fam = atomFamily<number, [string]>(() => 0)
+        const size = selector(get => get(fam).length)
+        store1.sub(size, () => {}) // keep the selector live
+        const seen: string[] = []
+        store1.onChange((changes: any[]) => {
+            for (const change of changes) seen.push(change.type)
+        }, options as any)
+        try {
+            run(store1, fam)
+        } catch {}
+        return seen
+    }
+
+    test("a committed lazy read reports nothing, with selectors enabled", () => {
+        const viaTxn = reportedTypes(
+            (s, fam) => s.txn(({ get }: any) => get(fam("lazy"))),
+            { selectors: true },
+        )
+        expect(viaTxn).toStrictEqual(
+            reportedTypes((s, fam) => s.get(fam("lazy")), { selectors: true }),
+        )
+        expect(viaTxn).toStrictEqual([])
+    })
+
+    test("an aborted lazy read reports nothing, with selectors enabled", () => {
+        expect(
+            reportedTypes(
+                (s, fam) =>
+                    s.txn(({ get }: any) => {
+                        get(fam("lazy"))
+                        throw new Error("abort")
+                    }),
+                { selectors: true },
+            ),
+        ).toStrictEqual([])
+    })
+
+    test("a real write in the same txn still reports its selectors", () => {
+        // The family had an actual write, so its index change is not init-only
+        // and must report exactly as a write-only transaction does.
+        const mixed = reportedTypes(
+            (s, fam) =>
+                s.txn(({ get, set }: any) => {
+                    get(fam("lazyOnly"))
+                    set(fam("written"), 7)
+                }),
+            { selectors: true },
+        )
+        expect(mixed).toStrictEqual(
+            reportedTypes(
+                (s, fam) => s.txn(({ set }: any) => set(fam("written"), 7)),
+                { selectors: true },
+            ),
+        )
+        expect(mixed.filter(t => t === "selector").length).toBeGreaterThan(0)
+    })
+})
