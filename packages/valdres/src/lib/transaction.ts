@@ -664,7 +664,8 @@ export class TransactionContext {
             // exceptional path. Register whatever the commit left unregistered,
             // best-effort, then let the original error propagate untouched.
             try {
-                root.finalizeUnregisteredLazyMembers()
+                const repairs = root.collectAbortedLazyMembers(undefined, true)
+                if (repairs) root.settleAbortedLazyMembers(repairs)
             } catch {}
             throw error
         } finally {
@@ -1129,7 +1130,9 @@ export class TransactionContext {
             let staged: Atom[] | undefined
             for (const atom of initialized) {
                 if (!isFamilyAtom(atom)) continue
-                if (this.isDeletedInWorkingIndex(atom)) continue
+                const stagedIndex = this.familyIndexFor(atom, draft.values)
+                if (stagedIndex && isAtomDeletedInFamilyIndex(atom, stagedIndex))
+                    continue
                 this.stageFamilyMembership(atom)
                 if (!staged) staged = []
                 staged.push(atom)
@@ -1196,8 +1199,18 @@ export class TransactionContext {
             for (const atom of initialized) {
                 if (!isFamilyAtom(atom)) continue
                 if (forRepair) {
-                    if (this.isRegisteredMember(atom)) continue
-                    if (this.isDeletedInCommittedIndex(atom)) continue
+                    // Skip what the commit already landed (registering again
+                    // would notify twice) and what it actually deleted.
+                    const index = this.familyIndexFor(atom, this._data.values)
+                    if (
+                        index &&
+                        (hasOwnFamilyAtom(
+                            index,
+                            atom as AtomFamilyAtom<any, any>,
+                        ) ||
+                            isAtomDeletedInFamilyIndex(atom, index))
+                    )
+                        continue
                 }
                 if (!members) members = []
                 members.push(atom)
@@ -1218,43 +1231,14 @@ export class TransactionContext {
         return settles
     }
 
-    /** True when this transaction has staged a delete of `atom` — the working
-     *  index's tombstone, which `del` always writes (unlike `draft.deletes`). */
-    private isDeletedInWorkingIndex(atom: Atom): boolean {
-        const family = (atom as AtomFamilyAtom<any, any>).family
-        const index = this._draft.values.get(family)?.__index
-        return index ? isAtomDeletedInFamilyIndex(atom, index) : false
-    }
-
-    /** True when `atom` carries a delete tombstone in this store's COMMITTED
-     *  family index — i.e. a delete of it actually landed. This is what tells
-     *  the repair pass a deletion applied. Value presence cannot: a scope's
-     *  `del` removes no ancestor value, so the deleted member still resolves
-     *  through the chain and would be resurrected. */
-    private isDeletedInCommittedIndex(atom: Atom): boolean {
-        const family = (atom as AtomFamilyAtom<any, any>).family
-        const index = this._data.values.get(family)?.__index
-        return index ? isAtomDeletedInFamilyIndex(atom, index) : false
-    }
-
-    /** True when `atom` already sits in this store's committed family index —
-     *  i.e. some part of the commit did land its membership. */
-    private isRegisteredMember(atom: Atom): boolean {
-        const family = (atom as AtomFamilyAtom<any, any>).family
-        const index = this._data.values.get(family)?.__index
-        return index
-            ? hasOwnFamilyAtom(index, atom as AtomFamilyAtom<any, any>)
-            : false
-    }
-
-    /** Best-effort repair after a commit threw partway: register the lazily-read
-     *  members whose membership the failed commit never wrote, using the same
-     *  one-boundary / one-notification settlement the abort path uses. Members
-     *  the commit DID register are skipped, so a partial failure cannot notify
-     *  the same family twice. */
-    private finalizeUnregisteredLazyMembers(): void {
-        const settles = this.collectAbortedLazyMembers(undefined, true)
-        if (settles) this.settleAbortedLazyMembers(settles)
+    /** This store's family index for `atom`, read out of `values` — the draft
+     *  (what this transaction INTENDED) or committed data (what actually
+     *  APPLIED). The tombstone in that index, not a local cleanup set nor the
+     *  presence of a value up the parent chain, is the authority on whether a
+     *  member is deleted: a scope's `del` of an INHERITED member writes only a
+     *  tombstone, and the value goes on living in the ancestor. */
+    private familyIndexFor(atom: Atom, values: StoreData["values"]) {
+        return values.get((atom as AtomFamilyAtom<any, any>).family)?.__index
     }
 
     /** Settle an aborted tree's lazily-read members with the same init-only
