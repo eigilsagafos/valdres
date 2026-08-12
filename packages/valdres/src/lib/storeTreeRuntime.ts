@@ -1,4 +1,5 @@
 import type { StoreData } from "../types/StoreData"
+import type { TransactionContext } from "./transaction"
 
 /**
  * State owned by a store TREE rather than by one store: created with the root
@@ -25,6 +26,8 @@ import type { StoreData } from "../types/StoreData"
  *                            mid-commit would drive the live tree negative)
  *   commitEndListeners       lib/onCommitEnd.ts, plus root-only teardown in
  *                            lib/disposeStoreData.ts
+ *   pendingBatch / pendingBatchCleanup
+ *                            lib/storeFromStoreData.ts
  *
  * Reads are unrestricted; every module may read `data.tree.*` freely.
  *
@@ -64,6 +67,10 @@ export type StoreTreeRuntime = {
      *  Undefined until the first listener and reset to undefined when the last
      *  one leaves, so an idle tree holds no allocation. */
     commitEndListeners: Set<() => void> | undefined
+    /** The implicit microtask batch shared by the root and every scope. */
+    pendingBatch: TransactionContext | null
+    /** Root-store lifecycle cleanup for `pendingBatch`. */
+    pendingBatchCleanup: (() => void) | undefined
 }
 
 /** Build the tree sidecar for a new ROOT store. Scopes never call this — they
@@ -76,4 +83,6 @@ export const createStoreTreeRuntime = (root: StoreData): StoreTreeRuntime => ({
     commitDepth: 0,
     commitDidWork: false,
     commitEndListeners: undefined,
+    pendingBatch: null,
+    pendingBatchCleanup: undefined,
 })

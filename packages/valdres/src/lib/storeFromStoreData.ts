@@ -44,6 +44,16 @@ import {
     TransactionContext,
 } from "./transaction"
 
+const transactionForStore = (
+    transaction: TransactionContext,
+    data: StoreData,
+): TransactionContext =>
+    data.parent
+        ? transactionForStore(transaction, data.parent).scopedTransaction(
+              data.id,
+          )
+        : transaction
+
 const SelectorProvidedToSetError = `Invalid state object passed to set().
 You provided a \`selector\`.
 Only \`atom\` cam be set.
@@ -84,41 +94,67 @@ const createStoreRuntime = (data: StoreData): Store => {
     // the same microtask are batched into a single transaction whose commit
     // (selector re-evaluation + subscriber notification) is deferred.
     let _pendingTxn: TransactionContext | null = null
-    let _pendingTxnCleanup: (() => void) | undefined
+
+    const currentPendingTransaction = () => {
+        // @ts-expect-error Store batching and transactions are one internal unit.
+        if (_pendingTxn?._state) _pendingTxn = null
+        return _pendingTxn
+    }
+
+    const borrowPendingTransaction = (rootTxn: TransactionContext) => {
+        const linkedTxn = transactionForStore(rootTxn, data)
+        _pendingTxn = linkedTxn
+        // currentPendingTransaction() drops a closed pointer on the next call,
+        // but an idle scope may never be called again. Release after the owner's
+        // already-queued commit so the closed transaction tree is not retained.
+        queueMicrotask(() => {
+            if (_pendingTxn === linkedTxn) _pendingTxn = null
+        })
+        return linkedTxn
+    }
+
+    const flushBatchTransaction = () => {
+        const pendingTxn = data.tree.pendingBatch
+        if (pendingTxn) {
+            const tree = data.tree
+            tree.pendingBatch = null
+            if (tree.pendingBatchCleanup) {
+                untrackStoreCleanup(tree.root, tree.pendingBatchCleanup)
+                tree.pendingBatchCleanup = undefined
+            }
+            commitTransaction(pendingTxn)
+        }
+    }
 
     const flushPendingTxn = () => {
         if (data.pendingOrphanCleanup === DISPOSED_STORE_PENDING) {
             _pendingTxn = null
-            if (_pendingTxnCleanup) {
-                untrackStoreCleanup(data, _pendingTxnCleanup)
-                _pendingTxnCleanup = undefined
-            }
             return
         }
-        if (_pendingTxn) {
-            const txnToCommit = _pendingTxn
-            _pendingTxn = null
-            if (_pendingTxnCleanup) {
-                untrackStoreCleanup(data, _pendingTxnCleanup)
-                _pendingTxnCleanup = undefined
-            }
-            commitTransaction(txnToCommit)
-        }
+        flushBatchTransaction()
     }
 
-    const ensurePendingTxn = () => {
-        if (!_pendingTxn) {
-            _pendingTxn = new TransactionContext(data)
+    const ensureBatchTransaction = () => {
+        let pendingTxn = data.tree.pendingBatch
+        if (!pendingTxn) {
+            const tree = data.tree
+            pendingTxn = new TransactionContext(tree.root)
+            // @ts-expect-error Store batching and transactions are one internal unit.
+            pendingTxn._implicitBatch = true
             const cancelPendingTxn = () => {
-                const pendingTxn = _pendingTxn
-                _pendingTxn = null
-                _pendingTxnCleanup = undefined
+                const pendingTxn = tree.pendingBatch
+                tree.pendingBatch = null
+                tree.pendingBatchCleanup = undefined
                 if (pendingTxn) cancelTransaction(pendingTxn)
             }
-            _pendingTxnCleanup = trackStoreCleanup(data, cancelPendingTxn)
+            tree.pendingBatch = pendingTxn
+            tree.pendingBatchCleanup = trackStoreCleanup(
+                tree.root,
+                cancelPendingTxn,
+            )
             queueMicrotask(() => {
                 try {
-                    flushPendingTxn()
+                    flushBatchTransaction()
                 } catch (error) {
                     // Re-throw asynchronously so the error is observable
                     // (e.g. via window.onerror / process uncaughtException)
@@ -129,8 +165,12 @@ const createStoreRuntime = (data: StoreData): Store => {
                 }
             })
         }
-        return _pendingTxn
+        return pendingTxn
     }
+
+    const ensurePendingTxn = () =>
+        currentPendingTransaction() ??
+        borrowPendingTransaction(ensureBatchTransaction())
 
     // --- get ---
     const getDefault: GetValue = (state: State) => {
@@ -153,9 +193,7 @@ const createStoreRuntime = (data: StoreData): Store => {
                 // validation. Return at the store boundary so steady cold
                 // reads avoid opening a liveness pass only to collect no seeds.
                 const coldCache = data.coldSelectorCaches.get(state)
-                if (
-                    coldCache?.validatedAt === data.tree.revision
-                ) {
+                if (coldCache?.validatedAt === data.tree.revision) {
                     return data.values.get(state)
                 }
             } else {
@@ -242,9 +280,10 @@ const createStoreRuntime = (data: StoreData): Store => {
             }
             flushPendingOrphanCleanup(data)
         }
-        if (_pendingTxn) {
-            return _pendingTxn.get(state)
-        }
+        const pendingTxn = currentPendingTransaction()
+        if (pendingTxn) return pendingTxn.get(state)
+        const batchTxn = data.tree.pendingBatch
+        if (batchTxn) return borrowPendingTransaction(batchTxn).get(state)
         return getDefault(state)
     }
 

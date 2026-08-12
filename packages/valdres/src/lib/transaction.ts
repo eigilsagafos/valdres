@@ -164,6 +164,10 @@ export class TransactionContext {
     private readonly _data: StoreData
     private _parentTransaction: TransactionContext | undefined
     private readonly _name: string | undefined
+    /** Implicit microtask batches share a tree for reads/commit, but disposing
+     *  one scope cancels only that scope's branch. Explicit transactions remain
+     *  atomic across their entire user-authored tree. */
+    private _implicitBatch = false
     private _state: TransactionState = TRANSACTION_OPEN
     private _scopedTransactions: undefined | Map<string, TransactionContext>
     // Everything this level stages before commit lives in one write overlay —
@@ -263,7 +267,15 @@ export class TransactionContext {
      *  This is the `StoreCancellable` contract — store lifecycle code cancels
      *  through the symbol and never names this class. */
     [CANCEL_ON_STORE_DISPOSE](): void {
-        const root = this._parentTransaction ? this.rootTransaction() : this
+        const parent = this._parentTransaction
+        const root = parent ? this.rootTransaction() : this
+        if (root._implicitBatch && parent) {
+            const scopedTransactions = parent._scopedTransactions!
+            scopedTransactions.delete(this._data.id)
+            if (!scopedTransactions.size) parent._scopedTransactions = undefined
+            this.cancelTree(TRANSACTION_DISPOSED)
+            return
+        }
         root.cancelTree(TRANSACTION_DISPOSED)
     }
 
@@ -1141,7 +1153,10 @@ export class TransactionContext {
             for (const atom of initialized) {
                 if (!isFamilyAtom(atom)) continue
                 const stagedIndex = this.familyIndexFor(atom, draft.values)
-                if (stagedIndex && isAtomDeletedInFamilyIndex(atom, stagedIndex))
+                if (
+                    stagedIndex &&
+                    isAtomDeletedInFamilyIndex(atom, stagedIndex)
+                )
                     continue
                 this.stageFamilyMembership(atom)
                 if (!staged) staged = []
@@ -1361,14 +1376,14 @@ export class TransactionContext {
         }
     }
 
-    private scopedTransaction(scopeId: string) {
-        if (!this._scopedTransactions) this._scopedTransactions = new Map()
-        if (!this._scopedTransactions.has(scopeId)) {
+    scopedTransaction(scopeId: string) {
+        let transaction = this._scopedTransactions?.get(scopeId)
+        if (!transaction) {
             const scopedData = this._data.scopes.get(scopeId)!
-            const scopedTransaction = new TransactionContext(scopedData, this)
-            this._scopedTransactions.set(scopeId, scopedTransaction)
+            transaction = new TransactionContext(scopedData, this)
+            ;(this._scopedTransactions ??= new Map()).set(scopeId, transaction)
         }
-        return this._scopedTransactions.get(scopeId)!
+        return transaction
     }
 
     private cloneFamilyIntoTxn(
