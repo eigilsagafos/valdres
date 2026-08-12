@@ -54,6 +54,11 @@ entrypoint instead of reaching through the public Store object.
 | `enumerable`       | `boolean` | Retain values enumerably so `store.snapshot()` can list current state                                                                                  |
 | `schemaValidation` | `boolean` | Validate atom/selector values against their `schema` (off by default). Inherited by scoped stores. See [Schema Validation](/guides/schema-validation). |
 
+With `batchUpdates`, a store and its scopes share pending writes for the tick.
+Synchronous descendant reads see pending ancestor values while scope-local
+shadows remain isolated from ancestors; subscriber notifications stay deferred
+until the batch commits.
+
 ```ts
 // Enable schema validation (e.g. outside production)
 const devStore = store({ schemaValidation: import.meta.env.DEV })

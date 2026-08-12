@@ -40,9 +40,21 @@ import { subscribe } from "./subscribe"
 import {
     cancelTransaction,
     commitTransaction,
+    isTransactionOpen,
     transaction,
+    transactionForStore,
     TransactionContext,
 } from "./transaction"
+
+const PENDING_TRANSACTION = Symbol("pendingTransaction")
+const ENSURE_PENDING_TRANSACTION = Symbol("ensurePendingTransaction")
+type StoreRuntime = Store & {
+    [PENDING_TRANSACTION]: () => TransactionContext | null
+    [ENSURE_PENDING_TRANSACTION]: () => TransactionContext
+}
+type RuntimeStoreData = StoreData & { [STORE_RUNTIME]?: StoreRuntime }
+
+const runtimeOf = (data: StoreData) => (data as RuntimeStoreData)[STORE_RUNTIME]
 
 const SelectorProvidedToSetError = `Invalid state object passed to set().
 You provided a \`selector\`.
@@ -58,7 +70,7 @@ export function storeFromStoreData(
 ): ScopedStore
 export function storeFromStoreData(data: StoreData): Store
 export function storeFromStoreData(data: StoreData, detach?: () => void) {
-    const runtimeData = data as StoreData & { [STORE_RUNTIME]?: Store }
+    const runtimeData = data as RuntimeStoreData
     let runtime = runtimeData[STORE_RUNTIME]
     if (!runtime) {
         runtime = createStoreRuntime(data)
@@ -73,7 +85,7 @@ export function storeFromStoreData(data: StoreData, detach?: () => void) {
  * implicit transaction authoritative for every handle that reaches the same
  * store data (including the internal handle mountAtom requests).
  */
-const createStoreRuntime = (data: StoreData): Store => {
+const createStoreRuntime = (data: StoreData): StoreRuntime => {
     // Public methods that already flush orphan work reuse that same hot guard
     // for terminal detection. Active stores therefore pay no second branch.
     const _initSet = new Set<Atom>()
@@ -86,7 +98,43 @@ const createStoreRuntime = (data: StoreData): Store => {
     let _pendingTxn: TransactionContext | null = null
     let _pendingTxnCleanup: (() => void) | undefined
 
+    const currentPendingTransaction = () => {
+        if (_pendingTxn && !isTransactionOpen(_pendingTxn)) {
+            _pendingTxn = null
+            if (_pendingTxnCleanup) {
+                untrackStoreCleanup(data, _pendingTxnCleanup)
+                _pendingTxnCleanup = undefined
+            }
+        }
+        return _pendingTxn
+    }
+
+    const pendingAncestorTransaction = () => {
+        let ancestor = data.parent
+        while (ancestor) {
+            const ancestorRuntime = runtimeOf(ancestor)
+            const pendingTxn = ancestorRuntime?.[PENDING_TRANSACTION]()
+            if (pendingTxn) return pendingTxn
+            ancestor = ancestor.parent
+        }
+        return null
+    }
+
+    const borrowPendingTransaction = (ancestorTxn: TransactionContext) => {
+        const linkedTxn = transactionForStore(ancestorTxn, data)
+        _pendingTxn = linkedTxn
+        // currentPendingTransaction() drops a closed pointer on the next call,
+        // but an idle scope may never be called again. Release after the owner's
+        // already-queued commit so the closed transaction tree is not retained.
+        queueMicrotask(() => {
+            if (_pendingTxn === linkedTxn) _pendingTxn = null
+        })
+        return linkedTxn
+    }
+
     const flushPendingTxn = () => {
+        const pendingTxn =
+            currentPendingTransaction() ?? pendingAncestorTransaction()
         if (data.pendingOrphanCleanup === DISPOSED_STORE_PENDING) {
             _pendingTxn = null
             if (_pendingTxnCleanup) {
@@ -95,20 +143,39 @@ const createStoreRuntime = (data: StoreData): Store => {
             }
             return
         }
-        if (_pendingTxn) {
-            const txnToCommit = _pendingTxn
-            _pendingTxn = null
+        if (pendingTxn) {
+            if (pendingTxn === _pendingTxn) _pendingTxn = null
             if (_pendingTxnCleanup) {
                 untrackStoreCleanup(data, _pendingTxnCleanup)
                 _pendingTxnCleanup = undefined
             }
-            commitTransaction(txnToCommit)
+            commitTransaction(pendingTxn)
         }
     }
 
     const ensurePendingTxn = () => {
+        currentPendingTransaction()
         if (!_pendingTxn) {
-            _pendingTxn = new TransactionContext(data)
+            let ancestorTxn = pendingAncestorTransaction()
+            // Every implicit scope transaction is rooted at the store-tree
+            // root, even when the first write originates in a child. That makes
+            // a later ancestor write part of the same overlay instead of
+            // creating two unrelated per-runtime transactions.
+            if (!ancestorTxn && data.parent) {
+                const rootRuntime = runtimeOf(data.tree.root)!
+                ancestorTxn = rootRuntime[ENSURE_PENDING_TRANSACTION]()
+            }
+            if (ancestorTxn) {
+                return borrowPendingTransaction(ancestorTxn)
+            }
+
+            _pendingTxn = new TransactionContext(
+                data,
+                undefined,
+                undefined,
+                undefined,
+                true,
+            )
             const cancelPendingTxn = () => {
                 const pendingTxn = _pendingTxn
                 _pendingTxn = null
@@ -153,9 +220,7 @@ const createStoreRuntime = (data: StoreData): Store => {
                 // validation. Return at the store boundary so steady cold
                 // reads avoid opening a liveness pass only to collect no seeds.
                 const coldCache = data.coldSelectorCaches.get(state)
-                if (
-                    coldCache?.validatedAt === data.tree.revision
-                ) {
+                if (coldCache?.validatedAt === data.tree.revision) {
                     return data.values.get(state)
                 }
             } else {
@@ -243,7 +308,15 @@ const createStoreRuntime = (data: StoreData): Store => {
             flushPendingOrphanCleanup(data)
         }
         if (_pendingTxn) {
-            return _pendingTxn.get(state)
+            const pendingTxn = _pendingTxn
+            if (isTransactionOpen(pendingTxn)) return pendingTxn.get(state)
+            currentPendingTransaction()
+        }
+        if (data.parent) {
+            const ancestorTxn = pendingAncestorTransaction()
+            if (ancestorTxn) {
+                return borrowPendingTransaction(ancestorTxn).get(state)
+            }
         }
         return getDefault(state)
     }
@@ -439,7 +512,7 @@ const createStoreRuntime = (data: StoreData): Store => {
         }
     }) as ScopeFn
 
-    const runtime = {
+    const runtime: StoreRuntime = {
         id: data.id,
         get,
         set,
@@ -453,6 +526,8 @@ const createStoreRuntime = (data: StoreData): Store => {
         onCommitEnd: storeOnCommitEnd,
         snapshot: storeSnapshot,
         dispose,
+        [PENDING_TRANSACTION]: currentPendingTransaction,
+        [ENSURE_PENDING_TRANSACTION]: ensurePendingTxn,
     }
     // The facade carries no internal state at all: lifecycle resources live in
     // StoreData.resources, so nothing here ever changes shape.
