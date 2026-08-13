@@ -1,3 +1,4 @@
+import type { AtomFamily } from "./AtomFamily"
 import type { Selector } from "./Selector"
 import type { State } from "./State"
 import type { StoreChangeCallback } from "./StoreChangeCallback"
@@ -204,6 +205,23 @@ export type StoreData = {
      *  Set once at creation and inherited by every (nested) scope. */
     enumerable?: boolean
     scopes: Map<string, StoreData>
+    /** Families whose membership changed in this store but whose snapshot array
+     *  has not been rendered yet — `values` holds a deferred stand-in carrying
+     *  the live index (see lib/atomFamilyIndex.ts). `undefined` until the first
+     *  family membership change, so read hot paths test one field rather than
+     *  probing a collection. Every read of a family's VALUE (as opposed to its
+     *  `__index`) must go through this check; `renderDirtyFamilyIndex` is the
+     *  boundary that materializes and clears it.
+     *
+     *  WEAK, like `values`: a write must not make this store an owner of the
+     *  family. `dirtyFamilyIndexCount` tracks how many entries it holds, since a
+     *  WeakSet cannot report its own size. */
+    dirtyFamilyIndexes: WeakSet<AtomFamily<any, any>> | undefined
+    /** Entries currently in `dirtyFamilyIndexes`. Reaching 0 releases the set so
+     *  reads return to the single-field guard. A family collected while still
+     *  deferred can leave this above 0 permanently — harmless: the set retains
+     *  nothing and the only cost is one WeakSet probe per read in this store. */
+    dirtyFamilyIndexCount: number
     batchUpdates?: boolean
     schemaValidation?: boolean
     scopeValueIndex: WeakMap<WeakKey, Set<StoreData>>

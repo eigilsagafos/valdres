@@ -27,7 +27,11 @@ import { stateNameSuffix } from "./stateNameForError"
 import { isStoreDisposed } from "./storeLifecycle"
 import { validateResolvedValue } from "./validateResolvedValue"
 import { validateSchema } from "./validateSchema"
-import { createAtomFamilyIndex, renderAtomFamilyIndex } from "./atomFamilyIndex"
+import {
+    createAtomFamilyIndex,
+    renderAtomFamilyIndex,
+    renderDirtyFamilyIndex,
+} from "./atomFamilyIndex"
 
 const admitDeletedMemberDefaultTransition = <Value>(
     state: AtomFamilyAtom<Value, any>,
@@ -302,6 +306,15 @@ export function getState<
     circularDependencySet?: WeakSet<Selector>,
 ) {
     if (data.values.has(state)) {
+        // Observation boundary for a family whose membership changed since the
+        // last read: the write left the snapshot unrendered, so materialize it
+        // here. One field load until this store touches a family's membership.
+        if (
+            data.dirtyFamilyIndexes !== undefined &&
+            data.dirtyFamilyIndexes.has(state as AtomFamily<any, any>)
+        ) {
+            return renderDirtyFamilyIndex(state as AtomFamily<any, any>, data)
+        }
         // Atom-only stores retain the original has/get fast path. Once this
         // store has materialized any cold selector, only a state with matching
         // metadata needs validation; active selectors have no such entry.

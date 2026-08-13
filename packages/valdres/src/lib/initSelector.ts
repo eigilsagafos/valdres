@@ -2,6 +2,7 @@ import { SchemaValidationError } from "../errors/SchemaValidationError"
 import { SelectorCircularDependencyError } from "../errors/SelectorCircularDependencyError"
 import { SelectorEvaluationError } from "../errors/SelectorEvaluationError"
 import type { Atom } from "../types/Atom"
+import type { AtomFamily } from "../types/AtomFamily"
 import type { GetValue } from "../types/GetValue"
 import type { Selector } from "../types/Selector"
 import type { State } from "../types/State"
@@ -12,6 +13,7 @@ import {
     SuspendAndWaitForResolveError,
     cleanUpRejectedPromise,
 } from "./asyncDependencyTracking"
+import { renderDirtyFamilyIndex } from "./atomFamilyIndex"
 import { getState } from "./getState"
 import {
     type EvaluationOutcome,
@@ -338,7 +340,19 @@ const evaluateLiveOnlySelector = <V>(
 
                 let value
                 if (data.values.has(state)) {
-                    value = data.values.get(state)
+                    // A selector reading a family observes its membership here,
+                    // so a snapshot deferred by a membership write materializes
+                    // before the selector body sees it.
+                    value =
+                        data.dirtyFamilyIndexes !== undefined &&
+                        data.dirtyFamilyIndexes.has(
+                            state as AtomFamily<any, any>,
+                        )
+                            ? renderDirtyFamilyIndex(
+                                  state as AtomFamily<any, any>,
+                                  data,
+                              )
+                            : data.values.get(state)
                 } else if (isSelector(state)) {
                     const wasMaterialized = data.stateDependencies.has(state)
                     value = initFreshActiveSelector(
@@ -524,8 +538,18 @@ export const evaluateSelector = <V>(
                 } else if (liveOnlyDependencyRead) {
                     if (data.values.has(state)) {
                         // A live-only store has no forward-only cache to
-                        // validate. Preserve the original WeakMap has/get path.
-                        value = data.values.get(state)
+                        // validate. Preserve the original WeakMap has/get path,
+                        // plus the family observation boundary (see above).
+                        value =
+                            data.dirtyFamilyIndexes !== undefined &&
+                            data.dirtyFamilyIndexes.has(
+                                state as AtomFamily<any, any>,
+                            )
+                                ? renderDirtyFamilyIndex(
+                                      state as AtomFamily<any, any>,
+                                      data,
+                                  )
+                                : data.values.get(state)
                     } else if (isSelector(state)) {
                         // Every selector discovered below a live selector is
                         // itself live. Initialize it directly in graph mode.

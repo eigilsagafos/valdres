@@ -1,5 +1,6 @@
 import { getStoreData } from "./getStoreData"
 import { describe, expect, test } from "bun:test"
+import { observeFamilyIndex } from "./atomFamilyIndex"
 import { atomFamily } from "../atomFamily"
 import { selector } from "../selector"
 import { store } from "../store"
@@ -104,15 +105,21 @@ const runSeed = (seed: number): string | null => {
             // branch/value indexes, liveness counts, resource ledgers — asserted
             // alongside the membership/selector oracle after every committed op.
             const violations = checkStoreInvariants(stores[i])
-            if (violations.length > 0) return `L${i} invariant: ${violations[0]}`
+            if (violations.length > 0)
+                return `L${i} invariant: ${violations[0]}`
         }
         for (let i = 0; i < L; i++) {
             const data = getStoreData(stores[i])
             const ks = keysAt(i)
             if (data.values.has(fam)) {
+                // Read through the family observation boundary — a membership
+                // write leaves the snapshot deferred, and this is exactly what
+                // it materializes into for any reader. Still non-forcing: a
+                // store without its own index is skipped by the `has` above.
+                const members = observeFamilyIndex(fam, data)!
                 const expected = new Set(ks.map(key))
-                if (!setEq(memberKeys(data.values.get(fam)), expected))
-                    return `L${i} membership: got {${[...memberKeys(data.values.get(fam))].sort()}} expected {${[...expected].sort()}}`
+                if (!setEq(memberKeys(members), expected))
+                    return `L${i} membership: got {${[...memberKeys(members)].sort()}} expected {${[...expected].sort()}}`
             }
             if (data.values.has(sumSel)) {
                 const exp = ks.reduce((a, k) => (a + (value[k] | 0)) | 0, 0)

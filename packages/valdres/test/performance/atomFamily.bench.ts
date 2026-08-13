@@ -100,6 +100,79 @@ describe("atomFamily membership maintenance", () => {
             },
         )
     })
+
+    // Membership CHANGES outside a transaction: each `set`/`del` is its own
+    // commit, so each one settles the family's membership on its own. The
+    // transaction case above amortizes that over one commit; these two are the
+    // event-handler shape — a loop of direct writes — and guard that the cost
+    // of a write stays independent of how many members the family already has.
+    //
+    // Ordered AFTER the transaction case deliberately: both churn a store and
+    // 500 member atoms per iteration, and the resulting heap pressure inflated
+    // the next case in the same process by ~20% when they ran first. Appending
+    // keeps the existing series measuring what it measured before.
+    test("create 500 members with direct sets", async () => {
+        const memberCount = 500
+
+        const vFamily = valdresAtomFamily<number, [number]>(0)
+        const vMembers = Array.from({ length: memberCount }, (_, i) =>
+            vFamily(i),
+        )
+        const jFamily = jotaiAtomFamily((id: number) => jotaiAtom(id))
+        const jMembers = Array.from({ length: memberCount }, (_, i) =>
+            jFamily(i),
+        )
+
+        // A fresh store per iteration is what makes every member NEW: the
+        // member atoms themselves are created once, outside the measurement.
+        await compare(
+            "atomFamily: direct set 500 new members",
+            () => {
+                const store = valdresCreateStore()
+                for (const member of vMembers) store.set(member, 1)
+            },
+            () => {
+                const store = jotaiCreateStore()
+                for (const member of jMembers) store.set(member, 1)
+            },
+        )
+    })
+
+    test("create then delete 500 members with direct writes", async () => {
+        const memberCount = 500
+
+        const vFamily = valdresAtomFamily<number, [number]>(0)
+        const vMembers = Array.from({ length: memberCount }, (_, i) =>
+            vFamily(i),
+        )
+        const jFamily = jotaiAtomFamily((id: number) => jotaiAtom(id))
+
+        // Deletion needs a populated store, and mitata has no per-iteration
+        // setup hook, so the whole measured region is the create+delete CYCLE:
+        // every operation inside it is the direct membership path under test,
+        // with no bulk-populate step to subtract. Read alongside the create-only
+        // case above to attribute a movement to one half or the other.
+        //
+        // Jotai has no per-store family membership; the nearest analogue is
+        // building the members and dropping them from the family cache. Its
+        // members are therefore created INSIDE the loop, so each iteration has
+        // something for `remove` to actually remove — with them hoisted, only
+        // the first iteration would do real work. It's a reference line for the
+        // perf page, not an equivalent operation.
+        await compare(
+            "atomFamily: direct create + delete 500 members",
+            () => {
+                const store = valdresCreateStore()
+                for (const member of vMembers) store.set(member, 1)
+                for (const member of vMembers) store.del(member)
+            },
+            () => {
+                const store = jotaiCreateStore()
+                for (let i = 0; i < memberCount; i++) store.set(jFamily(i), 1)
+                for (let i = 0; i < memberCount; i++) jFamily.remove(i)
+            },
+        )
+    })
 })
 
 describe("selectorFamily", () => {

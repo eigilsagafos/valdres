@@ -468,6 +468,32 @@ describe("memory leaks (atom families)", () => {
         expect(await detector.isLeaking()).toBe(false)
     })
 
+    test("family whose membership was never observed is collected", async () => {
+        // A live store must not retain a family just because something wrote a
+        // member into it: `data.values` is keyed weakly, and the deferred
+        // membership snapshot a direct write leaves behind (lib/atomFamilyIndex)
+        // must not add a strong reference. Nothing ever reads the family here,
+        // so the deferral bookkeeping is the only thing that could hold it —
+        // and through the index's `created` map, every member with it.
+        const store1 = store()
+        const { familyDetector, memberDetector } = (() => {
+            let family: any = atomFamily<object, [string]>(() => ({}))
+            let member: any = family("never-read")
+            const familyDetector = new LeakDetector(family)
+            const memberDetector = new LeakDetector(member)
+            store1.set(member, { value: 1 })
+            member = undefined
+            family = undefined
+            return { familyDetector, memberDetector }
+        })()
+
+        expect(await familyDetector.isLeaking()).toBe(false)
+        expect(await memberDetector.isLeaking()).toBe(false)
+        // The store outlives the assertions — otherwise this would pass on the
+        // store being collected rather than on the registry being weak.
+        expect(store1.id).toBeString()
+    })
+
     test("store.del() preserves the shared family identity", () => {
         const store1 = store()
         const family = atomFamily<object, [number]>(() => ({}))

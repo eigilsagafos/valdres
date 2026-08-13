@@ -1,4 +1,5 @@
 import type { Atom } from "../types/Atom"
+import type { AtomFamily } from "../types/AtomFamily"
 import type { AtomFamilyAtom } from "../types/AtomFamilyAtom"
 import type { GetValue } from "../types/GetValue"
 import type { SetAtom } from "../types/SetAtom"
@@ -8,6 +9,7 @@ import type { StoreData } from "../types/StoreData"
 import type { TransactionFn } from "../types/TransactionFn"
 import { isAtom } from "../utils/isAtom"
 import { isSelector } from "../utils/isSelector"
+import { renderDirtyFamilyIndex } from "./atomFamilyIndex"
 import { cacheController } from "./cacheController"
 import { unsetValue } from "./unsetValue"
 import { createStoreData } from "./createStoreData"
@@ -205,6 +207,17 @@ const createStoreRuntime = (data: StoreData): Store => {
         // selector cache-hit path. The eager scalar keeps atom-only stores from
         // touching the lazy cache WeakMap or checking the state object's shape.
         if (data.values.has(state)) {
+            // Observation boundary for a deferred family membership snapshot,
+            // mirroring getState's — this fast path returns without reaching it.
+            if (
+                data.dirtyFamilyIndexes !== undefined &&
+                data.dirtyFamilyIndexes.has(state as AtomFamily<any, any>)
+            ) {
+                return renderDirtyFamilyIndex(
+                    state as AtomFamily<any, any>,
+                    data,
+                ) as any
+            }
             const hasColdCache =
                 data.coldSelectorCachesEnabled &&
                 data.coldSelectorCaches.has(state)

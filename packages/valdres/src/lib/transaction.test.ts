@@ -1,5 +1,6 @@
 import { getStoreData } from "./getStoreData"
 import { describe, expect, mock, test } from "bun:test"
+import { observeFamilyIndex } from "./atomFamilyIndex"
 import { atom } from "../atom"
 import { atomFamily } from "../atomFamily"
 import { selector } from "../selector"
@@ -608,10 +609,11 @@ describe("transaction", () => {
         const user4atom = user(4)
         rootStore.set(user1atom, { id: 1, name: "Foo" })
         rootStore.set(user2atom, { id: 2, name: "Bar" })
-        expect(getStoreData(rootStore).values.get(user)).toStrictEqual([
-            user1atom,
-            user2atom,
-        ])
+        // Through the observation boundary, not `values.get`: a direct write
+        // defers the membership snapshot the same way a transaction does.
+        expect(observeFamilyIndex(user, getStoreData(rootStore))).toStrictEqual(
+            [user1atom, user2atom],
+        )
         expect(rootStore.get(user)).toStrictEqual([user1atom, user2atom])
         rootStore.txn(({ set, get, del }) => {
             expect(get(user)).toStrictEqual([user1atom, user2atom])
@@ -629,10 +631,9 @@ describe("transaction", () => {
             del(user3atom)
             expect(get(user)).toStrictEqual([user2atom, user4atom])
         })
-        expect(getStoreData(rootStore).values.get(user)).toStrictEqual([
-            user2atom,
-            user4atom,
-        ])
+        expect(observeFamilyIndex(user, getStoreData(rootStore))).toStrictEqual(
+            [user2atom, user4atom],
+        )
         expect(getStoreData(rootStore).values.has(user1atom)).toBe(false)
         expect(getStoreData(rootStore).values.has(user2atom)).toBe(true)
         expect(getStoreData(rootStore).values.has(user3atom)).toBe(false)
