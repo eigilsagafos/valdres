@@ -173,7 +173,7 @@ describe("trace oracle · disposal & cancellation", () => {
 
     test("the process-wide globalStore cannot be disposed", () => {
         expect(() => globalStore.dispose()).toThrow(
-            "globalStore is process-wide and cannot be disposed",
+            "valdres: globalStore is process-wide and cannot be disposed",
         )
     })
 })

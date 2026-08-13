@@ -11,7 +11,7 @@ describe("shared StoreData runtime", () => {
     test("scope consumers are leases over shared operations", () => {
         const root = store()
         expect(() => root.scope("missing", scope => scope.id)).toThrow(
-            "Scope missing does not exist",
+            "valdres: scope 'missing' does not exist",
         )
 
         const first = root.scope("shared")
@@ -32,7 +32,7 @@ describe("shared StoreData runtime", () => {
         expect(scopedData.scopeConsumers?.size).toBe(0)
         expect(getStoreData(root).scopes.has("shared")).toBe(false)
         expect(() => root.scope("shared", scope => scope.id)).toThrow(
-            "Scope shared does not exist",
+            "valdres: scope 'shared' does not exist",
         )
         expect(() => second.get(atom(0))).toThrow(/disposed/i)
     })

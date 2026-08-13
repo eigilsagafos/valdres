@@ -22,7 +22,7 @@ const assertFreezable = (obj: object) => {
     // host objects use a distinct brand and may hide mutable internal slots.
     if (tag === "Promise" || tag === "Error" || tag === "Object") return
     throw new TypeError(
-        `deepFreeze cannot make ${tag} values immutable. Store an immutable plain-object/array representation, or define the containing atom or selector with { mutable: true }.`,
+        `valdres: deepFreeze cannot make ${tag} values immutable. Store an immutable plain-object/array representation, or define the containing atom or selector with { mutable: true }.`,
     )
 }
 

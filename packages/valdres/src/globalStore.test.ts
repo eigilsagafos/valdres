@@ -5,7 +5,7 @@ import { store } from "./store"
 
 test("globalStore cannot be disposed", () => {
     expect(() => globalStore.dispose()).toThrow(
-        "globalStore is process-wide and cannot be disposed",
+        "valdres: globalStore is process-wide and cannot be disposed",
     )
 
     const sharedAtom = atom(0, { global: true })

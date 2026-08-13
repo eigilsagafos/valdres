@@ -12,7 +12,7 @@ describe("selector", () => {
             selector(async get => {
                 return get(atom(1))
             })
-        }).toThrow(/async/i)
+        }).toThrow("valdres: selector() does not accept async functions")
     })
 
     test("allows sync function that returns a Promise", () => {
@@ -341,9 +341,11 @@ describe("selector", () => {
     test("Trying to set a selector returns an error", async () => {
         const store1 = store()
         const atom1 = atom(1)
-        const selector1 = selector(get => get(atom1) + get(atom1))
+        const selector1 = selector(get => get(atom1) + get(atom1), {
+            name: "invalid-set-selector",
+        })
         expect(() => store1.set(selector1, 5)).toThrowError(
-            /You provided a `selector`./,
+            "valdres: invalid state object 'invalid-set-selector' passed to set()",
         )
     })
 

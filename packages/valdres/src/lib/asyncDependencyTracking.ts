@@ -6,6 +6,7 @@ export class SuspendAndWaitForResolveError extends Error {
     promise: Promise<any>
     constructor(promise: Promise<any>) {
         super()
+        this.name = "SuspendAndWaitForResolveError"
         this.promise = promise
     }
 }

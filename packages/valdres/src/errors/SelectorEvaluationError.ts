@@ -5,6 +5,7 @@ export class SelectorEvaluationError extends Error {
     selectors: any[]
     constructor(cause?: any) {
         super()
+        this.name = "SelectorEvaluationError"
         this.cause = cause
         this.selectors = []
     }
@@ -14,8 +15,10 @@ export class SelectorEvaluationError extends Error {
     }
 
     public get message(): string {
-        const firstSelectorName = this.selectors[0].name ?? "Anonymous Selector"
-        return `Selector eval crashed in '${firstSelectorName}'
-${generateSelectorTrace(this.selectors)}`
+        const firstSelectorName =
+            this.selectors[0]?.name ?? "Anonymous Selector"
+        const summary = `Selector eval crashed in '${firstSelectorName}'`
+        const trace = generateSelectorTrace(this.selectors)
+        return trace ? `${summary}\n${trace}` : summary
     }
 }

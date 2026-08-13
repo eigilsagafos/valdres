@@ -2,6 +2,7 @@ import type { AtomFamily } from "../types/AtomFamily"
 import type { AtomFamilyAtom } from "../types/AtomFamilyAtom"
 import type { StoreData } from "../types/StoreData"
 import { noteStateValueChanged } from "./stateRevisions"
+import { stateNameSuffix } from "./stateNameForError"
 import { trackScopeValue } from "./trackScopeValue"
 
 // @ts-ignore
@@ -128,7 +129,10 @@ export const initFamilyIndex = (
     let parentIndex
     if (data.parent) {
         parentIndex = initFamilyIndex(family, data.parent)
-        if (!parentIndex) throw new Error("Parent index is missing")
+        if (!parentIndex)
+            throw new Error(
+                `valdres: parent index is missing for atomFamily${stateNameSuffix(family)} in store '${data.id}'`,
+            )
     }
     const index = createAtomFamilyIndex(parentIndex)
     data.values.set(family, renderAtomFamilyIndex(index))
@@ -145,7 +149,9 @@ const findFamilyIndex = (family: AtomFamily<any, any>, data: StoreData) => {
     }
     const value = data.values.get(family)
     if (!value?.__index) {
-        throw new Error("Family index is missing")
+        throw new Error(
+            `valdres: family index is missing for atomFamily${stateNameSuffix(family)} in store '${data.id}'`,
+        )
     }
 
     return value.__index
@@ -223,7 +229,10 @@ export const addFamilyAtomsToSet = (
 ): boolean => {
     if (familyAtoms.size === 0) return false
     const index = findFamilyIndex(family, data)
-    if (!index) throw new Error("index not found")
+    if (!index)
+        throw new Error(
+            `valdres: family index not found for atomFamily${stateNameSuffix(family)} in store '${data.id}'`,
+        )
     let membershipChanged = false
     for (const atom of familyAtoms) {
         // A value-only write must leave the membership index completely alone.

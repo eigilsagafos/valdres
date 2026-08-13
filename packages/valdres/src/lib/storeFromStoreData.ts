@@ -43,6 +43,7 @@ import {
     transaction,
     TransactionContext,
 } from "./transaction"
+import { stateNameSuffix } from "./stateNameForError"
 
 const transactionForStore = (
     transaction: TransactionContext,
@@ -54,12 +55,16 @@ const transactionForStore = (
           )
         : transaction
 
-const SelectorProvidedToSetError = `Invalid state object passed to set().
+const selectorProvidedToSetError = (
+    state: unknown,
+) => `valdres: invalid state object${stateNameSuffix(state)} passed to set().
 You provided a \`selector\`.
-Only \`atom\` cam be set.
+Only an \`atom\` can be set.
 `
-const InvalidStateSetError = `Invalid state object passed to set().
-Only \`atom\` can be set.
+const invalidStateSetError = (
+    state: unknown,
+) => `valdres: invalid state object${stateNameSuffix(state)} passed to set().
+Only an \`atom\` can be set.
 `
 
 export function storeFromStoreData(
@@ -299,8 +304,9 @@ const createStoreRuntime = (data: StoreData): Store => {
             flushPendingOrphanCleanup(data)
         }
         if (isAtom(state)) return setAtom(state, value, data)
-        if (isSelector(state)) throw new Error(SelectorProvidedToSetError)
-        throw new Error(InvalidStateSetError)
+        if (isSelector(state))
+            throw new Error(selectorProvidedToSetError(state))
+        throw new Error(invalidStateSetError(state))
     }
 
     // @ts-ignore @ts-todo
@@ -314,8 +320,9 @@ const createStoreRuntime = (data: StoreData): Store => {
         if (isAtom(state)) {
             return ensurePendingTxn().set(state, value)
         }
-        if (isSelector(state)) throw new Error(SelectorProvidedToSetError)
-        throw new Error(InvalidStateSetError)
+        if (isSelector(state))
+            throw new Error(selectorProvidedToSetError(state))
+        throw new Error(invalidStateSetError(state))
     }
 
     const set = data.batchUpdates ? setBatched : setDefault
@@ -440,7 +447,7 @@ const createStoreRuntime = (data: StoreData): Store => {
         if (callback) {
             const scopedStoreData = data.scopes.get(scopeId)
             if (scopedStoreData === undefined) {
-                throw new Error(`Scope ${scopeId} does not exist`)
+                throw new Error(`valdres: scope '${scopeId}' does not exist`)
             }
             const scopedStore = storeFromStoreData(scopedStoreData)
             return callback(scopedStore)

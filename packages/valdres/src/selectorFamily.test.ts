@@ -7,15 +7,17 @@ import { selector } from "./selector"
 
 describe("selectorFamily", () => {
     test("the family object is a factory, not enumerable state", () => {
-        const family = selectorFamily((id: string) => () => id)
+        const family = selectorFamily((id: string) => () => id, {
+            name: "invalid-state-selector-family",
+        })
         family("one")
         const rootStore = store()
 
         expect(() => rootStore.get(family as any)).toThrow(
-            "Invalid object passed to get",
+            "valdres: invalid object 'invalid-state-selector-family' passed to get()",
         )
         expect(() => rootStore.sub(family as any, () => {})).toThrow(
-            "Invalid object passed to sub",
+            "valdres: invalid object 'invalid-state-selector-family' passed to sub()",
         )
     })
 
@@ -23,7 +25,7 @@ describe("selectorFamily", () => {
         const family = selectorFamily((id: number) => async () => id)
 
         expect(() => family(1)).toThrow(
-            "selectorFamily() does not accept async functions",
+            "valdres: selectorFamily() does not accept async functions",
         )
     })
 

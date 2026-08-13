@@ -12,7 +12,8 @@ export const createGlobalAtomFamily = <
     defaultValue: AtomFamilyDefaultValue<Value, Args>,
     options: AtomFamilyOptions<Value, Args>,
 ) => {
-    if (!options.name) throw new Error(`Missing name for global atomFamily`)
+    if (!options.name)
+        throw new Error("valdres: missing name for global atomFamily")
     if (atomFamilies.has(options.name)) {
         return atomFamilies.get(options.name) as AtomFamily<Value, Args>
     }

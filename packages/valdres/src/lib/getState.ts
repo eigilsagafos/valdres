@@ -23,6 +23,7 @@ import { settleCommit } from "./propagateUpdatedAtoms"
 import { resolveAtomDefaultValue } from "./resolveAtomDefaultValue"
 import { setValueInData } from "./setValueInData"
 import { getStateRevision, noteStateValueChanged } from "./stateRevisions"
+import { stateNameSuffix } from "./stateNameForError"
 import { isStoreDisposed } from "./storeLifecycle"
 import { validateResolvedValue } from "./validateResolvedValue"
 import { validateSchema } from "./validateSchema"
@@ -401,7 +402,9 @@ export function getState<
         initializedAtomsSet.add(state)
         return data.values.get(state)
     }
-    throw new Error("Invalid object passed to get")
+    throw new Error(
+        `valdres: invalid object${stateNameSuffix(state)} passed to get()`,
+    )
 }
 
 const findClosestStoreWithAtomInitialized = (
