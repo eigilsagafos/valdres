@@ -23,5 +23,5 @@ export type Selector<
     mutable?: boolean
     family?: SelectorFamily<Value, FamilyArgs>
     familyArgs?: FamilyArgs
-    onMount?: AtomOnMount
+    onMount?: AtomOnMount<Value>
 }

@@ -21,7 +21,7 @@ export type AtomOptions<Value = unknown> = {
     /** Mount lifecycle hook — see `AtomOnMount`. Must be set before the atom is
      *  first used in a store; assigning it after the atom is already in use is
      *  unsupported. */
-    onMount?: AtomOnMount
+    onMount?: AtomOnMount<Value>
     maxAge?: Reactive<number>
     /** Opt out of development/test deep-freezing. Required when values contain
      *  mutable built-ins or host objects (for example Map, Set, Date,

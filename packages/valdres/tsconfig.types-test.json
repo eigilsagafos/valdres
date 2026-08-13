@@ -1,10 +1,10 @@
 {
-    "//": "Typecheck lane for the schema type-assertion tests. The package's main tsconfig only includes src/index.ts (it emits .d.ts), so type-level tests would otherwise never be checked. Run via `bun run typecheck:types`.",
+    "//": "Typecheck lane for the type-assertion tests (`*.types.test.ts` anywhere under src/ — internal contracts in src/lib, plus the public type surface in src/publicTypeSurface.types.test.ts, which imports from the package root so a dropped export fails to compile). The package's main tsconfig only includes src/index.ts (it emits .d.ts), so type-level tests would otherwise never be checked. Run via `bun run typecheck:types`.",
     "//noUnusedLocals": "Type-assertion tests declare `type _X = Expect<Equal<…>>` aliases whose sole purpose is to exist; the declaration IS the assertion, so they are never referenced. The root enables noUnusedLocals — opt this lane out so the type tests aren't forced to reference their own scaffolding.",
     "extends": "../../tsconfig.json",
     "compilerOptions": {
         "noEmit": true,
         "noUnusedLocals": false
     },
-    "include": ["src/lib/*.types.test.ts"]
+    "include": ["src/**/*.types.test.ts"]
 }

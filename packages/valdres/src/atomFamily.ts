@@ -2,16 +2,8 @@ import { createAtomFamily } from "./lib/createAtomFamily"
 import { createGlobalAtomFamily } from "./lib/createGlobalAtomFamily"
 import type { AtomFamily } from "./types/AtomFamily"
 import type { AtomFamilyDefaultValue } from "./types/AtomFamilyDefaultValue"
-import type { AtomFamilyAtom } from "./types/AtomFamilyAtom"
 import type { AtomFamilyOptions } from "./types/AtomFamilyOptions"
-import type { GlobalAtom } from "./types/GlobalAtom"
-
-type GlobalAtomFamily<
-    Value,
-    Args extends [any, ...any[]] = [any, ...any[]],
-> = Omit<AtomFamily<Value, Args>, never> & {
-    (...args: Args): AtomFamilyAtom<Value, Args> & GlobalAtom<Value>
-}
+import type { GlobalAtomFamily } from "./types/GlobalAtomFamily"
 
 export function atomFamily<
     Value extends any,
