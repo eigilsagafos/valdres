@@ -25,6 +25,20 @@ Selector options apply to every family member. In particular, use
 `{ mutable: true }` when results contain mutable built-ins or host objects; see
 the selector [immutability contract](/valdres/selector#parameters).
 
+## Member identity and lifetime
+
+A member's identity is stable while live: repeated calls with the same key
+return the same selector while a caller or live store strongly retains it, such
+as through a subscription, dependency edge, or an enumerable store's cold
+cache. A default non-enumerable store uses weak keys for cold entries, so a cold
+read there does not by itself keep a member alive. The family cache is weak;
+after a member becomes unreachable, garbage collection may reclaim it and a
+later call can create a fresh identity.
+
+`release(...args)` explicitly evicts the cached lookup early. Existing callers
+and stores may continue using the released selector, while a later family call
+can create a new member for those arguments.
+
 Each member getter also receives `SelectorGetOptions`. Its `signal` is aborted
 when that evaluation is superseded or disposed, and `storeId` identifies the
 store evaluating the member. Existing getters that only accept `get` remain
