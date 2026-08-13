@@ -1,7 +1,4 @@
-import {
-    familyKey,
-    type FamilyKey as EncodedFamilyKey,
-} from "./lib/familyKey"
+import { familyKey, type EncodedFamilyKey } from "./lib/familyKey"
 import { WeakSelectorCache } from "./lib/WeakSelectorCache"
 import { selector } from "./selector"
 import type { AtomFamily } from "./types/AtomFamily"

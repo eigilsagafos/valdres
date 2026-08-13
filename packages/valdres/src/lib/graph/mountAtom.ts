@@ -1,5 +1,6 @@
 import type { State } from "../../types/State"
 import type { StoreData } from "../../types/StoreData"
+import type { InternalState } from "../../types/InternalState"
 import { isSelector } from "../../utils/isSelector"
 import { IS_PROD } from "../IS_PROD"
 import { addStateDependent } from "./inheritedDependencyBranches"
@@ -49,7 +50,7 @@ const hasDirectSubscribers = (state: State, data: StoreData): boolean => {
 
 /** Does `state` itself carry a mount hook? */
 const hasOwnMount = (state: State): boolean =>
-    !!(state.__valdresOnMount || state.onMount)
+    !!((state as InternalState).__valdresOnMount || state.onMount)
 
 /**
  * "Mount-relevant" = a walk DOWN from `state` could find something to mount:
@@ -622,7 +623,7 @@ export const reconcileLivenessAfterChurn = (
  * the onMount signature), then falls back to `onMount`.
  */
 export const mountAtom = (state: State, data: StoreData) => {
-    const onMountFn = state.__valdresOnMount ?? state.onMount
+    const onMountFn = (state as InternalState).__valdresOnMount ?? state.onMount
     if (!onMountFn || data.mounts.has(state)) return
     // Mark as mounted BEFORE calling onMountFn to prevent reentrant mounts
     // (onMount may call setSelf which triggers propagation and dep changes)
@@ -718,7 +719,7 @@ export const mountTransitiveDeps = (
         const current = stack.pop()!
         if (seen.has(current)) continue
         seen.add(current)
-        if (current.__valdresOnMount || current.onMount) {
+        if ((current as InternalState).__valdresOnMount || current.onMount) {
             if (current !== state) sawMountDescendant = true
             try {
                 mountAtom(current, data)
@@ -777,7 +778,7 @@ export const unmountOrphanedDeps = (
         const current = stack.pop()!
         if (seen.has(current)) continue
         seen.add(current)
-        if (current.__valdresOnMount || current.onMount) {
+        if ((current as InternalState).__valdresOnMount || current.onMount) {
             if (current !== state) sawMountDescendant = true
             if (data.mounts.has(current) && !isLive(current, data)) {
                 try {

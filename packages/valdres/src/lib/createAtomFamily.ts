@@ -1,11 +1,11 @@
-import type { AtomFamily } from "../types/AtomFamily"
 import type { AtomFamilyAtom } from "../types/AtomFamilyAtom"
 import type { AtomFamilyDefaultValue } from "../types/AtomFamilyDefaultValue"
 import type { AtomFamilyOptions } from "../types/AtomFamilyOptions"
 import type { AtomOptions } from "../types/AtomOptions"
+import type { InternalAtomFamily } from "../types/InternalAtomFamily"
 import { isSelectorFamily } from "../utils/isSelectorFamily"
 import { equal } from "./equal"
-import { familyKey, type FamilyKey } from "./familyKey"
+import { familyKey, type EncodedFamilyKey } from "./familyKey"
 import { globalAtom } from "./globalAtom"
 import { registerName } from "./registerName"
 import { WeakValueMap } from "./WeakValueMap"
@@ -21,7 +21,10 @@ export const createAtomFamily = <
     defaultValue: AtomFamilyDefaultValue<Value, Args>,
     options?: AtomFamilyOptions<Value, Args>,
 ) => {
-    const map = new WeakValueMap<FamilyKey, AtomFamilyAtom<Value, Args>>()
+    const map = new WeakValueMap<
+        EncodedFamilyKey,
+        AtomFamilyAtom<Value, Args>
+    >()
     // String arguments need canonical encoded keys in the family map, but the
     // raw-string side cache preserves the allocation-free atom-family hit path.
     // Values are weak here too, so this does not extend member lifetime or
@@ -44,8 +47,8 @@ export const createAtomFamily = <
     // miss, so the per-call hot path (cache hit) never pays for any of this.
     const build = (
         args: any[],
-        key: FamilyKey,
-        displayedKey: FamilyKey = key,
+        key: EncodedFamilyKey,
+        displayedKey: EncodedFamilyKey = key,
     ) => {
         // Resolve default value — inlined to avoid intermediate closures
         let dv: any
@@ -175,7 +178,7 @@ export const createAtomFamily = <
         // materializing a member.
         schema: memberOptions?.schema,
         schemaValidation: memberOptions?.schemaValidation,
-    }) as AtomFamily<Value, Args>
+    }) as InternalAtomFamily<Value, Args>
     // The FAMILY registers under its name; member atoms never do (they are
     // addressed as `family(...args)`). Global families can't double-register:
     // createGlobalAtomFamily returns its cached instance before re-creating.

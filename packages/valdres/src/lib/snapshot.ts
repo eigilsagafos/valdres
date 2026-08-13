@@ -1,4 +1,5 @@
 import type { SnapshotEntry } from "../types/SnapshotEntry"
+import type { InternalState } from "../types/InternalState"
 import type { StoreData } from "../types/StoreData"
 import { isAtomFamily } from "../utils/isAtomFamily"
 import { isSelector } from "../utils/isSelector"
@@ -21,7 +22,7 @@ const collect = (
 ): void => {
     // Only reached for enumerable stores, where `values` is a Map (iterable).
     for (const [state, value] of data.values as Map<WeakKey, unknown>) {
-        if ((state as { __valdresInternal?: boolean }).__valdresInternal) continue
+        if ((state as InternalState).__valdresInternal) continue
         if (isAtomFamily(state) || isSelectorFamily(state)) continue
         out.push({
             type: isSelector(state) ? "selector" : "atom",

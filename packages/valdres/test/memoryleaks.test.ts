@@ -8,6 +8,7 @@ import { atomFamily } from "../src/atomFamily"
 import { selectorFamily } from "../src/selectorFamily"
 import { familyKey } from "../src/lib/familyKey"
 import { index } from "../src/indexConstructor"
+import type { InternalAtomFamily } from "../src/types/InternalAtomFamily"
 
 // All leak tests that check if a value is collected use an IIFE to ensure
 // the store goes fully out of scope before asserting. When bun runs many
@@ -445,9 +446,13 @@ describe("memory leaks (atom families)", () => {
         const detector = new LeakDetector(familyAtom)
         familyAtom = undefined
         expect(await detector.isLeaking()).toBe(false)
-        expect(family.__valdresAtomFamilyMap.has(familyKey(["bob"]))).toBe(
-            false,
-        )
+        const internalFamily = family as InternalAtomFamily<
+            { name: string },
+            [string]
+        >
+        expect(
+            internalFamily.__valdresAtomFamilyMap.has(familyKey(["bob"])),
+        ).toBe(false)
     })
 
     test("family atom value is collected after unsubscribe", async () => {
@@ -466,12 +471,13 @@ describe("memory leaks (atom families)", () => {
     test("store.del() preserves the shared family identity", () => {
         const store1 = store()
         const family = atomFamily<object, [number]>(() => ({}))
+        const internalFamily = family as InternalAtomFamily<object, [number]>
         const member = family(1)
         store1.set(member, { value: 1 })
-        expect(family.__valdresAtomFamilyMap.has(1)).toBe(true)
+        expect(internalFamily.__valdresAtomFamilyMap.has(1)).toBe(true)
         store1.del(member)
         expect(family(1)).toBe(member)
-        expect(family.__valdresAtomFamilyMap.has(1)).toBe(true)
+        expect(internalFamily.__valdresAtomFamilyMap.has(1)).toBe(true)
     })
 })
 

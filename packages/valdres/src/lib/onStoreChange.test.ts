@@ -3,6 +3,8 @@ import { store } from "../store"
 import { atom } from "../atom"
 import { atomFamily } from "../atomFamily"
 import { selector } from "../selector"
+import type { InternalAtom } from "../types/InternalAtom"
+import type { InternalState } from "../types/InternalState"
 import type { StoreChange } from "../types/StoreChange"
 import { wait } from "../../test/utils/wait"
 
@@ -248,11 +250,15 @@ describe("store.onChange", () => {
         })
 
         // The cacheMeta atom updates on every tick but must never surface.
-        expect(changes.some(c => c.state === (atom1 as any).__cacheMeta)).toBe(
-            false,
-        )
         expect(
-            changes.some(c => (c.state as any).__valdresInternal === true),
+            changes.some(
+                c => c.state === (atom1 as InternalAtom<number>).__cacheMeta,
+            ),
+        ).toBe(false)
+        expect(
+            changes.some(
+                c => (c.state as InternalState).__valdresInternal === true,
+            ),
         ).toBe(false)
 
         unsubAtom()
@@ -263,8 +269,8 @@ describe("store.onChange", () => {
         const store1 = store()
         // Internal atoms (e.g. cacheMeta) propagate to subscribers but carry
         // __valdresInternal; onChange must skip them.
-        const internalAtom = atom(0)
-        ;(internalAtom as any).__valdresInternal = true
+        const internalAtom = atom(0) as InternalAtom<number>
+        internalAtom.__valdresInternal = true
         const cb = mock()
         const unsub = store1.onChange(cb)
 

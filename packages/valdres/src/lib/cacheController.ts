@@ -1,5 +1,6 @@
 import type { Atom, CacheMeta } from "../types/Atom"
 import type { CommitForestEntry } from "../types/CommitForestSettleFn"
+import type { InternalAtom } from "../types/InternalAtom"
 import type { InternalGlobalAtom } from "../types/InternalGlobalAtom"
 import type { State } from "../types/State"
 import type { StoreData } from "../types/StoreData"
@@ -117,6 +118,7 @@ const retain = (
     subscribeReactive: SubscribeReactive,
 ): void => {
     if (state.maxAge === undefined) return
+    const internalState = state as InternalAtom<any>
     const globalState = isGlobalAtom(state) ? state : undefined
     const existing = globalState?.cacheController
 
@@ -135,7 +137,7 @@ const retain = (
                 }
             }
         })
-        const metaAtom = (state.__cacheMeta ??= {
+        const metaAtom = (internalState.__cacheMeta ??= {
             equal,
             defaultValue: null,
             __valdresInternal: true,
@@ -175,7 +177,7 @@ const retain = (
             ? resolveReactive(state.staleIfError, data)
             : Infinity
 
-    const metaAtom = (state.__cacheMeta ??= {
+    const metaAtom = (internalState.__cacheMeta ??= {
         equal,
         defaultValue: null,
         __valdresInternal: true,

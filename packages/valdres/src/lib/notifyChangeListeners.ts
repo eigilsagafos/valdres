@@ -1,5 +1,6 @@
 import type { Atom } from "../types/Atom"
 import type { AtomFamilyAtom } from "../types/AtomFamilyAtom"
+import type { InternalState } from "../types/InternalState"
 import type { Selector } from "../types/Selector"
 import type { AtomChange, StoreChange } from "../types/StoreChange"
 import type { StoreChangeMeta } from "../types/StoreChangeMeta"
@@ -219,7 +220,8 @@ const buildChangeGroup = (
     let seen: Set<unknown> | undefined
     if (changedAtoms) {
         for (const atom of changedAtoms) {
-            if (atom.__valdresInternal || isAtomFamily(atom)) continue
+            if ((atom as InternalState).__valdresInternal || isAtomFamily(atom))
+                continue
             if (seen?.has(atom)) continue
             ;(seen ??= new Set()).add(atom)
             changes.push({
@@ -233,15 +235,15 @@ const buildChangeGroup = (
     }
     if (deletedAtoms) {
         for (const atom of deletedAtoms) {
-            if (atom.__valdresInternal || isAtomFamily(atom)) continue
+            if ((atom as InternalState).__valdresInternal || isAtomFamily(atom))
+                continue
             changes.push({ type: "atom", kind: "delete", state: atom, scope })
         }
     }
     if (changedSelectors) {
         for (const selector of changedSelectors) {
             if (
-                (selector as { __valdresInternal?: boolean })
-                    .__valdresInternal ||
+                (selector as InternalState).__valdresInternal ||
                 isSelectorFamily(selector)
             )
                 continue

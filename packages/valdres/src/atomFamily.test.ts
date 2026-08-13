@@ -4,6 +4,7 @@ import { atomFamily } from "./atomFamily"
 import { selectorFamily } from "./selectorFamily"
 import { wait } from "../test/utils/wait"
 import { selector } from "./selector"
+import type { InternalAtomFamily } from "./types/InternalAtomFamily"
 
 describe("atomFamily", () => {
     test("the same atom is returned when calling atomFamily", () => {
@@ -468,8 +469,12 @@ describe("atomFamily", () => {
         expect(todosAtomFamily("1")).toBe(todo1)
         expect(todosAtomFamily("2")).toBe(todo2)
         expect(todosAtomFamily("3")).toBe(todo3)
+        const internalTodosAtomFamily = todosAtomFamily as InternalAtomFamily<
+            { id: string; completed: boolean; name: string },
+            [string]
+        >
         expect(
-            todosAtomFamily.__valdresAtomFamilyMap
+            internalTodosAtomFamily.__valdresAtomFamilyMap
                 .values()
                 .map(atom => atom.familyArgs[0])
                 .toArray(),
