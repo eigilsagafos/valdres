@@ -2,7 +2,7 @@ import { equal } from "./lib/equal"
 import { familyKey, type EncodedFamilyKey } from "./lib/familyKey"
 import { nativeAsyncSelectorError } from "./lib/nativeAsyncSelectorError"
 import type { GetValue } from "./types/GetValue"
-import type { Selector } from "./types/Selector"
+import type { Selector, SelectorGetOptions } from "./types/Selector"
 import type { SelectorFamily } from "./types/SelectorFamily"
 import type { SelectorFamilyOptions } from "./types/SelectorFamilyOptions"
 import type { SelectorOptions } from "./types/SelectorOptions"
@@ -12,7 +12,9 @@ export const selectorFamily = <
     Value extends any,
     Args extends [any, ...any[]] = [any, ...any[]],
 >(
-    callback: (...args: Args) => (get: GetValue) => Value | Promise<Value>,
+    callback: (
+        ...args: Args
+    ) => (get: GetValue, options: SelectorGetOptions) => Value | Promise<Value>,
     options?: SelectorFamilyOptions<Value, Args>,
 ): SelectorFamily<Value, Args> => {
     const map = new Map<EncodedFamilyKey, Selector<Value, Args>>()

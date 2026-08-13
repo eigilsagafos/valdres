@@ -6,6 +6,7 @@ import type { GetValue } from "../types/GetValue"
 import type { MutationDraft } from "../types/MutationDraft"
 import type { State } from "../types/State"
 import type { SetAtomValue } from "../types/SetAtomValue"
+import type { SetAtom } from "../types/SetAtom"
 import type { StoreData } from "../types/StoreData"
 import type { StoreChangeSource } from "../types/StoreChangeSource"
 import type { TransactionFn } from "../types/TransactionFn"
@@ -386,7 +387,7 @@ export class TransactionContext {
         }
     }
 
-    set = <V>(atom: Atom<V>, value: SetAtomValue<V>): V => {
+    set = (<V>(atom: Atom<V>, value: SetAtomValue<V>): V | Promise<V> => {
         this.assertOpen("write to")
         if (!isAtom(atom))
             throw new Error(
@@ -399,6 +400,7 @@ export class TransactionContext {
         } else {
             resolved = value
         }
+        if (isPromiseLike(resolved)) resolved = Promise.resolve(resolved)
 
         // Staging-time freeze + validation (see normalizeStagedValue): a schema
         // failure throws inside the user's callback, so commit never runs and
@@ -422,8 +424,8 @@ export class TransactionContext {
             this.noteFamilyWrite(atom.family)
             this.stageFamilyMembership(atom)
         }
-        return resolved as V
-    }
+        return resolved as V | Promise<V>
+    }) as SetAtom
 
     /** Stage a family member's membership into this level's working index —
      *  the family-index half of a `set`, shared with the commit-time

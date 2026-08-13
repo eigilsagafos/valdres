@@ -87,11 +87,13 @@ describe("async writes", () => {
         const store1 = store()
         const valueAtom = atom(1)
         const pending = Promise.resolve(2)
+        let returned!: Promise<number>
 
         store1.txn(txn => {
             // Transaction writes support the same Promise-like values as set().
-            txn.set(valueAtom, pending)
+            returned = txn.set(valueAtom, pending)
         })
+        expect(returned).toBe(pending)
         expect(store1.get(valueAtom)).toBe(pending)
 
         await pending
@@ -103,10 +105,15 @@ describe("async writes", () => {
     test("transactional async updater settles its returned promise", async () => {
         const store1 = store()
         const valueAtom = atom(1)
+        let returned!: Promise<number>
 
         store1.txn(txn => {
-            txn.set(valueAtom, current => Promise.resolve(current + 1))
+            returned = txn.set(valueAtom, current =>
+                Promise.resolve(current + 1),
+            )
         })
+        expect(returned).toBeInstanceOf(Promise)
+        expect(await returned).toBe(2)
         await flushMicrotasks()
 
         expect(store1.get(valueAtom)).toBe(2)
@@ -124,10 +131,13 @@ describe("async writes", () => {
                 ) as any
             },
         }
+        let returned!: Promise<number>
 
         store1.txn(txn => {
-            txn.set(valueAtom, thenable)
+            returned = txn.set(valueAtom, thenable)
         })
+        expect(returned).toBeInstanceOf(Promise)
+        expect(returned).not.toBe(thenable)
         await flushMicrotasks()
 
         expect(adoptions).toBe(1)

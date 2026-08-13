@@ -7,7 +7,7 @@ description: Create a collection of atoms keyed by a parameter
 
 <div className="not-prose mb-8 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50 p-4">
   <div className="text-xs font-medium text-zinc-400 dark:text-zinc-500 mb-2 uppercase tracking-wider">Signature</div>
-  <code className="text-sm font-mono text-accent-500">atomFamily&lt;K, T&gt;(defaultFactory?: (key: K) =&gt; T): AtomFamily&lt;K, T&gt;</code>
+  <code className="text-sm font-mono text-accent-500">atomFamily&lt;K, T&gt;(defaultFactory?: (key: K) =&gt; T, options?: AtomFamilyOptions): AtomFamily&lt;K, T&gt;</code>
   <div className="mt-3 text-xs text-zinc-500 dark:text-zinc-400">
     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-zinc-200 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 font-medium mr-2">valdres</span>
     Create a keyed collection of atoms
@@ -42,6 +42,25 @@ const userAtom = atomFamily(id => ({
 // The default is generated when first accessed
 store.get(userAtom("user-1")) // { id: "user-1", name: "", email: "" }
 ```
+
+## Global families
+
+Set `global: true` to share each member's value across stores. A global family
+must have a stable `name`; omitting it is a type error and remains a runtime
+error for untyped JavaScript.
+
+```ts
+const featureFlagAtom = atomFamily((key: string) => false, {
+    global: true,
+    name: "app/feature-flags",
+})
+```
+
+The `global` flag determines whether members expose global atom capabilities, so
+TypeScript must know it as a literal. An options variable typed only as
+`AtomFamilyOptions` has `global?: boolean` and cannot select an overload. Narrow
+the flag first or use a literal options object as above. Plain global atoms do
+not require a name, and selectors do not have a `global` option.
 
 ## Key identity
 
