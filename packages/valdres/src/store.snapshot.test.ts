@@ -4,6 +4,7 @@ import { atom } from "./atom"
 import { atomFamily } from "./atomFamily"
 import { selector } from "./selector"
 import { cacheMeta } from "./cacheMeta"
+import type { InternalState } from "./types/InternalState"
 import type { SnapshotEntry } from "./types/SnapshotEntry"
 
 describe("store.snapshot (enumerable mode)", () => {
@@ -79,10 +80,7 @@ describe("store.snapshot (enumerable mode)", () => {
 
         // No entry whose state is __valdresInternal
         for (const entry of snap) {
-            expect(
-                (entry.state as { __valdresInternal?: boolean })
-                    .__valdresInternal,
-            ).toBeFalsy()
+            expect((entry.state as InternalState).__valdresInternal).toBeFalsy()
         }
         // Neither the family container nor the (live) cacheMeta selector is listed
         s.sub(cm, () => {}) // make the cacheMeta selector live so it caches a value

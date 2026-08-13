@@ -1,11 +1,12 @@
 import { equal } from "./lib/equal"
-import { familyKey, type FamilyKey } from "./lib/familyKey"
+import { familyKey, type EncodedFamilyKey } from "./lib/familyKey"
 import { nativeAsyncSelectorError } from "./lib/nativeAsyncSelectorError"
 import type { GetValue } from "./types/GetValue"
 import type { Selector } from "./types/Selector"
 import type { SelectorFamily } from "./types/SelectorFamily"
 import type { SelectorFamilyOptions } from "./types/SelectorFamilyOptions"
 import type { SelectorOptions } from "./types/SelectorOptions"
+import type { InternalSelectorFamily } from "./types/InternalSelectorFamily"
 
 export const selectorFamily = <
     Value extends any,
@@ -14,7 +15,7 @@ export const selectorFamily = <
     callback: (...args: Args) => (get: GetValue) => Value | Promise<Value>,
     options?: SelectorFamilyOptions<Value, Args>,
 ): SelectorFamily<Value, Args> => {
-    const map = new Map<FamilyKey, Selector<Value, Args>>()
+    const map = new Map<EncodedFamilyKey, Selector<Value, Args>>()
     const stringMap = new Map<string, Selector<Value, Args>>()
     const keyOf = options?.keyOf
     let selectorOptions: SelectorOptions<Value> | undefined
@@ -61,7 +62,7 @@ export const selectorFamily = <
             equal,
             ...selectorOptions,
             get,
-            family: selectorFamily,
+            family: internalSelectorFamily,
             familyArgs: args,
             familyArgsStringified: key,
             name: hasName
@@ -73,8 +74,12 @@ export const selectorFamily = <
         if (rawStringKey !== undefined) stringMap.set(rawStringKey, newSelector)
         return newSelector
     }
-    selectorFamily.__valdresSelectorFamilyMap = map
-    selectorFamily.release = (...args: Args) => {
+    const internalSelectorFamily = selectorFamily as InternalSelectorFamily<
+        Value,
+        Args
+    >
+    internalSelectorFamily.__valdresSelectorFamilyMap = map
+    internalSelectorFamily.release = (...args: Args) => {
         if (
             keyOf === undefined &&
             args.length === 1 &&
@@ -87,8 +92,8 @@ export const selectorFamily = <
     }
     // Exposed on the family object too (members carry them via ...options) so
     // a consumer can read a family's schema without materializing a member.
-    selectorFamily.schema = selectorOptions?.schema
-    selectorFamily.schemaValidation = selectorOptions?.schemaValidation
+    internalSelectorFamily.schema = selectorOptions?.schema
+    internalSelectorFamily.schemaValidation = selectorOptions?.schemaValidation
     // Define `name` explicitly. When named, expose the user's name. When unnamed,
     // override the intrinsic JS function name ("selectorFamily") with `undefined`
     // so an unnamed family mirrors an unnamed selector — consumers (devtools,
@@ -100,5 +105,5 @@ export const selectorFamily = <
         value: hasName ? selectorOptions!.name : undefined,
         writable: false,
     })
-    return selectorFamily
+    return internalSelectorFamily
 }

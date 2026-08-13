@@ -1,8 +1,8 @@
 import { stringifyFamilyArgs } from "./stringifyFamilyArgs"
 
-export type FamilyKey = string | number | boolean | bigint
+export type EncodedFamilyKey = string | number | boolean | bigint
 
-export const familyKey = (args: readonly unknown[]): FamilyKey => {
+export const familyKey = (args: readonly unknown[]): EncodedFamilyKey => {
     if (args.length === 1) {
         const a = args[0]
         const t = typeof a
@@ -16,7 +16,7 @@ export const familyKey = (args: readonly unknown[]): FamilyKey => {
             t === "bigint" ||
             (t === "number" && !Object.is(a, -0))
         )
-            return a as FamilyKey
+            return a as EncodedFamilyKey
     }
     return stringifyFamilyArgs(args)
 }

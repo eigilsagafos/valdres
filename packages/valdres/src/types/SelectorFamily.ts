@@ -1,4 +1,3 @@
-import type { FamilyKey } from "../lib/familyKey"
 import type { Schema } from "./Schema"
 import type { Selector } from "./Selector"
 
@@ -14,6 +13,4 @@ export type SelectorFamily<Value extends any, Args extends [any, ...any[]]> = {
     schema?: Schema<Value>
     /** Per-family `schemaValidation` override, mirrored from the options. */
     schemaValidation?: boolean
-    /** Internal strong identity cache, evicted through `release`. */
-    __valdresSelectorFamilyMap: Map<FamilyKey, Selector<Value, Args>>
 }

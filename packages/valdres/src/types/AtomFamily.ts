@@ -1,4 +1,3 @@
-import type { FamilyKey } from "../lib/familyKey"
 import type { AtomFamilyAtom } from "./AtomFamilyAtom"
 import type { EqualFunc } from "./EqualFunc"
 import type { Schema } from "./Schema"
@@ -22,11 +21,7 @@ export type AtomFamily<
     schema?: Schema<Value>
     /** Per-family `schemaValidation` override, mirrored from the options. */
     schemaValidation?: boolean
-    /** AtomFamily itself is not mountable; these are declared `never` to keep
-     *  the State union's dynamic mount-check uniform without runtime casts. */
+    /** AtomFamily itself is not mountable; `onMount` is declared `never` so the
+     *  public State union has a uniform mount-hook surface. */
     onMount?: never
-    __valdresOnMount?: never
-    /** Shared weak-value identity cache. Its Map-shaped iteration surface only
-     *  exposes members that are still strongly reachable by a caller/store. */
-    __valdresAtomFamilyMap: Map<FamilyKey, AtomFamilyAtom<Value, Args>>
 }

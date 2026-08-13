@@ -8,6 +8,7 @@ import { getNamedStateIndex } from "../lib/namedStateIndex"
 import { valdresGlobal } from "../lib/valdresGlobal"
 import { selector } from "../selector"
 import { store } from "../store"
+import type { InternalAtomFamily } from "../types/InternalAtomFamily"
 import { dehydrate } from "./dehydrate"
 
 const bigintCodec = z.codec(z.string(), z.bigint(), {
@@ -99,10 +100,15 @@ describe("dehydrate", () => {
         )
         expect(unrelatedMembers).toHaveLength(32)
 
+        const internalFam = fam as InternalAtomFamily<number, [string]>
+        const internalUnrelated = unrelated as InternalAtomFamily<
+            number,
+            [number]
+        >
         const registry = valdresGlobal().registry
         const registryIterator = registry[Symbol.iterator]
-        const familyValues = fam.__valdresAtomFamilyMap.values
-        const unrelatedValues = unrelated.__valdresAtomFamilyMap.values
+        const familyValues = internalFam.__valdresAtomFamilyMap.values
+        const unrelatedValues = internalUnrelated.__valdresAtomFamilyMap.values
         let registryScans = 0
         let familyCacheScans = 0
 
@@ -110,11 +116,11 @@ describe("dehydrate", () => {
             registryScans++
             return registryIterator.call(this)
         }
-        fam.__valdresAtomFamilyMap.values = function () {
+        internalFam.__valdresAtomFamilyMap.values = function () {
             familyCacheScans++
             return familyValues.call(this)
         }
-        unrelated.__valdresAtomFamilyMap.values = function () {
+        internalUnrelated.__valdresAtomFamilyMap.values = function () {
             familyCacheScans++
             return unrelatedValues.call(this)
         }
@@ -129,8 +135,8 @@ describe("dehydrate", () => {
             // Each method was inherited; delete the temporary own override so
             // this test leaves the shared registry/cache objects unchanged.
             delete (registry as any)[Symbol.iterator]
-            delete (fam.__valdresAtomFamilyMap as any).values
-            delete (unrelated.__valdresAtomFamilyMap as any).values
+            delete (internalFam.__valdresAtomFamilyMap as any).values
+            delete (internalUnrelated.__valdresAtomFamilyMap as any).values
         }
     })
 

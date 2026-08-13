@@ -5,6 +5,7 @@ import { selector } from "./selector"
 import { store } from "./store"
 import { withFakeClock, mockAsyncSource } from "../test/utils/fakeClock"
 import { getStoreData } from "./lib/getStoreData"
+import type { InternalAtom } from "./types/InternalAtom"
 
 describe("cacheMeta", () => {
     test("returns cache metadata for atom with maxAge", async () => {
@@ -166,7 +167,7 @@ describe("cacheMeta", () => {
             const unsubscribeMeta2 = store2.sub(cacheMeta(atom1), () => {})
             await source.resolve(1)
 
-            const metaAtom = atom1.__cacheMeta!
+            const metaAtom = (atom1 as InternalAtom<number>).__cacheMeta!
             const originalEqual = metaAtom.equal
             const firstError = new Error("metadata equality failed")
             const settlementError = new Error("metadata settlement failed")
