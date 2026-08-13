@@ -2,8 +2,13 @@
  *
  *  Both call forms take these: `store(options)` reads `id` from the bag, while
  *  `store(id, options)` takes the id from the first argument and rejects it in
- *  the bag (there would be two answers). Every option is fixed at creation and
- *  inherited by scopes — none can be toggled on a live store. */
+ *  the bag (there would be two answers).
+ *
+ *  Every option is fixed at creation — none can be toggled on a live store. The
+ *  three behavioral options (`batchUpdates`, `enumerable`, `schemaValidation`)
+ *  are additionally inherited by scopes. `id` is NOT: `store.scope(scopeId)`
+ *  names each scope with the id passed there, so a scope has its own `id` and
+ *  the root's appears only as the head of the scope id path. */
 export type StoreOptions = {
     /** Stable identity for the store, surfaced as `store.id` and as the root of
      *  the scope id path in `onChange`/`snapshot` entries. Defaults to a

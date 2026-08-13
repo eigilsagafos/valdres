@@ -31,6 +31,7 @@ import type {
     AtomDefaultValue,
     AtomFamily,
     AtomFamilyAtom,
+    AtomFamilyDefaultValue,
     AtomFamilySelector,
     AtomOnMount,
     AtomOnSet,
@@ -87,6 +88,15 @@ test("atom() overloads resolve to the exported Atom / GlobalAtom names", () => {
 })
 
 test("atomFamily() overloads resolve to AtomFamily / GlobalAtomFamily and their members", () => {
+    // atomFamily()'s first parameter is nameable too — a wrapper forwarding a
+    // default has to be able to annotate it without re-deriving the signature.
+    const lazyDefault: AtomFamilyDefaultValue<number, [string]> = key =>
+        key.length
+    const fromDefault = atomFamily<number, [string]>(lazyDefault)
+    type _FromDefault = Expect<
+        Equal<typeof fromDefault, AtomFamily<number, [string]>>
+    >
+
     const items = atomFamily<number, [string]>(0)
     const globalItems = atomFamily<number, [string]>(0, {
         name: "pts.family.global",
@@ -266,6 +276,25 @@ test("atom lifecycle hook types are nameable and receive the store and the state
     type _OnMountReturn = Expect<
         Equal<ReturnType<AtomOnMount<number>>, void | (() => void)>
     >
+
+    // Atom.onMount and Selector.onMount must stay the SAME type: Selector is
+    // structurally assignable to Atom and the engine depends on it, so giving
+    // each its own state type would break init and propagation.
+    type _AtomAndSelectorHooksMatch = Expect<
+        Equal<
+            NonNullable<Atom<number>["onMount"]>,
+            NonNullable<Selector<number>["onMount"]>
+        >
+    >
+
+    // The escape hatch for the union that results: narrow `State` at the USE
+    // site to reach fields only one side has. Parameters are contravariant, so
+    // the narrowed hook still assigns into atom()'s options.
+    const narrowed: AtomOnMount<number, Atom<number>> = (_store, state) => {
+        void state.defaultValue // atom-only field, no narrowing needed
+    }
+    const narrowlyMounted = atom(0, { onMount: narrowed })
+    type _Narrowed = Expect<Equal<typeof narrowlyMounted, Atom<number>>>
 
     let mountedIn: Store | undefined
     let mountedState: Atom<number> | Selector<number> | undefined

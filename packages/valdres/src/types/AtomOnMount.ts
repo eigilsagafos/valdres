@@ -27,8 +27,27 @@ import type { Store } from "./Store"
  * of `any`. The `Store`/`Atom`/`Selector` references here form a type-level
  * cycle back to this module, which TypeScript resolves lazily; only the
  * runtime `mountAtom` -> user-hook direction is a real dependency.
+ *
+ * `State` defaults to the `Atom | Selector` union because that is what the
+ * declaration site genuinely knows: `Atom.onMount` and `Selector.onMount` must
+ * keep the SAME type, since `Selector` is structurally assignable to `Atom`
+ * (every `Atom` field but `equal` is optional) and the engine relies on that
+ * throughout init and propagation. Giving each its own state type breaks the
+ * relationship and fails to compile in `initSelector`, `mountAtom`,
+ * `propagateUpdatedAtoms`, and `storeFromStoreData`.
+ *
+ * Narrow it at the USE site instead when a hook needs fields only one side has
+ * — `defaultValue` on an atom, `get` on a selector. The narrowed hook still
+ * assigns into `atom()`/`AtomOptions` because parameters are contravariant:
+ *
+ * ```ts
+ * const onMount: AtomOnMount<number, Atom<number>> = (store, state) => {
+ *     console.log(state.defaultValue) // atom-only field, no narrowing needed
+ * }
+ * atom(0, { onMount })
+ * ```
  */
-export type AtomOnMount<Value = any> = (
+export type AtomOnMount<Value = any, State = Atom<Value> | Selector<Value>> = (
     store: Store,
-    state: Atom<Value> | Selector<Value>,
+    state: State,
 ) => void | (() => void)
