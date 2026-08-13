@@ -10,14 +10,17 @@ export function atomFamily<
     Args extends [any, ...any[]] = [any, ...any[]],
 >(
     defaultValue: AtomFamilyDefaultValue<Value, Args> | undefined,
-    options: AtomFamilyOptions<Value, Args> & { global: true },
+    options: AtomFamilyOptions<Value, Args> & {
+        global: true
+        name: string
+    },
 ): GlobalAtomFamily<Value, Args>
 export function atomFamily<
     Value extends any,
     Args extends [any, ...any[]] = [any, ...any[]],
 >(
     defaultValue?: AtomFamilyDefaultValue<Value, Args>,
-    options?: AtomFamilyOptions<Value, Args>,
+    options?: AtomFamilyOptions<Value, Args> & { global?: false },
 ): AtomFamily<Value, Args>
 export function atomFamily<
     Value extends any,

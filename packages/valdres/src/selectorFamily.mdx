@@ -7,7 +7,7 @@ description: Create a collection of selectors keyed by a parameter
 
 <div className="not-prose mb-8 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50 p-4">
   <div className="text-xs font-medium text-zinc-400 dark:text-zinc-500 mb-2 uppercase tracking-wider">Signature</div>
-  <code className="text-sm font-mono text-accent-500">selectorFamily&lt;K, T&gt;(factory: (key: K) =&gt; (get: GetFn) =&gt; T): SelectorFamily&lt;K, T&gt;</code>
+  <code className="text-sm font-mono text-accent-500">selectorFamily&lt;K, T&gt;(factory: (key: K) =&gt; (get: GetFn, options: SelectorGetOptions) =&gt; T): SelectorFamily&lt;K, T&gt;</code>
   <div className="mt-3 text-xs text-zinc-500 dark:text-zinc-400">
     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-zinc-200 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 font-medium mr-2">valdres</span>
     Create a keyed collection of derived selectors
@@ -24,6 +24,21 @@ or membership to enumerate.
 Selector options apply to every family member. In particular, use
 `{ mutable: true }` when results contain mutable built-ins or host objects; see
 the selector [immutability contract](/valdres/selector#parameters).
+
+Each member getter also receives `SelectorGetOptions`. Its `signal` is aborted
+when that evaluation is superseded or disposed, and `storeId` identifies the
+store evaluating the member. Existing getters that only accept `get` remain
+valid.
+
+```ts
+const userSelector = selectorFamily(
+    userId =>
+        (get, { signal, storeId }) =>
+            fetch(`/api/users/${userId}?store=${storeId}`, { signal }).then(
+                res => res.json(),
+            ),
+)
+```
 
 ## Usage
 

@@ -84,6 +84,16 @@ myStore.set(countAtom, 42)
 myStore.set(countAtom, prev => prev + 1)
 ```
 
+Synchronous values and updater functions return the written value. Promise or
+promise-returning-updater inputs return the normalized `Promise`, which settles
+when the async write does:
+
+```ts
+const count = myStore.set(countAtom, 42) // number
+const pendingCount = myStore.set(countAtom, Promise.resolve(43)) // Promise<number>
+await pendingCount
+```
+
 ## Subscribing to changes
 
 Subscription callbacks are notifications. Read the current value from the store

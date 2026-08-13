@@ -29,7 +29,7 @@ import { setAtom } from "./setAtom"
 import { setValueInData } from "./setValueInData"
 import { snapshot } from "./snapshot"
 import { STORE_DATA_ACCESS } from "./storeDataAccessToken"
-import { STORE_RUNTIME } from "./storeRuntimeKey"
+import { BORROWED_STORE_RUNTIME, STORE_RUNTIME } from "./storeRuntimeKey"
 import {
     createStoreDisposedError,
     DISPOSED_STORE_PENDING,
@@ -80,6 +80,21 @@ export function storeFromStoreData(data: StoreData, detach?: () => void) {
         runtimeData[STORE_RUNTIME] = runtime
     }
     return detach ? createScopeLease(runtime, detach) : runtime
+}
+
+const borrowedStoreFromStoreData = (
+    data: StoreData,
+): Omit<Store, "dispose"> => {
+    const runtimeData = data as StoreData & {
+        [BORROWED_STORE_RUNTIME]?: Omit<Store, "dispose">
+    }
+    let borrowed = runtimeData[BORROWED_STORE_RUNTIME]
+    if (!borrowed) {
+        const { dispose: _, ...borrowedRuntime } = storeFromStoreData(data)
+        borrowed = borrowedRuntime
+        runtimeData[BORROWED_STORE_RUNTIME] = borrowed
+    }
+    return borrowed
 }
 
 /**
@@ -449,7 +464,7 @@ const createStoreRuntime = (data: StoreData): Store => {
             if (scopedStoreData === undefined) {
                 throw new Error(`valdres: scope '${scopeId}' does not exist`)
             }
-            const scopedStore = storeFromStoreData(scopedStoreData)
+            const scopedStore = borrowedStoreFromStoreData(scopedStoreData)
             return callback(scopedStore)
         } else {
             // Scope maps contain StoreData only, so undefined unambiguously

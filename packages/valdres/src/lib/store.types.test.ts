@@ -42,9 +42,17 @@ test("batched store set returns the staged value", () => {
 test("callback scopes expose a borrowed store without lifecycle ownership", () => {
     const root = store()
     const lease = root.scope("child")
+    const value = atom(1)
 
     root.scope("child", borrowed => {
+        // Invoke any accidentally leaked lifecycle method before checking the
+        // lease. On the old runtime facade this disposes the shared scope and
+        // the lease read below throws StoreDisposedError.
+        const leakedDispose = Reflect.get(borrowed, "dispose")
+        if (typeof leakedDispose === "function") leakedDispose()
+        expect(lease.get(value)).toBe(1)
         expect("detach" in borrowed).toBe(false)
+        expect("dispose" in borrowed).toBe(false)
         if (false) {
             // @ts-expect-error callback scopes do not own a detach lease
             borrowed.detach()
@@ -53,6 +61,7 @@ test("callback scopes expose a borrowed store without lifecycle ownership", () =
         }
     })
 
+    expect(lease.get(value)).toBe(1)
     lease.detach()
     expect(getStoreData(root).scopes.has("child")).toBe(false)
 })

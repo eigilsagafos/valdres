@@ -1,6 +1,6 @@
 import type { StoreData } from "../types/StoreData"
 import type { StoreOptions } from "../types/StoreOptions"
-import { STORE_RUNTIME } from "./storeRuntimeKey"
+import { BORROWED_STORE_RUNTIME, STORE_RUNTIME } from "./storeRuntimeKey"
 import { createStoreTreeRuntime } from "./storeTreeRuntime"
 
 let nextId = 0
@@ -89,6 +89,7 @@ export function createStoreData(
     // Reserve the private runtime slot eagerly to keep StoreData's hidden class
     // stable. storeFromStoreData fills it immediately after creation.
     data[STORE_RUNTIME] = undefined
+    data[BORROWED_STORE_RUNTIME] = undefined
     // Same reason: a store that later acquires a cleanup, mount, or open
     // transaction must not transition its shape to gain the slot.
     data.resources = undefined

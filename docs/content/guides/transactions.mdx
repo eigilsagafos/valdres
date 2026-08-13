@@ -90,6 +90,21 @@ myStore.txn(({ set }) => {
 })
 ```
 
+As with `store.set`, a synchronous transaction write returns its staged value,
+while a Promise or promise-returning updater returns a real `Promise`. The
+transaction callback itself must remain synchronous—capture the returned Promise
+if work outside the transaction needs to await settlement.
+
+```ts
+let settlement: Promise<number>
+
+myStore.txn(({ set }) => {
+    settlement = set(countA, Promise.resolve(10))
+})
+
+await settlement!
+```
+
 ## When to use transactions
 
 **Use transactions when:**
