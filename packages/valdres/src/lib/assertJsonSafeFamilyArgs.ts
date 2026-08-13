@@ -10,12 +10,32 @@ const propertyPath = (path: string, key: string) =>
         ? `${path}.${key}`
         : `${path}[${JSON.stringify(key)}]`
 
-/** Walk one family arg, returning the first value that does not survive
- * `JSON.parse(JSON.stringify(value))` unchanged — either because JSON cannot
- * represent it at all (BigInt throws, Date/Map/Set/undefined/NaN change type)
- * or because the parsed result is a structurally different value that the
- * family key codec would encode differently (-0, null-prototype objects,
+/** Walk one family arg, returning the first value whose JSON DATA does not
+ * survive `JSON.parse(JSON.stringify(value))` unchanged — either because JSON
+ * cannot represent it at all (BigInt throws, Date/Map/Set/undefined/NaN change
+ * type) or because the parsed result is a structurally different value that
+ * the family key codec would encode differently (-0, null-prototype objects,
  * sparse holes).
+ *
+ * Data is the deliberate boundary. JSON also drops everything ABOUT a value
+ * that isn't its data — descriptor bits (`writable`, `configurable`),
+ * extensibility (frozen/sealed), and object identity, so two references to one
+ * object come back as two objects. A `keyOf` that reads any of those does
+ * derive a different key after hydration, but this walk cannot be the place to
+ * catch it:
+ *
+ * - Rejecting frozen/sealed args would fire on ordinary code. valdres's own
+ *   dev-mode `deepFreeze` freezes every value written to an atom, so the
+ *   common `store.set(family(entity), entity)` leaves a FROZEN arg behind —
+ *   this dev-only guard would throw on the dev-only freeze.
+ * - Descriptor and extensibility checks wouldn't close the hole anyway:
+ *   aliasing (`family([shared, shared])`) diverges identically and no
+ *   descriptor check sees it.
+ *
+ * So the contract is narrowed instead of chased: for a NAMED (transferable)
+ * family, `keyOf` must derive its key from the args' JSON data. That is what
+ * every real `keyOf` does — `entity => entity.id` — and it is documented on
+ * the atomFamily page.
  *
  * Containers are checked by their own keys, not just their contents: a
  * property JSON drops (symbol-keyed, non-enumerable, a non-index property on

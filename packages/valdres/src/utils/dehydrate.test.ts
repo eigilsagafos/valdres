@@ -476,6 +476,41 @@ describe("dehydrate", () => {
             }
         })
 
+        // The guard validates args' JSON DATA. Metadata JSON drops — descriptor
+        // bits, extensibility, object identity — is out of scope BY DESIGN: a
+        // keyOf reading it would diverge after hydration, but rejecting it here
+        // would fire on ordinary code (see below), and wouldn't close the class
+        // anyway (aliasing diverges identically and no descriptor check sees
+        // it). The contract is narrowed on the atomFamily page instead: a named
+        // family's keyOf must key off the args' JSON data.
+        describe("value metadata is deliberately out of scope", () => {
+            test("a frozen arg passes — valdres's own dev freeze produces them", () => {
+                const fam = atomFamily<any, [any]>(undefined, {
+                    name: "dh-json-frozen",
+                })
+                const entity = { id: "u1" }
+                const store1 = store()
+                // The everyday shape: the entity is both the key and the value,
+                // and dev-mode deepFreeze freezes the value in place.
+                store1.set(fam(entity), entity)
+                expect(Object.isFrozen(entity)).toBe(true)
+                expect(dehydrate(store1).families).toEqual([
+                    ["dh-json-frozen", [{ id: "u1" }], { id: "u1" }],
+                ])
+            })
+
+            test("aliased args pass (identity is not recoverable from JSON)", () => {
+                const shared = { id: "s" }
+                const fam = atomFamily<number, [any[]]>(0, {
+                    name: "dh-json-alias",
+                })
+                const store1 = store()
+                store1.set(fam([shared, shared]), 1)
+                const payload = dehydrate(store1)
+                expect(JSON.parse(JSON.stringify(payload))).toEqual(payload)
+            })
+        })
+
         test("string, number, boolean, null, array and plain-object args pass", () => {
             const fam = atomFamily<number, [any]>(0, { name: "dh-json-ok" })
             const store1 = store()

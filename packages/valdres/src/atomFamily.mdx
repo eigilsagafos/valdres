@@ -77,6 +77,13 @@ run through the same canonical codec.
   `dehydrate`, naming the family and the argument path. Key transferred
   families by strings and numbers (`user(id)`, `day(date.toISOString())`) —
   `keyOf` does not help here, since the raw args are what crosses the wire.
+
+  For the same reason, a named family's `keyOf` must derive its key from the
+  arguments' JSON **data** (`entity => entity.id`). JSON carries no property
+  descriptors, no frozen/sealed flag, and no object identity — two references
+  to one object arrive as two objects — so a `keyOf` reading any of those
+  returns a different key after hydration. `dehydrate` cannot detect this and
+  does not try.
 </div>
 
 The legacy `release(...args)` method is deprecated and has no effect. Family
