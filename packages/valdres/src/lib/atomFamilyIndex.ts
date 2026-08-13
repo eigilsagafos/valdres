@@ -56,6 +56,87 @@ export const renderAtomFamilyIndex = (
     return renderedSnapshot
 }
 
+/** A membership snapshot nobody has looked at yet. It stands in for the
+ *  rendered array in `data.values` and carries the live index, so every
+ *  `__index` consumer — and `values.has`, which answers "does this store own
+ *  the family" — keeps working while the copy + sort is deferred. */
+const deferredFamilyIndexValue = (
+    index: AtomFamilyIndex,
+): RenderedAtomFamilyIndex => {
+    const deferred: AtomFamilyAtom<any, any>[] = []
+    Object.defineProperty(deferred, "__index", { value: index })
+    return deferred as unknown as RenderedAtomFamilyIndex
+}
+
+/** Publish a membership change WITHOUT rendering its snapshot. The change is
+ *  visible immediately through the index; the array readers see is materialized
+ *  at the first observation boundary (`renderDirtyFamilyIndex`).
+ *
+ *  Rendering here instead would copy + sort + freeze all K members on every one
+ *  of K writes, making a loop of direct `set`/`del` calls O(K² log K) — the
+ *  transaction path has always deferred this to its commit boundary (see
+ *  `dirtyFamilyIndexes` in transaction.ts), and this is the same deferral for
+ *  the direct path. Guarded by atomFamilyIndexScaling.test.ts. */
+const publishFamilyIndex = (
+    family: AtomFamily<any, any>,
+    index: AtomFamilyIndex,
+    data: StoreData,
+) => {
+    index.rendered = null
+    index.renderedArray = null
+    data.values.set(family, deferredFamilyIndexValue(index))
+    // WEAK, like `data.values` itself: writing a member must not make the store
+    // an owner of the family. A strong registry would keep an unread family —
+    // and, through its index's `created` map, every one of its members — alive
+    // for the store's lifetime (test/memoryleaks.test.ts). The count restores
+    // the `undefined` fast path once everything deferred has been observed; a
+    // family collected while still deferred leaves it armed, which costs one
+    // WeakSet probe per read in this store and retains nothing.
+    const dirty = data.dirtyFamilyIndexes
+    if (dirty === undefined) {
+        data.dirtyFamilyIndexes = new WeakSet([family])
+        data.dirtyFamilyIndexCount = 1
+    } else if (!dirty.has(family)) {
+        dirty.add(family)
+        data.dirtyFamilyIndexCount++
+    }
+    noteStateValueChanged(family, data)
+}
+
+/** Observation boundary: materialize the membership snapshot `family` currently
+ *  defers in `data`, publish it as the family's value, and return it.
+ *
+ *  Call sites reach this only after finding `family` in `data.dirtyFamilyIndexes`
+ *  — one field load on a read hot path, `undefined` until this store changes a
+ *  family's membership. The snapshot is re-derived from whatever index the store
+ *  holds NOW, so a value another path rendered in the meantime (a transaction
+ *  commit renders its own) is returned unchanged and the stale dirty marker is
+ *  simply dropped. */
+export const renderDirtyFamilyIndex = (
+    family: AtomFamily<any, any>,
+    data: StoreData,
+): RenderedAtomFamilyIndex | undefined => {
+    data.dirtyFamilyIndexes!.delete(family)
+    if (--data.dirtyFamilyIndexCount === 0) {
+        data.dirtyFamilyIndexes = undefined
+    }
+    const deferred = data.values.get(family)
+    if (deferred === undefined) return undefined
+    const rendered = renderAtomFamilyIndex(deferred.__index)
+    if (rendered !== deferred) data.values.set(family, rendered)
+    return rendered
+}
+
+/** `renderDirtyFamilyIndex` behind its own guard, for family reads that aren't
+ *  on a hot path. */
+export const observeFamilyIndex = (
+    family: AtomFamily<any, any>,
+    data: StoreData,
+): RenderedAtomFamilyIndex | undefined =>
+    data.dirtyFamilyIndexes !== undefined && data.dirtyFamilyIndexes.has(family)
+        ? renderDirtyFamilyIndex(family, data)
+        : data.values.get(family)
+
 /** Whether this index itself owns a live member. Parent membership is
  *  deliberately ignored: a scoped write to an inherited member must still
  *  create a local ownership entry so a later parent delete does not remove the
@@ -107,12 +188,18 @@ export const deleteFamilyAtomsFromSet = (
     if (familyAtoms.size === 0) return
     const index = findFamilyIndex(family, data)
     for (const atom of familyAtoms) {
+        // Drop the creation entry rather than shadowing it with a tombstone.
+        // A render walks BOTH maps, and once deleted only the tombstone carries
+        // meaning: it masks an inherited member and stops a read of the deleted
+        // member from re-registering it. Keeping the pair would have a render
+        // insert the member and then remove it again — two entries walked per
+        // deleted member instead of one. The tombstone itself must stay, so a
+        // render remains proportional to live members PLUS everything this index
+        // has ever deleted. Matches how `del` maintains a transaction's index.
+        index.created.delete(atom)
         index.deleted.set(atom, timestamp)
     }
-    index.rendered = null
-    index.renderedArray = null
-    data.values.set(family, renderAtomFamilyIndex(index))
-    noteStateValueChanged(family, data)
+    publishFamilyIndex(family, index, data)
     recursivelyUpdateIndexes(data, family)
 }
 
@@ -135,8 +222,7 @@ export const initFamilyIndex = (
             )
     }
     const index = createAtomFamilyIndex(parentIndex)
-    data.values.set(family, renderAtomFamilyIndex(index))
-    noteStateValueChanged(family, data)
+    publishFamilyIndex(family, index, data)
     if (data.parent) {
         trackScopeValue(family, data)
     }
@@ -174,10 +260,7 @@ export const recursivelyUpdateIndexes = (
     for (const scopedData of childScopesWithFamily) {
         const index = scopedData.values.get(family).__index
         index.parentIndex = parentIndex
-        index.rendered = null
-        index.renderedArray = null
-        scopedData.values.set(family, renderAtomFamilyIndex(index))
-        noteStateValueChanged(family, scopedData)
+        publishFamilyIndex(family, index, scopedData)
         recursivelyUpdateIndexes(scopedData, family)
     }
 }
@@ -204,10 +287,7 @@ export const ensureFamilyAncestorChain = (
     const own = data.values.get(family).__index
     if (own.parentIndex !== parentIndex) {
         own.parentIndex = parentIndex
-        own.rendered = null
-        own.renderedArray = null
-        data.values.set(family, renderAtomFamilyIndex(own))
-        noteStateValueChanged(family, data)
+        publishFamilyIndex(family, own, data)
         recursivelyUpdateIndexes(data, family)
     }
 }
@@ -244,10 +324,7 @@ export const addFamilyAtomsToSet = (
         index.deleted.delete(atom)
     }
     if (!membershipChanged) return false
-    index.rendered = null
-    index.renderedArray = null
-    data.values.set(family, renderAtomFamilyIndex(index))
-    noteStateValueChanged(family, data)
+    publishFamilyIndex(family, index, data)
     recursivelyUpdateIndexes(data, family)
     return membershipChanged
 }

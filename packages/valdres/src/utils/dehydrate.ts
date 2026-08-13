@@ -1,4 +1,5 @@
 import { assertJsonSafeFamilyArgs } from "../lib/assertJsonSafeFamilyArgs"
+import { observeFamilyIndex } from "../lib/atomFamilyIndex"
 import { IS_PROD } from "../lib/IS_PROD"
 import { getStoreData } from "../lib/getStoreData"
 import { getNamedStateIndex } from "../lib/namedStateIndex"
@@ -67,7 +68,9 @@ export const dehydrate = (store: Store): DehydratedState => {
     if (namedStates === undefined) return { atoms, families }
     for (const [state, name] of namedStates) {
         if (isAtomFamily(state)) {
-            const members = data.values.get(state)
+            // Observation boundary: a membership write may have left this
+            // family's snapshot unrendered (see lib/atomFamilyIndex.ts).
+            const members = observeFamilyIndex(state, data)
             if (members === undefined) continue
             for (const member of members) {
                 const value = data.values.get(member)

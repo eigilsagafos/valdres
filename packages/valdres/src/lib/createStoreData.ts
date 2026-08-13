@@ -80,6 +80,11 @@ export function createStoreData(
     data.pendingOrphanCleanup = undefined
     data.orphanCleanupScheduled = false
     data.scopes = new Map()
+    // Same hidden-class reasoning as the liveness scratch below: reserved at
+    // construction so a store's first family membership change doesn't
+    // transition the shape the atom get/set path has its inline caches on.
+    data.dirtyFamilyIndexes = undefined
+    data.dirtyFamilyIndexCount = 0
     data.scopeValueIndex = new WeakMap()
     // Eager (not lazy) because resolvePendingDefault in setAtom walks every
     // store in the scope chain on every setAtom call. Lazy would still

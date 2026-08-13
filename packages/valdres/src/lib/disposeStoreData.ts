@@ -159,6 +159,12 @@ export const disposeStoreData = (data: StoreData): void => {
             }
         }
 
+        // Deferred family snapshots die with the store's values. The registry
+        // is weak, so this retains nothing either way — dropping it keeps a
+        // disposed store's shape consistent with a fresh one.
+        current.dirtyFamilyIndexes = undefined
+        current.dirtyFamilyIndexCount = 0
+
         resetLivenessScratch(current)
     }
 
