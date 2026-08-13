@@ -21,7 +21,7 @@ export type Atom<Value = unknown> = {
     /** Per-atom override of the store's `schemaValidation` flag (see AtomOptions). */
     schemaValidation?: boolean
     onSet?: AtomOnSet<Value>
-    onMount?: AtomOnMount
+    onMount?: AtomOnMount<Value>
     maxAge?: Reactive<number>
     /** Skip development/test deep-freezing; see AtomOptions.mutable. */
     mutable?: boolean

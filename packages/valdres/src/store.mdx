@@ -48,6 +48,10 @@ entrypoint instead of reaching through the public Store object.
 
 ## Options
 
+The options bag is exported as `StoreOptions`, so a wrapper can accept and
+forward it without re-declaring the shape. It also carries `id`, which the
+`store(options)` form reads instead of a positional first argument.
+
 | Option             | Type      | Description                                                                                                                                            |
 | ------------------ | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `batchUpdates`     | `boolean` | Batch sequential `set()` calls within a tick into one notification pass (recommended for React)                                                        |

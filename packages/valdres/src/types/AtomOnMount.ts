@@ -1,3 +1,7 @@
+import type { Atom } from "./Atom"
+import type { Selector } from "./Selector"
+import type { Store } from "./Store"
+
 /**
  * Mount hook signature.
  *
@@ -16,9 +20,15 @@
  * mount hook, and that cache is populated as dependency edges form, so a hook
  * attached after those edges already exist may never be discovered.
  *
- * The args are typed loosely (`any`) to avoid a circular type import between
- * `Atom`/`Selector` and `Store`. In practice the `mountAtom` runtime always
- * passes a fully-typed `Store` and `Atom`/`Selector` reference.
+ * Both parameters are always passed by `mountAtom`. They are declared required
+ * rather than optional because a hook that ignores them — the common
+ * `onMount: () => bootstrap(thisAtom)` shape — stays assignable either way,
+ * while required parameters give the hooks that DO use them real types instead
+ * of `any`. The `Store`/`Atom`/`Selector` references here form a type-level
+ * cycle back to this module, which TypeScript resolves lazily; only the
+ * runtime `mountAtom` -> user-hook direction is a real dependency.
  */
-// biome-ignore lint/suspicious/noExplicitAny: see jsdoc above
-export type AtomOnMount = (store?: any, state?: any) => void | (() => void)
+export type AtomOnMount<Value = any> = (
+    store: Store,
+    state: Atom<Value> | Selector<Value>,
+) => void | (() => void)

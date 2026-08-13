@@ -1,4 +1,5 @@
 import type { StoreData } from "../types/StoreData"
+import type { StoreOptions } from "../types/StoreOptions"
 import { STORE_RUNTIME } from "./storeRuntimeKey"
 import { createStoreTreeRuntime } from "./storeTreeRuntime"
 
@@ -54,17 +55,9 @@ Object.defineProperties(lazyProto, {
     latestEvalContext: makeLazyGetter("latestEvalContext"),
 })
 
-export type CreateStoreDataOptions = {
-    batchUpdates?: boolean
-    /** Retain values enumerably (a `Map`, not a `WeakMap`) so `store.snapshot()`
-     *  can list the store's current state. Off by default; see `Store.snapshot`.
-     *  Scopes inherit it from their parent. */
-    enumerable?: boolean
-    /** Validate atom/selector values against their `schema` (if any) on init,
-     *  set, and selector evaluation. Off by default — opt in per store for
-     *  development-time safety. Scopes inherit it from their parent. */
-    schemaValidation?: boolean
-}
+/** The public `StoreOptions` minus `id`, which `createStoreData` takes as its
+ *  own parameter. Documented on `StoreOptions`. */
+export type CreateStoreDataOptions = Omit<StoreOptions, "id">
 
 export function createStoreData(
     id?: string,
