@@ -17,6 +17,7 @@ import {
     createStoreDisposedError,
     DISPOSED_STORE_PENDING,
 } from "./storeLifecycle"
+import { stateNameSuffix } from "./stateNameForError"
 import { addSubscriptionEqualCheck, unsubscribe } from "./unsubscribe"
 
 const initSubscribers = <V>(state: State<V>, data: StoreData) => {
@@ -41,7 +42,9 @@ export const subscribe = <V>(
     const atomFamilyState = !atomState && isAtomFamily(state)
     const selectorState = !atomState && !atomFamilyState && isSelector(state)
     if (!atomState && !atomFamilyState && !selectorState) {
-        throw new Error("Invalid object passed to sub")
+        throw new Error(
+            `valdres: invalid object${stateNameSuffix(state)} passed to sub()`,
+        )
     }
     let parentUnsubscribe: undefined | (() => void)
     let dropDelegate: undefined | (() => void)

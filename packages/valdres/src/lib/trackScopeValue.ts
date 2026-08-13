@@ -1,4 +1,5 @@
 import type { StoreData } from "../types/StoreData"
+import { stateNameSuffix } from "./stateNameForError"
 
 /** Register `key` (an atom or family) in the parent's scopeValueIndex, recording
  *  it in this scope's scopeIndexKeys for cleanup on detach. Throws if called on
@@ -12,7 +13,9 @@ export const trackScopeValue = (key: WeakKey, data: StoreData) => {
     const parent = data.parent
     const indexKeys = data.scopeIndexKeys
     if (!parent || !indexKeys) {
-        throw new Error("trackScopeValue called on a root store")
+        throw new Error(
+            `valdres: trackScopeValue called on a root store for state${stateNameSuffix(key)}`,
+        )
     }
     let set = parent.scopeValueIndex.get(key)
     if (!set) {

@@ -33,10 +33,10 @@ describe("adapter transaction lifecycle", () => {
 
         expect(store1.get(atom1)).toBe(2)
         expect(() => txn.commit()).toThrow(
-            "Cannot commit transaction while it is closed",
+            "valdres: cannot commit transaction while it is closed",
         )
         expect(() => txn.set(atom1, 3)).toThrow(
-            "Cannot write to transaction while it is closed",
+            "valdres: cannot write to transaction while it is closed",
         )
     })
 
@@ -50,10 +50,10 @@ describe("adapter transaction lifecycle", () => {
 
         expect(store1.get(atom1)).toBe(1)
         expect(() => txn.abort()).toThrow(
-            "Cannot abort transaction while it is closed",
+            "valdres: cannot abort transaction while it is closed",
         )
         expect(() => txn.get(atom1)).toThrow(
-            "Cannot read from transaction while it is closed",
+            "valdres: cannot read from transaction while it is closed",
         )
     })
 
@@ -80,7 +80,7 @@ describe("adapter transaction lifecycle", () => {
         expect(rootCb).toEqual([])
         expect(scopeCb).toEqual([])
         expect(() => txn.commit()).toThrow(
-            "Cannot commit transaction while it is closed",
+            "valdres: cannot commit transaction while it is closed",
         )
     })
 
@@ -168,7 +168,7 @@ describe("adapter transaction lifecycle", () => {
         expect(signal.aborted).toBe(true)
         expect(() => childTxn.get(selected)).toThrow(StoreDisposedError)
         expect(() => txn.commit()).toThrow(
-            "Cannot commit transaction while it is closed",
+            "valdres: cannot commit transaction while it is closed",
         )
     })
 })

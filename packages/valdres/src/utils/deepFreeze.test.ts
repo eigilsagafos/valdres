@@ -68,7 +68,9 @@ describe("deepFreeze", () => {
         ["Date", new Date(0)],
         ["RegExp", /mutable/g],
     ])("rejects mutable %s values with an actionable error", (_name, value) => {
-        expect(() => deepFreeze(value)).toThrow(/\{ mutable: true \}/)
+        expect(() => deepFreeze(value)).toThrow(
+            /valdres: deepFreeze cannot make .*\{ mutable: true \}/,
+        )
     })
 
     test("rejects unsupported values nested in otherwise freezable data", () => {

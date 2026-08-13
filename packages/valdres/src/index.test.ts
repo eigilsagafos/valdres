@@ -1,8 +1,15 @@
 import { expect, test } from "bun:test"
-import { version } from "../package.json"
 
 test("Error", async () => {
-    globalThis.__valdres__ = "0.0.0"
-    expect(() => import(".")).toThrowError("Loaded: 0.0.0")
-    globalThis.__valdres__ = version
+    const previous = globalThis.__valdres__
+    try {
+        globalThis.__valdres__ = "0.0.0"
+        await expect(
+            import("./index?duplicate-instance-test"),
+        ).rejects.toThrowError(
+            "valdres: an instance is already loaded. Loaded: 0.0.0",
+        )
+    } finally {
+        globalThis.__valdres__ = previous
+    }
 })

@@ -7,6 +7,7 @@ export const getStoreRuntime = (data: StoreData): Store => {
     const runtime = (data as StoreData & { [STORE_RUNTIME]?: Store })[
         STORE_RUNTIME
     ]
-    if (!runtime) throw new Error("Store runtime has not been initialized")
+    if (!runtime)
+        throw new Error("valdres: store runtime has not been initialized")
     return runtime
 }

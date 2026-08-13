@@ -158,6 +158,8 @@ describe("stableStringify", () => {
         expect(() => familyKey([hidden])).toThrow(TypeError)
         expect(() => familyKey([symbolKeyed])).toThrow(TypeError)
         expect(() => familyKey([cyclic])).toThrow(TypeError)
-        expect(() => familyKey([cyclic])).toThrow("Cyclic")
+        expect(() => familyKey([cyclic])).toThrow(
+            "valdres: cyclic family key values are not supported",
+        )
     })
 })

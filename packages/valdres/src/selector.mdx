@@ -75,6 +75,36 @@ Validation is opt-in per store (`store({ schemaValidation: true })`) or per
 selector (`schemaValidation: true`). See the
 [Schema Validation guide](/guides/schema-validation).
 
+## Evaluation errors
+
+Synchronous exceptions thrown while evaluating a selector are wrapped in
+`SelectorEvaluationError`. The original exception remains available as
+`error.cause`, and the message includes the named selector chain that led to
+the failure. Give selectors a `name` to make that trace useful.
+
+A dependency cycle throws `SelectorCircularDependencyError`, which extends
+`SelectorEvaluationError`. Both classes are exported from `valdres`, so check
+for the more specific circular error first when handling both:
+
+```ts
+import {
+    SelectorCircularDependencyError,
+    SelectorEvaluationError,
+} from "valdres"
+
+try {
+    appStore.get(profileSelector)
+} catch (error) {
+    if (error instanceof SelectorCircularDependencyError) {
+        console.error("Selector dependency cycle", error.message)
+    } else if (error instanceof SelectorEvaluationError) {
+        console.error("Selector evaluation failed", error.cause)
+    } else {
+        throw error
+    }
+}
+```
+
 ## See also
 
 - [selectorFamily](/valdres/selectorFamily) — create a collection of selectors keyed by a parameter

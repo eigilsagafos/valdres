@@ -1,6 +1,6 @@
 const unsupported = (description: string): never => {
     throw new TypeError(
-        `valdres: Unsupported family key value (${description}). ` +
+        `valdres: unsupported family key value (${description}). ` +
             "Pass a deterministic options.keyOf function for this argument type.",
     )
 }
@@ -8,7 +8,7 @@ const unsupported = (description: string): never => {
 const enter = (value: object, active: WeakSet<object>) => {
     if (active.has(value)) {
         throw new TypeError(
-            "valdres: Cyclic family key values are not supported. " +
+            "valdres: cyclic family key values are not supported. " +
                 "Pass a deterministic options.keyOf function for cyclic arguments.",
         )
     }

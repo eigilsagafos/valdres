@@ -111,10 +111,10 @@ describe("transaction", () => {
             txn.set(atom1, 2)
         })
         expect(() => successfulTxn.get(atom1)).toThrow(
-            "Cannot read from transaction while it is closed",
+            "valdres: cannot read from transaction while it is closed",
         )
         expect(() => successfulTxn.set(atom1, 3)).toThrow(
-            "Cannot write to transaction while it is closed",
+            "valdres: cannot write to transaction while it is closed",
         )
 
         expect(() =>
@@ -125,7 +125,7 @@ describe("transaction", () => {
             }),
         ).toThrow("abort")
         expect(() => failedTxn.set(atom1, 4)).toThrow(
-            "Cannot write to transaction while it is closed",
+            "valdres: cannot write to transaction while it is closed",
         )
         expect(store1.get(atom1)).toBe(2)
     })
@@ -141,10 +141,10 @@ describe("transaction", () => {
                 capturedTxn = txn
                 txn.set(atom1, 2)
             }),
-        ).toThrow("Cannot write to transaction while it is committing")
+        ).toThrow("valdres: cannot write to transaction while it is committing")
         expect(store1.get(atom1)).toBe(2)
         expect(() => capturedTxn.set(atom1, 4)).toThrow(
-            "Cannot write to transaction while it is closed",
+            "valdres: cannot write to transaction while it is closed",
         )
     })
 
@@ -473,7 +473,7 @@ describe("transaction", () => {
                 txn.set(count, 1)
                 return { then() {} }
             }),
-        ).toThrow("Transaction callbacks must be synchronous")
+        ).toThrow("valdres: transaction callbacks must be synchronous")
         expect(store1.get(count)).toBe(0)
 
         expect(() =>
@@ -481,7 +481,7 @@ describe("transaction", () => {
                 txn.set(count, 2)
                 return Promise.resolve()
             }),
-        ).toThrow("Transaction callbacks must be synchronous")
+        ).toThrow("valdres: transaction callbacks must be synchronous")
         expect(store1.get(count)).toBe(0)
 
         expect(() =>
@@ -490,7 +490,7 @@ describe("transaction", () => {
                 await Promise.resolve()
                 txn.set(count, 4)
             }),
-        ).toThrow("Transaction callbacks must be synchronous")
+        ).toThrow("valdres: transaction callbacks must be synchronous")
 
         await Promise.resolve()
         expect(store1.get(count)).toBe(0)
@@ -687,7 +687,9 @@ describe("transaction", () => {
                     txn.set(nameAtom, "fails")
                 })
             })
-        }).toThrow("Scope 'Missing' not found. Registered scopes: Foo, Bar")
+        }).toThrow(
+            "valdres: scope 'Missing' not found. Registered scopes: Foo, Bar",
+        )
         // Rolled-back transactions must not corrupt the tree either.
         assertStoreInvariants(store1)
     })

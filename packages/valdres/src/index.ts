@@ -9,7 +9,7 @@ declare const process: { env: { VALDRES_VERSION?: string } }
 const slot = valdresGlobal()
 if (slot.version) {
     throw new Error(
-        `Error! An instance of valdres is already loaded. Loaded: ${slot.version}. Attempted to load: ${process.env.VALDRES_VERSION}`,
+        `valdres: an instance is already loaded. Loaded: ${slot.version}. Attempted to load: ${process.env.VALDRES_VERSION}`,
     )
 } else {
     slot.version = process.env.VALDRES_VERSION
@@ -25,6 +25,8 @@ export { selectorFamily } from "./selectorFamily"
 export { store } from "./store"
 
 export { SchemaValidationError } from "./errors/SchemaValidationError"
+export { SelectorCircularDependencyError } from "./errors/SelectorCircularDependencyError"
+export { SelectorEvaluationError } from "./errors/SelectorEvaluationError"
 export { StoreDisposedError } from "./errors/StoreDisposedError"
 export { deepFreeze } from "./utils/deepFreeze"
 export { dehydrate } from "./utils/dehydrate"

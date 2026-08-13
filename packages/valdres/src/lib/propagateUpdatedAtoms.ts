@@ -94,6 +94,7 @@ import {
     recordStoreSettlement,
 } from "./architectureInstrumentation"
 import { IS_PROD } from "./IS_PROD"
+import { stateNameSuffix } from "./stateNameForError"
 import type { SettleFlags } from "../types/SettleFlags"
 import type { SelectorSettleFn } from "../types/SelectorSettleFn"
 
@@ -248,8 +249,15 @@ const settleDeletedAtoms = (
                     data,
                 )
                 addSetToSet(data.subscriptions.get(family), subscriptions)
-                if (familyAtoms.size === 0)
-                    throw new Error("Should not be possible")
+                if (
+                    !IS_PROD &&
+                    process.env.VALDRES_ENGINE_SELF_CHECKS !== "off" &&
+                    familyAtoms.size === 0
+                ) {
+                    throw new Error(
+                        `valdres: delete propagation collected an empty member set for atomFamily${stateNameSuffix(family)} in store '${data.id}'`,
+                    )
+                }
 
                 deleteFamilyAtomsFromSet(family, familyAtoms, data, timestamp)
             }
@@ -509,8 +517,15 @@ export const settleCommit = (
                 // args. Selectors that read the family object, however, depend
                 // only on membership and should run only when its list changes.
                 addSetToSet(data.subscriptions.get(family), subscriptions)
-                if (familyAtoms.size === 0)
-                    throw new Error("Should not be possible")
+                if (
+                    !IS_PROD &&
+                    process.env.VALDRES_ENGINE_SELF_CHECKS !== "off" &&
+                    familyAtoms.size === 0
+                ) {
+                    throw new Error(
+                        `valdres: update propagation collected an empty member set for atomFamily${stateNameSuffix(family)} in store '${data.id}'`,
+                    )
+                }
                 if (addFamilyAtomsToSet(family, familyAtoms, data, timestamp)) {
                     addDependentsToSet(
                         data.stateDependents.get(family),

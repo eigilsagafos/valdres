@@ -20,9 +20,10 @@ import {
 import { activeCommitBoundary } from "./onCommitEnd"
 import { untrackNamedAtom } from "./namedStateIndex"
 import { settleCommit } from "./propagateUpdatedAtoms"
+import { stateNameSuffix } from "./stateNameForError"
 import { noteStateValueChanged } from "./stateRevisions"
 
-const InvalidStateError = "unset() expects an atom."
+const InvalidStateError = "valdres: unset() expects an atom"
 
 /** Remove a store's own value for `atom` and the bookkeeping that tracked it:
  *  the entry in `data.values`, any `maxAge` write timestamp, and — for a scoped
@@ -125,7 +126,8 @@ export const effectiveValueAfterUnset = (
  *  change carries a value only if propagation rematerialized the atom; otherwise
  *  the value is omitted to preserve lazy-default semantics. */
 export const unsetValue = <V>(atom: Atom<V>, data: StoreData): void => {
-    if (!isAtom(atom)) throw new Error(InvalidStateError)
+    if (!isAtom(atom))
+        throw new Error(`${InvalidStateError}${stateNameSuffix(atom)}`)
 
     if (!detachOwnValue(atom, data)) return
 

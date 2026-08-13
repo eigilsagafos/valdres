@@ -748,7 +748,7 @@ describe("regression: contract guards", () => {
         const rootStore = store()
         const a = atom(1)
         expect(() => trackScopeValue(a, getStoreData(rootStore))).toThrow(
-            "trackScopeValue called on a root store",
+            "valdres: trackScopeValue called on a root store for state",
         )
     })
 })

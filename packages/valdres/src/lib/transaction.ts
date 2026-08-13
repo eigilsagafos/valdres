@@ -72,6 +72,7 @@ import {
     type SelectorEvaluationRuntime,
 } from "./initSelector"
 import { noteStateValueChanged } from "./stateRevisions"
+import { stateNameSuffix } from "./stateNameForError"
 
 /** One store's slot in a cross-scope commit. Collected root-first; written
  *  leaf-first (see commit) but settled root-first. Extends the settlement's
@@ -124,7 +125,7 @@ const throwTransactionStateError = (
     operation: string,
 ): never => {
     throw new Error(
-        `Cannot ${operation} transaction while it is ${transactionStateName(state)}`,
+        `valdres: cannot ${operation} transaction while it is ${transactionStateName(state)}`,
     )
 }
 
@@ -379,13 +380,18 @@ export class TransactionContext {
             this.selectorCache.set(state, res)
             return res
         } else {
-            throw new Error("Unsupported state")
+            throw new Error(
+                `valdres: unsupported state${stateNameSuffix(state)} passed to transaction.get()`,
+            )
         }
     }
 
     set = <V>(atom: Atom<V>, value: SetAtomValue<V>): V => {
         this.assertOpen("write to")
-        if (!isAtom(atom)) throw new Error("Not an atom")
+        if (!isAtom(atom))
+            throw new Error(
+                `valdres: transaction.set() expects an atom${stateNameSuffix(atom)}`,
+            )
         let resolved: V | PromiseLike<V>
         if (isFunction(value)) {
             const currentValue = this.get(atom) as V
@@ -471,7 +477,9 @@ export class TransactionContext {
         let staged = false
         for (const [atom, value] of pairs) {
             if (atom.family !== family) {
-                throw new Error("Atom does not belong to the provided family")
+                throw new Error(
+                    `valdres: atom${stateNameSuffix(atom)} does not belong to atomFamily${stateNameSuffix(family)}`,
+                )
             }
             let resolved = value
             // Freeze + validate like Transaction.set (normalizeStagedValue) so
@@ -539,7 +547,10 @@ export class TransactionContext {
 
     unset = (atom: Atom) => {
         this.assertOpen("write to")
-        if (!isAtom(atom)) throw new Error("unset() expects an atom.")
+        if (!isAtom(atom))
+            throw new Error(
+                `valdres: transaction.unset() expects an atom${stateNameSuffix(atom)}`,
+            )
         // An unset in the same txn supersedes a set of the same atom — drop any
         // buffered write so the atom reverts (re-inherits on a scope / reverts to
         // its default on a root) rather than being re-written.
@@ -561,7 +572,7 @@ export class TransactionContext {
             )
         } else {
             throw new Error(
-                `Scope '${scopeId}' not found. Registered scopes: ${[...this._data.scopes.keys()].join(", ")}`,
+                `valdres: scope '${scopeId}' not found. Registered scopes: ${[...this._data.scopes.keys()].join(", ")}`,
             )
         }
     }
@@ -572,7 +583,9 @@ export class TransactionContext {
         this.assertOpen("open a parent scope on")
         if (!this._parentTransaction) {
             if (!this._data.parent) {
-                throw new Error("Cannot access parentScope on root store")
+                throw new Error(
+                    "valdres: cannot access parentScope on root store",
+                )
             }
             this._parentTransaction = new TransactionContext(
                 this._data.parent,
@@ -613,7 +626,9 @@ export class TransactionContext {
                 // Do not commit writes staged before the thenable was returned.
                 // Observe native Promise rejection to avoid an unhandled rejection.
                 if (result instanceof Promise) result.catch(() => {})
-                throw new Error("Transaction callbacks must be synchronous")
+                throw new Error(
+                    "valdres: transaction callbacks must be synchronous",
+                )
             }
             if (autoCommit) this[COMMIT_TRANSACTION]()
             return result
