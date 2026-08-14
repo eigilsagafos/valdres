@@ -46,15 +46,8 @@ jobs:
               run: bun run typecheck
             - name: Typecheck type-level tests
               run: bun --filter 'valdres' typecheck:types
-            - name: Check valdres package compatibility
-              # Asserts the packed manifest, checks both exports with ATTW and
-              # publint, smoke-tests require(esm) on the current and minimum
-              # Node versions, then type-checks a strict Node16 consumer.
-              run: bun run scripts/check-valdres-package.ts
             - name: Deterministic architecture gates
               run: bun --filter 'valdres' test:architecture
-            - name: Deterministic package-size gates
-              run: bun run check-size
             - name: Retained-memory gates (Bun)
               run: bun --filter 'valdres' test:memory:bun
             - name: Retained-memory gates (Node)
@@ -172,8 +165,66 @@ jobs:
               if: steps.test.outcome == 'failure'
               run: exit 1
 
+    valdres-package:
+        name: Valdres published-package gate
+        runs-on: ubuntu-22.04
+        permissions:
+            contents: read
+            pull-requests: read
+        steps:
+            - uses: actions/checkout@v6
+              with:
+                  fetch-depth: 0
+            - name: Detect package and publishing changes
+              if: github.event_name == 'pull_request'
+              id: changes
+              uses: dorny/paths-filter@v3
+              with:
+                  filters: |
+                      package:
+                        - 'packages/valdres/**'
+                        - 'scripts/check-valdres-package.ts'
+                        - 'scripts/check-package-size.ts'
+                        - 'scripts/size-baseline.json'
+                        - 'scripts/prepack.ts'
+                        - 'scripts/postpublish.ts'
+                        - 'scripts/publish-metadata.ts'
+                        - 'scripts/rewrite-declaration-imports.ts'
+                        - 'scripts/verify-publish.ts'
+                        - 'scripts/ci-publish.sh'
+                        - 'package.json'
+                        - 'bun.lock'
+                        - '.github/workflows/ci.yaml'
+            - uses: oven-sh/setup-bun@v2
+              if:
+                  github.event_name != 'pull_request' ||
+                  steps.changes.outputs.package == 'true'
+              with:
+                  bun-version: 1.3.14
+            - uses: actions/setup-node@v6
+              if:
+                  github.event_name != 'pull_request' ||
+                  steps.changes.outputs.package == 'true'
+              with:
+                  # Active Node LTS; the smoke check runs this executable.
+                  node-version: "24.16"
+            - name: Install
+              if:
+                  github.event_name != 'pull_request' ||
+                  steps.changes.outputs.package == 'true'
+              run: bun install --frozen-lockfile
+            - name: Prove red, then validate the single npm tarball
+              if:
+                  github.event_name != 'pull_request' ||
+                  steps.changes.outputs.package == 'true'
+              # Builds valdres, invokes npm pack once, proves every validator
+              # rejects its targeted mutation, then runs the intact artifact
+              # through publint, ATTW, TS resolution, Node/Bun runtime smokes,
+              # browser/worker-target consumer builds, and committed budgets.
+              run: bun run scripts/check-valdres-package.ts --build --self-test
+
     publish:
-        needs: test
+        needs: [test, valdres-package]
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         runs-on: ubuntu-22.04
         environment: npm-publish
