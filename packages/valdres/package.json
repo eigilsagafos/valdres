@@ -14,6 +14,7 @@
     "type": "module",
     "exports": {
         ".": "./src/index.ts",
+        "./development": "./src/index.ts",
         "./adapter-internals/v1": "./src/adapter-internals/v1.ts"
     },
     "files": [

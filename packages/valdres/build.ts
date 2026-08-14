@@ -32,6 +32,11 @@ export const buildOptions = {
     minify: true,
     define: {
         "process.env.VALDRES_VERSION": JSON.stringify(version),
+        // Raw CDN/edge runtimes do not expose process. The default artifact
+        // treats that absence as production; a second build below overrides
+        // this define for the explicit development export condition.
+        __VALDRES_PROCESSLESS_DEVELOPMENT__: "false",
+        __VALDRES_BUILD_VARIANT__: JSON.stringify("default"),
         // Compile out the engine self-checks (assertPlanLegal in
         // src/lib/commitPlans.ts, assertTreeTriggersSealed in
         // src/lib/treeTriggerGroups.ts). They assert invariants only valdres's
@@ -46,6 +51,26 @@ export const buildOptions = {
         // a runtime reference lets the consumer's bundler/runtime resolve it for
         // their own environment. See src/lib/IS_PROD.ts. Guarded by a build test.
         "process.env.NODE_ENV": "process.env.NODE_ENV",
+    },
+}
+
+/** A parallel graph for bundlers that enable the `development` package export
+ * condition. It still honors NODE_ENV when process.env exists; only the
+ * process-less fallback differs from the default artifact. Keeping both public
+ * entrypoints in this split graph preserves their shared transaction runtime.
+ *
+ * This intentionally adds roughly 35% to the packed-package gzip size while a
+ * selected consumer bundle grows by less than 0.1%. A thin static ESM wrapper
+ * cannot change the already-instantiated IS_PROD module without mutating a
+ * global or making behavior depend on which entry loaded first, so the
+ * install-time duplication buys deterministic, isolated runtime semantics. */
+export const developmentBuildOptions = {
+    ...buildOptions,
+    outdir: "./dist/development",
+    define: {
+        ...buildOptions.define,
+        __VALDRES_PROCESSLESS_DEVELOPMENT__: "true",
+        __VALDRES_BUILD_VARIANT__: JSON.stringify("development"),
     },
 }
 
@@ -87,9 +112,11 @@ export const removeStaleBuildJavaScript = async (outdir: string) => {
 
 if (import.meta.main) {
     await removeStaleBuildJavaScript(buildOptions.outdir)
-    const result = await Bun.build(buildOptions)
-    if (!result.success) {
-        console.error(result.logs.join("\n"))
-        process.exit(1)
+    for (const options of [buildOptions, developmentBuildOptions]) {
+        const result = await Bun.build(options)
+        if (!result.success) {
+            console.error(result.logs.join("\n"))
+            process.exit(1)
+        }
     }
 }

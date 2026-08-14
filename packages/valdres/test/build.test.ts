@@ -1,8 +1,13 @@
-import { describe, expect, test } from "bun:test"
+import { afterAll, describe, expect, test } from "bun:test"
 import { mkdir, mkdtemp, readdir, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { buildOptions, removeStaleBuildJavaScript } from "../build"
+import { pathToFileURL } from "node:url"
+import {
+    buildOptions,
+    developmentBuildOptions,
+    removeStaleBuildJavaScript,
+} from "../build"
 
 // `outdir` is dropped so these bundle in memory; everything else — including
 // `minify` — matches what `bun run build` publishes.
@@ -29,7 +34,145 @@ let readableCache: ReturnType<typeof bundle> | undefined
 const readable = () =>
     (readableCache ??= bundle({ ...inMemory, minify: false }))
 
+/** Build both published graphs into an isolated directory so runtime probes do
+ * not mutate the package's checked-out dist/. */
+let publishedDistCache: Promise<string> | undefined
+const publishedDist = () =>
+    (publishedDistCache ??= (async () => {
+        const outdir = await mkdtemp(join(tmpdir(), "valdres-dist-"))
+        const results = await Promise.all([
+            Bun.build({ ...buildOptions, outdir }),
+            Bun.build({
+                ...developmentBuildOptions,
+                outdir: join(outdir, "development"),
+            }),
+        ])
+        for (const result of results) {
+            expect(result.success, result.logs.join("\n")).toBe(true)
+        }
+        return outdir
+    })())
+
+afterAll(async () => {
+    if (publishedDistCache) {
+        await rm(await publishedDistCache, { recursive: true, force: true })
+    }
+})
+
+const probeAcceptedWriteFreeze = async (
+    entry: string,
+    options: {
+        nodeEnv?: string
+        withoutProcess?: boolean
+        withoutProcessEnv?: boolean
+    } = {},
+) => {
+    const dist = await publishedDist()
+    const entryUrl = pathToFileURL(join(dist, entry)).href
+    const script = `
+        const entryUrl = ${JSON.stringify(entryUrl)}
+        ${
+            options.withoutProcess
+                ? "delete globalThis.process"
+                : options.withoutProcessEnv
+                  ? "globalThis.process = {}"
+                  : ""
+        }
+        const { atom, store } = await import(entryUrl)
+        const state = atom(null)
+        const value = { nested: {} }
+        const target = store()
+        target.set(state, value)
+        console.log(JSON.stringify({
+            root: Object.isFrozen(value),
+            nested: Object.isFrozen(value.nested),
+        }))
+    `
+    const result = Bun.spawnSync(
+        ["node", "--input-type=module", "--eval", script],
+        {
+            env: {
+                ...process.env,
+                ...(options.nodeEnv === undefined
+                    ? {}
+                    : { NODE_ENV: options.nodeEnv }),
+            },
+            stdout: "pipe",
+            stderr: "pipe",
+        },
+    )
+    if (result.exitCode !== 0) {
+        throw new Error(result.stderr.toString())
+    }
+    const frozen = JSON.parse(result.stdout.toString())
+    return frozen.root && frozen.nested
+}
+
 describe("build output", () => {
+    test("defaults process-less consumers to production without freezing accepted writes", async () => {
+        expect(
+            await probeAcceptedWriteFreeze("index.js", {
+                withoutProcess: true,
+            }),
+        ).toBe(false)
+    })
+
+    test("honors NODE_ENV=development by freezing accepted writes", async () => {
+        expect(
+            await probeAcceptedWriteFreeze("index.js", {
+                nodeEnv: "development",
+            }),
+        ).toBe(true)
+    })
+
+    test("defaults a process shim without env to production", async () => {
+        expect(
+            await probeAcceptedWriteFreeze("index.js", {
+                withoutProcessEnv: true,
+            }),
+        ).toBe(false)
+    })
+
+    test("the development entry freezes accepted writes without process", async () => {
+        expect(
+            await probeAcceptedWriteFreeze("development/index.js", {
+                withoutProcess: true,
+            }),
+        ).toBe(true)
+    })
+
+    test("the development entry honors NODE_ENV=production", async () => {
+        expect(
+            await probeAcceptedWriteFreeze("development/index.js", {
+                nodeEnv: "production",
+            }),
+        ).toBe(false)
+    })
+
+    test("mixed build variants identify both artifacts in the instance error", async () => {
+        const dist = await publishedDist()
+        const defaultUrl = pathToFileURL(join(dist, "index.js")).href
+        const developmentUrl = pathToFileURL(
+            join(dist, "development/index.js"),
+        ).href
+        const script = `
+            await import(${JSON.stringify(defaultUrl)})
+            try {
+                await import(${JSON.stringify(developmentUrl)})
+            } catch (error) {
+                console.log(error.message)
+            }
+        `
+        const result = Bun.spawnSync(
+            ["node", "--input-type=module", "--eval", script],
+            { stdout: "pipe", stderr: "pipe" },
+        )
+        expect(result.exitCode, result.stderr.toString()).toBe(0)
+        expect(result.stdout.toString()).toMatch(
+            /Loaded: .+ \(default\)\. Attempted to load: .+ \(development\)/,
+        )
+    })
+
     // Regression guard for the dev-only freeze. valdres is built once under
     // NODE_ENV=production; Bun special-cases `process.env.NODE_ENV` and would
     // inline it, folding `process.env.NODE_ENV === "production"` to `true` in the
