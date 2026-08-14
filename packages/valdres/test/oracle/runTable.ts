@@ -10,7 +10,7 @@
  *
  *  `build`/`act`/`assert` may be async, so async-atom / async-selector /
  *  revalidation suites use the same shape as the sync ones. */
-import { describe, test } from "bun:test"
+import { describe, test } from "../performance/test-compat"
 import {
     assertTrace,
     createRecorder,

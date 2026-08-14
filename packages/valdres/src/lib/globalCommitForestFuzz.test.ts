@@ -1,4 +1,4 @@
-import { describe, test } from "bun:test"
+import { describe, test } from "../../test/performance/test-compat"
 import { atom } from "../atom"
 import { selector } from "../selector"
 import { store } from "../store"

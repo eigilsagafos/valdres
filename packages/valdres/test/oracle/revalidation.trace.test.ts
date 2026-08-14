@@ -5,7 +5,7 @@
  *  last good value. Driven by the deterministic fake clock so tick timing never
  *  races CI. Written as explicit `test`s (not the table runner) because the fake
  *  clock's install/restore lifecycle wraps the whole build→act→assert. */
-import { describe, expect, test } from "bun:test"
+import { describe, expect, test } from "../performance/test-compat"
 import { store } from "../../src/store"
 import { cacheState } from "../../src/lib/cacheState"
 import { createArchitectureInstrumentation } from "../../src/lib/architectureInstrumentation"

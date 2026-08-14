@@ -2,7 +2,7 @@
  *  it preserves insertion order, order-free "bags" tolerate reordering, and a
  *  genuine spine reorder still produces an unequal (clearly diffable) result.
  *  Also a smoke test that the public-API wiring records the canonical spine. */
-import { describe, expect, test } from "bun:test"
+import { describe, expect, test } from "../performance/test-compat"
 import { atom } from "../../src/atom"
 import { store } from "../../src/store"
 import {

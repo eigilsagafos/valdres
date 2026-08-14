@@ -26,7 +26,7 @@
  *  the corresponding slice on both sides before comparing. This mirrors the
  *  maintainer convention in `src/lib/onCommitEnd.test.ts` (`.slice().sort()`).
  */
-import { expect } from "bun:test"
+import { expect } from "../performance/test-compat"
 import { atom } from "../../src/atom"
 import { selector } from "../../src/selector"
 import type { Atom } from "../../src/types/Atom"

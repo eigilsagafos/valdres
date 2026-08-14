@@ -7,12 +7,11 @@
  *               a root reverts to default, a scope re-inherits its parent
  *    - delete → removes a family member (source "delete", kind "delete")
  *  Each is one commit; a no-op unset must not commit. */
-import { expect } from "bun:test"
+import { expect } from "../performance/test-compat"
 import { atom } from "../../src/atom"
 import { atomFamily } from "../../src/atomFamily"
 import { store } from "../../src/store"
 import type { Store } from "../../src/types/Store"
-import type { StoreChange } from "../../src/types/StoreChange"
 import { runTraceTable, type TraceCase } from "./runTable"
 import {
     type ChangeCall,
@@ -31,12 +30,12 @@ type Ctx = {
     read: () => unknown
 }
 
-/** Convenience: the `kind` discriminators reported to onChange, in order. */
+/** Every change discriminator reported to onChange, in order. Selectors have
+ *  no `kind`, so name them explicitly instead of relying on Bun's matcher
+ *  treating a trailing `undefined` array entry as absent. */
 const kinds = (calls: ChangeCall[]): string[] =>
     calls.flatMap(c =>
-        c.changes.map(
-            ch => (ch as Extract<StoreChange, { kind: string }>).kind,
-        ),
+        c.changes.map(ch => (ch.type === "atom" ? ch.kind : "selector")),
     )
 
 const cases: TraceCase<Ctx>[] = [
@@ -71,7 +70,7 @@ const cases: TraceCase<Ctx>[] = [
         assert: ({ changes, read }) => {
             expect(read()).toBe(1)
             expect(changes.map(c => c.meta.source)).toEqual(["reset"])
-            expect(kinds(changes)).toEqual(["set"])
+            expect(kinds(changes)).toEqual(["set", "selector"])
         },
     },
     {
@@ -133,7 +132,7 @@ const cases: TraceCase<Ctx>[] = [
         assert: ({ changes, read }) => {
             expect(read()).toBe(1)
             expect(changes.map(c => c.meta.source)).toEqual(["unset"])
-            expect(kinds(changes)).toEqual(["unset"])
+            expect(kinds(changes)).toEqual(["unset", "selector"])
         },
     },
     {
@@ -212,7 +211,7 @@ const cases: TraceCase<Ctx>[] = [
         assert: ({ changes, read }) => {
             expect(read()).toBe(0) // reverts to the family default
             expect(changes.map(c => c.meta.source)).toEqual(["delete"])
-            expect(kinds(changes)).toEqual(["delete"])
+            expect(kinds(changes)).toEqual(["delete", "selector"])
         },
     },
 ]

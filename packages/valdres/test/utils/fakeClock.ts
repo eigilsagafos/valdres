@@ -1,4 +1,4 @@
-import { jest } from "bun:test"
+import { jest } from "../performance/test-compat"
 
 /** Drain the microtask queue so promise (`.then`) chains scheduled by a timer
  *  or a manual resolve settle before the next assertion. A few passes cover the

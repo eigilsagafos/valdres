@@ -1,5 +1,5 @@
 import { getStoreData } from "./getStoreData"
-import { expect, test } from "bun:test"
+import { expect, test } from "../../test/performance/test-compat"
 import { atom } from "../atom"
 import { selector } from "../selector"
 import { store } from "../store"

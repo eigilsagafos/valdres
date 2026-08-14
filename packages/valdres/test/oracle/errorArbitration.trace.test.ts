@@ -8,7 +8,7 @@
  *  registration order (all locked below). Only subscriber order ACROSS
  *  independent states is incidental — those cases assert "all ran + a first
  *  error surfaced" rather than which one. */
-import { describe, expect, test } from "bun:test"
+import { describe, expect, test } from "../performance/test-compat"
 import { atom } from "../../src/atom"
 import { store } from "../../src/store"
 import {

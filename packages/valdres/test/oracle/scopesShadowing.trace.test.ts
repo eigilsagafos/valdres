@@ -4,7 +4,7 @@
  *  still pins the shadow (otherwise a later parent write would leak in). Once
  *  shadowed, a parent write must not propagate into the scope; while unshadowed,
  *  a parent write is inherited and the scope's subscriber fires. */
-import { describe, expect, test } from "bun:test"
+import { describe, expect, test } from "../performance/test-compat"
 import { store } from "../../src/store"
 import {
     assertTrace,

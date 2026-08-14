@@ -43,7 +43,7 @@
  *      parent/child guarantee callers may depend on. Asserting it as a bag
  *      would prove nothing, since a bag admits either order.
  */
-import { expect } from "bun:test"
+import { expect } from "../performance/test-compat"
 import { atom } from "../../src/atom"
 import { atomFamily } from "../../src/atomFamily"
 import { selector } from "../../src/selector"

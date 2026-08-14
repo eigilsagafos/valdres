@@ -5,7 +5,7 @@
  *  stores report before the origin store" is locked here (the one cross-store
  *  ordering the engine intentionally guarantees); order AMONG peers is
  *  incidental. Also covers getSelf/setSelf and a scope shadow of a global. */
-import { describe, expect, test } from "bun:test"
+import { describe, expect, test } from "../performance/test-compat"
 import { store } from "../../src/store"
 import {
     assertTrace,
