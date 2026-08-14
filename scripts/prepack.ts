@@ -1,6 +1,7 @@
 import {
     INSTANCE_GUARD_SIDE_EFFECTS,
     NODE_ENGINE_RANGE,
+    PUBLISH_EXPORT_CONDITION_ORDER,
 } from "./publish-metadata.ts"
 
 const packageJsonFile = await Bun.file("./package.json")
@@ -28,7 +29,8 @@ if (await packageTmpJsonFile.exists()) {
     // skip it for this package. Other packages keep the source→dist rewrite.
     if (json.name !== "valdres-svelte") {
         const exports = Object.fromEntries(
-            Object.entries(json.exports).map(([k, v]) => {
+            Object.entries(json.exports).map(([k, value]) => {
+                const v = value as string
                 const [, , ...rest] = v.split("/")
                 const file = rest.pop()
                 const folder = ["dist", ...rest].join("/")
@@ -37,18 +39,23 @@ if (await packageTmpJsonFile.exists()) {
                 )
                 const typesDir = ["dist", "types", ...rest].join("/")
                 const fileName = file.split(".")[0]
+                const targets = {
+                    types: `./${typesDir}/${fileName}.d.ts`,
+                    ...(json.name === "valdres"
+                        ? {
+                              development: `./${developmentFolder}/${fileName}.js`,
+                          }
+                        : {}),
+                    import: `./${folder}/${fileName}.js`,
+                    default: `./${folder}/${fileName}.js`,
+                }
                 return [
                     k,
-                    {
-                        types: `./${typesDir}/${fileName}.d.ts`,
-                        ...(json.name === "valdres"
-                            ? {
-                                  development: `./${developmentFolder}/${fileName}.js`,
-                              }
-                            : {}),
-                        import: `./${folder}/${fileName}.js`,
-                        default: `./${folder}/${fileName}.js`,
-                    },
+                    Object.fromEntries(
+                        PUBLISH_EXPORT_CONDITION_ORDER.filter(
+                            condition => condition in targets,
+                        ).map(condition => [condition, targets[condition]]),
+                    ),
                 ]
             }),
         )
@@ -76,10 +83,10 @@ if (await packageTmpJsonFile.exists()) {
     const legacyTypeMappings = Object.fromEntries(
         Object.entries(json.exports)
             .filter(([exportPath]) => exportPath !== ".")
-            .map(([exportPath, exp]) => [
-                exportPath.slice(2),
-                [exp.types.slice(2)],
-            ]),
+            .map(([exportPath, value]) => {
+                const exp = value as { types: string }
+                return [exportPath.slice(2), [exp.types.slice(2)]]
+            }),
     )
     if (Object.keys(legacyTypeMappings).length > 0) {
         json.typesVersions = { "*": legacyTypeMappings }

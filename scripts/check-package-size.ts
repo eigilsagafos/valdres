@@ -1,64 +1,52 @@
 /**
- * Deterministic package and consumer bundle-size gates for `valdres`.
+ * Deterministic size gates for an already-packed `valdres` tarball.
  *
- * Measures three distinct artifacts and gates each against a committed
- * baseline (scripts/size-baseline.json) with a +2% ceiling:
+ * This script never builds or packs. The package contract gate passes the one
+ * npm-produced tarball here so dist, packed-file, and consumer-fixture sizes
+ * are all measurements of the artifact that every other validator sees.
  *
- *   1. dist     — every JavaScript file in the complete published dist output
- *                 (fresh `bun run build`), raw bytes + deterministic gzip.
- *   2. packed   — the full packed file set after build → build:types → prepack
- *                 (the files `npm pack` puts in the tarball, including the
- *                 prepacked package.json), raw bytes + deterministic gzip.
- *   3. fixtures — minified consumer bundles built from the prepacked package
- *                 resolved through its published `exports`: atom only,
- *                 atom + selector + store, all public exports, and the
- *                 adapter-internals entrypoint.
- *
- * All compression is `Bun.gzipSync` at a fixed level — implemented in code so
- * results carry no shell-gzip metadata (mtime, filename) and are reproducible
- * across machines. The packed measure gzips a canonical framing of the sorted
- * file set rather than the tarball itself, so npm/tar version differences in
- * archive metadata cannot move the number.
- *
- * Regenerate the baseline (initial capture, or ratcheting down after an
- * improvement) with:
+ * Ratchet the committed baseline after an intentional size change with:
  *
  *   VALDRES_UPDATE_SIZE_BASELINE=1 bun run check-size
- *
- * Ceilings are computed from the stored exact values, so ratcheting the
- * baseline tightens the gate automatically. Per-file dist sizes are recorded
- * in the baseline for context only — split chunks carry content hashes in
- * their names, so the gates apply to the dist totals, the packed set, and
- * each fixture.
  */
-import { mkdtemp, readdir, rm } from "node:fs/promises"
+import { mkdir, mkdtemp, readdir, rename, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
-import { join, relative } from "node:path"
+import { isAbsolute, join, relative, resolve } from "node:path"
 
 const TOLERANCE = 1.02
 const GZIP_LEVEL = 6
 
 const rootDir = join(import.meta.dir, "..")
-const pkgDir = join(rootDir, "packages/valdres")
 const baselinePath = join(import.meta.dir, "size-baseline.json")
 const updateBaseline = process.env.VALDRES_UPDATE_SIZE_BASELINE === "1"
+const tarballArgument = process.argv[2]
+
+if (!tarballArgument) {
+    throw new Error(
+        "Usage: bun run scripts/check-package-size.ts <valdres.tgz>\n" +
+            "Use `bun run check-size` to build and pack first.",
+    )
+}
+
+const tarballPath = isAbsolute(tarballArgument)
+    ? tarballArgument
+    : resolve(process.cwd(), tarballArgument)
 
 type Size = { raw: number; gzip: number }
 
 const gzipSize = (bytes: Uint8Array) =>
     Bun.gzipSync(bytes, { level: GZIP_LEVEL }).length
 
-const run = (cmd: string[], cwd: string) => {
-    const result = Bun.spawnSync(cmd, {
+const run = (command: string[], cwd: string) => {
+    const result = Bun.spawnSync(command, {
         cwd,
         stdio: ["inherit", "pipe", "pipe"],
     })
     if (result.exitCode !== 0) {
         throw new Error(
-            `\`${cmd.join(" ")}\` failed in ${cwd}:\n${result.stdout}${result.stderr}`,
+            `\`${command.join(" ")}\` failed in ${cwd}:\n${result.stdout}${result.stderr}`,
         )
     }
-    return result.stdout.toString()
 }
 
 const listFiles = async (dir: string): Promise<string[]> => {
@@ -72,65 +60,30 @@ const listFiles = async (dir: string): Promise<string[]> => {
         .sort()
 }
 
-// ── 1. dist: every JavaScript file in the complete published dist output ────
-
-console.log("Building valdres (dist + types)...")
-run(["bun", "run", "build"], pkgDir)
-run(["bun", "run", "build:types"], pkgDir)
-
-const distDir = join(pkgDir, "dist")
-const distJsFiles = (await listFiles(distDir)).filter(f => f.endsWith(".js"))
-if (distJsFiles.length === 0) throw new Error("no JavaScript files in dist/")
-
-const distFiles: Record<string, Size> = {}
-const dist: Size = { raw: 0, gzip: 0 }
-for (const file of distJsFiles) {
-    const bytes = new Uint8Array(await Bun.file(file).arrayBuffer())
-    const size = { raw: bytes.length, gzip: gzipSize(bytes) }
-    distFiles[relative(distDir, file)] = size
-    dist.raw += size.raw
-    dist.gzip += size.gzip
-}
-
-// ── 2. packed: the packed package after build, types, and prepack ────────────
-
-console.log("Prepacking and packing...")
-const pkgJsonPath = join(pkgDir, "package.json")
-const originalPackageJson = await Bun.file(pkgJsonPath).text()
-const tmpDir = await mkdtemp(join(tmpdir(), "valdres-size-"))
-// Everything below runs inside this one try/finally so the temporary
-// directory is removed on every path — success, gate failure, baseline
-// update, and errors thrown during prepack/pack itself. Exit status is set
-// via process.exitCode, never process.exit(), which would skip the finally.
+const tempDir = await mkdtemp(join(tmpdir(), "valdres-size-"))
 try {
-    let tarballPath: string
-    try {
-        run(["bun", "run", join(import.meta.dir, "prepack.ts")], pkgDir)
-        const packJson = run(
-            [
-                "npm",
-                "pack",
-                "--ignore-scripts",
-                "--json",
-                "--pack-destination",
-                tmpDir,
-            ],
-            pkgDir,
-        )
-        tarballPath = join(tmpDir, JSON.parse(packJson)[0].filename)
-    } finally {
-        // Restore the pre-prepack package.json even if packing failed.
-        await Bun.write(pkgJsonPath, originalPackageJson)
-        await rm(join(pkgDir, "package.tmp.json"), { force: true })
+    run(["tar", "-xzf", tarballPath, "-C", tempDir], tempDir)
+    const packedDir = join(tempDir, "package")
+    const distDir = join(packedDir, "dist")
+    const distJsFiles = (await listFiles(distDir)).filter(file =>
+        file.endsWith(".js"),
+    )
+    if (distJsFiles.length === 0)
+        throw new Error("no JavaScript files in dist/")
+
+    const distFiles: Record<string, Size> = {}
+    const dist: Size = { raw: 0, gzip: 0 }
+    for (const file of distJsFiles) {
+        const bytes = new Uint8Array(await Bun.file(file).arrayBuffer())
+        const size = { raw: bytes.length, gzip: gzipSize(bytes) }
+        distFiles[relative(distDir, file)] = size
+        dist.raw += size.raw
+        dist.gzip += size.gzip
     }
 
-    run(["tar", "-xzf", tarballPath, "-C", tmpDir], tmpDir)
-    const packedDir = join(tmpDir, "package")
+    // Compress canonical path/content framing, not tar headers, so npm and tar
+    // metadata differences cannot move the committed packed-package budget.
     const packedFiles = await listFiles(packedDir)
-
-    // Raw = total unpacked bytes. Gzip = deterministic compression of a
-    // canonical framing (sorted `path\0content\0`), so the measure depends only
-    // on the packed file set — never on tar headers or npm's gzip settings.
     const packed: Size = { raw: 0, gzip: 0 }
     const framing: Uint8Array[] = []
     const encoder = new TextEncoder()
@@ -144,26 +97,28 @@ try {
             new Uint8Array(1),
         )
     }
-    packed.gzip = gzipSize(
-        new Uint8Array(await new Blob(framing).arrayBuffer()),
+    const framedBytes = new Uint8Array(
+        framing.reduce((total, bytes) => total + bytes.length, 0),
     )
+    let frameOffset = 0
+    for (const bytes of framing) {
+        framedBytes.set(bytes, frameOffset)
+        frameOffset += bytes.length
+    }
+    packed.gzip = gzipSize(framedBytes)
 
-    // ── 3. minified consumer fixtures from the prepacked package ─────────────
+    const consumerDir = join(tempDir, "consumer")
+    await mkdir(join(consumerDir, "node_modules"), { recursive: true })
+    await rename(packedDir, join(consumerDir, "node_modules", "valdres"))
 
-    console.log("Building consumer fixtures...")
-    const consumerDir = join(tmpDir, "consumer")
-    run(["mkdir", "-p", join(consumerDir, "node_modules")], tmpDir)
-    run(["mv", packedDir, join(consumerDir, "node_modules", "valdres")], tmpDir)
-
-    const FIXTURES: Record<string, string> = {
+    const fixtureSources: Record<string, string> = {
         atom: `export { atom } from "valdres"`,
         "atom-selector-store": `export { atom, selector, store } from "valdres"`,
         "all-exports": `export * from "valdres"`,
         "adapter-internals": `export * from "valdres/adapter-internals/v1"`,
     }
-
     const fixtures: Record<string, Size> = {}
-    for (const [name, source] of Object.entries(FIXTURES)) {
+    for (const [name, source] of Object.entries(fixtureSources)) {
         const entry = join(consumerDir, `${name}.ts`)
         await Bun.write(entry, source)
         const result = await Bun.build({
@@ -178,45 +133,45 @@ try {
         }
         const bytes = new Uint8Array(
             await new Blob(
-                await Promise.all(result.outputs.map(o => o.arrayBuffer())),
+                await Promise.all(
+                    result.outputs.map(output => output.arrayBuffer()),
+                ),
             ).arrayBuffer(),
         )
         fixtures[name] = { raw: bytes.length, gzip: gzipSize(bytes) }
     }
 
-    // ── Compare against the baseline ─────────────────────────────────────────
-
     const actual = { dist, distFiles, packed, fixtures }
-
-    const lines: string[] = []
-    lines.push("Measured sizes (bytes):")
-    lines.push(`  dist total          raw ${dist.raw}  gzip ${dist.gzip}`)
-    for (const [file, size] of Object.entries(distFiles)) {
-        lines.push(`    ${file.padEnd(24)} raw ${size.raw}  gzip ${size.gzip}`)
-    }
-    lines.push(`  packed package      raw ${packed.raw}  gzip ${packed.gzip}`)
-    for (const [name, size] of Object.entries(fixtures)) {
-        lines.push(
-            `  fixture ${name.padEnd(19)} raw ${size.raw}  gzip ${size.gzip}`,
-        )
-    }
+    const lines = [
+        "Measured sizes (bytes):",
+        `  dist total          raw ${dist.raw}  gzip ${dist.gzip}`,
+        ...Object.entries(distFiles).map(
+            ([file, size]) =>
+                `    ${file.padEnd(24)} raw ${size.raw}  gzip ${size.gzip}`,
+        ),
+        `  packed package      raw ${packed.raw}  gzip ${packed.gzip}`,
+        ...Object.entries(fixtures).map(
+            ([name, size]) =>
+                `  fixture ${name.padEnd(19)} raw ${size.raw}  gzip ${size.gzip}`,
+        ),
+    ]
     console.log(lines.join("\n"))
 
     if (updateBaseline) {
         await Bun.write(baselinePath, JSON.stringify(actual, null, 4) + "\n")
         console.log(`\nBaseline written to ${relative(rootDir, baselinePath)}`)
     } else {
-        await checkAgainstBaseline(dist, packed, fixtures, FIXTURES)
+        await checkAgainstBaseline(dist, packed, fixtures, fixtureSources)
     }
 } finally {
-    await rm(tmpDir, { recursive: true, force: true })
+    await rm(tempDir, { recursive: true, force: true })
 }
 
 async function checkAgainstBaseline(
     dist: Size,
     packed: Size,
     fixtures: Record<string, Size>,
-    FIXTURES: Record<string, string>,
+    fixtureSources: Record<string, string>,
 ) {
     const baselineFile = Bun.file(baselinePath)
     if (!(await baselineFile.exists())) {
@@ -226,7 +181,6 @@ async function checkAgainstBaseline(
         )
     }
     const baseline = await baselineFile.json()
-
     const failures: string[] = []
     const improvements: string[] = []
 
@@ -235,12 +189,12 @@ async function checkAgainstBaseline(
             const expected = base[metric]
             const ceiling = Math.ceil(expected * TOLERANCE)
             const delta = size[metric] - expected
-            const pct = ((delta / expected) * 100).toFixed(2)
+            const percent = ((delta / expected) * 100).toFixed(2)
             const detail =
                 `${label} ${metric}: expected ${expected} (ceiling ${ceiling}, ` +
                 `baseline + 2%), actual ${size[metric]}, delta ${
                     delta >= 0 ? "+" : ""
-                }${delta} bytes (${delta >= 0 ? "+" : ""}${pct}%)`
+                }${delta} bytes (${delta >= 0 ? "+" : ""}${percent}%)`
             if (size[metric] > ceiling) failures.push(detail)
             else if (delta < 0) improvements.push(detail)
         }
@@ -248,35 +202,30 @@ async function checkAgainstBaseline(
 
     compare("dist total", baseline.dist, dist)
     compare("packed package", baseline.packed, packed)
-    for (const name of Object.keys(FIXTURES)) {
+    for (const name of Object.keys(fixtureSources)) {
         const base = baseline.fixtures?.[name]
         if (!base) {
             failures.push(
                 `fixture ${name}: no baseline entry — regenerate the baseline`,
             )
-            continue
+        } else {
+            compare(`fixture ${name}`, base, fixtures[name])
         }
-        compare(`fixture ${name}`, base, fixtures[name])
     }
 
     if (improvements.length > 0) {
         console.log("\nSize improvements (ratchet the baseline to lock in):")
         for (const line of improvements) console.log(`  ↓ ${line}`)
-        console.log(
-            "  Ratchet with: VALDRES_UPDATE_SIZE_BASELINE=1 bun run check-size",
-        )
     }
-
     if (failures.length > 0) {
         console.error(`\n${failures.length} size gate(s) exceeded:`)
         for (const line of failures) console.error(`  ✗ ${line}`)
         console.error(
-            "\nIf the growth is intended, regenerate the baseline with:\n" +
+            "\nIf the growth is intentional, regenerate the baseline with:\n" +
                 "  VALDRES_UPDATE_SIZE_BASELINE=1 bun run check-size",
         )
         process.exitCode = 1
-        return
+    } else {
+        console.log("\nAll size gates passed")
     }
-
-    console.log("\nAll size gates passed")
 }

@@ -22,7 +22,7 @@
     "scripts": {
         "build": "NODE_ENV=production bun run build.ts",
         "build:types": "rm -rf dist/types && bunx tsgo && bun run ../../scripts/rewrite-declaration-imports.ts dist/types",
-        "check:package": "bun run ../../scripts/check-valdres-package.ts",
+        "check:package": "bun run ../../scripts/check-valdres-package.ts --build",
         "typecheck:types": "bunx tsc -p tsconfig.types-test.json",
         "test": "bun test --reporter=dots",
         "test:bench": "rm -f test/performance/bench-results.ndjson && BENCH_SUITE=standard NODE_ENV=production bun test --timeout 60000 --concurrency 1 ./test/performance/*.bench.ts && BENCH_SUITE=standard NODE_ENV=production bun test --timeout 60000 --concurrency 1 ./test/performance/architecture.timing.ts",
