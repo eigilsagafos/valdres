@@ -60,6 +60,16 @@ jobs:
               run: bun --filter 'valdres-svelte' lint:publish
             - name: Verify publish (dry-run)
               run: DRY_RUN=1 bash scripts/ci-publish.sh
+            - name: Verify publish cleanup
+              run: |
+                  git diff --exit-code -- 'packages/**/package.json'
+
+                  stray_backups="$(find packages -name package.tmp.json -not -path '*/node_modules/*' -print)"
+                  if [ -n "$stray_backups" ]; then
+                      echo "::error::Publish dry-run left package.tmp.json backup files behind"
+                      echo "$stray_backups"
+                      exit 1
+                  fi
             - name: Benchmark tooling tests
               # scripts/ is intentionally not a workspace, so the root
               # `bun --filter '*' test` sweep never reaches these; run the
@@ -77,12 +87,57 @@ jobs:
               with:
                   script: |
                       const fs = require('fs');
-                      const { execSync } = require('child_process');
+                      const { execFileSync, execSync } = require('child_process');
 
                       const testStepFailed = '${{ steps.test.outcome }}' === 'failure';
 
+                      // A package with a runnable test script must produce a
+                      // JUnit file. Include test-bearing packages from the
+                      // event base so deleting a test script cannot silently
+                      // remove coverage. Exact `echo 'no tests'` placeholders
+                      // are the explicit opt-out for packages without a suite;
+                      // they do not emit JUnit output.
+                      const expectedPackages = new Set();
+                      const addTestPackages = (manifests, readManifest) => {
+                          for (const manifest of manifests) {
+                              try {
+                                  const json = JSON.parse(readManifest(manifest));
+                                  const testScript = json.scripts?.test;
+                                  const isNoTestPlaceholder = /^echo\s+(['"])no tests\1$/.test(testScript || '');
+                                  if (typeof testScript === 'string' && !isNoTestPlaceholder) {
+                                      expectedPackages.add(manifest.replace(/^packages\//, '').replace(/\/package\.json$/, ''));
+                                  }
+                              } catch (error) {
+                                  core.warning(`Could not inspect ${manifest}: ${error.message}`);
+                              }
+                          }
+                      };
+
+                      const currentManifests = execSync("find packages -name package.json -not -path '*/node_modules/*' -print")
+                          .toString().trim().split('\n').filter(Boolean);
+                      const currentManifestSet = new Set(currentManifests);
+                      addTestPackages(currentManifests, manifest => fs.readFileSync(manifest, 'utf8'));
+
+                      // PR checkouts have full history, so compare against the
+                      // base there. Push checkouts are depth 1 and rely on the
+                      // already-required PR check plus current-manifest coverage.
+                      const baseSha = context.eventName === 'pull_request'
+                          ? context.payload.pull_request?.base?.sha || ''
+                          : '';
+                      if (/^[0-9a-f]{40}$/i.test(baseSha) && !/^0+$/.test(baseSha)) {
+                          const baseManifests = execFileSync('git', [
+                              'ls-tree', '-r', '--name-only', baseSha, '--', 'packages'
+                          ]).toString().trim().split('\n')
+                              .filter(manifest =>
+                                  manifest.endsWith('/package.json') && currentManifestSet.has(manifest)
+                              );
+                          addTestPackages(baseManifests, manifest =>
+                              execFileSync('git', ['show', `${baseSha}:${manifest}`], { encoding: 'utf8' })
+                          );
+                      }
+
                       // Find all junit XML files
-                      const files = execSync("find packages -name 'junit*.xml'")
+                      const files = execSync("find packages -name 'junit*.xml' -not -path '*/node_modules/*'")
                           .toString().trim().split('\n').filter(Boolean);
 
                       if (files.length === 0) {
@@ -122,6 +177,10 @@ jobs:
                           }
                       }
 
+                      const missingPackages = [...expectedPackages]
+                          .filter(pkg => !pkgMap.has(pkg))
+                          .sort();
+
                       let totalTests = 0, totalFailures = 0, totalSkipped = 0, totalTime = 0;
                       for (const p of pkgMap.values()) {
                           totalTests += p.tests;
@@ -131,7 +190,7 @@ jobs:
                       }
 
                       const passed = totalTests - totalFailures - totalSkipped;
-                      const hasFailed = totalFailures > 0 || testStepFailed;
+                      const hasFailed = totalFailures > 0 || testStepFailed || missingPackages.length > 0;
                       const conclusion = hasFailed ? 'failure' : 'success';
                       const icon = hasFailed ? '❌' : '✅';
                       const title = `${totalTests} tests run, ${passed} passed, ${totalSkipped} skipped, ${totalFailures} failed`;
@@ -145,6 +204,10 @@ jobs:
                           summary += `| ${pIcon} ${pkg} | ${p.tests} | ${pPassed} | ${p.skipped} | ${p.failures} | ${p.time.toFixed(2)}s |\n`;
                       }
                       summary += `\n**Total: ${totalTests} tests, ${passed} passed, ${totalSkipped} skipped, ${totalFailures} failed in ${totalTime.toFixed(2)}s**`;
+                      if (missingPackages.length > 0) {
+                          summary += `\n\n### ❌ Missing JUnit results\n\n`;
+                          summary += missingPackages.map(pkg => `- \`${pkg}\``).join('\n');
+                      }
 
                       await github.rest.checks.create({
                           owner: context.repo.owner,
@@ -159,7 +222,13 @@ jobs:
                       fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, summary);
 
                       if (hasFailed) {
-                          core.setFailed(`${totalFailures} test(s) failed`);
+                          const reasons = [];
+                          if (totalFailures > 0) reasons.push(`${totalFailures} test(s) failed`);
+                          if (testStepFailed) reasons.push('test command failed');
+                          if (missingPackages.length > 0) {
+                              reasons.push(`${missingPackages.length} package(s) produced no JUnit results`);
+                          }
+                          core.setFailed(reasons.join('; '));
                       }
             - name: Fail if tests failed
               if: steps.test.outcome == 'failure'
