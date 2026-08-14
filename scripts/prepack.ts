@@ -35,10 +35,6 @@ if (await packageTmpJsonFile.exists()) {
                 const developmentFolder = ["dist", "development", ...rest].join(
                     "/",
                 )
-                const runtimeFolder =
-                    json.name === "valdres" && k === "./development"
-                        ? developmentFolder
-                        : folder
                 const typesDir = ["dist", "types", ...rest].join("/")
                 const fileName = file.split(".")[0]
                 return [
@@ -50,8 +46,8 @@ if (await packageTmpJsonFile.exists()) {
                                   development: `./${developmentFolder}/${fileName}.js`,
                               }
                             : {}),
-                        import: `./${runtimeFolder}/${fileName}.js`,
-                        default: `./${runtimeFolder}/${fileName}.js`,
+                        import: `./${folder}/${fileName}.js`,
+                        default: `./${folder}/${fileName}.js`,
                     },
                 ]
             }),

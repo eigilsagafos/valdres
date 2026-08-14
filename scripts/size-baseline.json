@@ -30,25 +30,25 @@
         }
     },
     "packed": {
-        "raw": 495132,
-        "gzip": 146046
+        "raw": 494819,
+        "gzip": 146031
     },
     "fixtures": {
         "atom": {
-            "raw": 109410,
-            "gzip": 32468
+            "raw": 107891,
+            "gzip": 31994
         },
         "atom-selector-store": {
-            "raw": 109691,
-            "gzip": 32588
+            "raw": 108172,
+            "gzip": 32110
         },
         "all-exports": {
-            "raw": 124849,
-            "gzip": 36989
+            "raw": 122626,
+            "gzip": 36367
         },
         "adapter-internals": {
-            "raw": 86082,
-            "gzip": 25264
+            "raw": 85504,
+            "gzip": 25148
         }
     }
 }

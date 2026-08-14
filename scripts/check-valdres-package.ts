@@ -140,12 +140,6 @@ try {
         rootExport?.development === "./dist/development/index.js",
         "root development export must be ./dist/development/index.js",
     )
-    const developmentExport = packedManifest.exports?.["./development"]
-    assertPackedManifest(
-        developmentExport?.import === "./dist/development/index.js" &&
-            developmentExport?.default === "./dist/development/index.js",
-        "development subpath must resolve to ./dist/development/index.js",
-    )
     assertPackedManifest(
         JSON.stringify(packedManifest.sideEffects) ===
             JSON.stringify(INSTANCE_GUARD_SIDE_EFFECTS),

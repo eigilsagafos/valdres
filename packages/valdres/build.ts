@@ -60,7 +60,7 @@ export const buildOptions = {
  * entrypoints in this split graph preserves their shared transaction runtime.
  *
  * This intentionally adds roughly 35% to the packed-package gzip size while a
- * selected consumer bundle grows by less than 0.1%. A thin static ESM wrapper
+ * selected consumer bundle grows by less than 0.2%. A thin static ESM wrapper
  * cannot change the already-instantiated IS_PROD module without mutating a
  * global or making behavior depend on which entry loaded first, so the
  * install-time duplication buys deterministic, isolated runtime semantics. */
