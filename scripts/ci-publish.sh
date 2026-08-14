@@ -42,11 +42,39 @@ PUBLIC_PACKAGES=(
 
 # Restore prepacked package.json files even if the script aborts midway.
 restore_packages() {
+  local restore_failed=0
+
   for dir in "${PUBLIC_PACKAGES[@]}"; do
-    (cd "$ROOT_DIR/$dir" && bun run "$SCRIPT_DIR/postpublish.ts" 2>/dev/null) || true
+    # A package only needs restoring once prepack has created its backup. This
+    # lets an early prepack failure clean up the packages already visited
+    # without treating untouched packages as restore failures.
+    if [ ! -f "$ROOT_DIR/$dir/package.tmp.json" ]; then
+      continue
+    fi
+
+    if ! (cd "$ROOT_DIR/$dir" && bun run "$SCRIPT_DIR/postpublish.ts"); then
+      echo "::error file=$dir/package.json::Failed to restore $dir/package.json after publish prepack"
+      restore_failed=1
+    fi
   done
+
+  return "$restore_failed"
 }
-trap restore_packages EXIT
+
+restore_on_exit() {
+  local exit_code=$?
+  trap - EXIT
+
+  # A restore failure is fatal even if a live `changeset publish` succeeded.
+  # Publishing may already have changed npm, but leaving CI red makes that
+  # partial release explicit so it can be reconciled before another release.
+  if ! restore_packages; then
+    exit_code=1
+  fi
+
+  exit "$exit_code"
+}
+trap restore_on_exit EXIT
 
 # Sanity-check that `bunx changeset` resolves before doing any work — catches
 # missing-binary regressions on PR before they reach the real publish flow.

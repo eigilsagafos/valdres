@@ -13,6 +13,7 @@ bench-results-node.ndjson
 bun_results.json
 node_results.json
 junit*.xml
+package.tmp.json
 # .d.ts files never belong in src/ — only emitted as side-effects when
 # --noCheck builds (draggable, panable) cross workspace boundaries.
 packages/*/src/**/*.d.ts
