@@ -1,5 +1,7 @@
 import { getStoreData } from "../src/lib/getStoreData"
 import { describe, expect, test } from "bun:test"
+import { generateHeapSnapshot } from "bun"
+import { releaseWeakRefs } from "bun:jsc"
 import { LeakDetector } from "../../test/src/LeakDetector"
 import { store } from "../src/store"
 import { atom } from "../src/atom"
@@ -9,6 +11,7 @@ import { selectorFamily } from "../src/selectorFamily"
 import { familyKey } from "../src/lib/familyKey"
 import { index } from "../src/indexConstructor"
 import type { InternalAtomFamily } from "../src/types/InternalAtomFamily"
+import type { InternalSelectorFamily } from "../src/types/InternalSelectorFamily"
 
 // All leak tests that check if a value is collected use an IIFE to ensure
 // the store goes fully out of scope before asserting. When bun runs many
@@ -508,6 +511,104 @@ describe("memory leaks (atom families)", () => {
 })
 
 describe("memory leaks (selector families)", () => {
+    test("unreferenced selector family entries are collected from the identity cache", async () => {
+        const entryCount = 1_000
+        const family = selectorFamily<number | string, [number | string]>(
+            id => () => id,
+        )
+        const internalFamily = family as InternalSelectorFamily<
+            number | string,
+            [number | string]
+        >
+        // Inspect the backing Map directly so this assertion cannot trigger
+        // WeakValueMap's public size/lookup sweep. It must reach zero from
+        // FinalizationRegistry callbacks alone.
+        const backingMap = (internalFamily.__valdresSelectorFamilyMap as any)
+            .refs as Map<number | string, unknown>
+        const refs = (() => {
+            const refs: WeakRef<object>[] = []
+            for (let id = 0; id < entryCount; id++) {
+                // Cover both the canonical encoded-key cache and the raw-string
+                // fast-path cache; either one retaining its value would leak it.
+                refs.push(new WeakRef(family(id % 2 === 0 ? id : `${id}`)))
+            }
+            return refs
+        })()
+
+        // Let the creating frame unwind, then use LeakDetector's two-GC and
+        // heap-snapshot pattern to clear JSC's conservative stack residue.
+        await Bun.sleep(0)
+        let retained = entryCount
+        for (let round = 0; round < 10; round++) {
+            releaseWeakRefs()
+            Bun.gc(true)
+            if (round > 0) generateHeapSnapshot()
+            releaseWeakRefs()
+            Bun.gc(true)
+            retained = refs.filter(ref => ref.deref() !== undefined).length
+            await Bun.sleep(0)
+            if (retained === 0 && backingMap.size === 0) break
+        }
+
+        expect(retained).toBe(0)
+        expect(backingMap.size).toBe(0)
+        expect(internalFamily.__valdresSelectorFamilyMap.size).toBe(0)
+    })
+
+    test("a live subscriber preserves selector family identity", async () => {
+        const store1 = store()
+        const family = selectorFamily<number, [string]>(() => () => 1)
+        let member: any = family("subscribed")
+        const ref = new WeakRef(member)
+        const detector = new LeakDetector(member)
+        const unsubscribe = store1.sub(member, () => {})
+        member = undefined
+
+        expect(await detector.isLeaking(10)).toBe(true)
+        expect(family("subscribed")).toBe(ref.deref())
+
+        unsubscribe()
+        store1.dispose()
+    })
+
+    test("a cold enumerable store entry preserves selector family identity", async () => {
+        const store1 = store({ enumerable: true })
+        const family = selectorFamily<number, [string]>(() => () => 1)
+        let member: any = family("cold")
+        const ref = new WeakRef(member)
+        const detector = new LeakDetector(member)
+        expect(store1.get(member)).toBe(1)
+        member = undefined
+
+        expect(await detector.isLeaking(10)).toBe(true)
+        expect(family("cold")).toBe(ref.deref())
+
+        store1.dispose()
+    })
+
+    test("a cold default-store entry does not retain selector family identity", async () => {
+        const store1 = store()
+        let factoryCalls = 0
+        const family = selectorFamily<string, [string]>(id => {
+            factoryCalls++
+            return () => id
+        })
+        let member: any = family("cold")
+        const detector = new LeakDetector(member)
+        expect(store1.get(member)).toBe("cold")
+        member = undefined
+
+        expect(await detector.isLeaking()).toBe(false)
+        expect(factoryCalls).toBe(1)
+        expect(store1.get(family("cold"))).toBe("cold")
+        expect(factoryCalls).toBe(2)
+
+        // The store outlives the collection probe: its default weak-key cache,
+        // rather than store collection, allowed the old member to disappear.
+        expect(store1.id).toBeString()
+        store1.dispose()
+    })
+
     test("released selector family entry is collected", async () => {
         const { family, sel } = (() => {
             const baseAtom = atom(1)
@@ -524,21 +625,6 @@ describe("memory leaks (selector families)", () => {
             return d
         })()
         expect(await detector.isLeaking()).toBe(false)
-    })
-
-    test("unreleased selector family entry is retained", async () => {
-        const baseAtom = atom(1)
-        const family = selectorFamily<object, [number]>((...args) => get => ({
-            result: get(baseAtom) * args[0],
-        }))
-        let sel: any = family(3)
-        const detector = new LeakDetector(sel)
-        sel = undefined
-        // A real strong reference does not need the detector's wider
-        // dead-object window; keep this intentional-leak assertion fast.
-        expect(await detector.isLeaking(10)).toBe(true)
-        // Clean up
-        family.release(3)
     })
 })
 

@@ -196,6 +196,26 @@ describe("selectorFamily", () => {
         )
     })
 
+    test("selectorFamily number cache hit", async () => {
+        const vAtom = valdresAtom(0)
+        const jAtom = jotaiAtom(0)
+        const vFamily = valdresSelectorFamily<number, [number]>(
+            id => get => get(vAtom) + id,
+        )
+        const jFamily = jotaiAtomFamily((id: number) =>
+            jotaiAtom(get => get(jAtom) + id),
+        )
+
+        vFamily(1)
+        jFamily(1)
+
+        await compare(
+            "selectorFamily(number) cache hit",
+            () => do_not_optimize(vFamily(1)),
+            () => do_not_optimize(jFamily(1)),
+        )
+    })
+
     test("selectorFamily string cache hit", async () => {
         const vAtom = valdresAtom(0)
         const jAtom = jotaiAtom(0)

@@ -36,7 +36,7 @@ test("engine-only fields stay off public state types", () => {
         // @ts-expect-error internal weak identity cache
         atomFamily.__valdresAtomFamilyMap
 
-        // @ts-expect-error internal strong identity cache
+        // @ts-expect-error internal weak identity cache
         selectorFamily.__valdresSelectorFamilyMap
 
         // The corresponding engine intersections retain every field.

@@ -1,6 +1,7 @@
 import { equal } from "./lib/equal"
 import { familyKey, type EncodedFamilyKey } from "./lib/familyKey"
 import { nativeAsyncSelectorError } from "./lib/nativeAsyncSelectorError"
+import { WeakValueMap } from "./lib/WeakValueMap"
 import type { GetValue } from "./types/GetValue"
 import type { Selector, SelectorGetOptions } from "./types/Selector"
 import type { SelectorFamily } from "./types/SelectorFamily"
@@ -17,8 +18,12 @@ export const selectorFamily = <
     ) => (get: GetValue, options: SelectorGetOptions) => Value | Promise<Value>,
     options?: SelectorFamilyOptions<Value, Args>,
 ): SelectorFamily<Value, Args> => {
-    const map = new Map<EncodedFamilyKey, Selector<Value, Args>>()
-    const stringMap = new Map<string, Selector<Value, Args>>()
+    const map = new WeakValueMap<EncodedFamilyKey, Selector<Value, Args>>({
+        autonomousCleanup: true,
+    })
+    const stringMap = new WeakValueMap<string, Selector<Value, Args>>({
+        autonomousCleanup: true,
+    })
     const keyOf = options?.keyOf
     let selectorOptions: SelectorOptions<Value> | undefined
     if (options !== undefined) {
