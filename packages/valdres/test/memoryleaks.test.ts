@@ -516,6 +516,15 @@ describe("memory leaks (selector families)", () => {
         const family = selectorFamily<number | string, [number | string]>(
             id => () => id,
         )
+        const internalFamily = family as InternalSelectorFamily<
+            number | string,
+            [number | string]
+        >
+        // Inspect the backing Map directly so this assertion cannot trigger
+        // WeakValueMap's public size/lookup sweep. It must reach zero from
+        // FinalizationRegistry callbacks alone.
+        const backingMap = (internalFamily.__valdresSelectorFamilyMap as any)
+            .refs as Map<number | string, unknown>
         const refs = (() => {
             const refs: WeakRef<object>[] = []
             for (let id = 0; id < entryCount; id++) {
@@ -527,9 +536,7 @@ describe("memory leaks (selector families)", () => {
         })()
 
         // Let the creating frame unwind, then use LeakDetector's two-GC and
-        // heap-snapshot pattern to clear JSC's conservative stack residue. If
-        // every member remains after two rounds, stop early: that is the strong
-        // cache's deterministic red result, not conservative-scan noise.
+        // heap-snapshot pattern to clear JSC's conservative stack residue.
         await Bun.sleep(0)
         let retained = entryCount
         for (let round = 0; round < 10; round++) {
@@ -539,17 +546,12 @@ describe("memory leaks (selector families)", () => {
             releaseWeakRefs()
             Bun.gc(true)
             retained = refs.filter(ref => ref.deref() !== undefined).length
-            if (retained === 0 || (round === 1 && retained === entryCount)) {
-                break
-            }
             await Bun.sleep(0)
+            if (retained === 0 && backingMap.size === 0) break
         }
 
         expect(retained).toBe(0)
-        const internalFamily = family as InternalSelectorFamily<
-            number | string,
-            [number | string]
-        >
+        expect(backingMap.size).toBe(0)
         expect(internalFamily.__valdresSelectorFamilyMap.size).toBe(0)
     })
 

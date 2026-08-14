@@ -18,8 +18,12 @@ export const selectorFamily = <
     ) => (get: GetValue, options: SelectorGetOptions) => Value | Promise<Value>,
     options?: SelectorFamilyOptions<Value, Args>,
 ): SelectorFamily<Value, Args> => {
-    const map = new WeakValueMap<EncodedFamilyKey, Selector<Value, Args>>()
-    const stringMap = new WeakValueMap<string, Selector<Value, Args>>()
+    const map = new WeakValueMap<EncodedFamilyKey, Selector<Value, Args>>({
+        autonomousCleanup: true,
+    })
+    const stringMap = new WeakValueMap<string, Selector<Value, Args>>({
+        autonomousCleanup: true,
+    })
     const keyOf = options?.keyOf
     let selectorOptions: SelectorOptions<Value> | undefined
     if (options !== undefined) {
