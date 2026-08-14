@@ -279,7 +279,9 @@ async function writeConsumerSources(
     const values = specifiers.map((_, index) => `entry${index}`).join(", ")
     await writeFile(
         join(consumerDir, "browser.mjs"),
-        `${browserImports}\nglobalThis.__valdresBrowserSmoke = [${values}].map(Object.keys)\n`,
+        `${browserImports}\n` +
+            `globalThis.__valdresBrowserSmoke = [${values}].map(Object.keys)\n` +
+            `new Worker(new URL("./worker.mjs", import.meta.url), { type: "module" })\n`,
     )
     await writeFile(
         join(consumerDir, "worker.mjs"),
@@ -327,16 +329,28 @@ async function typecheck(
 
 async function webpackBuild(consumerDir: string) {
     await new Promise<void>((resolvePromise, reject) => {
-        const compiler = webpack({
-            mode: "production",
-            context: consumerDir,
-            entry: {
-                browser: "./browser.mjs",
-                worker: "./worker.mjs",
+        const compiler = webpack([
+            {
+                mode: "production",
+                context: consumerDir,
+                entry: "./browser.mjs",
+                output: {
+                    filename: "browser.js",
+                    path: join(consumerDir, "dist-webpack", "browser"),
+                },
+                target: "web",
             },
-            output: { path: join(consumerDir, "dist-webpack") },
-            target: "web",
-        })
+            {
+                mode: "production",
+                context: consumerDir,
+                entry: "./worker.mjs",
+                output: {
+                    filename: "worker.js",
+                    path: join(consumerDir, "dist-webpack", "worker"),
+                },
+                target: "webworker",
+            },
+        ])
         compiler.run((error, stats) => {
             const buildError =
                 error ??
@@ -542,16 +556,28 @@ async function runPackageChecks(
                                 minify: true,
                                 outDir: "dist-vite",
                                 rollupOptions: {
-                                    input: {
-                                        browser: join(
-                                            consumerDir,
-                                            "browser.mjs",
-                                        ),
-                                        worker: join(consumerDir, "worker.mjs"),
-                                    },
+                                    // Vite recognizes this browser entry's
+                                    // `new Worker(new URL(...))` edge and runs
+                                    // worker.mjs through its worker pipeline.
+                                    input: join(consumerDir, "browser.mjs"),
                                 },
                             },
                         })
+                        const viteOutputs = await listFiles(
+                            join(consumerDir, "dist-vite"),
+                        )
+                        const emittedWorker = (
+                            await Promise.all(
+                                viteOutputs
+                                    .filter(file => file.endsWith(".js"))
+                                    .map(file => readFile(file, "utf8")),
+                            )
+                        ).some(source => source.includes("postMessage"))
+                        if (!emittedWorker) {
+                            throw new Error(
+                                "Vite did not emit the web worker entry",
+                            )
+                        }
                         if (!quiet) console.log("✓ vite")
                     } catch (error) {
                         failures.add("vite")
