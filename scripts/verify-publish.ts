@@ -2,11 +2,13 @@
  * Verifies the publish pipeline produces valid, publishable packages.
  *
  * Runs: build → build:types → prepack for each public package, then checks:
- *   1. Exports point to real files in dist/
+ *   1. Exports are types-first and point to real files in dist/
  *   2. Types files exist for each export
- *   3. No workspace: references remain in dependencies (after prepack)
- *   4. No scripts or devDependencies in prepacked package.json
- *   5. version field is present
+ *   3. Legacy main/types and engines metadata is present
+ *   4. The core side effect and Svelte's authored sideEffects are preserved
+ *   5. No workspace: references remain in dependencies (after prepack)
+ *   6. No scripts or devDependencies in prepacked package.json
+ *   7. version field is present
  *
  * Always restores original package.json via postpublish, even on failure.
  *
@@ -19,6 +21,11 @@
  * allowed to use `workspace:^` for ergonomics with non-publishable packages
  * like @valdres/test.)
  */
+
+import {
+    INSTANCE_GUARD_SIDE_EFFECTS,
+    NODE_ENGINE_RANGE,
+} from "./publish-metadata.ts"
 
 const PUBLIC_PACKAGES = [
     "packages/valdres",
@@ -158,6 +165,29 @@ for (const pkg of PUBLIC_PACKAGES) {
                     types?: string
                 }
 
+                if (Object.keys(exp)[0] !== "types") {
+                    error(
+                        pkgName,
+                        `export "${exportPath}" must put types first`,
+                    )
+                }
+
+                const conditionalRuntime = exp.import ?? exp.svelte
+                if (!exp.default) {
+                    error(
+                        pkgName,
+                        `export "${exportPath}" missing default field`,
+                    )
+                } else if (
+                    conditionalRuntime &&
+                    exp.default !== conditionalRuntime
+                ) {
+                    error(
+                        pkgName,
+                        `export "${exportPath}" default must match its runtime entry`,
+                    )
+                }
+
                 // The runnable entry is `import` for the bun-built packages, or
                 // the `svelte`/`default` condition for the svelte-package build.
                 const runtimeField = exp.import ?? exp.svelte ?? exp.default
@@ -177,7 +207,7 @@ for (const pkg of PUBLIC_PACKAGES) {
                     const typesPath = `${pkgDir}/${exp.types}`
                     const file = Bun.file(typesPath)
                     if (!(await file.exists())) {
-                        warn(pkgName, `export "${exportPath}" types file missing: ${exp.types}`)
+                        error(pkgName, `export "${exportPath}" types file missing: ${exp.types}`)
                     }
                 } else {
                     error(pkgName, `export "${exportPath}" missing types field`)
@@ -185,6 +215,45 @@ for (const pkg of PUBLIC_PACKAGES) {
             }
         } else {
             error(pkgName, "missing exports field")
+        }
+
+        const rootExport = packageJson.exports?.["."] as
+            | { default?: string; types?: string }
+            | undefined
+
+        if (!packageJson.main) {
+            error(pkgName, "missing main field")
+        } else if (packageJson.main !== rootExport?.default) {
+            error(pkgName, "main must match the root default export")
+        }
+
+        if (!packageJson.types) {
+            error(pkgName, "missing top-level types field")
+        } else if (packageJson.types !== rootExport?.types) {
+            error(pkgName, "top-level types must match the root types export")
+        }
+
+        if (pkgName === "valdres") {
+            if (packageJson.sideEffects === false) {
+                error(
+                    pkgName,
+                    "sideEffects:false would remove the instance guard",
+                )
+            } else if (
+                JSON.stringify(packageJson.sideEffects) !==
+                JSON.stringify(INSTANCE_GUARD_SIDE_EFFECTS)
+            ) {
+                error(pkgName, 'sideEffects must be ["./dist/index.js"]')
+            }
+        } else if (
+            pkgName === "valdres-svelte" &&
+            packageJson.sideEffects !== false
+        ) {
+            error(pkgName, "prepack must preserve sideEffects:false")
+        }
+
+        if (packageJson.engines?.node !== NODE_ENGINE_RANGE) {
+            error(pkgName, `engines.node must be ${NODE_ENGINE_RANGE}`)
         }
 
         // Check: publishConfig

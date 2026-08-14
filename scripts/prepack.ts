@@ -1,3 +1,8 @@
+import {
+    INSTANCE_GUARD_SIDE_EFFECTS,
+    NODE_ENGINE_RANGE,
+} from "./publish-metadata.ts"
+
 const packageJsonFile = await Bun.file("./package.json")
 const packageTmpJsonFile = await Bun.file("./package.tmp.json")
 if (await packageTmpJsonFile.exists()) {
@@ -7,6 +12,15 @@ if (await packageTmpJsonFile.exists()) {
     const json = await packageJsonFile.json()
     delete json.scripts
     delete json.devDependencies
+    if (
+        !json.exports ||
+        typeof json.exports !== "object" ||
+        Array.isArray(json.exports)
+    ) {
+        throw new Error(
+            `Prepack failed: ${json.name} must declare an exports map`,
+        )
+    }
     // valdres-svelte ships uncompiled source via @sveltejs/package and already
     // declares its final dist-pointing `exports` (a `{ types, svelte, default }`
     // condition map) in package.json — the `svelte` condition must survive, and
@@ -25,11 +39,52 @@ if (await packageTmpJsonFile.exists()) {
                     {
                         types: `./${typesDir}/${fileName}.d.ts`,
                         import: `./${folder}/${fileName}.js`,
+                        default: `./${folder}/${fileName}.js`,
                     },
                 ]
             }),
         )
         json.exports = exports
     }
+    const rootExport = json.exports["."]
+    if (
+        !rootExport ||
+        typeof rootExport !== "object" ||
+        typeof rootExport.default !== "string" ||
+        typeof rootExport.types !== "string"
+    ) {
+        throw new Error(
+            `Prepack failed: ${json.name} must declare root types and default exports`,
+        )
+    }
+
+    // Legacy Node10-style resolvers ignore `exports`, so mirror the root
+    // targets in the long-standing top-level fields.
+    json.main = rootExport.default
+    json.types = rootExport.types
+
+    // TypeScript's Node10 resolver also needs explicit redirects for exported
+    // subpaths because their declarations live below dist/types/.
+    const legacyTypeMappings = Object.fromEntries(
+        Object.entries(json.exports)
+            .filter(([exportPath]) => exportPath !== ".")
+            .map(([exportPath, exp]) => [
+                exportPath.slice(2),
+                [exp.types.slice(2)],
+            ]),
+    )
+    if (Object.keys(legacyTypeMappings).length > 0) {
+        json.typesVersions = { "*": legacyTypeMappings }
+    }
+
+    // Importing valdres installs the duplicate-instance guard. Mark only the
+    // core entry as side-effectful; bindings retain their authored metadata.
+    if (json.name === "valdres") {
+        json.sideEffects = [...INSTANCE_GUARD_SIDE_EFFECTS]
+    }
+
+    // All published entrypoints are ESM. Node 22.12 is the oldest supported
+    // floor exercised by the packed-package require(esm) compatibility gate.
+    json.engines = { ...json.engines, node: NODE_ENGINE_RANGE }
     await Bun.write("package.json", JSON.stringify(json, null, 4))
 }
