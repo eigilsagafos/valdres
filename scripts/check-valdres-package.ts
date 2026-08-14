@@ -7,6 +7,11 @@
 import { mkdir, mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import {
+    INSTANCE_GUARD_SIDE_EFFECTS,
+    MINIMUM_NODE_VERSION,
+    NODE_ENGINE_RANGE,
+} from "./publish-metadata.ts"
 
 const rootDir = join(import.meta.dir, "..")
 const packageDir = join(rootDir, "packages", "valdres")
@@ -29,6 +34,12 @@ function check(name: string, command: string[], cwd: string) {
         stdio: ["inherit", "inherit", "inherit"],
     })
     if (result.exitCode !== 0) failedChecks.push(name)
+}
+
+function assertPackedManifest(condition: boolean, message: string) {
+    if (condition) return
+    console.error(`Packed manifest assertion failed: ${message}`)
+    failedChecks.push(`packed manifest: ${message}`)
 }
 
 // Recover an interrupted earlier prepack before this run takes ownership of a
@@ -72,13 +83,72 @@ try {
     const packOutput = packResult.stdout.toString()
     const tarballPath = join(temporaryDir, JSON.parse(packOutput)[0].filename)
 
+    const manifestResult = Bun.spawnSync(
+        ["tar", "-xOf", tarballPath, "package/package.json"],
+        { stdio: ["inherit", "pipe", "inherit"] },
+    )
+    if (manifestResult.exitCode !== 0) {
+        throw new Error("Could not read package.json from packed tarball")
+    }
+    const packedManifest = JSON.parse(manifestResult.stdout.toString())
+    const rootExport = packedManifest.exports?.["."]
+
+    for (const [exportPath, exportValue] of Object.entries(
+        packedManifest.exports ?? {},
+    )) {
+        const exp = exportValue as Record<string, unknown>
+        assertPackedManifest(
+            Object.keys(exp)[0] === "types",
+            `export ${exportPath} must put types first`,
+        )
+        assertPackedManifest(
+            typeof exp.import === "string",
+            `export ${exportPath} must include import`,
+        )
+        assertPackedManifest(
+            exp.default === exp.import,
+            `export ${exportPath} default must match import`,
+        )
+    }
+    assertPackedManifest(
+        packedManifest.main === "./dist/index.js",
+        "main must be ./dist/index.js",
+    )
+    assertPackedManifest(
+        packedManifest.types === "./dist/types/index.d.ts",
+        "types must be ./dist/types/index.d.ts",
+    )
+    assertPackedManifest(
+        rootExport?.default === "./dist/index.js",
+        "root default export must be ./dist/index.js",
+    )
+    assertPackedManifest(
+        JSON.stringify(packedManifest.sideEffects) ===
+            JSON.stringify(INSTANCE_GUARD_SIDE_EFFECTS),
+        'sideEffects must be ["./dist/index.js"]',
+    )
+    assertPackedManifest(
+        packedManifest.engines?.node === NODE_ENGINE_RANGE,
+        `engines.node must be ${NODE_ENGINE_RANGE}`,
+    )
+
     // ATTW and publint each pack the dist-shaped package independently. ATTW
     // discovers both exports from package.json: `.` and
     // `./adapter-internals/v1`. The package is intentionally ESM-only, so the
-    // matching ATTW profile excludes legacy and CommonJS resolution modes.
+    // matching ATTW invocation ignores only ATTW's pre-require(esm) warning;
+    // Node10 resolution remains enforced for both public entrypoints.
     check(
         "attw",
-        ["bunx", "attw", "--pack", "--profile", "esm-only", "."],
+        [
+            "bunx",
+            "attw",
+            ".",
+            "--pack",
+            "--profile",
+            "strict",
+            "--ignore-rules",
+            "cjs-resolves-to-esm",
+        ],
         packageDir,
     )
     check("publint", ["bunx", "publint", "--strict"], packageDir)
@@ -129,6 +199,25 @@ try {
         consumerDir,
     )
     if (!failedChecks.includes("consumer install")) {
+        check(
+            'Current Node require("valdres")',
+            ["node", "--input-type=commonjs", "--eval", 'require("valdres")'],
+            consumerDir,
+        )
+        check(
+            `Node ${MINIMUM_NODE_VERSION} require("valdres")`,
+            [
+                "npx",
+                "--yes",
+                `--package=node@${MINIMUM_NODE_VERSION}`,
+                "--",
+                "node",
+                "--input-type=commonjs",
+                "--eval",
+                'require("valdres")',
+            ],
+            consumerDir,
+        )
         check(
             "Node16 consumer typecheck",
             [join(rootDir, "node_modules", ".bin", "tsc"), "-p", "."],
