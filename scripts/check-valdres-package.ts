@@ -106,7 +106,21 @@ try {
             `export ${exportPath} must include import`,
         )
         assertPackedManifest(
-            exp.default === exp.import,
+            typeof exp.default === "string",
+            `export ${exportPath} must include default`,
+        )
+        assertPackedManifest(
+            typeof exp.development === "string",
+            `export ${exportPath} must include development`,
+        )
+        assertPackedManifest(
+            typeof exp.default !== "string" ||
+                Object.keys(exp).indexOf("development") <
+                    Object.keys(exp).indexOf("default"),
+            `export ${exportPath} must put development before default`,
+        )
+        assertPackedManifest(
+            typeof exp.default !== "string" || exp.default === exp.import,
             `export ${exportPath} default must match import`,
         )
     }
@@ -123,9 +137,13 @@ try {
         "root default export must be ./dist/index.js",
     )
     assertPackedManifest(
+        rootExport?.development === "./dist/development/index.js",
+        "root development export must be ./dist/development/index.js",
+    )
+    assertPackedManifest(
         JSON.stringify(packedManifest.sideEffects) ===
             JSON.stringify(INSTANCE_GUARD_SIDE_EFFECTS),
-        'sideEffects must be ["./dist/index.js"]',
+        `sideEffects must be ${JSON.stringify(INSTANCE_GUARD_SIDE_EFFECTS)}`,
     )
     assertPackedManifest(
         packedManifest.engines?.node === NODE_ENGINE_RANGE,

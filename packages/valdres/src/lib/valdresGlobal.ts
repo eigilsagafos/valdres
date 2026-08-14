@@ -7,11 +7,14 @@ import type { AtomFamily } from "../types/AtomFamily"
  *  object so the same slot can carry the global name registry. `version` keeps
  *  the single-instance guard in index.ts working: it is `undefined` until an
  *  instance claims the slot (set from the build-time VALDRES_VERSION), and a
- *  second instance loading throws. `registry` maps every `name`d atom and
- *  atomFamily to its object — names are global addresses, so the registry is
- *  deliberately instance-global, not per-store. */
+ *  second instance loading throws. `buildVariant` identifies whether that
+ *  instance came from the default, development, or unbuilt source artifact.
+ *  `registry` maps every `name`d atom and atomFamily to its object — names are
+ *  global addresses, so the registry is deliberately instance-global, not
+ *  per-store. */
 export type ValdresGlobal = {
     version: string | undefined
+    buildVariant?: string
     registry: Map<string, Atom<any> | AtomFamily<any>>
 }
 

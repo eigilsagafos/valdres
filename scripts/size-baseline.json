@@ -1,25 +1,37 @@
 {
     "dist": {
-        "raw": 125142,
-        "gzip": 39102
+        "raw": 254830,
+        "gzip": 79634
     },
     "distFiles": {
         "adapter-internals/v1.js": {
             "raw": 479,
-            "gzip": 331
+            "gzip": 334
         },
-        "chunk-635t7pe5.js": {
-            "raw": 90366,
-            "gzip": 27065
+        "chunk-2y76gp4f.js": {
+            "raw": 91051,
+            "gzip": 27256
+        },
+        "development/adapter-internals/v1.js": {
+            "raw": 479,
+            "gzip": 332
+        },
+        "development/chunk-7s188se3.js": {
+            "raw": 91051,
+            "gzip": 27256
+        },
+        "development/index.js": {
+            "raw": 35887,
+            "gzip": 12231
         },
         "index.js": {
-            "raw": 34297,
-            "gzip": 11706
+            "raw": 35883,
+            "gzip": 12225
         }
     },
     "packed": {
-        "raw": 360055,
-        "gzip": 106310
+        "raw": 494819,
+        "gzip": 146031
     },
     "fixtures": {
         "atom": {

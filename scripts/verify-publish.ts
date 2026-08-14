@@ -159,6 +159,7 @@ for (const pkg of PUBLIC_PACKAGES) {
         if (packageJson.exports) {
             for (const [exportPath, exportValue] of Object.entries(packageJson.exports)) {
                 const exp = exportValue as {
+                    development?: string
                     import?: string
                     svelte?: string
                     default?: string
@@ -170,6 +171,40 @@ for (const pkg of PUBLIC_PACKAGES) {
                         pkgName,
                         `export "${exportPath}" must put types first`,
                     )
+                }
+
+                if (pkgName === "valdres") {
+                    if (!exp.development) {
+                        error(
+                            pkgName,
+                            `export "${exportPath}" missing development field`,
+                        )
+                    } else {
+                        const keys = Object.keys(exp)
+                        if (
+                            keys.includes("default") &&
+                            keys.indexOf("development") >
+                            keys.indexOf("default")
+                        ) {
+                            error(
+                                pkgName,
+                                `export "${exportPath}" must put development before default`,
+                            )
+                        }
+                        const developmentPath = `${pkgDir}/${exp.development}`
+                        const file = Bun.file(developmentPath)
+                        if (!(await file.exists())) {
+                            error(
+                                pkgName,
+                                `export "${exportPath}" development entry file missing: ${exp.development}`,
+                            )
+                        } else if (file.size === 0) {
+                            error(
+                                pkgName,
+                                `export "${exportPath}" development entry file is empty: ${exp.development}`,
+                            )
+                        }
+                    }
                 }
 
                 const conditionalRuntime = exp.import ?? exp.svelte
@@ -243,7 +278,10 @@ for (const pkg of PUBLIC_PACKAGES) {
                 JSON.stringify(packageJson.sideEffects) !==
                 JSON.stringify(INSTANCE_GUARD_SIDE_EFFECTS)
             ) {
-                error(pkgName, 'sideEffects must be ["./dist/index.js"]')
+                error(
+                    pkgName,
+                    `sideEffects must be ${JSON.stringify(INSTANCE_GUARD_SIDE_EFFECTS)}`,
+                )
             }
         } else if (
             pkgName === "valdres-svelte" &&

@@ -4,15 +4,23 @@ import { valdresGlobal } from "./lib/valdresGlobal"
 // Bun.build's define option. Declared at module scope (not global) so we
 // don't conflict with consumers' @types/node or bun-types.
 declare const process: { env: { VALDRES_VERSION?: string } }
+declare const __VALDRES_BUILD_VARIANT__: string
+
+const BUILD_VARIANT =
+    typeof __VALDRES_BUILD_VARIANT__ === "undefined"
+        ? "source"
+        : __VALDRES_BUILD_VARIANT__
 // Single-instance guard. The slot (see valdresGlobal) also carries the global
-// name registry; `version` is claimed exactly once, by the first instance.
+// name registry; `version` and `buildVariant` are claimed exactly once, by the
+// first instance.
 const slot = valdresGlobal()
 if (slot.version) {
     throw new Error(
-        `valdres: an instance is already loaded. Loaded: ${slot.version}. Attempted to load: ${process.env.VALDRES_VERSION}`,
+        `valdres: an instance is already loaded. Loaded: ${slot.version} (${slot.buildVariant ?? "unknown"}). Attempted to load: ${process.env.VALDRES_VERSION} (${BUILD_VARIANT})`,
     )
 } else {
     slot.version = process.env.VALDRES_VERSION
+    slot.buildVariant = BUILD_VARIANT
 }
 
 export { atom } from "./atom"

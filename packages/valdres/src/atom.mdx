@@ -48,10 +48,29 @@ const nameAtom = atom("default", { name: "nameAtom" })
 
 ## Immutability and exotic values
 
-In development and tests, Valdres deep-freezes plain object and array atom
-values so accidental in-place changes fail immediately. Error objects and
-Promise handles remain usable while their object surface is frozen. Production
-builds skip this development check.
+In development mode, Valdres deep-freezes immutable values on every accepted
+write so accidental in-place changes fail immediately. This includes plain
+object and array atom values; Error objects and Promise handles remain usable
+while their object surface is frozen. Production builds skip this development
+check.
+
+In runtimes with `process.env`, `NODE_ENV` selects the mode. Process-less CDN
+and edge runtimes default to production. To select the process-less debugging
+entry and retain development-only deep-freeze, validation diagnostics, warnings,
+and instrumentation, enable the package's `development` export condition in the
+bundler consistently across the entire application, including framework
+adapters. Do not mix default and development entrypoints: they intentionally
+use isolated runtime graphs.
+
+No-build CDN users can request the published `dist/development/index.js` file
+directly. That raw entry must not be combined with an adapter resolved from the
+default package entry; adapter applications should use the bundler condition so
+both the public and adapter-internals entrypoints select the development graph.
+
+Bun's bundler enables the `development` export condition by default. Use
+`bun build --production` when building a production process-less or edge app;
+adding only `--conditions=production` does not disable Bun's development
+condition.
 
 `Object.freeze` cannot make mutable built-ins or host objects reliably
 immutable. This includes `Map`, `Set`, `WeakMap`, `WeakSet`, `Date`,

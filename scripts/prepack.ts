@@ -32,12 +32,20 @@ if (await packageTmpJsonFile.exists()) {
                 const [, , ...rest] = v.split("/")
                 const file = rest.pop()
                 const folder = ["dist", ...rest].join("/")
+                const developmentFolder = ["dist", "development", ...rest].join(
+                    "/",
+                )
                 const typesDir = ["dist", "types", ...rest].join("/")
                 const fileName = file.split(".")[0]
                 return [
                     k,
                     {
                         types: `./${typesDir}/${fileName}.d.ts`,
+                        ...(json.name === "valdres"
+                            ? {
+                                  development: `./${developmentFolder}/${fileName}.js`,
+                              }
+                            : {}),
                         import: `./${folder}/${fileName}.js`,
                         default: `./${folder}/${fileName}.js`,
                     },

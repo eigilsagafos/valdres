@@ -7,7 +7,7 @@ test("Error", async () => {
         await expect(
             import("./index?duplicate-instance-test"),
         ).rejects.toThrowError(
-            "valdres: an instance is already loaded. Loaded: 0.0.0",
+            "valdres: an instance is already loaded. Loaded: 0.0.0 (unknown)",
         )
     } finally {
         globalThis.__valdres__ = previous
