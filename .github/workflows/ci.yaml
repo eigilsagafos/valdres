@@ -46,6 +46,11 @@ jobs:
               run: bun run typecheck
             - name: Typecheck type-level tests
               run: bun --filter 'valdres' typecheck:types
+            - name: Check valdres package compatibility
+              # Packs the real artifact, checks both exports with ATTW and
+              # publint, then installs the tarball into a strict Node16
+              # TypeScript consumer with skipLibCheck disabled.
+              run: bun run scripts/check-valdres-package.ts
             - name: Deterministic architecture gates
               run: bun --filter 'valdres' test:architecture
             - name: Deterministic package-size gates

@@ -20,7 +20,7 @@
     ],
     "scripts": {
         "build": "NODE_ENV=production bun build src/index.ts --outdir ./dist --packages external",
-        "build:types": "rm -rf dist/types && bunx tsgo",
+        "build:types": "rm -rf dist/types && bunx tsgo && bun run ../../../scripts/rewrite-declaration-imports.ts dist/types",
         "dev": "bun run dev/server.ts",
         "test": "bun test",
         "test:ci": "bun test"
