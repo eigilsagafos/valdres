@@ -24,7 +24,7 @@
         "dist"
     ],
     "scripts": {
-        "build": "svelte-package --input src --output dist --tsconfig ./tsconfig.json && find dist \\( -name '*.test.*' -o -name '*.mdx' \\) -delete",
+        "build": "svelte-package --input src --output dist --tsconfig ./tsconfig.json && find dist \\( -name '*.test.*' -o -name '*.mdx' \\) -delete && bun run ../../scripts/rewrite-declaration-imports.ts dist",
         "test": "bun test --conditions browser src/",
         "lint:publish": "publint --strict && svelte-check --workspace ./dist"
     },

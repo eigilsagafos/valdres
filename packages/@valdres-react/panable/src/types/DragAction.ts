@@ -1,8 +1,8 @@
-import type { Selector } from "../../../../valdres/src/types/Selector"
-import type { EventCallbackFn } from "../../../draggable/types/EventCallbackFn"
-import type { Size } from "../../../draggable/types/Size"
+import type { Selector } from "valdres"
+import type { EventCallbackFn } from "./EventCallbackFn"
 import type { EventId } from "./EventId"
 import type { Point } from "./Point"
+import type { Size } from "./Size"
 
 export type DragAction<Meta = any> = {
     kind: "drag"

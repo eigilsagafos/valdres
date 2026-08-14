@@ -1,8 +1,8 @@
 import React, { type CSSProperties } from "react"
 import type { Selector } from "valdres"
 import { useValue } from "valdres-react"
-import type { Size } from "../../../draggable/src/types/Size"
 import type { Point } from "../types/Point"
+import type { Size } from "../types/Size"
 
 export const PositionAbsolute = ({
     children,

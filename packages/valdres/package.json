@@ -21,7 +21,8 @@
     ],
     "scripts": {
         "build": "NODE_ENV=production bun run build.ts",
-        "build:types": "rm -rf dist/types && bunx tsgo",
+        "build:types": "rm -rf dist/types && bunx tsgo && bun run ../../scripts/rewrite-declaration-imports.ts dist/types",
+        "check:package": "bun run ../../scripts/check-valdres-package.ts",
         "typecheck:types": "bunx tsc -p tsconfig.types-test.json",
         "test": "bun test --reporter=dots",
         "test:bench": "rm -f test/performance/bench-results.ndjson && BENCH_SUITE=standard NODE_ENV=production bun test --timeout 60000 --concurrency 1 ./test/performance/*.bench.ts && BENCH_SUITE=standard NODE_ENV=production bun test --timeout 60000 --concurrency 1 ./test/performance/architecture.timing.ts",
@@ -33,9 +34,11 @@
         "test:memory:node": "NODE_OPTIONS=--expose-gc NODE_ENV=production npx vitest run --config vitest.memory.config.ts"
     },
     "devDependencies": {
+        "@arethetypeswrong/cli": "0.18.5",
         "@testing-library/react": "16.3.0",
         "jotai": "2.20.2",
         "mitata": "^1.0.34",
+        "publint": "0.3.21",
         "react": "19.1.1",
         "react-dom": "19.1.1",
         "recoil": "0.7.7",

@@ -23,8 +23,8 @@ if (await packageTmpJsonFile.exists()) {
                 return [
                     k,
                     {
-                        import: `./${folder}/${fileName}.js`,
                         types: `./${typesDir}/${fileName}.d.ts`,
+                        import: `./${folder}/${fileName}.js`,
                     },
                 ]
             }),

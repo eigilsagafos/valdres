@@ -1,6 +1,6 @@
 import { useEffect } from "react"
 import { useSetAtom, type Atom } from "valdres-react"
-import type { Size } from "../../../../draggable/src/types/Size"
+import type { Size } from "../../types/Size"
 
 const observerCallbacks = new WeakMap()
 
