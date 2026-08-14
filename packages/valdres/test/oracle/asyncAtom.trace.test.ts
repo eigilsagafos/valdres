@@ -5,7 +5,7 @@
  *  A superseded in-flight promise (last-write-wins) must never commit. An async
  *  default resolves the same way. Settlement is awaited via an explicit signal
  *  (nextCommit / mockAsyncSource) — never a fixed microtask count. */
-import { describe, expect, test } from "bun:test"
+import { describe, expect, test } from "../performance/test-compat"
 import { atom } from "../../src/atom"
 import { store } from "../../src/store"
 import type { Atom } from "../../src/types/Atom"

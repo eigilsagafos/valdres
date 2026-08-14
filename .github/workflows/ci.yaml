@@ -48,6 +48,35 @@ jobs:
               run: bun --filter 'valdres' typecheck:types
             - name: Deterministic architecture gates
               run: bun --filter 'valdres' test:architecture
+            - name: Rewrite guards (Node/V8)
+              # Consumer V8 can expose oracle and matcher assumptions hidden by
+              # Bun/JSC. Parse JUnit too, so empty collection cannot pass quietly.
+              run: |
+                  report="$RUNNER_TEMP/valdres-rewrite-guards.xml"
+
+                  set +e
+                  bun --filter 'valdres' test:rewrite-guards:node -- \
+                      --reporter=default \
+                      --reporter=junit \
+                      --outputFile.junit="$report"
+                  vitest_status=$?
+                  set -e
+
+                  node - "$report" <<'NODE'
+                  const fs = require('fs');
+                  const report = process.argv[2];
+                  const xml = fs.readFileSync(report, 'utf8');
+                  const testCount = [...xml.matchAll(/<testsuite\b[^>]*\btests="(\d+)"/g)]
+                      .reduce((total, match) => total + Number(match[1]), 0);
+
+                  console.log(`Node/V8 rewrite guards collected ${testCount} tests.`);
+                  if (testCount === 0) {
+                      console.error('::error::Node/V8 rewrite-guard lane collected zero tests');
+                      process.exit(1);
+                  }
+                  NODE
+
+                  exit "$vitest_status"
             - name: Retained-memory gates (Bun)
               run: bun --filter 'valdres' test:memory:bun
             - name: Retained-memory gates (Node)

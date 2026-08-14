@@ -5,7 +5,7 @@
  *  work is cancelled — its signal aborts and its settlement becomes a silent
  *  no-op (no trace events, no throw). onMount cleanups run on dispose. The
  *  process-wide globalStore cannot be disposed. */
-import { describe, expect, test } from "bun:test"
+import { describe, expect, test } from "../performance/test-compat"
 import { atom } from "../../src/atom"
 import { atomFamily } from "../../src/atomFamily"
 import { globalStore } from "../../src/globalStore"

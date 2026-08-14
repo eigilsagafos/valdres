@@ -1,5 +1,5 @@
 import { getStoreData } from "./getStoreData"
-import { describe, expect, test } from "bun:test"
+import { describe, expect, test } from "../../test/performance/test-compat"
 import { observeFamilyIndex } from "./atomFamilyIndex"
 import { atomFamily } from "../atomFamily"
 import { selector } from "../selector"

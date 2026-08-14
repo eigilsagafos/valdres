@@ -2,7 +2,7 @@
  *
  *  Locks the observable spine for `store.set` (value + updater), a no-op (equal)
  *  set that must not commit, and a bulk multi-atom write via `store.txn`. */
-import { expect } from "bun:test"
+import { expect } from "../performance/test-compat"
 import { store } from "../../src/store"
 import type { Atom } from "../../src/types/Atom"
 import type { Selector } from "../../src/types/Selector"

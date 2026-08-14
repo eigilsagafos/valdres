@@ -5,7 +5,7 @@
  *    - a downstream selector DOES recompute on the settle.
  *  Settlement is reported to a `{ selectors: true }` onChange as source
  *  "async-set", and the settle is a separate commitEnd boundary. */
-import { describe, expect, test } from "bun:test"
+import { describe, expect, test } from "../performance/test-compat"
 import { store } from "../../src/store"
 import type { Store } from "../../src/types/Store"
 import { runTraceTable, type TraceCase } from "./runTable"

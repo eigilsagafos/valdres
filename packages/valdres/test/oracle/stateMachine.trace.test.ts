@@ -16,7 +16,7 @@
  *  `% 2` / `% 4` collapses the corpus (e.g. atoms 0 and 2 never written, only
  *  transaction sizes 1 and 3). mulberry32 mixes all bits, so `% bound` on its
  *  output is well distributed — guarded by the generator-coverage test below. */
-import { describe, expect, test } from "bun:test"
+import { describe, expect, test } from "../performance/test-compat"
 import { store } from "../../src/store"
 import type { Atom } from "../../src/types/Atom"
 import {

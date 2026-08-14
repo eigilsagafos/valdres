@@ -5,7 +5,7 @@
  *  callback cancels the whole txn atomically (no partial commit). Writes made by
  *  subscribers during the commit coalesce into the outer commit's single
  *  commitEnd. */
-import { expect } from "bun:test"
+import { expect } from "../performance/test-compat"
 import { store } from "../../src/store"
 import type { Atom } from "../../src/types/Atom"
 import type { Store } from "../../src/types/Store"

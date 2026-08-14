@@ -6,7 +6,7 @@
  *  insertion order), so this suite locks only the phase *blocks* — onSet* then
  *  sub* then onChange* then commitEnd* — and treats each block as an order-free
  *  bag, mirroring the `.slice().sort()` convention in `onCommitEnd.test.ts`. */
-import { expect } from "bun:test"
+import { expect } from "../performance/test-compat"
 import { store } from "../../src/store"
 import type { Atom } from "../../src/types/Atom"
 import type { Selector } from "../../src/types/Selector"
