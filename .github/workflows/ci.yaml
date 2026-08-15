@@ -387,19 +387,63 @@ jobs:
                           throw new Error('Changesets returned an invalid pull request number');
                       }
 
-                      const { data: pull } = await github.rest.pulls.get({
-                          owner: context.repo.owner,
-                          repo: context.repo.repo,
-                          pull_number: pullNumber
-                      });
                       const expectedRepository = `${context.repo.owner}/${context.repo.repo}`;
-                      if (pull.state !== 'open' ||
-                          pull.base.ref !== 'main' ||
-                          pull.base.repo.full_name !== expectedRepository ||
-                          pull.head.repo.full_name !== expectedRepository ||
-                          pull.head.ref !== 'changeset-release/main' ||
-                          !/^[0-9a-f]{40}$/i.test(pull.head.sha)) {
-                          throw new Error('Changesets pull request identity is not trusted');
+                      const [{ stdout: shaOutput }, { stdout: branchOutput }] = await Promise.all([
+                          exec.getExecOutput('git', ['rev-parse', 'HEAD'], { silent: true }),
+                          exec.getExecOutput('git', ['branch', '--show-current'], { silent: true })
+                      ]);
+                      const releaseSha = shaOutput.trim();
+                      const releaseBranch = branchOutput.trim();
+                      if (!/^[0-9a-f]{40}$/i.test(releaseSha) ||
+                          releaseBranch !== 'changeset-release/main') {
+                          throw new Error('Changesets did not leave the trusted release commit checked out');
+                      }
+
+                      // The force-push can become visible through the Git ref API
+                      // before the pull-request API refreshes its cached head SHA.
+                      // Require both views to converge on the exact local commit.
+                      let converged = false;
+                      let lastPullSha = 'unknown';
+                      let lastRefSha = 'unknown';
+                      for (let attempt = 1; attempt <= 15; attempt++) {
+                          const [pullResponse, refResponse] = await Promise.all([
+                              github.rest.pulls.get({
+                                  owner: context.repo.owner,
+                                  repo: context.repo.repo,
+                                  pull_number: pullNumber
+                              }),
+                              github.rest.git.getRef({
+                                  owner: context.repo.owner,
+                                  repo: context.repo.repo,
+                                  ref: 'heads/changeset-release/main'
+                              })
+                          ]);
+                          const candidate = pullResponse.data;
+                          const branch = refResponse.data;
+                          lastPullSha = candidate.head.sha;
+                          lastRefSha = branch.object.sha;
+                          if (candidate.state !== 'open' ||
+                              candidate.base.ref !== 'main' ||
+                              candidate.base.repo.full_name !== expectedRepository ||
+                              candidate.head.repo.full_name !== expectedRepository ||
+                              candidate.head.ref !== releaseBranch) {
+                              throw new Error('Changesets pull request identity is not trusted');
+                          }
+                          if (candidate.head.sha === releaseSha &&
+                              branch.object.type === 'commit' &&
+                              branch.object.sha === releaseSha) {
+                              converged = true;
+                              break;
+                          }
+                          if (attempt < 15) {
+                              await new Promise(resolve => setTimeout(resolve, 2000));
+                          }
+                      }
+                      if (!converged) {
+                          throw new Error(
+                              `Changesets APIs did not converge on ${releaseSha}; ` +
+                              `pull=${lastPullSha}, ref=${lastRefSha}`
+                          );
                       }
 
                       const files = await github.paginate(
@@ -435,7 +479,7 @@ jobs:
                           owner: context.repo.owner,
                           repo: context.repo.repo,
                           name: 'benchmark_pr',
-                          head_sha: pull.head.sha,
+                          head_sha: releaseSha,
                           status: 'completed',
                           conclusion: 'success',
                           details_url: `${context.serverUrl}/${expectedRepository}/actions/runs/${context.runId}`,
