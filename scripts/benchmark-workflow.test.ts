@@ -266,8 +266,14 @@ describe("trusted generated-release pull requests", () => {
         expect(publish).toContain(
             "if: steps.changesets.outputs.pullRequestNumber != ''",
         )
-        expect(publish).toContain("pull.state !== 'open'")
-        expect(publish).toContain("pull.head.ref !== 'changeset-release/main'")
+        expect(publish).toContain(
+            "exec.getExecOutput('git', ['rev-parse', 'HEAD']",
+        )
+        expect(publish).toContain("releaseBranch !== 'changeset-release/main'")
+        expect(publish).toContain("attempt <= 15")
+        expect(publish).toContain("candidate.head.sha === releaseSha")
+        expect(publish).toContain("branch.object.sha === releaseSha")
+        expect(publish).toContain("candidate.state !== 'open'")
         expect(publish).toContain("files.length === 0 || files.length > 500")
         expect(publish).toContain("path === '.changeset/pre.json'")
         expect(publish).toContain("[a-z0-9-]+\\.md")
@@ -277,11 +283,17 @@ describe("trusted generated-release pull requests", () => {
             "Refusing benchmark check for non-release files",
         )
         expect(publish).toContain("name: 'benchmark_pr'")
-        expect(publish).toContain("head_sha: pull.head.sha")
+        expect(publish).toContain("head_sha: releaseSha")
 
-        expect(publish.indexOf("uses: changesets/action@v1")).toBeLessThan(
-            publish.indexOf("name: 'benchmark_pr'"),
-        )
+        const changesets = publish.indexOf("uses: changesets/action@v1")
+        const localSha = publish.indexOf("exec.getExecOutput('git', [")
+        const remoteRef = publish.indexOf("github.rest.git.getRef")
+        const changedFiles = publish.indexOf("github.rest.pulls.listFiles")
+        const createCheck = publish.indexOf("name: 'benchmark_pr'")
+        expect(changesets).toBeLessThan(localSha)
+        expect(localSha).toBeLessThan(remoteRef)
+        expect(remoteRef).toBeLessThan(changedFiles)
+        expect(changedFiles).toBeLessThan(createCheck)
     })
 })
 
