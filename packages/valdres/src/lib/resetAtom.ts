@@ -6,6 +6,7 @@ import { runCommitPlan } from "./commitEngine"
 import { createCommitErrors } from "./commitErrors"
 import { SETTLE_DEFAULT } from "./commitIntents"
 import {
+    createCommitPlan,
     forestSettlement,
     pendingGlobalEffects,
     singleStoreForest,
@@ -68,41 +69,46 @@ export const resetAtom = <V>(
     const globalEffects: PlannedGlobalEffects | undefined = isGlobalAtom(atom)
         ? pendingGlobalEffects(data, "set", applyGlobalSets)
         : undefined
-    runCommitPlan({
-        data,
-        settlement: globalEffects
-            ? forestSettlement(
-                  data,
-                  singleStoreForest(data, updatedAtoms),
-                  globalEffects,
-                  settleCommitForest,
-              )
-            : updateSettlement(
-                  data,
-                  updatedAtoms,
-                  settleCommit,
-                  SETTLE_DEFAULT,
-              ),
-        apply: () => {
-            updatedAtoms.push(
-                ...writeAtoms(
-                    pairs,
-                    data,
-                    writeInitializedAtoms,
-                    "collect",
-                    onSets,
-                ),
-            )
-            if (globalEffects) {
-                const sets = collectGlobalOnSets(onSets)
-                if (sets) globalEffects.sets.push(...sets)
-            }
-        },
-        onSets,
-        errors,
-        report: changeSink,
-        flushReport: changeSink ? () => flushChangeSink(changeSink) : undefined,
-        boundary: activeCommitBoundary(),
-    })
+    runCommitPlan(
+        createCommitPlan(
+            data,
+            globalEffects
+                ? forestSettlement(
+                      data,
+                      singleStoreForest(data, updatedAtoms),
+                      globalEffects,
+                      settleCommitForest,
+                  )
+                : updateSettlement(
+                      data,
+                      updatedAtoms,
+                      settleCommit,
+                      SETTLE_DEFAULT,
+                  ),
+            onSets,
+            errors,
+            changeSink,
+            undefined,
+            undefined,
+            () => {
+                updatedAtoms.push(
+                    ...writeAtoms(
+                        pairs,
+                        data,
+                        writeInitializedAtoms,
+                        "collect",
+                        onSets,
+                    ),
+                )
+                if (globalEffects) {
+                    const sets = collectGlobalOnSets(onSets)
+                    if (sets) globalEffects.sets.push(...sets)
+                }
+            },
+            undefined,
+            changeSink ? () => flushChangeSink(changeSink) : undefined,
+            activeCommitBoundary(),
+        ),
+    )
     return value
 }

@@ -30,8 +30,9 @@ type PropagateSelector<Context> = (
     context: Context,
 ) => void
 
-const flagsOf = (value: number): number => value % FLAG_BASE
-const pendingOf = (value: number): number => Math.floor(value / FLAG_BASE)
+// Packed metadata is uint32: six flag bits leave a ~67M-node pending ceiling.
+const flagsOf = (value: number): number => value & 63
+const pendingOf = (value: number): number => value >>> 6
 const withFlags = (value: number, flags: number): number =>
     pendingOf(value) * FLAG_BASE + flags
 const withPending = (value: number, pending: number): number =>

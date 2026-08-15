@@ -724,8 +724,10 @@ describe("batchUpdates and scopes", () => {
         const A = store("A")
         const B = A.scope("B")
 
-        expect(getStoreData(A).batchUpdates).toBeUndefined()
-        expect(getStoreData(B).batchUpdates).toBeUndefined()
+        // Disabled is stored explicitly so root and scoped StoreData objects
+        // retain the same complete hidden-class shape.
+        expect(getStoreData(A).batchUpdates).toBe(false)
+        expect(getStoreData(B).batchUpdates).toBe(false)
 
         const a = atom(0)
         const cb = mock(() => {})

@@ -54,7 +54,7 @@ export const pendingDefaultPromise = (
     while (cur) {
         const entry = cur.pendingDefaults.get(atom)
         if (entry) return entry.promise
-        cur = "parent" in cur ? cur.parent : undefined
+        cur = cur.parent
     }
     return undefined
 }
@@ -72,6 +72,6 @@ export const resolvePendingDefault = <Value>(
             cur.pendingDefaults.delete(atom)
             return
         }
-        cur = "parent" in cur ? cur.parent : undefined
+        cur = cur.parent
     }
 }

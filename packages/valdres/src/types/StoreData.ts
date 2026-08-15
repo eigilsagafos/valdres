@@ -203,7 +203,7 @@ export type StoreData = {
     /** True when this store was created with `{ enumerable: true }`: `values` is
      *  a `Map` (not a `WeakMap`) so `store.snapshot()` can list current state.
      *  Set once at creation and inherited by every (nested) scope. */
-    enumerable?: boolean
+    enumerable: boolean
     scopes: Map<string, StoreData>
     /** Families whose membership changed in this store but whose snapshot array
      *  has not been rendered yet — `values` holds a deferred stand-in carrying
@@ -222,24 +222,23 @@ export type StoreData = {
      *  deferred can leave this above 0 permanently — harmless: the set retains
      *  nothing and the only cost is one WeakSet probe per read in this store. */
     dirtyFamilyIndexCount: number
-    batchUpdates?: boolean
-    schemaValidation?: boolean
+    batchUpdates: boolean
+    schemaValidation: boolean
     scopeValueIndex: WeakMap<WeakKey, Set<StoreData>>
     /** Per inherited atom/family, the immediate child branches that contain at
      *  least one active dependent before any intervening atom shadow. Parent
      *  propagation uses this to enter only affected scope subtrees. */
     inheritedDependencyBranches: WeakMap<WeakKey, Set<StoreData>>
-    /** Present iff this is a scoped store. Root stores have `parent: undefined`. */
-    parent?: StoreData
-    /** Present iff this is a scoped store. Tracks active scope consumers
-     *  so the scope can be detached when the last consumer leaves. */
-    scopeConsumers?: Set<(expectedToDestroy?: boolean) => boolean>
-    /** Present iff this is a scoped store. Records keys this scope registered
-     *  in its parent's `scopeValueIndex`, used for cleanup on detach. */
-    scopeIndexKeys?: Set<WeakKey>
-    /** Present iff this is a scoped store. Records inherited dependency keys
-     *  for which this scope is registered as a branch in its parent's index. */
-    inheritedDependencyKeys?: Set<WeakKey>
+    /** The parent for a scoped store; `undefined` on a root store. */
+    parent: StoreData | undefined
+    /** Active scope consumers, or `undefined` on a root store. */
+    scopeConsumers: Set<(expectedToDestroy?: boolean) => boolean> | undefined
+    /** Keys this scope registered in its parent's `scopeValueIndex`, or
+     *  `undefined` on a root store. */
+    scopeIndexKeys: Set<WeakKey> | undefined
+    /** Inherited dependency keys for which this scope is registered as a
+     *  branch in its parent's index, or `undefined` before the first key. */
+    inheritedDependencyKeys: Set<WeakKey> | undefined
     /** Store-wide change listeners registered via `store.onChange`, each mapped
      *  to the kinds of change it opted into: `atoms` (default true) and
      *  `selectors` (default false). Absent (undefined) until the first listener

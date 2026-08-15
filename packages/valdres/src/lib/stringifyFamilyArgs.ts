@@ -5,14 +5,19 @@ const unsupported = (description: string): never => {
     )
 }
 
-const enter = (value: object, active: WeakSet<object>) => {
-    if (active.has(value)) {
+const enter = (
+    value: object,
+    active: WeakSet<object> | undefined,
+): WeakSet<object> => {
+    const cycleGuard = active ?? new WeakSet<object>()
+    if (cycleGuard.has(value)) {
         throw new TypeError(
             "valdres: cyclic family key values are not supported. " +
                 "Pass a deterministic options.keyOf function for cyclic arguments.",
         )
     }
-    active.add(value)
+    cycleGuard.add(value)
+    return cycleGuard
 }
 
 const rejectOwnProperties = (value: object, description: string) => {
@@ -32,7 +37,7 @@ const encodeNumber = (value: number) => {
  * string. Type tags keep unlike JS values apart; container lengths and
  * length-prefixed strings make nested values unambiguous without escaping.
  */
-const encodeValue = (value: unknown, active: WeakSet<object>): string => {
+const encodeValue = (value: unknown, active?: WeakSet<object>): string => {
     switch (typeof value) {
         case "undefined":
             return "u;"
@@ -61,7 +66,7 @@ const encodeValue = (value: unknown, active: WeakSet<object>): string => {
         if (Object.getPrototypeOf(value) !== Array.prototype) {
             return unsupported("Array subclass")
         }
-        enter(value, active)
+        const cycleGuard = enter(value, active)
         try {
             const keys: string[] = []
             for (const ownKey of Reflect.ownKeys(value)) {
@@ -89,11 +94,11 @@ const encodeValue = (value: unknown, active: WeakSet<object>): string => {
                 if (descriptor === undefined || !("value" in descriptor)) {
                     return unsupported("Array accessor property")
                 }
-                encoded += `j${key};${encodeValue(descriptor.value, active)}`
+                encoded += `j${key};${encodeValue(descriptor.value, cycleGuard)}`
             }
             return encoded
         } finally {
-            active.delete(value)
+            cycleGuard.delete(value)
         }
     }
 
@@ -105,7 +110,7 @@ const encodeValue = (value: unknown, active: WeakSet<object>): string => {
     const prototype = Object.getPrototypeOf(value)
 
     if (prototype === Object.prototype || prototype === null) {
-        enter(value, active)
+        const cycleGuard = enter(value, active)
         try {
             const ownKeys = Reflect.ownKeys(value)
             for (const key of ownKeys) {
@@ -125,11 +130,11 @@ const encodeValue = (value: unknown, active: WeakSet<object>): string => {
                     return unsupported("object accessor property")
                 }
                 encoded += `k${key.length}:${key}`
-                encoded += encodeValue(descriptor.value, active)
+                encoded += encodeValue(descriptor.value, cycleGuard)
             }
             return encoded
         } finally {
-            active.delete(value)
+            cycleGuard.delete(value)
         }
     }
 
@@ -143,7 +148,7 @@ const encodeValue = (value: unknown, active: WeakSet<object>): string => {
     }
 
     if (prototype === Map.prototype) {
-        enter(value, active)
+        const cycleGuard = enter(value, active)
         try {
             rejectOwnProperties(value, "Map with custom properties")
             const entries: string[] = []
@@ -155,19 +160,19 @@ const encodeValue = (value: unknown, active: WeakSet<object>): string => {
             }
             for (const [entryKey, entryValue] of iterator) {
                 entries.push(
-                    encodeValue(entryKey, active) +
-                        encodeValue(entryValue, active),
+                    encodeValue(entryKey, cycleGuard) +
+                        encodeValue(entryValue, cycleGuard),
                 )
             }
             entries.sort()
             return `m${entries.length}:${entries.join("")}`
         } finally {
-            active.delete(value)
+            cycleGuard.delete(value)
         }
     }
 
     if (prototype === Set.prototype) {
-        enter(value, active)
+        const cycleGuard = enter(value, active)
         try {
             rejectOwnProperties(value, "Set with custom properties")
             const entries: string[] = []
@@ -178,12 +183,12 @@ const encodeValue = (value: unknown, active: WeakSet<object>): string => {
                 return unsupported("non-Set object with Set prototype")
             }
             for (const entry of iterator) {
-                entries.push(encodeValue(entry, active))
+                entries.push(encodeValue(entry, cycleGuard))
             }
             entries.sort()
             return `e${entries.length}:${entries.join("")}`
         } finally {
-            active.delete(value)
+            cycleGuard.delete(value)
         }
     }
 
@@ -198,8 +203,14 @@ const encodeValue = (value: unknown, active: WeakSet<object>): string => {
 /** Encode a complete family call. The leading argument count distinguishes a
  * single Array argument from multiple positional arguments. */
 export const stringifyFamilyArgs = (args: readonly unknown[]): string => {
-    const active = new WeakSet<object>()
+    if (args.length === 1) return `a1:${encodeValue(args[0])}`
+    let active: WeakSet<object> | undefined
     let encoded = `a${args.length}:`
-    for (const arg of args) encoded += encodeValue(arg, active)
+    for (const arg of args) {
+        if (arg !== null && typeof arg === "object") {
+            active ??= new WeakSet<object>()
+        }
+        encoded += encodeValue(arg, active)
+    }
     return encoded
 }

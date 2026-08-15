@@ -7,7 +7,7 @@ import { isSelector } from "../utils/isSelector"
 import { createScalarCommit, runCommitPlan } from "./commitEngine"
 import { createCommitErrors } from "./commitErrors"
 import { SEED_WRITE, SETTLE_DEFAULT } from "./commitIntents"
-import { NO_ON_SETS, updateSettlement } from "./commitPlans"
+import { createCommitPlan, NO_ON_SETS, updateSettlement } from "./commitPlans"
 import { getState } from "./getState"
 import { hasAtomCommitObservers } from "./hasAtomCommitObservers"
 import { settleCommit } from "./propagateUpdatedAtoms"
@@ -131,36 +131,39 @@ export const getAtomInitValue = <V = any>(
                         )
                         return
                     }
-                    runCommitPlan({
-                        data,
-                        settlement: updateSettlement(
+                    runCommitPlan(
+                        createCommitPlan(
                             data,
-                            [atom],
-                            settleCommit,
-                            SETTLE_DEFAULT,
+                            updateSettlement(
+                                data,
+                                [atom],
+                                settleCommit,
+                                SETTLE_DEFAULT,
+                            ),
+                            NO_ON_SETS,
+                            createCommitErrors(),
+                            "async-set",
+                            undefined,
+                            () =>
+                                admitFunctionDefaultTransition(
+                                    atom,
+                                    resolvedValue,
+                                    value,
+                                    data,
+                                    undefined,
+                                    undefined,
+                                ),
+                            () =>
+                                applyFunctionDefaultResolution(
+                                    atom,
+                                    resolvedValue,
+                                    value,
+                                    data,
+                                    undefined,
+                                    undefined,
+                                ),
                         ),
-                        admit: () =>
-                            admitFunctionDefaultTransition(
-                                atom,
-                                resolvedValue,
-                                value,
-                                data,
-                                undefined,
-                                undefined,
-                            ),
-                        apply: () =>
-                            applyFunctionDefaultResolution(
-                                atom,
-                                resolvedValue,
-                                value,
-                                data,
-                                undefined,
-                                undefined,
-                            ),
-                        onSets: NO_ON_SETS,
-                        errors: createCommitErrors(),
-                        report: "async-set",
-                    })
+                    )
                 },
                 () => {
                     // On rejection, remove the rejected promise from the

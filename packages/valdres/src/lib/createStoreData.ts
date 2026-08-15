@@ -69,7 +69,7 @@ export function createStoreData(
     // Chosen once, here — never re-checked on get/set. A scope inherits its
     // parent's mode so an enumerable store is enumerable all the way down.
     const enumerable = options?.enumerable ?? parent?.enumerable ?? false
-    if (enumerable) data.enumerable = true
+    data.enumerable = enumerable
     data.values = enumerable ? new Map() : new WeakMap()
     // Tree-wide state: a scope shares its root's object by reference, so no
     // store-tree lookup ever walks `parent`.
@@ -109,25 +109,20 @@ export function createStoreData(
     data.livenessSeeds = undefined
     data.livenessRemovalArmed = false
     data.livenessLazyArmed = false
-    if (options?.batchUpdates) {
-        data.batchUpdates = true
-    }
+    data.batchUpdates = options?.batchUpdates ?? false
     // Opt-in, inherited down the scope chain like `enumerable` — chosen once
     // here, never re-checked on get/set.
     const schemaValidation =
         options?.schemaValidation ?? parent?.schemaValidation ?? false
-    if (schemaValidation) data.schemaValidation = true
-    if (parent) {
-        data.parent = parent
-        data.scopeConsumers = new Set()
-        data.scopeIndexKeys = new Set()
-        data.inheritedDependencyKeys = undefined
-        // Measurement windows attach this only in architecture tests. Scopes
-        // created during a window participate in the same logical commit.
-        if (parent.architectureInstrumentation) {
-            data.architectureInstrumentation =
-                parent.architectureInstrumentation
-        }
-    }
+    data.schemaValidation = schemaValidation
+    // Root and scoped stores install the same complete field sequence. Values
+    // differ, but the hot StoreData reads all see one hidden class.
+    data.parent = parent
+    data.scopeConsumers = parent ? new Set() : undefined
+    data.scopeIndexKeys = parent ? new Set() : undefined
+    data.inheritedDependencyKeys = undefined
+    // Measurement windows attach this only in architecture tests. Scopes
+    // created during a window participate in the same logical commit.
+    data.architectureInstrumentation = parent?.architectureInstrumentation
     return data
 }
