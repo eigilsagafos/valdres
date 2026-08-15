@@ -101,6 +101,8 @@ bun run docs:dev    # docs site at localhost:4321
 
 Versioning and publishing is handled by [Changesets](https://github.com/changesets/changesets). Each package versions independently.
 
+The 1.0 release is governed by the hard gates and RC burn-in checklist in [RELEASING.md](./RELEASING.md).
+
 **When you open a PR that changes a publishable package:**
 
 ```bash

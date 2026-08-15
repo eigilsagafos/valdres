@@ -1,0 +1,124 @@
+---
+title: 1.0 Compatibility Contract
+description:
+    Runtime, packaging, equality, family identity, and singleton guarantees for
+    Valdres 1.0
+---
+
+# 1.0 compatibility contract
+
+These are deliberate Valdres 1.0 contracts. They are useful when choosing the
+library, configuring a bundler, or deciding whether an upgrade changes
+application behavior.
+
+## ESM package and CommonJS loading
+
+Valdres is ESM-only. The package does not ship a separate CommonJS build. Modern
+Node.js can nevertheless load its ESM entry with `require()` through Node's
+`require(esm)` support. The export map's `default` condition points to the same
+ESM artifact as `import`, which is what a CommonJS resolver selects; it is not a
+hidden CommonJS fallback. The published package requires Node.js 22.12 or newer.
+
+Only the public export paths in the package export map are supported. Do not
+import private `dist` chunks or source paths.
+
+## Size
+
+The honest size for the core runtime is about **30 KB gzip** in a minified
+production consumer bundle. The exact number depends on the bundler and the
+exports used; the release gate currently measures roughly 32 KB gzip for the
+`atom` and `atom + selector + store` fixtures, and roughly 36 KB when every core
+export is retained.
+
+This is a consumer-bundle number, not the size of one source function after
+tree-shaking and not the compressed npm tarball. Valdres publishes minified
+JavaScript, and CI measures the packed artifact and representative consumer
+bundles on every relevant change.
+
+## Deep drop-equal is the default
+
+Atoms, atom families, selectors, and selector families use deep structural
+equality by default. When the next settled value is deeply equal to the current
+value, Valdres drops the update: it keeps the current value and does not notify
+dependents or subscribers. This avoids rerenders when an immutable update
+recreates an equivalent object or collection.
+
+Deep equality has a cost, and reference changes are sometimes meaningful. Use
+the `equal` option as the explicit escape hatch. `Object.is` gives
+reference/value identity semantics:
+
+```ts
+import { atom, selector } from "valdres"
+
+const documentAtom = atom({ blocks: [] }, { equal: Object.is })
+const viewSelector = selector(get => render(get(documentAtom)), {
+    equal: Object.is,
+})
+```
+
+With `equal: Object.is`, replacing an object with a different but structurally
+equal object is an update. In-place mutation remains unsupported because both
+comparators see the same reference; replace the value when writing.
+
+## Process-less runtimes
+
+When `process.env.NODE_ENV` exists, Valdres follows it. When `process` does not
+exist, as in many edge, worker, and direct-CDN runtimes, the default package
+entry behaves as production. It skips development-only deep-freezing, validation
+diagnostics, warnings, and instrumentation.
+
+For debugging a process-less application, enable the package's `development`
+export condition. Apply the condition consistently to `valdres` and every
+framework adapter so the app does not load isolated default and development
+runtime graphs. A URL-based, no-build ESM application can request the published
+file from a CDN, for example
+`https://unpkg.com/valdres@<version>/dist/development/index.js`. This does not
+make `valdres/dist/development/index.js` a supported package deep import: it is
+not in the export map, so package consumers must use the `development`
+condition. Bun enables that condition by default for development builds; use
+`bun build --production` for a production process-less bundle.
+
+## Selector-family identity is stable while live
+
+Calling a `selectorFamily` repeatedly with the same key returns the same member
+while a caller or live store retains that member. A subscription, dependency
+edge, or an enumerable store's cold cache can provide that retention. The family
+cache is weak: after the member is no longer reachable, garbage collection may
+reclaim it and a later call may create a new object identity.
+
+This is the “stable while live” contract. It provides stable identity wherever
+the reactive graph needs it without turning every key ever queried into a
+permanent memory entry. Calling `release(...args)` evicts a future family lookup
+but does not invalidate references or store entries that are already live.
+
+## Runtime and global-name singletons
+
+Valdres permits one core runtime graph per JavaScript global. The first import
+claims a `globalThis` instance slot; loading another copy throws, even when the
+copies have the same version. This guard prevents split stores, registries, and
+adapter commit coordination. It also means the default and `development` graphs
+must not be mixed in one application.
+
+Names on atoms and atom families are global addresses used by state transfer,
+not debug labels with module-local scope. They must be unique. Recreating an
+ordinary named atom or family throws instead of silently replacing its
+registered definition.
+
+A named global `atomFamily` has intentional singleton-by-name behavior:
+recreating it returns the original family, and the later default factory and
+options do not replace the first definition. This also defines its HMR behavior.
+During a hot update, the global family keeps the definition that was registered
+first; perform a full page or process reload to apply edits to that definition.
+Do not rely on HMR to migrate live global state or redefine a global family.
+
+The instance guard and name registry live on the JavaScript global, so workers,
+iframes, and separate server processes each have their own instance and
+registry. They do not synchronize state across those boundaries.
+
+## Stability boundary
+
+The exported declarations in the packed package's `dist/types` tree are the
+public TypeScript API. Valdres freezes that surface at the first 1.0 release
+candidate and checks subsequent changes semantically. Private source modules,
+private distribution chunks, and undocumented internal object fields are not
+part of the compatibility contract.
