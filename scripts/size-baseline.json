@@ -1,54 +1,70 @@
 {
     "dist": {
-        "raw": 254830,
-        "gzip": 79634
+        "raw": 375873,
+        "gzip": 117867
     },
     "distFiles": {
         "adapter-internals/v1.js": {
             "raw": 479,
-            "gzip": 334
+            "gzip": 331
         },
-        "chunk-2y76gp4f.js": {
-            "raw": 91051,
-            "gzip": 27256
+        "chunk-yxdwqwhq.js": {
+            "raw": 91104,
+            "gzip": 27279
         },
         "development/adapter-internals/v1.js": {
             "raw": 479,
             "gzip": 332
         },
-        "development/chunk-7s188se3.js": {
-            "raw": 91051,
-            "gzip": 27256
+        "development/chunk-bxq52yyx.js": {
+            "raw": 91104,
+            "gzip": 27279
         },
         "development/index.js": {
-            "raw": 35887,
-            "gzip": 12231
+            "raw": 35901,
+            "gzip": 12238
         },
         "index.js": {
-            "raw": 35883,
-            "gzip": 12225
+            "raw": 35897,
+            "gzip": 12232
+        },
+        "production/adapter-internals/v1.js": {
+            "raw": 479,
+            "gzip": 331
+        },
+        "production/chunk-s2p4qk2q.js": {
+            "raw": 87944,
+            "gzip": 26591
+        },
+        "production/index.js": {
+            "raw": 32486,
+            "gzip": 11254
         }
     },
     "packed": {
-        "raw": 494819,
-        "gzip": 146031
+        "raw": 615976,
+        "gzip": 183059
     },
     "fixtures": {
         "atom": {
-            "raw": 107891,
-            "gzip": 31994
+            "raw": 109473,
+            "gzip": 32505
         },
         "atom-selector-store": {
-            "raw": 108172,
-            "gzip": 32110
+            "raw": 109754,
+            "gzip": 32624
         },
         "all-exports": {
-            "raw": 122626,
-            "gzip": 36367
+            "raw": 124912,
+            "gzip": 37016
         },
         "adapter-internals": {
-            "raw": 85504,
-            "gzip": 25148
+            "raw": 86131,
+            "gzip": 25284
+        },
+        "atom-selector-store-production": {
+            "raw": 105648,
+            "gzip": 31695
         }
     }
 }
