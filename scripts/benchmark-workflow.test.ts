@@ -8,6 +8,10 @@ const workflow = (name: string) =>
 const measurementWorkflow = workflow("bencher-pr.yml")
 const gateWorkflow = workflow("bencher-pr-gate.yml")
 const deepWorkflow = workflow("bencher-deep.yml")
+const generatedDocsWorkflows = [
+    workflow("bench-table.yml"),
+    workflow("gen-readmes.yml"),
+]
 
 function jobNames(source: string): string[] {
     const jobs = source.match(/^jobs:\n([\s\S]*)$/m)?.[1] ?? ""
@@ -218,6 +222,37 @@ describe("trusted workflow_run benchmark gate", () => {
         expect(gateWorkflow.match(/BENCHER_API_KEY:/g)).toHaveLength(3)
         expect(gateWorkflow).toContain("environment: Bencher.dev")
     })
+})
+
+describe("trusted generated-documentation pushes", () => {
+    test.each(generatedDocsWorkflows)(
+        "pre-authorizes the exact generated commit before advancing main",
+        source => {
+            expect(source).toContain(
+                "permissions:\n    checks: write\n    contents: write",
+            )
+            expect(source).toContain(
+                'git push origin "HEAD:refs/heads/${holding_branch}"',
+            )
+            expect(source).toContain('"repos/${GITHUB_REPOSITORY}/check-runs"')
+            expect(source).toContain("-f name=benchmark_pr")
+            expect(source).toContain('-f head_sha="$(git rev-parse HEAD)"')
+
+            const publishHolding = source.indexOf(
+                'git push origin "HEAD:refs/heads/${holding_branch}"',
+            )
+            const createCheck = source.indexOf(
+                '"repos/${GITHUB_REPOSITORY}/check-runs"',
+            )
+            const publishMain = source.indexOf("git push origin HEAD:main")
+            const cleanup = source.indexOf(
+                'git push origin --delete "$holding_branch"',
+            )
+            expect(publishHolding).toBeLessThan(createCheck)
+            expect(createCheck).toBeLessThan(publishMain)
+            expect(publishMain).toBeLessThan(cleanup)
+        },
+    )
 })
 
 describe("deep benchmark workflow", () => {
