@@ -45,11 +45,24 @@ describe("protected set", () => {
         expect(isSubMicrosecond(TIMING_FLOOR_NS)).toBe(false)
     })
 
-    test("keeps the noisy atom-family workload measured and protected", () => {
-        const workload = "atomFamily: txn update 5,000 existing members"
-        expect(SUITE_SOURCE).toContain(workload)
-        expect(PROTECTED_OPS.has(workload)).toBe(true)
-        expect(UNGATEABLE_OPS.has(workload)).toBe(false)
+    test("protects direct family churn and quarantines the noisy txn row", () => {
+        const direct = "atomFamily: direct create + delete 500 members"
+        const noisy = "atomFamily: txn update 5,000 existing members"
+        expect(SUITE_SOURCE).toContain(direct)
+        expect(SUITE_SOURCE).toContain(noisy)
+        expect(PROTECTED_OPS.has(direct)).toBe(true)
+        expect(PROTECTED_OPS.has(noisy)).toBe(false)
+        expect(UNGATEABLE_OPS.has(direct)).toBe(false)
+    })
+
+    test("keeps the new structural, high-cardinality, and root-store cases", () => {
+        for (const workload of [
+            "set equal structural value (1,024 rows)",
+            "selectorFamily: lookup 10,000 retained entries",
+            "create + dispose 1,000 root stores",
+        ]) {
+            expect(SUITE_SOURCE).toContain(workload)
+        }
     })
 })
 
@@ -88,6 +101,7 @@ describe("aggregated equivalents", () => {
             "sub + unsub": 249,
             "selector(fn)": 6,
             "selectorFamily(id)": 205,
+            "selectorFamily(number) cache hit": 40,
             "selectorFamily(string) cache hit": 31,
             "atomFamily(id)": 195,
             "atomFamily(id) cache hit": 13,

@@ -1,6 +1,7 @@
 # Bencher base lane — the benchmark CI for this repo. On pushes to main it
 # records raw latency and tracks a runner-normalized latency measure over time.
-# PRs use a separate same-runner relative gate in bencher-pr.yml.
+# PRs measure untrusted code in bencher-pr.yml, then the trusted workflow-run
+# gate in bencher-pr-gate.yml evaluates and uploads that evidence.
 #
 # Project slug is `valdres` (BENCHER_PROJECT below); the project is public, so
 # its perf page and plots are viewable at bencher.dev/perf/valdres.

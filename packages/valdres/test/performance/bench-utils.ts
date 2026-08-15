@@ -79,11 +79,12 @@ export function toBenchmarkObservation(
 }
 
 // Measurement budget. 100ms per benchmark keeps the suite cheap enough to run
-// 3× per side in the relative-CB gate. Operations slower than mitata's 65µs
-// batch threshold get 20 warm-up calls so Node reaches a stable JIT tier before
-// sampling; fast operations enter batched measurement after the first warm-up
-// regardless of this ceiling. The smallest paired ratio across the repeats
-// then discards remaining GC/scheduler or anomalous JIT contamination.
+// four to twelve paired times in the relative gate. Operations slower than
+// mitata's 65µs batch threshold get 20 warm-up calls so Node reaches a stable
+// JIT tier before sampling; fast operations enter batched measurement after
+// the first warm-up regardless of this ceiling. Balanced paired log-ratios
+// drive the primary gate; the first three ratios also feed the unchanged
+// minimum-ratio catastrophic backstop.
 //
 // NOTE: every result is appended to one shared NDJSON file, so the suite MUST
 // run serially — bun via `--concurrency 1`, vitest via pool=forks + singleFork.
@@ -94,10 +95,10 @@ const MEASURE_ONE_OPTS = {
 }
 
 // Record compact percentile diagnostics for one benchmark. mitata's measure()
-// already returns a robust, tail-trimmed p50. CI repeats the suite; the base lane
-// takes the cross-run median, while the PR lane gates on the smallest paired
-// p50 ratio (see toPairedBmf in scripts/bench-to-bmf.ts). The raw sample array
-// stays in-process and is represented in NDJSON only by sampleCount.
+// already returns a robust, tail-trimmed p50. CI repeats the suite; the primary
+// PR gate analyzes paired log-ratios, while the catastrophic backstop uses the
+// smallest of its first three paired p50 ratios. The raw sample array stays
+// in-process and is represented in NDJSON only by sampleCount.
 export async function measureOne(
     name: string,
     fn: () => void | Promise<void>,

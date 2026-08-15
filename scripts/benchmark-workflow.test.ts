@@ -2,46 +2,39 @@ import { describe, expect, test } from "bun:test"
 import { readFileSync } from "fs"
 import { join } from "path"
 
-const prWorkflow = readFileSync(
-    join(import.meta.dir, "../.github/workflows/bencher-pr.yml"),
-    "utf8",
-)
-const deepWorkflow = readFileSync(
-    join(import.meta.dir, "../.github/workflows/bencher-deep.yml"),
-    "utf8",
-)
+const workflow = (name: string) =>
+    readFileSync(join(import.meta.dir, `../.github/workflows/${name}`), "utf8")
 
-function jobNames(workflow: string): string[] {
-    const jobs = workflow.match(/^jobs:\n([\s\S]*)$/m)?.[1] ?? ""
+const measurementWorkflow = workflow("bencher-pr.yml")
+const gateWorkflow = workflow("bencher-pr-gate.yml")
+const deepWorkflow = workflow("bencher-deep.yml")
+
+function jobNames(source: string): string[] {
+    const jobs = source.match(/^jobs:\n([\s\S]*)$/m)?.[1] ?? ""
     return [...jobs.matchAll(/^    ([a-z][a-z0-9_]*):$/gm)].map(
         match => match[1],
     )
 }
 
-function jobBlock(workflow: string, name: string): string {
+function jobBlock(source: string, name: string): string {
     const marker = `    ${name}:\n`
-    const start = workflow.indexOf(marker)
+    const start = source.indexOf(marker)
     if (start === -1) return ""
-    const remaining = workflow.slice(start + marker.length)
+    const remaining = source.slice(start + marker.length)
     const next = remaining.search(/^    [a-z][a-z0-9_]*:\n/m)
     return next === -1
-        ? workflow.slice(start)
-        : workflow.slice(start, start + marker.length + next)
+        ? source.slice(start)
+        : source.slice(start, start + marker.length + next)
 }
 
-describe("fast Bencher PR workflow", () => {
-    test("preserves the required workflow and final check identity", () => {
-        expect(prWorkflow).toMatch(/^name: Bencher \(PR\)$/m)
-        expect(jobNames(prWorkflow)).toEqual([
-            "classify_changes",
-            "run_benchmarks",
-            "benchmark_pr",
-        ])
-        expect(jobBlock(prWorkflow, "benchmark_pr")).toContain("if: always()")
-    })
-
-    test("triggers every PR to main without a workflow path filter", () => {
-        const trigger = prWorkflow.match(/^on:\n([\s\S]*?)\npermissions:/m)
+describe("fork-safe PR benchmark measurement", () => {
+    test("runs every PR in an unprivileged workflow", () => {
+        expect(measurementWorkflow).toMatch(
+            /^name: Bencher \(PR measurement\)$/m,
+        )
+        const trigger = measurementWorkflow.match(
+            /^on:\n([\s\S]*?)\npermissions:/m,
+        )
         expect(trigger).not.toBeNull()
         expect(trigger![1]).toContain("pull_request:")
         expect(trigger![1]).toContain("branches: [main]")
@@ -49,164 +42,169 @@ describe("fast Bencher PR workflow", () => {
             "types: [opened, synchronize, reopened, labeled]",
         )
         expect(trigger![1]).not.toMatch(/paths(?:-ignore)?:/)
+        expect(measurementWorkflow).toContain(
+            "permissions:\n    contents: read",
+        )
+        expect(measurementWorkflow).not.toContain("BENCHER_API_KEY")
+        expect(measurementWorkflow).not.toContain("environment: Bencher.dev")
+        expect(measurementWorkflow).not.toContain("bencherdev/bencher")
+        expect(measurementWorkflow).not.toContain("github.actor")
+        expect(measurementWorkflow).not.toContain(
+            "head.repo.full_name == github.repository",
+        )
     })
 
-    test("serializes the stable numeric per-PR Bencher branch", () => {
-        expect(prWorkflow).toContain(
-            "group: bencher-pr-${{ github.event.pull_request.number }}",
-        )
-        expect(prWorkflow).toContain("cancel-in-progress: false")
-        expect(prWorkflow).toContain(
-            "BENCHER_BRANCH: pr-${{ github.event.pull_request.number }}",
-        )
-        expect(prWorkflow).not.toContain("github.head_ref")
-    })
-
-    test("measures exactly three alternating pairs", () => {
-        const pairLoop = prWorkflow.match(
-            /for pair in ([^;]+); do([\s\S]*?)\n                  done/,
-        )
-        expect(pairLoop).not.toBeNull()
-        expect(pairLoop![1].trim().split(/\s+/)).toEqual(["1", "2", "3"])
-        expect(pairLoop![2]).toContain('if [[ "$pair" == "2" ]]')
-        expect(pairLoop![2]).toContain("pair_order=(head base)")
-        expect(pairLoop![2]).toContain("pair_order=(base head)")
-        expect(pairLoop![2]).toContain("for runtime in bun node")
-        expect(pairLoop![2]).toContain("for suite in standard async")
-        expect(pairLoop![2]).toContain('for side in "${pair_order[@]}"')
-        expect(3 * 2 * 2 * 2).toBe(24)
-    })
-
-    test("keeps explicit fail-closed observation metadata", () => {
-        expect(prWorkflow).toContain('export BENCH_PAIR_ID="pair-${pair}-')
-        expect(prWorkflow).toContain('export BENCH_SIDE="$side"')
-        expect(prWorkflow).toContain('export BENCH_ORDER="$order"')
-        expect(prWorkflow).toContain('export BENCH_SUITE="$suite"')
-        expect(prWorkflow).toContain("BENCH_VALDRES_ONLY=1")
-        expect(prWorkflow).toContain("BENCH_EXCLUDE_REFS")
-        expect(prWorkflow).toContain("BENCH_EXCLUDE_TINY")
-    })
-
-    test("feeds the gate only the three raw pair files", () => {
-        expect(prWorkflow).toContain("BENCH_NDJSON_BUN=/tmp/head_bun.ndjson")
-        expect(prWorkflow).toContain(
-            "BENCH_PAIRED_BASE_BUN=/tmp/base_bun.ndjson",
-        )
-        expect(prWorkflow).toContain(
-            "BENCH_PAIRED_BASE_NODE=/tmp/base_node.ndjson",
-        )
-        expect(prWorkflow).toContain("--threshold-upper-boundary 0.5")
-        expect(prWorkflow.match(/--err/g)).toHaveLength(2)
-    })
-
-    test("contains no fourth pair, analyzer, or rerun ladder", () => {
-        expect(prWorkflow).not.toContain("BENCH_MAX_ROUNDS")
-        expect(prWorkflow).not.toContain("bench-paired-report")
-        expect(prWorkflow).not.toContain("all_base_")
-        expect(prWorkflow).not.toContain("run_round")
-        expect(prWorkflow).not.toContain("run_block")
-        expect(prWorkflow).not.toContain("paired-report")
-    })
-
-    test("copies the complete current harness into the base worktree", () => {
-        expect(prWorkflow).toContain("rsync -a --delete")
-        expect(prWorkflow).toContain(
-            '"$GITHUB_WORKSPACE/packages/valdres/test/performance/"',
-        )
-        expect(prWorkflow).toContain("vitest.architecture-bench.config.ts")
-        expect(prWorkflow).toContain("vitest.async-bench.config.ts")
-    })
-
-    test("records the checked-out test-merge SHA accurately", () => {
-        expect(prWorkflow).toContain("TESTED_SHA: ${{ github.sha }}")
-        expect(prWorkflow).toContain("tested_test_merge_sha=${TESTED_SHA}")
-        expect(prWorkflow).not.toContain("PR head")
-    })
-
-    test("scopes the Bencher API key to seed and gate steps", () => {
-        expect(prWorkflow.match(/BENCHER_API_KEY:/g)).toHaveLength(3)
-        const prefix = prWorkflow.slice(
-            0,
-            prWorkflow.indexOf("- name: Seed relative baseline"),
-        )
-        expect(prefix).not.toContain("BENCHER_API_KEY")
-    })
-
-    test("classifies exact base/head changes with preinstalled Node only", () => {
-        const classify = jobBlock(prWorkflow, "classify_changes")
-        expect(classify).toContain(
-            "BASE_SHA: ${{ github.event.pull_request.base.sha }}",
-        )
-        expect(classify).toContain(
-            "HEAD_SHA: ${{ github.event.pull_request.head.sha }}",
-        )
-        expect(classify).toContain("--name-status")
-        expect(classify).toContain("-z")
-        expect(classify).toContain("--find-copies-harder")
-        expect(classify).toContain('"$BASE_SHA...$HEAD_SHA"')
+    test("classifies with trusted-base code and uploads minimal context", () => {
+        const classify = jobBlock(measurementWorkflow, "classify_changes")
         expect(classify).toContain(
             '"${BASE_SHA}:scripts/lib/benchmark-change-scope.mjs"',
         )
         expect(classify).toContain("git cat-file -e")
-        expect(classify).toContain(
-            'classifier="$GITHUB_WORKSPACE/scripts/lib/benchmark-change-scope.mjs"',
-        )
+        expect(classify).toContain("--name-status")
+        expect(classify).toContain("--find-copies-harder")
         expect(classify).toContain('node "$classifier"')
-        expect(classify).not.toContain("setup-bun")
-        expect(classify).not.toContain("setup-node")
-        expect(classify).not.toContain("environment:")
-        expect(classify).not.toContain("${{ secrets.")
-    })
-
-    test("the run-benchmarks label forces classification", () => {
-        expect(jobBlock(prWorkflow, "classify_changes")).toContain(
+        expect(classify).toContain(
             "contains(github.event.pull_request.labels.*.name,",
         )
-        expect(prWorkflow).toContain("'run-benchmarks'")
+        expect(classify).toContain("'run-benchmarks'")
+        expect(classify).toContain("name: benchmark-context")
+        expect(classify).toContain("schemaVersion: 1")
+        expect(classify).toContain("testedTestMergeSha")
+        expect(classify).toContain("runBenchmarks")
     })
 
-    test("only the measurement job owns the Bencher environment", () => {
-        expect(jobBlock(prWorkflow, "run_benchmarks")).toContain(
-            "environment: Bencher.dev",
-        )
-        expect(jobBlock(prWorkflow, "classify_changes")).not.toContain(
-            "Bencher.dev",
-        )
-        expect(jobBlock(prWorkflow, "benchmark_pr")).not.toContain(
-            "Bencher.dev",
-        )
-    })
-
-    test("the sentinel propagates classification and measurement failures", () => {
-        const sentinel = jobBlock(prWorkflow, "benchmark_pr")
-        expect(sentinel).toContain(
-            'if [[ "$CLASSIFICATION_RESULT" != "success" ]]',
-        )
-        expect(sentinel).toContain('if [[ "$BENCHMARK_RESULT" == "success" ]]')
-        expect(sentinel).toContain(
-            'echo "::error::Requested benchmark result: ${BENCHMARK_RESULT}"',
-        )
-        expect(sentinel.match(/exit 1/g)!.length).toBeGreaterThanOrEqual(4)
-    })
-
-    test("the sentinel succeeds only for explicit safe skips", () => {
-        const sentinel = jobBlock(prWorkflow, "benchmark_pr")
-        expect(sentinel).toContain('if [[ "$RUN_BENCHMARKS" == "false" ]]')
-        expect(sentinel).toContain('if [[ "$SAME_REPOSITORY" != "true" ]]')
-        expect(sentinel).toContain('if [[ "$IS_DEPENDABOT" == "true" ]]')
-        expect(sentinel).toContain("Benchmarks intentionally skipped")
-        expect(sentinel).toContain("Benchmarks skipped for fork pull request")
-        expect(sentinel).toContain("Benchmarks skipped for Dependabot")
-    })
-
-    test("irrelevant changes cannot request the environment or dependencies", () => {
-        const run = jobBlock(prWorkflow, "run_benchmarks")
+    test("measures forks without a secret or same-repository guard", () => {
+        const run = jobBlock(measurementWorkflow, "run_benchmarks")
         expect(run).toContain(
             "needs.classify_changes.outputs.run_benchmarks == 'true'",
         )
-        expect(run).toContain("environment: Bencher.dev")
-        expect(run).toContain("setup-bun")
+        expect(run).not.toContain("head.repo.full_name")
+        expect(run).not.toContain("dependabot")
+        expect(run).not.toContain("secrets.")
         expect(run).toContain("bun install --frozen-lockfile")
+        expect(run).toContain("persist-credentials: false")
+    })
+
+    test("uses the calibrated balanced ladder", () => {
+        const run = jobBlock(measurementWorkflow, "run_benchmarks")
+        const block = run.match(
+            /run_block\(\) \{[\s\S]*?\n                  \}/,
+        )
+        expect(block).not.toBeNull()
+        const sides = [
+            ...block![0].matchAll(
+                /run_suite "\$[ab]" "\$runtime" "\$suite" (base|head) (\d)/g,
+            ),
+        ].map(match => `${match[1]}@${match[2]}`)
+        expect(sides).toEqual(["base@1", "head@2", "head@1", "base@2"])
+        expect(run).toContain('BENCH_MAX_ROUNDS: "3"')
+        expect(run).toContain('run_block "$round" 1')
+        expect(run).toContain('run_block "$round" 2')
+        expect(run).toContain('if [[ "$round" == "1" ]]')
+        expect(run).toContain('"$gate" 0')
+        expect(run).toContain("BENCH_RERUN_LANES_FILE=/tmp/rerun-lanes")
+        expect(run).toContain('"$completed" -ge "$BENCH_MAX_ROUNDS"')
+    })
+
+    test("retains exactly the first three pairs for the old backstop", () => {
+        const run = jobBlock(measurementWorkflow, "run_benchmarks")
+        expect(run).toContain("gate_${side}_${runtime}.ndjson")
+        expect(run).toContain(
+            'run_block "$round" 1 "$runtime" "$suite" "$gate" "$gate"',
+        )
+        expect(run).toContain(
+            'run_block "$round" 2 "$runtime" "$suite" "$gate" 0',
+        )
+        expect(3 * 2 * 2 * 2).toBe(24)
+    })
+
+    test("copies the complete current harness into the base worktree", () => {
+        expect(measurementWorkflow).toContain("rsync -a --delete")
+        expect(measurementWorkflow).toContain(
+            '"$GITHUB_WORKSPACE/packages/valdres/test/performance/"',
+        )
+        expect(measurementWorkflow).toContain(
+            "vitest.architecture-bench.config.ts",
+        )
+        expect(measurementWorkflow).toContain("vitest.async-bench.config.ts")
+    })
+})
+
+describe("trusted workflow_run benchmark gate", () => {
+    test("preserves the required check identity", () => {
+        expect(gateWorkflow).toMatch(/^name: Bencher \(PR\)$/m)
+        expect(jobNames(gateWorkflow)).toEqual(["benchmark_pr"])
+        expect(gateWorkflow).toContain("name: 'benchmark_pr'")
+        expect(gateWorkflow).toContain("head_sha: headSha")
+        expect(gateWorkflow).toContain("checks.update")
+    })
+
+    test("is chained only from the measurement workflow", () => {
+        const trigger = gateWorkflow.match(/^on:\n([\s\S]*?)\npermissions:/m)
+        expect(trigger).not.toBeNull()
+        expect(trigger![1]).toContain("workflow_run:")
+        expect(trigger![1]).toContain("workflows: [Bencher (PR measurement)]")
+        expect(trigger![1]).toContain("types: [completed]")
+        expect(trigger![1]).not.toContain("pull_request:")
+    })
+
+    test("downloads artifacts from the exact triggering run", () => {
+        expect(
+            gateWorkflow.match(/actions\/download-artifact@v4/g),
+        ).toHaveLength(2)
+        expect(
+            gateWorkflow.match(
+                /run-id: \$\{\{ github\.event\.workflow_run\.id \}\}/g,
+            ),
+        ).toHaveLength(2)
+        expect(gateWorkflow).toContain("name: benchmark-context")
+        expect(gateWorkflow).toContain("name: benchmark-evidence")
+        expect(gateWorkflow).not.toContain("dawidd6/")
+    })
+
+    test("validates artifact identity before privileged use", () => {
+        expect(gateWorkflow).toContain("envelope.headSha !== run.head_sha")
+        expect(gateWorkflow).toContain(
+            "String(envelope.runId) !== String(run.id)",
+        )
+        expect(gateWorkflow).toContain("github.rest.pulls.get")
+        expect(gateWorkflow).toContain("pr.head.sha !== envelope.headSha")
+        expect(gateWorkflow).toContain(
+            "pr.head.repo.full_name !== run.head_repository.full_name",
+        )
+        expect(gateWorkflow).toContain('bytes" -gt 20000000')
+        expect(gateWorkflow).toContain('"$(wc -c < "$round_path")" -gt 8')
+    })
+
+    test("executes only the trusted default-branch implementation", () => {
+        expect(gateWorkflow).toContain("ref: main")
+        expect(gateWorkflow).not.toContain("github.event.pull_request")
+        expect(gateWorkflow).not.toContain("github.head_ref")
+        expect(gateWorkflow).not.toContain("testedTestMergeSha }}")
+    })
+
+    test("makes the paired model independently blocking", () => {
+        expect(gateWorkflow).toContain('BENCH_ENFORCE: "1"')
+        expect(gateWorkflow).toContain("bun run scripts/bench-paired-report.ts")
+        expect(gateWorkflow).toContain("PAIRED_GATE:")
+        expect(gateWorkflow).toContain("['paired ~10% gate'")
+    })
+
+    test("retains the exact +50% Bencher backstop", () => {
+        expect(
+            gateWorkflow.match(/--threshold-upper-boundary 0\.5/g),
+        ).toHaveLength(2)
+        expect(gateWorkflow.match(/--err/g)).toHaveLength(2)
+        expect(gateWorkflow).toContain("gate_base_bun.ndjson")
+        expect(gateWorkflow).toContain("gate_head_node.ndjson")
+        expect(gateWorkflow).toContain('--hash "$HEAD_SHA"')
+        expect(gateWorkflow).toContain('--ci-number "$PR_NUMBER"')
+    })
+
+    test("scopes secrets to the trusted workflow", () => {
+        expect(measurementWorkflow).not.toContain("secrets.")
+        expect(gateWorkflow.match(/BENCHER_API_KEY:/g)).toHaveLength(3)
+        expect(gateWorkflow).toContain("environment: Bencher.dev")
     })
 })
 
@@ -264,7 +262,7 @@ describe("deep benchmark workflow", () => {
         expect(deepWorkflow).toContain("vitest.async-bench.config.ts")
     })
 
-    test("uses balanced B-P-P-B blocks", () => {
+    test("uses balanced B-P-P-B blocks and a hard round cap", () => {
         const block = deepWorkflow.match(
             /run_block\(\) \{[\s\S]*?\n                  \}/,
         )
@@ -275,30 +273,20 @@ describe("deep benchmark workflow", () => {
             ),
         ].map(match => `${match[1]}@${match[2]}`)
         expect(sides).toEqual(["base@1", "head@2", "head@1", "base@2"])
-        expect(deepWorkflow.match(/run_block "\$round" [12]/g)).toHaveLength(2)
-    })
-
-    test("has four-pair round one and a hard three-round cap", () => {
-        expect(deepWorkflow).toContain('options:\n                    - "1"')
-        expect(deepWorkflow).toContain('                    - "2"')
-        expect(deepWorkflow).toContain('                    - "3"')
         expect(deepWorkflow).toContain(
             'if [[ ! "$MAX_ROUNDS_INPUT" =~ ^[123]$ ]]',
         )
         expect(deepWorkflow).toContain('"$completed" -ge "$BENCH_MAX_ROUNDS"')
-        expect(4 * 2 * 2 * 2).toBe(32)
-        expect(32 + 2 * (4 * 2 * 2)).toBe(64)
     })
 
-    test("keeps statistical verdicts advisory but parsing failures fatal", () => {
+    test("keeps weekly decisions advisory but parsing failures fatal", () => {
         expect(deepWorkflow).toContain("bun run scripts/bench-paired-report.ts")
         expect(deepWorkflow).not.toContain("continue-on-error: true")
         expect(deepWorkflow).not.toMatch(/outcome.*regression/)
         expect(deepWorkflow.match(/GITHUB_STEP_SUMMARY/g)).toHaveLength(1)
-        expect(prWorkflow).not.toContain("bench-paired-report")
     })
 
-    test("retains complete deep-run evidence for 90 days", () => {
+    test("retains complete calibration evidence for 90 days", () => {
         expect(deepWorkflow).toContain("observations/base_bun.ndjson")
         expect(deepWorkflow).toContain("decisions/round-${round}.json")
         expect(deepWorkflow).toContain("paired-report.md")

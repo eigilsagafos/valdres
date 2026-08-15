@@ -1,11 +1,12 @@
-# Bencher PR lane — fast, blocking relative benchmark gate.
+# Fork-safe Bencher workflow 2/3: untrusted pull-request measurement.
 #
-# Both the base commit and GitHub's checked-out test-merge commit run on one
-# runner. Exactly three explicit pairs are measured in B-P, P-B, B-P order for
-# Bun/Node and standard/async. The smallest paired head/base ratio feeds the
-# existing +50% Bencher gates. Detailed statistical calibration lives in the
-# non-required bencher-deep.yml workflow and cannot affect this check.
-name: Bencher (PR)
+# Workflow 1 is bencher-base.yml. This workflow checks out and executes the PR
+# (including forks) with read-only permissions and no secrets, then uploads raw
+# observations. bencher-pr-gate.yml is workflow 3: it runs from the trusted
+# default branch on workflow_run, re-analyzes this artifact, uploads it to
+# Bencher, and writes the required check to the PR head SHA.
+# https://bencher.dev/docs/how-to/github-actions/#pull-requests-from-forks
+name: Bencher (PR measurement)
 
 on:
     pull_request:
@@ -14,13 +15,9 @@ on:
 
 permissions:
     contents: read
-    pull-requests: write
-    checks: write
 
-# Every run for a PR mutates the same numeric scratch branch. Serialize those
-# mutations and never cancel a run between reset and upload.
 concurrency:
-    group: bencher-pr-${{ github.event.pull_request.number }}
+    group: bencher-pr-measure-${{ github.event.pull_request.number }}
     cancel-in-progress: false
 
 jobs:
@@ -29,8 +26,9 @@ jobs:
         outputs:
             run_benchmarks: ${{ steps.scope.outputs.run_benchmarks }}
         steps:
-            # This job deliberately uses the runner's preinstalled Node. It has
-            # no Bencher environment, Bun setup, dependency install, or secrets.
+            # Classification deliberately uses the runner's preinstalled Node.
+            # The classifier comes from the trusted base revision whenever it
+            # exists, so a PR cannot edit itself into the cheap skip path.
             - uses: actions/checkout@v6
               with:
                   fetch-depth: 0
@@ -45,10 +43,6 @@ jobs:
                       'run-benchmarks') }}
               run: |
                   set -euo pipefail
-                  # Execute the classifier from the trusted base revision, not
-                  # a version that the pull request could modify to skip itself.
-                  # The one-time fallback bootstraps the PR that introduces the
-                  # module, because its base revision cannot contain it yet.
                   classifier=/tmp/benchmark-change-scope.mjs
                   if git cat-file -e \
                     "${BASE_SHA}:scripts/lib/benchmark-change-scope.mjs" 2>/dev/null; then
@@ -75,19 +69,60 @@ jobs:
                   fi
                   echo "run_benchmarks=${decision}" >> "$GITHUB_OUTPUT"
 
+            # The privileged workflow treats every artifact byte as untrusted.
+            # This minimal envelope is checked against workflow_run.head_sha and
+            # the live pull request before its number reaches Bencher or an API.
+            - name: Record pull-request context
+              env:
+                  BASE_REF: ${{ github.event.pull_request.base.ref }}
+                  BASE_SHA: ${{ github.event.pull_request.base.sha }}
+                  HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+                  PR_NUMBER: ${{ github.event.pull_request.number }}
+                  REPOSITORY: ${{ github.repository }}
+                  RUN_BENCHMARKS: ${{ steps.scope.outputs.run_benchmarks }}
+                  RUN_ID: ${{ github.run_id }}
+                  TESTED_SHA: ${{ github.sha }}
+              run: |
+                  set -euo pipefail
+                  mkdir -p /tmp/benchmark-context
+                  jq -n \
+                    --arg repository "$REPOSITORY" \
+                    --argjson pr_number "$PR_NUMBER" \
+                    --arg base_ref "$BASE_REF" \
+                    --arg base_sha "$BASE_SHA" \
+                    --arg head_sha "$HEAD_SHA" \
+                    --arg tested_sha "$TESTED_SHA" \
+                    --argjson run_id "$RUN_ID" \
+                    --arg run_benchmarks "$RUN_BENCHMARKS" \
+                    '{
+                      schemaVersion: 1,
+                      repository: $repository,
+                      prNumber: $pr_number,
+                      baseRef: $base_ref,
+                      baseSha: $base_sha,
+                      headSha: $head_sha,
+                      testedTestMergeSha: $tested_sha,
+                      runId: $run_id,
+                      runBenchmarks: ($run_benchmarks == "true")
+                    }' > /tmp/benchmark-context/context.json
+            - name: Upload pull-request context
+              uses: actions/upload-artifact@v4
+              with:
+                  name: benchmark-context
+                  path: /tmp/benchmark-context/context.json
+                  if-no-files-found: error
+                  retention-days: 14
+
     run_benchmarks:
         needs: classify_changes
         if:
             ${{ needs.classify_changes.result == 'success' &&
-            needs.classify_changes.outputs.run_benchmarks == 'true' &&
-            github.event.pull_request.head.repo.full_name == github.repository
-            && github.actor != 'dependabot[bot]' }}
+            needs.classify_changes.outputs.run_benchmarks == 'true' }}
         runs-on: ubuntu-22.04
-        timeout-minutes: 45
-        environment: Bencher.dev
+        timeout-minutes: 120
         steps:
-            # pull_request checkout intentionally measures GitHub's test-merge
-            # commit. The base SHA is built separately in a worktree below.
+            # pull_request checkout measures GitHub's test-merge commit. The
+            # exact event base SHA is built separately in a worktree below.
             - uses: actions/checkout@v6
               with:
                   fetch-depth: 0
@@ -98,22 +133,7 @@ jobs:
             - uses: actions/setup-node@v6
               with:
                   node-version: "24.16.0"
-            - uses: bencherdev/bencher@v0.6.6
 
-            - name: Record execution context
-              env:
-                  BASE_SHA: ${{ github.event.pull_request.base.sha }}
-                  TESTED_SHA: ${{ github.sha }}
-                  PR_NUMBER: ${{ github.event.pull_request.number }}
-              run: |
-                  {
-                    echo "base_sha=${BASE_SHA}"
-                    echo "tested_test_merge_sha=${TESTED_SHA}"
-                    echo "pull_request_number=${PR_NUMBER}"
-                  } > /tmp/benchmark-context.txt
-
-            # Install both checkouts before measurement so dependency setup
-            # cannot introduce a long pause between paired processes.
             - name: Install tested test-merge commit
               run: bun install --frozen-lockfile
             - name: Build base SHA with the current benchmark harness
@@ -133,16 +153,24 @@ jobs:
                     "$GITHUB_WORKSPACE/packages/valdres/vitest.async-bench.config.ts" \
                     /tmp/base/packages/valdres/vitest.async-bench.config.ts
 
-            # Each suite invocation is a fresh process. Pair IDs, side/order
-            # metadata, and the versioned schema make pairing fail closed.
-            - name: Run interleaved base/test-merge benchmarks (Bun + Node, 3x)
+            # Four-pair B-P-P-B rounds feed the calibrated paired model. Round
+            # one always runs; only lanes with an inconclusive protected row get
+            # rounds two and three. The first three round-one pairs are copied
+            # separately for the unchanged +50% catastrophic Bencher backstop.
+            - name: Run balanced base/head blocks with the rerun ladder
+              env:
+                  BENCH_MAX_ROUNDS: "3"
               run: |
                   set -euo pipefail
+                  evidence=/tmp/benchmark-evidence
+                  observations="$evidence/observations"
+                  decisions="$evidence/decisions"
+                  mkdir -p "$observations" "$decisions"
                   rm -f \
-                    /tmp/base_bun.ndjson \
-                    /tmp/base_node.ndjson \
-                    /tmp/head_bun.ndjson \
-                    /tmp/head_node.ndjson
+                    "$observations"/*.ndjson \
+                    "$decisions"/*.json \
+                    /tmp/paired-report.md \
+                    /tmp/rerun-lanes
 
                   run_suite() {
                     local pair="$1"
@@ -150,18 +178,15 @@ jobs:
                     local suite="$3"
                     local side="$4"
                     local order="$5"
+                    local catastrophic="$6"
                     local checkout
-                    local output
                     local result
 
                     if [[ "$side" == "base" ]]; then
                       checkout="/tmp/base/packages/valdres"
-                      output="/tmp/base_${runtime}.ndjson"
                     else
                       checkout="${GITHUB_WORKSPACE}/packages/valdres"
-                      output="/tmp/head_${runtime}.ndjson"
                     fi
-
                     if [[ "$runtime" == "bun" ]]; then
                       result="test/performance/bench-results.ndjson"
                     else
@@ -170,7 +195,7 @@ jobs:
 
                     (
                       cd "$checkout"
-                      export BENCH_PAIR_ID="pair-${pair}-${runtime}-${suite}"
+                      export BENCH_PAIR_ID="$pair"
                       export BENCH_SIDE="$side"
                       export BENCH_ORDER="$order"
                       export BENCH_SUITE="$suite"
@@ -190,190 +215,92 @@ jobs:
                         BENCH_VALDRES_ONLY=1 NODE_ENV=production \
                           npx vitest run --config vitest.async-bench.config.ts
                       fi
-                      cat "$result" >> "$output"
+                      cat "$result" >> "$observations/all_${side}_${runtime}.ndjson"
+                      if [[ "$catastrophic" == "1" ]]; then
+                        cat "$result" >> "$observations/gate_${side}_${runtime}.ndjson"
+                      fi
                     )
                   }
 
-                  for pair in 1 2 3; do
-                    if [[ "$pair" == "2" ]]; then
-                      pair_order=(head base)
-                    else
-                      pair_order=(base head)
-                    fi
+                  run_block() {
+                    local round="$1"
+                    local block="$2"
+                    local runtime="$3"
+                    local suite="$4"
+                    local gate_a="$5"
+                    local gate_b="$6"
+                    local a="r${round}b${block}a-${runtime}-${suite}"
+                    local b="r${round}b${block}b-${runtime}-${suite}"
+                    run_suite "$a" "$runtime" "$suite" base 1 "$gate_a"
+                    run_suite "$a" "$runtime" "$suite" head 2 "$gate_a"
+                    run_suite "$b" "$runtime" "$suite" head 1 "$gate_b"
+                    run_suite "$b" "$runtime" "$suite" base 2 "$gate_b"
+                  }
 
-                    for runtime in bun node; do
-                      for suite in standard async; do
-                        order=0
-                        for side in "${pair_order[@]}"; do
-                          order=$((order + 1))
-                          run_suite "$pair" "$runtime" "$suite" "$side" "$order"
-                        done
-                      done
+                  run_round() {
+                    local round="$1"
+                    local runtime="$2"
+                    local suite="$3"
+                    local gate=0
+                    if [[ "$round" == "1" ]]; then gate=1; fi
+                    run_block "$round" 1 "$runtime" "$suite" "$gate" "$gate"
+                    run_block "$round" 2 "$runtime" "$suite" "$gate" 0
+                  }
+
+                  analyze_round() {
+                    local round="$1"
+                    BENCH_ROUND="$round" \
+                    BENCH_MAX_ROUNDS="$BENCH_MAX_ROUNDS" \
+                    BENCH_PAIRED_BASE_BUN="$observations/all_base_bun.ndjson" \
+                    BENCH_PAIRED_HEAD_BUN="$observations/all_head_bun.ndjson" \
+                    BENCH_PAIRED_BASE_NODE="$observations/all_base_node.ndjson" \
+                    BENCH_PAIRED_HEAD_NODE="$observations/all_head_node.ndjson" \
+                    BENCH_REPORT_JSON="$decisions/round-${round}.json" \
+                    BENCH_REPORT_MD=/tmp/paired-report.md \
+                    BENCH_RERUN_LANES_FILE=/tmp/rerun-lanes \
+                      bun run scripts/bench-paired-report.ts > /dev/null
+                  }
+
+                  for runtime in bun node; do
+                    for suite in standard async; do
+                      run_round 1 "$runtime" "$suite"
                     done
                   done
 
-            # The converter validates exact pair identities and process blocks.
-            # Its head value uses the smallest of exactly three paired ratios.
-            - name: Convert base + paired test-merge results to BMF
-              env:
-                  BENCH_EXCLUDE_REFS: "1"
-                  BENCH_EXCLUDE_TINY: "1"
-              run: |
-                  BENCH_NDJSON_BUN=/tmp/base_bun.ndjson \
-                  BENCH_NDJSON_NODE=/tmp/base_node.ndjson \
-                  BENCH_OUT_BUN=/tmp/base_bun_results.json \
-                  BENCH_OUT_NODE=/tmp/base_node_results.json \
-                    bun run scripts/bench-to-bmf.ts
-                  BENCH_NDJSON_BUN=/tmp/head_bun.ndjson \
-                  BENCH_NDJSON_NODE=/tmp/head_node.ndjson \
-                  BENCH_PAIRED_BASE_BUN=/tmp/base_bun.ndjson \
-                  BENCH_PAIRED_BASE_NODE=/tmp/base_node.ndjson \
-                  BENCH_OUT_BUN=/tmp/head_bun_results.json \
-                  BENCH_OUT_NODE=/tmp/head_node_results.json \
-                    bun run scripts/bench-to-bmf.ts
+                  completed=1
+                  while true; do
+                    analyze_round "$completed"
+                    lanes="$(cat /tmp/rerun-lanes)"
+                    if [[ -z "$lanes" || "$completed" -ge "$BENCH_MAX_ROUNDS" ]]; then
+                      cp /tmp/paired-report.md "$evidence/paired-report.md"
+                      cp "$decisions/round-${completed}.json" \
+                        "$evidence/paired-report.json"
+                      echo "$completed" > "$evidence/completed-round.txt"
+                      break
+                    fi
+                    round=$((completed + 1))
+                    echo "::notice::Round ${round}: adding pairs for ${lanes}"
+                    for lane in $lanes; do
+                      run_round "$round" "${lane%%:*}" "${lane##*:}"
+                    done
+                    completed="$round"
+                  done
 
-            - name: Upload benchmark observations
+            - name: Publish measurement report
               if: always()
-              continue-on-error: true
+              run: |
+                  if [[ -f /tmp/benchmark-evidence/paired-report.md ]]; then
+                    cat /tmp/benchmark-evidence/paired-report.md \
+                      >> "$GITHUB_STEP_SUMMARY"
+                  else
+                    echo "_No complete paired report was produced._" \
+                      >> "$GITHUB_STEP_SUMMARY"
+                  fi
+            - name: Upload raw benchmark evidence
+              if: always()
               uses: actions/upload-artifact@v4
               with:
-                  name: benchmark-observations
-                  path: |
-                      /tmp/base_bun.ndjson
-                      /tmp/base_node.ndjson
-                      /tmp/head_bun.ndjson
-                      /tmp/head_node.ndjson
-                      /tmp/benchmark-context.txt
+                  name: benchmark-evidence
+                  path: /tmp/benchmark-evidence/
                   if-no-files-found: warn
                   retention-days: 14
-
-            # Reset only the first Bun seed. Bun and Node share one stable,
-            # numeric per-PR Bencher branch, so resetting Node would erase Bun.
-            - name: Seed relative baseline
-              env:
-                  BENCHER_API_KEY: ${{ secrets.BENCHER_API_KEY }}
-                  BENCHER_BRANCH: pr-${{ github.event.pull_request.number }}
-                  BENCHER_PROJECT: valdres
-              run: |
-                  bencher run \
-                    --branch "$BENCHER_BRANCH" \
-                    --start-point-reset \
-                    --testbed ubuntu-2204-bun \
-                    --adapter json \
-                    --file /tmp/base_bun_results.json
-                  bencher run \
-                    --branch "$BENCHER_BRANCH" \
-                    --testbed ubuntu-2204-node \
-                    --adapter json \
-                    --file /tmp/base_node_results.json
-
-            - name: Gate Bun test-merge vs base
-              id: gate_bun
-              continue-on-error: true
-              env:
-                  BENCHER_API_KEY: ${{ secrets.BENCHER_API_KEY }}
-                  BENCHER_BRANCH: pr-${{ github.event.pull_request.number }}
-                  BENCHER_PROJECT: valdres
-                  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-              run: |
-                  bencher run \
-                    --branch "$BENCHER_BRANCH" \
-                    --testbed ubuntu-2204-bun \
-                    --threshold-measure latency \
-                    --threshold-test percentage \
-                    --threshold-upper-boundary 0.5 \
-                    --thresholds-reset \
-                    --err \
-                    --adapter json \
-                    --github-actions "$GH_TOKEN" \
-                    --file /tmp/head_bun_results.json
-            - name: Gate Node test-merge vs base
-              id: gate_node
-              continue-on-error: true
-              env:
-                  BENCHER_API_KEY: ${{ secrets.BENCHER_API_KEY }}
-                  BENCHER_BRANCH: pr-${{ github.event.pull_request.number }}
-                  BENCHER_PROJECT: valdres
-                  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-              run: |
-                  bencher run \
-                    --branch "$BENCHER_BRANCH" \
-                    --testbed ubuntu-2204-node \
-                    --threshold-measure latency \
-                    --threshold-test percentage \
-                    --threshold-upper-boundary 0.5 \
-                    --thresholds-reset \
-                    --err \
-                    --adapter json \
-                    --github-actions "$GH_TOKEN" \
-                    --file /tmp/head_node_results.json
-            - name: Enforce benchmark gates
-              if:
-                  ${{ steps.gate_bun.outcome == 'failure' ||
-                  steps.gate_node.outcome == 'failure' }}
-              run: |
-                  echo "::error::Benchmark alerts: Bun=${{ steps.gate_bun.outcome }}, Node=${{ steps.gate_node.outcome }}"
-                  exit 1
-
-    # Keep this job ID stable: branch protection requires
-    # `Bencher (PR) / benchmark_pr`. It converts intentional no-secret/no-runtime
-    # skips to success and fails closed for every requested same-repo benchmark.
-    benchmark_pr:
-        needs: [classify_changes, run_benchmarks]
-        if: always()
-        runs-on: ubuntu-22.04
-        steps:
-            - name: Finalize required benchmark check
-              env:
-                  CLASSIFICATION_RESULT: ${{ needs.classify_changes.result }}
-                  RUN_BENCHMARKS:
-                      ${{ needs.classify_changes.outputs.run_benchmarks }}
-                  BENCHMARK_RESULT: ${{ needs.run_benchmarks.result }}
-                  SAME_REPOSITORY:
-                      ${{ github.event.pull_request.head.repo.full_name ==
-                      github.repository }}
-                  IS_DEPENDABOT: ${{ github.actor == 'dependabot[bot]' }}
-              run: |
-                  set -euo pipefail
-
-                  if [[ "$CLASSIFICATION_RESULT" != "success" ]]; then
-                    echo "## Benchmark classification failed" >> "$GITHUB_STEP_SUMMARY"
-                    echo "::error::Change classification result: ${CLASSIFICATION_RESULT}"
-                    exit 1
-                  fi
-
-                  if [[ "$RUN_BENCHMARKS" == "false" ]]; then
-                    if [[ "$BENCHMARK_RESULT" != "skipped" ]]; then
-                      echo "::error::Irrelevant change unexpectedly started benchmarks"
-                      exit 1
-                    fi
-                    echo "## Benchmarks intentionally skipped" >> "$GITHUB_STEP_SUMMARY"
-                    echo "Every changed path is clearly documentation, Changeset metadata, or an ordinary non-performance test." >> "$GITHUB_STEP_SUMMARY"
-                    exit 0
-                  fi
-
-                  if [[ "$RUN_BENCHMARKS" != "true" ]]; then
-                    echo "::error::Missing or invalid classification output: ${RUN_BENCHMARKS}"
-                    exit 1
-                  fi
-
-                  if [[ "$SAME_REPOSITORY" != "true" ]]; then
-                    echo "## Benchmarks skipped for fork pull request" >> "$GITHUB_STEP_SUMMARY"
-                    echo "The untrusted fork cannot access the Bencher environment or secret." >> "$GITHUB_STEP_SUMMARY"
-                    exit 0
-                  fi
-
-                  if [[ "$IS_DEPENDABOT" == "true" ]]; then
-                    echo "## Benchmarks skipped for Dependabot" >> "$GITHUB_STEP_SUMMARY"
-                    echo "Dependabot does not receive the Bencher environment secret." >> "$GITHUB_STEP_SUMMARY"
-                    exit 0
-                  fi
-
-                  if [[ "$BENCHMARK_RESULT" == "success" ]]; then
-                    echo "## Required benchmarks passed" >> "$GITHUB_STEP_SUMMARY"
-                    exit 0
-                  fi
-
-                  echo "## Required benchmarks did not pass" >> "$GITHUB_STEP_SUMMARY"
-                  echo "::error::Requested benchmark result: ${BENCHMARK_RESULT}"
-                  exit 1

@@ -15,6 +15,31 @@ describe("store", () => {
         )
     })
 
+    test("create and release many root stores", async () => {
+        const storeCount = 1_000
+
+        // Jotai stores have no disposal API. Its row is the conventional
+        // creation reference; the Valdres row additionally performs the
+        // required terminal cleanup so repeated samples do not retain roots.
+        await compare(
+            "create + dispose 1,000 root stores",
+            () => {
+                const stores = Array.from({ length: storeCount }, () =>
+                    valdresCreateStore(),
+                )
+                do_not_optimize(stores)
+                for (const store of stores) store.dispose()
+            },
+            () => {
+                do_not_optimize(
+                    Array.from({ length: storeCount }, () =>
+                        jotaiCreateStore(),
+                    ),
+                )
+            },
+        )
+    })
+
     test("bulk set: 1000 atoms", async () => {
         const vStore = valdresCreateStore()
         const jStore = jotaiCreateStore()
@@ -51,10 +76,12 @@ describe("store", () => {
         await compare(
             "get 1000 atoms",
             () => {
-                for (let i = 0; i < 1000; i++) do_not_optimize(vStore.get(vAtoms[i]))
+                for (let i = 0; i < 1000; i++)
+                    do_not_optimize(vStore.get(vAtoms[i]))
             },
             () => {
-                for (let i = 0; i < 1000; i++) do_not_optimize(jStore.get(jAtoms[i]))
+                for (let i = 0; i < 1000; i++)
+                    do_not_optimize(jStore.get(jAtoms[i]))
             },
         )
     })

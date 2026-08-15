@@ -75,4 +75,23 @@ describe("readBenchResults", () => {
             `${path}: mixed benchmark schema versions`,
         )
     })
+
+    test("rejects control characters in untrusted observation metadata", () => {
+        const observation = toBenchmarkObservation("example", {
+            p25: 80,
+            p50: 100,
+            p75: 120,
+            p99: 150,
+            ticks: 12,
+            samples: [80, 100, 120],
+        })
+        expect(() =>
+            readBenchResults(
+                writeRows({
+                    ...observation,
+                    benchmark: "example\n## injected",
+                }),
+            ),
+        ).toThrow("benchmark must be a bounded single-line string")
+    })
 })

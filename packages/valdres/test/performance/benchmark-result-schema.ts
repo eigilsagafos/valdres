@@ -35,6 +35,17 @@ function isNonEmptyString(value: unknown): value is string {
     return typeof value === "string" && value.length > 0
 }
 
+function isBoundedSingleLineString(
+    value: unknown,
+    maxLength: number,
+): value is string {
+    return (
+        isNonEmptyString(value) &&
+        value.length <= maxLength &&
+        !/[\u0000-\u001f\u007f]/.test(value)
+    )
+}
+
 function isPositiveFinite(value: unknown): value is number {
     return typeof value === "number" && Number.isFinite(value) && value > 0
 }
@@ -58,11 +69,15 @@ export function parseBenchmarkObservation(
     if (value.kind !== "latency" || value.unit !== "ns") {
         throw new Error(`${source}: expected a latency observation in ns`)
     }
-    if (!isNonEmptyString(value.benchmark)) {
-        throw new Error(`${source}: benchmark must be a non-empty string`)
+    if (!isBoundedSingleLineString(value.benchmark, 512)) {
+        throw new Error(
+            `${source}: benchmark must be a bounded single-line string`,
+        )
     }
-    if (!isNonEmptyString(value.pairId)) {
-        throw new Error(`${source}: pairId must be a non-empty string`)
+    if (!isBoundedSingleLineString(value.pairId, 256)) {
+        throw new Error(
+            `${source}: pairId must be a bounded single-line string`,
+        )
     }
     if (value.side !== "base" && value.side !== "head") {
         throw new Error(`${source}: side must be base or head`)
@@ -73,11 +88,11 @@ export function parseBenchmarkObservation(
     if (value.runtime !== "bun" && value.runtime !== "node") {
         throw new Error(`${source}: runtime must be bun or node`)
     }
-    if (!isNonEmptyString(value.suite)) {
-        throw new Error(`${source}: suite must be a non-empty string`)
+    if (!isBoundedSingleLineString(value.suite, 64)) {
+        throw new Error(`${source}: suite must be a bounded single-line string`)
     }
-    if (!isNonEmptyString(value.runId)) {
-        throw new Error(`${source}: runId must be a non-empty string`)
+    if (!isBoundedSingleLineString(value.runId, 256)) {
+        throw new Error(`${source}: runId must be a bounded single-line string`)
     }
     if (!isPositiveInteger(value.processId)) {
         throw new Error(`${source}: processId must be a positive integer`)
