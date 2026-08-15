@@ -327,6 +327,7 @@ jobs:
         runs-on: ubuntu-22.04
         environment: npm-publish
         permissions:
+            checks: write
             contents: write
             pull-requests: write
         steps:
@@ -359,6 +360,7 @@ jobs:
               run: echo "//registry.npmjs.org/:_authToken=${{ secrets.NPM_TOKEN }}" > "$HOME/.npmrc"
 
             - name: Create Release Pull Request or Publish
+              id: changesets
               uses: changesets/action@v1
               with:
                   version: bun run version-packages
@@ -366,3 +368,79 @@ jobs:
               env:
                   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
                   NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+            # Pull requests created with GITHUB_TOKEN can require approval and
+            # do not reliably emit the workflow_run event used by the trusted
+            # benchmark gate. Version PRs cannot affect runtime performance,
+            # so pre-authorize only the exact commit after proving that every
+            # changed path is generated release metadata.
+            - name: Mark generated release pull request benchmark-safe
+              if: steps.changesets.outputs.pullRequestNumber != ''
+              uses: actions/github-script@v9
+              env:
+                  RELEASE_PR_NUMBER:
+                      ${{ steps.changesets.outputs.pullRequestNumber }}
+              with:
+                  script: |
+                      const pullNumber = Number(process.env.RELEASE_PR_NUMBER);
+                      if (!Number.isSafeInteger(pullNumber) || pullNumber <= 0) {
+                          throw new Error('Changesets returned an invalid pull request number');
+                      }
+
+                      const { data: pull } = await github.rest.pulls.get({
+                          owner: context.repo.owner,
+                          repo: context.repo.repo,
+                          pull_number: pullNumber
+                      });
+                      const expectedRepository = `${context.repo.owner}/${context.repo.repo}`;
+                      if (pull.state !== 'open' ||
+                          pull.base.ref !== 'main' ||
+                          pull.base.repo.full_name !== expectedRepository ||
+                          pull.head.repo.full_name !== expectedRepository ||
+                          pull.head.ref !== 'changeset-release/main' ||
+                          !/^[0-9a-f]{40}$/i.test(pull.head.sha)) {
+                          throw new Error('Changesets pull request identity is not trusted');
+                      }
+
+                      const files = await github.paginate(
+                          github.rest.pulls.listFiles,
+                          {
+                              owner: context.repo.owner,
+                              repo: context.repo.repo,
+                              pull_number: pullNumber,
+                              per_page: 100
+                          }
+                      );
+                      if (files.length === 0 || files.length > 500) {
+                          throw new Error(`Unexpected generated release file count: ${files.length}`);
+                      }
+                      const generatedReleasePath = path =>
+                          path === '.changeset/pre.json' ||
+                          /^\.changeset\/[a-z0-9-]+\.md$/.test(path) ||
+                          path === 'bun.lock' ||
+                          /^packages\/(?:@[^/]+\/)?[^/]+\/(?:CHANGELOG\.md|package\.json)$/.test(path);
+                      const unexpected = files
+                          .map(file => file.filename)
+                          .filter(path => !generatedReleasePath(path));
+                      if (unexpected.length > 0) {
+                          throw new Error(
+                              `Refusing benchmark check for non-release files: ${unexpected.join(', ')}`
+                          );
+                      }
+                      if (!files.some(file => /\/package\.json$/.test(file.filename))) {
+                          throw new Error('Generated release pull request has no package manifest');
+                      }
+
+                      await github.rest.checks.create({
+                          owner: context.repo.owner,
+                          repo: context.repo.repo,
+                          name: 'benchmark_pr',
+                          head_sha: pull.head.sha,
+                          status: 'completed',
+                          conclusion: 'success',
+                          details_url: `${context.serverUrl}/${expectedRepository}/actions/runs/${context.runId}`,
+                          output: {
+                              title: 'Generated release metadata only',
+                              summary: 'Trusted main-branch workflow verified that this commit changes generated release metadata only.'
+                          }
+                      });
