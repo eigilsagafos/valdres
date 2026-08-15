@@ -26,8 +26,6 @@ export const setValueInData = <Value extends unknown>(
     // initFamilyIndex instead). Selectors are also passed here via loose typing
     // but must NOT be tracked — `Object.hasOwn(atom, "defaultValue")` admits only
     // atoms, and `isAtomFamily` only families, so selectors fall through both.
-    const isNewAtomInScope =
-        data.parent && Object.hasOwn(atom, "defaultValue") && !data.values.has(atom)
     // A scope that materializes its OWN family index for the first time must be
     // registered in the parent's scopeValueIndex so recursivelyUpdateIndexes can
     // reach it when the parent's membership later changes. The non-txn path does
@@ -35,8 +33,13 @@ export const setValueInData = <Value extends unknown>(
     // Doing it at this WRITE (commit) — not in the transaction body — means a
     // transaction that throws registers nothing (valdres has no rollback), so a
     // later parent family write can't deref a scope that never got its index.
-    const isNewFamilyInScope =
-        !!data.parent && !data.values.has(atom) && isAtomFamily(atom)
+    const parent = data.parent
+    let isNewAtomInScope = false
+    let isNewFamilyInScope = false
+    if (parent && !data.values.has(atom)) {
+        isNewAtomInScope = Object.hasOwn(atom, "defaultValue")
+        isNewFamilyInScope = !isNewAtomInScope && isAtomFamily(atom)
+    }
     // Dev-only freeze decision. Kept inline (not a shared helper) because the
     // extra call frame measurably regresses the hot primitive-set path; if you
     // change this policy, keep Transaction.set in transaction.ts in sync.
