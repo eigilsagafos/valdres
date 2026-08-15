@@ -70,9 +70,13 @@ diagnostics, warnings, and instrumentation.
 For debugging a process-less application, enable the package's `development`
 export condition. Apply the condition consistently to `valdres` and every
 framework adapter so the app does not load isolated default and development
-runtime graphs. A no-build ESM application can load `dist/development/index.js`
-directly. Bun enables the `development` condition by default for development
-builds; use `bun build --production` for a production process-less bundle.
+runtime graphs. A URL-based, no-build ESM application can request the published
+file from a CDN, for example
+`https://unpkg.com/valdres@<version>/dist/development/index.js`. This does not
+make `valdres/dist/development/index.js` a supported package deep import: it is
+not in the export map, so package consumers must use the `development`
+condition. Bun enables that condition by default for development builds; use
+`bun build --production` for a production process-less bundle.
 
 ## Selector-family identity is stable while live
 

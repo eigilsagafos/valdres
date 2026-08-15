@@ -130,6 +130,22 @@ After RC1, feature work and opportunistic refactors stop. Only release-blocking
 fixes, tests, and documentation corrections enter the candidate branch. An API
 change resets the freeze and the quiet-period clock.
 
+### Quiet-period clock
+
+The quiet period is a minimum of 14 consecutive calendar days. The clock starts
+when RC1—or a replacement API-freeze candidate—is published to the `rc` dist-tag
+and every candidate gate is green.
+
+Any change to a published package's runtime JavaScript, declarations, export or
+package metadata, dependency graph, or release behavior restarts the full 14-day
+clock when the replacement candidate is published. A public API change also
+invalidates the RC1 freeze as described above. Changes limited to tests,
+documentation, burn-in evidence, or CI observation do not restart the clock when
+they cannot alter the packed artifacts or publish behavior.
+
+The burn-in checklist may be exercised throughout the quiet period, but RC2
+cannot be approved until both the 14 days and every checklist item are complete.
+
 ## RC2: burn-in
 
 RC2 is not a ceremonial republish. It begins only after RC1 has had a quiet
@@ -157,10 +173,17 @@ Record the app or fixture, runtime and framework versions, scenario, result, and
 candidate tarball version for every item. A unit test or source-workspace demo
 alone is not burn-in evidence.
 
-The quiet period is deliberate. The external review's point stands: roughly
-16,000 lines have been inserted since `valdres@1.0.0-beta.17`. RC2 exists to let
-that change settle under realistic workloads, not to create a deadline for more
-changes.
+The quiet period is deliberate. The external review's point stands: the core
+source has accumulated well over 16,000 inserted lines since
+`valdres@1.0.0-beta.17`. Reproduce the current count from the tagged release
+with:
+
+```bash
+git diff --numstat valdres@1.0.0-beta.17..HEAD -- packages/valdres/src packages/valdres/types | awk '{ insertions += $1 } END { print insertions }'
+```
+
+RC2 exists to let that change settle under realistic workloads, not to create a
+deadline for more changes.
 
 ## Stable 1.0 approval
 
