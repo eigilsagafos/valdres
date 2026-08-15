@@ -8,6 +8,7 @@ const workflow = (name: string) =>
 const measurementWorkflow = workflow("bencher-pr.yml")
 const gateWorkflow = workflow("bencher-pr-gate.yml")
 const deepWorkflow = workflow("bencher-deep.yml")
+const ciWorkflow = workflow("ci.yaml")
 const generatedDocsWorkflows = [
     workflow("bench-table.yml"),
     workflow("gen-readmes.yml"),
@@ -253,6 +254,35 @@ describe("trusted generated-documentation pushes", () => {
             expect(publishMain).toBeLessThan(cleanup)
         },
     )
+})
+
+describe("trusted generated-release pull requests", () => {
+    test("pre-authorizes only the exact allowlisted Changesets commit", () => {
+        const publish = jobBlock(ciWorkflow, "publish")
+        expect(publish).toContain(
+            "permissions:\n            checks: write\n            contents: write",
+        )
+        expect(publish).toContain("id: changesets")
+        expect(publish).toContain(
+            "if: steps.changesets.outputs.pullRequestNumber != ''",
+        )
+        expect(publish).toContain("pull.state !== 'open'")
+        expect(publish).toContain("pull.head.ref !== 'changeset-release/main'")
+        expect(publish).toContain("files.length === 0 || files.length > 500")
+        expect(publish).toContain("path === '.changeset/pre.json'")
+        expect(publish).toContain("[a-z0-9-]+\\.md")
+        expect(publish).toContain("path === 'bun.lock'")
+        expect(publish).toContain("CHANGELOG\\.md|package\\.json")
+        expect(publish).toContain(
+            "Refusing benchmark check for non-release files",
+        )
+        expect(publish).toContain("name: 'benchmark_pr'")
+        expect(publish).toContain("head_sha: pull.head.sha")
+
+        expect(publish.indexOf("uses: changesets/action@v1")).toBeLessThan(
+            publish.indexOf("name: 'benchmark_pr'"),
+        )
+    })
 })
 
 describe("deep benchmark workflow", () => {
