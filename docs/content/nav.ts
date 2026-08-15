@@ -26,6 +26,7 @@ const introduction: NavGroup = {
         { title: "Scoped Stores", route: "/guides/scoped-stores" },
         { title: "Schema Validation", route: "/guides/schema-validation" },
         { title: "TypeScript", route: "/guides/typescript" },
+        { title: "1.0 Compatibility", route: "/guides/compatibility" },
         { title: "Works Everywhere", route: "/guides/outside-react" },
         { title: "Performance", route: "/guides/performance" },
         { title: "Motivation", route: "/guides/motivation" },
