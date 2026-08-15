@@ -689,12 +689,17 @@ describe("atom", () => {
             const setTimeoutSpy = spyOn(
                 globalThis,
                 "setTimeout",
-            ).mockImplementation((...args: any[]) => {
-                // @ts-ignore
-                const id = originalSetTimeout(...args)
-                if (args[1] === 200) staleTimeoutIds.push(id)
-                return id
-            })
+            ).mockImplementation(
+                ((...args: any[]) => {
+                    const id = originalSetTimeout(
+                        args[0],
+                        args[1],
+                        ...args.slice(2),
+                    )
+                    if (args[1] === 200) staleTimeoutIds.push(id)
+                    return id
+                }) as unknown as typeof setTimeout,
+            )
             const clearedIds: Set<ReturnType<typeof setTimeout>> = new Set()
             const originalClearTimeout = globalThis.clearTimeout
             const clearTimeoutSpy = spyOn(

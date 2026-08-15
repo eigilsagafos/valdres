@@ -451,7 +451,6 @@ export class TransactionContext {
             !hasOwnFamilyAtom(ownFamilyValue.__index, atom)
         ) {
             if (!draft.values.has(atom.family)) {
-                // @ts-ignore
                 this.cloneFamilyIntoTxn(atom.family)
             }
             const index = draft.values.get(atom.family).__index
@@ -462,12 +461,12 @@ export class TransactionContext {
     }
 
     batchSetFamilyAtoms = (
-        family: any,
-        pairs: any,
+        family: AtomFamily<any, [any, ...any[]]>,
+        pairs: Iterable<readonly [Atom<any>, any]>,
         onSchemaError:
             | ((error: SchemaValidationError) => void)
             | undefined = undefined,
-    ) => {
+    ): void => {
         this.assertOpen("write to")
         // One draft load for the whole bulk loop (see Transaction.set).
         const draft = this._draft
@@ -482,7 +481,7 @@ export class TransactionContext {
         let membershipChanged = false
         let staged = false
         for (const [atom, value] of pairs) {
-            if (atom.family !== family) {
+            if (!isFamilyAtom(atom) || atom.family !== family) {
                 throw new Error(
                     `valdres: atom${stateNameSuffix(atom)} does not belong to atomFamily${stateNameSuffix(family)}`,
                 )
@@ -516,7 +515,6 @@ export class TransactionContext {
 
             if (!index || !hasOwnFamilyAtom(index, atom)) {
                 if (!draft.values.has(family)) {
-                    // @ts-ignore
                     this.cloneFamilyIntoTxn(family)
                     ownFamilyValue = draft.values.get(family)
                     index = ownFamilyValue.__index
@@ -534,7 +532,6 @@ export class TransactionContext {
     del = (atom: AtomFamilyAtom<any, any>) => {
         this.assertOpen("write to")
         if (!this._draft.values.has(atom.family)) {
-            // @ts-ignore
             this.cloneFamilyIntoTxn(atom.family)
         }
         this.noteFamilyWrite(atom.family)
@@ -1414,8 +1411,7 @@ export class TransactionContext {
 
     private cloneFamilyIntoTxn(
         family: any,
-        // @ts-ignore
-        parentIndex,
+        parentIndex?: any,
         moveUpIfParent = true,
     ): void {
         if (moveUpIfParent && this._parentTransaction)
@@ -1466,12 +1462,10 @@ export class TransactionContext {
             // would think it shadows the family, and the next parent family write
             // would deref `undefined` in recursivelyUpdateIndexes.
             clonedIndex = createAtomFamilyIndex(
-                // @ts-ignore
                 parentIndex ?? currentFamilyIndex,
             )
         } else {
             clonedIndex = cloneAtomFamilyIndex(
-                // @ts-ignore
                 currentFamilyIndex,
                 parentIndex,
             )
@@ -1486,7 +1480,7 @@ export class TransactionContext {
         // Avoiding a render here means a membership-changing transaction sorts
         // once, after all staged changes, rather than once before and after.
         const unrenderedFamilyValue: any[] = []
-        // @ts-ignore
+        // @ts-expect-error -- this internal array intentionally carries a non-array family-index marker until render
         unrenderedFamilyValue.__index = clonedIndex
         this._draft.values.set(family, unrenderedFamilyValue)
         this.markAtomFamilyIndexDirty(family)

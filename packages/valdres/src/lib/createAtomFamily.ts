@@ -53,10 +53,10 @@ export const createAtomFamily = <
         // Resolve default value — inlined to avoid intermediate closures
         let dv: any
         if (isSelectorFamilyDefault) {
-            // @ts-ignore @ts-todo
+            // @ts-expect-error -- runtime selector-family narrowing does not preserve the generic Args tuple for spreading
             dv = defaultValue(...args)
         } else if (isFunctionDefault) {
-            // @ts-ignore @ts-todo
+            // @ts-expect-error -- generic Value may itself be callable, so the runtime function check cannot isolate the factory
             dv = () => defaultValue(...args)
         } else {
             dv = defaultValue
@@ -82,7 +82,6 @@ export const createAtomFamily = <
             }
         }
 
-        // @ts-ignore @ts-todo
         familyAtom.family = atomFamily
         familyAtom.familyArgs = args
         familyAtom.familyArgsStringified = key

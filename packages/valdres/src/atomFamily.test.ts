@@ -4,6 +4,7 @@ import { atomFamily } from "./atomFamily"
 import { selectorFamily } from "./selectorFamily"
 import { wait } from "../test/utils/wait"
 import { selector } from "./selector"
+import type { GlobalAtom } from "./types/GlobalAtom"
 import type { InternalAtomFamily } from "./types/InternalAtomFamily"
 
 describe("atomFamily", () => {
@@ -676,8 +677,7 @@ describe("atomFamily", () => {
             global: true,
             name: "global_setSelf_test",
         })
-        const memberAtom = family("user1")
-        // @ts-ignore - setSelf may not exist yet
+        const memberAtom = family("user1") as GlobalAtom<string>
         memberAtom.setSelf("from setSelf")
         expect(store1.get(memberAtom)).toBe("from setSelf")
         expect(store2.get(memberAtom)).toBe("from setSelf")

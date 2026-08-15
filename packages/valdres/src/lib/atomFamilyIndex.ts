@@ -5,12 +5,10 @@ import { noteStateValueChanged } from "./stateRevisions"
 import { stateNameSuffix } from "./stateNameForError"
 import { trackScopeValue } from "./trackScopeValue"
 
-// @ts-ignore
 const getAtomFamilyRenderedMap = (
     index: ReturnType<typeof createAtomFamilyIndex>,
-) => {
+): Map<AtomFamilyAtom<any, any>, number> => {
     if (index.rendered) return index.rendered
-    // @ts-ignore
     const result = new Map(
         index.parentIndex
             ? getAtomFamilyRenderedMap(index.parentIndex)
