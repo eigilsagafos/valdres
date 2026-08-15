@@ -11,7 +11,6 @@ export const buildOptions = {
     // instance used by the public store bundle. Without splitting, Bun would
     // duplicate commit registries and adapter commits would miss listeners.
     splitting: true,
-    external: ["./package.json"],
     packages: "external" as const,
     // Ship a minified dist. Most consumers bundle valdres and would minify it
     // themselves, but pre-minifying still pays off twice: the published package
@@ -37,9 +36,11 @@ export const buildOptions = {
         // this define for the explicit development export condition.
         __VALDRES_PROCESSLESS_DEVELOPMENT__: "false",
         __VALDRES_BUILD_VARIANT__: JSON.stringify("default"),
-        // Compile out the engine self-checks (assertPlanLegal in
-        // src/lib/commitPlans.ts, assertTreeTriggersSealed in
-        // src/lib/treeTriggerGroups.ts). They assert invariants only valdres's
+        // Compile out the engine self-checks: assertPlanLegal (defined in
+        // src/lib/commitPlans.ts, called in src/lib/commitEngine.ts) and
+        // assertTreeTriggersSealed (defined in src/lib/treeTriggerGroups.ts,
+        // called in src/lib/propagateUpdatedAtoms.ts). Each is guarded at its
+        // call site by this same env read. They assert invariants only valdres's
         // own code can violate, so they belong to this repo's test loop, not to
         // a consumer's bundle.
         "process.env.VALDRES_ENGINE_SELF_CHECKS": JSON.stringify("off"),

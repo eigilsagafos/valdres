@@ -21,7 +21,6 @@ const isProductionModule = (relPath: string): boolean =>
     relPath.startsWith("src/") &&
     relPath.endsWith(".ts") &&
     !relPath.endsWith(".test.ts") &&
-    !relPath.endsWith(".test.performance.ts") &&
     !relPath.endsWith(".bench.ts") &&
     !/\.types\.test\.ts$/.test(relPath)
 

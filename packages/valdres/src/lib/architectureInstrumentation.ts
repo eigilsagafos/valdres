@@ -156,17 +156,3 @@ export const recordDependencyEdgeVisit = (data: StoreData): void => {
     const instrumentation = data.architectureInstrumentation
     if (instrumentation) instrumentation.counters.dependencyEdgeVisits++
 }
-
-export const recordSchedulerQueueEnqueue = (
-    data: StoreData,
-    count = 1,
-): void => {
-    const instrumentation = data.architectureInstrumentation
-    if (instrumentation)
-        instrumentation.counters.schedulerQueueEnqueues += count
-}
-
-export const recordSchedulerQueueDequeue = (data: StoreData): void => {
-    const instrumentation = data.architectureInstrumentation
-    if (instrumentation) instrumentation.counters.schedulerQueueDequeues++
-}

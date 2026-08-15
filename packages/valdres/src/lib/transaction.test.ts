@@ -465,6 +465,19 @@ describe("transaction", () => {
         })
     })
 
+    test("batchSetFamilyAtoms rejects a member from another family", () => {
+        const store1 = store()
+        const users = atomFamily<string, [number]>()
+        const otherUsers = atomFamily<string, [number]>()
+
+        expect(() =>
+            store1.txn(txn => {
+                txn.batchSetFamilyAtoms(users, [[otherUsers(1), "one"]])
+            }),
+        ).toThrow("valdres: atom does not belong to atomFamily")
+        expect(store1.get(users)).toStrictEqual([])
+    })
+
     test("thenable transaction callbacks throw synchronously and never commit", async () => {
         const store1 = store()
         const count = atom(0)
@@ -511,19 +524,6 @@ describe("transaction", () => {
             set(atom2, 21)
             expect(get(selector1)).toBe(12)
             expect(get(selector2)).toBe(22)
-        })
-    })
-
-    test.todo("transaction fails when trying to access dirty selector", () => {
-        const store1 = store()
-        const atom1 = atom(1, { name: "txn-dirty-atom1" })
-        const selector1 = selector(get => get(atom1) + 1, { name: "selector1" })
-        // const selector2 = selector((get) => get(selector1) + 1, "selector2")
-
-        store1.txn(({ set, get }) => {
-            expect(get(selector1)).toBe(2)
-            set(atom1, 2)
-            expect(() => get(selector1)).toThrow()
         })
     })
 
