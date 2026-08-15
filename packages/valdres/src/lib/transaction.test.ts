@@ -1,5 +1,5 @@
 import { getStoreData } from "./getStoreData"
-import { describe, expect, mock, test } from "bun:test"
+import { describe, expect, mock, spyOn, test } from "bun:test"
 import { observeFamilyIndex } from "./atomFamilyIndex"
 import { atom } from "../atom"
 import { atomFamily } from "../atomFamily"
@@ -565,6 +565,25 @@ describe("transaction", () => {
 
         expect(store1.get(family)).toBe(members)
         expect(store1.get(family)).toStrictEqual([a, b, c])
+    })
+
+    test("updating an existing family member does not read the membership clock", () => {
+        const store1 = store()
+        const family = atomFamily<number, [string]>(0)
+        const member = family("one")
+        store1.set(member, 1)
+        const now = spyOn(performance, "now")
+
+        try {
+            store1.txn(txn => {
+                txn.set(member, 2)
+                expect(now).not.toHaveBeenCalled()
+            })
+        } finally {
+            now.mockRestore()
+        }
+
+        expect(store1.get(member)).toBe(2)
     })
 
     test("family membership renders lazily on transaction read", () => {

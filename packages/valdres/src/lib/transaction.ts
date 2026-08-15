@@ -422,7 +422,7 @@ export class TransactionContext {
         this.invalidateSelectorCache()
         if (isFamilyAtom(atom)) {
             this.noteFamilyWrite(atom.family)
-            this.stageFamilyMembership(atom, performance.now())
+            this.stageFamilyMembership(atom)
         }
         return resolved as V | Promise<V>
     }) as SetAtom
@@ -434,7 +434,7 @@ export class TransactionContext {
      *  first materialize the family index. */
     private stageFamilyMembership(
         atom: AtomFamilyAtom<any, any>,
-        timestamp: number,
+        timestamp?: number,
     ): void {
         const draft = this._draft
         const ownFamilyValue = draft.values.has(atom.family)
@@ -455,7 +455,7 @@ export class TransactionContext {
                 this.cloneFamilyIntoTxn(atom.family)
             }
             const index = draft.values.get(atom.family).__index
-            index.created.set(atom, timestamp)
+            index.created.set(atom, timestamp ?? performance.now())
             index.deleted.delete(atom)
             this.recursivelyUpdateAtomFamilyIndexes(atom.family)
         }
