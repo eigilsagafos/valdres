@@ -411,7 +411,7 @@ export const equal = (a: any, b: any, updatedAtomsSet?: Set<any>) => {
     try {
         return deepEqualFn(a, b, updatedAtomsSet)
     } catch (error) {
-        // @ts-ignore
+        // @ts-expect-error -- cross-browser recursion errors are inspected structurally despite catch variables being unknown
         if ((error.message || "").match(/stack|recursion/i)) {
             // warn on circular references, don't crash
             // browsers give this different errors name and messages:

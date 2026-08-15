@@ -46,6 +46,12 @@ jobs:
               run: bun run typecheck
             - name: Typecheck type-level tests
               run: bun --filter 'valdres' typecheck:types
+            - name: Ban unchecked TypeScript suppressions in valdres
+              run: |
+                  if git grep -n -E '^[[:space:]]*//[[:space:]]*@ts-ignore([[:space:]]|$)' -- packages/valdres/src; then
+                      echo "::error::Use @ts-expect-error with a specific reason instead of @ts-ignore"
+                      exit 1
+                  fi
             - name: Deterministic architecture gates
               run: bun --filter 'valdres' test:architecture
             - name: Rewrite guards (Node/V8)

@@ -326,8 +326,7 @@ const evaluateLiveOnlySelector = <V>(
     try {
         let result
         try {
-            // @ts-ignore, @ts-todo
-            result = selector.get(state => {
+            result = selector.get((state: any) => {
                 if (evaluationComplete) {
                     if (!evalCtx.revoked && evalCtx.asyncDeps) {
                         evalCtx.asyncDeps.add(state)
@@ -497,8 +496,7 @@ export const evaluateSelector = <V>(
     try {
         let result
         try {
-            // @ts-ignore, @ts-todo
-            result = selector.get(state => {
+            result = selector.get((state: any) => {
                 // Deferred get calls (setTimeout, after await) use late binding
                 if (evaluationComplete) {
                     if (isStoreDisposed(data)) {

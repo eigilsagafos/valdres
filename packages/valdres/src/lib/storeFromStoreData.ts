@@ -3,6 +3,7 @@ import type { AtomFamily } from "../types/AtomFamily"
 import type { AtomFamilyAtom } from "../types/AtomFamilyAtom"
 import type { GetValue } from "../types/GetValue"
 import type { SetAtom } from "../types/SetAtom"
+import type { SetAtomValue } from "../types/SetAtomValue"
 import type { State } from "../types/State"
 import type { ScopedStore, ScopeFn, Store } from "../types/Store"
 import type { StoreData } from "../types/StoreData"
@@ -323,29 +324,59 @@ const createStoreRuntime = (data: StoreData): Store => {
     const get = data.batchUpdates ? getBatched : getDefault
 
     // --- set ---
-    // @ts-ignore @ts-todo
-    const setDefault: SetAtom = (state, value) => {
+    function setDefault<V>(state: Atom<V>, value: PromiseLike<V>): Promise<V>
+    function setDefault<V>(
+        state: Atom<V>,
+        updater: (current: V) => PromiseLike<V>,
+    ): Promise<V>
+    function setDefault<V>(
+        state: Atom<V>,
+        value: V | ((current: V) => V),
+    ): V
+    function setDefault<V>(
+        state: Atom<V>,
+        value: SetAtomValue<V>,
+    ): V | Promise<V>
+    function setDefault<V>(
+        state: Atom<V>,
+        value: SetAtomValue<V>,
+    ): V | Promise<V> {
         if (data.pendingOrphanCleanup) {
             if (data.pendingOrphanCleanup === DISPOSED_STORE_PENDING) {
                 throw createStoreDisposedError(data)
             }
             flushPendingOrphanCleanup(data)
         }
-        if (isAtom(state)) return setAtom(state, value, data)
+        if (isAtom<V>(state)) return setAtom(state, value, data)
         if (isSelector(state))
             throw new Error(selectorProvidedToSetError(state))
         throw new Error(invalidStateSetError(state))
     }
 
-    // @ts-ignore @ts-todo
-    const setBatched: SetAtom = (state, value) => {
+    function setBatched<V>(state: Atom<V>, value: PromiseLike<V>): Promise<V>
+    function setBatched<V>(
+        state: Atom<V>,
+        updater: (current: V) => PromiseLike<V>,
+    ): Promise<V>
+    function setBatched<V>(
+        state: Atom<V>,
+        value: V | ((current: V) => V),
+    ): V
+    function setBatched<V>(
+        state: Atom<V>,
+        value: SetAtomValue<V>,
+    ): V | Promise<V>
+    function setBatched<V>(
+        state: Atom<V>,
+        value: SetAtomValue<V>,
+    ): V | Promise<V> {
         if (data.pendingOrphanCleanup) {
             if (data.pendingOrphanCleanup === DISPOSED_STORE_PENDING) {
                 throw createStoreDisposedError(data)
             }
             flushPendingOrphanCleanup(data)
         }
-        if (isAtom(state)) {
+        if (isAtom<V>(state)) {
             return ensurePendingTxn().set(state, value)
         }
         if (isSelector(state))
@@ -353,7 +384,7 @@ const createStoreRuntime = (data: StoreData): Store => {
         throw new Error(invalidStateSetError(state))
     }
 
-    const set = data.batchUpdates ? setBatched : setDefault
+    const set: SetAtom = data.batchUpdates ? setBatched : setDefault
 
     // --- reset ---
     const reset = <V>(atom: Atom<V>) => {

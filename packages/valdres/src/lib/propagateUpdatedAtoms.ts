@@ -237,7 +237,7 @@ const settleDeletedAtoms = (
                 if (!deletedFamilyAtoms.has(atom.family)) {
                     deletedFamilyAtoms.set(atom.family, new Set())
                 }
-                // @ts-ignore
+                // @ts-expect-error -- the immediately preceding insertion proves this family set exists
                 deletedFamilyAtoms.get(atom.family).add(atom)
             }
         }
@@ -498,7 +498,7 @@ export const settleCommit = (
                 if (!updatedFamilyAtoms.has(atom.family)) {
                     updatedFamilyAtoms.set(atom.family, new Set())
                 }
-                // @ts-ignore
+                // @ts-expect-error -- the immediately preceding insertion proves this family set exists
                 updatedFamilyAtoms.get(atom.family).add(atom)
             }
         }

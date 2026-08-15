@@ -13,7 +13,7 @@ describe("setAtomPairs", () => {
         const fam = atomFamily<number, [string]>(0)
 
         // Typed against TransactionInterface and passed straight to store.txn —
-        // the adapter wiring this replaces needed a @ts-ignore for exactly this.
+        // the adapter wiring this replaces needed a TypeScript suppression for exactly this.
         const initialize: InitializeCallback = txn => {
             txn.set(fam("direct"), 7)
             return [

@@ -33,7 +33,7 @@ export const resolveAtomDefaultValue = <V = any>(
         data.pendingDefaults.set(atom, { promise, resolve })
         return promise
     } else if (typeof atom.defaultValue === "function") {
-        // @ts-ignore @ts-todo
+        // @ts-expect-error -- generic V may itself be callable, so typeof cannot isolate the default factory union member
         return atom.defaultValue()
     } else if (isSelector(atom.defaultValue)) {
         return getState(atom.defaultValue, data, initializedAtomsSet)
