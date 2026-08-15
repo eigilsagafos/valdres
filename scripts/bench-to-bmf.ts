@@ -82,7 +82,7 @@ function sameStrings(left: string[], right: string[]): boolean {
 }
 
 /** Validate the identity protocol before using any paired measurements. */
-function validatePairedObservations(
+export function validatePairedObservations(
     resultSets: BenchResult[][],
 ): BenchmarkObservation[] {
     const results = resultSets.flat()

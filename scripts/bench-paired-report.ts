@@ -21,6 +21,7 @@
  *   BENCH_ROUND / BENCH_MAX_ROUNDS  position in the rerun ladder
  */
 import { writeFileSync } from "fs"
+import { validatePairedObservations } from "./bench-to-bmf"
 import {
     PROTECTED_OPS,
     isProtected,
@@ -64,6 +65,14 @@ function requireObservations(
 
 function batchSize(observation: BenchmarkObservation): number {
     return observation.ticks / observation.sampleCount
+}
+
+/** Fail closed on the complete process/pair protocol for blocking evidence. */
+export function validateBlockingEvidence(
+    baseObservations: BenchmarkObservation[],
+    headObservations: BenchmarkObservation[],
+): void {
+    validatePairedObservations([baseObservations, headObservations])
 }
 
 /**
@@ -348,6 +357,11 @@ if (import.meta.main) {
         )
     }
 
+    const enforce = process.env.BENCH_ENFORCE === "1"
+    if (enforce) {
+        validateBlockingEvidence(baseObservations, headObservations)
+    }
+
     const round = positiveIntEnv("BENCH_ROUND", 1)
     const maxRounds = positiveIntEnv("BENCH_MAX_ROUNDS", 3)
     const decisions = decidePairedRun(
@@ -379,7 +393,7 @@ if (import.meta.main) {
     // publishes only its final round's markdown.
     console.log(markdown)
 
-    if (process.env.BENCH_ENFORCE === "1") {
+    if (enforce) {
         const failure = pairedGateFailure(
             decisions,
             DEFAULT_PAIRED_POLICY.minPairs * maxRounds,

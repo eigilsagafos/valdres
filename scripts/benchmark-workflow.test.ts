@@ -148,6 +148,18 @@ describe("trusted workflow_run benchmark gate", () => {
         expect(trigger![1]).not.toContain("pull_request:")
     })
 
+    test("uses a bounded concurrency identity for fork branches", () => {
+        const concurrency = gateWorkflow.match(
+            /^concurrency:\n([\s\S]*?)\njobs:/m,
+        )
+        expect(concurrency).not.toBeNull()
+        expect(concurrency![1]).toContain("pull_requests[0].number")
+        expect(concurrency![1]).toContain("head_repository.id")
+        expect(concurrency![1]).toContain("workflow_run.id")
+        expect(concurrency![1]).not.toContain("head_repository.full_name")
+        expect(concurrency![1]).not.toContain("head_branch")
+    })
+
     test("downloads artifacts from the exact triggering run", () => {
         expect(
             gateWorkflow.match(/actions\/download-artifact@v4/g),

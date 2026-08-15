@@ -3,6 +3,7 @@ import {
     buildComparisons,
     pairedGateFailure,
     renderReport,
+    validateBlockingEvidence,
 } from "./bench-paired-report"
 import { PROTECTED_OPS } from "./lib/bench-protected-set"
 import { decidePairedRun } from "./lib/paired-decision"
@@ -239,6 +240,36 @@ describe("pairedGateFailure", () => {
         unpaired[0].unpairedBase = 1
         expect(pairedGateFailure(unpaired)).toContain(
             "unpaired protected observations",
+        )
+    })
+})
+
+describe("validateBlockingEvidence", () => {
+    test("rejects malformed identity metadata before a blocking decision", () => {
+        const { base, head } = paired("get 1000 atoms / valdres", [
+            [10_000, 10_100],
+            [10_000, 10_050],
+            [10_000, 9_950],
+            [10_000, 10_020],
+        ])
+
+        expect(() =>
+            validateBlockingEvidence([...base, base[0]], head),
+        ).toThrow("Duplicate base observation")
+        expect(() =>
+            validateBlockingEvidence(base, [
+                { ...head[0], order: base[0].order },
+                ...head.slice(1),
+            ]),
+        ).toThrow("Invalid execution order metadata")
+        expect(() =>
+            validateBlockingEvidence(base, [
+                { ...head[0], runId: base[0].runId },
+                ...head.slice(1),
+            ]),
+        ).toThrow("Duplicate run identity")
+        expect(() => validateBlockingEvidence(base, head.slice(1))).toThrow(
+            "Mismatched pair IDs",
         )
     })
 })

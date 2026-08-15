@@ -18,9 +18,13 @@ permissions:
     pull-requests: write
 
 concurrency:
+    # Keep the key bounded even when a fork uses the maximum branch-name
+    # length. Prefer the numeric PR, then conservatively serialize a head repo;
+    # a deleted/missing head repository falls back to this unique run ID.
     group:
-        bencher-pr-gate-${{ github.event.workflow_run.head_repository.full_name
-        }}-${{ github.event.workflow_run.head_branch }}
+        bencher-pr-gate-${{ github.event.workflow_run.pull_requests[0].number ||
+        github.event.workflow_run.head_repository.id ||
+        github.event.workflow_run.id }}
     cancel-in-progress: false
 
 jobs:
