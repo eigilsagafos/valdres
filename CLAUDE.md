@@ -35,7 +35,9 @@ types/          shared types live here, NOT in src/
 test/
 ```
 
-- **One export per file.** `index.ts` is purely re-exports.
+- **One export per public file.** Internal `lib/` modules may group cohesive
+  exports. The re-export-only `index.ts` barrel is the intentional exception to
+  the one-export guard.
 - `lib/` is internal; `utils/` is public. Put helpers in the right one.
 
 ## Browser-API package pattern

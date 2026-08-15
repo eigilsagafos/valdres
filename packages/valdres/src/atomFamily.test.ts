@@ -322,6 +322,50 @@ describe("atomFamily", () => {
         expect(() => family(Symbol("same"))).toThrow(TypeError)
     })
 
+    test("atomFamily rejects unsupported structural keys without invoking accessors", () => {
+        class ArraySubclass extends Array {}
+        class MapSubclass extends Map {}
+        class SetSubclass extends Set {}
+        class DateSubclass extends Date {}
+        class Unsupported {}
+
+        const cyclic: Record<string, unknown> = {}
+        cyclic.self = cyclic
+        let getterCalls = 0
+        const accessor = Object.defineProperty({}, "value", {
+            enumerable: true,
+            get: () => {
+                getterCalls++
+                return 1
+            },
+        })
+        const hidden = Object.defineProperty({}, "value", { value: 1 })
+        const symbolKeyed = Object.defineProperty({}, Symbol("value"), {
+            value: 1,
+        })
+        const family = atomFamily<string, [unknown]>("default")
+
+        for (const key of [
+            () => undefined,
+            new WeakMap(),
+            new Unsupported(),
+            new ArraySubclass(),
+            new MapSubclass(),
+            new SetSubclass(),
+            new DateSubclass(),
+            accessor,
+            hidden,
+            symbolKeyed,
+            cyclic,
+        ]) {
+            expect(() => family(key)).toThrow(TypeError)
+        }
+        expect(getterCalls).toBe(0)
+        expect(() => family(cyclic)).toThrow(
+            "valdres: cyclic family key values are not supported",
+        )
+    })
+
     test("atomFamily keyOf supports otherwise unsupported arguments", () => {
         type Entity = { id: string; self?: Entity }
         const family = atomFamily<string, [Entity]>(entity => entity.id, {

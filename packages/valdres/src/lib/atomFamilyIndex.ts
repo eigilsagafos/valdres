@@ -33,7 +33,6 @@ const getSortedKeysByValues = <K, V extends number | string>(
     return Array.from(map.entries())
         .sort((a, b) => (a[1] > b[1] ? 1 : a[1] < b[1] ? -1 : 0))
         .map(entry => entry[0])
-    // res.__in
 }
 
 type RenderedAtomFamilyIndex = readonly AtomFamilyAtom<any, any>[] & {
@@ -85,13 +84,6 @@ const publishFamilyIndex = (
     index.rendered = null
     index.renderedArray = null
     data.values.set(family, deferredFamilyIndexValue(index))
-    // WEAK, like `data.values` itself: writing a member must not make the store
-    // an owner of the family. A strong registry would keep an unread family —
-    // and, through its index's `created` map, every one of its members — alive
-    // for the store's lifetime (test/memoryleaks.test.ts). The count restores
-    // the `undefined` fast path once everything deferred has been observed; a
-    // family collected while still deferred leaves it armed, which costs one
-    // WeakSet probe per read in this store and retains nothing.
     const dirty = data.dirtyFamilyIndexes
     if (dirty === undefined) {
         data.dirtyFamilyIndexes = new WeakSet([family])

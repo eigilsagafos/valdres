@@ -1,5 +1,5 @@
 import { getStoreData } from "./getStoreData"
-import { describe, expect, mock, test } from "bun:test"
+import { describe, expect, mock, spyOn, test } from "bun:test"
 import { observeFamilyIndex } from "./atomFamilyIndex"
 import { atom } from "../atom"
 import { atomFamily } from "../atomFamily"
@@ -465,6 +465,19 @@ describe("transaction", () => {
         })
     })
 
+    test("batchSetFamilyAtoms rejects a member from another family", () => {
+        const store1 = store()
+        const users = atomFamily<string, [number]>()
+        const otherUsers = atomFamily<string, [number]>()
+
+        expect(() =>
+            store1.txn(txn => {
+                txn.batchSetFamilyAtoms(users, [[otherUsers(1), "one"]])
+            }),
+        ).toThrow("valdres: atom does not belong to atomFamily")
+        expect(store1.get(users)).toStrictEqual([])
+    })
+
     test("thenable transaction callbacks throw synchronously and never commit", async () => {
         const store1 = store()
         const count = atom(0)
@@ -514,19 +527,6 @@ describe("transaction", () => {
         })
     })
 
-    test.todo("transaction fails when trying to access dirty selector", () => {
-        const store1 = store()
-        const atom1 = atom(1, { name: "txn-dirty-atom1" })
-        const selector1 = selector(get => get(atom1) + 1, { name: "selector1" })
-        // const selector2 = selector((get) => get(selector1) + 1, "selector2")
-
-        store1.txn(({ set, get }) => {
-            expect(get(selector1)).toBe(2)
-            set(atom1, 2)
-            expect(() => get(selector1)).toThrow()
-        })
-    })
-
     test("set in transaction", () => {
         const store1 = store()
         const counter = atom(0)
@@ -565,6 +565,25 @@ describe("transaction", () => {
 
         expect(store1.get(family)).toBe(members)
         expect(store1.get(family)).toStrictEqual([a, b, c])
+    })
+
+    test("updating an existing family member does not read the membership clock", () => {
+        const store1 = store()
+        const family = atomFamily<number, [string]>(0)
+        const member = family("one")
+        store1.set(member, 1)
+        const now = spyOn(performance, "now")
+
+        try {
+            store1.txn(txn => {
+                txn.set(member, 2)
+                expect(now).not.toHaveBeenCalled()
+            })
+        } finally {
+            now.mockRestore()
+        }
+
+        expect(store1.get(member)).toBe(2)
     })
 
     test("family membership renders lazily on transaction read", () => {

@@ -432,7 +432,10 @@ export class TransactionContext {
      *  registration of members a body read lazily initialized. Must run while
      *  the context is OPEN: `cloneFamilyIntoTxn` may read through `this.get` to
      *  first materialize the family index. */
-    private stageFamilyMembership(atom: AtomFamilyAtom<any, any>): void {
+    private stageFamilyMembership(
+        atom: AtomFamilyAtom<any, any>,
+        timestamp?: number,
+    ): void {
         const draft = this._draft
         const ownFamilyValue = draft.values.has(atom.family)
             ? draft.values.get(atom.family)
@@ -452,7 +455,7 @@ export class TransactionContext {
                 this.cloneFamilyIntoTxn(atom.family)
             }
             const index = draft.values.get(atom.family).__index
-            index.created.set(atom, performance.now())
+            index.created.set(atom, timestamp ?? performance.now())
             index.deleted.delete(atom)
             this.recursivelyUpdateAtomFamilyIndexes(atom.family)
         }
@@ -475,6 +478,7 @@ export class TransactionContext {
               : undefined
         let index = ownFamilyValue?.__index
         this.noteFamilyWrite(family)
+        const timestamp = performance.now()
         let membershipChanged = false
         let staged = false
         for (const [atom, value] of pairs) {
@@ -517,7 +521,7 @@ export class TransactionContext {
                     ownFamilyValue = draft.values.get(family)
                     index = ownFamilyValue.__index
                 }
-                index.created.set(atom, performance.now())
+                index.created.set(atom, timestamp)
                 index.deleted.delete(atom)
                 membershipChanged = true
             }
@@ -536,7 +540,8 @@ export class TransactionContext {
         this.noteFamilyWrite(atom.family)
         const index = this._draft.values.get(atom.family).__index
         index.created.delete(atom)
-        index.deleted.set(atom, performance.now())
+        const timestamp = performance.now()
+        index.deleted.set(atom, timestamp)
         this.recursivelyUpdateAtomFamilyIndexes(atom.family)
         if (this._data.values.has(atom)) {
             this.deleteSet.add(atom)
@@ -1167,6 +1172,7 @@ export class TransactionContext {
         const initialized = draft.initializedAtoms
         if (initialized && initialized.size) {
             let staged: Atom[] | undefined
+            let timestamp: number | undefined
             for (const atom of initialized) {
                 if (!isFamilyAtom(atom)) continue
                 const stagedIndex = this.familyIndexFor(atom, draft.values)
@@ -1175,7 +1181,10 @@ export class TransactionContext {
                     isAtomDeletedInFamilyIndex(atom, stagedIndex)
                 )
                     continue
-                this.stageFamilyMembership(atom)
+                this.stageFamilyMembership(
+                    atom,
+                    (timestamp ??= performance.now()),
+                )
                 if (!staged) staged = []
                 staged.push(atom)
             }
