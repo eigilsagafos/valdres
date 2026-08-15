@@ -2,7 +2,7 @@ import { describe, test } from "./test-compat"
 import { createStore as jotaiCreateStore, atom as jotaiAtom } from "jotai"
 import { atom as valdresAtom } from "../../src/atom"
 import { store as valdresCreateStore } from "../../src/store"
-import { compare } from "./bench-utils"
+import { compare, measureOne } from "./bench-utils"
 import { do_not_optimize } from "mitata"
 
 describe("atom", () => {
@@ -71,6 +71,31 @@ describe("atom", () => {
             "set(atom) with 10 subs",
             () => vStore.set(vAtom, ++vInt),
             () => jStore.set(jAtom, ++jInt),
+        )
+    })
+
+    test("set a large structurally equal value", async () => {
+        // Valdres's default equality is structural, whereas Jotai's default is
+        // referential. A head-to-head row would therefore measure different
+        // semantics, so keep this Valdres-specific path on measureOne(). The
+        // two values are built outside the timed region: this isolates the
+        // complete default-equality walk and equal-write short circuit.
+        const rowCount = 1_024
+        const makeRows = () =>
+            Array.from({ length: rowCount }, (_, id) => ({
+                id,
+                profile: { active: id % 2 === 0, score: id * 3 },
+                tags: [`group-${id % 16}`, `shard-${id % 64}`],
+            }))
+        const current = makeRows()
+        const equalCopy = makeRows()
+        const vStore = valdresCreateStore()
+        const vAtom = valdresAtom(current)
+        vStore.get(vAtom)
+
+        await measureOne(
+            "set equal structural value (1,024 rows) / valdres",
+            () => vStore.set(vAtom, equalCopy),
         )
     })
 

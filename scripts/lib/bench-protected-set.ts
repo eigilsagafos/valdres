@@ -5,9 +5,9 @@
  *
  *  - Explicit membership. The set below is one benchmark per subsystem, chosen
  *    to be the aggregated workload that a regression in that subsystem has to
- *    pass through. Everything else in the deep suite stays informational. Both
- *    families are advisory; a small protected family keeps the FDR adjustment
- *    in paired-decision.ts affordable at four to twelve pairs.
+ *    pass through. Everything else in the deep suite stays informational. The
+ *    protected family blocks pull requests; keeping it small makes the FDR
+ *    adjustment in paired-decision.ts affordable at four to twelve pairs.
  *
  *  - A timing floor. A raw operation measured in nanoseconds cannot be gated on
  *    a CI runner: the +10% budget lands inside the JIT-tier and timer noise, and
@@ -32,8 +32,8 @@ export const PROTECTED_OPS = new Set([
     "get 1000 atoms",
     "set 1000 atoms",
     "set + read 100 selectors",
-    "set + read 100 selectorFamily entries",
-    "atomFamily: txn update 5,000 existing members",
+    "selectorFamily: lookup 10,000 retained entries",
+    "atomFamily: direct create + delete 500 members",
     "txn: cross-atom 1000 selectors, with subs",
     "txn: large asymmetric DAG (1000 leaves × 50 chain)",
     "subscribe + unsubscribe 100 shared selector pairs",
@@ -58,15 +58,19 @@ export const AGGREGATED_EQUIVALENTS: Record<string, string | null> = {
     "set(atom) with 10 subs": "architecture: live graph fan-out 100",
     "sub + unsub": "subscribe + unsubscribe 100 shared selector pairs",
     "selector(fn)": "set + read 100 selectors",
-    "selectorFamily(id)": "set + read 100 selectorFamily entries",
-    "selectorFamily(string) cache hit": "set + read 100 selectorFamily entries",
-    "atomFamily(id)": "atomFamily: txn update 5,000 existing members",
-    "atomFamily(id) cache hit": "atomFamily: txn update 5,000 existing members",
+    "selectorFamily(id)": "selectorFamily: lookup 10,000 retained entries",
+    "selectorFamily(number) cache hit":
+        "selectorFamily: lookup 10,000 retained entries",
+    "selectorFamily(string) cache hit":
+        "selectorFamily: lookup 10,000 retained entries",
+    "atomFamily(id)": "atomFamily: direct create + delete 500 members",
+    "atomFamily(id) cache hit":
+        "atomFamily: direct create + delete 500 members",
     "atomFamily(string) cache hit":
-        "atomFamily: txn update 5,000 existing members",
-    // Store construction is not part of any aggregated workload — every other
-    // benchmark builds its store outside the measured region. A regression here
-    // shows up on the base lane's plot, not in the paired decision.
+        "atomFamily: direct create + delete 500 members",
+    // Construction is exercised at a stable scale by the many-root benchmark,
+    // but that row includes disposal on Valdres and creation only on Jotai. It
+    // remains informational rather than claiming decision-grade equivalence.
     createStore: null,
 }
 

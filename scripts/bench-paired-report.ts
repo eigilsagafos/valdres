@@ -1,11 +1,13 @@
 /**
- * Report-only paired benchmark analysis.
+ * Paired benchmark analysis and blocking PR-gate decision.
  *
  * Reads the base and head observation NDJSON for both runtimes, pairs them by
  * explicit pair identity, runs the decision model in scripts/lib/paired-decision.ts,
- * and writes a markdown report plus a machine-readable JSON artifact. It runs
- * in the weekly/manual deep workflow; the shipped three-pair `min(head/base)`
- * +50% Bencher gate remains isolated in the required PR workflow.
+ * and writes a markdown report plus a machine-readable JSON artifact. The
+ * weekly/manual deep workflow uses it for calibration evidence; the privileged
+ * PR gate sets BENCH_ENFORCE=1 so a protected regression exits non-zero. The
+ * three-pair `min(head/base)` +50% Bencher gate remains as a redundant
+ * catastrophic backstop.
  *
  * Its one side effect on CI control flow is the rerun-lanes file, which asks the
  * workflow to append more pairs to lanes whose PROTECTED benchmarks came back
@@ -19,11 +21,14 @@
  *   BENCH_ROUND / BENCH_MAX_ROUNDS  position in the rerun ladder
  */
 import { writeFileSync } from "fs"
+import { validatePairedObservations } from "./bench-to-bmf"
 import {
+    PROTECTED_OPS,
     isProtected,
     isSubMicrosecond,
     TIMING_FLOOR_NS,
 } from "./lib/bench-protected-set"
+import { isReference, opName } from "./lib/benchmark-names"
 import { median } from "./lib/median"
 import {
     DEFAULT_PAIRED_POLICY,
@@ -60,6 +65,14 @@ function requireObservations(
 
 function batchSize(observation: BenchmarkObservation): number {
     return observation.ticks / observation.sampleCount
+}
+
+/** Fail closed on the complete process/pair protocol for blocking evidence. */
+export function validateBlockingEvidence(
+    baseObservations: BenchmarkObservation[],
+    headObservations: BenchmarkObservation[],
+): void {
+    validatePairedObservations([baseObservations, headObservations])
 }
 
 /**
@@ -199,14 +212,16 @@ export function renderReport(
     const budget = `${(DEFAULT_PAIRED_POLICY.budgetPct * 100).toFixed(0)}%`
 
     const lines = [
-        "## Paired benchmark decision model (report-only)",
+        "## Paired benchmark decision model",
         "",
         `Budget **+${budget}**, FDR **${DEFAULT_PAIRED_POLICY.falseDiscoveryRate}**, estimator **${DEFAULT_PAIRED_POLICY.estimator}**, round **${context.round}/${context.maxRounds}**.`,
         "",
         `Protected: ${counts.regression} regression, ${counts["within-budget"]} within budget, ${counts.inconclusive} inconclusive.`,
         "",
-        "This model does not gate. The blocking check remains the `min(head/base)`",
-        "+50% catastrophic gate. See `scripts/PAIRED_DECISION_MODEL.md`.",
+        "Protected `regression` verdicts block pull requests. `inconclusive`",
+        "rows run the bounded ladder and remain non-blocking at its cap. The",
+        "`min(head/base)` +50% gate remains as a catastrophic backstop. See",
+        "`scripts/PAIRED_DECISION_MODEL.md`.",
         "",
         "### Protected",
         "",
@@ -257,6 +272,57 @@ export function renderReport(
     return lines.join("\n") + "\n"
 }
 
+export function pairedGateFailure(
+    decisions: PairedDecision[],
+    maxPairs: number = DEFAULT_PAIRED_POLICY.minPairs * 3,
+): string | null {
+    const observed = new Set(
+        decisions
+            .filter(decision => !isReference(decision.benchmark))
+            .map(
+                decision =>
+                    `${opName(decision.benchmark)}\u0000${decision.runtime}`,
+            ),
+    )
+    const missing: string[] = []
+    for (const benchmark of PROTECTED_OPS) {
+        for (const runtime of ["bun", "node"]) {
+            if (!observed.has(`${benchmark}\u0000${runtime}`)) {
+                missing.push(`${benchmark} (${runtime})`)
+            }
+        }
+    }
+    if (missing.length > 0) {
+        return `missing protected observations: ${missing.join(", ")}`
+    }
+
+    const protectedDecisions = decisions.filter(
+        decision => decision.family === "protected",
+    )
+    const unpaired = protectedDecisions.filter(
+        decision => decision.unpairedBase > 0 || decision.unpairedHead > 0,
+    )
+    if (unpaired.length > 0) {
+        return `unpaired protected observations: ${unpaired.map(decision => `${decision.benchmark} (${decision.runtime})`).join(", ")}`
+    }
+
+    const premature = protectedDecisions.filter(
+        decision =>
+            decision.outcome === "inconclusive" && decision.pairs < maxPairs,
+    )
+    if (premature.length > 0) {
+        return `protected comparisons stopped before the ${maxPairs}-pair cap: ${premature.map(decision => `${decision.benchmark} (${decision.runtime}, ${decision.pairs} pairs)`).join(", ")}`
+    }
+
+    const regressions = protectedDecisions.filter(
+        decision => decision.outcome === "regression",
+    )
+    if (regressions.length > 0) {
+        return `protected performance regressions: ${regressions.map(decision => `${decision.benchmark} (${decision.runtime}, ${pct(decision.estimatePct)})`).join(", ")}`
+    }
+    return null
+}
+
 function positiveIntEnv(name: string, fallback: number): number {
     const raw = process.env[name]
     if (raw === undefined || raw === "") return fallback
@@ -291,6 +357,11 @@ if (import.meta.main) {
         )
     }
 
+    const enforce = process.env.BENCH_ENFORCE === "1"
+    if (enforce) {
+        validateBlockingEvidence(baseObservations, headObservations)
+    }
+
     const round = positiveIntEnv("BENCH_ROUND", 1)
     const maxRounds = positiveIntEnv("BENCH_MAX_ROUNDS", 3)
     const decisions = decidePairedRun(
@@ -321,4 +392,15 @@ if (import.meta.main) {
     // Deliberately NOT appended to GITHUB_STEP_SUMMARY here. The deep workflow
     // publishes only its final round's markdown.
     console.log(markdown)
+
+    if (enforce) {
+        const failure = pairedGateFailure(
+            decisions,
+            DEFAULT_PAIRED_POLICY.minPairs * maxRounds,
+        )
+        if (failure) {
+            console.error(`Paired benchmark gate failed: ${failure}`)
+            process.exitCode = 1
+        }
+    }
 }

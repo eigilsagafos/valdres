@@ -1,9 +1,13 @@
 # Paired benchmark decision model
 
-Status: **report-only**. This model runs only in the weekly/manual
-`.github/workflows/bencher-deep.yml` calibration workflow. Its verdicts never
-gate a pull request. The required lane remains the three-pair `min(head/base)`
-+50% Bencher threshold in `.github/workflows/bencher-pr.yml`.
+Status: **blocking for protected comparisons**. The unprivileged
+`.github/workflows/bencher-pr.yml` measurement workflow runs the balanced ladder
+for same-repository and fork pull requests. The trusted
+`.github/workflows/bencher-pr-gate.yml` workflow replays this model from the
+default branch and fails on a protected `regression`. `inconclusive` rows rerun
+to the twelve-pair cap and remain non-blocking there. The original three-pair
+`min(head/base)` +50% Bencher threshold remains as a redundant catastrophic
+backstop.
 
 ## Why replace `min(head/base)`
 
@@ -91,14 +95,16 @@ and a lane contaminated in round 1 could never be cleared by rerunning.
 ### Protected set and the timing floor
 
 `lib/bench-protected-set.ts` holds eleven decision-bearing benchmarks, one
-aggregated workload per subsystem. "Decision-bearing" means the row receives an
-advisory statistical verdict and can request a deep-workflow rerun. Everything
-else is informational. Neither family blocks a pull request.
+aggregated workload per subsystem. "Decision-bearing" means the row receives a
+statistical verdict, can request another PR-measurement round, and blocks on a
+`regression`. Everything else is informational.
 
-`atomFamily: txn update 5,000 existing members` remains in the raw observations,
-the protected mapping, and the coarse +50% PR gate. It is also a known noisy
-workload. The paired model must not become blocking until that workload is
-separately redesigned or quarantined using evidence from deep-run artifacts.
+The known-noisy `atomFamily: txn update 5,000 existing members` row remains in
+raw observations and the coarse +50% backstop, but is quarantined from the
+protected family. `atomFamily: direct create + delete 500 members` replaces it
+as the decision-bearing family-membership workload. The selector-family slot is
+likewise the high-cardinality retained-entry lookup rather than the smaller
+propagation case.
 
 Independently, any comparison whose base measurement is below **1000 ns** is
 demoted to informational whatever the set says. A +10% budget on a 131 ns
@@ -151,11 +157,12 @@ extra pairs buy almost nothing.
 Only lanes with protected benchmarks can trigger a rerun. The async suite holds
 none, so it always runs exactly one round.
 
-"Report-only" is enforced by workflow separation, not just intention. The deep
-workflow has no pull-request trigger, Bencher secret, Bencher upload, threshold,
-or regression gate. A statistical `regression` verdict is artifact data only.
-Benchmark, parsing, schema, and infrastructure failures still fail the deep run
-so calibration data cannot look complete when it is not.
+The weekly/manual deep workflow remains advisory: it has no pull-request
+trigger, Bencher secret, Bencher upload, threshold, or regression gate. In the
+PR path, workflow separation instead enforces the trust boundary. Untrusted PR
+code produces raw artifacts without secrets; the `workflow_run` gate executes
+only default-branch analysis code, validates artifact identity and bounds, and
+publishes the required check on the PR head SHA.
 
 The analyzer runs once per completed round and writes files only. Each round's
 JSON decision is retained, while the workflow publishes the final Markdown
@@ -164,9 +171,10 @@ report exactly once.
 ### What the catastrophic gate sees
 
 The shipped `min(head/base)` +50% gate is preserved exactly, and "exactly" is
-load-bearing. The required workflow runs only three pairs in B-P, P-B, B-P
-order. The fourth balanced pair and every ladder round exist only in the
-separate deep workflow, so report tooling cannot alter or interrupt the gate.
+load-bearing. The PR measurement copies only the first three round-one pairs in
+B-P, P-B, B-P order into its backstop artifact. The fourth balanced pair and
+every ladder round feed only the statistical model, so they cannot dilute the
+old statistic.
 
 Handing it a fourth pair would strictly weaken it, because `min` is monotone
 decreasing in the number of pairs: `min([1.7, 1.7, 1.7])` is 1.7× and blocks,
@@ -321,19 +329,16 @@ order.
 Counted in suite invocations, which is the only part that is not
 runner-dependent:
 
-|                                       | invocations |
-| :------------------------------------ | ----------: |
-| required PR gate (3 pairs x 4 lanes)  |          24 |
-| deep round 1 (2 blocks x 4 lanes)     |          32 |
-| each deep rerun (standard lanes only) |          16 |
-| deep worst case (cap reached)         |          64 |
+|                                      | invocations |
+| :----------------------------------- | ----------: |
+| PR/deep round 1 (2 blocks x 4 lanes) |          32 |
+| each later standard-only round       |          16 |
+| PR/deep worst case (cap reached)     |          64 |
 
-The 24-invocation required lane targets the historical 3–4 minute range. That is
-an expectation, not a measured improvement; measure the next three hosted
-relevant PR runs. Deep calibration can spend up to 64 invocations without
-lengthening the merge path.
+The common case is 32 invocations. A noisy protected standard lane can take the
+required PR path to 64; the cap is absolute.
 
-## Calibration protocol
+## Calibration record
 
 Collect approximately ten weekly A/A or manual deep runs before proposing any
 new statistical policy. Each run retains its observations, per-round JSON
@@ -356,12 +361,26 @@ For each merge, collect:
    the JSON. This is what selects the correct row in the tables above, and it is
    currently the least-known input to the whole design.
 
-Only after that evidence exists should a blocking proposal be considered. It
-must also redesign or quarantine the noisy atom-family workload separately,
-state the budget and protected set, and derive the expected false-block rate per
-100 PRs from collected reports rather than the synthetic corpus.
+The blocking promotion keeps the calibrated +10% budget and eleven-row protected
+family size unchanged. It quarantines the noisy atom-family transaction row,
+replacing it with direct create/delete churn.
 
-Do not enable blocking and adjust the budget in the same change.
+The promotion's final hosted red/green check ran the report-only model before
+enforcement was enabled:
+
+- [A/A run 31850617341](https://github.com/eigilsagafos/valdres/actions/runs/31850617341)
+  compared `ead824c9` with the identical-tree empty commit `c16feb84`. At the
+  twelve-pair cap it reported 18 protected rows within budget, the two known
+  noisy atom-family rows inconclusive, and zero regressions.
+- [Synthetic-regression run 31850623664](https://github.com/eigilsagafos/valdres/actions/runs/31850623664)
+  compared `c16feb84` with scratch commit `1a4d61c2`, which added a
+  deterministic busy-loop to `getDefault`. It reported eight protected
+  regressions across Bun and Node. Four selector decisions landed between +11.5%
+  and +20.4%, proving the paired model blocks regressions that the +50% backstop
+  cannot detect.
+
+Future policy changes should continue to collect the five signals above. Do not
+change the budget and protected family in the same calibration step.
 
 ## Notes for future work
 

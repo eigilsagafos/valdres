@@ -1,5 +1,11 @@
 import { describe, expect, test } from "bun:test"
-import { buildComparisons, renderReport } from "./bench-paired-report"
+import {
+    buildComparisons,
+    pairedGateFailure,
+    renderReport,
+    validateBlockingEvidence,
+} from "./bench-paired-report"
+import { PROTECTED_OPS } from "./lib/bench-protected-set"
 import { decidePairedRun } from "./lib/paired-decision"
 import type { BenchmarkObservation } from "./lib/read-bench-results"
 
@@ -147,7 +153,7 @@ describe("buildComparisons", () => {
 })
 
 describe("renderReport", () => {
-    test("states that it does not gate and names the surviving gate", () => {
+    test("states that protected regressions block and names the backstop", () => {
         const { base, head } = paired("get 1000 atoms / valdres", [
             [10_000, 10_000],
             [10_000, 10_010],
@@ -158,7 +164,7 @@ describe("renderReport", () => {
             decidePairedRun(buildComparisons(base, head)),
             { round: 1, maxRounds: 3, rerunLanes: [] },
         )
-        expect(markdown).toContain("report-only")
+        expect(markdown).toContain("block pull requests")
         expect(markdown).toContain("min(head/base)")
         expect(markdown).toContain("get 1000 atoms / valdres")
         expect(markdown).toContain("within-budget")
@@ -174,5 +180,96 @@ describe("renderReport", () => {
         )
         expect(markdown).toContain("bun:standard")
         expect(markdown).toContain("round **2/3**")
+    })
+})
+
+function completeProtectedRun(
+    outcome: "within-budget" | "regression" | "inconclusive" = "within-budget",
+    pairs: number = 4,
+) {
+    return [...PROTECTED_OPS].flatMap(benchmark =>
+        (["bun", "node"] as const).map(runtime => ({
+            benchmark: `${benchmark} / valdres`,
+            runtime,
+            suite: "standard",
+            family: "protected" as const,
+            outcome,
+            flags: [],
+            pairs,
+            unpairedBase: 0,
+            unpairedHead: 0,
+            estimateLn: 0,
+            estimatePct: outcome === "regression" ? 0.2 : 0,
+            standardErrorLn: 0.005,
+            degreesOfFreedom: pairs - 1,
+            intervalPct: [0, 0] as [number, number],
+            regressionP: outcome === "regression" ? 0.001 : 1,
+            withinBudgetP: outcome === "within-budget" ? 0.001 : 1,
+            regressionQ: outcome === "regression" ? 0.001 : 1,
+            withinBudgetQ: outcome === "within-budget" ? 0.001 : 1,
+            logRatios: Array.from({ length: pairs }, () => 0),
+        })),
+    )
+}
+
+describe("pairedGateFailure", () => {
+    test("passes a complete within-budget run", () => {
+        expect(pairedGateFailure(completeProtectedRun())).toBeNull()
+    })
+
+    test("blocks a protected regression", () => {
+        expect(pairedGateFailure(completeProtectedRun("regression"))).toContain(
+            "protected performance regressions",
+        )
+    })
+
+    test("requires inconclusive rows to reach the bounded cap", () => {
+        expect(
+            pairedGateFailure(completeProtectedRun("inconclusive", 4), 12),
+        ).toContain("stopped before the 12-pair cap")
+        expect(
+            pairedGateFailure(completeProtectedRun("inconclusive", 12), 12),
+        ).toBeNull()
+    })
+
+    test("fails closed on missing or unpaired protected evidence", () => {
+        expect(pairedGateFailure(completeProtectedRun().slice(1))).toContain(
+            "missing protected observations",
+        )
+        const unpaired = completeProtectedRun()
+        unpaired[0].unpairedBase = 1
+        expect(pairedGateFailure(unpaired)).toContain(
+            "unpaired protected observations",
+        )
+    })
+})
+
+describe("validateBlockingEvidence", () => {
+    test("rejects malformed identity metadata before a blocking decision", () => {
+        const { base, head } = paired("get 1000 atoms / valdres", [
+            [10_000, 10_100],
+            [10_000, 10_050],
+            [10_000, 9_950],
+            [10_000, 10_020],
+        ])
+
+        expect(() =>
+            validateBlockingEvidence([...base, base[0]], head),
+        ).toThrow("Duplicate base observation")
+        expect(() =>
+            validateBlockingEvidence(base, [
+                { ...head[0], order: base[0].order },
+                ...head.slice(1),
+            ]),
+        ).toThrow("Invalid execution order metadata")
+        expect(() =>
+            validateBlockingEvidence(base, [
+                { ...head[0], runId: base[0].runId },
+                ...head.slice(1),
+            ]),
+        ).toThrow("Duplicate run identity")
+        expect(() => validateBlockingEvidence(base, head.slice(1))).toThrow(
+            "Mismatched pair IDs",
+        )
     })
 })

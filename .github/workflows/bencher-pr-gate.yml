@@ -1,0 +1,421 @@
+# Fork-safe Bencher workflow 3/3: trusted artifact analysis and upload.
+#
+# This workflow runs only from the default branch. It never checks out or
+# executes pull-request code. Raw observations are untrusted input: context is
+# cross-checked against workflow_run and the GitHub API, files are bounded, and
+# all parsing/conversion uses scripts from the trusted default branch.
+name: Bencher (PR)
+
+on:
+    workflow_run:
+        workflows: [Bencher (PR measurement)]
+        types: [completed]
+
+permissions:
+    actions: read
+    checks: write
+    contents: read
+    pull-requests: write
+
+concurrency:
+    # Keep the key bounded even when a fork uses the maximum branch-name
+    # length. Prefer the numeric PR, then conservatively serialize a head repo;
+    # a deleted/missing head repository falls back to this unique run ID.
+    group:
+        bencher-pr-gate-${{ github.event.workflow_run.pull_requests[0].number ||
+        github.event.workflow_run.head_repository.id ||
+        github.event.workflow_run.id }}
+    cancel-in-progress: false
+
+jobs:
+    # Keep this job/check name stable. The workflow_run job itself belongs to
+    # the default-branch SHA, so this job also creates a check named
+    # `benchmark_pr` explicitly on workflow_run.head_sha for branch protection.
+    benchmark_pr:
+        runs-on: ubuntu-22.04
+        timeout-minutes: 25
+        environment: Bencher.dev
+        steps:
+            - name: Create pending pull-request check
+              id: pending_check
+              uses: actions/github-script@v9
+              with:
+                  result-encoding: string
+                  script: |
+                      const headSha = context.payload.workflow_run.head_sha;
+                      if (!/^[0-9a-f]{40}$/i.test(headSha)) {
+                          throw new Error(`Invalid workflow_run head SHA: ${headSha}`);
+                      }
+                      const { data } = await github.rest.checks.create({
+                          owner: context.repo.owner,
+                          repo: context.repo.repo,
+                          name: 'benchmark_pr',
+                          head_sha: headSha,
+                          status: 'in_progress',
+                          details_url: context.payload.workflow_run.html_url,
+                          output: {
+                              title: 'Paired performance gate is running',
+                              summary: 'Validating fork-safe benchmark evidence.'
+                          }
+                      });
+                      return String(data.id);
+
+            - name: Download pull-request context
+              id: download_context
+              continue-on-error: true
+              uses: actions/download-artifact@v4
+              with:
+                  name: benchmark-context
+                  path: /tmp/benchmark-context
+                  github-token: ${{ secrets.GITHUB_TOKEN }}
+                  run-id: ${{ github.event.workflow_run.id }}
+
+            - name: Validate pull-request context
+              id: context_bounds
+              if: steps.download_context.outcome == 'success'
+              continue-on-error: true
+              run: |
+                  set -euo pipefail
+                  path=/tmp/benchmark-context/context.json
+                  if [[ ! -f "$path" || ! -s "$path" ]]; then
+                    echo "::error::Missing benchmark context"
+                    exit 1
+                  fi
+                  bytes="$(wc -c < "$path")"
+                  if [[ "$bytes" -gt 16384 ]]; then
+                    echo "::error::Benchmark context exceeds 16 KiB"
+                    exit 1
+                  fi
+
+            - name: Cross-check pull-request context
+              id: context
+              if: steps.context_bounds.outcome == 'success'
+              continue-on-error: true
+              uses: actions/github-script@v9
+              env:
+                  CONTEXT_PATH: /tmp/benchmark-context/context.json
+              with:
+                  result-encoding: string
+                  script: |
+                      const fs = require('fs');
+                      const envelope = JSON.parse(
+                          fs.readFileSync(process.env.CONTEXT_PATH, 'utf8')
+                      );
+                      const run = context.payload.workflow_run;
+                      const sha = value =>
+                          typeof value === 'string' && /^[0-9a-f]{40}$/i.test(value);
+                      if (envelope.schemaVersion !== 1) throw new Error('Unsupported context schema');
+                      if (envelope.repository !== `${context.repo.owner}/${context.repo.repo}`) {
+                          throw new Error('Context repository does not match this repository');
+                      }
+                      if (!Number.isInteger(envelope.prNumber) || envelope.prNumber <= 0) {
+                          throw new Error('Invalid pull request number');
+                      }
+                      if (String(envelope.runId) !== String(run.id)) {
+                          throw new Error('Context run ID does not match workflow_run');
+                      }
+                      if (!sha(envelope.baseSha) || !sha(envelope.headSha) ||
+                          !sha(envelope.testedTestMergeSha)) {
+                          throw new Error('Context contains an invalid SHA');
+                      }
+                      if (envelope.headSha !== run.head_sha) {
+                          throw new Error('Context head SHA does not match workflow_run');
+                      }
+                      if (envelope.baseRef !== 'main') {
+                          throw new Error('Benchmark base is not the default branch');
+                      }
+                      if (typeof envelope.runBenchmarks !== 'boolean') {
+                          throw new Error('Invalid benchmark classification');
+                      }
+
+                      const { data: pr } = await github.rest.pulls.get({
+                          owner: context.repo.owner,
+                          repo: context.repo.repo,
+                          pull_number: envelope.prNumber
+                      });
+                      if (pr.head.sha !== envelope.headSha) {
+                          throw new Error('Pull request moved after this benchmark run');
+                      }
+                      if (pr.base.ref !== envelope.baseRef ||
+                          pr.base.repo.full_name !== envelope.repository) {
+                          throw new Error('Pull request base does not match context');
+                      }
+                      if (pr.head.repo.full_name !== run.head_repository.full_name) {
+                          throw new Error('Pull request head repository does not match workflow_run');
+                      }
+
+                      core.setOutput('pr_number', String(envelope.prNumber));
+                      core.setOutput('base_sha', envelope.baseSha);
+                      core.setOutput('head_sha', envelope.headSha);
+                      core.setOutput('run_benchmarks', String(envelope.runBenchmarks));
+                      return `PR #${envelope.prNumber} at ${envelope.headSha}`;
+
+            - name: Check out trusted gate implementation
+              id: checkout
+              if:
+                  ${{ steps.context.outcome == 'success' &&
+                  github.event.workflow_run.conclusion == 'success' &&
+                  steps.context.outputs.run_benchmarks == 'true' }}
+              continue-on-error: true
+              uses: actions/checkout@v6
+              with:
+                  ref: main
+                  fetch-depth: 1
+                  persist-credentials: false
+            - name: Set up trusted toolchain
+              if: steps.checkout.outcome == 'success'
+              uses: oven-sh/setup-bun@v2
+              with:
+                  bun-version: 1.3.14
+            - if: steps.checkout.outcome == 'success'
+              uses: actions/setup-node@v6
+              with:
+                  node-version: "24.16.0"
+            - if: steps.checkout.outcome == 'success'
+              uses: bencherdev/bencher@v0.6.6
+            - name: Install trusted gate dependencies
+              id: install
+              if: steps.checkout.outcome == 'success'
+              continue-on-error: true
+              run: bun install --frozen-lockfile
+
+            - name: Download raw benchmark evidence
+              id: download_evidence
+              if: steps.install.outcome == 'success'
+              continue-on-error: true
+              uses: actions/download-artifact@v4
+              with:
+                  name: benchmark-evidence
+                  path: /tmp/benchmark-evidence
+                  github-token: ${{ secrets.GITHUB_TOKEN }}
+                  run-id: ${{ github.event.workflow_run.id }}
+
+            - name: Validate evidence bounds
+              id: evidence
+              if: steps.download_evidence.outcome == 'success'
+              continue-on-error: true
+              run: |
+                  set -euo pipefail
+                  observations=/tmp/benchmark-evidence/observations
+                  for file in \
+                    all_base_bun.ndjson \
+                    all_head_bun.ndjson \
+                    all_base_node.ndjson \
+                    all_head_node.ndjson \
+                    gate_base_bun.ndjson \
+                    gate_head_bun.ndjson \
+                    gate_base_node.ndjson \
+                    gate_head_node.ndjson; do
+                    path="$observations/$file"
+                    if [[ ! -f "$path" || ! -s "$path" ]]; then
+                      echo "::error::Missing benchmark evidence: ${file}"
+                      exit 1
+                    fi
+                    bytes="$(wc -c < "$path")"
+                    if [[ "$bytes" -gt 20000000 ]]; then
+                      echo "::error::Benchmark evidence exceeds 20 MB: ${file}"
+                      exit 1
+                    fi
+                  done
+                  round_path=/tmp/benchmark-evidence/completed-round.txt
+                  if [[ ! -f "$round_path" || ! -s "$round_path" ||
+                    "$(wc -c < "$round_path")" -gt 8 ]]; then
+                    echo "::error::Invalid completed-round evidence file"
+                    exit 1
+                  fi
+                  completed_round="$(cat "$round_path")"
+                  if [[ ! "$completed_round" =~ ^[123]$ ]]; then
+                    echo "::error::Invalid completed benchmark round"
+                    exit 1
+                  fi
+
+            - name: Enforce paired relative decision model
+              id: paired_gate
+              if: steps.evidence.outcome == 'success'
+              continue-on-error: true
+              env:
+                  BENCH_ENFORCE: "1"
+                  BENCH_MAX_ROUNDS: "3"
+                  BENCH_PAIRED_BASE_BUN: /tmp/benchmark-evidence/observations/all_base_bun.ndjson
+                  BENCH_PAIRED_HEAD_BUN: /tmp/benchmark-evidence/observations/all_head_bun.ndjson
+                  BENCH_PAIRED_BASE_NODE: /tmp/benchmark-evidence/observations/all_base_node.ndjson
+                  BENCH_PAIRED_HEAD_NODE: /tmp/benchmark-evidence/observations/all_head_node.ndjson
+                  BENCH_REPORT_JSON: /tmp/trusted-paired-report.json
+                  BENCH_REPORT_MD: /tmp/trusted-paired-report.md
+              run: |
+                  completed_round="$(cat /tmp/benchmark-evidence/completed-round.txt)"
+                  BENCH_ROUND="$completed_round" \
+                    bun run scripts/bench-paired-report.ts > /dev/null
+
+            - name: Publish trusted paired report
+              if: always() && steps.evidence.outcome == 'success'
+              run: |
+                  if [[ -f /tmp/trusted-paired-report.md ]]; then
+                    cat /tmp/trusted-paired-report.md >> "$GITHUB_STEP_SUMMARY"
+                  fi
+
+            # Reconstruct the exact old three-pair statistic with trusted code.
+            # It remains a +50% backstop; the paired model above is the primary
+            # ~10% relative gate for the calibrated protected family.
+            - name: Convert catastrophic backstop inputs
+              id: convert
+              if: steps.evidence.outcome == 'success'
+              continue-on-error: true
+              env:
+                  BENCH_EXCLUDE_REFS: "1"
+                  BENCH_EXCLUDE_TINY: "1"
+              run: |
+                  BENCH_NDJSON_BUN=/tmp/benchmark-evidence/observations/gate_base_bun.ndjson \
+                  BENCH_NDJSON_NODE=/tmp/benchmark-evidence/observations/gate_base_node.ndjson \
+                  BENCH_OUT_BUN=/tmp/base_bun_results.json \
+                  BENCH_OUT_NODE=/tmp/base_node_results.json \
+                    bun run scripts/bench-to-bmf.ts
+                  BENCH_NDJSON_BUN=/tmp/benchmark-evidence/observations/gate_head_bun.ndjson \
+                  BENCH_NDJSON_NODE=/tmp/benchmark-evidence/observations/gate_head_node.ndjson \
+                  BENCH_PAIRED_BASE_BUN=/tmp/benchmark-evidence/observations/gate_base_bun.ndjson \
+                  BENCH_PAIRED_BASE_NODE=/tmp/benchmark-evidence/observations/gate_base_node.ndjson \
+                  BENCH_OUT_BUN=/tmp/head_bun_results.json \
+                  BENCH_OUT_NODE=/tmp/head_node_results.json \
+                    bun run scripts/bench-to-bmf.ts
+
+            - name: Seed relative baseline
+              id: seed
+              if: steps.convert.outcome == 'success'
+              continue-on-error: true
+              env:
+                  BENCHER_API_KEY: ${{ secrets.BENCHER_API_KEY }}
+                  BENCHER_BRANCH: pr-${{ steps.context.outputs.pr_number }}
+                  BENCHER_PROJECT: valdres
+              run: |
+                  bencher run \
+                    --branch "$BENCHER_BRANCH" \
+                    --start-point-reset \
+                    --testbed ubuntu-2204-bun \
+                    --adapter json \
+                    --file /tmp/base_bun_results.json
+                  bencher run \
+                    --branch "$BENCHER_BRANCH" \
+                    --testbed ubuntu-2204-node \
+                    --adapter json \
+                    --file /tmp/base_node_results.json
+
+            - name: Gate Bun catastrophic backstop
+              id: gate_bun
+              if: steps.seed.outcome == 'success'
+              continue-on-error: true
+              env:
+                  BENCHER_API_KEY: ${{ secrets.BENCHER_API_KEY }}
+                  BENCHER_BRANCH: pr-${{ steps.context.outputs.pr_number }}
+                  BENCHER_PROJECT: valdres
+                  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+                  HEAD_SHA: ${{ steps.context.outputs.head_sha }}
+                  PR_NUMBER: ${{ steps.context.outputs.pr_number }}
+              run: |
+                  bencher run \
+                    --branch "$BENCHER_BRANCH" \
+                    --hash "$HEAD_SHA" \
+                    --ci-number "$PR_NUMBER" \
+                    --testbed ubuntu-2204-bun \
+                    --threshold-measure latency \
+                    --threshold-test percentage \
+                    --threshold-upper-boundary 0.5 \
+                    --thresholds-reset \
+                    --err \
+                    --adapter json \
+                    --github-actions "$GH_TOKEN" \
+                    --file /tmp/head_bun_results.json
+            - name: Gate Node catastrophic backstop
+              id: gate_node
+              if: steps.seed.outcome == 'success'
+              continue-on-error: true
+              env:
+                  BENCHER_API_KEY: ${{ secrets.BENCHER_API_KEY }}
+                  BENCHER_BRANCH: pr-${{ steps.context.outputs.pr_number }}
+                  BENCHER_PROJECT: valdres
+                  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+                  HEAD_SHA: ${{ steps.context.outputs.head_sha }}
+                  PR_NUMBER: ${{ steps.context.outputs.pr_number }}
+              run: |
+                  bencher run \
+                    --branch "$BENCHER_BRANCH" \
+                    --hash "$HEAD_SHA" \
+                    --ci-number "$PR_NUMBER" \
+                    --testbed ubuntu-2204-node \
+                    --threshold-measure latency \
+                    --threshold-test percentage \
+                    --threshold-upper-boundary 0.5 \
+                    --thresholds-reset \
+                    --err \
+                    --adapter json \
+                    --github-actions "$GH_TOKEN" \
+                    --file /tmp/head_node_results.json
+
+            - name: Finalize required pull-request check
+              if: always()
+              uses: actions/github-script@v9
+              env:
+                  CHECK_ID: ${{ steps.pending_check.outputs.result }}
+                  TRIGGER_CONCLUSION:
+                      ${{ github.event.workflow_run.conclusion }}
+                  CONTEXT_DOWNLOAD: ${{ steps.download_context.outcome }}
+                  CONTEXT_BOUNDS: ${{ steps.context_bounds.outcome }}
+                  CONTEXT_VALIDATION: ${{ steps.context.outcome }}
+                  RUN_BENCHMARKS: ${{ steps.context.outputs.run_benchmarks }}
+                  CHECKOUT: ${{ steps.checkout.outcome }}
+                  INSTALL: ${{ steps.install.outcome }}
+                  EVIDENCE_DOWNLOAD: ${{ steps.download_evidence.outcome }}
+                  EVIDENCE_VALIDATION: ${{ steps.evidence.outcome }}
+                  PAIRED_GATE: ${{ steps.paired_gate.outcome }}
+                  CONVERT: ${{ steps.convert.outcome }}
+                  SEED: ${{ steps.seed.outcome }}
+                  GATE_BUN: ${{ steps.gate_bun.outcome }}
+                  GATE_NODE: ${{ steps.gate_node.outcome }}
+              with:
+                  script: |
+                      const failures = [];
+                      if (process.env.TRIGGER_CONCLUSION !== 'success') {
+                          failures.push(`measurement workflow: ${process.env.TRIGGER_CONCLUSION}`);
+                      }
+                      if (process.env.CONTEXT_DOWNLOAD !== 'success') failures.push('context artifact download');
+                      if (process.env.CONTEXT_BOUNDS !== 'success') failures.push('context artifact bounds');
+                      if (process.env.CONTEXT_VALIDATION !== 'success') failures.push('context validation');
+
+                      const runs = process.env.RUN_BENCHMARKS === 'true';
+                      if (runs) {
+                          for (const [label, value] of [
+                              ['trusted checkout', process.env.CHECKOUT],
+                              ['trusted install', process.env.INSTALL],
+                              ['evidence download', process.env.EVIDENCE_DOWNLOAD],
+                              ['evidence validation', process.env.EVIDENCE_VALIDATION],
+                              ['paired ~10% gate', process.env.PAIRED_GATE],
+                              ['backstop conversion', process.env.CONVERT],
+                              ['Bencher baseline seed', process.env.SEED],
+                              ['Bun +50% backstop', process.env.GATE_BUN],
+                              ['Node +50% backstop', process.env.GATE_NODE]
+                          ]) {
+                              if (value !== 'success') failures.push(`${label}: ${value}`);
+                          }
+                      } else if (process.env.RUN_BENCHMARKS !== 'false') {
+                          failures.push('missing benchmark classification');
+                      }
+
+                      const conclusion = failures.length === 0 ? 'success' : 'failure';
+                      const title = failures.length === 0
+                          ? (runs ? 'Paired performance gate passed' : 'Benchmarks intentionally skipped')
+                          : 'Paired performance gate failed';
+                      const summary = failures.length === 0
+                          ? (runs
+                              ? 'The protected paired model and catastrophic Bencher backstops passed.'
+                              : 'Every changed path was classified as benchmark-irrelevant.')
+                          : `Failures:\n${failures.map(value => `- ${value}`).join('\n')}`;
+
+                      await github.rest.checks.update({
+                          owner: context.repo.owner,
+                          repo: context.repo.repo,
+                          check_run_id: Number(process.env.CHECK_ID),
+                          status: 'completed',
+                          conclusion,
+                          details_url: context.payload.workflow_run.html_url,
+                          output: { title, summary }
+                      });
+                      if (failures.length > 0) core.setFailed(failures.join('; '));

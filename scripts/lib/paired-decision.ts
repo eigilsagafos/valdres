@@ -6,9 +6,9 @@
  * runner interference, but it has no notion of confidence: it silently converts
  * a base 131/131/131 vs head 351/351/131 measurement — two of three pairs 2.7x
  * slow — into "0% change", because one clean pair is enough to clear it. That
- * gate is retained as the catastrophic backstop. This model is advisory deep-run
- * calibration and must stay non-blocking until its noisy atom-family workload is
- * separately redesigned or quarantined with hosted evidence.
+ * gate is retained as the catastrophic backstop. The calibrated model is the
+ * primary blocking PR decision for its protected family; the noisy atom-family
+ * transaction workload is quarantined in favor of direct create/delete churn.
  *
  * The model works on paired log-ratios r_i = ln(head_i) - ln(base_i):
  *
@@ -46,8 +46,8 @@ import {
 export type PairedOutcome = "regression" | "within-budget" | "inconclusive"
 
 /**
- * `protected` comparisons carry advisory decisions and drive the deep rerun
- * ladder; `informational` ones are reported only. The families are also
+ * `protected` comparisons carry blocking regression decisions and drive the
+ * bounded rerun ladder; `informational` ones are reported only. The families are also
  * the multiple-comparison families, which is why the protected set is kept
  * small: FDR adjustment across ~20 protected comparisons leaves usable power at
  * four to twelve pairs, while adjustment across all ~120 would not.

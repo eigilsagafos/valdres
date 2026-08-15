@@ -227,11 +227,11 @@ samples.
 | Subscribe/unsubscribe + fan-in + mounted spine | 481.8 → 484.1 µs | 638.6 → 661.4 µs |
 
 Selector scheduling targets improve on both engines; atom-only remains flat and
-all three teardown medians remain within the 5% non-regression limit. CI's
-existing Bencher workflow remains authoritative: it runs base and head
-interleaved on the same runner three times and gates on the smallest of the
-three paired head/base ratios per benchmark (the least runner-contaminated
-estimate — see `scripts/bench-to-bmf.ts`).
+all three teardown medians remain within the 5% non-regression limit. The paired
+PR model is authoritative for its protected family: it runs balanced B-P-P-B
+blocks on one runner and blocks statistically supported regressions over the
++10% budget. The smallest of the first three head/base ratios remains a +50%
+catastrophic backstop (see `scripts/PAIRED_DECISION_MODEL.md`).
 
 ## Limitations
 

@@ -101,9 +101,9 @@ describe("atomFamily membership maintenance", () => {
         )
     })
 
-    // Membership CHANGES outside a transaction: each `set`/`del` is its own
-    // commit, so each one settles the family's membership on its own. The
-    // transaction case above amortizes that over one commit; these two are the
+    // D1 guard — membership CHANGES outside a transaction. Every `set`/`del`
+    // commits separately and settles membership on its own; the transaction
+    // case above amortizes that over one commit. These two are the
     // event-handler shape — a loop of direct writes — and guard that the cost
     // of a write stays independent of how many members the family already has.
     //
@@ -233,6 +233,43 @@ describe("selectorFamily", () => {
             "selectorFamily(string) cache hit",
             () => do_not_optimize(vFamily("user-1")),
             () => do_not_optimize(jFamily("user-1")),
+        )
+    })
+
+    test("lookup 10,000 retained selectorFamily entries", async () => {
+        const memberCount = 10_000
+        const vAtom = valdresAtom(0)
+        const jAtom = jotaiAtom(0)
+        const vFamily = valdresSelectorFamily<number, [number]>(
+            id => get => get(vAtom) + id,
+        )
+        const jFamily = jotaiAtomFamily((id: number) =>
+            jotaiAtom(get => get(jAtom) + id),
+        )
+
+        // Retain every member so both weak and strong family caches contain the
+        // same high-cardinality working set throughout measurement.
+        const vMembers = Array.from({ length: memberCount }, (_, i) =>
+            vFamily(i),
+        )
+        const jMembers = Array.from({ length: memberCount }, (_, i) =>
+            jFamily(i),
+        )
+        do_not_optimize(vMembers)
+        do_not_optimize(jMembers)
+
+        await compare(
+            "selectorFamily: lookup 10,000 retained entries",
+            () => {
+                for (let i = 0; i < memberCount; i++) {
+                    do_not_optimize(vFamily(i))
+                }
+            },
+            () => {
+                for (let i = 0; i < memberCount; i++) {
+                    do_not_optimize(jFamily(i))
+                }
+            },
         )
     })
 })
