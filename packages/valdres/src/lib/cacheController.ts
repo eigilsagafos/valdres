@@ -21,7 +21,12 @@ import {
     type CommitErrors,
 } from "./commitErrors"
 import { SETTLE_DEFAULT } from "./commitIntents"
-import { forestEntry, NO_ON_SETS, NO_SETTLEMENT } from "./commitPlans"
+import {
+    createCommitPlan,
+    forestEntry,
+    NO_ON_SETS,
+    NO_SETTLEMENT,
+} from "./commitPlans"
 import { equal } from "./equal"
 import { hasAtomCommitObservers } from "./hasAtomCommitObservers"
 import { IS_PROD } from "./IS_PROD"
@@ -364,37 +369,40 @@ const retain = (
         refreshedAt: number | undefined,
     ): boolean => {
         const errors = createCommitErrors()
-        return runCommitPlan({
-            data,
-            settlement: NO_SETTLEMENT,
-            admit: () => current(requestGeneration),
-            apply: () => {
-                if (shouldWriteValue) {
-                    setAndPropagate(
-                        value,
+        return runCommitPlan(
+            createCommitPlan(
+                data,
+                NO_SETTLEMENT,
+                NO_ON_SETS,
+                errors,
+                undefined,
+                undefined,
+                () => current(requestGeneration),
+                () => {
+                    if (shouldWriteValue) {
+                        setAndPropagate(
+                            value,
+                            requestGeneration,
+                            errors,
+                            refreshedAt,
+                        )
+                    }
+                    // A value subscriber can revoke this controller, and global
+                    // settlement records rather than throws observer failures.
+                    // Both conditions historically prevented metadata-off.
+                    if (errors.hasError || !current(requestGeneration)) return
+
+                    const idleMeta = allocateMeta(false)
+                    publishWrite(
+                        metaAtom,
+                        idleMeta,
                         requestGeneration,
                         errors,
-                        refreshedAt,
+                        false,
                     )
-                }
-                // A value subscriber can revoke this controller, and global
-                // settlement records rather than throws observer failures.
-                // Both conditions historically prevented metadata-off.
-                if (errors.hasError || !current(requestGeneration)) return
-
-                const idleMeta = allocateMeta(false)
-                publishWrite(
-                    metaAtom,
-                    idleMeta,
-                    requestGeneration,
-                    errors,
-                    false,
-                )
-            },
-            onSets: NO_ON_SETS,
-            errors,
-            report: undefined,
-        })
+                },
+            ),
+        )
     }
 
     const getValueStore = (): StoreData => {

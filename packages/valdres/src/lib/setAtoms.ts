@@ -9,6 +9,7 @@ import { runCommitPlan } from "./commitEngine"
 import { SETTLE_DEFAULT } from "./commitIntents"
 import { createCommitErrors } from "./commitErrors"
 import {
+    createCommitPlan,
     globalEffects,
     forestSettlement,
     singleStoreForest,
@@ -80,32 +81,36 @@ export const commitAtoms = (
     const globalSets = collectGlobalOnSets(onSets)
 
     if (!globalSets) {
-        runCommitPlan({
-            data,
-            settlement: updateSettlement(
+        runCommitPlan(
+            createCommitPlan(
                 data,
-                updatedAtoms,
-                settleCommit,
-                SETTLE_DEFAULT,
+                updateSettlement(
+                    data,
+                    updatedAtoms,
+                    settleCommit,
+                    SETTLE_DEFAULT,
+                ),
+                onSets,
+                errors,
+                intent.report,
+            ),
+        )
+        return
+    }
+    runCommitPlan(
+        createCommitPlan(
+            data,
+            forestSettlement(
+                data,
+                singleStoreForest(data, updatedAtoms),
+                globalEffects(data, globalSets, "set", applyGlobalSets),
+                settleCommitForest,
             ),
             onSets,
             errors,
-            report: intent.report,
-        })
-        return
-    }
-    runCommitPlan({
-        data,
-        settlement: forestSettlement(
-            data,
-            singleStoreForest(data, updatedAtoms),
-            globalEffects(data, globalSets, "set", applyGlobalSets),
-            settleCommitForest,
+            intent.report,
         ),
-        onSets,
-        errors,
-        report: intent.report,
-    })
+    )
 }
 
 /**
@@ -211,16 +216,16 @@ const hookFreeFlushReport = () => flushChangeSink(hookFreeSink!)
 
 const hookFreeErrors = createCommitErrors()
 
-const hookFreePlan: UnreportedCommitPlan = {
-    data: undefined as unknown as StoreData,
-    settlement: hookFreeSettlement,
-    apply: hookFreeApply,
-    onSets: noOnSets,
-    errors: hookFreeErrors,
-    report: undefined,
-    flushReport: undefined,
-    boundary: undefined,
-}
+const hookFreePlan: UnreportedCommitPlan = createCommitPlan(
+    undefined as unknown as StoreData,
+    hookFreeSettlement,
+    noOnSets,
+    hookFreeErrors,
+    undefined,
+    undefined,
+    undefined,
+    hookFreeApply,
+)
 
 /**
  * Hook-free bulk commit entry, invoked directly by a single-store transaction
@@ -249,31 +254,36 @@ export const commitHookFreeAtoms = (
             settleCommit,
             SETTLE_DEFAULT,
         )
-        runCommitPlan({
-            data,
-            settlement,
-            apply: () => {
-                if (
-                    sink === undefined &&
-                    pairs.size >= FRESH_ATOM_FAST_PATH_MIN &&
-                    tryWriteFreshSimpleAtoms(pairs, data)
-                ) {
-                    return
-                }
-                settlement.atoms = writeAtoms(
-                    pairs,
-                    data,
-                    initializedAtomsSet,
-                    "skip",
-                    noOnSets,
-                )
-            },
-            onSets: noOnSets,
-            errors: createCommitErrors(),
-            report: sink,
-            flushReport: sink ? () => flushChangeSink(sink) : undefined,
-            boundary: activeCommitBoundary(),
-        })
+        runCommitPlan(
+            createCommitPlan(
+                data,
+                settlement,
+                noOnSets,
+                createCommitErrors(),
+                sink,
+                undefined,
+                undefined,
+                () => {
+                    if (
+                        sink === undefined &&
+                        pairs.size >= FRESH_ATOM_FAST_PATH_MIN &&
+                        tryWriteFreshSimpleAtoms(pairs, data)
+                    ) {
+                        return
+                    }
+                    settlement.atoms = writeAtoms(
+                        pairs,
+                        data,
+                        initializedAtomsSet,
+                        "skip",
+                        noOnSets,
+                    )
+                },
+                undefined,
+                sink ? () => flushChangeSink(sink) : undefined,
+                activeCommitBoundary(),
+            ),
+        )
         return
     }
     hookFreeBusy = true

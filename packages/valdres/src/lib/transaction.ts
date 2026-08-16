@@ -40,6 +40,7 @@ import type { StoreTreeRuntime } from "./storeTreeRuntime"
 import { runCommitPlan } from "./commitEngine"
 import { createCommitErrors } from "./commitErrors"
 import {
+    createCommitPlan,
     forestSettlement,
     globalEffects,
     singleStoreForest,
@@ -939,26 +940,28 @@ export class TransactionContext {
                 unsetAtoms,
                 initWork.init,
             )
-            runCommitPlan({
-                data: this._data,
-                settlement: forestSettlement(
+            runCommitPlan(
+                createCommitPlan(
                     this._data,
-                    entries,
-                    globalSets &&
-                        globalEffects(
-                            this._data,
-                            globalSets,
-                            "set",
-                            applyGlobalSets,
-                        ),
-                    settleCommitForest,
+                    forestSettlement(
+                        this._data,
+                        entries,
+                        globalSets &&
+                            globalEffects(
+                                this._data,
+                                globalSets,
+                                "set",
+                                applyGlobalSets,
+                            ),
+                        settleCommitForest,
+                    ),
+                    onSets,
+                    errors,
+                    sink,
                 ),
-                onSets,
-                errors,
-                report: sink,
                 // continueAfterError stays default: a hook error must not
                 // starve settlement of already-applied writes.
-            })
+            )
             return
         }
 
@@ -1031,26 +1034,28 @@ export class TransactionContext {
         for (const entry of plan) {
             for (const deferred of entry.onSets) onSets.push(deferred)
         }
-        runCommitPlan({
-            data: this._data,
-            settlement: forestSettlement(
+        runCommitPlan(
+            createCommitPlan(
                 this._data,
-                plan,
-                globalSets &&
-                    globalEffects(
-                        this._data,
-                        globalSets,
-                        "set",
-                        applyGlobalSets,
-                    ),
-                settleCommitForest,
+                forestSettlement(
+                    this._data,
+                    plan,
+                    globalSets &&
+                        globalEffects(
+                            this._data,
+                            globalSets,
+                            "set",
+                            applyGlobalSets,
+                        ),
+                    settleCommitForest,
+                ),
+                onSets,
+                errors,
+                sink,
             ),
-            onSets,
-            errors,
-            report: sink,
             // continueAfterError stays default: a hook error must not starve
             // settlement of already-applied writes.
-        })
+        )
     }
 
     // Depth-first pre-order: this store, then each nested scope. Produces a
@@ -1465,10 +1470,7 @@ export class TransactionContext {
                 parentIndex ?? currentFamilyIndex,
             )
         } else {
-            clonedIndex = cloneAtomFamilyIndex(
-                currentFamilyIndex,
-                parentIndex,
-            )
+            clonedIndex = cloneAtomFamilyIndex(currentFamilyIndex, parentIndex)
         }
         if (this._scopedTransactions?.size) {
             for (const [, scopedTxn] of this._scopedTransactions) {

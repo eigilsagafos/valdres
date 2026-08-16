@@ -13,6 +13,7 @@ import { createScalarCommit, runCommitPlan } from "./commitEngine"
 import { createCommitErrors } from "./commitErrors"
 import { SETTLE_DEFAULT } from "./commitIntents"
 import {
+    createCommitPlan,
     globalEffects,
     forestSettlement,
     globalWriteQueue,
@@ -413,15 +414,53 @@ const settleAsyncAtomResolution = <Value>(
         // One atom, one store: the ordered global sets and the deferred onSet
         // queue describe the same write, so they share one descriptor queue.
         const queue = globalWriteQueue(atom, resolvedValue, data)
-        const applied = runCommitPlan({
-            data,
-            settlement: forestSettlement(
+        const applied = runCommitPlan(
+            createCommitPlan(
                 data,
-                singleStoreForest(data, [atom]),
-                globalEffects(data, queue, "async-set", applyGlobalSets),
-                settleCommitForest,
+                forestSettlement(
+                    data,
+                    singleStoreForest(data, [atom]),
+                    globalEffects(data, queue, "async-set", applyGlobalSets),
+                    settleCommitForest,
+                ),
+                queue,
+                errors,
+                "async-set",
+                undefined,
+                () =>
+                    admitAsyncAtomTransition(
+                        atom,
+                        resolvedValue,
+                        promise,
+                        data,
+                        currentValue,
+                        undefined,
+                    ),
+                () => {
+                    applyAsyncAtomResolution(
+                        atom,
+                        resolvedValue,
+                        promise,
+                        data,
+                        currentValue,
+                        undefined,
+                    )
+                },
             ),
-            admit: () =>
+        )
+        if (applied) clearAsyncAtomCoordinator(atom, data, coordinator)
+        if (!applied) strandOrClearAsyncAtomCoordinator(atom, data, coordinator)
+        return
+    }
+    const applied = runCommitPlan(
+        createCommitPlan(
+            data,
+            updateSettlement(data, [atom], settleCommit, SETTLE_DEFAULT),
+            hasOnSet ? [[atom, resolvedValue, data]] : NO_ON_SETS,
+            errors,
+            "async-set",
+            undefined,
+            () =>
                 admitAsyncAtomTransition(
                     atom,
                     resolvedValue,
@@ -430,7 +469,7 @@ const settleAsyncAtomResolution = <Value>(
                     currentValue,
                     undefined,
                 ),
-            apply: () => {
+            () => {
                 applyAsyncAtomResolution(
                     atom,
                     resolvedValue,
@@ -440,45 +479,8 @@ const settleAsyncAtomResolution = <Value>(
                     undefined,
                 )
             },
-            onSets: queue,
-            errors,
-            report: "async-set",
-        })
-        if (applied) clearAsyncAtomCoordinator(atom, data, coordinator)
-        if (!applied) strandOrClearAsyncAtomCoordinator(atom, data, coordinator)
-        return
-    }
-    const applied = runCommitPlan({
-        data,
-        settlement: updateSettlement(
-            data,
-            [atom],
-            settleCommit,
-            SETTLE_DEFAULT,
         ),
-        admit: () =>
-            admitAsyncAtomTransition(
-                atom,
-                resolvedValue,
-                promise,
-                data,
-                currentValue,
-                undefined,
-            ),
-        apply: () => {
-            applyAsyncAtomResolution(
-                atom,
-                resolvedValue,
-                promise,
-                data,
-                currentValue,
-                undefined,
-            )
-        },
-        onSets: hasOnSet ? [[atom, resolvedValue, data]] : NO_ON_SETS,
-        errors,
-        report: "async-set",
-    })
+    )
     if (applied) clearAsyncAtomCoordinator(atom, data, coordinator)
     if (!applied) strandOrClearAsyncAtomCoordinator(atom, data, coordinator)
 }

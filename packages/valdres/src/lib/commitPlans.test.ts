@@ -7,6 +7,7 @@ import { createCommitErrors } from "./commitErrors"
 import { SETTLE_DEFAULT } from "./commitIntents"
 import {
     assertPlanLegal,
+    createCommitPlan,
     forestEntry,
     globalEffects,
     forestSettlement,
@@ -33,6 +34,33 @@ const illegal = (plan: unknown) =>
 
 describe("commitPlans", () => {
     describe("constructors", () => {
+        test("every commit plan has one complete field order", () => {
+            const store1 = data()
+            const plan = createCommitPlan(
+                store1,
+                NO_SETTLEMENT,
+                NO_ON_SETS,
+                createCommitErrors(),
+                undefined,
+            )
+
+            expect(Object.keys(plan)).toEqual([
+                "data",
+                "settlement",
+                "admit",
+                "apply",
+                "onSets",
+                "errors",
+                "beforeSettle",
+                "afterSettle",
+                "flushReport",
+                "boundary",
+                "afterCommit",
+                "continueAfterError",
+                "report",
+            ])
+        })
+
         test("a single-store forest is one entry with no cleanup groups", () => {
             const store1 = data()
             const a = atom(0)

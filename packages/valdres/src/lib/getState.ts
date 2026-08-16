@@ -12,10 +12,8 @@ import { isSelector } from "../utils/isSelector"
 import { createScalarCommit, runCommitPlan } from "./commitEngine"
 import { createCommitErrors } from "./commitErrors"
 import { SETTLE_SKIP_FAMILY_INDEX } from "./commitIntents"
-import { NO_ON_SETS, updateSettlement } from "./commitPlans"
-import {
-    clearStaleSelectorActivation,
-} from "./graph"
+import { createCommitPlan, NO_ON_SETS, updateSettlement } from "./commitPlans"
+import { clearStaleSelectorActivation } from "./graph"
 import { hasAtomCommitObservers } from "./hasAtomCommitObservers"
 import { initAtom } from "./initAtom"
 import { initSelector } from "./initSelector"
@@ -125,36 +123,39 @@ const coordinateDeletedMemberDefault = <Value>(
                 )
                 return
             }
-            runCommitPlan({
-                data,
-                settlement: updateSettlement(
+            runCommitPlan(
+                createCommitPlan(
                     data,
-                    [state],
-                    settleCommit,
-                    SETTLE_SKIP_FAMILY_INDEX,
+                    updateSettlement(
+                        data,
+                        [state],
+                        settleCommit,
+                        SETTLE_SKIP_FAMILY_INDEX,
+                    ),
+                    NO_ON_SETS,
+                    createCommitErrors(),
+                    undefined,
+                    undefined,
+                    () =>
+                        admitDeletedMemberDefaultTransition(
+                            state,
+                            resolvedValue,
+                            cached,
+                            data,
+                            undefined,
+                            undefined,
+                        ),
+                    () =>
+                        applyDeletedMemberDefaultResolution(
+                            state,
+                            resolvedValue,
+                            cached,
+                            data,
+                            undefined,
+                            undefined,
+                        ),
                 ),
-                admit: () =>
-                    admitDeletedMemberDefaultTransition(
-                        state,
-                        resolvedValue,
-                        cached,
-                        data,
-                        undefined,
-                        undefined,
-                    ),
-                apply: () =>
-                    applyDeletedMemberDefaultResolution(
-                        state,
-                        resolvedValue,
-                        cached,
-                        data,
-                        undefined,
-                        undefined,
-                    ),
-                onSets: NO_ON_SETS,
-                errors: createCommitErrors(),
-                report: undefined,
-            })
+            )
         },
         () => {
             commitDeletedMemberDefaultCleanup(

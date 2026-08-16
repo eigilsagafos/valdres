@@ -6,11 +6,9 @@ import { runCommitPlan } from "./commitEngine"
 import { cacheState } from "./cacheState"
 import { createCommitErrors } from "./commitErrors"
 import { SETTLE_INIT_ONLY, SETTLE_UNSET } from "./commitIntents"
-import { NO_ON_SETS, updateSettlement } from "./commitPlans"
+import { createCommitPlan, NO_ON_SETS, updateSettlement } from "./commitPlans"
 import { getState } from "./getState"
-import {
-    refreshInheritedDependencyBranch,
-} from "./graph"
+import { refreshInheritedDependencyBranch } from "./graph"
 import {
     createChangeSink,
     flushChangeSink,
@@ -151,34 +149,46 @@ export const unsetValue = <V>(atom: Atom<V>, data: StoreData): void => {
     if (changeSink === undefined) {
         // Nothing listening: the removal record has no delivery target, so the
         // plan carries no report preparation either.
-        runCommitPlan({
-            data,
-            settlement,
-            onSets: NO_ON_SETS,
-            errors: createCommitErrors(),
-            report: undefined,
-            afterSettle,
-            boundary,
-            continueAfterError: false,
-        })
+        runCommitPlan(
+            createCommitPlan(
+                data,
+                settlement,
+                NO_ON_SETS,
+                createCommitErrors(),
+                undefined,
+                undefined,
+                undefined,
+                undefined,
+                afterSettle,
+                undefined,
+                boundary,
+                undefined,
+                false,
+            ),
+        )
         return
     }
-    runCommitPlan({
-        data,
-        settlement,
-        onSets: NO_ON_SETS,
-        errors: createCommitErrors(),
-        report: changeSink,
-        beforeSettle: report =>
-            reportUnsetAtom(
-                atom,
-                data,
-                effectiveValueAfterUnset(atom, data),
-                report,
-            ),
-        afterSettle,
-        flushReport: () => flushChangeSink(changeSink),
-        boundary,
-        continueAfterError: false,
-    })
+    runCommitPlan(
+        createCommitPlan(
+            data,
+            settlement,
+            NO_ON_SETS,
+            createCommitErrors(),
+            changeSink,
+            report =>
+                reportUnsetAtom(
+                    atom,
+                    data,
+                    effectiveValueAfterUnset(atom, data),
+                    report,
+                ),
+            undefined,
+            undefined,
+            afterSettle,
+            () => flushChangeSink(changeSink),
+            boundary,
+            undefined,
+            false,
+        ),
+    )
 }

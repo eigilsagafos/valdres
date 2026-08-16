@@ -53,7 +53,12 @@ import { validateResolvedValue } from "./validateResolvedValue"
 import { validateSchema } from "./validateSchema"
 import { recordSelectorEvaluation } from "./architectureInstrumentation"
 import { IS_PROD } from "./IS_PROD"
-import { NO_ON_SETS, NO_SETTLEMENT, selectorSettlement } from "./commitPlans"
+import {
+    createCommitPlan,
+    NO_ON_SETS,
+    NO_SETTLEMENT,
+    selectorSettlement,
+} from "./commitPlans"
 
 export { isSuspendError } from "./asyncDependencyTracking"
 
@@ -874,31 +879,34 @@ export const handleSelectorResult = <Value>(
                 // reported and we clean up so the invalid value never commits.
                 // Consistent with the atom async paths.
                 if (!validateResolvedValue(selector, resolved, data)) {
-                    runCommitPlan({
-                        data,
-                        settlement: NO_SETTLEMENT,
-                        admit: () =>
-                            admitNativeSelectorCleanup(
-                                selector,
-                                resolved,
-                                value as Promise<any>,
-                                data,
-                                evaluationContext,
-                                evalDependencyRevisions,
-                            ),
-                        apply: () =>
-                            applyNativeSelectorCleanup(
-                                selector,
-                                resolved,
-                                value as Promise<any>,
-                                data,
-                                evaluationContext,
-                                evalDependencyRevisions,
-                            ),
-                        onSets: NO_ON_SETS,
-                        errors: createCommitErrors(),
-                        report: undefined,
-                    })
+                    runCommitPlan(
+                        createCommitPlan(
+                            data,
+                            NO_SETTLEMENT,
+                            NO_ON_SETS,
+                            createCommitErrors(),
+                            undefined,
+                            undefined,
+                            () =>
+                                admitNativeSelectorCleanup(
+                                    selector,
+                                    resolved,
+                                    value as Promise<any>,
+                                    data,
+                                    evaluationContext,
+                                    evalDependencyRevisions,
+                                ),
+                            () =>
+                                applyNativeSelectorCleanup(
+                                    selector,
+                                    resolved,
+                                    value as Promise<any>,
+                                    data,
+                                    evaluationContext,
+                                    evalDependencyRevisions,
+                                ),
+                        ),
+                    )
                     return
                 }
                 const dependents = data.stateDependents.get(selector)
@@ -918,66 +926,74 @@ export const handleSelectorResult = <Value>(
                     )
                     return
                 }
-                runCommitPlan({
-                    data,
-                    settlement: selectorSettlement(
+                runCommitPlan(
+                    createCommitPlan(
                         data,
-                        selector,
-                        settleAsyncSelectorCommit,
+                        selectorSettlement(
+                            data,
+                            selector,
+                            settleAsyncSelectorCommit,
+                        ),
+                        NO_ON_SETS,
+                        createCommitErrors(),
+                        "async-set",
+                        undefined,
+                        () =>
+                            admitNativeSelectorSettlement(
+                                selector,
+                                resolved,
+                                value as Promise<any>,
+                                data,
+                                evaluationContext,
+                                evalDependencyRevisions,
+                            ),
+                        () =>
+                            applyNativeSelectorSettlement(
+                                selector,
+                                resolved,
+                                value as Promise<any>,
+                                data,
+                                evaluationContext,
+                                evalDependencyRevisions,
+                            ),
+                        undefined,
+                        undefined,
+                        activeCommitBoundary(),
                     ),
-                    admit: () =>
-                        admitNativeSelectorSettlement(
-                            selector,
-                            resolved,
-                            value as Promise<any>,
-                            data,
-                            evaluationContext,
-                            evalDependencyRevisions,
-                        ),
-                    apply: () =>
-                        applyNativeSelectorSettlement(
-                            selector,
-                            resolved,
-                            value as Promise<any>,
-                            data,
-                            evaluationContext,
-                            evalDependencyRevisions,
-                        ),
-                    onSets: NO_ON_SETS,
-                    errors: createCommitErrors(),
-                    report: "async-set",
-                    boundary: activeCommitBoundary(),
-                })
+                )
             },
             () => {
                 if (evaluationContext) evaluationContext.asyncDeps = undefined
                 if (evaluationContext)
                     evaluationContext.asyncDependencyRevisions = undefined
-                runCommitPlan({
-                    data,
-                    settlement: NO_SETTLEMENT,
-                    admit: () =>
-                        admitNativeSelectorCleanup(
-                            selector,
-                            undefined,
-                            value as Promise<any>,
-                            data,
-                            evaluationContext,
-                            undefined,
-                        ),
-                    apply: () =>
-                        applyNativeSelectorCleanup(
-                            selector,
-                            undefined,
-                            value as Promise<any>,
-                            data,
-                            evaluationContext,
-                            undefined,
-                        ),
-                    onSets: NO_ON_SETS,
-                    errors: createCommitErrors(),
-                    report: undefined,
-                })
+                runCommitPlan(
+                    createCommitPlan(
+                        data,
+                        NO_SETTLEMENT,
+                        NO_ON_SETS,
+                        createCommitErrors(),
+                        undefined,
+                        undefined,
+                        () =>
+                            admitNativeSelectorCleanup(
+                                selector,
+                                undefined,
+                                value as Promise<any>,
+                                data,
+                                evaluationContext,
+                                undefined,
+                            ),
+                        () =>
+                            applyNativeSelectorCleanup(
+                                selector,
+                                undefined,
+                                value as Promise<any>,
+                                data,
+                                evaluationContext,
+                                undefined,
+                            ),
+                    ),
+                )
             },
         )
         if (!tracksCommittedGraph) {

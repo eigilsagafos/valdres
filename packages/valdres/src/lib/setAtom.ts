@@ -11,6 +11,7 @@ import { runHookedDirectWrite, runCommitPlan } from "./commitEngine"
 import { DIRECT_WRITE, SETTLE_DEFAULT } from "./commitIntents"
 import { createCommitErrors } from "./commitErrors"
 import {
+    createCommitPlan,
     forestSettlement,
     globalEffects,
     globalWriteQueue,
@@ -47,18 +48,19 @@ const globalWritePlanFor = (
     data: StoreData,
     queue: DeferredGlobalSet[],
     entries: CommitForestEntry[],
-): UnreportedCommitPlan => ({
-    data,
-    settlement: forestSettlement(
+): UnreportedCommitPlan =>
+    createCommitPlan(
         data,
-        entries,
-        globalEffects(data, queue, "set", applyGlobalSets),
-        settleCommitForest,
-    ),
-    onSets: queue,
-    errors: createCommitErrors(),
-    report: "set",
-})
+        forestSettlement(
+            data,
+            entries,
+            globalEffects(data, queue, "set", applyGlobalSets),
+            settleCommitForest,
+        ),
+        queue,
+        createCommitErrors(),
+        "set",
+    )
 
 /**
  * Direct-write coordinator of the commit engine: one atom, one store. Phases

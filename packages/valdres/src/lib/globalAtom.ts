@@ -12,16 +12,13 @@ import { cacheController } from "./cacheController"
 import { runCommitPlan } from "./commitEngine"
 import { createCommitErrors, recordCommitError } from "./commitErrors"
 import {
+    createCommitPlan,
     forestEntry,
     forestSettlement,
     NO_ON_SETS,
 } from "./commitPlans"
 import { globalOnSetMarker } from "./globalOnSetMarker"
-import {
-    isLive,
-    mountAtom,
-    unmountAtom,
-} from "./graph"
+import { isLive, mountAtom, unmountAtom } from "./graph"
 import { settleCommitForest } from "./propagateUpdatedAtoms"
 import { subscribe } from "./subscribe"
 import { detachOwnValue } from "./unsetValue"
@@ -159,45 +156,53 @@ export const globalAtom = <Value = unknown>(
         }
 
         const origin = subscribedStores[0] ?? snapshot[0] ?? globalStoreData
-        runCommitPlan({
-            data: origin,
-            settlement: forestSettlement(
+        runCommitPlan(
+            createCommitPlan(
                 origin,
-                entries,
+                forestSettlement(
+                    origin,
+                    entries,
+                    undefined,
+                    settleCommitForest,
+                ),
+                NO_ON_SETS,
+                errors,
+                "reset",
                 undefined,
-                settleCommitForest,
-            ),
-            onSets: NO_ON_SETS,
-            errors,
-            report: "reset",
-            afterCommit: () => {
-                for (const s of subscribedStores) {
-                    try {
-                        attach(s)
-                    } catch (e) {
-                        recordCommitError(errors, e)
-                    }
-                    // Match subscribe.ts: cache policy is retained only when
-                    // the atom has a DIRECT subscriber. Transitive
-                    // (selector-only) subscribers revalidate lazily on read.
-                    if (
-                        atom.maxAge !== undefined &&
-                        (s.subscriptions.get(atom)?.size ?? 0) > 0
-                    ) {
+                undefined,
+                undefined,
+                undefined,
+                undefined,
+                undefined,
+                () => {
+                    for (const s of subscribedStores) {
                         try {
-                            cacheController.retain(atom, s, subscribe)
+                            attach(s)
+                        } catch (e) {
+                            recordCommitError(errors, e)
+                        }
+                        // Match subscribe.ts: cache policy is retained only when
+                        // the atom has a DIRECT subscriber. Transitive
+                        // (selector-only) subscribers revalidate lazily on read.
+                        if (
+                            atom.maxAge !== undefined &&
+                            (s.subscriptions.get(atom)?.size ?? 0) > 0
+                        ) {
+                            try {
+                                cacheController.retain(atom, s, subscribe)
+                            } catch (e) {
+                                recordCommitError(errors, e)
+                            }
+                        }
+                        try {
+                            mountAtom(atom, s)
                         } catch (e) {
                             recordCommitError(errors, e)
                         }
                     }
-                    try {
-                        mountAtom(atom, s)
-                    } catch (e) {
-                        recordCommitError(errors, e)
-                    }
-                }
-            },
-        })
+                },
+            ),
+        )
     }
 
     // `stores` is a plain data property. A getter wasn't buying anything —

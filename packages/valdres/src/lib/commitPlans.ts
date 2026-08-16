@@ -9,13 +9,16 @@ import type {
 import type {
     CommitForestSettlement,
     CommitPlan,
+    CommitSettlement,
     DeleteSettlement,
     GlobalEffectsApply,
     GlobalForestSettlement,
     LocalForestSettlement,
     NoSettlement,
     PlannedGlobalEffects,
+    ReportingCommitPlan,
     SelectorSettlement,
+    UnreportedCommitPlan,
     UpdateSettlement,
 } from "../types/CommitPlan"
 import type { DeferredGlobalSet } from "./globalAtomFanOut"
@@ -43,10 +46,13 @@ import { IS_PROD } from "./IS_PROD"
  * forest literal in the core goes through `forestEntry`/`singleStoreForest`
  * here, so the shape of a commit forest is defined once.
  *
- * Each constructor takes the commit's store as its first argument purely to
- * stamp the deterministic `commitPlanAllocations` counter. A module-static plan
- * graph passes `undefined`: it is allocated once at module load, not per
- * commit, and must never inflate a measured commit's count.
+ * Each supporting-object constructor takes the commit's store as its first
+ * argument to stamp the deterministic `commitPlanAllocations` counter. The
+ * outer plan object itself has always been excluded from that counter, so
+ * `createCommitPlan` preserves the existing contract while replacing its old
+ * literal allocation sites. A module-static supporting graph passes
+ * `undefined`: it is allocated once at module load, not per commit, and must
+ * never inflate a measured commit's count.
  *
  * This module deliberately imports no propagation, fan-out, or write-path
  * module — `settle` and `apply` primitives arrive by injection — so it can
@@ -79,6 +85,75 @@ Object.freeze(NO_ON_SETS)
 export const NO_SETTLEMENT: NoSettlement = Object.freeze({
     kind: "none" as const,
 })
+
+/**
+ * Build every CommitPlan through one allocation site and install every field
+ * in one fixed order. The engine reads plans from many coordinators; keeping a
+ * single complete object shape prevents those reads from becoming polymorphic
+ * merely because one operation has an admission guard while another has a
+ * boundary or cleanup phase.
+ */
+export function createCommitPlan(
+    data: StoreData,
+    settlement: CommitSettlement,
+    onSets: DeferredOnSet[],
+    errors: CommitPlan["errors"],
+    report: UnreportedCommitPlan["report"],
+    beforeSettle?: undefined,
+    admit?: CommitPlan["admit"],
+    apply?: CommitPlan["apply"],
+    afterSettle?: CommitPlan["afterSettle"],
+    flushReport?: CommitPlan["flushReport"],
+    boundary?: CommitPlan["boundary"],
+    afterCommit?: CommitPlan["afterCommit"],
+    continueAfterError?: CommitPlan["continueAfterError"],
+): UnreportedCommitPlan
+export function createCommitPlan(
+    data: StoreData,
+    settlement: CommitSettlement,
+    onSets: DeferredOnSet[],
+    errors: CommitPlan["errors"],
+    report: ReportingCommitPlan["report"],
+    beforeSettle: ReportingCommitPlan["beforeSettle"],
+    admit?: CommitPlan["admit"],
+    apply?: CommitPlan["apply"],
+    afterSettle?: CommitPlan["afterSettle"],
+    flushReport?: CommitPlan["flushReport"],
+    boundary?: CommitPlan["boundary"],
+    afterCommit?: CommitPlan["afterCommit"],
+    continueAfterError?: CommitPlan["continueAfterError"],
+): ReportingCommitPlan
+export function createCommitPlan(
+    data: StoreData,
+    settlement: CommitSettlement,
+    onSets: DeferredOnSet[],
+    errors: CommitPlan["errors"],
+    report: CommitPlan["report"],
+    beforeSettle?: ReportingCommitPlan["beforeSettle"],
+    admit?: CommitPlan["admit"],
+    apply?: CommitPlan["apply"],
+    afterSettle?: CommitPlan["afterSettle"],
+    flushReport?: CommitPlan["flushReport"],
+    boundary?: CommitPlan["boundary"],
+    afterCommit?: CommitPlan["afterCommit"],
+    continueAfterError?: CommitPlan["continueAfterError"],
+): CommitPlan {
+    return {
+        data,
+        settlement,
+        admit,
+        apply,
+        onSets,
+        errors,
+        beforeSettle,
+        afterSettle,
+        flushReport,
+        boundary,
+        afterCommit,
+        continueAfterError,
+        report,
+    } as CommitPlan
+}
 
 /** Narrow a finished work list to the representation a forest entry accepts:
  *  an empty group is no work, and no work is `undefined`. */
