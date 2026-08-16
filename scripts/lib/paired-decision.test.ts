@@ -625,6 +625,14 @@ describe("guards", () => {
         expect(decision.outcome).toBe("regression")
     })
 
+    test("an unsettled tier is reported but does not suppress the verdict", () => {
+        const decision = decidePairedRun([
+            { ...comparison({ effect: 0.5, pairs: 6 }), tierUnsettled: true },
+        ])[0]
+        expect(decision.flags).toContain("tier-unsettled")
+        expect(decision.outcome).toBe("regression")
+    })
+
     test("identical samples cannot manufacture unbounded confidence", () => {
         const decision = decide({ ratios: [1.2, 1.2, 1.2, 1.2], jitter: 0 })
         expect(decision.standardErrorLn).toBeGreaterThanOrEqual(

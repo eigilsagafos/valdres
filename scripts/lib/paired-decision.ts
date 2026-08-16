@@ -60,6 +60,7 @@ export type DecisionFlag =
     | "unpaired-observations"
     | "batch-size-shift"
     | "sub-microsecond"
+    | "tier-unsettled"
 
 export interface PairedSample {
     pairId: string
@@ -81,6 +82,12 @@ export interface PairedComparison {
     unpairedHead: number
     /** Set when the comparison was demoted for being below the timing floor. */
     subMicrosecond?: boolean
+    /**
+     * Set when any constituent observation ran the tier-settle protocol and hit
+     * its window cap without two consecutive windows agreeing — a process that
+     * never reached one steady JIT tier.
+     */
+    tierUnsettled?: boolean
 }
 
 export interface PairedPolicy {
@@ -225,6 +232,10 @@ function summarize(
 ): Summary {
     const flags: DecisionFlag[] = []
     if (comparison.subMicrosecond) flags.push("sub-microsecond")
+    // Reported, never decisive — like batch-size-shift below. A process that
+    // never settled into one JIT tier widens the interval on its own; hiding
+    // or suppressing the row would collapse two tiers into one estimate.
+    if (comparison.tierUnsettled) flags.push("tier-unsettled")
     if (comparison.unpairedBase > 0 || comparison.unpairedHead > 0) {
         flags.push("unpaired-observations")
     }

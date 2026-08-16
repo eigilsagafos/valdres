@@ -226,6 +226,40 @@ describe("bench-to-bmf", () => {
         ).toThrow("side must be base or head")
     })
 
+    test("validates tier-settle diagnostics when present", () => {
+        const result = observation("async settle: atom resolve observed", 250, {
+            pairId: "pair-1",
+            side: "base",
+        })
+        const settled = {
+            ...result,
+            tierWindows: 3,
+            tierSettled: true,
+            tierDiscardedP50s: [510, 260],
+        }
+
+        expect(parseBenchmarkObservation(result, "test row")).toEqual(result)
+        expect(parseBenchmarkObservation(settled, "test row")).toEqual(settled)
+        expect(() =>
+            parseBenchmarkObservation(
+                { ...settled, tierDiscardedP50s: [510] },
+                "test row",
+            ),
+        ).toThrow("one finite positive p50 per discarded window")
+        expect(() =>
+            parseBenchmarkObservation(
+                { ...settled, tierSettled: "yes" },
+                "test row",
+            ),
+        ).toThrow("tierSettled must be a boolean")
+        expect(() =>
+            parseBenchmarkObservation(
+                { ...result, tierWindows: 0 },
+                "test row",
+            ),
+        ).toThrow("tierWindows must be a small positive integer")
+    })
+
     test("pairs reordered observations by benchmark and pair ID", () => {
         const name = "async settle: selector resolve observed"
         const [base1, head1] = pair(name, "pair-1", 5_300, 10_300)

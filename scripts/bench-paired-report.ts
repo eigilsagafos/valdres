@@ -128,7 +128,11 @@ export function buildComparisons(
         const samples: PairedSample[] = []
         let unpairedBase = 0
         let unpairedHead = 0
+        let tierUnsettled = false
         for (const [pairId, slot] of group.pairs) {
+            for (const observation of [slot.base, slot.head]) {
+                if (observation?.tierSettled === false) tierUnsettled = true
+            }
             if (slot.base && slot.head) {
                 samples.push({
                     pairId,
@@ -157,6 +161,7 @@ export function buildComparisons(
             unpairedBase,
             unpairedHead,
             subMicrosecond: isSubMicrosecond(baseCenter),
+            tierUnsettled,
         })
     }
 
@@ -249,7 +254,8 @@ export function renderReport(
     const notable = informational.filter(
         decision =>
             decision.outcome === "regression" ||
-            decision.flags.includes("bimodal"),
+            decision.flags.includes("bimodal") ||
+            decision.flags.includes("tier-unsettled"),
     )
     lines.push(
         "",

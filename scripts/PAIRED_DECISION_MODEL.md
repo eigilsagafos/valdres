@@ -155,7 +155,56 @@ is four pairs and not two — at n=6 the degrees of freedom are still 3 and the
 extra pairs buy almost nothing.
 
 Only lanes with protected benchmarks can trigger a rerun. The async suite holds
-none, so it always runs exactly one round.
+none, so it always runs exactly one round — four pairs, while a noisy protected
+standard lane can reach twelve. That asymmetry is deliberate: reruns exist to
+resolve blocking verdicts, and async rows do not block. The async lanes instead
+buy their repeatability inside the process, with the tier-settle protocol below.
+
+### Async settlement lanes and the JSC tier ramp
+
+The five async settlement benchmarks measure one settlement per operation, so
+their measurement windows contain only ~50k operation executions — three orders
+of magnitude fewer than the aggregated standard workloads. That exposed a
+mechanism the standard suite never sees:
+
+- Mitata generates a **fresh measurement-loop function per `measure()` call**,
+  so the recorded window starts in the engine's interpreter and contains the
+  whole JIT tier ramp (LLInt → Baseline → DFG → FTL on JSC). Tier thresholds are
+  execution counts, and on JSC the ramp spans tens of thousands of executions —
+  a large, environment-sensitive fraction of a ~50k-execution window.
+- Mitata's own `warmup_samples` cannot help: its warmup loop exits as soon as
+  one call lands under the 65µs batch threshold, which is the first call for
+  these microsecond operations. The suite's explicit `warmupRuns` train `fn` but
+  not the generated loop; 200k explicit warmups were measured and the ramp
+  persisted.
+- The 12-sample p50 of a window whose first half sits ~2x above its second half
+  flips between tiers from process to process. Hosted same-code A/A estimates
+  swung from -5.9% to +22.1% on Bun/x64, with every process showing the fast
+  tier at p25 and the slow tier at p75. The Node/V8 lane stays stable because V8
+  re-tiers a fresh loop within one or two batches.
+
+The **tier-settle protocol** (`tierSettle` in `measureOne`) discards whole
+measurement windows until two consecutive window p50s agree within 5%, capped at
+five windows, and reports the final window. JSC's code cache reuses tiered code
+across identical generated loops, so the second window typically starts warm.
+Mid-ramp windows disagree by 15–45% and settled windows by ~2–4% on both
+engines, so the 5% tolerance separates regimes instead of tuning one. Nothing is
+averaged away: every discarded window's p50 is recorded in the observation
+(`tierDiscardedP50s`), and a process that hits the cap without settling is
+written with `tierSettled: false` and reported as a `tier-unsettled` flag — like
+`batch-size-shift`, reported and never decisive.
+
+Measured effect (local A/A, ten fresh processes per arm, worst case): the
+selector-resolve-unobserved p50 dispersion fell from 11.7% sd of ln (max/min
+1.48x) to 2.2% (1.07x), and a deterministic busy-loop slowdown injected into
+`setValueInData` was still detected on all five async rows with tight intervals,
+the smallest at +12.6% [+10.4%, +14.8%]. Rejected alternatives: larger explicit
+warmup (ramp lives in the generated loop, not `fn`), longer windows via
+`min_cpu_time`/`min_samples` (linear CI cost and the median stays ramp-biased
+until the window dwarfs the ramp), and per-case process isolation (the suite's
+fixed case order shifts steady-state levels deterministically and identically
+for both sides, so isolation buys nothing the pairing does not already
+guarantee).
 
 The weekly/manual deep workflow remains advisory: it has no pull-request
 trigger, Bencher secret, Bencher upload, threshold, or regression gate. In the

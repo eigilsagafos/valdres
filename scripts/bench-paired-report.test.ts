@@ -150,6 +150,25 @@ describe("buildComparisons", () => {
         expect(decision.flags).toContain("bimodal")
         expect(decision.outcome).toBe("inconclusive")
     })
+
+    test("one observation that never settled flags the whole comparison", () => {
+        const { base, head } = paired("async settle: atom resolve observed", [
+            [2_000, 2_000],
+            [2_000, 2_000],
+        ])
+        head[1] = {
+            ...head[1],
+            tierWindows: 5,
+            tierSettled: false,
+            tierDiscardedP50s: [4_000, 3_900, 2_100, 4_100],
+        }
+        const settledElsewhere = buildComparisons(base, head.slice(0, 1))
+        expect(settledElsewhere[0].tierUnsettled).toBe(false)
+        const [comparison] = buildComparisons(base, head)
+        expect(comparison.tierUnsettled).toBe(true)
+        const [decision] = decidePairedRun([comparison])
+        expect(decision.flags).toContain("tier-unsettled")
+    })
 })
 
 describe("renderReport", () => {
