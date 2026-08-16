@@ -9,7 +9,6 @@ import {
     setAsyncAtomCoordinatorEntry,
     type AsyncAtomCoordinatorEntry,
 } from "./asyncAtomCoordinatorRegistry"
-import { applyResolvedAsyncAtomValue } from "./applyResolvedAsyncAtomValue"
 import { createScalarCommit, runCommitPlan } from "./commitEngine"
 import { createCommitErrors } from "./commitErrors"
 import { SETTLE_DEFAULT } from "./commitIntents"
@@ -25,6 +24,7 @@ import {
 import { applyGlobalSets } from "./globalAtomFanOut"
 import { hasAtomCommitObservers } from "./hasAtomCommitObservers"
 import { settleCommit, settleCommitForest } from "./propagateUpdatedAtoms"
+import { resolvePendingDefault } from "./resolvePendingDefault"
 import { setValueInData } from "./setValueInData"
 import { isStoreDisposed } from "./storeLifecycle"
 import { unsetValue } from "./unsetValue"
@@ -93,7 +93,8 @@ const applyAsyncAtomResolution = <Value>(
     _fallback: Value,
     _unused: undefined,
 ) => {
-    applyResolvedAsyncAtomValue(atom, resolvedValue, data)
+    setValueInData(atom, resolvedValue, data)
+    resolvePendingDefault(atom, data, resolvedValue)
 }
 
 const applyAsyncAtomRollback = <Value>(
@@ -119,7 +120,8 @@ const commitObservedAsyncAtomResolution = <Value>(
     _fallback: Value,
     _unused: undefined,
 ) => {
-    applyResolvedAsyncAtomValue(atom, resolvedValue, data)
+    setValueInData(atom, resolvedValue, data)
+    resolvePendingDefault(atom, data, resolvedValue)
     settleCommit([atom], data, undefined, "async-set", SETTLE_DEFAULT)
 }
 
