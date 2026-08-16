@@ -55,10 +55,16 @@ type ObservationStats = Pick<
     "p25" | "p50" | "p75" | "p99" | "ticks" | "samples"
 >
 
+type TierDiagnostics = Pick<
+    BenchmarkObservation,
+    "tierWindows" | "tierSettled" | "tierDiscardedP50s"
+>
+
 /** Convert Mitata stats to the compact, versioned row written to NDJSON. */
 export function toBenchmarkObservation(
     benchmark: string,
     stats: ObservationStats,
+    tier?: TierDiagnostics,
 ): BenchmarkObservation {
     return {
         schemaVersion: BENCHMARK_RESULT_SCHEMA_VERSION,
@@ -75,6 +81,7 @@ export function toBenchmarkObservation(
         p99: stats.p99,
         ticks: stats.ticks,
         sampleCount: stats.samples.length,
+        ...tier,
     }
 }
 
@@ -94,6 +101,21 @@ const MEASURE_ONE_OPTS = {
     warmup_samples: 20,
 }
 
+// Tier-settle protocol for per-operation async benchmarks. Mitata generates a
+// fresh measurement loop per measure() call, so the recorded window starts in
+// JSC's interpreter and contains the whole LLInt→Baseline→DFG→FTL ramp — for
+// microsecond-scale async operations the ramp spans tens of thousands of
+// executions, a large fraction of the window, and the 12-sample p50 flips
+// between tiers from process to process. JSC's code cache reuses the tiered
+// code across identical generated loops, so discarding whole windows until two
+// consecutive window p50s agree measures the settled tier. Mid-ramp windows
+// disagree by 15-45%; settled windows agree within ~2-4% on both engines, so
+// the 5% tolerance separates the two regimes rather than tuning either. Every
+// discarded window's p50 is recorded, and a process that never settles is
+// flagged, never silently averaged.
+const TIER_SETTLE_TOLERANCE = 0.05
+const TIER_SETTLE_MAX_WINDOWS = 5
+
 // Record compact percentile diagnostics for one benchmark. mitata's measure()
 // already returns a robust, tail-trimmed p50. CI repeats the suite; the primary
 // PR gate analyzes paired log-ratios, while the catastrophic backstop uses the
@@ -102,7 +124,7 @@ const MEASURE_ONE_OPTS = {
 export async function measureOne(
     name: string,
     fn: () => void | Promise<void>,
-    options?: { warmupRuns?: number },
+    options?: { warmupRuns?: number; tierSettle?: boolean },
 ) {
     // Mitata moves fast operations directly into batched measurement after one
     // warm-up, regardless of warmup_samples. Promise-heavy benchmarks can then
@@ -110,10 +132,29 @@ export async function measureOne(
     // may request explicit unmeasured calls so both base and head reach their
     // steady tier before Mitata samples them.
     for (let i = 0; i < (options?.warmupRuns ?? 0); i++) await fn()
-    const stats = await measure(fn, MEASURE_ONE_OPTS)
+    let stats = await measure(fn, MEASURE_ONE_OPTS)
+
+    let tier: TierDiagnostics | undefined
+    if (options?.tierSettle) {
+        const discarded: number[] = []
+        let settled = false
+        while (!settled && discarded.length < TIER_SETTLE_MAX_WINDOWS - 1) {
+            discarded.push(stats.p50)
+            const next = await measure(fn, MEASURE_ONE_OPTS)
+            settled =
+                Math.abs(Math.log(next.p50 / stats.p50)) <=
+                TIER_SETTLE_TOLERANCE
+            stats = next
+        }
+        tier = {
+            tierWindows: discarded.length + 1,
+            tierSettled: settled,
+            tierDiscardedP50s: discarded,
+        }
+    }
     console.log(`  ${name}: ${fmtNs(stats.p50)}`)
 
-    const result = toBenchmarkObservation(name, stats)
+    const result = toBenchmarkObservation(name, stats, tier)
     appendFileSync(RESULTS_PATH, JSON.stringify(result) + "\n")
     return stats
 }
