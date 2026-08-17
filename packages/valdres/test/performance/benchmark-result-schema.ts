@@ -25,6 +25,16 @@ export interface BenchmarkObservation {
     p99: number
     ticks: number
     sampleCount: number
+    /**
+     * Tier-settle diagnostics, present only for benchmarks measured under the
+     * discard-window protocol. The reported percentiles describe the final
+     * window; each discarded window's p50 is retained so a JIT-tier ramp or a
+     * process stuck between two tiers stays visible instead of being averaged
+     * into one misleading estimate.
+     */
+    tierWindows?: number
+    tierSettled?: boolean
+    tierDiscardedP50s?: number[]
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -125,6 +135,31 @@ export function parseBenchmarkObservation(
     }
     if ("samples" in value) {
         throw new Error(`${source}: raw Mitata samples must not be serialized`)
+    }
+
+    const hasTier =
+        "tierWindows" in value ||
+        "tierSettled" in value ||
+        "tierDiscardedP50s" in value
+    if (hasTier) {
+        if (!isPositiveInteger(value.tierWindows) || value.tierWindows > 16) {
+            throw new Error(
+                `${source}: tierWindows must be a small positive integer`,
+            )
+        }
+        if (typeof value.tierSettled !== "boolean") {
+            throw new Error(`${source}: tierSettled must be a boolean`)
+        }
+        const discarded = value.tierDiscardedP50s
+        if (
+            !Array.isArray(discarded) ||
+            discarded.length !== value.tierWindows - 1 ||
+            !discarded.every(isPositiveFinite)
+        ) {
+            throw new Error(
+                `${source}: tierDiscardedP50s must hold one finite positive p50 per discarded window`,
+            )
+        }
     }
 
     return value as unknown as BenchmarkObservation

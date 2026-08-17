@@ -6,7 +6,11 @@ import { measureOne } from "./bench-utils"
 import { describe, test } from "./test-compat"
 
 const noop = () => {}
-const ASYNC_SETTLEMENT_WARMUP = { warmupRuns: 1_000 }
+// warmupRuns trains fn itself before the first window; tierSettle then
+// discards whole measurement windows until consecutive window p50s agree,
+// because mitata's freshly generated measurement loop re-enters JSC's tier
+// ramp inside the recorded window (see bench-utils.ts).
+const ASYNC_SETTLEMENT_WARMUP = { warmupRuns: 1_000, tierSettle: true }
 
 const observeAtomSettlement = (
     target: ReturnType<typeof store>,
