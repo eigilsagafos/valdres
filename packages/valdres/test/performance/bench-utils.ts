@@ -116,6 +116,37 @@ const MEASURE_ONE_OPTS = {
 const TIER_SETTLE_TOLERANCE = 0.05
 const TIER_SETTLE_MAX_WINDOWS = 5
 
+/**
+ * Discard measurement windows until two consecutive window p50s agree within
+ * the tolerance or the window cap is reached, and report the final window.
+ * `first` is the already-measured opening window; `nextWindow` produces one
+ * further full window per call. Exported for deterministic tests — production
+ * callers go through `measureOne`.
+ */
+export async function settleTier<Stats extends { p50: number }>(
+    first: Stats,
+    nextWindow: () => Promise<Stats>,
+): Promise<{ stats: Stats; tier: TierDiagnostics }> {
+    const discarded: number[] = []
+    let settled = false
+    let stats = first
+    while (!settled && discarded.length < TIER_SETTLE_MAX_WINDOWS - 1) {
+        discarded.push(stats.p50)
+        const next = await nextWindow()
+        settled =
+            Math.abs(Math.log(next.p50 / stats.p50)) <= TIER_SETTLE_TOLERANCE
+        stats = next
+    }
+    return {
+        stats,
+        tier: {
+            tierWindows: discarded.length + 1,
+            tierSettled: settled,
+            tierDiscardedP50s: discarded,
+        },
+    }
+}
+
 // Record compact percentile diagnostics for one benchmark. mitata's measure()
 // already returns a robust, tail-trimmed p50. CI repeats the suite; the primary
 // PR gate analyzes paired log-ratios, while the catastrophic backstop uses the
@@ -136,21 +167,11 @@ export async function measureOne(
 
     let tier: TierDiagnostics | undefined
     if (options?.tierSettle) {
-        const discarded: number[] = []
-        let settled = false
-        while (!settled && discarded.length < TIER_SETTLE_MAX_WINDOWS - 1) {
-            discarded.push(stats.p50)
-            const next = await measure(fn, MEASURE_ONE_OPTS)
-            settled =
-                Math.abs(Math.log(next.p50 / stats.p50)) <=
-                TIER_SETTLE_TOLERANCE
-            stats = next
-        }
-        tier = {
-            tierWindows: discarded.length + 1,
-            tierSettled: settled,
-            tierDiscardedP50s: discarded,
-        }
+        const settlement = await settleTier(stats, () =>
+            measure(fn, MEASURE_ONE_OPTS),
+        )
+        stats = settlement.stats
+        tier = settlement.tier
     }
     console.log(`  ${name}: ${fmtNs(stats.p50)}`)
 
