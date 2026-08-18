@@ -2,11 +2,13 @@ import { describe, test, expect, mock } from "bun:test"
 import { store } from "../store"
 import { atom } from "../atom"
 import { atomFamily } from "../atomFamily"
+import { globalAtom } from "../globalAtom"
 import { selector } from "../selector"
 import type { InternalAtom } from "../types/InternalAtom"
 import type { InternalState } from "../types/InternalState"
 import type { StoreChange } from "../types/StoreChange"
 import { wait } from "../../test/utils/wait"
+import { uniqueName } from "../../test/utils/uniqueName"
 
 const waitFor = async (callback: () => void, count = 0, maxRetries = 200) => {
     try {
@@ -182,7 +184,7 @@ describe("store.onChange", () => {
     test("a global atom set in a txn: origin gets 'transaction', each peer gets a separate 'set' (peer fires first)", () => {
         const store1 = store()
         const store2 = store()
-        const g = atom(0, { global: true })
+        const g = globalAtom(0, { name: uniqueName("g") })
         // Initialize in both stores (joining the global sync set) before
         // subscribing, so init-seeding doesn't muddy the assertions.
         store1.get(g)

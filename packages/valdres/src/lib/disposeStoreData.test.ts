@@ -1,10 +1,12 @@
 import { describe, expect, mock, spyOn, test } from "bun:test"
 import { atom } from "../atom"
 import { atomFamily } from "../atomFamily"
+import { globalAtom } from "../globalAtom"
 import { selector } from "../selector"
 import { store } from "../store"
 import { StoreDisposedError } from "../errors/StoreDisposedError"
 import { mockAsyncSource, withFakeClock } from "../../test/utils/fakeClock"
+import { uniqueName } from "../../test/utils/uniqueName"
 import { cacheState } from "./cacheState"
 import { getStoreData } from "./getStoreData"
 import { commitEndRegistry } from "./onCommitEnd"
@@ -140,8 +142,8 @@ describe("store.dispose", () => {
             const survivor = store()
             const maxAge = atom(30)
             let fetchCount = 0
-            const target = atom(() => ++fetchCount, {
-                global: true,
+            const target = globalAtom(() => ++fetchCount, {
+                name: uniqueName("target"),
                 maxAge,
             })
 
@@ -163,7 +165,7 @@ describe("store.dispose", () => {
     test("a disposed mount cannot mutate a global atom in a live store", () => {
         const liveStore = store()
         const requestStore = store()
-        const shared = atom(0, { global: true })
+        const shared = globalAtom(0, { name: uniqueName("shared") })
         liveStore.get(shared)
 
         let tick!: () => void

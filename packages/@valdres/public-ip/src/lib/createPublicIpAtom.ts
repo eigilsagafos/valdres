@@ -1,4 +1,4 @@
-import { atom } from "valdres"
+import { globalAtom } from "valdres"
 import type { GlobalAtom } from "valdres"
 import { fetchPublicIp } from "../utils/fetchPublicIp"
 import { subscribe } from "./subscribe"
@@ -62,10 +62,9 @@ export const createPublicIpAtom = ({
         return promise
     }
 
-    const ipAtom: GlobalAtom<Promise<string> | string> = atom<
+    const ipAtom: GlobalAtom<Promise<string> | string> = globalAtom<
         Promise<string> | string
     >(runFetch, {
-        global: true,
         name,
         maxAge: maxAgeAtom,
         staleWhileRevalidate: staleWhileRevalidateAtom,

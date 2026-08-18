@@ -47,8 +47,10 @@ const examples: NavGroup = {
 // Core valdres API names — routes are framework-scoped
 const coreApiNames = [
     "atom",
+    "globalAtom",
     "selector",
     "atomFamily",
+    "globalAtomFamily",
     "selectorFamily",
     "index",
     "store",

@@ -1,10 +1,8 @@
 import { equal } from "./lib/equal"
-import { globalAtom } from "./lib/globalAtom"
 import { registerName } from "./lib/registerName"
 import type { Atom } from "./types/Atom"
 import type { AtomDefaultValue } from "./types/AtomDefaultValue"
 import type { AtomOptions } from "./types/AtomOptions"
-import type { GlobalAtom } from "./types/GlobalAtom"
 
 /**
  * [Docs Reference](https://valdres.dev/valdres/api/atom)
@@ -15,28 +13,10 @@ import type { GlobalAtom } from "./types/GlobalAtom"
  *
  */
 export function atom<V>(
-    defaultValue: AtomDefaultValue<V>,
-    options: AtomOptions<V> & { global: true },
-): GlobalAtom<V>
-
-export function atom<V>(
     defaultValue?: AtomDefaultValue<V>,
     options?: AtomOptions<V>,
-): Atom<V>
-
-export function atom<V>(
-    defaultValue?: AtomDefaultValue<V>,
-    options?: AtomOptions<V>,
-) {
+): Atom<V> {
     if (!options) return { equal, defaultValue }
-    if (options.global) {
-        const created = globalAtom(defaultValue, options)
-        // Family member atoms are built by createAtomFamily (never through
-        // atom()), so registering here registers exactly the directly-created,
-        // named atoms.
-        if (options.name !== undefined) registerName(options.name, created)
-        return created
-    }
     const created = {
         equal,
         defaultValue,

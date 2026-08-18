@@ -1,4 +1,4 @@
-import { atom } from "valdres"
+import { globalAtom } from "valdres"
 import type { PermissionValue } from "../types/PermissionValue"
 
 const getInitial = (): PermissionValue => {
@@ -15,7 +15,6 @@ const getInitial = (): PermissionValue => {
     return "granted"
 }
 
-export const permissionAtom = atom<PermissionValue>(getInitial, {
-    global: true,
+export const permissionAtom = globalAtom<PermissionValue>(getInitial, {
     name: "@valdres/browser-device-motion/permission",
 })

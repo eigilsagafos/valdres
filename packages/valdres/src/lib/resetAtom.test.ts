@@ -2,8 +2,10 @@ import { describe, expect, mock, test } from "bun:test"
 import { atom } from "../atom"
 import { SchemaValidationError } from "../errors/SchemaValidationError"
 import { StoreDisposedError } from "../errors/StoreDisposedError"
+import { globalAtom } from "../globalAtom"
 import { selector } from "../selector"
 import { store } from "../store"
+import { uniqueName } from "../../test/utils/uniqueName"
 
 describe("direct reset commit pipeline", () => {
     test("selector defaults initialize and commit without a post-commit throw", () => {
@@ -75,7 +77,7 @@ describe("direct reset commit pipeline", () => {
     })
 
     test("fans a global reset out to every initialized peer store", () => {
-        const value = atom(1, { global: true })
+        const value = globalAtom(1, { name: uniqueName("value") })
         const source = store()
         const peer = store()
         const sourceSubscriber = mock(() => {})

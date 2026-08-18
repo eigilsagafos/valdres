@@ -18,7 +18,7 @@ export const createGlobalAtomFamily = <
         return atomFamilies.get(options.name) as AtomFamily<Value, Args>
     }
 
-    const family = createAtomFamily(defaultValue, options)
+    const family = createAtomFamily(defaultValue, options, true)
     atomFamilies.set(options.name, family)
     return family
 }

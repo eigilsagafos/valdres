@@ -1,7 +1,6 @@
-import { atom } from "valdres"
+import { globalAtom } from "valdres"
 import type { ScreenDetail } from "../types/ScreenDetail"
 
-export const screensAtom = atom<ScreenDetail[]>([], {
-    global: true,
+export const screensAtom = globalAtom<ScreenDetail[]>([], {
     name: "@valdres/browser-screen-details/screens",
 })

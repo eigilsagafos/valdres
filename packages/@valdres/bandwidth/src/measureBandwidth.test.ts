@@ -1,5 +1,5 @@
 import { describe, test, expect, beforeEach, afterEach } from "bun:test"
-import { atom, store } from "valdres"
+import { globalAtom, store } from "valdres"
 import { bytesToMbps } from "./lib/bytesToMbps"
 import { median } from "./lib/median"
 import { stdDev } from "./lib/stdDev"
@@ -197,10 +197,7 @@ describe("invalidation", () => {
 
     test("changing a watched atom invalidates in-flight measurement", async () => {
         const s = store()
-        const triggerAtom = atom(0, {
-            global: true,
-            name: "test-trigger",
-        })
+        const triggerAtom = globalAtom(0, { name: "test-trigger" })
 
         invalidateOnAtom.setSelf([triggerAtom])
 
@@ -237,10 +234,7 @@ describe("invalidation", () => {
 
     test("invalidation wires up after a speed atom is subscribed", async () => {
         const s = store()
-        const triggerAtom = atom(0, {
-            global: true,
-            name: "test-trigger-no-speed",
-        })
+        const triggerAtom = globalAtom(0, { name: "test-trigger-no-speed" })
 
         invalidateOnAtom.setSelf([triggerAtom])
 
@@ -269,10 +263,7 @@ describe("invalidation", () => {
 
     test("atoms added mid-run to invalidateOnAtom trigger invalidation", async () => {
         const s = store()
-        const triggerAtom = atom(0, {
-            global: true,
-            name: "test-trigger-mid-run",
-        })
+        const triggerAtom = globalAtom(0, { name: "test-trigger-mid-run" })
 
         // Start with empty watch list. Subscribe to a speed atom so
         // setupInvalidation wires up under the mount-tied lifecycle.
@@ -305,10 +296,7 @@ describe("invalidation", () => {
 
     test("atoms removed from invalidateOnAtom stop triggering invalidation", async () => {
         const s = store()
-        const triggerAtom = atom(0, {
-            global: true,
-            name: "test-trigger-removed",
-        })
+        const triggerAtom = globalAtom(0, { name: "test-trigger-removed" })
 
         invalidateOnAtom.setSelf([triggerAtom])
         const unsubSpeed = s.sub(downloadSpeedAtom, () => {})
@@ -340,10 +328,7 @@ describe("invalidation", () => {
         const s = store()
         globalThis.fetch = mockFetch()
 
-        const triggerAtom = atom(0, {
-            global: true,
-            name: "test-trigger-no-error",
-        })
+        const triggerAtom = globalAtom(0, { name: "test-trigger-no-error" })
         invalidateOnAtom.setSelf([triggerAtom])
 
         // Start a real measurement, then invalidate while the latency phase

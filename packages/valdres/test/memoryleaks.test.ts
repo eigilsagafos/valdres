@@ -5,11 +5,14 @@ import { releaseWeakRefs } from "bun:jsc"
 import { LeakDetector } from "../../test/src/LeakDetector"
 import { store } from "../src/store"
 import { atom } from "../src/atom"
+import { globalAtom as createGlobalAtom } from "../src/globalAtom"
 import { selector } from "../src/selector"
 import { atomFamily } from "../src/atomFamily"
 import { selectorFamily } from "../src/selectorFamily"
 import { familyKey } from "../src/lib/familyKey"
 import { index } from "../src/indexConstructor"
+import { valdresGlobal } from "../src/lib/valdresGlobal"
+import { uniqueName } from "./utils/uniqueName"
 import type { InternalAtomFamily } from "../src/types/InternalAtomFamily"
 import type { InternalSelectorFamily } from "../src/types/InternalSelectorFamily"
 
@@ -127,7 +130,7 @@ describe("memory leaks (atoms)", () => {
 
 describe("memory leaks (global atoms)", () => {
     test("disposed request store is collected while its global atom remains", async () => {
-        const globalAtom = atom(0, { global: true })
+        const globalAtom = createGlobalAtom(0, { name: uniqueName("globalAtom") })
         const detector = (() => {
             const requestStore = store()
             requestStore.get(globalAtom)
@@ -139,21 +142,26 @@ describe("memory leaks (global atoms)", () => {
         expect(await detector.isLeaking()).toBe(false)
     })
 
-    test("global store does not retain an otherwise released global atom", async () => {
-        const detector = (() => {
-            const requestStore = store()
-            const globalAtom = atom(0, { global: true })
-            requestStore.get(globalAtom)
-            const detector = new LeakDetector(globalAtom)
-            requestStore.dispose()
-            return detector
-        })()
+    test("a registered global atom remains reachable via the name registry after its only store is disposed", () => {
+        // Global atoms are named, permanent registry addresses (ADR §2) —
+        // unlike the anonymous global atoms the pre-C6 `{ global: true }`
+        // flag allowed, a named global atom is deliberately retained for the
+        // life of the process rather than garbage collected once every store
+        // that touched it goes away.
+        const name = uniqueName("globalAtom")
+        const requestStore = store()
+        const globalAtom = createGlobalAtom(0, { name })
+        requestStore.get(globalAtom)
+        requestStore.dispose()
 
-        expect(await detector.isLeaking()).toBe(false)
+        expect(valdresGlobal().registry.get(name)).toBe(globalAtom)
     })
 
     test("cache-controller handoff does not retain its former owner store", async () => {
-        const cached = atom(() => 1, { global: true, maxAge: 60_000 })
+        const cached = createGlobalAtom(() => 1, {
+            name: uniqueName("cached"),
+            maxAge: 60_000,
+        })
         const survivor = store()
         const detector = (() => {
             let owner: ReturnType<typeof store> | undefined = store()
@@ -169,17 +177,20 @@ describe("memory leaks (global atoms)", () => {
         survivor.dispose()
     })
 
-    test("final cache-controller release does not retain its global atom", async () => {
+    test("final cache-controller release does not retain its request store", async () => {
+        // The global atom itself is out of scope here (see the previous
+        // test): it's a permanent registry entry, so this probes the
+        // cache-controller's final-release cleanup path for a stranded
+        // reference to the disposed request store instead.
+        const cached = createGlobalAtom(() => 1, {
+            name: uniqueName("cached"),
+            maxAge: 60_000,
+        })
         const detector = (() => {
             let requestStore: ReturnType<typeof store> | undefined = store()
-            let cached: ReturnType<typeof atom<number>> | undefined = atom(
-                () => 1,
-                { global: true, maxAge: 60_000 },
-            )
-            const detector = new LeakDetector(cached)
+            const detector = new LeakDetector(getStoreData(requestStore))
             requestStore.sub(cached, () => {})
             requestStore.dispose()
-            cached = undefined
             requestStore = undefined
             return detector
         })()

@@ -1,10 +1,12 @@
 import { describe, expect, mock, test } from "bun:test"
 import { atom } from "../atom"
+import { globalAtom } from "../globalAtom"
 import { selector } from "../selector"
 import { store } from "../store"
 import type { Atom } from "../types/Atom"
 import type { Store } from "../types/Store"
 import { isPromiseLike } from "../utils/isPromiseLike"
+import { uniqueName } from "../../test/utils/uniqueName"
 
 const flushMicrotasks = async () => {
     await Promise.resolve()
@@ -217,7 +219,7 @@ describe("async writes", () => {
         test(`${mode.name} fans a settled global write out to peers`, async () => {
             const source = mode.createStore()
             const peer = store()
-            const valueAtom = atom(1, { global: true })
+            const valueAtom = globalAtom(1, { name: uniqueName("valueAtom") })
             source.get(valueAtom)
             peer.get(valueAtom)
 

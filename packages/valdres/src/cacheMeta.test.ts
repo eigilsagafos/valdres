@@ -1,9 +1,11 @@
 import { describe, test, expect, mock, spyOn } from "bun:test"
 import { atom } from "./atom"
 import { cacheMeta } from "./cacheMeta"
+import { globalAtom } from "./globalAtom"
 import { selector } from "./selector"
 import { store } from "./store"
 import { withFakeClock, mockAsyncSource } from "../test/utils/fakeClock"
+import { uniqueName } from "../test/utils/uniqueName"
 import { getStoreData } from "./lib/getStoreData"
 import type { InternalAtom } from "./types/InternalAtom"
 
@@ -160,7 +162,10 @@ describe("cacheMeta", () => {
             const store1 = store()
             const store2 = store()
             const source = mockAsyncSource<number>()
-            const atom1 = atom(source.fn, { global: true, maxAge: 100 })
+            const atom1 = globalAtom(source.fn, {
+                name: uniqueName("atom1"),
+                maxAge: 100,
+            })
             const unsubscribe1 = store1.sub(atom1, () => {})
             const unsubscribe2 = store2.sub(atom1, () => {})
             const unsubscribeMeta1 = store1.sub(cacheMeta(atom1), () => {})
@@ -307,9 +312,9 @@ describe("reactive maxAge", () => {
         withFakeClock(async clock => {
             const store1 = store()
             const source = mockAsyncSource<number>()
-            const config = atom(100, { global: true })
-            const atom1 = atom(source.fn, {
-                global: true,
+            const config = globalAtom(100, { name: uniqueName("config") })
+            const atom1 = globalAtom(source.fn, {
+                name: uniqueName("atom1"),
                 maxAge: config,
                 staleWhileRevalidate: config,
             })
@@ -413,8 +418,8 @@ describe("reactive maxAge", () => {
             const store2 = store()
             let fetchCount = 0
 
-            const atom1 = atom(() => ++fetchCount, {
-                global: true,
+            const atom1 = globalAtom(() => ++fetchCount, {
+                name: uniqueName("atom1"),
                 maxAge: 30,
             })
 
@@ -452,8 +457,8 @@ describe("reactive maxAge", () => {
             let fetchCount = 0
             const maxAgeAtom = atom(30)
 
-            const atom1 = atom(() => ++fetchCount, {
-                global: true,
+            const atom1 = globalAtom(() => ++fetchCount, {
+                name: uniqueName("atom1"),
                 maxAge: maxAgeAtom,
             })
 

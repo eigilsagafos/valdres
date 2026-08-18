@@ -1,7 +1,9 @@
 import { describe, expect, mock, test } from "bun:test"
 import { atom } from "../atom"
+import { globalAtom } from "../globalAtom"
 import { selector } from "../selector"
 import { store } from "../store"
+import { uniqueName } from "../../test/utils/uniqueName"
 
 describe("throwing onSet hooks", () => {
     test("a direct set still propagates and notifies before rethrowing", () => {
@@ -115,7 +117,7 @@ describe("throwing onSet hooks", () => {
         const onSet = mock(() => {
             throw hookError
         })
-        const value = atom(0, { global: true, onSet })
+        const value = globalAtom(0, { name: uniqueName("value"), onSet })
         const doubled = selector(get => get(value) * 2)
         const source = store()
         const throwingPeer = store()
@@ -173,8 +175,8 @@ describe("throwing onSet hooks", () => {
     test("the last cross-scope global write converges every store despite a hook error", () => {
         const hookError = new Error("first global hook failed")
         let hookCalls = 0
-        const value = atom(0, {
-            global: true,
+        const value = globalAtom(0, {
+            name: uniqueName("value"),
             onSet: () => {
                 hookCalls++
                 if (hookCalls === 1) throw hookError

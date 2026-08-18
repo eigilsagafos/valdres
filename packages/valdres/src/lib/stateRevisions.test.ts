@@ -2,8 +2,10 @@ import { getStoreData } from "./getStoreData"
 import { describe, expect, test } from "bun:test"
 import { atom } from "../atom"
 import { atomFamily } from "../atomFamily"
+import { globalAtom } from "../globalAtom"
 import { selector } from "../selector"
 import { store } from "../store"
+import { uniqueName } from "../../test/utils/uniqueName"
 import { cleanUpRejectedPromise } from "./asyncDependencyTracking"
 import { deleteFamilyAtom } from "./deleteFamilyAtom"
 import { trackStateRevision } from "./stateRevisions"
@@ -42,7 +44,7 @@ describe("state revisions", () => {
 
     test("global reset does not record a value that was already absent", () => {
         const rootStore = store()
-        const valueAtom = atom(0, { global: true })
+        const valueAtom = globalAtom(0, { name: uniqueName("valueAtom") })
         rootStore.get(valueAtom)
         trackStateRevision(valueAtom, getStoreData(rootStore))
         getStoreData(rootStore).values.delete(valueAtom)

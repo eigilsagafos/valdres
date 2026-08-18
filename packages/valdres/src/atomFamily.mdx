@@ -45,22 +45,21 @@ store.get(userAtom("user-1")) // { id: "user-1", name: "", email: "" }
 
 ## Global families
 
-Set `global: true` to share each member's value across stores. A global family
-must have a stable `name`; omitting it is a type error and remains a runtime
-error for untyped JavaScript.
+Use [`globalAtomFamily`](/valdres/globalAtomFamily) to share each member's value
+across stores. `options.name` is required — a global family is addressed by
+it, so omitting it is a type error and remains a runtime error for untyped
+JavaScript.
 
 ```ts
-const featureFlagAtom = atomFamily((key: string) => false, {
-    global: true,
+import { globalAtomFamily } from "valdres"
+
+const featureFlagAtom = globalAtomFamily((key: string) => false, {
     name: "app/feature-flags",
 })
 ```
 
-The `global` flag determines whether members expose global atom capabilities, so
-TypeScript must know it as a literal. An options variable typed only as
-`AtomFamilyOptions` has `global?: boolean` and cannot select an overload. Narrow
-the flag first or use a literal options object as above. Plain global atoms do
-not require a name, and selectors do not have a `global` option.
+Re-defining a family under the same name returns the existing family instead of
+creating a second one. Selectors do not have a global counterpart.
 
 ## Key identity
 
@@ -137,5 +136,6 @@ function UserProfile({ userId }) {
 ## See also
 
 - [atom](/valdres/atom) — create a single atom
+- [globalAtomFamily](/valdres/globalAtomFamily) — share each member's value across every store
 - [selectorFamily](/valdres/selectorFamily) — derive state from a family of atoms
 - [index](/valdres/index) — reactively filter family members by a term

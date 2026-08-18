@@ -5,6 +5,12 @@
  */
 import { describe, test } from "./test-compat"
 import { atom } from "../../src/atom"
+// Benchmark files are replayed unmodified against a base-commit worktree
+// (see .github/workflows/bencher-pr.yml) that only has this PR's
+// test/performance/ directory, not its src/ or test/utils/ additions —
+// so this imports the internal constructor (stable across the C6 rework)
+// instead of the new public src/globalAtom.ts wrapper.
+import { globalAtom } from "../../src/lib/globalAtom"
 import { selector } from "../../src/selector"
 import { store } from "../../src/store"
 import type { Transaction } from "../../src/types/Transaction"
@@ -129,7 +135,7 @@ describe("architecture timing confirmations", () => {
     })
 
     test("global fan-out", async () => {
-        const shared = atom(0, { global: true })
+        const shared = globalAtom(0, { name: "bench/architecture-timing/shared" })
         const stores = Array.from({ length: 100 }, () => store())
         stores.forEach(target => target.get(shared))
         let next = 0

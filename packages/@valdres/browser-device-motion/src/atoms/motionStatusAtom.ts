@@ -1,4 +1,4 @@
-import { atom } from "valdres"
+import { globalAtom } from "valdres"
 import type { MotionStatus } from "../types/MotionStatus"
 
 const getInitial = (): MotionStatus => {
@@ -11,7 +11,6 @@ const getInitial = (): MotionStatus => {
     return "idle"
 }
 
-export const motionStatusAtom = atom<MotionStatus>(getInitial, {
-    global: true,
+export const motionStatusAtom = globalAtom<MotionStatus>(getInitial, {
     name: "@valdres/browser-device-motion/status",
 })

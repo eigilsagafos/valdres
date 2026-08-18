@@ -1,9 +1,6 @@
-import { atom } from "valdres"
+import { globalAtom } from "valdres"
 
-export const publicIpV4EndpointsAtom = atom<string[]>(
+export const publicIpV4EndpointsAtom = globalAtom<string[]>(
     ["https://api4.ipify.org", "https://ipv4.icanhazip.com"],
-    {
-        global: true,
-        name: "@valdres/public-ip/v4Endpoints",
-    },
+    { name: "@valdres/public-ip/v4Endpoints" },
 )

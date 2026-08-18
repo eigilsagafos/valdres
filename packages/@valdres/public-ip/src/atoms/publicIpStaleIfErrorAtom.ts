@@ -1,6 +1,5 @@
-import { atom } from "valdres"
+import { globalAtom } from "valdres"
 
-export const publicIpStaleIfErrorAtom = atom<number>(Infinity, {
-    global: true,
+export const publicIpStaleIfErrorAtom = globalAtom<number>(Infinity, {
     name: "@valdres/public-ip/staleIfError",
 })

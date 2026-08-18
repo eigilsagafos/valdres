@@ -1,7 +1,6 @@
-import { atom } from "valdres"
+import { globalAtom } from "valdres"
 import type { PublicIpStatus } from "../types/PublicIpStatus"
 
-export const publicIpStatusAtom = atom<PublicIpStatus>("idle", {
-    global: true,
+export const publicIpStatusAtom = globalAtom<PublicIpStatus>("idle", {
     name: "@valdres/public-ip/status",
 })

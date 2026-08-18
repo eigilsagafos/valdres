@@ -3,6 +3,7 @@ import { describe, expect, mock, spyOn, test } from "bun:test"
 import { observeFamilyIndex } from "./atomFamilyIndex"
 import { atom } from "../atom"
 import { atomFamily } from "../atomFamily"
+import { globalAtom } from "../globalAtom"
 import { selector } from "../selector"
 import { store } from "../store"
 import { transaction } from "./transaction"
@@ -12,6 +13,7 @@ import { SelectorCircularDependencyError } from "../errors/SelectorCircularDepen
 import { SelectorEvaluationError } from "../errors/SelectorEvaluationError"
 import type { InternalAtom } from "../types/InternalAtom"
 import { assertStoreInvariants } from "../../test/invariants/checkStoreInvariants"
+import { uniqueName } from "../../test/utils/uniqueName"
 
 /** Resolve to a promise's value if it settles within `ms`, else report it
  *  still pending — a bounded race so a hung suspense promise fails fast
@@ -1228,8 +1230,8 @@ describe("single-store cleanup commits through the commit engine", () => {
         const store1 = store()
         const store2 = store()
         const events: string[] = []
-        const globalCounter = atom(0, {
-            global: true,
+        const globalCounter = globalAtom(0, {
+            name: uniqueName("globalCounter"),
             onSet: () => events.push("onSet"),
         })
         const localAtom = atom(1)
@@ -1263,8 +1265,8 @@ describe("single-store cleanup commits through the commit engine", () => {
         const store1 = store()
         const store2 = store()
         const seen: string[] = []
-        const globalCounter = atom(0, {
-            global: true,
+        const globalCounter = globalAtom(0, {
+            name: uniqueName("globalCounter"),
             onSet: () => {
                 throw new Error("hook boom")
             },
@@ -1293,7 +1295,7 @@ describe("single-store cleanup commits through the commit engine", () => {
         const store1 = store()
         const store2 = store()
         const family = atomFamily<number, [string]>(0)
-        const globalCounter = atom(0, { global: true })
+        const globalCounter = globalAtom(0, { name: uniqueName("globalCounter") })
         const member = family("a")
         const seen: string[] = []
         store1.set(member, 1)

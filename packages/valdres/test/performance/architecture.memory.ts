@@ -1,5 +1,11 @@
 import { describe, expect, test } from "./test-compat"
 import { atom } from "../../src/atom"
+// Benchmark files are replayed unmodified against a base-commit worktree
+// (see .github/workflows/bencher-pr.yml) that only has this PR's
+// test/performance/ directory, not its src/ or test/utils/ additions —
+// so this imports the internal constructor (stable across the C6 rework)
+// instead of the new public src/globalAtom.ts wrapper.
+import { globalAtom } from "../../src/lib/globalAtom"
 import { selector } from "../../src/selector"
 import { store } from "../../src/store"
 import type { Store } from "../../src/types/Store"
@@ -298,9 +304,8 @@ describe("architecture retained-memory gates", () => {
 
     test("global fan-out", async () => {
         await measureRetained("global fan-out", () => {
-            let shared: ReturnType<typeof atom<number>> | undefined = atom(0, {
-                global: true,
-            })
+            let shared: ReturnType<typeof globalAtom<number>> | undefined =
+                globalAtom(0, { name: "bench/architecture-memory/shared" })
             let stores = Array.from({ length: 1_000 }, () => store())
             for (const target of stores) target.get(shared)
             stores[0]!.set(shared, 1)

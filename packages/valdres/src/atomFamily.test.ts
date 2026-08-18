@@ -1,6 +1,7 @@
 import { describe, test, expect, mock } from "bun:test"
 import { store } from "./store"
 import { atomFamily } from "./atomFamily"
+import { globalAtomFamily } from "./globalAtomFamily"
 import { selectorFamily } from "./selectorFamily"
 import { wait } from "../test/utils/wait"
 import { selector } from "./selector"
@@ -649,8 +650,7 @@ describe("atomFamily", () => {
     test("global atomFamily members sync across stores", () => {
         const store1 = store()
         const store2 = store()
-        const family = atomFamily<string, [string]>("default", {
-            global: true,
+        const family = globalAtomFamily<string, [string]>("default", {
             name: "global_sync_test",
         })
         const memberAtom = family("user1")
@@ -660,8 +660,7 @@ describe("atomFamily", () => {
     })
 
     test("global atomFamily members have setSelf/getSelf/resetSelf", () => {
-        const family = atomFamily<string, [string]>("default", {
-            global: true,
+        const family = globalAtomFamily<string, [string]>("default", {
             name: "global_self_test",
         })
         const memberAtom = family("user1")
@@ -673,8 +672,7 @@ describe("atomFamily", () => {
     test("global atomFamily setSelf propagates to all stores", () => {
         const store1 = store()
         const store2 = store()
-        const family = atomFamily<string, [string]>("default", {
-            global: true,
+        const family = globalAtomFamily<string, [string]>("default", {
             name: "global_setSelf_test",
         })
         const memberAtom = family("user1") as GlobalAtom<string>
@@ -696,15 +694,9 @@ describe("atomFamily", () => {
         ).toThrow("'non_global_test' already exists")
         // Global: creation is idempotent — the same name returns the cached
         // family instead of creating (or registering) a second one.
-        const globalGamily1 = atomFamily("Default", {
-            global: true,
-            name: "global_test",
-        })
-        const globalFamily2 = atomFamily("Default", {
-            global: true,
-            name: "global_test",
-        })
-        expect(Object.is(globalGamily1, globalFamily2)).toBe(true)
+        const globalFamily1 = globalAtomFamily("Default", { name: "global_test" })
+        const globalFamily2 = globalAtomFamily("Default", { name: "global_test" })
+        expect(Object.is(globalFamily1, globalFamily2)).toBe(true)
     })
 
     test("atom families in scope", () => {

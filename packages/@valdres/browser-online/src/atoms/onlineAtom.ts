@@ -1,4 +1,4 @@
-import { atom } from "valdres"
+import { globalAtom } from "valdres"
 import { subscribe } from "../lib/subscribe"
 
 const getInitial = () => {
@@ -6,8 +6,7 @@ const getInitial = () => {
     return navigator.onLine
 }
 
-export const onlineAtom = atom<boolean>(getInitial, {
-    global: true,
+export const onlineAtom = globalAtom<boolean>(getInitial, {
     name: "@valdres/browser-online/online",
     onMount: () => subscribe(),
 })

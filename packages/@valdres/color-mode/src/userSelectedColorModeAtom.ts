@@ -1,7 +1,7 @@
-import { atom } from "valdres"
+import { globalAtom } from "valdres"
 import type { UserSelectedColorMode } from "./types/UserSelectedColorMode"
 
-export const userSelectedColorModeAtom = atom<UserSelectedColorMode>("system", {
-    global: true,
-    name: "@valdres/color-mode/userSelectedColorModeAtom",
-})
+export const userSelectedColorModeAtom = globalAtom<UserSelectedColorMode>(
+    "system",
+    { name: "@valdres/color-mode/userSelectedColorModeAtom" },
+)

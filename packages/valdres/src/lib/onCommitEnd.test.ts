@@ -2,10 +2,12 @@ import { getStoreData } from "./getStoreData"
 import { describe, expect, mock, test } from "bun:test"
 import { atom } from "../atom"
 import { atomFamily } from "../atomFamily"
+import { globalAtom } from "../globalAtom"
 import { selector } from "../selector"
 import { store } from "../store"
 import type { State } from "../types/State"
 import type { StoreData } from "../types/StoreData"
+import { uniqueName } from "../../test/utils/uniqueName"
 
 describe("store.onCommitEnd", () => {
     test("plain set: fires exactly once, strictly after subscribers and onChange", () => {
@@ -299,7 +301,7 @@ describe("store.onCommitEnd", () => {
         test("a scoped global write opens one boundary for the store tree", () => {
             const root = store()
             const scoped = root.scope("ce-global")
-            const value = atom(0, { global: true })
+            const value = globalAtom(0, { name: uniqueName("value") })
             const subscriberDepths: number[] = []
             root.get(value)
             const unsubValue = scoped.sub(value, () => {
@@ -478,7 +480,7 @@ describe("store.onCommitEnd", () => {
 
         test("a throwing forest settlement closes the boundary and still delivers", () => {
             const store1 = store()
-            const value = atom(0, { global: true })
+            const value = globalAtom(0, { name: uniqueName("value") })
             const fired: string[] = []
             // Initialize before registering: the first read of a global atom is
             // itself a commit.
@@ -504,7 +506,7 @@ describe("store.onCommitEnd", () => {
         test("a multi-root forest closes every tree when the first listener throws", () => {
             const store1 = store()
             const store2 = store()
-            const value = atom(0, { global: true })
+            const value = globalAtom(0, { name: uniqueName("value") })
             const second = mock(() => {})
             // Initialize before registering: the first read of a global atom is
             // itself a commit.

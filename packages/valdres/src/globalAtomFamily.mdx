@@ -1,0 +1,60 @@
+---
+title: globalAtomFamily
+description: Create a collection of atoms shared across every store, keyed by a parameter
+---
+
+# globalAtomFamily
+
+<div className="not-prose mb-8 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50 p-4">
+  <div className="text-xs font-medium text-zinc-400 dark:text-zinc-500 mb-2 uppercase tracking-wider">Signature</div>
+  <code className="text-sm font-mono text-accent-500">globalAtomFamily&lt;T, K&gt;(defaultFactory: (key: K) =&gt; T, options: GlobalAtomFamilyOptions): GlobalAtomFamily&lt;T, K&gt;</code>
+  <div className="mt-3 text-xs text-zinc-500 dark:text-zinc-400">
+    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-zinc-200 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 font-medium mr-2">valdres</span>
+    Creates a keyed collection of cross-store singleton atoms
+  </div>
+</div>
+
+Combines [`atomFamily`](/valdres/atomFamily) and [`globalAtom`](/valdres/globalAtom):
+each member is keyed by a parameter, and each member's value is shared across
+every store that touches it.
+
+`options.name` is required — it is the family's global address. Re-defining a
+family under the same name returns the existing family instead of creating a
+second one, so calling `globalAtomFamily` again with the same name is safe
+(and idempotent) wherever it happens.
+
+## Usage
+
+```ts
+import { globalAtomFamily } from "valdres"
+
+const featureFlagAtom = globalAtomFamily((key: string) => false, {
+    name: "app/feature-flags",
+})
+
+featureFlagAtom("dark-mode").setSelf(true)
+```
+
+Same call shape as [`atomFamily`](/valdres/atomFamily) — the only difference
+is that `options.name` is required instead of optional.
+
+Each member carries the same `getSelf` / `setSelf` / `resetSelf` accessors as
+a plain [`globalAtom`](/valdres/globalAtom#the-self-accessors):
+
+```ts
+const flag = featureFlagAtom("dark-mode")
+flag.getSelf()   // read without a Store handle
+flag.setSelf(true)
+```
+
+## Parameters
+
+`globalAtomFamily` accepts the same options as
+[`atomFamily`](/valdres/atomFamily) (`keyOf`, plus every `AtomOptions` field)
+as `GlobalAtomFamilyOptions` — identical to `AtomFamilyOptions`, except `name`
+is required instead of optional.
+
+## See also
+
+- [globalAtom](/valdres/globalAtom) — a single cross-store atom
+- [atomFamily](/valdres/atomFamily) — a per-store keyed collection of atoms

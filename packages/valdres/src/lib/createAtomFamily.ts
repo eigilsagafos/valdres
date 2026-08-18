@@ -20,6 +20,7 @@ export const createAtomFamily = <
 >(
     defaultValue: AtomFamilyDefaultValue<Value, Args>,
     options?: AtomFamilyOptions<Value, Args>,
+    isGlobal = false,
 ) => {
     const map = new WeakValueMap<
         EncodedFamilyKey,
@@ -41,7 +42,6 @@ export const createAtomFamily = <
     const isFunctionDefault =
         !isSelectorFamilyDefault && typeof defaultValue === "function"
     const hasName = !!memberOptions?.name
-    const isGlobal = !!memberOptions?.global
 
     // Cold path: resolve default, build the atom, cache it. Only runs on a cache
     // miss, so the per-call hot path (cache hit) never pays for any of this.

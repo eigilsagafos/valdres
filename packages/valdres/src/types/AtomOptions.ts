@@ -5,7 +5,6 @@ import type { Reactive } from "./Reactive"
 import type { Schema } from "./Schema"
 
 export type AtomOptions<Value = unknown> = {
-    global?: boolean
     name?: string
     /** Schema to validate this atom's value against. A no-op unless validation
      *  is enabled — set `store({ schemaValidation: true })` or this atom's own

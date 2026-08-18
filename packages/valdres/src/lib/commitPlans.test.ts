@@ -1,7 +1,9 @@
 import { describe, expect, test } from "bun:test"
 import { atom } from "../atom"
 import { atomFamily } from "../atomFamily"
+import { globalAtom } from "../globalAtom"
 import { store } from "../store"
+import { uniqueName } from "../../test/utils/uniqueName"
 import type { CommitPlan } from "../types/CommitPlan"
 import { createCommitErrors } from "./commitErrors"
 import { SETTLE_DEFAULT } from "./commitIntents"
@@ -78,7 +80,7 @@ describe("commitPlans", () => {
 
         test("a global write shares one descriptor between sets and onSets", () => {
             const store1 = data()
-            const shared = atom(0, { global: true })
+            const shared = globalAtom(0, { name: uniqueName("shared") })
             const queue = globalWriteQueue(shared as any, 3, store1)
 
             expect(queue).toEqual([[shared, 3, store1] as any])

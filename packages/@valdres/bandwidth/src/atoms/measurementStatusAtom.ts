@@ -1,7 +1,6 @@
-import { atom } from "valdres"
+import { globalAtom } from "valdres"
 import type { MeasurementStatus } from "../types/MeasurementStatus"
 
-export const measurementStatusAtom = atom<MeasurementStatus>("idle", {
-    global: true,
+export const measurementStatusAtom = globalAtom<MeasurementStatus>("idle", {
     name: "@valdres/bandwidth/measurementStatus",
 })

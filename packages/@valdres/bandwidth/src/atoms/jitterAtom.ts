@@ -1,11 +1,10 @@
-import { atom } from "valdres"
+import { globalAtom } from "valdres"
 import { ensureMeasurement } from "../lib/ensureMeasurement"
 import { setupInvalidation } from "../lib/setupInvalidation"
 
-export const jitterAtom = atom<number>(
+export const jitterAtom = globalAtom<number>(
     () => ensureMeasurement().then(r => r.jitterMs),
     {
-        global: true,
         name: "@valdres/bandwidth/jitter",
         onMount: () => setupInvalidation(),
     },

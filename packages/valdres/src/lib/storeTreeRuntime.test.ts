@@ -1,8 +1,10 @@
 import { describe, expect, mock, test } from "bun:test"
 import { atom } from "../atom"
+import { globalAtom } from "../globalAtom"
 import { store } from "../store"
 import { getStoreData } from "./getStoreData"
 import { commitEndRegistry } from "./onCommitEnd"
+import { uniqueName } from "../../test/utils/uniqueName"
 
 describe("store tree runtime", () => {
     test("every scope in a tree shares one runtime object, and trees do not", () => {
@@ -64,7 +66,7 @@ describe("store tree runtime", () => {
         test("a global fan-out fires only the trees that are listening", () => {
             const origin = store()
             const peer = store()
-            const value = atom(0, { global: true })
+            const value = globalAtom(0, { name: uniqueName("value") })
             // Initialize before registering: the first read is itself a commit.
             origin.get(value)
             peer.get(value)
