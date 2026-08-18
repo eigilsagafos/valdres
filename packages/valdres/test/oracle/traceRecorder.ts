@@ -28,10 +28,12 @@
  */
 import { expect } from "../performance/test-compat"
 import { atom } from "../../src/atom"
+import { globalAtom } from "../../src/globalAtom"
 import { selector } from "../../src/selector"
 import type { Atom } from "../../src/types/Atom"
 import type { AtomOptions } from "../../src/types/AtomOptions"
 import type { GlobalAtom } from "../../src/types/GlobalAtom"
+import type { GlobalAtomOptions } from "../../src/types/GlobalAtomOptions"
 import type { Selector, SelectorGetOptions } from "../../src/types/Selector"
 import type { GetValue } from "../../src/types/GetValue"
 import type { Store } from "../../src/types/Store"
@@ -92,19 +94,26 @@ export const tracedAtom = <V>(
     }) as Atom<V>
 }
 
-/** A global atom whose `onSet` pushes `onSet:<label>`. Kept separate so the
- *  `{ global: true }` overload returns the `GlobalAtom` self-accessors. As with
- *  `tracedAtom`, `label` tags the trace only — no `name` is registered. */
+// Global atoms are named addresses (registerName throws on a duplicate), but
+// trace-oracle cases freely reuse short labels like "g" across cases in the
+// same process — so the registered name is a synthesized, always-unique
+// string. `label` tags the trace only; it is never the registered name.
+let tracedGlobalAtomSeq = 0
+
+/** A global atom whose `onSet` pushes `onSet:<label>`. Kept separate so
+ *  `globalAtom()` returns the `GlobalAtom` self-accessors. As with
+ *  `tracedAtom`, `label` tags the trace only — the registered name is
+ *  synthesized (see `tracedGlobalAtomSeq`) so cases can reuse labels freely. */
 export const tracedGlobalAtom = <V>(
     rec: Recorder,
     label: string,
     defaultValue?: V | (() => V) | Selector<V>,
-    opts?: AtomOptions<V>,
+    opts?: Omit<GlobalAtomOptions<V>, "name">,
 ): GlobalAtom<V> => {
     const userOnSet = opts?.onSet
-    return atom(defaultValue as V, {
+    return globalAtom(defaultValue as V, {
         ...opts,
-        global: true,
+        name: `trace-oracle/${label}#${tracedGlobalAtomSeq++}`,
         onSet: (value, store) => {
             rec.push(`onSet:${label}`)
             userOnSet?.(value, store)

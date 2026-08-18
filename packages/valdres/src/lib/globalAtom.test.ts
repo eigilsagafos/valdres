@@ -1,8 +1,9 @@
 import { getStoreData } from "./getStoreData"
 import { describe, test, expect, mock, spyOn } from "bun:test"
 import { store } from "../store"
-import { atom } from "../atom"
+import { globalAtom } from "../globalAtom"
 import { selector } from "../selector"
+import { uniqueName } from "../../test/utils/uniqueName"
 import { wait } from "../../test/utils/wait"
 import { withFakeClock } from "../../test/utils/fakeClock"
 
@@ -10,7 +11,7 @@ describe("globalAtom", () => {
     test("set in one store, read from both", () => {
         const store1 = store()
         const store2 = store()
-        const numberAtom = atom(0, { global: true })
+        const numberAtom = globalAtom(0, { name: uniqueName("numberAtom") })
         store1.set(numberAtom, 1)
         expect(store1.get(numberAtom)).toBe(1)
         expect(store2.get(numberAtom)).toBe(1)
@@ -19,7 +20,7 @@ describe("globalAtom", () => {
     test("stores with duplicate user-provided ids still synchronize by identity", () => {
         const store1 = store("duplicate")
         const store2 = store("duplicate")
-        const numberAtom = atom(0, { global: true })
+        const numberAtom = globalAtom(0, { name: uniqueName("numberAtom") })
 
         store1.get(numberAtom)
         store2.get(numberAtom)
@@ -32,8 +33,8 @@ describe("globalAtom", () => {
 
     test("disposing a store unregisters it from every global atom it touched", () => {
         const requestStore = store()
-        const firstAtom = atom(0, { global: true })
-        const secondAtom = atom(0, { global: true })
+        const firstAtom = globalAtom(0, { name: uniqueName("firstAtom") })
+        const secondAtom = globalAtom(0, { name: uniqueName("secondAtom") })
 
         requestStore.get(firstAtom)
         requestStore.get(secondAtom)
@@ -47,7 +48,7 @@ describe("globalAtom", () => {
     })
 
     test("disposed request stores do not accumulate in global write fan-out", () => {
-        const requestAtom = atom(0, { global: true })
+        const requestAtom = globalAtom(0, { name: uniqueName("requestAtom") })
         requestAtom.getSelf()
         const permanentStores = requestAtom.stores.size
 
@@ -63,7 +64,7 @@ describe("globalAtom", () => {
     test("dispose cancels a queued batched global write", async () => {
         const liveStore = store()
         const requestStore = store({ batchUpdates: true })
-        const requestAtom = atom(0, { global: true })
+        const requestAtom = globalAtom(0, { name: uniqueName("requestAtom") })
         liveStore.get(requestAtom)
 
         requestStore.set(requestAtom, 1)
@@ -77,7 +78,7 @@ describe("globalAtom", () => {
     test("dispose cancels a pending async global settlement", async () => {
         const liveStore = store()
         const requestStore = store()
-        const requestAtom = atom(0, { global: true })
+        const requestAtom = globalAtom(0, { name: uniqueName("requestAtom") })
         liveStore.get(requestAtom)
         let resolve!: (value: number) => void
         const pending = new Promise<number>(done => {
@@ -97,8 +98,8 @@ describe("globalAtom", () => {
 
     test("dispose balances a mounted global atom lifecycle", () => {
         const cleanup = mock(() => {})
-        const requestAtom = atom(0, {
-            global: true,
+        const requestAtom = globalAtom(0, {
+            name: uniqueName("requestAtom"),
             onMount: () => cleanup,
         })
         const requestStore = store()
@@ -112,7 +113,10 @@ describe("globalAtom", () => {
     })
 
     test("dispose releases the shared global maxAge interval", () => {
-        const requestAtom = atom(0, { global: true, maxAge: 1_000 })
+        const requestAtom = globalAtom(0, {
+            name: uniqueName("requestAtom"),
+            maxAge: 1_000,
+        })
         const store1 = store()
         const store2 = store()
         const unsubscribe1 = store1.sub(requestAtom, () => {})
@@ -130,13 +134,13 @@ describe("globalAtom", () => {
 
     test("a throwing lifecycle cleanup cannot strand global registrations", () => {
         const cleanupError = new Error("cleanup failed")
-        const throwingAtom = atom(0, {
-            global: true,
+        const throwingAtom = globalAtom(0, {
+            name: uniqueName("throwingAtom"),
             onMount: () => () => {
                 throw cleanupError
             },
         })
-        const trailingAtom = atom(0, { global: true })
+        const trailingAtom = globalAtom(0, { name: uniqueName("trailingAtom") })
         const requestStore = store()
         requestStore.sub(throwingAtom, () => {})
         requestStore.get(trailingAtom)
@@ -148,9 +152,9 @@ describe("globalAtom", () => {
 
     test("dispose cleanup cannot register a new global atom", () => {
         const requestStore = store()
-        const cleanupAtom = atom(0, { global: true })
-        const mountedAtom = atom(0, {
-            global: true,
+        const cleanupAtom = globalAtom(0, { name: uniqueName("cleanupAtom") })
+        const mountedAtom = globalAtom(0, {
+            name: uniqueName("mountedAtom"),
             onMount: () => () => {
                 requestStore.get(cleanupAtom)
             },
@@ -165,7 +169,7 @@ describe("globalAtom", () => {
     test("detaching the last scope consumer unregisters touched global atoms", () => {
         const root = store()
         const scoped = root.scope("request")
-        const requestAtom = atom(0, { global: true })
+        const requestAtom = globalAtom(0, { name: uniqueName("requestAtom") })
 
         // A scope normally inherits atoms from its parent. Register it directly
         // to cover stores that materialized a global before becoming detached.
@@ -181,7 +185,7 @@ describe("globalAtom", () => {
         const root = store()
         const firstConsumer = root.scope("shared")
         const secondConsumer = root.scope("shared")
-        const requestAtom = atom(0, { global: true })
+        const requestAtom = globalAtom(0, { name: uniqueName("requestAtom") })
         requestAtom.onInit!(() => {}, getStoreData(firstConsumer))
 
         firstConsumer.detach()
@@ -197,7 +201,7 @@ describe("globalAtom", () => {
         const root = store()
         const child = root.scope("child")
         const grandchild = child.scope("grandchild")
-        const requestAtom = atom(0, { global: true })
+        const requestAtom = globalAtom(0, { name: uniqueName("requestAtom") })
         requestAtom.onInit!(() => {}, getStoreData(root))
         requestAtom.onInit!(() => {}, getStoreData(child))
         requestAtom.onInit!(() => {}, getStoreData(grandchild))
@@ -214,7 +218,7 @@ describe("globalAtom", () => {
     test("set in txn", () => {
         const store1 = store()
         const store2 = store()
-        const numberAtom = atom(0, { global: true })
+        const numberAtom = globalAtom(0, { name: uniqueName("numberAtom") })
         store1.txn(({ set }) => {
             set(numberAtom, 1)
         })
@@ -225,7 +229,7 @@ describe("globalAtom", () => {
     test("setSelf", () => {
         const store1 = store()
         const store2 = store()
-        const numberAtom = atom(0, { global: true })
+        const numberAtom = globalAtom(0, { name: uniqueName("numberAtom") })
         numberAtom.setSelf(1)
         expect(store1.get(numberAtom)).toBe(1)
         expect(store2.get(numberAtom)).toBe(1)
@@ -243,7 +247,9 @@ describe("globalAtom", () => {
     test("function as deafault value", () => {
         const store1 = store()
         const store2 = store()
-        const numberAtom = atom(() => "it works", { global: true })
+        const numberAtom = globalAtom(() => "it works", {
+            name: uniqueName("numberAtom"),
+        })
         expect(store1.get(numberAtom)).toBe("it works")
         expect(store2.get(numberAtom)).toBe("it works")
     })
@@ -252,7 +258,10 @@ describe("globalAtom", () => {
         const store1 = store()
         const store2 = store()
         const onMount = mock(() => {})
-        const testAtom = atom("foo", { global: true, onMount })
+        const testAtom = globalAtom("foo", {
+            name: uniqueName("testAtom"),
+            onMount,
+        })
 
         expect(store1.get(testAtom)).toBe("foo")
         expect(store2.get(testAtom)).toBe("foo")
@@ -272,8 +281,8 @@ describe("globalAtom", () => {
         const store1 = store()
         const store2 = store()
         const cleanup = mock(() => {})
-        const testAtom = atom("foo", {
-            global: true,
+        const testAtom = globalAtom("foo", {
+            name: uniqueName("testAtom"),
             onMount: () => cleanup,
         })
 
@@ -291,7 +300,10 @@ describe("globalAtom", () => {
     test("onMount re-fires after full unmount and re-subscribe", () => {
         const store1 = store()
         const onMount = mock(() => () => {})
-        const testAtom = atom("foo", { global: true, onMount })
+        const testAtom = globalAtom("foo", {
+            name: uniqueName("testAtom"),
+            onMount,
+        })
 
         const unsub1 = store1.sub(testAtom, () => {})
         expect(onMount).toHaveBeenCalledTimes(1)
@@ -305,7 +317,7 @@ describe("globalAtom", () => {
     test("reset global atom restores default across stores", () => {
         const store1 = store()
         const store2 = store()
-        const testAtom = atom("foo", { global: true })
+        const testAtom = globalAtom("foo", { name: uniqueName("testAtom") })
         expect(store1.get(testAtom)).toBe("foo")
         expect(store2.get(testAtom)).toBe("foo")
         testAtom.setSelf("set self")
@@ -319,7 +331,7 @@ describe("globalAtom", () => {
     test("reset support for global atom with selectors", () => {
         const store1 = store()
         const store2 = store()
-        const testAtom = atom(3, { global: true, name: "Global test" })
+        const testAtom = globalAtom(3, { name: "Global test" })
         const testSelector = selector(get => get(testAtom) * 2)
         const sub1cb = mock(() => {})
         const sub2cb = mock(() => {})
@@ -344,7 +356,7 @@ describe("globalAtom", () => {
     test("reset support for global atom with subscriptions", () => {
         const store1 = store()
         const store2 = store()
-        const testAtom = atom(3, { global: true })
+        const testAtom = globalAtom(3, { name: uniqueName("testAtom") })
         const sub1cb = mock(() => {})
         const sub2cb = mock(() => {})
         store1.sub(testAtom, sub1cb)
@@ -367,7 +379,7 @@ describe("globalAtom", () => {
 
     test("subscribe to global atom adds store to atom", () => {
         const store1 = store()
-        const testAtom = atom(0, { global: true })
+        const testAtom = globalAtom(0, { name: uniqueName("testAtom") })
         const callback = mock(() => {})
         store1.sub(testAtom, callback)
         expect(testAtom.stores).toHaveLength(2) // TODO: Should we exclude the globalStore
@@ -379,13 +391,13 @@ describe("globalAtom", () => {
     })
 
     test("getSelf", () => {
-        expect(atom(1, { global: true }).getSelf()).toBe(1)
+        expect(globalAtom(1, { name: uniqueName("getSelf") }).getSelf()).toBe(1)
     })
 
     test("detach removes store from global atom stores set", () => {
         const store1 = store()
         const store2 = store()
-        const testAtom = atom(0, { global: true })
+        const testAtom = globalAtom(0, { name: uniqueName("testAtom") })
         store1.get(testAtom)
         store2.get(testAtom)
         // Both stores should be tracked (plus globalStore)
@@ -398,7 +410,7 @@ describe("globalAtom", () => {
     test("detached store no longer receives cross-store updates", () => {
         const store1 = store()
         const store2 = store()
-        const testAtom = atom(0, { global: true })
+        const testAtom = globalAtom(0, { name: uniqueName("testAtom") })
         store1.get(testAtom)
         store2.get(testAtom)
         testAtom.detach(getStoreData(store1))
@@ -412,8 +424,8 @@ describe("globalAtom", () => {
         const store2 = store()
         const store3 = store()
         const cleanup = mock(() => {})
-        const testAtom = atom("foo", {
-            global: true,
+        const testAtom = globalAtom("foo", {
+            name: uniqueName("testAtom"),
             onMount: () => cleanup,
         })
         const u1 = store1.sub(testAtom, () => {})
@@ -428,8 +440,7 @@ describe("globalAtom", () => {
 
     test("resetSelf still clears value and remounts when cleanup throws", () => {
         let mountCalls = 0
-        const a = atom("foo", {
-            global: true,
+        const a = globalAtom("foo", {
             name: "test/reset-cleanup-throws",
             onMount: () => {
                 mountCalls++
@@ -468,8 +479,7 @@ describe("globalAtom", () => {
     test("resetSelf remounts atom when only a dependent selector is subscribed", () => {
         let mountCalls = 0
         let unmountCalls = 0
-        const a = atom("foo", {
-            global: true,
+        const a = globalAtom("foo", {
             name: "test/reset-transitive-sub",
             onMount: () => {
                 mountCalls++
@@ -500,8 +510,7 @@ describe("globalAtom", () => {
     test("onMount throw rolls back the global mount counter", () => {
         let calls = 0
         let shouldThrow = true
-        const a = atom("foo", {
-            global: true,
+        const a = globalAtom("foo", {
             name: "test/onmount-throws-rollback",
             onMount: () => {
                 calls++
@@ -533,10 +542,7 @@ describe("globalAtom", () => {
     })
 
     test("after resetSelf, globalStore is re-added to stores on next interaction", () => {
-        const a = atom("foo", {
-            global: true,
-            name: "test/reset-globalStore-readd",
-        })
+        const a = globalAtom("foo", { name: "test/reset-globalStore-readd" })
         const s1 = store()
         const s2 = store()
 
@@ -563,13 +569,12 @@ describe("globalAtom", () => {
 
     test("resetSelf does not install maxAge timer for atoms with only transitive subs", async () => {
         let callCount = 0
-        const a = atom<number>(
+        const a = globalAtom<number>(
             () => {
                 callCount++
                 return callCount
             },
             {
-                global: true,
                 name: "test/reset-maxage-transitive-only",
                 maxAge: 30,
             },
@@ -591,13 +596,12 @@ describe("globalAtom", () => {
     test("get on unmounted atom past maxAge re-runs defaultValue (lazy revalidation)", () =>
         withFakeClock(async clock => {
             let calls = 0
-            const a = atom<number>(
+            const a = globalAtom<number>(
                 () => {
                     calls++
                     return calls
                 },
                 {
-                    global: true,
                     name: "test/lazy-revalidate-on-stale-get",
                     maxAge: 50,
                 },
@@ -622,13 +626,12 @@ describe("globalAtom", () => {
     test("get within maxAge window returns cached value without re-eval", () =>
         withFakeClock(async clock => {
             let calls = 0
-            const a = atom<number>(
+            const a = globalAtom<number>(
                 () => {
                     calls++
                     return calls
                 },
                 {
-                    global: true,
                     name: "test/lazy-revalidate-fresh-cache",
                     maxAge: 200,
                 },
@@ -646,8 +649,7 @@ describe("globalAtom", () => {
     test("global onMount receives (store, state) args like non-global atoms", () => {
         let receivedStore: unknown = null
         let receivedState: unknown = null
-        const a = atom("foo", {
-            global: true,
+        const a = globalAtom("foo", {
             name: "test/onMount-args",
             onMount: (store, state) => {
                 receivedStore = store
@@ -665,7 +667,7 @@ describe("globalAtom", () => {
     test("resetSelf recovers if subscriber throws", () => {
         const store1 = store()
         const store2 = store()
-        const testAtom = atom(0, { global: true })
+        const testAtom = globalAtom(0, { name: uniqueName("testAtom") })
         store1.get(testAtom)
         store2.get(testAtom)
         testAtom.setSelf(42)
@@ -691,7 +693,7 @@ describe("globalAtom", () => {
         const store1 = store()
         const store2 = store()
         const store3 = store()
-        const testAtom = atom(0, { global: true })
+        const testAtom = globalAtom(0, { name: uniqueName("testAtom") })
         store1.get(testAtom)
         store2.get(testAtom)
         store3.get(testAtom)
@@ -713,7 +715,10 @@ describe("globalAtom", () => {
         // per extra store. Spy directly on setInterval — no timing involved.
         const intervalSpy = spyOn(globalThis, "setInterval")
         try {
-            const testAtom = atom(() => 0, { global: true, maxAge: 50 })
+            const testAtom = globalAtom(() => 0, {
+                name: uniqueName("testAtom"),
+                maxAge: 50,
+            })
             const store1 = store()
             const store2 = store()
 
@@ -732,8 +737,7 @@ describe("globalAtom", () => {
     })
 
     test("notifies subscribers that re-read synchronously across multiple resets", async () => {
-        const a = atom(() => Promise.resolve("x"), {
-            global: true,
+        const a = globalAtom(() => Promise.resolve("x"), {
             name: "test-reset-repeat",
         })
         const s = store()
@@ -762,8 +766,7 @@ describe("globalAtom", () => {
     test("resetSelf cycles mount lifecycle for stores with active subscribers", () => {
         let mountCount = 0
         let unmountCount = 0
-        const a = atom("initial", {
-            global: true,
+        const a = globalAtom("initial", {
             name: "test-reset-mount-lifecycle",
             onMount: () => {
                 mountCount++
@@ -790,8 +793,7 @@ describe("globalAtom", () => {
 
     test("resetSelf without subscribers does not invoke onMount", () => {
         let mountCount = 0
-        const a = atom("initial", {
-            global: true,
+        const a = globalAtom("initial", {
             name: "test-reset-no-subs",
             onMount: () => {
                 mountCount++
@@ -808,8 +810,7 @@ describe("globalAtom", () => {
     test("setSelf with bare promise resolves into stored value across stores", async () => {
         const store1 = store()
         const store2 = store()
-        const testAtom = atom<string | Promise<string>>("initial", {
-            global: true,
+        const testAtom = globalAtom<string | Promise<string>>("initial", {
             name: "bare-promise-resolve",
         })
         expect(store1.get(testAtom)).toBe("initial")
@@ -832,8 +833,7 @@ describe("globalAtom", () => {
     test("setSelf with bare rejected promise reverts to previous value", async () => {
         const store1 = store()
         const store2 = store()
-        const testAtom = atom<string | Promise<string>>("previous", {
-            global: true,
+        const testAtom = globalAtom<string | Promise<string>>("previous", {
             name: "bare-promise-reject",
         })
         expect(store1.get(testAtom)).toBe("previous")
@@ -850,12 +850,12 @@ describe("globalAtom", () => {
     test("resetSelf rebuilds maxAge interval while subscribers remain", () =>
         withFakeClock(async clock => {
             let callCount = 0
-            const testAtom = atom(
+            const testAtom = globalAtom(
                 () => {
                     callCount++
                     return callCount
                 },
-                { global: true, maxAge: 50 },
+                { name: uniqueName("testAtom"), maxAge: 50 },
             )
 
             const store1 = store()
@@ -888,12 +888,12 @@ describe("globalAtom", () => {
     test("resetSelf revives maxAge for passive subscribers that don't re-read", () =>
         withFakeClock(async clock => {
             let defaultValueCalls = 0
-            const testAtom = atom(
+            const testAtom = globalAtom(
                 () => {
                     defaultValueCalls++
                     return defaultValueCalls
                 },
-                { global: true, maxAge: 50 },
+                { name: uniqueName("testAtom"), maxAge: 50 },
             )
 
             const store1 = store()
@@ -918,12 +918,12 @@ describe("globalAtom", () => {
     test("resetSelf stops maxAge interval when no subscribers remain", () =>
         withFakeClock(async clock => {
             let callCount = 0
-            const testAtom = atom(
+            const testAtom = globalAtom(
                 () => {
                     callCount++
                     return callCount
                 },
-                { global: true, maxAge: 50 },
+                { name: uniqueName("testAtom"), maxAge: 50 },
             )
 
             const store1 = store()
@@ -941,7 +941,10 @@ describe("globalAtom", () => {
         const store1 = store()
         const store2 = store()
         const onSet = mock(() => {})
-        const numberAtom = atom(0, { global: true, onSet })
+        const numberAtom = globalAtom(0, {
+            name: uniqueName("numberAtom"),
+            onSet,
+        })
 
         store1.set(numberAtom, 1)
 
@@ -963,7 +966,10 @@ describe("globalAtom", () => {
         const store1 = store()
         const store2 = store()
         const onSet = mock(() => {})
-        const numberAtom = atom(0, { global: true, onSet })
+        const numberAtom = globalAtom(0, {
+            name: uniqueName("numberAtom"),
+            onSet,
+        })
 
         // Touch the atom from peer stores so they're registered for sync.
         store1.get(numberAtom)

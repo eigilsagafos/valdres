@@ -1,6 +1,5 @@
-import { atom } from "valdres"
+import { globalAtom } from "valdres"
 
-export const lastMeasurementAtom = atom<number | null>(null, {
-    global: true,
+export const lastMeasurementAtom = globalAtom<number | null>(null, {
     name: "@valdres/bandwidth/lastMeasurement",
 })

@@ -1,4 +1,4 @@
-import { atom } from "valdres"
+import { globalAtom } from "valdres"
 import type { GeolocationStatus } from "../types/GeolocationStatus"
 
 const getInitial = (): GeolocationStatus => {
@@ -8,7 +8,7 @@ const getInitial = (): GeolocationStatus => {
     return "idle"
 }
 
-export const geolocationStatusAtom = atom<GeolocationStatus>(getInitial, {
-    global: true,
-    name: "@valdres/browser-geolocation/status",
-})
+export const geolocationStatusAtom = globalAtom<GeolocationStatus>(
+    getInitial,
+    { name: "@valdres/browser-geolocation/status" },
+)

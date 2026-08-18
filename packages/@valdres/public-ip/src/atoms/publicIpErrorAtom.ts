@@ -1,6 +1,5 @@
-import { atom } from "valdres"
+import { globalAtom } from "valdres"
 
-export const publicIpErrorAtom = atom<Error | null>(null, {
-    global: true,
+export const publicIpErrorAtom = globalAtom<Error | null>(null, {
     name: "@valdres/public-ip/error",
 })

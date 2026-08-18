@@ -3,6 +3,7 @@ import { describe, test, expect, mock, spyOn } from "bun:test"
 import { store } from "../store"
 import { atom } from "../atom"
 import { atomFamily } from "../atomFamily"
+import { globalAtom } from "../globalAtom"
 import { selector } from "../selector"
 import { trackScopeValue } from "./setValueInData"
 import { assertStoreInvariants } from "../../test/invariants/checkStoreInvariants"
@@ -779,10 +780,9 @@ describe("regression: maxAge: 0 is a valid TTL", () => {
     test("attach installs maxAge timer for a global atom with maxAge: 0", () => {
         const setIntervalSpy = spyOn(globalThis, "setInterval")
         const before = setIntervalSpy.mock.calls.length
-        const a = atom(0, {
-            global: true,
-            maxAge: 0,
+        const a = globalAtom(0, {
             name: "@valdres/test/maxage-zero",
+            maxAge: 0,
         })
         const s = store()
         const unsub = s.sub(a, () => {})

@@ -104,12 +104,13 @@ not debug labels with module-local scope. They must be unique. Recreating an
 ordinary named atom or family throws instead of silently replacing its
 registered definition.
 
-A named global `atomFamily` has intentional singleton-by-name behavior:
-recreating it returns the original family, and the later default factory and
-options do not replace the first definition. This also defines its HMR behavior.
-During a hot update, the global family keeps the definition that was registered
-first; perform a full page or process reload to apply edits to that definition.
-Do not rely on HMR to migrate live global state or redefine a global family.
+A `globalAtomFamily` has intentional singleton-by-name behavior: recreating it
+under the same name returns the original family, and the later default factory
+and options do not replace the first definition. This also defines its HMR
+behavior. During a hot update, the global family keeps the definition that was
+registered first; perform a full page or process reload to apply edits to that
+definition. Do not rely on HMR to migrate live global state or redefine a
+global family.
 
 The instance guard and name registry live on the JavaScript global, so workers,
 iframes, and separate server processes each have their own instance and

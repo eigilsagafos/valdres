@@ -224,7 +224,7 @@ describe("Scope", () => {
     // test("global atom works as expected when initializing store", () => {
     //     const storeA = store("A")
     //     const storeB = store("B")
-    //     const userIds = atom<number[]>([], { global: true })
+    //     const userIds = globalAtom<number[]>([], { name: "valdres-react/test/userIds" })
 
     //     renderHook((storeId?: string) => useStore(storeId), {
     //         wrapper: ({ children }) => (

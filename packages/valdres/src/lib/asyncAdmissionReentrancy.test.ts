@@ -58,9 +58,11 @@
  */
 import { describe, expect, test } from "bun:test"
 import { atom } from "../atom"
+import { globalAtom } from "../globalAtom"
 import { selector } from "../selector"
 import { store } from "../store"
 import { wait } from "../../test/utils/wait"
+import { uniqueName } from "../../test/utils/uniqueName"
 import { isPromiseLike } from "../utils/isPromiseLike"
 import { StoreDisposedError } from "../errors/StoreDisposedError"
 import type { Atom } from "../types/Atom"
@@ -143,8 +145,7 @@ const reentrantAtom = <T>(defaultValue?: T) => {
 const hookedCase = (defaultValue?: number, options?: { global?: true }) => {
     const events: string[] = []
     let armed: (() => void) | undefined
-    const state = atom<number>(defaultValue, {
-        ...options,
+    const hookOptions = {
         onSet: (value: number) => events.push(`onSet:${String(value)}`),
         schema: {
             parse: (value: unknown) => {
@@ -154,7 +155,13 @@ const hookedCase = (defaultValue?: number, options?: { global?: true }) => {
                 return value as number
             },
         },
-    })
+    }
+    const state = options?.global
+        ? globalAtom<number>(defaultValue, {
+              ...hookOptions,
+              name: uniqueName("hookedCase"),
+          })
+        : atom<number>(defaultValue, hookOptions)
     /** Attach the ordered log to `store1`, tagging events with `label` so a
      *  global atom's peer stores stay distinguishable. */
     const watch = (store1: Store, label = "") => {

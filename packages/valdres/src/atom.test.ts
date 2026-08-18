@@ -3,9 +3,11 @@ import { describe, test, expect, mock, spyOn } from "bun:test"
 import { atom } from "./atom"
 import { cacheMeta } from "./cacheMeta"
 import { SchemaValidationError } from "./errors/SchemaValidationError"
+import { globalAtom } from "./globalAtom"
 import { selector } from "./selector"
 import { store } from "./store"
 import { withFakeClock, mockAsyncSource } from "../test/utils/fakeClock"
+import { uniqueName } from "../test/utils/uniqueName"
 
 const numberSchema = {
     parse: (value: unknown): number => {
@@ -430,8 +432,8 @@ describe("atom", () => {
                 const validationOff = store()
                 const validationOn = store({ schemaValidation: true })
                 let next: unknown = 1
-                const atom1 = atom<number>(() => next as number, {
-                    global: true,
+                const atom1 = globalAtom<number>(() => next as number, {
+                    name: uniqueName("atom1"),
                     maxAge: 20,
                     schema: numberSchema,
                 })

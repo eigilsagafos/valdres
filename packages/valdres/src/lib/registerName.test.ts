@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test"
 import { atom } from "../atom"
 import { atomFamily } from "../atomFamily"
+import { globalAtom } from "../globalAtom"
+import { globalAtomFamily } from "../globalAtomFamily"
 import { selector } from "../selector"
 import { valdresGlobal } from "./valdresGlobal"
 
@@ -50,19 +52,17 @@ describe("named state registry", () => {
     })
 
     test("duplicate global atom name throws", () => {
-        atom(1, { global: true, name: "reg-dup-global" })
-        expect(() => atom(2, { global: true, name: "reg-dup-global" })).toThrow(
-            "'reg-dup-global' already exists",
-        )
+        globalAtom(1, { name: "reg-dup-global" })
+        expect(() =>
+            globalAtom(2, { name: "reg-dup-global" }),
+        ).toThrow("'reg-dup-global' already exists")
     })
 
     test("global atomFamily re-creation is idempotent, registered once", () => {
-        const f1 = atomFamily<number, [string]>(0, {
-            global: true,
+        const f1 = globalAtomFamily<number, [string]>(0, {
             name: "reg-global-family",
         })
-        const f2 = atomFamily<number, [string]>(0, {
-            global: true,
+        const f2 = globalAtomFamily<number, [string]>(0, {
             name: "reg-global-family",
         })
         expect(Object.is(f1, f2)).toBe(true)

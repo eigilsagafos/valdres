@@ -1,11 +1,10 @@
-import { atom } from "valdres"
+import { globalAtom } from "valdres"
 import type { GlobalAtom } from "valdres"
 import type { OrientationSnapshot } from "../types/OrientationSnapshot"
 import { subscribe } from "../lib/subscribe"
 
 export const orientationAtom: GlobalAtom<OrientationSnapshot | null> =
-    atom<OrientationSnapshot | null>(null, {
-        global: true,
+    globalAtom<OrientationSnapshot | null>(null, {
         name: "@valdres/browser-device-orientation/orientation",
         onMount: () => subscribe(orientationAtom),
     })

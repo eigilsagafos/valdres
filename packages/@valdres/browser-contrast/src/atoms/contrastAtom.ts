@@ -1,4 +1,4 @@
-import { atom } from "valdres"
+import { globalAtom } from "valdres"
 import { subscribe } from "../lib/subscribe"
 
 export type Contrast = "no-preference" | "more" | "less" | "custom"
@@ -22,8 +22,7 @@ export const readContrast = (): Contrast => {
     return "no-preference"
 }
 
-export const contrastAtom = atom<Contrast>(readContrast, {
-    global: true,
+export const contrastAtom = globalAtom<Contrast>(readContrast, {
     name: "@valdres/browser-contrast/contrast",
     onMount: () => subscribe(),
 })

@@ -1,6 +1,5 @@
-import { atom } from "valdres"
+import { globalAtom } from "valdres"
 
-export const publicIpV4ValueAtom = atom<string | null>(null, {
-    global: true,
+export const publicIpV4ValueAtom = globalAtom<string | null>(null, {
     name: "@valdres/public-ip/v4Value",
 })

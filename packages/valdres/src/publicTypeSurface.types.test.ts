@@ -19,6 +19,8 @@ import {
     atom,
     atomFamily,
     dehydrate,
+    globalAtom,
+    globalAtomFamily,
     hydrate,
     isFamilyAtom,
     isFamilySelector,
@@ -40,6 +42,8 @@ import type {
     EqualFunc,
     GlobalAtom,
     GlobalAtomFamily,
+    GlobalAtomFamilyOptions,
+    GlobalAtomOptions,
     ScopeFn,
     ScopedStore,
     Selector,
@@ -56,13 +60,30 @@ type Equal<X, Y> =
         ? true
         : false
 
-test("atom() overloads resolve to the exported Atom / GlobalAtom names", () => {
+test("atom() overloads resolve to the exported Atom name; globalAtom() resolves to GlobalAtom", () => {
     const plain = atom(0)
     const configured = atom(0, { name: "pts.atom.configured" })
-    const global = atom(0, { name: "pts.atom.global", global: true })
 
     type _Plain = Expect<Equal<typeof plain, Atom<number>>>
     type _Configured = Expect<Equal<typeof configured, Atom<number>>>
+
+    if (false) {
+        // `global: true` was removed from AtomOptions in favor of the
+        // dedicated globalAtom() constructor (C6) — this must be a compile
+        // error, not a silently-ignored option. Type-only: guarded so the
+        // wrong-shaped call is checked but never runs.
+        // @ts-expect-error `global` is not a valid AtomOptions key
+        atom(0, { name: "pts.atom.legacyGlobal", global: true })
+
+        // options.name is required — omitting the options object, or
+        // omitting `name` within it, is a compile error.
+        // @ts-expect-error missing the required options argument
+        globalAtom(0)
+        // @ts-expect-error missing the required name field
+        globalAtom(0, {})
+    }
+
+    const global = globalAtom(0, { name: "pts.atom.global" })
     type _Global = Expect<Equal<typeof global, GlobalAtom<number>>>
 
     // The non-global overload's options bag IS the exported AtomOptions, so a
@@ -74,6 +95,22 @@ test("atom() overloads resolve to the exported Atom / GlobalAtom names", () => {
     }
     const fromOptions = atom(0, options)
     type _FromOptions = Expect<Equal<typeof fromOptions, Atom<number>>>
+
+    // Likewise, globalAtom()'s options bag is the exported GlobalAtomOptions —
+    // identical to AtomOptions, except `name` is required instead of optional.
+    const globalOptions: GlobalAtomOptions<number> = {
+        name: "pts.atom.globalFromOptions",
+        equal: Object.is,
+        mutable: true,
+    }
+    const globalFromOptions = globalAtom(0, globalOptions)
+    type _GlobalFromOptions = Expect<
+        Equal<typeof globalFromOptions, GlobalAtom<number>>
+    >
+    // @ts-expect-error name is required on GlobalAtomOptions
+    const globalOptionsMissingName: GlobalAtomOptions<number> = {
+        equal: Object.is,
+    }
 
     // The default value accepts every AtomDefaultValue arm through the name.
     const lazyDefault: AtomDefaultValue<number> = () => Promise.resolve(1)
@@ -87,7 +124,7 @@ test("atom() overloads resolve to the exported Atom / GlobalAtom names", () => {
     expect(global.getSelf()).toBe(0)
 })
 
-test("atomFamily() overloads resolve to AtomFamily / GlobalAtomFamily and their members", () => {
+test("atomFamily() overloads resolve to AtomFamily; globalAtomFamily() resolves to GlobalAtomFamily", () => {
     // atomFamily()'s first parameter is nameable too — a wrapper forwarding a
     // default has to be able to annotate it without re-deriving the signature.
     const lazyDefault: AtomFamilyDefaultValue<number, [string]> = key =>
@@ -98,10 +135,40 @@ test("atomFamily() overloads resolve to AtomFamily / GlobalAtomFamily and their 
     >
 
     const items = atomFamily<number, [string]>(0)
-    const globalItems = atomFamily<number, [string]>(0, {
+
+    if (false) {
+        // `global: true` was removed from AtomFamilyOptions — dedicated
+        // globalAtomFamily() constructor only, exercised below. Type-only:
+        // guarded so the wrong-shaped call is checked but never runs.
+        atomFamily<number, [string]>(0, {
+            name: "pts.family.legacyGlobal",
+            // @ts-expect-error `global` is not a valid AtomFamilyOptions key
+            global: true,
+        })
+
+        // options.name is required — omitting the options object, or
+        // omitting `name` within it, is a compile error.
+        // @ts-expect-error missing the required options argument
+        globalAtomFamily<number, [string]>(0)
+        // @ts-expect-error missing the required name field
+        globalAtomFamily<number, [string]>(0, {})
+    }
+
+    const globalItems = globalAtomFamily<number, [string]>(0, {
         name: "pts.family.global",
-        global: true,
     })
+
+    const globalFamilyOptions: GlobalAtomFamilyOptions<number, [string]> = {
+        name: "pts.family.globalFromOptions",
+        equal: (a, b) => a === b,
+    }
+    const globalItemsFromOptions = globalAtomFamily<number, [string]>(
+        0,
+        globalFamilyOptions,
+    )
+    type _GlobalItemsFromOptions = Expect<
+        Equal<typeof globalItemsFromOptions, GlobalAtomFamily<number, [string]>>
+    >
 
     type _Items = Expect<Equal<typeof items, AtomFamily<number, [string]>>>
     type _GlobalItems = Expect<

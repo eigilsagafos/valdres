@@ -1,4 +1,4 @@
-import { atom } from "valdres"
+import { globalAtom } from "valdres"
 import type { OrientationStatus } from "../types/OrientationStatus"
 
 const getInitial = (): OrientationStatus => {
@@ -11,7 +11,7 @@ const getInitial = (): OrientationStatus => {
     return "idle"
 }
 
-export const orientationStatusAtom = atom<OrientationStatus>(getInitial, {
-    global: true,
-    name: "@valdres/browser-device-orientation/status",
-})
+export const orientationStatusAtom = globalAtom<OrientationStatus>(
+    getInitial,
+    { name: "@valdres/browser-device-orientation/status" },
+)

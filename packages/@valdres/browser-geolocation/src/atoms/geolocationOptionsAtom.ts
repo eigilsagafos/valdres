@@ -1,13 +1,10 @@
-import { atom } from "valdres"
+import { globalAtom } from "valdres"
 
-export const geolocationOptionsAtom = atom<PositionOptions>(
+export const geolocationOptionsAtom = globalAtom<PositionOptions>(
     {
         enableHighAccuracy: false,
         maximumAge: 0,
         timeout: 30_000,
     },
-    {
-        global: true,
-        name: "@valdres/browser-geolocation/options",
-    },
+    { name: "@valdres/browser-geolocation/options" },
 )

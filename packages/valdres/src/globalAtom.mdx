@@ -1,0 +1,80 @@
+---
+title: globalAtom
+description: Create an atom shared across every store
+---
+
+# globalAtom
+
+<div className="not-prose mb-8 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50 p-4">
+  <div className="text-xs font-medium text-zinc-400 dark:text-zinc-500 mb-2 uppercase tracking-wider">Signature</div>
+  <code className="text-sm font-mono text-accent-500">globalAtom&lt;T&gt;(defaultValue: T, options: GlobalAtomOptions): GlobalAtom&lt;T&gt;</code>
+  <div className="mt-3 text-xs text-zinc-500 dark:text-zinc-400">
+    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-zinc-200 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 font-medium mr-2">valdres</span>
+    Creates a cross-store singleton atom
+  </div>
+</div>
+
+A global atom is a single shared value that stays in sync across every store
+that touches it — writing in one store is immediately visible from any other.
+This is the mechanism behind Valdres' `@valdres/*` browser-API packages: each
+wraps one global atom around a browser subscription, so any store in the app
+sees the same `online` status, `geolocation` position, and so on.
+
+`options.name` is required — it is the atom's global address. Re-using a name
+that's already registered throws.
+
+## Usage
+
+```ts
+import { globalAtom } from "valdres"
+
+const onlineAtom = globalAtom(navigator.onLine, { name: "app/online" })
+```
+
+Same call shape as [`atom`](/valdres/atom) — the only difference is that
+`options.name` is required instead of optional.
+
+## The self-accessors
+
+A global atom carries three extra methods beyond the ordinary atom surface,
+for reading and writing it without a `Store` handle:
+
+```ts
+onlineAtom.getSelf()        // read the current value
+onlineAtom.setSelf(false)   // write — fans out to every store
+onlineAtom.resetSelf()      // restore the default value everywhere
+```
+
+These are what a browser-API package's `onMount` uses to push external events
+(a `navigator.onLine` change, a geolocation update, …) into the shared value:
+
+```ts
+const onlineAtom = globalAtom(navigator.onLine, {
+    name: "app/online",
+    onMount: () => {
+        const update = () => onlineAtom.setSelf(navigator.onLine)
+        window.addEventListener("online", update)
+        window.addEventListener("offline", update)
+        return () => {
+            window.removeEventListener("online", update)
+            window.removeEventListener("offline", update)
+        }
+    },
+})
+```
+
+`onMount` fires once, when the FIRST subscriber across ANY store attaches, and
+its cleanup fires once, when the LAST subscriber across ALL stores detaches —
+so the underlying browser subscription is shared, not duplicated per store.
+
+## Parameters
+
+`globalAtom` accepts the same options as [`atom`](/valdres/atom) (`schema`,
+`schemaValidation`, `onSet`, `onMount`, `maxAge`, `mutable`,
+`staleWhileRevalidate`, `staleIfError`) as `GlobalAtomOptions` — identical to
+`AtomOptions`, except `name` is required instead of optional.
+
+## See also
+
+- [atom](/valdres/atom) — create a single, per-store atom
+- [globalAtomFamily](/valdres/globalAtomFamily) — a keyed collection of global atoms

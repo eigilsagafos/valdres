@@ -1,6 +1,5 @@
-import { atom } from "valdres"
+import { globalAtom } from "valdres"
 
-export const publicIpMaxAgeAtom = atom<number>(5 * 60 * 1000, {
-    global: true,
+export const publicIpMaxAgeAtom = globalAtom<number>(5 * 60 * 1000, {
     name: "@valdres/public-ip/maxAge",
 })

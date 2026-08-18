@@ -1,10 +1,9 @@
-import { atom } from "valdres"
+import { globalAtom } from "valdres"
 import { getSystemColorMode } from "./getSystemColorMode"
 import { prefersColorSchemeDark } from "./prefersColorSchemeDark"
 import type { ColorMode } from "./types/ColorMode"
 
-export const systemColorModeAtom = atom<ColorMode>(getSystemColorMode, {
-    global: true,
+export const systemColorModeAtom = globalAtom<ColorMode>(getSystemColorMode, {
     name: "@valdres/color-mode/systemColorModeAtom",
     onMount: () => {
         const listener = () => {

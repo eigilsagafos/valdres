@@ -1,7 +1,6 @@
-import { atom } from "valdres"
+import { globalAtom } from "valdres"
 import type { GeolocationError } from "../types/GeolocationError"
 
-export const geolocationErrorAtom = atom<GeolocationError | null>(null, {
-    global: true,
+export const geolocationErrorAtom = globalAtom<GeolocationError | null>(null, {
     name: "@valdres/browser-geolocation/error",
 })

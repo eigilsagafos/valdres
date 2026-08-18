@@ -1,4 +1,4 @@
-import { atom } from "valdres"
+import { globalAtom } from "valdres"
 import type { ScreenPermissionState } from "../types/ScreenPermissionState"
 import { subscribe } from "../lib/subscribe"
 
@@ -9,8 +9,10 @@ const getInitial = (): ScreenPermissionState => {
     return "prompt"
 }
 
-export const screenPermissionAtom = atom<ScreenPermissionState>(getInitial, {
-    global: true,
-    name: "@valdres/browser-screen-details/permission",
-    onMount: () => subscribe(),
-})
+export const screenPermissionAtom = globalAtom<ScreenPermissionState>(
+    getInitial,
+    {
+        name: "@valdres/browser-screen-details/permission",
+        onMount: () => subscribe(),
+    },
+)

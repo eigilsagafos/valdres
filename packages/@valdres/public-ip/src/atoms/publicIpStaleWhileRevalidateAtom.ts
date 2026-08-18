@@ -1,6 +1,5 @@
-import { atom } from "valdres"
+import { globalAtom } from "valdres"
 
-export const publicIpStaleWhileRevalidateAtom = atom<number>(Infinity, {
-    global: true,
+export const publicIpStaleWhileRevalidateAtom = globalAtom<number>(Infinity, {
     name: "@valdres/public-ip/staleWhileRevalidate",
 })

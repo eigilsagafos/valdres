@@ -1,7 +1,6 @@
-import { atom } from "valdres"
+import { globalAtom } from "valdres"
 import type { ScreenDetail } from "../types/ScreenDetail"
 
-export const currentScreenAtom = atom<ScreenDetail | null>(null, {
-    global: true,
+export const currentScreenAtom = globalAtom<ScreenDetail | null>(null, {
     name: "@valdres/browser-screen-details/currentScreen",
 })

@@ -1,14 +1,11 @@
-import { atomFamily } from "valdres"
+import { globalAtomFamily } from "valdres"
 
 export type ModifierKeyType = "shift" | "meta" | "ctrl" | "alt" | "space"
 
-export const isModifierKeyActiveAtom = atomFamily<ModifierKeyType, boolean>(
-    false,
-    {
-        global: true,
-        name: "@valdres-react/panable/isModifierKeyActiveAtom",
-    },
-)
+export const isModifierKeyActiveAtom = globalAtomFamily<
+    ModifierKeyType,
+    boolean
+>(false, { name: "@valdres-react/panable/isModifierKeyActiveAtom" })
 
 const spaceAtom = isModifierKeyActiveAtom("space")
 const altAtom = isModifierKeyActiveAtom("alt")

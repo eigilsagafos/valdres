@@ -1,7 +1,7 @@
-import { atomFamily } from "valdres"
+import { globalAtomFamily } from "valdres"
 import type { ToggleKey } from "../types/ToggleKey"
 
-export const toggleKeyAtom = atomFamily<boolean | null, [ToggleKey]>(null, {
-    global: true,
-    name: "@valdres/browser-keyboard/toggleKey",
-})
+export const toggleKeyAtom = globalAtomFamily<boolean | null, [ToggleKey]>(
+    null,
+    { name: "@valdres/browser-keyboard/toggleKey" },
+)

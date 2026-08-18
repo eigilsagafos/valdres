@@ -1,9 +1,11 @@
 import { describe, expect, test } from "./test-compat"
 import { atom } from "../../src/atom"
+import { globalAtom } from "../../src/globalAtom"
 import { selector } from "../../src/selector"
 import { store } from "../../src/store"
 import type { Store } from "../../src/types/Store"
 import type { Transaction } from "../../src/types/Transaction"
+import { uniqueName } from "../utils/uniqueName"
 
 const runtime = typeof Bun !== "undefined" ? "bun" : "node"
 const bunJscSpecifier = "bun:jsc"
@@ -298,9 +300,8 @@ describe("architecture retained-memory gates", () => {
 
     test("global fan-out", async () => {
         await measureRetained("global fan-out", () => {
-            let shared: ReturnType<typeof atom<number>> | undefined = atom(0, {
-                global: true,
-            })
+            let shared: ReturnType<typeof globalAtom<number>> | undefined =
+                globalAtom(0, { name: uniqueName("shared") })
             let stores = Array.from({ length: 1_000 }, () => store())
             for (const target of stores) target.get(shared)
             stores[0]!.set(shared, 1)

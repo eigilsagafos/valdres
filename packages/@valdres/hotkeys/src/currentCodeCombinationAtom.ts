@@ -1,7 +1,6 @@
-import { atom } from "valdres"
+import { globalAtom } from "valdres"
 import type { KeyboardCode } from "./types/KeyboardCode"
 
-export const currentCodeCombinationAtom = atom<KeyboardCode[]>([], {
-    global: true,
+export const currentCodeCombinationAtom = globalAtom<KeyboardCode[]>([], {
     name: "@valdres/hotkeys/currentCodeCombinationAtom",
 })

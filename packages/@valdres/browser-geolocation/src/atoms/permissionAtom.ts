@@ -1,4 +1,4 @@
-import { atom } from "valdres"
+import { globalAtom } from "valdres"
 import type { GlobalAtom } from "valdres"
 import {
     subscribePermission,
@@ -6,8 +6,7 @@ import {
 } from "../lib/subscribePermission"
 
 export const permissionAtom: GlobalAtom<PermissionValue> =
-    atom<PermissionValue>("prompt", {
-        global: true,
+    globalAtom<PermissionValue>("prompt", {
         name: "@valdres/browser-geolocation/permission",
         onMount: () => subscribePermission(permissionAtom),
     })

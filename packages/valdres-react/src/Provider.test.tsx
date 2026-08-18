@@ -1,6 +1,6 @@
 import { describe, test, expect } from "bun:test"
 import { renderHook } from "@testing-library/react"
-import { atom, store } from "valdres"
+import { atom, globalAtom, store } from "valdres"
 import { useStoreId } from "./useStoreId"
 import { Provider } from "./Provider"
 import { useStore } from "./useStore"
@@ -57,7 +57,9 @@ describe("Provider", () => {
     test("global atom works as expected when initializing store", () => {
         const storeA = store("A")
         const storeB = store("B")
-        const userIds = atom<number[]>([], { global: true })
+        const userIds = globalAtom<number[]>([], {
+            name: "valdres-react/test/userIds",
+        })
 
         renderHook((storeId?: string) => useStore(storeId), {
             wrapper: ({ children }) => (

@@ -1,9 +1,11 @@
 import { describe, test } from "../../test/performance/test-compat"
 import { atom } from "../atom"
+import { globalAtom } from "../globalAtom"
 import { selector } from "../selector"
 import { store } from "../store"
 import { checkStoreInvariants } from "../../test/invariants/checkStoreInvariants"
 import { getStoreData } from "./getStoreData"
+import { uniqueName } from "../../test/utils/uniqueName"
 
 const mulberry32 = (seed: number) => () => {
     seed |= 0
@@ -17,7 +19,7 @@ describe("global commit-forest root/scope/shadow fuzz", () => {
     test("every seeded operation preserves values, selectors, and invariants", () => {
         for (let seed = 1; seed <= 80; seed++) {
             const random = mulberry32(seed * 2654435761)
-            const shared = atom(0, { global: true })
+            const shared = globalAtom(0, { name: uniqueName("shared") })
             const local = atom(0)
             const roots = Array.from({ length: 3 }, () => store())
             const scopes = roots.map(root => root.scope("child"))

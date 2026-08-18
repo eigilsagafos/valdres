@@ -1,4 +1,4 @@
-import { atom } from "valdres"
+import { globalAtom } from "valdres"
 import { subscribe } from "../lib/subscribe"
 
 export type ReducedTransparency = "no-preference" | "reduce"
@@ -17,8 +17,10 @@ const getInitial = (): ReducedTransparency => {
         : "no-preference"
 }
 
-export const reducedTransparencyAtom = atom<ReducedTransparency>(getInitial, {
-    global: true,
-    name: "@valdres/browser-reduced-transparency/reducedTransparency",
-    onMount: () => subscribe(),
-})
+export const reducedTransparencyAtom = globalAtom<ReducedTransparency>(
+    getInitial,
+    {
+        name: "@valdres/browser-reduced-transparency/reducedTransparency",
+        onMount: () => subscribe(),
+    },
+)

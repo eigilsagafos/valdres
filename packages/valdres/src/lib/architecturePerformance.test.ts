@@ -1,6 +1,7 @@
 import { describe, expect, mock, spyOn, test } from "bun:test"
 import { atom } from "../atom"
 import { atomFamily } from "../atomFamily"
+import { globalAtom } from "../globalAtom"
 import { selector } from "../selector"
 import { store } from "../store"
 import type { Store } from "../types/Store"
@@ -14,6 +15,7 @@ import {
 import { cacheController } from "./cacheController"
 import { getStoreData } from "./getStoreData"
 import { mockAsyncSource, withFakeClock } from "../../test/utils/fakeClock"
+import { uniqueName } from "../../test/utils/uniqueName"
 
 const noop = () => {}
 
@@ -416,7 +418,7 @@ describe("deterministic architecture performance gates", () => {
     test("a direct global write allocates only the objects it carries", () => {
         const origin = store()
         const peer = store()
-        const shared = atom(0, { global: true })
+        const shared = globalAtom(0, { name: uniqueName("shared") })
         origin.sub(shared, noop)
         peer.sub(shared, noop)
         origin.set(shared, 1)
@@ -438,8 +440,8 @@ describe("deterministic architecture performance gates", () => {
     test("a global write from inside a global fan-out settles independently", () => {
         const origin = store()
         const peer = store()
-        const outer = atom(0, { global: true })
-        const inner = atom(0, { global: true })
+        const outer = globalAtom(0, { name: uniqueName("outer") })
+        const inner = globalAtom(0, { name: uniqueName("inner") })
         origin.sub(outer, () => origin.set(inner, origin.get(outer) * 10))
         peer.sub(inner, noop)
         origin.set(outer, 1)
@@ -683,7 +685,7 @@ describe("deterministic architecture performance gates", () => {
     })
 
     test("global-containing cross-scope transactions run one commit plan", () => {
-        const shared = atom(0, { global: true })
+        const shared = globalAtom(0, { name: uniqueName("shared") })
         const origin = store()
         const scope = origin.scope("g-scope")
         const scoped = atom(0)
@@ -712,7 +714,7 @@ describe("deterministic architecture performance gates", () => {
         // folds into the root's single tree-walk settlement — a spanning
         // selector evaluates once, never once in a peer pass plus once in the
         // walk.
-        const shared = atom(0, { global: true })
+        const shared = globalAtom(0, { name: uniqueName("shared") })
         const origin = store()
         const scope = origin.scope("gp-scope")
         const local = atom(0)
@@ -747,7 +749,7 @@ describe("deterministic architecture performance gates", () => {
 
     test("global fan-out settles each affected store once", () => {
         const width = 6
-        const shared = atom(0, { global: true })
+        const shared = globalAtom(0, { name: uniqueName("shared") })
         const stores = Array.from({ length: width }, () => store())
         const selectors = stores.map((target, offset) => {
             const derived = selector(get => get(shared) + offset)
@@ -775,7 +777,7 @@ describe("deterministic architecture performance gates", () => {
     })
 
     test("unobserved global roots use the no-graph fast path", () => {
-        const shared = atom(0, { global: true })
+        const shared = globalAtom(0, { name: uniqueName("shared") })
         const stores = Array.from({ length: 6 }, () => store())
         stores.forEach(target => target.get(shared))
 
@@ -793,7 +795,7 @@ describe("deterministic architecture performance gates", () => {
     })
 
     test("global reset and resetSelf each admit one visit-once forest plan", () => {
-        const shared = atom(0, { global: true })
+        const shared = globalAtom(0, { name: uniqueName("shared") })
         const first = store()
         const child = first.scope("reset-child")
         const peer = store()
@@ -829,8 +831,8 @@ describe("deterministic architecture performance gates", () => {
     test("global max-age resolves through one stable plan", () =>
         withFakeClock(async clock => {
             const source = mockAsyncSource<number>()
-            const shared = atom(source.fn as unknown as () => number, {
-                global: true,
+            const shared = globalAtom(source.fn as unknown as () => number, {
+                name: uniqueName("shared"),
                 maxAge: 100,
             })
             const first = store()

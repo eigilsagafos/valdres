@@ -46,7 +46,7 @@ Each `@valdres/browser-*` package wraps one browser API as global atoms.
 Canonical reference: `packages/@valdres/browser-geolocation`.
 
 - Atoms use
-  `{ global: true, name: "@valdres/<pkg>/<atom>", onMount: () => bootstrap(thisAtom) }`.
+  `globalAtom(defaultValue, { name: "@valdres/<pkg>/<atom>", onMount: () => bootstrap(thisAtom) })`.
 - `onMount` starts the browser subscription on first subscriber; the cleanup it
   returns stops it when the last subscriber leaves.
 - Subscription wiring lives in `lib/bootstrap.ts` (and friends like

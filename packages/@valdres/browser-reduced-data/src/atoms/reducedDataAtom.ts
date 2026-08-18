@@ -1,4 +1,4 @@
-import { atom } from "valdres"
+import { globalAtom } from "valdres"
 import { subscribe } from "../lib/subscribe"
 
 export type ReducedData = "no-preference" | "reduce"
@@ -17,8 +17,7 @@ const getInitial = (): ReducedData => {
         : "no-preference"
 }
 
-export const reducedDataAtom = atom<ReducedData>(getInitial, {
-    global: true,
+export const reducedDataAtom = globalAtom<ReducedData>(getInitial, {
     name: "@valdres/browser-reduced-data/reducedData",
     onMount: () => subscribe(),
 })

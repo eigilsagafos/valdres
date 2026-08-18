@@ -1,6 +1,5 @@
-import { atom } from "valdres"
+import { globalAtom } from "valdres"
 
-export const currentKeyCombinationAtom = atom<string[]>([], {
-    global: true,
+export const currentKeyCombinationAtom = globalAtom<string[]>([], {
     name: "@valdres/hotkeys/currentKeyCombinationAtom",
 })

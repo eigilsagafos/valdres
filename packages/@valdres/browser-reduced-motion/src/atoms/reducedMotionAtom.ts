@@ -1,4 +1,4 @@
-import { atom } from "valdres"
+import { globalAtom } from "valdres"
 import { subscribe } from "../lib/subscribe"
 
 export type ReducedMotion = "no-preference" | "reduce"
@@ -17,8 +17,7 @@ const getInitial = (): ReducedMotion => {
         : "no-preference"
 }
 
-export const reducedMotionAtom = atom<ReducedMotion>(getInitial, {
-    global: true,
+export const reducedMotionAtom = globalAtom<ReducedMotion>(getInitial, {
     name: "@valdres/browser-reduced-motion/reducedMotion",
     onMount: () => subscribe(),
 })
