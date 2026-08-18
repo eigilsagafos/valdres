@@ -24,6 +24,10 @@ export type ValdresRuntime = {
     disposedStoreTokens: WeakMap<StoreData, object>
     disposedErrorTokens: WeakMap<Error, object>
     disposedStorePending: Set<WeakKey>
+    /** Shared constructor keeps the selector hot path on native instanceof. */
+    suspendErrorClass?: new (
+        promise: Promise<any>,
+    ) => Error & { promise: Promise<any> }
     /** Generated IDs are diagnostic identities and stay unique process-wide. */
     nextStoreId: number
     namedStateIndexes: WeakMap<

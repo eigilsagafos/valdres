@@ -157,6 +157,9 @@ describe("multiple valdres copies", () => {
             expect(new FutureSelectorError()).toBeInstanceOf(
                 second.SelectorEvaluationError,
             )
+            expect(new first.SelectorEvaluationError()).not.toBeInstanceOf(
+                FutureSelectorError,
+            )
         })
     })
 

@@ -1,4 +1,8 @@
-import { errorBrand, errorHasBrand, markError } from "./lib/errorBrand"
+import {
+    brandedErrorHasInstance,
+    errorBrand,
+    markError,
+} from "./lib/errorBrand"
 
 const STORE_DISPOSED_ERROR = errorBrand("StoreDisposedError")
 
@@ -6,7 +10,12 @@ const STORE_DISPOSED_ERROR = errorBrand("StoreDisposedError")
 export class StoreDisposedError extends Error {
     /** Preserve instanceof across adopted same-version package copies. */
     static [Symbol.hasInstance](value: unknown): boolean {
-        return errorHasBrand(value, STORE_DISPOSED_ERROR)
+        return brandedErrorHasInstance(
+            this,
+            StoreDisposedError,
+            value,
+            STORE_DISPOSED_ERROR,
+        )
     }
 
     constructor(storeId: string) {

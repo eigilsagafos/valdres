@@ -9,3 +9,18 @@ export const markError = (error: Error, brand: symbol): void => {
 
 export const errorHasBrand = (value: unknown, brand: symbol): boolean =>
     (value as Record<symbol, unknown> | null)?.[brand] === true
+
+const nativeHasInstance = Function.prototype[Symbol.hasInstance]
+
+/** Preserve normal subclass direction while adding a cross-copy fallback only
+ * for the class that owns the brand. Static Symbol.hasInstance is inherited,
+ * so using the brand for a subclass receiver would make every base error an
+ * instance of every subclass. */
+export const brandedErrorHasInstance = (
+    receiver: Function,
+    declaringClass: Function,
+    value: unknown,
+    brand: symbol,
+): boolean =>
+    nativeHasInstance.call(receiver, value) ||
+    (receiver === declaringClass && errorHasBrand(value, brand))

@@ -1,6 +1,10 @@
 import type { Selector } from "../types/Selector"
 import { generateSelectorTrace } from "./lib/generateSelectorTrace"
-import { errorBrand, errorHasBrand, markError } from "./lib/errorBrand"
+import {
+    brandedErrorHasInstance,
+    errorBrand,
+    markError,
+} from "./lib/errorBrand"
 
 const SELECTOR_EVALUATION_ERROR = errorBrand("SelectorEvaluationError")
 
@@ -9,7 +13,12 @@ export class SelectorEvaluationError extends Error {
 
     /** Preserve instanceof across adopted same-version package copies. */
     static [Symbol.hasInstance](value: unknown): boolean {
-        return errorHasBrand(value, SELECTOR_EVALUATION_ERROR)
+        return brandedErrorHasInstance(
+            this,
+            SelectorEvaluationError,
+            value,
+            SELECTOR_EVALUATION_ERROR,
+        )
     }
 
     constructor(cause?: any) {

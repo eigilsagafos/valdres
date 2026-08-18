@@ -1,6 +1,10 @@
 import type { Atom } from "../types/Atom"
 import type { Selector } from "../types/Selector"
-import { errorBrand, errorHasBrand, markError } from "./lib/errorBrand"
+import {
+    brandedErrorHasInstance,
+    errorBrand,
+    markError,
+} from "./lib/errorBrand"
 
 const SCHEMA_VALIDATION_ERROR = errorBrand("SchemaValidationError")
 
@@ -16,7 +20,12 @@ export class SchemaValidationError extends Error {
 
     /** Preserve instanceof across adopted same-version package copies. */
     static [Symbol.hasInstance](value: unknown): boolean {
-        return errorHasBrand(value, SCHEMA_VALIDATION_ERROR)
+        return brandedErrorHasInstance(
+            this,
+            SchemaValidationError,
+            value,
+            SCHEMA_VALIDATION_ERROR,
+        )
     }
 
     constructor(cause: unknown, state: Atom<any> | Selector<any>) {
