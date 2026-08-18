@@ -149,28 +149,31 @@ describe("build output", () => {
         ).toBe(false)
     })
 
-    test("mixed build variants identify both artifacts in the instance error", async () => {
+    test("same-version build variants adopt the shared globalStore", async () => {
         const dist = await publishedDist()
         const defaultUrl = pathToFileURL(join(dist, "index.js")).href
         const developmentUrl = pathToFileURL(
             join(dist, "development/index.js"),
         ).href
         const script = `
-            await import(${JSON.stringify(defaultUrl)})
-            try {
-                await import(${JSON.stringify(developmentUrl)})
-            } catch (error) {
-                console.log(error.message)
-            }
+            const first = await import(${JSON.stringify(defaultUrl)})
+            const state = first.atom(0)
+            first.globalStore.set(state, 42)
+            const second = await import(${JSON.stringify(developmentUrl)})
+            console.log(JSON.stringify({
+                sameStore: first.globalStore === second.globalStore,
+                value: second.globalStore.get(state),
+            }))
         `
         const result = Bun.spawnSync(
             ["node", "--input-type=module", "--eval", script],
             { stdout: "pipe", stderr: "pipe" },
         )
         expect(result.exitCode, result.stderr.toString()).toBe(0)
-        expect(result.stdout.toString()).toMatch(
-            /Loaded: .+ \(default\)\. Attempted to load: .+ \(development\)/,
-        )
+        expect(JSON.parse(result.stdout.toString())).toEqual({
+            sameStore: true,
+            value: 42,
+        })
     })
 
     // Regression guard for the dev-only freeze. valdres is built once under
@@ -234,12 +237,11 @@ describe("build output", () => {
             ),
         ).toHaveLength(1)
         // Cross-module protocol symbol: store lifecycle cancels open resources
-        // through it while TransactionContext implements it. Two copies would
-        // silently make the method lookup `undefined` and turn every
-        // disposal-with-open-transaction into a TypeError.
+        // through it while TransactionContext implements it. Symbol.for also
+        // keeps the protocol coherent across adopted same-version copies.
         expect(
             outputs.filter(code =>
-                code.includes('Symbol("valdres.cancelOnStoreDispose")'),
+                code.includes('Symbol.for("valdres.cancelOnStoreDispose")'),
             ),
         ).toHaveLength(1)
     })

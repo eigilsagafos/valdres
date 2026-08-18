@@ -45,6 +45,10 @@ export const createEvaluationOutcome = (): EvaluationOutcome => ({
  * The propagation loops instead own one plain carrier per PASS (like their
  * reusable DepsChange) via `createEvaluationOutcome` — no pool traffic on the
  * re-evaluation hot path.
+ *
+ * The pool is intentionally copy-local scratch. Outcomes never escape into
+ * StoreData, and a cross-copy nested evaluation acquires from its own
+ * dispatcher stack rather than coupling independent depth frames.
  */
 const pool: EvaluationOutcome[] = []
 let depth = 0

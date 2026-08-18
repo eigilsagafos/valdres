@@ -1,10 +1,21 @@
 import { SelectorEvaluationError } from "./SelectorEvaluationError"
 
 import { generateSelectorTrace } from "./lib/generateSelectorTrace"
+import { errorBrand, errorHasBrand, markError } from "./lib/errorBrand"
+
+const SELECTOR_CIRCULAR_DEPENDENCY_ERROR = errorBrand(
+    "SelectorCircularDependencyError",
+)
 
 export class SelectorCircularDependencyError extends SelectorEvaluationError {
+    /** Preserve instanceof across adopted same-version package copies. */
+    static [Symbol.hasInstance](value: unknown): boolean {
+        return errorHasBrand(value, SELECTOR_CIRCULAR_DEPENDENCY_ERROR)
+    }
+
     constructor() {
         super()
+        markError(this, SELECTOR_CIRCULAR_DEPENDENCY_ERROR)
         this.name = "SelectorCircularDependencyError"
     }
 
