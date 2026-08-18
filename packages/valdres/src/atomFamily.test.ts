@@ -694,9 +694,9 @@ describe("atomFamily", () => {
         ).toThrow("'non_global_test' already exists")
         // Global: creation is idempotent — the same name returns the cached
         // family instead of creating (or registering) a second one.
-        const globalGamily1 = globalAtomFamily("Default", { name: "global_test" })
+        const globalFamily1 = globalAtomFamily("Default", { name: "global_test" })
         const globalFamily2 = globalAtomFamily("Default", { name: "global_test" })
-        expect(Object.is(globalGamily1, globalFamily2)).toBe(true)
+        expect(Object.is(globalFamily1, globalFamily2)).toBe(true)
     })
 
     test("atom families in scope", () => {

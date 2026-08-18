@@ -2,7 +2,7 @@ import type { AtomFamily } from "./AtomFamily"
 import type { AtomFamilyAtom } from "./AtomFamilyAtom"
 import type { GlobalAtom } from "./GlobalAtom"
 
-/** The return type of `globalAtomFamily(name, defaultValue)`.
+/** The return type of `globalAtomFamily(defaultValue, options)`.
  *
  *  Identical to `AtomFamily` except that members carry the global atom surface
  *  (`getSelf`/`setSelf`/`resetSelf`) alongside their family identity. `Omit<…,

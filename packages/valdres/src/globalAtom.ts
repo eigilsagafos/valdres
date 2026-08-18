@@ -20,6 +20,7 @@ export function globalAtom<Value = unknown>(
     defaultValue: AtomDefaultValue<Value>,
     options: GlobalAtomOptions<Value>,
 ): GlobalAtom<Value> {
+    if (!options.name) throw new Error("valdres: missing name for global atom")
     const created = createGlobalAtom(defaultValue, options)
     registerName(options.name, created)
     return created
