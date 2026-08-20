@@ -8,7 +8,9 @@
  *  `TransactionContext`; before this, `disposeStoreData` imported
  *  `cancelTransaction` directly and `storeLifecycle` named the transaction type
  *  in its resource ledger. */
-export const CANCEL_ON_STORE_DISPOSE = Symbol("valdres.cancelOnStoreDispose")
+export const CANCEL_ON_STORE_DISPOSE: unique symbol = Symbol.for(
+    "valdres.cancelOnStoreDispose",
+)
 
 export type StoreCancellable = {
     [CANCEL_ON_STORE_DISPOSE](): void

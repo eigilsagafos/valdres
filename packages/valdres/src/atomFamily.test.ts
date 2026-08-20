@@ -1,4 +1,4 @@
-import { describe, test, expect, mock } from "bun:test"
+import { describe, test, expect, mock, spyOn } from "bun:test"
 import { store } from "./store"
 import { atomFamily } from "./atomFamily"
 import { globalAtomFamily } from "./globalAtomFamily"
@@ -692,11 +692,21 @@ describe("atomFamily", () => {
                 name: "non_global_test",
             }),
         ).toThrow("'non_global_test' already exists")
-        // Global: creation is idempotent — the same name returns the cached
-        // family instead of creating (or registering) a second one.
-        const globalFamily1 = globalAtomFamily("Default", { name: "global_test" })
-        const globalFamily2 = globalAtomFamily("Default", { name: "global_test" })
-        expect(Object.is(globalFamily1, globalFamily2)).toBe(true)
+        // Global: the name is explicitly first-definition-wins. Re-evaluation
+        // returns the original family and reports that the later input lost.
+        const warn = spyOn(console, "warn").mockImplementation(() => {})
+        try {
+            const globalFamily1 = globalAtomFamily("Default", {
+                name: "global_test",
+            })
+            const globalFamily2 = globalAtomFamily("Default", {
+                name: "global_test",
+            })
+            expect(Object.is(globalFamily1, globalFamily2)).toBe(true)
+            expect(warn).toHaveBeenCalledTimes(1)
+        } finally {
+            warn.mockRestore()
+        }
     })
 
     test("atom families in scope", () => {

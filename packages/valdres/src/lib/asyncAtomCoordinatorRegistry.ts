@@ -1,14 +1,12 @@
 import type { Atom } from "../types/Atom"
 import type { StoreData } from "../types/StoreData"
+import { valdresGlobal } from "./valdresGlobal"
 
 export type AsyncAtomCoordinatorEntry = {
     promise: PromiseLike<any>
 }
 
-const coordinatorsByStore = new WeakMap<
-    StoreData,
-    WeakMap<Atom<any>, AsyncAtomCoordinatorEntry>
->()
+const coordinatorsByStore = valdresGlobal().runtime.asyncAtomCoordinators
 
 export const getAsyncAtomCoordinatorEntry = (
     atom: Atom<any>,

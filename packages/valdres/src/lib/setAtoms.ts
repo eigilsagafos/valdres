@@ -180,6 +180,10 @@ const tryWriteFreshSimpleAtoms = (
 // a new transaction while an outer commit is delivering) finds the statics
 // busy and falls back to a fresh plan. Every field is reset in `finally` so
 // the statics never retain a store, sink, or atom list past their commit.
+// This is deliberately engine-copy-local scratch, not StoreData semantics:
+// each Store facade closes over the transaction engine that created it, while
+// a nested call through another adopted copy gets that copy's independent
+// busy flag and carrier rather than clobbering this frame.
 const EMPTY_UPDATED_ATOMS: Atom<any>[] = []
 let hookFreeBusy = false
 let hookFreePairs: Map<Atom<any>, any> = undefined!

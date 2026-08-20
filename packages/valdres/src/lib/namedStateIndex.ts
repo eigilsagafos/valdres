@@ -3,6 +3,7 @@ import type { AtomFamily } from "../types/AtomFamily"
 import type { AtomFamilyAtom } from "../types/AtomFamilyAtom"
 import type { StoreData } from "../types/StoreData"
 import { getRegisteredName } from "./registerName"
+import { valdresGlobal } from "./valdresGlobal"
 
 type NamedState = Atom<any> | AtomFamily<any>
 export type NamedStateIndex = Map<NamedState, string>
@@ -14,7 +15,7 @@ export type NamedStateIndex = Map<NamedState, string>
  * a store's lifetime; family members are represented by their already-global
  * family, never retained individually here.
  */
-const indexes = new WeakMap<StoreData, NamedStateIndex>()
+const indexes = valdresGlobal().runtime.namedStateIndexes
 
 export const trackNamedState = (
     state: Atom<any> | AtomFamilyAtom<any, any>,

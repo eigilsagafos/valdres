@@ -3,23 +3,46 @@ import { valdresGlobal } from "./lib/valdresGlobal"
 // `process.env.VALDRES_VERSION` is statically replaced at build time by
 // Bun.build's define option. Declared at module scope (not global) so we
 // don't conflict with consumers' @types/node or bun-types.
-declare const process: { env: { VALDRES_VERSION?: string } }
+declare const process: { env?: { VALDRES_VERSION?: string } }
 declare const __VALDRES_BUILD_VARIANT__: string
 
 const BUILD_VARIANT =
     typeof __VALDRES_BUILD_VARIANT__ === "undefined"
         ? "source"
         : __VALDRES_BUILD_VARIANT__
-// Single-instance guard. The slot (see valdresGlobal) also carries the global
-// name registry; `version` and `buildVariant` are claimed exactly once, by the
-// first instance.
+const VERSION =
+    typeof process === "undefined" || process.env == null
+        ? undefined
+        : process.env.VALDRES_VERSION
+
+// Runtime compatibility guard. The slot (see valdresGlobal) carries the shared
+// global engine surface and name registry. A known same-version copy adopts
+// that surface; different versions, or duplicates where either version is
+// unknown, cannot prove compatibility and fail before exposing the copy.
 const slot = valdresGlobal()
-if (slot.version) {
-    throw new Error(
-        `valdres: an instance is already loaded. Loaded: ${slot.version} (${slot.buildVariant ?? "unknown"}). Attempted to load: ${process.env.VALDRES_VERSION} (${BUILD_VARIANT})`,
-    )
+if (slot.loaded) {
+    const details = `Loaded: ${slot.version ?? "unknown"} (${slot.buildVariant ?? "unknown"}). Attempted: ${VERSION ?? "unknown"} (${BUILD_VARIANT}).`
+    if (slot.version === undefined || VERSION === undefined) {
+        throw new Error(
+            `valdres: cannot safely load another runtime because at least one valdres version is unknown. ${details} ` +
+                `Build valdres or inject process.env.VALDRES_VERSION so same-version copies can adopt the shared runtime.`,
+        )
+    }
+    if (slot.version !== VERSION) {
+        throw new Error(
+            `valdres: cannot load different valdres versions in the same JavaScript global. ${details} ` +
+                `Ensure the dependency graph resolves one version and deduplicate valdres dependencies.`,
+        )
+    }
+    if (!slot.adoptable) {
+        throw new Error(
+            `valdres: the loaded same-version instance does not expose the shared runtime required for safe adoption. ${details} ` +
+                `Deduplicate valdres dependencies or reload after upgrading every copy together.`,
+        )
+    }
 } else {
-    slot.version = process.env.VALDRES_VERSION
+    slot.loaded = true
+    slot.version = VERSION
     slot.buildVariant = BUILD_VARIANT
 }
 
