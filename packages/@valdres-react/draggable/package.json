@@ -1,7 +1,7 @@
 {
     "name": "@valdres-react/draggable",
     "description": "React drag-and-drop powered by Valdres",
-    "version": "0.3.0-beta.0",
+    "version": "0.3.0-beta.1",
     "license": "MIT",
     "author": {
         "name": "Eigil Sagafos"
@@ -28,7 +28,7 @@
         "valdres-react": "workspace:^"
     },
     "peerDependencies": {
-        "valdres-react": "^1.0.0-beta.1"
+        "valdres-react": "^1.0.0-beta.4"
     },
     "publishConfig": {
         "access": "public",

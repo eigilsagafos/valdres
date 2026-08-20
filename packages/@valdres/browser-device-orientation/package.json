@@ -1,7 +1,7 @@
 {
     "name": "@valdres/browser-device-orientation",
     "description": "Reactive device tilt and compass heading from DeviceOrientationEvent",
-    "version": "1.0.0-beta.6",
+    "version": "1.0.0-beta.7",
     "license": "MIT",
     "author": {
         "name": "Eigil Sagafos"
@@ -41,7 +41,7 @@
         "valdres-react": "workspace:^"
     },
     "peerDependencies": {
-        "valdres": "^1.0.0-beta.17"
+        "valdres": "^1.0.0-beta.18"
     },
     "publishConfig": {
         "access": "public",

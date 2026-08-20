@@ -1,7 +1,7 @@
 {
     "name": "@valdres-react/color-mode",
     "description": "React color mode hooks powered by Valdres",
-    "version": "0.3.0-beta.1",
+    "version": "0.3.0-beta.2",
     "license": "MIT",
     "author": {
         "name": "Eigil Sagafos"
@@ -24,14 +24,14 @@
         "test": "echo 'no tests'"
     },
     "dependencies": {
-        "@valdres/color-mode": "^1.0.0-beta.1"
+        "@valdres/color-mode": "^1.0.0-beta.6"
     },
     "devDependencies": {
         "typescript": "5.9.2",
         "valdres-react": "workspace:^"
     },
     "peerDependencies": {
-        "valdres-react": "^1.0.0-beta.1"
+        "valdres-react": "^1.0.0-beta.4"
     },
     "publishConfig": {
         "access": "public",
