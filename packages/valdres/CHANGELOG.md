@@ -1,5 +1,502 @@
 # valdres
 
+## 1.0.0-beta.18
+
+### Minor Changes
+
+- [#320](https://github.com/eigilsagafos/valdres/pull/320)
+  [`f4affba`](https://github.com/eigilsagafos/valdres/commit/f4affba65bb32429e2550aed63b51114ecaa434e)
+  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! - Replace the
+  `{ global: true }` atom/atomFamily flag with dedicated
+  `globalAtom(defaultValue, options)` and
+  `globalAtomFamily(defaultValue, options)` constructors.
+
+    **Breaking.** `global` is no longer a key of
+    `AtomOptions`/`AtomFamilyOptions` — `atom()` and `atomFamily()` only ever
+    produce ordinary, per-store state now. Global (cross-store) atoms and
+    families are created through the new constructors instead, with the same
+    call shape as `atom()`/`atomFamily()` except `options.name` is required (it
+    was previously optional, and plain global atoms could be unnamed). `atom()`
+    no longer statically imports the global-atom engine module, shrinking the
+    bundle for consumers who never create a global atom.
+
+    Migration:
+
+    ```diff
+    -const config = atom(0, { global: true, name: "app/config" })
+    +const config = globalAtom(0, { name: "app/config" })
+
+    -const itemById = atomFamily(null, { global: true, name: "items" })
+    +const itemById = globalAtomFamily(null, { name: "items" })
+    ```
+
+    The returned `GlobalAtom`/`GlobalAtomFamily` types, and their `getSelf` /
+    `setSelf` / `resetSelf` surface, are unchanged. The exported
+    `GlobalAtomOptions` / `GlobalAtomFamilyOptions` types are identical to
+    `AtomOptions`/`AtomFamilyOptions`, except `name` is required instead of
+    optional.
+
+- [#300](https://github.com/eigilsagafos/valdres/pull/300)
+  [`32b1894`](https://github.com/eigilsagafos/valdres/commit/32b18943331cbf0fd420181eb3920a8fb611d940)
+  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! - Give every type
+  reachable from an exported signature a name consumers can import.
+  `AtomOptions`, `SelectorOptions`, `StoreOptions`, `AtomDefaultValue`,
+  `AtomFamilyAtom`, `AtomFamilyDefaultValue`, `AtomFamilySelector`,
+  `GlobalAtomFamily`, `EqualFunc`, `AtomOnMount`, `AtomOnSet`, `SubscribeFn`,
+  `ScopedStore`, and `ScopeFn` are now exported from the package root, so a
+  typed wrapper can annotate them directly instead of re-deriving private shapes
+  with `Parameters`/`ReturnType`.
+
+    `StoreOptions` is the full `store()` bag — including `id` and
+    `batchUpdates`, which now carries doc comments describing the
+    tick-coalescing commit and its scope-sharing semantics.
+
+    `AtomOnMount` is properly typed:
+    `(store: Store, state: Atom<Value> | Selector<Value>)` instead of
+    `(store?: any, state?: any)`, so hooks that use their arguments get real
+    types. Hooks that ignore the arguments — the common
+    `onMount: () => bootstrap(thisAtom)` shape — are unaffected. A second type
+    parameter narrows the state at the use site when a hook needs fields only
+    one side has: `AtomOnMount<number, Atom<number>>` reaches `defaultValue`
+    without narrowing, and still assigns into `atom()`.
+
+- [#299](https://github.com/eigilsagafos/valdres/pull/299)
+  [`8416094`](https://github.com/eigilsagafos/valdres/commit/8416094d5edfe8dbce5b0e5966ceaeb7442cf118)
+  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! - Export
+  `SelectorEvaluationError` and `SelectorCircularDependencyError` from the
+  package root so applications can distinguish selector failures with
+  `instanceof`. Give every Valdres error class a stable `.name`, make empty
+  selector-error traces safe to inspect, and standardize public native errors on
+  the `valdres:` message prefix with state names where available.
+
+- [#321](https://github.com/eigilsagafos/valdres/pull/321)
+  [`492af67`](https://github.com/eigilsagafos/valdres/commit/492af67409130b347ca133198c9bd82e4256ae83)
+  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! - Allow duplicate
+  copies of the same known Valdres version to adopt one shared global runtime
+  instead of throwing. The shared `globalStore`, backing store data, semantic
+  side tables, lifecycle markers, generated store IDs, name indexes, and
+  global-family registry now keep engine state unified across copies, including
+  `instanceof`-based error control flow. Different or unknown versions fail with
+  actionable guidance.
+
+    Global atom families remain first-definition-wins singletons, but
+    development builds now warn when a later default or options object is
+    ignored, and detectable kind or `keyOf` contract mismatches throw.
+
+- [#301](https://github.com/eigilsagafos/valdres/pull/301)
+  [`2697ce5`](https://github.com/eigilsagafos/valdres/commit/2697ce5965b0f8f4f97ce0d9659a553ee2c8fa19)
+  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! - Correct the public
+  write and family contracts and prevent borrowed scope callbacks from disposing
+  scopes owned by lease holders.
+
+    `store.set` and transaction `set` now type synchronous writes as their value
+    and Promise or promise-returning-updater writes as `Promise<Value>`.
+    `selectorFamily` member getters receive the same `SelectorGetOptions` as
+    plain selectors. Global atom families now require a stable `name` at compile
+    time, matching their existing runtime requirement.
+
+    The global-family overload correction is a breaking type change for callers
+    that pass an options variable typed only as `AtomFamilyOptions`, where
+    `global` is an unresolved `boolean`. Narrow `global` to a literal branch or
+    pass a literal `{ global: true, name }` object so TypeScript can select the
+    global return type. Plain global atoms still permit unnamed instances, and
+    selectors do not expose a global option.
+
+### Patch Changes
+
+- [#304](https://github.com/eigilsagafos/valdres/pull/304)
+  [`2539b82`](https://github.com/eigilsagafos/valdres/commit/2539b82d95c7f1329f17a9a2740eef5bbb5be690)
+  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! - Ship ESM
+  declarations with explicit `.js` import specifiers so package exports resolve
+  for Node16 and NodeNext TypeScript consumers with library checking enabled.
+
+- [#277](https://github.com/eigilsagafos/valdres/pull/277)
+  [`fc0c8bb`](https://github.com/eigilsagafos/valdres/commit/fc0c8bbd3617ac73e7158af6638146ea1146cc61)
+  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! - A direct write to a
+  global atom now builds six plan objects per commit instead of nine: the
+  ordered global sets and the deferred onSet queue share one
+  `[atom, value, origin]` descriptor and one queue rather than allocating a
+  duplicate pair, since they describe the same write.
+
+    `store.onCommitEnd` no longer fires for a commit that produced nothing. A
+    transaction whose every write is value-equal, and a `reset` of an atom
+    already holding its default, are now as silent as the no-op `set` and no-op
+    `unset` already were. Real work performed inside such a commit — a
+    subscriber or `onSet` hook writing during delivery — still coalesces into
+    exactly one notification.
+
+    Internally, the illegal `CommitPlan` states are now unrepresentable rather
+    than merely unused: `beginCommit`/`endCommit` are one paired boundary
+    capability, global fan-out exists only as part of a forest settlement,
+    report preparation requires the report it prepares, and delete/unset work
+    groups are non-empty or absent — which also removes an asymmetry where an
+    empty `deleted` group counted as settlement work while an empty `unsetAtoms`
+    group did not. Settlement work is evaluated once per commit instead of three
+    times. The published bundle is unaffected by the accompanying engine
+    self-checks: they are compiled out.
+
+- [#295](https://github.com/eigilsagafos/valdres/pull/295)
+  [`bf616d6`](https://github.com/eigilsagafos/valdres/commit/bf616d68642feccb7ca2e043f28cf60e8bf848af)
+  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! - Stop dropping
+  writes that the default equality check could not see. Values differing only in
+  a symbol-keyed own enumerable property, in a property set beside the contents
+  of an array, `Map` or `Set`, or in a property that a custom `valueOf` /
+  `toString` does not expose all compared equal, so `set()` bailed as a no-op:
+  the store kept the old value, no subscriber fired, and nothing warned.
+
+    Own enumerable properties — symbol-keyed ones included — are now part of the
+    comparison for plain objects, arrays (holes and expandos included), `Map`,
+    `Set` and `RegExp`, and a custom `valueOf` / `toString` narrows the
+    comparison instead of replacing it. Binary buffers and views still compare
+    by their bytes alone, because enumerating a typed array's keys costs time
+    proportional to its length.
+
+    The identity and early-exit paths are unchanged; the added work is spent
+    only once two distinct values have otherwise compared equal.
+
+- [#305](https://github.com/eigilsagafos/valdres/pull/305)
+  [`40a0998`](https://github.com/eigilsagafos/valdres/commit/40a0998a019653f3a94fd310b8a143879ecae5b7)
+  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! - Fix published
+  metadata for CommonJS `require(esm)` and legacy TypeScript resolution, declare
+  Node.js 22.12 or newer, and preserve Valdres's runtime duplicate-instance
+  guard during tree-shaking.
+
+- [#318](https://github.com/eigilsagafos/valdres/pull/318)
+  [`8b3903b`](https://github.com/eigilsagafos/valdres/commit/8b3903b659fd5a8d8fd3e22fa48e1857119ed531)
+  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! - Improve core write,
+  propagation, store, and family-key hot paths. Commit plans now share one
+  complete object shape, scheduler metadata uses bitwise decoding, root and
+  scoped stores initialize one stable set of fields, and primitive family keys
+  avoid allocating a cycle guard.
+
+- [#288](https://github.com/eigilsagafos/valdres/pull/288)
+  [`f16ed4e`](https://github.com/eigilsagafos/valdres/commit/f16ed4e65bf5d2ab2f05fdf19ec8cb51a223814f)
+  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! - Fix `writeAtoms` so
+  an equal-value transaction write is a true no-op on a root store: it no longer
+  overwrites the stored reference with the new (deep-equal) value, and no longer
+  bumps the tree revision or invalidates cold selector caches. The scope-shadow
+  pinning behavior on scoped stores is unchanged.
+
+- [#294](https://github.com/eigilsagafos/valdres/pull/294)
+  [`82ff384`](https://github.com/eigilsagafos/valdres/commit/82ff3848fbc754e2c707bf4c5f904ebce775585b)
+  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! - Keep synchronous
+  reads fresh across scoped stores when `batchUpdates` is enabled. Implicit
+  batched transactions now share the explicit transaction tree, so descendant
+  reads and derived writes see pending ancestor values while preserving child
+  shadows and deferred notifications. Disposing one scope drops only that
+  scope's pending branch, and synchronous descendant operations flush the
+  ancestor batch before running.
+
+- [#290](https://github.com/eigilsagafos/valdres/pull/290)
+  [`1be55cf`](https://github.com/eigilsagafos/valdres/commit/1be55cf3672aa70b50ecca01cd47d6450a0ab2e1)
+  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! - Fix
+  `store.onCommitEnd` delivery for transactions that initialize a large batch of
+  fresh, otherwise unobserved atoms. These commits now report their completed
+  work even when run without another global store listener already active.
+
+- [#264](https://github.com/eigilsagafos/valdres/pull/264)
+  [`422a7d4`](https://github.com/eigilsagafos/valdres/commit/422a7d410474c1bd8a232ceb99dd545c9d4e6a75)
+  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! - Global writes,
+  resets, async settlement, max-age revalidation, and `resetSelf` now execute
+  through one CommitPlan forest. Each affected physical store is visited once
+  with the union of its local, inherited, shadow, and global trigger groups,
+  reducing repeated selector evaluation and custom-equality work while
+  preserving peer-before-origin observers, reports, cleanup, and first-error
+  ordering.
+
+- [#265](https://github.com/eigilsagafos/valdres/pull/265)
+  [`b394e0f`](https://github.com/eigilsagafos/valdres/commit/b394e0f1a2e51456d0f30aa73cf1372892785d47)
+  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! - Move every write to
+  the dependency-graph tables behind an internal GraphRuntime boundary
+  (`src/lib/graph/`): forward/reverse edges and dependency replacement,
+  scope-branch registration, liveness counters and mount reachability, cycle
+  metadata, orphan-edge cleanup, and the installation of dependencies discovered
+  by async evaluation. Selector evaluators no longer mutate graph state — they
+  report discovered dependencies through a pooled evaluation-outcome carrier and
+  the dispatcher that ran them installs the result, so evaluation and graph
+  bookkeeping are now separable phases with documented invariants at each
+  boundary.
+
+    Internal-only: no public API, semantics, or ordering changes. The core
+    write-path import cycle shrinks from 24 modules to 9 and the
+    `mountAtom ↔ storeFromStoreData` cycle is gone, guarded by a new
+    type-checker-based table-ownership scan and stricter import-boundary tests
+    alongside the existing cycle ratchet.
+
+- [#261](https://github.com/eigilsagafos/valdres/pull/261)
+  [`c4c2e6c`](https://github.com/eigilsagafos/valdres/commit/c4c2e6ce94c57b87bb2af3377ec3feb68f7f7f78)
+  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! - Transaction staging
+  now lives in a dedicated MutationDraft write overlay, and every single-store
+  transaction commit executes through the shared CommitPlan engine. Two
+  deliberate edge-case fixes ride along: (1) when reporting an unset during a
+  transaction commit itself fails (for example a throwing function default
+  evaluated by the report's parent read-through), the first captured commit
+  error — such as an earlier onSet hook error — now surfaces instead of being
+  masked by the reporting failure; (2) transaction staging now validates schemas
+  before dev-freezing, so validators observe the same (unfrozen) value
+  representation as direct writes.
+
+- [#298](https://github.com/eigilsagafos/valdres/pull/298)
+  [`539fb74`](https://github.com/eigilsagafos/valdres/commit/539fb742cc4ffaf22f64939733c1c2bb373262ba)
+  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! - Hide engine-only
+  `__` fields from the public `Atom`, `Selector`, `AtomFamily`, and
+  `SelectorFamily` types. The undocumented `globalStore.atoms` and
+  `globalStore.atomFamilies` registries are also no longer exposed; global atom
+  families retain the same process-wide identity through module-private state.
+
+- [#302](https://github.com/eigilsagafos/valdres/pull/302)
+  [`b669d77`](https://github.com/eigilsagafos/valdres/commit/b669d77e9637a089ff96da8994cc38ae43ed7360)
+  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! - Make direct
+  (non-transaction) `atomFamily` membership changes scale linearly. Every
+  `store.set(family(id), …)` on a NEW member — and every `store.del(member)` —
+  rebuilt and re-sorted the family's entire membership snapshot, so the cost of
+  adding member K was proportional to the K-1 already there. A loop of 4,000
+  direct creates took ~1.1s (~540× the same work in one transaction) and grew
+  ~O(K² log K).
+
+    The direct path now defers rendering the same way a transaction always has:
+    a membership write publishes the live index and materializes the sorted,
+    frozen array at the first observation boundary — a read of the family
+    through `store.get`, a selector, or dehydration. Deleting a member also
+    drops its creation entry instead of shadowing it with a tombstone, so a
+    render walks one entry per deleted member instead of two; the tombstone
+    stays (it masks an inherited member and stops a read from resurrecting it),
+    so a render remains proportional to live members plus everything the index
+    has ever deleted.
+
+    Measured with the same benchmark on both sides: direct set of 500 new
+    members 15.0ms → 312µs (~48×), and a direct create-then-delete cycle of 500
+    members 34.5ms → 403µs (~86×) — both now in the same range as Jotai's
+    nearest equivalents (280µs / 347µs), where they were 50× behind. Transaction
+    throughput, atom/selector read and write paths, and membership semantics are
+    unchanged.
+
+- [#287](https://github.com/eigilsagafos/valdres/pull/287)
+  [`c1a58bc`](https://github.com/eigilsagafos/valdres/commit/c1a58bc9174210e359f26202fc3fadc12bb6d514)
+  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! - Publish a minified
+  `dist`, and stop paying for benchmark-only counters in production.
+
+    The build now minifies. Most consumers bundle valdres and would minify it
+    themselves, so the headline win is in the published package — `dist`
+    JavaScript drops from 53.2 KB to 36.3 KB gzip (−32%) and the packed tarball
+    from 111.8 KB to 96.9 KB gzip (−13%), which every install and every
+    CDN/unpkg fetch pays. Consumer bundles also shrink slightly (≈0.9%, e.g. the
+    `atom + selector + store` fixture 30,462 → 30,079 bytes gzip) because
+    mangling valdres's internals here beats what a bundler infers through the
+    module graph. Source maps are deliberately not shipped: they restore
+    readable stack traces through valdres internals but measured at +167% on the
+    packed tarball (97 KB → 299 KB gzip), which is the wrong default when only a
+    rare consumer steps through our internals.
+
+    Two `architectureInstrumentation` call sites were reachable in production
+    without an `IS_PROD` guard — `recordCommitPlanRun` in the commit engine
+    (once per commit, the hottest path in the engine) and the scheduler/liveness
+    allocation counters in the graph workspace pool. Both now sit behind
+    `!IS_PROD`, matching every other `record*` call site, so a production build
+    pays neither the call nor the `data.architectureInstrumentation` load. These
+    are test/benchmark-only structural counters that production code has no way
+    to enable, so no observable behavior changes.
+
+    The build-output tests now assert the `process.env.NODE_ENV` and engine
+    self-check contracts against the minified artifact that actually ships, with
+    structural chunk-placement assertions kept on an unminified build where
+    identifiers survive.
+
+- [#274](https://github.com/eigilsagafos/valdres/pull/274)
+  [`154b413`](https://github.com/eigilsagafos/valdres/commit/154b413f4b06ea939d7b0cbfbba34cb2d5de34db)
+  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! - Single-store
+  transactions that mix ordinary writes with `del` / `unset` now settle through
+  the same commit forest as cross-scope and global-peer commits. Previously they
+  ran up to three sequential passes over the same store — update, then delete,
+  then unset — so a selector reached by more than one of them was evaluated once
+  per pass. The store is now visited once against the union of its trigger
+  groups.
+
+    Three observable behaviors are corrected as a result:
+
+    - **A throwing unset report no longer starves the rest of the commit.**
+      Filling an `unset` change record can evaluate user code (a scope reads
+      through to a de-materialized parent's lazy default). That report now runs
+      inside the settlement walk's reporting phase, so a throw is recorded into
+      the commit's error arbitration instead of escaping: selector settlement,
+      subscriber delivery, `onChange`, and scope re-delegation all still
+      complete, and the first error captured by the commit is the one rethrown.
+      Previously the throw skipped the shared deferred notification —
+      subscribers never fired for writes that `onChange` had already reported —
+      and left a scope with a dropped parent delegate, silently ignoring later
+      parent writes.
+    - **A mixed update + family delete reports its selector's final value
+      once.** The spanning selector is evaluated a single time, on fully-applied
+      state, and reported from the trigger group that first reached it. Record
+      content and order are unchanged (atoms, then the selectors that group
+      reached, in group order); only the redundant re-evaluation is gone.
+    - **A scoped transaction's `unset` reports its recomputed selectors.** The
+      parent value is now materialized by the selector's own read-through during
+      settlement rather than by a pre-settlement report pass, so a selector that
+      genuinely changed is emitted as part of the commit instead of being
+      consumed by a silent parent cascade.
+
+    `store.unset()` is not a transaction and is unchanged.
+
+- [#276](https://github.com/eigilsagafos/valdres/pull/276)
+  [`02e65c7`](https://github.com/eigilsagafos/valdres/commit/02e65c75328d88947e314933ca211c3da4dec9b7)
+  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! - Fix `unset`/`reset`
+  stranding a suspense placeholder on an atom with no default.
+
+    Reading an atom declared without a default (`atom<T>()`) hands the caller a
+    pending placeholder promise, resolved by the next write. Removing the
+    store's own value while that placeholder was live — `store.unset(atom)`, or
+    `store.reset(atom)` on a no-default atom — left the entry in place, and the
+    re-initialization on the next read minted a **second** placeholder over the
+    same key. Only the new one was ever resolved, so a consumer already
+    suspended on the first (`await store.get(atom)`, or a Suspense boundary)
+    hung forever:
+
+    ```ts
+    const a = atom<number>()
+    const suspense = store.get(a)
+    store.unset(a)
+    store.set(a, 7) // resolved a different placeholder
+    await suspense // hung
+    ```
+
+    Re-initialization now reuses the outstanding placeholder, so the suspended
+    reader is the one a later write resolves.
+
+- [#306](https://github.com/eigilsagafos/valdres/pull/306)
+  [`826fff9`](https://github.com/eigilsagafos/valdres/commit/826fff9d691bb3798504593abb03c6639580e4d0)
+  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! - Default
+  process-less CDN and edge runtimes to production mode so accepted writes skip
+  development-only deep-freezing, validation diagnostics, warnings, and
+  instrumentation. To retain those checks while debugging a process-less
+  runtime, bundlers can enable the `development` export condition; no-build CDN
+  consumers can load the development dist entry directly. The condition must be
+  applied consistently when framework adapters are present. Environments with
+  `process.env` continue to honor `NODE_ENV`.
+
+- [#297](https://github.com/eigilsagafos/valdres/pull/297)
+  [`0b3fb58`](https://github.com/eigilsagafos/valdres/commit/0b3fb58ad8dfc2a88dacddade17ee03a8177cdb9)
+  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! - Reject
+  non-JSON-safe atomFamily args in `dehydrate` (dev builds). Family args cross
+  the wire raw — schemas encode member values, not keys — and `hydrate`
+  re-derives each member with `family(...args)` from the parsed payload. A
+  `Date`, `Map`, `Set`, `BigInt`, `NaN`, `-0` or `undefined` argument does not
+  survive that round-trip, so the entry silently hydrated onto a phantom member
+  (or made `JSON.stringify` throw). Containers are checked by their own keys too
+  — a `toJSON` hook, an array expando, or a symbol-keyed property changes the
+  parsed result just as surely. Dev-mode `dehydrate` now throws a `TypeError`
+  naming the family and the argument path, e.g. `args[1].at[0] is a Date`.
+  Production behaviour is unchanged.
+
+- [#293](https://github.com/eigilsagafos/valdres/pull/293)
+  [`7d135d7`](https://github.com/eigilsagafos/valdres/commit/7d135d74e89e74b168459de6c08e417a2db2ce75)
+  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! - Prevent rejected
+  async atom writes from restoring a settled Promise without a live settlement
+  coordinator. Promise fallbacks from earlier writes, async function or selector
+  defaults, and parent scopes now converge to a settled atom value, including
+  for dependent selectors, without retaining completed coordinator chains.
+
+- [#266](https://github.com/eigilsagafos/valdres/pull/266)
+  [`f672be4`](https://github.com/eigilsagafos/valdres/commit/f672be49cd3cfc2fd0e0b8ae069d8c46f34dcb94)
+  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! - Reuse bounded,
+  frame-local graph worklists for selector scheduling and exact cyclic-liveness
+  reconciliation. A changed-seed closure scheduler evaluates ordinary acyclic
+  selectors once against finalized upstream values while no-op multi-seed writes
+  stop before downstream discovery. Dynamic dependency replacement, re-entrant
+  writes, and convergent cyclic fallback behavior remain supported.
+
+- [#260](https://github.com/eigilsagafos/valdres/pull/260)
+  [`756fd96`](https://github.com/eigilsagafos/valdres/commit/756fd96a31119c72ae4eb69d3b3ca35e1efc8bbc)
+  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! - Async atom
+  settlements no longer take the heavier observer propagation and reporting path
+  when the only `onChange` or `onCommitEnd` listeners are attached to unrelated
+  store trees. An otherwise unobserved async atom now settles on the lightweight
+  path, while listeners on the affected store tree still select the observer
+  path as before.
+
+- [#267](https://github.com/eigilsagafos/valdres/pull/267)
+  [`84d73fc`](https://github.com/eigilsagafos/valdres/commit/84d73fcf6083cd39dfc914b0f2b89328d4ceff7e)
+  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! - A throw during
+  commit-forest settlement collection no longer leaves the commit depth above
+  zero, which previously silenced all future `onCommitEnd` delivery. Multi-root
+  commit boundaries now close even when an earlier root or listener throws, and
+  the first error thrown is still the one propagated.
+
+- [#263](https://github.com/eigilsagafos/valdres/pull/263)
+  [`dddcafd`](https://github.com/eigilsagafos/valdres/commit/dddcafd33a35e7d14934dfb508bbbf4a583922bb)
+  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! - Cross-scope
+  transaction commits now execute one tree-level CommitPlan that settles each
+  affected store exactly once against the union of its own writes, inherited
+  changes, and any folded global-peer updates. Observable deltas: a selector
+  spanning several scopes evaluates once per store per commit instead of once
+  per reaching pass (an async spanning selector creates one promise per commit
+  instead of two); a custom `equal` receives the same per-reaching-pass trigger
+  sets as before — consulted in reaching order for exactly the groups whose
+  dirty chain reached that selector — so an impure predicate counting calls sees
+  fewer of them; a global peer that is itself part of the transaction's store
+  tree settles once instead of once in the peer pass and again in the tree; and
+  an unset-report failure during a cross-scope commit records into first-error
+  commit arbitration (and no longer starves other stores' settlement) instead of
+  escaping raw. Subscriber delivery order, first-error arbitration, and onChange
+  payload order keep their historical per-reaching- group causal positions.
+
+- [#289](https://github.com/eigilsagafos/valdres/pull/289)
+  [`348aa80`](https://github.com/eigilsagafos/valdres/commit/348aa80c882ef3f566f800d2c1ea950af28e8814)
+  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! - Fix stale selector
+  reads across transaction levels. A scoped transaction evaluates selectors
+  through its parent's draft, but a write only marked its own level's cache
+  dirty — so a root-level `set` left a scope (and a `parentScope` write left the
+  scope that opened it) serving the pre-write value for the rest of the
+  transaction. Writes now invalidate every selector cache in the working tree.
+
+- [#292](https://github.com/eigilsagafos/valdres/pull/292)
+  [`f8bf47e`](https://github.com/eigilsagafos/valdres/commit/f8bf47e829ec22e217f5d996dbb8d7bff3ad4af6)
+  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! - Fix family-index
+  membership for atoms lazily initialized inside a transaction. Reading an
+  uninitialized family member with `txn.get(family(key))` wrote its default into
+  committed store data but never registered the member in the family index, so
+  the member held a value while being permanently absent from `get(family)`.
+
+    A lazy init inside a transaction now produces exactly the observable result
+    of the direct read it stands in for — membership, dependent-selector values,
+    subscriber and `onCommitEnd` notifications, notification ORDER, and
+    `onChange` (which stays silent for a lazy read, while real writes in the
+    same transaction still report) — whilst coalescing into the transaction's
+    single commit, so each observer fires at most once.
+
+    This holds inside a scope too, where a `del` or `unset` of an inherited
+    member touches no local value: the family index's tombstone, not a local
+    cleanup set or the presence of a value further up the chain, decides whether
+    a member survives.
+
+    Membership is staged into the working index while the transaction is open,
+    and the members no value-changing write carried are settled by the commit
+    itself as a trigger group on its plan — one that counts as commit work even
+    when it is the only group, so a lazy read of an already-registered member
+    still notifies. Being part of the commit is what makes subscribers precede
+    `onChange` and brings the engine's error continuation to bear: a throwing
+    subscriber, hook, or `equal` can no longer leave a member holding a value
+    with no membership, and the repair such a failure triggers neither
+    resurrects a member the transaction deleted nor reports commit-end twice.
+    Aborting settles the tree the same way — collected and marked terminal
+    first, then settled behind one boundary with one notification phase, so no
+    callback observes a half-settled tree or reaches a still-open context.
+
+- [#303](https://github.com/eigilsagafos/valdres/pull/303)
+  [`9123fef`](https://github.com/eigilsagafos/valdres/commit/9123fef350a0816a3073fa67e8a738616290b6be)
+  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! - Stop
+  `selectorFamily` from retaining every member it has created. Both the
+  canonical key cache and string fast-path cache now hold selector identities
+  weakly, so an unreferenced member and its captured arguments, getter, cached
+  value, dependency graph, and encoded key can be reclaimed. Weakening and
+  bounded-group finalizer registration are batched outside the synchronous
+  creation path.
+
+    Member identity remains stable while a caller or live store retains it. Once
+    a member becomes unreachable, garbage collection may reclaim it and a later
+    call may create a fresh identity. `release(...args)` remains available for
+    explicit early cache eviction.
+
 ## 1.0.0-beta.17
 
 ### Minor Changes

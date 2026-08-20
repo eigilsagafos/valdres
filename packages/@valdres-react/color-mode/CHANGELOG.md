@@ -1,5 +1,27 @@
 # @valdres-react/color-mode
 
+## 0.3.0-beta.2
+
+### Patch Changes
+
+- [#304](https://github.com/eigilsagafos/valdres/pull/304)
+  [`2539b82`](https://github.com/eigilsagafos/valdres/commit/2539b82d95c7f1329f17a9a2740eef5bbb5be690)
+  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! - Ship ESM
+  declarations with explicit `.js` import specifiers so package exports resolve
+  for Node16 and NodeNext TypeScript consumers with library checking enabled.
+
+- [#305](https://github.com/eigilsagafos/valdres/pull/305)
+  [`40a0998`](https://github.com/eigilsagafos/valdres/commit/40a0998a019653f3a94fd310b8a143879ecae5b7)
+  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! - Fix published
+  metadata for CommonJS `require(esm)` and legacy TypeScript resolution, declare
+  Node.js 22.12 or newer, and preserve Valdres's runtime duplicate-instance
+  guard during tree-shaking.
+- Updated dependencies
+  [[`2539b82`](https://github.com/eigilsagafos/valdres/commit/2539b82d95c7f1329f17a9a2740eef5bbb5be690),
+  [`40a0998`](https://github.com/eigilsagafos/valdres/commit/40a0998a019653f3a94fd310b8a143879ecae5b7)]:
+    - valdres-react@1.0.0-beta.4
+    - @valdres/color-mode@1.0.0-beta.6
+
 ## 0.3.0-beta.1
 
 ### Patch Changes
