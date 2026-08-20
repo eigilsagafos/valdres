@@ -23,8 +23,10 @@ jobs:
             - uses: oven-sh/setup-bun@v2
               with:
                   # Pinned to the Bencher benchmark runners (bencher-{base,pr}.yml)
-                  # so the architecture/memory gates measure the same engines the
-                  # perf lanes and their committed baselines are calibrated on.
+                  # so the architecture/memory gates and the perf lanes all measure
+                  # the same engine. The committed retained-memory baseline is still
+                  # calibrated on 1.3.14 (see ARCHITECTURE_PERFORMANCE.md) and holds
+                  # under 1.4.0 pending a deliberate recalibration.
                   bun-version: 1.4.0
             - uses: actions/setup-node@v6
               with:
