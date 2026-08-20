@@ -2,9 +2,10 @@ import type { StoreData } from "../types/StoreData"
 import type { StoreOptions } from "../types/StoreOptions"
 import { BORROWED_STORE_RUNTIME, STORE_RUNTIME } from "./storeRuntimeKey"
 import { createStoreTreeRuntime } from "./storeTreeRuntime"
+import { valdresGlobal } from "./valdresGlobal"
 
-let nextId = 0
-const generateId = () => "__valdres_store_" + nextId++
+const runtime = valdresGlobal().runtime
+const generateId = () => "__valdres_store_" + runtime.nextStoreId++
 
 function makeLazyGetter(key: string, factory: () => any = () => new WeakMap()) {
     return {

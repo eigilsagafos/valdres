@@ -12,7 +12,11 @@ import {
     unmountOrphanedDeps,
 } from "./graph"
 
-const equalCheckCount = Symbol()
+// The Set can live on adopted StoreData while add/remove run in different
+// package copies, so its semantic count key must be shared too.
+const equalCheckCount: unique symbol = Symbol.for(
+    "valdres.subscriptionEqualCheckCount",
+)
 type CountedSubscriptions = Set<Subscription> & {
     [equalCheckCount]?: number
 }

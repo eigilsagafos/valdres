@@ -20,8 +20,11 @@ every store that touches it.
 
 `options.name` is required — it is the family's global address. Re-defining a
 family under the same name returns the existing family instead of creating a
-second one, so calling `globalAtomFamily` again with the same name is safe
-(and idempotent) wherever it happens.
+second one. The first definition wins: its default and options remain active,
+and a development build warns that the later definition was ignored. This makes
+hot-module re-evaluation safe without silently changing live global state. A
+detectable contract mismatch, such as reusing an atom's name or changing the
+detectable `keyOf` arity, throws instead.
 
 ## Usage
 

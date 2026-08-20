@@ -93,11 +93,16 @@ but does not invalidate references or store entries that are already live.
 
 ## Runtime and global-name singletons
 
-Valdres permits one core runtime graph per JavaScript global. The first import
-claims a `globalThis` instance slot; loading another copy throws, even when the
-copies have the same version. This guard prevents split stores, registries, and
-adapter commit coordination. It also means the default and `development` graphs
-must not be mixed in one application.
+Valdres permits multiple copies of the same known version in one JavaScript
+global. The first import claims a `globalThis` instance slot; later copies of
+that version adopt its process-wide `globalStore`, backing store data, name
+registry, and global-family registry. This keeps global state unified when a
+dependency graph happens to bundle Valdres more than once.
+
+Different versions still throw with deduplication guidance. A duplicate also
+throws when either copy's version is unknown, which is the case for unbuilt
+source unless the build injects `process.env.VALDRES_VERSION`: without two known
+versions, Valdres cannot establish that the engine contracts are compatible.
 
 Names on atoms and atom families are global addresses used by state transfer,
 not debug labels with module-local scope. They must be unique. Recreating an
@@ -106,11 +111,12 @@ registered definition.
 
 A `globalAtomFamily` has intentional singleton-by-name behavior: recreating it
 under the same name returns the original family, and the later default factory
-and options do not replace the first definition. This also defines its HMR
-behavior. During a hot update, the global family keeps the definition that was
-registered first; perform a full page or process reload to apply edits to that
-definition. Do not rely on HMR to migrate live global state or redefine a
-global family.
+and options do not replace the first definition. Development builds warn when
+this happens. This also defines its HMR behavior: during a hot update, the
+global family keeps the definition that was registered first; perform a full
+page or process reload to apply edits to that definition. A detectable contract
+mismatch is never reused: an atom already registered under the name, or a later
+`keyOf` with a different detectable arity, throws instead.
 
 The instance guard and name registry live on the JavaScript global, so workers,
 iframes, and separate server processes each have their own instance and

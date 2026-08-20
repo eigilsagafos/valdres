@@ -6,7 +6,7 @@ import { valdresGlobal } from "./valdresGlobal"
 // registry's existing ownership model while letting a store record the exact
 // address registered for a state (rather than trusting its mutable `name`
 // property later).
-const registeredNames = new WeakMap<WeakKey, string>()
+const registeredNames = valdresGlobal().runtime.registeredNames
 
 export const getRegisteredName = (
     state: Atom<any> | AtomFamily<any>,

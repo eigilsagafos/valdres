@@ -50,6 +50,8 @@ const GRAPH_LEAF_ALLOWLIST = new Set([
     "src/lib/stateRevisions.ts",
     "src/lib/getStoreRuntime.ts",
     "src/lib/storeRuntimeKey.ts",
+    // Shared-runtime registry; zero runtime imports of its own.
+    "src/lib/valdresGlobal.ts",
     // Symbol-only leaf, zero imports of its own — reached via storeLifecycle,
     // exactly like storeRuntimeKey.
     "src/lib/storeCancellableKey.ts",
@@ -57,6 +59,8 @@ const GRAPH_LEAF_ALLOWLIST = new Set([
     "src/utils/isAtom.ts",
     "src/utils/isAtomFamily.ts",
     "src/errors/StoreDisposedError.ts",
+    // Shared error-brand helper; zero imports of its own.
+    "src/errors/lib/errorBrand.ts",
 ])
 
 /** Production files allowed to write graph-table fields directly. */

@@ -23,19 +23,19 @@ import { settleCommitForest } from "./propagateUpdatedAtoms"
 import { subscribe } from "./subscribe"
 import { detachOwnValue } from "./unsetValue"
 import { globalStore } from "../globalStore"
+import { globalStoreRuntime } from "./globalStoreRuntime"
 import {
     isStoreDisposed,
     trackTouchedGlobal,
     untrackTouchedGlobal,
 } from "./storeLifecycle"
-import { getStoreData } from "./getStoreData"
 
 export const globalAtom = <Value = unknown>(
     defaultValue: AtomDefaultValue<Value>,
     options: AtomOptions<Value>,
 ) => {
     const stores = new Set<StoreData>()
-    const globalStoreData = getStoreData(globalStore)
+    const globalStoreData = globalStoreRuntime.data
     const userOnSet = options.onSet
 
     const attach = (data: StoreData) => {

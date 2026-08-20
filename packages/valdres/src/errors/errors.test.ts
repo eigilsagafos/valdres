@@ -73,4 +73,46 @@ describe("public error classes", () => {
             "Anonymous Selector",
         )
     })
+
+    test("custom instanceof handling preserves subclass identity", () => {
+        class SpecializedSchemaError extends SchemaValidationError {}
+        class SpecializedSelectorError extends SelectorEvaluationError {}
+        class SpecializedCircularError extends SelectorCircularDependencyError {}
+        class SpecializedStoreError extends StoreDisposedError {}
+        class SpecializedSuspendError extends SuspendAndWaitForResolveError {}
+        const state = atom(0)
+        const promise = Promise.resolve()
+
+        expect(
+            new SchemaValidationError(new Error("invalid"), state),
+        ).not.toBeInstanceOf(SpecializedSchemaError)
+        expect(new SelectorEvaluationError()).not.toBeInstanceOf(
+            SpecializedSelectorError,
+        )
+        expect(new SelectorCircularDependencyError()).not.toBeInstanceOf(
+            SpecializedCircularError,
+        )
+        expect(new StoreDisposedError("base")).not.toBeInstanceOf(
+            SpecializedStoreError,
+        )
+        expect(new SuspendAndWaitForResolveError(promise)).not.toBeInstanceOf(
+            SpecializedSuspendError,
+        )
+
+        expect(
+            new SpecializedSchemaError(new Error("invalid"), state),
+        ).toBeInstanceOf(SpecializedSchemaError)
+        expect(new SpecializedSelectorError()).toBeInstanceOf(
+            SpecializedSelectorError,
+        )
+        expect(new SpecializedCircularError()).toBeInstanceOf(
+            SpecializedCircularError,
+        )
+        expect(new SpecializedStoreError("specialized")).toBeInstanceOf(
+            SpecializedStoreError,
+        )
+        expect(new SpecializedSuspendError(promise)).toBeInstanceOf(
+            SpecializedSuspendError,
+        )
+    })
 })

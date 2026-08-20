@@ -4,6 +4,7 @@ import type { State } from "../types/State"
 import type { StoreData } from "../types/StoreData"
 import type { StoreCancellable } from "./storeCancellableKey"
 import { CANCEL_ON_STORE_DISPOSE } from "./storeCancellableKey"
+import { valdresGlobal } from "./valdresGlobal"
 
 /**
  * The store's resource ledger: everything acquired at runtime that disposal has
@@ -38,16 +39,18 @@ export type StoreResources = {
  *  released. A symbol (not an object) so the type system forces every reader to
  *  narrow before touching a field — the sentinel is shared process-wide and
  *  must never be mutated. */
-export const DISPOSED_STORE_RESOURCES = Symbol("valdres.disposedStore")
-export const DISPOSED_STORE_PENDING = new Set<WeakKey>()
+export const DISPOSED_STORE_RESOURCES: unique symbol = Symbol.for(
+    "valdres.disposedStore",
+)
+export const DISPOSED_STORE_PENDING =
+    valdresGlobal().runtime.disposedStorePending
 
 export type StoreLifecycle =
     | StoreResources
     | typeof DISPOSED_STORE_RESOURCES
     | undefined
 
-const disposedStoreTokens = new WeakMap<StoreData, object>()
-const disposedErrorTokens = new WeakMap<StoreDisposedError, object>()
+const { disposedStoreTokens, disposedErrorTokens } = valdresGlobal().runtime
 
 /** Live resources, or undefined once the store reached its terminal marker. */
 const resourcesFor = (data: StoreData): StoreResources | undefined => {
