@@ -181,9 +181,13 @@ disposal. These are retained-heap leak/regression gates, not total-allocation or
 RSS measurements.
 
 Observed medians below are bytes per retained unit from an interleaved local
-base/head comparison on Bun 1.3.14 and Node 24.16.0; benchmark CI pins the same
-versions. Ceilings are runtime-specific because the heaps differ, but are
-normalized per scenario unit and leave roughly 25–30% above the observed median.
+base/head comparison on Bun 1.3.14 and Node 24.16.0. Benchmark CI now pins Bun
+1.4.0, where the suite still passes under every ceiling — medians shift slightly
+downward (e.g. single-store transactions 232 → 149 B/unit) from JSC heap-layout
+changes, so these 1.3.14 baselines stand as valid upper references pending a
+deliberate recalibration. Ceilings are runtime-specific because the heaps
+differ, but are normalized per scenario unit and leave roughly 25–30% above the
+observed median.
 Released heap has a fixed ceiling: 512 KiB on Bun and 256 KiB on Node.
 
 Calibration note (single-store transactions, Bun): JSC's
