@@ -35,8 +35,8 @@
         "bun": ">=1.4.0"
     },
     "devDependencies": {
-        "@changesets/changelog-github": "^0.6.0",
-        "@changesets/cli": "^2.30.0",
+        "@changesets/changelog-github": "^1.0.0",
+        "@changesets/cli": "^3.0.1",
         "@codesandbox/sandpack-react": "^2.20.0",
         "@mdx-js/mdx": "^3.1.1",
         "@radix-ui/react-slider": "^1.3.6",

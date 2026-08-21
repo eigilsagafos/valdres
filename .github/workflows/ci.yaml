@@ -390,12 +390,19 @@ jobs:
               # (repo eigilsagafos/valdres, workflow .github/workflows/ci.yaml,
               # environment npm-publish). Brand-new package names still need a
               # one-off manual first publish before OIDC can take over.
-              uses: changesets/action@v1
+              uses: changesets/action@v2
               with:
-                  version: bun run version-packages
-                  publish: bash scripts/ci-publish.sh
-              env:
-                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+                  version-script: bun run version-packages
+                  publish-script: bash scripts/ci-publish.sh
+                  # v2 defaults to pushing the release commit and tags through
+                  # the GitHub API, which never checks the release branch out
+                  # locally. The benchmark-safe step below authorizes a commit
+                  # only after reading it back from the local clone, so keep the
+                  # Git CLI push mode v1 used.
+                  push-with-git-cli: true
+                  # v2 dropped the GITHUB_TOKEN environment variable: a token
+                  # only counts when passed through this input.
+                  github-token: ${{ secrets.GITHUB_TOKEN }}
 
             # Pull requests created with GITHUB_TOKEN can require approval and
             # do not reliably emit the workflow_run event used by the trusted
@@ -403,11 +410,11 @@ jobs:
             # so pre-authorize only the exact commit after proving that every
             # changed path is generated release metadata.
             - name: Mark generated release pull request benchmark-safe
-              if: steps.changesets.outputs.pullRequestNumber != ''
+              if: steps.changesets.outputs.pr-number != ''
               uses: actions/github-script@v9
               env:
                   RELEASE_PR_NUMBER:
-                      ${{ steps.changesets.outputs.pullRequestNumber }}
+                      ${{ steps.changesets.outputs.pr-number }}
               with:
                   script: |
                       const pullNumber = Number(process.env.RELEASE_PR_NUMBER);
@@ -486,9 +493,13 @@ jobs:
                       if (files.length === 0 || files.length > 500) {
                           throw new Error(`Unexpected generated release file count: ${files.length}`);
                       }
+                      // Changesets v3 keeps prerelease changesets it has already
+                      // versioned in `.changeset/pre/` instead of listing their
+                      // ids in `pre.json`, so a release commit moves files into
+                      // that folder as well.
                       const generatedReleasePath = path =>
                           path === '.changeset/pre.json' ||
-                          /^\.changeset\/[a-z0-9-]+\.md$/.test(path) ||
+                          /^\.changeset\/(?:pre\/)?[a-z0-9-]+\.md$/.test(path) ||
                           path === 'bun.lock' ||
                           /^packages\/(?:@[^/]+\/)?[^/]+\/(?:CHANGELOG\.md|package\.json)$/.test(path);
                       const unexpected = files

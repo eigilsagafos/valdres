@@ -29,6 +29,13 @@ does the versioning, and the publish workflow publishes after that PR merges.
 The first `rc` prerelease may be numbered `1.0.0-rc.0` by Changesets; it is the
 RC1 milestone in this document.
 
+Changesets keeps every changeset it has already versioned into a prerelease in
+`.changeset/pre/`, not in `pre.json`. Those files survive `pre exit`/`pre enter`
+and are consumed by the release that leaves prerelease mode, which is what makes
+the stable changelog cover the whole beta and rc history. Treat that folder as
+release state: don't bulk-delete it, and only remove an individual file if the
+change it describes genuinely no longer applies to the stable release.
+
 After RC2 has passed every gate and the stable-release conditions below are met,
 leave prerelease mode once more:
 

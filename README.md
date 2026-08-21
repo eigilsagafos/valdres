@@ -127,7 +127,7 @@ To preview what publishing would do locally:
 bun run verify-publish
 ```
 
-The repo is currently in `beta` prerelease mode (`bunx changeset pre exit` to graduate to stable).
+The repo is currently in `beta` prerelease mode (`bunx changeset pre exit` to graduate to stable). While in prerelease mode, changesets that have already been versioned into a `beta` release move to `.changeset/pre/`, where they stay until the stable release consumes them — leave them alone unless a change genuinely no longer applies.
 
 ## Benchmarks
 

@@ -264,8 +264,13 @@ describe("trusted generated-release pull requests", () => {
         )
         expect(publish).toContain("id: changesets")
         expect(publish).toContain(
-            "if: steps.changesets.outputs.pullRequestNumber != ''",
+            "if: steps.changesets.outputs.pr-number != ''",
         )
+        // The local-clone checks below only hold while the action pushes the
+        // release commit with the Git CLI. changesets/action@v2 defaults to
+        // pushing through the GitHub API, which never checks the release
+        // branch out, so dropping this input silently breaks the gate.
+        expect(publish).toContain("push-with-git-cli: true")
         expect(publish).toContain(
             "exec.getExecOutput('git', ['rev-parse', 'HEAD']",
         )
@@ -276,7 +281,7 @@ describe("trusted generated-release pull requests", () => {
         expect(publish).toContain("candidate.state !== 'open'")
         expect(publish).toContain("files.length === 0 || files.length > 500")
         expect(publish).toContain("path === '.changeset/pre.json'")
-        expect(publish).toContain("[a-z0-9-]+\\.md")
+        expect(publish).toContain("(?:pre\\/)?[a-z0-9-]+\\.md")
         expect(publish).toContain("path === 'bun.lock'")
         expect(publish).toContain("CHANGELOG\\.md|package\\.json")
         expect(publish).toContain(
@@ -285,7 +290,7 @@ describe("trusted generated-release pull requests", () => {
         expect(publish).toContain("name: 'benchmark_pr'")
         expect(publish).toContain("head_sha: releaseSha")
 
-        const changesets = publish.indexOf("uses: changesets/action@v1")
+        const changesets = publish.indexOf("uses: changesets/action@v2")
         const localSha = publish.indexOf("exec.getExecOutput('git', [")
         const remoteRef = publish.indexOf("github.rest.git.getRef")
         const changedFiles = publish.indexOf("github.rest.pulls.listFiles")
