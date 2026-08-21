@@ -169,12 +169,25 @@ const ownedByScope = (world: World, scope: any) => {
     return { atoms, created, deleted }
 }
 
+/** Entries appearing more than once — one commit must report a given state in a
+ *  given scope at most once, whatever internal channel carried it. */
+const duplicatesIn = (entries: string[]): string[] => {
+    const seen = new Set<string>()
+    const duplicates: string[] = []
+    for (const entry of entries) {
+        if (seen.has(entry)) duplicates.push(entry)
+        else seen.add(entry)
+    }
+    return duplicates
+}
+
 type Coverage = {
     ownedSomething: number
     ownedAtoms: number
     ownedCreated: number
     ownedDeleted: number
     notifiedOnRevert: number
+    reportedOnRevert: number
 }
 
 const runSeed = (seed: number, viaTransaction: boolean, coverage: Coverage) => {
@@ -239,6 +252,24 @@ const runSeed = (seed: number, viaTransaction: boolean, coverage: Coverage) => {
     const subjectChildWatch = watch(world, subjectChild)
     const controlChildWatch = watch(world, controlChild)
 
+    // Every change the revert reports. Checked for DUPLICATES rather than
+    // against the control (which reports nothing, having changed nothing): a
+    // commit that carries one member through two channels is invisible to a
+    // read-based oracle and to subscribers — a subscription fires once per
+    // commit regardless — but it reaches an onChange consumer twice.
+    const reported: string[] = []
+    const stopReporting = root.onChange(changes => {
+        for (const change of changes) {
+            const state: any = change.state
+            const id = state?.familyArgs
+                ? `member:${state.familyArgs.join(",")}`
+                : `atom:${world.atoms.indexOf(state)}`
+            reported.push(
+                `${(change as any).kind}|${id}|${change.scope.join("/")}`,
+            )
+        }
+    })
+
     let mixedWrite = false
     if (viaTransaction) {
         root.txn(txn => {
@@ -253,6 +284,13 @@ const runSeed = (seed: number, viaTransaction: boolean, coverage: Coverage) => {
     } else {
         subject.unsetAll()
     }
+
+    stopReporting()
+    expect({ seed, duplicates: duplicatesIn(reported) }).toStrictEqual({
+        seed,
+        duplicates: [],
+    })
+    if (reported.length > 0) coverage.reportedOnRevert++
 
     if (subjectWatch.drain().length > 0) coverage.notifiedOnRevert++
     // Nothing touched the control, so nothing may reach its subscribers — the
@@ -323,6 +361,7 @@ const emptyCoverage = (): Coverage => ({
     ownedCreated: 0,
     ownedDeleted: 0,
     notifiedOnRevert: 0,
+    reportedOnRevert: 0,
 })
 
 const SEEDS = 2000
@@ -335,6 +374,7 @@ const assertCoverage = (coverage: Coverage) => {
     expect(coverage.ownedCreated).toBeGreaterThan(SEEDS * 0.5)
     expect(coverage.ownedDeleted).toBeGreaterThan(SEEDS * 0.3)
     expect(coverage.notifiedOnRevert).toBeGreaterThan(SEEDS * 0.5)
+    expect(coverage.reportedOnRevert).toBeGreaterThan(SEEDS * 0.5)
 }
 
 describe("unsetAll differential fuzz", () => {

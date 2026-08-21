@@ -30,12 +30,15 @@ export type CommitForestEntry = {
      * it. The engine's own entry literals still set it explicitly, keeping one
      * object shape across every commit. */
     unsetMembershipDrops?: Set<AtomFamilyAtom<any, any>> | undefined
-    /** Members that entered or left this store's atom-family membership because
-     * `unsetAll` reverted its family index. They carry no value write of their
-     * own — a member coming back is a scope-local `del` being undone, and its
-     * value lives in the parent — so this is the only channel that can notify
-     * their family's subscribers and report them. Optional for the same reason
-     * as `unsetMembershipDrops`. */
+    /** Members whose atom-family membership changed because `unsetAll` reverted
+     * this store's family index, and that no other group in the commit carries.
+     * In practice that is the members coming BACK — a scope-local `del` being
+     * undone — which have no value write anywhere (their value lives in the
+     * parent), so this is the only channel that can notify their family's
+     * subscribers and report them. Members that LEFT are excluded: the revert
+     * unset their values, so the unset group already carries them, and emitting
+     * them here too would report each one twice. Optional for the same reason as
+     * `unsetMembershipDrops`. */
     familyMemberDelta?:
         | Map<AtomFamily<any>, Set<AtomFamilyAtom<any, any>>>
         | undefined

@@ -192,11 +192,14 @@ const applyFamilyIndexResets = (
         reverted.push(family)
         if (family.equal(before, staged)) continue
         changed.push(family)
-        // Which members entered or left. One that LEFT already notifies and
-        // reports through its own unset (the revert dropped its value); one
-        // that came BACK — a scope-local `del` reverted — has no value write
-        // anywhere, so this delta is the only thing that can carry it.
-        const delta = symmetricMemberDifference(before, staged)
+        // Which members changed membership and are NOT already carried by this
+        // commit's unsets. A member that LEFT is one the scope owned a value
+        // for — that is how it entered the scope's index — so the revert
+        // already staged its unset, which notifies and reports it; emitting it
+        // here too would double-report. A member that came BACK — a
+        // scope-local `del` being reverted — has no value write anywhere, so
+        // this delta is the only thing that can carry it.
+        const delta = unreportedMemberDelta(before, staged, draft.unsets)
         if (delta.size === 0) continue
         if (!memberDelta) memberDelta = new Map()
         memberDelta.set(family, delta)
@@ -204,15 +207,29 @@ const applyFamilyIndexResets = (
     return { changed, reverted, memberDelta }
 }
 
-/** Members present in exactly one of two rendered membership snapshots. */
-const symmetricMemberDifference = (
+/** Members present in exactly one of two rendered membership snapshots, minus
+ *  any the commit already reports through `unsets`.
+ *
+ *  Subtracting the unsets is what keeps this a delta-ONLY channel: it exists for
+ *  membership changes no other part of the commit can carry, and a member the
+ *  revert also unset is carried by that. Filtering on the STAGED unsets rather
+ *  than the write phase's outcome is exact here — a member can only appear in
+ *  `before` by being in this store's own index, which it only reaches by having
+ *  a value written here, so its unset always finds one to detach. */
+const unreportedMemberDelta = (
     before: readonly AtomFamilyAtom<any, any>[] | undefined,
     after: readonly AtomFamilyAtom<any, any>[],
+    unsets: Set<Atom<any>> | undefined,
 ): Set<AtomFamilyAtom<any, any>> => {
     const delta = new Set<AtomFamilyAtom<any, any>>(after)
     if (before) {
         for (const member of before) {
             if (!delta.delete(member)) delta.add(member)
+        }
+    }
+    if (unsets) {
+        for (const member of unsets) {
+            delta.delete(member as AtomFamilyAtom<any, any>)
         }
     }
     return delta

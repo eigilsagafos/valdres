@@ -109,6 +109,65 @@ describe("unsetAll notification", () => {
         ])
     })
 
+    test("a member that LEFT is reported exactly once, not twice", () => {
+        // The member's value drop already reports it through the unset channel.
+        // The membership delta exists only for members no other channel can
+        // carry, so it must not re-emit this one.
+        const entity = atomFamily<string, [string]>(id => `default:${id}`)
+        const root = store()
+        root.set(entity("kept"), "r")
+        const draft = root.scope("draft")
+        draft.set(entity("draft-only"), "d")
+
+        const changes: any[] = []
+        root.onChange(reported => changes.push(...reported))
+
+        draft.unsetAll()
+
+        expect(changes).toStrictEqual([
+            {
+                type: "atom",
+                kind: "unset",
+                state: entity("draft-only"),
+                value: "default:draft-only",
+                scope: ["draft"],
+            },
+        ])
+    })
+
+    test("a family subscriber still hears about a member that left, once", () => {
+        const entity = atomFamily<string, [string]>(id => `default:${id}`)
+        const root = store()
+        const draft = root.scope("draft")
+        draft.set(entity("draft-only"), "d")
+
+        const seen: string[][] = []
+        draft.sub(entity, (...args: any[]) => seen.push(args))
+
+        draft.unsetAll()
+
+        expect(seen).toStrictEqual([["draft-only"]])
+    })
+
+    test("a mixed revert reports each member exactly once", () => {
+        const entity = atomFamily<string, [string]>(id => `default:${id}`)
+        const root = store()
+        root.set(entity("shadowed"), "root-shadowed")
+        root.set(entity("deleted"), "root-deleted")
+        const draft = root.scope("draft")
+        draft.set(entity("shadowed"), "draft-shadowed")
+        draft.set(entity("added"), "draft-added")
+        draft.del(entity("deleted"))
+
+        const changes: any[] = []
+        root.onChange(reported => changes.push(...reported))
+
+        draft.unsetAll()
+
+        const perMember = changes.map(c => c.state.familyArgs[0]).sort()
+        expect(perMember).toStrictEqual(["added", "deleted", "shadowed"])
+    })
+
     test("a direct store.unsetAll() reports source 'unset'", () => {
         const title = atom("root")
         const root = store()

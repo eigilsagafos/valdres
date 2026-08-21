@@ -948,13 +948,15 @@ const settleTreeStore = (
             )
     }
 
-    // Members that entered or left because `unsetAll` reverted this store's
-    // family index. A member coming BACK (a scope-local `del` undone) has no
-    // value write anywhere — its value lives in the parent — so it appears in
-    // no other group, and without this its family's subscribers never learn the
-    // membership changed. Collected as its own group so its subscribers and its
-    // report keep the revert's own provenance; the index itself is already
-    // final (the write phase reset it), so nothing is registered here.
+    // Membership changes from `unsetAll` reverting this store's family index
+    // that no other group carries — in practice the members coming BACK (a
+    // scope-local `del` undone), which have no value write anywhere, so without
+    // this their family's subscribers never learn the membership changed. The
+    // members that LEFT are deliberately absent: the revert unset their values,
+    // so the unset group above already notifies and reports them. Collected as
+    // its own group so its subscribers and its report keep the revert's own
+    // provenance; the index itself is already final (the write phase reset it),
+    // so nothing is registered here.
     let memberDeltaGroup: OwnStyleGroup | undefined
     const familyMemberDelta = entry?.familyMemberDelta
     if (familyMemberDelta) {
