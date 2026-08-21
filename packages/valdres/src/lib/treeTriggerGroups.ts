@@ -289,19 +289,57 @@ export const collectOwnStyleGroup = (
 // member-change subscriptions and always collect; family DEPENDENTS run only
 // when membership actually changed. Reads the group's `directSubs` slot, which
 // is why it takes the `OwnStyleGroup` rather than a bare index.
+/** `all` minus `drops`, reusing `all` when nothing is dropped — the common case
+ *  even during an `unsetAll`, since only the reverting store's own members are
+ *  ever listed. */
+const withoutDrops = (
+    all: Set<AtomFamilyAtom<any>>,
+    drops: Set<AtomFamilyAtom<any>>,
+): Set<AtomFamilyAtom<any>> => {
+    let kept: Set<AtomFamilyAtom<any>> | undefined
+    for (const atom of all) {
+        if (drops.has(atom)) {
+            if (!kept) {
+                kept = new Set()
+                for (const earlier of all) {
+                    if (earlier === atom) break
+                    kept.add(earlier)
+                }
+            }
+            continue
+        }
+        kept?.add(atom)
+    }
+    return kept ?? all
+}
+
 export const applyFamilyAdds = (
     collector: TreeTriggerCollector,
     data: StoreData,
     collected: OwnStyleGroup,
     timestamp: number,
+    /** Members whose membership this group must not (re-)register — the family
+     *  half of `unsetAll`, which is reverting this store's index to its
+     *  parent's. Excluded before the add so a member the revert dropped is not
+     *  written straight back in by its own unset settlement.
+     *
+     *  Only the INDEX bookkeeping is skipped. The member's value genuinely
+     *  changed (it reverted to the parent's), so both its own subscribers —
+     *  collected with the group — and the family's subscribers still fire. */
+    membershipDrops?: Set<AtomFamilyAtom<any>>,
 ) => {
     const familyAtoms = collected.familyAtoms
     if (!familyAtoms) return
     const groupIndex = collected.index
     const subs = collector.directSubs[groupIndex]!
     const { selectors, provenance } = collector
-    for (const [family, atoms] of familyAtoms) {
+    for (const [family, all] of familyAtoms) {
+        // Collected for EVERY family in the group, before `membershipDrops`
+        // narrows what the index records: a family subscription is a
+        // member-change subscription and fires for a value-only write too.
         addSetToSet(data.subscriptions.get(family), subs)
+        const atoms = membershipDrops ? withoutDrops(all, membershipDrops) : all
+        if (atoms.size === 0) continue
         if (addFamilyAtomsToSet(family, atoms, data, timestamp)) {
             const dependents = data.stateDependents.get(family)
             if (dependents && dependents.size > 0) {

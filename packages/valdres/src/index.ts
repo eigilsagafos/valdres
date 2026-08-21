@@ -115,7 +115,12 @@ export type { SyncSetAtom } from "./types/SyncSetAtom"
 export type { State } from "./types/State"
 export type { Schema } from "./types/Schema"
 export type { StandardSchemaV1 } from "./types/StandardSchemaV1"
-export type { ScopedStore, ScopeFn, Store } from "./types/Store"
+export type {
+    BorrowedScopedStore,
+    ScopedStore,
+    ScopeFn,
+    Store,
+} from "./types/Store"
 export type { StoreOptions } from "./types/StoreOptions"
 export type { SubscribeFn } from "./types/SubscribeFn"
 export type {
@@ -126,6 +131,10 @@ export type {
 export type { StoreChangeCallback } from "./types/StoreChangeCallback"
 export type { StoreChangeMeta } from "./types/StoreChangeMeta"
 export type { StoreChangeSource } from "./types/StoreChangeSource"
-export type { Transaction } from "./types/Transaction"
+export type {
+    ScopedTransaction,
+    ScopedTransactionFn,
+    Transaction,
+} from "./types/Transaction"
 export type { TransactionFn } from "./types/TransactionFn"
 export type { TransactionInterface } from "./types/TransactionInterface"

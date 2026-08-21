@@ -36,6 +36,9 @@ export const buildCommitForest = (
             updatedAtoms: [],
             deleted: undefined,
             unsetAtoms: undefined,
+            unsetMembershipDrops: undefined,
+            familyMemberDelta: undefined,
+            familyIndexReverts: undefined,
             initAtoms: undefined,
             children: undefined,
         }
@@ -59,6 +62,37 @@ export const buildCommitForest = (
         if (entry.unsetAtoms) {
             if (node.unsetAtoms) node.unsetAtoms.push(...entry.unsetAtoms)
             else node.unsetAtoms = entry.unsetAtoms
+        }
+        if (entry.unsetMembershipDrops) {
+            // Two entries for one physical store can only come from separate
+            // plan sources; union their drops so a member either entry reverted
+            // stays out of the merged node's membership bookkeeping.
+            if (node.unsetMembershipDrops) {
+                // Copy rather than grow in place: the first entry's set is the
+                // transaction draft's own.
+                const merged = new Set(node.unsetMembershipDrops)
+                for (const atom of entry.unsetMembershipDrops) merged.add(atom)
+                node.unsetMembershipDrops = merged
+            } else node.unsetMembershipDrops = entry.unsetMembershipDrops
+        }
+        if (entry.familyMemberDelta) {
+            if (node.familyMemberDelta) {
+                const merged = new Map(node.familyMemberDelta)
+                for (const [family, members] of entry.familyMemberDelta) {
+                    const existing = merged.get(family)
+                    if (existing) {
+                        const union = new Set(existing)
+                        for (const member of members) union.add(member)
+                        merged.set(family, union)
+                    } else merged.set(family, members)
+                }
+                node.familyMemberDelta = merged
+            } else node.familyMemberDelta = entry.familyMemberDelta
+        }
+        if (entry.familyIndexReverts) {
+            if (node.familyIndexReverts)
+                node.familyIndexReverts.push(...entry.familyIndexReverts)
+            else node.familyIndexReverts = entry.familyIndexReverts
         }
         if (entry.initAtoms) {
             if (node.initAtoms) node.initAtoms.push(...entry.initAtoms)

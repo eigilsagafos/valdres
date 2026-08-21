@@ -14,6 +14,8 @@ import type { MutationDraft } from "../types/MutationDraft"
 export const createMutationDraft = (): MutationDraft => ({
     values: new Map(),
     unsets: undefined,
+    membershipFreeUnsets: undefined,
+    familyIndexResets: undefined,
     deletes: undefined,
     dirtyFamilyIndexes: undefined,
     initializedAtoms: undefined,
@@ -58,6 +60,10 @@ export const resetMutationDraft = (draft: MutationDraft): void => {
     draft.deletes = undefined
     draft.unsets?.clear()
     draft.unsets = undefined
+    draft.membershipFreeUnsets?.clear()
+    draft.membershipFreeUnsets = undefined
+    draft.familyIndexResets?.clear()
+    draft.familyIndexResets = undefined
     draft.selectorCache?.clear()
     draft.selectorCache = undefined
     draft.selectorCircularDependencies = undefined
@@ -67,7 +73,17 @@ export const resetMutationDraft = (draft: MutationDraft): void => {
     draft.hasCommitEffects = false
 }
 
-/** Unsets or deletes force the multi-pass settlement arm; plain staged values
- *  keep the bulk-write fast paths. */
+/** Unsets, deletes, or a reverted family index force the multi-pass settlement
+ *  arm; plain staged values keep the bulk-write fast paths.
+ *
+ *  A family-index revert (`unsetAll`) qualifies even though it stages no atom:
+ *  the bulk arms write `values` through the ordinary equality gate, and a revert
+ *  whose members were all inherited anyway renders to an equal member list while
+ *  still changing which store OWNS them — so its write must go through the
+ *  cleanup arm's `applyFamilyIndexResets`, which is unconditional. */
 export const draftHasCleanupMutations = (draft: MutationDraft): boolean =>
-    !!(draft.unsets?.size || draft.deletes?.size)
+    !!(
+        draft.unsets?.size ||
+        draft.deletes?.size ||
+        draft.familyIndexResets?.size
+    )

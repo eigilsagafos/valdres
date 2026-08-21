@@ -24,6 +24,18 @@ export type MutationDraft = {
     /** Unset tombstones: atoms whose own value is detached at commit so they
      *  revert (re-inherit on a scope, de-materialize on a root). */
     unsets: Set<Atom<any>> | undefined
+    /** The subset of `unsets` staged by `unsetAll`, i.e. family members whose
+     *  membership must NOT survive the revert. An ordinary `unset` keeps
+     *  membership (it resets a member's value, and the settlement re-registers
+     *  it); `unsetAll` is returning the scope's index to its parent's, so a
+     *  member re-registered by its own unset settlement would immediately undo
+     *  that. Read by the settlement's family-add bookkeeping and by
+     *  `stageLazyFamilyMemberships`. */
+    membershipFreeUnsets: Set<AtomFamilyAtom<any, any>> | undefined
+    /** Families whose own index `unsetAll` returned to a pass-through, applied
+     *  by the write phase rather than through `values` — see
+     *  `applyFamilyIndexResets`. */
+    familyIndexResets: Set<AtomFamily<any, [any, ...any[]]>> | undefined
     /** Family-member delete tombstones that also have a committed value to
      *  remove (membership-only deletes live in the staged family index). */
     deletes: Set<AtomFamilyAtom<any, any>> | undefined

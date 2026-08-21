@@ -5,9 +5,12 @@ description: Create isolated child stores that inherit state from their parent
 
 # Scoped Stores
 
-Scoped stores are child stores that inherit all state from their parent but can override values independently. Think of them as a "fork" of state — reads fall through to the parent, but writes stay local.
+Scoped stores are child stores that inherit all state from their parent but can
+override values independently. Think of them as a "fork" of state — reads fall
+through to the parent, but writes stay local.
 
-This is useful for modals, multi-step forms, drag previews, multi-tenant UIs, or any scenario where you need isolated copies of shared state.
+This is useful for modals, multi-step forms, drag previews, multi-tenant UIs, or
+any scenario where you need isolated copies of shared state.
 
 ## How it works
 
@@ -34,21 +37,22 @@ childStore.get(nameAtom) // "Alice" — falls through to parent
 childStore.set(nameAtom, "Bob")
 
 childStore.get(nameAtom) // "Bob" — shadowed in child
-rootStore.get(nameAtom)  // "Alice" — parent unchanged
+rootStore.get(nameAtom) // "Alice" — parent unchanged
 ```
 
 ### Parent updates don't overwrite shadows
 
-Once a scope shadows an atom, parent updates to that atom no longer affect the scope:
+Once a scope shadows an atom, parent updates to that atom no longer affect the
+scope:
 
 ```ts
 rootStore.set(nameAtom, "Charlie")
 
-rootStore.get(nameAtom)  // "Charlie"
+rootStore.get(nameAtom) // "Charlie"
 childStore.get(nameAtom) // "Bob" — still the scoped value
 ```
 
-But atoms that the scope *hasn't* shadowed continue to flow through:
+But atoms that the scope _hasn't_ shadowed continue to flow through:
 
 ```ts
 const ageAtom = atom(30)
@@ -70,16 +74,17 @@ const totalSelector = selector(get => get(priceAtom) * (1 + get(taxAtom)))
 const root = store()
 const child = root.scope("preview")
 
-root.get(totalSelector)  // 120
+root.get(totalSelector) // 120
 
 child.set(taxAtom, 0.25)
 child.get(totalSelector) // 125 — uses child's tax, parent's price
-root.get(totalSelector)  // 120 — unchanged
+root.get(totalSelector) // 120 — unchanged
 ```
 
 ## Families in scopes
 
-Atom families work across scopes. A child scope inherits the parent's family members but can add its own:
+Atom families work across scopes. A child scope inherits the parent's family
+members but can add its own:
 
 ```ts
 import { atomFamily, store } from "valdres"
@@ -94,7 +99,7 @@ child.get(todoAtom("a")) // { title: "Buy milk", done: false } — inherited
 // Add a new item only in the child scope
 child.set(todoAtom("b"), { title: "Draft todo", done: false })
 
-root.get(todoAtom)  // ["a"]
+root.get(todoAtom) // ["a"]
 child.get(todoAtom) // ["a", "b"] — child sees both
 ```
 
@@ -133,6 +138,82 @@ child.txn(({ set }) => {
 })
 ```
 
+## Reverting a scope
+
+`unset` drops one shadowed value so the atom re-inherits its parent's:
+
+```ts
+import { atom, atomFamily, store } from "valdres"
+
+const nameAtom = atom("Alice")
+const todoAtom = atomFamily<string, [string]>(id => `todo:${id}`)
+
+const root = store()
+root.set(todoAtom("a"), "Buy milk")
+const draft = root.scope("draft")
+
+draft.set(nameAtom, "Bob")
+draft.unset(nameAtom)
+draft.get(nameAtom) // "Alice" — the parent's value again, and tracking it
+```
+
+`unsetAll()` does that for everything the scope owns, in a single commit:
+
+```ts
+draft.set(nameAtom, "Bob")
+draft.set(todoAtom("b"), "Draft todo")
+
+draft.unsetAll()
+
+draft.get(nameAtom) // "Alice"
+draft.get(todoAtom) // [todoAtom("a")] — the draft's own member is gone too
+```
+
+Family membership reverts in both directions: members the scope added leave its
+`get(family)`, and members it deleted with `del()` come back.
+
+The scope itself survives — this is the difference from `detach()`. Its id,
+subscriptions, nested scopes, and any other handles on it all keep working, and
+it starts shadowing again the moment you write to it. Reach for `unsetAll()`
+when a scope's edits have been applied (or abandoned) but the scope stays on
+screen; reach for `detach()` when the scope is done for good.
+
+Every atom the scope shadowed notifies, exactly as `unset` does — including one
+whose parent value happens to be identical, because the scope really did stop
+owning it. Atoms it never shadowed are untouched.
+
+### Reverting inside a transaction
+
+A scope's own transaction can revert it directly:
+
+```ts
+draft.txn(txn => {
+    txn.unsetAll()
+    txn.set(nameAtom, "a fresh start")
+})
+```
+
+More often the revert belongs to a commit the parent is driving — publishing a
+draft, say — so the whole thing lands atomically and no subscriber sees the
+scope snap back before the write that supersedes it:
+
+```ts
+const publishedName = atom("")
+
+root.txn(txn => {
+    txn.set(publishedName, root.scope("draft", s => s.get(nameAtom)))
+    txn.scope("draft", scoped => scoped.unsetAll())
+})
+```
+
+`txn.scope()` throws if the scope does not exist, so guard it when a scope may
+never have been opened.
+
+`unsetAll()` is a scope operation — a root store has no parent to revert to, and
+calling it there throws. It is typed that way too: `unsetAll` exists on
+`ScopedStore` and on the transaction `scope()` hands you, not on `Store` or on a
+root transaction.
+
 ## Cleanup
 
 When you're done with a scope, call `detach()` to clean it up:
@@ -143,7 +224,8 @@ const child = root.scope("temp")
 child.detach()
 ```
 
-In framework integrations, cleanup happens automatically when the scope component unmounts.
+In framework integrations, cleanup happens automatically when the scope
+component unmounts.
 
 ## In React
 
@@ -165,7 +247,8 @@ function App() {
 }
 ```
 
-Everything inside `<Scope>` reads and writes to the scoped store. Components outside continue using the parent store.
+Everything inside `<Scope>` reads and writes to the scoped store. Components
+outside continue using the parent store.
 
 ### Initializing scope state
 
@@ -211,32 +294,48 @@ If you omit `scopeId`, a unique ID is generated automatically:
 
 ### Edit modal with cancel
 
-Create a scope for the edit form. If the user cancels, the scope is discarded. If they save, copy the values to the parent:
+Create a scope for the edit form. Edits stay in the scope; saving copies them to
+the parent and reverts the scope, so the form is clean the next time it opens —
+and both halves land in one commit:
 
 ```tsx
 function EditModal({ userId }) {
     const store = useStore()
 
     const handleSave = () => {
-        store.scope("edit", scopedStore => {
-            // Copy edited values back to parent
-            store.set(userAtom(userId), scopedStore.get(userAtom(userId)))
+        store.txn(txn => {
+            txn.set(
+                userAtom(userId),
+                store.scope("edit", scoped => scoped.get(userAtom(userId))),
+            )
+            txn.scope("edit", scoped => scoped.unsetAll())
         })
+    }
+
+    const handleCancel = () => {
+        // Throw the edits away without tearing the scope down.
+        store.scope("edit", scoped => scoped.unsetAll())
+        onClose()
     }
 
     return (
         <Scope scopeId="edit">
             <UserForm userId={userId} />
             <button onClick={handleSave}>Save</button>
-            <button onClick={onClose}>Cancel</button>
+            <button onClick={handleCancel}>Cancel</button>
         </Scope>
     )
 }
 ```
 
+`useStore()` inside `<Scope>` gives you the scope itself, so a "reset this form"
+button in the form can call `store.unsetAll()` directly — cast the handle if
+your adapter types it as a plain `Store`.
+
 ### Multi-tenant dashboard
 
-Each tenant panel gets its own scope, sharing base configuration but with independent data:
+Each tenant panel gets its own scope, sharing base configuration but with
+independent data:
 
 ```tsx
 function Dashboard({ tenants }) {
@@ -278,6 +377,8 @@ function DragPreview({ itemId, targetListId }) {
 
 Scoped stores are optimized for minimal overhead:
 
-- **No upfront copying** — values are resolved lazily by walking up the scope chain
-- **Selective propagation** — when a parent atom updates, the change only propagates to scopes that haven't shadowed it
+- **No upfront copying** — values are resolved lazily by walking up the scope
+  chain
+- **Selective propagation** — when a parent atom updates, the change only
+  propagates to scopes that haven't shadowed it
 - **Reference counting** — scopes are cleaned up when no consumers remain
