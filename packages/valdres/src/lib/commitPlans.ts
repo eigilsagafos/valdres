@@ -1,6 +1,7 @@
 declare const process: { env: { VALDRES_ENGINE_SELF_CHECKS?: string } }
 
 import type { Atom } from "../types/Atom"
+import type { AtomFamily } from "../types/AtomFamily"
 import type { AtomFamilyAtom } from "../types/AtomFamilyAtom"
 import type {
     CommitForestEntry,
@@ -168,9 +169,22 @@ export const forestEntry = (
     unsetAtoms: NonEmpty<Atom<any>> | undefined,
     children: CommitForestEntry[] | undefined,
     initAtoms?: NonEmpty<Atom<any>>,
+    unsetMembershipDrops?: Set<AtomFamilyAtom<any, any>>,
+    familyMemberDelta?: Map<AtomFamily<any>, Set<AtomFamilyAtom<any, any>>>,
+    familyIndexReverts?: NonEmpty<AtomFamily<any>>,
 ): CommitForestEntry => {
     count(data, 1)
-    return { data, updatedAtoms, deleted, unsetAtoms, initAtoms, children }
+    return {
+        data,
+        updatedAtoms,
+        deleted,
+        unsetAtoms,
+        unsetMembershipDrops,
+        familyMemberDelta,
+        familyIndexReverts,
+        initAtoms,
+        children,
+    }
 }
 
 /** The one-entry, one-root forest every single-store commit uses — an ordinary
@@ -181,6 +195,9 @@ export const singleStoreForest = (
     deleted?: NonEmpty<AtomFamilyAtom<any, any>>,
     unsetAtoms?: NonEmpty<Atom<any>>,
     initAtoms?: NonEmpty<Atom<any>>,
+    unsetMembershipDrops?: Set<AtomFamilyAtom<any, any>>,
+    familyMemberDelta?: Map<AtomFamily<any>, Set<AtomFamilyAtom<any, any>>>,
+    familyIndexReverts?: NonEmpty<AtomFamily<any>>,
 ): CommitForestEntry[] => {
     const entries = [
         forestEntry(
@@ -190,6 +207,9 @@ export const singleStoreForest = (
             unsetAtoms,
             undefined,
             initAtoms,
+            unsetMembershipDrops,
+            familyMemberDelta,
+            familyIndexReverts,
         ),
     ]
     count(data, 1)

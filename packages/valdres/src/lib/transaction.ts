@@ -9,6 +9,7 @@ import type { SetAtomValue } from "../types/SetAtomValue"
 import type { SetAtom } from "../types/SetAtom"
 import type { StoreData } from "../types/StoreData"
 import type { StoreChangeSource } from "../types/StoreChangeSource"
+import type { ScopedTransactionFn } from "../types/Transaction"
 import type { TransactionFn } from "../types/TransactionFn"
 import { SchemaValidationError } from "../errors/SchemaValidationError"
 import {
@@ -57,6 +58,8 @@ import {
     cloneAtomFamilyIndex,
     createAtomFamilyIndex,
     hasOwnFamilyAtom,
+    observeFamilyIndex,
+    recursivelyUpdateIndexes,
     renderAtomFamilyIndex,
 } from "./atomFamilyIndex"
 import {
@@ -68,12 +71,14 @@ import { settleCommitForest } from "./propagateUpdatedAtoms"
 import type { CommitForestEntry } from "../types/CommitForestSettleFn"
 import type { DeferredOnSet } from "./runOnSets"
 import { commitAtoms, commitHookFreeAtoms } from "./setAtoms"
+import { setValueInData } from "./setValueInData"
 import { writeAtoms } from "./writeAtoms"
 import {
     evaluateSelectorValue,
     type SelectorEvaluationRuntime,
 } from "./initSelector"
 import { noteStateValueChanged } from "./stateRevisions"
+import { rootUnsetAllError } from "./rootUnsetAllError"
 import { stateNameSuffix } from "./stateNameForError"
 
 /** One store's slot in a cross-scope commit. Collected root-first; written
@@ -149,6 +154,103 @@ const deleteAtomFamilyAtoms = (
             noteStateValueChanged(atom, data)
         }
     })
+}
+
+/** Land the reverted family indexes `unsetAll` staged, before the ordinary
+ *  write phase runs, and return the families whose rendered membership actually
+ *  changed so the commit propagates and reports those (and only those).
+ *
+ *  Taken out of `draft.values` rather than written through it: `writeAtoms`
+ *  skips a value-equal write, and a revert whose members were all inherited
+ *  anyway renders to an equal member list while still changing which store owns
+ *  them. Ownership is what a later parent `del` consults, so the write has to
+ *  happen either way — only the NOTIFICATION is conditional. */
+const applyFamilyIndexResets = (
+    draft: MutationDraft,
+    data: StoreData,
+): FamilyIndexResetResult => {
+    const resets = draft.familyIndexResets
+    if (!resets) return NO_FAMILY_RESETS
+    const changed: AtomFamily<any, any>[] = []
+    const reverted: AtomFamily<any, any>[] = []
+    let memberDelta:
+        | Map<AtomFamily<any>, Set<AtomFamilyAtom<any, any>>>
+        | undefined
+    for (const family of resets) {
+        const staged = draft.values.get(family)
+        if (staged === undefined) continue
+        draft.values.delete(family)
+        const before = observeFamilyIndex(family, data)
+        setValueInData(family, staged, data)
+        // Descendant scopes render against this index, and it is a NEW object.
+        // UNCONDITIONAL, before the equality check: the settlement's own
+        // re-link only runs for families that reach `updatedAtoms`, which is
+        // exactly what a revert whose own rendered list is unchanged does not
+        // do — and a descendant left pointing at the discarded index renders
+        // against stale creation timestamps.
+        if (data.scopes.size > 0) recursivelyUpdateIndexes(data, family)
+        reverted.push(family)
+        if (family.equal(before, staged)) continue
+        changed.push(family)
+        // Which members changed membership and are NOT already carried by this
+        // commit's unsets. A member that LEFT is one the scope owned a value
+        // for — that is how it entered the scope's index — so the revert
+        // already staged its unset, which notifies and reports it; emitting it
+        // here too would double-report. A member that came BACK — a
+        // scope-local `del` being reverted — has no value write anywhere, so
+        // this delta is the only thing that can carry it.
+        const delta = unreportedMemberDelta(before, staged, draft.unsets)
+        if (delta.size === 0) continue
+        if (!memberDelta) memberDelta = new Map()
+        memberDelta.set(family, delta)
+    }
+    return { changed, reverted, memberDelta }
+}
+
+/** Members present in exactly one of two rendered membership snapshots, minus
+ *  any the commit already reports through `unsets`.
+ *
+ *  Subtracting the unsets is what keeps this a delta-ONLY channel: it exists for
+ *  membership changes no other part of the commit can carry, and a member the
+ *  revert also unset is carried by that. Filtering on the STAGED unsets rather
+ *  than the write phase's outcome is exact here — a member can only appear in
+ *  `before` by being in this store's own index, which it only reaches by having
+ *  a value written here, so its unset always finds one to detach. */
+const unreportedMemberDelta = (
+    before: readonly AtomFamilyAtom<any, any>[] | undefined,
+    after: readonly AtomFamilyAtom<any, any>[],
+    unsets: Set<Atom<any>> | undefined,
+): Set<AtomFamilyAtom<any, any>> => {
+    const delta = new Set<AtomFamilyAtom<any, any>>(after)
+    if (before) {
+        for (const member of before) {
+            if (!delta.delete(member)) delta.add(member)
+        }
+    }
+    if (unsets) {
+        for (const member of unsets) {
+            delta.delete(member as AtomFamilyAtom<any, any>)
+        }
+    }
+    return delta
+}
+
+type FamilyIndexResetResult = {
+    /** Families whose rendered membership changed — propagated and reported. */
+    changed: AtomFamily<any, any>[]
+    /** EVERY family whose index was reset, changed membership or not. The
+     *  scope's own index survives the revert (as a pass-through), so its family
+     *  subscriptions still do not delegate to the parent — the settlement
+     *  re-arms them from this list, exactly as it re-delegates unset atoms. */
+    reverted: AtomFamily<any, any>[]
+    /** Per changed family, the members that entered or left. */
+    memberDelta: Map<AtomFamily<any>, Set<AtomFamilyAtom<any, any>>> | undefined
+}
+
+const NO_FAMILY_RESETS: FamilyIndexResetResult = {
+    changed: [],
+    reverted: [],
+    memberDelta: undefined,
 }
 
 // Detach the own value + bookkeeping for each unset atom that actually had
@@ -565,16 +667,98 @@ export class TransactionContext {
         this.invalidateSelectorCache()
     }
 
-    scope = <Callback extends TransactionFn>(
+    unsetAll = () => {
+        this.assertOpen("write to")
+        const indexKeys = this._data.scopeIndexKeys
+        if (!indexKeys)
+            throw new Error(rootUnsetAllError(this._data.id, "transaction"))
+        // Staged-but-uncommitted writes are part of what this scope would own,
+        // so they go too — same last-write-wins rule `unset` applies per atom.
+        // Families staged here are collected rather than dropped: their working
+        // index is the one the reset below must clear.
+        const families = new Set<AtomFamily<any, any>>()
+        for (const key of [...this._draft.values.keys()]) {
+            if (isAtomFamily(key)) families.add(key)
+            else this._draft.values.delete(key)
+        }
+        for (const key of [...indexKeys]) {
+            if (isAtomFamily(key)) families.add(key)
+            else this.unsetOwnMember(key as Atom)
+        }
+        for (const family of families) this.resetOwnFamilyIndex(family)
+    }
+
+    /** `unset`, plus the one thing a whole-scope revert needs that a per-atom
+     *  unset must not do: family members opt OUT of the settlement's membership
+     *  re-registration — see `membershipFreeUnsets`. */
+    private unsetOwnMember(atom: Atom): void {
+        this._draft.values.delete(atom)
+        if (!this._draft.unsets) this._draft.unsets = new Set()
+        this._draft.unsets.add(atom)
+        if (isFamilyAtom(atom)) {
+            if (!this._draft.membershipFreeUnsets)
+                this._draft.membershipFreeUnsets = new Set()
+            this._draft.membershipFreeUnsets.add(atom)
+        }
+        this.invalidateSelectorCache()
+    }
+
+    /** Return this scope's own index for `family` to a pass-through: empty
+     *  `created`/`deleted`, parent link intact. Membership then renders exactly
+     *  as the parent's — both directions, so members the scope ADDED leave the
+     *  list and members it DELETED come back.
+     *
+     *  The index is reset, never removed. Dropping `data.values`' entry would
+     *  break initFamilyIndex's ancestor invariant for any nested scope that
+     *  holds its own index (the scope would still be reachable from below but no
+     *  longer registered above), and an empty child index is exactly what
+     *  initFamilyIndex would build for a fresh scope anyway. */
+    private resetOwnFamilyIndex(family: AtomFamily<any, any>): void {
+        // Test for pass-through BEFORE cloning: `scopeIndexKeys` keeps a family
+        // forever once the scope has held an index, so a scope that reverts on
+        // every modal close would otherwise clone and render (copy + sort, O(K
+        // log K) per family) on every call just to discard the result.
+        const staged = this._draft.values.get(family)
+        const committed = staged ?? this._data.values.get(family)
+        const current = committed?.__index
+        if (
+            current &&
+            current.created.size === 0 &&
+            current.deleted.size === 0
+        )
+            return
+        if (!staged) this.cloneFamilyIntoTxn(family)
+        const index = this._draft.values.get(family).__index
+        // A clone of an already-pass-through index (the scope materialized one
+        // inside this same transaction) has nothing to hand back either.
+        if (index.created.size === 0 && index.deleted.size === 0) return
+        this.noteFamilyWrite(family)
+        index.created.clear()
+        index.deleted.clear()
+        this.recursivelyUpdateAtomFamilyIndexes(family)
+        // The write phase lands this one directly (see applyFamilyIndexResets):
+        // a reverted index can render to a byte-identical member list — every
+        // member was inherited all along — and the ordinary equality-gated write
+        // would drop precisely the ownership change that makes the revert real.
+        if (!this._draft.familyIndexResets)
+            this._draft.familyIndexResets = new Set()
+        this._draft.familyIndexResets.add(family)
+        this.invalidateSelectorCache()
+    }
+
+    scope = <Callback extends ScopedTransactionFn>(
         scopeId: string,
         callback: Callback,
     ): ReturnType<Callback> => {
         this.assertOpen("open a scope on")
         if (this._data.scopes.has(scopeId)) {
+            // The context handed to the callback is a scope's, so it really
+            // does carry `unsetAll`; only the internal execute signature is
+            // written against the root-shaped callback type.
             return this.scopedTransaction(scopeId)[EXECUTE_TRANSACTION](
-                callback,
+                callback as unknown as TransactionFn,
                 false,
-            )
+            ) as ReturnType<Callback>
         } else {
             throw new Error(
                 `valdres: scope '${scopeId}' not found. Registered scopes: ${[...this._data.scopes.keys()].join(", ")}`,
@@ -910,6 +1094,7 @@ export class TransactionContext {
             // visited once against their union — the same canonical settlement
             // the cross-scope and global-peer shapes already use.
             const onSets: DeferredOnSet[] = []
+            const reset = applyFamilyIndexResets(draft, this._data)
             const updatedAtoms = writeAtoms(
                 draft.values,
                 this._data,
@@ -917,6 +1102,8 @@ export class TransactionContext {
                 "collect",
                 onSets,
             )
+            for (const family of reset.changed)
+                updatedAtoms.push(family as unknown as Atom)
             const deleted = draft.deletes?.size
                 ? workGroup([...draft.deletes])
                 : undefined
@@ -939,6 +1126,9 @@ export class TransactionContext {
                 deleted,
                 unsetAtoms,
                 initWork.init,
+                unsetAtoms && draft.membershipFreeUnsets,
+                reset.memberDelta,
+                workGroup(reset.reverted),
             )
             runCommitPlan(
                 createCommitPlan(
@@ -986,6 +1176,7 @@ export class TransactionContext {
             const entry = plan[i]
             const txn = entry.txn
             txn.renderDirtyAtomFamilyIndexes()
+            const reset = applyFamilyIndexResets(txn._draft, entry.data)
             entry.updatedAtoms = writeAtoms(
                 txn._draft.values,
                 entry.data,
@@ -993,6 +1184,10 @@ export class TransactionContext {
                 "collect",
                 entry.onSets,
             )
+            for (const family of reset.changed)
+                entry.updatedAtoms.push(family as unknown as Atom)
+            entry.familyMemberDelta = reset.memberDelta
+            entry.familyIndexReverts = workGroup(reset.reverted)
             if (txn._draft.deletes?.size) {
                 deleteAtomFamilyAtoms(txn._draft.deletes, entry.data)
                 entry.deleted = workGroup([...txn._draft.deletes])
@@ -1003,6 +1198,7 @@ export class TransactionContext {
                 entry.unsetAtoms = workGroup(
                     applyUnsets(txn._draft.unsets, entry.data),
                 )
+                entry.unsetMembershipDrops = txn._draft.membershipFreeUnsets
             }
             const initWork = txn.partitionInitWork(entry.updatedAtoms)
             entry.updatedAtoms = initWork.updated
@@ -1069,6 +1265,9 @@ export class TransactionContext {
             updatedAtoms: [],
             deleted: undefined,
             unsetAtoms: undefined,
+            unsetMembershipDrops: undefined,
+            familyMemberDelta: undefined,
+            familyIndexReverts: undefined,
             initAtoms: undefined,
             children: undefined,
             onSets: [],
@@ -1183,6 +1382,10 @@ export class TransactionContext {
                     isAtomDeletedInFamilyIndex(atom, stagedIndex)
                 )
                     continue
+                // Same final-intent rule for `unsetAll`: a member this scope is
+                // handing back to its parent must not be re-registered by a read
+                // that happened earlier in the same transaction body.
+                if (draft.membershipFreeUnsets?.has(atom)) continue
                 this.stageFamilyMembership(
                     atom,
                     (timestamp ??= performance.now()),
@@ -1386,6 +1589,9 @@ export class TransactionContext {
                     updatedAtoms: [],
                     deleted: undefined,
                     unsetAtoms: undefined,
+                    unsetMembershipDrops: undefined,
+                    familyMemberDelta: undefined,
+                    familyIndexReverts: undefined,
                     initAtoms: initAtoms as NonEmpty<Atom<any>>,
                     children: undefined,
                 })
@@ -1548,4 +1754,22 @@ export const transaction = (
 ) => {
     const txn = new TransactionContext(data, undefined, undefined, name)
     return txn[EXECUTE_TRANSACTION](callback)
+}
+
+/** A store-level primitive that needs a transaction's atomicity but is not a
+ *  user transaction: it runs the callback and commits under its OWN
+ *  `StoreChangeMeta.source`, so `store.onChange` attributes it to the operation
+ *  the caller actually invoked (`scope.unsetAll()` reports `"unset"`, not
+ *  `"transaction"`) — matching every other primitive. Rolls back like any
+ *  transaction if the callback throws. */
+export const transactionAs = (
+    source: StoreChangeSource,
+    callback: ScopedTransactionFn,
+    data: StoreData,
+) => {
+    const txn = new TransactionContext(data)
+    // The context IS a ScopedTransaction (it carries `unsetAll`); the internal
+    // execute is typed against the narrower public callback shape.
+    txn[EXECUTE_TRANSACTION](callback as TransactionFn, false)
+    txn[COMMIT_TRANSACTION](source)
 }

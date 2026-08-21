@@ -5,8 +5,14 @@ import type { GetValue } from "../types/GetValue"
 import type { SetAtom } from "../types/SetAtom"
 import type { SetAtomValue } from "../types/SetAtomValue"
 import type { State } from "../types/State"
-import type { ScopedStore, ScopeFn, Store } from "../types/Store"
+import type {
+    BorrowedScopedStore,
+    ScopedStore,
+    ScopeFn,
+    Store,
+} from "../types/Store"
 import type { StoreData } from "../types/StoreData"
+import type { ScopedTransactionFn } from "../types/Transaction"
 import type { TransactionFn } from "../types/TransactionFn"
 import { isAtom } from "../utils/isAtom"
 import { isSelector } from "../utils/isSelector"
@@ -44,8 +50,10 @@ import {
     cancelTransaction,
     commitTransaction,
     transaction,
+    transactionAs,
     TransactionContext,
 } from "./transaction"
+import { rootUnsetAllError } from "./rootUnsetAllError"
 import { stateNameSuffix } from "./stateNameForError"
 
 const transactionForStore = (
@@ -70,30 +78,40 @@ const invalidStateSetError = (
 Only an \`atom\` can be set.
 `
 
+/** The shared per-StoreData facade: every scope operation, with lease
+ *  ownership (`detach`) added per consumer by `createScopeLease`. A root store's
+ *  facade has the same shape — `unsetAll` throws there (see rootUnsetAllError),
+ *  which keeps one runtime object shape for every store in a tree. */
+type StoreRuntime = Omit<ScopedStore, "detach">
+
 export function storeFromStoreData(
     data: StoreData,
     detach: () => void,
 ): ScopedStore
 export function storeFromStoreData(data: StoreData): Store
 export function storeFromStoreData(data: StoreData, detach?: () => void) {
-    const runtimeData = data as StoreData & { [STORE_RUNTIME]?: Store }
+    const runtime = storeRuntimeFor(data)
+    return detach ? createScopeLease(runtime, detach) : runtime
+}
+
+/** The one shared facade for `data`, created on first use. */
+const storeRuntimeFor = (data: StoreData): StoreRuntime => {
+    const runtimeData = data as StoreData & { [STORE_RUNTIME]?: StoreRuntime }
     let runtime = runtimeData[STORE_RUNTIME]
     if (!runtime) {
         runtime = createStoreRuntime(data)
         runtimeData[STORE_RUNTIME] = runtime
     }
-    return detach ? createScopeLease(runtime, detach) : runtime
+    return runtime
 }
 
-const borrowedStoreFromStoreData = (
-    data: StoreData,
-): Omit<Store, "dispose"> => {
+const borrowedStoreFromStoreData = (data: StoreData): BorrowedScopedStore => {
     const runtimeData = data as StoreData & {
-        [BORROWED_STORE_RUNTIME]?: Omit<Store, "dispose">
+        [BORROWED_STORE_RUNTIME]?: BorrowedScopedStore
     }
     let borrowed = runtimeData[BORROWED_STORE_RUNTIME]
     if (!borrowed) {
-        const { dispose: _, ...borrowedRuntime } = storeFromStoreData(data)
+        const { dispose: _, ...borrowedRuntime } = storeRuntimeFor(data)
         borrowed = borrowedRuntime
         runtimeData[BORROWED_STORE_RUNTIME] = borrowed
     }
@@ -106,7 +124,7 @@ const borrowedStoreFromStoreData = (
  * implicit transaction authoritative for every handle that reaches the same
  * store data (including the internal handle mountAtom requests).
  */
-const createStoreRuntime = (data: StoreData): Store => {
+const createStoreRuntime = (data: StoreData): StoreRuntime => {
     // Public methods that already flush orphan work reuse that same hot guard
     // for terminal detection. Active stores therefore pay no second branch.
     const _initSet = new Set<Atom>()
@@ -329,10 +347,7 @@ const createStoreRuntime = (data: StoreData): Store => {
         state: Atom<V>,
         updater: (current: V) => PromiseLike<V>,
     ): Promise<V>
-    function setDefault<V>(
-        state: Atom<V>,
-        value: V | ((current: V) => V),
-    ): V
+    function setDefault<V>(state: Atom<V>, value: V | ((current: V) => V)): V
     function setDefault<V>(
         state: Atom<V>,
         value: SetAtomValue<V>,
@@ -358,10 +373,7 @@ const createStoreRuntime = (data: StoreData): Store => {
         state: Atom<V>,
         updater: (current: V) => PromiseLike<V>,
     ): Promise<V>
-    function setBatched<V>(
-        state: Atom<V>,
-        value: V | ((current: V) => V),
-    ): V
+    function setBatched<V>(state: Atom<V>, value: V | ((current: V) => V)): V
     function setBatched<V>(
         state: Atom<V>,
         value: SetAtomValue<V>,
@@ -433,6 +445,29 @@ const createStoreRuntime = (data: StoreData): Store => {
         return unsetValue(atom, data)
     }
 
+    // --- unsetAll ---
+    // The whole-scope form of `unset`: every value this scope owns reverts to
+    // the parent's, in ONE commit. Runs as a transaction so the atom reverts,
+    // the family-index reverts, and their notifications settle together — the
+    // same path `txn.scope(id, txn => txn.unsetAll())` takes.
+    const unsetAll = () => {
+        if (data.pendingOrphanCleanup) {
+            if (data.pendingOrphanCleanup === DISPOSED_STORE_PENDING) {
+                throw createStoreDisposedError(data)
+            }
+            flushPendingOrphanCleanup(data)
+        }
+        if (!data.parent) throw new Error(rootUnsetAllError(data.id, "store"))
+        if (data.batchUpdates) flushPendingTxn()
+        // Fast path for the never-written scope, which is the common case for a
+        // revert-on-close: skip allocating a transaction to stage nothing. NOT
+        // a completeness check — a scope that has ever held a family index keeps
+        // that (pass-through) registration for good, so a genuinely empty scope
+        // can still reach the transaction below and find nothing to do.
+        if (data.scopeIndexKeys!.size === 0) return
+        transactionAs("unset", txn => txn.unsetAll(), data)
+    }
+
     const sub = <V>(
         state: State<V>,
         callback: (...args: any[]) => void,
@@ -442,7 +477,7 @@ const createStoreRuntime = (data: StoreData): Store => {
     }
 
     const txn = (
-        callback: TransactionFn | typeof STORE_DATA_ACCESS,
+        callback: ScopedTransactionFn | typeof STORE_DATA_ACCESS,
         name?: string,
     ) => {
         // Adapter-only closure handshake. The token is not reachable from the
@@ -456,7 +491,9 @@ const createStoreRuntime = (data: StoreData): Store => {
             flushPendingOrphanCleanup(data)
         }
         if (data.batchUpdates) flushPendingTxn()
-        return transaction(callback, data, name)
+        // A scope's context carries `unsetAll`; the internal helper is typed
+        // against the root-shaped callback.
+        return transaction(callback as TransactionFn, data, name)
     }
 
     // Implementation signature is permissive; the precise per-option callback
@@ -553,6 +590,7 @@ const createStoreRuntime = (data: StoreData): Store => {
         reset,
         del,
         unset,
+        unsetAll,
         scope,
         onChange,
         onCommitEnd: storeOnCommitEnd,
@@ -565,7 +603,10 @@ const createStoreRuntime = (data: StoreData): Store => {
 }
 
 /** A scope consumer owns only its detach lease; all operations share runtime. */
-const createScopeLease = (runtime: Store, detach: () => void): ScopedStore => {
+const createScopeLease = (
+    runtime: StoreRuntime,
+    detach: () => void,
+): ScopedStore => {
     const lease: ScopedStore = {
         id: runtime.id,
         get: runtime.get,
@@ -575,6 +616,7 @@ const createScopeLease = (runtime: Store, detach: () => void): ScopedStore => {
         reset: runtime.reset,
         del: runtime.del,
         unset: runtime.unset,
+        unsetAll: runtime.unsetAll,
         scope: runtime.scope,
         onChange: runtime.onChange,
         onCommitEnd: runtime.onCommitEnd,

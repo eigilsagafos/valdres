@@ -25,14 +25,29 @@ export const trackStateRevision = (state: WeakKey, data: StoreData) => {
 }
 
 /** Resolve the revision of the value this store would actually read. Scoped
- * atoms without a local shadow inherit their closest ancestor's revision. */
+ * atoms without a local shadow inherit their closest ancestor's revision —
+ * unless this store recorded a LATER one, which happens when it dropped a value
+ * it used to own (see below). */
 export const getStateRevision = (state: WeakKey, data: StoreData): number => {
     // Root stores dominate. Check parent first so their revision reads avoid an
     // otherwise redundant values.has() WeakMap probe.
     if (!data.parent || data.values.has(state)) {
         return data.stateRevisions.get(state) ?? 0
     }
-    return getStateRevision(state, data.parent)
+    const inherited = getStateRevision(state, data.parent)
+    // No local value, yet a local revision can still exist — `unset` is the one
+    // write that removes a store's own value instead of replacing it, and it
+    // records the bump here on the way out. What this store reads DID change,
+    // so that bump has to outrank the (unchanged) inherited revision until an
+    // ancestor write overtakes it.
+    //
+    // Without the max, a cold selector cached while the scope owned the value
+    // revalidates against the ancestor's revision — which is not the one it
+    // recorded from, but happens to be equal often enough (both 0 before any
+    // tracked ancestor write) — so the cache "validates" and serves the
+    // pre-unset value for the life of the scope.
+    const local = data.stateRevisions.get(state)
+    return local !== undefined && local > inherited ? local : inherited
 }
 
 /** Snapshot a cold selector's forward dependencies without putting the

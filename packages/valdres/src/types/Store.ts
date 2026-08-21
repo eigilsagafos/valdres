@@ -7,6 +7,7 @@ import type { AtomChange, SelectorChange, StoreChange } from "./StoreChange"
 import type { StoreChangeMeta } from "./StoreChangeMeta"
 import type { SetAtom } from "./SetAtom"
 import type { SubscribeFn } from "./SubscribeFn"
+import type { ScopedTransactionFn } from "./Transaction"
 import type { TransactionFn } from "./TransactionFn"
 
 type DeleteAtom = <
@@ -26,6 +27,10 @@ type DeleteAtom = <
  *  member). */
 type UnsetAtom = <Value extends any>(atom: Atom<Value>) => void
 
+/** The scope handed to the callback form of `scope()`: every scope operation,
+ *  minus the lifecycle ownership a lease carries. */
+export type BorrowedScopedStore = Omit<ScopedStore, "dispose" | "detach">
+
 export type ScopeFn = {
     /** Acquire a scope lease. The caller owns the returned `detach`. */
     (scopeId: string): ScopedStore
@@ -33,7 +38,7 @@ export type ScopeFn = {
      * store has no lifecycle ownership, so it cannot be disposed or detached. */
     <Result>(
         scopeId: string,
-        callback: (store: Omit<Store, "dispose">) => Result,
+        callback: (store: BorrowedScopedStore) => Result,
     ): Result
 }
 
@@ -137,6 +142,43 @@ export type Store = {
     snapshot: () => SnapshotEntry[]
 }
 
+/** Drop every value a scope owns, so the scope reverts wholesale to what it
+ *  inherits — the whole-scope form of `unset`, and the counterpart to
+ *  `detach()`: where detaching releases a lease (and destroys the scope with the
+ *  last one), this empties the scope but keeps it alive and reusable.
+ *
+ *  Every atom the scope shadows re-inherits its parent's current value and
+ *  resumes tracking it, and the scope's atom-family membership reverts to its
+ *  parent's in BOTH directions — members the scope added leave its
+ *  `get(family)`, members it deleted come back. It all lands in a single
+ *  commit, so no subscriber sees the scope half-reverted.
+ *
+ *  Notification follows `unset`: every atom whose own value was dropped
+ *  notifies, INCLUDING one whose inherited value turns out to be equal — the
+ *  scope genuinely stopped owning it, and the per-atom primitive reports that
+ *  the same way. Atoms the scope never shadowed are untouched and silent.
+ *
+ *  Scope identity, leases, subscriptions, and nested scopes are untouched;
+ *  values a nested scope owns are its own and stay (it re-inherits whatever this
+ *  scope now reads). Idempotent, and a no-op on a scope that owns nothing.
+ *
+ *  Only meaningful on a scope: a root store has no parent to revert to, and
+ *  calling it there throws — `unsetAll` is typed onto `ScopedStore`, so that is
+ *  a compile error rather than a surprise.
+ *
+ *  Inside a transaction it stages instead of committing, so the revert lands in
+ *  that commit: `scope.txn(txn => txn.unsetAll())` from the scope itself, or
+ *  `txn.scope(scopeId, txn => txn.unsetAll())` when the parent drives the
+ *  commit (publishing a draft and clearing it, say). */
+type UnsetAllValues = () => void
+
 export type ScopedStore = Store & {
     detach: (warnIfNotDestroyed?: boolean) => void
+    /** As `Store.txn`, but the callback receives a `ScopedTransaction` — so a
+     *  scope's own transaction can `unsetAll()` directly, without going back
+     *  through the parent's `txn.scope(id, …)`. */
+    txn: (callback: ScopedTransactionFn, name?: string) => void
+    /** Revert every value this scope owns to what it inherits, keeping the
+     *  scope alive. See `UnsetAllValues`. */
+    unsetAll: UnsetAllValues
 }

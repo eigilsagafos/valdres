@@ -21,6 +21,7 @@ describe("shared StoreData runtime", () => {
         expect(first.get).toBe(second.get)
         expect(first.set).toBe(second.set)
         expect(first.scope).toBe(second.scope)
+        expect(first.unsetAll).toBe(second.unsetAll)
         expect(first.detach).not.toBe(second.detach)
         expect(scopedData.scopeConsumers?.size).toBe(2)
 

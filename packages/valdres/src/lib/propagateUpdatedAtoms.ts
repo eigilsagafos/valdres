@@ -805,6 +805,19 @@ export const settleCommitForest: CommitForestSettleFn = (
                 }
             }
         }
+        // A reverted family index is a pass-through, so the scope no longer
+        // shadows the family's membership and its family subscriptions must
+        // track the parent again — the same re-arm the unset atoms above get,
+        // and for the same reason: the scope stopped owning the state.
+        if (entry.familyIndexReverts) {
+            for (const family of entry.familyIndexReverts) {
+                try {
+                    reDelegateScopeSubscriptions(family as any, entry.data)
+                } catch (error) {
+                    recordCommitError(errors, error)
+                }
+            }
+        }
     }
     closeCommitBoundaries(commitTrees, errors, errors.hasError)
 }
@@ -926,7 +939,43 @@ const settleTreeStore = (
             report: undefined,
         })
         if (unsetGroup.familyAtoms)
-            applyFamilyAdds(collector, data, unsetGroup, timestamp)
+            applyFamilyAdds(
+                collector,
+                data,
+                unsetGroup,
+                timestamp,
+                entry!.unsetMembershipDrops,
+            )
+    }
+
+    // Membership changes from `unsetAll` reverting this store's family index
+    // that no other group carries — in practice the members coming BACK (a
+    // scope-local `del` undone), which have no value write anywhere, so without
+    // this their family's subscribers never learn the membership changed. The
+    // members that LEFT are deliberately absent: the revert unset their values,
+    // so the unset group above already notifies and reports them. Collected as
+    // its own group so its subscribers and its report keep the revert's own
+    // provenance; the index itself is already final (the write phase reset it),
+    // so nothing is registered here.
+    let memberDeltaGroup: OwnStyleGroup | undefined
+    const familyMemberDelta = entry?.familyMemberDelta
+    if (familyMemberDelta) {
+        const deltaAtoms: Atom[] = []
+        for (const members of familyMemberDelta.values()) {
+            for (const member of members) deltaAtoms.push(member)
+        }
+        if (deltaAtoms.length > 0) {
+            memberDeltaGroup = collectOwnStyleGroup(collector, data, {
+                kind: TREE_GROUP_UNSET,
+                atoms: deltaAtoms,
+                set: undefined,
+                report: undefined,
+            })
+            const subs = collector.directSubs[memberDeltaGroup.index]!
+            for (const family of familyMemberDelta.keys()) {
+                addSetToSet(data.subscriptions.get(family), subs)
+            }
+        }
     }
 
     // Lazily-initialized members settle like an ordinary update — register
@@ -1144,6 +1193,11 @@ const settleTreeStore = (
         // and then silently skipped at delivery.
         if (initFamilyAtoms)
             collectForNotify(notify, data, orderedSubs, initFamilyAtoms)
+        // Reverted membership: a family subscription only fires for members
+        // present in the notify map, so the delta has to be promoted like any
+        // other changed member.
+        if (familyMemberDelta)
+            collectForNotify(notify, data, orderedSubs, familyMemberDelta)
     }
 
     // Reports, in the same reaching-group order. Selector entries are

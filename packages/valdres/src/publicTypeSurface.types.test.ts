@@ -38,6 +38,7 @@ import type {
     AtomOnMount,
     AtomOnSet,
     AtomOptions,
+    BorrowedScopedStore,
     DehydratedState,
     EqualFunc,
     GlobalAtom,
@@ -46,12 +47,15 @@ import type {
     GlobalAtomOptions,
     ScopeFn,
     ScopedStore,
+    ScopedTransaction,
+    ScopedTransactionFn,
     Selector,
     SelectorFamily,
     SelectorOptions,
     Store,
     StoreOptions,
     SubscribeFn,
+    Transaction,
 } from "valdres"
 
 type Expect<T extends true> = T
@@ -303,6 +307,42 @@ test("store() options and the scope/subscribe surface are nameable", async () =>
     // ScopedStore is a Store plus the detach lease — a consumer holding one can
     // pass it anywhere a Store is expected.
     type _ScopedIsStore = Expect<ScopedStore extends Store ? true : false>
+    // The callback form hands out the same scope minus lifecycle ownership, so
+    // `unsetAll` is reachable there without taking a lease.
+    const borrowed = root.scope("pts.scope", scope => scope)
+    type _Borrowed = Expect<Equal<typeof borrowed, BorrowedScopedStore>>
+    type _BorrowedHasUnsetAll = Expect<
+        Equal<typeof borrowed.unsetAll, ScopedStore["unsetAll"]>
+    >
+    // ...and neither lifecycle control leaks into it.
+    // @ts-expect-error a borrowed scope cannot be disposed
+    borrowed.dispose
+    // @ts-expect-error a borrowed scope cannot be detached
+    borrowed.detach
+    // `unsetAll` is a scope operation: a root store is not typed for it.
+    // @ts-expect-error unsetAll is only on ScopedStore
+    root.unsetAll
+    // ...and the transaction surface makes the same distinction, so the one
+    // operation that needs a scope cannot be reached from a root transaction.
+    root.txn(txn => {
+        type _RootTxn = Expect<Equal<typeof txn, Transaction>>
+        // @ts-expect-error unsetAll is only on a scoped transaction
+        txn.unsetAll
+        txn.scope("pts.scope", scopedTxn => {
+            type _ScopedTxn = Expect<Equal<typeof scopedTxn, ScopedTransaction>>
+            scopedTxn.unsetAll()
+        })
+        // A scope's own transaction hands out the same scoped surface.
+        const scopedFn: ScopedTransactionFn = scopedTxn => scopedTxn.unsetAll()
+        scoped.txn(scopedFn)
+        // A parent scope may itself be the root, so the same restriction holds.
+        txn.scope("pts.scope", scopedTxn =>
+            scopedTxn.parentScope(parentTxn => {
+                // @ts-expect-error unsetAll is only on a scoped transaction
+                parentTxn.unsetAll
+            }),
+        )
+    })
 
     const count = atom(0)
     let notified = 0
