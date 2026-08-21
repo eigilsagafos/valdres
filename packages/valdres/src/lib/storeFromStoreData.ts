@@ -476,7 +476,12 @@ const createStoreRuntime = (data: StoreData): StoreRuntime => {
         return subscribe(state, callback, deepEqualCheckBeforeCallback, data)
     }
 
-    const txn = (
+    // Implementation signature is permissive — it also serves the adapter-only
+    // STORE_DATA_ACCESS handshake, which no public caller can name. The precise
+    // generic (`<C extends ScopedTransactionFn>(cb: C) => ReturnType<C>`) lives
+    // on `StoreRuntime["txn"]`, applied at the cast below, the same way
+    // `onChange` carries its overloads.
+    const txnImpl = (
         callback: ScopedTransactionFn | typeof STORE_DATA_ACCESS,
         name?: string,
     ) => {
@@ -495,6 +500,7 @@ const createStoreRuntime = (data: StoreData): StoreRuntime => {
         // against the root-shaped callback.
         return transaction(callback as TransactionFn, data, name)
     }
+    const txn = txnImpl as unknown as StoreRuntime["txn"]
 
     // Implementation signature is permissive; the precise per-option callback
     // types live on the overloaded `Store["onChange"]`, which this satisfies.
@@ -528,6 +534,29 @@ const createStoreRuntime = (data: StoreData): StoreRuntime => {
     const dispose = () => {
         if (data.pendingOrphanCleanup === DISPOSED_STORE_PENDING) return
         disposeStoreData(data)
+    }
+
+    // --- onDispose ---
+    // Consumer-owned resources released with the store. Registered as an
+    // ordinary lifecycle cleanup, which is what disposal already drains — so
+    // these run in registration order, every one runs even if an earlier throws,
+    // and the first error reaches whoever called dispose().
+    const onDispose = (callback: () => void) => {
+        if (data.pendingOrphanCleanup === DISPOSED_STORE_PENDING) {
+            throw createStoreDisposedError(data)
+        }
+        trackStoreCleanup(data, callback)
+        return () => untrackStoreCleanup(data, callback)
+    }
+
+    const hasScope = (scopeId: string) => {
+        if (data.pendingOrphanCleanup) {
+            if (data.pendingOrphanCleanup === DISPOSED_STORE_PENDING) {
+                throw createStoreDisposedError(data)
+            }
+            flushPendingOrphanCleanup(data)
+        }
+        return data.scopes.has(scopeId)
     }
 
     const scope: ScopeFn = ((
@@ -592,6 +621,8 @@ const createStoreRuntime = (data: StoreData): StoreRuntime => {
         unset,
         unsetAll,
         scope,
+        hasScope,
+        onDispose,
         onChange,
         onCommitEnd: storeOnCommitEnd,
         snapshot: storeSnapshot,
@@ -618,6 +649,8 @@ const createScopeLease = (
         unset: runtime.unset,
         unsetAll: runtime.unsetAll,
         scope: runtime.scope,
+        hasScope: runtime.hasScope,
+        onDispose: runtime.onDispose,
         onChange: runtime.onChange,
         onCommitEnd: runtime.onCommitEnd,
         snapshot: runtime.snapshot,

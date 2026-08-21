@@ -83,3 +83,70 @@ describe("docs: reverting a scope", () => {
         ).toThrow(/scope 'never-opened' not found/)
     })
 })
+
+describe("docs: deleting a member in a scope", () => {
+    test("the two read paths disagree, on purpose", () => {
+        const todoAtom = atomFamily<string, [string]>(id => `todo:${id}`)
+        const root = store()
+        const child = root.scope("draft")
+
+        root.set(todoAtom("a"), "Buy milk")
+
+        child.del(todoAtom("a"))
+
+        expect(child.get(todoAtom)).toStrictEqual([])
+        expect(child.get(todoAtom("a"))).toBe("Buy milk")
+        expect(root.get(todoAtom)).toStrictEqual([todoAtom("a")])
+    })
+
+    test("a root delete has nothing to fall through to", () => {
+        const todoAtom = atomFamily<string, [string]>(id => `todo:${id}`)
+        const root = store()
+        root.set(todoAtom("a"), "Buy milk")
+
+        root.del(todoAtom("a"))
+
+        expect(root.get(todoAtom)).toStrictEqual([])
+        expect(root.get(todoAtom("a"))).toBe("todo:a")
+    })
+})
+
+describe("docs: cleanup", () => {
+    test("hasScope reports whether the scope outlived your lease", () => {
+        const root = store()
+        const first = root.scope("draft")
+        const second = root.scope("draft")
+
+        first.detach()
+        expect(root.hasScope("draft")).toBe(true)
+        second.detach()
+        expect(root.hasScope("draft")).toBe(false)
+    })
+
+    test("onDispose releases what you keep alongside a scope", () => {
+        const cache = new Map<string, string>()
+        const root = store()
+        const changeSetRef = "cs-1"
+
+        const draft = root.scope(changeSetRef)
+        cache.set(changeSetRef, "scratch")
+        draft.onDispose(() => cache.delete(changeSetRef))
+
+        draft.detach()
+        expect(cache.has(changeSetRef)).toBe(false)
+    })
+
+    test("guarding txn.scope with hasScope", () => {
+        const nameAtom = atom("Alice")
+        const root = store()
+        root.scope("draft").set(nameAtom, "Bob")
+
+        for (const ref of ["draft", "never-opened"]) {
+            if (root.hasScope(ref)) {
+                root.txn(txn => txn.scope(ref, scoped => scoped.unsetAll()))
+            }
+        }
+
+        expect(root.scope("draft", s => s.get(nameAtom))).toBe("Alice")
+    })
+})

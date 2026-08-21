@@ -344,6 +344,24 @@ test("store() options and the scope/subscribe surface are nameable", async () =>
         )
     })
 
+    // A transaction hands back whatever its callback returned — the same
+    // contract the two other callback forms (`store.scope`, `txn.scope`)
+    // already carry, rather than the `void` it used to be typed as.
+    const counter = atom(1)
+    const txnResult = root.txn(txn => txn.get(counter) + 1)
+    type _TxnReturns = Expect<Equal<typeof txnResult, number>>
+    const scopedTxnResult = scoped.txn(txn => txn.get(counter).toFixed(1))
+    type _ScopedTxnReturns = Expect<Equal<typeof scopedTxnResult, string>>
+    // Structural questions about the scope tree are answerable without
+    // catching the exception the throwing forms use.
+    type _HasScope = Expect<
+        Equal<Store["hasScope"], (scopeId: string) => boolean>
+    >
+    // Lifecycle: release what a consumer owns alongside a store.
+    type _OnDispose = Expect<
+        Equal<Store["onDispose"], (callback: () => void) => () => void>
+    >
+
     const count = atom(0)
     let notified = 0
     const unsubscribe: ReturnType<SubscribeFn> = scoped.sub(count, () => {
