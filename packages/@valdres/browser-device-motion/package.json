@@ -1,7 +1,7 @@
 {
     "name": "@valdres/browser-device-motion",
     "description": "Reactive device acceleration and rotation from DeviceMotionEvent",
-    "version": "1.0.0-beta.7",
+    "version": "1.0.0-beta.8",
     "license": "MIT",
     "author": {
         "name": "Eigil Sagafos"
@@ -41,7 +41,7 @@
         "valdres-react": "workspace:^"
     },
     "peerDependencies": {
-        "valdres": "^1.0.0-beta.18"
+        "valdres": "^1.0.0-beta.19"
     },
     "publishConfig": {
         "access": "public",
