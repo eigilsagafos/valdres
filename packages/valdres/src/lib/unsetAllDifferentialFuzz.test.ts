@@ -1,9 +1,10 @@
-import { describe, expect, test } from "bun:test"
+import { describe, expect, test } from "../../test/performance/test-compat"
 import { atom } from "../atom"
 import { atomFamily } from "../atomFamily"
 import { selector } from "../selector"
 import { store } from "../store"
 import { getStoreData } from "./getStoreData"
+import { checkStoreInvariants } from "../../test/invariants/checkStoreInvariants"
 
 /**
  * Differential fuzz for `unsetAll`.
@@ -255,6 +256,12 @@ const runSeed = (seed: number, viaTransaction: boolean, coverage: Coverage) => {
     }
 
     agree(-1)
+    // The shared structural checker: the revert must leave the store's own
+    // graph/index bookkeeping self-consistent, not merely reading correctly.
+    for (const scope of [root, subject, control, subjectChild, controlChild]) {
+        const violations = checkStoreInvariants(scope)
+        expect({ seed, violations }).toStrictEqual({ seed, violations: [] })
+    }
     // ...and they stay in agreement as the parent keeps changing — in state AND
     // in what their subscribers were told. Ownership the revert failed to
     // release, or a notification it failed to send, surfaces here.
