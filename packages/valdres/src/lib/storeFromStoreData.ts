@@ -541,12 +541,24 @@ const createStoreRuntime = (data: StoreData): StoreRuntime => {
     // ordinary lifecycle cleanup, which is what disposal already drains — so
     // these run in registration order, every one runs even if an earlier throws,
     // and the first error reaches whoever called dispose().
+    //
+    // Each call gets its OWN entry, via a wrapper, rather than registering the
+    // caller's function directly. The cleanup ledger is a Set keyed by function
+    // identity, so the same function registered twice would collapse to one
+    // entry that either returned canceller removes — one subsystem silently
+    // disabling another's cleanup. Cleanup composes where notification does not:
+    // running a release twice is a bug the caller can see, skipping one is a
+    // leak they cannot, so this errs toward running. (`onChange`/`onCommitEnd`
+    // dedupe by callback identity instead; for a notification, double-firing is
+    // the worse direction.) The wrapper also keeps this public contract from
+    // depending on how the internal ledger happens to store entries.
     const onDispose = (callback: () => void) => {
         if (data.pendingOrphanCleanup === DISPOSED_STORE_PENDING) {
             throw createStoreDisposedError(data)
         }
-        trackStoreCleanup(data, callback)
-        return () => untrackStoreCleanup(data, callback)
+        const registration = () => callback()
+        trackStoreCleanup(data, registration)
+        return () => untrackStoreCleanup(data, registration)
     }
 
     const hasScope = (scopeId: string) => {

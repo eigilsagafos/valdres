@@ -129,6 +129,49 @@ describe("store.onDispose", () => {
         second.detach()
     })
 
+    test("each registration is independent, even for the same function", () => {
+        // Cleanup composes: two subsystems may register the same shared
+        // release function, and one cancelling must not silently disable the
+        // other. The failure modes are asymmetric — running a cleanup twice is
+        // a bug the caller can see, skipping one is a leak they cannot — so
+        // this errs toward running. (`onChange`/`onCommitEnd` dedupe by
+        // callback identity instead; for a notification, double-firing is the
+        // worse direction.)
+        const root = store()
+        let count = 0
+        const release = () => count++
+
+        const cancelFirst = root.onDispose(release)
+        root.onDispose(release)
+        cancelFirst()
+
+        root.dispose()
+
+        expect(count).toBe(1)
+    })
+
+    test("registering the same function twice runs it twice", () => {
+        const root = store()
+        let count = 0
+        const release = () => count++
+        root.onDispose(release)
+        root.onDispose(release)
+
+        root.dispose()
+
+        expect(count).toBe(2)
+    })
+
+    test("cancelling twice is harmless", () => {
+        const root = store()
+        let count = 0
+        const cancel = root.onDispose(() => count++)
+        cancel()
+        cancel()
+        root.dispose()
+        expect(count).toBe(0)
+    })
+
     test("throws on an already-disposed store", () => {
         const root = store()
         root.dispose()

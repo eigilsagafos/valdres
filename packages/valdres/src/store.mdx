@@ -124,6 +124,19 @@ Valdres owns commit and rollback: a successful callback commits once, while a
 callback that throws discards every staged write. Callback transactions
 intentionally expose no manual `commit()` or backing store `data`.
 
+The transaction hands back whatever the callback returned, so a value read
+against its view can come straight out:
+
+```ts
+const total = myStore.txn(txn => {
+    txn.set(priceAtom, 100)
+    return txn.get(priceAtom) * quantity
+})
+```
+
+Promise and thenable callbacks are rejected at runtime — a transaction commits
+synchronously, so it cannot await anything.
+
 <div className="callout callout-warning">
     <div className="callout-title">Warning</div>
     Selectors that depend on atoms updated in a transaction will only recompute
@@ -157,6 +170,51 @@ Detached scopes are disposed automatically when their last consumer calls
 `detach()`. Every later operation on a disposed store throws
 `StoreDisposedError`; calling `dispose()` again is a no-op. Create a new store
 for later work.
+
+### Releasing your own resources
+
+Valdres cleans up what it owns. For anything you keep alongside a store — a
+cache, a connection, a timer — register it with `onDispose`, which runs when the
+store is disposed, when an ancestor is disposed, or, for a scope, when its last
+`detach()` lands:
+
+```ts
+const requestStore = store()
+const connection = openConnection()
+requestStore.onDispose(() => connection.close())
+```
+
+It returns a function that cancels the registration. Each call registers
+independently, so the same function passed twice runs twice and each canceller
+removes only its own. The store is already terminal inside the callback — every
+operation on it throws — so read what you need beforehand and close over it.
+Every callback runs even if an earlier one throws, and the first error reaches
+whoever called `dispose()`.
+
+Per-atom setup belongs in an atom's `onMount` instead, whose cleanup tracks
+subscribers rather than the store's lifetime.
+
+## Scopes
+
+`scope(scopeId)` opens a child store that inherits everything from this one and
+keeps its own writes local — see the
+[scoped stores guide](/guides/scoped-stores). `hasScope` answers whether one
+exists right now, which is otherwise only observable by catching what the
+callback form throws:
+
+```ts
+const draft = myStore.scope("draft")
+myStore.hasScope("draft") // true
+draft.detach()
+myStore.hasScope("draft") // false — that was the last lease
+```
+
+It reports this store's own children, not a search of the tree; depth composes
+through `scope()` rather than a path argument:
+
+```ts
+myStore.scope("a", s => s.hasScope("b"))
+```
 
 ## The global store
 

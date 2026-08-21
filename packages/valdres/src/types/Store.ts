@@ -112,7 +112,13 @@ export type Store = {
      *  close over it. Every registered callback runs even if an earlier one
      *  throws, and the first error is rethrown to whoever called `dispose()`.
      *  Per-atom setup instead belongs in `onMount`, whose cleanup runs when the
-     *  last subscriber leaves rather than when the store dies. */
+     *  last subscriber leaves rather than when the store dies.
+     *
+     *  Each call is an independent registration: the same function passed twice
+     *  runs twice, and each returned canceller removes only its own. Unlike
+     *  `onChange`/`onCommitEnd`, which dedupe by callback identity — for a
+     *  cleanup, skipping a registered release is a leak the caller cannot see,
+     *  while running one twice is a bug they can. */
     onDispose: (callback: () => void) => () => void
     /** Subscribe to changes in this store and its descendant scopes. The callback
      *  fires once per committed operation with the changes, the scope each

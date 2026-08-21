@@ -136,17 +136,78 @@ describe("docs: cleanup", () => {
         expect(cache.has(changeSetRef)).toBe(false)
     })
 
-    test("guarding txn.scope with hasScope", () => {
+    test("guarding txn.scope with hasScope, from inside the callback", () => {
         const nameAtom = atom("Alice")
         const root = store()
         root.scope("draft").set(nameAtom, "Bob")
 
         for (const ref of ["draft", "never-opened"]) {
-            if (root.hasScope(ref)) {
-                root.txn(txn => txn.scope(ref, scoped => scoped.unsetAll()))
-            }
+            root.txn(txn => {
+                if (root.hasScope(ref)) {
+                    txn.scope(ref, scoped => scoped.unsetAll())
+                }
+            })
         }
 
         expect(root.scope("draft", s => s.get(nameAtom))).toBe("Alice")
+    })
+
+    test("...which the pre-txn form does not survive under batchUpdates", () => {
+        // Why the guide puts the check inside: `txn()` flushes the pending
+        // batch first, and a subscriber woken by that flush can detach the last
+        // lease on the scope the guard just saw.
+        const trigger = atom("start")
+        const root = store({ batchUpdates: true })
+        const draft = root.scope("draft")
+        root.sub(trigger, () => draft.detach())
+        root.set(trigger, "fires")
+
+        expect(root.hasScope("draft")).toBe(true)
+        expect(() =>
+            root.txn(txn => txn.scope("draft", s => s.unsetAll())),
+        ).toThrow(/scope 'draft' not found/)
+    })
+})
+
+describe("docs: store.mdx", () => {
+    test("a transaction hands back its callback's value", () => {
+        const priceAtom = atom(0)
+        const quantity = 3
+        const myStore = store()
+
+        const total = myStore.txn(txn => {
+            txn.set(priceAtom, 100)
+            return txn.get(priceAtom) * quantity
+        })
+
+        expect(total).toBe(300)
+    })
+
+    test("onDispose releases a resource kept alongside the store", () => {
+        let closed = false
+        const requestStore = store()
+        const connection = { close: () => (closed = true) }
+        requestStore.onDispose(() => connection.close())
+
+        requestStore.dispose()
+
+        expect(closed).toBe(true)
+    })
+
+    test("hasScope tracks the last lease", () => {
+        const myStore = store()
+        const draft = myStore.scope("draft")
+        expect(myStore.hasScope("draft")).toBe(true)
+        draft.detach()
+        expect(myStore.hasScope("draft")).toBe(false)
+    })
+
+    test("depth composes through scope()", () => {
+        const myStore = store()
+        const a = myStore.scope("a")
+        const b = a.scope("b")
+        expect(myStore.scope("a", s => s.hasScope("b"))).toBe(true)
+        b.detach()
+        a.detach()
     })
 })

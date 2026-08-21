@@ -60,6 +60,32 @@ describe("store.hasScope", () => {
         again.detach()
     })
 
+    test("checked INSIDE a batched transaction, past the pending-batch flush", () => {
+        // `store.txn` on a batchUpdates store flushes the pending batch before
+        // running the callback, and a subscriber woken by that flush can detach
+        // the last lease on a scope. A guard placed before `txn` is therefore
+        // checking a fact the flush can invalidate; inside the callback the
+        // flush has already happened and nothing else can destroy a scope until
+        // the body returns.
+        const trigger = atom("start")
+        const root = store({ batchUpdates: true })
+        const draft = root.scope("draft")
+        root.sub(trigger, () => draft.detach())
+
+        root.set(trigger, "fires")
+        expect(root.hasScope("draft")).toBe(true)
+
+        expect(() =>
+            root.txn(txn => {
+                if (root.hasScope("draft")) {
+                    txn.scope("draft", scoped => scoped.unsetAll())
+                }
+            }),
+        ).not.toThrow()
+
+        expect(root.hasScope("draft")).toBe(false)
+    })
+
     test("throws on a disposed store", () => {
         const root = store()
         root.dispose()

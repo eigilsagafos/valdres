@@ -233,13 +233,20 @@ root.txn(txn => {
 ```
 
 `txn.scope()` throws if the scope does not exist, so guard with `hasScope` when
-a scope may never have been opened:
+a scope may never have been opened — from **inside** the transaction callback:
 
 ```ts
-if (root.hasScope("draft")) {
-    root.txn(txn => txn.scope("draft", scoped => scoped.unsetAll()))
-}
+root.txn(txn => {
+    if (root.hasScope("draft")) {
+        txn.scope("draft", scoped => scoped.unsetAll())
+    }
+})
 ```
+
+Checking before `txn()` looks equivalent but is not on a `batchUpdates` store:
+`txn()` flushes the pending batch before running your callback, and a subscriber
+woken by that flush can detach the last lease on the scope you just checked for.
+Inside the callback the flush has already happened.
 
 `unsetAll()` is a scope operation — a root store has no parent to revert to, and
 calling it there throws. It is typed that way too: `unsetAll` exists on
