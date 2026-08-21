@@ -53,7 +53,19 @@ const createWorld = () => {
     // can be observed indirectly.
     const joined = selector(get => atoms.map(a => get(a)).join("|"))
     const memberList = selector(get => memberIds(get(family)).join(","))
-    return { atoms, family, joined, memberList }
+    // Deliberately never subscribed. A COLD selector is not recomputed by
+    // propagation — it keeps a cached value and revalidates on read against a
+    // snapshot of its dependencies' revisions — so it exercises a completely
+    // different invalidation path from the two above, and one where a scope
+    // dropping its own value is the awkward case (the store stops holding the
+    // value whose revision moved).
+    const coldJoined = selector(
+        get => `cold:${atoms.map(a => get(a)).join("|")}`,
+    )
+    const coldMembers = selector(
+        get => `cold:${memberIds(get(family)).join(",")}`,
+    )
+    return { atoms, family, joined, memberList, coldJoined, coldMembers }
 }
 
 /** Everything a consumer of `scope` can see, WITHOUT perturbing it. Member
@@ -69,6 +81,8 @@ const observe = (world: World, scope: any) => {
         memberValues: members.map(key => scope.get(world.family(key))),
         joined: scope.get(world.joined),
         memberList: scope.get(world.memberList),
+        coldJoined: scope.get(world.coldJoined),
+        coldMembers: scope.get(world.coldMembers),
     }
 }
 
@@ -207,6 +221,18 @@ const runSeed = (seed: number, viaTransaction: boolean, coverage: Coverage) => {
     if (owned.atoms) coverage.ownedAtoms++
     if (owned.created) coverage.ownedCreated++
     if (owned.deleted) coverage.ownedDeleted++
+
+    // Prime the COLD selectors on both sides before the revert. This is what
+    // creates the condition the revert has to invalidate: a cache recorded
+    // while the subject still owned its values. Only the cold selectors are
+    // read here — they touch atoms and the family's membership list, neither of
+    // which materializes anything in the reading store, so the control is not
+    // perturbed (reading a member's VALUE would be, which is why `observe` is
+    // still held back until after the revert).
+    for (const scope of [subject, control, subjectChild, controlChild]) {
+        scope.get(world.coldJoined)
+        scope.get(world.coldMembers)
+    }
 
     const subjectWatch = watch(world, subject)
     const controlWatch = watch(world, control)
