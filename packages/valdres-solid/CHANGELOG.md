@@ -1,5 +1,14 @@
 # valdres-solid
 
+## 1.0.0-beta.8
+
+### Patch Changes
+
+- Updated dependencies
+  [[`63d9ca3`](https://github.com/eigilsagafos/valdres/commit/63d9ca3a5f710b586ffbd59d1d92ca7768f8b7da),
+  [`63d9ca3`](https://github.com/eigilsagafos/valdres/commit/63d9ca3a5f710b586ffbd59d1d92ca7768f8b7da)]:
+    - valdres@1.0.0-beta.19
+
 ## 1.0.0-beta.7
 
 ### Patch Changes

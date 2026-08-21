@@ -1,7 +1,7 @@
 {
     "name": "@valdres/browser-online",
     "description": "Reactive online/offline status from navigator.onLine",
-    "version": "1.0.0-beta.7",
+    "version": "1.0.0-beta.8",
     "license": "MIT",
     "author": {
         "name": "Eigil Sagafos"
@@ -31,7 +31,7 @@
         "valdres": "workspace:^"
     },
     "peerDependencies": {
-        "valdres": "^1.0.0-beta.18"
+        "valdres": "^1.0.0-beta.19"
     },
     "publishConfig": {
         "access": "public",

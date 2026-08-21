@@ -79,9 +79,9 @@
     },
     "packages/@valdres-react/hotkeys": {
       "name": "@valdres-react/hotkeys",
-      "version": "1.0.0-beta.6",
+      "version": "1.0.0-beta.7",
       "dependencies": {
-        "@valdres/hotkeys": "^1.0.0-beta.6",
+        "@valdres/hotkeys": "^1.0.0-beta.7",
       },
       "devDependencies": {
         "@testing-library/react": "16.3.0",
@@ -92,7 +92,7 @@
       },
       "peerDependencies": {
         "react": ">=18",
-        "valdres": "^1.0.0-beta.18",
+        "valdres": "^1.0.0-beta.19",
         "valdres-react": "^1.0.0-beta.4",
       },
     },
@@ -145,19 +145,19 @@
     },
     "packages/@valdres/bandwidth": {
       "name": "@valdres/bandwidth",
-      "version": "1.0.0-beta.7",
+      "version": "1.0.0-beta.8",
       "devDependencies": {
         "@valdres/public-ip": "workspace:^",
         "typescript": "5.9.2",
         "valdres": "workspace:^",
       },
       "peerDependencies": {
-        "valdres": "^1.0.0-beta.18",
+        "valdres": "^1.0.0-beta.19",
       },
     },
     "packages/@valdres/browser-color-scheme": {
       "name": "@valdres/browser-color-scheme",
-      "version": "1.0.0-beta.7",
+      "version": "1.0.0-beta.8",
       "devDependencies": {
         "@happy-dom/global-registrator": "20.0.5",
         "@types/react": "19.1.12",
@@ -170,12 +170,12 @@
         "valdres-react": "workspace:^",
       },
       "peerDependencies": {
-        "valdres": "^1.0.0-beta.18",
+        "valdres": "^1.0.0-beta.19",
       },
     },
     "packages/@valdres/browser-contrast": {
       "name": "@valdres/browser-contrast",
-      "version": "1.0.0-beta.7",
+      "version": "1.0.0-beta.8",
       "devDependencies": {
         "@happy-dom/global-registrator": "20.0.5",
         "@types/react": "19.1.12",
@@ -188,12 +188,12 @@
         "valdres-react": "workspace:^",
       },
       "peerDependencies": {
-        "valdres": "^1.0.0-beta.18",
+        "valdres": "^1.0.0-beta.19",
       },
     },
     "packages/@valdres/browser-device-motion": {
       "name": "@valdres/browser-device-motion",
-      "version": "1.0.0-beta.7",
+      "version": "1.0.0-beta.8",
       "devDependencies": {
         "@happy-dom/global-registrator": "20.0.5",
         "@react-three/drei": "10.7.7",
@@ -210,12 +210,12 @@
         "valdres-react": "workspace:^",
       },
       "peerDependencies": {
-        "valdres": "^1.0.0-beta.18",
+        "valdres": "^1.0.0-beta.19",
       },
     },
     "packages/@valdres/browser-device-orientation": {
       "name": "@valdres/browser-device-orientation",
-      "version": "1.0.0-beta.7",
+      "version": "1.0.0-beta.8",
       "devDependencies": {
         "@happy-dom/global-registrator": "20.0.5",
         "@react-three/drei": "10.7.7",
@@ -232,12 +232,12 @@
         "valdres-react": "workspace:^",
       },
       "peerDependencies": {
-        "valdres": "^1.0.0-beta.18",
+        "valdres": "^1.0.0-beta.19",
       },
     },
     "packages/@valdres/browser-focus": {
       "name": "@valdres/browser-focus",
-      "version": "1.0.0-beta.7",
+      "version": "1.0.0-beta.8",
       "devDependencies": {
         "@happy-dom/global-registrator": "20.0.5",
         "@types/react": "19.1.12",
@@ -250,12 +250,12 @@
         "valdres-react": "workspace:^",
       },
       "peerDependencies": {
-        "valdres": "^1.0.0-beta.18",
+        "valdres": "^1.0.0-beta.19",
       },
     },
     "packages/@valdres/browser-geolocation": {
       "name": "@valdres/browser-geolocation",
-      "version": "1.0.0-beta.7",
+      "version": "1.0.0-beta.8",
       "devDependencies": {
         "@happy-dom/global-registrator": "20.0.5",
         "happy-dom": "20.0.5",
@@ -263,23 +263,23 @@
         "valdres": "workspace:^",
       },
       "peerDependencies": {
-        "valdres": "^1.0.0-beta.18",
+        "valdres": "^1.0.0-beta.19",
       },
     },
     "packages/@valdres/browser-keyboard": {
       "name": "@valdres/browser-keyboard",
-      "version": "1.0.0-beta.7",
+      "version": "1.0.0-beta.8",
       "devDependencies": {
         "typescript": "5.9.2",
         "valdres": "workspace:^",
       },
       "peerDependencies": {
-        "valdres": "^1.0.0-beta.18",
+        "valdres": "^1.0.0-beta.19",
       },
     },
     "packages/@valdres/browser-online": {
       "name": "@valdres/browser-online",
-      "version": "1.0.0-beta.7",
+      "version": "1.0.0-beta.8",
       "devDependencies": {
         "@happy-dom/global-registrator": "20.0.5",
         "happy-dom": "20.0.5",
@@ -287,15 +287,15 @@
         "valdres": "workspace:^",
       },
       "peerDependencies": {
-        "valdres": "^1.0.0-beta.18",
+        "valdres": "^1.0.0-beta.19",
       },
     },
     "packages/@valdres/browser-presence": {
       "name": "@valdres/browser-presence",
-      "version": "1.0.0-beta.7",
+      "version": "1.0.0-beta.8",
       "dependencies": {
-        "@valdres/browser-focus": "^1.0.0-beta.7",
-        "@valdres/browser-visibility": "^1.0.0-beta.7",
+        "@valdres/browser-focus": "^1.0.0-beta.8",
+        "@valdres/browser-visibility": "^1.0.0-beta.8",
       },
       "devDependencies": {
         "@happy-dom/global-registrator": "20.0.5",
@@ -309,12 +309,12 @@
         "valdres-react": "workspace:^",
       },
       "peerDependencies": {
-        "valdres": "^1.0.0-beta.18",
+        "valdres": "^1.0.0-beta.19",
       },
     },
     "packages/@valdres/browser-reduced-data": {
       "name": "@valdres/browser-reduced-data",
-      "version": "1.0.0-beta.7",
+      "version": "1.0.0-beta.8",
       "devDependencies": {
         "@happy-dom/global-registrator": "20.0.5",
         "@types/react": "19.1.12",
@@ -327,12 +327,12 @@
         "valdres-react": "workspace:^",
       },
       "peerDependencies": {
-        "valdres": "^1.0.0-beta.18",
+        "valdres": "^1.0.0-beta.19",
       },
     },
     "packages/@valdres/browser-reduced-motion": {
       "name": "@valdres/browser-reduced-motion",
-      "version": "1.0.0-beta.7",
+      "version": "1.0.0-beta.8",
       "devDependencies": {
         "@happy-dom/global-registrator": "20.0.5",
         "@types/react": "19.1.12",
@@ -345,12 +345,12 @@
         "valdres-react": "workspace:^",
       },
       "peerDependencies": {
-        "valdres": "^1.0.0-beta.18",
+        "valdres": "^1.0.0-beta.19",
       },
     },
     "packages/@valdres/browser-reduced-transparency": {
       "name": "@valdres/browser-reduced-transparency",
-      "version": "1.0.0-beta.7",
+      "version": "1.0.0-beta.8",
       "devDependencies": {
         "@happy-dom/global-registrator": "20.0.5",
         "@types/react": "19.1.12",
@@ -363,12 +363,12 @@
         "valdres-react": "workspace:^",
       },
       "peerDependencies": {
-        "valdres": "^1.0.0-beta.18",
+        "valdres": "^1.0.0-beta.19",
       },
     },
     "packages/@valdres/browser-screen": {
       "name": "@valdres/browser-screen",
-      "version": "1.0.0-beta.7",
+      "version": "1.0.0-beta.8",
       "devDependencies": {
         "@happy-dom/global-registrator": "20.0.5",
         "happy-dom": "20.0.5",
@@ -376,12 +376,12 @@
         "valdres": "workspace:^",
       },
       "peerDependencies": {
-        "valdres": "^1.0.0-beta.18",
+        "valdres": "^1.0.0-beta.19",
       },
     },
     "packages/@valdres/browser-screen-details": {
       "name": "@valdres/browser-screen-details",
-      "version": "1.0.0-beta.7",
+      "version": "1.0.0-beta.8",
       "devDependencies": {
         "@happy-dom/global-registrator": "20.0.5",
         "happy-dom": "20.0.5",
@@ -389,12 +389,12 @@
         "valdres": "workspace:^",
       },
       "peerDependencies": {
-        "valdres": "^1.0.0-beta.18",
+        "valdres": "^1.0.0-beta.19",
       },
     },
     "packages/@valdres/browser-visibility": {
       "name": "@valdres/browser-visibility",
-      "version": "1.0.0-beta.7",
+      "version": "1.0.0-beta.8",
       "devDependencies": {
         "@happy-dom/global-registrator": "20.0.5",
         "@types/react": "19.1.12",
@@ -407,12 +407,12 @@
         "valdres-react": "workspace:^",
       },
       "peerDependencies": {
-        "valdres": "^1.0.0-beta.18",
+        "valdres": "^1.0.0-beta.19",
       },
     },
     "packages/@valdres/browser-window": {
       "name": "@valdres/browser-window",
-      "version": "1.0.0-beta.7",
+      "version": "1.0.0-beta.8",
       "devDependencies": {
         "@happy-dom/global-registrator": "20.0.5",
         "happy-dom": "20.0.5",
@@ -420,37 +420,37 @@
         "valdres": "workspace:^",
       },
       "peerDependencies": {
-        "valdres": "^1.0.0-beta.18",
+        "valdres": "^1.0.0-beta.19",
       },
     },
     "packages/@valdres/color-mode": {
       "name": "@valdres/color-mode",
-      "version": "1.0.0-beta.6",
+      "version": "1.0.0-beta.7",
       "devDependencies": {
         "happy-dom": "18.0.1",
         "typescript": "5.9.2",
         "valdres": "workspace:^",
       },
       "peerDependencies": {
-        "valdres": "^1.0.0-beta.18",
+        "valdres": "^1.0.0-beta.19",
       },
     },
     "packages/@valdres/hotkeys": {
       "name": "@valdres/hotkeys",
-      "version": "1.0.0-beta.6",
+      "version": "1.0.0-beta.7",
       "devDependencies": {
         "@valdres/browser-keyboard": "workspace:^",
         "typescript": "5.9.2",
         "valdres": "workspace:^",
       },
       "peerDependencies": {
-        "@valdres/browser-keyboard": "^1.0.0-beta.7",
-        "valdres": "^1.0.0-beta.18",
+        "@valdres/browser-keyboard": "^1.0.0-beta.8",
+        "valdres": "^1.0.0-beta.19",
       },
     },
     "packages/@valdres/public-ip": {
       "name": "@valdres/public-ip",
-      "version": "1.0.0-beta.7",
+      "version": "1.0.0-beta.8",
       "devDependencies": {
         "@happy-dom/global-registrator": "20.0.5",
         "@types/react": "18.3.8",
@@ -463,12 +463,12 @@
         "valdres-react": "workspace:^",
       },
       "peerDependencies": {
-        "valdres": "^1.0.0-beta.18",
+        "valdres": "^1.0.0-beta.19",
       },
     },
     "packages/@valdres/redux-devtools": {
       "name": "@valdres/redux-devtools",
-      "version": "1.0.0-beta.5",
+      "version": "1.0.0-beta.6",
       "devDependencies": {
         "@happy-dom/global-registrator": "20.0.5",
         "happy-dom": "20.0.5",
@@ -476,7 +476,7 @@
         "valdres": "workspace:^",
       },
       "peerDependencies": {
-        "valdres": "^1.0.0-beta.18",
+        "valdres": "^1.0.0-beta.19",
       },
     },
     "packages/test": {
@@ -485,7 +485,7 @@
     },
     "packages/valdres": {
       "name": "valdres",
-      "version": "1.0.0-beta.18",
+      "version": "1.0.0-beta.19",
       "devDependencies": {
         "@arethetypeswrong/cli": "0.18.5",
         "@testing-library/react": "16.3.0",
@@ -502,7 +502,7 @@
     },
     "packages/valdres-angular": {
       "name": "valdres-angular",
-      "version": "1.0.0-beta.7",
+      "version": "1.0.0-beta.8",
       "devDependencies": {
         "@angular/core": "19.2.0",
         "typescript": "5.9.2",
@@ -510,7 +510,7 @@
       },
       "peerDependencies": {
         "@angular/core": ">=17",
-        "valdres": "^1.0.0-beta.18",
+        "valdres": "^1.0.0-beta.19",
       },
     },
     "packages/valdres-react": {
@@ -538,7 +538,7 @@
     },
     "packages/valdres-solid": {
       "name": "valdres-solid",
-      "version": "1.0.0-beta.7",
+      "version": "1.0.0-beta.8",
       "devDependencies": {
         "solid-js": "1.9.5",
         "typescript": "5.9.2",
@@ -546,12 +546,12 @@
       },
       "peerDependencies": {
         "solid-js": ">=1.8",
-        "valdres": "^1.0.0-beta.18",
+        "valdres": "^1.0.0-beta.19",
       },
     },
     "packages/valdres-svelte": {
       "name": "valdres-svelte",
-      "version": "1.0.0-beta.7",
+      "version": "1.0.0-beta.8",
       "devDependencies": {
         "@happy-dom/global-registrator": "20.0.5",
         "@sveltejs/package": "^2.5.8",
@@ -565,12 +565,12 @@
       },
       "peerDependencies": {
         "svelte": ">=5.7",
-        "valdres": "^1.0.0-beta.18",
+        "valdres": "^1.0.0-beta.19",
       },
     },
     "packages/valdres-vue": {
       "name": "valdres-vue",
-      "version": "1.0.0-beta.7",
+      "version": "1.0.0-beta.8",
       "devDependencies": {
         "@happy-dom/global-registrator": "20.0.5",
         "@vue/test-utils": "2.4.6",
@@ -580,7 +580,7 @@
         "vue": "3.5.13",
       },
       "peerDependencies": {
-        "valdres": "^1.0.0-beta.18",
+        "valdres": "^1.0.0-beta.19",
         "vue": ">=3.3",
       },
     },

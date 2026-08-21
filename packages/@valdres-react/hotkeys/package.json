@@ -1,7 +1,7 @@
 {
     "name": "@valdres-react/hotkeys",
     "description": "React hotkey hooks powered by Valdres",
-    "version": "1.0.0-beta.6",
+    "version": "1.0.0-beta.7",
     "license": "MIT",
     "author": {
         "name": "Eigil Sagafos"
@@ -24,7 +24,7 @@
         "test": "echo 'no tests'"
     },
     "dependencies": {
-        "@valdres/hotkeys": "^1.0.0-beta.6"
+        "@valdres/hotkeys": "^1.0.0-beta.7"
     },
     "devDependencies": {
         "@testing-library/react": "16.3.0",
@@ -35,7 +35,7 @@
     },
     "peerDependencies": {
         "react": ">=18",
-        "valdres": "^1.0.0-beta.18",
+        "valdres": "^1.0.0-beta.19",
         "valdres-react": "^1.0.0-beta.4"
     },
     "publishConfig": {
