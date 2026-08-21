@@ -266,6 +266,11 @@ describe("trusted generated-release pull requests", () => {
         expect(publish).toContain(
             "if: steps.changesets.outputs.pr-number != ''",
         )
+        // The local-clone checks below only hold while the action pushes the
+        // release commit with the Git CLI. changesets/action@v2 defaults to
+        // pushing through the GitHub API, which never checks the release
+        // branch out, so dropping this input silently breaks the gate.
+        expect(publish).toContain("push-with-git-cli: true")
         expect(publish).toContain(
             "exec.getExecOutput('git', ['rev-parse', 'HEAD']",
         )
