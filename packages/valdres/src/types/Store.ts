@@ -10,6 +10,19 @@ import type { SubscribeFn } from "./SubscribeFn"
 import type { ScopedTransactionFn } from "./Transaction"
 import type { TransactionFn } from "./TransactionFn"
 
+/** Remove a family member from THIS store: its value goes, and it leaves this
+ *  store's `get(family)` membership list.
+ *
+ *  On a scope that is a local removal, not a tree-wide one, and the two read
+ *  paths then answer differently on purpose: `get(family)` omits the member,
+ *  while `get(family(key))` still returns the PARENT's value, because a value
+ *  read with no local value falls through the scope chain as it always does. The
+ *  scope is saying "not one of mine", not "gone everywhere" — the parent and its
+ *  other scopes are untouched. On a root store there is nothing to fall through
+ *  to, so the member reads its family default.
+ *
+ *  `ScopedStore.unsetAll()` reverts a scope-local delete along with everything
+ *  else the scope owns, putting the member back in its membership list. */
 type DeleteAtom = <
     Value extends any,
     Args extends [any, ...any[]] = [any, ...any[]],
@@ -61,11 +74,52 @@ export type Store = {
      *  on a scope, reverts to the default on a root); no-op when the store holds
      *  no own value. See `UnsetAtom`. */
     unset: UnsetAtom
-    /** Run a synchronous transaction. Promise/thenable callbacks are rejected.
-     *  An optional `name` is surfaced on the `meta` argument of `store.onChange`
-     *  callbacks for this commit (useful for dev tools). */
-    txn: (callback: TransactionFn, name?: string) => void
+    /** Run a synchronous transaction and return whatever the callback returned —
+     *  the same contract the callback forms of `scope()` carry, so a value read
+     *  against the transaction's view can come straight back out. Promise and
+     *  thenable callbacks are rejected at runtime, so a transaction cannot be
+     *  used to await anything. An optional `name` is surfaced on the `meta`
+     *  argument of `store.onChange` callbacks for this commit (useful for dev
+     *  tools). */
+    txn: <Callback extends TransactionFn>(
+        callback: Callback,
+        name?: string,
+    ) => ReturnType<Callback>
     scope: ScopeFn
+    /** Whether this store has a child scope with `scopeId` — its OWN children
+     *  only, not a search of the tree.
+     *
+     *  The same question `scope(scopeId, callback)` answers by throwing, without
+     *  making a consumer catch to find out. Depth composes through `scope()`
+     *  rather than a path argument: `store.scope("a", s => s.hasScope("b"))`.
+     *  A scope exists from the first `scope(scopeId)` until its last lease
+     *  detaches, so this also reports whether the id is currently live rather
+     *  than merely once-used. */
+    hasScope: (scopeId: string) => boolean
+    /** Run `callback` when this store is disposed — when `dispose()` is called
+     *  on it, when an ancestor is disposed, or, for a scope, when its LAST lease
+     *  detaches. Returns a function that cancels the registration.
+     *
+     *  For resources a consumer owns ALONGSIDE the store and must release with
+     *  it: an adapter's per-scope cache, a subscription to something external, a
+     *  timer. A scope's death is otherwise unobservable from a single lease —
+     *  the holder knows when IT detaches, not whether it was the last — so the
+     *  alternative is inferring it on the next acquire, which cannot distinguish
+     *  a surviving scope from a new one that reuses the id.
+     *
+     *  The store is already terminal when the callback runs, so every operation
+     *  on it throws `StoreDisposedError`; read what you need beforehand and
+     *  close over it. Every registered callback runs even if an earlier one
+     *  throws, and the first error is rethrown to whoever called `dispose()`.
+     *  Per-atom setup instead belongs in `onMount`, whose cleanup runs when the
+     *  last subscriber leaves rather than when the store dies.
+     *
+     *  Each call is an independent registration: the same function passed twice
+     *  runs twice, and each returned canceller removes only its own. Unlike
+     *  `onChange`/`onCommitEnd`, which dedupe by callback identity — for a
+     *  cleanup, skipping a registered release is a leak the caller cannot see,
+     *  while running one twice is a bug they can. */
+    onDispose: (callback: () => void) => () => void
     /** Subscribe to changes in this store and its descendant scopes. The callback
      *  fires once per committed operation with the changes, the scope each
      *  occurred in, and `meta` (source / txn name). Returns an unsubscribe
@@ -177,7 +231,10 @@ export type ScopedStore = Store & {
     /** As `Store.txn`, but the callback receives a `ScopedTransaction` — so a
      *  scope's own transaction can `unsetAll()` directly, without going back
      *  through the parent's `txn.scope(id, …)`. */
-    txn: (callback: ScopedTransactionFn, name?: string) => void
+    txn: <Callback extends ScopedTransactionFn>(
+        callback: Callback,
+        name?: string,
+    ) => ReturnType<Callback>
     /** Revert every value this scope owns to what it inherits, keeping the
      *  scope alive. See `UnsetAllValues`. */
     unsetAll: UnsetAllValues

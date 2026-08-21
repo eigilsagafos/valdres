@@ -9,8 +9,11 @@ export const storeAdapter = Object.freeze({
     isEnumerable(store: Store): boolean {
         return getStoreData(store).enumerable === true
     },
+    /** @deprecated Public since 1.0.0-beta.20 as `store.hasScope(scopeId)`.
+     *  Kept so an adapter pinned to this capability object keeps working; it
+     *  now just forwards. */
     hasScope(store: Store, scopeId: string): boolean {
-        return getStoreData(store).scopes.has(scopeId)
+        return store.hasScope(scopeId)
     },
     hasScopePath(store: Store, scopeIds: readonly string[]): boolean {
         let data = getStoreData(store)

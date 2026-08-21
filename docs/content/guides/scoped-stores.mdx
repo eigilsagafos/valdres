@@ -103,6 +103,29 @@ root.get(todoAtom) // ["a"]
 child.get(todoAtom) // ["a", "b"] — child sees both
 ```
 
+### Deleting a member in a scope
+
+`del()` removes the member from **this store's** membership. On a scope that is
+a local removal, and the two read paths answer differently on purpose:
+
+```ts
+root.set(todoAtom("a"), { title: "Buy milk", done: false })
+
+child.del(todoAtom("a"))
+
+child.get(todoAtom) // [] — not one of the child's members
+child.get(todoAtom("a")) // { title: "Buy milk" … } — still the parent's value
+root.get(todoAtom) // ["a"] — the parent is untouched
+```
+
+A value read with no local value falls through the scope chain, exactly as it
+does for any other atom — the scope said "not one of mine", not "gone
+everywhere". On a root store there is nothing to fall through to, so a deleted
+member reads its family default instead.
+
+This is also why reverting a scope has to restore membership and not just
+values: see [Reverting a scope](#reverting-a-scope) below.
+
 ## Subscriptions
 
 Subscriptions within a scope react to changes in that scope's view of state:
@@ -201,13 +224,29 @@ scope snap back before the write that supersedes it:
 const publishedName = atom("")
 
 root.txn(txn => {
-    txn.set(publishedName, root.scope("draft", s => s.get(nameAtom)))
+    txn.set(
+        publishedName,
+        root.scope("draft", s => s.get(nameAtom)),
+    )
     txn.scope("draft", scoped => scoped.unsetAll())
 })
 ```
 
-`txn.scope()` throws if the scope does not exist, so guard it when a scope may
-never have been opened.
+`txn.scope()` throws if the scope does not exist, so guard with `hasScope` when
+a scope may never have been opened — from **inside** the transaction callback:
+
+```ts
+root.txn(txn => {
+    if (root.hasScope("draft")) {
+        txn.scope("draft", scoped => scoped.unsetAll())
+    }
+})
+```
+
+Checking before `txn()` looks equivalent but is not on a `batchUpdates` store:
+`txn()` flushes the pending batch before running your callback, and a subscriber
+woken by that flush can detach the last lease on the scope you just checked for.
+Inside the callback the flush has already happened.
 
 `unsetAll()` is a scope operation — a root store has no parent to revert to, and
 calling it there throws. It is typed that way too: `unsetAll` exists on
@@ -226,6 +265,39 @@ child.detach()
 
 In framework integrations, cleanup happens automatically when the scope
 component unmounts.
+
+`detach()` releases **your** lease. The scope itself dies when its last lease
+goes, so a holder cannot tell from its own `detach()` whether the scope survived
+— `store.hasScope(scopeId)` answers that from the parent:
+
+```ts
+const first = root.scope("draft")
+const second = root.scope("draft")
+
+first.detach()
+root.hasScope("draft") // true — second still holds a lease
+second.detach()
+root.hasScope("draft") // false — gone
+```
+
+### Releasing your own resources with a scope
+
+If you keep anything alongside a scope — a cache, a subscription to something
+external, a timer — register it with `onDispose`, which runs when the scope
+actually dies: on its last `detach()`, or when an ancestor is disposed.
+
+```ts
+const draft = root.scope(changeSetRef)
+draft.onDispose(() => cache.delete(changeSetRef))
+```
+
+Without it the only signal is inference on the next acquire, which cannot
+distinguish a scope that survived from a new one that reuses the id — so state
+keyed by the id outlives the scope it belonged to and leaks into its successor.
+
+The store is already terminal inside the callback, so read anything you need
+beforehand and close over it. `onDispose` is on every store, not just scopes: a
+request/SSR root store releases its resources the same way.
 
 ## In React
 
