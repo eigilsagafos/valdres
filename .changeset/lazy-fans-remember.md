@@ -32,9 +32,24 @@ before trusting `equal`; the extra probe is paid only when the value compared
 against was `undefined`, so the steady-state hot path is unchanged (atom,
 selector, and propagation benchmarks are flat).
 
-Two observable consequences beyond the speed. A subscriber now fires when a
-selector recovers from a throwing evaluation into `undefined`, where before the
-change was silently dropped. And `store.snapshot()` on an enumerable store now
-includes selectors whose value is `undefined` — they were materialized all
-along, but absent from `values` and so invisible to `snapshot()` and to anything
-built on it, such as `@valdres/redux-devtools`.
+The same root cause had a second symptom: a custom `equal` was invoked with the
+absent-entry sentinel. `EqualFunc<Value>` types both operands as `Value`, so
+`equal: (a, b) => a.id === b.id` on a `selector<{ id: number }>` is type-correct
+with nothing to null-guard — yet it received `undefined` as `a` and threw on the
+selector's very first read. On the propagation path the same call made a
+selector unrecoverable: a throwing evaluation drops the value, so the recovery
+compared against absence, the comparator threw again, the catch dropped the
+recovered value, and the selector never escaped its error state. Presence is now
+resolved _before_ `equal` is consulted rather than filtering its result
+afterwards, so a comparator only ever sees two committed values — which is also
+the honest reading of the contract, since with nothing committed the answer is
+"not equal" by definition and there is no question to ask.
+
+Three observable consequences beyond the speed. A custom `equal` that
+dereferences its arguments now works on a selector's first read instead of
+throwing. A subscriber now fires when a selector recovers from a throwing
+evaluation into `undefined`, where before the change was silently dropped. And
+`store.snapshot()` on an enumerable store now includes selectors whose value is
+`undefined` — they were materialized all along, but absent from `values` and so
+invisible to `snapshot()` and to anything built on it, such as
+`@valdres/redux-devtools`.

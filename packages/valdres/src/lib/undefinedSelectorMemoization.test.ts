@@ -497,3 +497,149 @@ describe("undefined-valued selectors are memoized", () => {
         expect(counter.evaluations).toBe(1)
     })
 })
+
+// The other half of the same root cause, reported by Copilot on PR #329 and
+// confirmed to predate it (`origin/main` behaves identically).
+//
+// `EqualFunc<Value>` types BOTH operands as `Value` — not `Value | undefined` —
+// so `equal: (a, b) => a.id === b.id` on a `selector<{ id: number }>` is
+// type-correct with no reason to null-guard. But both change-detection sites
+// read `data.values.get(selector)`, which yields `undefined` for an ABSENT
+// entry, and passed it straight to the comparator. A comparator that
+// dereferences its argument therefore threw on the selector's very first read,
+// and on the propagation path a recovery from a throwing evaluation threw again
+// (the catch drops the value, so the next attempt still compares against
+// absence) — leaving the selector permanently stuck in its error state.
+//
+// The fix gates `equal` on presence instead of filtering its result, so the
+// comparator is only ever invoked with two committed values. That is also the
+// honest reading of the contract: with nothing committed the answer is "not
+// equal" by definition, so there is no question to ask.
+describe("custom equal is never handed an absent value", () => {
+    type Row = { id: number }
+    const byId = (a: Row, b: Row) => a.id === b.id
+
+    test("a comparator is not invoked at all on a first evaluation", () => {
+        const source = atom(1, { name: "eq-source-1" })
+        const calls: unknown[] = []
+        const state = selector<Row>(get => ({ id: get(source) }), {
+            name: "eq-child-1",
+            equal: (a, b) => {
+                calls.push(a)
+                return a?.id === b?.id
+            },
+        })
+        const parent = selector(get => get(state).id, { name: "eq-parent-1" })
+
+        const testStore = store()
+        expect(testStore.get(parent)).toBe(1)
+        // Was 1 call, with `a === undefined`.
+        expect(calls).toEqual([])
+
+        // It is still consulted once the selector has a committed value.
+        testStore.set(source, 2)
+        expect(testStore.get(parent)).toBe(2)
+        expect(calls.length).toBeGreaterThan(0)
+        expect(calls.every(a => a !== undefined)).toBe(true)
+    })
+
+    test("a comparator that dereferences its argument survives a first read", () => {
+        const source = atom(1, { name: "eq-source-2" })
+        const state = selector<Row>(get => ({ id: get(source) }), {
+            name: "eq-child-2",
+            equal: byId,
+        })
+        const testStore = store()
+        // Threw "undefined is not an object (evaluating 'a.id')" before the fix.
+        expect(testStore.get(state)).toEqual({ id: 1 })
+    })
+
+    test("the same holds when the selector is only read transitively", () => {
+        // The directly-read state has getDefault's restore fallback in front of
+        // it; a transitively-read one does not, so assert both.
+        const source = atom(1, { name: "eq-source-3" })
+        const child = selector<Row>(get => ({ id: get(source) }), {
+            name: "eq-child-3",
+            equal: byId,
+        })
+        const parent = selector(get => get(child).id, { name: "eq-parent-3" })
+        expect(store().get(parent)).toBe(1)
+    })
+
+    test("the same holds when subscribed and inside a scope", () => {
+        const source = atom(1, { name: "eq-source-4" })
+        const child = selector<Row>(get => ({ id: get(source) }), {
+            name: "eq-child-4",
+            equal: byId,
+        })
+        const parent = selector(get => get(child).id, { name: "eq-parent-4" })
+
+        const root = store()
+        expect(() => root.sub(parent, () => {})).not.toThrow()
+        expect(root.get(parent)).toBe(1)
+
+        const scoped = store().scope("eq-scope")
+        expect(scoped.get(parent)).toBe(1)
+    })
+
+    test("a comparator that dereferences its argument survives error recovery", () => {
+        // The propagation path: a throwing evaluation drops the value, so the
+        // recovery compared against absence. The comparator threw, the catch
+        // dropped the recovered value again, and the selector never escaped.
+        const source = atom(1, { name: "eq-source-5" })
+        const child = selector<Row>(
+            get => {
+                const value = get(source)
+                if (value === 2) throw new Error("eq-boom")
+                return { id: value }
+            },
+            { name: "eq-child-5", equal: byId },
+        )
+        const parent = selector(get => `id=${get(child).id}`, {
+            name: "eq-parent-5",
+        })
+
+        const testStore = store()
+        const seen: string[] = []
+        testStore.sub(parent, () => seen.push("notified"))
+        expect(testStore.get(parent)).toBe("id=1")
+
+        try {
+            testStore.set(source, 2)
+        } catch {}
+        // Recovering must neither throw out of `set` nor leave the selector
+        // stuck: both happened before the fix.
+        expect(() => testStore.set(source, 3)).not.toThrow()
+        expect(testStore.get(parent)).toBe("id=3")
+        expect(seen.length).toBeGreaterThan(0)
+    })
+
+    test("a comparator is not invoked on a first evaluation during propagation", () => {
+        // Guards the propagateUpdatedAtoms site specifically: a selector first
+        // materialized by a write must not consult its comparator either.
+        const gate = atom(false, { name: "eq-source-6" })
+        const source = atom(1, { name: "eq-source-6b" })
+        const calls: unknown[] = []
+        const lazy = selector<Row>(get => ({ id: get(source) }), {
+            name: "eq-child-6",
+            equal: (a, b) => {
+                calls.push(a)
+                return a?.id === b?.id
+            },
+        })
+        const parent = selector(get => (get(gate) ? get(lazy).id : -1), {
+            name: "eq-parent-6",
+        })
+
+        const testStore = store()
+        testStore.sub(parent, () => {})
+        expect(testStore.get(parent)).toBe(-1)
+        expect(calls).toEqual([])
+
+        // Flipping the gate materializes `lazy` for the first time inside a
+        // propagation pass.
+        testStore.set(gate, true)
+        expect(testStore.get(parent)).toBe(1)
+        expect(calls.every(a => a !== undefined)).toBe(true)
+    })
+})
