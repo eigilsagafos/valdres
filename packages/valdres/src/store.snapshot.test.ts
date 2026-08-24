@@ -63,6 +63,76 @@ describe("store.snapshot (enumerable mode)", () => {
         })
     })
 
+    test("a selector whose value is undefined appears too", () => {
+        // A materialized selector was invisible here whenever its value was
+        // `undefined`: `initSelector` skipped the write because the computed
+        // value compared equal to the absent-entry sentinel, so nothing landed
+        // in `values` for `collect()` to iterate. This module's own doc comment
+        // claimed "a selector only appears when it holds a cached value — which,
+        // iterating `values`, it always does", which was false for exactly this
+        // case. Asserted here rather than only through the internal
+        // `values.has` invariant because it is public behavior that
+        // `@valdres/redux-devtools` and any snapshot consumer sees.
+        const s = store({ enumerable: true })
+        const source = atom(1)
+        const absent = selector<number | undefined>(
+            get => (get(source) === 1 ? undefined : get(source)),
+            { name: "snapshot-undefined" },
+        )
+        s.sub(absent, () => {})
+        expect(s.get(absent)).toBeUndefined()
+
+        const snap = s.snapshot()
+        expect(snap).toContainEqual({
+            type: "selector",
+            state: absent,
+            value: undefined,
+            scope: [],
+        })
+
+        // And it stays listed with the right value across a transition in both
+        // directions, so the entry tracks the selector rather than lingering.
+        s.set(source, 5)
+        expect(s.snapshot()).toContainEqual({
+            type: "selector",
+            state: absent,
+            value: 5,
+            scope: [],
+        })
+        s.set(source, 1)
+        expect(s.snapshot()).toContainEqual({
+            type: "selector",
+            state: absent,
+            value: undefined,
+            scope: [],
+        })
+    })
+
+    test("an undefined-valued selector appears when read without a subscriber", () => {
+        // The transitive, unsubscribed shape: no `getDefault` restore fallback
+        // and no live graph, so this is the case that stayed broken longest.
+        const s = store({ enumerable: true })
+        const source = atom(1)
+        const child = selector<undefined>(
+            get => {
+                get(source)
+                return undefined
+            },
+            { name: "snapshot-undefined-cold" },
+        )
+        const parent = selector(get => get(child) === undefined, {
+            name: "snapshot-undefined-parent",
+        })
+        expect(s.get(parent)).toBe(true)
+
+        expect(s.snapshot()).toContainEqual({
+            type: "selector",
+            state: child,
+            value: undefined,
+            scope: [],
+        })
+    })
+
     test("excludes __valdresInternal atoms and family containers", () => {
         const s = store({ enumerable: true })
         const atom1 = atom(1)

@@ -167,10 +167,28 @@ const reEvaluateSelector = (
             true,
         )
 
-        // Use reference equality for promises — deep equal treats all
-        // promises as structurally identical (both have zero own keys).
+        // Same presence rule as initSelector's, for the same reason: on this
+        // path a MISSING entry means the previous evaluation threw (see the
+        // catch below, which drops the value). Treating that absence as a
+        // committed `undefined` both leaves the selector unmemoized and stops
+        // propagation, so a subscriber never learns the error cleared. The
+        // probe is paid only when the value we would compare against is
+        // `undefined`.
+        const hasExistingValue =
+            existingValue !== undefined || data.values.has(selector)
+
+        // Gating rather than post-filtering also keeps every comparator — the
+        // selector's own and each one `treeEqualAcrossGroups` invokes per group
+        // — from ever seeing the absent sentinel, which `EqualFunc<Value>` says
+        // cannot happen. Otherwise a recovery from a throwing evaluation calls
+        // `equal(undefined, recovered)`, a comparator like
+        // `(a, b) => a.id === b.id` throws, the catch below drops the recovered
+        // value again, and the selector never escapes the error state.
+        // Promises use reference equality — deep equal treats all promises as
+        // structurally identical (both have zero own keys).
         const areEqual =
-            isPromiseLike(existingValue) || isPromiseLike(updatedValue)
+            hasExistingValue &&
+            (isPromiseLike(existingValue) || isPromiseLike(updatedValue)
                 ? existingValue === updatedValue
                 : treeCtx === undefined
                   ? selector.equal(existingValue, updatedValue, updatedAtoms)
@@ -180,7 +198,7 @@ const reEvaluateSelector = (
                         existingValue,
                         updatedValue,
                         updatedAtoms,
-                    )
+                    ))
         if (areEqual) return false
         setValueInData(selector, updatedValue, data)
         return true

@@ -1158,12 +1158,32 @@ export const initSelector = <V>(
         selectorGraphActive,
     )
 
-    // Promises should use reference equality — deep equal treats all
-    // promises as structurally identical (both have zero own keys).
+    // `data.values.get` returns `undefined` both for a committed `undefined`
+    // and for NOTHING COMMITTED, so presence has to be resolved before the two
+    // are treated alike. The extra probe is paid only when the value we would
+    // otherwise compare against is `undefined`.
+    //
+    // Nothing committed means nothing can be equal, so skipping the write would
+    // leave the selector permanently unmemoized: every cache hit downstream
+    // keys off `values.has`, so each later read re-runs the body — including
+    // each repeated `get(child)` inside ONE parent evaluation, which turns a
+    // shared leaf in a recursive traversal into O(reads x full re-eval).
+    const hasExistingValue =
+        existingValue !== undefined || data.values.has(selector)
+
+    // Gate `equal` on presence rather than filtering its result afterwards:
+    // `EqualFunc<Value>` types BOTH operands as `Value`, so handing a
+    // comparator the absent sentinel is a type lie, and a perfectly ordinary
+    // `equal: (a, b) => a.id === b.id` throws on the selector's first read.
+    // There is also nothing to ask: with no committed value the answer is
+    // "not equal" by definition, so the call is skipped rather than repaired.
+    // Promises use reference equality — deep equal treats all promises as
+    // structurally identical (both have zero own keys).
     const areEqual =
-        isPromiseLike(existingValue) || isPromiseLike(updatedValue)
+        hasExistingValue &&
+        (isPromiseLike(existingValue) || isPromiseLike(updatedValue)
             ? existingValue === updatedValue
-            : selector.equal(existingValue as V, updatedValue as V)
+            : selector.equal(existingValue as V, updatedValue as V))
 
     if (areEqual) {
         if (!selectorGraphActive) {

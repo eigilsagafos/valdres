@@ -141,7 +141,14 @@ try {
         fixtures[name] = { raw: bytes.length, gzip: gzipSize(bytes) }
     }
 
-    const actual = { dist, distFiles, packed, fixtures }
+    // Recorded, not compared. Bundler output is toolchain-specific: the same
+    // source built on Bun 1.3.13 measures ~2.2KB smaller than on 1.4.0, which
+    // is more than the whole 2% allowance. Stamping the version that produced
+    // these numbers lets a failure say whether toolchain drift is the likely
+    // cause instead of leaving a mystery multi-KB delta. (A baseline generated
+    // on a different Bun than CI enforces with silently consumed ~1.99% of the
+    // allowance for several releases.)
+    const actual = { bun: Bun.version, dist, distFiles, packed, fixtures }
     const lines = [
         "Measured sizes (bytes):",
         `  dist total          raw ${dist.raw}  gzip ${dist.gzip}`,
@@ -220,6 +227,23 @@ async function checkAgainstBaseline(
     if (failures.length > 0) {
         console.error(`\n${failures.length} size gate(s) exceeded:`)
         for (const line of failures) console.error(`  ✗ ${line}`)
+        // Only speaks up on an existing failure, so a contributor on a newer
+        // patch release whose sizes are fine never sees it.
+        if (baseline.bun !== undefined && baseline.bun !== Bun.version) {
+            console.error(
+                `\nNote: the baseline was recorded on Bun ${baseline.bun}, but this ` +
+                    `run is Bun ${Bun.version}. Bundler output differs between Bun ` +
+                    `versions by more than this gate's 2% allowance, so the delta above ` +
+                    `may be toolchain drift rather than your change. Compare against a ` +
+                    `run of main on THIS Bun version before regenerating.`,
+            )
+        } else if (baseline.bun === undefined) {
+            console.error(
+                `\nNote: this baseline predates Bun-version stamping. Regenerate it on ` +
+                    `the same Bun the CI gate pins (.github/workflows/ci.yaml) so the 2% ` +
+                    `allowance measures your change rather than a toolchain difference.`,
+            )
+        }
         console.error(
             "\nIf the growth is intentional, regenerate the baseline with:\n" +
                 "  VALDRES_UPDATE_SIZE_BASELINE=1 bun run check-size",
