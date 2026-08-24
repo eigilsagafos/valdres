@@ -27,7 +27,11 @@ import { writeAtoms } from "./writeAtoms"
 // Safe only with writeAtoms("skip"), which cannot mutate this queue.
 // Reusing it keeps hook-free bulk writes allocation-light.
 const noOnSets: DeferredOnSet[] = []
-const FRESH_ATOM_FAST_PATH_MIN = 256
+// Exported for the fast path's own tests, which have to straddle the threshold
+// to compare the specialization against the established path — a hardcoded
+// batch size would silently take the established path on both sides if this
+// number ever moved, and the differential would pass by being vacuous.
+export const FRESH_ATOM_FAST_PATH_MIN = 256
 
 /**
  * Bulk-write coordinator of the commit engine, invoked directly by a
@@ -161,8 +165,24 @@ const tryWriteFreshSimpleAtoms = (
         }
     }
     for (const [atom, value] of pairs) {
-        // Match initAtom's primitive landing before equality. If equality ever
-        // throws, the initialized default remains just as it did previously.
+        // The established path's per-atom sequence for a fresh atom — land the
+        // declared default (initAtom), run the atom's comparator, write — kept
+        // here for FAILURE fidelity, not for the comparison's answer: admission
+        // proved nothing is committed yet, so an equal answer has no prior
+        // value to preserve by skipping the write. Whichever of the two steps
+        // after the landing throws, the atom is left holding its default,
+        // exactly as initAtom plus a failed set leaves it.
+        //
+        // Neither step is dead, though `equal` alone is inert on a
+        // primitive-or-null first operand (it answers from `===` without
+        // reaching an object path, so the incoming value's valueOf/toString are
+        // never invoked). What keeps them live is that this loop runs USER CODE
+        // between iterations: in a dev build setValueInData deep-freezes the
+        // staged value, and deepFreeze reads every own property, so a getter in
+        // an EARLIER atom's value can reassign a later atom's `equal` (atoms
+        // are plain objects) or fail its own second traversal. Admission's
+        // `atom.equal === equal` is therefore a fact about loop entry, not
+        // about iteration N. setAtoms.test.ts fails if either step is dropped.
         data.values.set(atom, atom.defaultValue)
         atom.equal(atom.defaultValue, value)
         setValueInData(atom, value, data)
