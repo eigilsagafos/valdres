@@ -1,4 +1,9 @@
-import { expect, test } from "bun:test"
+// `test-compat`, not `bun:test`: `src/lib/*Fuzz.test.ts` is an explicit include
+// of the Node/V8 rewrite-guard lane (vitest.rewrite-guards.config.ts), where
+// `bun:test` does not resolve. Its siblings — unsetAllDifferentialFuzz,
+// livenessCyclicFuzz, scopeFamilyTxnFuzz — all import the same shim, so this
+// invariant now gets checked on both JSC and V8 rather than only Bun.
+import { expect, test } from "../../test/performance/test-compat"
 import { atom } from "../atom"
 import { selector } from "../selector"
 import { store } from "../store"
