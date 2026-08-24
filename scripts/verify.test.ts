@@ -3,7 +3,7 @@ import { existsSync, readFileSync } from "fs"
 import { mkdtemp, rm } from "fs/promises"
 import { tmpdir } from "os"
 import { join } from "path"
-import { buildPlan, resolveStart, runSteps } from "./verify"
+import { buildPlan, resolveStart, runSteps, toolchainDrift } from "./verify"
 
 // `bun run verify` reproduces ci.yaml's pull-request jobs by reading them out
 // of the workflow. These tests are the other half of that contract: they run
@@ -493,6 +493,36 @@ describe("verify refuses to run a job it cannot reproduce", () => {
         ).toThrow(/no later step re-failing/)
     })
 
+    // GitHub also accepts an expression for continue-on-error, which parses as
+    // a string. A plain `!== true` check waves it through as strict, so CI
+    // could tolerate a failure verify treats as fatal.
+    test.each([
+        ["${{ github.event_name == 'push' }}", "an expression"],
+        ["'true'", "a quoted string"],
+    ])("a non-literal continue-on-error (%s) is an error", value => {
+        expect(() =>
+            buildPlan(
+                fixture(
+                    step("Gate", [
+                        "id: gate",
+                        `continue-on-error: ${value}`,
+                        "run: exit 1",
+                    ]),
+                ),
+            ),
+        ).toThrow(/non-literal `continue-on-error/)
+    })
+
+    test("continue-on-error: false needs no compensator", () => {
+        expect(() =>
+            buildPlan(
+                fixture(
+                    step("Gate", ["continue-on-error: false", "run: echo ok"]),
+                ),
+            ),
+        ).not.toThrow()
+    })
+
     test("the exact failure compensator is recognised and skipped", () => {
         const plan = buildPlan(
             fixture(
@@ -622,6 +652,54 @@ describe("runSteps", () => {
     })
 })
 
+// A mismatched toolchain is a false-green path, not a nicety: the wrong Bun has
+// already made the size gate pass locally on a commit CI rejected, and that gate
+// now runs inside verify.
+describe("toolchainDrift", () => {
+    const pinned = { bun: "1.4.0", node: "24.16" }
+
+    test("exact and patch-level matches are clean", () => {
+        expect(
+            toolchainDrift({ bun: "1.4.0", node: "24.16.0" }, pinned).drift,
+        ).toEqual([])
+        expect(
+            toolchainDrift({ bun: "1.4.0", node: "24.16" }, pinned).drift,
+        ).toEqual([])
+    })
+
+    test("a different minor or major is drift", () => {
+        // "24.16" must not be satisfied by 24.17 or 26 — only by 24.16.x.
+        expect(
+            toolchainDrift({ bun: "1.4.0", node: "24.17.0" }, pinned).drift,
+        ).toEqual(["node is 24.17.0; CI pins 24.16"])
+        expect(
+            toolchainDrift({ bun: "1.3.14", node: "26.0.0" }, pinned).drift,
+        ).toHaveLength(2)
+    })
+
+    test("a prefix that is not a version boundary is drift", () => {
+        // 24.161 starts with "24.16" as a string but is a different version.
+        expect(
+            toolchainDrift({ bun: "1.4.0", node: "24.161.0" }, pinned).drift,
+        ).toEqual(["node is 24.161.0; CI pins 24.16"])
+    })
+
+    test("a missing executable is drift, not a pass", () => {
+        expect(
+            toolchainDrift({ bun: "1.4.0", node: undefined }, pinned).drift,
+        ).toEqual(["node is not installed; CI pins 24.16"])
+    })
+
+    test("an unknown pin is reported but not treated as drift", () => {
+        const { drift, lines } = toolchainDrift(
+            { bun: "1.4.0", node: "24.16.0" },
+            { bun: "1.4.0", node: undefined },
+        )
+        expect(drift).toEqual([])
+        expect(lines.join("\n")).toContain("CI pin unknown")
+    })
+})
+
 describe("resolveStart", () => {
     const steps = [
         { name: "Install [test]", run: "", env: {} },
@@ -639,12 +717,20 @@ describe("resolveStart", () => {
         expect(resolveStart(steps, "3")).toBe(2)
     })
 
-    test("out-of-range and zero fall through to name matching, then null", () => {
-        // Not clamped: silently starting somewhere the user did not ask for is
-        // worse than telling them the step does not exist.
+    test("out-of-range indices are null, never clamped", () => {
+        // Silently starting somewhere the user did not ask for is worse than
+        // telling them the step does not exist.
         expect(resolveStart(steps, "0")).toBeNull()
         expect(resolveStart(steps, "4")).toBeNull()
         expect(resolveStart(steps, "-1")).toBeNull()
+    })
+
+    test("a numeric prefix is not a number", () => {
+        // `parseInt("2oops")` is 2, which would silently skip step 1 — a gate
+        // dropped because of a typo.
+        expect(resolveStart(steps, "2oops")).toBeNull()
+        expect(resolveStart(steps, "1.5")).toBeNull()
+        expect(resolveStart(steps, " 2")).toBeNull()
     })
 
     test("a case-insensitive name substring resolves", () => {

@@ -75,6 +75,12 @@ Canonical reference: `packages/@valdres/browser-geolocation`.
   cover `docs-ci.yml` (`docs:build`, `gen-readmes --check`) or the Bencher gate;
   it prints that list on every run. `--list` prints the plan without running it;
   `--from=N` resumes after a fix (and says so instead of claiming a full pass).
+- **verify refuses to run on a toolchain that doesn't match CI's pins.** Keep
+  local Bun at `.bun-version` and Node at ci.yaml's `node-version` — bundler
+  output is Bun-specific and the size gate runs inside verify, so the wrong
+  version measures something other than what CI measures. `--list` needs no
+  toolchain; `--allow-toolchain-drift` overrides and downgrades the final
+  claim.
 
 ## Releasing
 

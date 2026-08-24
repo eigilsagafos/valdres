@@ -55,9 +55,15 @@
  * "verify passed" meaning something and verify running `shell: python` through
  * bash and calling it green.
  *
+ * It also refuses to run at all on a toolchain that does not match CI's pins.
+ * That is not fussiness: bundler output is Bun-version-specific and the
+ * published-package size gate now runs here, so the wrong Bun measures
+ * something other than what CI measures and a green result would be a lie.
+ *
  *   bun run verify              # both jobs, start to finish
- *   bun run verify --list       # print the plan, run nothing
+ *   bun run verify --list       # print the plan, run nothing (no toolchain needed)
  *   bun run verify --from=9     # resume at step 9 (index or name substring)
+ *   bun run verify --allow-toolchain-drift   # run on a mismatched bun/node anyway
  */
 import { mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
@@ -260,7 +266,18 @@ const assertCompensated = (
     siblings: WorkflowStep[],
     index: number,
 ) => {
-    if (step["continue-on-error"] !== true) return
+    const policy = step["continue-on-error"]
+    // GitHub also accepts an expression here (`continue-on-error: ${{ … }}`),
+    // which parses as a string. Only the runner can evaluate it, and a plain
+    // `!== true` check would wave it through as strict — so CI could tolerate a
+    // failure verify treats as fatal. Literal booleans only.
+    if (policy !== undefined && typeof policy !== "boolean")
+        throw teach(
+            `Step "${name}" in ${WORKFLOW} has a non-literal \`continue-on-error: ${String(
+                policy,
+            )}\`. Only the runner can evaluate that, so verify cannot know whether CI tolerates this step failing.`,
+        )
+    if (policy !== true) return
     const id = step.id
     const compensator =
         id !== undefined &&
@@ -498,25 +515,59 @@ const localNodeVersion = async () => {
     }
 }
 
-/** CI pins its toolchain through `uses:` steps verify cannot run, so report the
- *  gap instead. A Bun mismatch has bitten this repo before: bundler output is
- *  toolchain-specific, so the wrong Bun makes the size gate lie. */
-const reportToolchain = async (pinned: Plan["pinned"]) => {
-    const line = (
+/** CI pins its toolchain through `uses:` steps verify cannot run, so check the
+ *  gap here — and treat it as fatal, not advisory.
+ *
+ *  This is a genuine false-green path, not a nicety. Bundler output is
+ *  toolchain-specific: the wrong Bun has already made the published-package
+ *  size gate pass locally on a commit CI rejected (see
+ *  scripts/toolchain-version.test.ts for the incident). That gate now runs
+ *  inside verify, and the Node smokes in the same job execute whichever `node`
+ *  is on PATH. A run on the wrong toolchain measured something other than what
+ *  CI measures, so it may not claim CI would pass. */
+export const toolchainDrift = (
+    local: { bun: string | undefined; node: string | undefined },
+    pinned: Plan["pinned"],
+) => {
+    const drift: string[] = []
+    const lines: string[] = []
+    const check = (
         label: string,
-        local: string | undefined,
+        installed: string | undefined,
         pin: string | undefined,
     ) => {
-        if (!pin) return `  · ${label} ${local ?? "not found"} (CI pin unknown)`
-        if (!local) return `  ⚠ ${label} not found — CI pins ${pin}`
-        const matches = local === pin || local.startsWith(`${pin}.`)
-        return matches
-            ? `  ✓ ${label} ${local}`
-            : `  ⚠ ${label} ${local} — CI pins ${pin}; results here may not match CI`
+        if (!pin) {
+            lines.push(
+                `  · ${label} ${installed ?? "not found"} (CI pin unknown)`,
+            )
+            return
+        }
+        if (!installed) {
+            drift.push(`${label.trim()} is not installed; CI pins ${pin}`)
+            lines.push(`  ✗ ${label} not found — CI pins ${pin}`)
+            return
+        }
+        // A pinned "24.16" is satisfied by 24.16.x, but not by 24.17 or 26.
+        if (installed === pin || installed.startsWith(`${pin}.`)) {
+            lines.push(`  ✓ ${label} ${installed}`)
+            return
+        }
+        drift.push(`${label.trim()} is ${installed}; CI pins ${pin}`)
+        lines.push(`  ✗ ${label} ${installed} — CI pins ${pin}`)
     }
+    check("bun ", local.bun, pinned.bun)
+    check("node", local.node, pinned.node)
+    return { drift, lines }
+}
+
+const checkToolchain = async (pinned: Plan["pinned"]) => {
+    const { drift, lines } = toolchainDrift(
+        { bun: Bun.version, node: await localNodeVersion() },
+        pinned,
+    )
     console.log("Toolchain")
-    console.log(line("bun ", Bun.version, pinned.bun))
-    console.log(line("node", await localNodeVersion(), pinned.node))
+    for (const line of lines) console.log(line)
+    return drift
 }
 
 const duration = (ms: number) =>
@@ -533,9 +584,13 @@ export const resolveStart = (
     from: string | undefined,
 ): number | null => {
     if (from === undefined) return 0
-    const index = Number.parseInt(from, 10)
-    if (Number.isInteger(index) && index >= 1 && index <= steps.length)
-        return index - 1
+    // Whole-string match only. `parseInt` would read "2oops" as 2 and silently
+    // skip the first step instead of reporting a malformed argument.
+    if (/^\d+$/.test(from)) {
+        const index = Number.parseInt(from, 10)
+        if (index >= 1 && index <= steps.length) return index - 1
+        return null
+    }
     const needle = from.toLowerCase()
     const match = steps.findIndex(step =>
         step.name.toLowerCase().includes(needle),
@@ -612,6 +667,7 @@ export const runSteps = async (
 if (import.meta.main) {
     const args = process.argv.slice(2)
     const listOnly = args.includes("--list")
+    const allowDrift = args.includes("--allow-toolchain-drift")
     const from = args
         .find(arg => arg.startsWith("--from="))
         ?.slice("--from=".length)
@@ -621,7 +677,23 @@ if (import.meta.main) {
     console.log(
         `\n${WORKFLOW} — job(s) ${JOBS.map(job => `\`${job}\``).join(", ")}\n`,
     )
-    await reportToolchain(plan.pinned)
+    const drift = await checkToolchain(plan.pinned)
+
+    // `--list` runs nothing, so it cannot report a false green and stays
+    // informational. An actual run on the wrong toolchain measured something
+    // other than what CI measures, so it must not claim CI would pass.
+    if (drift.length > 0 && !listOnly && !allowDrift) {
+        console.error(
+            `\nToolchain does not match CI:\n` +
+                drift.map(item => `    · ${item}`).join("\n") +
+                `\n\nThe pinned Bun is in \`.bun-version\` — bundler output is version-specific,\n` +
+                `and the published-package size gate has already passed locally on a commit CI\n` +
+                `rejected. The Node smokes in that same job run whichever \`node\` is on PATH.\n\n` +
+                `    bun run verify --list                     # plan only, no toolchain needed\n` +
+                `    bun run verify --allow-toolchain-drift    # run anyway; results may not match CI`,
+        )
+        process.exit(2)
+    }
 
     const policySkips = plan.skipped.filter(
         skip => SKIPPED_STEPS[skip.name] !== undefined,
@@ -688,8 +760,14 @@ if (import.meta.main) {
                   `re-run \`bun run verify\` before opening the PR.`
             : `All ${plan.steps.length} step(s) passed in ${total} — ${JOBS.map(
                   job => `\`${job}\``,
-              ).join(
-                  " + ",
-              )} minus the publish dry-run. Not covered: ${NOT_COVERED.length} gate(s) listed above.`,
+              ).join(" + ")} minus the publish dry-run. Not covered: ${
+                  NOT_COVERED.length
+              } gate(s) listed above.${
+                  drift.length > 0
+                      ? `\n\nWARNING: ran on a toolchain that does not match CI (${drift.join(
+                            "; ",
+                        )}). This is not evidence CI will pass.`
+                      : ""
+              }`,
     )
 }
