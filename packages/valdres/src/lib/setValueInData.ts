@@ -41,8 +41,11 @@ export const setValueInData = <Value extends unknown>(
         isNewFamilyInScope = !isNewAtomInScope && isAtomFamily(atom)
     }
     // Dev-only freeze decision. Kept inline (not a shared helper) because the
-    // extra call frame measurably regresses the hot primitive-set path; if you
-    // change this policy, keep Transaction.set in transaction.ts in sync.
+    // extra call frame measurably regresses the hot primitive-set path. The
+    // staging-time copy of this policy lives in `normalizeStagedValue` (which
+    // Transaction.set and Transaction.batchSetFamilyAtoms both call); change
+    // one and `deepFreezePolicyFuzz.test.ts` fails, because it drives every
+    // write path with the same value and requires one outcome.
     let written: Value
     // Atom families store Valdres' own mutable membership-index carrier in the
     // values map. Families are callable; ordinary atom descriptors are objects,

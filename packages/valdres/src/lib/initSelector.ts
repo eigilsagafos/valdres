@@ -305,6 +305,13 @@ export type SelectorEvaluationRuntime = {
  * live reverse graph, so none of the cold/live mode branches are needed.
  * Keeping this code shape separate lets JavaScriptCore tier it like the
  * pre-cold-cache evaluator instead of compiling the larger mixed-mode path.
+ *
+ * Twin of `evaluateSelector`, whose `liveOnlyDependencyRead` branch is the same
+ * getter. The duplication is deliberate and measured; the EQUIVALENCE is
+ * enforced by `selectorEvaluatorTwinFuzz.test.ts`, which drives one store
+ * through each twin and compares every read, notification, edge table, liveness
+ * count and mount transition. Change one twin without the other and that file
+ * fails — do not rely on the two bodies looking alike.
  */
 const evaluateLiveOnlySelector = <V>(
     selector: Selector<V>,
@@ -336,6 +343,14 @@ const evaluateLiveOnlySelector = <V>(
         try {
             result = selector.get((state: any) => {
                 if (evaluationComplete) {
+                    // Same guard, same position as evaluateSelector's deferred
+                    // branch. A deferred `get` is the only way to reach a store
+                    // after disposal, so omitting it here made the error a
+                    // silent read of a dead store on live-only stores only —
+                    // pinned by selectorEvaluatorTwinFuzz.test.ts.
+                    if (isStoreDisposed(data)) {
+                        throw createStoreDisposedError(data)
+                    }
                     if (!evalCtx.revoked && evalCtx.asyncDeps) {
                         evalCtx.asyncDeps.add(state)
                     }
@@ -666,8 +681,10 @@ export const evaluateSelector = <V>(
         evaluationComplete = true
 
         // Probe the user-visible `then` exactly once — see the identical note
-        // in evaluateLiveOnlySelector: a second probe before the dispatcher
-        // installs would let a `then`-getter's deferred `get` be overwritten.
+        // in evaluateLiveOnlySelector (twin; equivalence enforced by
+        // selectorEvaluatorTwinFuzz.test.ts): a second probe before the
+        // dispatcher installs would let a `then`-getter's deferred `get` be
+        // overwritten.
         const isPromiseResult = isPromiseLike(result)
         const isAsyncResult =
             result instanceof SuspendAndWaitForResolveError || isPromiseResult
@@ -1052,9 +1069,18 @@ const installOverlayDeps = (
 }
 
 /** Out-of-line installer choice for the committed dispatcher. Uses the SAME
- * predicate value that selected the evaluator, so the twin evaluator and twin
- * installer can never diverge. Kept out of the dispatcher body so the
- * no-churn hot path stays small enough for V8 to inline. */
+ * `liveOnly` value that selected the evaluator, so within this dispatcher the
+ * twin evaluator and twin installer cannot disagree. Kept out of the dispatcher
+ * body so the no-churn hot path stays small enough for V8 to inline.
+ *
+ * Sharing one variable is the mechanism, not the proof — and it only holds for
+ * THIS caller. `evaluateSelectorValue` and `propagateUpdatedAtoms` both reach
+ * `evaluateSelector` with `selectorGraphActive: true` on a live-only store,
+ * taking the live-only read branch while passing `liveOnly: false` here; that
+ * pairing is sound because `installEvaluationDeps` subsumes the live-only
+ * installer, which is itself an invariant rather than an observation.
+ * `selectorEvaluatorTwinFuzz.test.ts` is what checks it: dropping the
+ * `coldSelectorCachesEnabled` term from either predicate fails it. */
 const installCommittedOutcome = (
     selector: Selector,
     data: StoreData,
