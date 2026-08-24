@@ -388,8 +388,15 @@ const evaluateLiveOnlySelector = <V>(
                         circularDependencySet,
                     )
                 }
+                // Only a dep seen for the FIRST TIME this evaluation can change
+                // the dep set, so gate the membership lookup on the Set actually
+                // growing. A body that reads the same member hundreds of
+                // thousands of times then pays one size compare per read instead
+                // of a `has` on every one.
+                const distinctDeps = updatedDeps.size
                 updatedDeps.add(state)
                 if (
+                    updatedDeps.size !== distinctDeps &&
                     !depsChanged &&
                     (!currentDependencies || !currentDependencies.has(state))
                 ) {
@@ -629,8 +636,10 @@ export const evaluateSelector = <V>(
                         )
                     }
                 }
+                const distinctDeps = updatedDeps.size
                 updatedDeps.add(state)
                 if (
+                    updatedDeps.size !== distinctDeps &&
                     !depsChanged &&
                     (!currentDependencies || !currentDependencies.has(state))
                 ) {

@@ -85,6 +85,22 @@ const userRevision = selectorFamily(
 )
 ```
 
+`keyOf` is also the lever for read-heavy code. A single string or number
+argument is looked up directly, but an object argument has to be canonicalized
+on **every** call — `family({ id })` in a loop re-encodes that object each time,
+while `family(id)` does not. If a family with structured arguments sits on a hot
+path, give it a `keyOf` that projects the identifying part:
+
+```ts
+// re-encodes { id, revision } on every call
+const slow = selectorFamily(user => get => get(userAtom(user.id)).name)
+
+// encodes one string instead
+const fast = selectorFamily(user => get => get(userAtom(user.id)).name, {
+    keyOf: user => user.id,
+})
+```
+
 ## With async computation
 
 ```ts
