@@ -20,6 +20,7 @@ import {
     recursivelyUpdateIndexes,
 } from "./atomFamilyIndex"
 import type { DepsChange } from "../types/DepsChange"
+import { hasCommittedValue } from "./hasCommittedValue"
 import { evaluateSelector, handleSelectorResult } from "./initSelector"
 import {
     applyLiveDependencyDiff,
@@ -171,17 +172,21 @@ const reEvaluateSelector = (
         // path a MISSING entry means the previous evaluation threw (see the
         // catch below, which drops the value). Treating that absence as a
         // committed `undefined` both leaves the selector unmemoized and stops
-        // propagation, so a subscriber never learns the error cleared. The
-        // probe is paid only when the value we would compare against is
-        // `undefined`.
-        const hasExistingValue =
-            existingValue !== undefined || data.values.has(selector)
+        // propagation, so a subscriber never learns the error cleared.
+        // `existingValue` is the caller's own `data.values.get(selector)`
+        // (settleScheduledSelector), so it carries the presence question here
+        // too.
+        const hasExistingValue = hasCommittedValue(
+            selector,
+            data,
+            existingValue,
+        )
 
-        // Gating rather than post-filtering also keeps every comparator — the
-        // selector's own and each one `treeEqualAcrossGroups` invokes per group
-        // — from ever seeing the absent sentinel, which `EqualFunc<Value>` says
-        // cannot happen. Otherwise a recovery from a throwing evaluation calls
-        // `equal(undefined, recovered)`, a comparator like
+        // Gating rather than post-filtering (see hasCommittedValue) is what
+        // keeps every comparator — the selector's own AND each one
+        // `treeEqualAcrossGroups` invokes per provenance group — out of the
+        // absent-sentinel position. Otherwise a recovery from a throwing
+        // evaluation calls `equal(undefined, recovered)`, a comparator like
         // `(a, b) => a.id === b.id` throws, the catch below drops the recovered
         // value again, and the selector never escapes the error state.
         // Promises use reference equality — deep equal treats all promises as
