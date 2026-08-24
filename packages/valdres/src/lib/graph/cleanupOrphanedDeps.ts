@@ -3,8 +3,13 @@ import type { StoreData } from "../../types/StoreData"
 import type { Selector } from "../../types/Selector"
 import { removeStateDependent } from "./inheritedDependencyBranches"
 import { isLive } from "./mountAtom"
-import { noteStateValueChanged } from "../stateRevisions"
+import {
+    noteStateValueChanged,
+    recordColdSelectorCache,
+} from "../stateRevisions"
 import { untrackAbortController } from "../storeLifecycle"
+import { hasCommittedValue } from "../hasCommittedValue"
+import { isPromiseLike } from "../../utils/isPromiseLike"
 
 /**
  * Remove non-live states from the dependency graph, clear selector caches, and
@@ -53,20 +58,58 @@ export const cleanupOrphanedDeps = (state: State, data: StoreData) => {
             for (const dep of deps) {
                 removeStateDependent(dep, current, data)
             }
-            data.stateDependencies.delete(current)
-            // The active marker is weak and can remain through teardown. A
-            // later subscription overwrites it while rebuilding the live graph;
-            // a later cold read clears it on the cache-miss path before
-            // evaluation. Deferring that delete keeps synchronous unsubscribe
-            // bursts from paying one extra WeakSet mutation per selector.
-            // Live-only stores never instantiate the cold-cache WeakMap. Keep
-            // their batched teardown to the original graph/value work.
-            if (data.coldSelectorCachesEnabled) {
-                data.coldSelectorCaches.delete(current)
-            }
-            if (data.values.delete(current)) {
-                if (data.tree.revisionEnabled) {
-                    noteStateValueChanged(current, data)
+            // Demote rather than drop: leave the selector in EXACTLY the shape
+            // a cold read produces — committed value, forward dependency set,
+            // revision-snapshot cache, no reverse edges, no active marker. That
+            // shape already has a promote path (`onFirstDirectSubscriber` ->
+            // `activateSelectorGraph` rebuilds the reverse graph from the
+            // retained forward set) and a staleness path (a dependency write
+            // advances the tree revision, so the next read revalidates and
+            // re-evaluates). A remount therefore costs edge re-wiring instead
+            // of re-running the selector body — the difference between 0 and N
+            // re-evaluations for a subscribed graph that churns.
+            //
+            // A pending async value is NOT demotable: the abort controller is
+            // untracked below and the settlement handlers are keyed to the
+            // evaluation identity revoked above, so its promise must never be
+            // served from a cache. Drop those the old way.
+            //
+            // Neither is anything in an `enumerable` store, where `values` is a
+            // strong Map: retention there would outlive the selector instead of
+            // dying with it, and `store.snapshot()` — public API, and what
+            // @valdres/redux-devtools enumerates — would start listing
+            // torn-down selectors. Enumerable stores exist for observability,
+            // so they keep the drop semantics and pay the re-evaluation.
+            const committed = data.values.get(current)
+            if (
+                !data.enumerable &&
+                hasCommittedValue(current, data, committed) &&
+                !isPromiseLike(committed)
+            ) {
+                // Clear the marker FIRST: `recordColdSelectorCache` treats an
+                // active selector as live and would delete the cache instead of
+                // writing it. Dropping the marker is also what lets
+                // `activateSelectorGraph` (which early-returns on an active
+                // marker) rebuild the reverse graph on the next subscribe.
+                data.selectorGraphActive.delete(current as Selector)
+                recordColdSelectorCache(current as Selector, deps, data)
+            } else {
+                data.stateDependencies.delete(current)
+                // The active marker is weak and can remain through teardown. A
+                // later subscription overwrites it while rebuilding the live
+                // graph; a later cold read clears it on the cache-miss path
+                // before evaluation. Deferring that delete keeps synchronous
+                // unsubscribe bursts from paying one extra WeakSet mutation per
+                // selector. Live-only stores never instantiate the cold-cache
+                // WeakMap. Keep their batched teardown to the original
+                // graph/value work.
+                if (data.coldSelectorCachesEnabled) {
+                    data.coldSelectorCaches.delete(current)
+                }
+                if (data.values.delete(current)) {
+                    if (data.tree.revisionEnabled) {
+                        noteStateValueChanged(current, data)
+                    }
                 }
             }
             untrackAbortController(

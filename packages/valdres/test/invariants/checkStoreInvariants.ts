@@ -1,6 +1,7 @@
+import type { Selector } from "../../src/types/Selector"
 import type { State } from "../../src/types/State"
 import type { Store } from "../../src/types/Store"
-import type { StoreData } from "../../src/types/StoreData"
+import type { ColdSelectorCache, StoreData } from "../../src/types/StoreData"
 import { getStoreData } from "../../src/lib/getStoreData"
 import { isStoreDisposed, peekStoreResources } from "../../src/lib/storeLifecycle"
 import { isAtomFamily } from "../../src/utils/isAtomFamily"
@@ -88,6 +89,17 @@ const depsOf = (data: StoreData, state: State): Set<State> | undefined => {
 const dependentsOf = (data: StoreData, state: State): Set<State> | undefined => {
     const map = hasOwn<WeakMap<State, Set<State>>>(data, "stateDependents")
     return map?.get(state)
+}
+
+const coldCacheOf = (
+    data: StoreData,
+    selector: Selector,
+): ColdSelectorCache | undefined => {
+    const map = hasOwn<WeakMap<WeakKey, ColdSelectorCache>>(
+        data,
+        "coldSelectorCaches",
+    )
+    return map?.get(selector)
 }
 
 const collectTree = (root: StoreData): StoreData[] => {
@@ -575,11 +587,54 @@ const checkStore = (
                     `${at}: orphaned ${label(s)} retains an abort controller`,
                 )
             }
-            if (isSelector(s) && depsOf(data, s)) {
-                push(
-                    "retained-registration",
-                    `${at}: orphaned selector ${label(s)} retains a dependency set`,
-                )
+            // A forward set with a revision-snapshot cache behind it is the
+            // legitimate COLD shape — produced both by an unsubscribed read and
+            // by orphan cleanup demoting a torn-down selector so a remount can
+            // re-wire instead of re-evaluating. Promotion rebuilds the reverse
+            // graph from exactly this set, and a dependency write invalidates it
+            // by revision, so it is revalidatable rather than leaked. A forward
+            // set with NO cache behind it is unreachable bookkeeping.
+            const retainedDeps = isSelector(s) ? depsOf(data, s) : undefined
+            if (retainedDeps) {
+                const cache = coldCacheOf(data, s as Selector)
+                if (!cache) {
+                    push(
+                        "retained-registration",
+                        `${at}: orphaned selector ${label(s)} retains a dependency set with no cold cache`,
+                    )
+                } else {
+                    // Presence alone would accept a cache that cannot actually
+                    // revalidate this set. What makes the retention legitimate
+                    // is that the snapshot COVERS the forward set and every
+                    // member is revision-tracked, so a write to any of them
+                    // invalidates it.
+                    const snapshot = new Set(cache.dependencies)
+                    const covers =
+                        snapshot.size === retainedDeps.size &&
+                        [...retainedDeps].every(dep => snapshot.has(dep))
+                    if (!covers) {
+                        push(
+                            "retained-registration",
+                            `${at}: orphaned selector ${label(s)} retains a dependency set its cold snapshot does not cover`,
+                        )
+                    }
+                    const tracked = data.tree.trackedRevisions
+                    const untracked = [...retainedDeps].filter(
+                        dep => !(tracked?.has(dep) ?? false),
+                    )
+                    if (untracked.length > 0) {
+                        push(
+                            "retained-registration",
+                            `${at}: orphaned selector ${label(s)} retains ${untracked.length} revision-untracked dependenc${untracked.length === 1 ? "y" : "ies"}, so its cold snapshot can never invalidate`,
+                        )
+                    }
+                    if (cache.validatedAt > data.tree.revision) {
+                        push(
+                            "retained-registration",
+                            `${at}: orphaned selector ${label(s)} has a cold snapshot validated at ${cache.validatedAt}, ahead of tree revision ${data.tree.revision}`,
+                        )
+                    }
+                }
             }
         }
     }

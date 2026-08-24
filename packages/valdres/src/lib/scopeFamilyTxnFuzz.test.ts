@@ -1,3 +1,4 @@
+import { getStateRevision } from "./stateRevisions"
 import { getStoreData } from "./getStoreData"
 import { describe, expect, test } from "../../test/performance/test-compat"
 import { observeFamilyIndex } from "./atomFamilyIndex"
@@ -121,16 +122,51 @@ const runSeed = (seed: number): string | null => {
                 if (!setEq(memberKeys(members), expected))
                     return `L${i} membership: got {${[...memberKeys(members)].sort()}} expected {${[...expected].sort()}}`
             }
+            // A COLD selector's raw entry is allowed to be stale by design: it
+            // carries a revision snapshot and revalidates on read (orphan
+            // cleanup demotes torn-down selectors into exactly this shape).
+            //
+            // Deliberately DON'T resolve that by reading through the store: a
+            // public read drains pending cleanup and re-evaluates, so the oracle
+            // would heal the very staleness it is auditing and the "cleanup
+            // still queued while the next op runs" interleaving would stop being
+            // explored. Instead keep auditing the RAW entry and accept a
+            // mismatch only when the snapshot is provably unable to serve it.
+            const staleSnapshotIsInvalid = (sel: any): boolean => {
+                const cache = data.coldSelectorCaches.get(sel)
+                if (!cache) return false
+                if (cache.validatedAt !== data.tree.revision) return true
+                // Validated this revision, so it must genuinely still match
+                // every dependency revision it recorded.
+                return cache.dependencies.some(
+                    (dep: any, index: number) =>
+                        getStateRevision(dep, data) !==
+                        cache.dependencyRevisions[index],
+                )
+            }
+            const mismatch = (sel: any, got: any, exp: any) =>
+                !staleSnapshotIsInvalid(sel)
+                    ? `raw=${got} expected=${exp} (cold snapshot claims to be current)`
+                    : null
             if (data.values.has(sumSel)) {
                 const exp = ks.reduce((a, k) => (a + (value[k] | 0)) | 0, 0)
-                if (data.values.get(sumSel) !== exp)
-                    return `L${i} sum: ${data.values.get(sumSel)} != ${exp}`
+                const got = data.values.get(sumSel)
+                if (got !== exp) {
+                    const bad = mismatch(sumSel, got, exp)
+                    if (bad) return `L${i} sum: ${bad}`
+                }
             }
             if (
                 data.values.has(countSel) &&
                 data.values.get(countSel) !== ks.length
-            )
-                return `L${i} count: ${data.values.get(countSel)} != ${ks.length}`
+            ) {
+                const bad = mismatch(
+                    countSel,
+                    data.values.get(countSel),
+                    ks.length,
+                )
+                if (bad) return `L${i} count: ${bad}`
+            }
             for (let term = 0; term < NTERMS; term++) {
                 if (!data.values.has(idxSel[term])) continue
                 const got = memberKeys(data.values.get(idxSel[term]))
@@ -144,8 +180,8 @@ const runSeed = (seed: number): string | null => {
                         )
                         .map(key),
                 )
-                if (!setEq(got, exp))
-                    return `L${i} idx(${term}): got {${[...got].sort()}} expected {${[...exp].sort()}}`
+                if (!setEq(got, exp) && !staleSnapshotIsInvalid(idxSel[term]))
+                    return `L${i} idx(${term}): got {${[...got].sort()}} expected {${[...exp].sort()}} (cold snapshot claims to be current)`
             }
         }
         return null

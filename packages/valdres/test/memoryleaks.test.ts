@@ -299,6 +299,39 @@ describe("memory leaks (subscriptions)", () => {
         expect(await detector.isLeaking()).toBe(false)
     })
 
+    test("a demoted selector is collected while its store stays alive", async () => {
+        // Orphan cleanup retains a torn-down selector's value so a remount can
+        // re-wire instead of re-evaluating. That retention must stay keyed
+        // WEAKLY on the selector, or churning through many distinct family
+        // members (navigating page after page) would accumulate one cached
+        // value per member for the life of the store.
+        const s = store()
+        const flush = atom("demoted-flush")
+        const rows = selectorFamily<object, [string]>(
+            () => () => ({ row: {} }),
+        )
+        let member: any = rows("page-1")
+        const detector = new LeakDetector(member)
+        const valueDetector = new LeakDetector(s.get(member))
+        const unsubscribe = s.sub(member, () => {})
+        unsubscribe()
+        // Drain the queued orphan sweep so the selector is actually demoted.
+        s.get(flush)
+        member = undefined
+
+        expect(await detector.isLeaking()).toBe(false)
+        expect(await valueDetector.isLeaking()).toBe(false)
+        const internalFamily = rows as unknown as InternalSelectorFamily<
+            object,
+            [string]
+        >
+        expect(
+            internalFamily.__valdresSelectorFamilyMap.has(
+                familyKey(["page-1"]),
+            ),
+        ).toBe(false)
+    })
+
     test("stateDependents are cleaned up after selector unsubscribe", async () => {
         const s = store()
         const baseAtom = atom(1)
