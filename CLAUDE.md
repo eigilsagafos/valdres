@@ -7,8 +7,8 @@ Bun, not Node. Don't reach for `npm`, `pnpm`, `vitest`, or `jest`.
 - Run tests **per-package** (`cd packages/<pkg> && bun test`) or across all
   packages via `bun run test` (= `bun --filter '*' test`).
 - **Never run bare `bun test` at the repo root.** The built-in runner scans
-  every package from the wrong cwd and fabricates ~240 bogus failures; a
-  bunfig `[test].preload` guard now hard-fails it with instructions.
+  every package from the wrong cwd and fabricates ~240 bogus failures; a bunfig
+  `[test].preload` guard now hard-fails it with instructions.
 - Fresh checkouts have no `node_modules` — run `bun install` first (Conductor
   workspaces do this automatically via `.conductor/settings.toml`).
 
@@ -67,6 +67,14 @@ code but intentionally don't release (refactors, internal cleanup), run
 `bunx changeset --empty` to satisfy the check. Don't hand-edit `version` fields
 or CHANGELOGs — the Version Packages bot does that on merge. Repo is in `beta`
 prerelease mode.
+
+**A brand-new package needs one local publish before it can be merged.** CI
+publishes over npm trusted publishing (OIDC), which cannot create a package name
+that doesn't exist yet. Run `bun run first-publish <name>` (see RELEASING.md)
+_before_ the package lands on main — otherwise the next Version Packages merge
+fails partway through a real release. The publishable package set is derived
+from the workspace by `scripts/public-packages.ts`, so there is no list to
+update.
 
 ## Documentation
 

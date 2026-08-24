@@ -295,9 +295,17 @@ jobs:
                         - 'scripts/prepack.ts'
                         - 'scripts/postpublish.ts'
                         - 'scripts/publish-metadata.ts'
+                        - 'scripts/public-packages.ts'
                         - 'scripts/rewrite-declaration-imports.ts'
                         - 'scripts/verify-publish.ts'
+                        - 'scripts/first-publish.ts'
                         - 'scripts/ci-publish.sh'
+                        # The publish pipeline's shared helpers: prepack/restore
+                        # and the workspace: protocol rule both live here now, so
+                        # a change to them must re-run this gate.
+                        - 'scripts/lib/with-prepacked.ts'
+                        - 'scripts/lib/workspace-protocol.ts'
+                        - 'scripts/lib/describe-error.ts'
                         - 'package.json'
                         - 'bun.lock'
                         - '.github/workflows/ci.yaml'
@@ -388,8 +396,11 @@ jobs:
               # per-package publish credential. Each published package must have
               # a matching trusted publisher registered on npmjs.com
               # (repo eigilsagafos/valdres, workflow .github/workflows/ci.yaml,
-              # environment npm-publish). Brand-new package names still need a
-              # one-off manual first publish before OIDC can take over.
+              # environment npm-publish — see TRUSTED_PUBLISHER in
+              # scripts/publish-metadata.ts). Brand-new package names still need
+              # a one-off local first publish before OIDC can take over; run
+              # `bun run first-publish <name>` before the package merges to
+              # main. RELEASING.md documents the full sequence.
               uses: changesets/action@v2
               with:
                   version-script: bun run version-packages
