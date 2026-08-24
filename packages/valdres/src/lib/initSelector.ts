@@ -1165,7 +1165,21 @@ export const initSelector = <V>(
             ? existingValue === updatedValue
             : selector.equal(existingValue as V, updatedValue as V)
 
-    if (areEqual) {
+    // `areEqual` alone can't authorize skipping the write. When this store
+    // holds NO entry for the selector, `existingValue` is the absent-value
+    // sentinel `undefined` — so a first evaluation that computes `undefined`
+    // (or any custom `equal` that accepts `undefined`) compares equal to
+    // nothing at all. Skipping then leaves the selector permanently
+    // unmemoized: every cache hit downstream keys off `values.has`, so each
+    // later read re-runs the body — including each repeated `get(child)`
+    // inside ONE parent evaluation, which turns a shared leaf in a recursive
+    // traversal into O(reads x full re-eval). Distinguish absent from
+    // present-and-undefined with a WeakMap probe paid only when the value we
+    // compared against was `undefined`.
+    if (
+        areEqual &&
+        (existingValue !== undefined || data.values.has(selector))
+    ) {
         if (!selectorGraphActive) {
             markColdSelectorCacheValidated(selector, data)
         }

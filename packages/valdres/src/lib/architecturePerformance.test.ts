@@ -4,8 +4,6 @@ import { atomFamily } from "../atomFamily"
 import { globalAtom } from "../globalAtom"
 import { selector } from "../selector"
 import { store } from "../store"
-import type { Store } from "../types/Store"
-import type { StoreData } from "../types/StoreData"
 import {
     createArchitectureInstrumentation,
     recordSelectorSettlement,
@@ -15,42 +13,10 @@ import {
 import { cacheController } from "./cacheController"
 import { getStoreData } from "./getStoreData"
 import { mockAsyncSource, withFakeClock } from "../../test/utils/fakeClock"
+import { measureArchitecture } from "../../test/utils/measureArchitecture"
 import { uniqueName } from "../../test/utils/uniqueName"
 
 const noop = () => {}
-
-const measureArchitecture = (
-    stores: Store | Store[],
-    operation: () => void,
-): ArchitectureCounters => {
-    const instrumentation = createArchitectureInstrumentation()
-    const roots = (Array.isArray(stores) ? stores : [stores]).map(getStoreData)
-    const attached = new Set<StoreData>()
-
-    const attachTree = (root: StoreData) => {
-        const queue = [root]
-        for (let i = 0; i < queue.length; i++) {
-            const data = queue[i]!
-            if (attached.has(data)) continue
-            attached.add(data)
-            data.architectureInstrumentation = instrumentation
-            for (const child of data.scopes.values()) queue.push(child)
-        }
-    }
-
-    for (const root of roots) attachTree(root)
-    try {
-        operation()
-    } finally {
-        // Include scopes created during the measured operation before removing
-        // the collector, so no test-only strong reference survives the window.
-        for (const root of roots) attachTree(root)
-        for (const data of attached) {
-            delete data.architectureInstrumentation
-        }
-    }
-    return { ...instrumentation.counters }
-}
 
 const expectBetween = (actual: number, min: number, max: number) => {
     expect(actual).toBeGreaterThanOrEqual(min)

@@ -192,4 +192,81 @@ describe("selector", () => {
             },
         )
     })
+
+    // Every other benchmark in this suite reads each selector exactly ONCE, so
+    // none of them can see a lost memoization — that is how the beta.20
+    // "selector re-evaluates on every dependency read" regression shipped past
+    // the bench gate. This models the workload that exposed it: a traversal
+    // that revisits shared nodes, so each leaf is read many times per pass.
+    //
+    // Two details are load-bearing, both learned from that regression:
+    //
+    //  - The write goes to a `cursor` atom that ONLY the root reads. That makes
+    //    the root re-evaluate and re-walk the graph while every leaf's inputs
+    //    are unchanged, which is the exact condition memoization has to cover.
+    //    Writing an atom the leaves depend on instead lets propagation settle
+    //    them once and stop, and the re-read never happens.
+    //  - The leaves resolve to `undefined` (an absent field on an entity — the
+    //    shape the consumer had). `undefined` is also what a MISSING cache
+    //    entry reads back as, so change-detection that confuses "absent" with
+    //    "present and undefined" shows up here as O(reads) full re-evaluations
+    //    instead of O(1).
+    test("traversal re-reading shared leaves", async () => {
+        const nodes = 20
+        const visitsPerNode = 5
+        // An entity record with no `duration` field, so each leaf resolves to
+        // `undefined` by a plain property read — no per-read allocation that
+        // would add noise unrelated to the property under measurement.
+        const entity: { duration?: number } = {}
+
+        const vStore = valdresCreateStore()
+        const vSource = valdresAtom(entity)
+        const vCursor = valdresAtom(0)
+        const vLeaf = valdresSelectorFamily(
+            (_id: number) => get => get(vSource).duration,
+        )
+        const vRoot = valdresSelector(get => {
+            let visited = get(vCursor)
+            for (let visit = 0; visit < visitsPerNode; visit++) {
+                for (let id = 0; id < nodes; id++) {
+                    do_not_optimize(get(vLeaf(id)))
+                    visited++
+                }
+            }
+            return visited
+        })
+        vStore.sub(vRoot, () => {})
+
+        const jStore = jotaiCreateStore()
+        const jSource = jotaiAtom(entity)
+        const jCursor = jotaiAtom(0)
+        const jLeaf = jotaiAtomFamily((_id: number) =>
+            jotaiAtom(get => get(jSource).duration),
+        )
+        const jRoot = jotaiAtom(get => {
+            let visited = get(jCursor)
+            for (let visit = 0; visit < visitsPerNode; visit++) {
+                for (let id = 0; id < nodes; id++) {
+                    do_not_optimize(get(jLeaf(id)))
+                    visited++
+                }
+            }
+            return visited
+        })
+        jStore.sub(jRoot, () => {})
+
+        let vInt = 0
+        let jInt = 0
+        await compare(
+            "traversal: 20 leaves revisited 5x each",
+            () => {
+                vStore.set(vCursor, ++vInt)
+                do_not_optimize(vStore.get(vRoot))
+            },
+            () => {
+                jStore.set(jCursor, ++jInt)
+                do_not_optimize(jStore.get(jRoot))
+            },
+        )
+    })
 })

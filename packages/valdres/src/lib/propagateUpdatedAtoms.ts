@@ -181,7 +181,19 @@ const reEvaluateSelector = (
                         updatedValue,
                         updatedAtoms,
                     )
-        if (areEqual) return false
+        // Same caveat as initSelector's: `equal` was handed the absent-value
+        // sentinel whenever this store holds NO entry for the selector — which
+        // on this path means the previous evaluation threw (see the catch
+        // below, which drops the value). Trusting "unchanged" there would both
+        // leave the selector unmemoized and stop propagation, so a subscriber
+        // never learns the error cleared. The probe is paid only when the value
+        // we compared against was `undefined`.
+        if (
+            areEqual &&
+            (existingValue !== undefined || data.values.has(selector))
+        ) {
+            return false
+        }
         setValueInData(selector, updatedValue, data)
         return true
     } catch {
