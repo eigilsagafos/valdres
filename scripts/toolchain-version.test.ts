@@ -45,29 +45,75 @@ describe("pinned Bun toolchain", () => {
         expect(pinnedVersion).toMatch(/^\d+\.\d+\.\d+$/)
     })
 
-    test("every workflow pins the same Bun as .bun-version", () => {
+    // Enumerate SETUP STEPS, not pins. Scanning for `bun-version:` keys can
+    // only check the pins that still exist: drop the key from one workflow and
+    // the remaining pins keep the guard green while that job silently installs
+    // whatever Bun is latest — the original failure mode, reintroduced.
+    // `oven-sh/setup-bun` does not auto-detect `.bun-version` (its
+    // `bun-version-file` input defaults to null), so a step with neither input
+    // resolves to latest and must fail here. (Caught by Copilot on PR #329.)
+    const setupBunSteps = () => {
         const workflowDir = join(rootDir, ".github/workflows")
-        const pins: Array<{ file: string; line: number; version: string }> = []
+        const steps: Array<{
+            file: string
+            line: number
+            key?: string
+            value?: string
+        }> = []
         for (const file of readdirSync(workflowDir)) {
             if (!file.endsWith(".yml") && !file.endsWith(".yaml")) continue
             const lines = read(`.github/workflows/${file}`).split("\n")
             lines.forEach((line, index) => {
-                const match = line.match(/^\s*bun-version:\s*(\S+)\s*$/)
-                if (match) {
-                    pins.push({
-                        file,
-                        line: index + 1,
-                        version: match[1]!,
-                    })
+                if (!/uses:\s*oven-sh\/setup-bun/.test(line)) return
+                // Sibling keys of `uses:` align with it; anything less indented
+                // starts the next step or block, which ends this one.
+                const stepIndent = line.indexOf("uses:")
+                let key: string | undefined
+                let value: string | undefined
+                for (let next = index + 1; next < lines.length; next++) {
+                    const candidate = lines[next]!
+                    if (candidate.trim() === "") continue
+                    const indent =
+                        candidate.length - candidate.trimStart().length
+                    if (indent < stepIndent) break
+                    const match = candidate.match(
+                        /^\s*(bun-version|bun-version-file):\s*(\S+)\s*$/,
+                    )
+                    if (match) {
+                        key = match[1]
+                        value = match[2]
+                        break
+                    }
                 }
+                steps.push({ file, line: index + 1, key, value })
             })
         }
-        // Guard the guard: if the workflows stop pinning altogether, this test
-        // must fail rather than silently assert nothing.
-        expect(pins.length).toBeGreaterThan(0)
-        const mismatched = pins.filter(pin => pin.version !== pinnedVersion)
+        return steps
+    }
+
+    test("every setup-bun step declares a Bun version", () => {
+        const steps = setupBunSteps()
+        // Guard the guard: if the scan stops finding steps at all (e.g. the
+        // action is renamed), fail rather than silently assert nothing.
+        expect(steps.length).toBeGreaterThan(0)
+        const unpinned = steps.filter(step => step.key === undefined)
+        expect(unpinned.map(step => `${step.file}:${step.line}`)).toEqual([])
+    })
+
+    test("every setup-bun step resolves to the pinned Bun", () => {
+        const mismatched = setupBunSteps().filter(step => {
+            if (step.key === "bun-version") return step.value !== pinnedVersion
+            // Reading the version from a file is fine as long as it is THIS
+            // file; any other source can disagree with `.bun-version`.
+            if (step.key === "bun-version-file")
+                return !/\.bun-version$/.test(step.value ?? "")
+            return false // absence is the other test's business
+        })
         expect(
-            mismatched.map(pin => `${pin.file}:${pin.line} → ${pin.version}`),
+            mismatched.map(
+                step =>
+                    `${step.file}:${step.line} → ${step.key}: ${step.value}`,
+            ),
         ).toEqual([])
     })
 
