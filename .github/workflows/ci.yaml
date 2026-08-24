@@ -118,6 +118,14 @@ jobs:
               id: test
               run: bun run test:ci
               continue-on-error: true
+            - name: JUnit coverage gate
+              # A package with a runnable test script must emit a JUnit report;
+              # `bun run test:ci` can exit 0 while one produces nothing. This
+              # used to live only inside the github-script step below, where no
+              # local command could run it — so `bun run verify` reported green
+              # on a CI-red checkout. As an ordinary shell step, verify picks it
+              # up from this file like every other step.
+              run: bun run scripts/check-junit-coverage.ts
             - name: Test Report
               if: always()
               uses: actions/github-script@v9
@@ -128,50 +136,20 @@ jobs:
 
                       const testStepFailed = '${{ steps.test.outcome }}' === 'failure';
 
-                      // A package with a runnable test script must produce a
-                      // JUnit file. Include test-bearing packages from the
-                      // event base so deleting a test script cannot silently
-                      // remove coverage. Exact `echo 'no tests'` placeholders
-                      // are the explicit opt-out for packages without a suite;
-                      // they do not emit JUnit output.
-                      const expectedPackages = new Set();
-                      const addTestPackages = (manifests, readManifest) => {
-                          for (const manifest of manifests) {
-                              try {
-                                  const json = JSON.parse(readManifest(manifest));
-                                  const testScript = json.scripts?.test;
-                                  const isNoTestPlaceholder = /^echo\s+(['"])no tests\1$/.test(testScript || '');
-                                  if (typeof testScript === 'string' && !isNoTestPlaceholder) {
-                                      expectedPackages.add(manifest.replace(/^packages\//, '').replace(/\/package\.json$/, ''));
-                                  }
-                              } catch (error) {
-                                  core.warning(`Could not inspect ${manifest}: ${error.message}`);
-                              }
-                          }
-                      };
-
-                      const currentManifests = execSync("find packages -name package.json -not -path '*/node_modules/*' -print")
-                          .toString().trim().split('\n').filter(Boolean);
-                      const currentManifestSet = new Set(currentManifests);
-                      addTestPackages(currentManifests, manifest => fs.readFileSync(manifest, 'utf8'));
-
-                      // PR checkouts have full history, so compare against the
-                      // base there. Push checkouts are depth 1 and rely on the
-                      // already-required PR check plus current-manifest coverage.
-                      const baseSha = context.eventName === 'pull_request'
-                          ? context.payload.pull_request?.base?.sha || ''
-                          : '';
-                      if (/^[0-9a-f]{40}$/i.test(baseSha) && !/^0+$/.test(baseSha)) {
-                          const baseManifests = execFileSync('git', [
-                              'ls-tree', '-r', '--name-only', baseSha, '--', 'packages'
-                          ]).toString().trim().split('\n')
-                              .filter(manifest =>
-                                  manifest.endsWith('/package.json') && currentManifestSet.has(manifest)
-                              );
-                          addTestPackages(baseManifests, manifest =>
-                              execFileSync('git', ['show', `${baseSha}:${manifest}`], { encoding: 'utf8' })
-                          );
-                      }
+                      // Which packages owe a JUnit file is decided by
+                      // scripts/check-junit-coverage.ts, the same module the
+                      // "JUnit coverage gate" step above enforces and that
+                      // `bun run verify` runs locally. `--json` is a pure query
+                      // that always exits 0; the gate step is what fails the
+                      // job. One implementation, so the summary below can never
+                      // disagree with the gate.
+                      const expectedPackages = new Set(
+                          JSON.parse(
+                              execFileSync('bun', [
+                                  'run', 'scripts/check-junit-coverage.ts', '--json'
+                              ], { encoding: 'utf8' })
+                          ).expected
+                      );
 
                       // Find all junit XML files
                       const files = execSync("find packages -name 'junit*.xml' -not -path '*/node_modules/*'")

@@ -5,8 +5,9 @@
  * `bun run test` is a single step in the `test` job. The others — build, build:types,
  * typecheck, the type-level tests, the `@ts-ignore` ban, the architecture gate,
  * the Node/V8 rewrite-guard lane, both retained-memory gates, the
- * valdres-svelte publish lint, the `scripts/` tests — only ever ran on GitHub,
- * so anything they alone catch stayed invisible until the PR went red.
+ * valdres-svelte publish lint, the JUnit coverage gate, the `scripts/` tests —
+ * only ever ran on GitHub, so anything they alone catch stayed invisible until
+ * the PR went red.
  * PR #329 landed exactly there: a new `src/lib/*Fuzz.test.ts` is
  * auto-collected by `vitest.rewrite-guards.config.ts`, where `bun:test` does
  * not resolve, so the file had to import `test/performance/test-compat` like
@@ -64,11 +65,27 @@ import { join } from "node:path"
 
 const WORKFLOW = ".github/workflows/ci.yaml"
 
-/** The pull-request gates in ci.yaml, in the order verify runs them. `publish`
- *  is deliberately absent: it only fires on push to main. `valdres-package` is
- *  path-filtered on GitHub (`packages/valdres/**`) but takes seconds locally,
- *  so verify always runs it rather than reasoning about your diff. */
+/** The pull-request gates in ci.yaml, in the order verify runs them.
+ *  `valdres-package` is path-filtered on GitHub (`packages/valdres/**`) but
+ *  takes seconds locally, so verify always runs it rather than reasoning about
+ *  your diff. */
 const JOBS = ["test", "valdres-package"]
+
+/** Jobs verify deliberately does not run, and why. Every job declared in
+ *  ci.yaml must appear either here or in JOBS — a new job is otherwise outside
+ *  verify's coverage with nothing to say so, which is the drift this command
+ *  exists to prevent. */
+const SKIPPED_JOBS: Record<string, string> = {
+    publish:
+        "push-to-main only (`github.event_name == 'push'`), never a pull-request gate — and it publishes to npm",
+}
+
+/** Commands verify runs once even though more than one CI job runs them. Every
+ *  CI job gets a fresh runner and installs; locally there is one checkout. This
+ *  is the ONE place verify does less than CI, so it is an explicit list rather
+ *  than a general "seen this command before" rule: a repeated gate must never
+ *  be dropped silently, and repeats WITHIN a job are always intentional. */
+const IDEMPOTENT_SETUP = new Set(["bun install --frozen-lockfile"])
 
 /** CI surface verify does NOT cover, printed on every run. A pre-PR command
  *  that quietly covers two thirds of the gates is the same class of problem
@@ -112,6 +129,34 @@ const SUPPORTED_STEP_KEYS = new Set([
     "continue-on-error",
 ])
 
+/** Job keys that provably do not change how a `run:` block executes locally.
+ *  The omissions are the point: `defaults` (run.shell / run.working-directory),
+ *  `container`, `services` and `strategy` all change what CI actually executes,
+ *  so they must fail closed here exactly as unknown step keys do. */
+const SUPPORTED_JOB_KEYS = new Set([
+    "name",
+    "runs-on",
+    "needs",
+    "if",
+    "permissions",
+    "environment",
+    "concurrency",
+    "outputs",
+    "timeout-minutes",
+    "steps",
+])
+
+/** Same reasoning one level up: workflow-level `defaults` and `env` reach every
+ *  step in every job. */
+const SUPPORTED_WORKFLOW_KEYS = new Set([
+    "name",
+    "on",
+    "run-name",
+    "concurrency",
+    "permissions",
+    "jobs",
+])
+
 export type PlannedStep = {
     name: string
     run: string
@@ -141,6 +186,13 @@ const SUPPORTED_RUNNER_VARIABLES = new Set(["RUNNER_TEMP"])
 
 const RUNNER_VARIABLE = /\$\{?((?:GITHUB|RUNNER)_[A-Z_]+)/g
 
+/** `steps.<id>.outcome == 'failure'` — the exact condition CI uses to turn a
+ *  `continue-on-error` step back into a job failure. Shared by evaluateIf (what
+ *  verify may skip) and assertCompensated (what makes skipping it correct), so
+ *  the two can never disagree about which shape is understood. */
+const FAILURE_COMPENSATOR =
+    /^steps\.([\w-]+)\.(?:outcome|conclusion) == 'failure'$/
+
 /** GitHub `if:` expressions verify knows how to answer locally. Returning null
  *  means "unrecognised", which stops the run — a new conditional step must get
  *  a deliberate local answer rather than being dropped on the floor. */
@@ -151,13 +203,18 @@ const evaluateIf = (
     // verify is the pre-PR command, so answer as a pull request would.
     if (normalized === "github.event_name == 'pull_request'")
         return { run: true }
-    // Steps gated on another step's outcome are CI reporting plumbing. Verify
-    // does not honour `continue-on-error` (see assertCompensated), so a failing
-    // step already stops the run and the re-fail step has nothing to add.
-    if (/\bsteps\.[\w-]+\.(?:outcome|conclusion)\b/.test(normalized))
+    // The one outcome-gated shape verify understands: a step that re-fails the
+    // job because an earlier `continue-on-error` step failed. Verify does not
+    // honour `continue-on-error` (see assertCompensated), so the failing step
+    // has already stopped the run and this one has nothing left to do.
+    //
+    // Deliberately exact. Matching any mention of `.outcome` would swallow a
+    // real gate like `if: steps.build.outcome == 'success'`, silently skipping
+    // it instead of raising the promised unrecognised-condition error.
+    if (FAILURE_COMPENSATOR.test(normalized))
         return {
             run: false,
-            reason: "gated on a CI step outcome; verify fails on the step itself instead",
+            reason: "re-fails the job on an earlier step's failure; verify fails on that step itself instead",
         }
     // dorny/paths-filter output — GitHub skips the job when your diff misses
     // the filter. Verify has no diff context and these gates are cheap, so it
@@ -193,11 +250,9 @@ const assertCompensated = (
     const id = step.id
     const compensator =
         id !== undefined &&
-        /^[\w-]+$/.test(id) &&
-        siblings.some(other =>
-            new RegExp(`\\bsteps\\.${id}\\.(?:outcome|conclusion)\\b`).test(
-                other.if ?? "",
-            ),
+        siblings.some(
+            other =>
+                (other.if ?? "").trim().match(FAILURE_COMPENSATOR)?.[1] === id,
         )
     if (!compensator)
         throw teach(
@@ -205,15 +260,21 @@ const assertCompensated = (
         )
 }
 
-const assertSupportedKeys = (step: WorkflowStep, name: string) => {
-    const unsupported = Object.keys(step).filter(
-        key => !SUPPORTED_STEP_KEYS.has(key),
-    )
+/** Fail closed on any key verify does not honour, at whichever level. Silently
+ *  ignoring `shell:`, `defaults.run.working-directory:` or `container:` means
+ *  executing something other than what CI executes and calling it green. */
+const assertSupportedKeys = (
+    node: Record<string, unknown>,
+    where: string,
+    supported: Set<string>,
+    level: "workflow" | "job" | "step",
+) => {
+    const unsupported = Object.keys(node).filter(key => !supported.has(key))
     if (unsupported.length > 0)
         throw teach(
-            `Step "${name}" in ${WORKFLOW} uses step key(s) verify does not honour: ${unsupported.join(
+            `${where} in ${WORKFLOW} uses ${level} key(s) verify does not honour: ${unsupported.join(
                 ", ",
-            )}. Running it anyway would execute a different command than CI does.`,
+            )}. Running anyway would execute something other than what CI executes.`,
         )
 }
 
@@ -251,6 +312,35 @@ export const buildPlan = (workflowSource: string): Plan => {
         throw teach(
             `${WORKFLOW} now declares workflow-level \`env:\`, which verify does not apply to steps.`,
         )
+    assertSupportedKeys(
+        workflow as Record<string, unknown>,
+        WORKFLOW,
+        SUPPORTED_WORKFLOW_KEYS,
+        "workflow",
+    )
+
+    // Every declared job must be classified. Without this, a new required
+    // pull-request job simply falls outside verify while it keeps reporting
+    // green — the exact drift this command exists to prevent.
+    const declared = Object.keys(workflow.jobs ?? {})
+    const unclassified = declared.filter(
+        job => !JOBS.includes(job) && SKIPPED_JOBS[job] === undefined,
+    )
+    if (unclassified.length > 0)
+        throw teach(
+            `${WORKFLOW} declares job(s) verify neither runs nor skips: ${unclassified.join(
+                ", ",
+            )}. Add them to JOBS if they gate pull requests, or to SKIPPED_JOBS with a reason.`,
+        )
+    const vanished = [...JOBS, ...Object.keys(SKIPPED_JOBS)].filter(
+        job => !declared.includes(job),
+    )
+    if (vanished.length > 0)
+        throw new Error(
+            `scripts/verify.ts names job(s) that no longer exist in ${WORKFLOW}: ${vanished.join(
+                ", ",
+            )}. Update JOBS / SKIPPED_JOBS.`,
+        )
 
     const planned: PlannedStep[] = []
     const skipped: Plan["skipped"] = []
@@ -268,6 +358,12 @@ export const buildPlan = (workflowSource: string): Plan => {
             throw teach(
                 `\`jobs.${jobName}\` in ${WORKFLOW} now declares job-level \`env:\`, which verify does not apply to steps.`,
             )
+        assertSupportedKeys(
+            job as Record<string, unknown>,
+            `jobs.${jobName}`,
+            SUPPORTED_JOB_KEYS,
+            "job",
+        )
 
         steps.forEach((step, index) => {
             const name =
@@ -307,22 +403,33 @@ export const buildPlan = (workflowSource: string): Plan => {
                 }
             }
 
-            assertSupportedKeys(step, name)
+            assertSupportedKeys(
+                step as Record<string, unknown>,
+                `Step "${name}"`,
+                SUPPORTED_STEP_KEYS,
+                "step",
+            )
             assertCompensated(step, name, steps)
             assertReproducible(step, name)
 
-            // Separate CI jobs get separate runners, so each one installs.
-            // Locally there is one checkout — running `bun install` again is
-            // just dead time.
-            const priorJob = alreadyRun.get(step.run)
-            if (priorJob !== undefined) {
+            // Skip a repeat only when it is an allowlisted setup command, from
+            // a DIFFERENT job, with an identical environment. A repeat inside
+            // one job is intentional, and the same command under different env
+            // is a different command.
+            const identity = `${step.run} ${JSON.stringify(step.env ?? {})}`
+            const priorJob = alreadyRun.get(identity)
+            if (
+                priorJob !== undefined &&
+                priorJob !== jobName &&
+                IDEMPOTENT_SETUP.has(step.run.trim())
+            ) {
                 skipped.push({
                     name: `${name} [${jobName}]`,
-                    reason: `identical command already run in the \`${priorJob}\` job`,
+                    reason: `identical setup command already run in the \`${priorJob}\` job`,
                 })
                 return
             }
-            alreadyRun.set(step.run, jobName)
+            if (priorJob === undefined) alreadyRun.set(identity, jobName)
 
             planned.push({
                 name: JOBS.length > 1 ? `${name} [${jobName}]` : name,

@@ -62,8 +62,8 @@ Canonical reference: `packages/@valdres/browser-geolocation`.
   `git grep` ban on `@ts-ignore`, `test:architecture`,
   `test:rewrite-guards:node` (vitest, not bun, so `bun:test` does not resolve
   there), `test:memory:bun`, `test:memory:node`,
-  `valdres-svelte lint:publish`, `bun test scripts/` — only ever ran on
-  GitHub. That gap turned PR #329 red: a
+  `valdres-svelte lint:publish`, the JUnit coverage gate, `bun test scripts/` —
+  only ever ran on GitHub. That gap turned PR #329 red: a
   new `src/lib/*Fuzz.test.ts` is auto-collected by
   `vitest.rewrite-guards.config.ts` and had to import
   `test/performance/test-compat` like its three siblings; nothing local said so.

@@ -139,6 +139,8 @@ describe("bun run verify", () => {
             "lint:publish",
             "bun test scripts/",
             "bun run test:ci",
+            "check-junit-coverage",
+            "check-valdres-package",
         ])
             expect(planned).toContain(command)
     })
@@ -170,6 +172,12 @@ describe("verify refuses to run a job it cannot reproduce", () => {
             "        steps:",
             "            - name: Package gate",
             "              run: bun run scripts/check-valdres-package.ts",
+            // Declared because SKIPPED_JOBS names it; every job in the file
+            // must be classified, and a named job that vanishes is an error.
+            "    publish:",
+            "        steps:",
+            "            - name: Publish",
+            "              run: bash scripts/ci-publish.sh",
         ].join("\n")
 
     const step = (name: string, body: string[]) =>
@@ -247,12 +255,13 @@ describe("verify refuses to run a job it cannot reproduce", () => {
         expect(() => buildPlan(renamed)).toThrow(/no longer exist/)
     })
 
-    test("renaming the job is an error", () => {
+    test("renaming a covered job is an error", () => {
         const renamed = fixture(step("Gate", ["run: echo ok"])).replace(
             "    test:",
             "    checks:",
         )
-        expect(() => buildPlan(renamed)).toThrow(/jobs\.test\.steps/)
+        // Caught twice over: `checks` is unclassified, and `test` has vanished.
+        expect(() => buildPlan(renamed)).toThrow(/neither runs nor skips/)
     })
 
     test("dropping the second gated job is an error", () => {
@@ -260,7 +269,60 @@ describe("verify refuses to run a job it cannot reproduce", () => {
             "    valdres-package:",
             "    unrelated:",
         )
-        expect(() => buildPlan(dropped)).toThrow(/jobs\.valdres-package\.steps/)
+        expect(() => buildPlan(dropped)).toThrow(/neither runs nor skips/)
+    })
+
+    // A new required PR job must not simply fall outside verify's coverage
+    // while it keeps reporting green.
+    test("a brand-new job forces a deliberate decision", () => {
+        const added =
+            fixture(step("Gate", ["run: echo ok"])) +
+            "\n    lint:\n        steps:\n            - name: Lint\n              run: bun run lint"
+        expect(() => buildPlan(added)).toThrow(/neither runs nor skips: lint/)
+    })
+
+    test("a skipped job that vanishes is an error", () => {
+        // Deleted, not renamed — a rename trips the unclassified check first.
+        const gone = fixture(step("Gate", ["run: echo ok"])).replace(
+            "\n    publish:\n        steps:\n            - name: Publish\n              run: bash scripts/ci-publish.sh",
+            "",
+        )
+        expect(() => buildPlan(gone)).toThrow(/no longer exist/)
+    })
+
+    // Job- and workflow-level settings reach every step, so they fail closed
+    // exactly like unknown step keys do.
+    test.each([
+        [
+            "defaults",
+            "        defaults:\n            run:\n                shell: python",
+        ],
+        ["container", "        container: node:20"],
+        [
+            "services",
+            "        services:\n            db:\n                image: postgres",
+        ],
+        [
+            "strategy",
+            "        strategy:\n            matrix:\n                bun: [1.3, 1.4]",
+        ],
+    ])("job-level %s is an error", (key, block) => {
+        const source = fixture(step("Gate", ["run: echo ok"])).replace(
+            "    test:\n        steps:",
+            `    test:\n${block}\n        steps:`,
+        )
+        expect(() => buildPlan(source)).toThrow(
+            new RegExp(`job key\\(s\\) verify does not honour: ${key}`),
+        )
+    })
+
+    test("workflow-level defaults is an error", () => {
+        const source =
+            "defaults:\n    run:\n        working-directory: docs\n" +
+            fixture(step("Gate", ["run: echo ok"]))
+        expect(() => buildPlan(source)).toThrow(
+            /workflow key\(s\) verify does not honour: defaults/,
+        )
     })
 
     // Checking step VALUES but not step KEYS was the original hole: a key
@@ -309,7 +371,7 @@ describe("verify refuses to run a job it cannot reproduce", () => {
         ).not.toThrow()
     })
 
-    test("a command already run in an earlier job is not run twice", () => {
+    test("an allowlisted setup command repeated across jobs runs once", () => {
         // Separate CI jobs get separate runners and each installs; locally
         // there is one checkout, so the repeat is dead time.
         const plan = buildPlan(
@@ -324,7 +386,79 @@ describe("verify refuses to run a job it cannot reproduce", () => {
             plan.steps.filter(s => s.run === "bun install --frozen-lockfile"),
         ).toHaveLength(1)
         expect(plan.skipped.map(s => s.reason)).toContain(
-            "identical command already run in the `test` job",
+            "identical setup command already run in the `test` job",
+        )
+    })
+
+    // Suppressing a repeat is the one place verify runs LESS than CI, so it is
+    // deliberately narrow. Everything below must run twice.
+    test("a non-setup command repeated across jobs runs twice", () => {
+        const plan = buildPlan(
+            fixture(step("Gate", ["run: bun run build"])).replace(
+                "            - name: Package gate",
+                "            - name: Build again\n              run: bun run build\n            - name: Package gate",
+            ),
+        )
+        expect(plan.steps.filter(s => s.run === "bun run build")).toHaveLength(
+            2,
+        )
+    })
+
+    test("a repeat within a single job runs twice", () => {
+        const plan = buildPlan(
+            fixture(
+                step("Install", ["run: bun install --frozen-lockfile"]),
+                step("Install again", ["run: bun install --frozen-lockfile"]),
+            ),
+        )
+        expect(
+            plan.steps.filter(s => s.run === "bun install --frozen-lockfile"),
+        ).toHaveLength(2)
+    })
+
+    test("the same command under different env is not a repeat", () => {
+        const plan = buildPlan(
+            fixture(
+                step("Install", ["run: bun install --frozen-lockfile"]),
+            ).replace(
+                "            - name: Package gate",
+                "            - name: Install\n              env:\n                  NODE_ENV: production\n              run: bun install --frozen-lockfile\n            - name: Package gate",
+            ),
+        )
+        expect(
+            plan.steps.filter(s => s.run === "bun install --frozen-lockfile"),
+        ).toHaveLength(2)
+    })
+
+    // Only the exact re-fail shape is reporting plumbing. Any other condition
+    // reading a step outcome is a real gate and must fail closed.
+    test("an outcome condition that is not the failure compensator fails closed", () => {
+        expect(() =>
+            buildPlan(
+                fixture(
+                    step("Gate", [
+                        "if: steps.build.outcome == 'success'",
+                        "run: echo ok",
+                    ]),
+                ),
+            ),
+        ).toThrow(/cannot evaluate/)
+    })
+
+    test("the exact failure compensator is recognised and skipped", () => {
+        const plan = buildPlan(
+            fixture(
+                step("Fail if gate failed", [
+                    "if: steps.gate.outcome == 'failure'",
+                    "run: exit 1",
+                ]),
+            ),
+        )
+        expect(plan.steps.map(s => bareName(s.name))).not.toContain(
+            "Fail if gate failed",
+        )
+        expect(plan.skipped.map(s => bareName(s.name))).toContain(
+            "Fail if gate failed",
         )
     })
 })

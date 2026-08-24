@@ -20,8 +20,8 @@ bun run scripts/gen-readmes.ts --check    # READMEs in sync with MDX
 workflow at run time: build, build:types, typecheck, the `@ts-ignore` ban,
 architecture and retained-memory gates, the Node/V8 rewrite-guard lane, the
 changeset check, the valdres-svelte publish lint, `bun test scripts/`, the
-package test sweep, and the published-tarball gate. It omits only the publish
-dry-run and its cleanup assertion. `bun run test` is a single one of those
+package test sweep, the JUnit coverage gate, and the published-tarball gate. It
+omits only the publish dry-run and its cleanup assertion. `bun run test` is a single one of those
 steps; running it alone is what let PR #329 go red.
 
 The two commands after it are the gap verify does not cover (`docs-ci.yml`) —
