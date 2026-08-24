@@ -602,13 +602,11 @@ const runShape = (
     const pristine = freezeSignature(factory.make())
 
     const probe = factory.make()
-    const outcomes = PATHS.filter(path => path.accepts(probe)).map(
-        path => {
-            const value = factory.make()
-            const options = mutable ? { mutable: true as const } : {}
-            return { path, value, result: path.run(value, options) }
-        },
-    )
+    const outcomes = PATHS.filter(path => path.accepts(probe)).map(path => {
+        const value = factory.make()
+        const options = mutable ? { mutable: true as const } : {}
+        return { path, value, result: path.run(value, options) }
+    })
     // A shape no path can express would make P1 vacuously true.
     if (outcomes.length < 2) {
         report(`only ${outcomes.length} path(s) can express this shape`)
