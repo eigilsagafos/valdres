@@ -57,6 +57,24 @@ Canonical reference: `packages/@valdres/browser-geolocation`.
 - `bun test` per package. Files colocated as `*.test.ts` next to source.
 - Happy-DOM is preloaded via each package's `bunfig.toml`
   (`preload = "./test/setup/happyDom.ts"`). Don't add jsdom.
+- **`bun run test` is not what CI runs.** It is a single step in CI's `test`
+  job. The rest — `build`, `build:types`, `typecheck`, `typecheck:types`, a
+  `git grep` ban on `@ts-ignore`, `test:architecture`,
+  `test:rewrite-guards:node` (vitest, not bun, so `bun:test` does not resolve
+  there), `test:memory:bun`, `test:memory:node`,
+  `valdres-svelte lint:publish`, `bun test scripts/` — only ever ran on
+  GitHub. That gap turned PR #329 red: a
+  new `src/lib/*Fuzz.test.ts` is auto-collected by
+  `vitest.rewrite-guards.config.ts` and had to import
+  `test/performance/test-compat` like its three siblings; nothing local said so.
+- **`bun run verify` is the pre-PR command** (~1m20s). It reads the step list
+  out of `.github/workflows/ci.yaml` at run time (not a hand-copied duplicate)
+  and runs both PR-gated jobs — `test` and `valdres-package` — in CI's order,
+  omitting only the publish dry-run and its cleanup assertion, since the dry-run
+  executes the real release script against your working tree. It does **not**
+  cover `docs-ci.yml` (`docs:build`, `gen-readmes --check`) or the Bencher gate;
+  it prints that list on every run. `--list` prints the plan without running it;
+  `--from=N` resumes after a fix (and says so instead of claiming a full pass).
 
 ## Releasing
 
@@ -77,8 +95,9 @@ prerelease mode.
   `PACKAGES`/`BENCH` tables, and `docs/content/bench-summary.json` are
   regenerated (`bun run gen-readmes` / Bencher workflows) — edit the MDX
   instead.
-- **Before opening or updating a PR, run the `/before-pr` skill** — it has the
-  full checklist: docs coverage, quality bar, generated artifacts, and the
+- **Before opening or updating a PR, run `bun run verify` and the `/before-pr`
+  skill** — `verify` is ci.yaml's PR jobs; the skill has the rest of the
+  checklist: docs coverage, quality bar, generated artifacts, and the docs
   checks CI enforces (`docs:build` + `gen-readmes --check` run on PRs that touch
   docs-related files).
 

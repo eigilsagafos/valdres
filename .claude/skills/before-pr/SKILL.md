@@ -10,11 +10,23 @@ Walk every section. CI enforces the mechanical ones; the quality ones are on you
 ## 1. Run what CI runs
 
 ```bash
-bun test                                  # affected packages at minimum
+bun run verify                            # ci.yaml's PR jobs, read from the workflow
 bun run docs:build                        # must build clean (catches broken MDX)
 bun run scripts/gen-readmes.ts --check    # READMEs in sync with MDX
-bunx changeset status --since=origin/main # changeset present (or `bunx changeset --empty`)
 ```
+
+`bun run verify` (~1m20s) runs both PR-gated jobs in `.github/workflows/ci.yaml`
+— `test` and `valdres-package` — in CI's order, reading the steps out of the
+workflow at run time: build, build:types, typecheck, the `@ts-ignore` ban,
+architecture and retained-memory gates, the Node/V8 rewrite-guard lane, the
+changeset check, the valdres-svelte publish lint, `bun test scripts/`, the
+package test sweep, and the published-tarball gate. It omits only the publish
+dry-run and its cleanup assertion. `bun run test` is a single one of those
+steps; running it alone is what let PR #329 go red.
+
+The two commands after it are the gap verify does not cover (`docs-ci.yml`) —
+verify prints that reminder itself on every run. `--list` shows the plan,
+`--from=N` resumes after a fix.
 
 ## 2. Documentation coverage
 
