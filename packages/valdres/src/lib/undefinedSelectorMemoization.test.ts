@@ -614,6 +614,41 @@ describe("custom equal is never handed an absent value", () => {
         expect(seen.length).toBeGreaterThan(0)
     })
 
+    test("an async selector resolving to undefined is committed too", async () => {
+        // A THIRD code path reaches the same question:
+        // `applyNativeSelectorSettlement` writes a resolved promise's value
+        // without consulting `equal` at all, so it commits `undefined`
+        // correctly today and this bug never applied to it. Guarded anyway —
+        // this is now the third defect in the "absent entry treated as a value"
+        // family, so any future `equal`-gated skip added here would repeat it,
+        // and nothing else covers the async settlement path for this value.
+        let evaluations = 0
+        const source = atom(1, { name: "eq-source-7" })
+        const state = selector<Promise<undefined>>(
+            get => {
+                evaluations++
+                get(source)
+                return Promise.resolve(undefined)
+            },
+            { name: "eq-child-7" },
+        )
+        const parent = selector(get => get(state) === undefined, {
+            name: "eq-parent-7",
+        })
+
+        const testStore = store()
+        await testStore.get(state)
+        // Let the settlement microtask land the resolved value.
+        await Promise.resolve()
+
+        expect(getStoreData(testStore).values.has(state)).toBe(true)
+        expect(testStore.get(parent)).toBe(true)
+
+        const settled = evaluations
+        for (let i = 0; i < 5; i++) testStore.get(parent)
+        expect(evaluations).toBe(settled)
+    })
+
     test("a comparator is not invoked on a first evaluation during propagation", () => {
         // Guards the propagateUpdatedAtoms site specifically: a selector first
         // materialized by a write must not consult its comparator either.
