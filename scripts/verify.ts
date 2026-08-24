@@ -130,19 +130,23 @@ const SUPPORTED_STEP_KEYS = new Set([
 ])
 
 /** Job keys that provably do not change how a `run:` block executes locally.
- *  The omissions are the point: `defaults` (run.shell / run.working-directory),
- *  `container`, `services` and `strategy` all change what CI actually executes,
- *  so they must fail closed here exactly as unknown step keys do. */
+ *  The omissions are the point, and they include more than the obvious ones:
+ *
+ *  - `defaults` (run.shell / run.working-directory), `container`, `services`,
+ *    `strategy` — change what CI actually executes.
+ *  - `if` — a job condition can make GitHub skip a covered job entirely while
+ *    verify runs it and claims to have replayed CI. Verify evaluates step-level
+ *    conditions; until it does the same for jobs, this fails closed.
+ *  - `timeout-minutes` — GitHub would kill the job at the deadline and
+ *    `runSteps` enforces none, so a local pass could hide a CI timeout. */
 const SUPPORTED_JOB_KEYS = new Set([
     "name",
     "runs-on",
     "needs",
-    "if",
     "permissions",
     "environment",
     "concurrency",
     "outputs",
-    "timeout-minutes",
     "steps",
 ])
 
@@ -189,9 +193,14 @@ const RUNNER_VARIABLE = /\$\{?((?:GITHUB|RUNNER)_[A-Z_]+)/g
 /** `steps.<id>.outcome == 'failure'` — the exact condition CI uses to turn a
  *  `continue-on-error` step back into a job failure. Shared by evaluateIf (what
  *  verify may skip) and assertCompensated (what makes skipping it correct), so
- *  the two can never disagree about which shape is understood. */
-const FAILURE_COMPENSATOR =
-    /^steps\.([\w-]+)\.(?:outcome|conclusion) == 'failure'$/
+ *  the two can never disagree about which shape is understood.
+ *
+ *  `outcome` only, deliberately. GitHub records a failed step's pre-policy
+ *  result in `outcome` and its post-`continue-on-error` result in `conclusion`
+ *  — which is `success`. So `conclusion == 'failure'` never fires for the step
+ *  it is meant to compensate: CI would tolerate the failure and go green while
+ *  verify stopped, the one direction of divergence that wastes your time. */
+const FAILURE_COMPENSATOR = /^steps\.([\w-]+)\.outcome == 'failure'$/
 
 /** GitHub `if:` expressions verify knows how to answer locally. Returning null
  *  means "unrecognised", which stops the run — a new conditional step must get
@@ -240,20 +249,28 @@ const teach = (detail: string) =>
  *  re-fails the job on this one's outcome, which is exactly how the `Test` step
  *  is wired (`Fail if tests failed`). Without that compensating step, CI would
  *  go green where verify goes red, so demand one rather than quietly becoming
- *  stricter than the thing being reproduced. */
+ *  stricter than the thing being reproduced.
+ *
+ *  Only steps AFTER this one count. GitHub evaluates conditions in order, so a
+ *  compensator placed earlier reads an empty `steps.<id>.outcome`, never fires,
+ *  and leaves CI green on a failure verify treats as fatal. */
 const assertCompensated = (
     step: WorkflowStep,
     name: string,
     siblings: WorkflowStep[],
+    index: number,
 ) => {
     if (step["continue-on-error"] !== true) return
     const id = step.id
     const compensator =
         id !== undefined &&
-        siblings.some(
-            other =>
-                (other.if ?? "").trim().match(FAILURE_COMPENSATOR)?.[1] === id,
-        )
+        siblings
+            .slice(index + 1)
+            .some(
+                other =>
+                    (other.if ?? "").trim().match(FAILURE_COMPENSATOR)?.[1] ===
+                    id,
+            )
     if (!compensator)
         throw teach(
             `Step "${name}" in ${WORKFLOW} is \`continue-on-error: true\` with no later step re-failing on its outcome, so CI tolerates its failure and verify would not.`,
@@ -409,7 +426,7 @@ export const buildPlan = (workflowSource: string): Plan => {
                 SUPPORTED_STEP_KEYS,
                 "step",
             )
-            assertCompensated(step, name, steps)
+            assertCompensated(step, name, steps, index)
             assertReproducible(step, name)
 
             // Skip a repeat only when it is an allowlisted setup command, from

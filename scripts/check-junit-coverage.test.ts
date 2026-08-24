@@ -78,6 +78,27 @@ describe("JUnit coverage expectations", () => {
         expect(coverage.expected.length).toBeGreaterThan(10)
     })
 
+    test("stale reports are cleared before the suite runs", async () => {
+        // Without this the gate is satisfiable by a report from an earlier run:
+        // `junit*.xml` is gitignored and never cleaned, so a package that has
+        // stopped emitting one passes locally and fails on CI's clean checkout.
+        // The cleanup lives in the workflow so CI and verify share it.
+        const { buildPlan } = await import("./verify")
+        const plan = buildPlan(read(".github/workflows/ci.yaml"))
+        const at = (match: (run: string) => boolean) =>
+            plan.steps.findIndex(step => match(step.run))
+
+        const clean = at(
+            run => run.includes("junit*.xml") && run.includes("-delete"),
+        )
+        const suite = at(run => run === "bun run test:ci")
+        const gate = at(run => run.includes("check-junit-coverage"))
+
+        expect(clean).toBeGreaterThanOrEqual(0)
+        expect(clean).toBeLessThan(suite)
+        expect(suite).toBeLessThan(gate)
+    })
+
     test("CI enforces the gate as a shell step, not only in the reporter", () => {
         // The whole point of extracting it: if this step is dropped from the
         // workflow, verify silently stops covering it again.

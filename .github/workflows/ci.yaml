@@ -114,6 +114,13 @@ jobs:
               # bunfig `[test].preload` guard blocks root-level `bun test`, so
               # opt this legitimate scripts/ run in (see scripts/no-root-bun-test.ts).
               run: VALDRES_ALLOW_ROOT_BUN_TEST=1 bun test scripts/
+            - name: Clear stale JUnit reports
+              # A no-op on CI's fresh checkout; the point is local. `junit*.xml`
+              # is gitignored and never cleaned, so a report left by an earlier
+              # run would satisfy the coverage gate below for a package that has
+              # since stopped emitting one — `bun run verify` green, CI red.
+              # Living here rather than in verify means both run the same thing.
+              run: find packages -name 'junit*.xml' -not -path '*/node_modules/*' -delete
             - name: Test
               id: test
               run: bun run test:ci

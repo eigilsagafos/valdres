@@ -19,10 +19,12 @@
  *   bun run scripts/check-junit-coverage.ts --json    # pure query, always exits 0
  *   bun run scripts/check-junit-coverage.ts --base=<ref>
  *
- * LOCAL CAVEAT: `junit*.xml` is gitignored, not cleaned between runs. CI always
- * starts from a fresh checkout; locally a stale report from an earlier run can
- * satisfy the gate for a package that has since stopped emitting one. The
- * failure direction is CI-catches-it, never the reverse.
+ * This only means anything against freshly written reports. `junit*.xml` is
+ * gitignored and would otherwise survive between local runs, letting a report
+ * from an hour ago satisfy the gate for a package that has since stopped
+ * emitting one — green locally, red on CI's clean checkout. The workflow's
+ * "Clear stale JUnit reports" step deletes them immediately before `test:ci`,
+ * so CI and `bun run verify` both scan only what this run produced.
  */
 import { join } from "node:path"
 

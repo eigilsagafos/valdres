@@ -306,6 +306,12 @@ describe("verify refuses to run a job it cannot reproduce", () => {
             "strategy",
             "        strategy:\n            matrix:\n                bun: [1.3, 1.4]",
         ],
+        // A job condition can make GitHub skip a covered job entirely while
+        // verify runs it and claims to have replayed CI.
+        ["if", "        if: github.event_name == 'push'"],
+        // GitHub would kill the job at the deadline; runSteps enforces none, so
+        // a local pass could hide a CI timeout.
+        ["timeout-minutes", "        timeout-minutes: 5"],
     ])("job-level %s is an error", (key, block) => {
         const source = fixture(step("Gate", ["run: echo ok"])).replace(
             "    test:\n        steps:",
@@ -443,6 +449,48 @@ describe("verify refuses to run a job it cannot reproduce", () => {
                 ),
             ),
         ).toThrow(/cannot evaluate/)
+    })
+
+    // GitHub records a failed step's pre-policy result in `outcome` and its
+    // post-continue-on-error result in `conclusion`, which is `success`. So a
+    // `conclusion == 'failure'` compensator never fires: CI tolerates the
+    // failure and goes green while verify stops.
+    test("conclusion is not accepted as a compensator", () => {
+        expect(() =>
+            buildPlan(
+                fixture(
+                    step("Gate", [
+                        "id: gate",
+                        "continue-on-error: true",
+                        "run: exit 1",
+                    ]),
+                    step("Fail if gate failed", [
+                        "if: steps.gate.conclusion == 'failure'",
+                        "run: exit 1",
+                    ]),
+                ),
+            ),
+        ).toThrow(/continue-on-error/)
+    })
+
+    // GitHub evaluates conditions in order: a compensator placed before the
+    // step reads an empty outcome, never fires, and leaves CI green.
+    test("a compensator placed before the step does not count", () => {
+        expect(() =>
+            buildPlan(
+                fixture(
+                    step("Fail if gate failed", [
+                        "if: steps.gate.outcome == 'failure'",
+                        "run: exit 1",
+                    ]),
+                    step("Gate", [
+                        "id: gate",
+                        "continue-on-error: true",
+                        "run: exit 1",
+                    ]),
+                ),
+            ),
+        ).toThrow(/no later step re-failing/)
     })
 
     test("the exact failure compensator is recognised and skipped", () => {
