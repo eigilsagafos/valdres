@@ -2,6 +2,7 @@ import { assertJsonSafeFamilyArgs } from "../lib/assertJsonSafeFamilyArgs"
 import { observeFamilyIndex } from "../lib/atomFamilyIndex"
 import { IS_PROD } from "../lib/IS_PROD"
 import { getStoreData } from "../lib/getStoreData"
+import { hasCommittedValue } from "../lib/hasCommittedValue"
 import { getNamedStateIndex } from "../lib/namedStateIndex"
 import { encodeWireValue } from "../lib/wireCodec"
 import type { DehydratedState } from "../types/DehydratedState"
@@ -74,10 +75,11 @@ export const dehydrate = (store: Store): DehydratedState => {
             if (members === undefined) continue
             for (const member of members) {
                 const value = data.values.get(member)
-                // Most values are defined, so avoid probing the backing map
-                // twice on the serializer's common path. `has` is still needed
-                // to distinguish a present atom whose value is `undefined`.
-                if (value === undefined && !data.values.has(member)) continue
+                // A member listed in the index need not hold a value here — and
+                // a present member whose value IS `undefined` must still be
+                // serialized. Same presence question as every equal-gated skip,
+                // asked with the value already in hand.
+                if (!hasCommittedValue(member, data, value)) continue
                 // The payload contracts args as a non-empty tuple (mirroring
                 // atomFamily's Args), and hydrate skips empty-args entries.
                 // A zero-arg member can only exist via an untyped JS call —
@@ -116,7 +118,7 @@ export const dehydrate = (store: Store): DehydratedState => {
             }
         } else {
             const value = data.values.get(state)
-            if (value === undefined && !data.values.has(state)) continue
+            if (!hasCommittedValue(state, data, value)) continue
             if (isPromiseLike(value)) {
                 if (!IS_PROD)
                     console.warn(

@@ -27,6 +27,7 @@ import {
     rollbackSelectorActivation,
     settleLateDependency,
 } from "./graph"
+import { hasCommittedValue } from "./hasCommittedValue"
 import { createGuardedScalarCommit, runCommitPlan } from "./commitEngine"
 import { createCommitErrors } from "./commitErrors"
 import { SETTLE_DEFAULT } from "./commitIntents"
@@ -77,8 +78,10 @@ const admitNativeSelectorSettlement = (
         !evaluationContext.revoked &&
         data.latestEvalContext.get(selector) === evaluationContext &&
         data.stateDependencies.has(selector) &&
+        // Either this promise is still the committed value, or nothing is
+        // committed at all — a settled value from elsewhere supersedes us.
         (currentValue === promise ||
-            (currentValue === undefined && !data.values.has(selector)))
+            !hasCommittedValue(selector, data, currentValue))
     )
 }
 
@@ -120,7 +123,7 @@ const admitNativeSelectorCleanup = (
     return (
         !isStoreDisposed(data) &&
         (currentValue === promise ||
-            (currentValue === undefined && !data.values.has(selector)))
+            !hasCommittedValue(selector, data, currentValue))
     )
 }
 
@@ -1158,25 +1161,21 @@ export const initSelector = <V>(
         selectorGraphActive,
     )
 
-    // `data.values.get` returns `undefined` both for a committed `undefined`
-    // and for NOTHING COMMITTED, so presence has to be resolved before the two
-    // are treated alike. The extra probe is paid only when the value we would
-    // otherwise compare against is `undefined`.
-    //
     // Nothing committed means nothing can be equal, so skipping the write would
     // leave the selector permanently unmemoized: every cache hit downstream
     // keys off `values.has`, so each later read re-runs the body — including
     // each repeated `get(child)` inside ONE parent evaluation, which turns a
     // shared leaf in a recursive traversal into O(reads x full re-eval).
-    const hasExistingValue =
-        existingValue !== undefined || data.values.has(selector)
+    //
+    // This comparison is the hot one, so the value already in hand carries the
+    // presence question: hasCommittedValue probes the map only when there is an
+    // `undefined` to disambiguate.
+    const hasExistingValue = hasCommittedValue(selector, data, existingValue)
 
-    // Gate `equal` on presence rather than filtering its result afterwards:
-    // `EqualFunc<Value>` types BOTH operands as `Value`, so handing a
-    // comparator the absent sentinel is a type lie, and a perfectly ordinary
-    // `equal: (a, b) => a.id === b.id` throws on the selector's first read.
-    // There is also nothing to ask: with no committed value the answer is
-    // "not equal" by definition, so the call is skipped rather than repaired.
+    // Gate `equal` on presence rather than filtering its result afterwards (see
+    // hasCommittedValue): with nothing committed the answer is "not equal" by
+    // definition, so the call is skipped rather than repaired, and no
+    // comparator is ever shown the absent sentinel.
     // Promises use reference equality — deep equal treats all promises as
     // structurally identical (both have zero own keys).
     const areEqual =

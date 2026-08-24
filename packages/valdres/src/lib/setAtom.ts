@@ -24,6 +24,7 @@ import {
     tryApplyUnobservedGlobalSet,
 } from "./globalAtomFanOut"
 import { getState } from "./getState"
+import { hasCommittedValue } from "./hasCommittedValue"
 import { settleCommit, settleCommitForest } from "./propagateUpdatedAtoms"
 import { isFunction } from "./isFunction"
 import { resolvePendingDefault } from "./resolvePendingDefault"
@@ -98,7 +99,7 @@ export const setAtom = <Value = any>(
         // through to its parent, however, an explicit equal set must pin a local
         // shadow just like the settled-value branch below.
         if (currentValue === promise) {
-            if (data.parent && !data.values.has(atom)) {
+            if (data.parent && !hasCommittedValue(atom, data)) {
                 coordinateAsyncWrite(atom, promise, currentValue, data, intent)
             }
             return promise as Value
@@ -137,7 +138,13 @@ export const setAtom = <Value = any>(
         // mirrors writeAtoms' equal branch, which already does this for the txn
         // commit path. On a root (no parent) or an already-shadowed scope atom
         // this is a true no-op, so the write hot path is untouched.
-        if (data.parent && !data.values.has(atom)) {
+        //
+        // `currentValue` is deliberately NOT handed to hasCommittedValue: a
+        // read-through resolves to the parent's value, which proves nothing
+        // about a local entry — the missing shadow is exactly the case where it
+        // is non-undefined and there is nothing committed here. `data.parent`
+        // short-circuits first, so a root store still pays no probe at all.
+        if (data.parent && !hasCommittedValue(atom, data)) {
             if (isGlobalAtom(atom) && intent.effects === "run") {
                 atom.attach(data)
             }

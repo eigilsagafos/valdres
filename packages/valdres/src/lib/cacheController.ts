@@ -29,6 +29,7 @@ import {
 } from "./commitPlans"
 import { equal } from "./equal"
 import { hasAtomCommitObservers } from "./hasAtomCommitObservers"
+import { hasCommittedValue } from "./hasCommittedValue"
 import { IS_PROD } from "./IS_PROD"
 import { settleCommit, settleCommitForest } from "./propagateUpdatedAtoms"
 import { setValueInData } from "./setValueInData"
@@ -206,8 +207,15 @@ const retain = (
             if (!current(requestGeneration)) break
             try {
                 const currentValue = store.values.get(target)
-                const hasCurrentValue =
-                    currentValue !== undefined || store.values.has(target)
+                // A peer that has never read this atom — or whose entry
+                // `expireIfStale` just dropped — has nothing to compare
+                // against, and its comparator must not be shown the absent
+                // sentinel.
+                const hasCurrentValue = hasCommittedValue(
+                    target,
+                    store,
+                    currentValue,
+                )
                 const valueIsPromise = isPromiseLike(value)
                 const areEqual =
                     hasCurrentValue &&
@@ -339,8 +347,7 @@ const retain = (
             return
         }
         const currentValue = data.values.get(state)
-        const hasCurrentValue =
-            currentValue !== undefined || data.values.has(state)
+        const hasCurrentValue = hasCommittedValue(state, data, currentValue)
         const valueIsPromise = isPromiseLike(value)
         const areEqual =
             hasCurrentValue &&

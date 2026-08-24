@@ -27,6 +27,7 @@ import { isSelector } from "../utils/isSelector"
 import { clearSupersededAsyncAtomCoordinator } from "./asyncAtomCoordinatorRegistry"
 import { detachOwnValue } from "./unsetValue"
 import { getState, isAtomDeletedInFamilyIndex } from "./getState"
+import { hasCommittedValue } from "./hasCommittedValue"
 import { getAtomInitValue } from "./initAtom"
 import { isFunction } from "./isFunction"
 import { normalizeStagedValue } from "./normalizeStagedValue"
@@ -181,6 +182,12 @@ const applyFamilyIndexResets = (
         if (staged === undefined) continue
         draft.values.delete(family)
         const before = observeFamilyIndex(family, data)
+        // Presence is captured HERE, not at the comparison below: the write on
+        // the next line lands `staged` in the same map, so a probe taken later
+        // would report the new entry and say the absent `before` was present.
+        // `observeFamilyIndex` is `| undefined` — a family this store never
+        // committed an index for reverts with nothing to compare against.
+        const hadBefore = hasCommittedValue(family, data, before)
         setValueInData(family, staged, data)
         // Descendant scopes render against this index, and it is a NEW object.
         // UNCONDITIONAL, before the equality check: the settlement's own
@@ -190,7 +197,7 @@ const applyFamilyIndexResets = (
         // against stale creation timestamps.
         if (data.scopes.size > 0) recursivelyUpdateIndexes(data, family)
         reverted.push(family)
-        if (family.equal(before, staged)) continue
+        if (hadBefore && family.equal(before, staged)) continue
         changed.push(family)
         // Which members changed membership and are NOT already carried by this
         // commit's unsets. A member that LEFT is one the scope owned a value
