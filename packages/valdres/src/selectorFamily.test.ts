@@ -269,6 +269,58 @@ describe("selectorFamily", () => {
         })
     })
 
+    test("a keyed family forwards the whole argument tuple", () => {
+        // A family with keyOf gets its own accessor, which assembles the
+        // argument array down the same arity branches as the unkeyed one. Both
+        // keyOf and the member factory must receive every argument: a branch
+        // that dropped one would hand keyOf a short tuple, and calls that
+        // differ only in a dropped position would silently collapse onto a
+        // single member.
+        const keyOfCalls: any[][] = []
+        const factoryCalls: any[][] = []
+        const family = selectorFamily(
+            (...args: any[]) => {
+                factoryCalls.push(args)
+                return () => args.length
+            },
+            {
+                keyOf: (...args: any[]) => {
+                    keyOfCalls.push(args)
+                    return JSON.stringify(args)
+                },
+            },
+        )
+        const shapes: any[][] = [
+            [],
+            ["a"],
+            ["a", 1],
+            // differs from the previous shape only in the LAST argument, so a
+            // truncating branch would merge the two
+            ["a", 2],
+            ["a", 1, 2],
+            [1, 2, 3, 4, 5],
+        ]
+
+        const members = shapes.map((args, index) => {
+            const member = family(...(args as [any]))
+            expect(keyOfCalls[keyOfCalls.length - 1]).toEqual(args)
+            expect(factoryCalls[index]).toEqual(args)
+            return member
+        })
+
+        shapes.forEach((args, index) => {
+            expect(family(...(args as [any]))).toBe(members[index])
+        })
+        expect(new Set(members).size).toBe(shapes.length)
+        // the member keeps the ORIGINAL arguments, not the projected key
+        shapes.forEach((args, index) => {
+            expect(members[index]!.familyArgs).toEqual(args as [any])
+        })
+        // a cache hit still re-runs keyOf (it is what produces the key) but
+        // must not re-run the factory
+        expect(factoryCalls.length).toBe(shapes.length)
+    })
+
     test("factory runs once per cache entry, not per read", () => {
         // The wrapper used to be `(get) => callback(...args)(get)`, which
         // re-invoked the user's factory on every selector evaluation and

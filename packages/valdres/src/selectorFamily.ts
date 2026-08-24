@@ -51,8 +51,13 @@ export const selectorFamily = <
         displayedKey: EncodedFamilyKey = key,
         rawStringKey?: string,
     ) => {
-        // A member reachable under the encoded key must be reused even when the
-        // raw-string side cache missed (release() clears only that side).
+        // One construction guard for every entry point. The string accessor
+        // reaches here having probed only `stringMap`, which is keyed on the
+        // raw string rather than the encoded key, so it has not yet ruled out a
+        // canonical entry; the other accessors probed `map` under this exact
+        // key and repeat it here. Cold path either way — build() runs only on a
+        // miss — and it keeps "never publish a second member for one key" true
+        // at one place instead of four.
         const existing = map.get(key)
         if (existing !== undefined) return existing
 
