@@ -574,7 +574,11 @@ describe("selector evaluator twin fuzz", () => {
         expect(coverage.sawSelectorEdges).toBeGreaterThan(SEEDS * 0.3)
         expect(coverage.sawMount).toBeGreaterThan(SEEDS * 0.3)
         expect(coverage.sawThrow).toBeGreaterThan(SEEDS * 0.05)
-    })
+        // 30s like every sibling fuzz in this directory, and like the V8 lane's
+        // own `testTimeout`. Bun's 5s default is not a budget a differential
+        // fuzz fits in: ~1.1s locally is ~6s on a CI runner, which is exactly
+        // how this first landed red.
+    }, 30_000)
 
     test("a deferred get sees the same disposed store through either twin", () => {
         // The twins' one NAMED difference, and the reason this pairing needed a

@@ -720,7 +720,8 @@ describe("deep-freeze policy fuzz", () => {
             if (failures.length >= 10) break
         }
         expect(format(failures)).toEqual([])
-    })
+        // See the sibling fuzzers: 30s, not Bun's 5s default.
+    }, 30_000)
 
     test("every write path shows the schema an unfrozen value", () => {
         // The OTHER cross-path claim in normalizeStagedValue's contract: "Order
