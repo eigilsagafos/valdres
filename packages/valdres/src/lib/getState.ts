@@ -322,7 +322,12 @@ export function getState<
         const coldCache = data.coldSelectorCachesEnabled
             ? data.coldSelectorCaches.get(state)
             : undefined
-        if (!coldCache) {
+        // Hoist isColdSelectorCacheFresh's own first test. Nothing this cache
+        // observed has changed since it was last validated, so the two calls it
+        // would take to reach the same `data.values.get` are pure overhead — and
+        // read-heavy traversals take this branch on nearly every read. Mirrors
+        // the identical check at the store boundary in storeFromStoreData.
+        if (!coldCache || coldCache.validatedAt === data.tree.revision) {
             return data.values.get(state)
         }
         return getColdSelectorState(

@@ -237,15 +237,16 @@ const createStoreRuntime = (data: StoreData): StoreRuntime => {
                     data,
                 ) as any
             }
-            const hasColdCache =
-                data.coldSelectorCachesEnabled &&
-                data.coldSelectorCaches.has(state)
-            if (hasColdCache) {
+            // One WeakMap lookup, not has() + get(): a cache entry is always an
+            // object, so `undefined` already means "absent".
+            const coldCache = data.coldSelectorCachesEnabled
+                ? data.coldSelectorCaches.get(state)
+                : undefined
+            if (coldCache !== undefined) {
                 // No state observed by this cache has changed since its last
                 // validation. Return at the store boundary so steady cold
                 // reads avoid opening a liveness pass only to collect no seeds.
-                const coldCache = data.coldSelectorCaches.get(state)
-                if (coldCache?.validatedAt === data.tree.revision) {
+                if (coldCache.validatedAt === data.tree.revision) {
                     return data.values.get(state)
                 }
             } else {

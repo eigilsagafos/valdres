@@ -218,6 +218,57 @@ describe("selectorFamily", () => {
         expect(family("a")).not.toBe(first)
     })
 
+    test("every argument shape resolves to one stable, distinct member", () => {
+        // The accessor derives its cache key down four arity branches — a raw
+        // string via the side cache, a single non-string primitive used AS the
+        // map key, a one/two-element array literal, and a copy of `arguments`
+        // for anything wider. They must agree with familyKey() on both halves
+        // of cache identity: repeat calls return the SAME member, and arguments
+        // that are not the same key return DIFFERENT ones.
+        const family = selectorFamily(
+            (...args: any[]) =>
+                () =>
+                    args.length,
+        )
+        const shapes: any[][] = [
+            [],
+            ["a"],
+            [""],
+            // a raw string that looks like an encoded key must not collide with
+            // the value it encodes
+            ["s1:a"],
+            [0],
+            [-0],
+            [1],
+            [NaN],
+            [Infinity],
+            [true],
+            [false],
+            [10n],
+            [null],
+            [undefined],
+            [{ id: "x" }],
+            [[1, 2]],
+            ["a", 1],
+            ["a", 2],
+            [1, 2],
+            ["a", 1, 2],
+            [1, 2, 3, 4, 5],
+        ]
+        const members = shapes.map(args => family(...(args as [any])))
+
+        // stable
+        shapes.forEach((args, index) => {
+            expect(family(...(args as [any]))).toBe(members[index])
+        })
+        // distinct — including +0 vs -0, which SameValueZero would merge
+        expect(new Set(members).size).toBe(shapes.length)
+        // and each member reports the key it was actually filed under
+        shapes.forEach((args, index) => {
+            expect(members[index]!.familyArgs).toEqual(args as [any])
+        })
+    })
+
     test("factory runs once per cache entry, not per read", () => {
         // The wrapper used to be `(get) => callback(...args)(get)`, which
         // re-invoked the user's factory on every selector evaluation and
