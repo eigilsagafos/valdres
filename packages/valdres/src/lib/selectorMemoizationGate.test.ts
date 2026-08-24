@@ -319,4 +319,105 @@ describe("selector memoization gate", () => {
         })
         expect(settled.selectorEvaluations).toBe(0)
     })
+
+    // --- 7. The comparator is a matrix AXIS, not a single case --------------
+    // Section 6 above covered "a custom equal" with exactly one variant:
+    // `equal: () => true`. That variant is null-safe BY CONSTRUCTION — it
+    // ignores both operands — so it is the one custom comparator that cannot
+    // observe what it is handed. Having the dimension present but populated
+    // with a non-exercising variant bought false confidence: Copilot found on
+    // PR #329 that both change-detection sites invoked `equal` with the
+    // absent-entry sentinel, which `EqualFunc<Value>` says cannot happen, so a
+    // perfectly ordinary `(a, b) => a.id === b.id` crashed on a first read.
+    // Section 6 sailed straight past it.
+    //
+    // So sweep the comparator too, with variants that actually DEREFERENCE
+    // their operands. The lesson generalizes past this bug: when a matrix gains
+    // a user-supplied-callback axis, the variants have to exercise the
+    // contract, not merely occupy the slot.
+    type Row = { id: number }
+    const COMPARATORS: Array<
+        [string, ((a: Row, b: Row) => boolean) | undefined]
+    > = [
+        ["default structural equal", undefined],
+        ["reads a.id and b.id", (a, b) => a.id === b.id],
+        ["reference identity", (a, b) => a === b],
+        [
+            "reads a.id via Object.keys",
+            (a, b) => Object.keys(a).length === Object.keys(b).length,
+        ],
+        ["lenient, ignores operands", () => true],
+    ]
+
+    describe("an object-valued selector, swept by comparator", () => {
+        for (const [label, equal] of COMPARATORS) {
+            test(label, () => {
+                const source = atom(1, { name: uniqueName("gate-src") })
+                const leaf = selector<Row>(get => ({ id: get(source) }), {
+                    name: uniqueName("gate-leaf"),
+                    ...(equal ? { equal } : {}),
+                })
+                const root = selector(
+                    get => {
+                        let reads = 0
+                        for (let i = 0; i < READS; i++) {
+                            get(leaf).id
+                            reads++
+                        }
+                        return reads
+                    },
+                    { name: uniqueName("gate-root") },
+                )
+
+                const target = store()
+                // A dereferencing comparator must survive the FIRST read: it
+                // used to be handed `undefined` and throw here.
+                const cold = measureArchitecture(target, () =>
+                    expect(target.get(root)).toBe(READS),
+                )
+                expect(cold.selectorEvaluations).toBe(2)
+
+                const settled = measureArchitecture(target, () => {
+                    for (let i = 0; i < READS; i++) target.get(root)
+                })
+                expect(settled.selectorEvaluations).toBe(0)
+            })
+        }
+    })
+
+    describe("a dereferencing comparator in every read mode", () => {
+        for (const [modeLabel, open] of READ_MODES) {
+            test(modeLabel, () => {
+                const source = atom(1, { name: uniqueName("gate-src") })
+                const leaf = selector<Row>(get => ({ id: get(source) }), {
+                    name: uniqueName("gate-leaf"),
+                    equal: (a, b) => a.id === b.id,
+                })
+                const root = selector(
+                    get => {
+                        let reads = 0
+                        for (let i = 0; i < READS; i++) {
+                            get(leaf).id
+                            reads++
+                        }
+                        return reads
+                    },
+                    { name: uniqueName("gate-root") },
+                )
+
+                const target = store()
+                let handle!: Store
+                const cold = measureArchitecture(target, () => {
+                    handle = open(target, root as unknown as Selector<unknown>)
+                })
+                expect(cold.selectorEvaluations).toBe(2)
+                expect(handle.get(root)).toBe(READS)
+
+                const settled = measureArchitecture(target, () => {
+                    for (let i = 0; i < READS; i++) handle.get(root)
+                })
+                expect(settled.selectorEvaluations).toBe(0)
+            })
+        }
+    })
 })
