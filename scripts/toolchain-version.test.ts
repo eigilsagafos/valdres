@@ -24,6 +24,17 @@ const read = (path: string) => readFileSync(join(rootDir, path), "utf8")
 
 const pinnedVersion = read(".bun-version").trim()
 
+/** YAML scalars may be quoted; `bun-version: "1.4.0"` and `bun-version: 1.4.0`
+ *  are the same value to the action, so they must be the same value here.
+ *  Comparing the raw capture treated a legitimately quoted pin as a mismatch. */
+const unquote = (value: string) =>
+    value.replace(/^(['"])(.*)\1$/, (_match, _quote, inner) => inner)
+
+/** The repository-root version file, written the ways YAML might spell it.
+ *  A suffix test is not enough: `config/.bun-version` and `evil.bun-version`
+ *  both end in `.bun-version` while being a different source of truth. */
+const ROOT_VERSION_FILE = new Set([".bun-version", "./.bun-version"])
+
 const compareSemver = (a: string, b: string) => {
     const parse = (v: string) =>
         v
@@ -102,11 +113,13 @@ describe("pinned Bun toolchain", () => {
 
     test("every setup-bun step resolves to the pinned Bun", () => {
         const mismatched = setupBunSteps().filter(step => {
-            if (step.key === "bun-version") return step.value !== pinnedVersion
+            const value = unquote(step.value ?? "")
+            if (step.key === "bun-version") return value !== pinnedVersion
             // Reading the version from a file is fine as long as it is THIS
-            // file; any other source can disagree with `.bun-version`.
+            // file — compared as a whole path, not by suffix, so a second
+            // version file elsewhere in the tree cannot quietly take over.
             if (step.key === "bun-version-file")
-                return !/\.bun-version$/.test(step.value ?? "")
+                return !ROOT_VERSION_FILE.has(value)
             return false // absence is the other test's business
         })
         expect(

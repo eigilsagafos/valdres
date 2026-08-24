@@ -14,7 +14,13 @@ const warnedStores = new WeakSet<StoreData>()
  *  states (e.g. the cacheMeta atom) and family container objects, and classify
  *  each remaining entry as `"atom"` or `"selector"` via `isSelector`. A selector
  *  only appears when it holds a cached value — which, iterating `values`, it
- *  always does. `scope` is the id path from the outermost scope down to `data`. */
+ *  always does, `undefined` included: an entry whose value is `undefined` is a
+ *  materialized selector that computed `undefined`, not a missing one. (It used
+ *  to be missing — `initSelector` compared the computed value against the
+ *  absent-entry sentinel and skipped the write, so these selectors never
+ *  reached `values` at all and this claim was false. See
+ *  lib/undefinedSelectorMemoization.test.ts.)
+ *  `scope` is the id path from the outermost scope down to `data`. */
 const collect = (
     data: StoreData,
     scope: string[],

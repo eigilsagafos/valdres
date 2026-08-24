@@ -16,9 +16,10 @@ Every cache hit downstream keys off `values.has(state)`, so an uncommitted
 selector was permanently unmemoized: each `get()` re-ran its body. Repeated
 reads of the same member inside ONE parent evaluation — what a recursive graph
 traversal produces — became O(reads × full re-eval), and the cost multiplies per
-level of a chain: 12 reads across three levels evaluated the leaf 157 times
-instead of once. Writes were affected the same way, since re-evaluating a
-dependent re-read the leaf once per `get()`. A consumer reading a trivial
+level of a chain: 12 reads at each of three levels evaluated the leaf 144 times
+instead of once (157 evaluations across the whole chain instead of 3). Writes
+were affected the same way, since re-evaluating a dependent re-read the leaf
+once per `get()`. A consumer reading a trivial
 `selectorFamily(ref => get => get(entity(ref)).data.duration)` leaf through a
 traversal saw it evaluate ~467k times where 0.2.0-alpha.28 evaluated it a
 handful of times — alpha.28 always wrote the value, so the memoization was
