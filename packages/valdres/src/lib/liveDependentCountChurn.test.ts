@@ -89,5 +89,5 @@ test("live selector re-adds a dependency after transitional cyclic churn", () =>
 
     expect(getStoreData(s).stateDependencies.get(root)).toContain(newBranch)
     expect(getStoreData(s).stateDependents.get(newBranch)).toContain(root)
-    expect(getStoreData(s).liveDependentCount.get(newBranch)).toBe(1)
+    expect(getStoreData(s).graphNodes.get(newBranch)?.live).toBe(1)
 })

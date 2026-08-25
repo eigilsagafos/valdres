@@ -16,6 +16,12 @@ import {
     noteLivenessWorkspaceSize,
     releaseLivenessWorkspace,
 } from "./workspace"
+import {
+    graphNodeFor,
+    liveDependents,
+    peekGraphNode,
+    UNSET,
+} from "./graphNode"
 import { getStoreRuntime } from "../getStoreRuntime"
 import {
     isStoreDisposed,
@@ -59,7 +65,7 @@ const hasOwnMount = (state: State): boolean =>
  * `unmountOrphanedDeps` are pure no-ops and can return before allocating.
  */
 const hasMountInClosure = (state: State, data: StoreData): boolean =>
-    hasOwnMount(state) || data.mountInClosure.has(state)
+    hasOwnMount(state) || peekGraphNode(state, data)?.mountInClosure === true
 
 /**
  * Push the `mountInClosure` marker UP from `state` to its dependents. Called
@@ -78,10 +84,11 @@ const propagateMountMarkerUp = (state: State, data: StoreData) => {
         const parents = data.stateDependents.get(current)
         if (!parents) continue
         for (const parent of parents) {
-            if (data.mountInClosure.has(parent)) continue
+            const parentNode = graphNodeFor(parent, data)
+            if (parentNode.mountInClosure) continue
             // parent gains a mount-relevant child → it now has a mountable
             // descendant. Record the marker regardless of parent's own hook.
-            data.mountInClosure.set(parent, true)
+            parentNode.mountInClosure = true
             // Only ascend through parents that were not ALREADY mount-relevant
             // via their own hook — those had their ancestors marked when their
             // hook-bearing edges first formed, so re-ascending is redundant.
@@ -92,16 +99,18 @@ const propagateMountMarkerUp = (state: State, data: StoreData) => {
 
 /** Mark `state` and every existing dependent as potentially cyclic. */
 const propagateCycleRiskUp = (state: State, data: StoreData) => {
-    if (data.cycleRiskInClosure.has(state)) return
-    data.cycleRiskInClosure.set(state, true)
+    const seedNode = graphNodeFor(state, data)
+    if (seedNode.cycleRisk) return
+    seedNode.cycleRisk = true
     const stack: State[] = [state]
     while (stack.length > 0) {
         const current = stack.pop()!
         const parents = data.stateDependents.get(current)
         if (!parents) continue
         for (const parent of parents) {
-            if (data.cycleRiskInClosure.has(parent)) continue
-            data.cycleRiskInClosure.set(parent, true)
+            const parentNode = graphNodeFor(parent, data)
+            if (parentNode.cycleRisk) continue
+            parentNode.cycleRisk = true
             stack.push(parent)
         }
     }
@@ -129,20 +138,24 @@ export const noteDependencyAdded = (
     // (and its existing dependents) as cycle-risky. A risky dependency also makes
     // the selector's closure risky. This is conservative and monotonic: false
     // positives are allowed; false negatives are not.
-    const selectorOrder = data.dependencyOrder.get(selector)
-    const depOrder = data.dependencyOrder.get(dep)
+    // One record lookup each for `selector` and `dep` instead of one per field:
+    // this runs per committed edge, and it used to read `dependencyOrder` twice,
+    // `cycleRiskInClosure` once and `mountInClosure` twice.
+    const selectorNode = graphNodeFor(selector, data)
+    const depNode = peekGraphNode(dep, data)
+    const selectorOrder = selectorNode.order
+    const depOrder = depNode?.order ?? UNSET
     if (
-        data.cycleRiskInClosure.has(dep) ||
-        selectorOrder === undefined ||
-        (isSelector(dep) &&
-            (depOrder === undefined || depOrder >= selectorOrder))
+        depNode?.cycleRisk === true ||
+        selectorOrder === UNSET ||
+        (isSelector(dep) && (depOrder === UNSET || depOrder >= selectorOrder))
     ) {
         propagateCycleRiskUp(selector, data)
     }
 
-    if (!hasMountInClosure(dep, data)) return
-    if (data.mountInClosure.has(selector)) return
-    data.mountInClosure.set(selector, true)
+    if (!(hasOwnMount(dep) || depNode?.mountInClosure === true)) return
+    if (selectorNode.mountInClosure) return
+    selectorNode.mountInClosure = true
     // If `selector` already had its own hook it was already mount-relevant, so
     // its dependents were marked when their edges formed — no up-walk needed.
     if (!hasOwnMount(selector)) propagateMountMarkerUp(selector, data)
@@ -206,8 +219,7 @@ export const activateSelectorGraph = (root: State, data: StoreData) => {
  */
 export const isLive = (state: State, data: StoreData): boolean => {
     if (hasDirectSubscribers(state, data)) return true
-    const count = data.liveDependentCount.get(state)
-    return !!count && count > 0
+    return (peekGraphNode(state, data)?.live ?? 0) > 0
 }
 
 /**
@@ -234,8 +246,9 @@ const propagateLive = (root: State, data: StoreData) => {
             for (const dep of deps) {
                 if (instrumentation)
                     instrumentation.counters.livenessEdgeVisits++
-                const prev = data.liveDependentCount.get(dep) ?? 0
-                data.liveDependentCount.set(dep, prev + 1)
+                const depNode = graphNodeFor(dep, data)
+                const prev = depNode.live
+                depNode.live = prev + 1
                 if (prev === 0 && !hasDirectSubscribers(dep, data)) {
                     if (stack === undefined) {
                         stack = []
@@ -267,13 +280,9 @@ const propagateNotLive = (root: State, data: StoreData) => {
             for (const dep of deps) {
                 if (instrumentation)
                     instrumentation.counters.livenessEdgeVisits++
-                const prev = data.liveDependentCount.get(dep) ?? 0
-                const next = prev - 1
-                if (next <= 0) {
-                    data.liveDependentCount.delete(dep)
-                } else {
-                    data.liveDependentCount.set(dep, next)
-                }
+                const depNode = graphNodeFor(dep, data)
+                const prev = depNode.live
+                depNode.live = prev > 0 ? prev - 1 : 0
                 if (prev === 1 && !hasDirectSubscribers(dep, data)) {
                     if (stack === undefined) {
                         stack = []
@@ -294,8 +303,7 @@ const propagateNotLive = (root: State, data: StoreData) => {
  */
 export const onFirstDirectSubscriber = (state: State, data: StoreData) => {
     activateSelectorGraph(state, data)
-    const liveDepCount = data.liveDependentCount.get(state) ?? 0
-    if (liveDepCount === 0) {
+    if (liveDependents(state, data) === 0) {
         propagateLive(state, data)
     }
 }
@@ -306,8 +314,7 @@ export const onFirstDirectSubscriber = (state: State, data: StoreData) => {
  * propagate.
  */
 export const onLastDirectSubscriber = (state: State, data: StoreData) => {
-    const liveDepCount = data.liveDependentCount.get(state) ?? 0
-    if (liveDepCount === 0) {
+    if (liveDependents(state, data) === 0) {
         propagateNotLive(state, data)
     }
 }
@@ -318,8 +325,9 @@ export const onLastDirectSubscriber = (state: State, data: StoreData) => {
  */
 export const onLiveDependencyAdded = (dep: State, data: StoreData) => {
     activateSelectorGraph(dep, data)
-    const prev = data.liveDependentCount.get(dep) ?? 0
-    data.liveDependentCount.set(dep, prev + 1)
+    const node = graphNodeFor(dep, data)
+    const prev = node.live
+    node.live = prev + 1
     if (prev === 0 && !hasDirectSubscribers(dep, data)) {
         propagateLive(dep, data)
     }
@@ -330,13 +338,9 @@ export const onLiveDependencyAdded = (dep: State, data: StoreData) => {
  * if the contribution was the last one keeping dep alive.
  */
 export const onLiveDependencyRemoved = (dep: State, data: StoreData) => {
-    const prev = data.liveDependentCount.get(dep) ?? 0
-    const next = prev - 1
-    if (next <= 0) {
-        data.liveDependentCount.delete(dep)
-    } else {
-        data.liveDependentCount.set(dep, next)
-    }
+    const node = graphNodeFor(dep, data)
+    const prev = node.live
+    node.live = prev > 0 ? prev - 1 : 0
     if (prev === 1 && !hasDirectSubscribers(dep, data)) {
         propagateNotLive(dep, data)
     }
@@ -367,12 +371,11 @@ const seedClosureHasCycle = (
     seed: State,
     data: StoreData,
     graphVersion: number,
-    acyclicAtVersion: WeakMap<WeakKey, number>,
 ): boolean => {
     // A prior scan at this topology version proved the full downward closure
     // acyclic. Orphan teardown only deletes edges, so the proof stays valid
     // across every sibling unsubscribe in the burst.
-    if (acyclicAtVersion.get(seed) === graphVersion) return false
+    if (peekGraphNode(seed, data)?.acyclicAt === graphVersion) return false
 
     const workspace = acquireLivenessWorkspace(data)
     const onPath = ensureOnPath(workspace, data)
@@ -393,14 +396,14 @@ const seedClosureHasCycle = (
             const next = frame.it.next()
             if (next.done) {
                 onPath.delete(frame.node)
-                acyclicAtVersion.set(frame.node, graphVersion)
+                graphNodeFor(frame.node, data).acyclicAt = graphVersion
                 stack.pop()
                 continue
             }
             const dep = next.value as State
             if (!IS_PROD) recordLivenessEdge(data)
             if (onPath.has(dep)) return true // back-edge → cycle
-            if (acyclicAtVersion.get(dep) === graphVersion) continue
+            if (peekGraphNode(dep, data)?.acyclicAt === graphVersion) continue
             onPath.add(dep)
             stack.push({
                 node: dep,
@@ -419,18 +422,13 @@ export const regionHasCycle = (
     data: StoreData,
 ): boolean => {
     const graphVersion = data.dependencyGraphVersion
-    const acyclicAtVersion = data.acyclicDependencyVersion
     if (seeds instanceof Set) {
         for (const seed of seeds) {
-            if (
-                seedClosureHasCycle(seed, data, graphVersion, acyclicAtVersion)
-            ) {
-                return true
-            }
+            if (seedClosureHasCycle(seed, data, graphVersion)) return true
         }
         return false
     }
-    return seedClosureHasCycle(seeds, data, graphVersion, acyclicAtVersion)
+    return seedClosureHasCycle(seeds, data, graphVersion)
 }
 
 /**
@@ -440,7 +438,7 @@ export const regionHasCycle = (
  */
 const seededRegionMayHaveCycle = (seeds: Set<State>, data: StoreData) => {
     for (const seed of seeds) {
-        if (data.cycleRiskInClosure.has(seed)) return true
+        if (peekGraphNode(seed, data)?.cycleRisk === true) return true
     }
     return false
 }
@@ -632,10 +630,9 @@ export const reconcileLivenessAfterChurn = (
             }
             // liveDependentCount never stores 0 (entries are deleted at <= 0),
             // so a missing entry IS count 0 — only touch on a genuine change.
-            const prev = data.liveDependentCount.get(D) ?? 0
-            if (count === prev) continue
-            if (count <= 0) data.liveDependentCount.delete(D)
-            else data.liveDependentCount.set(D, count)
+            const node = graphNodeFor(D, data)
+            if (count === node.live) continue
+            node.live = count > 0 ? count : 0
         }
         // Share one visited set across all mounts and a different set across all
         // unmounts. They cannot be shared with each other: a node skipped by one
@@ -779,7 +776,8 @@ export const mountTransitiveDeps = (
         }
     }
     if (canRecomputeMarker && !sawMountDescendant) {
-        data.mountInClosure.delete(state)
+        const node = peekGraphNode(state, data)
+        if (node !== undefined) node.mountInClosure = false
     }
     if (firstError) {
         throw firstError.value
@@ -834,7 +832,8 @@ export const unmountOrphanedDeps = (
         }
     }
     if (canRecomputeMarker && !sawMountDescendant) {
-        data.mountInClosure.delete(state)
+        const node = peekGraphNode(state, data)
+        if (node !== undefined) node.mountInClosure = false
     }
     if (firstError) {
         throw firstError.value

@@ -80,6 +80,7 @@ export {
     hasInheritedDependencyBranches,
     refreshInheritedDependencyBranch,
 } from "./inheritedDependencyBranches"
+export { graphNodeFor, peekGraphNode, UNSET } from "./graphNode"
 export { queueOrphanCleanup } from "./queueOrphanCleanup"
 export { flushPendingOrphanCleanup } from "./flushPendingOrphanCleanup"
 export {

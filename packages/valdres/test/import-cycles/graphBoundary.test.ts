@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test"
+import { readFileSync } from "node:fs"
 import { resolve } from "node:path"
 import { buildImportGraph, computeSccs, PACKAGE_ROOT } from "./importGraph"
 import {
@@ -174,6 +175,46 @@ describe("graph table ownership", () => {
         expect(offenders).toEqual([])
     })
 
+    test("graphNodes is reached only through its accessor module", () => {
+        // The per-node record consolidated six tables into one, which moved
+        // those writes from `table.set(state, v)` to `record.field = v`. A
+        // field assignment is invisible to the mutating-METHOD scan above, so
+        // the containment guarantee is restated as a stronger, simpler rule:
+        // `data.graphNodes` is touched by graph/graphNode.ts and nowhere else.
+        // Every other module — inside graph/ or out — goes through
+        // peekGraphNode / graphNodeFor, which is also what keeps reads from
+        // allocating a record.
+        const ALLOWED = new Set([
+            // The accessors themselves.
+            "src/lib/graph/graphNode.ts",
+            // The field declaration, and the constructor's lazy registration.
+            "src/types/StoreData.ts",
+            "src/lib/createStoreData.ts",
+        ])
+        const offenders: string[] = []
+        for (const module of modules) {
+            if (ALLOWED.has(module)) continue
+            const source = readFileSync(
+                resolve(PACKAGE_ROOT, module),
+                "utf8",
+            )
+            source.split("\n").forEach((line, index) => {
+                if (/\bgraphNodes\b/.test(line.replace(/\/\/.*$/, ""))) {
+                    offenders.push(`${module}:${index + 1}`)
+                }
+            })
+        }
+        expect(offenders).toEqual([])
+    })
+
+    test("non-vacuity: the accessor module really does touch the table", () => {
+        const source = readFileSync(
+            resolve(PACKAGE_ROOT, "src/lib/graph/graphNode.ts"),
+            "utf8",
+        )
+        expect(source.match(/\bgraphNodes\b/g)?.length ?? 0).toBeGreaterThanOrEqual(3)
+    })
+
     test("non-vacuity: the scan sees the graph runtime's own writes", () => {
         // If the table list, the type resolution, or module discovery silently
         // broke, the ownership test above would pass trivially. The graph
@@ -234,10 +275,10 @@ describe("mutation-scan fixtures", () => {
     test("catches destructured and renamed receivers", () => {
         expect(
             flagged(`export const f = (data: StoreData, s: object) => {
-                const { liveDependentCount } = data
-                liveDependentCount.set(s, 1)
+                const { graphNodes } = data
+                graphNodes.set(s, { live: 1 })
             }`),
-        ).toEqual(["liveDependentCount"])
+        ).toEqual(["graphNodes"])
         expect(
             flagged(`export const f = (data: StoreData, s: object) => {
                 const runtime = data
@@ -246,10 +287,10 @@ describe("mutation-scan fixtures", () => {
         ).toEqual(["selectorGraphActive"])
         expect(
             flagged(`export const f = (data: StoreData, s: object) => {
-                const table = data.mountInClosure
+                const table = data.stateDependencies
                 table.delete(s)
             }`),
-        ).toEqual(["mountInClosure"])
+        ).toEqual(["stateDependencies"])
     })
 
     test("catches writes through an untyped receiver", () => {
@@ -264,9 +305,9 @@ describe("mutation-scan fixtures", () => {
         expect(
             flagged(`export const f = (data: StoreData, s: object) => {
                 data["stateDependents"].set(s, new Set())
-                data[\`liveDependentCount\`].set(s, 1)
+                data[\`graphNodes\`].set(s, { live: 1 })
             }`),
-        ).toEqual(["stateDependents", "liveDependentCount"])
+        ).toEqual(["stateDependents", "graphNodes"])
         // A computed non-literal string key on a StoreData receiver cannot be
         // proven safe — flagged conservatively in mutating positions.
         expect(
@@ -281,10 +322,10 @@ describe("mutation-scan fixtures", () => {
         // Bracket-keyed destructuring records the alias like dot access does.
         expect(
             flagged(`export const f = (data: StoreData, s: object) => {
-                const { ["mountInClosure"]: table } = data
+                const { ["stateDependents"]: table } = data
                 table.delete(s)
             }`),
-        ).toEqual(["mountInClosure"])
+        ).toEqual(["stateDependents"])
     })
 
     test("ignores symbol-keyed slots and unowned bracket planes", () => {
@@ -313,9 +354,9 @@ describe("mutation-scan fixtures", () => {
                 T extends StoreData,
                 U extends T,
             >(data: U, s: object) => {
-                data.liveDependentCount.set(s, 1)
+                data.graphNodes.set(s, { live: 1 })
             }`),
-        ).toEqual(["liveDependentCount"])
+        ).toEqual(["graphNodes"])
     })
 
     test("ignores reads, sentinels, comments, and strings", () => {
