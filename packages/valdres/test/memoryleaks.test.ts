@@ -321,6 +321,13 @@ describe("memory leaks (subscriptions)", () => {
 
         expect(await detector.isLeaking()).toBe(false)
         expect(await valueDetector.isLeaking()).toBe(false)
+        // Pin the store across BOTH probes. Without a use down here its last
+        // use is above, so JSC may reclaim the store and every weak table it
+        // owns — and then the assertions would hold even if a LIVE store had
+        // strongly retained the member, which is the only thing this test is
+        // trying to rule out. (That vacuous form is already covered by
+        // "selector value is collected after subscribe and unsubscribe".)
+        expect(s.get(flush)).toBe("demoted-flush")
         const internalFamily = rows as unknown as InternalSelectorFamily<
             object,
             [string]
