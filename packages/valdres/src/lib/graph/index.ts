@@ -48,7 +48,10 @@
  * Sanctioned cross-plane effects (the boundary is "one writing owner for
  * graph tables", not "graph code touches nothing else"):
  * - activateSelectorGraph deletes coldSelectorCaches entries — cold→live
- *   promotion consumes the cold plane.
+ *   promotion consumes the cold plane. Framework snapshot reads may use this
+ *   provisionally before liveness propagation; queueObservedCleanup returns an
+ *   unclaimed synchronous graph to cold on the next microtask (a suspended
+ *   graph waits until its current Promise settles).
  * - installLateDependency invalidates a cold cache (validatedAt = -1) when a
  *   new async edge desynchronizes it.
  * - cleanupOrphanedDeps deletes orphaned states' entries from values,
@@ -63,6 +66,7 @@
  */
 
 export {
+    activateSelectorGraph,
     beginLivenessPass,
     endLivenessPass,
     isLive,
@@ -75,6 +79,12 @@ export {
     unmountAtom,
     unmountOrphanedDeps,
 } from "./mountAtom"
+export {
+    dropObservedCleanups,
+    queueObservedCleanup,
+    queueObservedCleanups,
+} from "./queueObservedCleanup"
+export { cleanupOrphanedDeps } from "./cleanupOrphanedDeps"
 export {
     detachInheritedDependencyBranches,
     hasInheritedDependencyBranches,

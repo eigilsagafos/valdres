@@ -153,6 +153,9 @@ export const noteDependencyAdded = (
  * reverse graph. Cold reads intentionally build only forward edges; the first
  * direct or transitive live consumer calls this before liveness propagation so
  * subsequent source writes can reach the whole subscribed selector closure.
+ * Framework adapters also call it provisionally for the render-time snapshot
+ * read that precedes subscription; that graph is coherent but not live/mounted,
+ * and queueObservedCleanup eventually demotes it if the render never commits.
  */
 export const activateSelectorGraph = (root: State, data: StoreData) => {
     // Active dependencies dominate this call site: fresh live evaluation has

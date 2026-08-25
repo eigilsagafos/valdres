@@ -1,5 +1,6 @@
 import { describe, expect, mock, test } from "bun:test"
 import { atom } from "../atom"
+import { storeAdapter } from "../adapter-internals/v1"
 import { selector } from "../selector"
 import { store } from "../store"
 
@@ -306,7 +307,11 @@ describe("dynamic-dependency propagation", () => {
             const subbed: (null | (() => void))[] = new Array(nSelectors).fill(null)
             const toggle = (si: number) => {
                 if (subbed[si]) { subbed[si]!(); subbed[si] = null }
-                else subbed[si] = child.sub(I.sels[si], () => {})
+                else {
+                    // Match useSyncExternalStore's render-read → commit-subscribe order.
+                    storeAdapter.getForSubscription(child, I.sels[si])
+                    subbed[si] = child.sub(I.sels[si], () => {})
+                }
             }
             for (let si = 0; si < nSelectors; si++) if (rnd() < 0.6) toggle(si)
 
@@ -369,7 +374,11 @@ describe("dynamic-dependency propagation", () => {
             const subbed: (null | (() => void))[] = new Array(nSelectors).fill(null)
             const toggle = (si: number) => {
                 if (subbed[si]) { subbed[si]!(); subbed[si] = null }
-                else subbed[si] = child.sub(I.sels[si], () => {})
+                else {
+                    // Match useSyncExternalStore's render-read → commit-subscribe order.
+                    storeAdapter.getForSubscription(child, I.sels[si])
+                    subbed[si] = child.sub(I.sels[si], () => {})
+                }
             }
             for (let si = 0; si < nSelectors; si++) if (rnd() < 0.6) toggle(si)
 

@@ -175,6 +175,17 @@ export const recordColdSelectorCache = (
     return matchesCurrentValues
 }
 
+/** Force a retained snapshot through validation/re-evaluation on its next read. */
+export const invalidateColdSelectorCache = (
+    selector: Selector,
+    data: StoreData,
+) => {
+    const cache = data.coldSelectorCaches.get(selector)
+    if (!cache) return
+    cache.validatedAt = -1
+    cache.validatedInPass = 0
+}
+
 /** A selector write advances the shared clock after its dependency snapshot was
  * recorded. Move a known-current snapshot forward without rebuilding it. */
 export const markColdSelectorCacheValidated = (
@@ -190,8 +201,7 @@ export const markColdSelectorCacheValidated = (
     // the snapshot rather than vouch for it. Outside a walk this is a no-op, so
     // ordinary cold reads take the normal path.
     if (!coldValidationMayRecord(tree)) {
-        cache.validatedAt = -1
-        cache.validatedInPass = 0
+        invalidateColdSelectorCache(selector, data)
         return
     }
     cache.validatedAt = tree.revision

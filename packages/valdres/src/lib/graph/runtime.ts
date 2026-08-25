@@ -3,7 +3,10 @@ import type { Selector } from "../../types/Selector"
 import type { State } from "../../types/State"
 import type { StoreData } from "../../types/StoreData"
 import { isSelector } from "../../utils/isSelector"
-import { endColdValidationPassForExternalChange } from "../stateRevisions"
+import {
+    endColdValidationPassForExternalChange,
+    invalidateColdSelectorCache,
+} from "../stateRevisions"
 import { DISPOSED_STORE_PENDING } from "../storeLifecycle"
 import { cleanupOrphanedDeps } from "./cleanupOrphanedDeps"
 import {
@@ -269,11 +272,7 @@ export const installLateDependency = (
             // pass that validated the snapshot is still the current one (the
             // clock need not have moved), and the pass memo would otherwise
             // serve the value this invalidation exists to retire.
-            const cache = data.coldSelectorCaches.get(selector)
-            if (cache) {
-                cache.validatedAt = -1
-                cache.validatedInPass = 0
-            }
+            invalidateColdSelectorCache(selector, data)
             // Retiring this snapshot is not enough. Before the pass memo, an
             // ANCESTOR revalidating always re-read every selector dependency and
             // so pulled the repair through; with the memo a stamped ancestor

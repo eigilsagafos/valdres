@@ -13,27 +13,45 @@ import { isPromiseLike } from "../../utils/isPromiseLike"
 
 /**
  * Remove non-live states from the dependency graph, clear selector caches, and
- * recursively clean orphaned dependencies/dependents. Visit marks persist for
- * one topology generation so every state is processed once across a queued
- * sibling-unsubscribe burst.
+ * recursively clean orphaned dependencies/dependents. This drains both queued
+ * unsubscribe roots and provisional framework observations whose render never
+ * subscribed. Visit marks persist for one topology generation so every state is
+ * processed once across a queued sibling-unsubscribe/observation burst.
  */
-export const cleanupOrphanedDeps = (state: State, data: StoreData) => {
+export const cleanupOrphanedDeps = (
+    state: State,
+    data: StoreData,
+    protectedStates?: WeakSet<WeakKey>,
+    forceDrop = false,
+) => {
+    // Another provisional observation can share this state without being live
+    // yet. Its cleanup owner protects the whole suspended dependency closure so
+    // an abandoned sibling cannot revoke the Promise React will retry.
+    if (protectedStates?.has(state)) return
     // A live root has nothing to clean. This is the dominant shape for wide
     // fan-in teardown until the aggregator itself unsubscribes.
     if (isLive(state, data)) return
 
     const graphVersion = data.dependencyGraphVersion
     const cleanedAtVersion = data.orphanCleanupVersion
-    if (cleanedAtVersion.get(state) === graphVersion) return
+    if (!forceDrop && cleanedAtVersion.get(state) === graphVersion) return
 
     const stack = [state]
+    // Terminal disposal can revisit a selector already demoted in this graph
+    // generation, so it needs a pass-local cycle guard instead of the ordinary
+    // cross-burst generation marks. This allocation exists only on disposal.
+    const dropped = forceDrop ? new WeakSet<WeakKey>() : undefined
     while (stack.length > 0) {
         const current = stack.pop()!
         // Live boundaries are deliberately NOT marked: a later burst may make
         // one transition to non-live, at which point it needs cleanup.
-        if (cleanedAtVersion.get(current) === graphVersion) continue
+        if (dropped?.has(current)) continue
+        if (!forceDrop && cleanedAtVersion.get(current) === graphVersion)
+            continue
+        if (protectedStates?.has(current)) continue
         if (isLive(current, data)) continue
-        cleanedAtVersion.set(current, graphVersion)
+        if (dropped) dropped.add(current)
+        else cleanedAtVersion.set(current, graphVersion)
 
         const dependents = data.stateDependents.get(current)
         const deps = data.stateDependencies.get(current)
@@ -101,6 +119,7 @@ export const cleanupOrphanedDeps = (state: State, data: StoreData) => {
             // so they keep the drop semantics and pay the re-evaluation.
             const committed = data.values.get(current)
             if (
+                !forceDrop &&
                 !data.enumerable &&
                 hasCommittedValue(current, data, committed) &&
                 !isPromiseLike(committed)
