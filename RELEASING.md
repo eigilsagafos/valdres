@@ -47,6 +47,56 @@ Commit the generated `pre.json` change. Let the Version Packages PR produce the
 stable versions. Do not run `bun run version-packages` on an ordinary feature
 branch or edit the generated release files by hand.
 
+## Bootstrapping a new package
+
+npm cannot create a package name over OIDC. A trusted publisher only attaches to
+a package that already exists — `npm trust` states the requirement outright
+("Package must exist"), and the npmjs.com form appears only on a published
+package's settings page. Every new package therefore needs exactly one locally
+authenticated publish, after which the release workflow owns it like any other.
+
+Do this **before** the package merges to main. `changeset publish` publishes any
+non-private workspace package whose local version is missing from the registry;
+it does not need a changeset to decide that. So the moment the package lands on
+main, the next Version Packages merge tries to publish it over OIDC and fails
+partway through a real release. Bootstrapping first removes the ordering
+constraint entirely.
+
+```bash
+bun run first-publish @valdres/browser-mouse --dry-run   # every check, no publish
+npm login
+bun run first-publish @valdres/browser-mouse
+```
+
+The script derives the package from the workspace, refuses to continue unless
+the manifest is release-ready, confirms the name is still free, builds, runs the
+same `prepack`/`postpublish` pair CI uses (restoring `package.json` even when
+the publish fails), registers the trusted publisher against
+`scripts/publish-metadata.ts`'s `TRUSTED_PUBLISHER` values, and prints the
+resulting dist-tags. `--placeholder` publishes registry metadata only, so the
+first installable build still comes from CI with a provenance attestation;
+deprecate that version afterwards, and never unpublish it — removing the last
+version deletes the package and its trusted publisher along with it.
+
+Two details the script handles that are easy to get wrong by hand:
+
+- npm refuses `npm publish` for a prerelease version without an explicit
+  `--tag`, so the bootstrap publish goes to the Changesets prerelease tag.
+- Nothing else would then create `latest`, and a package with no `latest` fails
+  a bare `npm install <name>`. The script points `latest` at the bootstrap
+  version too (`--no-latest` opts out).
+
+Then open the pull request with a changeset, merge it (the main run opens a
+Version Packages pull request and publishes nothing), and merge that. CI
+publishes the real version over OIDC. Verify the tags afterwards as described in
+"Publish and dist-tag verification" — dist-tag selection depends on registry
+state, and this repo's packages already show `latest` and the prerelease tag
+drifting apart.
+
+Nothing else needs editing: `scripts/public-packages.ts` derives the publishable
+set from the workspace, so `scripts/ci-publish.sh` and
+`scripts/verify-publish.ts` both pick the package up automatically.
+
 ## Gates for every candidate
 
 Every RC and the final 1.0 commit must pass all required CI checks, plus these

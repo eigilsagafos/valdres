@@ -19,6 +19,7 @@
         "changeset": "changeset",
         "version-packages": "changeset version && bun install",
         "release": "bash scripts/ci-publish.sh",
+        "first-publish": "bun run scripts/first-publish.ts",
         "verify-publish": "bun run scripts/verify-publish.ts",
         "check:package": "bun run scripts/check-valdres-package.ts --build",
         "check-size": "bun run scripts/check-valdres-package.ts --build --checks=size",

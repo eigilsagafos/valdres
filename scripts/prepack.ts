@@ -1,6 +1,7 @@
 import {
     INSTANCE_GUARD_SIDE_EFFECTS,
     NODE_ENGINE_RANGE,
+    PREPACK_EXPORT_REWRITE_EXEMPT,
     PUBLISH_EXPORT_CONDITION_ORDER,
 } from "./publish-metadata.ts"
 
@@ -22,12 +23,12 @@ if (await packageTmpJsonFile.exists()) {
             `Prepack failed: ${json.name} must declare an exports map`,
         )
     }
-    // valdres-svelte ships uncompiled source via @sveltejs/package and already
-    // declares its final dist-pointing `exports` (a `{ types, svelte, default }`
-    // condition map) in package.json — the `svelte` condition must survive, and
-    // the string-splitting rewrite below assumes `./src/...` string values, so
-    // skip it for this package. Other packages keep the source→dist rewrite.
-    if (json.name !== "valdres-svelte") {
+    // Exempt packages already declare their final dist-pointing `exports` (a
+    // `{ types, svelte, default }` condition map) — the `svelte` condition must
+    // survive, and the string-splitting rewrite below assumes `./src/...`
+    // string values. See PREPACK_EXPORT_REWRITE_EXEMPT for the full reasoning.
+    // Other packages keep the source→dist rewrite.
+    if (!PREPACK_EXPORT_REWRITE_EXEMPT.includes(json.name)) {
         const exports = Object.fromEntries(
             Object.entries(json.exports).map(([k, value]) => {
                 const v = value as string

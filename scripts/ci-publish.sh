@@ -4,41 +4,23 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(dirname "$SCRIPT_DIR")"
 
-PUBLIC_PACKAGES=(
-  packages/valdres
-  packages/valdres-react
-  packages/valdres-angular
-  packages/valdres-solid
-  packages/valdres-svelte
-  packages/valdres-vue
-  packages/@valdres/bandwidth
-  packages/@valdres/browser-color-scheme
-  packages/@valdres/browser-contrast
-  packages/@valdres/browser-device-motion
-  packages/@valdres/browser-device-orientation
-  packages/@valdres/browser-focus
-  packages/@valdres/browser-geolocation
-  packages/@valdres/browser-keyboard
-  packages/@valdres/browser-online
-  packages/@valdres/browser-presence
-  packages/@valdres/browser-reduced-data
-  packages/@valdres/browser-reduced-motion
-  packages/@valdres/browser-reduced-transparency
-  packages/@valdres/browser-screen
-  packages/@valdres/browser-screen-details
-  packages/@valdres/browser-visibility
-  packages/@valdres/browser-window
-  packages/@valdres/color-mode
-  packages/@valdres/hotkeys
-  packages/@valdres/public-ip
-  packages/@valdres/redux-devtools
-  packages/@valdres-react/color-mode
-  packages/@valdres-react/draggable
-  packages/@valdres-react/hotkeys
-  packages/@valdres-react/jotai
-  packages/@valdres-react/panable
-  packages/@valdres-react/recoil
-)
+# Derived from the workspace rather than hardcoded here, so a new package can
+# never be published without going through prepack. See public-packages.ts for
+# why that mattered. Command substitution (not a pipe) so `set -e` aborts when
+# the resolver itself fails instead of silently prepacking nothing.
+PACKAGE_LIST="$(bun run "$SCRIPT_DIR/public-packages.ts")"
+
+PUBLIC_PACKAGES=()
+while IFS= read -r package_dir; do
+  [ -n "$package_dir" ] && PUBLIC_PACKAGES+=("$package_dir")
+done <<< "$PACKAGE_LIST"
+
+if [ "${#PUBLIC_PACKAGES[@]}" -eq 0 ]; then
+  echo "::error::public-packages.ts resolved no publishable packages"
+  exit 1
+fi
+
+echo "Resolved ${#PUBLIC_PACKAGES[@]} publishable packages"
 
 # Restore prepacked package.json files even if the script aborts midway.
 restore_packages() {
