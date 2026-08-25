@@ -173,8 +173,17 @@ export const installEvaluationDeps = (
  * Twin of `installEvaluationDeps` for the dominant live-only store shape
  * (see evaluateLiveOnlySelector): reverse edges always tracked, no cold
  * caches to promote, no propagation-loop diff to mirror. Kept as a second
- * monomorphic entry so the pre-cold-cache path pays no per-edge mode
- * branches; the semantic core is identical and pinned by a parity test.
+ * monomorphic entry so the pre-cold-cache path pays no per-edge mode branches.
+ *
+ * The semantic core is identical, and three files hold it that way — reach for
+ * whichever matches the line you are changing:
+ *   - `runtime.test.ts` (below, "installer twin parity") diffs the two
+ *     installers directly on hand-built dependency-set transitions.
+ *   - `selectorEvaluatorTwinFuzz.test.ts` drives both through the public API
+ *     and compares edges, liveness counts and mount transitions per op.
+ *   - `livenessCyclicFuzz.test.ts` owns the two cycle-gated liveness arms
+ *     below (`livenessLazyArmed`, `livenessRemovalArmed`); the twin fuzz
+ *     reaches them too rarely to guard them.
  */
 export const installEvaluationDepsLiveOnly = (
     selector: Selector,

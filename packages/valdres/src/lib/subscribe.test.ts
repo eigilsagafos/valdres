@@ -570,18 +570,25 @@ describe("subscribe", () => {
         unsubscribeLeaf()
         await Promise.resolve()
 
-        expect(getStoreData(rootStore).stateDependencies.has(leaf)).toBe(false)
-        expect(
-            getStoreData(rootStore).stateDependencies.has(intermediate),
-        ).toBe(false)
-        expect(getStoreData(rootStore).values.has(leaf)).toBe(false)
-        expect(getStoreData(rootStore).values.has(intermediate)).toBe(false)
+        // Cleaning an orphan means evicting it from the iterable reverse graph,
+        // not discarding its work: the whole chain demotes to cold caches, so a
+        // remount re-wires instead of re-evaluating.
         expect(
             getStoreData(rootStore).stateDependents.get(source),
         ).not.toContain(intermediate)
+        expect(getStoreData(rootStore).coldSelectorCaches.has(leaf)).toBe(true)
+        expect(
+            getStoreData(rootStore).coldSelectorCaches.has(intermediate),
+        ).toBe(true)
+        expect(getStoreData(rootStore).values.has(leaf)).toBe(true)
+        expect(getStoreData(rootStore).values.has(intermediate)).toBe(true)
 
+        // Off the reverse graph, so the write reaches neither of them.
         rootStore.set(source, 2)
         expect(intermediateCallback).toHaveBeenCalledTimes(1)
+        // ...and the now-stale snapshot revalidates lazily on the next read.
+        expect(rootStore.get(leaf)).toBe(5)
+        expect(intermediateCallback).toHaveBeenCalledTimes(2)
     })
 
     test("subscription promotes a freshly validated dynamic cold cache", () => {
@@ -654,22 +661,31 @@ describe("subscribe", () => {
         expect(rootStore.get(constant)).toBe(42)
         firstUnsubscribe()
         await Promise.resolve()
-        expect(getStoreData(rootStore).stateDependencies.has(constant)).toBe(
+        // A dependency-free selector can never go stale, so demotion leaves it
+        // permanently cached — and never graph-active.
+        expect(getStoreData(rootStore).selectorGraphActive.has(constant)).toBe(
             false,
         )
-        expect(getStoreData(rootStore).values.has(constant)).toBe(false)
+        expect(getStoreData(rootStore).coldSelectorCaches.has(constant)).toBe(
+            true,
+        )
 
         // An empty dependency set creates no edge that could implicitly
         // invalidate a shared teardown visit. Re-materializing the selector
         // itself must invalidate it so the second unsubscribe still cleans up.
         const secondUnsubscribe = rootStore.sub(constant, () => {}, false)
         expect(rootStore.get(constant)).toBe(42)
+        expect(getStoreData(rootStore).selectorGraphActive.has(constant)).toBe(
+            true,
+        )
         secondUnsubscribe()
         await Promise.resolve()
-        expect(getStoreData(rootStore).stateDependencies.has(constant)).toBe(
+        expect(getStoreData(rootStore).selectorGraphActive.has(constant)).toBe(
             false,
         )
-        expect(getStoreData(rootStore).values.has(constant)).toBe(false)
+        expect(getStoreData(rootStore).coldSelectorCaches.has(constant)).toBe(
+            true,
+        )
     })
 
     test("a public read flushes queued orphan cleanup first", () => {
@@ -680,12 +696,18 @@ describe("subscribe", () => {
         const unsubscribe = rootStore.sub(constant, () => {}, false)
         expect(evaluate).toHaveBeenCalledTimes(1)
         unsubscribe()
+        expect(getStoreData(rootStore).pendingOrphanCleanup).toBeDefined()
 
-        // Cleanup is normally microtask-batched, but an immediate public read
-        // preserves the previous observable behavior: clear the cached orphan,
-        // then evaluate it again instead of returning the pre-unsubscribe value.
+        // Cleanup is normally microtask-batched; a public read drains the queue
+        // before it observes anything. Draining demotes the orphan rather than
+        // discarding it, so the read is served from the retained snapshot — the
+        // flush is visible in the queue emptying, not in a wasted re-evaluation.
         expect(rootStore.get(constant)).toBe(42)
-        expect(evaluate).toHaveBeenCalledTimes(2)
+        expect(getStoreData(rootStore).pendingOrphanCleanup).toBeUndefined()
+        expect(getStoreData(rootStore).coldSelectorCaches.has(constant)).toBe(
+            true,
+        )
+        expect(evaluate).toHaveBeenCalledTimes(1)
     })
 
     test("lifecycle cleanup is synchronous while graph cleanup is microtask-batched", async () => {
@@ -715,10 +737,16 @@ describe("subscribe", () => {
         )
 
         await Promise.resolve()
-        expect(getStoreData(rootStore).stateDependencies.has(derived)).toBe(
-            false,
+        // The batched graph work has now run: the reverse edge is released and
+        // the selector is demoted (value retained behind a revision snapshot).
+        expect(
+            getStoreData(rootStore).stateDependents.get(mounted)?.has(derived) ??
+                false,
+        ).toBe(false)
+        expect(getStoreData(rootStore).coldSelectorCaches.has(derived)).toBe(
+            true,
         )
-        expect(getStoreData(rootStore).values.has(derived)).toBe(false)
+        expect(getStoreData(rootStore).values.has(derived)).toBe(true)
     })
 
     test("a failed mount rolls back the subscription so retry mounts again", () => {
@@ -770,13 +798,14 @@ describe("subscribe", () => {
         expect(() => unsubscribe()).toThrow("cleanup boom")
         await Promise.resolve()
 
-        expect(getStoreData(rootStore).stateDependencies.has(derived)).toBe(
-            false,
-        )
-        expect(getStoreData(rootStore).values.has(derived)).toBe(false)
+        // The throwing user cleanup must not abort the queued graph work: the
+        // reverse edge is still released and the selector still demoted.
         expect(
             getStoreData(rootStore).stateDependents.get(mounted),
         ).not.toContain(derived)
+        expect(getStoreData(rootStore).coldSelectorCaches.has(derived)).toBe(
+            true,
+        )
     })
 
     test("unsubscribe cleans deep orphaned selector chains iteratively", async () => {
@@ -799,14 +828,18 @@ describe("subscribe", () => {
 
         expect(() => unsubscribeTail()).not.toThrow()
         await Promise.resolve()
-        expect(getStoreData(rootStore).stateDependencies.has(current)).toBe(
-            false,
-        )
-        expect(getStoreData(rootStore).stateDependencies.has(first)).toBe(false)
-        expect(getStoreData(rootStore).values.has(current)).toBe(false)
-        expect(getStoreData(rootStore).values.has(first)).toBe(false)
+        // The point is that a 100k-deep chain is torn down iteratively without
+        // blowing the stack. Every link demotes, so what proves the whole chain
+        // was visited is that each one left the reverse graph.
         expect(
             getStoreData(rootStore).stateDependents.get(source),
         ).not.toContain(first)
+        expect(getStoreData(rootStore).coldSelectorCaches.has(first)).toBe(true)
+        expect(getStoreData(rootStore).coldSelectorCaches.has(current)).toBe(
+            true,
+        )
+        expect(getStoreData(rootStore).selectorGraphActive.has(current)).toBe(
+            false,
+        )
     })
 })

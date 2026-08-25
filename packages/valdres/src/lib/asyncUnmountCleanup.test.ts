@@ -110,13 +110,25 @@ describe("async selector unmount cleanup", () => {
         await gate
         await Promise.resolve()
 
-        expect(getStoreData(targetStore).values.has(derived)).toBe(false)
+        // The selector settled synchronously, so orphan cleanup demoted it:
+        // value and forward set are retained behind a revision snapshot.
+        expect(getStoreData(targetStore).values.has(derived)).toBe(true)
         expect(getStoreData(targetStore).stateDependencies.has(derived)).toBe(
-            false,
+            true,
         )
+        // What "read-only" means: the post-cleanup deferred get registers
+        // nothing. No reverse edge...
         expect(
             getStoreData(targetStore).stateDependents.get(late)?.has(derived) ??
                 false,
+        ).toBe(false)
+        // ...and no smuggled entry into the retained forward set either, which
+        // would otherwise put a dependency in the cold snapshot that the
+        // evaluation never legitimately recorded.
+        expect(
+            getStoreData(targetStore)
+                .stateDependencies.get(derived)
+                ?.has(late) ?? false,
         ).toBe(false)
     })
 

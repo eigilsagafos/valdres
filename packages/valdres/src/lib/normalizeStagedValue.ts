@@ -18,11 +18,18 @@ import { validateSchema } from "./validateSchema"
  * settlement by coordinateAsyncWrite.
  *
  * The freeze decision mirrors `setValueInData` (which keeps its copy inline
- * for the hot primitive-set path — keep the two in sync): respect
- * `atom.mutable` and production mode, and never freeze a promise-like, which
- * must stay usable until the async-write coordinator normalizes it at commit.
- * Freezing at staging (not only at commit) is what makes staged values
- * immutable within the transaction body.
+ * for the hot primitive-set path): respect `atom.mutable` and production mode,
+ * and never freeze a promise-like, which must stay usable until the async-write
+ * coordinator normalizes it at commit. Freezing at staging (not only at commit)
+ * is what makes staged values immutable within the transaction body.
+ *
+ * `deepFreezePolicyFuzz.test.ts` enforces that paragraph rather than trusting
+ * it: it requires every write path to agree on the outcome for one value (so a
+ * drift in the shared value policy surfaces as a path disagreement), pins the
+ * deliberate promise-like exemption, and pins the validate-then-freeze order
+ * above by checking that a schema is never shown an already-frozen value. What
+ * it does NOT cover is `setValueInData`'s family-index-carrier exemption, which
+ * has no counterpart here — see the note there.
  */
 export const normalizeStagedValue = <V>(
     atom: Atom<any>,
