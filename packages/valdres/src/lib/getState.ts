@@ -24,7 +24,10 @@ import { getStateRevision, noteStateValueChanged } from "./stateRevisions"
 import { stateNameSuffix } from "./stateNameForError"
 import { IS_PROD } from "./IS_PROD"
 import { isStoreDisposed } from "./storeLifecycle"
-import { coldCacheIsCurrentInPass } from "./storeTreeRuntime"
+import {
+    coldCacheIsCurrentInPass,
+    coldValidationMayRecord,
+} from "./storeTreeRuntime"
 import { validateResolvedValue } from "./validateResolvedValue"
 import { validateSchema } from "./validateSchema"
 import {
@@ -265,8 +268,10 @@ const isColdSelectorCacheFresh = (
                 return false
             }
         }
-        cache.validatedAt = tree.revision
-        cache.validatedInPass = tree.coldValidationPass
+        if (coldValidationMayRecord(tree)) {
+            cache.validatedAt = tree.revision
+            cache.validatedInPass = tree.coldValidationPass
+        }
         return true
     }
 
@@ -315,24 +320,15 @@ const isColdSelectorCacheFresh = (
             }
         }
         // Dependency validation can itself materialize values and advance the
-        // shared clock. This snapshot is current through the end of that walk.
-        // A walk that leaned on the cycle guard's guess records NOTHING: not the
-        // pass stamp, and not `validatedAt` either. Keeping `validatedAt` would
-        // still let a later read accept the guess whenever the clock happened not
-        // to have moved since, which is how a dynamically-cyclic graph stopped
-        // reporting SelectorCircularDependencyError. Re-walking every read is
-        // what the pre-pass code did here, by accident; this makes it the rule.
-        // A walk that leaned on the cycle guard's guess records NOTHING: not the
-        // pass stamp, and not `validatedAt` either. Suppressing only the pass
-        // stamp is not enough — a later read still accepts the guess whenever the
-        // clock happens not to have moved since, which froze a dynamically-cyclic
-        // graph at an inconsistent state (S4 serving a value while the same store
-        // served a different S2 that S4's body is defined as reading) and stopped
-        // reporting SelectorCircularDependencyError entirely. Recording nothing
-        // makes a dynamic cycle behave like a STATIC one, which already throws on
-        // every cold read.
-        cache.validatedAt = tree.revision
-        cache.validatedInPass = tree.coldValidationPass
+        // shared clock. This snapshot is current through the end of that walk —
+        // UNLESS the walk's evidence was voided while it ran, in which case it
+        // records nothing at all, not even `validatedAt`. See
+        // `coldValidationMayRecord` for the two ways that happens and what each
+        // one broke.
+        if (coldValidationMayRecord(tree)) {
+            cache.validatedAt = tree.revision
+            cache.validatedInPass = tree.coldValidationPass
+        }
         return true
     } finally {
         data.coldCacheValidationSet.delete(selector)
@@ -364,7 +360,10 @@ const getColdSelectorState = <Value>(
     ) {
         tree.coldValidationPass++
     }
-    if (tree.coldValidationDepth === 0) tree.coldValidationProvisional = 0
+    if (tree.coldValidationDepth === 0) {
+        tree.coldValidationProvisional = 0
+        tree.coldValidationPoisoned = false
+    }
     tree.coldValidationDepth++
     try {
         // Re-evaluation stays INSIDE the pass. Running it outside would advance
@@ -389,11 +388,15 @@ const getColdSelectorState = <Value>(
     } finally {
         if (--tree.coldValidationDepth === 0) {
             tree.coldValidationBaseRevision = tree.revision
-            // The pass leaned on the cycle guard's guess, so nothing it stamped
-            // may be trusted by a LATER read. Retiring the id voids every stamp
-            // it wrote in one integer bump.
-            if (tree.coldValidationProvisional !== 0) {
+            // A walk whose evidence was voided recorded nothing, but records it
+            // wrote BEFORE that happened are still live — retire the id so a
+            // later read cannot believe them.
+            if (
+                tree.coldValidationProvisional !== 0 ||
+                tree.coldValidationPoisoned
+            ) {
                 tree.coldValidationProvisional = 0
+                tree.coldValidationPoisoned = false
                 tree.coldValidationPass++
             }
         }

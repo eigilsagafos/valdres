@@ -1,7 +1,10 @@
 import type { Selector } from "../types/Selector"
 import type { State } from "../types/State"
 import type { StoreData } from "../types/StoreData"
-import type { StoreTreeRuntime } from "./storeTreeRuntime"
+import {
+    coldValidationMayRecord,
+    type StoreTreeRuntime,
+} from "./storeTreeRuntime"
 import { isSelector } from "../utils/isSelector"
 
 /**
@@ -56,7 +59,14 @@ export const endColdValidationPass = (
     // Split out of `noteStateValueChanged` and guarded at both call sites by a
     // plain integer compare, so an ordinary write — no validation in flight —
     // never reaches this state-shape check.
-    if (!isSelector(state)) tree.coldValidationPass++
+    if (isSelector(state)) return
+    // Retire the pass so records written BEFORE this change stop being believed,
+    // and POISON it so no frame still on the stack can write a new one.
+    // Retirement alone is not enough: an enclosing frame recording after this
+    // point stamps into the fresh id and is then trusted across later reads —
+    // see `coldValidationMayRecord`.
+    tree.coldValidationPass++
+    tree.coldValidationPoisoned = true
 }
 
 /** Start maintaining a revision for a state newly discovered by a cold async
@@ -134,18 +144,19 @@ export const recordColdSelectorCache = (
         index++
     }
     dependencyStates.length = index
-    const validatedAt = matchesCurrentValues ? tree.revision : -1
-    // A snapshot that does NOT match current values is deliberately given pass
-    // `0`: it is non-validatable, and the pass memo must never resurrect it.
-    // Stamp the pass ONLY from inside a validation walk that proved this
-    // closure, and only if that walk never leaned on the cycle guard's guess.
-    // A snapshot rebuilt outside a walk — an async settlement landing in a
+    // A snapshot that does not match current values, or one rebuilt by a walk
+    // whose evidence is void, is left non-validatable (-1 / pass 0) so the next
+    // read re-derives it instead of trusting either memo.
+    const validatedAt =
+        matchesCurrentValues && coldValidationMayRecord(tree)
+            ? tree.revision
+            : -1
+    // The pass stamp additionally requires being INSIDE a walk that proved this
+    // closure. A snapshot rebuilt outside one — an async settlement landing in a
     // microtask — has proven nothing, yet the pass it would name is very often
     // still authoritative, which would make it permanently un-invalidatable.
-    // `validatedAt` alone is the right memo there: it is stamped at the current
-    // revision, so the next real change retires it.
     const validatedInPass =
-        matchesCurrentValues && tree.coldValidationDepth !== 0
+        validatedAt >= 0 && tree.coldValidationDepth !== 0
             ? tree.coldValidationPass
             : 0
     if (existingCache) {
@@ -173,11 +184,16 @@ export const markColdSelectorCacheValidated = (
     const cache = data.coldSelectorCaches.get(selector)
     if (!cache) return
     const tree = data.tree
-    // A re-evaluation inside a validation pass may have read dependencies the
-    // cycle guard only GUESSED were fresh, so the value just committed is not
-    // necessarily consistent with them — record neither stamp. Outside a pass
-    // the counter is 0, so ordinary cold reads take the normal path. See
-    // lib/getState.ts, `isColdSelectorCacheFresh`.
+    // A re-evaluation inside a walk whose evidence is void proves nothing about
+    // the value it just committed: it may have read a source that changed
+    // mid-walk, or a dependency the cycle guard only GUESSED was fresh. Retire
+    // the snapshot rather than vouch for it. Outside a walk this is a no-op, so
+    // ordinary cold reads take the normal path.
+    if (!coldValidationMayRecord(tree)) {
+        cache.validatedAt = -1
+        cache.validatedInPass = 0
+        return
+    }
     cache.validatedAt = tree.revision
     // See recordColdSelectorCache: outside a walk, nothing proved the closure.
     if (tree.coldValidationDepth !== 0) {

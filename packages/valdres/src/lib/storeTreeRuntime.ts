@@ -69,9 +69,13 @@ export type StoreTreeRuntime = {
     coldValidationPass: number
     coldValidationBaseRevision: number
     /** Provisional freshness answers the cycle guard handed out in the pass in
-     *  flight. Non-zero retires the pass when it ends, so a guess never reaches
-     *  a later read — see lib/getState.ts, `isColdSelectorCacheFresh`. */
+     *  flight. Non-zero blocks every freshness record for the rest of it — see
+     *  lib/getState.ts, `isColdSelectorCacheFresh`. */
     coldValidationProvisional: number
+    /** Set when a source changed while a validation walk was active, so no frame
+     *  of that walk may record freshness: its conclusions were reached against
+     *  revisions that no longer hold. Cleared with the outermost pass. */
+    coldValidationPoisoned: boolean
     /** Re-entrancy depth of in-flight commit boundaries for this tree.
      *  Listeners fire when the OUTERMOST boundary closes, so writes performed
      *  by a subscriber coalesce into one notification. */
@@ -120,6 +124,34 @@ export const coldCacheIsCurrentInPass = (
     (tree.coldValidationDepth > 0 ||
         tree.coldValidationBaseRevision === tree.revision)
 
+/**
+ * May the caller record freshness for a cold snapshot right now?
+ *
+ * A record is a CLAIM that the snapshot matches what its dependencies hold. Two
+ * things void the evidence for that claim, and both are properties of the WALK
+ * rather than of the snapshot, which is why this is asked here and not inferred
+ * at each stamp site:
+ *
+ *  - POISONED: a source changed while the walk was active (user code re-entering
+ *    the store from a selector body, a lazy default resolving). Every frame of
+ *    that walk read dependency revisions that no longer hold, so an enclosing
+ *    frame stamping AFTER the change would launder it — and because the change
+ *    retired the pass id, it would stamp into the NEW id and be believed across
+ *    later reads. That is how `root` came to serve 10 while the same store served
+ *    the `observer` it is defined as reading as 70.
+ *  - PROVISIONAL: the walk leaned on the cycle guard's "assume fresh" answer,
+ *    which is a guess. Suppressing only the pass stamp is not enough — a later
+ *    read still accepts the guess through `validatedAt` whenever the clock has
+ *    not moved since, which let a dynamic cycle latch A === 5 alongside B === 6
+ *    though A's body is `B + 1`.
+ *
+ * Outside a walk there is no walk to distrust, so an ordinary cold read records
+ * normally.
+ */
+export const coldValidationMayRecord = (tree: StoreTreeRuntime): boolean =>
+    tree.coldValidationDepth === 0 ||
+    (!tree.coldValidationPoisoned && tree.coldValidationProvisional === 0)
+
 /** Build the tree sidecar for a new ROOT store. Scopes never call this — they
  *  inherit `parent.tree` by reference. */
 export const createStoreTreeRuntime = (root: StoreData): StoreTreeRuntime => ({
@@ -131,6 +163,7 @@ export const createStoreTreeRuntime = (root: StoreData): StoreTreeRuntime => ({
     coldValidationPass: 1,
     coldValidationBaseRevision: -1,
     coldValidationProvisional: 0,
+    coldValidationPoisoned: false,
     commitDepth: 0,
     commitDidWork: false,
     commitEndListeners: undefined,

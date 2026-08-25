@@ -252,6 +252,41 @@ describe("cold selector cache validation pass", () => {
         expect(target.get(root)).toBe(71)
     })
 
+    test("an EQUAL-result re-entrant write still invalidates the parent", () => {
+        // The sibling test above returns `t`, which changes the saboteur's own
+        // value and so bumps its revision — that alone invalidates `root`
+        // through the ordinary revision path and MASKS this defect. Return a
+        // constant instead and the saboteur's revision never moves, so the only
+        // thing that can invalidate `root` is the pass machinery.
+        //
+        // The failure it exposed: the write retires the pass MID-WALK, and
+        // `root` then stamps itself into the NEW pass id using the dependency
+        // revisions it read BEFORE the write. `observer` later repairs to 70,
+        // but `root` is stamped in the current pass, so the store serves
+        // root === 10 and observer === 70 at the same time, forever — even
+        // though root's body is `observer + saboteur` === 70.
+        let target: any
+        const trigger = atom(0)
+        const shared = atom(1)
+        const observer = selector(get => get(shared) * 10)
+        const saboteur = selector(get => {
+            const t = get(trigger)
+            if (t === 1) target.set(shared, 7)
+            return 0 // deliberately unchanged
+        })
+        const root = selector(get => get(observer) + get(saboteur))
+        target = store()
+
+        expect(target.get(root)).toBe(10)
+        target.set(trigger, 1)
+        // Whatever the first post-write read returns, the store must not go on
+        // serving a root that contradicts the observer it is built from.
+        target.get(root)
+        expect(target.get(observer)).toBe(70)
+        expect(target.get(root)).toBe(70)
+        expect(target.get(root)).toBe(70)
+    })
+
     test("a lazily resolved atom default ends the pass", () => {
         // A default resolving for the first time is a source change the walk did
         // not derive: a snapshot may have recorded revision 0 for the atom while
@@ -275,19 +310,17 @@ describe("cold selector cache validation pass", () => {
         expect(target.get(derived)).toBe(6)
     })
 
-    test("a dynamically cyclic cold graph neither freezes nor stops reporting", () => {
-        // The cycle guard treats a snapshot already being validated as
-        // provisionally fresh — a GUESS. Carrying that guess into a later read
-        // under a pass stamp froze the graph: it reported
-        // SelectorCircularDependencyError twice and then served `top` and `mid`
-        // values that contradicted each other forever, even though `top`'s body
-        // is exactly `500000 + get(mid)`.
+    test("a dynamically cyclic cold graph keeps reporting the cycle", () => {
+        // Stability is NOT the bar here — a latched snapshot is stable and wrong.
+        // What must hold is that the cycle keeps surfacing rather than going
+        // quiet behind a memo. (The semantic half is asserted by "a dynamic cycle
+        // never settles on a semantically impossible state" below.)
         const seed = atom(1)
         const flip = atom(0)
         let mid: any
         let top: any
         // Warm while ACYCLIC, then flip `bottom` onto a branch that reads its own
-        // dependents, closing the cycle after the snapshots exist.
+        // dependents, closing the cycle after the snapshots already exist.
         const bottom: any = selector(get =>
             get(flip) % 2 === 0
                 ? 100000 + get(seed)
@@ -302,26 +335,13 @@ describe("cold selector cache validation pass", () => {
         expect(target.get(bottom)).toBe(100001)
 
         target.set(flip, 1)
-        const read = (state: any) => {
-            try {
-                return String(target.get(state))
-            } catch (error) {
-                return (error as Error).constructor.name
+        for (let round = 0; round < 5; round++) {
+            for (const state of [bottom, mid, top]) {
+                expect(() => target.get(state)).toThrow(
+                    SelectorCircularDependencyError,
+                )
             }
         }
-        const rounds = new Set<string>()
-        for (let round = 0; round < 6; round++) {
-            // The selector whose own branch closed the cycle keeps reporting it.
-            expect(() => target.get(bottom)).toThrow(
-                SelectorCircularDependencyError,
-            )
-            rounds.add([read(bottom), read(mid), read(top)].join("/"))
-        }
-        // A single distinct round would mean the graph latched — the failure this
-        // pins. Values in a cyclic graph are deliberately not asserted: they are
-        // unspecified, and they diverge on every read here exactly as they did
-        // before the validation pass existed.
-        expect(rounds.size).toBeGreaterThan(1)
     })
 
     test("a statically cyclic cold graph throws on every read", () => {
@@ -336,69 +356,47 @@ describe("cold selector cache validation pass", () => {
         }
     })
 
-    test("a cyclic cold graph settles in a bounded number of reads", () => {
-        // The cycle guard's provisional answer still leaves `validatedAt`
-        // stamped, so a later read can serve a value that was validated on a
-        // guess. That is not new — the pre-pass code did the same — and it does
-        // NOT produce an inconsistent latch: across 400 random cyclic-capable
-        // cold graphs neither build ever served a settled state that disagreed
-        // with its own selector bodies.
+    test("a dynamic cycle never settles on a semantically impossible state", () => {
+        // The bar for a cyclic cold read is NOT stability — a latched state is
+        // stable and wrong. Every value the store serves must agree with its own
+        // body over the values that same store serves, or the read must throw
+        // the documented cycle error.
         //
-        // What the pass changes is convergence. A cyclic cold read is not
-        // idempotent on either build — the first read after a write moves the
-        // answer — but before the pass the answer kept moving for many more
-        // reads, because each read re-entered the cycle's members and grew their
-        // values. On the graph below one write took 29 reads to stop moving;
-        // it now takes 2. That is the property worth pinning: `store.get` on a
-        // cyclic graph must reach a stable answer promptly, not drift.
-        const atoms = [atom(1), atom(1), atom(1), atom(1)]
-        const gates = [0, 2, 2, 2, 0, 1]
-        const sels: any[] = []
-        for (let i = 0; i < 6; i++) {
-            sels.push(
-                selector((get: any) => {
-                    let acc = 1 + get(atoms[gates[i]!]!) + get(atoms[i % 4]!)
-                    // Conditional cross-reads, so the graph turns cyclic only
-                    // after the snapshots already exist. The clamp keeps the
-                    // divergence finite so "settles" is measurable at all.
-                    if (acc % 2 === 0) {
-                        for (let k = 0; k < 6; k++) {
-                            if (k !== i && (i + k) % 3 !== 0) {
-                                acc += Math.min(get(sels[k]) as number, 1000)
-                            }
-                        }
-                    }
-                    return acc
-                }),
-            )
-        }
+        // The failure this exposed: with `flip` truthy, A's body is `B + 1`, so
+        // A === 5 while B === 6 is impossible. It was reached because the cycle
+        // guard's guess escaped the read through `validatedAt` (retiring only the
+        // pass id is not enough), and repeated reads then served it forever.
+        const flip = atom(0)
+        const seed = atom(1)
+        let second: any
+        const first: any = selector(get =>
+            get(flip) ? (get(second) as number) + 1 : get(seed),
+        )
+        second = selector(get => (get(first) as number) + 1)
         const target = store()
-        const readAll = () =>
-            sels
-                .map(state => {
-                    try {
-                        return String(target.get(state))
-                    } catch (error) {
-                        return (error as Error).constructor.name
-                    }
-                })
-                .join("|")
 
-        readAll()
-        for (let step = 0; step < 6; step++) {
-            target.set(atoms[step % 4]!, 1 + step)
-            let previous = readAll()
-            let stable = 0
-            let reads = 1
-            while (stable < 3 && reads < 40) {
-                const next = readAll()
-                reads++
-                stable = next === previous ? stable + 1 : 0
-                previous = next
+        expect(target.get(first)).toBe(1)
+        expect(target.get(second)).toBe(2)
+        target.set(flip, 1)
+
+        for (let round = 0; round < 4; round++) {
+            let a: number | null = null
+            let b: number | null = null
+            try {
+                a = target.get(first) as number
+            } catch (error) {
+                expect(error).toBeInstanceOf(SelectorCircularDependencyError)
             }
-            // 5 is generous against the measured 2, and far below the 29 this
-            // same graph needed before the pass.
-            expect(reads - 3).toBeLessThanOrEqual(5)
+            try {
+                b = target.get(second) as number
+            } catch (error) {
+                expect(error).toBeInstanceOf(SelectorCircularDependencyError)
+            }
+            // Semantic oracle: any value actually served must satisfy its body.
+            if (a !== null && b !== null) {
+                expect(a).toBe(b + 1) // first's body, with flip truthy
+                expect(b).toBe(a + 1) // second's body
+            }
         }
     })
 
