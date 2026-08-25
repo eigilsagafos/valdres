@@ -55,16 +55,7 @@ import { getStoreData } from "./getStoreData"
 // flip. Seeds that never flip are counted, and a floor is asserted — without it
 // this whole file could quietly degrade into running one evaluator twice.
 //
-// SCOPE, measured rather than assumed. Instrumenting
-// `installEvaluationDepsLiveOnly` across a full run: 3,909 calls, of which the
-// cycle-gated liveness arms (`livenessLazyArmed`, `livenessRemovalArmed`) fire
-// twice and zero times respectively. Those two need a lazy re-init to land
-// INSIDE an active propagation pass, which this op mix reaches by accident at
-// best — so they are NOT this file's to guard, and deleting either one still
-// passes here. They are guarded by livenessCyclicFuzz.test.ts, which fails on
-// both; that is the file to reach for when touching them.
-//
-// What this file does guard, each verified by deleting the line and watching it
+// WHAT THIS FILE GUARDS, each verified by deleting the line and watching it
 // fail: the twin read getters (dirty-family observation, fresh-selector
 // activation and its rollback, the repeated-read dep gate), the twin installers'
 // edge diff, removal diff, graph-changed note and mount-closure marker, error
@@ -73,20 +64,34 @@ import { getStoreData } from "./getStoreData"
 // with the general installer, surfaces as a liveDependentCount ground-truth
 // violation.
 //
-// One further known limit, for the same reason as the liveness arms. Deleting
-// the live-only evaluator's own post-loop dep-set SIZE check still passes at
-// 1,500 seeds; it fails at ~6,000. A re-evaluation driven by propagation goes
-// through `evaluateSelector` even on a live-only store (see
-// propagateUpdatedAtoms.reEvaluateSelector), so that check is only load-bearing
-// on a LAZY re-read of an already-materialized selector — a narrow window this
-// op mix reaches rarely. The branch generator below is biased toward
-// equal-size/different-membership dep sets to widen it, which recovered the
-// INSTALLER's removal diff; the evaluator's own size check still wants either
-// more seeds or an op that targets remounting directly.
+// WHAT IT DOES NOT — measured, not assumed. A green run here is not proof that a
+// one-sided change to either twin is safe. Four branches survive deleting them,
+// each owned elsewhere; go to the named file when you touch one:
 //
-// Synchronous only. The twins also differ on the DEFERRED (post-await,
-// post-timeout) `get` path, which is a named condition rather than a
-// distribution — it gets its own test at the bottom of this file.
+//   1. The cycle-gated liveness arms (`livenessLazyArmed`,
+//      `livenessRemovalArmed`). Instrumenting `installEvaluationDepsLiveOnly`
+//      across a full run: 3,909 calls, of which the arms fire twice and zero
+//      times. They need a lazy re-init to land INSIDE an active propagation
+//      pass, which this op mix reaches by accident at best.
+//          -> livenessCyclicFuzz.test.ts fails on both.
+//   2. The live-only evaluator's own post-loop dep-set SIZE check. Passes at
+//      1,500 seeds, fails at ~6,000. Propagation re-evaluates through
+//      `evaluateSelector` even on a live-only store (see
+//      propagateUpdatedAtoms.reEvaluateSelector), so this check is only
+//      load-bearing on a LAZY re-read of an already-materialized selector. The
+//      branch generator below is biased toward equal-size/different-membership
+//      dep sets to widen that window, which recovered the INSTALLER's removal
+//      diff but not this.
+//          -> raise SEEDS, or add an op that remounts a still-live selector.
+//   3. The installers' capture-to-install interval merge, which only matters
+//      when a deferred `get` runs in that window — unreachable from a
+//      synchronous op mix.
+//          -> graph/runtime.test.ts ("installer twin parity" and "late
+//             dependency install") fails on both twins.
+//   4. Anything else async. The deferred (post-await, post-timeout) `get` path
+//      is a named condition rather than a distribution, so the one twin
+//      difference that ever existed there gets its own test at the bottom of
+//      this file rather than fuzz coverage.
 
 const mulberry32 = (seed: number) => () => {
     seed |= 0

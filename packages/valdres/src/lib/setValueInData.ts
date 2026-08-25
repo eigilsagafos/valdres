@@ -43,9 +43,17 @@ export const setValueInData = <Value extends unknown>(
     // Dev-only freeze decision. Kept inline (not a shared helper) because the
     // extra call frame measurably regresses the hot primitive-set path. The
     // staging-time copy of this policy lives in `normalizeStagedValue` (which
-    // Transaction.set and Transaction.batchSetFamilyAtoms both call); change
-    // one and `deepFreezePolicyFuzz.test.ts` fails, because it drives every
-    // write path with the same value and requires one outcome.
+    // Transaction.set and Transaction.batchSetFamilyAtoms both call).
+    //
+    // Two policies share the condition below, and they have different owners:
+    //   - the VALUE policy (mutable / production / freeze depth) is pinned by
+    //     `deepFreezePolicyFuzz.test.ts`, which drives every write path with the
+    //     same value and requires one outcome, so a drift between the two copies
+    //     surfaces as a path disagreement.
+    //   - the `typeof atom === "function"` exemption, which keeps a FAMILY's own
+    //     mutable membership-index carrier out of the user-value contract, is
+    //     invisible to that fuzz (it writes family MEMBERS, never the carrier).
+    //     Removing it fails the `hydrate` tests instead.
     let written: Value
     // Atom families store Valdres' own mutable membership-index carrier in the
     // values map. Families are callable; ordinary atom descriptors are objects,

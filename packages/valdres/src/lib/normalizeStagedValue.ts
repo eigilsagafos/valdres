@@ -23,11 +23,13 @@ import { validateSchema } from "./validateSchema"
  * coordinator normalizes it at commit. Freezing at staging (not only at commit)
  * is what makes staged values immutable within the transaction body.
  *
- * `deepFreezePolicyFuzz.test.ts` enforces both halves of that paragraph rather
- * than trusting it: it requires every write path to agree on the outcome for
- * one value (so the two copies cannot drift), pins the deliberate promise-like
- * exemption, and pins the validate-then-freeze order above by checking that a
- * schema is never shown an already-frozen value.
+ * `deepFreezePolicyFuzz.test.ts` enforces that paragraph rather than trusting
+ * it: it requires every write path to agree on the outcome for one value (so a
+ * drift in the shared value policy surfaces as a path disagreement), pins the
+ * deliberate promise-like exemption, and pins the validate-then-freeze order
+ * above by checking that a schema is never shown an already-frozen value. What
+ * it does NOT cover is `setValueInData`'s family-index-carrier exemption, which
+ * has no counterpart here — see the note there.
  */
 export const normalizeStagedValue = <V>(
     atom: Atom<any>,

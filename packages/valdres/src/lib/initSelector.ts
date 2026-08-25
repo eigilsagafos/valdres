@@ -307,11 +307,14 @@ export type SelectorEvaluationRuntime = {
  * pre-cold-cache evaluator instead of compiling the larger mixed-mode path.
  *
  * Twin of `evaluateSelector`, whose `liveOnlyDependencyRead` branch is the same
- * getter. The duplication is deliberate and measured; the EQUIVALENCE is
- * enforced by `selectorEvaluatorTwinFuzz.test.ts`, which drives one store
+ * getter. The duplication is deliberate and measured. Do not rely on the two
+ * bodies looking alike: `selectorEvaluatorTwinFuzz.test.ts` drives one store
  * through each twin and compares every read, notification, edge table, liveness
- * count and mount transition. Change one twin without the other and that file
- * fails — do not rely on the two bodies looking alike.
+ * count and mount transition, so most one-sided changes here fail it.
+ *
+ * MOST, not all — that file's header lists the branches it does NOT reach, and
+ * names the test that owns each. Check it before concluding a one-sided change
+ * is safe because the suite is green.
  */
 const evaluateLiveOnlySelector = <V>(
     selector: Selector<V>,
@@ -681,10 +684,9 @@ export const evaluateSelector = <V>(
         evaluationComplete = true
 
         // Probe the user-visible `then` exactly once — see the identical note
-        // in evaluateLiveOnlySelector (twin; equivalence enforced by
-        // selectorEvaluatorTwinFuzz.test.ts): a second probe before the
-        // dispatcher installs would let a `then`-getter's deferred `get` be
-        // overwritten.
+        // in evaluateLiveOnlySelector (its twin; see that function's header for
+        // what holds the two together): a second probe before the dispatcher
+        // installs would let a `then`-getter's deferred `get` be overwritten.
         const isPromiseResult = isPromiseLike(result)
         const isAsyncResult =
             result instanceof SuspendAndWaitForResolveError || isPromiseResult
