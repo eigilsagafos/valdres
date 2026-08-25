@@ -147,12 +147,19 @@ test("a throwing cyclic cleanup still queues orphaned graph cleanup", async () =
     expect(() => unsubscribe()).toThrow("cleanup boom")
 
     await Promise.resolve()
-    expect(getStoreData(s).stateDependencies.has(root)).toBe(false)
-    expect(getStoreData(s).stateDependencies.has(x)).toBe(false)
-    expect(getStoreData(s).stateDependencies.has(y)).toBe(false)
-    expect(getStoreData(s).values.has(root)).toBe(false)
-    expect(getStoreData(s).values.has(x)).toBe(false)
-    expect(getStoreData(s).values.has(y)).toBe(false)
+    // The whole cyclic region leaves the reverse graph despite the throwing
+    // cleanup. Each member demotes to a cold cache — cyclic snapshots are an
+    // explicitly supported shape (isColdSelectorCacheFresh guards recursion via
+    // coldCacheValidationSet), so retention here does not resurrect the cycle.
+    expect(getStoreData(s).stateDependents.get(x)?.has(root) ?? false).toBe(
+        false,
+    )
+    expect(getStoreData(s).stateDependents.get(y)?.has(x) ?? false).toBe(false)
+    expect(getStoreData(s).stateDependents.get(x)?.has(y) ?? false).toBe(false)
+    expect(getStoreData(s).selectorGraphActive.has(root)).toBe(false)
+    expect(getStoreData(s).coldSelectorCaches.has(root)).toBe(true)
+    expect(getStoreData(s).coldSelectorCaches.has(x)).toBe(true)
+    expect(getStoreData(s).coldSelectorCaches.has(y)).toBe(true)
 })
 
 test("acyclic dependency removals skip the exact cycle DFS", async () => {

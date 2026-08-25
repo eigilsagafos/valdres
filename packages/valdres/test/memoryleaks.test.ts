@@ -299,6 +299,46 @@ describe("memory leaks (subscriptions)", () => {
         expect(await detector.isLeaking()).toBe(false)
     })
 
+    test("a demoted selector is collected while its store stays alive", async () => {
+        // Orphan cleanup retains a torn-down selector's value so a remount can
+        // re-wire instead of re-evaluating. That retention must stay keyed
+        // WEAKLY on the selector, or churning through many distinct family
+        // members (navigating page after page) would accumulate one cached
+        // value per member for the life of the store.
+        const s = store()
+        const flush = atom("demoted-flush")
+        const rows = selectorFamily<object, [string]>(
+            () => () => ({ row: {} }),
+        )
+        let member: any = rows("page-1")
+        const detector = new LeakDetector(member)
+        const valueDetector = new LeakDetector(s.get(member))
+        const unsubscribe = s.sub(member, () => {})
+        unsubscribe()
+        // Drain the queued orphan sweep so the selector is actually demoted.
+        s.get(flush)
+        member = undefined
+
+        expect(await detector.isLeaking()).toBe(false)
+        expect(await valueDetector.isLeaking()).toBe(false)
+        // Pin the store across BOTH probes. Without a use down here its last
+        // use is above, so JSC may reclaim the store and every weak table it
+        // owns — and then the assertions would hold even if a LIVE store had
+        // strongly retained the member, which is the only thing this test is
+        // trying to rule out. (That vacuous form is already covered by
+        // "selector value is collected after subscribe and unsubscribe".)
+        expect(s.get(flush)).toBe("demoted-flush")
+        const internalFamily = rows as unknown as InternalSelectorFamily<
+            object,
+            [string]
+        >
+        expect(
+            internalFamily.__valdresSelectorFamilyMap.has(
+                familyKey(["page-1"]),
+            ),
+        ).toBe(false)
+    })
+
     test("stateDependents are cleaned up after selector unsubscribe", async () => {
         const s = store()
         const baseAtom = atom(1)

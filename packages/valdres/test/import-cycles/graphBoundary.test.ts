@@ -58,6 +58,10 @@ const GRAPH_LEAF_ALLOWLIST = new Set([
     "src/utils/isSelector.ts",
     "src/utils/isAtom.ts",
     "src/utils/isAtomFamily.ts",
+    // Both reached from orphan cleanup's demote gate. Type-only/no imports of
+    // their own, so neither can re-enter the write path.
+    "src/lib/hasCommittedValue.ts",
+    "src/utils/isPromiseLike.ts",
     "src/errors/StoreDisposedError.ts",
     // Shared error-brand helper; zero imports of its own.
     "src/errors/lib/errorBrand.ts",

@@ -67,12 +67,25 @@ const countTeardownDependencyReads = async (
     // Include the one queued orphan sweep: the assertion covers total burst
     // work, not merely what remains on each individual unsubscribe stack.
     await Promise.resolve()
+    // Snapshot before the structural check below, whose own probes would
+    // otherwise count against the linearity bound.
+    const teardownDependencyReads = dependencyReads
+    // Teardown's contract is that an orphan leaves the ITERABLE REVERSE graph,
+    // so no later write can reach it. Its forward set is retained on purpose —
+    // orphan cleanup demotes it to a cold cache so a remount re-wires the graph
+    // instead of re-running the selector body.
+    const leftReverseGraph = (state: any) => {
+        const deps = dependencies.get(state)
+        if (!deps) return true
+        const dependents = getStoreData(targetStore).stateDependents
+        for (const dep of deps) if (dependents.get(dep)?.has(state)) return false
+        return true
+    }
     const graphWasCleaned =
-        !getStoreData(targetStore).stateDependencies.has(leaves[0]) &&
-        !getStoreData(targetStore).stateDependencies.has(spineTop)
+        leftReverseGraph(leaves[0]) && leftReverseGraph(spineTop)
     return {
         count,
-        dependencyReads,
+        dependencyReads: teardownDependencyReads,
         lifecycleCleanupWasSynchronous,
         mountCleanups,
         graphWasCleaned,
