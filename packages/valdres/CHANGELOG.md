@@ -1,5 +1,95 @@
 # valdres
 
+## 1.0.0-beta.22
+
+### Patch Changes
+
+- [#333](https://github.com/eigilsagafos/valdres/pull/333)
+  [`6703889`](https://github.com/eigilsagafos/valdres/commit/6703889aa59b4b86a111b1d32a3257507254a2e7)
+  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! - Cut the per-read
+  cost of already-cached selector reads, for consumers whose traversals read the
+  same members many times per pass.
+
+    - `selectorFamily(...)` member resolution now uses the same accessor shape
+      `atomFamily` already had — a small cache-hit path with member construction
+      split into a separate `build()`. A single-string-argument hit goes from
+      ~16 ns to ~4.6 ns.
+    - `getState` hoists the cold-cache revision check that
+      `isColdSelectorCacheFresh` performs first anyway, so a validated cold read
+      returns without two extra calls.
+    - A selector body re-reading a dependency it has already read this
+      evaluation no longer repeats the dependency-membership lookup.
+    - The store's `get` boundary resolves a cold cache entry with one `WeakMap`
+      lookup instead of `has()` + `get()`.
+
+    Measured on a 200-member three-level `selectorFamily` graph, reading cached
+    members 1M times inside one evaluation: `get(family(id))` 45.7 → 28.4
+    ns/read, a three-level chain 48.4 → 30.1 ns/read.
+
+- [#337](https://github.com/eigilsagafos/valdres/pull/337)
+  [`8747e0c`](https://github.com/eigilsagafos/valdres/commit/8747e0c1d3eb666356f4b98418ac679241b5686f)
+  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! - Demote orphaned
+  selectors to a cold cache instead of dropping their value
+
+    Unsubscribing the last observer of a selector deleted its cached value, so a
+    remount re-ran the selector body. Under component churn — a virtualized list
+    scrolling, a route leaving and returning, Suspense retrying during a load —
+    that made every mount/unmount cycle re-evaluate the whole subscribed
+    subtree. Because teardown is deferred and drained by the next public read,
+    the cost landed inside `store.get`, which is where `useSyncExternalStore`'s
+    `getSnapshot` runs.
+
+    Orphan cleanup now leaves the selector in exactly the shape a cold read
+    produces: committed value and forward dependency set retained behind a
+    revision snapshot, reverse edges released. A remount re-wires the graph
+    through the existing promote path instead of re-evaluating, and a dependency
+    written while unmounted still invalidates the snapshot so the next read
+    re-evaluates once. Reads across an unmount/remount boundary are
+    `Object.is`-stable again.
+
+    Measured on 181 components each subscribing a per-item selector over a
+    shared high-fan-in layout selector: scroll churn and full remount drop from
+    910 selector evaluations to 0, and time inside `getSnapshot` from 2.5 ms /
+    1.4 ms to 0.4 ms / 0.1 ms. Write propagation and teardown linearity are
+    unchanged.
+
+    Two deliberate trade-offs. Recording a snapshot enables the store's
+    cold-cache bookkeeping, so the first selector teardown moves that store onto
+    the cold-cache-aware read and evaluation paths for good — the same switch
+    any read of an unsubscribed selector already causes, costing single-digit
+    nanoseconds per cached read (measured 12 ns to 15 ns on a 20-selector fan).
+    React stores already flip it via `getSnapshot` before subscribing;
+    imperative `sub()`-then-`get()` consumers that never read an unsubscribed
+    selector will now see it too.
+
+    Stores created with `{ enumerable: true }` keep the previous drop behaviour
+    and still pay the re-evaluation: their `values` is a strong `Map`, so a
+    retained value would outlive its selector rather than being reclaimed with
+    it, and `store.snapshot()` — which `@valdres/redux-devtools` enumerates —
+    would begin listing torn-down selectors.
+
+- [#338](https://github.com/eigilsagafos/valdres/pull/338)
+  [`91e515c`](https://github.com/eigilsagafos/valdres/commit/91e515c9bdb19b963f2bec528bb327e300c36be1)
+  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! - Fix a deferred
+  `get` reading through a disposed store.
+
+    A selector body that calls `get` after its synchronous evaluation finished
+    (after an `await`, or from a `setTimeout`) is the one way to reach a store
+    once it has been disposed. That call is supposed to throw
+    `StoreDisposedError`. It did — unless the store had never cached a cold
+    selector, in which case the read silently succeeded against the dead store
+    and the consumer never learned the store was gone.
+
+    The two cases ran different evaluators (`evaluateSelector` vs its live-only
+    twin), and only the first carried the disposal guard. Whether an app hit the
+    bug depended on whether it had ever read a selector it hadn't subscribed to,
+    which is not a distinction the disposal contract should turn on.
+
+    Both evaluator twins are now held to one another by
+    `selectorEvaluatorTwinFuzz.test.ts`, which drives the same program through
+    each and compares every read, notification, dependency edge, liveness count
+    and mount transition.
+
 ## 1.0.0-beta.21
 
 ### Patch Changes
