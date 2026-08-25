@@ -93,10 +93,10 @@ describe("cold selector cache validation pass", () => {
             )
         })
 
-        // The bound that matters: proportional to the edge count, NOT to
-        // edges x mid fan-out. Before the pass this was 12x higher (every one
-        // of the 12 mids re-walked its 10 atoms once per top that reached it,
-        // and again after each sibling re-evaluation aged its stamp).
+        // The bound that matters: proportional to the edge count, NOT to edges
+        // x dependents-per-shared-node. Before the pass every one of the 12 mids
+        // re-walked its 10 atoms once per top that reached it, and again after
+        // each sibling re-evaluation aged its stamp.
         expect(graph.edges).toBe(172)
         expect(first.coldCacheDependencyChecks).toBeLessThanOrEqual(graph.edges)
 
@@ -113,11 +113,15 @@ describe("cold selector cache validation pass", () => {
         expect(second.selectorEvaluations).toBe(0)
     })
 
-    test("the per-read bound does not grow with mid-layer fan-out", () => {
-        // Same atom and top counts, 4x the shared mid layer. Per-edge work must
-        // stay flat; it is the ratio, not the absolute count, that regressed.
-        const measure = (midCount: number) => {
-            const graph = buildWideGraph(8, midCount, 4)
+    test("the per-read bound does not grow with dependents per shared node", () => {
+        // The multiplier that regressed is how many DEPENDENTS each shared node
+        // has, not how wide the shared layer is: a mid was re-walked once per
+        // top that reached it, and again after each sibling re-evaluation aged
+        // its stamp. So vary `topCount` and hold `midCount` fixed. (Varying
+        // `midCount` instead leaves the ratio flat — measured 2.88 -> 2.97 with
+        // the memo disabled — so that arrangement asserts nothing.)
+        const measure = (topCount: number) => {
+            const graph = buildWideGraph(8, 12, topCount)
             const target = store()
             demote(target, graph.root)
             const counts = measureArchitecture(target, () => {
@@ -126,9 +130,13 @@ describe("cold selector cache validation pass", () => {
             })
             return counts.coldCacheDependencyChecks / graph.edges
         }
-        const narrow = measure(5)
-        const wide = measure(20)
-        expect(wide).toBeLessThanOrEqual(narrow * 1.5)
+        // Measured with the memo disabled: 1.79 at 2 dependents rising to 5.74
+        // at 16, i.e. the ratio tracks the multiplier directly. With the memo it
+        // is 1.00 throughout, so 1.5x is a wide margin that still fails on any
+        // return to per-dependent re-walking.
+        const few = measure(2)
+        const many = measure(16)
+        expect(many).toBeLessThanOrEqual(few * 1.5)
     })
 
     test("a write after the pass ends still invalidates every snapshot", () => {
@@ -325,6 +333,72 @@ describe("cold selector cache validation pass", () => {
             expect(() => target.get(state)).toThrow(
                 SelectorCircularDependencyError,
             )
+        }
+    })
+
+    test("a cyclic cold graph settles in a bounded number of reads", () => {
+        // The cycle guard's provisional answer still leaves `validatedAt`
+        // stamped, so a later read can serve a value that was validated on a
+        // guess. That is not new — the pre-pass code did the same — and it does
+        // NOT produce an inconsistent latch: across 400 random cyclic-capable
+        // cold graphs neither build ever served a settled state that disagreed
+        // with its own selector bodies.
+        //
+        // What the pass changes is convergence. A cyclic cold read is not
+        // idempotent on either build — the first read after a write moves the
+        // answer — but before the pass the answer kept moving for many more
+        // reads, because each read re-entered the cycle's members and grew their
+        // values. On the graph below one write took 29 reads to stop moving;
+        // it now takes 2. That is the property worth pinning: `store.get` on a
+        // cyclic graph must reach a stable answer promptly, not drift.
+        const atoms = [atom(1), atom(1), atom(1), atom(1)]
+        const gates = [0, 2, 2, 2, 0, 1]
+        const sels: any[] = []
+        for (let i = 0; i < 6; i++) {
+            sels.push(
+                selector((get: any) => {
+                    let acc = 1 + get(atoms[gates[i]!]!) + get(atoms[i % 4]!)
+                    // Conditional cross-reads, so the graph turns cyclic only
+                    // after the snapshots already exist. The clamp keeps the
+                    // divergence finite so "settles" is measurable at all.
+                    if (acc % 2 === 0) {
+                        for (let k = 0; k < 6; k++) {
+                            if (k !== i && (i + k) % 3 !== 0) {
+                                acc += Math.min(get(sels[k]) as number, 1000)
+                            }
+                        }
+                    }
+                    return acc
+                }),
+            )
+        }
+        const target = store()
+        const readAll = () =>
+            sels
+                .map(state => {
+                    try {
+                        return String(target.get(state))
+                    } catch (error) {
+                        return (error as Error).constructor.name
+                    }
+                })
+                .join("|")
+
+        readAll()
+        for (let step = 0; step < 6; step++) {
+            target.set(atoms[step % 4]!, 1 + step)
+            let previous = readAll()
+            let stable = 0
+            let reads = 1
+            while (stable < 3 && reads < 40) {
+                const next = readAll()
+                reads++
+                stable = next === previous ? stable + 1 : 0
+                previous = next
+            }
+            // 5 is generous against the measured 2, and far below the 29 this
+            // same graph needed before the pass.
+            expect(reads - 3).toBeLessThanOrEqual(5)
         }
     })
 
