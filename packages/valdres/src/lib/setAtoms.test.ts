@@ -96,8 +96,11 @@ describe("commitAtoms", () => {
 describe("seed fast path", () => {
     const BELOW = FRESH_ATOM_FAST_PATH_MIN - 1
     const AT = FRESH_ATOM_FAST_PATH_MIN
-    // Dev-only: both steps are inert in a production build, where the write
-    // path freezes nothing and so runs no user code at all.
+    // Traversal count for the VALUE-CARRIER mechanism specifically: a value
+    // getter is reached only through the dev-build deepFreeze, so it fires
+    // twice in dev (staging, then commit) and never in production. This is not
+    // a claim that the production write path runs no user code — it does, via
+    // atom accessors, which the divergence table covers separately.
     const TRAVERSALS = IS_PROD ? 0 : 2
 
     // Both of this specialization's global gates are process-wide counters, and
@@ -318,9 +321,22 @@ describe("seed fast path", () => {
      */
     describe("known divergences", () => {
         type Probe = Record<string, number | undefined>
+        /**
+         * `value-getter` — reached through the dev-build deepFreeze of a staged
+         *   object value, so unreachable in production.
+         * `atom-accessor` — an accessor on a field the write path reads before
+         *   (or without) consulting IS_PROD: `atom.mutable`
+         *   (normalizeStagedValue, setValueInData) and `atom.maxAge`
+         *   (setValueInData). Reachable in EVERY build, with primitive values,
+         *   and `mutable` is not checked by admission at all.
+         */
+        type Mechanism = "value-getter" | "atom-accessor"
         type Case = {
             label: string
             diverges: boolean
+            mechanism?: Mechanism
+            /** atom-accessor only: the field to install the accessor on. */
+            accessorField?: "mutable" | "maxAge"
             mutate: (victim: any, probe: Probe, store1: any) => void
         }
 
@@ -454,6 +470,31 @@ describe("seed fast path", () => {
                     v.family = {}
                 },
             },
+            // Reachability is NOT bounded by dev freezing. These two need no
+            // object value and no freeze: the accessor is on the atom itself,
+            // on a field the write path reads before consulting IS_PROD.
+            {
+                label: "accessor on atom.mutable (production-reachable)",
+                diverges: true,
+                mechanism: "atom-accessor",
+                accessorField: "mutable",
+                mutate: (v, p) => {
+                    v.onInit = () => {
+                        p.onInitCalls = (p.onInitCalls ?? 0) + 1
+                    }
+                },
+            },
+            {
+                label: "accessor on atom.maxAge (production-reachable)",
+                diverges: true,
+                mechanism: "atom-accessor",
+                accessorField: "maxAge",
+                mutate: (v, p) => {
+                    v.onInit = () => {
+                        p.onInitCalls = (p.onInitCalls ?? 0) + 1
+                    }
+                },
+            },
         ]
 
         // Every atom is seeded with the SAME value, so nothing in the observed
@@ -461,26 +502,38 @@ describe("seed fast path", () => {
         // two runs differ by construction and every case read as divergent.
         const SEEDED = 7
 
-        const observe = (count: number, mutate: Case["mutate"]) => {
+        const observe = (count: number, testCase: Case) => {
             const atoms = Array.from({ length: count }, () => atom<any>(0))
             const store1 = store({ schemaValidation: true })
             const probe: Probe = {}
-            let traversals = 0
+            let hookRuns = 0
+            const fire = () => {
+                if (++hookRuns >= 2)
+                    testCase.mutate(atoms[count - 1], probe, store1)
+            }
+
+            // An atom-accessor case needs no object value at all: the accessor
+            // sits on atom 0 itself, on a field the write path reads.
+            if (testCase.mechanism === "atom-accessor") {
+                Object.defineProperty(atoms[0]!, testCase.accessorField!, {
+                    configurable: true,
+                    get() {
+                        fire()
+                        return undefined
+                    },
+                })
+            }
+
             let thrown: string | undefined
             try {
                 store1.txn(txn =>
                     atoms.forEach((a, i) =>
                         txn.set(
                             a,
-                            i === 0
+                            i === 0 && testCase.mechanism !== "atom-accessor"
                                 ? {
                                       get carrier() {
-                                          if (++traversals >= 2)
-                                              mutate(
-                                                  atoms[count - 1],
-                                                  probe,
-                                                  store1,
-                                              )
+                                          fire()
                                           return 1
                                       },
                                   }
@@ -497,21 +550,39 @@ describe("seed fast path", () => {
             } catch {
                 readBack = "<read threw>"
             }
-            return { probe, traversals, thrown, readBack }
+            // The semantic outcome is what the two paths are compared on.
+            // `hookRuns` is reported separately: the established path reads an
+            // atom field more often than this loop does (it also writes through
+            // initAtom), so comparing it would report a divergence for the
+            // wrong reason.
+            return { outcome: { probe, thrown, readBack }, hookRuns }
         }
 
         for (const testCase of CASES) {
-            test(`${testCase.label} — ${testCase.diverges ? "diverges" : "agrees"}`, () => {
-                const established = observe(BELOW, testCase.mutate)
-                const fastPath = observe(AT, testCase.mutate)
-                const agree =
-                    JSON.stringify(established) === JSON.stringify(fastPath)
+            const mechanism = testCase.mechanism ?? "value-getter"
+            // A value getter rides the dev-only freeze; an atom accessor does
+            // not, so only the former goes quiet in production.
+            const reachable = mechanism === "atom-accessor" || !IS_PROD
 
-                // In production nothing freezes, so the carrier getter never
-                // runs, no mutation lands, and every case agrees.
-                expect(agree).toBe(IS_PROD ? true : !testCase.diverges)
-                expect(established.traversals).toBe(TRAVERSALS)
-                expect(fastPath.traversals).toBe(TRAVERSALS)
+            test(`${testCase.label} — ${testCase.diverges ? "diverges" : "agrees"}`, () => {
+                const established = observe(BELOW, testCase)
+                const fastPath = observe(AT, testCase)
+                const agree =
+                    JSON.stringify(established.outcome) ===
+                    JSON.stringify(fastPath.outcome)
+
+                expect(agree).toBe(reachable ? !testCase.diverges : true)
+
+                // Non-vacuity: the mechanism actually fired (and, for a value
+                // getter, fired the expected twice — once at staging, once in
+                // the loop, which is what puts the mutation after admission).
+                if (mechanism === "value-getter") {
+                    expect(established.hookRuns).toBe(TRAVERSALS)
+                    expect(fastPath.hookRuns).toBe(TRAVERSALS)
+                } else {
+                    expect(established.hookRuns).toBeGreaterThanOrEqual(2)
+                    expect(fastPath.hookRuns).toBeGreaterThanOrEqual(2)
+                }
             })
         }
     })

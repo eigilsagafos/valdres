@@ -183,15 +183,23 @@ const tryWriteFreshSimpleAtoms = (
         // primitive-or-null first operand (it answers from `===` without
         // reaching an object path, so the incoming value's valueOf/toString are
         // never invoked). What keeps them live is that this loop runs USER CODE
-        // between iterations: in a dev build setValueInData deep-freezes the
-        // staged value, and deepFreeze reads every own property, so a getter in
-        // an EARLIER atom's value can reassign a later atom's `equal` (atoms
-        // are plain objects), swap its `defaultValue` for an object whose
-        // coercion hooks then DO run, or fail its own second traversal.
-        // Admission's per-atom checks are therefore facts about loop entry, not
-        // about iteration N. Re-reading `atom.equal` and `atom.defaultValue`
-        // here — rather than hoisting them — is what keeps those two cases in
-        // step with the established path.
+        // between iterations, by two independent routes:
+        //
+        //   1. A value getter. In a dev build setValueInData deep-freezes the
+        //      staged value and deepFreeze reads every own property, so a
+        //      getter in an EARLIER atom's value runs here. Dev-only.
+        //   2. An atom accessor. `atom.mutable` is read BEFORE the IS_PROD
+        //      test in both normalizeStagedValue and setValueInData, and
+        //      `atom.maxAge` is read unconditionally, so an accessor on either
+        //      runs in EVERY build, with primitive values, and `mutable` is not
+        //      an admission condition at all.
+        //
+        // Either route can reassign a later atom's `equal` (atoms are plain
+        // objects) or swap its `defaultValue` for an object whose coercion
+        // hooks then DO run. Admission's per-atom checks are therefore facts
+        // about loop entry, not about iteration N. Re-reading `atom.equal` and
+        // `atom.defaultValue` here — rather than hoisting them — is what keeps
+        // those two cases in step with the established path.
         //
         // Fidelity under such a mutation is deliberately NOT claimed in
         // general, and the exceptions are not enumerated here — every attempt
@@ -202,10 +210,11 @@ const tryWriteFreshSimpleAtoms = (
         // `schema`, invoking `onInit`, notifying a subscriber added mid-commit.
         // setAtoms.test.ts asserts the verdict for each mutation in a table, so
         // a new divergence shows up as a failing case rather than as a stale
-        // comment. Closing the class means removing the user-code window rather
-        // than re-checking fields per atom: admitting only primitive VALUES
-        // would do it, since setValueInData then freezes nothing and the loop
-        // calls nothing. That is a scope/perf tradeoff for its own change.
+        // comment. No closure is proposed here: narrowing admission to
+        // primitive VALUES shuts only route 1, and route 2 needs neither an
+        // object value nor a dev build, so anything claiming to close the class
+        // has to account for the write path's own reads of mutable atom fields
+        // — measure it against that table before believing it.
         data.values.set(atom, atom.defaultValue)
         atom.equal(atom.defaultValue, value)
         setValueInData(atom, value, data)
