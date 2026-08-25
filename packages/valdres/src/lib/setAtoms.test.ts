@@ -1,5 +1,12 @@
 import { getStoreData } from "./getStoreData"
-import { describe, test, expect, mock } from "bun:test"
+import {
+    afterAll,
+    beforeAll,
+    describe,
+    expect,
+    mock,
+    test,
+} from "bun:test"
 import { store } from "../store"
 import { atom } from "../atom"
 import { commitAtoms, FRESH_ATOM_FAST_PATH_MIN } from "./setAtoms"
@@ -10,6 +17,8 @@ import {
 import { equal } from "./equal"
 import { IS_PROD } from "./IS_PROD"
 import type { Atom } from "../types/Atom"
+import { commitEndRegistry } from "./onCommitEnd"
+import { changeListenerRegistry } from "./notifyChangeListeners"
 
 describe("commitAtoms", () => {
     test("invokes atom.onSet for each updated atom with a collecting intent", () => {
@@ -90,6 +99,30 @@ describe("seed fast path", () => {
     // path freezes nothing and so runs no user code at all.
     const TRAVERSALS = IS_PROD ? 0 : 2
 
+    // Both of this specialization's global gates are process-wide counters, and
+    // other test files in this process leave listeners registered: a non-zero
+    // change count makes the transaction allocate a sink (which skips the fast
+    // path), and a non-zero commit-end count makes admission bail. Left alone,
+    // every test here would compare the established path against itself and
+    // pass while measuring nothing — the file passes in isolation and goes
+    // vacuous in the full suite, which is the worst of both. Zeroed for the
+    // duration and restored after; test files run sequentially, so no other
+    // file's listeners are missed. The `onInit` divergence test below is the
+    // canary: it is the one assertion that fails outright if the fast path was
+    // not actually taken.
+    let savedCommitEnd = 0
+    let savedChange = 0
+    beforeAll(() => {
+        savedCommitEnd = commitEndRegistry.count
+        savedChange = changeListenerRegistry.count
+        commitEndRegistry.count = 0
+        changeListenerRegistry.count = 0
+    })
+    afterAll(() => {
+        commitEndRegistry.count = savedCommitEnd
+        changeListenerRegistry.count = savedChange
+    })
+
     // A root store, no listener, no committed value for any atom in the batch:
     // the full admission shape, so `AT` takes the specialization and `BELOW`
     // does not. `valueFor` receives the atoms so a value can close over a
@@ -117,10 +150,13 @@ describe("seed fast path", () => {
     test("never invokes the incoming value's valueOf or toString", () => {
         // The comparator's first operand is the declared default, so for every
         // admitted shape — a primitive or `null` — it answers from `===` and
-        // never reaches the object path that consults those hooks. Widening
-        // admission to object defaults would reach it, turning a bulk seed into
-        // an arbitrary user-code call site, so this is pinned rather than left
-        // to a reading of `equal`.
+        // never reaches the object path that consults those hooks. It is the
+        // operand's shape doing that, not a missing branch: widening admission
+        // to object defaults would reach it, and so does swapping `defaultValue`
+        // for an object mid-loop (which both paths then handle alike, because
+        // the loop re-reads it). Pinned rather than left to a reading of
+        // `equal`, since reaching it turns a bulk seed into an arbitrary
+        // user-code call site.
         let hookCalls = 0
         const hostile = () => ({
             valueOf() {
@@ -254,4 +290,94 @@ describe("seed fast path", () => {
             expect(established.holdsDeclaredDefault).toBe(true)
         }
     })
+
+    /**
+     * The landing is a bare `values.set`, not `initAtom`, so `initAtom`'s other
+     * duties are not reproduced. Under the same mid-commit mutation the
+     * comparator call covers, that is observable: these two fields diverge from
+     * the established path.
+     *
+     * Pinned as KNOWN divergences, not as desired behaviour. Both need a value
+     * getter to assign an admission-checked field to a later atom in the same
+     * batch, which no ordinary code does (`onInit` is not even user-facing —
+     * `globalAtom` sets it at construction). If a change closes the window —
+     * admitting only primitive values would, since the loop would then call
+     * nothing — these tests go red and should be deleted, not repaired.
+     */
+    describe("known divergences: initAtom duties the landing skips", () => {
+        // Assigns `field` to the LAST atom from the FIRST atom's freeze
+        // traversal, i.e. after admission and inside the write loop.
+        const hijackField = (count: number, field: string, make: () => unknown) => {
+            const atoms = Array.from({ length: count }, () => atom<any>(0))
+            const store1 = store({ schemaValidation: true })
+            let traversals = 0
+            try {
+                store1.txn(txn =>
+                    atoms.forEach((a, i) =>
+                        txn.set(
+                            a,
+                            i === 0
+                                ? {
+                                      get probe() {
+                                          if (++traversals >= 2)
+                                              (atoms[count - 1] as any)[field] =
+                                                  make()
+                                          return 1
+                                      },
+                                  }
+                                : i + 1,
+                        ),
+                    ),
+                )
+            } catch {
+                // Neither field throws; a future one might.
+            }
+            return traversals
+        }
+
+
+        test("an onInit assigned mid-loop runs on the established path only", () => {
+            let ran = 0
+            const traversalsBelow = hijackField(BELOW, "onInit", () => () => {
+                ran++
+            })
+            const onEstablished = ran
+            ran = 0
+            const traversalsAt = hijackField(AT, "onInit", () => () => {
+                ran++
+            })
+            const onFastPath = ran
+
+            expect(traversalsBelow).toBe(TRAVERSALS)
+            expect(traversalsAt).toBe(TRAVERSALS)
+            // In production nothing freezes, so neither path ever sees the
+            // assignment and both agree at zero.
+            expect(onEstablished).toBe(IS_PROD ? 0 : 1)
+            expect(onFastPath).toBe(0)
+        })
+
+        test("a schema assigned mid-loop validates on the established path only", () => {
+            let validations = 0
+            const schema = () => ({
+                "~standard": {
+                    version: 1,
+                    vendor: "valdres-test",
+                    validate: (value: unknown) => {
+                        validations++
+                        return { value }
+                    },
+                },
+            })
+
+            hijackField(BELOW, "schema", schema)
+            const onEstablished = validations
+            validations = 0
+            hijackField(AT, "schema", schema)
+            const onFastPath = validations
+
+            expect(onEstablished).toBe(IS_PROD ? 0 : 1)
+            expect(onFastPath).toBe(0)
+        })
+    })
+
 })

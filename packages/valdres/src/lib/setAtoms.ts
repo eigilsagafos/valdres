@@ -180,9 +180,23 @@ const tryWriteFreshSimpleAtoms = (
         // between iterations: in a dev build setValueInData deep-freezes the
         // staged value, and deepFreeze reads every own property, so a getter in
         // an EARLIER atom's value can reassign a later atom's `equal` (atoms
-        // are plain objects) or fail its own second traversal. Admission's
-        // `atom.equal === equal` is therefore a fact about loop entry, not
-        // about iteration N. setAtoms.test.ts fails if either step is dropped.
+        // are plain objects), swap its `defaultValue` for an object whose
+        // coercion hooks then DO run, or fail its own second traversal.
+        // Admission's per-atom checks are therefore facts about loop entry, not
+        // about iteration N. Re-reading `atom.equal` and `atom.defaultValue`
+        // here — rather than hoisting them — is what keeps those two cases in
+        // step with the established path.
+        //
+        // Fidelity under such a mutation is deliberately NOT claimed in
+        // general. The landing is a bare `values.set`, not `initAtom`, so the
+        // duties initAtom performs around it are not reproduced: a `schema`
+        // assigned mid-loop never validates the default, and an `onInit`
+        // assigned mid-loop is never invoked (both diverge from the established
+        // path, both pinned as known divergences in setAtoms.test.ts). Closing
+        // that class properly means removing the user-code window rather than
+        // re-checking fields per atom — admitting only primitive VALUES would
+        // do it, since setValueInData then freezes nothing and the loop calls
+        // nothing. That is a scope/perf tradeoff for its own change.
         data.values.set(atom, atom.defaultValue)
         atom.equal(atom.defaultValue, value)
         setValueInData(atom, value, data)
