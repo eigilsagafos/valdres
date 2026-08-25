@@ -1,4 +1,6 @@
-import { describe, expect, test } from "bun:test"
+// Runtime-agnostic: the Node/V8 rewrite-guard lane runs this file under vitest,
+// where `bun:test` does not resolve.
+import { describe, expect, test } from "../../test/performance/test-compat"
 import { atom } from "../atom"
 import { selector } from "../selector"
 import { store } from "../store"
