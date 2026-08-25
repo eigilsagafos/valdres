@@ -65,6 +65,7 @@
  *   bun run verify --from=9     # resume at step 9 (index or name substring)
  *   bun run verify --allow-toolchain-drift   # run on a mismatched bun/node anyway
  */
+import { createHash } from "node:crypto"
 import { mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -91,6 +92,35 @@ const SKIPPED_JOBS: Record<string, { when: string; reason: string }> = {
     },
 }
 
+/** Digest of an action step's CONFIGURATION — everything but its name (the
+ *  policy key) and its `uses:` version (bumping `@v6` to `@v7` should not be
+ *  churn; the action slug is checked separately). Stable key order so the
+ *  digest tracks meaning, not YAML authoring order.
+ *
+ *  Only actions that execute caller-supplied code need one — today that is
+ *  `actions/github-script`, whose `with.script` can call `core.setFailed` and
+ *  therefore gate the job. `checkout` cannot gate; `setup-bun` / `setup-node`
+ *  carry only pins, which toolchainDrift validates directly; `paths-filter`
+ *  can only make CI run the job LESS often than verify does. */
+const configDigest = (step: WorkflowStep) => {
+    const config = {
+        with: step.with ?? null,
+        if: step.if ?? null,
+        env: step.env ?? null,
+        "continue-on-error": step["continue-on-error"] ?? null,
+        id: step.id ?? null,
+    }
+    return createHash("sha256")
+        .update(JSON.stringify(config))
+        .digest("hex")
+        .slice(0, 12)
+}
+
+/** The digest of ci.yaml's `Test Report` configuration as reviewed: its script
+ *  reports results and calls `core.setFailed` only for conditions the
+ *  `JUnit coverage gate` shell step also enforces. */
+const TEST_REPORT_CONFIG = "2dcc96ee6def"
+
 const CHECKOUT = "you already have a checkout"
 const SETUP_BUN =
     "installs the pinned Bun; verify compares your local Bun against that pin in preflight instead"
@@ -108,7 +138,10 @@ const SETUP_NODE =
  *  Unnamed steps key on their versionless action slug, so bumping `@v6` to
  *  `@v7` is not a spurious failure; the `action` field still pins WHICH action
  *  a named step may be. */
-const SKIPPED_ACTIONS: Record<string, { action: string; reason: string }> = {
+const SKIPPED_ACTIONS: Record<
+    string,
+    { action: string; reason: string; config?: string }
+> = {
     "test / actions/checkout": { action: "actions/checkout", reason: CHECKOUT },
     "test / oven-sh/setup-bun": {
         action: "oven-sh/setup-bun",
@@ -121,6 +154,14 @@ const SKIPPED_ACTIONS: Record<string, { action: string; reason: string }> = {
     "test / Test Report": {
         action: "actions/github-script",
         reason: "posts the JUnit summary to the GitHub Checks API. Its one GATE — every test-bearing package must emit a report — is enforced by scripts/check-junit-coverage.ts, which runs as a shell step verify executes",
+        // This one carries a digest because github-script runs ARBITRARY
+        // caller-supplied JS, and that script can call `core.setFailed`. The
+        // reason above is a claim about what the script does; without pinning
+        // the script, adding a second gate to it stays silently skipped —
+        // which is the hole this whole file started from. Update the digest
+        // only after re-reading the script and confirming any new failure path
+        // has a local equivalent.
+        config: TEST_REPORT_CONFIG,
     },
     "valdres-package / actions/checkout": {
         action: "actions/checkout",
@@ -189,25 +230,30 @@ const SUPPORTED_STEP_KEYS = new Set([
     "continue-on-error",
 ])
 
-/** Job keys that provably do not change how a `run:` block executes locally.
- *  The omissions are the point, and they include more than the obvious ones:
+/** Job keys that provably do not change whether or how a covered job's steps
+ *  execute. The omissions are the point, and they fall into two groups.
  *
+ *  Change what CI executes:
  *  - `defaults` (run.shell / run.working-directory), `container`, `services`,
- *    `strategy` — change what CI actually executes.
- *  - `if` — a job condition can make GitHub skip a covered job entirely while
- *    verify runs it and claims to have replayed CI. Verify evaluates step-level
- *    conditions; until it does the same for jobs, this fails closed.
- *  - `timeout-minutes` — GitHub would kill the job at the deadline and
- *    `runSteps` enforces none, so a local pass could hide a CI timeout. */
+ *    `strategy`.
+ *  - `timeout-minutes` — GitHub kills the job at the deadline; `runSteps`
+ *    enforces none, so a local pass could hide a CI timeout.
+ *
+ *  Change WHETHER the job runs at all, which verify models not at all — it
+ *  would replay a job GitHub skipped and still call that a faithful replay:
+ *  - `if` — a job condition.
+ *  - `needs` — a failed or skipped prerequisite skips this job too.
+ *  - `environment` — can hold the job for manual approval.
+ *  - `concurrency` — can cancel the job mid-run. */
 const SUPPORTED_JOB_KEYS = new Set([
     "name",
     "runs-on",
-    "needs",
-    "permissions",
-    "environment",
-    "concurrency",
-    "outputs",
     "steps",
+    // Kept deliberately. `permissions` scopes GITHUB_TOKEN for actions, which
+    // verify does not run; `outputs` is consumed by other jobs. Neither
+    // changes whether or how this job's steps execute.
+    "permissions",
+    "outputs",
 ])
 
 /** Same reasoning one level up: workflow-level `defaults` and `env` reach every
@@ -289,12 +335,21 @@ const RUNNER_VARIABLE = /\$\{?((?:GITHUB|RUNNER)_[A-Z_]+)/g
  *  verify stopped, the one direction of divergence that wastes your time. */
 const FAILURE_COMPENSATOR = /^steps\.([\w-]+)\.outcome == 'failure'$/
 
-/** Commands that cannot succeed. Matching the `if:` shape is not enough to
- *  prove a step re-fails the job: a later step gated on the same outcome that
- *  merely reports (`run: echo "tests failed"`) leaves CI green while verify
- *  stops red. Verify cannot decide in general whether a command fails, so it
- *  accepts only ones that unconditionally do. */
-const ALWAYS_FAILS = /^(?:false|exit\s+[1-9][0-9]*)$/
+/** Does this command definitely exit non-zero? Matching the `if:` shape is not
+ *  enough to prove a step re-fails the job: a later step gated on the same
+ *  outcome that merely reports (`run: echo "tests failed"`) leaves CI green
+ *  while verify stops red. Verify cannot decide this in general, so it accepts
+ *  only commands that unconditionally fail.
+ *
+ *  `exit N` is taken modulo 256 by the shell, so `exit 256` and `exit 512` are
+ *  SUCCESS — a compensator written that way compensates for nothing. `exit 300`
+ *  is a genuine failure (status 44) and is accepted. */
+const alwaysFails = (command: string) => {
+    const trimmed = command.trim()
+    if (trimmed === "false") return true
+    const status = trimmed.match(/^exit\s+([0-9]+)$/)?.[1]
+    return status !== undefined && Number(status) % 256 !== 0
+}
 
 /** GitHub `if:` expressions verify knows how to answer locally. Returning null
  *  means "unrecognised", which stops the run — a new conditional step must get
@@ -381,10 +436,7 @@ const assertCompensated = (
             if (tolerated !== undefined && tolerated !== false) return false
             // `typeof`, not `!== undefined`: `run: true` is a YAML boolean, and
             // it is exactly the no-op that must not count as a compensator.
-            return (
-                typeof other.run === "string" &&
-                ALWAYS_FAILS.test(other.run.trim())
-            )
+            return typeof other.run === "string" && alwaysFails(other.run)
         })
     if (!compensator)
         throw teach(
@@ -599,6 +651,15 @@ export const buildPlan = (workflowSource: string): Plan => {
                     throw teach(
                         `Step "${name}" in \`jobs.${jobName}\` of ${WORKFLOW} now uses \`${action}\`, but SKIPPED_ACTIONS was written for \`${actionPolicy.action}\`. Re-decide whether it still has no local equivalent.`,
                     )
+                if (actionPolicy.config !== undefined) {
+                    const digest = configDigest(step)
+                    if (digest !== actionPolicy.config)
+                        throw teach(
+                            `Step "${name}" in \`jobs.${jobName}\` of ${WORKFLOW} runs caller-supplied code, and its configuration has changed (${actionPolicy.config} -> ${digest}).\n\n` +
+                                `Verify skips it because: ${actionPolicy.reason}.\n\n` +
+                                `Re-read the script. If it gained a failure path (\`core.setFailed\`, a throw) with no local equivalent, give it one — that is how the JUnit coverage gate came to exist. If the change is cosmetic, update the digest in SKIPPED_ACTIONS to ${digest}.`,
+                        )
+                }
                 matchedActionSkips.add(key)
                 skipped.push({
                     name,

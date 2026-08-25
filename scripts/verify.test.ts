@@ -184,6 +184,20 @@ describe("verify refuses to run a job it cannot reproduce", () => {
                 ...runBlock(policy.run),
             ])
 
+    /** Lift a step verbatim out of the real workflow. `Test Report` carries a
+     *  config digest, so a stub would only ever exercise the mismatch path —
+     *  the fixture has to contain the actual reviewed step. */
+    const realStepYaml = (stepName: string) => {
+        const lines = workflowSource.split("\n")
+        const start = lines.findIndex(
+            line => line === `            - name: ${stepName}`,
+        )
+        expect(start).toBeGreaterThan(-1)
+        let end = start + 1
+        while (end < lines.length && !/^ {12}- /.test(lines[end]!)) end++
+        return lines.slice(start, end)
+    }
+
     // Mirrors the real workflow's action layout, because SKIPPED_ACTIONS is
     // keyed by job AND step: every entry must be matched by some step here or
     // the stale-entry check fires.
@@ -199,8 +213,7 @@ describe("verify refuses to run a job it cannot reproduce", () => {
             "            - uses: actions/setup-node@v6",
             ...skippedStepYaml("test"),
             ...steps,
-            "            - name: Test Report",
-            "              uses: actions/github-script@v9",
+            ...realStepYaml("Test Report"),
             "    valdres-package:",
             "        runs-on: ubuntu-22.04",
             "        steps:",
@@ -602,6 +615,15 @@ describe("verify refuses to run a job it cannot reproduce", () => {
                 ["if: steps.gate.outcome == 'failure'", "run: exit 42"],
             ],
             [
+                "exit 255",
+                ["if: steps.gate.outcome == 'failure'", "run: exit 255"],
+            ],
+            [
+                // Shell status 44 — genuinely fails, so accepting it is right.
+                "exit 300",
+                ["if: steps.gate.outcome == 'failure'", "run: exit 300"],
+            ],
+            [
                 'a quoted "false"',
                 ["if: steps.gate.outcome == 'failure'", 'run: "false"'],
             ],
@@ -615,6 +637,16 @@ describe("verify refuses to run a job it cannot reproduce", () => {
                 ["if: steps.gate.outcome == 'failure'", "run: echo failed"],
             ],
             ["exit 0", ["if: steps.gate.outcome == 'failure'", "run: exit 0"]],
+            [
+                // The shell takes exit codes modulo 256, so these SUCCEED and
+                // compensate for nothing.
+                "exit 256",
+                ["if: steps.gate.outcome == 'failure'", "run: exit 256"],
+            ],
+            [
+                "exit 512",
+                ["if: steps.gate.outcome == 'failure'", "run: exit 512"],
+            ],
             [
                 "run: true (a YAML boolean, not the shell command)",
                 ["if: steps.gate.outcome == 'failure'", "run: true"],
@@ -701,6 +733,49 @@ describe("verify refuses to run a job it cannot reproduce", () => {
         )
         expect(() => buildPlan(source)).toThrow(
             /now uses `some\/other-action`, but SKIPPED_ACTIONS was written for/,
+        )
+    })
+
+    // github-script runs arbitrary caller-supplied JS that can call
+    // `core.setFailed`. The skip reason is a claim about what that script does,
+    // so the script is pinned by digest — otherwise adding a gate to it stays
+    // silently omitted, which is the hole this file started from.
+    test("a code-executing action whose script changed is an error", () => {
+        // A new gate smuggled into the reporter's script — the shape that hid
+        // the JUnit coverage gate for this PR's first four rounds.
+        const source = fixture(step("Gate", ["run: echo ok"])).replace(
+            "                      const testStepFailed =",
+            "                      core.setFailed('brand new gate');\n                      const testStepFailed =",
+        )
+        expect(source).toContain("brand new gate")
+        expect(() => buildPlan(source)).toThrow(
+            /runs caller-supplied code, and its configuration has changed/,
+        )
+    })
+
+    test("bumping a code-executing action's version is not a failure", () => {
+        // The digest deliberately excludes the `uses:` version; the action slug
+        // is checked separately.
+        const source = fixture(step("Gate", ["run: echo ok"])).replace(
+            "actions/github-script@v9",
+            "actions/github-script@v10",
+        )
+        expect(() => buildPlan(source)).not.toThrow()
+    })
+
+    // These do not change what a job's steps do — they change WHETHER the job
+    // runs, which verify models not at all.
+    test.each([
+        ["needs", "        needs: [build]"],
+        ["environment", "        environment: staging"],
+        ["concurrency", "        concurrency: ci-test"],
+    ])("job-level %s is an error", (key, block) => {
+        const source = fixture(step("Gate", ["run: echo ok"])).replace(
+            "    test:\n        runs-on: ubuntu-22.04",
+            `    test:\n${block}\n        runs-on: ubuntu-22.04`,
+        )
+        expect(() => buildPlan(source)).toThrow(
+            new RegExp(`job key\\(s\\) verify does not honour: ${key}`),
         )
     })
 
