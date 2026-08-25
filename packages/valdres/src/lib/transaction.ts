@@ -515,7 +515,10 @@ export class TransactionContext {
         // Staging-time freeze + validation (see normalizeStagedValue): a schema
         // failure throws inside the user's callback, so commit never runs and
         // the transaction stays atomic. This also covers stores using implicit
-        // batched txns.
+        // batched txns. `deepFreezePolicyFuzz.test.ts` holds this path to the
+        // same freeze policy as the commit-time one in setValueInData, and
+        // checks the atomicity claim by staging a sibling write beside a value
+        // the policy rejects.
         resolved = normalizeStagedValue(atom, resolved, this._data)
         // One draft load for the whole staging body: bulk staging loops (5k+
         // member updates) are Bencher-gated, so keep the per-set load profile
@@ -601,7 +604,8 @@ export class TransactionContext {
             // this public bulk path cannot be used to bypass a store's schema
             // boundary. Hydrate's lenient mode supplies a per-entry handler so
             // invalid members can be skipped without giving up one grouped
-            // write per family.
+            // write per family. This path is one of the write paths
+            // `deepFreezePolicyFuzz.test.ts` requires to agree with the rest.
             if (!onSchemaError) {
                 resolved = normalizeStagedValue(atom, resolved, this._data)
             } else {
