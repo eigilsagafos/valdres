@@ -1,6 +1,9 @@
 import type { Selector } from "../types/Selector"
 import type { StoreData } from "../types/StoreData"
-import { noteStateValueChanged } from "./stateRevisions"
+import {
+    endColdValidationPassForExternalChange,
+    noteStateValueChanged,
+} from "./stateRevisions"
 import { valdresGlobal } from "./valdresGlobal"
 
 const createSuspendErrorClass = () => {
@@ -38,6 +41,12 @@ export const cleanUpRejectedPromise = <Value>(
     if (data.values.has(selector) && data.values.get(selector) !== promise)
         return
     if (data.values.delete(selector)) {
+        // Retire any validation pass in flight. `noteStateValueChanged` exempts
+        // selectors — a walk re-deriving one cannot invalidate its own
+        // conclusions — but this drop comes from a rejected promise, which the
+        // walk did not derive. Reached at depth 0 in the ordinary microtask case,
+        // where this is simply redundant with the revision bump.
+        endColdValidationPassForExternalChange(data.tree)
         noteStateValueChanged(selector, data)
     }
 }

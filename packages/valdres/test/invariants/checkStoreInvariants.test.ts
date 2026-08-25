@@ -335,4 +335,49 @@ describe("checkStoreInvariants — corrupted fixtures", () => {
             ),
         ).toBe(true)
     })
+
+    test("retained-registration: a cold snapshot stamped past the tree pass is caught", async () => {
+        const a = atom(1, { name: n("a") })
+        const s1 = selector(get => get(a), { name: n("s1") })
+        const st = store()
+        const unsub = st.sub(s1, () => {}, false)
+        unsub()
+        await Promise.resolve()
+        expect(
+            checkStoreInvariants(st, { quiescent: true, states: [a, s1] }),
+        ).toEqual([])
+
+        const data = getStoreData(st)
+        const cache = data.coldSelectorCaches.get(s1)!
+        // A stamp ahead of the monotonic tree counter can never be retired, so
+        // the snapshot would be served forever without a dependency comparison.
+        cache.validatedInPass = data.tree.coldValidationPass + 1
+        expect(
+            has(
+                checkStoreInvariants(st, { quiescent: true, states: [s1] }),
+                "retained-registration",
+            ),
+        ).toBe(true)
+    })
+
+    test("retained-registration: a non-validatable cold snapshot holding a live pass stamp is caught", async () => {
+        const a = atom(1, { name: n("a") })
+        const s1 = selector(get => get(a), { name: n("s1") })
+        const st = store()
+        const unsub = st.sub(s1, () => {}, false)
+        unsub()
+        await Promise.resolve()
+
+        const data = getStoreData(st)
+        const cache = data.coldSelectorCaches.get(s1)!
+        // Half an invalidation: `validatedAt` retired, pass stamp left live.
+        cache.validatedAt = -1
+        cache.validatedInPass = data.tree.coldValidationPass
+        expect(
+            has(
+                checkStoreInvariants(st, { quiescent: true, states: [s1] }),
+                "retained-registration",
+            ),
+        ).toBe(true)
+    })
 })

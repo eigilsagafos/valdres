@@ -1,4 +1,4 @@
-import type { StoreData } from "../types/StoreData"
+import type { ColdSelectorCache, StoreData } from "../types/StoreData"
 import type { TransactionContext } from "./transaction"
 
 /**
@@ -20,6 +20,15 @@ import type { TransactionContext } from "./transaction"
  *   root                     lib/createStoreData.ts (construction only)
  *   revision / revisionEnabled / trackedRevisions
  *                            lib/stateRevisions.ts, lib/setValueInData.ts
+ *   coldValidationDepth / coldValidationBaseRevision / coldValidationProvisional
+ *                            lib/getState.ts (the validation pass owner)
+ *   coldValidationPass       lib/getState.ts opens and retires the pass; the
+ *                            paths that END one early because something changed
+ *                            outside the walk go through the two helpers in
+ *                            lib/stateRevisions.ts, called from there plus
+ *                            lib/setValueInData.ts, lib/graph/runtime.ts,
+ *                            lib/initSelector.ts and
+ *                            lib/asyncDependencyTracking.ts
  *   commitDepth / commitDidWork
  *                            lib/onCommitEnd.ts (beginCommit/endCommit only —
  *                            disposal must never reset either; a scope disposed
@@ -50,6 +59,19 @@ export type StoreTreeRuntime = {
      *  lets writes skip revision-map churn for unrelated states without
      *  retaining either side of the dependency. */
     trackedRevisions: WeakSet<WeakKey> | undefined
+    /** The cold-cache validation pass: re-entrancy depth (the OUTERMOST entry
+     *  owns the pass, nested ones join it), the pass id (from 1, so the `0` a
+     *  fresh `ColdSelectorCache` carries never matches a live pass), and
+     *  `revision` as of the last pass's end (`-1` before the first). Unlike
+     *  `revision`, the id does NOT move for the materializations a validation
+     *  walk performs itself. Rationale in lib/getState.ts. */
+    coldValidationDepth: number
+    coldValidationPass: number
+    coldValidationBaseRevision: number
+    /** Provisional freshness answers the cycle guard handed out in the pass in
+     *  flight. Non-zero retires the pass when it ends, so a guess never reaches
+     *  a later read — see lib/getState.ts, `isColdSelectorCacheFresh`. */
+    coldValidationProvisional: number
     /** Re-entrancy depth of in-flight commit boundaries for this tree.
      *  Listeners fire when the OUTERMOST boundary closes, so writes performed
      *  by a subscriber coalesce into one notification. */
@@ -73,6 +95,31 @@ export type StoreTreeRuntime = {
     pendingBatchCleanup: (() => void) | undefined
 }
 
+/** Is `cache` still known-current by virtue of the tree's validation pass?
+ *  Shared by the store-boundary read and the read primitive — see the note in
+ *  the body for why it must be exactly one predicate. */
+export const coldCacheIsCurrentInPass = (
+    cache: ColdSelectorCache,
+    tree: StoreTreeRuntime,
+): boolean =>
+    // Three things have to hold. A non-validatable snapshot is never current,
+    // whatever pass stamped it. The snapshot must carry the CURRENT pass id. And
+    // that pass must still be authoritative — true only while one is in flight
+    // (the outermost entry has already advanced the id if the clock moved), or
+    // after one ended with the clock still where it left it. Once a write moves
+    // `revision` past `coldValidationBaseRevision` every stamp from that pass is
+    // void and the next outermost entry allocates a new id.
+    //
+    // Deliberately ONE predicate for lib/storeFromStoreData.ts and
+    // lib/getState.ts: a boundary that answered this differently from the
+    // primitive behind it would serve a value the primitive would have
+    // re-derived. src/selector.test.ts ("cold cache skips re-evaluation after an
+    // unrelated write") is what makes the third term load-bearing.
+    cache.validatedAt >= 0 &&
+    cache.validatedInPass === tree.coldValidationPass &&
+    (tree.coldValidationDepth > 0 ||
+        tree.coldValidationBaseRevision === tree.revision)
+
 /** Build the tree sidecar for a new ROOT store. Scopes never call this — they
  *  inherit `parent.tree` by reference. */
 export const createStoreTreeRuntime = (root: StoreData): StoreTreeRuntime => ({
@@ -80,6 +127,10 @@ export const createStoreTreeRuntime = (root: StoreData): StoreTreeRuntime => ({
     revision: 0,
     revisionEnabled: false,
     trackedRevisions: undefined,
+    coldValidationDepth: 0,
+    coldValidationPass: 1,
+    coldValidationBaseRevision: -1,
+    coldValidationProvisional: 0,
     commitDepth: 0,
     commitDidWork: false,
     commitEndListeners: undefined,

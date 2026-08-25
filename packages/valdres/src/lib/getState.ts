@@ -22,7 +22,9 @@ import { resolveAtomDefaultValue } from "./resolveAtomDefaultValue"
 import { setValueInData } from "./setValueInData"
 import { getStateRevision, noteStateValueChanged } from "./stateRevisions"
 import { stateNameSuffix } from "./stateNameForError"
+import { IS_PROD } from "./IS_PROD"
 import { isStoreDisposed } from "./storeLifecycle"
+import { coldCacheIsCurrentInPass } from "./storeTreeRuntime"
 import { validateResolvedValue } from "./validateResolvedValue"
 import { validateSchema } from "./validateSchema"
 import {
@@ -178,6 +180,53 @@ const coordinateDeletedMemberDefault = <Value>(
     )
 }
 
+/**
+ * Is this cold snapshot still consistent with what its dependencies hold now?
+ *
+ * THE VALIDATION PASS, and why `validatedAt` alone was not enough of a memo.
+ * This is the canonical explanation; the fields it describes
+ * (`ColdSelectorCache.validatedInPass`, `StoreTreeRuntime.coldValidation*`)
+ * point here rather than repeating it.
+ *
+ * `validatedAt` records the tree-wide revision clock at the moment a snapshot
+ * was proven current, and `validatedAt === tree.revision` is the O(1) "nothing
+ * anywhere has changed since" shortcut. The problem is that a validation walk
+ * ADVANCES that clock itself: reaching a stale selector dependency re-evaluates
+ * it, and committing the new value bumps the revision. So the first
+ * re-evaluation inside a walk aged the stamp of every sibling snapshot the same
+ * walk had already validated, and each of those then re-walked its entire
+ * dependency closure — repeatedly, once per re-evaluation. The shortcut hit
+ * ZERO times during a load. On a deep, shared graph under write churn the cost
+ * was superlinear in graph size: a wide fan-in layer was re-validated once per
+ * dependent above it, and a real app measured 102,241 revision comparisons for
+ * a single write-then-read over a graph with 7,020 edges.
+ *
+ * The pass id fixes it by being a clock that does NOT tick for the walk's own
+ * materializations. A snapshot stamped in the pass still in flight is current by
+ * construction: a selector's value is a pure function of its dependencies, so
+ * anything the walk re-derived cannot have changed what an earlier-validated
+ * snapshot observed. The pass also survives BETWEEN top-level reads — it ends
+ * only when the clock moves while no pass is in flight — so a burst of reads
+ * over one cold graph (React calling getSnapshot for every mounted component)
+ * validates each snapshot at most once in total rather than once per root.
+ *
+ * The premise has two holes, both closed rather than assumed away. A revision
+ * advancing for something the walk did NOT derive — user code re-entering the
+ * store and writing from a selector body, an atom default resolving, an async
+ * settlement — ends the pass on the spot (`endColdValidationPass`). And a
+ * freshness answer that came from the cycle guard is a GUESS, not a proof, so a
+ * pass that used one is retired when it ends rather than carried into the next
+ * read (see the guard below).
+ */
+/** Count the comparisons one validation is about to make. Per validation, not
+ * per comparison, so the loop stays a plain indexed compare — a mid-loop
+ * bail-out over-counts, the safe direction for an upper-bound gate. */
+const recordColdCacheDependencyChecks = (data: StoreData, count: number) => {
+    const instrumentation = data.architectureInstrumentation
+    if (instrumentation)
+        instrumentation.counters.coldCacheDependencyChecks += count
+}
+
 const isColdSelectorCacheFresh = (
     selector: Selector,
     cache: ColdSelectorCache,
@@ -185,11 +234,18 @@ const isColdSelectorCacheFresh = (
     initializedAtomsSet: Set<Atom>,
     circularDependencySet?: WeakSet<Selector>,
 ): boolean => {
-    if (cache.validatedAt === data.tree.revision) return true
+    const tree = data.tree
+    if (cache.validatedAt === tree.revision) return true
     // Negative snapshots are deliberately non-validatable: either a late async
     // read changed the dependency set before its revision array was rebuilt, or
     // the evaluation observed a dependency revision that is no longer current.
+    // Checked BEFORE the pass memo so an invalidation can never be memoed away.
     if (cache.validatedAt < 0) return false
+    // Already proven current in the pass still in flight: `validatedAt` has
+    // merely aged behind a materialization this same walk performed. Only ever
+    // reached from inside a pass (getColdSelectorState holds the depth), so the
+    // pass needs no separate currency check here.
+    if (cache.validatedInPass === tree.coldValidationPass) return true
 
     const dependencies = cache.dependencies
     if (dependencies.length !== cache.dependencyRevisions.length) return false
@@ -199,6 +255,7 @@ const isColdSelectorCacheFresh = (
     // one or a few atoms), so validate it without three WeakSet operations and
     // without looking the dependency Set up again in stateDependencies.
     if (!cache.hasSelectorDependencies) {
+        if (!IS_PROD) recordColdCacheDependencyChecks(data, dependencies.length)
         for (let index = 0; index < dependencies.length; index++) {
             const dependency = dependencies[index]
             if (
@@ -208,16 +265,38 @@ const isColdSelectorCacheFresh = (
                 return false
             }
         }
-        cache.validatedAt = data.tree.revision
+        cache.validatedAt = tree.revision
+        cache.validatedInPass = tree.coldValidationPass
         return true
     }
 
     // Cached async/dynamic selector graphs can be cyclic. Treat a cache already
     // being validated as provisionally fresh; the outer walk still compares its
     // state revision and every reachable non-cyclic source revision.
-    if (data.coldCacheValidationSet.has(selector)) return true
+    //
+    // This answer is a GUESS, and it must not outlive the read that made it. It
+    // was only ever self-correcting by accident: the walk kept advancing the
+    // clock, so an outer snapshot that leaned on the guess had its `validatedAt`
+    // aged before the next read and got re-walked. A pass stamp does not age, so
+    // letting one survive freezes the guess — a dependency set that turns cyclic
+    // dynamically (a branch flipping to read its own dependent) reported
+    // SelectorCircularDependencyError once and then served two values that
+    // contradicted each other, forever.
+    //
+    // So count the guess, and retire the whole pass when it ends (see the exit in
+    // getColdSelectorState). The within-read memo still applies, which is what
+    // keeps a cyclic graph from being quadratic; only the CROSS-read memo is
+    // given up, which is exactly the guarantee a guess cannot support. Cyclic
+    // cold graphs therefore keep the pre-pass behaviour — the cycle is reported
+    // on every read and no snapshot freezes — and acyclic graphs, where the whole
+    // performance problem lives, pay nothing.
+    if (data.coldCacheValidationSet.has(selector)) {
+        tree.coldValidationProvisional++
+        return true
+    }
     data.coldCacheValidationSet.add(selector)
     try {
+        if (!IS_PROD) recordColdCacheDependencyChecks(data, dependencies.length)
         for (let index = 0; index < dependencies.length; index++) {
             const dependency = dependencies[index]
             if (isSelector(dependency)) {
@@ -237,7 +316,23 @@ const isColdSelectorCacheFresh = (
         }
         // Dependency validation can itself materialize values and advance the
         // shared clock. This snapshot is current through the end of that walk.
-        cache.validatedAt = data.tree.revision
+        // A walk that leaned on the cycle guard's guess records NOTHING: not the
+        // pass stamp, and not `validatedAt` either. Keeping `validatedAt` would
+        // still let a later read accept the guess whenever the clock happened not
+        // to have moved since, which is how a dynamically-cyclic graph stopped
+        // reporting SelectorCircularDependencyError. Re-walking every read is
+        // what the pre-pass code did here, by accident; this makes it the rule.
+        // A walk that leaned on the cycle guard's guess records NOTHING: not the
+        // pass stamp, and not `validatedAt` either. Suppressing only the pass
+        // stamp is not enough — a later read still accepts the guess whenever the
+        // clock happens not to have moved since, which froze a dynamically-cyclic
+        // graph at an inconsistent state (S4 serving a value while the same store
+        // served a different S2 that S4's body is defined as reading) and stopped
+        // reporting SelectorCircularDependencyError entirely. Recording nothing
+        // makes a dynamic cycle behave like a STATIC one, which already throws on
+        // every cold read.
+        cache.validatedAt = tree.revision
+        cache.validatedInPass = tree.coldValidationPass
         return true
     } finally {
         data.coldCacheValidationSet.delete(selector)
@@ -245,7 +340,8 @@ const isColdSelectorCacheFresh = (
 }
 
 /** Validate a cache entry already resolved by the caller while retaining the
- * normal recursive selector-validation path. */
+ * normal recursive selector-validation path. Owns the validation pass — see
+ * `isColdSelectorCacheFresh` for what the pass is for. */
 const getColdSelectorState = <Value>(
     selector: Selector<Value>,
     cache: ColdSelectorCache,
@@ -253,16 +349,54 @@ const getColdSelectorState = <Value>(
     initializedAtomsSet: Set<Atom>,
     circularDependencySet?: WeakSet<Selector>,
 ): Value => {
+    const tree = data.tree
+    // Snapshot already proven current in the pass in flight (or in the last one,
+    // with nothing changed since it ended). This is the dominant shape for a
+    // read burst over a shared cold graph, and it deliberately skips the pass
+    // bookkeeping below: paying that per cached dependency read is the cost this
+    // memo exists to remove.
+    if (coldCacheIsCurrentInPass(cache, tree)) {
+        return data.values.get(selector)
+    }
     if (
-        !isColdSelectorCacheFresh(
-            selector,
-            cache,
-            data,
-            initializedAtomsSet,
-            circularDependencySet,
-        )
+        tree.coldValidationDepth === 0 &&
+        tree.coldValidationBaseRevision !== tree.revision
     ) {
-        initSelector(selector, data, initializedAtomsSet, circularDependencySet)
+        tree.coldValidationPass++
+    }
+    if (tree.coldValidationDepth === 0) tree.coldValidationProvisional = 0
+    tree.coldValidationDepth++
+    try {
+        // Re-evaluation stays INSIDE the pass. Running it outside would advance
+        // the clock and then re-open a fresh pass for each dependency the
+        // re-evaluation reads, discarding the memo exactly where it pays most.
+        if (
+            !isColdSelectorCacheFresh(
+                selector,
+                cache,
+                data,
+                initializedAtomsSet,
+                circularDependencySet,
+            )
+        ) {
+            initSelector(
+                selector,
+                data,
+                initializedAtomsSet,
+                circularDependencySet,
+            )
+        }
+    } finally {
+        if (--tree.coldValidationDepth === 0) {
+            tree.coldValidationBaseRevision = tree.revision
+            // The pass leaned on the cycle guard's guess, so nothing it stamped
+            // may be trusted by a LATER read. Retiring the id voids every stamp
+            // it wrote in one integer bump.
+            if (tree.coldValidationProvisional !== 0) {
+                tree.coldValidationProvisional = 0
+                tree.coldValidationPass++
+            }
+        }
     }
     return data.values.get(selector)
 }

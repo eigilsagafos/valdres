@@ -2,6 +2,7 @@ import type { Atom } from "../types/Atom"
 import type { AtomFamily } from "../types/AtomFamily"
 import type { StoreData } from "../types/StoreData"
 import { deepFreeze } from "../utils/deepFreeze"
+import { endColdValidationPass } from "./stateRevisions"
 import { isAtomFamily } from "../utils/isAtomFamily"
 import { ensureFamilyAncestorChain } from "./atomFamilyIndex"
 import {
@@ -76,6 +77,13 @@ export const setValueInData = <Value extends unknown>(
     if (tree.revisionEnabled && tree.trackedRevisions!.has(atom)) {
         data.stateRevisions.set(atom, ++tree.revision)
     }
+    // A write landing INSIDE a cold-cache validation walk (user code re-entering
+    // the store from a selector body, a lazy default resolving) voids that walk's
+    // premise. Deliberately OUTSIDE the tracking guard above: an UNTRACKED atom
+    // bumps no revision of its own, but its write still propagates into live
+    // selectors that ARE tracked dependencies of cold snapshots, so the walk's
+    // conclusions are just as void. See lib/stateRevisions.ts.
+    if (tree.coldValidationDepth !== 0) endColdValidationPass(atom, tree)
     if (isNewAtomInScope) {
         trackScopeValue(atom, data)
         // The new shadow cuts this store's dependent subtree off from ancestor

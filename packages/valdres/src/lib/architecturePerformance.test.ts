@@ -52,6 +52,7 @@ describe("deterministic architecture performance gates", () => {
             livenessWorkAllocations: 0,
             schedulerCycleFallbacks: 0,
             livenessEdgeVisits: 0,
+            coldCacheDependencyChecks: 0,
             mountEdgeVisits: 0,
             mountTransitions: 0,
             unmountTransitions: 0,
