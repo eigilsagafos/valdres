@@ -31,6 +31,10 @@ export type ColdSelectorCache = {
     dependencies: State[]
     dependencyRevisions: number[]
     validatedAt: number
+    /** Validation pass this snapshot was last proven current in; `0` means
+     * never. Why `validatedAt` is not a sufficient memo on its own:
+     * lib/getState.ts, `isColdSelectorCacheFresh`. */
+    validatedInPass: number
     /** Atom/family-only dependency sets cannot contain a selector cycle, so
      * their validation skips the recursive cycle guard entirely. */
     hasSelectorDependencies: boolean

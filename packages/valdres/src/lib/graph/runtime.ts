@@ -3,6 +3,7 @@ import type { Selector } from "../../types/Selector"
 import type { State } from "../../types/State"
 import type { StoreData } from "../../types/StoreData"
 import { isSelector } from "../../utils/isSelector"
+import { endColdValidationPassForExternalChange } from "../stateRevisions"
 import { DISPOSED_STORE_PENDING } from "../storeLifecycle"
 import { cleanupOrphanedDeps } from "./cleanupOrphanedDeps"
 import {
@@ -264,8 +265,21 @@ export const installLateDependency = (
         } else {
             // The dependency list no longer aligns with the cold cache's
             // revision array. Force validation/re-evaluation on the next read.
+            // Clear the pass stamp too: this can land in a microtask while the
+            // pass that validated the snapshot is still the current one (the
+            // clock need not have moved), and the pass memo would otherwise
+            // serve the value this invalidation exists to retire.
             const cache = data.coldSelectorCaches.get(selector)
-            if (cache) cache.validatedAt = -1
+            if (cache) {
+                cache.validatedAt = -1
+                cache.validatedInPass = 0
+            }
+            // Retiring this snapshot is not enough. Before the pass memo, an
+            // ANCESTOR revalidating always re-read every selector dependency and
+            // so pulled the repair through; with the memo a stamped ancestor
+            // skips that loop entirely and never sees it. End the pass so every
+            // ancestor re-walks, as it used to.
+            endColdValidationPassForExternalChange(data.tree)
         }
     }
     return isNewDep

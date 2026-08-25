@@ -65,6 +65,12 @@ const GRAPH_LEAF_ALLOWLIST = new Set([
     "src/errors/StoreDisposedError.ts",
     // Shared error-brand helper; zero imports of its own.
     "src/errors/lib/errorBrand.ts",
+    // The tree sidecar, reached through stateRevisions when orphan cleanup's
+    // demote gate records a cold snapshot: recording now asks the tree whether
+    // the validating walk's evidence still holds (coldValidationMayRecord).
+    // Its own two imports are BOTH type-only, so it has no runtime edges at all
+    // and cannot re-enter the write path.
+    "src/lib/storeTreeRuntime.ts",
 ])
 
 /** Production files allowed to write graph-table fields directly. */

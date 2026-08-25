@@ -40,6 +40,7 @@ import { reportAsyncSchemaError } from "./reportAsyncSchemaError"
 import { setValueInData } from "./setValueInData"
 import {
     getStateRevision,
+    endColdValidationPassForExternalChange,
     markColdSelectorCacheValidated,
     recordColdSelectorCache,
     trackStateRevision,
@@ -93,6 +94,12 @@ const applyNativeSelectorSettlement = (
     _evaluationContext: SelectorEvaluationContext | undefined,
     dependencyRevisions: Map<State, number> | undefined,
 ) => {
+    // An async result landing is an external change to this selector's value, so
+    // the `isSelector` exemption in `endColdValidationPass` must not cover it.
+    // Ordinarily this runs in a microtask at depth 0 and is redundant with the
+    // revision bump; it matters only when a synchronous thenable puts the
+    // settlement inside a validation walk.
+    endColdValidationPassForExternalChange(data.tree)
     setValueInData(selector, resolved, data)
     const resolvedDependencies = data.stateDependencies.get(selector)
     if (resolvedDependencies && !data.selectorGraphActive.has(selector)) {
