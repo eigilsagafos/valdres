@@ -81,9 +81,31 @@ const JOBS = ["test", "valdres-package"]
  *  ci.yaml must appear either here or in JOBS — a new job is otherwise outside
  *  verify's coverage with nothing to say so, which is the drift this command
  *  exists to prevent. */
-const SKIPPED_JOBS: Record<string, string> = {
-    publish:
-        "push-to-main only (`github.event_name == 'push'`), never a pull-request gate — and it publishes to npm",
+const SKIPPED_JOBS: Record<string, { when: string; reason: string }> = {
+    publish: {
+        // Stored, not assumed. The reason below is only true while this exact
+        // condition holds; widening or deleting it turns `publish` into a
+        // pull-request job that verify would go on silently skipping.
+        when: "github.event_name == 'push' && github.ref == 'refs/heads/main'",
+        reason: "push-to-main only, never a pull-request gate — and it publishes to npm",
+    },
+}
+
+/** `uses:` steps in covered jobs, and why each has no local equivalent. An
+ *  unlisted action is a hard error rather than assumed plumbing: an action can
+ *  be a gate (the JUnit reporter was, until it was extracted) or can prepare
+ *  state that later shell steps depend on, and either way verify omitting it
+ *  silently is the drift this command exists to prevent. */
+const SKIPPED_ACTIONS: Record<string, string> = {
+    "actions/checkout": "you already have a checkout",
+    "oven-sh/setup-bun":
+        "installs the pinned Bun; verify compares your local Bun against that pin in preflight instead",
+    "actions/setup-node":
+        "installs the pinned Node; compared against your local Node in preflight instead",
+    "dorny/paths-filter":
+        "decides whether the path-filtered job runs at all; verify always runs it rather than reasoning about your diff",
+    "actions/github-script":
+        "posts the JUnit summary to the GitHub Checks API. Its one GATE — every test-bearing package must emit a report — is enforced by scripts/check-junit-coverage.ts, which runs as a shell step verify executes",
 }
 
 /** Commands verify runs once even though more than one CI job runs them. Every
@@ -173,12 +195,16 @@ export type PlannedStep = {
     env: Record<string, string>
 }
 
+/** Covered job name -> the version that job pins, or undefined if it sets up no
+ *  such toolchain at all (which is itself a problem, not a neutral absence). */
+export type ToolPins = Record<string, string | undefined>
+
 export type Plan = {
     steps: PlannedStep[]
     skipped: Array<{ name: string; reason: string }>
-    /** Every distinct pin found across the covered jobs. More than one means no
-     *  single local toolchain can replay them; none means verify cannot tell. */
-    pinned: { bun: string[]; node: string[] }
+    /** Per job, so a job losing its setup action is visible. Disagreeing pins
+     *  mean no single local toolchain can replay them. */
+    pinned: { bun: ToolPins; node: ToolPins }
     /** Every distinct `runs-on` label across the covered jobs. */
     runners: string[]
 }
@@ -296,8 +322,12 @@ const assertCompensated = (
             if ((other.if ?? "").trim().match(FAILURE_COMPENSATOR)?.[1] !== id)
                 return false
             // A compensator that is itself tolerated fails nothing, and an
-            // action step's effect on the job is opaque to verify.
-            if (other["continue-on-error"] === true) return false
+            // action step's effect on the job is opaque to verify. Anything but
+            // a literal `false`/absent disqualifies it: `continue-on-error:
+            // ${{ true }}` is a string, so an `=== true` test would miss it and
+            // certify a compensator GitHub will tolerate.
+            const tolerated = other["continue-on-error"]
+            if (tolerated !== undefined && tolerated !== false) return false
             // `typeof`, not `!== undefined`: `run: true` is a YAML boolean, and
             // it is exactly the no-op that must not count as a compensator.
             return (
@@ -393,9 +423,27 @@ export const buildPlan = (workflowSource: string): Plan => {
             )}. Update JOBS / SKIPPED_JOBS.`,
         )
 
+    // Each skip reason is only true while the job's condition holds. Widening
+    // or deleting `jobs.publish.if` would make it a pull-request job that
+    // verify goes on skipping while claiming both PR jobs are covered — so
+    // assert the condition, do not take the comment's word for it.
+    for (const [jobName, policy] of Object.entries(SKIPPED_JOBS)) {
+        const actual = (workflow.jobs?.[jobName] as { if?: string } | undefined)
+            ?.if
+        if (actual?.trim() !== policy.when)
+            throw teach(
+                `\`jobs.${jobName}\` in ${WORKFLOW} is skipped by verify because it is ${policy.reason}, which holds only while its condition is:\n` +
+                    `    ${policy.when}\n` +
+                    `but the workflow now says:\n` +
+                    `    ${actual?.trim() ?? "(no `if:` at all)"}\n` +
+                    `If it can now gate pull requests, move it to JOBS.`,
+            )
+    }
+
     const planned: PlannedStep[] = []
     const skipped: Plan["skipped"] = []
     const matchedPolicySkips = new Set<string>()
+    const matchedActionSkips = new Set<string>()
     const alreadyRun = new Map<string, string>()
 
     for (const jobName of JOBS) {
@@ -468,19 +516,41 @@ export const buildPlan = (workflowSource: string): Plan => {
                     `Step "${name}" in ${WORKFLOW} is a \`run:\` step carrying \`with:\`, which only applies to \`uses:\` steps.`,
                 )
 
-            // `uses:` steps are runner plumbing (checkout, toolchain install)
-            // or GitHub API reporting. Locally you already have a checkout and
-            // a toolchain; the pins are compared in the preflight below and
-            // gated by scripts/toolchain-version.test.ts.
+            // An action is only plumbing if someone said so. Actions can be
+            // gates (the JUnit reporter was one) or can prepare state later
+            // shell steps rely on, so an unlisted one stops the run.
             if (step.run === undefined) {
+                if (step.uses === undefined)
+                    throw teach(
+                        `Step "${name}" in \`jobs.${jobName}\` of ${WORKFLOW} has neither \`run:\` nor \`uses:\`.`,
+                    )
+                const action = step.uses.split("@")[0]!
+                const actionReason = SKIPPED_ACTIONS[action]
+                if (actionReason === undefined)
+                    throw teach(
+                        `Step "${name}" in \`jobs.${jobName}\` of ${WORKFLOW} uses \`${action}\`, which verify does not know. Actions can gate the job or set up state later steps need — add it to SKIPPED_ACTIONS with a reason, or give it a local equivalent.`,
+                    )
+                matchedActionSkips.add(action)
                 skipped.push({
                     name,
-                    reason: step.uses
-                        ? "`uses:` action — no local shell equivalent"
-                        : "no `run:` block",
+                    reason: `\`${action}\` — ${actionReason}`,
                 })
                 return
             }
+
+            // VALIDATE BEFORE CLASSIFYING. Everything below this point can
+            // decide not to run the step, and a step that verify skips locally
+            // still shapes CI's behaviour — the failure compensator is skipped
+            // here yet decides whether `Test` may be treated as fatal. Checking
+            // only the steps verify executes left those unvalidated.
+            assertSupportedKeys(
+                step as Record<string, unknown>,
+                `Step "${name}"`,
+                SUPPORTED_STEP_KEYS,
+                "step",
+            )
+            assertCompensated(step, name, steps, index)
+            assertReproducible(step, name)
 
             const policyReason = SKIPPED_STEPS[name]
             if (policyReason !== undefined) {
@@ -500,15 +570,6 @@ export const buildPlan = (workflowSource: string): Plan => {
                     return
                 }
             }
-
-            assertSupportedKeys(
-                step as Record<string, unknown>,
-                `Step "${name}"`,
-                SUPPORTED_STEP_KEYS,
-                "step",
-            )
-            assertCompensated(step, name, steps, index)
-            assertReproducible(step, name)
 
             // Skip a repeat only when it is an allowlisted setup command, from
             // a DIFFERENT job, with an identical environment. A repeat inside
@@ -549,22 +610,33 @@ export const buildPlan = (workflowSource: string): Plan => {
                 `key, or drop it if the step is gone.`,
         )
 
-    // Collect EVERY pin across the covered jobs, not the first. Each job pins
-    // its own toolchain, but verify runs them all under one local version — so
-    // if the jobs ever disagree, no local toolchain can be correct for both and
-    // preflight must say so rather than validating against whichever came
-    // first. An absent pin is equally fatal: verify cannot claim parity with a
-    // version it does not know.
-    const allSteps = JOBS.flatMap(name => workflow.jobs?.[name]?.steps ?? [])
-    const pins = (action: string, input: string) => [
-        ...new Set(
-            allSteps
-                .filter(step => step.uses?.startsWith(action))
-                .map(step => step.with?.[input])
-                .filter((value): value is string => value !== undefined)
-                .map(String),
-        ),
-    ]
+    const staleActions = Object.keys(SKIPPED_ACTIONS).filter(
+        action => !matchedActionSkips.has(action),
+    )
+    if (staleActions.length > 0)
+        throw new Error(
+            `SKIPPED_ACTIONS in scripts/verify.ts names action(s) no covered job uses: ${staleActions.join(
+                ", ",
+            )}.\n\n` +
+                `A stale entry is a standing permission to ignore an action that may come ` +
+                `back for a different reason. Drop it.`,
+        )
+
+    // Pins are tracked PER JOB, not pooled. Each covered job sets up its own
+    // toolchain while verify runs them all under one local version, so pooling
+    // hides the case that matters: a job dropping its setup action keeps the
+    // other job's pin in the pool and preflight passes, even though that CI job
+    // now runs on the runner default. Absent and conflicting are both fatal —
+    // verify cannot claim parity with a version it does not know.
+    const pins = (action: string, input: string): ToolPins =>
+        Object.fromEntries(
+            JOBS.map(name => [
+                name,
+                (workflow.jobs?.[name]?.steps ?? []).find(step =>
+                    step.uses?.startsWith(action),
+                )?.with?.[input],
+            ]),
+        )
 
     return {
         steps: planned,
@@ -622,8 +694,26 @@ export const toolchainDrift = (
     const check = (
         label: string,
         installed: string | undefined,
-        candidates: string[],
+        byJob: ToolPins,
     ) => {
+        const unpinnedJobs = Object.keys(byJob).filter(
+            job => byJob[job] === undefined,
+        )
+        if (unpinnedJobs.length > 0) {
+            // That job runs on the runner default, which verify cannot know.
+            drift.push(
+                `${label.trim()} has no pin in ${unpinnedJobs.join(
+                    ", ",
+                )}, so that job runs on the runner default and verify cannot check it`,
+            )
+            lines.push(
+                `  ✗ ${label} ${installed ?? "not found"} — no CI pin in ${unpinnedJobs.join(
+                    ", ",
+                )}`,
+            )
+            return
+        }
+        const candidates = [...new Set(Object.values(byJob) as string[])]
         if (candidates.length > 1) {
             // Verify runs every covered job under ONE local toolchain, so pins
             // that disagree cannot all be satisfied — validating against

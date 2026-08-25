@@ -164,6 +164,14 @@ describe("verify refuses to run a job it cannot reproduce", () => {
             "    test:",
             "        runs-on: ubuntu-22.04",
             "        steps:",
+            // Every entry in SKIPPED_ACTIONS must be used by a covered job, so
+            // a stale standing permission cannot linger. Listing them here
+            // keeps the fixture representative of the real workflow too.
+            "            - uses: actions/checkout@v6",
+            "            - uses: oven-sh/setup-bun@v2",
+            "            - uses: actions/setup-node@v6",
+            "            - uses: dorny/paths-filter@v3",
+            "            - uses: actions/github-script@v9",
             "            - name: Verify publish (dry-run)",
             "              run: DRY_RUN=1 bash scripts/ci-publish.sh",
             "            - name: Verify publish cleanup",
@@ -177,6 +185,9 @@ describe("verify refuses to run a job it cannot reproduce", () => {
             // Declared because SKIPPED_JOBS names it; every job in the file
             // must be classified, and a named job that vanishes is an error.
             "    publish:",
+            // Verify skips this job, and the skip is only valid while this
+            // exact condition keeps it off pull requests.
+            "        if: github.event_name == 'push' && github.ref == 'refs/heads/main'",
             "        runs-on: ubuntu-22.04",
             "        steps:",
             "            - name: Publish",
@@ -627,6 +638,63 @@ describe("verify refuses to run a job it cannot reproduce", () => {
         ).toThrow(/carrying `with:`/)
     })
 
+    // An action can be a gate, or can set up state later shell steps depend
+    // on. Treating every one as plumbing is how the JUnit reporter went
+    // unnoticed for the first four rounds of this PR.
+    test("an unknown action is an error, not assumed plumbing", () => {
+        expect(() =>
+            buildPlan(fixture(step("Lint", ["uses: some/lint-action@v1"]))),
+        ).toThrow(/uses `some\/lint-action`, which verify does not know/)
+    })
+
+    test("a step with neither run: nor uses: is an error", () => {
+        expect(() =>
+            buildPlan(fixture(step("Empty", ["id: nothing"]))),
+        ).toThrow(/neither `run:` nor `uses:`/)
+    })
+
+    test("a SKIPPED_ACTIONS entry no job uses is an error", () => {
+        // A stale entry is a standing permission to ignore an action that may
+        // come back for an entirely different reason.
+        const source = fixture(step("Gate", ["run: echo ok"])).replace(
+            "            - uses: dorny/paths-filter@v3\n",
+            "",
+        )
+        expect(() => buildPlan(source)).toThrow(
+            /names action\(s\) no covered job uses: dorny\/paths-filter/,
+        )
+    })
+
+    // The skip reason for `publish` holds only while its condition does.
+    test.each([
+        ["deleted", (s: string) => s.replace(/^        if: .*\n/m, "")],
+        [
+            "widened",
+            (s: string) =>
+                s.replace(/^        if: .*$/m, "        if: always()"),
+        ],
+    ])("a skipped job whose condition is %s is an error", (_label, mutate) => {
+        const source = fixture(step("Gate", ["run: echo ok"]))
+        expect(() => buildPlan(source)).not.toThrow()
+        expect(() => buildPlan(mutate(source))).toThrow(/holds only while/)
+    })
+
+    // A step verify skips locally still shapes CI's behaviour — the failure
+    // compensator is skipped here yet decides whether `Test` may be fatal.
+    test("a step skipped by its if: is still validated", () => {
+        expect(() =>
+            buildPlan(
+                fixture(
+                    step("Skipped locally", [
+                        "if: steps.gate.outcome == 'failure'",
+                        "shell: python",
+                        "run: exit 1",
+                    ]),
+                ),
+            ),
+        ).toThrow(/does not honour: shell/)
+    })
+
     test("a non-string run: is an error, not a crash", () => {
         // `run: true` / `run: false` are YAML booleans that read as commands.
         expect(() => buildPlan(fixture(step("Bool", ["run: true"])))).toThrow(
@@ -767,7 +835,10 @@ describe("runSteps", () => {
 // already made the size gate pass locally on a commit CI rejected, and that gate
 // now runs inside verify.
 describe("toolchainDrift", () => {
-    const pinned = { bun: ["1.4.0"], node: ["24.16"] }
+    const pinned = {
+        bun: { test: "1.4.0", "valdres-package": "1.4.0" },
+        node: { test: "24.16", "valdres-package": "24.16" },
+    }
     const linux = (bun: string | undefined, node: string | undefined) => ({
         bun,
         node,
@@ -811,22 +882,23 @@ describe("toolchainDrift", () => {
     // false green for the other job.
     test("covered jobs pinning different versions is drift", () => {
         const { drift } = toolchainDrift(linux("1.4.0", "24.16.0"), {
-            bun: ["1.4.0", "1.5.0"],
-            node: ["24.16"],
+            bun: { test: "1.4.0", "valdres-package": "1.5.0" },
+            node: { test: "24.16", "valdres-package": "24.16" },
         })
         expect(drift).toEqual([
             "bun is pinned to 1.4.0 and 1.5.0 by different covered jobs; one local version cannot replay both",
         ])
     })
 
-    test("a missing pin is drift, not an informational note", () => {
-        // Verify cannot claim parity with a version it does not know.
+    test("a job that lost its setup action is drift", () => {
+        // Pooling pins across jobs hid this: the other job's pin satisfied the
+        // check while this one silently ran on the runner default.
         const { drift } = toolchainDrift(linux("1.4.0", "24.16.0"), {
-            bun: ["1.4.0"],
-            node: [],
+            bun: { test: "1.4.0", "valdres-package": "1.4.0" },
+            node: { test: "24.16", "valdres-package": undefined },
         })
         expect(drift).toEqual([
-            "node has no pin in the covered jobs, so verify cannot check it",
+            "node has no pin in valdres-package, so that job runs on the runner default and verify cannot check it",
         ])
     })
 
