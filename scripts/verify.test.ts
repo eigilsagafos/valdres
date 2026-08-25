@@ -3,7 +3,13 @@ import { existsSync, readFileSync } from "fs"
 import { mkdtemp, rm } from "fs/promises"
 import { tmpdir } from "os"
 import { join } from "path"
-import { buildPlan, resolveStart, runSteps, toolchainDrift } from "./verify"
+import {
+    buildPlan,
+    resolveStart,
+    runSteps,
+    SKIPPED_STEPS,
+    toolchainDrift,
+} from "./verify"
 
 // `bun run verify` reproduces ci.yaml's pull-request jobs by reading them out
 // of the workflow. These tests are the other half of that contract: they run
@@ -155,8 +161,32 @@ describe("bun run verify", () => {
 // The whole value of the script is "if it passed, CI's test job passes", so
 // every construct below is a hard error before the first step runs.
 describe("verify refuses to run a job it cannot reproduce", () => {
-    /** A minimal `test` job. Both publish steps are always present because
-     *  SKIPPED_STEPS must match something — that check has its own test. */
+    /** Render a `run:` value back to YAML, block-scalar if multi-line. Used so
+     *  the fixture's skipped steps are generated FROM the policy rather than
+     *  transcribed — the policy now pins their exact commands, and a
+     *  hand-copied near-miss would only test the mismatch path. */
+    const runBlock = (run: string) => {
+        const lines = run.replace(/\n$/, "").split("\n")
+        if (lines.length === 1) return [`              run: ${lines[0]}`]
+        return [
+            "              run: |",
+            ...lines.map(line =>
+                line === "" ? "" : `                  ${line}`,
+            ),
+        ]
+    }
+
+    const skippedStepYaml = (job: string) =>
+        Object.entries(SKIPPED_STEPS)
+            .filter(([, policy]) => policy.job === job)
+            .flatMap(([name, policy]) => [
+                `            - name: ${name}`,
+                ...runBlock(policy.run),
+            ])
+
+    // Mirrors the real workflow's action layout, because SKIPPED_ACTIONS is
+    // keyed by job AND step: every entry must be matched by some step here or
+    // the stale-entry check fires.
     const fixture = (...steps: string[]) =>
         [
             "name: CI",
@@ -164,22 +194,21 @@ describe("verify refuses to run a job it cannot reproduce", () => {
             "    test:",
             "        runs-on: ubuntu-22.04",
             "        steps:",
-            // Every entry in SKIPPED_ACTIONS must be used by a covered job, so
-            // a stale standing permission cannot linger. Listing them here
-            // keeps the fixture representative of the real workflow too.
             "            - uses: actions/checkout@v6",
             "            - uses: oven-sh/setup-bun@v2",
             "            - uses: actions/setup-node@v6",
-            "            - uses: dorny/paths-filter@v3",
-            "            - uses: actions/github-script@v9",
-            "            - name: Verify publish (dry-run)",
-            "              run: DRY_RUN=1 bash scripts/ci-publish.sh",
-            "            - name: Verify publish cleanup",
-            "              run: git diff --exit-code",
+            ...skippedStepYaml("test"),
             ...steps,
+            "            - name: Test Report",
+            "              uses: actions/github-script@v9",
             "    valdres-package:",
             "        runs-on: ubuntu-22.04",
             "        steps:",
+            "            - uses: actions/checkout@v6",
+            "            - name: Detect package and publishing changes",
+            "              uses: dorny/paths-filter@v3",
+            "            - uses: oven-sh/setup-bun@v2",
+            "            - uses: actions/setup-node@v6",
             "            - name: Package gate",
             "              run: bun run scripts/check-valdres-package.ts",
             // Declared because SKIPPED_JOBS names it; every job in the file
@@ -644,7 +673,57 @@ describe("verify refuses to run a job it cannot reproduce", () => {
     test("an unknown action is an error, not assumed plumbing", () => {
         expect(() =>
             buildPlan(fixture(step("Lint", ["uses: some/lint-action@v1"]))),
-        ).toThrow(/uses `some\/lint-action`, which verify does not know/)
+        ).toThrow(/no policy for \(`test \/ Lint`\)/)
+    })
+
+    // The hole this keying closes: an action listed for one step must not grant
+    // a standing permission to a DIFFERENT step using it. A second
+    // github-script calling core.setFailed is exactly the gate-behind-`uses:`
+    // shape that started this file.
+    test("a second step reusing a known action still needs its own policy", () => {
+        expect(() =>
+            buildPlan(
+                fixture(
+                    step("Sneaky gate", [
+                        "uses: actions/github-script@v9",
+                        "with:",
+                        "    script: core.setFailed('nope')",
+                    ]),
+                ),
+            ),
+        ).toThrow(/no policy for \(`test \/ Sneaky gate`\)/)
+    })
+
+    test("a known step swapping to another action is an error", () => {
+        const source = fixture(step("Gate", ["run: echo ok"])).replace(
+            "              uses: actions/github-script@v9",
+            "              uses: some/other-action@v1",
+        )
+        expect(() => buildPlan(source)).toThrow(
+            /now uses `some\/other-action`, but SKIPPED_ACTIONS was written for/,
+        )
+    })
+
+    test("bumping an unnamed action's version is not a failure", () => {
+        // Keying unnamed steps on the versionless slug keeps `@v6` -> `@v7`
+        // from being spurious churn; the `action` field still pins which
+        // action a NAMED step may be.
+        const source = fixture(step("Gate", ["run: echo ok"])).replace(
+            /actions\/checkout@v6/g,
+            "actions/checkout@v7",
+        )
+        expect(() => buildPlan(source)).not.toThrow()
+    })
+
+    test("an action step gains an unhonoured key is an error", () => {
+        // Action steps used to return before key validation entirely.
+        const source = fixture(step("Gate", ["run: echo ok"])).replace(
+            "            - uses: actions/checkout@v6\n",
+            "            - uses: actions/checkout@v6\n              timeout-minutes: 3\n",
+        )
+        expect(() => buildPlan(source)).toThrow(
+            /does not honour: timeout-minutes/,
+        )
     })
 
     test("a step with neither run: nor uses: is an error", () => {
@@ -653,16 +732,26 @@ describe("verify refuses to run a job it cannot reproduce", () => {
         ).toThrow(/neither `run:` nor `uses:`/)
     })
 
-    test("a SKIPPED_ACTIONS entry no job uses is an error", () => {
-        // A stale entry is a standing permission to ignore an action that may
-        // come back for an entirely different reason.
+    test("a SKIPPED_ACTIONS entry no job has is an error", () => {
+        // A stale entry is a standing permission to ignore a step that may come
+        // back for an entirely different reason.
         const source = fixture(step("Gate", ["run: echo ok"])).replace(
-            "            - uses: dorny/paths-filter@v3\n",
+            "            - name: Detect package and publishing changes\n              uses: dorny/paths-filter@v3\n",
             "",
         )
         expect(() => buildPlan(source)).toThrow(
-            /names action\(s\) no covered job uses: dorny\/paths-filter/,
+            /no covered job has: valdres-package \/ Detect package/,
         )
+    })
+
+    // The command is part of the policy, so a step keeping its name while
+    // gaining another gate cannot inherit the skip.
+    test("a skipped step whose command changed is an error", () => {
+        const source = fixture(step("Gate", ["run: echo ok"])).replace(
+            "              run: DRY_RUN=1 bash scripts/ci-publish.sh",
+            "              run: |\n                  DRY_RUN=1 bash scripts/ci-publish.sh\n                  bun run some-new-gate",
+        )
+        expect(() => buildPlan(source)).toThrow(/its command has changed/)
     })
 
     // The skip reason for `publish` holds only while its condition does.

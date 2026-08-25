@@ -91,21 +91,53 @@ const SKIPPED_JOBS: Record<string, { when: string; reason: string }> = {
     },
 }
 
-/** `uses:` steps in covered jobs, and why each has no local equivalent. An
- *  unlisted action is a hard error rather than assumed plumbing: an action can
- *  be a gate (the JUnit reporter was, until it was extracted) or can prepare
- *  state that later shell steps depend on, and either way verify omitting it
- *  silently is the drift this command exists to prevent. */
-const SKIPPED_ACTIONS: Record<string, string> = {
-    "actions/checkout": "you already have a checkout",
-    "oven-sh/setup-bun":
-        "installs the pinned Bun; verify compares your local Bun against that pin in preflight instead",
-    "actions/setup-node":
-        "installs the pinned Node; compared against your local Node in preflight instead",
-    "dorny/paths-filter":
-        "decides whether the path-filtered job runs at all; verify always runs it rather than reasoning about your diff",
-    "actions/github-script":
-        "posts the JUnit summary to the GitHub Checks API. Its one GATE — every test-bearing package must emit a report — is enforced by scripts/check-junit-coverage.ts, which runs as a shell step verify executes",
+const CHECKOUT = "you already have a checkout"
+const SETUP_BUN =
+    "installs the pinned Bun; verify compares your local Bun against that pin in preflight instead"
+const SETUP_NODE =
+    "installs the pinned Node; compared against your local Node in preflight instead"
+
+/** `uses:` steps in covered jobs, and why each has no local equivalent.
+ *
+ *  Keyed by JOB AND STEP, not by action. Keying by action alone grants a
+ *  standing permission: a second `actions/github-script` step calling
+ *  `core.setFailed` would have been waved through on the strength of the first
+ *  one's entry — recreating exactly the gate-hidden-behind-`uses:` hole that
+ *  started this file. A new action step must be decided on, every time.
+ *
+ *  Unnamed steps key on their versionless action slug, so bumping `@v6` to
+ *  `@v7` is not a spurious failure; the `action` field still pins WHICH action
+ *  a named step may be. */
+const SKIPPED_ACTIONS: Record<string, { action: string; reason: string }> = {
+    "test / actions/checkout": { action: "actions/checkout", reason: CHECKOUT },
+    "test / oven-sh/setup-bun": {
+        action: "oven-sh/setup-bun",
+        reason: SETUP_BUN,
+    },
+    "test / actions/setup-node": {
+        action: "actions/setup-node",
+        reason: SETUP_NODE,
+    },
+    "test / Test Report": {
+        action: "actions/github-script",
+        reason: "posts the JUnit summary to the GitHub Checks API. Its one GATE — every test-bearing package must emit a report — is enforced by scripts/check-junit-coverage.ts, which runs as a shell step verify executes",
+    },
+    "valdres-package / actions/checkout": {
+        action: "actions/checkout",
+        reason: CHECKOUT,
+    },
+    "valdres-package / Detect package and publishing changes": {
+        action: "dorny/paths-filter",
+        reason: "decides whether this path-filtered job runs at all; verify always runs it rather than reasoning about your diff",
+    },
+    "valdres-package / oven-sh/setup-bun": {
+        action: "oven-sh/setup-bun",
+        reason: SETUP_BUN,
+    },
+    "valdres-package / actions/setup-node": {
+        action: "actions/setup-node",
+        reason: SETUP_NODE,
+    },
 }
 
 /** Commands verify runs once even though more than one CI job runs them. Every
@@ -212,11 +244,30 @@ export type Plan = {
 /** The only `run:` steps verify refuses to execute, and why. A name here that
  *  matches no step in the job is a hard error: a rename must not silently turn
  *  the release script back on. */
-const SKIPPED_STEPS: Record<string, string> = {
-    "Verify publish (dry-run)":
-        "runs the real release script (scripts/ci-publish.sh) — DRY_RUN=1 still rewrites every package manifest in place, which is fine on a throwaway runner and not on your working tree",
-    "Verify publish cleanup":
-        "only asserts the dry-run above left no residue, so with that skipped it verifies nothing — and it fails on any legitimate uncommitted package.json edit",
+export const SKIPPED_STEPS: Record<
+    string,
+    { job: string; run: string; reason: string }
+> = {
+    "Verify publish (dry-run)": {
+        job: "test",
+        run: "DRY_RUN=1 bash scripts/ci-publish.sh",
+        reason: "runs the real release script (scripts/ci-publish.sh) — DRY_RUN=1 still rewrites every package manifest in place, which is fine on a throwaway runner and not on your working tree",
+    },
+    "Verify publish cleanup": {
+        job: "test",
+        run: [
+            "git diff --exit-code -- 'packages/**/package.json'",
+            "",
+            `stray_backups="$(find packages -name package.tmp.json -not -path '*/node_modules/*' -print)"`,
+            'if [ -n "$stray_backups" ]; then',
+            '    echo "::error::Publish dry-run left package.tmp.json backup files behind"',
+            '    echo "$stray_backups"',
+            "    exit 1",
+            "fi",
+            "",
+        ].join("\n"),
+        reason: "only asserts the dry-run above left no residue, so with that skipped it verifies nothing — and it fails on any legitimate uncommitted package.json edit",
+    },
 }
 
 /** Runner variables verify can honestly reproduce. A `run:` block reading any
@@ -516,46 +567,66 @@ export const buildPlan = (workflowSource: string): Plan => {
                     `Step "${name}" in ${WORKFLOW} is a \`run:\` step carrying \`with:\`, which only applies to \`uses:\` steps.`,
                 )
 
-            // An action is only plumbing if someone said so. Actions can be
-            // gates (the JUnit reporter was one) or can prepare state later
-            // shell steps rely on, so an unlisted one stops the run.
-            if (step.run === undefined) {
-                if (step.uses === undefined)
-                    throw teach(
-                        `Step "${name}" in \`jobs.${jobName}\` of ${WORKFLOW} has neither \`run:\` nor \`uses:\`.`,
-                    )
-                const action = step.uses.split("@")[0]!
-                const actionReason = SKIPPED_ACTIONS[action]
-                if (actionReason === undefined)
-                    throw teach(
-                        `Step "${name}" in \`jobs.${jobName}\` of ${WORKFLOW} uses \`${action}\`, which verify does not know. Actions can gate the job or set up state later steps need — add it to SKIPPED_ACTIONS with a reason, or give it a local equivalent.`,
-                    )
-                matchedActionSkips.add(action)
-                skipped.push({
-                    name,
-                    reason: `\`${action}\` — ${actionReason}`,
-                })
-                return
-            }
-
-            // VALIDATE BEFORE CLASSIFYING. Everything below this point can
-            // decide not to run the step, and a step that verify skips locally
-            // still shapes CI's behaviour — the failure compensator is skipped
-            // here yet decides whether `Test` may be treated as fatal. Checking
-            // only the steps verify executes left those unvalidated.
+            // VALIDATE BEFORE CLASSIFYING, and before the run/uses split.
+            // Every branch below can decide not to run the step, and a step
+            // verify skips still shapes CI's behaviour — the failure
+            // compensator is skipped here yet decides whether `Test` may be
+            // treated as fatal.
             assertSupportedKeys(
                 step as Record<string, unknown>,
                 `Step "${name}"`,
                 SUPPORTED_STEP_KEYS,
                 "step",
             )
+
+            // An action is only plumbing if someone said so about THIS step.
+            // A permission keyed by action alone is a standing one: a second
+            // `actions/github-script` step would ride in on the first one's
+            // entry, recreating the gate-hidden-behind-`uses:` hole.
+            if (step.run === undefined) {
+                if (step.uses === undefined)
+                    throw teach(
+                        `Step "${name}" in \`jobs.${jobName}\` of ${WORKFLOW} has neither \`run:\` nor \`uses:\`.`,
+                    )
+                const action = step.uses.split("@")[0]!
+                const key = `${jobName} / ${step.name ?? action}`
+                const actionPolicy = SKIPPED_ACTIONS[key]
+                if (actionPolicy === undefined)
+                    throw teach(
+                        `Step "${name}" in \`jobs.${jobName}\` of ${WORKFLOW} is an action step verify has no policy for (\`${key}\`). Actions can gate the job or set up state later steps need — add it to SKIPPED_ACTIONS with a reason, or give it a local equivalent.`,
+                    )
+                if (actionPolicy.action !== action)
+                    throw teach(
+                        `Step "${name}" in \`jobs.${jobName}\` of ${WORKFLOW} now uses \`${action}\`, but SKIPPED_ACTIONS was written for \`${actionPolicy.action}\`. Re-decide whether it still has no local equivalent.`,
+                    )
+                matchedActionSkips.add(key)
+                skipped.push({
+                    name,
+                    reason: `\`${action}\` — ${actionPolicy.reason}`,
+                })
+                return
+            }
+
             assertCompensated(step, name, steps, index)
             assertReproducible(step, name)
 
-            const policyReason = SKIPPED_STEPS[name]
-            if (policyReason !== undefined) {
+            // Bound to the job and the exact command, not just the display
+            // name: a step keeping its name while gaining another gate, or a
+            // second job reusing the name, must not inherit the skip.
+            const policy = SKIPPED_STEPS[name]
+            if (policy !== undefined) {
+                if (policy.job !== jobName)
+                    throw teach(
+                        `Step "${name}" appears in \`jobs.${jobName}\` of ${WORKFLOW}, but the skip policy was written for \`jobs.${policy.job}\`.`,
+                    )
+                if (policy.run !== step.run)
+                    throw teach(
+                        `Step "${name}" in ${WORKFLOW} is skipped because it ${policy.reason}, but its command has changed:\n\n` +
+                            `--- expected ---\n${policy.run}\n--- actual ---\n${step.run}\n\n` +
+                            `Re-decide whether skipping it is still correct, then update SKIPPED_STEPS.`,
+                    )
                 matchedPolicySkips.add(name)
-                skipped.push({ name, reason: policyReason })
+                skipped.push({ name, reason: policy.reason })
                 return
             }
 
@@ -611,11 +682,11 @@ export const buildPlan = (workflowSource: string): Plan => {
         )
 
     const staleActions = Object.keys(SKIPPED_ACTIONS).filter(
-        action => !matchedActionSkips.has(action),
+        key => !matchedActionSkips.has(key),
     )
     if (staleActions.length > 0)
         throw new Error(
-            `SKIPPED_ACTIONS in scripts/verify.ts names action(s) no covered job uses: ${staleActions.join(
+            `SKIPPED_ACTIONS in scripts/verify.ts names action step(s) no covered job has: ${staleActions.join(
                 ", ",
             )}.\n\n` +
                 `A stale entry is a standing permission to ignore an action that may come ` +
