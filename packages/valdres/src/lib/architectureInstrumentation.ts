@@ -94,6 +94,16 @@ export const recordSelectorEvaluation = (data: StoreData): void => {
     if (instrumentation) instrumentation.counters.selectorEvaluations++
 }
 
+/** Count dependency revisions compared while catching up cold snapshots. */
+export const recordColdCacheDependencyChecks = (
+    data: StoreData,
+    count: number,
+): void => {
+    const instrumentation = data.architectureInstrumentation
+    if (instrumentation)
+        instrumentation.counters.coldCacheDependencyChecks += count
+}
+
 export const recordCommitPlanRun = (data: StoreData): void => {
     const instrumentation = data.architectureInstrumentation
     if (instrumentation) instrumentation.counters.commitPlanRuns++

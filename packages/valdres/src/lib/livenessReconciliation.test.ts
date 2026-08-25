@@ -5,6 +5,7 @@ import { atomFamily } from "../atomFamily"
 import { selector } from "../selector"
 import { selectorFamily } from "../selectorFamily"
 import { store } from "../store"
+import { storeAdapter } from "../adapter-internals/v1"
 import { isLive, reconcileLivenessAfterChurn } from "./graph/mountAtom"
 
 // Regression coverage for the `liveDependentCount` desync fixed by
@@ -128,11 +129,15 @@ describe("liveDependentCount stays consistent across dynamic-dep churn", () => {
                 if (subs.has(si)) {
                     subs.get(si)!()
                     subs.delete(si)
-                } else
+                } else {
+                    // Match useSyncExternalStore: render reads the snapshot
+                    // before React installs the subscription during commit.
+                    storeAdapter.getForSubscription(ctx, sels[si])
                     subs.set(
                         si,
                         ctx.sub(sels[si], () => {}),
                     )
+                }
             }
             for (let si = 0; si < nSel; si++) if (rnd() < 0.5) toggle(si)
             checkInvariant(ctx, states, `seed=${seed} init`)

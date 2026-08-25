@@ -5,6 +5,7 @@ import type { GetValue } from "../types/GetValue"
 import type { SetAtom } from "../types/SetAtom"
 import type { SetAtomValue } from "../types/SetAtomValue"
 import type { State } from "../types/State"
+import type { Selector } from "../types/Selector"
 import type {
     BorrowedScopedStore,
     ScopedStore,
@@ -26,9 +27,11 @@ import {
     beginLivenessPass,
     endLivenessPass,
     flushPendingOrphanCleanup,
+    queueObservedCleanup,
     reconcileLivenessAfterChurn,
 } from "./graph"
 import { getState } from "./getState"
+import { initFreshActiveSelector } from "./initSelector"
 import { onCommitEnd } from "./onCommitEnd"
 import { onStoreChange } from "./onStoreChange"
 import { SETTLE_INIT_ONLY } from "./commitIntents"
@@ -56,6 +59,7 @@ import {
 } from "./transaction"
 import { rootUnsetAllError } from "./rootUnsetAllError"
 import { stateNameSuffix } from "./stateNameForError"
+import { reviveColdSelectorGraph } from "./reviveColdSelectorGraph"
 
 const transactionForStore = (
     transaction: TransactionContext,
@@ -215,18 +219,25 @@ const createStoreRuntime = (data: StoreData): StoreRuntime => {
         borrowPendingTransaction(ensureBatchTransaction())
 
     // --- get ---
-    const getDefault: GetValue = (state: State) => {
+    // The private second argument reuses this one per-store closure for adapter
+    // snapshot reads; keeping a separate retained function costs ~100 B/store.
+    const getDefault = (state: State, forSubscription = false) => {
         if (data.pendingOrphanCleanup) {
             if (data.pendingOrphanCleanup === DISPOSED_STORE_PENDING) {
                 throw createStoreDisposedError(data)
             }
             flushPendingOrphanCleanup(data)
         }
+        const observesSelector =
+            forSubscription &&
+            isSelector(state) &&
+            (!data.selectorGraphActive.has(state) ||
+                !data.stateDependencies.has(state))
         // Cold selectors are the only cached states that need to pass through
         // getState for revision validation. Preserve the original atom/active-
         // selector cache-hit path. The eager scalar keeps atom-only stores from
         // touching the lazy cache WeakMap or checking the state object's shape.
-        if (data.values.has(state)) {
+        if (!observesSelector && data.values.has(state)) {
             // Observation boundary for a deferred family membership snapshot,
             // mirroring getState's — this fast path returns without reaching it.
             if (
@@ -284,29 +295,49 @@ const createStoreRuntime = (data: StoreData): StoreRuntime => {
         let seedsToReconcile: Set<State> | null = null
         _initDepth++
         try {
-            res = getState(state, data, _initSet)
-        } finally {
-            _initDepth--
-            // A selector may call another handle for this same StoreData while
-            // it is evaluating. Keep every atom initialized by that nested read
-            // in the shared set until the outermost get has installed all of its
-            // dependency edges; propagating from the nested read would clear the
-            // set too early and miss those not-yet-committed edges.
-            if (_initDepth === 0 && _initSet.size) {
-                const atoms = [..._initSet]
-                _initSet.clear()
-                settleCommit(
-                    atoms,
-                    data,
-                    undefined,
-                    undefined,
-                    SETTLE_INIT_ONLY,
-                )
-                initialized = true
+            if (observesSelector) {
+                res = data.stateDependencies.has(state)
+                    ? reviveColdSelectorGraph(
+                          state as Selector,
+                          data,
+                          _initSet,
+                          data.circularDepSet,
+                      )
+                    : initFreshActiveSelector(
+                          state as Selector,
+                          data,
+                          _initSet,
+                          data.circularDepSet,
+                      )
+            } else {
+                res = getState(state, data, _initSet)
             }
-            // Release the collector in the finally (a throwing getState/onMount
-            // still releases it); reconcile the returned region after the try.
-            if (ownsLivenessSeeds) seedsToReconcile = endLivenessPass(data)
+        } finally {
+            try {
+                _initDepth--
+                // A selector may call another handle for this same StoreData while
+                // it is evaluating. Keep every atom initialized by that nested read
+                // in the shared set until the outermost get has installed all of its
+                // dependency edges; propagating from the nested read would clear the
+                // set too early and miss those not-yet-committed edges.
+                if (_initDepth === 0 && _initSet.size) {
+                    const atoms = [..._initSet]
+                    _initSet.clear()
+                    settleCommit(
+                        atoms,
+                        data,
+                        undefined,
+                        undefined,
+                        SETTLE_INIT_ONLY,
+                    )
+                    initialized = true
+                }
+                // Release the collector in the finally (a throwing getState/onMount
+                // still releases it); reconcile the returned region after the try.
+                if (ownsLivenessSeeds) seedsToReconcile = endLivenessPass(data)
+            } finally {
+                if (observesSelector) queueObservedCleanup(state, data)
+            }
         }
         // OWNER-DEFERRED reconciliation, same mode as propagateSelectorUpdates:
         // a read nested inside an in-flight pass defers its seeds to that owner
@@ -350,7 +381,7 @@ const createStoreRuntime = (data: StoreData): StoreRuntime => {
         return getDefault(state)
     }
 
-    const get = data.batchUpdates ? getBatched : getDefault
+    const get: GetValue = data.batchUpdates ? getBatched : getDefault
 
     // --- set ---
     function setDefault<V>(state: Atom<V>, value: PromiseLike<V>): Promise<V>
@@ -488,18 +519,37 @@ const createStoreRuntime = (data: StoreData): StoreRuntime => {
     }
 
     // Implementation signature is permissive — it also serves the adapter-only
-    // STORE_DATA_ACCESS handshake, which no public caller can name. The precise
+    // STORE_DATA_ACCESS handshake, which no public caller can name. Passing a
+    // state with the capability requests an adapter subscription read; omitting
+    // it recovers StoreData. The precise
     // generic (`<C extends ScopedTransactionFn>(cb: C) => ReturnType<C>`) lives
     // on `StoreRuntime["txn"]`, applied at the cast below, the same way
     // `onChange` carries its overloads.
     const txnImpl = (
         callback: ScopedTransactionFn | typeof STORE_DATA_ACCESS,
-        name?: string,
+        name?: string | State,
     ) => {
         // Adapter-only closure handshake. The token is not reachable from the
         // public facade or package root, so StoreData never becomes a runtime
         // property and ordinary store creation needs no side registry.
-        if (callback === STORE_DATA_ACCESS) return data
+        if (callback === STORE_DATA_ACCESS) {
+            if (name === undefined) return data
+            const state = name as State
+            if (data.pendingOrphanCleanup) {
+                if (data.pendingOrphanCleanup === DISPOSED_STORE_PENDING) {
+                    throw createStoreDisposedError(data)
+                }
+                flushPendingOrphanCleanup(data)
+            }
+            if (data.batchUpdates) {
+                const pendingTxn = currentPendingTransaction()
+                if (pendingTxn) return pendingTxn.get(state)
+                const batchTxn = data.tree.pendingBatch
+                if (batchTxn)
+                    return borrowPendingTransaction(batchTxn).get(state)
+            }
+            return getDefault(state, true)
+        }
         if (data.pendingOrphanCleanup) {
             if (data.pendingOrphanCleanup === DISPOSED_STORE_PENDING) {
                 throw createStoreDisposedError(data)
@@ -509,7 +559,7 @@ const createStoreRuntime = (data: StoreData): StoreRuntime => {
         if (data.batchUpdates) flushPendingTxn()
         // A scope's context carries `unsetAll`; the internal helper is typed
         // against the root-shaped callback.
-        return transaction(callback as TransactionFn, data, name)
+        return transaction(callback as TransactionFn, data, name as string)
     }
     const txn = txnImpl as unknown as StoreRuntime["txn"]
 

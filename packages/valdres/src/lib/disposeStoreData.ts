@@ -2,6 +2,7 @@ import type { InternalGlobalAtom } from "../types/InternalGlobalAtom"
 import type { StoreData } from "../types/StoreData"
 import {
     detachInheritedDependencyBranches,
+    dropObservedCleanups,
     dropQueuedOrphanWork,
     resetLivenessScratch,
     sealGraphForDisposal,
@@ -158,6 +159,11 @@ export const disposeStoreData = (data: StoreData): void => {
                 }
             }
         }
+
+        // Snapshot observations have no subscription/mount entry to drive
+        // ordinary teardown. Drop them after subscriptions and mounts are gone
+        // so every formerly committed observation is now beyond a live root.
+        dropObservedCleanups(current)
 
         // Deferred family snapshots die with the store's values. The registry
         // is weak, so this retains nothing either way — dropping it keeps a

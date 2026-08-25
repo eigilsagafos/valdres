@@ -35,6 +35,7 @@ import {
     renderAtomFamilyIndex,
     renderDirtyFamilyIndex,
 } from "./atomFamilyIndex"
+import { recordColdCacheDependencyChecks } from "./architectureInstrumentation"
 
 const admitDeletedMemberDefaultTransition = <Value>(
     state: AtomFamilyAtom<Value, any>,
@@ -221,15 +222,6 @@ const coordinateDeletedMemberDefault = <Value>(
  * pass that used one is retired when it ends rather than carried into the next
  * read (see the guard below).
  */
-/** Count the comparisons one validation is about to make. Per validation, not
- * per comparison, so the loop stays a plain indexed compare — a mid-loop
- * bail-out over-counts, the safe direction for an upper-bound gate. */
-const recordColdCacheDependencyChecks = (data: StoreData, count: number) => {
-    const instrumentation = data.architectureInstrumentation
-    if (instrumentation)
-        instrumentation.counters.coldCacheDependencyChecks += count
-}
-
 const isColdSelectorCacheFresh = (
     selector: Selector,
     cache: ColdSelectorCache,
