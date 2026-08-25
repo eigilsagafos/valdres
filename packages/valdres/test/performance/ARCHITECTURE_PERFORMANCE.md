@@ -49,8 +49,10 @@ one side of a PR comparison.
   frame-local workspace and report zero.
 - `livenessWorkAllocations`: liveness/mount-owned work containers created inside
   the window. Warm multi-container cyclic/reconciliation walks reuse their
-  workspace; measured-faster one-array count and mount walks remain local and
-  still report their short-lived containers.
+  workspace; the mount walks remain local and still report their short-lived
+  containers. The live/not-live count walks allocate their traversal array only
+  when a dependency genuinely flips and the walk has to cascade past the root's
+  own edges, so churn that resolves at the root reports zero for them.
 - `schedulerCycleFallbacks`: stalled cyclic regions settled by the isolated
   insertion-order fallback. Ordinary acyclic graphs must report zero.
 - `livenessEdgeVisits` / `mountEdgeVisits`: dependency edges examined by
