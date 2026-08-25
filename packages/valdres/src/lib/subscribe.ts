@@ -126,14 +126,29 @@ export const subscribe = <V>(
         // active-marker WeakSet.
         if (!selectorHasValue && !data.stateDependencies.has(state)) {
             initFreshActiveSelector(state, data, new Set(), new WeakSet())
-        } else if (
-            !selectorHasValue ||
-            (data.coldSelectorCachesEnabled &&
-                !data.selectorGraphActive.has(state))
-        ) {
-            // Existing cold caches must validate before promotion; an active
-            // selector whose value was dropped must re-evaluate in graph mode.
+        } else if (!selectorHasValue) {
+            // An active selector whose value was dropped must re-evaluate in
+            // graph mode.
             getState(state, data, new Set(), new WeakSet())
+        } else if (
+            data.coldSelectorCachesEnabled &&
+            !data.selectorGraphActive.has(state)
+        ) {
+            // Existing cold caches must validate before promotion — but hoist
+            // the freshness test that getState would apply first. A cache
+            // validated at the current tree revision has observed no change, and
+            // a state with no cache entry at all has nothing to validate; in
+            // both cases getState's own fast path just returns the committed
+            // value, so the call and the two traversal accumulators it needs are
+            // pure overhead. Remount churn takes this branch on every promotion.
+            // Mirrors the identical hoist in getState and at the store boundary.
+            const coldCache = data.coldSelectorCaches.get(state)
+            if (
+                coldCache !== undefined &&
+                coldCache.validatedAt !== data.tree.revision
+            ) {
+                getState(state, data, new Set(), new WeakSet())
+            }
         }
     }
 

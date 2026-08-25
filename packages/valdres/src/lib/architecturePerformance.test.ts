@@ -188,9 +188,11 @@ describe("deterministic architecture performance gates", () => {
         expect(counts.schedulerQueueEnqueues).toBe(0)
         expect(counts.schedulerQueueDequeues).toBe(0)
         expect(counts.schedulerWorkAllocations).toBe(0)
-        // The one-array count walks intentionally stay local: pooling them
-        // regresses subscribe/unsubscribe despite avoiding these two arrays.
-        expect(counts.livenessWorkAllocations).toBe(2)
+        // The count walks allocate their traversal array only when a
+        // dependency actually flips live/not-live and the walk has to cascade.
+        // This churn resolves entirely at the root's own edges, so it now
+        // allocates nothing at all (it used to take two arrays unconditionally).
+        expect(counts.livenessWorkAllocations).toBe(0)
 
         for (const cleanup of cleanups) cleanup()
     })
@@ -232,9 +234,11 @@ describe("deterministic architecture performance gates", () => {
         expect(counts.mountTransitions).toBe(1)
         expect(counts.unmountTransitions).toBe(1)
         expect(counts.schedulerWorkAllocations).toBe(0)
-        // The measured-faster local count and mount walks keep their six
-        // short-lived containers; only multi-container reconciliation is pooled.
-        expect(counts.livenessWorkAllocations).toBe(6)
+        // The local mount walks keep their short-lived containers; only
+        // multi-container reconciliation is pooled. Four, not six: the two
+        // count-walk arrays are now allocated only on a genuine cascade, and
+        // this churn resolves at the root's own edges.
+        expect(counts.livenessWorkAllocations).toBe(4)
         expect(counts.livenessEdgeVisits).toBe(0)
         expect(counts.mountEdgeVisits).toBe(0)
 
@@ -283,7 +287,9 @@ describe("deterministic architecture performance gates", () => {
         expect(counts.selectorEvaluations).toBe(6)
         expect(counts.duplicateSelectorSettlements).toBe(0)
         expect(counts.schedulerWorkAllocations).toBe(0)
-        expect(counts.livenessWorkAllocations).toBe(3)
+        // Two mount-walk containers; the count walk no longer allocates a
+        // third, because nothing here cascades past the root's own edges.
+        expect(counts.livenessWorkAllocations).toBe(2)
         expect(counts.mountTransitions).toBe(1)
         expect(counts.unmountTransitions).toBe(0)
 

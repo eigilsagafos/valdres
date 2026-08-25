@@ -55,8 +55,27 @@ export const cleanupOrphanedDeps = (state: State, data: StoreData) => {
             }
             data.latestEvalContext.delete(selector)
 
+            // Dependents are enqueued BEFORE the dependency loop below so the
+            // stack ends up in the same order it had when the enqueue was a
+            // second pass after the demote: dependents pushed first, then
+            // dependencies, so LIFO still pops dependencies first. That order is
+            // load-bearing — a dependency that takes the DROP branch bumps its
+            // own revision, and a dependent demoted afterwards snapshots the
+            // post-drop revision. Reversing it would silently change which
+            // revision a cold cache records.
+            if (dependents) {
+                for (const dependent of dependents) stack.push(dependent)
+            }
+            // Release the reverse edge and enqueue the dependency for its own
+            // orphan check in ONE pass, instead of two loops over the same Set
+            // (which walked every edge twice and allocated a second Set iterator
+            // per selector). Safe to interleave: `stack` is only consumed by
+            // later pops, and cleanup never touches `subscriptions` or
+            // `liveDependentCount`, so the `isLive` verdict each pop reads is
+            // fixed for the whole sweep.
             for (const dep of deps) {
                 removeStateDependent(dep, current, data)
+                stack.push(dep)
             }
             // Demote rather than drop: leave the selector in EXACTLY the shape
             // a cold read produces — committed value, forward dependency set,
@@ -118,10 +137,7 @@ export const cleanupOrphanedDeps = (state: State, data: StoreData) => {
             )
             data.abortControllers.delete(current)
 
-            if (dependents) {
-                for (const dependent of dependents) stack.push(dependent)
-            }
-            for (const dep of deps) stack.push(dep)
+            // Dependents and dependencies were both enqueued above.
             continue
         }
 

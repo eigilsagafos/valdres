@@ -163,23 +163,38 @@ export const activateSelectorGraph = (root: State, data: StoreData) => {
     // construction, so even the active-marker lookup is redundant.
     if (!isSelector(root) || !data.coldSelectorCachesEnabled) return
     if (data.selectorGraphActive.has(root)) return
-    const stack: State[] = [root]
-    while (stack.length > 0) {
-        const selector = stack.pop()!
-        if (data.selectorGraphActive.has(selector)) continue
-        data.selectorGraphActive.add(selector)
-        if (data.coldSelectorCachesEnabled) {
-            data.coldSelectorCaches.delete(selector)
-        }
+    // Promotion normally stops at the first already-live selector: a remounting
+    // row re-promotes itself but reaches a shared aggregator that never left the
+    // live graph. Filter those out at PUSH time so the frontier stays empty and
+    // the traversal stack is never allocated, instead of pushing each one only
+    // to discard it on pop. The pop-side check stays — it is what keeps a
+    // diamond (one selector reached from two parents in the same walk) from
+    // being processed twice.
+    let stack: State[] | undefined
+    let selector: State | undefined = root
+    while (selector !== undefined) {
+        if (!data.selectorGraphActive.has(selector)) {
+            data.selectorGraphActive.add(selector)
+            if (data.coldSelectorCachesEnabled) {
+                data.coldSelectorCaches.delete(selector)
+            }
 
-        const dependencies = data.stateDependencies.get(selector)
-        if (!dependencies) continue
-        noteDependencyGraphChanged(selector, data)
-        for (const dependency of dependencies) {
-            addStateDependent(dependency, selector, data)
-            noteDependencyAdded(selector, dependency, data)
-            if (isSelector(dependency)) stack.push(dependency)
+            const dependencies = data.stateDependencies.get(selector)
+            if (dependencies !== undefined) {
+                noteDependencyGraphChanged(selector, data)
+                for (const dependency of dependencies) {
+                    addStateDependent(dependency, selector, data)
+                    noteDependencyAdded(selector, dependency, data)
+                    if (
+                        isSelector(dependency) &&
+                        !data.selectorGraphActive.has(dependency)
+                    ) {
+                        ;(stack ??= []).push(dependency)
+                    }
+                }
+            }
         }
+        selector = stack !== undefined ? stack.pop() : undefined
     }
 }
 
@@ -201,23 +216,37 @@ export const isLive = (state: State, data: StoreData): boolean => {
  * more live dependent of D. If that flips D from not-live to live, recurse.
  */
 const propagateLive = (root: State, data: StoreData) => {
-    const stack: State[] = [root]
     const instrumentation = !IS_PROD
         ? data.architectureInstrumentation
         : undefined
-    if (instrumentation) instrumentation.counters.livenessWorkAllocations++
-    while (stack.length > 0) {
-        const current = stack.pop()!
+    // The root's own edges are walked without a stack, and the stack is
+    // allocated only if some dependency actually FLIPS to live. Most calls
+    // don't cascade — a remount re-subscribes siblings that share an
+    // already-live aggregator — so this keeps the common case allocation-free
+    // instead of paying an array per call. `livenessWorkAllocations` is bumped
+    // at the allocation itself, not on entry, so the counter keeps reporting
+    // containers actually created.
+    let stack: State[] | undefined
+    let current: State | undefined = root
+    while (current !== undefined) {
         const deps = data.stateDependencies.get(current)
-        if (!deps) continue
-        for (const dep of deps) {
-            if (instrumentation) instrumentation.counters.livenessEdgeVisits++
-            const prev = data.liveDependentCount.get(dep) ?? 0
-            data.liveDependentCount.set(dep, prev + 1)
-            if (prev === 0 && !hasDirectSubscribers(dep, data)) {
-                stack.push(dep)
+        if (deps !== undefined) {
+            for (const dep of deps) {
+                if (instrumentation)
+                    instrumentation.counters.livenessEdgeVisits++
+                const prev = data.liveDependentCount.get(dep) ?? 0
+                data.liveDependentCount.set(dep, prev + 1)
+                if (prev === 0 && !hasDirectSubscribers(dep, data)) {
+                    if (stack === undefined) {
+                        stack = []
+                        if (instrumentation)
+                            instrumentation.counters.livenessWorkAllocations++
+                    }
+                    stack.push(dep)
+                }
             }
         }
+        current = stack !== undefined ? stack.pop() : undefined
     }
 }
 
@@ -226,28 +255,36 @@ const propagateLive = (root: State, data: StoreData) => {
  * dependency graph. Mirror of propagateLive.
  */
 const propagateNotLive = (root: State, data: StoreData) => {
-    const stack: State[] = [root]
     const instrumentation = !IS_PROD
         ? data.architectureInstrumentation
         : undefined
-    if (instrumentation) instrumentation.counters.livenessWorkAllocations++
-    while (stack.length > 0) {
-        const current = stack.pop()!
+    // Stack allocated only on an actual cascade — see propagateLive.
+    let stack: State[] | undefined
+    let current: State | undefined = root
+    while (current !== undefined) {
         const deps = data.stateDependencies.get(current)
-        if (!deps) continue
-        for (const dep of deps) {
-            if (instrumentation) instrumentation.counters.livenessEdgeVisits++
-            const prev = data.liveDependentCount.get(dep) ?? 0
-            const next = prev - 1
-            if (next <= 0) {
-                data.liveDependentCount.delete(dep)
-            } else {
-                data.liveDependentCount.set(dep, next)
-            }
-            if (prev === 1 && !hasDirectSubscribers(dep, data)) {
-                stack.push(dep)
+        if (deps !== undefined) {
+            for (const dep of deps) {
+                if (instrumentation)
+                    instrumentation.counters.livenessEdgeVisits++
+                const prev = data.liveDependentCount.get(dep) ?? 0
+                const next = prev - 1
+                if (next <= 0) {
+                    data.liveDependentCount.delete(dep)
+                } else {
+                    data.liveDependentCount.set(dep, next)
+                }
+                if (prev === 1 && !hasDirectSubscribers(dep, data)) {
+                    if (stack === undefined) {
+                        stack = []
+                        if (instrumentation)
+                            instrumentation.counters.livenessWorkAllocations++
+                    }
+                    stack.push(dep)
+                }
             }
         }
+        current = stack !== undefined ? stack.pop() : undefined
     }
 }
 
