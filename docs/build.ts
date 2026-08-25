@@ -3,15 +3,24 @@ import { compileMdx } from "./src/compile-mdx"
 import { renderPages } from "./src/render"
 import { generateLlmsTxt, generateMarkdownPages } from "./src/generate-llms-txt"
 import { generateSitemap } from "./src/generate-sitemap"
+import {
+    bundleClient,
+    bundleDemos,
+    bundleLanding,
+    islandDefine,
+    readValdresVersion,
+} from "./src/islands-build"
 import { $ } from "bun"
 
 const rootDir = import.meta.dir.replace("/docs", "")
 const distDir = `${import.meta.dir}/dist`
 const siteUrl = "https://valdres.dev"
 
-const valdresVersion: string = (
-    await Bun.file(`${rootDir}/packages/valdres/package.json`).json()
-).version
+const valdresVersion = await readValdresVersion(rootDir)
+
+// See islands-build.ts for why the islands need valdres's own build defines.
+// scripts/check-docs-islands.ts evaluates these exact bundles in CI.
+const define = islandDefine(valdresVersion, "production")
 
 // Start from a clean slate — stale routes from earlier builds would otherwise
 // ship and get indexed by pagefind.
@@ -33,42 +42,13 @@ const tailwindBin = `${rootDir}/node_modules/.bin/tailwindcss`
 await $`${tailwindBin} -i ${import.meta.dir}/src/styles/globals.css -o ${distDir}/styles.css --minify`.quiet()
 
 console.log("⚡ Bundling client JS...")
-await Bun.build({
-    entrypoints: [`${import.meta.dir}/src/islands/client.ts`],
-    outdir: distDir,
-    minify: true,
-    naming: "client.js",
-})
-
-// Deduplicate React — workspace packages each install their own copy,
-// but the browser bundle must use a single shared React instance.
-const reactDedup: import("bun").BunPlugin = {
-    name: "react-dedup",
-    setup(build) {
-        const reactPkgs = ["react", "react/jsx-runtime", "react/jsx-dev-runtime", "react-dom", "react-dom/client"]
-        for (const pkg of reactPkgs) {
-            build.onResolve({ filter: new RegExp(`^${pkg.replace("/", "\\/")}$`) }, () => {
-                return { path: require.resolve(pkg) }
-            })
-        }
-    },
-}
+await bundleClient({ outdir: distDir, minify: true, define })
 
 console.log("⚡ Bundling API demos + playground...")
-const demosBuild = await Bun.build({
-    entrypoints: [
-        `${import.meta.dir}/src/islands/demos.ts`,
-        `${import.meta.dir}/src/islands/playground-bundle.tsx`,
-    ],
+const demosBuild = await bundleDemos({
     outdir: distDir,
     minify: true,
-    splitting: true,
-    naming: { entry: "[name].js" },
-    plugins: [reactDedup],
-    define: {
-        "process.env.NODE_ENV": '"production"',
-        "process.env.VALDRES_VERSION": JSON.stringify(valdresVersion),
-    },
+    define,
 })
 if (!demosBuild.success) {
     console.error("Demos build failed:")
@@ -76,48 +56,10 @@ if (!demosBuild.success) {
 }
 
 console.log("⚡ Bundling landing page islands...")
-
-const sveltePlugin: import("bun").BunPlugin = {
-    name: "svelte",
-    async setup(build) {
-        const { compile, compileModule } = await import("svelte/compiler")
-
-        // Handle .svelte.ts/.svelte.js module files (Svelte 5 runes in TS/JS)
-        // This must come before .svelte to match more specifically
-        build.onLoad({ filter: /\.svelte\.[tj]s$/ }, async args => {
-            const source = await Bun.file(args.path).text()
-            const transpiler = new Bun.Transpiler({ loader: "ts" })
-            const jsSource = transpiler.transformSync(source)
-            const result = compileModule(jsSource, {
-                filename: args.path,
-                generate: "client",
-            })
-            return { contents: result.js.code, loader: "js" }
-        })
-
-        // Handle .svelte component files
-        build.onLoad({ filter: /\.svelte$/ }, async args => {
-            const source = await Bun.file(args.path).text()
-            const result = compile(source, {
-                filename: args.path,
-                generate: "client",
-                css: "injected",
-            })
-            return { contents: result.js.code, loader: "js" }
-        })
-    },
-}
-
-const landingBuild = await Bun.build({
-    entrypoints: [`${import.meta.dir}/src/islands/landing.tsx`],
+const landingBuild = await bundleLanding({
     outdir: distDir,
     minify: true,
-    naming: "landing.js",
-    plugins: [reactDedup, sveltePlugin],
-    define: {
-        "process.env.NODE_ENV": '"production"',
-        "process.env.VALDRES_VERSION": JSON.stringify(valdresVersion),
-    },
+    define,
 })
 if (!landingBuild.success) {
     console.error("Landing build failed:")

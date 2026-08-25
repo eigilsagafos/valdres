@@ -54,6 +54,16 @@ jobs:
                       echo "::error::Use @ts-expect-error with a specific reason instead of @ts-ignore"
                       exit 1
                   fi
+            - name: Docs island bundles load in a browser
+              # The demos on valdres.dev bundle valdres from workspace SOURCE, so
+              # a core change that is harmless for the published dist can still
+              # kill every demo on the site — and did, unnoticed for three weeks,
+              # because a bundle that throws on load still builds, still renders
+              # the page, and logs nothing. Lives HERE rather than in docs-ci.yml
+              # because that workflow does not run on `packages/**` changes, which
+              # is exactly what broke it. Bundles the islands itself, so it costs
+              # seconds instead of a 210-page site build.
+              run: bun run scripts/check-docs-islands.ts
             - name: Deterministic architecture gates
               run: bun --filter 'valdres' test:architecture
             - name: Rewrite guards (Node/V8)

@@ -53,10 +53,29 @@ const publishedDist = () =>
         return outdir
     })())
 
+/** valdres bundled the way a *source* consumer's bundler sees it: from `src`,
+ *  with no defines, for the browser. This repo's own docs site bundles the
+ *  workspace source exactly like this. */
+let sourceBundleCache: Promise<string> | undefined
+const sourceBundle = () =>
+    (sourceBundleCache ??= (async () => {
+        const outdir = await mkdtemp(join(tmpdir(), "valdres-source-"))
+        const result = await Bun.build({
+            entrypoints: [join(import.meta.dir, "..", "src", "index.ts")],
+            outdir,
+            target: "browser",
+        })
+        expect(result.success, result.logs.join("\n")).toBe(true)
+        return outdir
+    })())
+
 afterAll(async () => {
-    if (publishedDistCache) {
-        await rm(await publishedDistCache, { recursive: true, force: true })
-    }
+    const dirs = await Promise.all(
+        [publishedDistCache, sourceBundleCache].filter(Boolean),
+    )
+    await Promise.all(
+        dirs.map(dir => rm(dir!, { recursive: true, force: true })),
+    )
 })
 
 const probeAcceptedWriteFreeze = async (
@@ -272,6 +291,43 @@ describe("build output", () => {
         // TransactionContext from the chunk under its real name.
         expect(outputs[index]).not.toContain("class TransactionContext")
         expect(outputs[adapterInternals]).toContain("Transaction")
+    })
+
+    // Both guards above run against the dist, where the define has already
+    // folded every self-check away — so neither can see an unguarded
+    // `process.env` read in the source form. A source consumer gets no folding
+    // at all, and this repo's docs site is one: it bundles workspace `src`. One
+    // self-check that read the env BEFORE short-circuiting on `!IS_PROD` threw
+    // `process is not defined` on module load there (the module-static plan
+    // graph in commitPlans counts its own allocations), which took down every
+    // interactive demo on valdres.dev. Bundling from source and running with no
+    // `process` at all is the only place that shows up, so assert it here: every
+    // self-check must short-circuit on `!IS_PROD` before reading the env,
+    // because process-less runtimes default to production.
+    test("commits with no `process` at all when bundled from source", async () => {
+        const entryUrl = pathToFileURL(
+            join(await sourceBundle(), "index.js"),
+        ).href
+        const script = `
+            delete globalThis.process
+            const { atom, atomFamily, selector, store } =
+                await import(${JSON.stringify(entryUrl)})
+            const count = atom(1)
+            const member = atomFamily(0)
+            const total = selector(get => get(count) + get(member("a")))
+            const target = store()
+            target.sub(total, () => {})
+            target.set(count, 2)
+            target.set(member("a"), 4)
+            target.txn(({ set }) => set(count, 3))
+            console.log(String(target.get(total)))
+        `
+        const result = Bun.spawnSync(
+            ["node", "--input-type=module", "--eval", script],
+            { stdout: "pipe", stderr: "pipe" },
+        )
+        expect(result.exitCode, result.stderr.toString()).toBe(0)
+        expect(result.stdout.toString().trim()).toBe("7")
     })
 
     test("removes stale split chunks without deleting type output", async () => {

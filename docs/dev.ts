@@ -2,14 +2,19 @@ import { watch } from "node:fs"
 import { discover } from "./src/discover"
 import { compileMdx } from "./src/compile-mdx"
 import { renderPages } from "./src/render"
+import {
+    bundleClient,
+    bundleDemos,
+    bundleLanding,
+    islandDefine,
+    readValdresVersion,
+} from "./src/islands-build"
 
 const rootDir = import.meta.dir.replace("/docs", "")
 const docsDir = import.meta.dir
 const distDir = `${docsDir}/dist`
 
-const valdresVersion: string = (
-    await Bun.file(`${rootDir}/packages/valdres/package.json`).json()
-).version
+const valdresVersion = await readValdresVersion(rootDir)
 
 type BuildKind = "mdx" | "layout" | "bundles"
 
@@ -34,79 +39,19 @@ const RELOAD_SCRIPT = `<script>
 })();
 </script>`
 
-const reactDedup: import("bun").BunPlugin = {
-    name: "react-dedup",
-    setup(build) {
-        const reactPkgs = ["react", "react/jsx-runtime", "react/jsx-dev-runtime", "react-dom", "react-dom/client"]
-        for (const pkg of reactPkgs) {
-            build.onResolve({ filter: new RegExp(`^${pkg.replace("/", "\\/")}$`) }, () => {
-                return { path: require.resolve(pkg) }
-            })
-        }
-    },
-}
-
-const sveltePlugin: import("bun").BunPlugin = {
-    name: "svelte",
-    async setup(build) {
-        const { compile, compileModule } = await import("svelte/compiler")
-        build.onLoad({ filter: /\.svelte\.[tj]s$/ }, async args => {
-            const source = await Bun.file(args.path).text()
-            const transpiler = new Bun.Transpiler({ loader: "ts" })
-            const jsSource = transpiler.transformSync(source)
-            const result = compileModule(jsSource, { filename: args.path, generate: "client" })
-            return { contents: result.js.code, loader: "js" }
-        })
-        build.onLoad({ filter: /\.svelte$/ }, async args => {
-            const source = await Bun.file(args.path).text()
-            const result = compile(source, { filename: args.path, generate: "client", css: "injected" })
-            return { contents: result.js.code, loader: "js" }
-        })
-    },
-}
-
-const defineDev = {
-    "process.env.NODE_ENV": '"development"',
-    "process.env.VALDRES_VERSION": JSON.stringify(valdresVersion),
-}
-
-async function bundleClient() {
-    return Bun.build({
-        entrypoints: [`${docsDir}/src/islands/client.ts`],
-        outdir: distDir,
-        naming: "client.js",
-    })
-}
-
-async function bundleIslands() {
-    return Bun.build({
-        entrypoints: [
-            `${docsDir}/src/islands/demos.ts`,
-            `${docsDir}/src/islands/playground-bundle.tsx`,
-        ],
-        outdir: distDir,
-        splitting: true,
-        naming: { entry: "[name].js" },
-        plugins: [reactDedup],
-        define: defineDev,
-    })
-}
-
-async function bundleLanding() {
-    return Bun.build({
-        entrypoints: [`${docsDir}/src/islands/landing.tsx`],
-        outdir: distDir,
-        naming: "landing.js",
-        plugins: [reactDedup, sveltePlugin],
-        define: defineDev,
-    })
+// Same bundler config as the production build (see islands-build.ts), with
+// NODE_ENV flipped so dev islands get React's development build.
+const bundleOptions = {
+    outdir: distDir,
+    minify: false,
+    define: islandDefine(valdresVersion, "development"),
 }
 
 async function rebuildBundles() {
     const results = await Promise.all([
-        bundleClient(),
-        bundleIslands(),
-        bundleLanding(),
+        bundleClient(bundleOptions),
+        bundleDemos(bundleOptions),
+        bundleLanding(bundleOptions),
     ])
     for (const r of results) {
         if (!r.success) for (const log of r.logs) console.error(log)
