@@ -27,7 +27,11 @@ import { writeAtoms } from "./writeAtoms"
 // Safe only with writeAtoms("skip"), which cannot mutate this queue.
 // Reusing it keeps hook-free bulk writes allocation-light.
 const noOnSets: DeferredOnSet[] = []
-const FRESH_ATOM_FAST_PATH_MIN = 256
+// Exported for the fast path's own tests, which have to straddle the threshold
+// to compare the specialization against the established path — a hardcoded
+// batch size would silently take the established path on both sides if this
+// number ever moved, and the differential would pass by being vacuous.
+export const FRESH_ATOM_FAST_PATH_MIN = 256
 
 /**
  * Bulk-write coordinator of the commit engine, invoked directly by a
@@ -161,8 +165,63 @@ const tryWriteFreshSimpleAtoms = (
         }
     }
     for (const [atom, value] of pairs) {
-        // Match initAtom's primitive landing before equality. If equality ever
-        // throws, the initialized default remains just as it did previously.
+        // The established path's per-atom sequence for a fresh atom — land the
+        // declared default (initAtom), run the atom's comparator, write — kept
+        // here for FAILURE fidelity, not for the comparison's answer, which
+        // this specialization discards: it writes unconditionally, where the
+        // established path skips the write when the comparison says equal.
+        // That skip is not a no-op — after the landing the default IS the
+        // committed value, and preserving it is observable whenever a value
+        // compares equal without being identical: a `+0` default seeded with
+        // `-0` keeps `+0` on the established path and stores `-0` here. That
+        // residue is accepted, not overlooked. What the ordering does buy is
+        // the failure shape, for failures BEFORE the write lands: if the
+        // comparator throws, or setValueInData throws on its way to storing,
+        // the atom is left holding its default, exactly as initAtom plus a
+        // failed set leaves it.
+        //
+        // That guarantee stops at the store. setValueInData stores the value
+        // and only then reads `atom.maxAge`, so a throw from THERE leaves the
+        // established path holding the default (it threw while initAtom was
+        // landing it) and leaves this loop holding the incoming value. Pinned
+        // as a known divergence rather than claimed away.
+        //
+        // Neither step is dead, though `equal` alone is inert on a
+        // primitive-or-null first operand (it answers from `===` without
+        // reaching an object path, so the incoming value's valueOf/toString are
+        // never invoked). What keeps them live is that this loop runs USER CODE
+        // between iterations, by two independent routes:
+        //
+        //   1. A value getter. In a dev build setValueInData deep-freezes the
+        //      staged value and deepFreeze reads every own property, so a
+        //      getter in an EARLIER atom's value runs here. Dev-only.
+        //   2. An atom accessor. `atom.mutable` is read BEFORE the IS_PROD
+        //      test in both normalizeStagedValue and setValueInData, and
+        //      `atom.maxAge` is read unconditionally, so an accessor on either
+        //      runs in EVERY build, with primitive values, and `mutable` is not
+        //      an admission condition at all.
+        //
+        // Either route can reassign a later atom's `equal` (atoms are plain
+        // objects) or swap its `defaultValue` for an object whose coercion
+        // hooks then DO run. Admission's per-atom checks are therefore facts
+        // about loop entry, not about iteration N. Re-reading `atom.equal` and
+        // `atom.defaultValue` here — rather than hoisting them — is what keeps
+        // those two cases in step with the established path.
+        //
+        // Fidelity under such a mutation is deliberately NOT claimed in
+        // general, and the exceptions are not enumerated here — every attempt
+        // to list them in prose missed one. The landing is a bare `values.set`
+        // and the write is unconditional, so everything `initAtom` and the
+        // settlement list do around them is skipped: evaluating a default that
+        // became a factory or a selector, freezing it, validating it against a
+        // `schema`, invoking `onInit`, notifying a subscriber added mid-commit.
+        // setAtoms.test.ts asserts the verdict for each mutation in a table, so
+        // a new divergence shows up as a failing case rather than as a stale
+        // comment. No closure is proposed here: narrowing admission to
+        // primitive VALUES shuts only route 1, and route 2 needs neither an
+        // object value nor a dev build, so anything claiming to close the class
+        // has to account for the write path's own reads of mutable atom fields
+        // — measure it against that table before believing it.
         data.values.set(atom, atom.defaultValue)
         atom.equal(atom.defaultValue, value)
         setValueInData(atom, value, data)
