@@ -31,6 +31,28 @@ function Greeting() {
 }
 ```
 
+## Batched stores
+
+On a store created with `{ batchUpdates: true }`, sequential `set()` calls are
+coalesced into one commit on the next microtask, and the commit is what notifies
+subscribers. `useValue` therefore reports the **committed** value: a write
+becomes visible to the component when the batch commits, not within the same
+tick.
+
+```tsx
+store.set(nameAtom, "Jotunheimen")
+store.get(nameAtom) // "Jotunheimen" — store.get reads your own writes
+// the component still shows the previous value here
+await Promise.resolve() // batch commits, subscribers notified
+// the component now shows "Jotunheimen"
+```
+
+This is what keeps `useValue` safe under React's `useSyncExternalStore`: a
+snapshot that moved with the staged write — before any subscriber callback — is
+what React diagnoses as tearing, and it repairs that with a nested re-render on
+every commit. In tests, await a microtask (or wrap in `act`) after a `set`
+before asserting on rendered output.
+
 ## With selector families
 
 ```tsx

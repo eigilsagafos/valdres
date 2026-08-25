@@ -38,6 +38,7 @@ import { setAtom } from "./setAtom"
 import { setValueInData } from "./setValueInData"
 import { snapshot } from "./snapshot"
 import { STORE_DATA_ACCESS } from "./storeDataAccessToken"
+import { COMMITTED_READ_ACCESS } from "./committedReadAccessToken"
 import { BORROWED_STORE_RUNTIME, STORE_RUNTIME } from "./storeRuntimeKey"
 import {
     createStoreDisposedError,
@@ -478,18 +479,25 @@ const createStoreRuntime = (data: StoreData): StoreRuntime => {
     }
 
     // Implementation signature is permissive — it also serves the adapter-only
-    // STORE_DATA_ACCESS handshake, which no public caller can name. The precise
-    // generic (`<C extends ScopedTransactionFn>(cb: C) => ReturnType<C>`) lives
-    // on `StoreRuntime["txn"]`, applied at the cast below, the same way
-    // `onChange` carries its overloads.
+    // STORE_DATA_ACCESS and COMMITTED_READ_ACCESS handshakes, which no public
+    // caller can name. The precise generic (`<C extends ScopedTransactionFn>(cb:
+    // C) => ReturnType<C>`) lives on `StoreRuntime["txn"]`, applied at the cast
+    // below, the same way `onChange` carries its overloads.
     const txnImpl = (
-        callback: ScopedTransactionFn | typeof STORE_DATA_ACCESS,
+        callback:
+            | ScopedTransactionFn
+            | typeof STORE_DATA_ACCESS
+            | typeof COMMITTED_READ_ACCESS,
         name?: string,
     ) => {
         // Adapter-only closure handshake. The token is not reachable from the
         // public facade or package root, so StoreData never becomes a runtime
         // property and ordinary store creation needs no side registry.
         if (callback === STORE_DATA_ACCESS) return data
+        // Same handshake for the committed-only read. `getDefault` is closure
+        // state (the shared init set), so it cannot be recovered from StoreData
+        // alone, and handing it out here keeps the facade's shape fixed.
+        if (callback === COMMITTED_READ_ACCESS) return getDefault
         if (data.pendingOrphanCleanup) {
             if (data.pendingOrphanCleanup === DISPOSED_STORE_PENDING) {
                 throw createStoreDisposedError(data)

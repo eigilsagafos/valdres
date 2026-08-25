@@ -63,6 +63,14 @@ Synchronous descendant reads see pending ancestor values while scope-local
 shadows remain isolated from ancestors; subscriber notifications stay deferred
 until the batch commits.
 
+Those two halves are deliberately out of phase: `store.get` reads your own
+writes back immediately, but only the commit notifies. Code that reacts to
+notifications must therefore not read staged writes, or it observes values no
+callback ever announced — React reports exactly that as tearing. Framework
+bindings handle this for you (`valdres-react`'s `useValue` reads the committed
+value); if you are writing your own integration, read through
+`storeAdapter.committedGet` rather than `store.get`.
+
 ```ts
 // Enable schema validation (e.g. outside production)
 const devStore = store({ schemaValidation: import.meta.env.DEV })

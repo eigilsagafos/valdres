@@ -129,6 +129,18 @@ const MANIFEST: ManifestEntry[] = [
             "the same map before the comparison.",
     },
     {
+        file: "src/lib/transaction.ts",
+        fn: "get",
+        operand: "committed",
+        kind: "gated",
+        why:
+            "A staged selector read memoizes against the committed value so an " +
+            "unchanged value keeps its reference (see the call site: batched " +
+            "store.get routes through here, and React treats reference churn " +
+            "with no notification as tearing). A selector this store never " +
+            "committed has nothing to compare against.",
+    },
+    {
         file: "src/lib/setAtom.ts",
         fn: "setAtom",
         operand: "currentValue",
@@ -321,6 +333,16 @@ const handSpelledPredicates = (
 const ARROW_FN =
     /^\s*(?:export\s+)?(?:const|let|var)\s+([A-Za-z0-9_$]+)\s*(?::[^=]*)?=\s*(?:async\s+)?(?:<[^>]*>\s*)?\(/
 const FUNCTION_FN = /^\s*(?:export\s+)?(?:async\s+)?function\s+([A-Za-z0-9_$]+)/
+// An arrow assigned to a CLASS PROPERTY (`get: GetValue = (`, `private
+// hasTxnOrData = (`). Without this the backwards search walks past it to the
+// previous module-level binding, so a call inside `TransactionContext` is
+// attributed to an unrelated function AND gets that function's much wider
+// window — which is where a `gated` claim would stop being checked against the
+// gate that actually guards it. `TransactionContext` is built entirely from
+// class-property arrows, and staged-vs-committed is exactly the comparison that
+// belongs there, so this is the shape the gate most needs to see.
+const CLASS_PROP_FN =
+    /^\s*(?:(?:public|private|protected|readonly|static|override|declare)\s+)*([A-Za-z0-9_$]+)\s*(?::[^=]*)?=\s*(?:async\s+)?(?:<[^>]*>\s*)?\(/
 
 /** Text of the first argument of a call whose `(` is at `openParen`. */
 const firstArgument = (source: string, openParen: number): string => {
@@ -394,7 +416,9 @@ const scanModule = (
         let fnLine = 0
         for (let i = lineIndex; i >= 0; i--) {
             const found =
-                ARROW_FN.exec(lines[i]!) ?? FUNCTION_FN.exec(lines[i]!)
+                ARROW_FN.exec(lines[i]!) ??
+                FUNCTION_FN.exec(lines[i]!) ??
+                CLASS_PROP_FN.exec(lines[i]!)
             if (found) {
                 fn = found[1]!
                 fnLine = i

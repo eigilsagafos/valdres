@@ -2,9 +2,10 @@ import { describe, test, expect, mock } from "bun:test"
 import { atom, selector } from "valdres"
 import { generateStoreAndRenderHook } from "./generateStoreAndRenderHook"
 import { useValue } from "../src/useValue"
+import { flushBatch } from "./flushBatch"
 
 describe("selector evaluation batching: sequential set vs txn", () => {
-    test("sequential store.set batches via implicit transaction", () => {
+    test("sequential store.set batches via implicit transaction", async () => {
         const atomA = atom(0)
         const atomB = atom(0)
         const selectorFn = mock(get => get(atomA) + get(atomB))
@@ -26,10 +27,12 @@ describe("selector evaluation batching: sequential set vs txn", () => {
         // Sequential sets: atomA=1, then atomB=2
         // These are auto-batched into an implicit transaction that commits
         // on the next microtask, so the selector only evaluates once with
-        // the final state [1, 2] — no intermediate [1, 0] evaluation.
+        // the final state [1, 2] — no intermediate [1, 0] evaluation. The
+        // commit is also what notifies the subscriber, so the flush is what
+        // makes the new value observable to the component.
         store.set(atomA, 1)
         store.set(atomB, 2)
-        rerender()
+        await flushBatch()
 
         expect(result.current).toBe(3)
 
