@@ -514,7 +514,7 @@ describe("verify refuses to run a job it cannot reproduce", () => {
                     ]),
                 ),
             ),
-        ).toThrow(/no later step re-failing/)
+        ).toThrow(/no later step that re-fails/)
     })
 
     // GitHub also accepts an expression for continue-on-error, which parses as
@@ -545,6 +545,93 @@ describe("verify refuses to run a job it cannot reproduce", () => {
                 ),
             ),
         ).not.toThrow()
+    })
+
+    // Matching the `if:` shape does not prove a step re-fails the job. Each of
+    // these leaves CI green after tolerating the original failure, so verify
+    // stopping red would be a false alarm.
+    describe("a compensator must actually fail the job", () => {
+        const tolerated = ["id: gate", "continue-on-error: true", "run: work"]
+        const withCompensator = (body: string[]) =>
+            fixture(step("Gate", tolerated), step("After", body))
+
+        test.each([
+            ["exit 1", ["if: steps.gate.outcome == 'failure'", "run: exit 1"]],
+            [
+                "exit 42",
+                ["if: steps.gate.outcome == 'failure'", "run: exit 42"],
+            ],
+            [
+                'a quoted "false"',
+                ["if: steps.gate.outcome == 'failure'", 'run: "false"'],
+            ],
+        ])("%s counts", (_label, body) => {
+            expect(() => buildPlan(withCompensator(body))).not.toThrow()
+        })
+
+        test.each([
+            [
+                "a reporting step",
+                ["if: steps.gate.outcome == 'failure'", "run: echo failed"],
+            ],
+            ["exit 0", ["if: steps.gate.outcome == 'failure'", "run: exit 0"]],
+            [
+                "run: true (a YAML boolean, not the shell command)",
+                ["if: steps.gate.outcome == 'failure'", "run: true"],
+            ],
+            [
+                "a compensator that is itself tolerated",
+                [
+                    "if: steps.gate.outcome == 'failure'",
+                    "continue-on-error: true",
+                    "run: exit 1",
+                ],
+            ],
+            [
+                "an action step, whose effect on the job is opaque",
+                ["if: steps.gate.outcome == 'failure'", "uses: some/action@v1"],
+            ],
+        ])("%s does not count", (_label, body) => {
+            expect(() => buildPlan(withCompensator(body))).toThrow(
+                /no later step that re-fails/,
+            )
+        })
+    })
+
+    // GitHub rejects a step declaring both, so verify would be reporting green
+    // for a workflow that never runs at all.
+    test("a step with both run: and uses: is an error", () => {
+        expect(() =>
+            buildPlan(
+                fixture(
+                    step("Mixed", [
+                        "uses: actions/checkout@v6",
+                        "run: echo pwned",
+                    ]),
+                ),
+            ),
+        ).toThrow(/declares both `run:` and `uses:`/)
+    })
+
+    test("a run: step carrying with: is an error", () => {
+        expect(() =>
+            buildPlan(
+                fixture(
+                    step("Odd", [
+                        "run: echo hi",
+                        "with:",
+                        "    fetch-depth: 0",
+                    ]),
+                ),
+            ),
+        ).toThrow(/carrying `with:`/)
+    })
+
+    test("a non-string run: is an error, not a crash", () => {
+        // `run: true` / `run: false` are YAML booleans that read as commands.
+        expect(() => buildPlan(fixture(step("Bool", ["run: true"])))).toThrow(
+            /non-string `run:/,
+        )
     })
 
     test("the exact failure compensator is recognised and skipped", () => {

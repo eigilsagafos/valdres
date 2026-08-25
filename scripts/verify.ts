@@ -212,6 +212,13 @@ const RUNNER_VARIABLE = /\$\{?((?:GITHUB|RUNNER)_[A-Z_]+)/g
  *  verify stopped, the one direction of divergence that wastes your time. */
 const FAILURE_COMPENSATOR = /^steps\.([\w-]+)\.outcome == 'failure'$/
 
+/** Commands that cannot succeed. Matching the `if:` shape is not enough to
+ *  prove a step re-fails the job: a later step gated on the same outcome that
+ *  merely reports (`run: echo "tests failed"`) leaves CI green while verify
+ *  stops red. Verify cannot decide in general whether a command fails, so it
+ *  accepts only ones that unconditionally do. */
+const ALWAYS_FAILS = /^(?:false|exit\s+[1-9][0-9]*)$/
+
 /** GitHub `if:` expressions verify knows how to answer locally. Returning null
  *  means "unrecognised", which stops the run — a new conditional step must get
  *  a deliberate local answer rather than being dropped on the floor. */
@@ -285,16 +292,22 @@ const assertCompensated = (
     const id = step.id
     const compensator =
         id !== undefined &&
-        siblings
-            .slice(index + 1)
-            .some(
-                other =>
-                    (other.if ?? "").trim().match(FAILURE_COMPENSATOR)?.[1] ===
-                    id,
+        siblings.slice(index + 1).some(other => {
+            if ((other.if ?? "").trim().match(FAILURE_COMPENSATOR)?.[1] !== id)
+                return false
+            // A compensator that is itself tolerated fails nothing, and an
+            // action step's effect on the job is opaque to verify.
+            if (other["continue-on-error"] === true) return false
+            // `typeof`, not `!== undefined`: `run: true` is a YAML boolean, and
+            // it is exactly the no-op that must not count as a compensator.
+            return (
+                typeof other.run === "string" &&
+                ALWAYS_FAILS.test(other.run.trim())
             )
+        })
     if (!compensator)
         throw teach(
-            `Step "${name}" in ${WORKFLOW} is \`continue-on-error: true\` with no later step re-failing on its outcome, so CI tolerates its failure and verify would not.`,
+            `Step "${name}" in ${WORKFLOW} is \`continue-on-error: true\` with no later step that re-fails the job on its outcome (a \`run:\` of \`exit <nonzero>\` or \`false\`, not itself \`continue-on-error\`), so CI tolerates its failure and verify would not.`,
         )
 }
 
@@ -429,6 +442,32 @@ export const buildPlan = (workflowSource: string): Plan => {
                 step.name ??
                 (step.uses ? `uses: ${step.uses}` : `step ${index + 1}`)
 
+            // `run: false` and `run: true` are YAML BOOLEANS, not the shell
+            // commands they look like — a real trap, since `run: true` reads as
+            // a no-op compensator. Anything non-string here would also crash
+            // the string handling below, so reject it by shape.
+            if (step.run !== undefined && typeof step.run !== "string")
+                throw teach(
+                    `Step "${name}" in ${WORKFLOW} has a non-string \`run: ${String(
+                        step.run,
+                    )}\` — YAML parsed it as ${typeof step.run}. Quote it ("${String(
+                        step.run,
+                    )}") if you meant the shell command.`,
+                )
+
+            // GitHub rejects a step declaring both, and `with:` means nothing
+            // on a `run:` step. Verify would otherwise happily execute the
+            // `run:` and report green for a workflow CI cannot even validate —
+            // a false green for a file that never gets as far as failing.
+            if (step.run !== undefined && step.uses !== undefined)
+                throw teach(
+                    `Step "${name}" in ${WORKFLOW} declares both \`run:\` and \`uses:\`. GitHub rejects that outright, so this workflow would not run at all.`,
+                )
+            if (step.run !== undefined && step.with !== undefined)
+                throw teach(
+                    `Step "${name}" in ${WORKFLOW} is a \`run:\` step carrying \`with:\`, which only applies to \`uses:\` steps.`,
+                )
+
             // `uses:` steps are runner plumbing (checkout, toolchain install)
             // or GitHub API reporting. Locally you already have a checkout and
             // a toolchain; the pins are compared in the preflight below and
@@ -475,7 +514,7 @@ export const buildPlan = (workflowSource: string): Plan => {
             // a DIFFERENT job, with an identical environment. A repeat inside
             // one job is intentional, and the same command under different env
             // is a different command.
-            const identity = `${step.run} ${JSON.stringify(step.env ?? {})}`
+            const identity = `${step.run}\u0000${JSON.stringify(step.env ?? {})}`
             const priorJob = alreadyRun.get(identity)
             if (
                 priorJob !== undefined &&
