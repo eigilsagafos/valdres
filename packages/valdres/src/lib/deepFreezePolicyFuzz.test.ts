@@ -731,8 +731,21 @@ describe("deep-freeze policy fuzz", () => {
         // normalizeStagedValue. Two mechanisms, one guarantee — so it is worth a
         // check that spans both.
         const failures: string[] = []
+        // A pre-frozen node in otherwise live input, on purpose. It makes the
+        // comparison below discriminating: "the schema saw nothing frozen" would
+        // be the wrong assertion (this value arrives with a frozen node and that
+        // is the caller's business), and so would "the schema saw no live node"
+        // — the earlier form of this check, which a SHALLOW freeze-then-validate
+        // slipped through because the live child kept it quiet. What has to hold
+        // is that the schema sees the caller's freeze state EXACTLY.
+        const makeValue = () => ({
+            live: { a: 1 },
+            deep: { b: { c: 2 } },
+            pre: Object.freeze({ d: 3 }),
+        })
+        const pristine = freezeSignature(makeValue()).join(" ")
         for (const path of PATHS) {
-            const value = { nested: { a: 1 } }
+            const value = makeValue()
             if (!path.accepts(value)) continue
             const observed: string[] = []
             const options: AtomOptions<any> = {
@@ -756,12 +769,10 @@ describe("deep-freeze policy fuzz", () => {
                 failures.push(`${path.label} never validated the value`)
                 continue
             }
-            const frozenWhenSeen = observed.filter(
-                entry => !entry.includes("=live"),
-            )
-            if (frozenWhenSeen.length > 0) {
+            const altered = observed.filter(entry => entry !== pristine)
+            if (altered.length > 0) {
                 failures.push(
-                    `${path.label} validated an already-frozen value: ${frozenWhenSeen.join(" | ")}`,
+                    `${path.label} validated a value the policy had already touched: ${altered.join(" | ")} (expected ${pristine})`,
                 )
             }
         }
