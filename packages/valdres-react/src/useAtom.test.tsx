@@ -3,17 +3,18 @@ import { describe, expect, test } from "bun:test"
 import { useEffect } from "react"
 import { atom } from "valdres"
 import { generateStoreAndRenderHook } from "../test/generateStoreAndRenderHook"
+import { flushBatch } from "../test/flushBatch"
 import { useAtom } from "./useAtom"
 import { Provider } from "./Provider"
 
 describe("useAtom", () => {
-    test("default", () => {
+    test("default", async () => {
         const [, renderHook] = generateStoreAndRenderHook()
         const numberAtom = atom(10)
-        const { result, rerender } = renderHook(() => useAtom(numberAtom))
+        const { result } = renderHook(() => useAtom(numberAtom))
         expect(result.current[0]).toBe(10)
         result.current[1](20)
-        rerender()
+        await flushBatch()
         expect(result.current[0]).toBe(20)
     })
     test("can write an atom value on useEffect", async () => {

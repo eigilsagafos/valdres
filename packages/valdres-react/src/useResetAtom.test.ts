@@ -4,6 +4,7 @@ import { atom, atomFamily } from "valdres"
 import { useAtom } from "./useAtom"
 import { waitFor } from "@testing-library/react"
 import { generateStoreAndRenderHook } from "../test/generateStoreAndRenderHook"
+import { flushBatch } from "../test/flushBatch"
 
 const useTestHook = atom => {
     const reset = useResetAtom(atom)
@@ -16,13 +17,13 @@ const useTestHook = atom => {
 }
 
 describe("useResetAtom", () => {
-    test("atom with primitive value", () => {
+    test("atom with primitive value", async () => {
         const [, renderHook] = generateStoreAndRenderHook()
         const numberAtom = atom(10)
-        const { result, rerender } = renderHook(() => useTestHook(numberAtom))
+        const { result } = renderHook(() => useTestHook(numberAtom))
         expect(result.current.value).toBe(10)
         result.current.set(20)
-        rerender()
+        await flushBatch()
         expect(result.current.value).toBe(20)
         result.current.reset()
         waitFor(() => {

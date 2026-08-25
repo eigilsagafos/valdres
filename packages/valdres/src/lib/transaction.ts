@@ -488,6 +488,32 @@ export class TransactionContext {
                 this.selectorCircularDependencySet,
                 this.selectorRuntime,
             )
+            // Memoize against the committed value under the selector's own
+            // equality, exactly as the committed evaluators do (initSelector /
+            // propagateUpdatedAtoms both keep the existing reference when
+            // `areEqual`). Without this a staged read is reference-unstable for
+            // an UNCHANGED value: every `set` clears the cache above, so the
+            // next read hands back a freshly-built object that no notification
+            // ever accompanies. `batchUpdates` stores route store.get through
+            // here (getBatched), so that churn reaches React —
+            // useSyncExternalStore's post-commit check sees a snapshot that
+            // differs from the render's, calls forceStoreRerender, and a burst
+            // of writes walks it into "Maximum update depth exceeded".
+            //
+            // Same presence gate and promise rule as those evaluators: with
+            // nothing committed the answer is "not equal" by definition, so no
+            // comparator is shown the absent sentinel, and promises compare by
+            // reference (deep equal treats all promises as identical).
+            const committed = this._data.values.get(state)
+            if (
+                hasCommittedValue(state, this._data, committed) &&
+                !isPromiseLike(committed) &&
+                !isPromiseLike(res) &&
+                state.equal(committed, res)
+            ) {
+                this.selectorCache.set(state, committed)
+                return committed
+            }
             this.selectorCache.set(state, res)
             return res
         } else {
