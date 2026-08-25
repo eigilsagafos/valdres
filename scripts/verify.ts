@@ -176,7 +176,11 @@ export type PlannedStep = {
 export type Plan = {
     steps: PlannedStep[]
     skipped: Array<{ name: string; reason: string }>
-    pinned: { bun?: string; node?: string }
+    /** Every distinct pin found across the covered jobs. More than one means no
+     *  single local toolchain can replay them; none means verify cannot tell. */
+    pinned: { bun: string[]; node: string[] }
+    /** Every distinct `runs-on` label across the covered jobs. */
+    runners: string[]
 }
 
 /** The only `run:` steps verify refuses to execute, and why. A name here that
@@ -399,6 +403,27 @@ export const buildPlan = (workflowSource: string): Plan => {
             "job",
         )
 
+        // Verify executes every step through `bash -e`. That is a fair model of
+        // a Linux runner and not of a Windows one, and a self-hosted label says
+        // nothing at all about the environment — so validate the label rather
+        // than assume. (Which OS the DEVELOPER is on is reported in preflight,
+        // not blocked; see toolchainDrift for why the two differ.)
+        const runsOn = (job as { "runs-on"?: unknown })["runs-on"]
+        if (runsOn === undefined)
+            throw teach(
+                `\`jobs.${jobName}\` in ${WORKFLOW} declares no \`runs-on\`, so verify cannot tell which runner it models.`,
+            )
+        const labels = (Array.isArray(runsOn) ? runsOn : [runsOn]).map(String)
+        const unsupportedRunner = labels.filter(
+            label => !/^ubuntu-/.test(label),
+        )
+        if (unsupportedRunner.length > 0)
+            throw teach(
+                `\`jobs.${jobName}\` in ${WORKFLOW} runs on ${unsupportedRunner.join(
+                    ", ",
+                )}. Verify models a Linux runner (\`bash -e\`, GNU-ish utilities) and cannot faithfully replay that.`,
+            )
+
         steps.forEach((step, index) => {
             const name =
                 step.name ??
@@ -485,17 +510,40 @@ export const buildPlan = (workflowSource: string): Plan => {
                 `key, or drop it if the step is gone.`,
         )
 
+    // Collect EVERY pin across the covered jobs, not the first. Each job pins
+    // its own toolchain, but verify runs them all under one local version — so
+    // if the jobs ever disagree, no local toolchain can be correct for both and
+    // preflight must say so rather than validating against whichever came
+    // first. An absent pin is equally fatal: verify cannot claim parity with a
+    // version it does not know.
     const allSteps = JOBS.flatMap(name => workflow.jobs?.[name]?.steps ?? [])
-    const pin = (action: string, input: string) =>
-        allSteps.find(step => step.uses?.startsWith(action))?.with?.[input]
+    const pins = (action: string, input: string) => [
+        ...new Set(
+            allSteps
+                .filter(step => step.uses?.startsWith(action))
+                .map(step => step.with?.[input])
+                .filter((value): value is string => value !== undefined)
+                .map(String),
+        ),
+    ]
 
     return {
         steps: planned,
         skipped,
         pinned: {
-            bun: pin("oven-sh/setup-bun", "bun-version")?.toString(),
-            node: pin("actions/setup-node", "node-version")?.toString(),
+            bun: pins("oven-sh/setup-bun", "bun-version"),
+            node: pins("actions/setup-node", "node-version"),
         },
+        runners: [
+            ...new Set(
+                JOBS.flatMap(name => {
+                    const on = (
+                        workflow.jobs?.[name] as { "runs-on"?: unknown }
+                    )?.["runs-on"]
+                    return (Array.isArray(on) ? on : [on]).map(String)
+                }),
+            ),
+        ],
     }
 }
 
@@ -526,19 +574,42 @@ const localNodeVersion = async () => {
  *  is on PATH. A run on the wrong toolchain measured something other than what
  *  CI measures, so it may not claim CI would pass. */
 export const toolchainDrift = (
-    local: { bun: string | undefined; node: string | undefined },
+    local: { bun: string | undefined; node: string | undefined; os?: string },
     pinned: Plan["pinned"],
+    runners: string[] = [],
 ) => {
     const drift: string[] = []
     const lines: string[] = []
     const check = (
         label: string,
         installed: string | undefined,
-        pin: string | undefined,
+        candidates: string[],
     ) => {
-        if (!pin) {
+        if (candidates.length > 1) {
+            // Verify runs every covered job under ONE local toolchain, so pins
+            // that disagree cannot all be satisfied — validating against
+            // whichever came first would be a false green for the other job.
+            drift.push(
+                `${label.trim()} is pinned to ${candidates.join(
+                    " and ",
+                )} by different covered jobs; one local version cannot replay both`,
+            )
             lines.push(
-                `  · ${label} ${installed ?? "not found"} (CI pin unknown)`,
+                `  ✗ ${label} ${installed ?? "not found"} — CI pins conflict (${candidates.join(
+                    ", ",
+                )})`,
+            )
+            return
+        }
+        const pin = candidates[0]
+        if (!pin) {
+            // Absent is fatal too: verify cannot claim parity with a version it
+            // does not know.
+            drift.push(
+                `${label.trim()} has no pin in the covered jobs, so verify cannot check it`,
+            )
+            lines.push(
+                `  ✗ ${label} ${installed ?? "not found"} — CI pin missing`,
             )
             return
         }
@@ -557,13 +628,33 @@ export const toolchainDrift = (
     }
     check("bun ", local.bun, pinned.bun)
     check("node", local.node, pinned.node)
+
+    // The host OS is REPORTED, never blocking, and that is a deliberate split
+    // from the version pins above. The divergence is real but narrow — CI runs
+    // ubuntu-22.04 while most contributors here are on macOS, so a `run:` block
+    // using a GNU-only flag can pass in one place and fail in the other.
+    // Blocking would make verify unusable on the primary dev platform, and a
+    // flag everyone passes on every run would neuter the Bun/Node checks along
+    // with it. So: name it every run rather than let it be invisible.
+    if (runners.length > 0 && local.os && local.os !== "linux")
+        lines.push(
+            `  · host ${local.os} — CI runs ${runners.join(
+                ", ",
+            )}; shell utilities differ (BSD vs GNU)`,
+        )
+
     return { drift, lines }
 }
 
-const checkToolchain = async (pinned: Plan["pinned"]) => {
+const checkToolchain = async (plan: Plan) => {
     const { drift, lines } = toolchainDrift(
-        { bun: Bun.version, node: await localNodeVersion() },
-        pinned,
+        {
+            bun: Bun.version,
+            node: await localNodeVersion(),
+            os: process.platform === "darwin" ? "macOS" : process.platform,
+        },
+        plan.pinned,
+        plan.runners,
     )
     console.log("Toolchain")
     for (const line of lines) console.log(line)
@@ -677,7 +768,7 @@ if (import.meta.main) {
     console.log(
         `\n${WORKFLOW} — job(s) ${JOBS.map(job => `\`${job}\``).join(", ")}\n`,
     )
-    const drift = await checkToolchain(plan.pinned)
+    const drift = await checkToolchain(plan)
 
     // `--list` runs nothing, so it cannot report a false green and stays
     // informational. An actual run on the wrong toolchain measured something

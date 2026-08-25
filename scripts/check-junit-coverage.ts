@@ -120,6 +120,22 @@ if (import.meta.main) {
         process.exit(0)
     }
 
+    // An unresolvable base silently drops the base-branch expectations, which
+    // is the difference between catching and missing "this PR replaced a real
+    // test script with the placeholder": CI's full-history checkout still
+    // expects that package to report, a base-less local run does not. Fail
+    // closed rather than quietly weaken the gate. Nothing is lost by being
+    // strict — verify's `Require changeset` step already needs origin/main, so
+    // a clone without it never reaches this point anyway.
+    if (!coverage.baseResolved) {
+        console.error(
+            `::error::Base ref \`${coverage.base}\` could not be resolved, so packages that had a\n` +
+                `test script on the base branch cannot be included in the expectation set.\n\n` +
+                `    git fetch origin main:refs/remotes/origin/main\n` +
+                `    bun run scripts/check-junit-coverage.ts --base=<ref>   # or point somewhere else`,
+        )
+        process.exit(1)
+    }
     // Guard the guard: if the scan stops finding test-bearing packages at all,
     // fail rather than pass an empty expectation set.
     if (coverage.expected.length === 0) {

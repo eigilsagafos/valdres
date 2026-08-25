@@ -162,6 +162,7 @@ describe("verify refuses to run a job it cannot reproduce", () => {
             "name: CI",
             "jobs:",
             "    test:",
+            "        runs-on: ubuntu-22.04",
             "        steps:",
             "            - name: Verify publish (dry-run)",
             "              run: DRY_RUN=1 bash scripts/ci-publish.sh",
@@ -169,12 +170,14 @@ describe("verify refuses to run a job it cannot reproduce", () => {
             "              run: git diff --exit-code",
             ...steps,
             "    valdres-package:",
+            "        runs-on: ubuntu-22.04",
             "        steps:",
             "            - name: Package gate",
             "              run: bun run scripts/check-valdres-package.ts",
             // Declared because SKIPPED_JOBS names it; every job in the file
             // must be classified, and a named job that vanishes is an error.
             "    publish:",
+            "        runs-on: ubuntu-22.04",
             "        steps:",
             "            - name: Publish",
             "              run: bash scripts/ci-publish.sh",
@@ -283,10 +286,10 @@ describe("verify refuses to run a job it cannot reproduce", () => {
 
     test("a skipped job that vanishes is an error", () => {
         // Deleted, not renamed — a rename trips the unclassified check first.
-        const gone = fixture(step("Gate", ["run: echo ok"])).replace(
-            "\n    publish:\n        steps:\n            - name: Publish\n              run: bash scripts/ci-publish.sh",
-            "",
-        )
+        // Truncating at the marker keeps this robust against fixture edits.
+        const source = fixture(step("Gate", ["run: echo ok"]))
+        const gone = source.slice(0, source.indexOf("\n    publish:"))
+        expect(gone).not.toContain("publish:")
         expect(() => buildPlan(gone)).toThrow(/no longer exist/)
     })
 
@@ -314,12 +317,33 @@ describe("verify refuses to run a job it cannot reproduce", () => {
         ["timeout-minutes", "        timeout-minutes: 5"],
     ])("job-level %s is an error", (key, block) => {
         const source = fixture(step("Gate", ["run: echo ok"])).replace(
-            "    test:\n        steps:",
-            `    test:\n${block}\n        steps:`,
+            "    test:\n        runs-on: ubuntu-22.04\n        steps:",
+            `    test:\n${block}\n        runs-on: ubuntu-22.04\n        steps:`,
         )
         expect(() => buildPlan(source)).toThrow(
             new RegExp(`job key\\(s\\) verify does not honour: ${key}`),
         )
+    })
+
+    // Verify executes every step through `bash -e`, a fair model of a Linux
+    // runner and not of a Windows one; a self-hosted label says nothing at all.
+    test.each(["windows-latest", "macos-14", "self-hosted"])(
+        "a covered job on %s is an error",
+        runner => {
+            const source = fixture(step("Gate", ["run: echo ok"])).replace(
+                "    test:\n        runs-on: ubuntu-22.04\n        steps:",
+                `    test:\n        runs-on: ${runner}\n        steps:`,
+            )
+            expect(() => buildPlan(source)).toThrow(/models a Linux runner/)
+        },
+    )
+
+    test("ubuntu runners are accepted and collected", () => {
+        const source = fixture(step("Gate", ["run: echo ok"])).replace(
+            "    test:\n        runs-on: ubuntu-22.04\n        steps:",
+            "    test:\n        runs-on: ubuntu-22.04\n        steps:",
+        )
+        expect(buildPlan(source).runners).toContain("ubuntu-22.04")
     })
 
     test("workflow-level defaults is an error", () => {
@@ -656,47 +680,87 @@ describe("runSteps", () => {
 // already made the size gate pass locally on a commit CI rejected, and that gate
 // now runs inside verify.
 describe("toolchainDrift", () => {
-    const pinned = { bun: "1.4.0", node: "24.16" }
+    const pinned = { bun: ["1.4.0"], node: ["24.16"] }
+    const linux = (bun: string | undefined, node: string | undefined) => ({
+        bun,
+        node,
+        os: "linux",
+    })
 
     test("exact and patch-level matches are clean", () => {
-        expect(
-            toolchainDrift({ bun: "1.4.0", node: "24.16.0" }, pinned).drift,
-        ).toEqual([])
-        expect(
-            toolchainDrift({ bun: "1.4.0", node: "24.16" }, pinned).drift,
-        ).toEqual([])
+        expect(toolchainDrift(linux("1.4.0", "24.16.0"), pinned).drift).toEqual(
+            [],
+        )
+        expect(toolchainDrift(linux("1.4.0", "24.16"), pinned).drift).toEqual(
+            [],
+        )
     })
 
     test("a different minor or major is drift", () => {
         // "24.16" must not be satisfied by 24.17 or 26 — only by 24.16.x.
+        expect(toolchainDrift(linux("1.4.0", "24.17.0"), pinned).drift).toEqual(
+            ["node is 24.17.0; CI pins 24.16"],
+        )
         expect(
-            toolchainDrift({ bun: "1.4.0", node: "24.17.0" }, pinned).drift,
-        ).toEqual(["node is 24.17.0; CI pins 24.16"])
-        expect(
-            toolchainDrift({ bun: "1.3.14", node: "26.0.0" }, pinned).drift,
+            toolchainDrift(linux("1.3.14", "26.0.0"), pinned).drift,
         ).toHaveLength(2)
     })
 
     test("a prefix that is not a version boundary is drift", () => {
         // 24.161 starts with "24.16" as a string but is a different version.
         expect(
-            toolchainDrift({ bun: "1.4.0", node: "24.161.0" }, pinned).drift,
+            toolchainDrift(linux("1.4.0", "24.161.0"), pinned).drift,
         ).toEqual(["node is 24.161.0; CI pins 24.16"])
     })
 
     test("a missing executable is drift, not a pass", () => {
-        expect(
-            toolchainDrift({ bun: "1.4.0", node: undefined }, pinned).drift,
-        ).toEqual(["node is not installed; CI pins 24.16"])
+        expect(toolchainDrift(linux("1.4.0", undefined), pinned).drift).toEqual(
+            ["node is not installed; CI pins 24.16"],
+        )
     })
 
-    test("an unknown pin is reported but not treated as drift", () => {
+    // Verify runs every covered job under one local toolchain, so pins that
+    // disagree cannot all be satisfied — checking only the first would be a
+    // false green for the other job.
+    test("covered jobs pinning different versions is drift", () => {
+        const { drift } = toolchainDrift(linux("1.4.0", "24.16.0"), {
+            bun: ["1.4.0", "1.5.0"],
+            node: ["24.16"],
+        })
+        expect(drift).toEqual([
+            "bun is pinned to 1.4.0 and 1.5.0 by different covered jobs; one local version cannot replay both",
+        ])
+    })
+
+    test("a missing pin is drift, not an informational note", () => {
+        // Verify cannot claim parity with a version it does not know.
+        const { drift } = toolchainDrift(linux("1.4.0", "24.16.0"), {
+            bun: ["1.4.0"],
+            node: [],
+        })
+        expect(drift).toEqual([
+            "node has no pin in the covered jobs, so verify cannot check it",
+        ])
+    })
+
+    // Deliberately NOT drift: blocking would make verify unusable on macOS, the
+    // primary dev platform here, and a flag passed on every run would neuter
+    // the version checks too. Reported so it is never invisible.
+    test("a non-Linux host is reported, not blocked", () => {
         const { drift, lines } = toolchainDrift(
-            { bun: "1.4.0", node: "24.16.0" },
-            { bun: "1.4.0", node: undefined },
+            { bun: "1.4.0", node: "24.16.0", os: "macOS" },
+            pinned,
+            ["ubuntu-22.04"],
         )
         expect(drift).toEqual([])
-        expect(lines.join("\n")).toContain("CI pin unknown")
+        expect(lines.join("\n")).toContain("host macOS — CI runs ubuntu-22.04")
+    })
+
+    test("a Linux host adds no host note", () => {
+        const { lines } = toolchainDrift(linux("1.4.0", "24.16.0"), pinned, [
+            "ubuntu-22.04",
+        ])
+        expect(lines.join("\n")).not.toContain("host")
     })
 })
 
