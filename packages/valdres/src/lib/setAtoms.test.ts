@@ -86,12 +86,16 @@ describe("commitAtoms", () => {
  *
  * Every case runs at both `FRESH_ATOM_FAST_PATH_MIN` and one below it, so the
  * specialization is compared against the path it stands in for rather than
- * against an expectation written down by hand. The two hostile cases below
- * hinge on a value getter firing exactly twice — once when the transaction
- * body stages the value, once when the commit writes it — so each asserts that
- * traversal count. Were a third traversal ever added, the hijack would land
- * before admission instead of inside the write loop and these tests would go
- * quietly vacuous; the assertion turns that into a failure instead.
+ * against an expectation written down by hand. The two hostile behaviour tests
+ * below hinge on a value getter firing exactly twice — once when the
+ * transaction body stages the value, once when the commit writes it — so each
+ * asserts that traversal count. Were a third traversal ever added, the hijack
+ * would land before admission instead of inside the write loop and these tests
+ * would go quietly vacuous; the assertion turns that into a failure instead.
+ *
+ * Those two use a value getter, which is dev-only. That is a property of the
+ * route they exercise, not of the fast path: the divergence table below also
+ * covers atom accessors, which reach the same window in a production build.
  */
 describe("seed fast path", () => {
     const BELOW = FRESH_ATOM_FAST_PATH_MIN - 1
@@ -311,13 +315,20 @@ describe("seed fast path", () => {
      * freezing it, validating it, invoking `onInit`, notifying a subscriber
      * added mid-commit — is skipped.
      *
+     * Reaching any of them needs a getter or accessor that mutates a later atom
+     * in the same batch, which no ordinary code does — but by TWO routes, not
+     * one, which is what `mechanism` records. A value getter rides the dev-only
+     * deepFreeze of an object value; an atom accessor rides the write path's
+     * own reads of `atom.mutable`/`atom.maxAge` and needs neither a dev build
+     * nor an object value.
+     *
      * `diverges` is the CURRENT verdict, not the desired one. A new divergence
-     * fails here, and so does one that gets closed: admitting only primitive
-     * VALUES would close all of them at once (the loop would then run no user
-     * code, so nothing could be mutated mid-commit), at the cost of pushing
-     * object-valued bulk seeds back onto the established path. Reaching any of
-     * these needs a value getter to mutate a later atom in the same batch,
-     * which no ordinary code does.
+     * fails here, and so does one that gets closed. Note what that means for
+     * any proposed closure: narrowing admission to primitive VALUES shuts the
+     * value-getter route only — run it against this table and the six
+     * value-getter rows flip while the two `atom-accessor` rows keep diverging.
+     * An earlier version of this comment claimed that narrowing closed all of
+     * them; the accessor rows below are why it does not.
      */
     describe("known divergences", () => {
         type Probe = Record<string, number | undefined>
