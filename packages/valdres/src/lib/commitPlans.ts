@@ -65,10 +65,18 @@ import { IS_PROD } from "./IS_PROD"
 // allocates, and it is compiled out of the published bundle by the define in
 // `build.ts` (see the guard in `commitEngine.ts` for why the env read is
 // written inline rather than behind a shared const).
+//
+// `!IS_PROD` stays FIRST, as at every other self-check site. Without the define
+// — anyone bundling valdres from source, including this repo's own docs site —
+// the env read ships raw, and `process` does not exist in a browser. Reading it
+// first threw a ReferenceError on module load, because the module-static plan
+// graph below counts its own allocations: one unguarded read took the entire
+// bundle down. Leading with `!IS_PROD` short-circuits before it, since
+// process-less runtimes default to production.
 const count = (store: StoreData | undefined, allocations: number) => {
     if (
-        process.env.VALDRES_ENGINE_SELF_CHECKS !== "off" &&
         !IS_PROD &&
+        process.env.VALDRES_ENGINE_SELF_CHECKS !== "off" &&
         store?.architectureInstrumentation
     )
         recordCommitPlanAllocations(store, allocations)

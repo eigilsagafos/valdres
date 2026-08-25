@@ -19,6 +19,11 @@ jobs:
               env:
                   NODE_ENV: production
                   PUBLIC_POSTHOG_KEY: ${{ vars.PUBLIC_POSTHOG_KEY }}
+            # CI gates this on every PR too, but CI and this workflow both run on
+            # push to main — in parallel. Repeat the check here so a bundle that
+            # throws on load cannot reach the live site while CI is still going red.
+            - name: Docs island bundles load in a browser
+              run: bun run scripts/check-docs-islands.ts
             - name: Upload website artifact
               uses: actions/upload-pages-artifact@v5
               with:
