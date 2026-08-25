@@ -175,9 +175,16 @@ const tryWriteFreshSimpleAtoms = (
         // compares equal without being identical: a `+0` default seeded with
         // `-0` keeps `+0` on the established path and stores `-0` here. That
         // residue is accepted, not overlooked. What the ordering does buy is
-        // the failure shape: whichever of the two steps after the landing
-        // throws, the atom is left holding its default, exactly as initAtom
-        // plus a failed set leaves it.
+        // the failure shape, for failures BEFORE the write lands: if the
+        // comparator throws, or setValueInData throws on its way to storing,
+        // the atom is left holding its default, exactly as initAtom plus a
+        // failed set leaves it.
+        //
+        // That guarantee stops at the store. setValueInData stores the value
+        // and only then reads `atom.maxAge`, so a throw from THERE leaves the
+        // established path holding the default (it threw while initAtom was
+        // landing it) and leaves this loop holding the incoming value. Pinned
+        // as a known divergence rather than claimed away.
         //
         // Neither step is dead, though `equal` alone is inert on a
         // primitive-or-null first operand (it answers from `===` without

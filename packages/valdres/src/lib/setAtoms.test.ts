@@ -348,12 +348,30 @@ describe("seed fast path", () => {
             mechanism?: Mechanism
             /** atom-accessor only: the field to install the accessor on. */
             accessorField?: "mutable" | "maxAge"
+            /**
+             * What the non-carrier atoms are seeded with. Defaults to a
+             * primitive; a case whose mechanism needs an OBJECT on both sides of
+             * the comparison (`equal` only enters its coercion path when both
+             * operands are objects) has to say so, or the mutation is applied
+             * and then never consulted.
+             */
+            seedValue?: () => unknown
+            /**
+             * `true` when the mutation is expected to change the observed
+             * outcome on at least one path. Asserted against a same-seed
+             * baseline, so a case that silently stops reaching its mechanism
+             * fails instead of passing. Absent means the opposite claim — that
+             * NEITHER path consults the field — which still has teeth: the case
+             * fails if either one starts.
+             */
+            observable?: true
             mutate: (victim: any, probe: Probe, store1: any) => void
         }
 
         const CASES: Case[] = [
             {
                 label: "defaultValue := factory function",
+                observable: true,
                 diverges: true,
                 mutate: (v, p) => {
                     v.defaultValue = () => {
@@ -364,6 +382,7 @@ describe("seed fast path", () => {
             },
             {
                 label: "defaultValue := unfreezable Map",
+                observable: true,
                 diverges: true,
                 mutate: v => {
                     v.defaultValue = new Map([["k", 1]])
@@ -371,6 +390,7 @@ describe("seed fast path", () => {
             },
             {
                 label: "defaultValue := selector",
+                observable: true,
                 diverges: true,
                 mutate: (v, p) => {
                     v.defaultValue = selector(() => {
@@ -381,6 +401,7 @@ describe("seed fast path", () => {
             },
             {
                 label: "onInit := recorder",
+                observable: true,
                 diverges: true,
                 mutate: (v, p) => {
                     v.onInit = () => {
@@ -390,6 +411,7 @@ describe("seed fast path", () => {
             },
             {
                 label: "schema := recorder",
+                observable: true,
                 diverges: true,
                 mutate: (v, p) => {
                     v.schema = {
@@ -406,6 +428,7 @@ describe("seed fast path", () => {
             },
             {
                 label: "subscribe(victim) mid-commit (store state, not a field)",
+                observable: true,
                 diverges: true,
                 mutate: (v, p, store1) => {
                     store1.sub(v, () => {
@@ -417,6 +440,7 @@ describe("seed fast path", () => {
             // retained steps, or a deliberate design choice, keeps them in step.
             {
                 label: "equal := throwing comparator",
+                observable: true,
                 diverges: false,
                 mutate: (v, p) => {
                     v.equal = () => {
@@ -426,10 +450,17 @@ describe("seed fast path", () => {
                 },
             },
             {
+                // Needs an object on BOTH sides: the swapped default is one
+                // operand, the seeded value is the other. With a primitive seed
+                // `equal` answers from `===` and this case would apply the
+                // mutation, never reach `valueOf`, and pass regardless.
                 label: "defaultValue := object with throwing valueOf",
                 diverges: false,
+                observable: true,
+                seedValue: () => ({ seeded: true }),
                 mutate: (v, p) => {
                     v.defaultValue = {
+                        swapped: true,
                         valueOf() {
                             p.coercions = (p.coercions ?? 0) + 1
                             throw new Error("coercion reached")
@@ -461,8 +492,11 @@ describe("seed fast path", () => {
                 },
             },
             {
+                // Observable through the cache: both paths record a write
+                // timestamp for it, which is what keeps them in step.
                 label: "maxAge := 1000",
                 diverges: false,
+                observable: true,
                 mutate: v => {
                     v.maxAge = 1000
                 },
@@ -506,6 +540,28 @@ describe("seed fast path", () => {
                     }
                 },
             },
+            {
+                // setValueInData STORES the value (:52/:59) before it reads
+                // `atom.maxAge` (:96), so a throwing accessor on that field
+                // throws AFTER the store. The established path throws while
+                // initAtom is landing the default and leaves the default; this
+                // loop has already stored the incoming value and leaves that.
+                // So the failure guarantee holds only for throws BEFORE the
+                // write lands. Production-reachable.
+                label: "throwing accessor on atom.maxAge, after the store",
+                diverges: true,
+                observable: true,
+                mechanism: "atom-accessor",
+                accessorField: "mutable",
+                mutate: victim => {
+                    Object.defineProperty(victim, "maxAge", {
+                        configurable: true,
+                        get() {
+                            throw new Error("maxAge accessor threw")
+                        },
+                    })
+                },
+            },
         ]
 
         // Every atom is seeded with the SAME value, so nothing in the observed
@@ -535,6 +591,7 @@ describe("seed fast path", () => {
                 })
             }
 
+            const seedValue = testCase.seedValue ?? (() => SEEDED)
             let thrown: string | undefined
             try {
                 store1.txn(txn =>
@@ -548,16 +605,24 @@ describe("seed fast path", () => {
                                           return 1
                                       },
                                   }
-                                : SEEDED,
+                                : seedValue(),
                         ),
                     ),
                 )
             } catch (error) {
                 thrown = (error as Error).message
             }
+            const data = getStoreData(store1)
+            const victim = atoms[count - 1]!
+            // Raw map read FIRST, and it is the load-bearing observable: a
+            // `store.get` re-reads the atom and so can re-run the very accessor
+            // under test, collapsing a real difference into an identical
+            // "<read threw>" on both paths. That is how the post-store maxAge
+            // case first looked like it agreed.
+            const stored = JSON.stringify(data.values.get(victim)) ?? "undefined"
             let readBack: string
             try {
-                readBack = String(store1.get(atoms[count - 1]!))
+                readBack = JSON.stringify(store1.get(victim)) ?? "undefined"
             } catch {
                 readBack = "<read threw>"
             }
@@ -565,9 +630,35 @@ describe("seed fast path", () => {
             // `hookRuns` is reported separately: the established path reads an
             // atom field more often than this loop does (it also writes through
             // initAtom), so comparing it would report a divergence for the
-            // wrong reason.
-            return { outcome: { probe, thrown, readBack }, hookRuns }
+            // wrong reason. The store-internal probes are here because several
+            // fields leave no trace in the value alone — `maxAge` only shows up
+            // as a recorded cache write, and an undefined default only as a
+            // pending-default placeholder.
+            return {
+                outcome: {
+                    probe,
+                    thrown,
+                    stored,
+                    readBack,
+                    committed: data.values.has(victim),
+                    pendingDefault: data.pendingDefaults.has(victim),
+                    cachedWrite: !!(data as any).cache?.get?.(victim)
+                        ?.lastWriteAt,
+                },
+                hookRuns,
+            }
         }
+
+        /** Same seed shape, no mutation — the floor an `observable` case must rise above. */
+        const baselineFor = (count: number, testCase: Case) =>
+            observe(count, {
+                label: "baseline",
+                diverges: false,
+                mechanism: testCase.mechanism,
+                accessorField: testCase.accessorField,
+                seedValue: testCase.seedValue,
+                mutate: () => {},
+            })
 
         for (const testCase of CASES) {
             const mechanism = testCase.mechanism ?? "value-getter"
@@ -584,7 +675,7 @@ describe("seed fast path", () => {
 
                 expect(agree).toBe(reachable ? !testCase.diverges : true)
 
-                // Non-vacuity: the mechanism actually fired (and, for a value
+                // Non-vacuity, part 1: the mechanism fired (and, for a value
                 // getter, fired the expected twice — once at staging, once in
                 // the loop, which is what puts the mutation after admission).
                 if (mechanism === "value-getter") {
@@ -593,6 +684,22 @@ describe("seed fast path", () => {
                 } else {
                     expect(established.hookRuns).toBeGreaterThanOrEqual(2)
                     expect(fastPath.hookRuns).toBeGreaterThanOrEqual(2)
+                }
+
+                // Non-vacuity, part 2: a case claiming its mutation is observed
+                // has to actually move the outcome off an identically-seeded
+                // baseline on at least one path. Without this a case can apply
+                // its mutation into a code path that never consults it and pass
+                // regardless — which is exactly what the coercion case did
+                // while the seed was a primitive.
+                if (testCase.observable && reachable) {
+                    const movedEstablished =
+                        JSON.stringify(established.outcome) !==
+                        JSON.stringify(baselineFor(BELOW, testCase).outcome)
+                    const movedFastPath =
+                        JSON.stringify(fastPath.outcome) !==
+                        JSON.stringify(baselineFor(AT, testCase).outcome)
+                    expect(movedEstablished || movedFastPath).toBe(true)
                 }
             })
         }
