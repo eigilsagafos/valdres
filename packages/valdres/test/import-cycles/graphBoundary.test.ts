@@ -199,7 +199,17 @@ describe("graph table ownership", () => {
                 "utf8",
             )
             source.split("\n").forEach((line, index) => {
-                if (/\bgraphNodes\b/.test(line.replace(/\/\/.*$/, ""))) {
+                const trimmed = line.trim()
+                // Documentation may name the table — the facade header does, by
+                // design. Only CODE references count.
+                if (
+                    trimmed.startsWith("*") ||
+                    trimmed.startsWith("/*") ||
+                    trimmed.startsWith("//")
+                ) {
+                    return
+                }
+                if (/\bgraphNodes\b/.test(line)) {
                     offenders.push(`${module}:${index + 1}`)
                 }
             })

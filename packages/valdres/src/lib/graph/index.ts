@@ -5,16 +5,23 @@
  *   stateDependencies / stateDependents      forward/reverse edges + replacement
  *   selectorGraphActive                      cold→live promotion markers
  *   inheritedDependencyBranches(+Keys)       scope-branch registration
- *   liveDependentCount / mounts /            liveness + mount reachability, and
- *     mountInClosure, livenessPassActive/      the liveness-pass scratch
- *     livenessSeeds/livenessRemovalArmed/
+ *   graphNodes                               ONE record per state carrying the
+ *                                              liveness count (`live`), the
+ *                                              mount and cycle-risk markers
+ *                                              (`mountInClosure`, `cycleRisk`),
+ *                                              the stable materialization order
+ *                                              (`order`) and the two version
+ *                                              stamps (`acyclicAt` for memoized
+ *                                              acyclic proofs, `cleanedAt` for
+ *                                              orphan-walk visits). Reached only
+ *                                              through graph/graphNode.ts —
+ *                                              nothing else names the table.
+ *   mounts / livenessPassActive /            mount ledger + the liveness-pass
+ *     livenessSeeds / livenessRemovalArmed /   scratch state
  *     livenessLazyArmed
- *   dependencyOrder / nextDependencyOrder /  cycle metadata: stable order,
- *     dependencyGraphVersion /                 topology generation, risk marker,
- *     cycleRiskInClosure /                     memoized acyclic proofs
- *     acyclicDependencyVersion
- *   orphanCleanupVersion /                   orphan-edge cleanup plane
- *     pendingOrphanCleanup /
+ *   nextDependencyOrder /                    graph-wide counters: the order
+ *     dependencyGraphVersion                   allocator and topology generation
+ *   pendingOrphanCleanup /                   orphan-edge cleanup plane
  *     orphanCleanupScheduled
  *
  * Non-graph modules may READ these tables freely (hot paths depend on it) and
@@ -51,7 +58,8 @@
  *   promotion consumes the cold plane.
  * - installLateDependency invalidates a cold cache (validatedAt = -1) when a
  *   new async edge desynchronizes it.
- * - cleanupOrphanedDeps deletes orphaned states' entries from values,
+ * - cleanupOrphanedDeps stamps `cleanedAt` on the graph node and deletes
+ *   orphaned states' entries from values,
  *   coldSelectorCaches, and latestEvalContext, and aborts + untracks their
  *   controllers: delete-only teardown of the planes it orphans, never inserts.
  * - The store facade for user onMount hooks resolves through the leaf

@@ -16,12 +16,7 @@ import {
     noteLivenessWorkspaceSize,
     releaseLivenessWorkspace,
 } from "./workspace"
-import {
-    graphNodeFor,
-    liveDependents,
-    peekGraphNode,
-    UNSET,
-} from "./graphNode"
+import { graphNodeFor, liveDependents, peekGraphNode, UNSET } from "./graphNode"
 import { getStoreRuntime } from "../getStoreRuntime"
 import {
     isStoreDisposed,
@@ -280,9 +275,11 @@ const propagateNotLive = (root: State, data: StoreData) => {
             for (const dep of deps) {
                 if (instrumentation)
                     instrumentation.counters.livenessEdgeVisits++
-                const depNode = graphNodeFor(dep, data)
-                const prev = depNode.live
-                depNode.live = prev > 0 ? prev - 1 : 0
+                // No record means the count is already 0, so there is nothing
+                // to decrement and nothing to allocate.
+                const depNode = peekGraphNode(dep, data)
+                const prev = depNode?.live ?? 0
+                if (prev > 0) depNode!.live = prev - 1
                 if (prev === 1 && !hasDirectSubscribers(dep, data)) {
                     if (stack === undefined) {
                         stack = []
@@ -338,9 +335,10 @@ export const onLiveDependencyAdded = (dep: State, data: StoreData) => {
  * if the contribution was the last one keeping dep alive.
  */
 export const onLiveDependencyRemoved = (dep: State, data: StoreData) => {
-    const node = graphNodeFor(dep, data)
-    const prev = node.live
-    node.live = prev > 0 ? prev - 1 : 0
+    // See propagateNotLive: absent record == count 0, so a decrement is a no-op.
+    const node = peekGraphNode(dep, data)
+    const prev = node?.live ?? 0
+    if (prev > 0) node!.live = prev - 1
     if (prev === 1 && !hasDirectSubscribers(dep, data)) {
         propagateNotLive(dep, data)
     }
@@ -630,9 +628,12 @@ export const reconcileLivenessAfterChurn = (
             }
             // liveDependentCount never stores 0 (entries are deleted at <= 0),
             // so a missing entry IS count 0 — only touch on a genuine change.
-            const node = graphNodeFor(D, data)
-            if (count === node.live) continue
-            node.live = count > 0 ? count : 0
+            // Peek first: a region member whose reconciled count already
+            // matches — including the common 0-to-0 case for a node that never
+            // needed a record — must not be given one.
+            const existing = peekGraphNode(D, data)
+            if (count === (existing?.live ?? 0)) continue
+            ;(existing ?? graphNodeFor(D, data)).live = count > 0 ? count : 0
         }
         // Share one visited set across all mounts and a different set across all
         // unmounts. They cannot be shared with each other: a node skipped by one

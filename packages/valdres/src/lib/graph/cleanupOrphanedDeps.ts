@@ -31,10 +31,12 @@ export const cleanupOrphanedDeps = (state: State, data: StoreData) => {
         const current = stack.pop()!
         // Live boundaries are deliberately NOT marked: a later burst may make
         // one transition to non-live, at which point it needs cleanup.
-        const currentNode = graphNodeFor(current, data)
-        if (currentNode.cleanedAt === graphVersion) continue
+        // Peek: this walk stops at every live boundary it reaches, and those
+        // nodes must not be given a record just to be skipped.
+        const currentNode = peekGraphNode(current, data)
+        if (currentNode?.cleanedAt === graphVersion) continue
         if (isLive(current, data)) continue
-        currentNode.cleanedAt = graphVersion
+        ;(currentNode ?? graphNodeFor(current, data)).cleanedAt = graphVersion
 
         const dependents = data.stateDependents.get(current)
         const deps = data.stateDependencies.get(current)
