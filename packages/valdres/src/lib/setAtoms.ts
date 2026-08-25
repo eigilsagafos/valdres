@@ -167,11 +167,17 @@ const tryWriteFreshSimpleAtoms = (
     for (const [atom, value] of pairs) {
         // The established path's per-atom sequence for a fresh atom — land the
         // declared default (initAtom), run the atom's comparator, write — kept
-        // here for FAILURE fidelity, not for the comparison's answer: admission
-        // proved nothing is committed yet, so an equal answer has no prior
-        // value to preserve by skipping the write. Whichever of the two steps
-        // after the landing throws, the atom is left holding its default,
-        // exactly as initAtom plus a failed set leaves it.
+        // here for FAILURE fidelity, not for the comparison's answer, which
+        // this specialization discards: it writes unconditionally, where the
+        // established path skips the write when the comparison says equal.
+        // That skip is not a no-op — after the landing the default IS the
+        // committed value, and preserving it is observable whenever a value
+        // compares equal without being identical: a `+0` default seeded with
+        // `-0` keeps `+0` on the established path and stores `-0` here. That
+        // residue is accepted, not overlooked. What the ordering does buy is
+        // the failure shape: whichever of the two steps after the landing
+        // throws, the atom is left holding its default, exactly as initAtom
+        // plus a failed set leaves it.
         //
         // Neither step is dead, though `equal` alone is inert on a
         // primitive-or-null first operand (it answers from `===` without
@@ -188,15 +194,18 @@ const tryWriteFreshSimpleAtoms = (
         // step with the established path.
         //
         // Fidelity under such a mutation is deliberately NOT claimed in
-        // general. The landing is a bare `values.set`, not `initAtom`, so the
-        // duties initAtom performs around it are not reproduced: a `schema`
-        // assigned mid-loop never validates the default, and an `onInit`
-        // assigned mid-loop is never invoked (both diverge from the established
-        // path, both pinned as known divergences in setAtoms.test.ts). Closing
-        // that class properly means removing the user-code window rather than
-        // re-checking fields per atom — admitting only primitive VALUES would
-        // do it, since setValueInData then freezes nothing and the loop calls
-        // nothing. That is a scope/perf tradeoff for its own change.
+        // general, and the exceptions are not enumerated here — every attempt
+        // to list them in prose missed one. The landing is a bare `values.set`
+        // and the write is unconditional, so everything `initAtom` and the
+        // settlement list do around them is skipped: evaluating a default that
+        // became a factory or a selector, freezing it, validating it against a
+        // `schema`, invoking `onInit`, notifying a subscriber added mid-commit.
+        // setAtoms.test.ts asserts the verdict for each mutation in a table, so
+        // a new divergence shows up as a failing case rather than as a stale
+        // comment. Closing the class means removing the user-code window rather
+        // than re-checking fields per atom: admitting only primitive VALUES
+        // would do it, since setValueInData then freezes nothing and the loop
+        // calls nothing. That is a scope/perf tradeoff for its own change.
         data.values.set(atom, atom.defaultValue)
         atom.equal(atom.defaultValue, value)
         setValueInData(atom, value, data)

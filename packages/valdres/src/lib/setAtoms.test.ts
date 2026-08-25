@@ -7,6 +7,7 @@ import {
     mock,
     test,
 } from "bun:test"
+import { selector } from "../selector"
 import { store } from "../store"
 import { atom } from "../atom"
 import { commitAtoms, FRESH_ATOM_FAST_PATH_MIN } from "./setAtoms"
@@ -292,25 +293,180 @@ describe("seed fast path", () => {
     })
 
     /**
-     * The landing is a bare `values.set`, not `initAtom`, so `initAtom`'s other
-     * duties are not reproduced. Under the same mid-commit mutation the
-     * comparator call covers, that is observable: these two fields diverge from
-     * the established path.
+     * KNOWN divergences from the established path, table-driven.
      *
-     * Pinned as KNOWN divergences, not as desired behaviour. Both need a value
-     * getter to assign an admission-checked field to a later atom in the same
-     * batch, which no ordinary code does (`onInit` is not even user-facing —
-     * `globalAtom` sets it at construction). If a change closes the window —
-     * admitting only primitive values would, since the loop would then call
-     * nothing — these tests go red and should be deleted, not repaired.
+     * A prose list of these kept being wrong: three separate reviews found
+     * cases a hand-written one had missed, and each time the missing case was
+     * the same shape as the ones already there. So the verdict is asserted per
+     * mutation instead of described. Every admission-checked atom field gets at
+     * least one payload, plus one store-state mutation to show the class is not
+     * limited to fields.
+     *
+     * All of them have one root: the specialization replaces `initAtom` and the
+     * settlement list with a bare `values.set` and an unconditional write, so
+     * every duty around those — evaluating a default (factory or selector),
+     * freezing it, validating it, invoking `onInit`, notifying a subscriber
+     * added mid-commit — is skipped.
+     *
+     * `diverges` is the CURRENT verdict, not the desired one. A new divergence
+     * fails here, and so does one that gets closed: admitting only primitive
+     * VALUES would close all of them at once (the loop would then run no user
+     * code, so nothing could be mutated mid-commit), at the cost of pushing
+     * object-valued bulk seeds back onto the established path. Reaching any of
+     * these needs a value getter to mutate a later atom in the same batch,
+     * which no ordinary code does.
      */
-    describe("known divergences: initAtom duties the landing skips", () => {
-        // Assigns `field` to the LAST atom from the FIRST atom's freeze
-        // traversal, i.e. after admission and inside the write loop.
-        const hijackField = (count: number, field: string, make: () => unknown) => {
+    describe("known divergences", () => {
+        type Probe = Record<string, number | undefined>
+        type Case = {
+            label: string
+            diverges: boolean
+            mutate: (victim: any, probe: Probe, store1: any) => void
+        }
+
+        const CASES: Case[] = [
+            {
+                label: "defaultValue := factory function",
+                diverges: true,
+                mutate: (v, p) => {
+                    v.defaultValue = () => {
+                        p.factoryCalls = (p.factoryCalls ?? 0) + 1
+                        return 42
+                    }
+                },
+            },
+            {
+                label: "defaultValue := unfreezable Map",
+                diverges: true,
+                mutate: v => {
+                    v.defaultValue = new Map([["k", 1]])
+                },
+            },
+            {
+                label: "defaultValue := selector",
+                diverges: true,
+                mutate: (v, p) => {
+                    v.defaultValue = selector(() => {
+                        p.selectorReads = (p.selectorReads ?? 0) + 1
+                        return 7
+                    })
+                },
+            },
+            {
+                label: "onInit := recorder",
+                diverges: true,
+                mutate: (v, p) => {
+                    v.onInit = () => {
+                        p.onInitCalls = (p.onInitCalls ?? 0) + 1
+                    }
+                },
+            },
+            {
+                label: "schema := recorder",
+                diverges: true,
+                mutate: (v, p) => {
+                    v.schema = {
+                        "~standard": {
+                            version: 1,
+                            vendor: "valdres-test",
+                            validate: (value: unknown) => {
+                                p.validations = (p.validations ?? 0) + 1
+                                return { value }
+                            },
+                        },
+                    }
+                },
+            },
+            {
+                label: "subscribe(victim) mid-commit (store state, not a field)",
+                diverges: true,
+                mutate: (v, p, store1) => {
+                    store1.sub(v, () => {
+                        p.notifications = (p.notifications ?? 0) + 1
+                    })
+                },
+            },
+            // Agreeing cases are asserted too: each is a reason the two
+            // retained steps, or a deliberate design choice, keeps them in step.
+            {
+                label: "equal := throwing comparator",
+                diverges: false,
+                mutate: (v, p) => {
+                    v.equal = () => {
+                        p.comparatorCalls = (p.comparatorCalls ?? 0) + 1
+                        throw new Error("hijacked comparator")
+                    }
+                },
+            },
+            {
+                label: "defaultValue := object with throwing valueOf",
+                diverges: false,
+                mutate: (v, p) => {
+                    v.defaultValue = {
+                        valueOf() {
+                            p.coercions = (p.coercions ?? 0) + 1
+                            throw new Error("coercion reached")
+                        },
+                    }
+                },
+            },
+            {
+                label: "defaultValue := undefined",
+                diverges: false,
+                mutate: v => {
+                    v.defaultValue = undefined
+                },
+            },
+            {
+                label: "onSet := recorder (this arm writes with 'skip')",
+                diverges: false,
+                mutate: (v, p) => {
+                    v.onSet = () => {
+                        p.onSetCalls = (p.onSetCalls ?? 0) + 1
+                    }
+                },
+            },
+            {
+                label: "name := string (registry is the source of truth)",
+                diverges: false,
+                mutate: v => {
+                    v.name = "hijacked-name"
+                },
+            },
+            {
+                label: "maxAge := 1000",
+                diverges: false,
+                mutate: v => {
+                    v.maxAge = 1000
+                },
+            },
+            {
+                label: "mutable := true",
+                diverges: false,
+                mutate: v => {
+                    v.mutable = true
+                },
+            },
+            {
+                label: "family := {}",
+                diverges: false,
+                mutate: v => {
+                    v.family = {}
+                },
+            },
+        ]
+
+        // Every atom is seeded with the SAME value, so nothing in the observed
+        // state can depend on the batch size — a count-derived value makes the
+        // two runs differ by construction and every case read as divergent.
+        const SEEDED = 7
+
+        const observe = (count: number, mutate: Case["mutate"]) => {
             const atoms = Array.from({ length: count }, () => atom<any>(0))
             const store1 = store({ schemaValidation: true })
+            const probe: Probe = {}
             let traversals = 0
+            let thrown: string | undefined
             try {
                 store1.txn(txn =>
                     atoms.forEach((a, i) =>
@@ -318,66 +474,46 @@ describe("seed fast path", () => {
                             a,
                             i === 0
                                 ? {
-                                      get probe() {
+                                      get carrier() {
                                           if (++traversals >= 2)
-                                              (atoms[count - 1] as any)[field] =
-                                                  make()
+                                              mutate(
+                                                  atoms[count - 1],
+                                                  probe,
+                                                  store1,
+                                              )
                                           return 1
                                       },
                                   }
-                                : i + 1,
+                                : SEEDED,
                         ),
                     ),
                 )
-            } catch {
-                // Neither field throws; a future one might.
+            } catch (error) {
+                thrown = (error as Error).message
             }
-            return traversals
+            let readBack: string
+            try {
+                readBack = String(store1.get(atoms[count - 1]!))
+            } catch {
+                readBack = "<read threw>"
+            }
+            return { probe, traversals, thrown, readBack }
         }
 
+        for (const testCase of CASES) {
+            test(`${testCase.label} — ${testCase.diverges ? "diverges" : "agrees"}`, () => {
+                const established = observe(BELOW, testCase.mutate)
+                const fastPath = observe(AT, testCase.mutate)
+                const agree =
+                    JSON.stringify(established) === JSON.stringify(fastPath)
 
-        test("an onInit assigned mid-loop runs on the established path only", () => {
-            let ran = 0
-            const traversalsBelow = hijackField(BELOW, "onInit", () => () => {
-                ran++
+                // In production nothing freezes, so the carrier getter never
+                // runs, no mutation lands, and every case agrees.
+                expect(agree).toBe(IS_PROD ? true : !testCase.diverges)
+                expect(established.traversals).toBe(TRAVERSALS)
+                expect(fastPath.traversals).toBe(TRAVERSALS)
             })
-            const onEstablished = ran
-            ran = 0
-            const traversalsAt = hijackField(AT, "onInit", () => () => {
-                ran++
-            })
-            const onFastPath = ran
-
-            expect(traversalsBelow).toBe(TRAVERSALS)
-            expect(traversalsAt).toBe(TRAVERSALS)
-            // In production nothing freezes, so neither path ever sees the
-            // assignment and both agree at zero.
-            expect(onEstablished).toBe(IS_PROD ? 0 : 1)
-            expect(onFastPath).toBe(0)
-        })
-
-        test("a schema assigned mid-loop validates on the established path only", () => {
-            let validations = 0
-            const schema = () => ({
-                "~standard": {
-                    version: 1,
-                    vendor: "valdres-test",
-                    validate: (value: unknown) => {
-                        validations++
-                        return { value }
-                    },
-                },
-            })
-
-            hijackField(BELOW, "schema", schema)
-            const onEstablished = validations
-            validations = 0
-            hijackField(AT, "schema", schema)
-            const onFastPath = validations
-
-            expect(onEstablished).toBe(IS_PROD ? 0 : 1)
-            expect(onFastPath).toBe(0)
-        })
+        }
     })
 
 })
