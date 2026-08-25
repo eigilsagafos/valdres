@@ -66,11 +66,23 @@ import { getStoreData } from "./getStoreData"
 //
 // What this file does guard, each verified by deleting the line and watching it
 // fail: the twin read getters (dirty-family observation, fresh-selector
-// activation and its rollback, the dep-set change detection), the twin
-// installers' edge diff and mount-closure marker, and the DISPATCHER PREDICATE
-// itself — dropping the `coldSelectorCachesEnabled` term, so the live-only
-// evaluator is paired with the general installer, surfaces as a
-// liveDependentCount ground-truth violation.
+// activation and its rollback, the repeated-read dep gate), the twin installers'
+// edge diff, removal diff, graph-changed note and mount-closure marker, error
+// PARITY down the cause chain, and the DISPATCHER PREDICATE itself — dropping
+// the `coldSelectorCachesEnabled` term, so the live-only evaluator is paired
+// with the general installer, surfaces as a liveDependentCount ground-truth
+// violation.
+//
+// One further known limit, for the same reason as the liveness arms. Deleting
+// the live-only evaluator's own post-loop dep-set SIZE check still passes at
+// 1,500 seeds; it fails at ~6,000. A re-evaluation driven by propagation goes
+// through `evaluateSelector` even on a live-only store (see
+// propagateUpdatedAtoms.reEvaluateSelector), so that check is only load-bearing
+// on a LAZY re-read of an already-materialized selector — a narrow window this
+// op mix reaches rarely. The branch generator below is biased toward
+// equal-size/different-membership dep sets to widen it, which recovered the
+// INSTALLER's removal diff; the evaluator's own size check still wants either
+// more seeds or an op that targets remounting directly.
 //
 // Synchronous only. The twins also differ on the DEFERRED (post-await,
 // post-timeout) `get` path, which is a named condition rather than a
@@ -154,7 +166,30 @@ const createWorld = (seed: number) => {
 
     for (let index = 0; index < SELECTOR_COUNT; index++) {
         const branchA = refsFor(index, false)
-        const branchB = refsFor(index, true)
+        // Usually an independent set; sometimes branch A with ONE ref swapped,
+        // so the two branches have the SAME dep count and different membership.
+        // That is the exact shape the evaluator's post-loop size check exists
+        // for — a dep dropped while the count coincidentally stayed equal, which
+        // a count-based diff would miss and leave as a stale reverse edge.
+        // Independent random branches produce it only by luck: deleting that
+        // check needed ~6,000 seeds to fail before this, and ~1,500 after.
+        const branchB =
+            branchA.length > 0 && rnd() < 0.45
+                ? (() => {
+                      // Same self-reference guard `refsFor` applies: a selector
+                      // reading itself is an unconditional cycle error, not a
+                      // dep-set shape.
+                      const swapAt = int(0, branchA.length - 1)
+                      const target =
+                          (index + 1 + int(0, SELECTOR_COUNT - 2)) %
+                          SELECTOR_COUNT
+                      return branchA.map((ref, at) =>
+                          at === swapAt
+                              ? ({ kind: "selector", index: target } as Ref)
+                              : ref,
+                      )
+                  })()
+                : refsFor(index, true)
         // One selector compares by a custom equal, one returns an object: both
         // are memoization surfaces the evaluator feeds but does not own.
         const returnsObject = index === SELECTOR_COUNT - 1
@@ -165,9 +200,29 @@ const createWorld = (seed: number) => {
         // selector i sit on branch B while j sits on branch A, which is how the
         // graph carries a cycle that no single evaluation recurses through.
         const gate = atoms[index % ATOM_COUNT]!
+        // Some bodies throw a USER error on a third gate value. Without this the
+        // only error the fuzz could produce was SelectorCircularDependencyError
+        // — which extends SelectorEvaluationError, so it is re-thrown UNWRAPPED
+        // with no `cause` and (for anonymous selectors) a constant message. That
+        // made every throwing seed indistinguishable, so the oracle's error
+        // resolution was never under pressure. A user throw takes the wrapping
+        // path instead: SelectorEvaluationError with a distinct `cause`, which
+        // is also the branch that runs rollbackFreshSelectorActivations.
+        //
+        // Tuned, not guessed. Throwing bodies suppress the successful
+        // evaluations that churn the dependency graph, and making every other
+        // selector throw on one gate value in three cost real detection: the
+        // "installer drops the removal diff" mutation stopped failing. Two
+        // selectors of five, on one gate value in five, keeps that mutation
+        // caught AND still produces two distinct wrapped causes, at 527 of 1,500
+        // seeds throwing (up from 182 before bodies could throw at all).
+        const throwsOnGate = index % 3 === 1
         selectors.push(
             selector(
                 get => {
+                    if (throwsOnGate && get(gate) % 5 === 4) {
+                        throw new Error(`body-${index} refused`)
+                    }
                     const refs = get(gate) % 2 === 0 ? branchA : branchB
                     let sum = 0
                     let last: State | undefined
@@ -235,6 +290,31 @@ const allStates = (world: World): State[] => [
     ...world.selectors,
 ]
 
+/** Flatten an error and its `cause` chain into one comparable string.
+ *
+ *  The outer class alone is not enough: `SelectorEvaluationError` is
+ *  constructed with `super()` (no message) and carries the real failure in
+ *  `cause`, so two twins could fail for entirely different reasons and compare
+ *  equal. Its `message` is a computed getter naming the selector, which is a
+ *  constant here because these selectors are deliberately anonymous — leaving
+ *  `cause` as the only discriminator. Depth-capped because a cause chain can be
+ *  cyclic, and first message line only, since the tail is a rendered
+ *  selector trace whose ordering is not part of the contract. */
+const showError = (error: unknown): string => {
+    const parts: string[] = []
+    let current: any = error
+    for (let depth = 0; current && depth < 5; depth++) {
+        const name =
+            current instanceof Error
+                ? (current.name ?? current.constructor?.name)
+                : typeof current
+        const message = String(current?.message ?? current).split("\n")[0]
+        parts.push(`${name}(${message})`)
+        current = current.cause
+    }
+    return parts.join(" <- ")
+}
+
 /** Serialize a read so a value and an error are comparable in one trace slot. */
 const show = (read: () => unknown): string => {
     try {
@@ -250,7 +330,7 @@ const show = (read: () => unknown): string => {
         }
         return JSON.stringify(value)
     } catch (error) {
-        return `!${(error as Error).constructor.name}`
+        return `!${showError(error)}`
     }
 }
 
@@ -568,7 +648,8 @@ describe("selector evaluator twin fuzz", () => {
         // Floors, not exact counts: they fail loudly if a change to the op
         // weights drains a path, without pinning the generator's behaviour.
         // Measured headroom at the time of writing, out of 1,500 seeds:
-        // pureLiveOnly 593, notifications 833, selector edges 683, throws 182.
+        // pureLiveOnly 701, notifications 744, selector edges 1030,
+        // mounts 1119, throws 527.
         expect(coverage.pureLiveOnly).toBeGreaterThan(SEEDS * 0.1)
         expect(coverage.sawNotification).toBeGreaterThan(SEEDS * 0.3)
         expect(coverage.sawSelectorEdges).toBeGreaterThan(SEEDS * 0.3)
