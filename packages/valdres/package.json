@@ -30,7 +30,8 @@
         "test:bench:async": "rm -f test/performance/bench-results.ndjson && BENCH_SUITE=async NODE_ENV=production bun test --timeout 60000 --concurrency 1 ./test/performance/asyncSettlement.timing.ts",
         "test:bench:async:node": "rm -f test/performance/bench-results-node.ndjson && BENCH_SUITE=async NODE_ENV=production npx vitest run --config vitest.async-bench.config.ts",
         "test:architecture": "bun test ./src/lib/architecturePerformance.test.ts",
-        "spike:query": "bunx tsc -p test/api-spikes/query-construction/tsconfig.json && bunx tsgo --noEmit -p test/api-spikes/query-construction/tsconfig.json && bun test/api-spikes/query-construction/check-editor.ts && bun test/api-spikes/query-construction/check-metrics.ts",
+        "spike:query": "bunx tsc -p test/api-spikes/query-construction/tsconfig.json && bunx tsgo --noEmit -p test/api-spikes/query-construction/tsconfig.json && bun test/api-spikes/query-construction/check-editor.ts && bun test/api-spikes/query-construction/check-metrics.ts && bun test/api-spikes/query-construction/check-reachability.ts",
+        "spike:query:reachability": "bun test/api-spikes/query-construction/check-reachability.ts",
         "test:rewrite-guards:node": "npx vitest run --config vitest.rewrite-guards.config.ts",
         "test:memory:bun": "NODE_ENV=production bun test --timeout 120000 --concurrency 1 ./test/performance/*.memory.ts",
         "test:memory:node": "NODE_OPTIONS=--expose-gc NODE_ENV=production npx vitest run --config vitest.memory.config.ts"
