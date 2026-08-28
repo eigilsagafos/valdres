@@ -1,0 +1,223 @@
+{
+    "typescript": "5.9.2",
+    "markers": {
+        "attached-builder-members": {
+            "kind": "completion",
+            "entries": [
+                {
+                    "name": "apply",
+                    "kind": "method"
+                },
+                {
+                    "name": "arguments",
+                    "kind": "property"
+                },
+                {
+                    "name": "bind",
+                    "kind": "method"
+                },
+                {
+                    "name": "call",
+                    "kind": "method"
+                },
+                {
+                    "name": "caller",
+                    "kind": "property"
+                },
+                {
+                    "name": "indexes",
+                    "kind": "property"
+                },
+                {
+                    "name": "length",
+                    "kind": "property"
+                },
+                {
+                    "name": "name",
+                    "kind": "property"
+                },
+                {
+                    "name": "prototype",
+                    "kind": "property"
+                },
+                {
+                    "name": "query",
+                    "kind": "method"
+                },
+                {
+                    "name": "toString",
+                    "kind": "method"
+                }
+            ]
+        },
+        "attached-builder-query": {
+            "kind": "quickinfo",
+            "display": "const attachedBuilderEditorQuery: StructuralQuery<CollectionRow<MovieId, Movie>, Readonly<Record<never, never>>, { readonly where: Predicate<MovieIndexes>; }>"
+        },
+        "attached-object-members": {
+            "kind": "completion",
+            "entries": [
+                {
+                    "name": "apply",
+                    "kind": "method"
+                },
+                {
+                    "name": "arguments",
+                    "kind": "property"
+                },
+                {
+                    "name": "bind",
+                    "kind": "method"
+                },
+                {
+                    "name": "call",
+                    "kind": "method"
+                },
+                {
+                    "name": "caller",
+                    "kind": "property"
+                },
+                {
+                    "name": "indexes",
+                    "kind": "property"
+                },
+                {
+                    "name": "length",
+                    "kind": "property"
+                },
+                {
+                    "name": "name",
+                    "kind": "property"
+                },
+                {
+                    "name": "prototype",
+                    "kind": "property"
+                },
+                {
+                    "name": "query",
+                    "kind": "method"
+                },
+                {
+                    "name": "toString",
+                    "kind": "method"
+                }
+            ]
+        },
+        "attached-object-query": {
+            "kind": "quickinfo",
+            "display": "const attachedObjectEditorQuery: StructuralQuery<CollectionRow<MovieId, Movie>, Readonly<Record<never, never>>, { readonly where: { readonly genre: { readonly eq: \"drama\"; }; }; }>"
+        },
+        "builder-facets": {
+            "kind": "quickinfo",
+            "display": "type BuilderFacets = { readonly genre: readonly FacetBucket<\"comedy\" | \"documentary\" | \"drama\">[]; }"
+        },
+        "builder-genre-operators": {
+            "kind": "completion",
+            "entries": [
+                {
+                    "name": "anyOf",
+                    "kind": "method"
+                },
+                {
+                    "name": "eq",
+                    "kind": "method"
+                },
+                {
+                    "name": "facet",
+                    "kind": "method"
+                }
+            ]
+        },
+        "builder-indexes": {
+            "kind": "completion",
+            "entries": [
+                {
+                    "name": "genre",
+                    "kind": "property"
+                },
+                {
+                    "name": "rating",
+                    "kind": "property"
+                },
+                {
+                    "name": "releasedAt",
+                    "kind": "property"
+                },
+                {
+                    "name": "tags",
+                    "kind": "property"
+                }
+            ]
+        },
+        "builder-order": {
+            "kind": "quickinfo",
+            "display": "type BuilderOrder = readonly [OrderTerm<MovieIndexes>, OrderTerm<MovieIndexes>]"
+        },
+        "builder-query": {
+            "kind": "quickinfo",
+            "display": "const builderEditorQuery: StructuralQuery<CollectionRow<MovieId, Movie>, { readonly genre: readonly FacetBucket<\"comedy\" | \"documentary\" | \"drama\">[]; }, { readonly where: Predicate<MovieIndexes>; readonly orderBy: readonly [OrderTerm<MovieIndexes>, OrderTerm<MovieIndexes>]; readonly facets: { readonly genre: FacetTerm<MovieIndexes, \"comedy\" | \"documentary\" | \"drama\">; }; }>"
+        },
+        "multi-source-hit": {
+            "kind": "quickinfo",
+            "display": "type MultiSourceHit = Readonly<{ source: \"movie\"; row: CollectionRow<MovieId, Movie>; score: number; }> | Readonly<{ source: \"person\"; row: CollectionRow<PersonId, Person>; score: number; }>"
+        },
+        "object-facets": {
+            "kind": "quickinfo",
+            "display": "type ObjectFacets = { readonly genre: readonly FacetBucket<\"comedy\" | \"documentary\" | \"drama\">[]; }"
+        },
+        "object-genre-operators": {
+            "kind": "completion",
+            "entries": [
+                {
+                    "name": "anyOf",
+                    "kind": "property"
+                },
+                {
+                    "name": "eq",
+                    "kind": "property"
+                }
+            ]
+        },
+        "object-indexes": {
+            "kind": "completion",
+            "entries": [
+                {
+                    "name": "$all",
+                    "kind": "property"
+                },
+                {
+                    "name": "$any",
+                    "kind": "property"
+                },
+                {
+                    "name": "$not",
+                    "kind": "property"
+                },
+                {
+                    "name": "genre",
+                    "kind": "property"
+                },
+                {
+                    "name": "rating",
+                    "kind": "property"
+                },
+                {
+                    "name": "releasedAt",
+                    "kind": "property"
+                },
+                {
+                    "name": "tags",
+                    "kind": "property"
+                }
+            ]
+        },
+        "object-order": {
+            "kind": "quickinfo",
+            "display": "type ObjectOrder = readonly [{ readonly rating: \"desc\"; }, { readonly releasedAt: \"asc\"; }]"
+        },
+        "object-query": {
+            "kind": "quickinfo",
+            "display": "const objectEditorQuery: StructuralQuery<CollectionRow<MovieId, Movie>, { readonly genre: readonly FacetBucket<\"comedy\" | \"documentary\" | \"drama\">[]; }, { readonly where: { readonly genre: { readonly eq: \"drama\"; }; }; readonly orderBy: readonly [{ readonly rating: \"desc\"; }, { readonly releasedAt: \"asc\"; }]; readonly facets: { readonly genre: true; }; }>"
+        }
+    }
+}

@@ -1,0 +1,458 @@
+{
+    "$schema": "./schemas/callback-capabilities.schema.json",
+    "schemaVersion": 1,
+    "completeness": "partial",
+    "entries": [
+        {
+            "id": "callback.atom-lazy-initializer",
+            "apiEntryId": "core.atom.lazy",
+            "role": "Resolve one StoreTree fallback synchronously on first required read.",
+            "phase": "materializingRead",
+            "suppliedCapabilities": [],
+            "allowedExternalWork": ["pure synchronous value construction"],
+            "rejectedCapturedOperations": [
+                "Store mutation",
+                "Store transaction",
+                "subscription registration",
+                "scope access",
+                "source invalidation"
+            ],
+            "guardDomain": "same-runtime-domain",
+            "errorRule": "A thrown non-thenable becomes the owning fallback error outcome under the ordinary initializer rule.",
+            "thenableRule": "A returned or thrown thenable is normalized to the named invalid synchronous initializer error and receives one rejection-containment handler.",
+            "resultBoundary": "Exactly one synchronous value or error outcome is memoized at the owning fallback only when the approved read/commit path consumes it.",
+            "requiredContractIds": [
+                "atom.lazy.sync-per-tree-fallback",
+                "callback.no-captured-store-capability"
+            ],
+            "decisionStatus": "approved"
+        },
+        {
+            "id": "callback.selector-getter",
+            "apiEntryId": "core.selector",
+            "role": "Build one pure synchronous derived outcome and dependency proposal.",
+            "phase": "materializingRead-or-propagating",
+            "suppliedCapabilities": [
+                "revocable supplied get for readable same-domain State"
+            ],
+            "allowedExternalWork": ["pure synchronous computation"],
+            "rejectedCapturedOperations": [
+                "Store mutation",
+                "Store transaction",
+                "subscription registration",
+                "scope access",
+                "source invalidation",
+                "post-return supplied get"
+            ],
+            "guardDomain": "same-runtime-domain",
+            "errorRule": "Ordinary errors become stable selector error proposals; RuntimeMismatchError is a sticky host control fault and cannot be caught into a value.",
+            "thenableRule": "A returned thenable becomes the named invalid synchronous selector outcome with one rejection-containment handler; it is never awaited or served.",
+            "resultBoundary": "The evaluator atomically accepts one value/error proposal with its synchronously captured dependency prefix or publishes nothing for a disposable control fault.",
+            "requiredContractIds": [
+                "selector.pure-sync-dag",
+                "selector.one-evaluator",
+                "callback.revocable-capability"
+            ],
+            "decisionStatus": "approved"
+        },
+        {
+            "id": "callback.transaction",
+            "apiEntryId": "core.store.txn",
+            "role": "Stage one synchronous same-StoreTree TreeTransaction and return its result after commit.",
+            "phase": "drafting",
+            "suppliedCapabilities": [
+                "active Transaction cursor",
+                "same-Tree scope cursors",
+                "draft-overlay reads and mutation intents"
+            ],
+            "allowedExternalWork": [
+                "ordinary synchronous application work that does not require rollback"
+            ],
+            "rejectedCapturedOperations": [
+                "captured Store mutation",
+                "nested Store transaction",
+                "subscription registration",
+                "scope topology mutation"
+            ],
+            "guardDomain": "active-transaction",
+            "errorRule": "An escaping error aborts the TreeTransaction; a caught operation error preserves earlier valid intents in the same draft.",
+            "thenableRule": "A returned thenable is rejected synchronously as InvalidTransactionCallbackResultError after preserving only its synchronous-prefix intents for outer catch semantics; the cursor closes when the outer callback exits.",
+            "resultBoundary": "The callback result is returned only after successful preflight, apply, propagation, and settlement.",
+            "requiredContractIds": [
+                "transaction.one-tree-draft",
+                "transaction.sync-derived-reads"
+            ],
+            "decisionStatus": "approved"
+        },
+        {
+            "id": "callback.transaction-scope",
+            "apiEntryId": "core.store.txn",
+            "role": "Lexical sugar over one existing TreeTransaction cursor target.",
+            "phase": "drafting",
+            "suppliedCapabilities": [
+                "targeted Transaction cursor sharing the outer draft"
+            ],
+            "allowedExternalWork": [
+                "same work allowed to the outer transaction callback"
+            ],
+            "rejectedCapturedOperations": [
+                "nested Store transaction",
+                "savepoint creation",
+                "scope topology creation"
+            ],
+            "guardDomain": "active-transaction",
+            "errorRule": "An escaping error follows the outer transaction abort rule; an outer catch preserves prior shared-draft intents.",
+            "thenableRule": "A thenable receives the same synchronous invalid-callback-result rule as the outer transaction callback.",
+            "resultBoundary": "Returns the synchronous callback result and leaves every same-Tree cursor active until the outer transaction exits.",
+            "requiredContractIds": ["transaction.scope-cursor-no-savepoint"],
+            "decisionStatus": "approved"
+        },
+        {
+            "id": "callback.atom-update",
+            "apiEntryId": "core.store.update",
+            "role": "Compute a replacement value from one current Atom value.",
+            "phase": "drafting-or-direct-mutation-admission",
+            "suppliedCapabilities": ["current synchronous value"],
+            "allowedExternalWork": ["pure synchronous computation"],
+            "rejectedCapturedOperations": [
+                "Store mutation",
+                "Store transaction",
+                "subscription registration",
+                "scope access",
+                "source invalidation"
+            ],
+            "guardDomain": "same-runtime-domain",
+            "errorRule": "A throw rejects the operation before its intent is admitted.",
+            "thenableRule": "A returned or thrown thenable is a named invalid synchronous updater failure and is never staged.",
+            "resultPolicy": "value-may-be-undefined",
+            "resultBoundary": "Called exactly once; its valid synchronous result becomes the one staged Atom value intent, including undefined when that belongs to the Atom value type, and the public mutation returns void.",
+            "requiredContractIds": ["mutation.value-vs-updater"],
+            "decisionStatus": "approved"
+        },
+        {
+            "id": "callback.collection-row-update",
+            "apiEntryId": "core.store.update",
+            "role": "Compute a replacement value from one effectively present collection row.",
+            "phase": "drafting-or-direct-mutation-admission",
+            "suppliedCapabilities": ["current synchronous row value"],
+            "allowedExternalWork": ["pure synchronous computation"],
+            "rejectedCapturedOperations": [
+                "Store mutation",
+                "Store transaction",
+                "subscription registration",
+                "scope access",
+                "source invalidation"
+            ],
+            "guardDomain": "same-runtime-domain",
+            "errorRule": "Effective absence throws MissingCollectionRowError before the updater is invoked; an updater throw rejects the operation before its intent is admitted.",
+            "thenableRule": "A returned or thrown thenable is a named invalid synchronous updater failure and is never staged.",
+            "resultPolicy": "value-must-not-be-undefined",
+            "resultBoundary": "Called exactly once for a present row; a valid non-undefined result becomes the one staged Present value intent and the public mutation returns void.",
+            "requiredContractIds": [
+                "mutation.value-vs-updater",
+                "collection.update-existing-only"
+            ],
+            "decisionStatus": "approved"
+        },
+        {
+            "id": "callback.family-create-node",
+            "apiEntryId": "core.family",
+            "role": "Create one immutable State definition for an identity tuple cache miss.",
+            "phase": "definition-construction",
+            "suppliedCapabilities": ["canonical family arguments"],
+            "allowedExternalWork": [
+                "construct immutable Valdres definitions",
+                "call other definition-level families"
+            ],
+            "rejectedCapturedOperations": [
+                "Store read",
+                "Store mutation",
+                "Store transaction",
+                "subscription registration",
+                "scope access",
+                "source invalidation"
+            ],
+            "guardDomain": "same-runtime-domain",
+            "errorRule": "A throw creates no family member and is not cached.",
+            "thenableRule": "A thenable rejects as an invalid family factory result; the factory must synchronously return a same-domain State.",
+            "resultBoundary": "One valid same-domain State subtype is weakly memoized for the canonical identity tuple.",
+            "requiredContractIds": [
+                "family.variadic-primitive-identity",
+                "callback.definition-only"
+            ],
+            "decisionStatus": "approved"
+        },
+        {
+            "id": "callback.family-encode-key",
+            "apiEntryId": "core.family",
+            "role": "Map a richer argument tuple to one primitive SameValueZero identity key.",
+            "phase": "definition-identity",
+            "suppliedCapabilities": ["full family argument tuple"],
+            "allowedExternalWork": ["pure synchronous canonicalization"],
+            "rejectedCapturedOperations": [
+                "Store read",
+                "Store mutation",
+                "Store transaction",
+                "subscription registration",
+                "scope access",
+                "source invalidation"
+            ],
+            "guardDomain": "same-runtime-domain",
+            "errorRule": "A throw creates and caches nothing.",
+            "thenableRule": "A returned or thrown thenable rejects as an invalid synchronous encoder result.",
+            "resultBoundary": "A valid JavaScript primitive becomes the sole identity key; original rich inputs are not retained by the family cache.",
+            "requiredContractIds": [
+                "family.explicit-encode-key",
+                "callback.definition-only"
+            ],
+            "decisionStatus": "approved"
+        },
+        {
+            "id": "callback.collection-encode-key",
+            "apiEntryId": "core.collection",
+            "role": "Map one richer row lookup input to the canonical portable scalar row key.",
+            "phase": "definition-identity",
+            "suppliedCapabilities": ["one collection lookup input"],
+            "allowedExternalWork": ["pure synchronous canonicalization"],
+            "rejectedCapturedOperations": [
+                "Store read",
+                "Store mutation",
+                "Store transaction",
+                "subscription registration",
+                "scope access",
+                "source invalidation"
+            ],
+            "guardDomain": "same-runtime-domain",
+            "errorRule": "A throw or invalid scalar creates no row handle and is not cached.",
+            "thenableRule": "A returned or thrown thenable rejects as an invalid synchronous collection-key encoder result.",
+            "resultBoundary": "A valid string, finite number, bigint, boolean, or null is canonicalized before row-handle memoization; original input is not retained.",
+            "requiredContractIds": [
+                "collection.row-identity",
+                "callback.definition-only"
+            ],
+            "decisionStatus": "approved"
+        },
+        {
+            "id": "callback.collection-index-extractor",
+            "apiEntryId": "core.collection",
+            "role": "Derive canonical structural index keys from one proposed present row value.",
+            "phase": "guarded-delta-derivation-before-preflight",
+            "suppliedCapabilities": [
+                "canonical row value",
+                "canonical row key"
+            ],
+            "allowedExternalWork": ["pure synchronous key extraction"],
+            "rejectedCapturedOperations": [
+                "Store read",
+                "Store mutation",
+                "Store transaction",
+                "subscription registration",
+                "scope access",
+                "source invalidation"
+            ],
+            "guardDomain": "same-runtime-domain",
+            "errorRule": "A throw aborts the draft before apply; no source, membership, index, graph, or notification state changes.",
+            "thenableRule": "A returned or thrown thenable rejects as an invalid synchronous extractor result and produces no prepared delta.",
+            "resultBoundary": "Only validated inert canonical deltas cross into final no-user-code preflight/apply.",
+            "requiredContractIds": [
+                "collection.atomic-deltas",
+                "transaction.no-user-code-final-preflight"
+            ],
+            "decisionStatus": "approved"
+        },
+        {
+            "id": "callback.external-get-snapshot",
+            "apiEntryId": "core.external-atom",
+            "role": "Read one authoritative synchronous live external snapshot.",
+            "phase": "samplingExternal",
+            "suppliedCapabilities": [],
+            "allowedExternalWork": [
+                "pure synchronous read of adapter-owned snapshot state"
+            ],
+            "rejectedCapturedOperations": [
+                "same-domain Store read",
+                "same-domain Store mutation",
+                "same-domain Store transaction",
+                "same-domain registration or unsubscribe",
+                "same-domain source invalidation"
+            ],
+            "guardDomain": "same-runtime-domain",
+            "errorRule": "An ordinary non-thenable throw becomes a recoverable external projection error; RuntimeMismatchError remains an exact control fault with host-specific publication rules.",
+            "thenableRule": "A returned or thrown thenable becomes one contained named invalid synchronous snapshot outcome and is never awaited.",
+            "resultBoundary": "One Object.is-stable live value or error is sampled per admitted generation/transaction capture according to the external lifecycle contract.",
+            "requiredContractIds": [
+                "external.pull-contract",
+                "external.recoverable-snapshot-errors"
+            ],
+            "decisionStatus": "approved"
+        },
+        {
+            "id": "callback.external-get-server-snapshot",
+            "apiEntryId": "core.external-atom",
+            "role": "Read one deterministic server/hydration snapshot for a disposable hydration host.",
+            "phase": "hydration-read",
+            "suppliedCapabilities": [],
+            "allowedExternalWork": [
+                "pure synchronous read of deterministic or transferred adapter seed"
+            ],
+            "rejectedCapturedOperations": [
+                "same-domain Store read",
+                "same-domain Store mutation",
+                "same-domain Store transaction",
+                "same-domain registration or unsubscribe",
+                "same-domain source invalidation"
+            ],
+            "guardDomain": "same-runtime-domain",
+            "errorRule": "A non-thenable throw is memoized exactly within the disposable host; a missing reader is a sticky host-fatal dependency-path error.",
+            "thenableRule": "A returned or thrown thenable becomes the named invalid synchronous server snapshot error and is never a Suspense wakeable.",
+            "resultBoundary": "Sampled at most once per disposable host and never published into the live graph or external projection.",
+            "requiredContractIds": [
+                "external.deterministic-server-snapshot",
+                "react.isolated-hydration-reader"
+            ],
+            "decisionStatus": "approved"
+        },
+        {
+            "id": "callback.external-subscribe",
+            "apiEntryId": "core.external-atom",
+            "role": "Attach exactly one StoreTree invalidator to an adapter source at aggregate retain 0 to 1.",
+            "phase": "transitioningLifecycle",
+            "suppliedCapabilities": [
+                "one generation-bound invalidator that may only latch during its own startup"
+            ],
+            "allowedExternalWork": [
+                "attach an adapter listener",
+                "start adapter-owned producer when its lifetime policy requires it"
+            ],
+            "rejectedCapturedOperations": [
+                "same-domain Store operations",
+                "older same-domain invalidators",
+                "arbitrary same-domain publication"
+            ],
+            "guardDomain": "same-runtime-domain",
+            "errorRule": "A throw or invalid cleanup return rolls back provisional callback/retain admission and returns no unreachable subscription.",
+            "thenableRule": "subscribe itself is synchronous and must return a synchronous cleanup function; thenable setup results reject.",
+            "resultBoundary": "After a valid cleanup is returned, core performs the mandatory second sample and one admission settlement before sub returns.",
+            "requiredContractIds": [
+                "external.race-closing-attach",
+                "external.startup-dirty-latch"
+            ],
+            "decisionStatus": "approved"
+        },
+        {
+            "id": "callback.external-cleanup",
+            "apiEntryId": "core.external-atom",
+            "role": "Release one revoked StoreTree invalidator from its adapter source.",
+            "phase": "transitioningLifecycle-or-disposing",
+            "suppliedCapabilities": [],
+            "allowedExternalWork": [
+                "detach the revoked adapter listener",
+                "stop adapter-owned producer when its lifetime policy requires it"
+            ],
+            "rejectedCapturedOperations": [
+                "same-domain Store operations",
+                "same-domain registration",
+                "other same-domain invalidators",
+                "publication through the revoked invalidator"
+            ],
+            "guardDomain": "same-runtime-domain",
+            "errorRule": "Cleanup is all-run; errors join the ordered outer lifecycle ledger and surface only after the target is idle or terminal.",
+            "thenableRule": "A returned or thrown thenable becomes one contained named synchronous lifecycle cleanup failure, is never awaited, and cannot add disposeAsync.",
+            "resultBoundary": "The generation is revoked before invocation and remains revoked regardless of cleanup outcome.",
+            "requiredContractIds": [
+                "external.generation-safe-cleanup",
+                "lifecycle.synchronous-cleanup"
+            ],
+            "decisionStatus": "approved"
+        },
+        {
+            "id": "callback.store-subscriber",
+            "apiEntryId": "core.store",
+            "role": "Observe one final settled subscription target after source and derived state stabilize.",
+            "phase": "notifying",
+            "suppliedCapabilities": [
+                "settled callback value",
+                "idempotent unsubscribe for already-owned subscription",
+                "committed reads that do not sample dormant external sources"
+            ],
+            "allowedExternalWork": [
+                "Web Storage persistence",
+                "DOM or application side effects outside Valdres"
+            ],
+            "rejectedCapturedOperations": [
+                "same-domain Store mutation",
+                "same-domain Store transaction",
+                "new subscription",
+                "scope access or creation",
+                "Store disposal",
+                "dormant external sampling"
+            ],
+            "guardDomain": "same-runtime-domain",
+            "errorRule": "One callback error does not starve the remaining snapshot; uncaught errors join the ordered outer workflow ledger and surface after idle.",
+            "thenableRule": "The callback is not awaited and no asynchronous Valdres capability survives delivery.",
+            "resultBoundary": "Each affected subscription runs at most once per settlement, subject to the separate one-budget startup admission rule.",
+            "requiredContractIds": [
+                "notification.after-stability",
+                "callback.subscriber-quarantine"
+            ],
+            "decisionStatus": "evidence-required"
+        },
+        {
+            "id": "callback.query-builder",
+            "apiEntryId": "core.structural-query",
+            "role": "Candidate A constructs and freezes one inert typed query definition.",
+            "phase": "definition-construction",
+            "suppliedCapabilities": [
+                "query-local typed index/operator builder"
+            ],
+            "allowedExternalWork": [
+                "compose immutable predicate, order, and facet terms"
+            ],
+            "rejectedCapturedOperations": [
+                "Store read",
+                "Store mutation",
+                "Store transaction",
+                "subscription registration",
+                "scope access",
+                "source invalidation"
+            ],
+            "guardDomain": "same-runtime-domain",
+            "errorRule": "A throw creates no Query definition.",
+            "thenableRule": "An async callback or returned/thrown thenable rejects as an invalid synchronous query definition.",
+            "resultBoundary": "Runs exactly once during definition construction and is discarded after producing the frozen AST.",
+            "requiredContractIds": [
+                "query.definition-grammar-a",
+                "callback.definition-only"
+            ],
+            "decisionStatus": "pending-experiment"
+        },
+        {
+            "id": "callback.beta-cache-loader",
+            "apiEntryId": "beta.cache-companion",
+            "role": "Acquire one keyed async cache entry generation outside the Valdres State contract.",
+            "phase": "independent-beta-client",
+            "suppliedCapabilities": [
+                "AbortSignal",
+                "loader key",
+                "client-owned generation context"
+            ],
+            "allowedExternalWork": [
+                "network, IndexedDB, worker, or application async acquisition"
+            ],
+            "rejectedCapturedOperations": [
+                "Store internals",
+                "adapter internals",
+                "privileged graph or transaction access"
+            ],
+            "guardDomain": "same-runtime-domain",
+            "errorRule": "Exact entry failure/stale/SWR semantics remain a later beta API contract and never alter plain externalAtom behavior.",
+            "thenableRule": "The beta loader is intentionally async; its Promise is owned by the cache client and never becomes a Valdres State value.",
+            "resultBoundary": "Latest generation wins inside one client-owned entry; handoff to canonical Store data is a later explicit synchronous transaction.",
+            "requiredContractIds": [
+                "cache.no-store-internals",
+                "cache.client-owned-entries"
+            ],
+            "decisionStatus": "evidence-required"
+        }
+    ]
+}

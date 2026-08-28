@@ -1,0 +1,205 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://valdres.dev/contracts/v1/public-api.schema.json",
+    "title": "Valdres v1 public API manifest",
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+        "$schema",
+        "schemaVersion",
+        "completeness",
+        "generatedAgainst",
+        "entries"
+    ],
+    "properties": {
+        "$schema": { "const": "./schemas/public-api.schema.json" },
+        "schemaVersion": { "const": 1 },
+        "completeness": { "enum": ["partial", "complete"] },
+        "generatedAgainst": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["workspace", "frozenLegacy", "currentShiftX"],
+            "properties": {
+                "workspace": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["commit", "packageVersion"],
+                    "properties": {
+                        "commit": { "type": "string", "minLength": 40 },
+                        "packageVersion": { "type": "string" }
+                    }
+                },
+                "frozenLegacy": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                        "packageVersion",
+                        "npmSpec",
+                        "registryTarball",
+                        "integrity",
+                        "sha256",
+                        "localAuditPath"
+                    ],
+                    "properties": {
+                        "packageVersion": { "type": "string", "minLength": 1 },
+                        "npmSpec": {
+                            "type": "string",
+                            "pattern": "^valdres@[0-9]"
+                        },
+                        "registryTarball": {
+                            "type": "string",
+                            "pattern": "^https://registry\\.npmjs\\.org/"
+                        },
+                        "integrity": {
+                            "type": "string",
+                            "pattern": "^sha512-[A-Za-z0-9+/]+={0,2}$"
+                        },
+                        "sha256": {
+                            "type": "string",
+                            "pattern": "^[0-9a-f]{64}$"
+                        },
+                        "localAuditPath": { "type": "string", "minLength": 1 }
+                    }
+                },
+                "currentShiftX": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["status", "notes"],
+                    "properties": {
+                        "status": {
+                            "enum": [
+                                "external-handoff-required",
+                                "available",
+                                "complete"
+                            ]
+                        },
+                        "notes": { "type": "string" }
+                    }
+                }
+            }
+        },
+        "entries": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "$ref": "#/$defs/entry" }
+        }
+    },
+    "$defs": {
+        "entry": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "id",
+                "kind",
+                "owner",
+                "legacy",
+                "target",
+                "migration",
+                "contractIds",
+                "decisionStatus",
+                "notes"
+            ],
+            "properties": {
+                "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9.-]+$" },
+                "kind": {
+                    "enum": [
+                        "runtime-export",
+                        "type-export",
+                        "method",
+                        "option",
+                        "subpath",
+                        "package",
+                        "error"
+                    ]
+                },
+                "owner": { "type": "string", "minLength": 1 },
+                "legacy": {
+                    "type": "array",
+                    "items": { "$ref": "#/$defs/surface" }
+                },
+                "target": { "$ref": "#/$defs/target" },
+                "migration": { "$ref": "#/$defs/migration" },
+                "contractIds": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": { "type": "string" },
+                    "uniqueItems": true
+                },
+                "decisionStatus": {
+                    "enum": [
+                        "approved",
+                        "pending-experiment",
+                        "evidence-required"
+                    ]
+                },
+                "notes": { "type": "string", "minLength": 1 }
+            }
+        },
+        "surface": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["package", "subpath", "name", "baseline"],
+            "properties": {
+                "package": { "type": "string", "minLength": 1 },
+                "subpath": { "type": "string", "minLength": 1 },
+                "name": { "type": "string", "minLength": 1 },
+                "baseline": { "type": "string", "minLength": 1 }
+            }
+        },
+        "target": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["package", "subpath", "name", "status"],
+            "properties": {
+                "package": { "type": ["string", "null"] },
+                "subpath": { "type": ["string", "null"] },
+                "name": { "type": ["string", "null"] },
+                "status": {
+                    "enum": [
+                        "stable",
+                        "experimental",
+                        "internal",
+                        "removed",
+                        "pending"
+                    ]
+                }
+            }
+        },
+        "migration": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "mode",
+                "replacementIds",
+                "semver",
+                "codemod",
+                "typeError",
+                "firstPartyOwner",
+                "evidenceStatus"
+            ],
+            "properties": {
+                "mode": {
+                    "enum": ["keep", "add", "replace", "remove", "move"]
+                },
+                "replacementIds": {
+                    "type": "array",
+                    "items": { "type": "string" },
+                    "uniqueItems": true
+                },
+                "semver": { "enum": ["compatible", "breaking", "new"] },
+                "codemod": { "type": "string", "minLength": 1 },
+                "typeError": { "type": "string", "minLength": 1 },
+                "firstPartyOwner": { "type": "string", "minLength": 1 },
+                "evidenceStatus": {
+                    "enum": [
+                        "not-required",
+                        "planned",
+                        "historical-only",
+                        "external-handoff-required",
+                        "complete"
+                    ]
+                }
+            }
+        }
+    }
+}

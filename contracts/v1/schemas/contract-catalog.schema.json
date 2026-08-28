@@ -1,0 +1,22 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://valdres.dev/contracts/v1/contract-catalog.schema.json",
+    "title": "Valdres v1 contract ID catalog",
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["$schema", "schemaVersion", "completeness", "contractIds"],
+    "properties": {
+        "$schema": { "const": "./schemas/contract-catalog.schema.json" },
+        "schemaVersion": { "const": 1 },
+        "completeness": { "enum": ["partial", "complete"] },
+        "contractIds": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+                "type": "string",
+                "pattern": "^[a-z0-9][a-z0-9.-]+$"
+            },
+            "uniqueItems": true
+        }
+    }
+}

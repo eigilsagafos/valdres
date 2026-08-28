@@ -1,0 +1,10 @@
+{
+    "extends": "../../../../../tsconfig.json",
+    "compilerOptions": {
+        "exactOptionalPropertyTypes": true,
+        "noEmit": true,
+        "noUnusedLocals": false,
+        "types": ["bun"]
+    },
+    "include": ["./*.ts"]
+}
