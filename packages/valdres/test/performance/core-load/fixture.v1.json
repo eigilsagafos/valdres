@@ -1,0 +1,92 @@
+{
+    "schemaVersion": 1,
+    "id": "shiftx-core-load-v1",
+    "checksumSeed": 1399350344,
+    "inputs": {
+        "items": 181,
+        "depth": 40,
+        "shared": 8,
+        "leaves": 8,
+        "subscribersPerItem": 6,
+        "steps": 900,
+        "window": 25,
+        "scroll": 8,
+        "metaWriteEvery": 25
+    },
+    "scenarios": {
+        "writes": {
+            "writesEnabled": true,
+            "expected": {
+                "renderReads": 43350,
+                "notificationReads": 5394,
+                "notifications": 5394,
+                "subscriptions": 43350,
+                "timedUnsubscriptions": 43200,
+                "totalUnsubscriptions": 43350,
+                "entityWrites": 900,
+                "metaWrites": 36,
+                "semanticChecksum": "d83b21cc",
+                "oracleTraceSha256": "8b64a81ecd20431da979b58c909ca3945a1ad7b1dead8938f90bfb3a5359686c"
+            }
+        },
+        "no-writes": {
+            "writesEnabled": false,
+            "expected": {
+                "renderReads": 43350,
+                "notificationReads": 0,
+                "notifications": 0,
+                "subscriptions": 43350,
+                "timedUnsubscriptions": 43200,
+                "totalUnsubscriptions": 43350,
+                "entityWrites": 0,
+                "metaWrites": 0,
+                "semanticChecksum": "d48af58b",
+                "oracleTraceSha256": "963afb5cee2e6fa5e414c1234504516689218532e0dc5e436cd2b86392a34ed2"
+            }
+        }
+    },
+    "measurement": {
+        "warmupProcesses": 0,
+        "authoritativeSamples": 50,
+        "percentiles": {
+            "p50": "median",
+            "p95": "nearest-rank"
+        },
+        "ceilingsMs": {
+            "p50": 10,
+            "p95": 15
+        }
+    },
+    "currentBetaControl": {
+        "packageVersion": "1.0.0-beta.23",
+        "tarballSha256": "d98638aa0d8890d35f25b2a132fb7add0355206f925fcf2a4cfe0104a20cafa4"
+    },
+    "authoritativeRunner": {
+        "platform": "darwin",
+        "architecture": "arm64",
+        "hardwareModel": "Mac17,4",
+        "cpuModel": "Apple M5",
+        "logicalCores": 10,
+        "memoryBytes": 34359738368,
+        "node": "v24.16.0",
+        "macOS": "26.5.2",
+        "powerSource": "AC Power"
+    },
+    "canonicalV1CounterKeys": [
+        "firstMaterializations",
+        "subscriptionCausedReevaluations",
+        "validationWalks",
+        "reverseEdgeInstalls",
+        "reverseEdgeRemovals",
+        "orphanWalks",
+        "lifecycleEdgeVisits"
+    ],
+    "noWriteZeroCounterKeys": [
+        "subscriptionCausedReevaluations",
+        "validationWalks",
+        "reverseEdgeInstalls",
+        "reverseEdgeRemovals",
+        "orphanWalks",
+        "lifecycleEdgeVisits"
+    ]
+}

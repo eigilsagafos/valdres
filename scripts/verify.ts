@@ -2,12 +2,12 @@
  * `bun run verify` — run ci.yaml's pull-request gates locally, driven by CI's
  * own file.
  *
- * `bun run test` is a single step in the `test` job. The others — build, build:types,
- * typecheck, the type-level tests, the `@ts-ignore` ban, the architecture gate,
- * the Node/V8 rewrite-guard lane, both retained-memory gates, the
- * valdres-svelte publish lint, the JUnit coverage gate, the `scripts/` tests —
- * only ever ran on GitHub, so anything they alone catch stayed invisible until
- * the PR went red.
+ * `bun run test` is a single step in the `test` job. The others — the v1
+ * contract/migration-ledger gate, build, build:types, typecheck, the type-level
+ * tests, the `@ts-ignore` ban, the architecture gate, the Node/V8 rewrite-guard
+ * lane, both retained-memory gates, the valdres-svelte publish lint, the JUnit
+ * coverage gate, the `scripts/` tests — only ever ran on GitHub, so anything
+ * they alone catch stayed invisible until the PR went red.
  * PR #329 landed exactly there: a new `src/lib/*Fuzz.test.ts` is
  * auto-collected by `vitest.rewrite-guards.config.ts`, where `bun:test` does
  * not resolve, so the file had to import `test/performance/test-compat` like

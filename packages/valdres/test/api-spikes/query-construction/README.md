@@ -12,7 +12,8 @@ The spike compares two independent choices:
 2. zero-operator-import grammar: a query-local typed builder callback (A) versus
    a recursively typed object grammar (C).
 
-Both grammars cover the same fixtures:
+The four candidates cover matched positive fixtures plus grammar-appropriate
+negative and type probes:
 
 - one exact filter;
 - filter + range + ordering + facets;
@@ -22,9 +23,13 @@ Both grammars cover the same fixtures:
 - a parameterized `family` query;
 - negative value/operator/order assertions, including empty, multi-operator,
   explicit-`undefined`, and multi-index shapes;
-- recursively closed definition/index/operator/order/facet and facet-option keys
-  plus collection-local provenance for builder terms and reusable object
-  fragments;
+- closed top-level definition fields, typed builder index/operator members, and
+  recursively closed object-grammar index/operator/order/facet and facet-option
+  keys;
+- structural index-map compatibility: builder terms and reusable object
+  fragments reject incompatible maps while remaining portable across separately
+  named maps with the same shape (this experiment does not claim nominal
+  collection-instance provenance);
 - a future heterogeneous multi-collection source map whose `source` discriminant
   narrows its row type.
 
@@ -60,22 +65,30 @@ those lists for review and deliberately does not assign a winner.
 The packed reachability gate packs one test-only fixture package exactly once
 and consumes that artifact through Bun, esbuild, Vite/Rollup, webpack, and
 native Node/Bun ESM. It compares membership-only and query-using consumers for
-all four ownership/grammar candidates. Sentinels and retained-module graphs must
-agree; every bundled output is executed; two clean builds must have identical
-hashes; and a 4 KB observable engine mutation proves the gate turns red. Bun 1.4
-has no module metafile, so its bundled reachability proof uses output markers,
-hashes, runtime behavior, and the mutation control while the other bundlers also
-assert their module graphs. Native Node records an exact load trace; native Bun
-is a behavioral parity smoke because it exposes no equivalent trace here.
+all four ownership/grammar candidates, plus focused filterless-query parity and
+object order-array cases. Sentinels and retained-module graphs must agree; the
+first baseline bundle for every tool/case is executed; two clean builds must
+have identical hashes; and a 4 KB engine-sentinel mutation proves the affected
+bundle evidence turns red. Bun 1.4 has no module metafile, so its bundled
+reachability proof uses output markers, hashes, runtime behavior, and the
+mutation control while the other bundlers also assert their module graphs.
+Native Node records an exact load trace; native Bun is a behavioral parity smoke
+because it exposes no equivalent trace here.
+
+The executable engine is an observable reachability control, not a reference
+implementation of production `State`, row-handle, ordering, or facet semantics.
+Its runtime assertions cover callback construction, the representative query,
+filterless definitions, and object order-array normalization so dead or broken
+fixture code cannot masquerade as useful bundle evidence.
 
 The checked-in result favors standalone ownership for the stable primitive:
 
 - standalone membership consumers retain no query engine or grammar module in
   all four bundlers;
 - when the collection escapes, the tested eager own-property `.query` closure
-  retains the query tier and costs 918–1,129 gzip bytes in this deliberately
+  retains the query tier and costs 981–1,163 gzip bytes in this deliberately
   small fixture;
-- once a query is used, object grammar is 68–131 gzip bytes smaller than the
+- once a query is used, object grammar is 11–96 gzip bytes smaller than the
   builder grammar in this fixture, which is not enough evidence to choose the
   grammar or predict complete production validation/normalization cost;
 - the native Node ESM trace links either variant entry's statically referenced

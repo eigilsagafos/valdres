@@ -53,6 +53,16 @@ interface PersonIndexes {
     readonly bornAt: OrderedIndex<number>
 }
 
+// A separately named index map with the same structural shape as MovieIndexes.
+// This experiment deliberately proves schema compatibility, not nominal
+// collection-instance provenance.
+interface ArchiveMovieIndexes {
+    readonly genre: ValueIndex<Genre>
+    readonly tags: MultiValueIndex<Tag>
+    readonly rating: OrderedIndex<number>
+    readonly releasedAt: OrderedIndex<number>
+}
+
 declare const movies: Collection<MovieId, Movie, MovieIndexes>
 declare const people: Collection<PersonId, Person, PersonIndexes>
 
@@ -292,6 +302,10 @@ const builderOrderTupleProbe = queryWithBuilder(movies, query => ({
 const objectOrderTupleProbe = queryWithObject(movies, {
     orderBy: [{ rating: "desc" }, { releasedAt: "asc" }] as const,
 })
+const builderFilterlessProbe = queryWithBuilder(movies, () => ({ limit: 2 }))
+const objectFilterlessProbe = queryWithObject(movies, { limit: 2 })
+void builderFilterlessProbe
+void objectFilterlessProbe
 
 type _BuilderOrderTuple = Expect<
     Equal<
@@ -313,6 +327,19 @@ const builderNegative = queryWithBuilder(movies, query => ({
     orderBy: query.index.tags.desc(),
 }))
 void builderNegative
+
+const builderUnknownDefinitionField = queryWithBuilder(
+    movies,
+    // @ts-expect-error builder query definition fields are a closed grammar
+    query => ({ where: query.index.genre.eq("drama"), pageSize: 24 }),
+)
+void builderUnknownDefinitionField
+
+const attachedBuilderUnknownDefinitionField = builderMovies.query(
+    // @ts-expect-error attached ownership applies the same exact grammar
+    query => ({ where: query.index.genre.eq("drama"), pageSize: 24 }),
+)
+void attachedBuilderUnknownDefinitionField
 
 const objectNegative = queryWithObject(movies, {
     // @ts-expect-error genre values are a closed domain
@@ -458,6 +485,19 @@ const objectUndefinedSecondOrderField = queryWithObject(movies, {
 void objectUndefinedSecondOrderField
 
 declare const personQueryBuilder: QueryBuilder<PersonIndexes>
+declare const archiveMovieQueryBuilder: QueryBuilder<ArchiveMovieIndexes>
+
+// Structurally identical index maps intentionally keep terms portable in this
+// experiment, even when the maps have different declaration names.
+const builderStructurallyCompatibleTerms: BuilderQueryDefinition<MovieIndexes> =
+    {
+        where: archiveMovieQueryBuilder.index.genre.eq("drama"),
+        orderBy: archiveMovieQueryBuilder.index.rating.desc(),
+        facets: {
+            archiveGenre: archiveMovieQueryBuilder.index.genre.facet(),
+        },
+    }
+void builderStructurallyCompatibleTerms
 
 const builderForeignTerms: BuilderQueryDefinition<MovieIndexes> = {
     // @ts-expect-error predicates retain their originating index map
@@ -472,6 +512,11 @@ const builderForeignTerms: BuilderQueryDefinition<MovieIndexes> = {
 void builderForeignTerms
 
 declare const personObjectFragment: ObjectWhere<PersonIndexes>
+declare const archiveMovieObjectFragment: ObjectWhere<ArchiveMovieIndexes>
+
+const movieCompatibleObjectFragment: ObjectWhere<MovieIndexes> =
+    archiveMovieObjectFragment
+void movieCompatibleObjectFragment
 
 // @ts-expect-error reusable object fragments retain their originating index map
 const movieObjectFragment: ObjectWhere<MovieIndexes> = personObjectFragment

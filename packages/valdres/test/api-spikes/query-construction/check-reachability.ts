@@ -36,7 +36,7 @@ const updateSnapshot = process.argv.includes("--update")
 
 type Ownership = "standalone" | "attached"
 type Grammar = "builder" | "object"
-type Usage = "membership" | "query"
+type Usage = "filterless" | "membership" | "order-array" | "query"
 type Tool = "bun" | "esbuild" | "vite-rollup" | "webpack"
 
 type CaseDefinition = {
@@ -81,6 +81,27 @@ const cases: CaseDefinition[] = [
             })),
         ),
     ),
+    {
+        id: "standalone-builder-filterless",
+        exportPath: "standalone-builder",
+        ownership: "standalone",
+        grammar: "builder",
+        usage: "filterless",
+    },
+    {
+        id: "standalone-object-filterless",
+        exportPath: "standalone-object",
+        ownership: "standalone",
+        grammar: "object",
+        usage: "filterless",
+    },
+    {
+        id: "standalone-object-order-array",
+        exportPath: "standalone-object",
+        ownership: "standalone",
+        grammar: "object",
+        usage: "order-array",
+    },
 ]
 
 const rowsSource = `[
@@ -110,7 +131,13 @@ console.log(JSON.stringify(output))
         definition.ownership === "standalone"
             ? "import { collection, query }"
             : "import { collection }"
-    const builderDefinition = `q => {
+    const builderDefinition =
+        definition.usage === "filterless"
+            ? `q => {
+    definitionCalls++
+    return ({ limit: 2 })
+}`
+            : `q => {
     definitionCalls++
     return ({
     where: q.all(
@@ -127,7 +154,15 @@ console.log(JSON.stringify(output))
     limit: 2,
     })
 }`
-    const objectDefinition = `{
+    const objectDefinition =
+        definition.usage === "filterless"
+            ? `{ limit: 2 }`
+            : definition.usage === "order-array"
+              ? `{
+    orderBy: [{ rating: "desc" }, { releasedAt: "desc" }],
+    limit: 4,
+}`
+              : `{
     where: {
         genre: { eq: "drama" },
         tags: { hasAny: ["award-winner", "classic"] },
@@ -175,6 +210,31 @@ function expectedOutput(definition: CaseDefinition) {
             first: "Alpha",
         }
     }
+    if (definition.usage === "filterless") {
+        return {
+            rows: ["m1", "m2"],
+            total: 7,
+            facets: {},
+            engine: ENGINE_SENTINEL,
+            grammar:
+                definition.grammar === "builder"
+                    ? BUILDER_SENTINEL
+                    : OBJECT_SENTINEL,
+            definitionCalls: definition.grammar === "builder" ? 1 : 0,
+            repeatStable: true,
+        }
+    }
+    if (definition.usage === "order-array") {
+        return {
+            rows: ["m3", "m1", "m4", "m5"],
+            total: 7,
+            facets: {},
+            engine: ENGINE_SENTINEL,
+            grammar: OBJECT_SENTINEL,
+            definitionCalls: 0,
+            repeatStable: true,
+        }
+    }
     return {
         rows: ["m5", "m6"],
         total: 4,
@@ -197,7 +257,7 @@ function expectedOutput(definition: CaseDefinition) {
 
 function expectedMarkers(definition: CaseDefinition): Markers {
     const retainsQuery =
-        definition.usage === "query" || definition.ownership === "attached"
+        definition.usage !== "membership" || definition.ownership === "attached"
     return {
         collection: true,
         engine: retainsQuery,
@@ -823,6 +883,7 @@ registerHooks({
                 "The eventual Valdres production build and export topology.",
                 "A direct Bun native-ESM module-linkage trace; Bun is behavior-smoked while Node supplies the trace.",
                 "The size of complete production grammar validation and normalization.",
+                "A reference oracle for production State, row-handle, ordering, or facet semantics.",
             ],
         },
         tools: toolVersions,

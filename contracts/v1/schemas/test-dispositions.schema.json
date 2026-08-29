@@ -1,0 +1,215 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://valdres.dev/contracts/v1/test-dispositions.schema.json",
+    "title": "Valdres Phase 1 test-disposition ledger",
+    "type": "array",
+    "minItems": 1,
+    "items": {
+        "oneOf": [
+            { "$ref": "#/$defs/header" },
+            { "$ref": "#/$defs/disposition" },
+            { "$ref": "#/$defs/testOwner" }
+        ]
+    },
+    "contains": { "$ref": "#/$defs/header" },
+    "minContains": 1,
+    "maxContains": 1,
+    "$defs": {
+        "contractId": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9.-]+$"
+        },
+        "dispositionId": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9.-]+$"
+        },
+        "ownerId": {
+            "type": "string",
+            "pattern": "^V1M-[A-Z0-9]+-[0-9]{3}$"
+        },
+        "relativePath": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$)).+$"
+        },
+        "contractIds": {
+            "type": "array",
+            "items": { "$ref": "#/$defs/contractId" },
+            "uniqueItems": true
+        },
+        "pendingInventory": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "status",
+                "catalogPath",
+                "sha256",
+                "expectedDispositionIds"
+            ],
+            "properties": {
+                "status": { "const": "pending" },
+                "catalogPath": { "const": null },
+                "sha256": { "const": null },
+                "expectedDispositionIds": {
+                    "type": "array",
+                    "items": { "$ref": "#/$defs/dispositionId" },
+                    "uniqueItems": true
+                }
+            }
+        },
+        "frozenInventory": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "status",
+                "catalogPath",
+                "sha256",
+                "expectedDispositionIds"
+            ],
+            "properties": {
+                "status": { "const": "frozen" },
+                "catalogPath": { "$ref": "#/$defs/relativePath" },
+                "sha256": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{64}$"
+                },
+                "expectedDispositionIds": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": { "$ref": "#/$defs/dispositionId" },
+                    "uniqueItems": true
+                }
+            }
+        },
+        "header": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "$schema",
+                "recordType",
+                "schemaVersion",
+                "completeness",
+                "baseline",
+                "inventory",
+                "notes"
+            ],
+            "properties": {
+                "$schema": {
+                    "const": "./schemas/test-dispositions.schema.json"
+                },
+                "recordType": { "const": "header" },
+                "schemaVersion": { "const": 1 },
+                "completeness": { "enum": ["partial", "complete"] },
+                "baseline": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["package", "version", "frozenSurface"],
+                    "properties": {
+                        "package": { "const": "valdres" },
+                        "version": { "const": "1.0.0-beta.23" },
+                        "frozenSurface": {
+                            "const": "./frozen-legacy-surface.json"
+                        }
+                    }
+                },
+                "inventory": {
+                    "oneOf": [
+                        { "$ref": "#/$defs/pendingInventory" },
+                        { "$ref": "#/$defs/frozenInventory" }
+                    ]
+                },
+                "notes": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": { "type": "string", "minLength": 1 },
+                    "uniqueItems": true
+                }
+            }
+        },
+        "subject": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["origin", "kind", "path"],
+            "properties": {
+                "origin": {
+                    "enum": ["published-beta.23", "workspace-recovery"]
+                },
+                "kind": {
+                    "enum": [
+                        "production-file",
+                        "test-file",
+                        "test-case",
+                        "infrastructure"
+                    ]
+                },
+                "path": { "$ref": "#/$defs/relativePath" },
+                "testName": { "type": "string", "minLength": 1 }
+            }
+        },
+        "disposition": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "recordType",
+                "id",
+                "subject",
+                "disposition",
+                "reviewStatus",
+                "contractIds",
+                "ownerIds",
+                "destination",
+                "rationale"
+            ],
+            "properties": {
+                "recordType": { "const": "disposition" },
+                "id": { "$ref": "#/$defs/dispositionId" },
+                "subject": { "$ref": "#/$defs/subject" },
+                "disposition": { "enum": ["A", "B", "C", "D", "E"] },
+                "reviewStatus": { "enum": ["proposed", "approved"] },
+                "contractIds": { "$ref": "#/$defs/contractIds" },
+                "ownerIds": {
+                    "type": "array",
+                    "items": { "$ref": "#/$defs/ownerId" },
+                    "uniqueItems": true
+                },
+                "destination": {
+                    "oneOf": [
+                        { "type": "null" },
+                        { "type": "string", "minLength": 1 }
+                    ]
+                },
+                "rationale": { "type": "string", "minLength": 12 }
+            }
+        },
+        "testOwner": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "recordType",
+                "id",
+                "path",
+                "testName",
+                "contractIds",
+                "status"
+            ],
+            "properties": {
+                "recordType": { "const": "test-owner" },
+                "id": { "$ref": "#/$defs/ownerId" },
+                "path": { "$ref": "#/$defs/relativePath" },
+                "testName": {
+                    "oneOf": [
+                        { "type": "null" },
+                        { "type": "string", "minLength": 1 }
+                    ]
+                },
+                "contractIds": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": { "$ref": "#/$defs/contractId" },
+                    "uniqueItems": true
+                },
+                "status": { "enum": ["planned", "implemented"] }
+            }
+        }
+    }
+}

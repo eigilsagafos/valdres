@@ -5,6 +5,7 @@ export const OBJECT_SENTINEL = "D431_OBJECT_SENTINEL_2V9K6P3R8M1X7Q5C"
 const node = value => Object.freeze(value)
 
 function normalizeWhere(input) {
+    if (input == null) return undefined
     const terms = Object.entries(input).map(([field, constraint]) => {
         if (field === "$all")
             return node({
@@ -47,9 +48,13 @@ function normalizeWhere(input) {
 }
 
 function normalizeOrderBy(input) {
+    if (input == null) return Object.freeze([])
+    const terms = Array.isArray(input) ? input : [input]
     return Object.freeze(
-        Object.entries(input).map(([field, direction]) =>
-            node({ field, direction }),
+        terms.flatMap(term =>
+            Object.entries(term).map(([field, direction]) =>
+                node({ field, direction }),
+            ),
         ),
     )
 }

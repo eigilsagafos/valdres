@@ -169,6 +169,15 @@ export interface BuilderQueryDefinition<Indexes extends IndexMap> {
     readonly facets?: Readonly<Record<string, FacetTerm<Indexes, unknown>>>
 }
 
+type ExactBuilderQueryDefinition<Indexes extends IndexMap, Definition> =
+    Definition extends BuilderQueryDefinition<Indexes>
+        ? {
+              readonly [Name in keyof Definition]: Name extends keyof BuilderQueryDefinition<Indexes>
+                  ? Definition[Name]
+                  : never
+          }
+        : never
+
 type BuilderFacetValue<Target> =
     Target extends FacetTerm<infer _Indexes, infer Value> ? Value : never
 
@@ -187,12 +196,18 @@ export declare function queryWithBuilder<
     const Definition extends BuilderQueryDefinition<IndexesOf<Target>>,
 >(
     collection: Target,
-    define: (builder: QueryBuilder<IndexesOf<Target>>) => Definition,
+    define: (
+        builder: QueryBuilder<IndexesOf<Target>>,
+    ) => Definition &
+        ExactBuilderQueryDefinition<IndexesOf<Target>, Definition>,
 ): StructuralQuery<RowOf<Target>, BuilderFacetResult<Definition>, Definition>
 
 export type BuilderQueryCollection<Target extends AnyCollection> = Target & {
     query<const Definition extends BuilderQueryDefinition<IndexesOf<Target>>>(
-        define: (builder: QueryBuilder<IndexesOf<Target>>) => Definition,
+        define: (
+            builder: QueryBuilder<IndexesOf<Target>>,
+        ) => Definition &
+            ExactBuilderQueryDefinition<IndexesOf<Target>, Definition>,
     ): StructuralQuery<
         RowOf<Target>,
         BuilderFacetResult<Definition>,

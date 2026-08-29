@@ -14,7 +14,8 @@
             "Marginal whole-application cost when shared chunks or another query import already make the query tier reachable.",
             "The eventual Valdres production build and export topology.",
             "A direct Bun native-ESM module-linkage trace; Bun is behavior-smoked while Node supplies the trace.",
-            "The size of complete production grammar validation and normalization."
+            "The size of complete production grammar validation and normalization.",
+            "A reference oracle for production State, row-handle, ordering, or facet semantics."
         ]
     },
     "tools": {
@@ -50,12 +51,12 @@
                 "sha256": "e398f4c4b22fffb38a72df0ee5541c4a73201cf0680fed66911af2954f939702"
             },
             "esm/query-engine.js": {
-                "raw": 2930,
-                "sha256": "4b834890ccf5605249a7e890dc8e498add9cf0b26a554617dcdf8bc577f393e1"
+                "raw": 2964,
+                "sha256": "27b24aceb0a79865f63041144393eadb8365a08df63b07b6d0ae150f5b7fd2ed"
             },
             "esm/query-object.js": {
-                "raw": 2462,
-                "sha256": "6fe3669b2d37e9bff5745fc71a4db42f22a788ff3fd45173990287a807e66597"
+                "raw": 2659,
+                "sha256": "9c431d86dcf806e1d27257451666704a574214a09908c6e63efc7ebc36c9eb1f"
             },
             "esm/standalone-builder.js": {
                 "raw": 107,
@@ -70,7 +71,7 @@
                 "sha256": "1278e5efe315456f351dad1cd80e1cb58856c20eabbeba9a1065b52c9b8ebeb6"
             }
         },
-        "canonicalSha256": "32381cae078b099b3955ef55379ce4a7e3b5ed3b9f9b7a93c36879a369761681"
+        "canonicalSha256": "0569de017dfd0f09f8c8ce4d12f5659d19a75d131fd503893842553449c2204a"
     },
     "cases": [
         {
@@ -189,6 +190,45 @@
                 "builder": false,
                 "object": true
             }
+        },
+        {
+            "id": "standalone-builder-filterless",
+            "exportPath": "standalone-builder",
+            "ownership": "standalone",
+            "grammar": "builder",
+            "usage": "filterless",
+            "expectedMarkers": {
+                "collection": true,
+                "engine": true,
+                "builder": true,
+                "object": false
+            }
+        },
+        {
+            "id": "standalone-object-filterless",
+            "exportPath": "standalone-object",
+            "ownership": "standalone",
+            "grammar": "object",
+            "usage": "filterless",
+            "expectedMarkers": {
+                "collection": true,
+                "engine": true,
+                "builder": false,
+                "object": true
+            }
+        },
+        {
+            "id": "standalone-object-order-array",
+            "exportPath": "standalone-object",
+            "ownership": "standalone",
+            "grammar": "object",
+            "usage": "order-array",
+            "expectedMarkers": {
+                "collection": true,
+                "engine": true,
+                "builder": false,
+                "object": true
+            }
         }
     ],
     "bundles": {
@@ -216,9 +256,9 @@
                 }
             },
             "standalone-builder-query": {
-                "raw": 4247,
-                "gzip": 1603,
-                "sha256": "114f6e1555c4168bd9611b73d05bb968bfa20db5c76e8cb3a1b8b54adb2fab1c",
+                "raw": 4267,
+                "gzip": 1612,
+                "sha256": "60899ac8097d394c3e8135fba0b37e054eff581b9d7f30f2c76c395631918dba",
                 "markers": {
                     "collection": true,
                     "engine": true,
@@ -238,9 +278,9 @@
                 }
             },
             "standalone-object-query": {
-                "raw": 3825,
-                "gzip": 1508,
-                "sha256": "d56d349be4c413027e4e63fdfcad12a66f7a728294975511d0da695b1bb5e6c5",
+                "raw": 3944,
+                "gzip": 1570,
+                "sha256": "8ab9a53e2a91e7b080be08a9b394aae0ce5ce0e23ac739de26b80c2705fc312a",
                 "markers": {
                     "collection": true,
                     "engine": true,
@@ -249,9 +289,9 @@
                 }
             },
             "attached-builder-membership": {
-                "raw": 4072,
-                "gzip": 1528,
-                "sha256": "cd9aedca9fd187a7709caa28bb68c60f30c196296f4bfa5ed88f3d1a8f898d16",
+                "raw": 4092,
+                "gzip": 1536,
+                "sha256": "d9da1c062f6fa25d59358ee7f0b4e961799e9928238459cb2145974e75bcae66",
                 "markers": {
                     "collection": true,
                     "engine": true,
@@ -260,9 +300,9 @@
                 }
             },
             "attached-builder-query": {
-                "raw": 4338,
-                "gzip": 1635,
-                "sha256": "c8df7bc4a6907566d1df34e1c47f2e189664bef92c77f708ef2220441dc67679",
+                "raw": 4358,
+                "gzip": 1643,
+                "sha256": "fb312226dc3cc2789d801fee171be4df2622eff005781817cd33be98d2814508",
                 "markers": {
                     "collection": true,
                     "engine": true,
@@ -271,9 +311,9 @@
                 }
             },
             "attached-object-membership": {
-                "raw": 3734,
-                "gzip": 1461,
-                "sha256": "0f63dd8a6f51214a0a01fad8d4a4ca0934aaa2c0dbcca8997ed984e36aa4115c",
+                "raw": 3853,
+                "gzip": 1525,
+                "sha256": "b2d2fe10c80a8fa0b39993358915766e6458b02a840f56483d116abae1ab1d5f",
                 "markers": {
                     "collection": true,
                     "engine": true,
@@ -282,9 +322,42 @@
                 }
             },
             "attached-object-query": {
-                "raw": 3916,
-                "gzip": 1536,
-                "sha256": "daa86866e26b556c750efc5a7b2439b24c931ba0b1a1176a18fb1bbb1869a918",
+                "raw": 4035,
+                "gzip": 1597,
+                "sha256": "7aef2b2a54a988118d9c9ea52258defac9543360b49c72910d90e83bb91c0259",
+                "markers": {
+                    "collection": true,
+                    "engine": true,
+                    "builder": false,
+                    "object": true
+                }
+            },
+            "standalone-builder-filterless": {
+                "raw": 4012,
+                "gzip": 1526,
+                "sha256": "104e98fea9fbff83ab5916266e8f5a71de534e3251e07551c5ac24e69eda26a8",
+                "markers": {
+                    "collection": true,
+                    "engine": true,
+                    "builder": true,
+                    "object": false
+                }
+            },
+            "standalone-object-filterless": {
+                "raw": 3762,
+                "gzip": 1510,
+                "sha256": "d5f3401cc77e7845bf63e9600d5b0ac4a1392b35b5b4daddebd46f2dea6d3da9",
+                "markers": {
+                    "collection": true,
+                    "engine": true,
+                    "builder": false,
+                    "object": true
+                }
+            },
+            "standalone-object-order-array": {
+                "raw": 3808,
+                "gzip": 1526,
+                "sha256": "e2297c3d85d679c304d6dad19b7ad3bcb6f506e92293b44addc16a4b4467b0a8",
                 "markers": {
                     "collection": true,
                     "engine": true,
@@ -319,9 +392,9 @@
                 "fixtureModules": ["collection.js"]
             },
             "standalone-builder-query": {
-                "raw": 4203,
-                "gzip": 1608,
-                "sha256": "997ddbd7c91c96a882512385040c53fdf88c29a454fccfb01389d45c0fb334b0",
+                "raw": 4223,
+                "gzip": 1616,
+                "sha256": "c81d5c2fce2f760f6384becaef0d33a60e4e0fdc11be26300e95c34cb13bfede",
                 "markers": {
                     "collection": true,
                     "engine": true,
@@ -347,9 +420,9 @@
                 "fixtureModules": ["collection.js"]
             },
             "standalone-object-query": {
-                "raw": 3787,
-                "gzip": 1509,
-                "sha256": "93e453135d3c84354c88673929067fca040e61806dc716ade11ded126b46464b",
+                "raw": 3904,
+                "gzip": 1570,
+                "sha256": "54a5efff2b0fcae3d75298865424f03744b02b2fc0cae8ec7a537f517f951616",
                 "markers": {
                     "collection": true,
                     "engine": true,
@@ -363,9 +436,9 @@
                 ]
             },
             "attached-builder-membership": {
-                "raw": 4028,
-                "gzip": 1530,
-                "sha256": "bf53c2c095543c210f8501bc1b8c0870ef6e78a7357e1ec06ada5a86f98517ba",
+                "raw": 4048,
+                "gzip": 1538,
+                "sha256": "d0d385b8d2339ca938006afc33f81e3f1112f086d3225d5270099e63951c5bae",
                 "markers": {
                     "collection": true,
                     "engine": true,
@@ -380,9 +453,9 @@
                 ]
             },
             "attached-builder-query": {
-                "raw": 4292,
-                "gzip": 1639,
-                "sha256": "be0690ce00101e7b29fe167b8338b51992177d0ab722d87b5425b838e9221309",
+                "raw": 4312,
+                "gzip": 1647,
+                "sha256": "f50a9132597fd5f1b7fb1d8911d180883025128b914f48a680745c03bf1cd382",
                 "markers": {
                     "collection": true,
                     "engine": true,
@@ -397,9 +470,9 @@
                 ]
             },
             "attached-object-membership": {
-                "raw": 3694,
-                "gzip": 1464,
-                "sha256": "1c14e2e6d1fbca7b9291875131b0f7feaa81e9af2a426a658cad1e6ec1887b78",
+                "raw": 3811,
+                "gzip": 1526,
+                "sha256": "c2ef54c72ed3bef0e6606534888a6767c7bfff4d8c502e8fbaef9da1502d00ec",
                 "markers": {
                     "collection": true,
                     "engine": true,
@@ -414,9 +487,9 @@
                 ]
             },
             "attached-object-query": {
-                "raw": 3876,
-                "gzip": 1539,
-                "sha256": "9dbf33ec4b460319f385c4ae68227d02c9a019b0104f3783c8b010d35755765b",
+                "raw": 3993,
+                "gzip": 1597,
+                "sha256": "ef0537815aa8b38dc88a962e615eaef36ce60ddb7769c57c936fce31efa61efd",
                 "markers": {
                     "collection": true,
                     "engine": true,
@@ -425,6 +498,54 @@
                 },
                 "fixtureModules": [
                     "attached-object.js",
+                    "collection.js",
+                    "query-engine.js",
+                    "query-object.js"
+                ]
+            },
+            "standalone-builder-filterless": {
+                "raw": 3968,
+                "gzip": 1530,
+                "sha256": "e358109871c9b8a9510fa90a03d784f9954571a978f582f7e3fc119cb2b4930a",
+                "markers": {
+                    "collection": true,
+                    "engine": true,
+                    "builder": true,
+                    "object": false
+                },
+                "fixtureModules": [
+                    "collection.js",
+                    "query-builder.js",
+                    "query-engine.js"
+                ]
+            },
+            "standalone-object-filterless": {
+                "raw": 3722,
+                "gzip": 1514,
+                "sha256": "4c435b494ba0182d8dcda01ebe0ae0af4ddd946e11e20da8512e6622c4d959b7",
+                "markers": {
+                    "collection": true,
+                    "engine": true,
+                    "builder": false,
+                    "object": true
+                },
+                "fixtureModules": [
+                    "collection.js",
+                    "query-engine.js",
+                    "query-object.js"
+                ]
+            },
+            "standalone-object-order-array": {
+                "raw": 3768,
+                "gzip": 1526,
+                "sha256": "1289500489752a1a8135988dea81dd12aee97256db71ac7a0d453b1ac02592e9",
+                "markers": {
+                    "collection": true,
+                    "engine": true,
+                    "builder": false,
+                    "object": true
+                },
+                "fixtureModules": [
                     "collection.js",
                     "query-engine.js",
                     "query-object.js"
@@ -457,9 +578,9 @@
                 "fixtureModules": ["collection.js"]
             },
             "standalone-builder-query": {
-                "raw": 5402,
-                "gzip": 1821,
-                "sha256": "db734c874d6497ca9e37c27e756cce5bcba42e43ad617e6a0fac59dd7fee2259",
+                "raw": 5430,
+                "gzip": 1829,
+                "sha256": "d59b141f93efa7889f058b0b18f77f501e13e44be72eaba5672f978b575e3266",
                 "markers": {
                     "collection": true,
                     "engine": true,
@@ -485,9 +606,9 @@
                 "fixtureModules": ["collection.js"]
             },
             "standalone-object-query": {
-                "raw": 5028,
-                "gzip": 1753,
-                "sha256": "2fc4c7d0e466098d580902bff201cf9d3f2c4997905f891752a0ebf698de76d0",
+                "raw": 5198,
+                "gzip": 1818,
+                "sha256": "81a40efc58d0f17b0a29f302b1477b9b20945abbfa33c9b775ee8137db0d4ab5",
                 "markers": {
                     "collection": true,
                     "engine": true,
@@ -501,9 +622,9 @@
                 ]
             },
             "attached-builder-membership": {
-                "raw": 5203,
-                "gzip": 1724,
-                "sha256": "b83fea198855ee50c7ca6031e3a7ca68972a633ca559b2eac082918d89e1a4e6",
+                "raw": 5231,
+                "gzip": 1730,
+                "sha256": "bccebbff8d0247f5a1c08ac8165ade275ce5cfd17ea413201d9b8bd4f8cc6915",
                 "markers": {
                     "collection": true,
                     "engine": true,
@@ -518,9 +639,9 @@
                 ]
             },
             "attached-builder-query": {
-                "raw": 5521,
-                "gzip": 1857,
-                "sha256": "edf25cfce723f6b7fa115d1652b1a94fad958772a75fbd88972d1c29cf876b0c",
+                "raw": 5549,
+                "gzip": 1864,
+                "sha256": "29701b8d67d8dfec1e96b602e6223881b9ddfd56aadd6f05318929713a1a5657",
                 "markers": {
                     "collection": true,
                     "engine": true,
@@ -535,9 +656,9 @@
                 ]
             },
             "attached-object-membership": {
-                "raw": 4901,
-                "gzip": 1694,
-                "sha256": "08d0c2630989e3f122deab48a45daf87b6334100db538dad2d7c4572434c2ad9",
+                "raw": 5071,
+                "gzip": 1758,
+                "sha256": "ab1312c6441e0b19ff4445532ac17a41883dabb94b7f9e449a510a7342cb69ab",
                 "markers": {
                     "collection": true,
                     "engine": true,
@@ -552,9 +673,9 @@
                 ]
             },
             "attached-object-query": {
-                "raw": 5147,
-                "gzip": 1788,
-                "sha256": "654f3bb5e3e7f65b73d3099f94fb7ba4ab6c45e7ffe2a065ffd1decdc16ddbe0",
+                "raw": 5317,
+                "gzip": 1852,
+                "sha256": "f8e4227253720a7ec87a5e8b6eac9867b7a273ea6ddeaf7559a14aa703b693f2",
                 "markers": {
                     "collection": true,
                     "engine": true,
@@ -563,6 +684,54 @@
                 },
                 "fixtureModules": [
                     "attached-object.js",
+                    "collection.js",
+                    "query-engine.js",
+                    "query-object.js"
+                ]
+            },
+            "standalone-builder-filterless": {
+                "raw": 5117,
+                "gzip": 1728,
+                "sha256": "3f48f6ca80ddca350601e26f7b8e56df93b17911648391f44441fff7da1b9ed2",
+                "markers": {
+                    "collection": true,
+                    "engine": true,
+                    "builder": true,
+                    "object": false
+                },
+                "fixtureModules": [
+                    "collection.js",
+                    "query-builder.js",
+                    "query-engine.js"
+                ]
+            },
+            "standalone-object-filterless": {
+                "raw": 4943,
+                "gzip": 1745,
+                "sha256": "79aef196df013d7d09b86cb36708bc58dac43eea576bd11dd0bcb57c77fda91a",
+                "markers": {
+                    "collection": true,
+                    "engine": true,
+                    "builder": false,
+                    "object": true
+                },
+                "fixtureModules": [
+                    "collection.js",
+                    "query-engine.js",
+                    "query-object.js"
+                ]
+            },
+            "standalone-object-order-array": {
+                "raw": 5002,
+                "gzip": 1764,
+                "sha256": "9a0aff3af0febd2c1a917016717eb1c4978f5dd7de62656c144d07df7a6a21aa",
+                "markers": {
+                    "collection": true,
+                    "engine": true,
+                    "builder": false,
+                    "object": true
+                },
+                "fixtureModules": [
                     "collection.js",
                     "query-engine.js",
                     "query-object.js"
@@ -595,9 +764,9 @@
                 "fixtureModules": ["collection.js"]
             },
             "standalone-builder-query": {
-                "raw": 4683,
-                "gzip": 1806,
-                "sha256": "fc316c4d67b2a7c2484136709a91176efb7e072f3c76ca90b3710c1797265d64",
+                "raw": 4703,
+                "gzip": 1815,
+                "sha256": "686bfc80c6f9e7ee6f51e31e87542af6e4a7c0c8985c713298fa4ddfc1c767e9",
                 "markers": {
                     "collection": true,
                     "engine": true,
@@ -623,9 +792,9 @@
                 "fixtureModules": ["collection.js"]
             },
             "standalone-object-query": {
-                "raw": 4249,
-                "gzip": 1681,
-                "sha256": "57486a6c010135ad807c0c2729a648ef6addac9a451e14b020a50eb9e5bfad15",
+                "raw": 4382,
+                "gzip": 1724,
+                "sha256": "d0113529f614d668f3edc0e2def74ce67f1ea3361f871cf5d237902256bf4b8e",
                 "markers": {
                     "collection": true,
                     "engine": true,
@@ -639,9 +808,9 @@
                 ]
             },
             "attached-builder-membership": {
-                "raw": 4575,
-                "gzip": 1744,
-                "sha256": "60981033bb5cb37b1a0a1dcd612158bfb2ad3550542c25651812d9b3ab43d1ef",
+                "raw": 4595,
+                "gzip": 1755,
+                "sha256": "2e52cd1331345654ae4da61fd952a985935e0af74310beda1e6bca28dec4513a",
                 "markers": {
                     "collection": true,
                     "engine": true,
@@ -656,9 +825,9 @@
                 ]
             },
             "attached-builder-query": {
-                "raw": 4812,
-                "gzip": 1845,
-                "sha256": "ca29aa831b86d3ad3098b2ec831200184ab46de3399f5efb766db92c2e572d89",
+                "raw": 4832,
+                "gzip": 1853,
+                "sha256": "ed42878cc240aeb089d711d21e245273f204d407aaf0c1dc5d0405f9c689d9b8",
                 "markers": {
                     "collection": true,
                     "engine": true,
@@ -673,9 +842,9 @@
                 ]
             },
             "attached-object-membership": {
-                "raw": 4231,
-                "gzip": 1657,
-                "sha256": "41ccdeb9e547b409cb3a760f55ac97dbaf3e30ef0bf9d35747c79f6755a116c4",
+                "raw": 4364,
+                "gzip": 1701,
+                "sha256": "6010a054c82eee6f668eb4a38038e9e94016142be603dfff5e465604ffac3c7a",
                 "markers": {
                     "collection": true,
                     "engine": true,
@@ -690,9 +859,9 @@
                 ]
             },
             "attached-object-query": {
-                "raw": 4378,
-                "gzip": 1714,
-                "sha256": "7259af454d0c9e6ebd8b82f8673e2eb44c337d4dc6893a9102e70ddfedd1c33e",
+                "raw": 4511,
+                "gzip": 1757,
+                "sha256": "f934eaf5830f62cbfdf09faf8539f1e4dd56e8ecfbfe4a16760f4b54952800e5",
                 "markers": {
                     "collection": true,
                     "engine": true,
@@ -701,6 +870,54 @@
                 },
                 "fixtureModules": [
                     "attached-object.js",
+                    "collection.js",
+                    "query-engine.js",
+                    "query-object.js"
+                ]
+            },
+            "standalone-builder-filterless": {
+                "raw": 4448,
+                "gzip": 1729,
+                "sha256": "4b2ace1f615e1b061cdbc05b2cfe7e41c3248218675632f12701a3d3a395fa74",
+                "markers": {
+                    "collection": true,
+                    "engine": true,
+                    "builder": true,
+                    "object": false
+                },
+                "fixtureModules": [
+                    "collection.js",
+                    "query-builder.js",
+                    "query-engine.js"
+                ]
+            },
+            "standalone-object-filterless": {
+                "raw": 4200,
+                "gzip": 1665,
+                "sha256": "eecb64a82d0c83f8a2beb8e47b73e2dfb0ced0d53467dae246a355875a73e0e1",
+                "markers": {
+                    "collection": true,
+                    "engine": true,
+                    "builder": false,
+                    "object": true
+                },
+                "fixtureModules": [
+                    "collection.js",
+                    "query-engine.js",
+                    "query-object.js"
+                ]
+            },
+            "standalone-object-order-array": {
+                "raw": 4246,
+                "gzip": 1681,
+                "sha256": "7debdf01f6a55a263a73f1a4b8812ae22cd199a6f0246c60cb8d4882531146e0",
+                "markers": {
+                    "collection": true,
+                    "engine": true,
+                    "builder": false,
+                    "object": true
+                },
+                "fixtureModules": [
                     "collection.js",
                     "query-engine.js",
                     "query-object.js"
@@ -955,40 +1172,118 @@
                 "definitionCalls": 0,
                 "repeatStable": true
             }
+        },
+        "standalone-builder-filterless": {
+            "nodeFixtureModules": [
+                "collection.js",
+                "query-builder.js",
+                "query-engine.js",
+                "standalone-builder.js"
+            ],
+            "node": {
+                "rows": ["m1", "m2"],
+                "total": 7,
+                "facets": {},
+                "engine": "D431_ENGINE_SENTINEL_9Q2M7V4K1X8P6R5C",
+                "grammar": "D431_BUILDER_SENTINEL_5R8P1X4K7V2M9Q6C",
+                "definitionCalls": 1,
+                "repeatStable": true
+            },
+            "bun": {
+                "rows": ["m1", "m2"],
+                "total": 7,
+                "facets": {},
+                "engine": "D431_ENGINE_SENTINEL_9Q2M7V4K1X8P6R5C",
+                "grammar": "D431_BUILDER_SENTINEL_5R8P1X4K7V2M9Q6C",
+                "definitionCalls": 1,
+                "repeatStable": true
+            }
+        },
+        "standalone-object-filterless": {
+            "nodeFixtureModules": [
+                "collection.js",
+                "query-engine.js",
+                "query-object.js",
+                "standalone-object.js"
+            ],
+            "node": {
+                "rows": ["m1", "m2"],
+                "total": 7,
+                "facets": {},
+                "engine": "D431_ENGINE_SENTINEL_9Q2M7V4K1X8P6R5C",
+                "grammar": "D431_OBJECT_SENTINEL_2V9K6P3R8M1X7Q5C",
+                "definitionCalls": 0,
+                "repeatStable": true
+            },
+            "bun": {
+                "rows": ["m1", "m2"],
+                "total": 7,
+                "facets": {},
+                "engine": "D431_ENGINE_SENTINEL_9Q2M7V4K1X8P6R5C",
+                "grammar": "D431_OBJECT_SENTINEL_2V9K6P3R8M1X7Q5C",
+                "definitionCalls": 0,
+                "repeatStable": true
+            }
+        },
+        "standalone-object-order-array": {
+            "nodeFixtureModules": [
+                "collection.js",
+                "query-engine.js",
+                "query-object.js",
+                "standalone-object.js"
+            ],
+            "node": {
+                "rows": ["m3", "m1", "m4", "m5"],
+                "total": 7,
+                "facets": {},
+                "engine": "D431_ENGINE_SENTINEL_9Q2M7V4K1X8P6R5C",
+                "grammar": "D431_OBJECT_SENTINEL_2V9K6P3R8M1X7Q5C",
+                "definitionCalls": 0,
+                "repeatStable": true
+            },
+            "bun": {
+                "rows": ["m3", "m1", "m4", "m5"],
+                "total": 7,
+                "facets": {},
+                "engine": "D431_ENGINE_SENTINEL_9Q2M7V4K1X8P6R5C",
+                "grammar": "D431_OBJECT_SENTINEL_2V9K6P3R8M1X7Q5C",
+                "definitionCalls": 0,
+                "repeatStable": true
+            }
         }
     },
     "comparisons": {
         "bun": {
-            "builderAttachedMembershipCost": { "raw": 2947, "gzip": 985 },
-            "objectAttachedMembershipCost": { "raw": 2609, "gzip": 918 },
-            "builderAttachedQueryCost": { "raw": 91, "gzip": 32 },
-            "objectAttachedQueryCost": { "raw": 91, "gzip": 28 },
-            "standaloneObjectVsBuilderQuery": { "raw": -422, "gzip": -95 },
-            "attachedObjectVsBuilderQuery": { "raw": -422, "gzip": -99 }
+            "builderAttachedMembershipCost": { "raw": 2967, "gzip": 993 },
+            "objectAttachedMembershipCost": { "raw": 2728, "gzip": 982 },
+            "builderAttachedQueryCost": { "raw": 91, "gzip": 31 },
+            "objectAttachedQueryCost": { "raw": 91, "gzip": 27 },
+            "standaloneObjectVsBuilderQuery": { "raw": -323, "gzip": -42 },
+            "attachedObjectVsBuilderQuery": { "raw": -323, "gzip": -46 }
         },
         "esbuild": {
-            "builderAttachedMembershipCost": { "raw": 2905, "gzip": 985 },
-            "objectAttachedMembershipCost": { "raw": 2571, "gzip": 919 },
+            "builderAttachedMembershipCost": { "raw": 2925, "gzip": 993 },
+            "objectAttachedMembershipCost": { "raw": 2688, "gzip": 981 },
             "builderAttachedQueryCost": { "raw": 89, "gzip": 31 },
-            "objectAttachedQueryCost": { "raw": 89, "gzip": 30 },
-            "standaloneObjectVsBuilderQuery": { "raw": -416, "gzip": -99 },
-            "attachedObjectVsBuilderQuery": { "raw": -416, "gzip": -100 }
+            "objectAttachedQueryCost": { "raw": 89, "gzip": 27 },
+            "standaloneObjectVsBuilderQuery": { "raw": -319, "gzip": -46 },
+            "attachedObjectVsBuilderQuery": { "raw": -319, "gzip": -50 }
         },
         "vite-rollup": {
-            "builderAttachedMembershipCost": { "raw": 3837, "gzip": 1129 },
-            "objectAttachedMembershipCost": { "raw": 3535, "gzip": 1099 },
-            "builderAttachedQueryCost": { "raw": 119, "gzip": 36 },
-            "objectAttachedQueryCost": { "raw": 119, "gzip": 35 },
-            "standaloneObjectVsBuilderQuery": { "raw": -374, "gzip": -68 },
-            "attachedObjectVsBuilderQuery": { "raw": -374, "gzip": -69 }
+            "builderAttachedMembershipCost": { "raw": 3865, "gzip": 1135 },
+            "objectAttachedMembershipCost": { "raw": 3705, "gzip": 1163 },
+            "builderAttachedQueryCost": { "raw": 119, "gzip": 35 },
+            "objectAttachedQueryCost": { "raw": 119, "gzip": 34 },
+            "standaloneObjectVsBuilderQuery": { "raw": -232, "gzip": -11 },
+            "attachedObjectVsBuilderQuery": { "raw": -232, "gzip": -12 }
         },
         "webpack": {
-            "builderAttachedMembershipCost": { "raw": 3099, "gzip": 1024 },
-            "objectAttachedMembershipCost": { "raw": 2755, "gzip": 937 },
-            "builderAttachedQueryCost": { "raw": 129, "gzip": 39 },
+            "builderAttachedMembershipCost": { "raw": 3119, "gzip": 1035 },
+            "objectAttachedMembershipCost": { "raw": 2888, "gzip": 981 },
+            "builderAttachedQueryCost": { "raw": 129, "gzip": 38 },
             "objectAttachedQueryCost": { "raw": 129, "gzip": 33 },
-            "standaloneObjectVsBuilderQuery": { "raw": -434, "gzip": -125 },
-            "attachedObjectVsBuilderQuery": { "raw": -434, "gzip": -131 }
+            "standaloneObjectVsBuilderQuery": { "raw": -321, "gzip": -91 },
+            "attachedObjectVsBuilderQuery": { "raw": -321, "gzip": -96 }
         }
     },
     "redProof": {
@@ -1016,12 +1311,12 @@
             "standalone-object-query": {
                 "changed": true,
                 "rawDelta": 4097,
-                "gzipDelta": 3329
+                "gzipDelta": 3340
             },
             "attached-builder-membership": {
                 "changed": true,
                 "rawDelta": 4097,
-                "gzipDelta": 3334
+                "gzipDelta": 3335
             },
             "attached-builder-query": {
                 "changed": true,
@@ -1031,12 +1326,27 @@
             "attached-object-membership": {
                 "changed": true,
                 "rawDelta": 4097,
-                "gzipDelta": 3335
+                "gzipDelta": 3343
             },
             "attached-object-query": {
                 "changed": true,
                 "rawDelta": 4097,
-                "gzipDelta": 3336
+                "gzipDelta": 3348
+            },
+            "standalone-builder-filterless": {
+                "changed": true,
+                "rawDelta": 4097,
+                "gzipDelta": 3330
+            },
+            "standalone-object-filterless": {
+                "changed": true,
+                "rawDelta": 4097,
+                "gzipDelta": 3337
+            },
+            "standalone-object-order-array": {
+                "changed": true,
+                "rawDelta": 4097,
+                "gzipDelta": 3337
             }
         },
         "esbuild": {
@@ -1053,7 +1363,7 @@
             "standalone-builder-query": {
                 "changed": true,
                 "rawDelta": 4097,
-                "gzipDelta": 3340
+                "gzipDelta": 3341
             },
             "standalone-object-membership": {
                 "changed": false,
@@ -1063,12 +1373,12 @@
             "standalone-object-query": {
                 "changed": true,
                 "rawDelta": 4097,
-                "gzipDelta": 3330
+                "gzipDelta": 3341
             },
             "attached-builder-membership": {
                 "changed": true,
                 "rawDelta": 4097,
-                "gzipDelta": 3333
+                "gzipDelta": 3334
             },
             "attached-builder-query": {
                 "changed": true,
@@ -1078,12 +1388,27 @@
             "attached-object-membership": {
                 "changed": true,
                 "rawDelta": 4097,
-                "gzipDelta": 3331
+                "gzipDelta": 3344
             },
             "attached-object-query": {
                 "changed": true,
                 "rawDelta": 4097,
-                "gzipDelta": 3336
+                "gzipDelta": 3348
+            },
+            "standalone-builder-filterless": {
+                "changed": true,
+                "rawDelta": 4097,
+                "gzipDelta": 3329
+            },
+            "standalone-object-filterless": {
+                "changed": true,
+                "rawDelta": 4097,
+                "gzipDelta": 3333
+            },
+            "standalone-object-order-array": {
+                "changed": true,
+                "rawDelta": 4097,
+                "gzipDelta": 3337
             }
         },
         "vite-rollup": {
@@ -1100,7 +1425,7 @@
             "standalone-builder-query": {
                 "changed": true,
                 "rawDelta": 4097,
-                "gzipDelta": 3372
+                "gzipDelta": 3374
             },
             "standalone-object-membership": {
                 "changed": false,
@@ -1110,27 +1435,42 @@
             "standalone-object-query": {
                 "changed": true,
                 "rawDelta": 4097,
-                "gzipDelta": 3366
+                "gzipDelta": 3377
             },
             "attached-builder-membership": {
                 "changed": true,
                 "rawDelta": 4097,
-                "gzipDelta": 3359
+                "gzipDelta": 3361
             },
             "attached-builder-query": {
                 "changed": true,
                 "rawDelta": 4097,
-                "gzipDelta": 3375
+                "gzipDelta": 3374
             },
             "attached-object-membership": {
                 "changed": true,
                 "rawDelta": 4097,
-                "gzipDelta": 3360
+                "gzipDelta": 3374
             },
             "attached-object-query": {
                 "changed": true,
                 "rawDelta": 4097,
-                "gzipDelta": 3370
+                "gzipDelta": 3380
+            },
+            "standalone-builder-filterless": {
+                "changed": true,
+                "rawDelta": 4097,
+                "gzipDelta": 3361
+            },
+            "standalone-object-filterless": {
+                "changed": true,
+                "rawDelta": 4097,
+                "gzipDelta": 3365
+            },
+            "standalone-object-order-array": {
+                "changed": true,
+                "rawDelta": 4097,
+                "gzipDelta": 3371
             }
         },
         "webpack": {
@@ -1147,7 +1487,7 @@
             "standalone-builder-query": {
                 "changed": true,
                 "rawDelta": 4097,
-                "gzipDelta": 3385
+                "gzipDelta": 3388
             },
             "standalone-object-membership": {
                 "changed": false,
@@ -1157,27 +1497,42 @@
             "standalone-object-query": {
                 "changed": true,
                 "rawDelta": 4097,
-                "gzipDelta": 3371
+                "gzipDelta": 3377
             },
             "attached-builder-membership": {
                 "changed": true,
                 "rawDelta": 4097,
-                "gzipDelta": 3378
+                "gzipDelta": 3377
             },
             "attached-builder-query": {
                 "changed": true,
                 "rawDelta": 4097,
-                "gzipDelta": 3390
+                "gzipDelta": 3392
             },
             "attached-object-membership": {
                 "changed": true,
                 "rawDelta": 4097,
-                "gzipDelta": 3369
+                "gzipDelta": 3374
             },
             "attached-object-query": {
                 "changed": true,
                 "rawDelta": 4097,
-                "gzipDelta": 3376
+                "gzipDelta": 3384
+            },
+            "standalone-builder-filterless": {
+                "changed": true,
+                "rawDelta": 4097,
+                "gzipDelta": 3378
+            },
+            "standalone-object-filterless": {
+                "changed": true,
+                "rawDelta": 4097,
+                "gzipDelta": 3369
+            },
+            "standalone-object-order-array": {
+                "changed": true,
+                "rawDelta": 4097,
+                "gzipDelta": 3371
             }
         }
     }

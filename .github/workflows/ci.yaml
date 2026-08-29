@@ -36,6 +36,8 @@ jobs:
             - name: Require changeset
               if: github.event_name == 'pull_request'
               run: bunx changeset status --since=origin/main
+            - name: V1 contracts and migration ledger
+              run: bun run check:contracts-v1
             - name: Build
               run: bun run build
             - name: Build types
@@ -48,6 +50,11 @@ jobs:
               run: bun run typecheck
             - name: Typecheck type-level tests
               run: bun --filter 'valdres' typecheck:types
+            - name: V1 selector evaluator contract
+              # The evaluator remains unexported, so this dedicated lane proves
+              # its host fixtures and independent symbolic oracle are both
+              # typechecked before the future Store kernel can integrate it.
+              run: bun --filter 'valdres' test:v1-selector-evaluator
             - name: Ban unchecked TypeScript suppressions in valdres
               run: |
                   if git grep -n -E '^[[:space:]]*//[[:space:]]*@ts-ignore([[:space:]]|$)' -- packages/valdres/src; then

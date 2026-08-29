@@ -5,8 +5,14 @@
     "publicApiIds": [
         "beta.cache-companion",
         "beta.search",
+        "collection.artifact-export",
+        "collection.artifact-import",
         "collection.artifacts-subpath",
+        "collection.materialization-status",
+        "collection.materialization-subscribe",
+        "collection.materialize",
         "collection.operations-subpath",
+        "collection.scan",
         "core.atom",
         "core.atom.lazy",
         "core.collection",
@@ -45,10 +51,51 @@
         "callback.external-subscribe",
         "callback.family-create-node",
         "callback.family-encode-key",
+        "callback.materialization-status-listener",
         "callback.query-builder",
+        "callback.selector-comparator",
         "callback.selector-getter",
         "callback.store-subscriber",
         "callback.transaction",
         "callback.transaction-scope"
+    ],
+    "independentBetaPublicApiIds": ["beta.cache-companion", "beta.search"],
+    "frozenPublicCoordinates": [
+        {
+            "id": "collection.artifact-export",
+            "package": "valdres",
+            "subpath": "./collection/artifacts",
+            "name": "exportArtifact"
+        },
+        {
+            "id": "collection.artifact-import",
+            "package": "valdres",
+            "subpath": "./collection/artifacts",
+            "name": "importArtifact"
+        },
+        {
+            "id": "collection.materialization-status",
+            "package": "valdres",
+            "subpath": "./collection",
+            "name": "getMaterializationStatus"
+        },
+        {
+            "id": "collection.materialization-subscribe",
+            "package": "valdres",
+            "subpath": "./collection",
+            "name": "subscribeMaterialization"
+        },
+        {
+            "id": "collection.materialize",
+            "package": "valdres",
+            "subpath": "./collection",
+            "name": "materialize"
+        },
+        {
+            "id": "collection.scan",
+            "package": "valdres",
+            "subpath": "./collection",
+            "name": "scan"
+        }
     ]
 }

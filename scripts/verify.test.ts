@@ -133,6 +133,7 @@ describe("bun run verify", () => {
             .steps.map(step => step.run)
             .join("\n")
         for (const command of [
+            "bun run check:contracts-v1",
             "bun run build",
             "bun run build:types",
             "bun run typecheck",

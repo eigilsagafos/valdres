@@ -46,12 +46,41 @@
             ],
             "guardDomain": "same-runtime-domain",
             "errorRule": "Ordinary errors become stable selector error proposals; RuntimeMismatchError is a sticky host control fault and cannot be caught into a value.",
-            "thenableRule": "A returned thenable becomes the named invalid synchronous selector outcome with one rejection-containment handler; it is never awaited or served.",
-            "resultBoundary": "The evaluator atomically accepts one value/error proposal with its synchronously captured dependency prefix or publishes nothing for a disposable control fault.",
+            "thenableRule": "A returned or thrown thenable becomes the named invalid synchronous selector outcome with one rejection-containment handler; it is never awaited or served.",
+            "resultBoundary": "The evaluator returns one immutable value/error/control proposal with its synchronously captured valid dependency prefix. A disposable or pre-apply host rejects a control proposal without publication; a persistent post-apply host installs the exact control outcome as authoritative current state.",
             "requiredContractIds": [
                 "selector.pure-sync-dag",
                 "selector.one-evaluator",
                 "callback.revocable-capability"
+            ],
+            "decisionStatus": "approved"
+        },
+        {
+            "id": "callback.selector-comparator",
+            "apiEntryId": "core.selector",
+            "role": "Compare one previous selector value with one fully evaluated next proposal without changing its dependency capture.",
+            "phase": "comparing-selector-proposal",
+            "suppliedCapabilities": [
+                "previous selector value",
+                "next proposed selector value"
+            ],
+            "allowedExternalWork": ["pure synchronous comparison"],
+            "rejectedCapturedOperations": [
+                "Store read or mutation",
+                "Store transaction",
+                "subscription registration",
+                "scope access",
+                "source invalidation",
+                "supplied selector get"
+            ],
+            "guardDomain": "same-runtime-domain",
+            "errorRule": "A thrown non-thenable becomes the proposal's stable comparator error outcome; RuntimeMismatchError is a sticky exact host control fault and cannot be caught into a boolean or ordinary error proposal.",
+            "thenableRule": "A returned or thrown thenable becomes the named invalid synchronous comparator error outcome with one rejection-containment handler; it is never awaited or tested for truthiness.",
+            "resultBoundary": "The comparator must return exactly true or false; every other synchronous result becomes a named invalid comparator result error proposal. Exactly true canonicalizes the accepted proposal to the prior successful value and reuses its served token only while that success is still the current served outcome; an equal error-to-value recovery receives a new token. Exactly false accepts the next value. Every accepted value or error proposal retains the complete synchronously captured dependency set.",
+            "requiredContractIds": [
+                "selector.pure-sync-dag",
+                "selector.one-evaluator",
+                "callback.no-captured-store-capability"
             ],
             "decisionStatus": "approved"
         },
@@ -257,6 +286,36 @@
             "requiredContractIds": [
                 "collection.atomic-deltas",
                 "transaction.no-user-code-final-preflight"
+            ],
+            "decisionStatus": "approved"
+        },
+        {
+            "id": "callback.materialization-status-listener",
+            "apiEntryId": "collection.materialization-subscribe",
+            "role": "Observe one immutable materialization status snapshot after the transition is installed.",
+            "phase": "notifying-materialization-status",
+            "suppliedCapabilities": [
+                "current immutable materialization status snapshot including its progress representation",
+                "idempotent unsubscribe for the already-owned status subscription",
+                "inert status and exact-scan reads"
+            ],
+            "allowedExternalWork": [
+                "application scheduling, logging, or progress UI outside Valdres"
+            ],
+            "rejectedCapturedOperations": [
+                "same-domain Store mutation or transaction",
+                "same-domain materialization or artifact command",
+                "same-domain subscription admission",
+                "scope access or creation",
+                "Store disposal"
+            ],
+            "guardDomain": "same-runtime-domain",
+            "errorRule": "The status transition remains installed; one listener error cannot starve the remaining frozen delivery snapshot, and the first escaping error surfaces after delivery.",
+            "thenableRule": "The listener is not awaited and no asynchronous Valdres capability survives delivery.",
+            "resultBoundary": "The listener receives the same opaque immutable status snapshot returned by getMaterializationStatus; its return value is ignored.",
+            "requiredContractIds": [
+                "callback.subscriber-quarantine",
+                "collection.materialization-observation"
             ],
             "decisionStatus": "approved"
         },

@@ -528,14 +528,124 @@
                 "mode": "add",
                 "replacementIds": [],
                 "semver": "new",
-                "codemod": "Import explicit scan/materialization/status/progress operations from valdres/collection.",
+                "codemod": "Import materialize, scan, getMaterializationStatus, and subscribeMaterialization from valdres/collection.",
                 "typeError": "Operational APIs are not root exports.",
                 "firstPartyOwner": "collection",
                 "evidenceStatus": "planned"
             },
             "contractIds": ["collection.operational-boundary"],
             "decisionStatus": "approved",
-            "notes": "Exact API spelling remains a Phase 0 engineering gate."
+            "notes": "The stable subpath has no Store methods and no separate progress export."
+        },
+        {
+            "id": "collection.materialize",
+            "kind": "runtime-export",
+            "owner": "valdres",
+            "legacy": [],
+            "target": {
+                "package": "valdres",
+                "subpath": "./collection",
+                "name": "materialize",
+                "status": "stable"
+            },
+            "migration": {
+                "mode": "add",
+                "replacementIds": [],
+                "semver": "new",
+                "codemod": "Call materialize(store, index, options?) for explicit StoreTree-owned index demand.",
+                "typeError": "Transaction targets, non-index definitions, Store.materialize, and option keys not admitted by the final options type reject.",
+                "firstPartyOwner": "collection",
+                "evidenceStatus": "planned"
+            },
+            "contractIds": [
+                "collection.materialization-lifecycle",
+                "collection.operational-boundary"
+            ],
+            "decisionStatus": "approved",
+            "notes": "Returns the opaque materialization handle also returned by importArtifact; option members and scheduling policy remain unresolved."
+        },
+        {
+            "id": "collection.scan",
+            "kind": "runtime-export",
+            "owner": "valdres",
+            "legacy": [],
+            "target": {
+                "package": "valdres",
+                "subpath": "./collection",
+                "name": "scan",
+                "status": "stable"
+            },
+            "migration": {
+                "mode": "add",
+                "replacementIds": [],
+                "semver": "new",
+                "codemod": "Call scan(storeOrTxn, query) only when the explicit exact O(N) path is intended.",
+                "typeError": "scan requires a same-domain Store or Transaction and a structural Query definition.",
+                "firstPartyOwner": "collection",
+                "evidenceStatus": "planned"
+            },
+            "contractIds": [
+                "collection.operational-boundary",
+                "query.exact-scan-operation",
+                "query.single-collection-composite-result"
+            ],
+            "decisionStatus": "approved",
+            "notes": "The standalone exact path never starts materialization or silently switches algorithms; query-construction grammar remains unresolved."
+        },
+        {
+            "id": "collection.materialization-status",
+            "kind": "runtime-export",
+            "owner": "valdres",
+            "legacy": [],
+            "target": {
+                "package": "valdres",
+                "subpath": "./collection",
+                "name": "getMaterializationStatus",
+                "status": "stable"
+            },
+            "migration": {
+                "mode": "add",
+                "replacementIds": [],
+                "semver": "new",
+                "codemod": "Read getMaterializationStatus(materialization); progress is represented within that inert snapshot.",
+                "typeError": "Only a same-domain materialization handle is accepted; no standalone progress function exists.",
+                "firstPartyOwner": "collection",
+                "evidenceStatus": "planned"
+            },
+            "contractIds": [
+                "collection.materialization-lifecycle",
+                "collection.materialization-observation",
+                "collection.operational-boundary"
+            ],
+            "decisionStatus": "approved",
+            "notes": "The opaque status snapshot contains progress; its state vocabulary, progress representation, generation, revision, diagnostics, and scheduler fields are not frozen."
+        },
+        {
+            "id": "collection.materialization-subscribe",
+            "kind": "runtime-export",
+            "owner": "valdres",
+            "legacy": [],
+            "target": {
+                "package": "valdres",
+                "subpath": "./collection",
+                "name": "subscribeMaterialization",
+                "status": "stable"
+            },
+            "migration": {
+                "mode": "add",
+                "replacementIds": [],
+                "semver": "new",
+                "codemod": "Call subscribeMaterialization(materialization, listener) and retain its idempotent unsubscribe.",
+                "typeError": "Only a same-domain materialization handle and synchronous listener are accepted.",
+                "firstPartyOwner": "collection",
+                "evidenceStatus": "planned"
+            },
+            "contractIds": [
+                "collection.materialization-observation",
+                "collection.operational-boundary"
+            ],
+            "decisionStatus": "approved",
+            "notes": "The listener receives the same opaque immutable status snapshot returned by getMaterializationStatus, including its progress representation."
         },
         {
             "id": "collection.artifacts-subpath",
@@ -552,14 +662,69 @@
                 "mode": "add",
                 "replacementIds": [],
                 "semver": "new",
-                "codemod": "Import builder/import/checkpoint/codec/cache operations from valdres/collection/artifacts.",
+                "codemod": "Import exportArtifact and importArtifact from valdres/collection/artifacts.",
                 "typeError": "Artifact APIs are not root exports.",
                 "firstPartyOwner": "collection",
                 "evidenceStatus": "planned"
             },
             "contractIds": ["collection.artifact-boundary"],
             "decisionStatus": "approved",
-            "notes": "Raw bytes are portable data; prepared candidates are runtime-owned."
+            "notes": "Only import/export spelling is frozen; raw bytes remain portable data and prepared candidates remain runtime-owned."
+        },
+        {
+            "id": "collection.artifact-export",
+            "kind": "runtime-export",
+            "owner": "valdres",
+            "legacy": [],
+            "target": {
+                "package": "valdres",
+                "subpath": "./collection/artifacts",
+                "name": "exportArtifact",
+                "status": "stable"
+            },
+            "migration": {
+                "mode": "add",
+                "replacementIds": [],
+                "semver": "new",
+                "codemod": "Call exportArtifact(materialization) only through valdres/collection/artifacts.",
+                "typeError": "Only a same-domain materialization handle is accepted.",
+                "firstPartyOwner": "collection",
+                "evidenceStatus": "planned"
+            },
+            "contractIds": [
+                "collection.artifact-boundary",
+                "collection.artifact-reconciliation"
+            ],
+            "decisionStatus": "approved",
+            "notes": "The returned artifact is opaque; byte format, codec generation, integrity metadata, persistence, and execution timing are not frozen here."
+        },
+        {
+            "id": "collection.artifact-import",
+            "kind": "runtime-export",
+            "owner": "valdres",
+            "legacy": [],
+            "target": {
+                "package": "valdres",
+                "subpath": "./collection/artifacts",
+                "name": "importArtifact",
+                "status": "stable"
+            },
+            "migration": {
+                "mode": "add",
+                "replacementIds": [],
+                "semver": "new",
+                "codemod": "Call importArtifact(store, index, artifact) and observe the returned materialization handle through valdres/collection.",
+                "typeError": "Transaction targets and foreign Store/index/materialization handles reject before work; portable artifact data follows bounded format validation.",
+                "firstPartyOwner": "collection",
+                "evidenceStatus": "planned"
+            },
+            "contractIds": [
+                "collection.artifact-boundary",
+                "collection.artifact-reconciliation",
+                "collection.materialization-lifecycle"
+            ],
+            "decisionStatus": "approved",
+            "notes": "Returns the same opaque handle as materialize; fallback scheduling, byte representation, codec/schema/security policy, persistence, and execution timing remain unresolved."
         },
         {
             "id": "react.provider",

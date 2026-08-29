@@ -3,6 +3,7 @@ import { readRows } from "./collection.js"
 export const ENGINE_SENTINEL = "D431_ENGINE_SENTINEL_9Q2M7V4K1X8P6R5C"
 
 function matches(row, term) {
+    if (term == null) return true
     if (term.kind === "and") return term.terms.every(next => matches(row, next))
     if (term.kind === "or") return term.terms.some(next => matches(row, next))
     if (term.kind === "not") return !matches(row, term.term)

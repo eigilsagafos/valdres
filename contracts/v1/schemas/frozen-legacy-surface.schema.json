@@ -1,37 +1,92 @@
 {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "$id": "https://valdres.dev/contracts/v1/frozen-legacy-surface.schema.json",
-    "title": "Frozen Valdres beta.23 root export surface",
+    "title": "Frozen Valdres beta.23 export surface",
     "type": "object",
     "additionalProperties": false,
     "required": [
         "$schema",
         "schemaVersion",
         "package",
-        "subpath",
         "baseline",
-        "runtimeExports",
-        "typeExports"
+        "entrypoints"
     ],
     "properties": {
         "$schema": { "const": "./schemas/frozen-legacy-surface.schema.json" },
         "schemaVersion": { "const": 1 },
         "package": { "const": "valdres" },
-        "subpath": { "const": "." },
         "baseline": { "const": "1.0.0-beta.23" },
-        "runtimeExports": {
+        "entrypoints": {
             "type": "array",
-            "minItems": 29,
-            "maxItems": 29,
+            "minItems": 2,
+            "maxItems": 2,
+            "items": {
+                "oneOf": [
+                    { "$ref": "#/$defs/rootEntrypoint" },
+                    { "$ref": "#/$defs/adapterInternalsEntrypoint" }
+                ]
+            },
+            "allOf": [
+                {
+                    "contains": { "$ref": "#/$defs/rootEntrypoint" },
+                    "minContains": 1,
+                    "maxContains": 1
+                },
+                {
+                    "contains": {
+                        "$ref": "#/$defs/adapterInternalsEntrypoint"
+                    },
+                    "minContains": 1,
+                    "maxContains": 1
+                }
+            ]
+        }
+    },
+    "$defs": {
+        "exportNames": {
+            "type": "array",
             "items": { "type": "string", "minLength": 1 },
             "uniqueItems": true
         },
-        "typeExports": {
-            "type": "array",
-            "minItems": 56,
-            "maxItems": 56,
-            "items": { "type": "string", "minLength": 1 },
-            "uniqueItems": true
+        "rootEntrypoint": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["subpath", "runtimeExports", "typeExports"],
+            "properties": {
+                "subpath": { "const": "." },
+                "runtimeExports": {
+                    "allOf": [
+                        { "$ref": "#/$defs/exportNames" },
+                        { "type": "array", "minItems": 29, "maxItems": 29 }
+                    ]
+                },
+                "typeExports": {
+                    "allOf": [
+                        { "$ref": "#/$defs/exportNames" },
+                        { "type": "array", "minItems": 56, "maxItems": 56 }
+                    ]
+                }
+            }
+        },
+        "adapterInternalsEntrypoint": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["subpath", "runtimeExports", "typeExports"],
+            "properties": {
+                "subpath": { "const": "./adapter-internals/v1" },
+                "runtimeExports": {
+                    "allOf": [
+                        { "$ref": "#/$defs/exportNames" },
+                        { "type": "array", "minItems": 3, "maxItems": 3 }
+                    ]
+                },
+                "typeExports": {
+                    "allOf": [
+                        { "$ref": "#/$defs/exportNames" },
+                        { "type": "array", "maxItems": 0 }
+                    ]
+                }
+            }
         }
     }
 }
