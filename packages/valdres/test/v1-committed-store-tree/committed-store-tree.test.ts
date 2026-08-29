@@ -287,6 +287,28 @@ describe("v1 persistent committed StoreTree host", () => {
         expect(thenCalls).toBe(4)
     })
 
+    test("supports a lazy initializer reentering its active selector read", () => {
+        const domain = createCommittedStoreTreeDomain()
+        let suppliedGet: (() => number) | undefined
+        let reenter = true
+        let initializerCalls = 0
+        const lazy = domain.atomLazy(() => {
+            initializerCalls++
+            if (!reenter) return 7
+            reenter = false
+            return suppliedGet!()
+        })
+        const parent = domain.selector(get => {
+            suppliedGet = () => get(lazy)
+            return get(lazy)
+        })
+        const tree = domain.createStoreTree()
+
+        expect(tree.get(parent)).toBe(7)
+        expect(tree.get(parent)).toBe(7)
+        expect(initializerCalls).toBe(2)
+    })
+
     test("quarantines direct-set thenable containment across same-domain StoreTrees", () => {
         const domain = createCommittedStoreTreeDomain()
         const target = domain.atom<unknown>(0)

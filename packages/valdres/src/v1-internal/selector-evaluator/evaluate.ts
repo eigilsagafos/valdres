@@ -308,10 +308,10 @@ export const evaluateSelector = <Node, Token extends object, Value>(
             throw error
         }
 
-        const alreadyAccepted = dependencyNodes.has(dependency)
+        const wasAcceptedBeforeServe = dependencyNodes.has(dependency)
         let wasCurrentDirectDependency = false
         if (
-            !alreadyAccepted &&
+            !wasAcceptedBeforeServe &&
             currentDependencies !== undefined &&
             currentDependencies.length > 0
         ) {
@@ -340,6 +340,11 @@ export const evaluateSelector = <Node, Token extends object, Value>(
             throw invalidatedPrefixCycle
         }
 
+        // Serving can synchronously reenter this supplied getter through a
+        // lazy host callback, or truncate the accepted prefix after a graph
+        // publication. Re-read membership before deciding whether this call
+        // must prove and capture the edge.
+        const alreadyAccepted = dependencyNodes.has(dependency)
         const graphVersionAfterServe = observedGraphVersion
         const sessionPublicationsAfterServe = observedSessionPublications
         const mayReusePriorProof =

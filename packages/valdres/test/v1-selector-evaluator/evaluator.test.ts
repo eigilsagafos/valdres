@@ -279,6 +279,30 @@ describe("v1 selector evaluator outcomes", () => {
         ).toEqual(["a", "b"])
     })
 
+    test("deduplicates a dependency accepted by a reentrant serve callback", () => {
+        const host = new TestHost()
+        host.setLeaf("lazy", 7)
+        let suppliedGet: (<Value>(node: Node) => Value) | undefined
+        let reenter = true
+        host.setServeEffect("lazy", () => {
+            if (!reenter) return
+            reenter = false
+            suppliedGet?.<number>("lazy")
+        })
+        host.define({
+            node: "parent",
+            get: get => {
+                suppliedGet = get
+                return get<number>("lazy")
+            },
+        })
+
+        expect(valueOf(host.read<number>("parent"))).toBe(7)
+        expect(
+            host.records.get("parent")?.dependencies.map(({ node }) => node),
+        ).toEqual(["lazy"])
+    })
+
     test("reuses immutable dependency snapshots when node and token stay current", () => {
         const host = new TestHost()
         host.setLeaf("a", 2)
