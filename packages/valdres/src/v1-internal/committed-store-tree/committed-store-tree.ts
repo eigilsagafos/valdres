@@ -16,18 +16,23 @@ import {
     StoreTreeMismatchError,
     TransactionClosedError,
     TransactionPhaseError,
+    SubscriberNotificationError,
     assertCursorOperationAllowed,
+    assertStoreReadAllowed,
     assertStoreOperationAllowed,
+    assertUnsubscribeAllowed,
     brandRuntimeHandle,
     classifyEntryOwner,
     classifyOwner,
     containThenable,
     inspectSynchronousAtomValue,
     inspectThenable,
+    latchSubscriberControlFault,
     makeStateHandle,
     runGuardedCallback,
     runLazyInitializer,
     runSelectorActivity,
+    runSubscriberActivity,
     runTransactionActivity,
     runTransactionResultActivity,
     type AnyAtom,
@@ -97,6 +102,33 @@ interface CommitWorksets {
     affected: Map<AtomViewRecord, DraftAtomOutcome> | undefined
 }
 
+type SubscriberCallback = () => unknown
+
+interface SubscriptionTarget {
+    readonly host: CommittedStoreTreeHost
+    readonly scope: StoreScopeNode
+    readonly state: AnyState
+    head: SubscriptionRegistration | undefined
+    tail: SubscriptionRegistration | undefined
+    reachedEpoch: number
+}
+
+interface SubscriptionRegistration {
+    callback: SubscriberCallback | undefined
+    target: SubscriptionTarget | undefined
+    previous: SubscriptionRegistration | undefined
+    next: SubscriptionRegistration | undefined
+}
+
+const createUnsubscribe = (
+    registration: SubscriptionRegistration,
+): (() => void) =>
+    function unsubscribe(): void {
+        const target = registration.target
+        if (target === undefined) return
+        target.host.removeSubscription(registration)
+    }
+
 export interface InternalStoreTreeInstrumentation {
     read(counter: StoreTreeCounter): number
 }
@@ -123,9 +155,21 @@ const STORE_TREE_COUNTER_INDEX: Readonly<Record<StoreTreeCounter, number>> =
         finalPreflightVisits: 17,
         draftStorageAllocations: 18,
         commitWorksetAllocations: 19,
+        subscriptionIndexMapsCreated: 20,
+        subscriptionTargetsCreated: 21,
+        subscriptionRegistrations: 22,
+        subscriptionRemovals: 23,
+        unsubscribeClosuresCreated: 24,
+        activeSubscriptionScopes: 25,
+        activeSubscriptionTargets: 26,
+        activeSubscriptions: 27,
+        notificationTargetsReached: 28,
+        notificationSnapshots: 29,
+        subscriberCallbacksAttempted: 30,
+        subscriberErrors: 31,
     })
 
-const STORE_TREE_COUNTER_COUNT = 20
+const STORE_TREE_COUNTER_COUNT = 32
 const internalInstrumentationCounters = new WeakMap<
     InternalStoreTreeInstrumentation,
     Uint32Array
@@ -338,6 +382,13 @@ class CommittedStoreTreeHost
         | Map<StoreScopeNode, Map<AnySelector, number>>
         | undefined
     #propagationControlFault: unknown | undefined
+    #subscriptionTargets:
+        | Map<StoreScopeNode, Map<AnyState, SubscriptionTarget>>
+        | undefined
+    #nextNotificationEpoch = 1
+    #notificationEpoch = 0
+    #notificationTarget: SubscriptionTarget | undefined
+    #remainingNotificationTargets: SubscriptionTarget[] | undefined
     readonly #domain: RuntimeDomainRecords
     readonly #counters: Uint32Array | undefined
 
@@ -389,14 +440,164 @@ class CommittedStoreTreeHost
         const session = new SelectorEvaluationSession<AnyState>()
         const node = state as unknown as AnyState
         const ownerStatus = classifyEntryOwner(this.#domain, node, session)
-        assertStoreOperationAllowed(this.#domain, "StoreTree.get")
+        assertStoreReadAllowed(this.#domain, "StoreTree.get")
         this.#assertScopeLive(scope)
         if (ownerStatus === "invalid") {
             throw new TypeError("StoreTree.get requires a valid State")
         }
-        const served = scope.serveKnownLocal(node, session)
-        if (served.outcome.kind !== "value") throw served.outcome.error
-        return served.outcome.value as Value
+        try {
+            const served = scope.serveKnownLocal(node, session)
+            if (served.outcome.kind !== "value") {
+                if (served.outcome.kind === "control-error") {
+                    latchSubscriberControlFault(
+                        this.#domain,
+                        served.outcome.error,
+                    )
+                }
+                throw served.outcome.error
+            }
+            return served.outcome.value as Value
+        } catch (error) {
+            const controlFault = session.getControlFault()
+            if (controlFault.kind === "fault") {
+                latchSubscriberControlFault(this.#domain, controlFault.error)
+            }
+            throw error
+        }
+    }
+
+    sub<Value>(
+        scope: StoreScopeNode,
+        state: State<Value>,
+        callback: () => void,
+    ): () => void {
+        const node = state as unknown as AnyState
+        let session: SelectorEvaluationSession<AnyState> | undefined
+        const ownerStatus = this.#domain.states.has(node)
+            ? "local"
+            : classifyEntryOwner(
+                  this.#domain,
+                  node,
+                  (session = new SelectorEvaluationSession<AnyState>()),
+              )
+        assertStoreOperationAllowed(this.#domain, "StoreTree.sub")
+        this.#assertScopeLive(scope)
+        if (
+            ownerStatus === "invalid" ||
+            (!this.#domain.atoms.has(node) && !this.#domain.selectors.has(node))
+        ) {
+            throw new TypeError("StoreTree.sub requires a valid State")
+        }
+        if (typeof callback !== "function") {
+            throw new TypeError("StoreTree.sub requires a callback function")
+        }
+
+        const served =
+            scope.getMaterializedServedOutcome(node) ??
+            scope.serveKnownLocal(
+                node,
+                session ?? new SelectorEvaluationSession<AnyState>(),
+            )
+        if (served.outcome.kind === "control-error") {
+            throw served.outcome.error
+        }
+
+        let targets = this.#subscriptionTargets
+        if (targets === undefined) {
+            targets = new Map()
+            this.#subscriptionTargets = targets
+            if (this.instrumented) {
+                this.recordCounter("subscriptionIndexMapsCreated")
+            }
+        }
+        let byState = targets.get(scope)
+        if (byState === undefined) {
+            byState = new Map()
+            targets.set(scope, byState)
+            if (this.instrumented) {
+                this.recordCounter("subscriptionIndexMapsCreated")
+                this.recordCounter("activeSubscriptionScopes")
+            }
+        }
+        let target = byState.get(node)
+        if (target === undefined) {
+            target = {
+                host: this,
+                scope,
+                state: node,
+                head: undefined,
+                tail: undefined,
+                reachedEpoch: 0,
+            }
+            byState.set(node, target)
+            if (this.instrumented) {
+                this.recordCounter("subscriptionTargetsCreated")
+                this.recordCounter("activeSubscriptionTargets")
+            }
+        }
+        const registration: SubscriptionRegistration = {
+            callback: callback as SubscriberCallback,
+            target,
+            previous: target.tail,
+            next: undefined,
+        }
+        if (target.tail === undefined) {
+            target.head = registration
+        } else {
+            target.tail.next = registration
+        }
+        target.tail = registration
+        if (this.instrumented) {
+            this.recordCounter("subscriptionRegistrations")
+            this.recordCounter("activeSubscriptions")
+            this.recordCounter("unsubscribeClosuresCreated")
+        }
+        return createUnsubscribe(registration)
+    }
+
+    removeSubscription(registration: SubscriptionRegistration): void {
+        const target = registration.target
+        if (target === undefined) return
+        assertUnsubscribeAllowed(this.#domain)
+
+        const previous = registration.previous
+        const next = registration.next
+        if (previous === undefined) {
+            target.head = next
+        } else {
+            previous.next = next
+        }
+        if (next === undefined) {
+            target.tail = previous
+        } else {
+            next.previous = previous
+        }
+        registration.callback = undefined
+        registration.target = undefined
+        registration.previous = undefined
+        registration.next = undefined
+        const instrumented = this.instrumented
+        if (instrumented) {
+            this.recordCounter("subscriptionRemovals")
+            this.recordCounter("activeSubscriptions", -1)
+        }
+
+        if (target.head !== undefined) return
+        const targets = this.#subscriptionTargets
+        const byState = targets?.get(target.scope)
+        if (byState?.get(target.state) === target) {
+            byState.delete(target.state)
+            if (instrumented) {
+                this.recordCounter("activeSubscriptionTargets", -1)
+            }
+        }
+        if (byState !== undefined && byState.size === 0) {
+            targets?.delete(target.scope)
+            if (instrumented) {
+                this.recordCounter("activeSubscriptionScopes", -1)
+            }
+        }
+        if (targets?.size === 0) this.#subscriptionTargets = undefined
     }
 
     set<Value>(scope: StoreScopeNode, atom: Atom<Value>, value: Value): void {
@@ -494,6 +695,7 @@ class CommittedStoreTreeHost
                 }
                 parent.children.delete(node)
             }
+            this.#dropSubscriptions(node)
             node.dropRecords()
             node.namedChildren.clear()
             node.children.clear()
@@ -820,11 +1022,11 @@ class CommittedStoreTreeHost
         intent: "set" | "update" | "reset",
         input?: unknown,
     ): void {
+        const node = atom as unknown as AnyAtom
+        const session = new SelectorEvaluationSession<AnyState>()
+        this.#validateDirectAtom(scope, node, session, operation)
         const draft = this.#createDraft()
         try {
-            const node = atom as unknown as AnyAtom
-            const session = new SelectorEvaluationSession<AnyState>()
-            this.#validateDirectAtom(scope, node, session, operation)
             if (intent === "set") {
                 this.#stageAtomSet(draft, scope, node, input, session)
             } else if (intent === "update") {
@@ -849,6 +1051,36 @@ class CommittedStoreTreeHost
             this.#commitDraft(draft)
         } finally {
             draft.release()
+        }
+    }
+
+    #dropSubscriptions(scope: StoreScopeNode): void {
+        const targets = this.#subscriptionTargets
+        const byState = targets?.get(scope)
+        if (byState === undefined) return
+
+        let removed = 0
+        for (const target of byState.values()) {
+            let registration = target.head
+            while (registration !== undefined) {
+                const next = registration.next
+                registration.callback = undefined
+                registration.target = undefined
+                registration.previous = undefined
+                registration.next = undefined
+                removed++
+                registration = next
+            }
+            target.head = undefined
+            target.tail = undefined
+        }
+        targets!.delete(scope)
+        if (targets!.size === 0) this.#subscriptionTargets = undefined
+        if (this.instrumented) {
+            this.recordCounter("subscriptionRemovals", removed)
+            this.recordCounter("activeSubscriptions", -removed)
+            this.recordCounter("activeSubscriptionTargets", -byState.size)
+            this.recordCounter("activeSubscriptionScopes", -1)
         }
     }
 
@@ -1200,62 +1432,71 @@ class CommittedStoreTreeHost
             }
         }
 
-        let firstChangedSource: AtomViewRecord | undefined
-        let remainingChangedSources: AtomViewRecord[] | undefined
-        const firstAffectedRecord = worksets.affectedRecord
-        const firstAffectedBefore = worksets.affectedBefore
-        if (
-            firstAffectedRecord !== undefined &&
-            firstAffectedBefore !== undefined
-        ) {
-            firstChangedSource = this.#settleAffectedAtomView(
-                worksets,
-                firstAffectedRecord,
-                firstAffectedBefore,
-            )
-        }
-        const secondAffectedRecord = worksets.secondAffectedRecord
-        const secondAffectedBefore = worksets.secondAffectedBefore
-        if (
-            secondAffectedRecord !== undefined &&
-            secondAffectedBefore !== undefined
-        ) {
-            const source = this.#settleAffectedAtomView(
-                worksets,
-                secondAffectedRecord,
-                secondAffectedBefore,
-            )
-            if (source !== undefined) {
-                if (firstChangedSource === undefined) {
-                    firstChangedSource = source
-                } else {
-                    remainingChangedSources = [source]
-                }
+        this.#beginNotificationSettlement()
+        try {
+            let firstChangedSource: AtomViewRecord | undefined
+            let remainingChangedSources: AtomViewRecord[] | undefined
+            const firstAffectedRecord = worksets.affectedRecord
+            const firstAffectedBefore = worksets.affectedBefore
+            if (
+                firstAffectedRecord !== undefined &&
+                firstAffectedBefore !== undefined
+            ) {
+                firstChangedSource = this.#settleAffectedAtomView(
+                    worksets,
+                    firstAffectedRecord,
+                    firstAffectedBefore,
+                )
             }
-        }
-        if (worksets.affected !== undefined) {
-            for (const [record, before] of worksets.affected) {
+            const secondAffectedRecord = worksets.secondAffectedRecord
+            const secondAffectedBefore = worksets.secondAffectedBefore
+            if (
+                secondAffectedRecord !== undefined &&
+                secondAffectedBefore !== undefined
+            ) {
                 const source = this.#settleAffectedAtomView(
                     worksets,
-                    record,
-                    before,
+                    secondAffectedRecord,
+                    secondAffectedBefore,
                 )
-                if (source === undefined) continue
-                if (firstChangedSource === undefined) {
-                    firstChangedSource = source
-                } else {
-                    if (remainingChangedSources === undefined) {
-                        remainingChangedSources = []
+                if (source !== undefined) {
+                    if (firstChangedSource === undefined) {
+                        firstChangedSource = source
+                    } else {
+                        remainingChangedSources = [source]
                     }
-                    remainingChangedSources.push(source)
                 }
             }
+            if (worksets.affected !== undefined) {
+                for (const [record, before] of worksets.affected) {
+                    const source = this.#settleAffectedAtomView(
+                        worksets,
+                        record,
+                        before,
+                    )
+                    if (source === undefined) continue
+                    if (firstChangedSource === undefined) {
+                        firstChangedSource = source
+                    } else {
+                        if (remainingChangedSources === undefined) {
+                            remainingChangedSources = []
+                        }
+                        remainingChangedSources.push(source)
+                    }
+                }
+            }
+            if (ownershipChanged) {
+                this.#sourceEpoch += 1
+                this.recordCounter("sourceEpoch")
+            }
+            this.#propagateFromSources(
+                firstChangedSource,
+                remainingChangedSources,
+            )
+        } catch (error) {
+            this.#clearNotificationSettlement()
+            throw error
         }
-        if (ownershipChanged) {
-            this.#sourceEpoch += 1
-            this.recordCounter("sourceEpoch")
-        }
-        this.#propagateFromSources(firstChangedSource, remainingChangedSources)
     }
 
     #prepareAtomApplyPlan(
@@ -1567,7 +1808,10 @@ class CommittedStoreTreeHost
         firstSource: AtomViewRecord | undefined,
         remainingSources?: readonly AtomViewRecord[],
     ): void {
-        if (firstSource === undefined) return
+        if (firstSource === undefined) {
+            this.#clearNotificationSettlement()
+            return
+        }
         this.recordCounter("propagationSettlements")
         this.#propagationQueue = []
         this.#propagationStatusScope = undefined
@@ -1576,6 +1820,7 @@ class CommittedStoreTreeHost
         this.#propagationStatuses = undefined
         this.#propagationControlFault = undefined
         this.#postSourceApply = true
+        let authoritativeControlFault: unknown | undefined
         try {
             firstSource.scope.markDependents(firstSource.atom)
             if (remainingSources !== undefined) {
@@ -1590,6 +1835,8 @@ class CommittedStoreTreeHost
                 this.#settleSelector(scope, selector)
             }
         } finally {
+            authoritativeControlFault = this.#propagationControlFault
+            this.#propagationControlFault = undefined
             this.#postSourceApply = false
             this.#propagationQueue = undefined
             this.#propagationStatusScope = undefined
@@ -1597,9 +1844,145 @@ class CommittedStoreTreeHost
             this.#propagationStatusBits = 0
             this.#propagationStatuses = undefined
         }
-        if (this.#propagationControlFault !== undefined) {
-            throw this.#propagationControlFault
+        this.#deliverSubscriptionSnapshot(authoritativeControlFault)
+    }
+
+    #beginNotificationSettlement(): void {
+        this.#notificationTarget = undefined
+        this.#remainingNotificationTargets = undefined
+        this.#notificationEpoch =
+            this.#subscriptionTargets === undefined
+                ? 0
+                : this.#nextNotificationEpoch++
+    }
+
+    #clearNotificationSettlement(): void {
+        this.#notificationEpoch = 0
+        this.#notificationTarget = undefined
+        this.#remainingNotificationTargets = undefined
+    }
+
+    reachSubscriptionTarget(scope: StoreScopeNode, state: AnyState): void {
+        const epoch = this.#notificationEpoch
+        const target = this.#subscriptionTargets?.get(scope)?.get(state)
+        if (
+            epoch === 0 ||
+            target === undefined ||
+            target.reachedEpoch === epoch
+        ) {
+            return
         }
+        target.reachedEpoch = epoch
+        if (this.instrumented) {
+            this.recordCounter("notificationTargetsReached")
+        }
+        if (this.#notificationTarget === undefined) {
+            this.#notificationTarget = target
+            return
+        }
+        if (this.#remainingNotificationTargets === undefined) {
+            this.#remainingNotificationTargets = [target]
+        } else {
+            this.#remainingNotificationTargets.push(target)
+        }
+    }
+
+    #deliverSubscriptionSnapshot(
+        authoritativeControlFault: unknown | undefined,
+    ): void {
+        const firstTarget = this.#notificationTarget
+        if (firstTarget === undefined) {
+            this.#clearNotificationSettlement()
+            if (authoritativeControlFault !== undefined) {
+                throw authoritativeControlFault
+            }
+            return
+        }
+        let firstCallback: SubscriberCallback | undefined
+        let snapshot: SubscriberCallback[] | undefined
+        const capture = (target: SubscriptionTarget): void => {
+            let registration = target.head
+            while (registration !== undefined) {
+                const callback = registration.callback
+                if (callback !== undefined) {
+                    if (firstCallback === undefined) {
+                        firstCallback = callback
+                    } else if (snapshot === undefined) {
+                        snapshot = [firstCallback, callback]
+                    } else {
+                        snapshot.push(callback)
+                    }
+                }
+                registration = registration.next
+            }
+        }
+
+        capture(firstTarget)
+        const remainingTargets = this.#remainingNotificationTargets
+        if (remainingTargets !== undefined) {
+            for (const target of remainingTargets) capture(target)
+        }
+        this.#clearNotificationSettlement()
+
+        if (firstCallback === undefined) {
+            if (authoritativeControlFault !== undefined) {
+                throw authoritativeControlFault
+            }
+            return
+        }
+        const frozenSnapshot = Object.freeze(snapshot ?? [firstCallback])
+        const instrumented = this.instrumented
+        if (instrumented) this.recordCounter("notificationSnapshots")
+        let subscriberErrors: unknown[] | undefined
+        for (const callback of frozenSnapshot) {
+            if (instrumented) {
+                this.recordCounter("subscriberCallbacksAttempted")
+            }
+            const session = new SelectorEvaluationSession<AnyState>()
+            let callbackThrew = false
+            let callbackError: unknown
+            try {
+                runSubscriberActivity(this.#domain, session, () => {
+                    try {
+                        const returned = callback()
+                        const inspected = inspectThenable(returned)
+                        if (inspected.kind === "thenable") {
+                            containThenable(inspected)
+                        } else if (inspected.kind === "inspection-error") {
+                            callbackThrew = true
+                            callbackError = inspected.error
+                        }
+                    } catch (thrown) {
+                        callbackThrew = true
+                        callbackError = thrown
+                        const inspected = inspectThenable(thrown)
+                        if (inspected.kind === "thenable") {
+                            containThenable(inspected)
+                        }
+                    }
+                })
+            } catch (controlFault) {
+                callbackThrew = true
+                callbackError = controlFault
+            }
+            if (callbackThrew) {
+                if (subscriberErrors === undefined) subscriberErrors = []
+                subscriberErrors.push(callbackError)
+                if (instrumented) this.recordCounter("subscriberErrors")
+            }
+        }
+
+        if (subscriberErrors === undefined) {
+            if (authoritativeControlFault !== undefined) {
+                throw authoritativeControlFault
+            }
+            return
+        }
+        throw new SubscriberNotificationError(
+            authoritativeControlFault === undefined
+                ? subscriberErrors
+                : [authoritativeControlFault, ...subscriberErrors],
+        )
     }
 
     enqueueSelector(scope: StoreScopeNode, selector: AnySelector): boolean {
@@ -1755,6 +2138,10 @@ class CommittedStoreTreeFacade implements CommittedStoreTree {
 
     get<Value>(state: State<Value>): Value {
         return this.#host.get(this.#scope, state)
+    }
+
+    sub<Value>(state: State<Value>, callback: () => void): () => void {
+        return this.#host.sub(this.#scope, state, callback)
     }
 
     set<Value>(atom: Atom<Value>, value: Value): void {
@@ -1913,6 +2300,7 @@ export {
     InvalidTransactionCallbackResultError,
     InvalidTransactionTargetError,
     RuntimeMismatchError,
+    SubscriberNotificationError,
     ScopeNotFoundError,
     SelectorCapabilityError,
     StoreDisposedError,

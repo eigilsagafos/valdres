@@ -41,6 +41,18 @@ export type StoreTreeCounter =
     | "finalPreflightVisits"
     | "draftStorageAllocations"
     | "commitWorksetAllocations"
+    | "subscriptionIndexMapsCreated"
+    | "subscriptionTargetsCreated"
+    | "subscriptionRegistrations"
+    | "subscriptionRemovals"
+    | "unsubscribeClosuresCreated"
+    | "activeSubscriptionScopes"
+    | "activeSubscriptionTargets"
+    | "activeSubscriptions"
+    | "notificationTargetsReached"
+    | "notificationSnapshots"
+    | "subscriberCallbacksAttempted"
+    | "subscriberErrors"
 
 interface SelectorRecord {
     readonly served: ServedSelectorOutcome<OutcomeToken>
@@ -74,6 +86,7 @@ export interface StoreScopeCoordinator {
     ): ServedSelectorOutcome<OutcomeToken>
     enqueueSelector(scope: StoreScopeNode, selector: AnySelector): boolean
     prepareSelectorRead(scope: StoreScopeNode, selector: AnySelector): void
+    reachSubscriptionTarget(scope: StoreScopeNode, state: AnyState): void
     latchPropagationControlFault(error: unknown): void
     recordCounter(counter: StoreTreeCounter, amount?: number): void
 }
@@ -204,6 +217,19 @@ export class StoreScopeNode
         return this.#atomViews.get(atom)
     }
 
+    getMaterializedServedOutcome(
+        state: AnyState,
+    ): ServedSelectorOutcome<OutcomeToken> | undefined {
+        const atomView = this.#atomViews.get(state as AnyAtom)
+        if (atomView !== undefined) return atomView.served
+        const selector = state as AnySelector
+        const selectorRecord = this.#selectorRecords.get(selector)
+        return selectorRecord !== undefined &&
+            !this.#dirtySelectors.has(selector)
+            ? selectorRecord.served
+            : undefined
+    }
+
     createAtomView(
         atom: AnyAtom,
         outcome: DraftAtomOutcome,
@@ -253,6 +279,7 @@ export class StoreScopeNode
             token: this.createOutcomeToken(),
             outcome,
         })
+        this.coordinator.reachSubscriptionTarget(this, record.atom)
     }
 
     captureCommittedSelectorSuccess(
@@ -412,6 +439,7 @@ export class StoreScopeNode
             previous !== undefined &&
             !Object.is(previous.served.token, proposal.token)
         ) {
+            this.coordinator.reachSubscriptionTarget(this, selector)
             this.markDependents(selector)
         }
         if (proposal.outcome.kind === "control-error") {

@@ -1460,6 +1460,7 @@ describe("v1 persistent committed StoreTree host", () => {
             [
                 "constructor",
                 "get",
+                "sub",
                 "set",
                 "update",
                 "reset",

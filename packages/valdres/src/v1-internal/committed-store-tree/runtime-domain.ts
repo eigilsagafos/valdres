@@ -37,6 +37,10 @@ export type RuntimeActivity =
           kind: "guarded-callback"
           session: ControlFaultSession
       }>
+    | Readonly<{
+          kind: "subscriber"
+          session: ControlFaultSession
+      }>
 
 export interface RuntimeDomainRecords {
     readonly states: WeakSet<object>
@@ -83,6 +87,23 @@ export class RuntimeMismatchError extends ImmutableRuntimeError {
     constructor() {
         super("Valdres handles belong to a different runtime domain")
         this.name = "RuntimeMismatchError"
+        this.seal()
+    }
+}
+
+export class SubscriberNotificationError extends ImmutableRuntimeError {
+    readonly code = "VALDRES_SUBSCRIBER_NOTIFICATION"
+    readonly cause: unknown
+    readonly causes: readonly unknown[]
+    readonly committed = true
+    readonly phase = "notifying"
+    readonly source = "owned-mutation"
+
+    constructor(causes: readonly unknown[]) {
+        super("One or more Store subscribers threw during notification")
+        this.name = "SubscriberNotificationError"
+        this.causes = Object.freeze([...causes])
+        this.cause = this.causes[0]
         this.seal()
     }
 }
@@ -307,6 +328,27 @@ export const runGuardedCallback = <Result>(
     }
 }
 
+export const runSubscriberActivity = <Result>(
+    domain: RuntimeDomainRecords,
+    session: ControlFaultSession,
+    operation: () => Result,
+): Result => {
+    try {
+        const result = runInRuntimeActivity(
+            domain,
+            Object.freeze({ kind: "subscriber", session }),
+            operation,
+        )
+        const controlFault = session.getControlFault()
+        if (controlFault.kind === "fault") throw controlFault.error
+        return result
+    } catch (error) {
+        const controlFault = session.getControlFault()
+        if (controlFault.kind === "fault") throw controlFault.error
+        throw error
+    }
+}
+
 export const runSelectorActivity = <Result>(
     domain: RuntimeDomainRecords,
     session: ControlFaultSession,
@@ -358,6 +400,41 @@ export const assertStoreOperationAllowed = (
     if (activity === undefined) return
     if (activity.kind === "selector") {
         throw new SelectorCapabilityError(operation)
+    }
+    if (
+        activity.kind === "transaction" ||
+        activity.kind === "transaction-result"
+    ) {
+        throw new TransactionPhaseError()
+    }
+    throw new CallbackCapabilityError()
+}
+
+export const assertStoreReadAllowed = (
+    domain: RuntimeDomainRecords,
+    operation: string,
+): void => {
+    if (domain.activity?.kind === "subscriber") return
+    assertStoreOperationAllowed(domain, operation)
+}
+
+export const latchSubscriberControlFault = (
+    domain: RuntimeDomainRecords,
+    error: unknown,
+): void => {
+    const activity = domain.activity
+    if (activity?.kind === "subscriber") {
+        activity.session.latchControlFault(error)
+    }
+}
+
+export const assertUnsubscribeAllowed = (
+    domain: RuntimeDomainRecords,
+): void => {
+    const activity = domain.activity
+    if (activity === undefined || activity.kind === "subscriber") return
+    if (activity.kind === "selector") {
+        throw new SelectorCapabilityError("Store unsubscribe")
     }
     if (
         activity.kind === "transaction" ||
