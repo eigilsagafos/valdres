@@ -427,6 +427,17 @@ export class StoreScopeNode
         previous: readonly SelectorDependencySnapshot<AnyState, OutcomeToken>[],
         next: readonly SelectorDependencySnapshot<AnyState, OutcomeToken>[],
     ): void {
+        if (previous.length === next.length) {
+            let index = 0
+            while (
+                index < previous.length &&
+                Object.is(previous[index]!.node, next[index]!.node)
+            ) {
+                index++
+            }
+            if (index === previous.length) return
+        }
+
         for (const dependency of previous) {
             const dependents = this.#reverseEdges.get(dependency.node)
             dependents?.delete(selector)
