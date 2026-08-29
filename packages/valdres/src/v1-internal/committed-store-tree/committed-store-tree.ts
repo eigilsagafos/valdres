@@ -78,6 +78,22 @@ interface AtomApplyPlan {
     readonly ownershipChanged: boolean
 }
 
+interface CommitWorksets {
+    readonly onAllocation: (() => void) | undefined
+    preflightAtom: AnyAtom | undefined
+    preflightScope: StoreScopeNode | undefined
+    preflightOutcome: DraftAtomOutcome | undefined
+    preflight: Map<AnyAtom, Map<StoreScopeNode, DraftAtomOutcome>> | undefined
+    consideredRecord: AtomViewRecord | undefined
+    considered: Set<AtomViewRecord> | undefined
+    affectedRecord: AtomViewRecord | undefined
+    affectedBefore: DraftAtomOutcome | undefined
+    affected: Map<AtomViewRecord, DraftAtomOutcome> | undefined
+    resolvedRecord: AtomViewRecord | undefined
+    resolvedOutcome: DraftAtomOutcome | undefined
+    resolved: Map<AtomViewRecord, DraftAtomOutcome> | undefined
+}
+
 export interface InternalStoreTreeInstrumentation {
     read(counter: StoreTreeCounter): number
 }
@@ -102,9 +118,11 @@ const STORE_TREE_COUNTER_INDEX: Readonly<Record<StoreTreeCounter, number>> =
         scratchMapAllocations: 15,
         finalResolutionVisits: 16,
         finalPreflightVisits: 17,
+        draftStorageAllocations: 18,
+        commitWorksetAllocations: 19,
     })
 
-const STORE_TREE_COUNTER_COUNT = 18
+const STORE_TREE_COUNTER_COUNT = 20
 const internalInstrumentationCounters = new WeakMap<
     InternalStoreTreeInstrumentation,
     Uint32Array
@@ -148,6 +166,156 @@ const sameAtomOutcome = (
         next.kind !== "value" &&
         Object.is(previous.error, next.error)
     )
+}
+
+const createCommitWorksets = (onAllocation?: () => void): CommitWorksets => ({
+    onAllocation,
+    preflightAtom: undefined,
+    preflightScope: undefined,
+    preflightOutcome: undefined,
+    preflight: undefined,
+    consideredRecord: undefined,
+    considered: undefined,
+    affectedRecord: undefined,
+    affectedBefore: undefined,
+    affected: undefined,
+    resolvedRecord: undefined,
+    resolvedOutcome: undefined,
+    resolved: undefined,
+})
+
+const allocateCommitMap = <Key, Value>(
+    worksets: CommitWorksets,
+): Map<Key, Value> => {
+    worksets.onAllocation?.()
+    return new Map<Key, Value>()
+}
+
+const allocateCommitSet = <Value>(worksets: CommitWorksets): Set<Value> => {
+    worksets.onAllocation?.()
+    return new Set<Value>()
+}
+
+const getPreflightOutcome = (
+    worksets: CommitWorksets,
+    atom: AnyAtom,
+    scope: StoreScopeNode,
+): DraftAtomOutcome | undefined => {
+    if (
+        worksets.preflightOutcome !== undefined &&
+        Object.is(worksets.preflightAtom, atom) &&
+        Object.is(worksets.preflightScope, scope)
+    ) {
+        return worksets.preflightOutcome
+    }
+    return worksets.preflight?.get(atom)?.get(scope)
+}
+
+const setPreflightOutcome = (
+    worksets: CommitWorksets,
+    atom: AnyAtom,
+    scope: StoreScopeNode,
+    outcome: DraftAtomOutcome,
+): void => {
+    if (worksets.preflightOutcome === undefined) {
+        worksets.preflightAtom = atom
+        worksets.preflightScope = scope
+        worksets.preflightOutcome = outcome
+        return
+    }
+    if (
+        Object.is(worksets.preflightAtom, atom) &&
+        Object.is(worksets.preflightScope, scope)
+    ) {
+        return
+    }
+    let preflight = worksets.preflight
+    if (preflight === undefined) {
+        preflight = allocateCommitMap(worksets)
+        worksets.preflight = preflight
+    }
+    let byScope = preflight.get(atom)
+    if (byScope === undefined) {
+        byScope = allocateCommitMap(worksets)
+        preflight.set(atom, byScope)
+    }
+    byScope.set(scope, outcome)
+}
+
+const markConsidered = (
+    worksets: CommitWorksets,
+    record: AtomViewRecord,
+): boolean => {
+    if (Object.is(worksets.consideredRecord, record)) return false
+    if (worksets.consideredRecord === undefined) {
+        worksets.consideredRecord = record
+        return true
+    }
+    let considered = worksets.considered
+    if (considered === undefined) {
+        considered = allocateCommitSet(worksets)
+        worksets.considered = considered
+    }
+    if (considered.has(record)) return false
+    considered.add(record)
+    return true
+}
+
+const markAffected = (
+    worksets: CommitWorksets,
+    record: AtomViewRecord,
+    before: DraftAtomOutcome,
+): void => {
+    if (worksets.affectedRecord === undefined) {
+        worksets.affectedRecord = record
+        worksets.affectedBefore = before
+        return
+    }
+    let affected = worksets.affected
+    if (affected === undefined) {
+        affected = allocateCommitMap(worksets)
+        worksets.affected = affected
+    }
+    affected.set(record, before)
+}
+
+const hasAffected = (
+    worksets: CommitWorksets,
+    record: AtomViewRecord,
+): boolean =>
+    Object.is(worksets.affectedRecord, record) ||
+    (worksets.affected?.has(record) ?? false)
+
+const getResolvedOutcome = (
+    worksets: CommitWorksets,
+    record: AtomViewRecord,
+): DraftAtomOutcome | undefined => {
+    if (Object.is(worksets.resolvedRecord, record)) {
+        return worksets.resolvedOutcome
+    }
+    return worksets.resolved?.get(record)
+}
+
+const setResolvedOutcome = (
+    worksets: CommitWorksets,
+    record: AtomViewRecord,
+    outcome: DraftAtomOutcome,
+): void => {
+    if (worksets.resolvedRecord === undefined) {
+        worksets.resolvedRecord = record
+        worksets.resolvedOutcome = outcome
+        return
+    }
+    if (Object.is(worksets.resolvedRecord, record)) {
+        worksets.resolvedOutcome = outcome
+        return
+    }
+    let resolved = worksets.resolved
+    if (resolved === undefined) {
+        resolved = allocateCommitMap(worksets)
+        worksets.resolved = resolved
+    }
+    resolved.set(record, outcome)
 }
 
 class CommittedStoreTreeHost
@@ -203,6 +371,15 @@ class CommittedStoreTreeHost
         counters[STORE_TREE_COUNTER_INDEX[counter]] += amount
     }
 
+    #createDraft(): TreeDraft {
+        this.recordCounter("draftCreations")
+        return new TreeDraft(
+            this.instrumented
+                ? () => this.recordCounter("draftStorageAllocations")
+                : undefined,
+        )
+    }
+
     get<Value>(scope: StoreScopeNode, state: State<Value>): Value {
         const session = new SelectorEvaluationSession<AnyState>()
         const node = state as unknown as AnyState
@@ -212,7 +389,7 @@ class CommittedStoreTreeHost
         if (ownerStatus === "invalid") {
             throw new TypeError("StoreTree.get requires a valid State")
         }
-        const served = scope.serve(node, session)
+        const served = scope.serveKnownLocal(node, session)
         if (served.outcome.kind !== "value") throw served.outcome.error
         return served.outcome.value as Value
     }
@@ -332,8 +509,7 @@ class CommittedStoreTreeHost
             throw new TypeError("StoreTree.txn requires a callback function")
         }
 
-        const draft = new TreeDraft()
-        this.recordCounter("draftCreations")
+        const draft = this.#createDraft()
         const cursor = createRootTransactionCursor(this, draft, scope)
         let result: Result
         try {
@@ -639,8 +815,7 @@ class CommittedStoreTreeHost
         intent: "set" | "update" | "reset",
         input?: unknown,
     ): void {
-        const draft = new TreeDraft()
-        this.recordCounter("draftCreations")
+        const draft = this.#createDraft()
         try {
             const node = atom as unknown as AnyAtom
             const session = new SelectorEvaluationSession<AnyState>()
@@ -728,7 +903,7 @@ class CommittedStoreTreeHost
                 atom,
                 value: canonical,
                 publishDraftFallback:
-                    baseline.reachesFallback && draft.fallbackMemo.has(atom),
+                    baseline.reachesFallback && draft.hasFallback(atom),
             }),
         )
     }
@@ -781,7 +956,7 @@ class CommittedStoreTreeHost
                 kind: "reset",
                 atom,
                 publishDraftFallback:
-                    after.reachesFallback && draft.fallbackMemo.has(atom),
+                    after.reachesFallback && draft.hasFallback(atom),
             }),
         )
     }
@@ -792,8 +967,7 @@ class CommittedStoreTreeHost
         atom: AnyAtom,
         session: SelectorEvaluationSession<AnyState>,
     ): AtomDraftBaseline {
-        let baselines = draft.atomBaselines.get(scope)
-        const existing = baselines?.get(atom)
+        const existing = draft.getAtomBaseline(scope, atom)
         if (existing !== undefined) return existing
         const owned = scope.atomOverrides.has(atom)
         let current: StoreScopeNode | undefined = scope
@@ -813,11 +987,7 @@ class CommittedStoreTreeHost
                 this.#getDraftFallbackOutcome(draft, atom, session),
             reachesFallback,
         })
-        if (baselines === undefined) {
-            baselines = new Map()
-            draft.atomBaselines.set(scope, baselines)
-        }
-        baselines.set(atom, baseline)
+        draft.setAtomBaseline(scope, atom, baseline)
         return baseline
     }
 
@@ -839,7 +1009,7 @@ class CommittedStoreTreeHost
     ): Readonly<{ outcome: DraftAtomOutcome; reachesFallback: boolean }> {
         let current: StoreScopeNode | undefined = scope
         while (current !== undefined) {
-            const intent = draft.intents.get(current)?.get(atom)
+            const intent = draft.getIntent(current, atom)
             if (intent?.kind === "set") {
                 return Object.freeze({
                     outcome: valueOutcome(intent.value),
@@ -872,14 +1042,14 @@ class CommittedStoreTreeHost
             return valueOutcome(definition.fallback.value)
         }
         const initialize = definition.fallback.initialize
-        const memoized = draft.fallbackMemo.get(atom)
+        const memoized = draft.getFallback(atom)
         if (memoized !== undefined) return memoized
         const outcome = fromSynchronousResult(
             runGuardedCallback(this.#domain, session, () =>
                 runLazyInitializer(initialize),
             ),
         )
-        draft.fallbackMemo.set(atom, outcome)
+        draft.setFallback(atom, outcome)
         return outcome
     }
 
@@ -955,7 +1125,7 @@ class CommittedStoreTreeHost
     }
 
     #commitDraft(draft: TreeDraft): void {
-        if (draft.intents.size === 0) return
+        if (!draft.hasIntents) return
 
         /*
          * Commit is one ordered, user-code-free source settlement:
@@ -964,135 +1134,205 @@ class CommittedStoreTreeHost
          *                   -> apply every owner -> rewire AtomViews
          *                   -> memoized final outcomes -> one propagation
          *
-         * No selector observes a partially applied multi-scope source set.
+         * The first plan and workset entries stay scalar. Later entries lazily
+         * promote the same pipeline to collections; no selector observes a
+         * partially applied multi-scope source set.
          */
-        const plan: AtomApplyPlan[] = []
-        const affected = new Map<AtomViewRecord, DraftAtomOutcome>()
-        const considered = new Set<AtomViewRecord>()
-        const preflight = new Map<
-            AnyAtom,
-            Map<StoreScopeNode, DraftAtomOutcome>
-        >()
-        for (const [scope, intents] of draft.intents) {
-            for (const intent of intents.values()) {
-                const baseline = draft.atomBaselines
-                    .get(scope)
-                    ?.get(intent.atom)
-                if (baseline === undefined) {
-                    throw new Error("TreeDraft atom baseline is missing")
-                }
-                this.#readFinalAtomOutcome(draft, scope, intent.atom, preflight)
-                const ownershipChanged =
-                    intent.kind === "set"
-                        ? !baseline.owned ||
-                          !Object.is(
-                              scope.atomOverrides.get(intent.atom),
-                              intent.value,
-                          )
-                        : baseline.owned
-                plan.push(
-                    Object.freeze({
-                        scope,
-                        intent,
-                        ownershipChanged,
-                    }),
+        const worksets = createCommitWorksets(
+            this.instrumented
+                ? () => this.recordCounter("commitWorksetAllocations")
+                : undefined,
+        )
+        let firstPlan: AtomApplyPlan | undefined
+        let remainingPlan: AtomApplyPlan[] | undefined
+        const singleIntent = draft.singleIntent
+        const singleScope = draft.singleIntentScope
+        if (singleIntent !== undefined && singleScope !== undefined) {
+            firstPlan = this.#prepareAtomApplyPlan(
+                draft,
+                singleScope,
+                singleIntent,
+                worksets,
+            )
+        } else {
+            draft.forEachIntent((scope, intent) => {
+                const entry = this.#prepareAtomApplyPlan(
+                    draft,
+                    scope,
+                    intent,
+                    worksets,
                 )
-                const record = scope.getAtomView(intent.atom)
-                if (record !== undefined) {
-                    this.#collectAffectedAtomViews(
-                        draft,
-                        record,
-                        affected,
-                        considered,
-                        preflight,
-                    )
+                if (firstPlan === undefined) {
+                    firstPlan = entry
+                    return
                 }
-            }
+                if (remainingPlan === undefined) remainingPlan = []
+                remainingPlan.push(entry)
+            })
         }
+        if (firstPlan === undefined) return
 
         // Apply every fallback publication and owned source before propagation.
-        for (const entry of plan) {
-            if (!entry.intent.publishDraftFallback) continue
-            const fallback = draft.fallbackMemo.get(entry.intent.atom)
-            if (
-                fallback !== undefined &&
-                !this.#fallbackRecords.has(entry.intent.atom)
-            ) {
-                this.#fallbackRecords.set(entry.intent.atom, fallback)
-                this.recordCounter("fallbackPublications")
+        this.#publishPlanFallback(draft, firstPlan)
+        if (remainingPlan !== undefined) {
+            for (const entry of remainingPlan) {
+                this.#publishPlanFallback(draft, entry)
             }
         }
 
-        let ownershipChanged = false
-        for (const entry of plan) {
-            const { intent, scope } = entry
-            if (intent.kind === "set") {
-                scope.atomOverrides.set(intent.atom, intent.value)
-            } else {
-                scope.atomOverrides.delete(intent.atom)
+        let ownershipChanged = this.#applyPlanOwner(firstPlan)
+        if (remainingPlan !== undefined) {
+            for (const entry of remainingPlan) {
+                const entryOwnershipChanged = this.#applyPlanOwner(entry)
+                ownershipChanged ||= entryOwnershipChanged
             }
-            ownershipChanged ||= entry.ownershipChanged
         }
 
         // Rewire every materialized target only after every local source applies.
-        for (const { scope, intent } of plan) {
-            const record = scope.getAtomView(intent.atom)
-            if (record === undefined) continue
-            if (intent.kind === "set" || scope.parent === undefined) {
-                scope.detachAtomView(record)
-            } else {
-                scope.attachAtomView(
-                    record,
-                    this.#materializeAtomViewInert(scope.parent, intent.atom),
-                )
+        this.#rewirePlanAtomView(firstPlan)
+        if (remainingPlan !== undefined) {
+            for (const entry of remainingPlan) {
+                this.#rewirePlanAtomView(entry)
             }
         }
 
-        const resolved = new Map<AtomViewRecord, DraftAtomOutcome>()
-        const changedSources: Readonly<{
-            scope: StoreScopeNode
-            node: AnyAtom
-        }>[] = []
-        for (const [record, before] of affected) {
-            const after = this.#resolveFinalAffectedAtomOutcome(
-                record,
-                affected,
-                resolved,
+        let firstChangedSource:
+            | Readonly<{ scope: StoreScopeNode; node: AnyAtom }>
+            | undefined
+        let remainingChangedSources:
+            | Readonly<{ scope: StoreScopeNode; node: AnyAtom }>[]
+            | undefined
+        const firstAffectedRecord = worksets.affectedRecord
+        const firstAffectedBefore = worksets.affectedBefore
+        if (
+            firstAffectedRecord !== undefined &&
+            firstAffectedBefore !== undefined
+        ) {
+            firstChangedSource = this.#settleAffectedAtomView(
+                worksets,
+                firstAffectedRecord,
+                firstAffectedBefore,
             )
-            if (sameAtomOutcome(before, after)) continue
-            record.scope.updateAtomView(record, after)
-            changedSources.push(
-                Object.freeze({ scope: record.scope, node: record.atom }),
-            )
+        }
+        if (worksets.affected !== undefined) {
+            for (const [record, before] of worksets.affected) {
+                const source = this.#settleAffectedAtomView(
+                    worksets,
+                    record,
+                    before,
+                )
+                if (source === undefined) continue
+                if (firstChangedSource === undefined) {
+                    firstChangedSource = source
+                } else {
+                    if (remainingChangedSources === undefined) {
+                        remainingChangedSources = []
+                    }
+                    remainingChangedSources.push(source)
+                }
+            }
         }
         if (ownershipChanged) {
             this.#sourceEpoch += 1
             this.recordCounter("sourceEpoch")
         }
-        this.#propagateFromSources(changedSources)
+        this.#propagateFromSources(firstChangedSource, remainingChangedSources)
+    }
+
+    #prepareAtomApplyPlan(
+        draft: TreeDraft,
+        scope: StoreScopeNode,
+        intent: AtomIntent,
+        worksets: CommitWorksets,
+    ): AtomApplyPlan {
+        const baseline = draft.getAtomBaseline(scope, intent.atom)
+        if (baseline === undefined) {
+            throw new Error("TreeDraft atom baseline is missing")
+        }
+        this.#readFinalAtomOutcome(draft, scope, intent.atom, worksets)
+        const entry: AtomApplyPlan = Object.freeze({
+            scope,
+            intent,
+            ownershipChanged:
+                intent.kind === "set"
+                    ? !baseline.owned ||
+                      !Object.is(
+                          scope.atomOverrides.get(intent.atom),
+                          intent.value,
+                      )
+                    : baseline.owned,
+        })
+        const record = scope.getAtomView(intent.atom)
+        if (record !== undefined) {
+            this.#collectAffectedAtomViews(draft, record, worksets)
+        }
+        return entry
+    }
+
+    #publishPlanFallback(draft: TreeDraft, entry: AtomApplyPlan): void {
+        if (!entry.intent.publishDraftFallback) return
+        const fallback = draft.getFallback(entry.intent.atom)
+        if (
+            fallback !== undefined &&
+            !this.#fallbackRecords.has(entry.intent.atom)
+        ) {
+            this.#fallbackRecords.set(entry.intent.atom, fallback)
+            this.recordCounter("fallbackPublications")
+        }
+    }
+
+    #applyPlanOwner(entry: AtomApplyPlan): boolean {
+        const { intent, scope } = entry
+        if (intent.kind === "set") {
+            scope.atomOverrides.set(intent.atom, intent.value)
+        } else {
+            scope.atomOverrides.delete(intent.atom)
+        }
+        return entry.ownershipChanged
+    }
+
+    #rewirePlanAtomView({ scope, intent }: AtomApplyPlan): void {
+        const record = scope.getAtomView(intent.atom)
+        if (record === undefined) return
+        if (intent.kind === "set" || scope.parent === undefined) {
+            scope.detachAtomView(record)
+        } else {
+            scope.attachAtomView(
+                record,
+                this.#materializeAtomViewInert(scope.parent, intent.atom),
+            )
+        }
+    }
+
+    #settleAffectedAtomView(
+        worksets: CommitWorksets,
+        record: AtomViewRecord,
+        before: DraftAtomOutcome,
+    ): Readonly<{ scope: StoreScopeNode; node: AnyAtom }> | undefined {
+        const after = this.#resolveFinalAffectedAtomOutcome(record, worksets)
+        if (sameAtomOutcome(before, after)) return undefined
+        record.scope.updateAtomView(record, after)
+        return Object.freeze({ scope: record.scope, node: record.atom })
     }
 
     #collectAffectedAtomViews(
         draft: TreeDraft,
         record: AtomViewRecord,
-        affected: Map<AtomViewRecord, DraftAtomOutcome>,
-        considered: Set<AtomViewRecord>,
-        preflight: Map<AnyAtom, Map<StoreScopeNode, DraftAtomOutcome>>,
+        worksets: CommitWorksets,
     ): void {
         const pending = [record]
         while (pending.length !== 0) {
             const current = pending.pop() as AtomViewRecord
-            if (considered.has(current)) continue
-            considered.add(current)
+            if (!markConsidered(worksets, current)) continue
             const before = current.served.outcome as DraftAtomOutcome
             const after = this.#readFinalAtomOutcome(
                 draft,
                 current.scope,
                 current.atom,
-                preflight,
+                worksets,
             )
             if (sameAtomOutcome(before, after)) continue
-            affected.set(current, before)
+            markAffected(worksets, current, before)
             const firstChild = pending.length
             current.inheritingChildren.forEach(child => {
                 this.recordCounter("routeVisits")
@@ -1112,27 +1352,32 @@ class CommittedStoreTreeHost
 
     #resolveFinalAffectedAtomOutcome(
         record: AtomViewRecord,
-        affected: ReadonlyMap<AtomViewRecord, DraftAtomOutcome>,
-        resolved: Map<AtomViewRecord, DraftAtomOutcome>,
+        worksets: CommitWorksets,
     ): DraftAtomOutcome {
-        const existing = resolved.get(record)
+        const existing = getResolvedOutcome(worksets, record)
         if (existing !== undefined) return existing
 
         let current = record
-        const unresolved: AtomViewRecord[] = []
+        let firstUnresolved: AtomViewRecord | undefined
+        let remainingUnresolved: AtomViewRecord[] | undefined
         let outcome: DraftAtomOutcome
         while (true) {
-            const memoized = resolved.get(current)
+            const memoized = getResolvedOutcome(worksets, current)
             if (memoized !== undefined) {
                 outcome = memoized
                 break
             }
-            if (!affected.has(current)) {
+            if (!hasAffected(worksets, current)) {
                 outcome = current.served.outcome as DraftAtomOutcome
                 break
             }
 
-            unresolved.push(current)
+            if (firstUnresolved === undefined) {
+                firstUnresolved = current
+            } else {
+                if (remainingUnresolved === undefined) remainingUnresolved = []
+                remainingUnresolved.push(current)
+            }
             if (current.scope.atomOverrides.has(current.atom)) {
                 outcome = valueOutcome(
                     current.scope.atomOverrides.get(current.atom),
@@ -1146,39 +1391,53 @@ class CommittedStoreTreeHost
             current = current.inheritedFrom
         }
 
-        for (let index = unresolved.length - 1; index >= 0; index--) {
-            const unresolvedRecord = unresolved[index] as AtomViewRecord
-            resolved.set(unresolvedRecord, outcome)
+        if (remainingUnresolved !== undefined) {
+            for (
+                let index = remainingUnresolved.length - 1;
+                index >= 0;
+                index--
+            ) {
+                setResolvedOutcome(
+                    worksets,
+                    remainingUnresolved[index] as AtomViewRecord,
+                    outcome,
+                )
+                this.recordCounter("finalResolutionVisits")
+            }
+        }
+        if (firstUnresolved !== undefined) {
+            setResolvedOutcome(worksets, firstUnresolved, outcome)
             this.recordCounter("finalResolutionVisits")
         }
-        return resolved.get(record) ?? outcome
+        return getResolvedOutcome(worksets, record) ?? outcome
     }
 
     #readFinalAtomOutcome(
         draft: TreeDraft,
         scope: StoreScopeNode,
         atom: AnyAtom,
-        preflight: Map<AnyAtom, Map<StoreScopeNode, DraftAtomOutcome>>,
+        worksets: CommitWorksets,
     ): DraftAtomOutcome {
-        let byScope = preflight.get(atom)
-        if (byScope === undefined) {
-            byScope = new Map()
-            preflight.set(atom, byScope)
-        }
-        const existing = byScope.get(scope)
+        const existing = getPreflightOutcome(worksets, atom, scope)
         if (existing !== undefined) return existing
 
         let current: StoreScopeNode | undefined = scope
-        const unresolved: StoreScopeNode[] = []
+        let firstUnresolved: StoreScopeNode | undefined
+        let remainingUnresolved: StoreScopeNode[] | undefined
         let outcome: DraftAtomOutcome | undefined
         while (current !== undefined) {
-            const memoized = byScope.get(current)
+            const memoized = getPreflightOutcome(worksets, atom, current)
             if (memoized !== undefined) {
                 outcome = memoized
                 break
             }
-            unresolved.push(current)
-            const intent = draft.intents.get(current)?.get(atom)
+            if (firstUnresolved === undefined) {
+                firstUnresolved = current
+            } else {
+                if (remainingUnresolved === undefined) remainingUnresolved = []
+                remainingUnresolved.push(current)
+            }
+            const intent = draft.getIntent(current, atom)
             if (intent?.kind === "set") {
                 outcome = valueOutcome(intent.value)
                 break
@@ -1190,9 +1449,15 @@ class CommittedStoreTreeHost
             current = current.parent
         }
         outcome ??= this.#readFinalFallbackOutcome(draft, atom)
-        for (const unresolvedScope of unresolved) {
-            byScope.set(unresolvedScope, outcome)
+        if (firstUnresolved !== undefined) {
+            setPreflightOutcome(worksets, atom, firstUnresolved, outcome)
             this.recordCounter("finalPreflightVisits")
+        }
+        if (remainingUnresolved !== undefined) {
+            for (const unresolvedScope of remainingUnresolved) {
+                setPreflightOutcome(worksets, atom, unresolvedScope, outcome)
+                this.recordCounter("finalPreflightVisits")
+            }
         }
         return outcome
     }
@@ -1203,7 +1468,7 @@ class CommittedStoreTreeHost
     ): DraftAtomOutcome {
         const committed = this.#fallbackRecords.get(atom)
         if (committed !== undefined) return committed
-        const memoized = draft.fallbackMemo.get(atom)
+        const memoized = draft.getFallback(atom)
         if (memoized !== undefined) return memoized
         const definition = this.#atomDefinition(atom)
         if (definition.fallback.kind === "eager") {
@@ -1338,12 +1603,15 @@ class CommittedStoreTreeHost
     }
 
     #propagateFromSources(
-        sources: readonly Readonly<{
+        firstSource:
+            | Readonly<{ scope: StoreScopeNode; node: AnyState }>
+            | undefined,
+        remainingSources?: readonly Readonly<{
             scope: StoreScopeNode
             node: AnyState
         }>[],
     ): void {
-        if (sources.length === 0) return
+        if (firstSource === undefined) return
         this.recordCounter("propagationSettlements")
         this.#propagationQueue = []
         this.#propagationQueued = new Map()
@@ -1352,8 +1620,11 @@ class CommittedStoreTreeHost
         this.#propagationControlFault = undefined
         this.#postSourceApply = true
         try {
-            for (const source of sources) {
-                source.scope.markDependents(source.node)
+            firstSource.scope.markDependents(firstSource.node)
+            if (remainingSources !== undefined) {
+                for (const source of remainingSources) {
+                    source.scope.markDependents(source.node)
+                }
             }
             let cursor = 0
             while (cursor < this.#propagationQueue.length) {

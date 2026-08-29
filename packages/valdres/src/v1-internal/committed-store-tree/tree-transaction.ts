@@ -60,23 +60,290 @@ export interface DraftScratchHost<Node extends object = AnyState> {
  */
 export class TreeDraft {
     readonly transaction = Object.freeze({})
-    readonly intents = new Map<StoreScopeNode, Map<AnyAtom, AtomIntent>>()
-    readonly atomBaselines = new Map<
-        StoreScopeNode,
-        Map<AnyAtom, AtomDraftBaseline>
-    >()
-    readonly fallbackMemo = new Map<AnyAtom, DraftAtomOutcome>()
+    readonly #onStorageAllocation: (() => void) | undefined
+    #singleIntentScope: StoreScopeNode | undefined
+    #singleIntent: AtomIntent | undefined
+    #intentBucket: Map<AnyAtom, AtomIntent> | undefined
+    #intentScopes: Map<StoreScopeNode, Map<AnyAtom, AtomIntent>> | undefined
+    #singleBaselineScope: StoreScopeNode | undefined
+    #singleBaselineAtom: AnyAtom | undefined
+    #singleBaseline: AtomDraftBaseline | undefined
+    #baselineBucket: Map<AnyAtom, AtomDraftBaseline> | undefined
+    #baselineScopes:
+        | Map<StoreScopeNode, Map<AnyAtom, AtomDraftBaseline>>
+        | undefined
+    #singleFallbackAtom: AnyAtom | undefined
+    #singleFallback: DraftAtomOutcome | undefined
+    #fallbackMemo: Map<AnyAtom, DraftAtomOutcome> | undefined
     #scratchHosts: Map<StoreScopeNode, DraftScratchHost> | undefined
     generation = 0
     active = true
 
+    constructor(onStorageAllocation?: () => void) {
+        this.#onStorageAllocation = onStorageAllocation
+    }
+
+    get hasIntents(): boolean {
+        return (
+            this.#singleIntent !== undefined ||
+            this.#intentBucket !== undefined ||
+            this.#intentScopes !== undefined
+        )
+    }
+
+    get singleIntentScope(): StoreScopeNode | undefined {
+        return this.#singleIntentScope
+    }
+
+    get singleIntent(): AtomIntent | undefined {
+        return this.#singleIntent
+    }
+
     stage(scope: StoreScopeNode, intent: AtomIntent): void {
-        let intents = this.intents.get(scope)
-        if (intents === undefined) {
-            intents = new Map()
-            this.intents.set(scope, intents)
+        const intentScopes = this.#intentScopes
+        if (intentScopes !== undefined) {
+            let intents = intentScopes.get(scope)
+            if (intents === undefined) {
+                intents = this.#allocateMap<AnyAtom, AtomIntent>()
+                intentScopes.set(scope, intents)
+            }
+            intents.set(intent.atom, intent)
+            this.#advanceGeneration()
+            return
         }
-        intents.set(intent.atom, intent)
+
+        const intentBucket = this.#intentBucket
+        if (intentBucket !== undefined) {
+            if (Object.is(this.#singleIntentScope, scope)) {
+                intentBucket.set(intent.atom, intent)
+            } else {
+                const scopes = this.#allocateMap<
+                    StoreScopeNode,
+                    Map<AnyAtom, AtomIntent>
+                >()
+                scopes.set(
+                    this.#singleIntentScope as StoreScopeNode,
+                    intentBucket,
+                )
+                const next = this.#allocateMap<AnyAtom, AtomIntent>()
+                next.set(intent.atom, intent)
+                scopes.set(scope, next)
+                this.#intentScopes = scopes
+                this.#intentBucket = undefined
+                this.#singleIntentScope = undefined
+            }
+            this.#advanceGeneration()
+            return
+        }
+
+        const singleIntent = this.#singleIntent
+        if (singleIntent === undefined) {
+            this.#singleIntentScope = scope
+            this.#singleIntent = intent
+            this.#advanceGeneration()
+            return
+        }
+        if (
+            Object.is(this.#singleIntentScope, scope) &&
+            Object.is(singleIntent.atom, intent.atom)
+        ) {
+            this.#singleIntent = intent
+            this.#advanceGeneration()
+            return
+        }
+
+        if (Object.is(this.#singleIntentScope, scope)) {
+            const intents = this.#allocateMap<AnyAtom, AtomIntent>()
+            intents.set(singleIntent.atom, singleIntent)
+            intents.set(intent.atom, intent)
+            this.#intentBucket = intents
+        } else {
+            const scopes = this.#allocateMap<
+                StoreScopeNode,
+                Map<AnyAtom, AtomIntent>
+            >()
+            const first = this.#allocateMap<AnyAtom, AtomIntent>()
+            first.set(singleIntent.atom, singleIntent)
+            scopes.set(this.#singleIntentScope as StoreScopeNode, first)
+            const next = this.#allocateMap<AnyAtom, AtomIntent>()
+            next.set(intent.atom, intent)
+            scopes.set(scope, next)
+            this.#intentScopes = scopes
+            this.#singleIntentScope = undefined
+        }
+        this.#singleIntent = undefined
+        this.#advanceGeneration()
+    }
+
+    forEachIntent(
+        visit: (scope: StoreScopeNode, intent: AtomIntent) => void,
+    ): void {
+        const singleIntent = this.#singleIntent
+        if (singleIntent !== undefined) {
+            visit(this.#singleIntentScope as StoreScopeNode, singleIntent)
+            return
+        }
+        const intentBucket = this.#intentBucket
+        if (intentBucket !== undefined) {
+            const scope = this.#singleIntentScope as StoreScopeNode
+            for (const intent of intentBucket.values()) visit(scope, intent)
+            return
+        }
+        const intentScopes = this.#intentScopes
+        if (intentScopes === undefined) return
+        for (const [scope, intents] of intentScopes) {
+            for (const intent of intents.values()) visit(scope, intent)
+        }
+    }
+
+    getIntent(scope: StoreScopeNode, atom: AnyAtom): AtomIntent | undefined {
+        const singleIntent = this.#singleIntent
+        if (
+            singleIntent !== undefined &&
+            Object.is(this.#singleIntentScope, scope) &&
+            Object.is(singleIntent.atom, atom)
+        ) {
+            return singleIntent
+        }
+        if (Object.is(this.#singleIntentScope, scope)) {
+            return this.#intentBucket?.get(atom)
+        }
+        return this.#intentScopes?.get(scope)?.get(atom)
+    }
+
+    getAtomBaseline(
+        scope: StoreScopeNode,
+        atom: AnyAtom,
+    ): AtomDraftBaseline | undefined {
+        if (
+            this.#singleBaseline !== undefined &&
+            Object.is(this.#singleBaselineScope, scope) &&
+            Object.is(this.#singleBaselineAtom, atom)
+        ) {
+            return this.#singleBaseline
+        }
+        if (Object.is(this.#singleBaselineScope, scope)) {
+            return this.#baselineBucket?.get(atom)
+        }
+        return this.#baselineScopes?.get(scope)?.get(atom)
+    }
+
+    setAtomBaseline(
+        scope: StoreScopeNode,
+        atom: AnyAtom,
+        baseline: AtomDraftBaseline,
+    ): void {
+        const baselineScopes = this.#baselineScopes
+        if (baselineScopes !== undefined) {
+            let baselines = baselineScopes.get(scope)
+            if (baselines === undefined) {
+                baselines = this.#allocateMap<AnyAtom, AtomDraftBaseline>()
+                baselineScopes.set(scope, baselines)
+            }
+            if (!baselines.has(atom)) baselines.set(atom, baseline)
+            return
+        }
+
+        const baselineBucket = this.#baselineBucket
+        if (baselineBucket !== undefined) {
+            if (Object.is(this.#singleBaselineScope, scope)) {
+                if (!baselineBucket.has(atom)) {
+                    baselineBucket.set(atom, baseline)
+                }
+            } else {
+                const scopes = this.#allocateMap<
+                    StoreScopeNode,
+                    Map<AnyAtom, AtomDraftBaseline>
+                >()
+                scopes.set(
+                    this.#singleBaselineScope as StoreScopeNode,
+                    baselineBucket,
+                )
+                const next = this.#allocateMap<AnyAtom, AtomDraftBaseline>()
+                next.set(atom, baseline)
+                scopes.set(scope, next)
+                this.#baselineScopes = scopes
+                this.#baselineBucket = undefined
+                this.#singleBaselineScope = undefined
+            }
+            return
+        }
+
+        const singleBaseline = this.#singleBaseline
+        if (singleBaseline === undefined) {
+            this.#singleBaselineScope = scope
+            this.#singleBaselineAtom = atom
+            this.#singleBaseline = baseline
+            return
+        }
+        if (
+            Object.is(this.#singleBaselineScope, scope) &&
+            Object.is(this.#singleBaselineAtom, atom)
+        ) {
+            return
+        }
+
+        if (Object.is(this.#singleBaselineScope, scope)) {
+            const baselines = this.#allocateMap<AnyAtom, AtomDraftBaseline>()
+            baselines.set(this.#singleBaselineAtom as AnyAtom, singleBaseline)
+            baselines.set(atom, baseline)
+            this.#baselineBucket = baselines
+        } else {
+            const scopes = this.#allocateMap<
+                StoreScopeNode,
+                Map<AnyAtom, AtomDraftBaseline>
+            >()
+            const first = this.#allocateMap<AnyAtom, AtomDraftBaseline>()
+            first.set(this.#singleBaselineAtom as AnyAtom, singleBaseline)
+            scopes.set(this.#singleBaselineScope as StoreScopeNode, first)
+            const next = this.#allocateMap<AnyAtom, AtomDraftBaseline>()
+            next.set(atom, baseline)
+            scopes.set(scope, next)
+            this.#baselineScopes = scopes
+            this.#singleBaselineScope = undefined
+        }
+        this.#singleBaselineAtom = undefined
+        this.#singleBaseline = undefined
+    }
+
+    getFallback(atom: AnyAtom): DraftAtomOutcome | undefined {
+        if (Object.is(this.#singleFallbackAtom, atom)) {
+            return this.#singleFallback
+        }
+        return this.#fallbackMemo?.get(atom)
+    }
+
+    hasFallback(atom: AnyAtom): boolean {
+        return (
+            Object.is(this.#singleFallbackAtom, atom) ||
+            (this.#fallbackMemo?.has(atom) ?? false)
+        )
+    }
+
+    setFallback(atom: AnyAtom, outcome: DraftAtomOutcome): void {
+        const fallbackMemo = this.#fallbackMemo
+        if (fallbackMemo !== undefined) {
+            fallbackMemo.set(atom, outcome)
+            return
+        }
+        if (this.#singleFallback === undefined) {
+            this.#singleFallbackAtom = atom
+            this.#singleFallback = outcome
+            return
+        }
+        if (Object.is(this.#singleFallbackAtom, atom)) {
+            this.#singleFallback = outcome
+            return
+        }
+        const memo = this.#allocateMap<AnyAtom, DraftAtomOutcome>()
+        memo.set(this.#singleFallbackAtom as AnyAtom, this.#singleFallback)
+        memo.set(atom, outcome)
+        this.#fallbackMemo = memo
+        this.#singleFallbackAtom = undefined
+        this.#singleFallback = undefined
+    }
+
+    #advanceGeneration(): void {
         this.generation += 1
         const scratchHosts = this.#scratchHosts
         if (scratchHosts !== undefined) {
@@ -118,11 +385,38 @@ export class TreeDraft {
     }
 
     release(): void {
-        this.intents.clear()
-        this.atomBaselines.clear()
-        this.fallbackMemo.clear()
+        this.#intentBucket?.clear()
+        if (this.#intentScopes !== undefined) {
+            for (const intents of this.#intentScopes.values()) intents.clear()
+            this.#intentScopes.clear()
+        }
+        this.#baselineBucket?.clear()
+        if (this.#baselineScopes !== undefined) {
+            for (const baselines of this.#baselineScopes.values()) {
+                baselines.clear()
+            }
+            this.#baselineScopes.clear()
+        }
+        this.#fallbackMemo?.clear()
+        this.#singleIntentScope = undefined
+        this.#singleIntent = undefined
+        this.#intentBucket = undefined
+        this.#intentScopes = undefined
+        this.#singleBaselineScope = undefined
+        this.#singleBaselineAtom = undefined
+        this.#singleBaseline = undefined
+        this.#baselineBucket = undefined
+        this.#baselineScopes = undefined
+        this.#singleFallbackAtom = undefined
+        this.#singleFallback = undefined
+        this.#fallbackMemo = undefined
         this.#scratchHosts?.clear()
         this.#scratchHosts = undefined
+    }
+
+    #allocateMap<Key, Value>(): Map<Key, Value> {
+        this.#onStorageAllocation?.()
+        return new Map<Key, Value>()
     }
 }
 

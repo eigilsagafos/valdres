@@ -39,6 +39,8 @@ export type StoreTreeCounter =
     | "scratchMapAllocations"
     | "finalResolutionVisits"
     | "finalPreflightVisits"
+    | "draftStorageAllocations"
+    | "commitWorksetAllocations"
 
 interface SelectorRecord {
     readonly served: ServedSelectorOutcome<OutcomeToken>
@@ -303,7 +305,17 @@ export class StoreScopeNode
         if (classifyOwner(domain, node, session) === "invalid") {
             throw new TypeError("Selector get requires a valid State")
         }
+        return this.serveKnownLocal(node, session)
+    }
+
+    serveKnownLocal(
+        node: AnyState,
+        session: SelectorEvaluationSession<AnyState>,
+    ): ServedSelectorOutcome<OutcomeToken> {
+        const domain = this.coordinator.runtimeDomain
         if (domain.atoms.has(node)) {
+            const current = this.#atomViews.get(node as AnyAtom)
+            if (current !== undefined) return current.served
             return this.coordinator.serveScopeAtom(
                 this,
                 node as AnyAtom,
@@ -316,13 +328,13 @@ export class StoreScopeNode
             throw new TypeError("Unknown committed StoreTree state")
         }
         const selector = node as AnySelector
-        const current = this.#selectorRecords.get(selector)
+        let current = this.#selectorRecords.get(selector)
         if (current !== undefined && this.coordinator.postSourceApply) {
             this.coordinator.prepareSelectorRead(this, selector)
+            current = this.#selectorRecords.get(selector)
         }
-        const prepared = this.#selectorRecords.get(selector)
-        if (prepared !== undefined && !this.#dirtySelectors.has(selector)) {
-            return prepared.served
+        if (current !== undefined && !this.#dirtySelectors.has(selector)) {
+            return current.served
         }
 
         const proposal = runSelectorActivity(domain, session, () =>

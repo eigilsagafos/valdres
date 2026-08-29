@@ -10,6 +10,13 @@ import {
     SelectorCircularDependencyError,
     SelectorReadRevokedError,
 } from "../../src/v1-internal/selector-evaluator/errors"
+import type { AnyAtom } from "../../src/v1-internal/committed-store-tree/runtime-domain"
+import type { StoreScopeNode } from "../../src/v1-internal/committed-store-tree/scope-node"
+import {
+    TreeDraft,
+    type AtomDraftBaseline,
+    type AtomIntent,
+} from "../../src/v1-internal/committed-store-tree/tree-transaction"
 import { createReferenceModel, value } from "../v1-model"
 import type { TransactionStep, ValueToken } from "../v1-model/protocol"
 
@@ -23,6 +30,142 @@ const thrownBy = (operation: () => unknown): unknown => {
 }
 
 describe("v1 root-only TreeTransaction", () => {
+    test("keeps the first draft coordinate scalar and preserves order through promotion and release", () => {
+        const scopeA = Object.freeze({ id: "A" }) as unknown as StoreScopeNode
+        const scopeB = Object.freeze({ id: "B" }) as unknown as StoreScopeNode
+        const atomX = Object.freeze({ id: "x" }) as unknown as AnyAtom
+        const atomY = Object.freeze({ id: "y" }) as unknown as AnyAtom
+        const atomZ = Object.freeze({ id: "z" }) as unknown as AnyAtom
+        const valueOutcome = Object.freeze({
+            kind: "value" as const,
+            value: undefined,
+        })
+        const error = Object.freeze({ fault: "fallback" })
+        const errorOutcome = Object.freeze({
+            kind: "error" as const,
+            error,
+        })
+        const baseline: AtomDraftBaseline = Object.freeze({
+            owned: false,
+            outcome: valueOutcome,
+            reachesFallback: true,
+        })
+        const replacementBaseline: AtomDraftBaseline = Object.freeze({
+            owned: true,
+            outcome: errorOutcome,
+            reachesFallback: false,
+        })
+        const setIntent = (atom: AnyAtom, value: unknown): AtomIntent =>
+            Object.freeze({
+                kind: "set" as const,
+                atom,
+                value,
+                publishDraftFallback: false,
+            })
+        let storageAllocations = 0
+        const draft = new TreeDraft(() => storageAllocations++)
+
+        draft.setAtomBaseline(scopeA, atomX, baseline)
+        draft.stage(scopeA, setIntent(atomX, "first"))
+        draft.setAtomBaseline(scopeA, atomX, replacementBaseline)
+        draft.stage(scopeA, setIntent(atomX, "replacement"))
+        expect(storageAllocations).toBe(0)
+        expect(draft.singleIntentScope).toBe(scopeA)
+        const scalarIntent = draft.singleIntent
+        expect(scalarIntent?.kind).toBe("set")
+        expect(scalarIntent?.kind === "set" && scalarIntent.value).toBe(
+            "replacement",
+        )
+        expect(draft.getAtomBaseline(scopeA, atomX)).toBe(baseline)
+
+        draft.setAtomBaseline(scopeB, atomY, baseline)
+        draft.stage(scopeB, setIntent(atomY, "second-scope"))
+        draft.setAtomBaseline(scopeA, atomZ, baseline)
+        draft.stage(scopeA, setIntent(atomZ, "later-first-scope"))
+        draft.setAtomBaseline(scopeA, atomX, replacementBaseline)
+        draft.stage(scopeA, setIntent(atomX, "final"))
+
+        const order: readonly [StoreScopeNode, AnyAtom, unknown][] = []
+        draft.forEachIntent((scope, intent) => {
+            ;(order as [StoreScopeNode, AnyAtom, unknown][]).push([
+                scope,
+                intent.atom,
+                intent.kind === "set" ? intent.value : undefined,
+            ])
+        })
+        expect(order).toEqual([
+            [scopeA, atomX, "final"],
+            [scopeA, atomZ, "later-first-scope"],
+            [scopeB, atomY, "second-scope"],
+        ])
+        expect(draft.getAtomBaseline(scopeA, atomX)).toBe(baseline)
+        expect(storageAllocations).toBe(6)
+
+        draft.setFallback(atomX, valueOutcome)
+        expect(draft.getFallback(atomX)).toBe(valueOutcome)
+        expect(storageAllocations).toBe(6)
+        draft.setFallback(atomY, errorOutcome)
+        expect(draft.getFallback(atomX)).toBe(valueOutcome)
+        expect(draft.getFallback(atomY)).toBe(errorOutcome)
+        expect(storageAllocations).toBe(7)
+
+        draft.release()
+        expect(draft.hasIntents).toBe(false)
+        expect(draft.getIntent(scopeA, atomX)).toBeUndefined()
+        expect(draft.getAtomBaseline(scopeA, atomX)).toBeUndefined()
+        expect(draft.getFallback(atomX)).toBeUndefined()
+        expect(draft.getFallback(atomY)).toBeUndefined()
+
+        let sameScopeAllocations = 0
+        const sameScopeDraft = new TreeDraft(() => sameScopeAllocations++)
+        sameScopeDraft.setAtomBaseline(scopeA, atomX, baseline)
+        sameScopeDraft.stage(scopeA, setIntent(atomX, "first"))
+        sameScopeDraft.setAtomBaseline(scopeA, atomZ, replacementBaseline)
+        sameScopeDraft.stage(scopeA, setIntent(atomZ, "second"))
+        expect(sameScopeAllocations).toBe(2)
+        expect(sameScopeDraft.getAtomBaseline(scopeA, atomX)).toBe(baseline)
+        expect(sameScopeDraft.getAtomBaseline(scopeA, atomZ)).toBe(
+            replacementBaseline,
+        )
+        sameScopeDraft.setAtomBaseline(scopeB, atomY, baseline)
+        sameScopeDraft.stage(scopeB, setIntent(atomY, "third"))
+        sameScopeDraft.setAtomBaseline(scopeA, atomX, replacementBaseline)
+        sameScopeDraft.stage(scopeA, setIntent(atomX, "replacement"))
+        const promotedOrder: [StoreScopeNode, AnyAtom, unknown][] = []
+        sameScopeDraft.forEachIntent((scope, intent) => {
+            promotedOrder.push([
+                scope,
+                intent.atom,
+                intent.kind === "set" ? intent.value : undefined,
+            ])
+        })
+        expect(promotedOrder).toEqual([
+            [scopeA, atomX, "replacement"],
+            [scopeA, atomZ, "second"],
+            [scopeB, atomY, "third"],
+        ])
+        expect(sameScopeAllocations).toBe(6)
+        expect(sameScopeDraft.getAtomBaseline(scopeA, atomX)).toBe(baseline)
+        sameScopeDraft.release()
+        expect(sameScopeDraft.hasIntents).toBe(false)
+        expect(sameScopeDraft.getIntent(scopeA, atomX)).toBeUndefined()
+        expect(sameScopeDraft.getIntent(scopeA, atomZ)).toBeUndefined()
+        expect(sameScopeDraft.getIntent(scopeB, atomY)).toBeUndefined()
+        expect(sameScopeDraft.getAtomBaseline(scopeA, atomX)).toBeUndefined()
+        expect(sameScopeDraft.getAtomBaseline(scopeA, atomZ)).toBeUndefined()
+        expect(sameScopeDraft.getAtomBaseline(scopeB, atomY)).toBeUndefined()
+
+        const scalarDraft = new TreeDraft()
+        scalarDraft.setAtomBaseline(scopeA, atomX, baseline)
+        scalarDraft.stage(scopeA, setIntent(atomX, "scalar"))
+        scalarDraft.setFallback(atomX, valueOutcome)
+        scalarDraft.release()
+        expect(scalarDraft.hasIntents).toBe(false)
+        expect(scalarDraft.getIntent(scopeA, atomX)).toBeUndefined()
+        expect(scalarDraft.getAtomBaseline(scopeA, atomX)).toBeUndefined()
+        expect(scalarDraft.getFallback(atomX)).toBeUndefined()
+    })
+
     test("reads canonical prior intents and preserves exact Atom values", () => {
         const domain = createCommittedStoreTreeDomain()
         const count = domain.atom(0)
@@ -160,6 +303,8 @@ describe("v1 root-only TreeTransaction", () => {
         })
 
         expect(tree.get(total)).toBe(3)
+        expect(tree.get(left)).toBe(1)
+        expect(tree.get(right)).toBe(2)
         expect(evaluations).toBe(2)
         expect(observations).toEqual([
             [0, 0],

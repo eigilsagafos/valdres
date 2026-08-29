@@ -111,43 +111,46 @@ describe("v1 scope-keyed committed StoreTree host", () => {
         ).toBeInstanceOf(RuntimeMismatchError)
     })
 
-    test("does not retain abandoned anonymous scopes through topology or closed cursor drafts", async () => {
+    test("releases scalar one-intent drafts behind retained closed cursors", async () => {
         const counters = counterHarness()
         const domain = createCommittedStoreTreeDomain(counters.instrumentation)
         const count = domain.atom(0)
         const root = domain.createStoreTree()
         let committedCursor!: RootTransaction
         let abortedCursor!: RootTransaction
+        const storageBefore = counters.read("draftStorageAllocations")
         const committed = (() => {
-            const anonymous = root.scope()
-            const reference = new WeakRef(anonymous as object)
+            const scope = root.scope()
+            const reference = new WeakRef(scope as object)
             root.txn(transaction => {
                 committedCursor = transaction
-                transaction.scope(anonymous).set(count, 1)
+                transaction.scope(scope).set(count, 1)
             })
             return reference
         })()
-        const abort = new Error("abort anonymous scope draft")
+        const abort = new Error("abort scalar anonymous scope draft")
         const aborted = (() => {
-            const anonymous = root.scope()
-            const reference = new WeakRef(anonymous as object)
+            const scope = root.scope()
+            const reference = new WeakRef(scope as object)
             expect(
                 thrownBy(() =>
                     root.txn(transaction => {
                         abortedCursor = transaction
-                        transaction.scope(anonymous).set(count, 2)
+                        transaction.scope(scope).set(count, 2)
                         throw abort
                     }),
                 ),
             ).toBe(abort)
             return reference
         })()
+        expect(counters.read("draftStorageAllocations")).toBe(storageBefore)
 
-        let retained = 2
+        const references = [committed, aborted]
+        let retained = references.length
         for (let round = 0; round < 20 && retained !== 0; round++) {
             await Bun.sleep(0)
             Bun.gc(true)
-            retained = [committed, aborted].filter(
+            retained = references.filter(
                 reference => reference.deref() !== undefined,
             ).length
         }
@@ -164,6 +167,72 @@ describe("v1 scope-keyed committed StoreTree host", () => {
         expect(
             counters.read("deadRouteCompactions") - compactionsBefore,
         ).toBeGreaterThanOrEqual(2)
+    })
+
+    test("does not retain promoted multi-scope drafts through topology or closed cursors", async () => {
+        const counters = counterHarness()
+        const domain = createCommittedStoreTreeDomain(counters.instrumentation)
+        const count = domain.atom(0)
+        const root = domain.createStoreTree()
+        let committedCursor!: RootTransaction
+        let abortedCursor!: RootTransaction
+        const committed = (() => {
+            const first = root.scope()
+            const second = root.scope()
+            const references = [
+                new WeakRef(first as object),
+                new WeakRef(second as object),
+            ]
+            root.txn(transaction => {
+                committedCursor = transaction
+                transaction.scope(first).set(count, 1)
+                transaction.scope(second).set(count, 2)
+            })
+            return references
+        })()
+        const abort = new Error("abort anonymous scope draft")
+        const aborted = (() => {
+            const first = root.scope()
+            const second = root.scope()
+            const references = [
+                new WeakRef(first as object),
+                new WeakRef(second as object),
+            ]
+            expect(
+                thrownBy(() =>
+                    root.txn(transaction => {
+                        abortedCursor = transaction
+                        transaction.scope(first).set(count, 3)
+                        transaction.scope(second).set(count, 4)
+                        throw abort
+                    }),
+                ),
+            ).toBe(abort)
+            return references
+        })()
+
+        const references = [...committed, ...aborted]
+        let retained = references.length
+        for (let round = 0; round < 20 && retained !== 0; round++) {
+            await Bun.sleep(0)
+            Bun.gc(true)
+            retained = references.filter(
+                reference => reference.deref() !== undefined,
+            ).length
+        }
+        expect(retained).toBe(0)
+        expect(thrownBy(() => committedCursor.get(count))).toBeInstanceOf(
+            TransactionClosedError,
+        )
+        expect(thrownBy(() => abortedCursor.get(count))).toBeInstanceOf(
+            TransactionClosedError,
+        )
+
+        const compactionsBefore = counters.read("deadRouteCompactions")
+        root.dispose()
+        expect(
+            counters.read("deadRouteCompactions") - compactionsBefore,
+        ).toBeGreaterThanOrEqual(4)
     })
 
     test("keeps weak handles ordered and removable while abandoned selector routes compact", async () => {
@@ -396,7 +465,15 @@ describe("v1 scope-keyed committed StoreTree host", () => {
         const scratchHostsBefore = counters.read("scratchHostAllocations")
         const scratchMapsBefore = counters.read("scratchMapAllocations")
         const draftsBefore = counters.read("draftCreations")
+        const draftStorageBefore = counters.read("draftStorageAllocations")
+        const commitWorksetsBefore = counters.read("commitWorksetAllocations")
         root.set(untouched, 10)
+        expect(counters.read("draftStorageAllocations")).toBe(
+            draftStorageBefore,
+        )
+        expect(counters.read("commitWorksetAllocations")).toBe(
+            commitWorksetsBefore,
+        )
         root.txn(transaction => {
             for (let index = 0; index < 8; index++) {
                 transaction.scope(idleScopes[index]!).set(untouched, index)
@@ -405,6 +482,12 @@ describe("v1 scope-keyed committed StoreTree host", () => {
         expect(counters.read("scratchHostAllocations")).toBe(scratchHostsBefore)
         expect(counters.read("scratchMapAllocations")).toBe(scratchMapsBefore)
         expect(counters.read("draftCreations") - draftsBefore).toBe(2)
+        expect(
+            counters.read("draftStorageAllocations") - draftStorageBefore,
+        ).toBe(18)
+        expect(
+            counters.read("commitWorksetAllocations") - commitWorksetsBefore,
+        ).toBe(2)
 
         const subtree = root.scope()
         let descendant = subtree
