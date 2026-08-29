@@ -413,19 +413,20 @@ export const assertStoreOperationAllowed = (
 export const assertStoreReadAllowed = (
     domain: RuntimeDomainRecords,
     operation: string,
-): void => {
-    if (domain.activity?.kind === "subscriber") return
-    assertStoreOperationAllowed(domain, operation)
-}
-
-export const latchSubscriberControlFault = (
-    domain: RuntimeDomainRecords,
-    error: unknown,
-): void => {
+): ControlFaultSession | undefined => {
     const activity = domain.activity
-    if (activity?.kind === "subscriber") {
-        activity.session.latchControlFault(error)
+    if (activity === undefined) return undefined
+    if (activity.kind === "subscriber") return activity.session
+    if (activity.kind === "selector") {
+        throw new SelectorCapabilityError(operation)
     }
+    if (
+        activity.kind === "transaction" ||
+        activity.kind === "transaction-result"
+    ) {
+        throw new TransactionPhaseError()
+    }
+    throw new CallbackCapabilityError()
 }
 
 export const assertUnsubscribeAllowed = (

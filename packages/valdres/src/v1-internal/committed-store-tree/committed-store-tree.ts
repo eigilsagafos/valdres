@@ -27,7 +27,6 @@ import {
     containThenable,
     inspectSynchronousAtomValue,
     inspectThenable,
-    latchSubscriberControlFault,
     makeStateHandle,
     runGuardedCallback,
     runLazyInitializer,
@@ -440,19 +439,24 @@ class CommittedStoreTreeHost
         const session = new SelectorEvaluationSession<AnyState>()
         const node = state as unknown as AnyState
         const ownerStatus = classifyEntryOwner(this.#domain, node, session)
-        assertStoreReadAllowed(this.#domain, "StoreTree.get")
+        const subscriberSession = assertStoreReadAllowed(
+            this.#domain,
+            "StoreTree.get",
+        )
         this.#assertScopeLive(scope)
         if (ownerStatus === "invalid") {
             throw new TypeError("StoreTree.get requires a valid State")
+        }
+        if (subscriberSession === undefined) {
+            const served = scope.serveKnownLocal(node, session)
+            if (served.outcome.kind !== "value") throw served.outcome.error
+            return served.outcome.value as Value
         }
         try {
             const served = scope.serveKnownLocal(node, session)
             if (served.outcome.kind !== "value") {
                 if (served.outcome.kind === "control-error") {
-                    latchSubscriberControlFault(
-                        this.#domain,
-                        served.outcome.error,
-                    )
+                    subscriberSession.latchControlFault(served.outcome.error)
                 }
                 throw served.outcome.error
             }
@@ -460,7 +464,7 @@ class CommittedStoreTreeHost
         } catch (error) {
             const controlFault = session.getControlFault()
             if (controlFault.kind === "fault") {
-                latchSubscriberControlFault(this.#domain, controlFault.error)
+                subscriberSession.latchControlFault(controlFault.error)
             }
             throw error
         }
