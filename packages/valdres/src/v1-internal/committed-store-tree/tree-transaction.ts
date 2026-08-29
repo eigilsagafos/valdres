@@ -55,19 +55,23 @@ export interface DraftScratchHost<Node extends object = AnyState> {
  *       -> nearest committed override
  *       -> draft/committed fallback
  *
- * Scratch storage is absent until the first Selector read. Atom-only direct
- * and transaction paths therefore allocate neither a scratch map nor a host.
+ * Two same-scope intent/baseline coordinates stay inline before promotion.
+ * Scratch storage is absent until the first Selector read, so Atom-only direct
+ * and transaction paths allocate neither a scratch map nor a host.
  */
 export class TreeDraft {
     readonly transaction = Object.freeze({})
     readonly #onStorageAllocation: (() => void) | undefined
     #singleIntentScope: StoreScopeNode | undefined
     #singleIntent: AtomIntent | undefined
+    #secondIntent: AtomIntent | undefined
     #intentBucket: Map<AnyAtom, AtomIntent> | undefined
     #intentScopes: Map<StoreScopeNode, Map<AnyAtom, AtomIntent>> | undefined
     #singleBaselineScope: StoreScopeNode | undefined
     #singleBaselineAtom: AnyAtom | undefined
     #singleBaseline: AtomDraftBaseline | undefined
+    #secondBaselineAtom: AnyAtom | undefined
+    #secondBaseline: AtomDraftBaseline | undefined
     #baselineBucket: Map<AnyAtom, AtomDraftBaseline> | undefined
     #baselineScopes:
         | Map<StoreScopeNode, Map<AnyAtom, AtomDraftBaseline>>
@@ -86,6 +90,7 @@ export class TreeDraft {
     get hasIntents(): boolean {
         return (
             this.#singleIntent !== undefined ||
+            this.#secondIntent !== undefined ||
             this.#intentBucket !== undefined ||
             this.#intentScopes !== undefined
         )
@@ -96,7 +101,7 @@ export class TreeDraft {
     }
 
     get singleIntent(): AtomIntent | undefined {
-        return this.#singleIntent
+        return this.#secondIntent === undefined ? this.#singleIntent : undefined
     }
 
     stage(scope: StoreScopeNode, intent: AtomIntent): void {
@@ -153,8 +158,20 @@ export class TreeDraft {
         }
 
         if (Object.is(this.#singleIntentScope, scope)) {
+            const secondIntent = this.#secondIntent
+            if (secondIntent === undefined) {
+                this.#secondIntent = intent
+                this.#advanceGeneration()
+                return
+            }
+            if (Object.is(secondIntent.atom, intent.atom)) {
+                this.#secondIntent = intent
+                this.#advanceGeneration()
+                return
+            }
             const intents = this.#allocateMap<AnyAtom, AtomIntent>()
             intents.set(singleIntent.atom, singleIntent)
+            intents.set(secondIntent.atom, secondIntent)
             intents.set(intent.atom, intent)
             this.#intentBucket = intents
         } else {
@@ -164,6 +181,9 @@ export class TreeDraft {
             >()
             const first = this.#allocateMap<AnyAtom, AtomIntent>()
             first.set(singleIntent.atom, singleIntent)
+            if (this.#secondIntent !== undefined) {
+                first.set(this.#secondIntent.atom, this.#secondIntent)
+            }
             scopes.set(this.#singleIntentScope as StoreScopeNode, first)
             const next = this.#allocateMap<AnyAtom, AtomIntent>()
             next.set(intent.atom, intent)
@@ -172,6 +192,7 @@ export class TreeDraft {
             this.#singleIntentScope = undefined
         }
         this.#singleIntent = undefined
+        this.#secondIntent = undefined
         this.#advanceGeneration()
     }
 
@@ -181,6 +202,12 @@ export class TreeDraft {
         const singleIntent = this.#singleIntent
         if (singleIntent !== undefined) {
             visit(this.#singleIntentScope as StoreScopeNode, singleIntent)
+            if (this.#secondIntent !== undefined) {
+                visit(
+                    this.#singleIntentScope as StoreScopeNode,
+                    this.#secondIntent,
+                )
+            }
             return
         }
         const intentBucket = this.#intentBucket
@@ -205,6 +232,14 @@ export class TreeDraft {
         ) {
             return singleIntent
         }
+        const secondIntent = this.#secondIntent
+        if (
+            secondIntent !== undefined &&
+            Object.is(this.#singleIntentScope, scope) &&
+            Object.is(secondIntent.atom, atom)
+        ) {
+            return secondIntent
+        }
         if (Object.is(this.#singleIntentScope, scope)) {
             return this.#intentBucket?.get(atom)
         }
@@ -221,6 +256,13 @@ export class TreeDraft {
             Object.is(this.#singleBaselineAtom, atom)
         ) {
             return this.#singleBaseline
+        }
+        if (
+            this.#secondBaseline !== undefined &&
+            Object.is(this.#singleBaselineScope, scope) &&
+            Object.is(this.#secondBaselineAtom, atom)
+        ) {
+            return this.#secondBaseline
         }
         if (Object.is(this.#singleBaselineScope, scope)) {
             return this.#baselineBucket?.get(atom)
@@ -284,8 +326,16 @@ export class TreeDraft {
         }
 
         if (Object.is(this.#singleBaselineScope, scope)) {
+            const secondBaseline = this.#secondBaseline
+            if (secondBaseline === undefined) {
+                this.#secondBaselineAtom = atom
+                this.#secondBaseline = baseline
+                return
+            }
+            if (Object.is(this.#secondBaselineAtom, atom)) return
             const baselines = this.#allocateMap<AnyAtom, AtomDraftBaseline>()
             baselines.set(this.#singleBaselineAtom as AnyAtom, singleBaseline)
+            baselines.set(this.#secondBaselineAtom as AnyAtom, secondBaseline)
             baselines.set(atom, baseline)
             this.#baselineBucket = baselines
         } else {
@@ -295,6 +345,12 @@ export class TreeDraft {
             >()
             const first = this.#allocateMap<AnyAtom, AtomDraftBaseline>()
             first.set(this.#singleBaselineAtom as AnyAtom, singleBaseline)
+            if (
+                this.#secondBaselineAtom !== undefined &&
+                this.#secondBaseline !== undefined
+            ) {
+                first.set(this.#secondBaselineAtom, this.#secondBaseline)
+            }
             scopes.set(this.#singleBaselineScope as StoreScopeNode, first)
             const next = this.#allocateMap<AnyAtom, AtomDraftBaseline>()
             next.set(atom, baseline)
@@ -304,6 +360,8 @@ export class TreeDraft {
         }
         this.#singleBaselineAtom = undefined
         this.#singleBaseline = undefined
+        this.#secondBaselineAtom = undefined
+        this.#secondBaseline = undefined
     }
 
     getFallback(atom: AnyAtom): DraftAtomOutcome | undefined {
@@ -400,11 +458,14 @@ export class TreeDraft {
         this.#fallbackMemo?.clear()
         this.#singleIntentScope = undefined
         this.#singleIntent = undefined
+        this.#secondIntent = undefined
         this.#intentBucket = undefined
         this.#intentScopes = undefined
         this.#singleBaselineScope = undefined
         this.#singleBaselineAtom = undefined
         this.#singleBaseline = undefined
+        this.#secondBaselineAtom = undefined
+        this.#secondBaseline = undefined
         this.#baselineBucket = undefined
         this.#baselineScopes = undefined
         this.#singleFallbackAtom = undefined

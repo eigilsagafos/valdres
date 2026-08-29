@@ -83,15 +83,18 @@ interface CommitWorksets {
     preflightAtom: AnyAtom | undefined
     preflightScope: StoreScopeNode | undefined
     preflightOutcome: DraftAtomOutcome | undefined
+    secondPreflightAtom: AnyAtom | undefined
+    secondPreflightScope: StoreScopeNode | undefined
+    secondPreflightOutcome: DraftAtomOutcome | undefined
     preflight: Map<AnyAtom, Map<StoreScopeNode, DraftAtomOutcome>> | undefined
     consideredRecord: AtomViewRecord | undefined
+    secondConsideredRecord: AtomViewRecord | undefined
     considered: Set<AtomViewRecord> | undefined
     affectedRecord: AtomViewRecord | undefined
     affectedBefore: DraftAtomOutcome | undefined
+    secondAffectedRecord: AtomViewRecord | undefined
+    secondAffectedBefore: DraftAtomOutcome | undefined
     affected: Map<AtomViewRecord, DraftAtomOutcome> | undefined
-    resolvedRecord: AtomViewRecord | undefined
-    resolvedOutcome: DraftAtomOutcome | undefined
-    resolved: Map<AtomViewRecord, DraftAtomOutcome> | undefined
 }
 
 export interface InternalStoreTreeInstrumentation {
@@ -173,15 +176,18 @@ const createCommitWorksets = (onAllocation?: () => void): CommitWorksets => ({
     preflightAtom: undefined,
     preflightScope: undefined,
     preflightOutcome: undefined,
+    secondPreflightAtom: undefined,
+    secondPreflightScope: undefined,
+    secondPreflightOutcome: undefined,
     preflight: undefined,
     consideredRecord: undefined,
+    secondConsideredRecord: undefined,
     considered: undefined,
     affectedRecord: undefined,
     affectedBefore: undefined,
+    secondAffectedRecord: undefined,
+    secondAffectedBefore: undefined,
     affected: undefined,
-    resolvedRecord: undefined,
-    resolvedOutcome: undefined,
-    resolved: undefined,
 })
 
 const allocateCommitMap = <Key, Value>(
@@ -208,6 +214,13 @@ const getPreflightOutcome = (
     ) {
         return worksets.preflightOutcome
     }
+    if (
+        worksets.secondPreflightOutcome !== undefined &&
+        Object.is(worksets.secondPreflightAtom, atom) &&
+        Object.is(worksets.secondPreflightScope, scope)
+    ) {
+        return worksets.secondPreflightOutcome
+    }
     return worksets.preflight?.get(atom)?.get(scope)
 }
 
@@ -229,6 +242,18 @@ const setPreflightOutcome = (
     ) {
         return
     }
+    if (worksets.secondPreflightOutcome === undefined) {
+        worksets.secondPreflightAtom = atom
+        worksets.secondPreflightScope = scope
+        worksets.secondPreflightOutcome = outcome
+        return
+    }
+    if (
+        Object.is(worksets.secondPreflightAtom, atom) &&
+        Object.is(worksets.secondPreflightScope, scope)
+    ) {
+        return
+    }
     let preflight = worksets.preflight
     if (preflight === undefined) {
         preflight = allocateCommitMap(worksets)
@@ -246,9 +271,18 @@ const markConsidered = (
     worksets: CommitWorksets,
     record: AtomViewRecord,
 ): boolean => {
-    if (Object.is(worksets.consideredRecord, record)) return false
+    if (
+        Object.is(worksets.consideredRecord, record) ||
+        Object.is(worksets.secondConsideredRecord, record)
+    ) {
+        return false
+    }
     if (worksets.consideredRecord === undefined) {
         worksets.consideredRecord = record
+        return true
+    }
+    if (worksets.secondConsideredRecord === undefined) {
+        worksets.secondConsideredRecord = record
         return true
     }
     let considered = worksets.considered
@@ -271,51 +305,17 @@ const markAffected = (
         worksets.affectedBefore = before
         return
     }
+    if (worksets.secondAffectedRecord === undefined) {
+        worksets.secondAffectedRecord = record
+        worksets.secondAffectedBefore = before
+        return
+    }
     let affected = worksets.affected
     if (affected === undefined) {
         affected = allocateCommitMap(worksets)
         worksets.affected = affected
     }
     affected.set(record, before)
-}
-
-const hasAffected = (
-    worksets: CommitWorksets,
-    record: AtomViewRecord,
-): boolean =>
-    Object.is(worksets.affectedRecord, record) ||
-    (worksets.affected?.has(record) ?? false)
-
-const getResolvedOutcome = (
-    worksets: CommitWorksets,
-    record: AtomViewRecord,
-): DraftAtomOutcome | undefined => {
-    if (Object.is(worksets.resolvedRecord, record)) {
-        return worksets.resolvedOutcome
-    }
-    return worksets.resolved?.get(record)
-}
-
-const setResolvedOutcome = (
-    worksets: CommitWorksets,
-    record: AtomViewRecord,
-    outcome: DraftAtomOutcome,
-): void => {
-    if (worksets.resolvedRecord === undefined) {
-        worksets.resolvedRecord = record
-        worksets.resolvedOutcome = outcome
-        return
-    }
-    if (Object.is(worksets.resolvedRecord, record)) {
-        worksets.resolvedOutcome = outcome
-        return
-    }
-    let resolved = worksets.resolved
-    if (resolved === undefined) {
-        resolved = allocateCommitMap(worksets)
-        worksets.resolved = resolved
-    }
-    resolved.set(record, outcome)
 }
 
 class CommittedStoreTreeHost
@@ -1134,7 +1134,7 @@ class CommittedStoreTreeHost
          *                   -> apply every owner -> rewire AtomViews
          *                   -> memoized final outcomes -> one propagation
          *
-         * The first plan and workset entries stay scalar. Later entries lazily
+         * The first two workset entries stay inline. Later entries lazily
          * promote the same pipeline to collections; no selector observes a
          * partially applied multi-scope source set.
          */
@@ -1196,12 +1196,8 @@ class CommittedStoreTreeHost
             }
         }
 
-        let firstChangedSource:
-            | Readonly<{ scope: StoreScopeNode; node: AnyAtom }>
-            | undefined
-        let remainingChangedSources:
-            | Readonly<{ scope: StoreScopeNode; node: AnyAtom }>[]
-            | undefined
+        let firstChangedSource: AtomViewRecord | undefined
+        let remainingChangedSources: AtomViewRecord[] | undefined
         const firstAffectedRecord = worksets.affectedRecord
         const firstAffectedBefore = worksets.affectedBefore
         if (
@@ -1213,6 +1209,25 @@ class CommittedStoreTreeHost
                 firstAffectedRecord,
                 firstAffectedBefore,
             )
+        }
+        const secondAffectedRecord = worksets.secondAffectedRecord
+        const secondAffectedBefore = worksets.secondAffectedBefore
+        if (
+            secondAffectedRecord !== undefined &&
+            secondAffectedBefore !== undefined
+        ) {
+            const source = this.#settleAffectedAtomView(
+                worksets,
+                secondAffectedRecord,
+                secondAffectedBefore,
+            )
+            if (source !== undefined) {
+                if (firstChangedSource === undefined) {
+                    firstChangedSource = source
+                } else {
+                    remainingChangedSources = [source]
+                }
+            }
         }
         if (worksets.affected !== undefined) {
             for (const [record, before] of worksets.affected) {
@@ -1308,11 +1323,15 @@ class CommittedStoreTreeHost
         worksets: CommitWorksets,
         record: AtomViewRecord,
         before: DraftAtomOutcome,
-    ): Readonly<{ scope: StoreScopeNode; node: AnyAtom }> | undefined {
-        const after = this.#resolveFinalAffectedAtomOutcome(record, worksets)
+    ): AtomViewRecord | undefined {
+        const after = getPreflightOutcome(worksets, record.atom, record.scope)
+        if (after === undefined) {
+            throw new Error("Affected AtomView final outcome is missing")
+        }
+        this.recordCounter("finalResolutionVisits")
         if (sameAtomOutcome(before, after)) return undefined
         record.scope.updateAtomView(record, after)
-        return Object.freeze({ scope: record.scope, node: record.atom })
+        return record
     }
 
     #collectAffectedAtomViews(
@@ -1348,68 +1367,6 @@ class CommittedStoreTreeHost
                 pending[right] = child
             }
         }
-    }
-
-    #resolveFinalAffectedAtomOutcome(
-        record: AtomViewRecord,
-        worksets: CommitWorksets,
-    ): DraftAtomOutcome {
-        const existing = getResolvedOutcome(worksets, record)
-        if (existing !== undefined) return existing
-
-        let current = record
-        let firstUnresolved: AtomViewRecord | undefined
-        let remainingUnresolved: AtomViewRecord[] | undefined
-        let outcome: DraftAtomOutcome
-        while (true) {
-            const memoized = getResolvedOutcome(worksets, current)
-            if (memoized !== undefined) {
-                outcome = memoized
-                break
-            }
-            if (!hasAffected(worksets, current)) {
-                outcome = current.served.outcome as DraftAtomOutcome
-                break
-            }
-
-            if (firstUnresolved === undefined) {
-                firstUnresolved = current
-            } else {
-                if (remainingUnresolved === undefined) remainingUnresolved = []
-                remainingUnresolved.push(current)
-            }
-            if (current.scope.atomOverrides.has(current.atom)) {
-                outcome = valueOutcome(
-                    current.scope.atomOverrides.get(current.atom),
-                )
-                break
-            }
-            if (current.inheritedFrom === undefined) {
-                outcome = this.#readCommittedFallbackOutcomeInert(current.atom)
-                break
-            }
-            current = current.inheritedFrom
-        }
-
-        if (remainingUnresolved !== undefined) {
-            for (
-                let index = remainingUnresolved.length - 1;
-                index >= 0;
-                index--
-            ) {
-                setResolvedOutcome(
-                    worksets,
-                    remainingUnresolved[index] as AtomViewRecord,
-                    outcome,
-                )
-                this.recordCounter("finalResolutionVisits")
-            }
-        }
-        if (firstUnresolved !== undefined) {
-            setResolvedOutcome(worksets, firstUnresolved, outcome)
-            this.recordCounter("finalResolutionVisits")
-        }
-        return getResolvedOutcome(worksets, record) ?? outcome
     }
 
     #readFinalAtomOutcome(
@@ -1603,13 +1560,8 @@ class CommittedStoreTreeHost
     }
 
     #propagateFromSources(
-        firstSource:
-            | Readonly<{ scope: StoreScopeNode; node: AnyState }>
-            | undefined,
-        remainingSources?: readonly Readonly<{
-            scope: StoreScopeNode
-            node: AnyState
-        }>[],
+        firstSource: AtomViewRecord | undefined,
+        remainingSources?: readonly AtomViewRecord[],
     ): void {
         if (firstSource === undefined) return
         this.recordCounter("propagationSettlements")
@@ -1620,10 +1572,10 @@ class CommittedStoreTreeHost
         this.#propagationControlFault = undefined
         this.#postSourceApply = true
         try {
-            firstSource.scope.markDependents(firstSource.node)
+            firstSource.scope.markDependents(firstSource.atom)
             if (remainingSources !== undefined) {
                 for (const source of remainingSources) {
-                    source.scope.markDependents(source.node)
+                    source.scope.markDependents(source.atom)
                 }
             }
             let cursor = 0

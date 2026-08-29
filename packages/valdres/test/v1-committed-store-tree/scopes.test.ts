@@ -403,6 +403,8 @@ describe("v1 scope-keyed committed StoreTree host", () => {
         const fallbackOnly = domain.atomLazy(() => ++fallbackCalls)
         const count = domain.atom(0)
         const untouched = domain.atom(0)
+        const inlineLeft = domain.atom(0)
+        const inlineRight = domain.atom(0)
         const root = domain.createStoreTree()
 
         const epochBeforeFallback = counters.read("sourceEpoch")
@@ -461,6 +463,35 @@ describe("v1 scope-keyed committed StoreTree host", () => {
         expect(deepest.get(count)).toBe(2)
         expect(counters.read("warmParentHops")).toBe(hopsBeforeWarmRead)
         expect(counters.read("routeAdds")).toBe(routeAddsBeforeWarmRead)
+
+        expect(root.get(inlineLeft)).toBe(0)
+        expect(root.get(inlineRight)).toBe(0)
+        const inlineDraftStorageBefore = counters.read(
+            "draftStorageAllocations",
+        )
+        const inlineCommitWorksetsBefore = counters.read(
+            "commitWorksetAllocations",
+        )
+        const inlinePreflightBefore = counters.read("finalPreflightVisits")
+        const inlineResolutionBefore = counters.read("finalResolutionVisits")
+        root.txn(transaction => {
+            transaction.set(inlineLeft, 1)
+            transaction.set(inlineRight, 2)
+        })
+        expect(root.get(inlineLeft)).toBe(1)
+        expect(root.get(inlineRight)).toBe(2)
+        expect(counters.read("draftStorageAllocations")).toBe(
+            inlineDraftStorageBefore,
+        )
+        expect(counters.read("commitWorksetAllocations")).toBe(
+            inlineCommitWorksetsBefore,
+        )
+        expect(
+            counters.read("finalPreflightVisits") - inlinePreflightBefore,
+        ).toBe(2)
+        expect(
+            counters.read("finalResolutionVisits") - inlineResolutionBefore,
+        ).toBe(2)
 
         const scratchHostsBefore = counters.read("scratchHostAllocations")
         const scratchMapsBefore = counters.read("scratchMapAllocations")
@@ -977,9 +1008,10 @@ describe("v1 scope-keyed committed StoreTree host", () => {
         expect(child.get(failed)).toBe(7)
     })
 
-    test("matches direct scoped operations with equivalent one-intent transactions", () => {
+    test("matches direct scoped operations with equivalent one- and two-intent transactions", () => {
         const domain = createCommittedStoreTreeDomain()
         const count = domain.atom(1)
+        const paired = domain.atom(2)
         const root = domain.createStoreTree()
         const direct = root.scope("direct")
         const transactional = root.scope("transactional")
@@ -1015,6 +1047,16 @@ describe("v1 scope-keyed committed StoreTree host", () => {
         ).toBeUndefined()
         expectSame()
         expect(direct.get(count)).toBe(1)
+
+        direct.set(count, 7)
+        direct.set(paired, 9)
+        root.txn(transaction => {
+            const cursor = transaction.scope(transactional)
+            cursor.set(count, 7)
+            cursor.set(paired, 9)
+        })
+        expectSame()
+        expect(direct.get(paired)).toBe(transactional.get(paired))
     })
 
     test("shares one tree fallback across scopes while draft-only and scratch work stays disposable", () => {

@@ -30,7 +30,7 @@ const thrownBy = (operation: () => unknown): unknown => {
 }
 
 describe("v1 root-only TreeTransaction", () => {
-    test("keeps the first draft coordinate scalar and preserves order through promotion and release", () => {
+    test("keeps two same-scope draft coordinates inline and preserves order through promotion and release", () => {
         const scopeA = Object.freeze({ id: "A" }) as unknown as StoreScopeNode
         const scopeB = Object.freeze({ id: "B" }) as unknown as StoreScopeNode
         const atomX = Object.freeze({ id: "x" }) as unknown as AnyAtom
@@ -122,11 +122,25 @@ describe("v1 root-only TreeTransaction", () => {
         sameScopeDraft.stage(scopeA, setIntent(atomX, "first"))
         sameScopeDraft.setAtomBaseline(scopeA, atomZ, replacementBaseline)
         sameScopeDraft.stage(scopeA, setIntent(atomZ, "second"))
-        expect(sameScopeAllocations).toBe(2)
+        sameScopeDraft.setAtomBaseline(scopeA, atomZ, baseline)
+        expect(sameScopeAllocations).toBe(0)
+        expect(sameScopeDraft.singleIntent).toBeUndefined()
         expect(sameScopeDraft.getAtomBaseline(scopeA, atomX)).toBe(baseline)
         expect(sameScopeDraft.getAtomBaseline(scopeA, atomZ)).toBe(
             replacementBaseline,
         )
+        const inlineOrder: [StoreScopeNode, AnyAtom, unknown][] = []
+        sameScopeDraft.forEachIntent((scope, intent) => {
+            inlineOrder.push([
+                scope,
+                intent.atom,
+                intent.kind === "set" ? intent.value : undefined,
+            ])
+        })
+        expect(inlineOrder).toEqual([
+            [scopeA, atomX, "first"],
+            [scopeA, atomZ, "second"],
+        ])
         sameScopeDraft.setAtomBaseline(scopeB, atomY, baseline)
         sameScopeDraft.stage(scopeB, setIntent(atomY, "third"))
         sameScopeDraft.setAtomBaseline(scopeA, atomX, replacementBaseline)
@@ -154,6 +168,46 @@ describe("v1 root-only TreeTransaction", () => {
         expect(sameScopeDraft.getAtomBaseline(scopeA, atomX)).toBeUndefined()
         expect(sameScopeDraft.getAtomBaseline(scopeA, atomZ)).toBeUndefined()
         expect(sameScopeDraft.getAtomBaseline(scopeB, atomY)).toBeUndefined()
+
+        let thirdSameScopeAllocations = 0
+        const thirdSameScopeDraft = new TreeDraft(
+            () => thirdSameScopeAllocations++,
+        )
+        thirdSameScopeDraft.setAtomBaseline(scopeA, atomX, baseline)
+        thirdSameScopeDraft.stage(scopeA, setIntent(atomX, "first"))
+        thirdSameScopeDraft.setAtomBaseline(scopeA, atomZ, replacementBaseline)
+        thirdSameScopeDraft.stage(scopeA, setIntent(atomZ, "second"))
+        expect(thirdSameScopeAllocations).toBe(0)
+        thirdSameScopeDraft.setAtomBaseline(scopeA, atomY, baseline)
+        thirdSameScopeDraft.stage(scopeA, setIntent(atomY, "third"))
+        thirdSameScopeDraft.setAtomBaseline(scopeA, atomZ, baseline)
+        thirdSameScopeDraft.stage(
+            scopeA,
+            setIntent(atomZ, "second-replacement"),
+        )
+        const thirdSameScopeOrder: [StoreScopeNode, AnyAtom, unknown][] = []
+        thirdSameScopeDraft.forEachIntent((scope, intent) => {
+            thirdSameScopeOrder.push([
+                scope,
+                intent.atom,
+                intent.kind === "set" ? intent.value : undefined,
+            ])
+        })
+        expect(thirdSameScopeOrder).toEqual([
+            [scopeA, atomX, "first"],
+            [scopeA, atomZ, "second-replacement"],
+            [scopeA, atomY, "third"],
+        ])
+        expect(thirdSameScopeAllocations).toBe(2)
+        expect(thirdSameScopeDraft.getAtomBaseline(scopeA, atomZ)).toBe(
+            replacementBaseline,
+        )
+        thirdSameScopeDraft.release()
+        expect(thirdSameScopeDraft.hasIntents).toBe(false)
+        expect(thirdSameScopeDraft.getIntent(scopeA, atomZ)).toBeUndefined()
+        expect(
+            thirdSameScopeDraft.getAtomBaseline(scopeA, atomZ),
+        ).toBeUndefined()
 
         const scalarDraft = new TreeDraft()
         scalarDraft.setAtomBaseline(scopeA, atomX, baseline)
