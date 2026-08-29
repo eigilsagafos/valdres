@@ -156,18 +156,15 @@ class CommittedStoreTreeHost
     }
 
     set<Value>(atom: Atom<Value>, value: Value): void {
-        const draft = new TreeDraft()
-        try {
-            const node = atom as unknown as AnyAtom
-            const session = new SelectorEvaluationSession<AnyState>()
-            this.#validateDirectAtom(node, session, "StoreTree.set")
-            this.#stageAtomSet(draft, node, value, session)
-        } catch (error) {
-            draft.close()
-            throw error
-        }
-        draft.close()
-        this.#commitDraft(draft)
+        this.#runDirectAtomIntent(atom, "StoreTree.set", "set", value)
+    }
+
+    update<Value>(atom: Atom<Value>, update: AtomUpdater<Value>): void {
+        this.#runDirectAtomIntent(atom, "StoreTree.update", "update", update)
+    }
+
+    reset<Value>(atom: Atom<Value>): void {
+        this.#runDirectAtomIntent(atom, "StoreTree.reset", "reset")
     }
 
     txn<Result>(callback: TransactionCallback<Result>): Result {
@@ -258,20 +255,13 @@ class CommittedStoreTreeHost
             session,
             "Transaction.update",
         )
-        if (typeof update !== "function") {
-            throw new TypeError(
-                "Transaction.update requires an updater function",
-            )
-        }
-
-        const current = this.#readDraftAtomOutcome(draft, node, session)
-        if (current.kind !== "value") throw current.error
-        const candidate = this.#runAtomUpdater(
+        this.#stageAtomUpdate(
+            draft,
+            node,
             update as (current: unknown) => unknown,
-            current.value,
             session,
+            "Transaction.update",
         )
-        this.#stageAtomSet(draft, node, candidate, session)
     }
 
     transactionReset<Value>(draft: TreeDraft, atom: Atom<Value>): void {
@@ -403,6 +393,38 @@ class CommittedStoreTreeHost
         this.#assertAtomKind(atom, ownerStatus, operation)
     }
 
+    #runDirectAtomIntent<Value>(
+        atom: Atom<Value>,
+        operation: string,
+        intent: "set" | "update" | "reset",
+        input?: unknown,
+    ): void {
+        const draft = new TreeDraft()
+        try {
+            const node = atom as unknown as AnyAtom
+            const session = new SelectorEvaluationSession<AnyState>()
+            this.#validateDirectAtom(node, session, operation)
+            if (intent === "set") {
+                this.#stageAtomSet(draft, node, input, session)
+            } else if (intent === "update") {
+                this.#stageAtomUpdate(
+                    draft,
+                    node,
+                    input as (current: unknown) => unknown,
+                    session,
+                    operation,
+                )
+            } else {
+                this.#stageAtomReset(draft, node, session)
+            }
+        } catch (error) {
+            draft.close()
+            throw error
+        }
+        draft.close()
+        this.#commitDraft(draft)
+    }
+
     #validateTransactionAtom(
         draft: TreeDraft,
         atom: AnyAtom,
@@ -458,6 +480,23 @@ class CommittedStoreTreeHost
                     baseline.reachesFallback && draft.fallbackMemo.has(atom),
             }),
         )
+    }
+
+    #stageAtomUpdate(
+        draft: TreeDraft,
+        atom: AnyAtom,
+        update: (current: unknown) => unknown,
+        session: SelectorEvaluationSession<AnyState>,
+        operation: string,
+    ): void {
+        if (typeof update !== "function") {
+            throw new TypeError(`${operation} requires an updater function`)
+        }
+
+        const current = this.#readDraftAtomOutcome(draft, atom, session)
+        if (current.kind !== "value") throw current.error
+        const candidate = this.#runAtomUpdater(update, current.value, session)
+        this.#stageAtomSet(draft, atom, candidate, session)
     }
 
     #stageAtomReset(
@@ -837,6 +876,14 @@ class CommittedStoreTreeFacade implements CommittedStoreTree {
 
     set<Value>(atom: Atom<Value>, value: Value): void {
         this.#host.set(atom, value)
+    }
+
+    update<Value>(atom: Atom<Value>, update: AtomUpdater<Value>): void {
+        this.#host.update(atom, update)
+    }
+
+    reset<Value>(atom: Atom<Value>): void {
+        this.#host.reset(atom)
     }
 
     txn<Result>(callback: TransactionCallback<Result>): Result {

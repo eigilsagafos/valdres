@@ -50,6 +50,8 @@ export type TransactionCallback<Result> = (
 export interface CommittedStoreTree {
     get<Value>(state: State<Value>): Value
     set<Value>(atom: Atom<Value>, value: Value): void
+    update<Value>(atom: Atom<Value>, update: AtomUpdater<Value>): void
+    reset<Value>(atom: Atom<Value>): void
     txn<Result>(callback: TransactionCallback<Result>): Result
 }
 
