@@ -7,6 +7,12 @@ cannot run in this workspace, and the sparse October 2024 snapshot under
 Return one provenance-stamped report and the exact commands/output needed to
 reproduce it. Do not copy proprietary ShiftX source into Valdres.
 
+The completion evidence must point to that report and record its SHA-256. It
+must also record `verdict: pass`; metadata without the report artifact cannot
+open the Valdres contract gate. Copy only the non-proprietary report into the
+Valdres workspace. Ordinary Valdres CI verifies the reviewed report bytes and
+does not require the private ShiftX checkout to be present.
+
 ## Provenance header
 
 Record:

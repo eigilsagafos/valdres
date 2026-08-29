@@ -18,13 +18,26 @@ import { fileURLToPath } from "node:url"
 import ts from "typescript"
 
 type Completeness = "partial" | "complete"
-type DecisionStatus = "approved" | "pending-experiment" | "evidence-required"
+type DecisionStatus =
+    | "approved"
+    | "pending-review"
+    | "pending-experiment"
+    | "evidence-required"
 type Disposition = "A" | "B" | "C" | "D" | "E"
 type ResultPolicy = "value-may-be-undefined" | "value-must-not-be-undefined"
+type LegacyKind =
+    | "runtime-export"
+    | "type-export"
+    | "property"
+    | "method"
+    | "overload"
+    | "option"
 
 interface LegacySurface {
+    readonly kind: LegacyKind
     readonly package: string
     readonly subpath: string
+    readonly owner?: string
     readonly name: string
     readonly baseline: string
 }
@@ -70,12 +83,47 @@ interface PublicManifest {
     readonly schemaVersion: 1
     readonly completeness: Completeness
     readonly generatedAgainst: {
-        readonly workspace: { readonly commit: string }
+        readonly workspace: {
+            readonly commit: string
+            readonly packageVersion: string
+        }
         readonly frozenLegacy: {
+            readonly packageVersion: string
+            readonly npmSpec: string
+            readonly registryTarball: string
             readonly integrity: string
             readonly sha256: string
+            readonly localAuditPath: string
         }
-        readonly currentShiftX: { readonly status: string }
+        readonly currentShiftX:
+            | {
+                  readonly status: "external-handoff-required" | "available"
+                  readonly notes: string
+              }
+            | {
+                  readonly status: "complete"
+                  readonly notes: string
+                  readonly evidence: {
+                      readonly verdict: "pass"
+                      readonly remote: string
+                      readonly branch: string
+                      readonly commit: string
+                      readonly dirty: false
+                      readonly lockfile: {
+                          readonly path: string
+                          readonly sha256: string
+                      }
+                      readonly packedArtifact: {
+                          readonly path: string
+                          readonly sha256: string
+                      }
+                      readonly report: {
+                          readonly path: string
+                          readonly sha256: string
+                      }
+                      readonly checkedPaths: readonly string[]
+                  }
+              }
     }
     readonly entries: readonly PublicEntry[]
 }
@@ -102,6 +150,7 @@ interface ContractCatalog {
 
 interface FrozenPublicCoordinate {
     readonly id: string
+    readonly kind: PublicEntry["kind"]
     readonly package: string
     readonly subpath: string
     readonly name: string
@@ -114,6 +163,16 @@ interface TargetSurfaceCatalog {
     readonly callbackIds: readonly string[]
     readonly independentBetaPublicApiIds: readonly string[]
     readonly frozenPublicCoordinates: readonly FrozenPublicCoordinate[]
+    readonly pendingSurfaceDecisions: readonly {
+        readonly id: string
+        readonly category:
+            | "alias-exports"
+            | "query-grammar"
+            | "adapter-protocol"
+            | "error-names"
+            | "option-spellings"
+        readonly status: "pending"
+    }[]
 }
 
 interface FrozenLegacyEntrypoint {
@@ -122,16 +181,71 @@ interface FrozenLegacyEntrypoint {
     readonly typeExports: readonly string[]
 }
 
-interface FrozenLegacySurface {
-    readonly schemaVersion: 1
-    readonly package: string
-    readonly baseline: string
-    readonly entrypoints: readonly FrozenLegacyEntrypoint[]
+interface FrozenLegacyMember {
+    readonly kind: "property" | "method" | "overload"
+    readonly subpath: string
+    readonly owner: string
+    readonly name: string
 }
 
-interface FrozenLegacyCoordinates {
-    readonly runtime: ReadonlySet<string>
-    readonly types: ReadonlySet<string>
+interface FrozenLegacyOption {
+    readonly kind: "option"
+    readonly subpath: string
+    readonly owner: string
+    readonly name: string
+}
+
+interface FrozenLegacyBlob {
+    readonly path: string
+    readonly gitBlobSha1: string
+}
+
+interface FrozenLegacyPackage {
+    readonly package: string
+    readonly baseline: string
+    readonly provenance: {
+        readonly sourceRevision: string
+        readonly releaseRevision: string
+        readonly sourcePackageTreeSha1: string
+        readonly releasePackageTreeSha1: string
+        readonly sourceTreeSha1: string
+        readonly sourcePackageJsonBlobSha1: string
+        readonly releasePackageJsonBlobSha1: string
+        readonly entrypointBlobs: readonly (FrozenLegacyBlob & {
+            readonly subpath: string
+        })[]
+        readonly surfaceBlobs: readonly FrozenLegacyBlob[]
+        readonly publishedArtifact:
+            | {
+                  readonly status: "verified"
+                  readonly npmSpec: string
+                  readonly integrity: string
+                  readonly sha256: string
+              }
+            | {
+                  readonly status: "not-audited"
+                  readonly notes: string
+              }
+    }
+    readonly entrypoints: readonly FrozenLegacyEntrypoint[]
+    readonly members: readonly FrozenLegacyMember[]
+    readonly options: readonly FrozenLegacyOption[]
+}
+
+interface FrozenLegacySurface {
+    readonly schemaVersion: 2
+    readonly packages: readonly FrozenLegacyPackage[]
+}
+
+interface LegacyDispositionEntry {
+    readonly coordinate: LegacySurface
+    readonly dispositionId: string
+    readonly reviewStatus: "proposed" | "approved"
+}
+
+interface LegacyDispositionCatalog {
+    readonly schemaVersion: 1
+    readonly entries: readonly LegacyDispositionEntry[]
 }
 
 interface TestDispositionHeader {
@@ -216,6 +330,10 @@ interface FrozenTestInventory {
         readonly version: "1.0.0-beta.23"
     }
     readonly provenance: {
+        readonly publishedPackage: {
+            readonly npmSpec: string
+            readonly tarballSha256: string
+        }
         readonly testRegistration: {
             readonly files: number
             readonly registeredFiles: number
@@ -258,6 +376,7 @@ export interface ContractSet {
     readonly callbackManifest: unknown
     readonly contractCatalog: unknown
     readonly frozenLegacySurface: unknown
+    readonly legacyDispositionCatalog: unknown
     readonly targetSurfaceCatalog: unknown
     readonly testDispositionLedger: unknown
     readonly testDispositionInventoryEvidence?: TestDispositionInventoryEvidence | null
@@ -282,6 +401,9 @@ const validateCatalog = compileSchema(
 )
 const validateFrozenLegacySurface = compileSchema(
     join(schemasDirectory, "frozen-legacy-surface.schema.json"),
+)
+const validateLegacyDispositionCatalog = compileSchema(
+    join(schemasDirectory, "legacy-disposition-catalog.schema.json"),
 )
 const validateTargetSurfaceCatalog = compileSchema(
     join(schemasDirectory, "target-surface-catalog.schema.json"),
@@ -348,7 +470,29 @@ const requiredKinds = new Set<PublicEntry["kind"]>([
     "error",
 ])
 const independentBetaOwner = "independent-beta"
-const frozenLegacySubpaths = new Set([".", "./adapter-internals/v1"])
+const gitCoordinateCache = new Map<string, string>()
+const frozenLegacyCoordinateInventorySha256 =
+    "3d661c9b3ea5cb5e53202fc87c11aff36663abf269e5592701563170eeab986c"
+const frozenLegacyProvenanceInventorySha256 =
+    "5b01eda652cf7f3e281cc0b832eda76157d2939c9997dfc51eb6186b558e3f06"
+const frozenReviewedLegacyDispositionSha256 =
+    "e8a2097a3d88c2208575d1cc5384d149db29de4d22b48714173c5c68fe99ccc4"
+const frozenTargetCoordinateInventorySha256 =
+    "a2ad677a99d335fccc4948d07dee9c12da8474aea9f80683e03e3c96205b5fb5"
+const frozenReleaseTrackOwnershipSha256 =
+    "f8b85a9a29f7310eca51fb858586d2e65ec1a8908e1db93895df79133e99b682"
+const frozenWorkspaceBaseline = Object.freeze({
+    commit: "ff1424bde13445eba07fcb426f5493dd43898f72",
+    packageVersion: "1.0.0-beta.22",
+})
+// Current ShiftX is not available in this workspace. An external handoff may
+// populate this only after its evidence payload has been independently
+// reviewed. Until then, no inline manifest payload can open completion.
+const frozenReviewedCurrentShiftXEvidenceSha256: string | null = null
+const frozenLegacySubpaths = new Map([
+    ["valdres", new Set([".", "./adapter-internals/v1"])],
+    ["valdres-react", new Set(["."])],
+] as const)
 const requiredFrozenPublicCoordinates = new Map([
     [
         "collection.artifact-export",
@@ -430,6 +574,11 @@ export function validateContractSet(input: ContractSet): Readonly<{
         "frozen-legacy-surface.json",
     )
     assertSchema(
+        validateLegacyDispositionCatalog,
+        input.legacyDispositionCatalog,
+        "legacy-disposition-catalog.json",
+    )
+    assertSchema(
         validateTargetSurfaceCatalog,
         input.targetSurfaceCatalog,
         "target-surface-catalog.json",
@@ -444,17 +593,31 @@ export function validateContractSet(input: ContractSet): Readonly<{
     const callbackManifest = input.callbackManifest as CallbackManifest
     const contractCatalog = input.contractCatalog as ContractCatalog
     const frozenLegacySurface = input.frozenLegacySurface as FrozenLegacySurface
+    const legacyDispositionCatalog =
+        input.legacyDispositionCatalog as LegacyDispositionCatalog
     const targetSurfaceCatalog =
         input.targetSurfaceCatalog as TargetSurfaceCatalog
     const testDispositionLedger =
         input.testDispositionLedger as TestDispositionLedger
 
-    assertFrozenLegacyEntrypoints(frozenLegacySurface)
+    assertFrozenLegacySurface(frozenLegacySurface)
+    const frozenCorePublishedArtifact = assertFrozenLegacyPublicArtifact(
+        publicManifest,
+        frozenLegacySurface,
+    )
 
     assert(
         /^[0-9a-f]{40}$/.test(publicManifest.generatedAgainst.workspace.commit),
         "workspace commit must be a full Git SHA",
     )
+    assert(
+        publicManifest.generatedAgainst.workspace.commit ===
+            frozenWorkspaceBaseline.commit &&
+            publicManifest.generatedAgainst.workspace.packageVersion ===
+                frozenWorkspaceBaseline.packageVersion,
+        "workspace baseline differs from the independently pinned recovery input",
+    )
+    assertWorkspaceBaseline()
     assert(
         /^[0-9a-f]{64}$/.test(
             publicManifest.generatedAgainst.frozenLegacy.sha256,
@@ -486,6 +649,10 @@ export function validateContractSet(input: ContractSet): Readonly<{
         targetSurfaceCatalog.independentBetaPublicApiIds,
         "independent beta public API",
     )
+    uniqueIds(
+        targetSurfaceCatalog.pendingSurfaceDecisions,
+        "pending target surface decision",
+    )
     assertContainsAll(
         targetPublicIds,
         independentBetaPublicIds,
@@ -501,12 +668,24 @@ export function validateContractSet(input: ContractSet): Readonly<{
         catalogIds,
         input.testDispositionInventoryEvidence ?? null,
         input.testOwnerEvidence ?? null,
+        frozenCorePublishedArtifact,
     )
     assertExactSet(publicIds, targetPublicIds, "public API target catalog")
     assertExactSet(callbackIds, targetCallbackIds, "callback target catalog")
     const frozenLegacyCoordinates = collectFrozenLegacyCoordinates(
         publicManifest,
         frozenLegacySurface,
+    )
+    assertLegacyDispositionCatalog(
+        publicManifest.entries,
+        publicIds,
+        expectedFrozenLegacyCoordinates(frozenLegacySurface),
+        legacyDispositionCatalog,
+    )
+    assertFrozenReleaseTrackOwnership(
+        publicManifest,
+        callbackManifest,
+        targetSurfaceCatalog,
     )
 
     for (const entry of publicManifest.entries) {
@@ -539,6 +718,12 @@ export function validateContractSet(input: ContractSet): Readonly<{
         }
     }
 
+    if (publicManifest.generatedAgainst.currentShiftX.status === "complete") {
+        assertReviewedCurrentShiftXEvidence(
+            publicManifest.generatedAgainst.currentShiftX.evidence,
+        )
+    }
+
     const completeness = [
         publicManifest.completeness,
         callbackManifest.completeness,
@@ -556,6 +741,8 @@ export function validateContractSet(input: ContractSet): Readonly<{
             contractCatalog,
             frozenLegacySurface,
             frozenLegacyCoordinates,
+            legacyDispositionCatalog,
+            targetSurfaceCatalog,
             independentBetaPublicIds,
         )
     }
@@ -606,6 +793,17 @@ function assertFrozenPublicCoordinates(
     const publicEntriesById = new Map(
         publicEntries.map(entry => [entry.id, entry] as const),
     )
+    for (const entry of publicEntries) {
+        if (
+            entry.decisionStatus === "approved" &&
+            ["stable", "experimental", "internal"].includes(entry.target.status)
+        ) {
+            assert(
+                coordinatesById.has(entry.id),
+                `${entry.id} has an approved ${entry.target.status} target absent from the independent target coordinate catalog`,
+            )
+        }
+    }
     for (const coordinate of coordinates) {
         const entry = publicEntriesById.get(coordinate.id)
         assert(
@@ -614,14 +812,81 @@ function assertFrozenPublicCoordinates(
         )
         const target = entry.target
         assert(
-            target.package === coordinate.package &&
+            entry.kind === coordinate.kind &&
+                target.package === coordinate.package &&
                 target.subpath === coordinate.subpath &&
                 target.name === coordinate.name,
             `${coordinate.id} target coordinate differs from the frozen target catalog` +
-                `; expected ${coordinate.package}:${coordinate.subpath}:${coordinate.name}` +
-                `; received ${String(target.package)}:${String(target.subpath)}:${String(target.name)}`,
+                `; expected ${coordinate.kind}:${coordinate.package}:${coordinate.subpath}:${coordinate.name}` +
+                `; received ${entry.kind}:${String(target.package)}:${String(target.subpath)}:${String(target.name)}`,
         )
     }
+    const inventorySha256 = createHash("sha256")
+        .update(
+            coordinates
+                .map(coordinate =>
+                    JSON.stringify([
+                        coordinate.id,
+                        coordinate.kind,
+                        coordinate.package,
+                        coordinate.subpath,
+                        coordinate.name,
+                    ]),
+                )
+                .sort()
+                .join("\n") + "\n",
+        )
+        .digest("hex")
+    assert(
+        inventorySha256 === frozenTargetCoordinateInventorySha256,
+        "frozen target coordinate inventory differs from the independently pinned digest" +
+            `; expected ${frozenTargetCoordinateInventorySha256}; received ${inventorySha256}`,
+    )
+}
+
+function assertFrozenReleaseTrackOwnership(
+    publicManifest: PublicManifest,
+    callbackManifest: CallbackManifest,
+    targetSurfaceCatalog: TargetSurfaceCatalog,
+): void {
+    const ownershipSha256 = createHash("sha256")
+        .update(
+            JSON.stringify({
+                publicEntries: publicManifest.entries
+                    .map(entry =>
+                        JSON.stringify([
+                            entry.id,
+                            entry.owner,
+                            entry.target.status,
+                        ]),
+                    )
+                    .sort(),
+                callbackEntries: callbackManifest.entries
+                    .map(entry => JSON.stringify([entry.id, entry.apiEntryId]))
+                    .sort(),
+                publicApiIds: [...targetSurfaceCatalog.publicApiIds].sort(),
+                callbackIds: [...targetSurfaceCatalog.callbackIds].sort(),
+                independentBetaPublicApiIds: [
+                    ...targetSurfaceCatalog.independentBetaPublicApiIds,
+                ].sort(),
+                pendingSurfaceDecisions:
+                    targetSurfaceCatalog.pendingSurfaceDecisions
+                        .map(decision =>
+                            JSON.stringify([
+                                decision.id,
+                                decision.category,
+                                decision.status,
+                            ]),
+                        )
+                        .sort(),
+            }) + "\n",
+        )
+        .digest("hex")
+    assert(
+        ownershipSha256 === frozenReleaseTrackOwnershipSha256,
+        "reviewed release-track ownership differs from the independently pinned digest" +
+            `; expected ${frozenReleaseTrackOwnershipSha256}; received ${ownershipSha256}`,
+    )
 }
 
 function assertTestDispositionLedger(
@@ -629,6 +894,10 @@ function assertTestDispositionLedger(
     catalogIds: ReadonlySet<string>,
     inventoryEvidence: TestDispositionInventoryEvidence | null,
     testOwnerEvidence: readonly TestOwnerEvidence[] | null,
+    frozenCorePublishedArtifact: Readonly<{
+        npmSpec: string
+        sha256: string
+    }>,
 ): Readonly<{
     testDispositions: number
     testDispositionCounts: Readonly<Record<Disposition, number>>
@@ -775,6 +1044,7 @@ function assertTestDispositionLedger(
                   dispositionIds,
                   inventoryEvidence,
                   header.classificationScope,
+                  frozenCorePublishedArtifact,
               )
             : null
     if (header.inventory.status !== "frozen") {
@@ -935,6 +1205,10 @@ function assertFrozenTestInventory(
     dispositionIds: ReadonlySet<string>,
     evidence: TestDispositionInventoryEvidence | null,
     classificationScope: TestDispositionHeader["classificationScope"],
+    frozenCorePublishedArtifact: Readonly<{
+        npmSpec: string
+        sha256: string
+    }>,
 ): Readonly<{
     subjects: number
     scopeSubjects: number
@@ -978,6 +1252,13 @@ function assertFrozenTestInventory(
     }
     assertSchema(validateFrozenTestInventory, parsed, frozen.catalogPath)
     const inventory = parsed as FrozenTestInventory
+    assert(
+        inventory.provenance.publishedPackage.npmSpec ===
+            frozenCorePublishedArtifact.npmSpec &&
+            inventory.provenance.publishedPackage.tarballSha256 ===
+                frozenCorePublishedArtifact.sha256,
+        "frozen test inventory published package differs from the frozen legacy artifact",
+    )
     uniqueIds(inventory.entries, "frozen test inventory")
     const inventoryTestSubjectIds = new Set(
         inventory.entries
@@ -1126,14 +1407,129 @@ function subjectCoordinate(subject: TestSubject): string {
     ])
 }
 
-function assertFrozenLegacyEntrypoints(
+function assertFrozenLegacySurface(
     frozenLegacySurface: FrozenLegacySurface,
 ): void {
-    const subpaths = uniqueCoordinates(
-        frozenLegacySurface.entrypoints.map(entrypoint => entrypoint.subpath),
-        "frozen legacy subpath",
+    const packageNames = uniqueCoordinates(
+        frozenLegacySurface.packages.map(
+            frozenPackage => frozenPackage.package,
+        ),
+        "frozen legacy package",
     )
-    assertExactSet(subpaths, frozenLegacySubpaths, "frozen legacy subpath")
+    assertExactSet(
+        packageNames,
+        new Set(frozenLegacySubpaths.keys()),
+        "frozen legacy package",
+    )
+
+    for (const frozenPackage of frozenLegacySurface.packages) {
+        const expectedSubpaths = frozenLegacySubpaths.get(
+            frozenPackage.package as "valdres" | "valdres-react",
+        )!
+        const subpaths = uniqueCoordinates(
+            frozenPackage.entrypoints.map(entrypoint => entrypoint.subpath),
+            `${frozenPackage.package} frozen legacy subpath`,
+        )
+        assertExactSet(
+            subpaths,
+            expectedSubpaths,
+            `${frozenPackage.package} frozen legacy subpath`,
+        )
+        assertFrozenLegacyGitProvenance(frozenPackage)
+    }
+
+    const coordinates = expectedFrozenLegacyCoordinates(frozenLegacySurface)
+    const inventorySha256 = createHash("sha256")
+        .update([...coordinates].sort().join("\n") + "\n")
+        .digest("hex")
+    assert(
+        inventorySha256 === frozenLegacyCoordinateInventorySha256,
+        "frozen legacy coordinate inventory differs from the independently pinned digest" +
+            `; expected ${frozenLegacyCoordinateInventorySha256}; received ${inventorySha256}`,
+    )
+
+    const provenanceSha256 = createHash("sha256")
+        .update(
+            frozenLegacySurface.packages
+                .map(frozenPackage => {
+                    const { provenance } = frozenPackage
+                    const publishedArtifact =
+                        provenance.publishedArtifact.status === "verified"
+                            ? JSON.stringify([
+                                  provenance.publishedArtifact.status,
+                                  provenance.publishedArtifact.npmSpec,
+                                  provenance.publishedArtifact.integrity,
+                                  provenance.publishedArtifact.sha256,
+                              ])
+                            : JSON.stringify([
+                                  provenance.publishedArtifact.status,
+                                  provenance.publishedArtifact.notes,
+                              ])
+                    return JSON.stringify([
+                        frozenPackage.package,
+                        frozenPackage.baseline,
+                        provenance.sourceRevision,
+                        provenance.releaseRevision,
+                        provenance.sourcePackageTreeSha1,
+                        provenance.releasePackageTreeSha1,
+                        provenance.sourceTreeSha1,
+                        provenance.sourcePackageJsonBlobSha1,
+                        provenance.releasePackageJsonBlobSha1,
+                        provenance.entrypointBlobs
+                            .map(blob =>
+                                JSON.stringify([
+                                    blob.subpath,
+                                    blob.path,
+                                    blob.gitBlobSha1,
+                                ]),
+                            )
+                            .sort(),
+                        provenance.surfaceBlobs
+                            .map(blob =>
+                                JSON.stringify([blob.path, blob.gitBlobSha1]),
+                            )
+                            .sort(),
+                        publishedArtifact,
+                    ])
+                })
+                .sort()
+                .join("\n") + "\n",
+        )
+        .digest("hex")
+    assert(
+        provenanceSha256 === frozenLegacyProvenanceInventorySha256,
+        "frozen legacy provenance inventory differs from the independently pinned digest" +
+            `; expected ${frozenLegacyProvenanceInventorySha256}; received ${provenanceSha256}`,
+    )
+}
+
+function assertFrozenLegacyPublicArtifact(
+    publicManifest: PublicManifest,
+    frozenLegacySurface: FrozenLegacySurface,
+): Readonly<{ npmSpec: string; sha256: string }> {
+    const frozenCore = frozenLegacySurface.packages.find(
+        frozenPackage => frozenPackage.package === "valdres",
+    )
+    assert(frozenCore !== undefined, "frozen legacy core package is missing")
+    const artifact = frozenCore.provenance.publishedArtifact
+    assert(
+        artifact.status === "verified",
+        "frozen legacy core package requires a verified published artifact",
+    )
+    const declared = publicManifest.generatedAgainst.frozenLegacy
+    const expectedRegistryTarball = `https://registry.npmjs.org/valdres/-/valdres-${frozenCore.baseline}.tgz`
+    assert(
+        declared.packageVersion === frozenCore.baseline &&
+            declared.npmSpec === artifact.npmSpec &&
+            declared.registryTarball === expectedRegistryTarball &&
+            declared.integrity === artifact.integrity &&
+            declared.sha256 === artifact.sha256,
+        "public manifest frozen legacy artifact differs from the independently pinned legacy provenance",
+    )
+    return Object.freeze({
+        npmSpec: artifact.npmSpec,
+        sha256: artifact.sha256,
+    })
 }
 
 function assertComplete(
@@ -1141,7 +1537,9 @@ function assertComplete(
     callbackManifest: CallbackManifest,
     contractCatalog: ContractCatalog,
     frozenLegacySurface: FrozenLegacySurface,
-    frozenLegacyCoordinates: FrozenLegacyCoordinates,
+    frozenLegacyCoordinates: ReadonlySet<string>,
+    legacyDispositionCatalog: LegacyDispositionCatalog,
+    targetSurfaceCatalog: TargetSurfaceCatalog,
     independentBetaPublicIds: ReadonlySet<string>,
 ): void {
     const stablePublicEntries = publicManifest.entries.filter(
@@ -1183,6 +1581,10 @@ function assertComplete(
         "a complete public manifest requires current ShiftX evidence",
     )
     assert(
+        targetSurfaceCatalog.pendingSurfaceDecisions.length === 0,
+        "a complete target surface catalog cannot contain pending spelling decisions",
+    )
+    assert(
         stableCallbackEntries.every(
             entry => entry.decisionStatus === "approved",
         ),
@@ -1205,15 +1607,27 @@ function assertComplete(
         "public API kind",
     )
 
+    const expectedLegacyCoordinates =
+        expectedFrozenLegacyCoordinates(frozenLegacySurface)
     assertExactSet(
-        frozenLegacyCoordinates.runtime,
-        expectedFrozenLegacyCoordinates("runtime-export", frozenLegacySurface),
-        "frozen legacy runtime export",
+        frozenLegacyCoordinates,
+        expectedLegacyCoordinates,
+        "frozen legacy coordinate",
     )
     assertExactSet(
-        frozenLegacyCoordinates.types,
-        expectedFrozenLegacyCoordinates("type-export", frozenLegacySurface),
-        "frozen legacy type export",
+        new Set(
+            legacyDispositionCatalog.entries.map(entry =>
+                legacyCoordinate(entry.coordinate),
+            ),
+        ),
+        expectedLegacyCoordinates,
+        "reviewed legacy disposition",
+    )
+    assert(
+        legacyDispositionCatalog.entries.every(
+            entry => entry.reviewStatus === "approved",
+        ),
+        "a complete public manifest requires approved legacy disposition ownership",
     )
 
     const referencedContracts = new Set([
@@ -1230,69 +1644,352 @@ function assertComplete(
 function collectFrozenLegacyCoordinates(
     publicManifest: PublicManifest,
     frozenLegacySurface: FrozenLegacySurface,
-): FrozenLegacyCoordinates {
-    const runtime: string[] = []
-    const types: string[] = []
-    const frozenSubpaths = new Set(
-        frozenLegacySurface.entrypoints.map(entrypoint => entrypoint.subpath),
-    )
+): ReadonlySet<string> {
+    const coordinates: string[] = []
+    const expected = expectedFrozenLegacyCoordinates(frozenLegacySurface)
 
     for (const entry of publicManifest.entries) {
-        if (entry.kind !== "runtime-export" && entry.kind !== "type-export") {
-            continue
-        }
         for (const surface of entry.legacy) {
-            if (
-                surface.package !== frozenLegacySurface.package ||
-                !frozenSubpaths.has(surface.subpath) ||
-                surface.baseline !== frozenLegacySurface.baseline
-            ) {
-                continue
-            }
-            const coordinate = legacyCoordinate(entry.kind, surface)
-            if (entry.kind === "runtime-export") runtime.push(coordinate)
-            else types.push(coordinate)
+            assertLegacyCoordinateShape(surface)
+            const coordinate = legacyCoordinate(surface)
+            assert(
+                expected.has(coordinate),
+                `${entry.id} claims a legacy coordinate absent from the frozen inventory: ${coordinate}`,
+            )
+            coordinates.push(coordinate)
         }
     }
 
-    return {
-        runtime: uniqueCoordinates(runtime, "frozen legacy runtime export"),
-        types: uniqueCoordinates(types, "frozen legacy type export"),
-    }
+    return uniqueCoordinates(coordinates, "frozen legacy coordinate")
 }
 
 function expectedFrozenLegacyCoordinates(
-    kind: "runtime-export" | "type-export",
     frozenLegacySurface: FrozenLegacySurface,
 ): ReadonlySet<string> {
-    return new Set(
-        frozenLegacySurface.entrypoints.flatMap(entrypoint =>
-            (kind === "runtime-export"
-                ? entrypoint.runtimeExports
-                : entrypoint.typeExports
-            ).map(name =>
-                legacyCoordinate(kind, {
-                    package: frozenLegacySurface.package,
-                    subpath: entrypoint.subpath,
-                    name,
-                    baseline: frozenLegacySurface.baseline,
+    return uniqueCoordinates(
+        frozenLegacySurface.packages.flatMap(frozenPackage => [
+            ...frozenPackage.entrypoints.flatMap(entrypoint => [
+                ...entrypoint.runtimeExports.map(name =>
+                    legacyCoordinate({
+                        kind: "runtime-export",
+                        package: frozenPackage.package,
+                        subpath: entrypoint.subpath,
+                        name,
+                        baseline: frozenPackage.baseline,
+                    }),
+                ),
+                ...entrypoint.typeExports.map(name =>
+                    legacyCoordinate({
+                        kind: "type-export",
+                        package: frozenPackage.package,
+                        subpath: entrypoint.subpath,
+                        name,
+                        baseline: frozenPackage.baseline,
+                    }),
+                ),
+            ]),
+            ...frozenPackage.members.map(member =>
+                legacyCoordinate({
+                    ...member,
+                    package: frozenPackage.package,
+                    baseline: frozenPackage.baseline,
                 }),
             ),
-        ),
+            ...frozenPackage.options.map(option =>
+                legacyCoordinate({
+                    ...option,
+                    package: frozenPackage.package,
+                    baseline: frozenPackage.baseline,
+                }),
+            ),
+        ]),
+        "frozen legacy coordinate",
     )
 }
 
-function legacyCoordinate(
-    kind: "runtime-export" | "type-export",
-    surface: LegacySurface,
-): string {
+function legacyCoordinate(surface: LegacySurface): string {
     return JSON.stringify([
-        kind,
+        surface.kind,
         surface.package,
         surface.subpath,
+        surface.owner ?? null,
         surface.name,
         surface.baseline,
     ])
+}
+
+function assertLegacyCoordinateShape(surface: LegacySurface): void {
+    const isExport =
+        surface.kind === "runtime-export" || surface.kind === "type-export"
+    assert(
+        isExport
+            ? surface.owner === undefined
+            : isNonblank(surface.owner ?? null),
+        `${surface.kind} legacy coordinate has invalid owner provenance`,
+    )
+}
+
+function assertLegacyDispositionCatalog(
+    publicEntries: readonly PublicEntry[],
+    publicIds: ReadonlySet<string>,
+    frozenCoordinates: ReadonlySet<string>,
+    catalog: LegacyDispositionCatalog,
+): void {
+    const mappings = new Map<string, LegacyDispositionEntry>()
+    const publicEntriesById = new Map(
+        publicEntries.map(entry => [entry.id, entry] as const),
+    )
+    for (const mapping of catalog.entries) {
+        assertLegacyCoordinateShape(mapping.coordinate)
+        const coordinate = legacyCoordinate(mapping.coordinate)
+        assert(
+            frozenCoordinates.has(coordinate),
+            `legacy disposition catalog contains a coordinate absent from the frozen inventory: ${coordinate}`,
+        )
+        assert(
+            !mappings.has(coordinate),
+            `duplicate legacy disposition coordinate: ${coordinate}`,
+        )
+        assert(
+            publicIds.has(mapping.dispositionId),
+            `legacy disposition ${mapping.dispositionId} has no public manifest entry`,
+        )
+        const disposition = publicEntriesById.get(mapping.dispositionId)!
+        assert(
+            disposition.legacy.some(
+                surface => legacyCoordinate(surface) === coordinate,
+            ),
+            `legacy disposition mapping ${coordinate} is missing from ${mapping.dispositionId}`,
+        )
+        mappings.set(coordinate, mapping)
+    }
+
+    for (const entry of publicEntries) {
+        for (const surface of entry.legacy) {
+            const coordinate = legacyCoordinate(surface)
+            const mapping = mappings.get(coordinate)
+            assert(
+                mapping !== undefined,
+                `${entry.id} legacy coordinate has no reviewed disposition mapping: ${coordinate}`,
+            )
+            assert(
+                mapping.dispositionId === entry.id,
+                `${entry.id} claims ${coordinate}, but reviewed disposition ownership belongs to ${mapping.dispositionId}`,
+            )
+        }
+    }
+
+    const reviewedDispositionSha256 = createHash("sha256")
+        .update(
+            catalog.entries
+                .map(mapping =>
+                    JSON.stringify([
+                        mapping.coordinate.kind,
+                        mapping.coordinate.package,
+                        mapping.coordinate.subpath,
+                        mapping.coordinate.owner ?? null,
+                        mapping.coordinate.name,
+                        mapping.coordinate.baseline,
+                        mapping.dispositionId,
+                        mapping.reviewStatus,
+                    ]),
+                )
+                .sort()
+                .join("\n") + "\n",
+        )
+        .digest("hex")
+    assert(
+        reviewedDispositionSha256 === frozenReviewedLegacyDispositionSha256,
+        "reviewed legacy disposition ownership differs from the independently pinned digest" +
+            `; expected ${frozenReviewedLegacyDispositionSha256}; received ${reviewedDispositionSha256}`,
+    )
+}
+
+export function assertReviewedCurrentShiftXEvidence(
+    evidence: Extract<
+        PublicManifest["generatedAgainst"]["currentShiftX"],
+        { readonly status: "complete" }
+    >["evidence"],
+): void {
+    assert(
+        frozenReviewedCurrentShiftXEvidenceSha256 !== null,
+        "current ShiftX evidence has not been independently reviewed and pinned",
+    )
+    const evidenceSha256 = createHash("sha256")
+        .update(
+            JSON.stringify([
+                evidence.verdict,
+                evidence.remote,
+                evidence.branch,
+                evidence.commit,
+                evidence.dirty,
+                [evidence.lockfile.path, evidence.lockfile.sha256],
+                [evidence.packedArtifact.path, evidence.packedArtifact.sha256],
+                [evidence.report.path, evidence.report.sha256],
+                [...evidence.checkedPaths].sort(),
+            ]),
+        )
+        .digest("hex")
+    assert(
+        evidenceSha256 === frozenReviewedCurrentShiftXEvidenceSha256,
+        "current ShiftX evidence differs from the independently reviewed payload" +
+            `; expected ${frozenReviewedCurrentShiftXEvidenceSha256}; received ${evidenceSha256}`,
+    )
+
+    assertPortableShiftXReport(evidence.report.path, evidence.report.sha256)
+}
+
+export function assertPortableShiftXReport(
+    declaredPath: string,
+    expectedSha256: string,
+    repositoryRoot = resolve(directory, "../.."),
+): void {
+    assert(
+        !isAbsolute(declaredPath),
+        `current ShiftX audit report path must be repository-relative: ${declaredPath}`,
+    )
+    const repositoryPath = realpathSync(repositoryRoot)
+    const absolutePath = resolve(repositoryPath, declaredPath)
+    assertRepositoryFilePath(
+        repositoryPath,
+        absolutePath,
+        declaredPath,
+        "current ShiftX audit report",
+    )
+    let realPath: string
+    try {
+        realPath = realpathSync(absolutePath)
+    } catch (error) {
+        if (isMissingPathError(error)) {
+            throw new Error(
+                `current ShiftX audit report does not exist: ${declaredPath}`,
+            )
+        }
+        throw error
+    }
+    assertRepositoryFilePath(
+        repositoryPath,
+        realPath,
+        declaredPath,
+        "current ShiftX audit report",
+    )
+    assert(
+        statSync(realPath).isFile(),
+        `current ShiftX audit report is not a file: ${declaredPath}`,
+    )
+    const actualSha256 = createHash("sha256")
+        .update(new Uint8Array(readFileSync(realPath)))
+        .digest("hex")
+    assert(
+        actualSha256 === expectedSha256,
+        "current ShiftX audit report SHA-256 differs from the reviewed evidence",
+    )
+}
+
+function assertFrozenLegacyGitProvenance(
+    frozenPackage: FrozenLegacyPackage,
+): void {
+    const { provenance } = frozenPackage
+    const packagePath = `packages/${frozenPackage.package}`
+    assertGitCoordinate(
+        provenance.sourceRevision,
+        packagePath,
+        provenance.sourcePackageTreeSha1,
+    )
+    assertGitCoordinate(
+        provenance.releaseRevision,
+        packagePath,
+        provenance.releasePackageTreeSha1,
+    )
+    assertGitCoordinate(
+        provenance.sourceRevision,
+        `${packagePath}/src`,
+        provenance.sourceTreeSha1,
+    )
+    assertGitCoordinate(
+        provenance.releaseRevision,
+        `${packagePath}/src`,
+        provenance.sourceTreeSha1,
+    )
+    assertGitCoordinate(
+        provenance.sourceRevision,
+        `${packagePath}/package.json`,
+        provenance.sourcePackageJsonBlobSha1,
+    )
+    assertGitCoordinate(
+        provenance.releaseRevision,
+        `${packagePath}/package.json`,
+        provenance.releasePackageJsonBlobSha1,
+    )
+    for (const blob of [
+        ...provenance.entrypointBlobs,
+        ...provenance.surfaceBlobs,
+    ]) {
+        assertGitCoordinate(
+            provenance.sourceRevision,
+            blob.path,
+            blob.gitBlobSha1,
+        )
+        assertGitCoordinate(
+            provenance.releaseRevision,
+            blob.path,
+            blob.gitBlobSha1,
+        )
+    }
+}
+
+function assertWorkspaceBaseline(): void {
+    const result = spawnSync(
+        "git",
+        [
+            "show",
+            `${frozenWorkspaceBaseline.commit}:packages/valdres/package.json`,
+        ],
+        {
+            cwd: resolve(directory, "../.."),
+            encoding: "utf8",
+        },
+    )
+    assert(
+        result.error === undefined && result.status === 0,
+        "cannot verify the pinned workspace recovery commit",
+    )
+    let packageJson: unknown
+    try {
+        packageJson = JSON.parse(result.stdout) as unknown
+    } catch {
+        throw new Error("pinned workspace package.json is invalid JSON")
+    }
+    assert(
+        isRecord(packageJson) &&
+            packageJson.version === frozenWorkspaceBaseline.packageVersion,
+        "pinned workspace package version differs from the recovery baseline",
+    )
+}
+
+function assertGitCoordinate(
+    revision: string,
+    path: string,
+    expectedObject: string,
+): void {
+    const coordinate = `${revision}:${path}`
+    let actualObject = gitCoordinateCache.get(coordinate)
+    if (actualObject === undefined) {
+        const result = spawnSync("git", ["rev-parse", coordinate], {
+            cwd: resolve(directory, "../.."),
+            encoding: "utf8",
+        })
+        assert(
+            result.status === 0,
+            `cannot verify frozen legacy provenance ${coordinate}`,
+        )
+        actualObject = result.stdout.trim()
+        gitCoordinateCache.set(coordinate, actualObject)
+    }
+    assert(
+        actualObject === expectedObject,
+        `frozen legacy provenance differs for ${coordinate}; expected ${expectedObject}; received ${actualObject}`,
+    )
 }
 
 function uniqueCoordinates(
@@ -1642,6 +2339,9 @@ function main(): void {
         contractCatalog: readJson(join(directory, "contract-catalog.json")),
         frozenLegacySurface: readJson(
             join(directory, "frozen-legacy-surface.json"),
+        ),
+        legacyDispositionCatalog: readJson(
+            join(directory, "legacy-disposition-catalog.json"),
         ),
         targetSurfaceCatalog: readJson(
             join(directory, "target-surface-catalog.json"),

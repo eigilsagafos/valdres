@@ -14,6 +14,8 @@ import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 import {
+    assertPortableShiftXReport,
+    assertReviewedCurrentShiftXEvidence,
     loadTestDispositionInventoryEvidence,
     loadTestOwnerEvidence,
     parseTestDispositionLedger,
@@ -21,6 +23,11 @@ import {
     type ContractSet,
 } from "./check"
 import { acquirePublishedTarball } from "./generate-frozen-test-inventory"
+import {
+    collectFrozenCoordinates,
+    coordinateKey,
+    generateProposedPublicApiSkeletons,
+} from "./generate-public-api-skeletons"
 
 const directory = dirname(fileURLToPath(import.meta.url))
 const ZERO_REGISTRATION_PATHS = [
@@ -481,8 +488,8 @@ describe("v1 contract manifest validation", () => {
         )
 
         const duplicateFrozenExport = mutableSet()
-        duplicateFrozenExport.frozenLegacySurface.entrypoints[0].runtimeExports[1] =
-            duplicateFrozenExport.frozenLegacySurface.entrypoints[0].runtimeExports[0]
+        duplicateFrozenExport.frozenLegacySurface.packages[0].entrypoints[0].runtimeExports[1] =
+            duplicateFrozenExport.frozenLegacySurface.packages[0].entrypoints[0].runtimeExports[0]
         expect(() => validateContractSet(duplicateFrozenExport)).toThrow(
             /must NOT have duplicate items/,
         )
@@ -539,13 +546,13 @@ describe("v1 contract manifest validation", () => {
         const missingApiManifest = mutableSet()
         missingApiManifest.publicManifest.entries.pop()
         expect(() => validateContractSet(missingApiManifest)).toThrow(
-            /public API target catalog inventory differs/,
+            /public API target catalog inventory differs|has no public manifest entry/,
         )
 
         const missingApiCatalog = mutableSet()
         missingApiCatalog.targetSurfaceCatalog.publicApiIds.pop()
         expect(() => validateContractSet(missingApiCatalog)).toThrow(
-            /public API target catalog inventory differs/,
+            /public API target catalog inventory differs|absent from the target public API catalog/,
         )
 
         const missingCallbackManifest = mutableSet()
@@ -588,15 +595,15 @@ describe("v1 contract manifest validation", () => {
         )
     })
 
-    test("stable completion is derived from API ownership, not an ID prefix", () => {
-        const set = completeCandidate()
+    test("stable completion is derived from reviewed release-track ownership", () => {
+        const set = mutableSet()
+        set.publicManifest.completeness = "complete"
+        set.callbackManifest.completeness = "complete"
+        set.contractCatalog.completeness = "complete"
+        set.targetSurfaceCatalog.completeness = "complete"
         const entry = findPublicEntry(set, "core.store.delete")
-        entry.id = "beta.store-delete"
         entry.decisionStatus = "evidence-required"
         entry.migration.evidenceStatus = "planned"
-        const targetId =
-            set.targetSurfaceCatalog.publicApiIds.indexOf("core.store.delete")
-        set.targetSurfaceCatalog.publicApiIds[targetId] = "beta.store-delete"
         expect(() => validateContractSet(set)).toThrow(
             /unresolved decisions|migration evidence/,
         )
@@ -605,75 +612,439 @@ describe("v1 contract manifest validation", () => {
         const betaSearch = findPublicEntry(disguisedStable, "beta.search")
         betaSearch.target.status = "stable"
         expect(() => validateContractSet(disguisedStable)).toThrow(
-            /independent beta but targets the stable\/internal v1 surface/,
+            /reviewed release-track ownership differs from the independently pinned digest/,
         )
 
         const selfRelabelled = mutableSet()
         const storeDelete = findPublicEntry(selfRelabelled, "core.store.delete")
         storeDelete.owner = "independent-beta"
-        storeDelete.target = {
-            package: null,
-            subpath: null,
-            name: null,
-            status: "pending",
-        }
         expect(() => validateContractSet(selfRelabelled)).toThrow(
-            /owner disagrees with the reviewed independent-beta catalog/,
+            /reviewed release-track ownership differs from the independently pinned digest/,
         )
     })
 
-    test("accepts a synthetic candidate only when every gate is complete", () => {
-        expect(validateContractSet(completeCandidate()).completeness).toBe(
-            "complete/complete/complete/complete",
+    test("cannot complete until current ShiftX evidence is independently pinned", () => {
+        expect(() =>
+            assertReviewedCurrentShiftXEvidence({
+                verdict: "pass",
+                remote: "ssh://example.invalid/shiftx.git",
+                branch: "synthetic-validation",
+                commit: "a".repeat(40),
+                dirty: false,
+                lockfile: { path: "bun.lock", sha256: "b".repeat(64) },
+                packedArtifact: {
+                    path: "shiftx-validation.tgz",
+                    sha256: "c".repeat(64),
+                },
+                report: {
+                    path: "contracts/v1/shiftx-validation-report.json",
+                    sha256: "d".repeat(64),
+                },
+                checkedPaths: ["packages/shiftx"],
+            }),
+        ).toThrow(
+            /current ShiftX evidence has not been independently reviewed and pinned/,
         )
+    })
+
+    test("portable ShiftX reports are exact repository-relative files", () => {
+        const temporaryRoot = mkdtempSync(
+            join(tmpdir(), "valdres-shiftx-report-"),
+        )
+        const outsideRoot = mkdtempSync(
+            join(tmpdir(), "valdres-shiftx-outside-"),
+        )
+        try {
+            const reportPath = join(temporaryRoot, "evidence/report.json")
+            mkdirSync(dirname(reportPath), { recursive: true })
+            writeFileSync(reportPath, '{"verdict":"pass"}\n')
+            const reportSha256 = createHash("sha256")
+                .update(new Uint8Array(readFileSync(reportPath)))
+                .digest("hex")
+            expect(() =>
+                assertPortableShiftXReport(
+                    "evidence/report.json",
+                    reportSha256,
+                    temporaryRoot,
+                ),
+            ).not.toThrow()
+            expect(() =>
+                assertPortableShiftXReport(
+                    reportPath,
+                    reportSha256,
+                    temporaryRoot,
+                ),
+            ).toThrow(/must be repository-relative/)
+            expect(() =>
+                assertPortableShiftXReport(
+                    "../outside.json",
+                    reportSha256,
+                    temporaryRoot,
+                ),
+            ).toThrow(/escapes the repository/)
+
+            const outsideReport = join(outsideRoot, "report.json")
+            writeFileSync(outsideReport, '{"verdict":"pass"}\n')
+            symlinkSync(
+                outsideReport,
+                join(temporaryRoot, "linked-report.json"),
+            )
+            expect(() =>
+                assertPortableShiftXReport(
+                    "linked-report.json",
+                    reportSha256,
+                    temporaryRoot,
+                ),
+            ).toThrow(/escapes the repository/)
+            expect(() =>
+                assertPortableShiftXReport(
+                    "evidence/report.json",
+                    "0".repeat(64),
+                    temporaryRoot,
+                ),
+            ).toThrow(/SHA-256 differs/)
+        } finally {
+            rmSync(temporaryRoot, { recursive: true, force: true })
+            rmSync(outsideRoot, { recursive: true, force: true })
+        }
     })
 
     test("duplicate padding cannot open the completion gate", () => {
         const set = completeCandidate()
         const runtimeEntry = findPublicEntry(set, "core.atom")
-        const typeEntry = findPublicEntry(set, "core.atom.lazy")
-        const runtimeSurface = rootSurface("atom")
-        const typeSurface = rootSurface("OnlyOneType")
-
-        runtimeEntry.legacy = Array.from({ length: 29 }, () => ({
-            ...runtimeSurface,
-        }))
-        typeEntry.legacy = Array.from({ length: 56 }, () => ({
-            ...typeSurface,
-        }))
+        runtimeEntry.legacy.push(structuredClone(runtimeEntry.legacy[0]))
 
         expect(() => validateContractSet(set)).toThrow(
-            /duplicate frozen legacy runtime export/,
+            /duplicate frozen legacy coordinate/,
         )
     })
 
-    test("complete inventories must exactly match frozen export coordinates", () => {
+    test("complete inventories must exactly match frozen coordinates", () => {
         const set = completeCandidate()
         const runtimeEntry = findPublicEntry(set, "core.atom")
-        const typeEntry = findPublicEntry(set, "core.atom.lazy")
-
-        runtimeEntry.legacy = Array.from({ length: 29 }, (_, index) =>
-            rootSurface(`InventedRuntime${index}`),
-        )
-        typeEntry.legacy = Array.from({ length: 56 }, (_, index) =>
-            rootSurface(`InventedType${index}`),
-        )
+        runtimeEntry.legacy = [rootSurface("InventedRuntime")]
 
         expect(() => validateContractSet(set)).toThrow(
-            /frozen legacy runtime export inventory differs from the frozen surface/,
+            /claims a legacy coordinate absent from the frozen inventory/,
         )
     })
 
     test("complete inventories include adapter-internals/v1 exports", () => {
         const set = completeCandidate()
-        const runtimeEntry = findPublicEntry(set, "core.atom")
-        runtimeEntry.legacy = runtimeEntry.legacy.filter(
-            (surface: any) =>
-                surface.subpath !== "./adapter-internals/v1" ||
-                surface.name !== "storeAdapter",
+        const mapping = set.legacyDispositionCatalog.entries.find(
+            (entry: any) =>
+                entry.coordinate.subpath === "./adapter-internals/v1" &&
+                entry.coordinate.name === "storeAdapter",
         )
+        findPublicEntry(set, mapping.dispositionId).legacy = []
         expect(() => validateContractSet(set)).toThrow(
-            /frozen legacy runtime export inventory differs from the frozen surface/,
+            /legacy disposition mapping .* is missing/,
+        )
+    })
+
+    test("reviewed ownership rejects bulk-attaching keep, replace, and remove exports to atom", () => {
+        const set = completeCandidate()
+        const atomEntry = findPublicEntry(set, "core.atom")
+        const exports = set.publicManifest.entries.flatMap((entry: any) =>
+            entry.legacy.filter(
+                (surface: any) =>
+                    surface.kind === "runtime-export" ||
+                    surface.kind === "type-export",
+            ),
+        )
+        expect(
+            exports.some((surface: any) => surface.name === "atomFamily"),
+        ).toBe(true)
+        expect(
+            exports.some((surface: any) => surface.name === "globalAtom"),
+        ).toBe(true)
+        for (const entry of set.publicManifest.entries) {
+            entry.legacy = entry.legacy.filter(
+                (surface: any) =>
+                    surface.kind !== "runtime-export" &&
+                    surface.kind !== "type-export",
+            )
+        }
+        atomEntry.legacy.push(...exports)
+
+        expect(() => validateContractSet(set)).toThrow(
+            /legacy disposition mapping .* is missing|claims .* but reviewed disposition ownership belongs to/,
+        )
+    })
+
+    test("reviewed ownership cannot self-authorize by changing both writable artifacts", () => {
+        const set = mutableSet()
+        const atomEntry = findPublicEntry(set, "core.atom")
+        const familyEntry = findPublicEntry(set, "core.family")
+        const atomFamily = familyEntry.legacy.find(
+            (surface: any) => surface.name === "atomFamily",
+        )
+        familyEntry.legacy = familyEntry.legacy.filter(
+            (surface: any) => surface.name !== "atomFamily",
+        )
+        atomEntry.legacy.push(structuredClone(atomFamily))
+        set.legacyDispositionCatalog.entries.find(
+            (mapping: any) => mapping.coordinate.name === "atomFamily",
+        ).dispositionId = "core.atom"
+
+        expect(() => validateContractSet(set)).toThrow(
+            /reviewed legacy disposition ownership differs from the independently pinned digest/,
+        )
+    })
+
+    test("release-track ownership cannot self-authorize across manifests", () => {
+        const relabelledPublic = mutableSet()
+        const storeDelete = findPublicEntry(
+            relabelledPublic,
+            "core.store.delete",
+        )
+        storeDelete.owner = "independent-beta"
+        storeDelete.target.status = "experimental"
+        storeDelete.decisionStatus = "evidence-required"
+        relabelledPublic.targetSurfaceCatalog.independentBetaPublicApiIds.push(
+            "core.store.delete",
+        )
+        expect(() => validateContractSet(relabelledPublic)).toThrow(
+            /reviewed release-track ownership differs from the independently pinned digest/,
+        )
+
+        const relabelledCallback = mutableSet()
+        relabelledCallback.callbackManifest.entries.find(
+            (entry: any) => entry.id === "callback.store-subscriber",
+        ).apiEntryId = "beta.search"
+        expect(() => validateContractSet(relabelledCallback)).toThrow(
+            /reviewed release-track ownership differs from the independently pinned digest/,
+        )
+
+        const deletedPendingDecision = mutableSet()
+        deletedPendingDecision.targetSurfaceCatalog.pendingSurfaceDecisions = []
+        expect(() => validateContractSet(deletedPendingDecision)).toThrow(
+            /reviewed release-track ownership differs from the independently pinned digest/,
+        )
+
+        const relabelledPendingDecision = mutableSet()
+        relabelledPendingDecision.targetSurfaceCatalog.pendingSurfaceDecisions.find(
+            (decision: any) => decision.id === "pending.query-construction",
+        ).category = "alias-exports"
+        expect(() => validateContractSet(relabelledPendingDecision)).toThrow(
+            /reviewed release-track ownership differs from the independently pinned digest/,
+        )
+    })
+
+    test("complete inventories cannot omit a React export", () => {
+        const set = completeCandidate()
+        removeLegacyCoordinate(set, {
+            package: "valdres-react",
+            kind: "runtime-export",
+            owner: null,
+            name: "useAtom",
+        })
+        expect(() => validateContractSet(set)).toThrow(
+            /legacy disposition mapping .* is missing/,
+        )
+    })
+
+    test("complete inventories cannot omit Store or Transaction members", () => {
+        for (const [owner, name] of [
+            ["Store", "get(atom)"],
+            ["Transaction", "reset"],
+        ] as const) {
+            const set = completeCandidate()
+            removeLegacyCoordinate(set, {
+                package: "valdres",
+                kind: name.includes("(") ? "overload" : "method",
+                owner,
+                name,
+            })
+            expect(() => validateContractSet(set)).toThrow(
+                /legacy disposition mapping .* is missing/,
+            )
+        }
+    })
+
+    test("React legacy rows must use the pinned beta.4 provenance", () => {
+        const set = mutableSet()
+        findPublicEntry(set, "react.provider").legacy[0].baseline =
+            "1.0.0-beta.23"
+        expect(() => validateContractSet(set)).toThrow(
+            /claims a legacy coordinate absent from the frozen inventory/,
+        )
+    })
+
+    test("approved stable targets must appear in the independent coordinate catalog", () => {
+        const set = mutableSet()
+        set.targetSurfaceCatalog.frozenPublicCoordinates =
+            set.targetSurfaceCatalog.frozenPublicCoordinates.filter(
+                (coordinate: any) => coordinate.id !== "core.atom",
+            )
+        expect(() => validateContractSet(set)).toThrow(
+            /core\.atom has an approved stable target absent from the independent target coordinate catalog/,
+        )
+    })
+
+    test("a ShiftX status flip without stamped external evidence cannot complete", () => {
+        const set = mutableSet()
+        set.publicManifest.generatedAgainst.currentShiftX.status = "complete"
+        expect(() => validateContractSet(set)).toThrow(
+            /public-api\.json schema validation failed|required property 'evidence'/,
+        )
+    })
+
+    test("partial manifests cannot self-assert fabricated complete ShiftX evidence", () => {
+        const set = mutableSet()
+        set.publicManifest.generatedAgainst.currentShiftX = {
+            status: "complete",
+            notes: "Fabricated evidence must fail even while manifests are partial.",
+            evidence: {
+                verdict: "pass",
+                remote: "ssh://example.invalid/shiftx.git",
+                branch: "fabricated",
+                commit: "a".repeat(40),
+                dirty: false,
+                lockfile: { path: "bun.lock", sha256: "b".repeat(64) },
+                packedArtifact: {
+                    path: "valdres-fake.tgz",
+                    sha256: "c".repeat(64),
+                },
+                report: {
+                    path: "contracts/v1/SHIFTX_HANDOFF.md",
+                    sha256: createHash("sha256")
+                        .update(
+                            new Uint8Array(
+                                readFileSync(
+                                    join(directory, "SHIFTX_HANDOFF.md"),
+                                ),
+                            ),
+                        )
+                        .digest("hex"),
+                },
+                checkedPaths: ["packages/shiftx"],
+            },
+        }
+        expect(() => validateContractSet(set)).toThrow(
+            /current ShiftX evidence has not been independently reviewed and pinned/,
+        )
+    })
+
+    test("generates deterministic evidence-free skeletons for every unowned frozen coordinate", () => {
+        const set = mutableSet()
+        const first = generateProposedPublicApiSkeletons(
+            set.frozenLegacySurface,
+            set.legacyDispositionCatalog,
+        )
+        const second = generateProposedPublicApiSkeletons(
+            set.frozenLegacySurface,
+            set.legacyDispositionCatalog,
+        )
+        expect(first).toEqual(second)
+        expect(first.length).toBe(
+            collectFrozenCoordinates(set.frozenLegacySurface).length -
+                set.legacyDispositionCatalog.entries.length,
+        )
+        expect(
+            first.every(
+                skeleton =>
+                    skeleton.decisionStatus === "pending-review" &&
+                    skeleton.contractIds.length === 0 &&
+                    !("evidence" in skeleton),
+            ),
+        ).toBe(true)
+        expect(
+            new Set(first.map(skeleton => skeleton.dispositionId)).size,
+        ).toBe(first.length)
+        const reviewedCoordinates = new Set(
+            set.legacyDispositionCatalog.entries.map((entry: any) =>
+                coordinateKey(entry.coordinate),
+            ),
+        )
+        expect(
+            new Set(first.map(skeleton => coordinateKey(skeleton.legacy))),
+        ).toEqual(
+            new Set(
+                collectFrozenCoordinates(set.frozenLegacySurface)
+                    .map(coordinateKey)
+                    .filter(coordinate => !reviewedCoordinates.has(coordinate)),
+            ),
+        )
+    })
+
+    test("pending-review rows may remain evidence-free, while approved rows require contracts", () => {
+        const pending = mutableSet()
+        const pendingEntry = findPublicEntry(pending, "core.store.update")
+        pendingEntry.decisionStatus = "pending-review"
+        pendingEntry.contractIds = []
+        expect(validateContractSet(pending).completeness).toBe(
+            "partial/partial/partial/partial",
+        )
+
+        const approved = mutableSet()
+        findPublicEntry(approved, "core.store.update").contractIds = []
+        expect(() => validateContractSet(approved)).toThrow(
+            /public-api\.json schema validation failed|must NOT have fewer than 1/,
+        )
+    })
+
+    test("frozen legacy coordinates and source blobs cannot self-attest", () => {
+        const changedWorkspace = mutableSet()
+        changedWorkspace.publicManifest.generatedAgainst.workspace.commit =
+            "f".repeat(40)
+        changedWorkspace.publicManifest.generatedAgainst.workspace.packageVersion =
+            "9.9.9"
+        expect(() => validateContractSet(changedWorkspace)).toThrow(
+            /workspace baseline differs from the independently pinned recovery input/,
+        )
+
+        const changedInventory = mutableSet()
+        changedInventory.frozenLegacySurface.packages[0].members[0].name =
+            "inventedId"
+        expect(() => validateContractSet(changedInventory)).toThrow(
+            /frozen legacy coordinate inventory differs from the independently pinned digest/,
+        )
+
+        const changedBlob = mutableSet()
+        changedBlob.frozenLegacySurface.packages[1].provenance.surfaceBlobs[0].gitBlobSha1 =
+            "f".repeat(40)
+        expect(() => validateContractSet(changedBlob)).toThrow(
+            /frozen legacy provenance differs|frozen legacy provenance inventory differs/,
+        )
+
+        const missingBlob = mutableSet()
+        missingBlob.frozenLegacySurface.packages[0].provenance.surfaceBlobs.pop()
+        expect(() => validateContractSet(missingBlob)).toThrow(
+            /frozen legacy provenance inventory differs from the independently pinned digest/,
+        )
+
+        const repointedRevision = mutableSet()
+        const coreProvenance =
+            repointedRevision.frozenLegacySurface.packages[0].provenance
+        coreProvenance.sourceRevision = coreProvenance.releaseRevision
+        coreProvenance.sourcePackageTreeSha1 =
+            coreProvenance.releasePackageTreeSha1
+        coreProvenance.sourcePackageJsonBlobSha1 =
+            coreProvenance.releasePackageJsonBlobSha1
+        expect(() => validateContractSet(repointedRevision)).toThrow(
+            /frozen legacy provenance inventory differs from the independently pinned digest/,
+        )
+
+        const forgedArtifact = mutableSet()
+        const publishedArtifact =
+            forgedArtifact.frozenLegacySurface.packages[0].provenance
+                .publishedArtifact
+        publishedArtifact.npmSpec = "valdres@9.9.9"
+        publishedArtifact.integrity = `sha512-${"A".repeat(86)}==`
+        publishedArtifact.sha256 = "f".repeat(64)
+        forgedArtifact.publicManifest.generatedAgainst.frozenLegacy.packageVersion =
+            "9.9.9"
+        forgedArtifact.publicManifest.generatedAgainst.frozenLegacy.npmSpec =
+            "valdres@9.9.9"
+        forgedArtifact.publicManifest.generatedAgainst.frozenLegacy.registryTarball =
+            "https://registry.npmjs.org/valdres/-/valdres-9.9.9.tgz"
+        forgedArtifact.publicManifest.generatedAgainst.frozenLegacy.integrity =
+            publishedArtifact.integrity
+        forgedArtifact.publicManifest.generatedAgainst.frozenLegacy.sha256 =
+            publishedArtifact.sha256
+        expect(() => validateContractSet(forgedArtifact)).toThrow(
+            /frozen legacy provenance inventory differs from the independently pinned digest/,
         )
     })
 
@@ -681,7 +1052,7 @@ describe("v1 contract manifest validation", () => {
         const missingTarget = mutableSet()
         missingTarget.publicManifest.entries[0].target.name = null
         expect(() => validateContractSet(missingTarget)).toThrow(
-            /stable target with missing coordinates/,
+            /stable target with missing coordinates|target coordinate differs from the frozen target catalog/,
         )
 
         const blankTarget = mutableSet()
@@ -720,6 +1091,16 @@ describe("v1 contract manifest validation", () => {
         expect(() => validateContractSet(renamedEverywhere)).toThrow(
             /collection\.materialize frozen target catalog coordinate differs from the required standalone spelling/,
         )
+
+        const renamedGeneralTarget = mutableSet()
+        findPublicEntry(renamedGeneralTarget, "core.atom").target.name =
+            "renamedAtom"
+        renamedGeneralTarget.targetSurfaceCatalog.frozenPublicCoordinates.find(
+            (coordinate: any) => coordinate.id === "core.atom",
+        ).name = "renamedAtom"
+        expect(() => validateContractSet(renamedGeneralTarget)).toThrow(
+            /frozen target coordinate inventory differs from the independently pinned digest/,
+        )
     })
 
     test("separates Atom undefined from collection-row undefined", () => {
@@ -749,6 +1130,7 @@ function readSet(): ContractSet {
         callbackManifest: readJson("callback-capabilities.json"),
         contractCatalog: readJson("contract-catalog.json"),
         frozenLegacySurface: readJson("frozen-legacy-surface.json"),
+        legacyDispositionCatalog: readJson("legacy-disposition-catalog.json"),
         targetSurfaceCatalog: readJson("target-surface-catalog.json"),
         testDispositionLedger,
         testDispositionInventoryEvidence: loadTestDispositionInventoryEvidence(
@@ -772,7 +1154,31 @@ function completeCandidate(): any {
     set.callbackManifest.completeness = "complete"
     set.contractCatalog.completeness = "complete"
     set.targetSurfaceCatalog.completeness = "complete"
-    set.publicManifest.generatedAgainst.currentShiftX.status = "complete"
+    set.publicManifest.generatedAgainst.currentShiftX = {
+        status: "complete",
+        notes: "Synthetic complete candidate used only to exercise structural gates.",
+        evidence: {
+            verdict: "pass",
+            remote: "ssh://example.invalid/shiftx.git",
+            branch: "synthetic-validation",
+            commit: "a".repeat(40),
+            dirty: false,
+            lockfile: {
+                path: "bun.lock",
+                sha256: "b".repeat(64),
+            },
+            packedArtifact: {
+                path: "shiftx-validation.tgz",
+                sha256: "c".repeat(64),
+            },
+            report: {
+                path: "shiftx-validation-report.json",
+                sha256: "d".repeat(64),
+            },
+            checkedPaths: ["packages/shiftx", "packages/valdres-adapter"],
+        },
+    }
+    set.targetSurfaceCatalog.pendingSurfaceDecisions = []
 
     for (const entry of set.publicManifest.entries) {
         if (entry.owner === "independent-beta") continue
@@ -780,11 +1186,12 @@ function completeCandidate(): any {
         entry.migration.evidenceStatus = "complete"
         if (entry.target.status === "pending") {
             entry.target = {
-                package: "valdres",
-                subpath: ".",
-                name: "placeholder",
-                status: "stable",
+                package: null,
+                subpath: null,
+                name: null,
+                status: "removed",
             }
+            entry.migration.mode = "remove"
         }
     }
     for (const entry of set.callbackManifest.entries) {
@@ -795,39 +1202,54 @@ function completeCandidate(): any {
         }
     }
 
-    const runtimeEntry = findPublicEntry(set, "core.atom")
-    const typeEntry = findPublicEntry(set, "core.atom.lazy")
-    typeEntry.kind = "type-export"
-    findPublicEntry(set, "core.store.scope").kind = "option"
-
-    const frozenSubpaths = new Set(
-        set.frozenLegacySurface.entrypoints.map(
-            (entrypoint: any) => entrypoint.subpath,
-        ),
-    )
-    for (const entry of set.publicManifest.entries) {
-        if (entry.kind !== "runtime-export" && entry.kind !== "type-export") {
-            continue
-        }
-        entry.legacy = entry.legacy.filter(
-            (surface: any) =>
-                surface.package !== set.frozenLegacySurface.package ||
-                !frozenSubpaths.has(surface.subpath) ||
-                surface.baseline !== set.frozenLegacySurface.baseline,
-        )
+    for (const mapping of set.legacyDispositionCatalog.entries) {
+        mapping.reviewStatus = "approved"
     }
-    runtimeEntry.legacy = set.frozenLegacySurface.entrypoints.flatMap(
-        (entrypoint: any) =>
-            entrypoint.runtimeExports.map((name: string) =>
-                legacySurface(entrypoint.subpath, name),
-            ),
+
+    const skeletons = generateProposedPublicApiSkeletons(
+        set.frozenLegacySurface,
+        set.legacyDispositionCatalog,
     )
-    typeEntry.legacy = set.frozenLegacySurface.entrypoints.flatMap(
-        (entrypoint: any) =>
-            entrypoint.typeExports.map((name: string) =>
-                legacySurface(entrypoint.subpath, name),
-            ),
-    )
+    for (const skeleton of skeletons) {
+        const kind =
+            skeleton.legacy.kind === "type-export"
+                ? "type-export"
+                : skeleton.legacy.kind === "option"
+                  ? "option"
+                  : skeleton.legacy.kind === "runtime-export"
+                    ? "runtime-export"
+                    : "method"
+        set.publicManifest.entries.push({
+            id: skeleton.dispositionId,
+            kind,
+            owner: "synthetic-completion",
+            legacy: [structuredClone(skeleton.legacy)],
+            target: {
+                package: null,
+                subpath: null,
+                name: null,
+                status: "removed",
+            },
+            migration: {
+                mode: "remove",
+                replacementIds: [],
+                semver: "breaking",
+                codemod: "Synthetic completion fixture.",
+                typeError: "Synthetic completion fixture.",
+                firstPartyOwner: "synthetic-completion",
+                evidenceStatus: "complete",
+            },
+            contractIds: [set.contractCatalog.contractIds[0]],
+            decisionStatus: "approved",
+            notes: "Synthetic completion fixture generated from one frozen coordinate.",
+        })
+        set.targetSurfaceCatalog.publicApiIds.push(skeleton.dispositionId)
+        set.legacyDispositionCatalog.entries.push({
+            coordinate: structuredClone(skeleton.legacy),
+            dispositionId: skeleton.dispositionId,
+            reviewStatus: "approved",
+        })
+    }
     return set
 }
 
@@ -966,12 +1388,42 @@ function findPublicEntry(set: any, id: string): any {
     return set.publicManifest.entries.find((entry: any) => entry.id === id)
 }
 
+function removeLegacyCoordinate(
+    set: any,
+    expected: {
+        package: string
+        kind: string
+        owner: string | null
+        name: string
+    },
+): void {
+    const mapping = set.legacyDispositionCatalog.entries.find(
+        (entry: any) =>
+            entry.coordinate.package === expected.package &&
+            entry.coordinate.kind === expected.kind &&
+            (entry.coordinate.owner ?? null) === expected.owner &&
+            entry.coordinate.name === expected.name,
+    )
+    if (!mapping) throw new Error(`missing fixture mapping ${expected.name}`)
+    const disposition = findPublicEntry(set, mapping.dispositionId)
+    disposition.legacy = disposition.legacy.filter(
+        (surface: any) =>
+            !(
+                surface.package === expected.package &&
+                surface.kind === expected.kind &&
+                (surface.owner ?? null) === expected.owner &&
+                surface.name === expected.name
+            ),
+    )
+}
+
 function rootSurface(name: string): any {
     return legacySurface(".", name)
 }
 
 function legacySurface(subpath: string, name: string): any {
     return {
+        kind: "runtime-export",
         package: "valdres",
         subpath,
         name,

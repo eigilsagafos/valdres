@@ -4,20 +4,38 @@ These files turn the Phase 0 recovery-plan decisions into queryable, reviewed
 artifacts. They are not generated from the beta source because the v1 contract
 deliberately removes behavior that the beta implements.
 
-- `public-api.json` owns public-surface classification and migration.
+- `public-api.json` owns semantic migration dispositions. Each legacy surface
+  carries its own immutable coordinate kind, independent of the target entry's
+  semantic kind.
+- `legacy-disposition-catalog.json` is the closed-world reviewed join from each
+  frozen legacy coordinate to exactly one public disposition ID. Partial work
+  may leave coordinates unmapped, but it may not attach them to an arbitrary
+  existing row; completion requires exact bidirectional coverage and approval.
+  The current reviewed mapping payload is independently digest-pinned in the
+  checker, so editing the catalog and manifest together cannot self-authorize a
+  different ownership map.
 - `callback-capabilities.json` owns every function-valued public input and its
   capability/error boundary.
 - `contract-catalog.json` is the reviewed namespace for every contract ID used
   by either manifest.
 - `target-surface-catalog.json` is the independently reviewed set of intended
   public API and callback IDs plus the explicit independent-beta subset and
-  frozen coordinates for stabilized standalone exports. Manifest IDs must equal
-  it in both directions, and frozen package/subpath/name coordinates must match
-  independently. An entry cannot opt out of the stable completion gate by
-  renaming itself or changing its owner.
-- `frozen-legacy-surface.json` records the exact, unique beta.23 root and
-  `adapter-internals/v1` runtime/type exports that a complete migration
-  inventory must classify.
+  frozen coordinates for every currently approved stable or experimental target.
+  Manifest IDs must equal it in both directions, and frozen
+  kind/package/subpath/name coordinates must match independently. Unresolved
+  alias, query-grammar, adapter-protocol, error-name, and option-spelling
+  decisions are listed explicitly without invented coordinates. A second
+  reviewed digest pins public owner/status, callback-to-API ownership, the
+  independent-beta subset, and every pending decision so coordinated relabels or
+  deletions cannot self-authorize.
+- `frozen-legacy-surface.json` records immutable, provenance-stamped coordinates
+  for the beta.23 core root and adapter exports, the actual beta.4 React
+  exports, Store/Transaction/adapter members and overloads, and public
+  options/props. Pinned Git trees and blobs plus an independent coordinate
+  digest prevent the inventory from self-attesting after an edit.
+- `generate-public-api-skeletons.ts` deterministically emits one evidence-free
+  `pending-review` JSONL skeleton for every frozen coordinate not yet owned by
+  the disposition catalog. It never invents contract coverage or a target.
 - `frozen-test-inventory.json` freezes every beta.23 production TypeScript file,
   every zero-registration type-test file, and every Bun-registered test case
   with source-blob and, for registered cases, source-line evidence.
@@ -40,15 +58,27 @@ deliberately removes behavior that the beta implements.
 - `check.ts` executes those JSON Schemas and enforces cross-file references,
   target/migration invariants, updater result policies, and the honesty of the
   declared completeness state. A complete manifest must equal the frozen legacy
-  surface exactly; aggregate counts or duplicate padding cannot open the gate.
-  It also parses and validates the disposition ledger, including contract and
-  test-owner joins. `check.test.ts` proves malformed and falsely-complete
-  manifests and ledgers fail.
+  surface and reviewed ownership map exactly; aggregate counts, duplicate
+  padding, or attaching all exports to one disposition cannot open the gate.
+  Current ShiftX completion additionally requires stamped external repository,
+  lockfile, packed-artifact, checked-path, passing-verdict, and audit-report
+  evidence whose exact payload has been independently reviewed and digest-pinned
+  in the checker; no ShiftX payload is pinned on this laptop, so an inline or
+  fabricated payload cannot open completion. Once a payload is pinned, the
+  checker also verifies the portable report artifact's exact bytes. The external
+  verifier—not ordinary Valdres CI—checks the private checkout's origin, branch,
+  HEAD, clean status, checked paths, and exact lockfile/candidate bytes before
+  emitting that report. It also parses and validates the disposition ledger,
+  including contract and test-owner joins. `check.test.ts` proves malformed and
+  falsely-complete manifests and ledgers fail.
 
 Run:
 
 ```sh
 bun run check:contracts-v1
+
+# Inspect deterministic, unreviewed migration skeletons (JSONL on stdout)
+bun contracts/v1/generate-public-api-skeletons.ts
 ```
 
 That command type-checks the contracts, regenerates the frozen inventory in
@@ -59,9 +89,9 @@ ledger regression suites. CI runs this same command; `bun run verify` reads it
 directly from the CI workflow.
 
 The manifests and both reviewed catalogs currently declare themselves `partial`.
-That is intentional: Phase 0 cannot exit until the full beta.23 surface,
-Store/Transaction methods, React surface, adapter internals, stable subpaths,
-errors, and stable callback inputs are present and all four completeness flags
+That is intentional: the legacy coordinates are now frozen, but their semantic
+dispositions, unresolved target spellings, current ShiftX evidence, errors, and
+stable callback inputs are not complete. All four completeness flags still
 change together. Independent beta entries may remain evidence-gated; they do not
 open or block the stable-1.0 completeness gate.
 

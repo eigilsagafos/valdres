@@ -11,7 +11,8 @@
         "publicApiIds",
         "callbackIds",
         "independentBetaPublicApiIds",
-        "frozenPublicCoordinates"
+        "frozenPublicCoordinates",
+        "pendingSurfaceDecisions"
     ],
     "properties": {
         "$schema": { "const": "./schemas/target-surface-catalog.schema.json" },
@@ -49,11 +50,22 @@
             "items": {
                 "type": "object",
                 "additionalProperties": false,
-                "required": ["id", "package", "subpath", "name"],
+                "required": ["id", "kind", "package", "subpath", "name"],
                 "properties": {
                     "id": {
                         "type": "string",
                         "pattern": "^[a-z0-9][a-z0-9.-]+$"
+                    },
+                    "kind": {
+                        "enum": [
+                            "runtime-export",
+                            "type-export",
+                            "method",
+                            "option",
+                            "subpath",
+                            "package",
+                            "error"
+                        ]
                     },
                     "package": { "type": "string", "minLength": 1 },
                     "subpath": { "type": "string", "minLength": 1 },
@@ -61,6 +73,31 @@
                 }
             },
             "uniqueItems": true
+        },
+        "pendingSurfaceDecisions": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["id", "category", "status", "notes"],
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "pattern": "^[a-z0-9][a-z0-9.-]+$"
+                    },
+                    "category": {
+                        "enum": [
+                            "alias-exports",
+                            "query-grammar",
+                            "adapter-protocol",
+                            "error-names",
+                            "option-spellings"
+                        ]
+                    },
+                    "status": { "const": "pending" },
+                    "notes": { "type": "string", "minLength": 1 }
+                }
+            }
         }
     }
 }

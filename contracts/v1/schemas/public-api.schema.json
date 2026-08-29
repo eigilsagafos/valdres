@@ -73,8 +73,30 @@
                                 "complete"
                             ]
                         },
-                        "notes": { "type": "string" }
-                    }
+                        "notes": { "type": "string" },
+                        "evidence": { "$ref": "#/$defs/shiftXEvidence" }
+                    },
+                    "allOf": [
+                        {
+                            "if": {
+                                "properties": {
+                                    "status": { "const": "complete" }
+                                },
+                                "required": ["status"]
+                            },
+                            "then": {
+                                "properties": {
+                                    "evidence": {
+                                        "$ref": "#/$defs/shiftXEvidence"
+                                    }
+                                },
+                                "required": ["evidence"]
+                            },
+                            "else": {
+                                "properties": { "evidence": false }
+                            }
+                        }
+                    ]
                 }
             }
         },
@@ -121,29 +143,103 @@
                 "migration": { "$ref": "#/$defs/migration" },
                 "contractIds": {
                     "type": "array",
-                    "minItems": 1,
                     "items": { "type": "string" },
                     "uniqueItems": true
                 },
                 "decisionStatus": {
                     "enum": [
                         "approved",
+                        "pending-review",
                         "pending-experiment",
                         "evidence-required"
                     ]
                 },
                 "notes": { "type": "string", "minLength": 1 }
-            }
+            },
+            "allOf": [
+                {
+                    "if": {
+                        "properties": {
+                            "decisionStatus": { "const": "approved" }
+                        },
+                        "required": ["decisionStatus"]
+                    },
+                    "then": {
+                        "properties": {
+                            "contractIds": {
+                                "type": "array",
+                                "minItems": 1
+                            }
+                        }
+                    }
+                }
+            ]
         },
         "surface": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["package", "subpath", "name", "baseline"],
+            "required": ["kind", "package", "subpath", "name", "baseline"],
             "properties": {
+                "kind": { "$ref": "#/$defs/legacyKind" },
                 "package": { "type": "string", "minLength": 1 },
                 "subpath": { "type": "string", "minLength": 1 },
+                "owner": { "type": "string", "minLength": 1 },
                 "name": { "type": "string", "minLength": 1 },
                 "baseline": { "type": "string", "minLength": 1 }
+            }
+        },
+        "legacyKind": {
+            "enum": [
+                "runtime-export",
+                "type-export",
+                "property",
+                "method",
+                "overload",
+                "option"
+            ]
+        },
+        "sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+        },
+        "shiftXEvidenceFile": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["path", "sha256"],
+            "properties": {
+                "path": { "type": "string", "minLength": 1 },
+                "sha256": { "$ref": "#/$defs/sha256" }
+            }
+        },
+        "shiftXEvidence": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "verdict",
+                "remote",
+                "branch",
+                "commit",
+                "dirty",
+                "lockfile",
+                "packedArtifact",
+                "report",
+                "checkedPaths"
+            ],
+            "properties": {
+                "verdict": { "const": "pass" },
+                "remote": { "type": "string", "pattern": "\\S" },
+                "branch": { "type": "string", "pattern": "\\S" },
+                "commit": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+                "dirty": { "const": false },
+                "lockfile": { "$ref": "#/$defs/shiftXEvidenceFile" },
+                "packedArtifact": { "$ref": "#/$defs/shiftXEvidenceFile" },
+                "report": { "$ref": "#/$defs/shiftXEvidenceFile" },
+                "checkedPaths": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": { "type": "string", "minLength": 1 },
+                    "uniqueItems": true
+                }
             }
         },
         "target": {

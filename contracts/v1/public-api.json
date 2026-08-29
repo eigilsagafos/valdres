@@ -27,6 +27,7 @@
             "owner": "valdres",
             "legacy": [
                 {
+                    "kind": "runtime-export",
                     "package": "valdres",
                     "subpath": ".",
                     "name": "atom",
@@ -82,6 +83,7 @@
             "owner": "valdres",
             "legacy": [
                 {
+                    "kind": "runtime-export",
                     "package": "valdres",
                     "subpath": ".",
                     "name": "selector",
@@ -141,12 +143,14 @@
             "owner": "valdres",
             "legacy": [
                 {
+                    "kind": "runtime-export",
                     "package": "valdres",
                     "subpath": ".",
                     "name": "atomFamily",
                     "baseline": "1.0.0-beta.23"
                 },
                 {
+                    "kind": "runtime-export",
                     "package": "valdres",
                     "subpath": ".",
                     "name": "selectorFamily",
@@ -261,6 +265,7 @@
             "owner": "valdres",
             "legacy": [
                 {
+                    "kind": "runtime-export",
                     "package": "valdres",
                     "subpath": ".",
                     "name": "store",
@@ -292,9 +297,11 @@
             "owner": "valdres",
             "legacy": [
                 {
+                    "kind": "overload",
                     "package": "valdres",
                     "subpath": ".",
-                    "name": "Store.scope",
+                    "owner": "Store",
+                    "name": "scope(id)",
                     "baseline": "1.0.0-beta.23"
                 }
             ],
@@ -327,9 +334,11 @@
             "owner": "valdres",
             "legacy": [
                 {
+                    "kind": "overload",
                     "package": "valdres",
                     "subpath": ".",
-                    "name": "Store.txn",
+                    "owner": "Store",
+                    "name": "txn(callback)",
                     "baseline": "1.0.0-beta.23"
                 }
             ],
@@ -359,14 +368,7 @@
             "id": "core.store.update",
             "kind": "method",
             "owner": "valdres",
-            "legacy": [
-                {
-                    "package": "valdres",
-                    "subpath": ".",
-                    "name": "Store.set(updater)",
-                    "baseline": "1.0.0-beta.23"
-                }
-            ],
+            "legacy": [],
             "target": {
                 "package": "valdres",
                 "subpath": ".",
@@ -395,9 +397,11 @@
             "owner": "valdres",
             "legacy": [
                 {
+                    "kind": "method",
                     "package": "valdres",
                     "subpath": ".",
-                    "name": "Store.del",
+                    "owner": "Store",
+                    "name": "del",
                     "baseline": "1.0.0-beta.23"
                 }
             ],
@@ -426,6 +430,7 @@
             "owner": "valdres",
             "legacy": [
                 {
+                    "kind": "runtime-export",
                     "package": "valdres",
                     "subpath": ".",
                     "name": "globalAtom",
@@ -457,6 +462,7 @@
             "owner": "valdres",
             "legacy": [
                 {
+                    "kind": "runtime-export",
                     "package": "valdres",
                     "subpath": ".",
                     "name": "globalStore",
@@ -488,9 +494,11 @@
             "owner": "valdres",
             "legacy": [
                 {
+                    "kind": "method",
                     "package": "valdres",
                     "subpath": ".",
-                    "name": "Store.onDispose",
+                    "owner": "Store",
+                    "name": "onDispose",
                     "baseline": "1.0.0-beta.23"
                 }
             ],
@@ -732,10 +740,11 @@
             "owner": "valdres-react",
             "legacy": [
                 {
+                    "kind": "runtime-export",
                     "package": "valdres-react",
                     "subpath": ".",
                     "name": "Provider",
-                    "baseline": "1.0.0-beta.23"
+                    "baseline": "1.0.0-beta.4"
                 }
             ],
             "target": {
@@ -763,10 +772,11 @@
             "owner": "valdres-react",
             "legacy": [
                 {
+                    "kind": "runtime-export",
                     "package": "valdres-react",
                     "subpath": ".",
                     "name": "Scope",
-                    "baseline": "1.0.0-beta.23"
+                    "baseline": "1.0.0-beta.4"
                 }
             ],
             "target": {
@@ -794,10 +804,11 @@
             "owner": "valdres-react",
             "legacy": [
                 {
+                    "kind": "runtime-export",
                     "package": "valdres-react",
                     "subpath": ".",
                     "name": "useStore",
-                    "baseline": "1.0.0-beta.23"
+                    "baseline": "1.0.0-beta.4"
                 }
             ],
             "target": {
@@ -825,10 +836,11 @@
             "owner": "valdres-react",
             "legacy": [
                 {
+                    "kind": "runtime-export",
                     "package": "valdres-react",
                     "subpath": ".",
                     "name": "useValue",
-                    "baseline": "1.0.0-beta.23"
+                    "baseline": "1.0.0-beta.4"
                 }
             ],
             "target": {
@@ -859,10 +871,11 @@
             "owner": "valdres-react",
             "legacy": [
                 {
+                    "kind": "runtime-export",
                     "package": "valdres-react",
                     "subpath": ".",
                     "name": "useTransaction",
-                    "baseline": "1.0.0-beta.23"
+                    "baseline": "1.0.0-beta.4"
                 }
             ],
             "target": {
@@ -890,10 +903,11 @@
             "owner": "valdres-react",
             "legacy": [
                 {
+                    "kind": "runtime-export",
                     "package": "valdres-react",
                     "subpath": ".",
                     "name": "useValdresCallback",
-                    "baseline": "1.0.0-beta.23"
+                    "baseline": "1.0.0-beta.4"
                 }
             ],
             "target": {
@@ -945,16 +959,11 @@
             "owner": "independent-beta",
             "legacy": [
                 {
+                    "kind": "runtime-export",
                     "package": "valdres",
                     "subpath": ".",
                     "name": "cacheMeta",
                     "baseline": "1.0.0-beta.23"
-                },
-                {
-                    "package": "valdres-react",
-                    "subpath": ".",
-                    "name": "useResource",
-                    "baseline": "experimental"
                 }
             ],
             "target": {

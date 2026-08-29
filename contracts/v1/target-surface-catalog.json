@@ -62,40 +62,218 @@
     "independentBetaPublicApiIds": ["beta.cache-companion", "beta.search"],
     "frozenPublicCoordinates": [
         {
-            "id": "collection.artifact-export",
+            "id": "core.atom",
+            "kind": "runtime-export",
             "package": "valdres",
-            "subpath": "./collection/artifacts",
-            "name": "exportArtifact"
+            "subpath": ".",
+            "name": "atom"
         },
         {
-            "id": "collection.artifact-import",
+            "id": "core.atom.lazy",
+            "kind": "method",
             "package": "valdres",
-            "subpath": "./collection/artifacts",
-            "name": "importArtifact"
+            "subpath": ".",
+            "name": "atom.lazy"
         },
         {
-            "id": "collection.materialization-status",
+            "id": "core.selector",
+            "kind": "runtime-export",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "selector"
+        },
+        {
+            "id": "core.external-atom",
+            "kind": "runtime-export",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "externalAtom"
+        },
+        {
+            "id": "core.family",
+            "kind": "runtime-export",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "family"
+        },
+        {
+            "id": "core.collection",
+            "kind": "runtime-export",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "collection"
+        },
+        {
+            "id": "core.presence",
+            "kind": "runtime-export",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "presence"
+        },
+        {
+            "id": "core.store",
+            "kind": "runtime-export",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "store"
+        },
+        {
+            "id": "core.store.scope",
+            "kind": "method",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "Store.scope"
+        },
+        {
+            "id": "core.store.txn",
+            "kind": "method",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "Store.txn"
+        },
+        {
+            "id": "core.store.update",
+            "kind": "method",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "Store.update"
+        },
+        {
+            "id": "core.store.delete",
+            "kind": "method",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "Store.delete"
+        },
+        {
+            "id": "collection.operations-subpath",
+            "kind": "subpath",
             "package": "valdres",
             "subpath": "./collection",
-            "name": "getMaterializationStatus"
-        },
-        {
-            "id": "collection.materialization-subscribe",
-            "package": "valdres",
-            "subpath": "./collection",
-            "name": "subscribeMaterialization"
+            "name": "valdres/collection"
         },
         {
             "id": "collection.materialize",
+            "kind": "runtime-export",
             "package": "valdres",
             "subpath": "./collection",
             "name": "materialize"
         },
         {
             "id": "collection.scan",
+            "kind": "runtime-export",
             "package": "valdres",
             "subpath": "./collection",
             "name": "scan"
+        },
+        {
+            "id": "collection.materialization-status",
+            "kind": "runtime-export",
+            "package": "valdres",
+            "subpath": "./collection",
+            "name": "getMaterializationStatus"
+        },
+        {
+            "id": "collection.materialization-subscribe",
+            "kind": "runtime-export",
+            "package": "valdres",
+            "subpath": "./collection",
+            "name": "subscribeMaterialization"
+        },
+        {
+            "id": "collection.artifacts-subpath",
+            "kind": "subpath",
+            "package": "valdres",
+            "subpath": "./collection/artifacts",
+            "name": "valdres/collection/artifacts"
+        },
+        {
+            "id": "collection.artifact-export",
+            "kind": "runtime-export",
+            "package": "valdres",
+            "subpath": "./collection/artifacts",
+            "name": "exportArtifact"
+        },
+        {
+            "id": "collection.artifact-import",
+            "kind": "runtime-export",
+            "package": "valdres",
+            "subpath": "./collection/artifacts",
+            "name": "importArtifact"
+        },
+        {
+            "id": "react.provider",
+            "kind": "runtime-export",
+            "package": "valdres-react",
+            "subpath": ".",
+            "name": "Provider"
+        },
+        {
+            "id": "react.use-store",
+            "kind": "runtime-export",
+            "package": "valdres-react",
+            "subpath": ".",
+            "name": "useStore"
+        },
+        {
+            "id": "react.use-value",
+            "kind": "runtime-export",
+            "package": "valdres-react",
+            "subpath": ".",
+            "name": "useValue"
+        },
+        {
+            "id": "react.use-update-atom",
+            "kind": "runtime-export",
+            "package": "valdres-react",
+            "subpath": ".",
+            "name": "useUpdateAtom"
+        },
+        {
+            "id": "beta.search",
+            "kind": "package",
+            "package": "@valdres/search",
+            "subpath": ".",
+            "name": "@valdres/search"
+        },
+        {
+            "id": "core.runtime-mismatch-error",
+            "kind": "error",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "RuntimeMismatchError"
+        }
+    ],
+    "pendingSurfaceDecisions": [
+        {
+            "id": "pending.public-type-aliases",
+            "category": "alias-exports",
+            "status": "pending",
+            "notes": "Exact retained spellings for EqualFunc, FamilyKey, GetValue, ResetAtom, SetAtom, SetAtomValue, SubscribeFn, SyncSetAtom, and TransactionFn remain a founder/engineering decision."
+        },
+        {
+            "id": "pending.query-construction",
+            "category": "query-grammar",
+            "status": "pending",
+            "notes": "The Phase 0 spike must compare the approved A and C query-construction forms before an export spelling is frozen."
+        },
+        {
+            "id": "pending.adapter-protocol",
+            "category": "adapter-protocol",
+            "status": "pending",
+            "notes": "readHydrationSnapshot is approved, but exact Store brand/read/sub adapter protocol names and any delivery wrapper remain unresolved."
+        },
+        {
+            "id": "pending.error-names",
+            "category": "error-names",
+            "status": "pending",
+            "notes": "Exact class and code spellings for the six additional callback, subscriber, cleanup, convergence, nested-delivery, and SSR snapshot failures remain unresolved."
+        },
+        {
+            "id": "pending.option-spellings",
+            "category": "option-spellings",
+            "status": "pending",
+            "notes": "Index/query, adapter, and batteries-included cache options such as staleIfError and maxAge remain pending; no spelling is frozen by implication."
         }
     ]
 }

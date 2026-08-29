@@ -1,0 +1,208 @@
+{
+    "$schema": "./schemas/legacy-disposition-catalog.schema.json",
+    "schemaVersion": 1,
+    "entries": [
+        {
+            "coordinate": {
+                "kind": "runtime-export",
+                "package": "valdres",
+                "subpath": ".",
+                "name": "atom",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "core.atom",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "runtime-export",
+                "package": "valdres",
+                "subpath": ".",
+                "name": "selector",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "core.selector",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "runtime-export",
+                "package": "valdres",
+                "subpath": ".",
+                "name": "atomFamily",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "core.family",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "runtime-export",
+                "package": "valdres",
+                "subpath": ".",
+                "name": "selectorFamily",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "core.family",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "runtime-export",
+                "package": "valdres",
+                "subpath": ".",
+                "name": "store",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "core.store",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "overload",
+                "package": "valdres",
+                "subpath": ".",
+                "owner": "Store",
+                "name": "scope(id)",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "core.store.scope",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "overload",
+                "package": "valdres",
+                "subpath": ".",
+                "owner": "Store",
+                "name": "txn(callback)",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "core.store.txn",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "method",
+                "package": "valdres",
+                "subpath": ".",
+                "owner": "Store",
+                "name": "del",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "core.store.delete",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "runtime-export",
+                "package": "valdres",
+                "subpath": ".",
+                "name": "globalAtom",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "core.global-atom",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "runtime-export",
+                "package": "valdres",
+                "subpath": ".",
+                "name": "globalStore",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "core.global-store",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "method",
+                "package": "valdres",
+                "subpath": ".",
+                "owner": "Store",
+                "name": "onDispose",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "core.store.on-dispose",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "runtime-export",
+                "package": "valdres-react",
+                "subpath": ".",
+                "name": "Provider",
+                "baseline": "1.0.0-beta.4"
+            },
+            "dispositionId": "react.provider",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "runtime-export",
+                "package": "valdres-react",
+                "subpath": ".",
+                "name": "Scope",
+                "baseline": "1.0.0-beta.4"
+            },
+            "dispositionId": "react.scope",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "runtime-export",
+                "package": "valdres-react",
+                "subpath": ".",
+                "name": "useStore",
+                "baseline": "1.0.0-beta.4"
+            },
+            "dispositionId": "react.use-store",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "runtime-export",
+                "package": "valdres-react",
+                "subpath": ".",
+                "name": "useValue",
+                "baseline": "1.0.0-beta.4"
+            },
+            "dispositionId": "react.use-value",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "runtime-export",
+                "package": "valdres-react",
+                "subpath": ".",
+                "name": "useTransaction",
+                "baseline": "1.0.0-beta.4"
+            },
+            "dispositionId": "react.use-transaction",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "runtime-export",
+                "package": "valdres-react",
+                "subpath": ".",
+                "name": "useValdresCallback",
+                "baseline": "1.0.0-beta.4"
+            },
+            "dispositionId": "react.use-valdres-callback",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "runtime-export",
+                "package": "valdres",
+                "subpath": ".",
+                "name": "cacheMeta",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "beta.cache-companion",
+            "reviewStatus": "proposed"
+        }
+    ]
+}
