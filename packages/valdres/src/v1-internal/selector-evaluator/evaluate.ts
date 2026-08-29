@@ -204,6 +204,8 @@ export const evaluateSelector = <Node, Token extends object, Value>(
         session.getSelectorGraphPublicationCount(host)
     let prefixProofVersion = graphVersionAtEntry
     let prefixProofSessionPublications = sessionPublicationsAtEntry
+    let observedGraphVersion = graphVersionAtEntry
+    let observedSessionPublications = sessionPublicationsAtEntry
 
     const hasOnlyAttributedPublications = (
         graphVersionBefore: number,
@@ -267,6 +269,8 @@ export const evaluateSelector = <Node, Token extends object, Value>(
         const graphVersion = host.getSelectorGraphVersion()
         const sessionPublications =
             session.getSelectorGraphPublicationCount(host)
+        observedGraphVersion = graphVersion
+        observedSessionPublications = sessionPublications
         const onlyAttributed = hasOnlyAttributedPublications(
             prefixProofVersion,
             prefixProofSessionPublications,
@@ -315,9 +319,8 @@ export const evaluateSelector = <Node, Token extends object, Value>(
             throw invalidatedPrefixCycle
         }
 
-        const graphVersionAfterServe = host.getSelectorGraphVersion()
-        const sessionPublicationsAfterServe =
-            session.getSelectorGraphPublicationCount(host)
+        const graphVersionAfterServe = observedGraphVersion
+        const sessionPublicationsAfterServe = observedSessionPublications
         const mayReusePriorProof =
             alreadyAccepted ||
             (wasCurrentDirectDependency &&

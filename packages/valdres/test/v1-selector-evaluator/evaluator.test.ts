@@ -44,6 +44,7 @@ class TestHost implements SelectorEvaluationHost<Node, Token> {
         (session: SelectorEvaluationSession<Node>) => void
     >()
     readonly publications: SelectorEvaluationProposal<Node, Token>[] = []
+    graphVersionReads = 0
     readonly liveRecords: Map<Node, TestRecord> | undefined
     readonly comparisonRecords: Map<Node, TestRecord> | undefined
     #nextToken = 1
@@ -203,6 +204,7 @@ class TestHost implements SelectorEvaluationHost<Node, Token> {
     }
 
     getSelectorGraphVersion(): number {
+        this.graphVersionReads++
         return this.#selectorGraphVersion
     }
 
@@ -309,6 +311,15 @@ describe("v1 selector evaluator outcomes", () => {
         const changedToken = host.records.get("sum")!.dependencies
         expect(changedToken[0]).not.toBe(changedNode[0])
         expect(changedToken[1]).toBe(changedNode[1])
+    })
+
+    test("reuses the graph observation validated immediately after serve", () => {
+        const host = new TestHost()
+        host.setLeaf("leaf", 1)
+        host.define({ node: "derived", get: get => get<number>("leaf") })
+
+        expect(valueOf(host.read<number>("derived"))).toBe(1)
+        expect(host.graphVersionReads).toBe(3)
     })
 
     test("V1M-SEL-002 custom equality reuses a current value token while replacing topology", () => {
