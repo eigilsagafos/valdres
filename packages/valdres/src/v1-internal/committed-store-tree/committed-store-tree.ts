@@ -38,6 +38,10 @@ import {
     type SynchronousResult,
 } from "./runtime-domain"
 import {
+    ScratchSelectorHost,
+    type ResolvedScratchState,
+} from "./scratch-selector-host"
+import {
     TreeDraft,
     createRootTransactionCursor,
     inspectTransactionCallbackResult,
@@ -212,18 +216,22 @@ class CommittedStoreTreeHost
         if (ownerStatus === "invalid") {
             throw new TypeError("Transaction.get requires a valid State")
         }
-        if (!this.#domain.atoms.has(node)) {
-            throw new TypeError(
-                "Transaction selector reads require the scratch host",
+        if (this.#domain.atoms.has(node)) {
+            const outcome = this.#readDraftAtomOutcome(
+                draft,
+                node as AnyAtom,
+                session,
             )
+            if (outcome.kind !== "value") throw outcome.error
+            return outcome.value as Value
         }
-        const outcome = this.#readDraftAtomOutcome(
-            draft,
-            node as AnyAtom,
-            session,
-        )
-        if (outcome.kind !== "value") throw outcome.error
-        return outcome.value as Value
+        if (!this.#domain.selectors.has(node)) {
+            throw new TypeError("Transaction.get requires a readable State")
+        }
+        const scratchHost =
+            draft.scratchHost ?? this.#createScratchSelectorHost(draft)
+        draft.scratchHost ??= scratchHost
+        return scratchHost.readSelector<Value>(node)
     }
 
     transactionSet<Value>(
@@ -334,6 +342,55 @@ class CommittedStoreTreeHost
 
     createOutcomeToken(): OutcomeToken {
         return Object.freeze({ id: this.#nextToken++ })
+    }
+
+    #createScratchSelectorHost(
+        draft: TreeDraft,
+    ): ScratchSelectorHost<AnyState> {
+        return new ScratchSelectorHost<AnyState>(
+            Object.freeze({
+                resolveState: (
+                    node: AnyState,
+                    session: SelectorEvaluationSession<AnyState>,
+                ) => this.#resolveScratchState(node, session),
+                readDraftAtomOutcome: (
+                    atom: AnyState,
+                    session: SelectorEvaluationSession<AnyState>,
+                ) =>
+                    this.#readDraftAtomOutcome(draft, atom as AnyAtom, session),
+                captureCommittedSelectorSuccess: (selector: AnyState) => {
+                    const lastSuccess = this.#selectorRecords.get(
+                        selector as AnySelector,
+                    )?.lastSuccess
+                    return lastSuccess === undefined
+                        ? undefined
+                        : Object.freeze({ value: lastSuccess.value })
+                },
+                runSelectorActivity: <Result>(
+                    session: SelectorEvaluationSession<AnyState>,
+                    operation: () => Result,
+                ): Result =>
+                    runSelectorActivity(this.#domain, session, operation),
+            }),
+            draft.generation,
+        )
+    }
+
+    #resolveScratchState(
+        node: AnyState,
+        session: SelectorEvaluationSession<AnyState>,
+    ): ResolvedScratchState<AnyState> {
+        if (classifyOwner(this.#domain, node, session) === "invalid") {
+            throw new TypeError("Selector get requires a valid State")
+        }
+        if (this.#domain.atoms.has(node)) {
+            return Object.freeze({ kind: "atom" })
+        }
+        const definition = this.#domain.selectors.get(node)
+        if (definition === undefined) {
+            throw new TypeError("Unknown scratch StoreTree State")
+        }
+        return Object.freeze({ kind: "selector", definition })
     }
 
     #validateDirectAtom(

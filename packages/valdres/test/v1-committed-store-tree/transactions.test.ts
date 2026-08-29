@@ -3,7 +3,13 @@ import {
     RuntimeMismatchError,
     createCommittedStoreTreeDomain,
     type RootTransaction,
+    type Selector,
 } from "../../src/v1-internal/committed-store-tree/committed-store-tree"
+import {
+    InvalidSynchronousSelectorResultError,
+    SelectorCircularDependencyError,
+    SelectorReadRevokedError,
+} from "../../src/v1-internal/selector-evaluator/errors"
 import { createReferenceModel, value } from "../v1-model"
 import type { TransactionStep, ValueToken } from "../v1-model/protocol"
 
@@ -517,5 +523,482 @@ describe("v1 root-only TreeTransaction", () => {
                 ).toBe(true)
             }
         }
+    })
+
+    test("memoizes scratch values and errors only within the current successful-intent generation", () => {
+        const local = createCommittedStoreTreeDomain()
+        const foreign = createCommittedStoreTreeDomain()
+        const source = local.atom(1)
+        const unrelated = local.atom(0)
+        const foreignAtom = foreign.atom(0)
+        let valueEvaluations = 0
+        let errorEvaluations = 0
+        const cause = new Error("scratch getter failed")
+        const valueSelector = local.selector(get => {
+            valueEvaluations++
+            return Object.freeze({ value: get(source) })
+        })
+        const errorSelector = local.selector(() => {
+            errorEvaluations++
+            throw cause
+        })
+        const tree = local.createStoreTree()
+
+        tree.txn(transaction => {
+            const firstValue = transaction.get(valueSelector)
+            expect(transaction.get(valueSelector)).toBe(firstValue)
+            const firstError = thrownBy(() => transaction.get(errorSelector))
+            expect(thrownBy(() => transaction.get(errorSelector))).toBe(
+                firstError,
+            )
+
+            expect(thrownBy(() => transaction.get(foreignAtom))).toBeInstanceOf(
+                RuntimeMismatchError,
+            )
+            expect(
+                thrownBy(() =>
+                    transaction.update(unrelated, () => {
+                        throw new Error("failed updater")
+                    }),
+                ),
+            ).toBeInstanceOf(Error)
+            expect(transaction.get(valueSelector)).toBe(firstValue)
+            expect(thrownBy(() => transaction.get(errorSelector))).toBe(
+                firstError,
+            )
+            expect([valueEvaluations, errorEvaluations]).toEqual([1, 1])
+
+            transaction.set(unrelated, 1)
+            expect(transaction.get(valueSelector)).not.toBe(firstValue)
+            expect(thrownBy(() => transaction.get(errorSelector))).not.toBe(
+                firstError,
+            )
+            expect([valueEvaluations, errorEvaluations]).toEqual([2, 2])
+        })
+    })
+
+    test("compares every scratch generation against one committed-success baseline", () => {
+        const domain = createCommittedStoreTreeDomain()
+        const source = domain.atom(0)
+        const comparisons: [number, number][] = []
+        const derived = domain.selector(
+            get => Object.freeze({ value: get(source) }),
+            {
+                equal: (baseline, candidate) => {
+                    comparisons.push([baseline.value, candidate.value])
+                    return Math.abs(baseline.value - candidate.value) <= 1
+                },
+            },
+        )
+        const tree = domain.createStoreTree()
+        const committed = tree.get(derived)
+        comparisons.splice(0)
+
+        tree.txn(transaction => {
+            transaction.set(source, 2)
+            expect(transaction.get(derived).value).toBe(2)
+            transaction.set(source, 1)
+            expect(transaction.get(derived)).toBe(committed)
+            expect(comparisons).toEqual([
+                [0, 2],
+                [0, 1],
+            ])
+        })
+        expect(tree.get(derived)).toBe(committed)
+    })
+
+    test("shares draft lazy outcomes across direct and transitive reads without publishing unrelated work", () => {
+        const domain = createCommittedStoreTreeDomain()
+        const unrelated = domain.atom(0)
+        let calls = 0
+        const lazy = domain.atomLazy(() =>
+            Object.freeze({ invocation: ++calls }),
+        )
+        const derived = domain.selector(get => get(lazy))
+        const lazyCause = new Error("lazy scratch failure")
+        let errorCalls = 0
+        const failedLazy = domain.atomLazy<number>(() => {
+            errorCalls++
+            throw lazyCause
+        })
+        const failedDerived = domain.selector(get => get(failedLazy))
+        const tree = domain.createStoreTree()
+
+        let speculative!: Readonly<{ invocation: number }>
+        tree.txn(transaction => {
+            speculative = transaction.get(lazy)
+            expect(transaction.get(derived)).toBe(speculative)
+            transaction.set(unrelated, 1)
+            expect(transaction.get(derived)).toBe(speculative)
+            expect(thrownBy(() => transaction.get(failedLazy))).toBe(lazyCause)
+            expect(
+                thrownBy(() => transaction.get(failedDerived)),
+            ).toBeInstanceOf(Error)
+            expect(calls).toBe(1)
+            expect(errorCalls).toBe(1)
+        })
+
+        const committed = tree.get(lazy)
+        expect(committed).not.toBe(speculative)
+        expect(committed.invocation).toBe(2)
+        expect(thrownBy(() => tree.get(failedLazy))).toBe(lazyCause)
+        expect(errorCalls).toBe(2)
+
+        let aborted!: Readonly<{ invocation: number }>
+        expect(
+            thrownBy(() =>
+                tree.txn(transaction => {
+                    transaction.reset(lazy)
+                    aborted = transaction.get(derived)
+                    throw new Error("abort")
+                }),
+            ),
+        ).toBeInstanceOf(Error)
+        expect(tree.get(lazy)).toBe(committed)
+        expect(aborted).toBe(committed)
+        expect(calls).toBe(2)
+    })
+
+    test("keeps scratch branch dependencies out of the persistent graph", () => {
+        const domain = createCommittedStoreTreeDomain()
+        const gate = domain.atom(false)
+        const left = domain.atom(1)
+        const right = domain.atom(10)
+        let evaluations = 0
+        const choice = domain.selector(get => {
+            evaluations++
+            return get(get(gate) ? right : left)
+        })
+        const tree = domain.createStoreTree()
+
+        expect(tree.get(choice)).toBe(1)
+        expect(
+            thrownBy(() =>
+                tree.txn(transaction => {
+                    transaction.set(gate, true)
+                    expect(transaction.get(choice)).toBe(10)
+                    throw new Error("abort scratch branch")
+                }),
+            ),
+        ).toBeInstanceOf(Error)
+        expect(evaluations).toBe(2)
+
+        tree.set(right, 11)
+        expect(evaluations).toBe(2)
+        tree.set(left, 2)
+        expect(evaluations).toBe(3)
+        expect(tree.get(choice)).toBe(2)
+    })
+
+    test("retries memoized scratch cycles only after a successful intent", () => {
+        const local = createCommittedStoreTreeDomain()
+        const foreign = createCommittedStoreTreeDomain()
+        const gate = local.atom(true)
+        const unrelated = local.atom(0)
+        const foreignAtom = foreign.atom(0)
+        let evaluations = 0
+        let recursive!: Selector<number>
+        recursive = local.selector(get => {
+            evaluations++
+            return get(gate) ? get(recursive) : 1
+        })
+        const tree = local.createStoreTree()
+
+        tree.txn(transaction => {
+            const first = thrownBy(() => transaction.get(recursive))
+            expect(first).toBeInstanceOf(SelectorCircularDependencyError)
+            expect(thrownBy(() => transaction.get(recursive))).toBe(first)
+            expect(evaluations).toBe(1)
+
+            expect(thrownBy(() => transaction.get(foreignAtom))).toBeInstanceOf(
+                RuntimeMismatchError,
+            )
+            expect(thrownBy(() => transaction.get(recursive))).toBe(first)
+            expect(evaluations).toBe(1)
+
+            transaction.set(unrelated, 1)
+            const retried = thrownBy(() => transaction.get(recursive))
+            expect(retried).toBeInstanceOf(SelectorCircularDependencyError)
+            expect(retried).not.toBe(first)
+            expect(evaluations).toBe(2)
+
+            transaction.set(gate, false)
+            expect(transaction.get(recursive)).toBe(1)
+            expect(evaluations).toBe(3)
+        })
+    })
+
+    test("does not reuse or publish an unmaterialized committed selector record", () => {
+        const domain = createCommittedStoreTreeDomain()
+        const source = domain.atom(2)
+        let evaluations = 0
+        const derived = domain.selector(get => {
+            evaluations++
+            return Object.freeze({ doubled: get(source) * 2 })
+        })
+        const tree = domain.createStoreTree()
+
+        const scratch = tree.txn(transaction => transaction.get(derived))
+        expect(evaluations).toBe(1)
+        const committed = tree.get(derived)
+        expect(evaluations).toBe(2)
+        expect(committed).not.toBe(scratch)
+        expect(committed).toEqual(scratch)
+    })
+
+    test("keeps completed scratch children but never memoizes a control-failed parent", () => {
+        const local = createCommittedStoreTreeDomain()
+        const foreign = createCommittedStoreTreeDomain()
+        let foreignInitializerCalls = 0
+        const foreignLazy = foreign.atomLazy(() => {
+            foreignInitializerCalls++
+            return 9
+        })
+        const source = local.atom(0)
+        const other = local.atom(0)
+        const tree = local.createStoreTree()
+        const sibling = local.createStoreTree()
+        let childEvaluations = 0
+        let parentEvaluations = 0
+        const nestedFaults: unknown[] = []
+        const child = local.selector(get => {
+            childEvaluations++
+            return get(source) + 1
+        })
+        const contaminated = local.selector(get => {
+            parentEvaluations++
+            const value = get(child)
+            try {
+                sibling.get(foreignLazy)
+            } catch (error) {
+                nestedFaults.push(error)
+            }
+            return value
+        })
+
+        tree.txn(transaction => {
+            transaction.set(source, 1)
+            const first = thrownBy(() => transaction.get(contaminated))
+            expect(first).toBe(nestedFaults[0])
+            expect(first).toBeInstanceOf(RuntimeMismatchError)
+            expect(transaction.get(child)).toBe(2)
+            expect(childEvaluations).toBe(1)
+
+            const second = thrownBy(() => transaction.get(contaminated))
+            expect(second).toBe(nestedFaults[1])
+            expect(second).toBeInstanceOf(RuntimeMismatchError)
+            expect(second).not.toBe(first)
+            expect([childEvaluations, parentEvaluations]).toEqual([1, 2])
+
+            transaction.set(other, 2)
+        })
+        expect(tree.get(source)).toBe(1)
+        expect(tree.get(other)).toBe(2)
+        expect(foreignInitializerCalls).toBe(0)
+    })
+
+    test("preserves the first nested mismatch through hostile scratch owner inspection", () => {
+        const local = createCommittedStoreTreeDomain()
+        const foreign = createCommittedStoreTreeDomain()
+        const foreignAtom = foreign.atom(0)
+        const source = local.atom(3)
+        const tree = local.createStoreTree()
+        const sibling = local.createStoreTree()
+        const nestedFaults: unknown[] = []
+        let traps = 0
+        const impostor = new Proxy(
+            { kind: "atom" },
+            {
+                getOwnPropertyDescriptor(): undefined {
+                    traps++
+                    try {
+                        sibling.get(foreignAtom)
+                    } catch (error) {
+                        nestedFaults.push(error)
+                    }
+                    throw new Error("later trap failure")
+                },
+            },
+        )
+        const contaminated = local.selector(get => {
+            get(impostor as never)
+            return get(source)
+        })
+
+        tree.txn(transaction => {
+            const first = thrownBy(() => transaction.get(contaminated))
+            expect(first).toBe(nestedFaults[0])
+            expect(first).toBeInstanceOf(RuntimeMismatchError)
+            const second = thrownBy(() => transaction.get(contaminated))
+            expect(second).toBe(nestedFaults[1])
+            expect(second).toBeInstanceOf(RuntimeMismatchError)
+        })
+        expect(traps).toBe(2)
+    })
+
+    test("performs no owner-descriptor reflection for local scratch handles", () => {
+        const domain = createCommittedStoreTreeDomain()
+        const source = domain.atom(1)
+        const derived = domain.selector(get => get(source) + 1)
+        const tree = domain.createStoreTree()
+        const original = Object.getOwnPropertyDescriptor
+        let localHandleProbes = 0
+
+        Object.getOwnPropertyDescriptor = ((target, key) => {
+            if (Object.is(target, source) || Object.is(target, derived)) {
+                localHandleProbes++
+            }
+            return original(target, key)
+        }) as typeof Object.getOwnPropertyDescriptor
+        try {
+            tree.txn(transaction => {
+                expect(transaction.get(derived)).toBe(2)
+                expect(transaction.get(derived)).toBe(2)
+            })
+        } finally {
+            Object.getOwnPropertyDescriptor = original
+        }
+        expect(localHandleProbes).toBe(0)
+    })
+
+    test("quarantines captured Store and cursor operations while independent domains remain usable", () => {
+        const local = createCommittedStoreTreeDomain()
+        const independent = createCommittedStoreTreeDomain()
+        const source = local.atom(1)
+        const independentSource = independent.atom(0)
+        const independentTree = independent.createStoreTree()
+        let tree!: ReturnType<typeof local.createStoreTree>
+        let cursor!: RootTransaction
+        let evaluations = 0
+        const errors: unknown[] = []
+        const derived = local.selector(get => {
+            evaluations++
+            for (const operation of [
+                () => tree.get(source),
+                () => tree.set(source, 8),
+                () => cursor.set(source, 9),
+            ]) {
+                try {
+                    operation()
+                } catch (error) {
+                    errors.push(error)
+                }
+            }
+            independentTree.set(independentSource, 4)
+            return get(source)
+        })
+        tree = local.createStoreTree()
+
+        tree.txn(transaction => {
+            cursor = transaction
+            expect(transaction.get(derived)).toBe(1)
+            expect(transaction.get(derived)).toBe(1)
+        })
+        expect(evaluations).toBe(1)
+        expect(errors).toEqual([
+            expect.objectContaining({
+                code: "VALDRES_SELECTOR_CAPABILITY_ERROR",
+            }),
+            expect.objectContaining({
+                code: "VALDRES_SELECTOR_CAPABILITY_ERROR",
+            }),
+            expect.objectContaining({
+                code: "VALDRES_SELECTOR_CAPABILITY_ERROR",
+            }),
+        ])
+        expect(tree.get(source)).toBe(1)
+        expect(independentTree.get(independentSource)).toBe(4)
+    })
+
+    test("revokes supplied selector reads immediately and retained cursors on callback exit", async () => {
+        const domain = createCommittedStoreTreeDomain()
+        const source = domain.atom(1)
+        let suppliedGet!: <Value>(state: typeof source) => Value
+        let retained!: RootTransaction
+        const derived = domain.selector(get => {
+            suppliedGet = get as typeof suppliedGet
+            return get(source)
+        })
+        const tree = domain.createStoreTree()
+
+        tree.txn(transaction => {
+            retained = transaction
+            expect(transaction.get(derived)).toBe(1)
+            expect(thrownBy(() => suppliedGet(source))).toBeInstanceOf(
+                SelectorReadRevokedError,
+            )
+        })
+        await Promise.resolve()
+        expect(thrownBy(() => suppliedGet(source))).toBeInstanceOf(
+            SelectorReadRevokedError,
+        )
+        expect(thrownBy(() => retained.get(source))).toMatchObject({
+            code: "VALDRES_TRANSACTION_CLOSED",
+        })
+    })
+
+    test("contains scratch getter and comparator thenables once per generation", () => {
+        const domain = createCommittedStoreTreeDomain()
+        const unrelated = domain.atom(0)
+        const source = domain.atom(0)
+        let getterEvaluations = 0
+        let getterContainments = 0
+        const asynchronousGetter = domain.selector(() => {
+            getterEvaluations++
+            return {
+                then(_resolve: unknown, reject: (error: unknown) => void) {
+                    getterContainments++
+                    reject(new Error("contained getter"))
+                },
+            }
+        })
+        let comparatorContainments = 0
+        const compared = domain.selector(get => get(source), {
+            equal: (() => ({
+                then(_resolve: unknown, reject: (error: unknown) => void) {
+                    comparatorContainments++
+                    reject(new Error("contained comparator"))
+                },
+            })) as unknown as (previous: number, next: number) => boolean,
+        })
+        const tree = domain.createStoreTree()
+        expect(tree.get(compared)).toBe(0)
+
+        tree.txn(transaction => {
+            const getterError = thrownBy(() =>
+                transaction.get(asynchronousGetter),
+            )
+            expect(getterError).toBeInstanceOf(
+                InvalidSynchronousSelectorResultError,
+            )
+            expect(thrownBy(() => transaction.get(asynchronousGetter))).toBe(
+                getterError,
+            )
+
+            transaction.set(source, 1)
+            const comparatorError = thrownBy(() => transaction.get(compared))
+            expect(comparatorError).toBeInstanceOf(
+                InvalidSynchronousSelectorResultError,
+            )
+            expect(thrownBy(() => transaction.get(compared))).toBe(
+                comparatorError,
+            )
+            expect([getterContainments, comparatorContainments]).toEqual([1, 1])
+
+            transaction.set(unrelated, 1)
+            expect(
+                thrownBy(() => transaction.get(asynchronousGetter)),
+            ).not.toBe(getterError)
+            expect(thrownBy(() => transaction.get(compared))).not.toBe(
+                comparatorError,
+            )
+            expect([getterContainments, comparatorContainments]).toEqual([2, 2])
+        })
+
+        expect(thrownBy(() => tree.get(asynchronousGetter))).toBeInstanceOf(
+            InvalidSynchronousSelectorResultError,
+        )
+        expect(getterEvaluations).toBe(3)
+        expect(getterContainments).toBe(3)
     })
 })

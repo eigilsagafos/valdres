@@ -33,7 +33,8 @@ export type AtomIntent =
           publishDraftFallback: boolean
       }>
 
-export interface DraftScratchHost {
+export interface DraftScratchHost<Node extends object = AnyState> {
+    readSelector<Value>(selector: Node): Value
     advanceGeneration(generation: number): void
     revoke(): void
 }
