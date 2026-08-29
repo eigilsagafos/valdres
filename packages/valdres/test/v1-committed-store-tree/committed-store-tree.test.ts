@@ -1119,6 +1119,58 @@ describe("v1 persistent committed StoreTree host", () => {
         expect([choiceEvaluations, parentEvaluations]).toEqual([3, 2])
     })
 
+    test("preserves established reaching order when selector dependencies stay unchanged", () => {
+        const local = createCommittedStoreTreeDomain()
+        const foreign = createCommittedStoreTreeDomain()
+        const source = local.atom(0)
+        const side = local.atom(0)
+        const foreignAtom = foreign.atom(0)
+        const tree = local.createStoreTree()
+        const order: string[] = []
+        const faults: unknown[] = []
+        let faulting = false
+        const readForeign = (label: string): void => {
+            if (!faulting) return
+            order.push(label)
+            try {
+                tree.get(foreignAtom)
+            } catch (error) {
+                faults.push(error)
+            }
+        }
+        const first = local.selector(get => {
+            const value = get(source)
+            get(side)
+            readForeign("first")
+            return value
+        })
+        const second = local.selector(get => {
+            const value = get(source)
+            readForeign("second")
+            return value
+        })
+
+        expect(tree.get(first)).toBe(0)
+        expect(tree.get(second)).toBe(0)
+        tree.set(side, 1)
+
+        faulting = true
+        const surfaced = thrownBy(() => tree.set(source, 1))
+
+        expect(order).toEqual(["first", "second"])
+        expect(faults).toHaveLength(2)
+        expect(surfaced).toBe(faults[0])
+        expect(faults[0]).toBeInstanceOf(RuntimeMismatchError)
+        expect(faults[1]).toBeInstanceOf(RuntimeMismatchError)
+        expect(thrownBy(() => tree.get(first))).toBe(faults[0])
+        expect(thrownBy(() => tree.get(second))).toBe(faults[1])
+
+        faulting = false
+        tree.set(source, 2)
+        expect(tree.get(first)).toBe(2)
+        expect(tree.get(second)).toBe(2)
+    })
+
     test("publishes ordinary selector errors and recovers through retained routing", () => {
         const domain = createCommittedStoreTreeDomain()
         const fail = domain.atom(false)
