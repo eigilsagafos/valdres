@@ -28,12 +28,17 @@ export interface SelectorOptions<Value> {
 
 export type AtomUpdater<Value> = (current: Value) => Value
 
-/** A root-only revocable view over one internal StoreTree draft. */
+/** A scope-bound revocable view over one internal StoreTree draft. */
 export interface RootTransaction {
     get<Value>(state: State<Value>): Value
     set<Value>(atom: Atom<Value>, value: Value): void
     update<Value>(atom: Atom<Value>, update: AtomUpdater<Value>): void
     reset<Value>(atom: Atom<Value>): void
+    scope(target: string | CommittedStoreTree): RootTransaction
+    scope<Result>(
+        target: string | CommittedStoreTree,
+        callback: TransactionCallback<Result>,
+    ): Result
 }
 
 type SynchronousTransactionResult<Result> =
@@ -53,6 +58,9 @@ export interface CommittedStoreTree {
     update<Value>(atom: Atom<Value>, update: AtomUpdater<Value>): void
     reset<Value>(atom: Atom<Value>): void
     txn<Result>(callback: TransactionCallback<Result>): Result
+    scope(): CommittedStoreTree
+    scope(id: string): CommittedStoreTree
+    dispose(): void
 }
 
 export interface CommittedStoreTreeDomain {

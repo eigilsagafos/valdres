@@ -42,6 +42,10 @@ export interface RuntimeDomainRecords {
     readonly states: WeakSet<object>
     readonly atoms: WeakMap<object, AtomDefinition>
     readonly selectors: WeakMap<object, SelectorDefinition<AnyState, any>>
+    /** Exact same-domain Store facade recognition; values stay opaque here. */
+    readonly stores: WeakMap<object, object>
+    /** Exact same-domain Transaction cursor recognition; values stay opaque. */
+    readonly transactionCursors: WeakMap<object, object>
     readonly ownerToken: object
     activity: RuntimeActivity | undefined
 }
@@ -151,6 +155,46 @@ export class InvalidAtomComparatorResultError extends ImmutableRuntimeError {
             "Atom comparators must return exactly true or false synchronously",
         )
         this.name = "InvalidAtomComparatorResultError"
+        this.seal()
+    }
+}
+
+export class StoreDisposedError extends ImmutableRuntimeError {
+    readonly code = "VALDRES_STORE_DISPOSED"
+
+    constructor() {
+        super("This Store has been disposed")
+        this.name = "StoreDisposedError"
+        this.seal()
+    }
+}
+
+export class ScopeNotFoundError extends ImmutableRuntimeError {
+    readonly code = "VALDRES_SCOPE_NOT_FOUND"
+
+    constructor() {
+        super("The named child Store does not exist")
+        this.name = "ScopeNotFoundError"
+        this.seal()
+    }
+}
+
+export class StoreTreeMismatchError extends ImmutableRuntimeError {
+    readonly code = "VALDRES_STORE_TREE_MISMATCH"
+
+    constructor() {
+        super("The Store belongs to a different StoreTree")
+        this.name = "StoreTreeMismatchError"
+        this.seal()
+    }
+}
+
+export class InvalidTransactionTargetError extends ImmutableRuntimeError {
+    readonly code = "VALDRES_INVALID_TRANSACTION_TARGET"
+
+    constructor() {
+        super("Transaction.scope requires a Store or named child")
+        this.name = "InvalidTransactionTargetError"
         this.seal()
     }
 }
@@ -364,7 +408,9 @@ export const classifyOwner = (
     if (
         (typeof value === "object" || typeof value === "function") &&
         value !== null &&
-        domain.states.has(value)
+        (domain.states.has(value) ||
+            domain.stores.has(value) ||
+            domain.transactionCursors.has(value))
     ) {
         return "local"
     }
@@ -397,7 +443,9 @@ export const classifyEntryOwner = (
     if (
         (typeof value === "object" || typeof value === "function") &&
         value !== null &&
-        domain.states.has(value)
+        (domain.states.has(value) ||
+            domain.stores.has(value) ||
+            domain.transactionCursors.has(value))
     ) {
         return "local"
     }

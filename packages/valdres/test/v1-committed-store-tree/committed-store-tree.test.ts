@@ -953,6 +953,118 @@ describe("v1 persistent committed StoreTree host", () => {
         )
     })
 
+    test("switches dynamic selector fanouts at 1k, 2k, and 4k with linear evaluations", () => {
+        for (const width of [1_000, 2_000, 4_000]) {
+            const domain = createCommittedStoreTreeDomain()
+            const gate = domain.atom(false)
+            const left = domain.atom(0)
+            const right = domain.atom(0)
+            const tree = domain.createStoreTree()
+            const evaluations = Array<number>(width).fill(0)
+            const selectors = evaluations.map((_, index) =>
+                domain.selector(get => {
+                    evaluations[index]++
+                    return (get(gate) ? get(right) : get(left)) + index
+                }),
+            )
+
+            for (let index = 0; index < width; index++) {
+                expect(tree.get(selectors[index]!)).toBe(index)
+            }
+            tree.set(gate, true)
+            expect(evaluations.every(count => count === 2)).toBe(true)
+
+            tree.set(left, 1)
+            expect(evaluations.every(count => count === 2)).toBe(true)
+
+            tree.set(right, 2)
+            expect(evaluations.every(count => count === 3)).toBe(true)
+            expect(tree.get(selectors[width - 1]!)).toBe(width + 1)
+        }
+    })
+
+    test("settles upstream selector work before reverse-source-order downstream work", () => {
+        const domain = createCommittedStoreTreeDomain()
+        const left = domain.atom(0)
+        const right = domain.atom(0)
+        const tree = domain.createStoreTree()
+        const evaluations = { upstream: 0, middle: 0, downstream: 0 }
+        const upstream = domain.selector(get => {
+            evaluations.upstream++
+            return get(left) + 1
+        })
+        const middle = domain.selector(get => {
+            evaluations.middle++
+            return get(upstream) + 1
+        })
+        const downstream = domain.selector(get => {
+            evaluations.downstream++
+            return get(right) + get(middle)
+        })
+
+        expect(tree.get(downstream)).toBe(2)
+        tree.txn(transaction => {
+            transaction.set(right, 10)
+            transaction.set(left, 1)
+        })
+        expect(evaluations).toEqual({
+            upstream: 2,
+            middle: 2,
+            downstream: 2,
+        })
+        expect(tree.get(downstream)).toBe(13)
+        expect(evaluations).toEqual({
+            upstream: 2,
+            middle: 2,
+            downstream: 2,
+        })
+    })
+
+    test("settles a newly selected dependency before a dynamic downstream read", () => {
+        const domain = createCommittedStoreTreeDomain()
+        const gate = domain.atom(0)
+        const source = domain.atom(0)
+        const tree = domain.createStoreTree()
+        const evaluations = { leaf: 0, branch: 0, choice: 0, parent: 0 }
+        const leaf = domain.selector(get => {
+            evaluations.leaf++
+            return get(source) + 1
+        })
+        const branch = domain.selector(get => {
+            evaluations.branch++
+            return get(leaf) + 1
+        })
+        const choice = domain.selector(get => {
+            evaluations.choice++
+            return get(gate) === 0 ? 0 : get(branch)
+        })
+        const parent = domain.selector(get => {
+            evaluations.parent++
+            return get(choice)
+        })
+
+        expect(tree.get(parent)).toBe(0)
+        expect(tree.get(branch)).toBe(2)
+        tree.txn(transaction => {
+            transaction.set(gate, 1)
+            transaction.set(source, 1)
+        })
+        expect(tree.get(parent)).toBe(3)
+        expect(evaluations).toEqual({
+            leaf: 2,
+            branch: 2,
+            choice: 2,
+            parent: 2,
+        })
+        expect(tree.get(parent)).toBe(3)
+        expect(evaluations).toEqual({
+            leaf: 2,
+            branch: 2,
+            choice: 2,
+            parent: 2,
+        })
+    })
+
     test("replaces dynamic reverse edges while equal selector values prune parents", () => {
         const domain = createCommittedStoreTreeDomain()
         const gate = domain.atom(true)
@@ -1273,7 +1385,16 @@ describe("v1 persistent committed StoreTree host", () => {
         expect(Object.keys(tree)).toEqual([])
         expect("domain" in tree).toBe(false)
         expect(Object.getOwnPropertyNames(Object.getPrototypeOf(tree))).toEqual(
-            ["constructor", "get", "set", "update", "reset", "txn"],
+            [
+                "constructor",
+                "get",
+                "set",
+                "update",
+                "reset",
+                "txn",
+                "scope",
+                "dispose",
+            ],
         )
         expect((tree as CommittedStoreTree & { serve?: unknown }).serve).toBe(
             undefined,
