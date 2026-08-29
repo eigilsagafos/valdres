@@ -1255,6 +1255,20 @@ describe("v1 contract manifest validation", () => {
         )
     })
 
+    test("freezes update as a new target while legacy set overloads replace into it", () => {
+        const set = mutableSet()
+        const update = findPublicEntry(set, "core.store.update")
+        const setMethod = findPublicEntry(set, "core.store.set")
+
+        expect(update.legacy).toEqual([])
+        expect(update.migration.mode).toBe("add")
+        expect(update.migration.semver).toBe("new")
+        expect(setMethod.migration.mode).toBe("replace")
+        expect(setMethod.migration.replacementIds).toContain(
+            "core.store.update",
+        )
+    })
+
     test("separates Atom undefined from collection-row undefined", () => {
         const set = mutableSet()
         const atomUpdate = set.callbackManifest.entries.find(

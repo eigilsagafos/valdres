@@ -1205,9 +1205,9 @@
                 "status": "stable"
             },
             "migration": {
-                "mode": "replace",
+                "mode": "add",
                 "replacementIds": [],
-                "semver": "breaking",
+                "semver": "new",
                 "codemod": "Rewrite updater-valued set calls to update.",
                 "typeError": "A function passed to set is stored as a value; row update on absence rejects.",
                 "firstPartyOwner": "core",
