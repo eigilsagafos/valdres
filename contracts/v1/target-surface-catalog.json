@@ -39,6 +39,7 @@
         "core.invalid-atom-comparator-result-error",
         "core.invalid-synchronous-atom-value-error",
         "core.invalid-transaction-callback-result-error",
+        "core.invalid-transaction-target-error",
         "core.global-atom",
         "core.global-store",
         "core.presence",
@@ -48,6 +49,7 @@
         "core.query-definition.order-by",
         "core.query-definition.where",
         "core.runtime-mismatch-error",
+        "core.scope-not-found-error",
         "core.server-snapshot-unavailable-error",
         "core.selector",
         "core.selector-capability-error",
@@ -57,6 +59,7 @@
         "core.selector-evaluation-error",
         "core.store",
         "core.store-disposed-error",
+        "core.store-tree-mismatch-error",
         "core.store.delete",
         "core.store.dispose",
         "core.store.get",
@@ -403,6 +406,14 @@
             "errorCode": "VALDRES_INVALID_TRANSACTION_CALLBACK_RESULT"
         },
         {
+            "id": "core.invalid-transaction-target-error",
+            "kind": "error",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "InvalidTransactionTargetError",
+            "errorCode": "VALDRES_INVALID_TRANSACTION_TARGET"
+        },
+        {
             "id": "core.query-definition.facets",
             "kind": "option",
             "package": "valdres",
@@ -496,6 +507,14 @@
             "errorCode": "VALDRES_RUNTIME_MISMATCH"
         },
         {
+            "id": "core.scope-not-found-error",
+            "kind": "error",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "ScopeNotFoundError",
+            "errorCode": "VALDRES_SCOPE_NOT_FOUND"
+        },
+        {
             "id": "core.selector",
             "kind": "runtime-export",
             "package": "valdres",
@@ -537,7 +556,16 @@
             "kind": "error",
             "package": "valdres",
             "subpath": ".",
-            "name": "StoreDisposedError"
+            "name": "StoreDisposedError",
+            "errorCode": "VALDRES_STORE_DISPOSED"
+        },
+        {
+            "id": "core.store-tree-mismatch-error",
+            "kind": "error",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "StoreTreeMismatchError",
+            "errorCode": "VALDRES_STORE_TREE_MISMATCH"
         },
         {
             "id": "core.store.delete",

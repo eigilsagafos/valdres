@@ -1237,6 +1237,36 @@
             "notes": "The exact root class/code pair is InvalidTransactionCallbackResultError / VALDRES_INVALID_TRANSACTION_CALLBACK_RESULT."
         },
         {
+            "id": "core.invalid-transaction-target-error",
+            "kind": "error",
+            "owner": "valdres",
+            "errorCode": "VALDRES_INVALID_TRANSACTION_TARGET",
+            "legacy": [],
+            "target": {
+                "package": "valdres",
+                "subpath": ".",
+                "name": "InvalidTransactionTargetError",
+                "status": "stable"
+            },
+            "migration": {
+                "mode": "add",
+                "replacementIds": [],
+                "semver": "new",
+                "codemod": "Pass an existing immediate child name or a Store to Transaction.scope.",
+                "typeError": "An untyped non-string/non-Store target throws VALDRES_INVALID_TRANSACTION_TARGET before lookup or draft work.",
+                "firstPartyOwner": "core",
+                "evidenceStatus": "planned"
+            },
+            "contractIds": [
+                "error.stable-name-and-code",
+                "runtime.before-work-owner-check",
+                "transaction.one-tree-draft",
+                "transaction.scope-cursor-no-savepoint"
+            ],
+            "decisionStatus": "approved",
+            "notes": "The exact root class/code pair is InvalidTransactionTargetError / VALDRES_INVALID_TRANSACTION_TARGET."
+        },
+        {
             "id": "core.runtime-mismatch-error",
             "kind": "error",
             "owner": "valdres",
@@ -1263,6 +1293,36 @@
             ],
             "decisionStatus": "approved",
             "notes": "No same-version global adoption in 1.0."
+        },
+        {
+            "id": "core.scope-not-found-error",
+            "kind": "error",
+            "owner": "valdres",
+            "errorCode": "VALDRES_SCOPE_NOT_FOUND",
+            "legacy": [],
+            "target": {
+                "package": "valdres",
+                "subpath": ".",
+                "name": "ScopeNotFoundError",
+                "status": "stable"
+            },
+            "migration": {
+                "mode": "add",
+                "replacementIds": [],
+                "semver": "new",
+                "codemod": "Create the named child scope explicitly before resolving it through Transaction.scope.",
+                "typeError": "A missing immediate child name throws VALDRES_SCOPE_NOT_FOUND without creating topology or staging work.",
+                "firstPartyOwner": "core",
+                "evidenceStatus": "planned"
+            },
+            "contractIds": [
+                "error.stable-name-and-code",
+                "runtime.before-work-owner-check",
+                "scope.parent-local-name",
+                "transaction.scope-cursor-no-savepoint"
+            ],
+            "decisionStatus": "approved",
+            "notes": "The exact root class/code pair is ScopeNotFoundError / VALDRES_SCOPE_NOT_FOUND. String targeting is lookup-only."
         },
         {
             "id": "core.selector",
@@ -1494,6 +1554,7 @@
             "id": "core.store-disposed-error",
             "kind": "error",
             "owner": "core",
+            "errorCode": "VALDRES_STORE_DISPOSED",
             "legacy": [
                 {
                     "kind": "runtime-export",
@@ -1518,9 +1579,45 @@
                 "firstPartyOwner": "core",
                 "evidenceStatus": "planned"
             },
-            "contractIds": ["store.explicit-owner-teardown"],
+            "contractIds": [
+                "error.stable-name-and-code",
+                "runtime.before-work-owner-check",
+                "scope.explicit-disposal",
+                "store.explicit-owner-teardown"
+            ],
             "decisionStatus": "approved",
-            "notes": "Disposed Store generations remain terminal and code-addressable."
+            "notes": "The exact root class/code pair is StoreDisposedError / VALDRES_STORE_DISPOSED. Disposed Store generations remain terminal."
+        },
+        {
+            "id": "core.store-tree-mismatch-error",
+            "kind": "error",
+            "owner": "valdres",
+            "errorCode": "VALDRES_STORE_TREE_MISMATCH",
+            "legacy": [],
+            "target": {
+                "package": "valdres",
+                "subpath": ".",
+                "name": "StoreTreeMismatchError",
+                "status": "stable"
+            },
+            "migration": {
+                "mode": "add",
+                "replacementIds": [],
+                "semver": "new",
+                "codemod": "Target only Stores owned by the active transaction's StoreTree.",
+                "typeError": "A same-domain Store from an unrelated StoreTree throws VALDRES_STORE_TREE_MISMATCH before draft work.",
+                "firstPartyOwner": "core",
+                "evidenceStatus": "planned"
+            },
+            "contractIds": [
+                "error.stable-name-and-code",
+                "no-writable-cross-tree-state",
+                "runtime.before-work-owner-check",
+                "transaction.one-tree-draft",
+                "transaction.scope-cursor-no-savepoint"
+            ],
+            "decisionStatus": "approved",
+            "notes": "The exact root class/code pair is StoreTreeMismatchError / VALDRES_STORE_TREE_MISMATCH. Runtime mismatch retains higher precedence for recognized cross-domain Stores."
         },
         {
             "id": "core.store.delete",

@@ -521,9 +521,9 @@ const frozenLegacyProvenanceInventorySha256 =
 const frozenReviewedLegacyDispositionSha256 =
     "e6fcb767cd68ed85f8dd5035190616fa1dbcc72094dc644ee3eb649ffc6bea63"
 const frozenTargetCoordinateInventorySha256 =
-    "3b9bf9a8eeff8204549f53e7b99c51d94d5da1be170ff16cd69a6df41cf9d77f"
+    "36caed1fcea7f212db8722655dbe743365a1b0ec5663d8c836088c3e3b2fc93c"
 const frozenReleaseTrackOwnershipSha256 =
-    "23261cb3508b4952881bb8fe98dbd89a54604948955137fe50ddf2062148fd1e"
+    "e46a92669b9cd10b20a8e5ac02538fb73e1dc5b01374dbffa84ab3c50c64ba39"
 const frozenWorkspaceBaseline = Object.freeze({
     commit: "ff1424bde13445eba07fcb426f5493dd43898f72",
     packageVersion: "1.0.0-beta.22",
@@ -730,6 +730,14 @@ const requiredFrozenPublicCoordinates = new Map([
         },
     ],
     [
+        "core.invalid-transaction-target-error",
+        {
+            package: "valdres",
+            subpath: ".",
+            name: "InvalidTransactionTargetError",
+        },
+    ],
+    [
         "core.query-definition.facets",
         { package: "valdres", subpath: ".", name: "QueryDefinition.facets" },
     ],
@@ -758,6 +766,10 @@ const requiredFrozenPublicCoordinates = new Map([
         },
     ],
     [
+        "core.scope-not-found-error",
+        { package: "valdres", subpath: ".", name: "ScopeNotFoundError" },
+    ],
+    [
         "core.selector-capability-error",
         { package: "valdres", subpath: ".", name: "SelectorCapabilityError" },
     ],
@@ -768,6 +780,14 @@ const requiredFrozenPublicCoordinates = new Map([
     [
         "core.selector-options.name",
         { package: "valdres", subpath: ".", name: "SelectorOptions.name" },
+    ],
+    [
+        "core.store-disposed-error",
+        { package: "valdres", subpath: ".", name: "StoreDisposedError" },
+    ],
+    [
+        "core.store-tree-mismatch-error",
+        { package: "valdres", subpath: ".", name: "StoreTreeMismatchError" },
     ],
     [
         "core.transaction-closed-error",
@@ -802,12 +822,19 @@ const requiredFrozenErrorCodes = new Map([
         "core.invalid-transaction-callback-result-error",
         "VALDRES_INVALID_TRANSACTION_CALLBACK_RESULT",
     ],
+    [
+        "core.invalid-transaction-target-error",
+        "VALDRES_INVALID_TRANSACTION_TARGET",
+    ],
     ["core.runtime-mismatch-error", "VALDRES_RUNTIME_MISMATCH"],
+    ["core.scope-not-found-error", "VALDRES_SCOPE_NOT_FOUND"],
     [
         "core.server-snapshot-unavailable-error",
         "VALDRES_SERVER_SNAPSHOT_UNAVAILABLE",
     ],
     ["core.selector-capability-error", "VALDRES_SELECTOR_CAPABILITY_ERROR"],
+    ["core.store-disposed-error", "VALDRES_STORE_DISPOSED"],
+    ["core.store-tree-mismatch-error", "VALDRES_STORE_TREE_MISMATCH"],
     ["core.transaction-closed-error", "VALDRES_TRANSACTION_CLOSED"],
     ["core.transaction-phase-error", "VALDRES_TRANSACTION_PHASE"],
 ] as const)
@@ -830,6 +857,24 @@ const requiredExecutionErrorContracts = new Map([
         ["error.stable-name-and-code", "transaction.one-tree-draft"],
     ],
     [
+        "core.invalid-transaction-target-error",
+        [
+            "error.stable-name-and-code",
+            "runtime.before-work-owner-check",
+            "transaction.one-tree-draft",
+            "transaction.scope-cursor-no-savepoint",
+        ],
+    ],
+    [
+        "core.scope-not-found-error",
+        [
+            "error.stable-name-and-code",
+            "runtime.before-work-owner-check",
+            "scope.parent-local-name",
+            "transaction.scope-cursor-no-savepoint",
+        ],
+    ],
+    [
         "core.selector-capability-error",
         [
             "callback.revocable-capability",
@@ -849,6 +894,25 @@ const requiredExecutionErrorContracts = new Map([
         "core.transaction-phase-error",
         [
             "error.stable-name-and-code",
+            "transaction.one-tree-draft",
+            "transaction.scope-cursor-no-savepoint",
+        ],
+    ],
+    [
+        "core.store-disposed-error",
+        [
+            "error.stable-name-and-code",
+            "runtime.before-work-owner-check",
+            "scope.explicit-disposal",
+            "store.explicit-owner-teardown",
+        ],
+    ],
+    [
+        "core.store-tree-mismatch-error",
+        [
+            "error.stable-name-and-code",
+            "no-writable-cross-tree-state",
+            "runtime.before-work-owner-check",
             "transaction.one-tree-draft",
             "transaction.scope-cursor-no-savepoint",
         ],

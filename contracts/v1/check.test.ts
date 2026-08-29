@@ -1289,6 +1289,157 @@ describe("v1 contract manifest validation", () => {
         )
     })
 
+    test("freezes scope and transaction targeting failure ownership", () => {
+        const set = mutableSet()
+        const expected = new Map([
+            [
+                "core.store-disposed-error",
+                {
+                    name: "StoreDisposedError",
+                    code: "VALDRES_STORE_DISPOSED",
+                    mode: "keep",
+                    semver: "breaking",
+                    contractIds: [
+                        "error.stable-name-and-code",
+                        "runtime.before-work-owner-check",
+                        "scope.explicit-disposal",
+                        "store.explicit-owner-teardown",
+                    ],
+                },
+            ],
+            [
+                "core.scope-not-found-error",
+                {
+                    name: "ScopeNotFoundError",
+                    code: "VALDRES_SCOPE_NOT_FOUND",
+                    mode: "add",
+                    semver: "new",
+                    contractIds: [
+                        "error.stable-name-and-code",
+                        "runtime.before-work-owner-check",
+                        "scope.parent-local-name",
+                        "transaction.scope-cursor-no-savepoint",
+                    ],
+                },
+            ],
+            [
+                "core.store-tree-mismatch-error",
+                {
+                    name: "StoreTreeMismatchError",
+                    code: "VALDRES_STORE_TREE_MISMATCH",
+                    mode: "add",
+                    semver: "new",
+                    contractIds: [
+                        "error.stable-name-and-code",
+                        "no-writable-cross-tree-state",
+                        "runtime.before-work-owner-check",
+                        "transaction.one-tree-draft",
+                        "transaction.scope-cursor-no-savepoint",
+                    ],
+                },
+            ],
+            [
+                "core.invalid-transaction-target-error",
+                {
+                    name: "InvalidTransactionTargetError",
+                    code: "VALDRES_INVALID_TRANSACTION_TARGET",
+                    mode: "add",
+                    semver: "new",
+                    contractIds: [
+                        "error.stable-name-and-code",
+                        "runtime.before-work-owner-check",
+                        "transaction.one-tree-draft",
+                        "transaction.scope-cursor-no-savepoint",
+                    ],
+                },
+            ],
+        ] as const)
+
+        for (const [id, ownership] of expected) {
+            const entry = findPublicEntry(set, id)
+            expect(entry.kind).toBe("error")
+            expect(entry.target).toEqual({
+                package: "valdres",
+                subpath: ".",
+                name: ownership.name,
+                status: "stable",
+            })
+            expect(entry.errorCode).toBe(ownership.code)
+            expect(entry.migration.mode).toBe(ownership.mode)
+            expect(entry.migration.semver).toBe(ownership.semver)
+            expect(entry.contractIds).toEqual(ownership.contractIds)
+            expect(
+                set.targetSurfaceCatalog.frozenPublicCoordinates.find(
+                    (coordinate: any) => coordinate.id === id,
+                ),
+            ).toEqual({
+                id,
+                kind: "error",
+                package: "valdres",
+                subpath: ".",
+                name: ownership.name,
+                errorCode: ownership.code,
+            })
+        }
+
+        const disposed = findPublicEntry(set, "core.store-disposed-error")
+        expect(disposed.owner).toBe("core")
+        expect(disposed.legacy).toEqual([
+            {
+                kind: "runtime-export",
+                package: "valdres",
+                subpath: ".",
+                name: "StoreDisposedError",
+                baseline: "1.0.0-beta.23",
+            },
+        ])
+        for (const id of [
+            "core.scope-not-found-error",
+            "core.store-tree-mismatch-error",
+            "core.invalid-transaction-target-error",
+        ]) {
+            expect(findPublicEntry(set, id).legacy).toEqual([])
+        }
+
+        const changedEverywhere = mutableSet()
+        findPublicEntry(
+            changedEverywhere,
+            "core.scope-not-found-error",
+        ).errorCode = "VALDRES_MISSING_SCOPE"
+        changedEverywhere.targetSurfaceCatalog.frozenPublicCoordinates.find(
+            (coordinate: any) => coordinate.id === "core.scope-not-found-error",
+        ).errorCode = "VALDRES_MISSING_SCOPE"
+        expect(() => validateContractSet(changedEverywhere)).toThrow(
+            /core\.scope-not-found-error differs from the required stable error code VALDRES_SCOPE_NOT_FOUND/,
+        )
+
+        const droppedContract = mutableSet()
+        findPublicEntry(
+            droppedContract,
+            "core.store-tree-mismatch-error",
+        ).contractIds = [
+            "error.stable-name-and-code",
+            "runtime.before-work-owner-check",
+            "transaction.one-tree-draft",
+            "transaction.scope-cursor-no-savepoint",
+        ]
+        expect(() => validateContractSet(droppedContract)).toThrow(
+            /core\.store-tree-mismatch-error differs from the required execution-error contract ownership/,
+        )
+
+        const droppedCodeCoordinate = mutableSet()
+        delete findPublicEntry(
+            droppedCodeCoordinate,
+            "core.store-disposed-error",
+        ).errorCode
+        delete droppedCodeCoordinate.targetSurfaceCatalog.frozenPublicCoordinates.find(
+            (coordinate: any) => coordinate.id === "core.store-disposed-error",
+        ).errorCode
+        expect(() => validateContractSet(droppedCodeCoordinate)).toThrow(
+            /frozen error code coordinate inventory differs from the frozen surface; missing: core\.store-disposed-error/,
+        )
+    })
+
     test("preserves phase-specific callback errors and runtime activity ownership", () => {
         const set = mutableSet()
         const executionErrors = new Map<string, readonly [string, string]>([

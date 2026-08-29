@@ -146,6 +146,17 @@ TransactionClosedError                 VALDRES_TRANSACTION_CLOSED
 TransactionPhaseError                  VALDRES_TRANSACTION_PHASE
 ```
 
+The scope/disposal boundary freezes four more root errors. The existing beta
+`StoreDisposedError` coordinate keeps its legacy ownership; the other three
+coordinates are additive:
+
+```text
+StoreDisposedError              VALDRES_STORE_DISPOSED
+ScopeNotFoundError              VALDRES_SCOPE_NOT_FOUND
+StoreTreeMismatchError          VALDRES_STORE_TREE_MISMATCH
+InvalidTransactionTargetError   VALDRES_INVALID_TRANSACTION_TARGET
+```
+
 Selector getter/comparator capability violations remain
 `SelectorCapabilityError`, and transaction/transaction-scope phase violations
 remain `TransactionPhaseError`; neither is rewritten to the generic callback
