@@ -5,37 +5,61 @@ import type {
     SelectorDependencySnapshot,
     SelectorEvaluationHost,
     SelectorEvaluationProposal,
-    SelectorOutcome,
     SelectorRecordView,
     ServedSelectorOutcome,
 } from "../selector-evaluator/types"
 import { SelectorEvaluationSession } from "../selector-evaluator/types"
+import {
+    CallbackCapabilityError,
+    InvalidAtomComparatorResultError,
+    InvalidSynchronousAtomValueError,
+    InvalidTransactionCallbackResultError,
+    RuntimeMismatchError,
+    SelectorCapabilityError,
+    TransactionClosedError,
+    TransactionPhaseError,
+    assertCursorOperationAllowed,
+    assertStoreOperationAllowed,
+    classifyEntryOwner,
+    classifyOwner,
+    containThenable,
+    inspectSynchronousAtomValue,
+    inspectThenable,
+    makeStateHandle,
+    runGuardedCallback,
+    runLazyInitializer,
+    runSelectorActivity,
+    runTransactionActivity,
+    runTransactionResultActivity,
+    type AnyAtom,
+    type AnyState,
+    type AtomDefinition,
+    type RuntimeDomainRecords,
+    type SynchronousResult,
+} from "./runtime-domain"
+import {
+    TreeDraft,
+    createRootTransactionCursor,
+    inspectTransactionCallbackResult,
+    type AtomDraftBaseline,
+    type AtomIntent,
+    type DraftAtomOutcome,
+    type TreeTransactionHost,
+} from "./tree-transaction"
 import type {
     Atom,
+    AtomOptions,
+    AtomUpdater,
     CommittedStoreTree,
     CommittedStoreTreeDomain,
     Selector,
     SelectorOptions,
     State,
     StateRead,
+    TransactionCallback,
 } from "./types"
 
-type AnyState = State<any>
-type AnyAtom = Atom<any>
 type AnySelector = Selector<any>
-
-type AtomFallback =
-    | Readonly<{ kind: "eager"; value: unknown }>
-    | Readonly<{ kind: "lazy"; initialize: () => unknown }>
-
-interface DomainRecords {
-    readonly states: WeakSet<object>
-    readonly atoms: WeakMap<object, AtomFallback>
-    readonly selectors: WeakMap<object, SelectorDefinition<AnyState, any>>
-    readonly ownerToken: object
-    activeSession: SelectorEvaluationSession<AnyState> | undefined
-}
-
 type OutcomeToken = Readonly<{ id: number }>
 
 interface SelectorRecord {
@@ -49,165 +73,48 @@ interface SelectorRecord {
         | undefined
 }
 
-type InspectedThenable =
-    | Readonly<{ kind: "not-thenable" }>
-    | Readonly<{
-          kind: "thenable"
-          target: object | ((...args: never[]) => unknown)
-          then: (...args: unknown[]) => unknown
-      }>
-    | Readonly<{ kind: "inspection-error"; error: unknown }>
+interface AtomApplyPlan {
+    readonly intent: AtomIntent
+    readonly before: DraftAtomOutcome
+    readonly after: DraftAtomOutcome
+    readonly ownershipChanged: boolean
+    readonly effectiveChanged: boolean
+}
 
-type SynchronousResult =
-    | Readonly<{ kind: "value"; value: unknown }>
-    | Readonly<{ kind: "error"; error: unknown }>
+const valueOutcome = (value: unknown): DraftAtomOutcome =>
+    Object.freeze({ kind: "value", value })
 
-const NOT_THENABLE = Object.freeze({ kind: "not-thenable" as const })
-const NOOP = (): void => {}
-const APPLY = Reflect.apply
-const RUNTIME_OWNER_KEY = Symbol.for("valdres.runtime-owner/v1")
+const errorOutcome = (error: unknown): DraftAtomOutcome =>
+    Object.freeze({ kind: "error", error })
 
-/** The stable owner failure that a later public facade will re-export. */
-export class RuntimeMismatchError extends Error {
-    readonly code = "VALDRES_RUNTIME_MISMATCH"
+const fromSynchronousResult = (result: SynchronousResult): DraftAtomOutcome =>
+    result.kind === "value"
+        ? valueOutcome(result.value)
+        : errorOutcome(result.error)
 
-    constructor() {
-        super("Valdres handles belong to a different runtime domain")
-        this.name = "RuntimeMismatchError"
-        Object.freeze(this)
+const sameAtomOutcome = (
+    previous: DraftAtomOutcome,
+    next: DraftAtomOutcome,
+): boolean => {
+    if (previous.kind !== next.kind) return false
+    if (previous.kind === "value" && next.kind === "value") {
+        return Object.is(previous.value, next.value)
     }
-}
-
-const immutableNamedError = (
-    name: string,
-    code: string,
-    message: string,
-): Readonly<Error & { readonly code: string }> => {
-    const error = new Error(message) as Error & { code: string }
-    error.name = name
-    error.code = code
-    return Object.freeze(error)
-}
-
-const invalidAtomValueError = () =>
-    immutableNamedError(
-        "InvalidSynchronousAtomValueError",
-        "VALDRES_INVALID_SYNCHRONOUS_ATOM_VALUE",
-        "Atom values and lazy initializers must be synchronous",
+    return (
+        previous.kind !== "value" &&
+        next.kind !== "value" &&
+        Object.is(previous.error, next.error)
     )
-
-const selectorCapabilityError = (
-    operation: "get" | "set" | "createStoreTree",
-) =>
-    immutableNamedError(
-        "SelectorCapabilityError",
-        "VALDRES_SELECTOR_CAPABILITY_ERROR",
-        `A selector callback cannot call StoreTree.${operation} directly`,
-    )
-
-const inspectThenable = (value: unknown): InspectedThenable => {
-    if (
-        (typeof value !== "object" || value === null) &&
-        typeof value !== "function"
-    ) {
-        return NOT_THENABLE
-    }
-
-    try {
-        const then = (value as { readonly then?: unknown }).then
-        return typeof then === "function"
-            ? Object.freeze({
-                  kind: "thenable" as const,
-                  target: value,
-                  then: then as (...args: unknown[]) => unknown,
-              })
-            : NOT_THENABLE
-    } catch (error) {
-        return Object.freeze({ kind: "inspection-error" as const, error })
-    }
 }
-
-const inspectSynchronousValue = (value: unknown): SynchronousResult => {
-    const inspected = inspectThenable(value)
-    if (inspected.kind === "not-thenable") {
-        return Object.freeze({ kind: "value" as const, value })
-    }
-    if (inspected.kind === "inspection-error") {
-        return Object.freeze({ kind: "error" as const, error: inspected.error })
-    }
-    try {
-        APPLY(inspected.then, inspected.target, [undefined, NOOP])
-    } catch {
-        // Containment must not replace the named synchronous-boundary error.
-    }
-    return Object.freeze({
-        kind: "error" as const,
-        error: invalidAtomValueError(),
-    })
-}
-
-const runLazyInitializer = (initialize: () => unknown): SynchronousResult => {
-    try {
-        return inspectSynchronousValue(initialize())
-    } catch (thrown) {
-        const inspected = inspectThenable(thrown)
-        if (inspected.kind === "not-thenable") {
-            return Object.freeze({ kind: "error" as const, error: thrown })
-        }
-        if (inspected.kind === "inspection-error") {
-            return Object.freeze({
-                kind: "error" as const,
-                error: inspected.error,
-            })
-        }
-        try {
-            APPLY(inspected.then, inspected.target, [undefined, NOOP])
-        } catch {
-            // See inspectSynchronousValue: containment is deliberately inert.
-        }
-        return Object.freeze({
-            kind: "error" as const,
-            error: invalidAtomValueError(),
-        })
-    }
-}
-
-const runWithDomainGuard = <Result>(
-    domain: DomainRecords,
-    session: SelectorEvaluationSession<AnyState>,
-    operation: () => Result,
-): Result => {
-    const previousSession = domain.activeSession
-    domain.activeSession = session
-    try {
-        return operation()
-    } finally {
-        domain.activeSession = previousSession
-    }
-}
-
-const inspectGuardedSynchronousValue = (
-    domain: DomainRecords,
-    session: SelectorEvaluationSession<AnyState>,
-    value: unknown,
-): SynchronousResult => {
-    const result = runWithDomainGuard(domain, session, () =>
-        inspectSynchronousValue(value),
-    )
-    const controlFault = session.getControlFault()
-    if (controlFault.kind === "fault") throw controlFault.error
-    return result
-}
-
-const freezeOutcome = <Value>(
-    outcome: SelectorOutcome<Value>,
-): SelectorOutcome<Value> => Object.freeze(outcome)
 
 class CommittedStoreTreeHost
     implements
         CommittedStoreTree,
-        SelectorEvaluationHost<AnyState, OutcomeToken>
+        SelectorEvaluationHost<AnyState, OutcomeToken>,
+        TreeTransactionHost
 {
+    readonly #fallbackRecords = new Map<AnyAtom, DraftAtomOutcome>()
+    readonly #atomOverrides = new Map<AnyAtom, unknown>()
     readonly #atomRecords = new Map<
         AnyAtom,
         ServedSelectorOutcome<OutcomeToken>
@@ -216,23 +123,26 @@ class CommittedStoreTreeHost
     readonly #reverseEdges = new Map<AnyState, Set<AnySelector>>()
     readonly #dirtySelectors = new Set<AnySelector>()
     #nextToken = 1
+    #sourceEpoch = 0
     #postSourceApply = false
     #propagationQueue: AnySelector[] | undefined
     #propagationQueued: Set<AnySelector> | undefined
     #propagationControlFault: unknown | undefined
-    readonly #domain: DomainRecords
+    readonly #domain: RuntimeDomainRecords
 
-    constructor(domain: DomainRecords) {
+    constructor(domain: RuntimeDomainRecords) {
         this.#domain = domain
+    }
+
+    get runtimeDomain(): RuntimeDomainRecords {
+        return this.#domain
     }
 
     get<Value>(state: State<Value>): Value {
         const session = new SelectorEvaluationSession<AnyState>()
         const node = state as unknown as AnyState
-        const ownerStatus = this.#classifyEntryOwner(node, session)
-        if (this.#domain.activeSession !== undefined) {
-            throw selectorCapabilityError("get")
-        }
+        const ownerStatus = classifyEntryOwner(this.#domain, node, session)
+        assertStoreOperationAllowed(this.#domain, "StoreTree.get")
         if (ownerStatus === "invalid") {
             throw new TypeError("StoreTree.get requires a valid State")
         }
@@ -242,52 +152,132 @@ class CommittedStoreTreeHost
     }
 
     set<Value>(atom: Atom<Value>, value: Value): void {
-        const node = atom as unknown as AnyAtom
-        const session = new SelectorEvaluationSession<AnyState>()
-        const ownerStatus = this.#classifyEntryOwner(node, session)
-        if (this.#domain.activeSession !== undefined) {
-            throw selectorCapabilityError("set")
+        const draft = new TreeDraft()
+        try {
+            const node = atom as unknown as AnyAtom
+            const session = new SelectorEvaluationSession<AnyState>()
+            this.#validateDirectAtom(node, session, "StoreTree.set")
+            this.#stageAtomSet(draft, node, value, session)
+        } catch (error) {
+            draft.close()
+            throw error
         }
+        draft.close()
+        this.#commitDraft(draft)
+    }
+
+    txn<Result>(callback: TransactionCallback<Result>): Result {
+        assertStoreOperationAllowed(this.#domain, "StoreTree.txn")
+        if (typeof callback !== "function") {
+            throw new TypeError("StoreTree.txn requires a callback function")
+        }
+
+        const draft = new TreeDraft()
+        const cursor = createRootTransactionCursor(this, draft)
+        let result: Result
+        try {
+            result = runTransactionActivity(
+                this.#domain,
+                draft.transaction,
+                () =>
+                    (
+                        callback as unknown as (
+                            transaction: typeof cursor,
+                        ) => Result
+                    )(cursor),
+            )
+        } catch (error) {
+            draft.close()
+            throw error
+        }
+        draft.close()
+
+        const resultSession = new SelectorEvaluationSession<AnyState>()
+        runTransactionResultActivity(this.#domain, resultSession, () =>
+            inspectTransactionCallbackResult(result),
+        )
+        this.#commitDraft(draft)
+        return result
+    }
+
+    transactionGet<Value>(draft: TreeDraft, state: State<Value>): Value {
+        const node = state as unknown as AnyState
+        const session = new SelectorEvaluationSession<AnyState>()
+        const ownerStatus = classifyEntryOwner(this.#domain, node, session)
+        assertCursorOperationAllowed(
+            this.#domain,
+            draft.transaction,
+            draft.active,
+        )
         if (ownerStatus === "invalid") {
-            throw new TypeError("StoreTree.set requires a valid Atom")
+            throw new TypeError("Transaction.get requires a valid State")
         }
         if (!this.#domain.atoms.has(node)) {
-            throw new TypeError("StoreTree.set requires an Atom")
+            throw new TypeError(
+                "Transaction selector reads require the scratch host",
+            )
         }
-
-        const inspected = inspectGuardedSynchronousValue(
-            this.#domain,
+        const outcome = this.#readDraftAtomOutcome(
+            draft,
+            node as AnyAtom,
             session,
-            value,
         )
-        if (inspected.kind === "error") throw inspected.error
+        if (outcome.kind !== "value") throw outcome.error
+        return outcome.value as Value
+    }
 
-        const current = this.#serveAtom(node, session)
-        if (
-            current.outcome.kind === "value" &&
-            Object.is(current.outcome.value, inspected.value)
-        ) {
-            return
+    transactionSet<Value>(
+        draft: TreeDraft,
+        atom: Atom<Value>,
+        value: Value,
+    ): void {
+        const node = atom as unknown as AnyAtom
+        const session = new SelectorEvaluationSession<AnyState>()
+        this.#validateTransactionAtom(draft, node, session, "Transaction.set")
+        this.#stageAtomSet(draft, node, value, session)
+    }
+
+    transactionUpdate<Value>(
+        draft: TreeDraft,
+        atom: Atom<Value>,
+        update: AtomUpdater<Value>,
+    ): void {
+        const node = atom as unknown as AnyAtom
+        const session = new SelectorEvaluationSession<AnyState>()
+        this.#validateTransactionAtom(
+            draft,
+            node,
+            session,
+            "Transaction.update",
+        )
+        if (typeof update !== "function") {
+            throw new TypeError(
+                "Transaction.update requires an updater function",
+            )
         }
 
-        this.#atomRecords.set(
-            node,
-            Object.freeze({
-                token: this.createOutcomeToken(),
-                outcome: freezeOutcome({
-                    kind: "value",
-                    value: inspected.value,
-                }),
-            }),
+        const current = this.#readDraftAtomOutcome(draft, node, session)
+        if (current.kind !== "value") throw current.error
+        const candidate = this.#runAtomUpdater(
+            update as (current: unknown) => unknown,
+            current.value,
+            session,
         )
-        this.#propagateFrom(node)
+        this.#stageAtomSet(draft, node, candidate, session)
+    }
+
+    transactionReset<Value>(draft: TreeDraft, atom: Atom<Value>): void {
+        const node = atom as unknown as AnyAtom
+        const session = new SelectorEvaluationSession<AnyState>()
+        this.#validateTransactionAtom(draft, node, session, "Transaction.reset")
+        this.#stageAtomReset(draft, node, session)
     }
 
     serve(
         node: AnyState,
         session: SelectorEvaluationSession<AnyState>,
     ): ServedSelectorOutcome<OutcomeToken> {
-        if (this.#classifyOwner(node, session) === "invalid") {
+        if (classifyOwner(this.#domain, node, session) === "invalid") {
             throw new TypeError("Selector get requires a valid State")
         }
         if (this.#domain.atoms.has(node)) {
@@ -304,10 +294,9 @@ class CommittedStoreTreeHost
             return current.served
         }
 
-        const proposal = runWithDomainGuard(this.#domain, session, () =>
+        const proposal = runSelectorActivity(this.#domain, session, () =>
             evaluateSelector(definition, this, session),
         )
-
         if (
             proposal.outcome.kind === "control-error" &&
             !this.#postSourceApply
@@ -347,6 +336,284 @@ class CommittedStoreTreeHost
         return Object.freeze({ id: this.#nextToken++ })
     }
 
+    #validateDirectAtom(
+        atom: AnyAtom,
+        session: SelectorEvaluationSession<AnyState>,
+        operation: string,
+    ): void {
+        const ownerStatus = classifyEntryOwner(this.#domain, atom, session)
+        assertStoreOperationAllowed(this.#domain, operation)
+        this.#assertAtomKind(atom, ownerStatus, operation)
+    }
+
+    #validateTransactionAtom(
+        draft: TreeDraft,
+        atom: AnyAtom,
+        session: SelectorEvaluationSession<AnyState>,
+        operation: string,
+    ): void {
+        const ownerStatus = classifyEntryOwner(this.#domain, atom, session)
+        assertCursorOperationAllowed(
+            this.#domain,
+            draft.transaction,
+            draft.active,
+        )
+        this.#assertAtomKind(atom, ownerStatus, operation)
+    }
+
+    #assertAtomKind(
+        atom: AnyAtom,
+        ownerStatus: "local" | "invalid",
+        operation: string,
+    ): void {
+        if (ownerStatus === "invalid" || !this.#domain.atoms.has(atom)) {
+            throw new TypeError(`${operation} requires a valid Atom`)
+        }
+    }
+
+    #stageAtomSet(
+        draft: TreeDraft,
+        atom: AnyAtom,
+        value: unknown,
+        session: SelectorEvaluationSession<AnyState>,
+    ): void {
+        const inspected = runGuardedCallback(this.#domain, session, () =>
+            inspectSynchronousAtomValue(value),
+        )
+        if (inspected.kind === "error") throw inspected.error
+
+        const baseline = this.#getDraftAtomBaseline(draft, atom, session)
+        const canonical =
+            baseline.outcome.kind === "value"
+                ? this.#canonicalizeAtomCandidate(
+                      atom,
+                      baseline.outcome.value,
+                      inspected.value,
+                      session,
+                  )
+                : inspected.value
+        draft.stage(
+            Object.freeze({
+                kind: "set",
+                atom,
+                value: canonical,
+                publishDraftFallback:
+                    baseline.reachesFallback && draft.fallbackMemo.has(atom),
+            }),
+        )
+    }
+
+    #stageAtomReset(
+        draft: TreeDraft,
+        atom: AnyAtom,
+        session: SelectorEvaluationSession<AnyState>,
+    ): void {
+        this.#getDraftAtomBaseline(draft, atom, session)
+        const fallback = this.#getDraftFallbackOutcome(draft, atom, session)
+        if (fallback.kind !== "value") throw fallback.error
+        draft.stage(
+            Object.freeze({
+                kind: "reset",
+                atom,
+                fallback,
+                publishDraftFallback: draft.fallbackMemo.has(atom),
+            }),
+        )
+    }
+
+    #getDraftAtomBaseline(
+        draft: TreeDraft,
+        atom: AnyAtom,
+        session: SelectorEvaluationSession<AnyState>,
+    ): AtomDraftBaseline {
+        const existing = draft.atomBaselines.get(atom)
+        if (existing !== undefined) return existing
+        const owned = this.#atomOverrides.has(atom)
+        const baseline = Object.freeze({
+            owned,
+            outcome: owned
+                ? valueOutcome(this.#atomOverrides.get(atom))
+                : this.#getDraftFallbackOutcome(draft, atom, session),
+            reachesFallback: !owned,
+        })
+        draft.atomBaselines.set(atom, baseline)
+        return baseline
+    }
+
+    #readDraftAtomOutcome(
+        draft: TreeDraft,
+        atom: AnyAtom,
+        session: SelectorEvaluationSession<AnyState>,
+    ): DraftAtomOutcome {
+        const intent = draft.intents.get(atom)
+        if (intent?.kind === "set") return valueOutcome(intent.value)
+        if (intent?.kind === "reset") return intent.fallback
+        if (this.#atomOverrides.has(atom)) {
+            return valueOutcome(this.#atomOverrides.get(atom))
+        }
+        return this.#getDraftFallbackOutcome(draft, atom, session)
+    }
+
+    #getDraftFallbackOutcome(
+        draft: TreeDraft,
+        atom: AnyAtom,
+        session: SelectorEvaluationSession<AnyState>,
+    ): DraftAtomOutcome {
+        const committed = this.#fallbackRecords.get(atom)
+        if (committed !== undefined) return committed
+        const definition = this.#atomDefinition(atom)
+        if (definition.fallback.kind === "eager") {
+            return valueOutcome(definition.fallback.value)
+        }
+        const initialize = definition.fallback.initialize
+        const memoized = draft.fallbackMemo.get(atom)
+        if (memoized !== undefined) return memoized
+        const outcome = fromSynchronousResult(
+            runGuardedCallback(this.#domain, session, () =>
+                runLazyInitializer(initialize),
+            ),
+        )
+        draft.fallbackMemo.set(atom, outcome)
+        return outcome
+    }
+
+    #canonicalizeAtomCandidate(
+        atom: AnyAtom,
+        baseline: unknown,
+        candidate: unknown,
+        session: SelectorEvaluationSession<AnyState>,
+    ): unknown {
+        const compare = this.#atomDefinition(atom).equal
+        if (compare === undefined) {
+            return Object.is(baseline, candidate) ? baseline : candidate
+        }
+        return this.#runAtomComparator(compare, baseline, candidate, session)
+            ? baseline
+            : candidate
+    }
+
+    #runAtomComparator(
+        compare: (previous: unknown, next: unknown) => boolean,
+        baseline: unknown,
+        candidate: unknown,
+        session: SelectorEvaluationSession<AnyState>,
+    ): boolean {
+        return runGuardedCallback(this.#domain, session, () => {
+            let returned: unknown
+            try {
+                returned = compare(baseline, candidate)
+            } catch (thrown) {
+                const inspected = inspectThenable(thrown)
+                if (inspected.kind === "not-thenable") throw thrown
+                if (inspected.kind === "inspection-error") {
+                    throw inspected.error
+                }
+                containThenable(inspected)
+                throw new InvalidAtomComparatorResultError()
+            }
+            const inspected = inspectThenable(returned)
+            if (inspected.kind === "inspection-error") throw inspected.error
+            if (inspected.kind === "thenable") {
+                containThenable(inspected)
+                throw new InvalidAtomComparatorResultError()
+            }
+            if (returned !== true && returned !== false) {
+                throw new InvalidAtomComparatorResultError()
+            }
+            return returned
+        })
+    }
+
+    #runAtomUpdater(
+        update: (current: unknown) => unknown,
+        current: unknown,
+        session: SelectorEvaluationSession<AnyState>,
+    ): unknown {
+        return runGuardedCallback(this.#domain, session, () => {
+            let returned: unknown
+            try {
+                returned = update(current)
+            } catch (thrown) {
+                const inspected = inspectThenable(thrown)
+                if (inspected.kind === "not-thenable") throw thrown
+                if (inspected.kind === "inspection-error") {
+                    throw inspected.error
+                }
+                containThenable(inspected)
+                throw new InvalidSynchronousAtomValueError()
+            }
+            const inspected = inspectSynchronousAtomValue(returned)
+            if (inspected.kind === "error") throw inspected.error
+            return inspected.value
+        })
+    }
+
+    #commitDraft(draft: TreeDraft): void {
+        if (draft.intents.size === 0) return
+
+        // Final preflight: all outcomes and comparator decisions are inert.
+        const plan: AtomApplyPlan[] = []
+        for (const intent of draft.intents.values()) {
+            const baseline = draft.atomBaselines.get(intent.atom)
+            if (baseline === undefined) {
+                throw new Error("TreeDraft atom baseline is missing")
+            }
+            const after =
+                intent.kind === "set"
+                    ? valueOutcome(intent.value)
+                    : intent.fallback
+            const ownershipChanged =
+                intent.kind === "set"
+                    ? !baseline.owned ||
+                      !Object.is(
+                          this.#atomOverrides.get(intent.atom),
+                          intent.value,
+                      )
+                    : baseline.owned
+            plan.push(
+                Object.freeze({
+                    intent,
+                    before: baseline.outcome,
+                    after,
+                    ownershipChanged,
+                    effectiveChanged: !sameAtomOutcome(baseline.outcome, after),
+                }),
+            )
+        }
+
+        // Apply every fallback publication and owned source before propagation.
+        for (const entry of plan) {
+            if (!entry.intent.publishDraftFallback) continue
+            const fallback = draft.fallbackMemo.get(entry.intent.atom)
+            if (fallback !== undefined) {
+                this.#fallbackRecords.set(entry.intent.atom, fallback)
+            }
+        }
+
+        const changedSources: AnyAtom[] = []
+        let ownershipChanged = false
+        for (const entry of plan) {
+            const { intent } = entry
+            if (intent.kind === "set") {
+                this.#atomOverrides.set(intent.atom, intent.value)
+            } else {
+                this.#atomOverrides.delete(intent.atom)
+            }
+            ownershipChanged ||= entry.ownershipChanged
+            if (!entry.effectiveChanged) continue
+            this.#atomRecords.set(
+                intent.atom,
+                Object.freeze({
+                    token: this.createOutcomeToken(),
+                    outcome: entry.after,
+                }),
+            )
+            changedSources.push(intent.atom)
+        }
+        if (ownershipChanged) this.#sourceEpoch += 1
+        this.#propagateFromSources(changedSources)
+    }
+
     #serveAtom(
         atom: AnyAtom,
         session: SelectorEvaluationSession<AnyState>,
@@ -354,40 +621,43 @@ class CommittedStoreTreeHost
         const current = this.#atomRecords.get(atom)
         if (current !== undefined) return current
 
-        const fallback = this.#domain.atoms.get(atom)
-        if (fallback === undefined) {
-            throw new TypeError("Unknown committed StoreTree Atom")
-        }
-        const result =
-            fallback.kind === "eager"
-                ? Object.freeze({
-                      kind: "value" as const,
-                      value: fallback.value,
-                  })
-                : this.#evaluateLazyInitializer(fallback.initialize, session)
-
-        const controlFault = session.getControlFault()
-        if (controlFault.kind === "fault") throw controlFault.error
-
+        const outcome = this.#atomOverrides.has(atom)
+            ? valueOutcome(this.#atomOverrides.get(atom))
+            : this.#getCommittedFallbackOutcome(atom, session)
         const served = Object.freeze({
             token: this.createOutcomeToken(),
-            outcome: freezeOutcome(
-                result.kind === "value"
-                    ? { kind: "value", value: result.value }
-                    : { kind: "error", error: result.error },
-            ),
+            outcome,
         })
         this.#atomRecords.set(atom, served)
         return served
     }
 
-    #evaluateLazyInitializer(
-        initialize: () => unknown,
+    #getCommittedFallbackOutcome(
+        atom: AnyAtom,
         session: SelectorEvaluationSession<AnyState>,
-    ): SynchronousResult {
-        return runWithDomainGuard(this.#domain, session, () =>
-            runLazyInitializer(initialize),
+    ): DraftAtomOutcome {
+        const current = this.#fallbackRecords.get(atom)
+        if (current !== undefined) return current
+        const definition = this.#atomDefinition(atom)
+        if (definition.fallback.kind === "eager") {
+            return valueOutcome(definition.fallback.value)
+        }
+        const initialize = definition.fallback.initialize
+        const outcome = fromSynchronousResult(
+            runGuardedCallback(this.#domain, session, () =>
+                runLazyInitializer(initialize),
+            ),
         )
+        this.#fallbackRecords.set(atom, outcome)
+        return outcome
+    }
+
+    #atomDefinition(atom: AnyAtom): AtomDefinition {
+        const definition = this.#domain.atoms.get(atom)
+        if (definition === undefined) {
+            throw new TypeError("Unknown committed StoreTree Atom")
+        }
+        return definition
     }
 
     #installSelectorProposal(
@@ -456,13 +726,14 @@ class CommittedStoreTreeHost
         }
     }
 
-    #propagateFrom(source: AnyState): void {
+    #propagateFromSources(sources: readonly AnyState[]): void {
+        if (sources.length === 0) return
         this.#propagationQueue = []
         this.#propagationQueued = new Set()
         this.#propagationControlFault = undefined
         this.#postSourceApply = true
         try {
-            this.#enqueueDependents(source)
+            for (const source of sources) this.#enqueueDependents(source)
             let cursor = 0
             while (cursor < this.#propagationQueue.length) {
                 const selector = this.#propagationQueue[cursor++]!
@@ -493,75 +764,12 @@ class CommittedStoreTreeHost
             this.#propagationQueue.push(selector)
         }
     }
-
-    #classifyEntryOwner(
-        state: AnyState,
-        session: SelectorEvaluationSession<AnyState>,
-    ): "local" | "invalid" {
-        if (
-            (typeof state === "object" || typeof state === "function") &&
-            state !== null &&
-            this.#domain.states.has(state)
-        ) {
-            return "local"
-        }
-
-        const faultSession = this.#domain.activeSession ?? session
-        try {
-            const ownerStatus =
-                this.#domain.activeSession === undefined
-                    ? runWithDomainGuard(this.#domain, faultSession, () =>
-                          this.#classifyOwner(state, faultSession),
-                      )
-                    : this.#classifyOwner(state, faultSession)
-            const controlFault = faultSession.getControlFault()
-            if (controlFault.kind === "fault") throw controlFault.error
-            return ownerStatus
-        } catch (error) {
-            const controlFault = faultSession.getControlFault()
-            if (controlFault.kind === "fault") throw controlFault.error
-            throw error
-        }
-    }
-
-    #classifyOwner(
-        state: AnyState,
-        session: SelectorEvaluationSession<AnyState>,
-    ): "local" | "invalid" {
-        if (
-            (typeof state === "object" || typeof state === "function") &&
-            state !== null &&
-            this.#domain.states.has(state)
-        ) {
-            return "local"
-        }
-        if (
-            (typeof state === "object" || typeof state === "function") &&
-            state !== null
-        ) {
-            const ownerDescriptor = Object.getOwnPropertyDescriptor(
-                state,
-                RUNTIME_OWNER_KEY,
-            )
-            if (
-                ownerDescriptor !== undefined &&
-                "value" in ownerDescriptor &&
-                !Object.is(ownerDescriptor.value, this.#domain.ownerToken)
-            ) {
-                const error = new RuntimeMismatchError()
-                const faultSession = this.#domain.activeSession ?? session
-                faultSession.latchControlFault(error)
-                throw error
-            }
-        }
-        return "invalid"
-    }
 }
 
 class CommittedStoreTreeFacade implements CommittedStoreTree {
     readonly #host: CommittedStoreTreeHost
 
-    constructor(domain: DomainRecords) {
+    constructor(domain: RuntimeDomainRecords) {
         this.#host = new CommittedStoreTreeHost(domain)
         Object.freeze(this)
     }
@@ -573,61 +781,51 @@ class CommittedStoreTreeFacade implements CommittedStoreTree {
     set<Value>(atom: Atom<Value>, value: Value): void {
         this.#host.set(atom, value)
     }
+
+    txn<Result>(callback: TransactionCallback<Result>): Result {
+        return this.#host.txn(callback)
+    }
 }
 
 const EMPTY_DEPENDENCIES = Object.freeze(
     [],
 ) as readonly SelectorDependencySnapshot<AnyState, OutcomeToken>[]
 
-const makeHandle = <Kind extends "atom" | "selector">(
-    kind: Kind,
-    ownerToken: object,
-): Readonly<{ kind: Kind }> => {
-    const handle = { kind }
-    Object.defineProperty(handle, RUNTIME_OWNER_KEY, {
-        value: ownerToken,
-        enumerable: false,
-        writable: false,
-        configurable: false,
-    })
-    return Object.freeze(handle)
+const readAtomOptions = <Value>(
+    options: AtomOptions<Value>,
+): Pick<AtomDefinition, "equal"> => {
+    if (options.equal !== undefined && typeof options.equal !== "function") {
+        throw new TypeError("Atom equal must be a function")
+    }
+    return options.equal === undefined
+        ? {}
+        : {
+              equal: options.equal as (
+                  previous: unknown,
+                  next: unknown,
+              ) => boolean,
+          }
 }
 
 export const createCommittedStoreTreeDomain = (): CommittedStoreTreeDomain => {
-    const records: DomainRecords = {
+    const records: RuntimeDomainRecords = {
         states: new WeakSet(),
         atoms: new WeakMap(),
         selectors: new WeakMap(),
         ownerToken: Object.freeze({}),
-        activeSession: undefined,
+        activity: undefined,
     }
 
-    const atom = <Value>(fallback: Value): Atom<Value> => {
-        const session =
-            records.activeSession ?? new SelectorEvaluationSession<AnyState>()
-        const inspected = inspectGuardedSynchronousValue(
-            records,
-            session,
-            fallback,
+    const atom = <Value>(
+        fallback: Value,
+        options: AtomOptions<Value> = {},
+    ): Atom<Value> => {
+        const session = new SelectorEvaluationSession<AnyState>()
+        const inspected = runGuardedCallback(records, session, () =>
+            inspectSynchronousAtomValue(fallback),
         )
         if (inspected.kind === "error") throw inspected.error
-        const handle = makeHandle(
-            "atom",
-            records.ownerToken,
-        ) as unknown as Atom<Value>
-        records.states.add(handle)
-        records.atoms.set(
-            handle,
-            Object.freeze({ kind: "eager", value: inspected.value }),
-        )
-        return handle
-    }
-
-    const atomLazy = <Value>(initialize: () => Value): Atom<Value> => {
-        if (typeof initialize !== "function") {
-            throw new TypeError("atomLazy requires an initializer function")
-        }
-        const handle = makeHandle(
+        const handle = makeStateHandle(
             "atom",
             records.ownerToken,
         ) as unknown as Atom<Value>
@@ -635,8 +833,36 @@ export const createCommittedStoreTreeDomain = (): CommittedStoreTreeDomain => {
         records.atoms.set(
             handle,
             Object.freeze({
-                kind: "lazy",
-                initialize: initialize as () => unknown,
+                fallback: Object.freeze({
+                    kind: "eager" as const,
+                    value: inspected.value,
+                }),
+                ...readAtomOptions(options),
+            }),
+        )
+        return handle
+    }
+
+    const atomLazy = <Value>(
+        initialize: () => Value,
+        options: AtomOptions<Value> = {},
+    ): Atom<Value> => {
+        if (typeof initialize !== "function") {
+            throw new TypeError("atomLazy requires an initializer function")
+        }
+        const handle = makeStateHandle(
+            "atom",
+            records.ownerToken,
+        ) as unknown as Atom<Value>
+        records.states.add(handle)
+        records.atoms.set(
+            handle,
+            Object.freeze({
+                fallback: Object.freeze({
+                    kind: "lazy",
+                    initialize: initialize as () => unknown,
+                }),
+                ...readAtomOptions(options),
             }),
         )
         return handle
@@ -655,7 +881,7 @@ export const createCommittedStoreTreeDomain = (): CommittedStoreTreeDomain => {
         ) {
             throw new TypeError("selector equal must be a function")
         }
-        const handle = makeHandle(
+        const handle = makeStateHandle(
             "selector",
             records.ownerToken,
         ) as unknown as Selector<Value>
@@ -676,20 +902,33 @@ export const createCommittedStoreTreeDomain = (): CommittedStoreTreeDomain => {
         atomLazy,
         selector,
         createStoreTree: () => {
-            if (records.activeSession !== undefined) {
-                throw selectorCapabilityError("createStoreTree")
-            }
+            assertStoreOperationAllowed(records, "createStoreTree")
             return new CommittedStoreTreeFacade(records)
         },
     })
 }
 
+export {
+    CallbackCapabilityError,
+    InvalidAtomComparatorResultError,
+    InvalidSynchronousAtomValueError,
+    InvalidTransactionCallbackResultError,
+    RuntimeMismatchError,
+    SelectorCapabilityError,
+    TransactionClosedError,
+    TransactionPhaseError,
+}
+
 export type {
     Atom,
+    AtomOptions,
+    AtomUpdater,
     CommittedStoreTree,
     CommittedStoreTreeDomain,
+    RootTransaction,
     Selector,
     SelectorOptions,
     State,
     StateRead,
+    TransactionCallback,
 } from "./types"

@@ -146,8 +146,8 @@ describe("v1 persistent committed StoreTree host", () => {
             code: "VALDRES_INVALID_SYNCHRONOUS_ATOM_VALUE",
         })
         expect(reentryError).toMatchObject({
-            name: "SelectorCapabilityError",
-            code: "VALDRES_SELECTOR_CAPABILITY_ERROR",
+            name: "CallbackCapabilityError",
+            code: "VALDRES_CALLBACK_CAPABILITY",
         })
         expect(first.get(target)).toBe(0)
         expect(second.get(reentryTarget)).toBe(0)
@@ -179,7 +179,7 @@ describe("v1 persistent committed StoreTree host", () => {
             TypeError,
         )
         expect(reentryError).toMatchObject({
-            code: "VALDRES_SELECTOR_CAPABILITY_ERROR",
+            code: "VALDRES_CALLBACK_CAPABILITY",
         })
         expect(second.get(target)).toBe(0)
 
@@ -187,7 +187,7 @@ describe("v1 persistent committed StoreTree host", () => {
             thrownBy(() => first.set(impostor as never, 1 as never)),
         ).toBeInstanceOf(TypeError)
         expect(reentryError).toMatchObject({
-            code: "VALDRES_SELECTOR_CAPABILITY_ERROR",
+            code: "VALDRES_CALLBACK_CAPABILITY",
         })
         expect(second.get(target)).toBe(0)
         expect(traps).toBe(2)
@@ -547,7 +547,7 @@ describe("v1 persistent committed StoreTree host", () => {
 
         expect(first.get(guardedLazy)).toBe(3)
         expect(lazySetError).toMatchObject({
-            code: "VALDRES_SELECTOR_CAPABILITY_ERROR",
+            code: "VALDRES_CALLBACK_CAPABILITY",
         })
         expect(second.get(otherTreeTarget)).toBe(0)
     })
@@ -566,7 +566,7 @@ describe("v1 persistent committed StoreTree host", () => {
         expect(Object.keys(tree)).toEqual([])
         expect("domain" in tree).toBe(false)
         expect(Object.getOwnPropertyNames(Object.getPrototypeOf(tree))).toEqual(
-            ["constructor", "get", "set"],
+            ["constructor", "get", "set", "txn"],
         )
         expect((tree as CommittedStoreTree & { serve?: unknown }).serve).toBe(
             undefined,
