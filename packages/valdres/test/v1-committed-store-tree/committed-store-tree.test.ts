@@ -98,8 +98,28 @@ describe("v1 persistent committed StoreTree host", () => {
             code: "VALDRES_INVALID_SYNCHRONOUS_ATOM_VALUE",
         })
         expect(thrownBy(() => first.get(asynchronous))).toBe(asynchronousError)
-        expect(thenGets).toBe(1)
-        expect(thenCalls).toBe(1)
+
+        const thrownAsynchronous = domain.atomLazy(() => {
+            throw thenable
+        })
+        expect(thrownBy(() => first.get(thrownAsynchronous))).toMatchObject({
+            name: "InvalidSynchronousAtomValueError",
+            code: "VALDRES_INVALID_SYNCHRONOUS_ATOM_VALUE",
+        })
+
+        expect(thrownBy(() => domain.atom(thenable))).toMatchObject({
+            name: "InvalidSynchronousAtomValueError",
+            code: "VALDRES_INVALID_SYNCHRONOUS_ATOM_VALUE",
+        })
+
+        const holder = domain.atom<unknown>(0)
+        expect(thrownBy(() => first.set(holder, thenable))).toMatchObject({
+            name: "InvalidSynchronousAtomValueError",
+            code: "VALDRES_INVALID_SYNCHRONOUS_ATOM_VALUE",
+        })
+        expect(first.get(holder)).toBe(0)
+        expect(thenGets).toBe(4)
+        expect(thenCalls).toBe(4)
     })
 
     test("integrates the evaluator once per relevant committed token change", () => {
