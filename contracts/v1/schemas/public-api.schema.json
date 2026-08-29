@@ -135,6 +135,21 @@
                     ]
                 },
                 "owner": { "type": "string", "minLength": 1 },
+                "errorCode": {
+                    "type": "string",
+                    "pattern": "^VALDRES_[A-Z0-9_]+$"
+                },
+                "allowedValues": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": { "type": "string", "minLength": 1 },
+                    "uniqueItems": true
+                },
+                "parameters": {
+                    "type": "array",
+                    "items": { "type": "string", "minLength": 1 },
+                    "uniqueItems": true
+                },
                 "legacy": {
                     "type": "array",
                     "items": { "$ref": "#/$defs/surface" }

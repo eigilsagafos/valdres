@@ -69,7 +69,22 @@
                     },
                     "package": { "type": "string", "minLength": 1 },
                     "subpath": { "type": "string", "minLength": 1 },
-                    "name": { "type": "string", "minLength": 1 }
+                    "name": { "type": "string", "minLength": 1 },
+                    "errorCode": {
+                        "type": "string",
+                        "pattern": "^VALDRES_[A-Z0-9_]+$"
+                    },
+                    "allowedValues": {
+                        "type": "array",
+                        "minItems": 1,
+                        "items": { "type": "string", "minLength": 1 },
+                        "uniqueItems": true
+                    },
+                    "parameters": {
+                        "type": "array",
+                        "items": { "type": "string", "minLength": 1 },
+                        "uniqueItems": true
+                    }
                 }
             },
             "uniqueItems": true

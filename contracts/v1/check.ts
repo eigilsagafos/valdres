@@ -45,6 +45,9 @@ interface LegacySurface {
 interface PublicEntry {
     readonly id: string
     readonly owner: string
+    readonly errorCode?: string
+    readonly allowedValues?: readonly string[]
+    readonly parameters?: readonly string[]
     readonly kind:
         | "runtime-export"
         | "type-export"
@@ -131,6 +134,9 @@ interface PublicManifest {
 interface CallbackEntry {
     readonly id: string
     readonly apiEntryId: string
+    readonly errorRule: string
+    readonly thenableRule: string
+    readonly resultBoundary: string
     readonly resultPolicy?: ResultPolicy
     readonly requiredContractIds: readonly string[]
     readonly decisionStatus: DecisionStatus
@@ -154,6 +160,9 @@ interface FrozenPublicCoordinate {
     readonly package: string
     readonly subpath: string
     readonly name: string
+    readonly errorCode?: string
+    readonly allowedValues?: readonly string[]
+    readonly parameters?: readonly string[]
 }
 
 interface TargetSurfaceCatalog {
@@ -416,12 +425,41 @@ const validateFrozenTestInventory = compileSchema(
 )
 
 const requiredPublicIds = new Set([
+    "adapter.assert-store",
+    "adapter.read",
+    "adapter.read-hydration-snapshot",
+    "adapter.subscribe",
+    "adapter.v1-subpath",
     "core.atom",
     "core.atom.lazy",
+    "core.atom-options.equal",
+    "core.atom-options.name",
+    "core.callback-capability-error",
     "core.selector",
+    "core.selector-options.equal",
+    "core.selector-options.name",
     "core.external-atom",
+    "core.external-atom-options.name",
+    "core.external-source-delivery-limit-error",
+    "core.external-source-non-convergence-error",
+    "core.dormant-external-read-error",
+    "core.invalid-atom-comparator-result-error",
+    "core.invalid-external-cleanup-error",
+    "core.invalid-synchronous-atom-value-error",
+    "core.invalid-transaction-callback-result-error",
+    "core.server-snapshot-unavailable-error",
     "core.family",
+    "core.family-options.encode-key",
     "core.collection",
+    "core.collection-options.encode-key",
+    "core.collection-options.indexes",
+    "core.query-definition.where",
+    "core.query-definition.order-by",
+    "core.query-definition.offset",
+    "core.query-definition.limit",
+    "core.query-definition.facets",
+    "core.facet-options.mode",
+    "core.facet-options.order",
     "core.presence",
     "core.structural-query",
     "core.store",
@@ -431,8 +469,12 @@ const requiredPublicIds = new Set([
     "react.use-store",
     "react.use-value",
     "core.runtime-mismatch-error",
+    "core.selector-capability-error",
+    "core.transaction-closed-error",
+    "core.transaction-phase-error",
     "collection.operations-subpath",
     "collection.materialize",
+    "collection.materialize-options.priority",
     "collection.scan",
     "collection.materialization-status",
     "collection.materialization-subscribe",
@@ -441,6 +483,8 @@ const requiredPublicIds = new Set([
     "collection.artifact-import",
 ])
 const requiredCallbackIds = new Set([
+    "callback.adapter-subscriber",
+    "callback.atom-comparator",
     "callback.atom-lazy-initializer",
     "callback.selector-comparator",
     "callback.selector-getter",
@@ -477,9 +521,9 @@ const frozenLegacyProvenanceInventorySha256 =
 const frozenReviewedLegacyDispositionSha256 =
     "e6fcb767cd68ed85f8dd5035190616fa1dbcc72094dc644ee3eb649ffc6bea63"
 const frozenTargetCoordinateInventorySha256 =
-    "4a2bad59e3511cd51d4e85b1aaef9f79c5d0222e1b9505edf19805f3a7eee6ed"
+    "3b9bf9a8eeff8204549f53e7b99c51d94d5da1be170ff16cd69a6df41cf9d77f"
 const frozenReleaseTrackOwnershipSha256 =
-    "262b7861643f9d42e76c15b8c05ea7b94e63a359c1fd4e83d70ee49711ea88ce"
+    "23261cb3508b4952881bb8fe98dbd89a54604948955137fe50ddf2062148fd1e"
 const frozenWorkspaceBaseline = Object.freeze({
     commit: "ff1424bde13445eba07fcb426f5493dd43898f72",
     packageVersion: "1.0.0-beta.22",
@@ -493,6 +537,46 @@ const frozenLegacySubpaths = new Map([
     ["valdres-react", new Set(["."])],
 ] as const)
 const requiredFrozenPublicCoordinates = new Map([
+    [
+        "adapter.assert-store",
+        {
+            package: "valdres",
+            subpath: "./adapter-internals/v1",
+            name: "assertStore",
+        },
+    ],
+    [
+        "adapter.read",
+        {
+            package: "valdres",
+            subpath: "./adapter-internals/v1",
+            name: "read",
+        },
+    ],
+    [
+        "adapter.read-hydration-snapshot",
+        {
+            package: "valdres",
+            subpath: "./adapter-internals/v1",
+            name: "readHydrationSnapshot",
+        },
+    ],
+    [
+        "adapter.subscribe",
+        {
+            package: "valdres",
+            subpath: "./adapter-internals/v1",
+            name: "subscribe",
+        },
+    ],
+    [
+        "adapter.v1-subpath",
+        {
+            package: "valdres",
+            subpath: "./adapter-internals/v1",
+            name: "valdres/adapter-internals/v1",
+        },
+    ],
     [
         "collection.artifact-export",
         {
@@ -534,10 +618,272 @@ const requiredFrozenPublicCoordinates = new Map([
         },
     ],
     [
+        "collection.materialize-options.priority",
+        {
+            package: "valdres",
+            subpath: "./collection",
+            name: "MaterializeOptions.priority",
+        },
+    ],
+    [
         "collection.scan",
         { package: "valdres", subpath: "./collection", name: "scan" },
     ],
+    [
+        "core.atom-options.equal",
+        { package: "valdres", subpath: ".", name: "AtomOptions.equal" },
+    ],
+    [
+        "core.atom-options.name",
+        { package: "valdres", subpath: ".", name: "AtomOptions.name" },
+    ],
+    [
+        "core.callback-capability-error",
+        { package: "valdres", subpath: ".", name: "CallbackCapabilityError" },
+    ],
+    [
+        "core.collection-options.encode-key",
+        {
+            package: "valdres",
+            subpath: ".",
+            name: "CollectionOptions.encodeKey",
+        },
+    ],
+    [
+        "core.collection-options.indexes",
+        {
+            package: "valdres",
+            subpath: ".",
+            name: "CollectionOptions.indexes",
+        },
+    ],
+    [
+        "core.dormant-external-read-error",
+        { package: "valdres", subpath: ".", name: "DormantExternalReadError" },
+    ],
+    [
+        "core.external-atom-options.name",
+        {
+            package: "valdres",
+            subpath: ".",
+            name: "ExternalAtomOptions.name",
+        },
+    ],
+    [
+        "core.external-source-delivery-limit-error",
+        {
+            package: "valdres",
+            subpath: ".",
+            name: "ExternalSourceDeliveryLimitError",
+        },
+    ],
+    [
+        "core.external-source-non-convergence-error",
+        {
+            package: "valdres",
+            subpath: ".",
+            name: "ExternalSourceNonConvergenceError",
+        },
+    ],
+    [
+        "core.facet-options.mode",
+        { package: "valdres", subpath: ".", name: "FacetOptions.mode" },
+    ],
+    [
+        "core.facet-options.order",
+        { package: "valdres", subpath: ".", name: "FacetOptions.order" },
+    ],
+    [
+        "core.family-options.encode-key",
+        { package: "valdres", subpath: ".", name: "FamilyOptions.encodeKey" },
+    ],
+    [
+        "core.invalid-external-cleanup-error",
+        {
+            package: "valdres",
+            subpath: ".",
+            name: "InvalidExternalCleanupError",
+        },
+    ],
+    [
+        "core.invalid-atom-comparator-result-error",
+        {
+            package: "valdres",
+            subpath: ".",
+            name: "InvalidAtomComparatorResultError",
+        },
+    ],
+    [
+        "core.invalid-synchronous-atom-value-error",
+        {
+            package: "valdres",
+            subpath: ".",
+            name: "InvalidSynchronousAtomValueError",
+        },
+    ],
+    [
+        "core.invalid-transaction-callback-result-error",
+        {
+            package: "valdres",
+            subpath: ".",
+            name: "InvalidTransactionCallbackResultError",
+        },
+    ],
+    [
+        "core.query-definition.facets",
+        { package: "valdres", subpath: ".", name: "QueryDefinition.facets" },
+    ],
+    [
+        "core.query-definition.limit",
+        { package: "valdres", subpath: ".", name: "QueryDefinition.limit" },
+    ],
+    [
+        "core.query-definition.offset",
+        { package: "valdres", subpath: ".", name: "QueryDefinition.offset" },
+    ],
+    [
+        "core.query-definition.order-by",
+        { package: "valdres", subpath: ".", name: "QueryDefinition.orderBy" },
+    ],
+    [
+        "core.query-definition.where",
+        { package: "valdres", subpath: ".", name: "QueryDefinition.where" },
+    ],
+    [
+        "core.server-snapshot-unavailable-error",
+        {
+            package: "valdres",
+            subpath: ".",
+            name: "ServerSnapshotUnavailableError",
+        },
+    ],
+    [
+        "core.selector-capability-error",
+        { package: "valdres", subpath: ".", name: "SelectorCapabilityError" },
+    ],
+    [
+        "core.selector-options.equal",
+        { package: "valdres", subpath: ".", name: "SelectorOptions.equal" },
+    ],
+    [
+        "core.selector-options.name",
+        { package: "valdres", subpath: ".", name: "SelectorOptions.name" },
+    ],
+    [
+        "core.transaction-closed-error",
+        { package: "valdres", subpath: ".", name: "TransactionClosedError" },
+    ],
+    [
+        "core.transaction-phase-error",
+        { package: "valdres", subpath: ".", name: "TransactionPhaseError" },
+    ],
 ] as const)
+const requiredFrozenErrorCodes = new Map([
+    ["core.callback-capability-error", "VALDRES_CALLBACK_CAPABILITY"],
+    ["core.dormant-external-read-error", "VALDRES_DORMANT_EXTERNAL_READ"],
+    [
+        "core.external-source-delivery-limit-error",
+        "VALDRES_EXTERNAL_SOURCE_DELIVERY_LIMIT",
+    ],
+    [
+        "core.external-source-non-convergence-error",
+        "VALDRES_EXTERNAL_SOURCE_NON_CONVERGENCE",
+    ],
+    [
+        "core.invalid-atom-comparator-result-error",
+        "VALDRES_INVALID_ATOM_COMPARATOR_RESULT",
+    ],
+    ["core.invalid-external-cleanup-error", "VALDRES_INVALID_EXTERNAL_CLEANUP"],
+    [
+        "core.invalid-synchronous-atom-value-error",
+        "VALDRES_INVALID_SYNCHRONOUS_ATOM_VALUE",
+    ],
+    [
+        "core.invalid-transaction-callback-result-error",
+        "VALDRES_INVALID_TRANSACTION_CALLBACK_RESULT",
+    ],
+    ["core.runtime-mismatch-error", "VALDRES_RUNTIME_MISMATCH"],
+    [
+        "core.server-snapshot-unavailable-error",
+        "VALDRES_SERVER_SNAPSHOT_UNAVAILABLE",
+    ],
+    ["core.selector-capability-error", "VALDRES_SELECTOR_CAPABILITY_ERROR"],
+    ["core.transaction-closed-error", "VALDRES_TRANSACTION_CLOSED"],
+    ["core.transaction-phase-error", "VALDRES_TRANSACTION_PHASE"],
+] as const)
+const requiredExecutionErrorContracts = new Map([
+    [
+        "core.invalid-atom-comparator-result-error",
+        ["atom.object-is-default", "error.stable-name-and-code"],
+    ],
+    [
+        "core.invalid-synchronous-atom-value-error",
+        [
+            "atom.exact-value",
+            "atom.lazy.sync-per-tree-fallback",
+            "error.stable-name-and-code",
+            "mutation.value-vs-updater",
+        ],
+    ],
+    [
+        "core.invalid-transaction-callback-result-error",
+        ["error.stable-name-and-code", "transaction.one-tree-draft"],
+    ],
+    [
+        "core.selector-capability-error",
+        [
+            "callback.revocable-capability",
+            "error.stable-name-and-code",
+            "selector.pure-sync-dag",
+        ],
+    ],
+    [
+        "core.transaction-closed-error",
+        [
+            "error.stable-name-and-code",
+            "transaction.one-tree-draft",
+            "transaction.scope-cursor-no-savepoint",
+        ],
+    ],
+    [
+        "core.transaction-phase-error",
+        [
+            "error.stable-name-and-code",
+            "transaction.one-tree-draft",
+            "transaction.scope-cursor-no-savepoint",
+        ],
+    ],
+] as const)
+const requiredFrozenAllowedValues = new Map([
+    ["collection.materialize-options.priority", ["user-visible", "background"]],
+    ["core.facet-options.mode", ["conjunctive", "disjunctive"]],
+    ["core.facet-options.order", ["count-desc", "value-asc", "value-desc"]],
+] as const)
+const requiredFrozenParameters = new Map([["core.store", []]] as const)
+const requiredFrozenTargetStatuses = new Map([
+    ["adapter.assert-store", "internal"],
+    ["adapter.read", "internal"],
+    ["adapter.read-hydration-snapshot", "internal"],
+    ["adapter.subscribe", "internal"],
+    ["adapter.v1-subpath", "internal"],
+] as const)
+const requiredCallbackPhaseErrors = new Map([
+    ["callback.selector-getter", "SelectorCapabilityError"],
+    ["callback.selector-comparator", "SelectorCapabilityError"],
+    ["callback.transaction", "TransactionPhaseError"],
+    ["callback.transaction-scope", "TransactionPhaseError"],
+] as const)
+const requiredCallbackOutcomeErrors = new Map([
+    ["callback.atom-lazy-initializer", "InvalidSynchronousAtomValueError"],
+    ["callback.atom-comparator", "InvalidAtomComparatorResultError"],
+    ["callback.atom-update", "InvalidSynchronousAtomValueError"],
+    ["callback.transaction", "InvalidTransactionCallbackResultError"],
+    ["callback.transaction-scope", "InvalidTransactionCallbackResultError"],
+] as const)
+const runtimeOwnedExternalErrorNames = [
+    "ExternalSourceNonConvergenceError",
+    "ExternalSourceDeliveryLimitError",
+] as const
 
 export function validateContractSet(input: ContractSet): Readonly<{
     publicEntries: number
@@ -710,6 +1056,7 @@ export function validateContractSet(input: ContractSet): Readonly<{
             )
         }
     }
+    assertCallbackErrorOwnership(callbackManifest.entries)
 
     assertFrozenReleaseTrackOwnership(
         publicManifest,
@@ -757,6 +1104,47 @@ export function validateContractSet(input: ContractSet): Readonly<{
     }
 }
 
+function assertCallbackErrorOwnership(
+    callbackEntries: readonly CallbackEntry[],
+): void {
+    const callbacksById = new Map(
+        callbackEntries.map(entry => [entry.id, entry] as const),
+    )
+    for (const [id, requiredErrorName] of requiredCallbackPhaseErrors) {
+        const entry = callbacksById.get(id)
+        assert(entry !== undefined, `missing callback capability ${id}`)
+        assert(
+            entry.errorRule.includes(requiredErrorName) &&
+                !entry.errorRule.includes("CallbackCapabilityError"),
+            `${id} must retain ${requiredErrorName} instead of the generic callback capability error`,
+        )
+    }
+    for (const [id, requiredErrorName] of requiredCallbackOutcomeErrors) {
+        const entry = callbacksById.get(id)
+        assert(entry !== undefined, `missing callback capability ${id}`)
+        assert(
+            entry.thenableRule.includes(requiredErrorName),
+            `${id} must retain outcome error ${requiredErrorName}`,
+        )
+    }
+    const atomComparator = callbacksById.get("callback.atom-comparator")!
+    assert(
+        atomComparator.resultBoundary.includes(
+            "InvalidAtomComparatorResultError",
+        ),
+        "callback.atom-comparator must reject every non-boolean result as InvalidAtomComparatorResultError",
+    )
+    for (const entry of callbackEntries) {
+        const serializedEntry = JSON.stringify(entry)
+        for (const runtimeErrorName of runtimeOwnedExternalErrorNames) {
+            assert(
+                !serializedEntry.includes(runtimeErrorName),
+                `${entry.id} cannot own runtime activity error ${runtimeErrorName}`,
+            )
+        }
+    }
+}
+
 function assertFrozenPublicCoordinates(
     publicEntries: readonly PublicEntry[],
     targetPublicIds: ReadonlySet<string>,
@@ -764,6 +1152,20 @@ function assertFrozenPublicCoordinates(
 ): void {
     const coordinatesById = new Map<string, FrozenPublicCoordinate>()
     for (const coordinate of coordinates) {
+        assert(
+            coordinate.errorCode === undefined || coordinate.kind === "error",
+            `${coordinate.id} has an error code but is not an error coordinate`,
+        )
+        assert(
+            coordinate.allowedValues === undefined ||
+                coordinate.kind === "option",
+            `${coordinate.id} has allowed values but is not an option coordinate`,
+        )
+        assert(
+            coordinate.parameters === undefined ||
+                coordinate.kind === "runtime-export",
+            `${coordinate.id} has parameters but is not a runtime-export coordinate`,
+        )
         assert(
             !coordinatesById.has(coordinate.id),
             `duplicate frozen public coordinate ${coordinate.id}`,
@@ -793,6 +1195,74 @@ function assertFrozenPublicCoordinates(
         publicEntries.map(entry => [entry.id, entry] as const),
     )
     for (const entry of publicEntries) {
+        assert(
+            entry.errorCode === undefined || entry.kind === "error",
+            `${entry.id} has an error code but is not an error entry`,
+        )
+        assert(
+            entry.allowedValues === undefined || entry.kind === "option",
+            `${entry.id} has allowed values but is not an option entry`,
+        )
+        assert(
+            entry.parameters === undefined || entry.kind === "runtime-export",
+            `${entry.id} has parameters but is not a runtime-export entry`,
+        )
+    }
+    assertExactSet(
+        new Set(
+            coordinates
+                .filter(coordinate => coordinate.errorCode !== undefined)
+                .map(coordinate => coordinate.id),
+        ),
+        new Set(requiredFrozenErrorCodes.keys()),
+        "frozen error code coordinate",
+    )
+    assertExactSet(
+        new Set(
+            publicEntries
+                .filter(entry => entry.errorCode !== undefined)
+                .map(entry => entry.id),
+        ),
+        new Set(requiredFrozenErrorCodes.keys()),
+        "public error code entry",
+    )
+    assertExactSet(
+        new Set(
+            coordinates
+                .filter(coordinate => coordinate.allowedValues !== undefined)
+                .map(coordinate => coordinate.id),
+        ),
+        new Set(requiredFrozenAllowedValues.keys()),
+        "frozen finite option value coordinate",
+    )
+    assertExactSet(
+        new Set(
+            publicEntries
+                .filter(entry => entry.allowedValues !== undefined)
+                .map(entry => entry.id),
+        ),
+        new Set(requiredFrozenAllowedValues.keys()),
+        "public finite option value entry",
+    )
+    assertExactSet(
+        new Set(
+            coordinates
+                .filter(coordinate => coordinate.parameters !== undefined)
+                .map(coordinate => coordinate.id),
+        ),
+        new Set(requiredFrozenParameters.keys()),
+        "frozen call-parameter coordinate",
+    )
+    assertExactSet(
+        new Set(
+            publicEntries
+                .filter(entry => entry.parameters !== undefined)
+                .map(entry => entry.id),
+        ),
+        new Set(requiredFrozenParameters.keys()),
+        "public call-parameter entry",
+    )
+    for (const entry of publicEntries) {
         if (
             entry.decisionStatus === "approved" &&
             ["stable", "experimental", "internal"].includes(entry.target.status)
@@ -814,10 +1284,67 @@ function assertFrozenPublicCoordinates(
             entry.kind === coordinate.kind &&
                 target.package === coordinate.package &&
                 target.subpath === coordinate.subpath &&
-                target.name === coordinate.name,
+                target.name === coordinate.name &&
+                entry.errorCode === coordinate.errorCode &&
+                JSON.stringify(entry.allowedValues) ===
+                    JSON.stringify(coordinate.allowedValues) &&
+                JSON.stringify(entry.parameters) ===
+                    JSON.stringify(coordinate.parameters),
             `${coordinate.id} target coordinate differs from the frozen target catalog` +
                 `; expected ${coordinate.kind}:${coordinate.package}:${coordinate.subpath}:${coordinate.name}` +
                 `; received ${entry.kind}:${String(target.package)}:${String(target.subpath)}:${String(target.name)}`,
+        )
+    }
+    const errorCodes = new Set<string>()
+    for (const [id, requiredCode] of requiredFrozenErrorCodes) {
+        const coordinate = coordinatesById.get(id)!
+        const entry = publicEntriesById.get(id)!
+        assert(
+            coordinate.errorCode === requiredCode &&
+                entry.errorCode === requiredCode,
+            `${id} differs from the required stable error code ${requiredCode}`,
+        )
+        assert(
+            !errorCodes.has(requiredCode),
+            `duplicate frozen public error code ${requiredCode}`,
+        )
+        errorCodes.add(requiredCode)
+    }
+    for (const [id, requiredContractIds] of requiredExecutionErrorContracts) {
+        const entry = publicEntriesById.get(id)!
+        assert(
+            JSON.stringify(entry.contractIds) ===
+                JSON.stringify(requiredContractIds),
+            `${id} differs from the required execution-error contract ownership`,
+        )
+    }
+    for (const [id, requiredValues] of requiredFrozenAllowedValues) {
+        const coordinate = coordinatesById.get(id)!
+        const entry = publicEntriesById.get(id)!
+        assert(
+            JSON.stringify(coordinate.allowedValues) ===
+                JSON.stringify(requiredValues) &&
+                JSON.stringify(entry.allowedValues) ===
+                    JSON.stringify(requiredValues),
+            `${id} differs from the required finite option values ${JSON.stringify(requiredValues)}`,
+        )
+    }
+    for (const [id, requiredParameters] of requiredFrozenParameters) {
+        const coordinate = coordinatesById.get(id)!
+        const entry = publicEntriesById.get(id)!
+        assert(
+            JSON.stringify(coordinate.parameters) ===
+                JSON.stringify(requiredParameters) &&
+                JSON.stringify(entry.parameters) ===
+                    JSON.stringify(requiredParameters),
+            `${id} differs from the required call parameters ${JSON.stringify(requiredParameters)}`,
+        )
+    }
+    for (const [id, requiredStatus] of requiredFrozenTargetStatuses) {
+        const entry = publicEntriesById.get(id)!
+        assert(
+            entry.target.status === requiredStatus,
+            `${id} must remain ${requiredStatus}`,
         )
     }
     const inventorySha256 = createHash("sha256")
@@ -830,6 +1357,9 @@ function assertFrozenPublicCoordinates(
                         coordinate.package,
                         coordinate.subpath,
                         coordinate.name,
+                        coordinate.errorCode ?? null,
+                        coordinate.allowedValues ?? null,
+                        coordinate.parameters ?? null,
                     ]),
                 )
                 .sort()
@@ -860,6 +1390,9 @@ function assertFrozenReleaseTrackOwnership(
                             entry.target.status,
                             entry.migration.mode,
                             [...entry.migration.replacementIds].sort(),
+                            entry.errorCode ?? null,
+                            entry.allowedValues ?? null,
+                            entry.parameters ?? null,
                         ]),
                     )
                     .sort(),

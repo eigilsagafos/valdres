@@ -22,18 +22,20 @@ deliberately removes behavior that the beta implements.
   public API and callback IDs plus the explicit independent-beta subset and
   frozen coordinates for every currently approved stable or experimental target.
   Manifest IDs must equal it in both directions, and frozen
-  kind/package/subpath/name coordinates must match independently. The stable
+  kind/package/subpath/name coordinates plus finite value domains, call
+  parameters, and error codes must match independently. The stable
   structural-query primitive is the standalone, zero-operator-import recursive
   object grammar proven by the D43.1 spike; its fluent builder remains reserved
   for experimental multi-collection search. The reviewed alias decisions keep
   narrowed `EqualFunc`, `FamilyKey`, `GetValue`, `SubscribeFn`, and generic
   `TransactionFn`, while removing `ResetAtom`, `SetAtom`, `SetAtomValue`, and
-  `SyncSetAtom`; unresolved adapter-protocol, error-name, and option-spelling
-  decisions remain listed explicitly without invented coordinates. A second
-  reviewed digest pins each public entry's owner, kind, target status, migration
-  mode, and replacements, together with callback-to-API ownership, the
-  independent-beta subset, and every pending decision, so coordinated relabels
-  or semantic rewrites cannot self-authorize.
+  `SyncSetAtom`. It also freezes the peer-owned `adapter-internals/v1`
+  functions, the additional callback/external failure names and codes, and the
+  minimal closed option bags. A second reviewed digest pins each public entry's
+  owner, kind, target status, migration mode, replacements, and frozen error
+  code, together with callback-to-API ownership, the independent-beta subset,
+  and every pending decision, so coordinated relabels or semantic rewrites
+  cannot self-authorize.
 - `frozen-legacy-surface.json` records immutable, provenance-stamped coordinates
   for the beta.23 core root and adapter exports, the actual beta.4 React
   exports, Store/Transaction/adapter members and overloads, and public
@@ -96,14 +98,15 @@ directly from the CI workflow.
 
 The manifests and both reviewed catalogs currently declare themselves `partial`.
 That is intentional. All 174 frozen legacy coordinates now have exact approved
-disposition ownership, the 156 formerly unowned coordinates resolve as 35
-`keep`, 35 `replace`, 63 `remove`, and 23 `move` decisions, and the skeleton
-generator therefore emits no rows. Completion still waits on the unresolved
-adapter-protocol, additional error-name, and option-spelling coordinates; the
-remaining target/package contracts; stable callback and contract-catalog gates;
-and stamped current ShiftX evidence. All four completeness flags still change
-together. Independent beta entries may remain evidence-gated; they do not open
-or block the stable-1.0 completeness gate.
+disposition ownership, the 156 formerly unowned coordinates resolve as 34
+`keep`, 33 `replace`, 66 `remove`, and 23 `move` decisions, and the skeleton
+generator therefore emits no rows. The adapter-protocol, additional error-name,
+and minimal option-spelling decisions are now closed, so the pending-surface
+decision list is empty. Completion still waits on the remaining target/package
+contracts, stable callback and contract-catalog gates, and stamped current
+ShiftX evidence. All four completeness flags still change together. Independent
+beta entries may remain evidence-gated; they do not open or block the stable-1.0
+completeness gate.
 
 `FamilyKey` now means exactly
 `string | number | bigint | boolean | symbol | null | undefined`; it no longer
@@ -114,6 +117,49 @@ synchronous Store method-capability types, and `TransactionFn<Result = unknown>`
 preserves the transaction callback result. The four removed mutation aliases are
 intentionally replaced by the canonical Store/Transaction method types and the
 exact-value-versus-updater split.
+
+The versioned internal adapter seam is exactly the standalone `assertStore`,
+`read`, `subscribe`, and `readHydrationSnapshot` exports from
+`valdres/adapter-internals/v1`. It remains in the reviewed target catalog but is
+not stable public API. It does not expose a capability wrapper, `Transaction`,
+adapter options, a Store ID, or a batching protocol. The six new root errors
+freeze both class and machine-code spellings:
+
+```text
+CallbackCapabilityError              VALDRES_CALLBACK_CAPABILITY
+DormantExternalReadError              VALDRES_DORMANT_EXTERNAL_READ
+InvalidExternalCleanupError           VALDRES_INVALID_EXTERNAL_CLEANUP
+ExternalSourceNonConvergenceError     VALDRES_EXTERNAL_SOURCE_NON_CONVERGENCE
+ExternalSourceDeliveryLimitError      VALDRES_EXTERNAL_SOURCE_DELIVERY_LIMIT
+ServerSnapshotUnavailableError        VALDRES_SERVER_SNAPSHOT_UNAVAILABLE
+```
+
+The transaction/Atom implementation boundary additionally freezes these consumed
+root errors before the corresponding kernel slice lands:
+
+```text
+InvalidAtomComparatorResultError       VALDRES_INVALID_ATOM_COMPARATOR_RESULT
+InvalidSynchronousAtomValueError       VALDRES_INVALID_SYNCHRONOUS_ATOM_VALUE
+InvalidTransactionCallbackResultError  VALDRES_INVALID_TRANSACTION_CALLBACK_RESULT
+SelectorCapabilityError                VALDRES_SELECTOR_CAPABILITY_ERROR
+TransactionClosedError                 VALDRES_TRANSACTION_CLOSED
+TransactionPhaseError                  VALDRES_TRANSACTION_PHASE
+```
+
+Selector getter/comparator capability violations remain
+`SelectorCapabilityError`, and transaction/transaction-scope phase violations
+remain `TransactionPhaseError`; neither is rewritten to the generic callback
+error. External non-convergence and nested-delivery limits are owned by runtime
+activity guards rather than by the source callbacks they surround.
+
+The stable closed option bags are `AtomOptions { name, equal }`,
+`SelectorOptions { name, equal }`, `ExternalAtomOptions { name }`,
+`FamilyOptions { encodeKey }`, and `CollectionOptions { encodeKey, indexes }`.
+`QueryDefinition` contains exactly `where`, `orderBy`, `offset`, `limit`, and
+`facets`; each facet has only `mode` and `order`. `MaterializeOptions` contains
+only `priority`, whose values are exactly `"user-visible" | "background"`.
+`store()` accepts zero arguments, and the beta `StoreOptions` export remains
+owned as a removed legacy coordinate rather than surviving as an empty bag.
 
 Exact manifest/catalog parity does not prove that the target catalog is
 exhaustive. Before changing `target-surface-catalog.json` to `complete`, Phase 0
@@ -153,11 +199,12 @@ This is a spelling and ownership freeze, not a production implementation or a
 freeze of every signature detail. `collection-operations.type-test.ts` proves
 only those call relationships. Query construction is now frozen separately as
 the root `query(collection, recursiveObjectDefinition)` form. Materialization
-option members, scheduler and priority policy, public retry/cancel controls,
-status field vocabulary, artifact representation/codec/schema/security,
-persistence, and artifact execution timing remain unresolved. The executable
-collection-operations and query-construction spikes remain semantic evidence;
-they are not exported runtime code.
+priority is the exact two-literal union above; scheduler callbacks and public
+retry/cancel controls are absent from the stable option bag. Status field
+vocabulary, artifact representation/codec/schema/security, persistence, and
+artifact execution timing remain unresolved. The executable collection-
+operations and query-construction spikes remain semantic evidence; they are not
+exported runtime code.
 
 ## Phase 1 test-disposition ledger
 

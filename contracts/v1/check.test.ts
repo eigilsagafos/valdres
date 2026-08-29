@@ -816,17 +816,16 @@ describe("v1 contract manifest validation", () => {
             /reviewed release-track ownership differs from the independently pinned digest/,
         )
 
-        const deletedPendingDecision = mutableSet()
-        deletedPendingDecision.targetSurfaceCatalog.pendingSurfaceDecisions = []
-        expect(() => validateContractSet(deletedPendingDecision)).toThrow(
-            /reviewed release-track ownership differs from the independently pinned digest/,
+        const inventedPendingDecision = mutableSet()
+        inventedPendingDecision.targetSurfaceCatalog.pendingSurfaceDecisions.push(
+            {
+                id: "pending.error-names",
+                category: "error-names",
+                status: "pending",
+                notes: "A resolved surface cannot be reopened by editing the writable catalog.",
+            },
         )
-
-        const relabelledPendingDecision = mutableSet()
-        relabelledPendingDecision.targetSurfaceCatalog.pendingSurfaceDecisions.find(
-            (decision: any) => decision.id === "pending.error-names",
-        ).category = "query-grammar"
-        expect(() => validateContractSet(relabelledPendingDecision)).toThrow(
+        expect(() => validateContractSet(inventedPendingDecision)).toThrow(
             /reviewed release-track ownership differs from the independently pinned digest/,
         )
     })
@@ -1008,11 +1007,649 @@ describe("v1 contract manifest validation", () => {
             {},
         )
         expect(modeCounts).toEqual({
-            keep: 40,
-            replace: 41,
-            remove: 69,
+            keep: 39,
+            replace: 39,
+            remove: 72,
             move: 24,
         })
+
+        const beforeRecovery: any[] = [
+            legacySurface(".", "atom"),
+            legacySurface(".", "selector"),
+            legacySurface(".", "atomFamily"),
+            legacySurface(".", "selectorFamily"),
+            legacySurface(".", "store"),
+            {
+                kind: "overload",
+                package: "valdres",
+                subpath: ".",
+                owner: "Store",
+                name: "scope(id)",
+                baseline: "1.0.0-beta.23",
+            },
+            {
+                kind: "overload",
+                package: "valdres",
+                subpath: ".",
+                owner: "Store",
+                name: "txn(callback)",
+                baseline: "1.0.0-beta.23",
+            },
+            {
+                kind: "method",
+                package: "valdres",
+                subpath: ".",
+                owner: "Store",
+                name: "del",
+                baseline: "1.0.0-beta.23",
+            },
+            legacySurface(".", "globalAtom"),
+            legacySurface(".", "globalStore"),
+            {
+                kind: "method",
+                package: "valdres",
+                subpath: ".",
+                owner: "Store",
+                name: "onDispose",
+                baseline: "1.0.0-beta.23",
+            },
+            ...[
+                "Provider",
+                "Scope",
+                "useStore",
+                "useValue",
+                "useTransaction",
+                "useValdresCallback",
+            ].map(name => ({
+                kind: "runtime-export",
+                package: "valdres-react",
+                subpath: ".",
+                name,
+                baseline: "1.0.0-beta.4",
+            })),
+            legacySurface(".", "cacheMeta"),
+        ]
+        expect(beforeRecovery).toHaveLength(18)
+        const beforeRecoveryKeys = new Set(beforeRecovery.map(coordinateKey))
+        const recoveredModeCounts = set.legacyDispositionCatalog.entries
+            .filter(
+                (mapping: any) =>
+                    !beforeRecoveryKeys.has(coordinateKey(mapping.coordinate)),
+            )
+            .reduce((counts: Record<string, number>, mapping: any) => {
+                const mode = migrationModeById.get(mapping.dispositionId)!
+                counts[mode] = (counts[mode] ?? 0) + 1
+                return counts
+            }, {})
+        expect(recoveredModeCounts).toEqual({
+            keep: 34,
+            replace: 33,
+            remove: 66,
+            move: 23,
+        })
+    })
+
+    test("freezes the internal peer-owned adapter-internals/v1 protocol without a wrapper", () => {
+        const set = mutableSet()
+        const expected = new Map<string, string>([
+            ["adapter.assert-store", "assertStore"],
+            ["adapter.read", "read"],
+            ["adapter.read-hydration-snapshot", "readHydrationSnapshot"],
+            ["adapter.subscribe", "subscribe"],
+            ["adapter.v1-subpath", "valdres/adapter-internals/v1"],
+        ])
+        const entries = set.publicManifest.entries.filter(
+            (entry: any) =>
+                entry.target.status === "internal" &&
+                entry.target.subpath === "./adapter-internals/v1",
+        )
+
+        expect(
+            new Map(entries.map((entry: any) => [entry.id, entry.target.name])),
+        ).toEqual(expected)
+        expect(
+            entries.every(
+                (entry: any) =>
+                    entry.target.package === "valdres" &&
+                    entry.migration.mode === "add" &&
+                    entry.migration.semver === "new" &&
+                    entry.contractIds.includes("adapter.peer-owned-protocol"),
+            ),
+        ).toBe(true)
+        expect(
+            set.targetSurfaceCatalog.frozenPublicCoordinates
+                .filter(
+                    (coordinate: any) =>
+                        coordinate.subpath === "./adapter-internals/v1",
+                )
+                .map((coordinate: any) => [coordinate.id, coordinate.name]),
+        ).toEqual([...expected])
+
+        const subscriber = set.callbackManifest.entries.find(
+            (entry: any) => entry.id === "callback.adapter-subscriber",
+        )
+        expect(subscriber?.apiEntryId).toBe("adapter.subscribe")
+        expect(subscriber?.resultBoundary).toContain(
+            "no delivery wrapper, batching hook, Transaction, Store ID, or adapter options",
+        )
+        expect(subscriber?.errorRule).toContain("CallbackCapabilityError")
+        expect(subscriber?.errorRule).toContain("DormantExternalReadError")
+
+        const removedWrapper = findPublicEntry(set, "legacy.store-adapter")
+        expect(removedWrapper.target.status).toBe("removed")
+        expect(removedWrapper.migration.mode).toBe("remove")
+        expect(removedWrapper.migration.replacementIds).toEqual([
+            "adapter.assert-store",
+            "adapter.read",
+            "adapter.read-hydration-snapshot",
+            "adapter.subscribe",
+        ])
+
+        const renamedEverywhere = mutableSet()
+        findPublicEntry(renamedEverywhere, "adapter.read").target.name =
+            "getSnapshot"
+        renamedEverywhere.targetSurfaceCatalog.frozenPublicCoordinates.find(
+            (coordinate: any) => coordinate.id === "adapter.read",
+        ).name = "getSnapshot"
+        expect(() => validateContractSet(renamedEverywhere)).toThrow(
+            /adapter\.read frozen target catalog coordinate differs from the required standalone spelling/,
+        )
+
+        const publishedAsStable = mutableSet()
+        findPublicEntry(
+            publishedAsStable,
+            "adapter.read-hydration-snapshot",
+        ).target.status = "stable"
+        expect(() => validateContractSet(publishedAsStable)).toThrow(
+            /adapter\.read-hydration-snapshot must remain internal/,
+        )
+    })
+
+    test("freezes the six callback and external failure names and codes", () => {
+        const set = mutableSet()
+        const expected = new Map<string, readonly [string, string]>([
+            [
+                "core.callback-capability-error",
+                ["CallbackCapabilityError", "VALDRES_CALLBACK_CAPABILITY"],
+            ],
+            [
+                "core.dormant-external-read-error",
+                ["DormantExternalReadError", "VALDRES_DORMANT_EXTERNAL_READ"],
+            ],
+            [
+                "core.invalid-external-cleanup-error",
+                [
+                    "InvalidExternalCleanupError",
+                    "VALDRES_INVALID_EXTERNAL_CLEANUP",
+                ],
+            ],
+            [
+                "core.external-source-non-convergence-error",
+                [
+                    "ExternalSourceNonConvergenceError",
+                    "VALDRES_EXTERNAL_SOURCE_NON_CONVERGENCE",
+                ],
+            ],
+            [
+                "core.external-source-delivery-limit-error",
+                [
+                    "ExternalSourceDeliveryLimitError",
+                    "VALDRES_EXTERNAL_SOURCE_DELIVERY_LIMIT",
+                ],
+            ],
+            [
+                "core.server-snapshot-unavailable-error",
+                [
+                    "ServerSnapshotUnavailableError",
+                    "VALDRES_SERVER_SNAPSHOT_UNAVAILABLE",
+                ],
+            ],
+        ])
+
+        for (const [id, [name, code]] of expected) {
+            const entry = findPublicEntry(set, id)
+            expect(entry.kind).toBe("error")
+            expect(entry.target).toEqual({
+                package: "valdres",
+                subpath: ".",
+                name,
+                status: "stable",
+            })
+            expect(entry.errorCode).toBe(code)
+            expect(entry.migration.mode).toBe("add")
+            expect(entry.migration.semver).toBe("new")
+            expect(entry.contractIds).toContain("error.stable-name-and-code")
+            expect(
+                set.targetSurfaceCatalog.frozenPublicCoordinates.find(
+                    (coordinate: any) => coordinate.id === id,
+                ),
+            ).toEqual({
+                id,
+                kind: "error",
+                package: "valdres",
+                subpath: ".",
+                name,
+                errorCode: code,
+            })
+        }
+        expect(
+            findPublicEntry(set, "core.runtime-mismatch-error").errorCode,
+        ).toBe("VALDRES_RUNTIME_MISMATCH")
+
+        const callbackErrorRules = new Map<string, readonly string[]>([
+            [
+                "callback.adapter-subscriber",
+                ["CallbackCapabilityError", "DormantExternalReadError"],
+            ],
+            ["callback.external-get-snapshot", ["CallbackCapabilityError"]],
+            [
+                "callback.external-get-server-snapshot",
+                ["CallbackCapabilityError", "ServerSnapshotUnavailableError"],
+            ],
+            [
+                "callback.external-subscribe",
+                ["CallbackCapabilityError", "InvalidExternalCleanupError"],
+            ],
+            [
+                "callback.external-cleanup",
+                ["CallbackCapabilityError", "InvalidExternalCleanupError"],
+            ],
+            [
+                "callback.store-subscriber",
+                ["CallbackCapabilityError", "DormantExternalReadError"],
+            ],
+        ])
+        for (const [callbackId, names] of callbackErrorRules) {
+            const callback = set.callbackManifest.entries.find(
+                (entry: any) => entry.id === callbackId,
+            )
+            for (const name of names) {
+                expect(callback?.errorRule).toContain(name)
+            }
+        }
+
+        const changedEverywhere = mutableSet()
+        findPublicEntry(
+            changedEverywhere,
+            "core.dormant-external-read-error",
+        ).errorCode = "VALDRES_DORMANT_READ"
+        changedEverywhere.targetSurfaceCatalog.frozenPublicCoordinates.find(
+            (coordinate: any) =>
+                coordinate.id === "core.dormant-external-read-error",
+        ).errorCode = "VALDRES_DORMANT_READ"
+        expect(() => validateContractSet(changedEverywhere)).toThrow(
+            /core\.dormant-external-read-error differs from the required stable error code/,
+        )
+
+        const codeOnNonError = mutableSet()
+        findPublicEntry(codeOnNonError, "core.atom").errorCode =
+            "VALDRES_NOT_AN_ERROR"
+        expect(() => validateContractSet(codeOnNonError)).toThrow(
+            /core\.atom has an error code but is not an error entry/,
+        )
+    })
+
+    test("preserves phase-specific callback errors and runtime activity ownership", () => {
+        const set = mutableSet()
+        const executionErrors = new Map<string, readonly [string, string]>([
+            [
+                "core.invalid-atom-comparator-result-error",
+                [
+                    "InvalidAtomComparatorResultError",
+                    "VALDRES_INVALID_ATOM_COMPARATOR_RESULT",
+                ],
+            ],
+            [
+                "core.invalid-synchronous-atom-value-error",
+                [
+                    "InvalidSynchronousAtomValueError",
+                    "VALDRES_INVALID_SYNCHRONOUS_ATOM_VALUE",
+                ],
+            ],
+            [
+                "core.invalid-transaction-callback-result-error",
+                [
+                    "InvalidTransactionCallbackResultError",
+                    "VALDRES_INVALID_TRANSACTION_CALLBACK_RESULT",
+                ],
+            ],
+            [
+                "core.selector-capability-error",
+                [
+                    "SelectorCapabilityError",
+                    "VALDRES_SELECTOR_CAPABILITY_ERROR",
+                ],
+            ],
+            [
+                "core.transaction-closed-error",
+                ["TransactionClosedError", "VALDRES_TRANSACTION_CLOSED"],
+            ],
+            [
+                "core.transaction-phase-error",
+                ["TransactionPhaseError", "VALDRES_TRANSACTION_PHASE"],
+            ],
+        ])
+        for (const [id, [name, code]] of executionErrors) {
+            const entry = findPublicEntry(set, id)
+            expect(entry.target).toEqual({
+                package: "valdres",
+                subpath: ".",
+                name,
+                status: "stable",
+            })
+            expect(entry.errorCode).toBe(code)
+            expect(entry.contractIds).toContain("error.stable-name-and-code")
+            expect(
+                set.targetSurfaceCatalog.frozenPublicCoordinates.find(
+                    (coordinate: any) => coordinate.id === id,
+                ),
+            ).toMatchObject({ id, name, errorCode: code })
+        }
+
+        const phaseSpecificErrors = new Map<string, string>([
+            ["callback.selector-getter", "SelectorCapabilityError"],
+            ["callback.selector-comparator", "SelectorCapabilityError"],
+            ["callback.transaction", "TransactionPhaseError"],
+            ["callback.transaction-scope", "TransactionPhaseError"],
+        ])
+        for (const [callbackId, errorName] of phaseSpecificErrors) {
+            const callback = set.callbackManifest.entries.find(
+                (entry: any) => entry.id === callbackId,
+            )
+            expect(callback?.errorRule).toContain(errorName)
+            expect(callback?.errorRule).not.toContain("CallbackCapabilityError")
+        }
+
+        for (const callback of set.callbackManifest.entries) {
+            expect(JSON.stringify(callback)).not.toContain(
+                "ExternalSourceNonConvergenceError",
+            )
+            expect(JSON.stringify(callback)).not.toContain(
+                "ExternalSourceDeliveryLimitError",
+            )
+        }
+        const outcomeErrors = new Map<string, string>([
+            [
+                "callback.atom-lazy-initializer",
+                "InvalidSynchronousAtomValueError",
+            ],
+            ["callback.atom-comparator", "InvalidAtomComparatorResultError"],
+            ["callback.atom-update", "InvalidSynchronousAtomValueError"],
+            ["callback.transaction", "InvalidTransactionCallbackResultError"],
+            [
+                "callback.transaction-scope",
+                "InvalidTransactionCallbackResultError",
+            ],
+        ])
+        for (const [callbackId, errorName] of outcomeErrors) {
+            const callback = set.callbackManifest.entries.find(
+                (entry: any) => entry.id === callbackId,
+            )
+            expect(JSON.stringify(callback)).toContain(errorName)
+        }
+        expect(
+            findPublicEntry(set, "core.external-source-non-convergence-error")
+                .contractIds,
+        ).toContain("external.bounded-settlement")
+        expect(
+            findPublicEntry(set, "core.external-source-delivery-limit-error")
+                .contractIds,
+        ).toContain("external.bounded-settlement")
+
+        const genericSweep = mutableSet()
+        genericSweep.callbackManifest.entries.find(
+            (entry: any) => entry.id === "callback.transaction",
+        ).errorRule =
+            "Forbidden captured same-domain work throws CallbackCapabilityError."
+        expect(() => validateContractSet(genericSweep)).toThrow(
+            /callback\.transaction must retain TransactionPhaseError/,
+        )
+
+        const unnamedComparatorFailure = mutableSet()
+        unnamedComparatorFailure.callbackManifest.entries.find(
+            (entry: any) => entry.id === "callback.atom-comparator",
+        ).thenableRule = "A thenable becomes a named comparator failure."
+        expect(() => validateContractSet(unnamedComparatorFailure)).toThrow(
+            /callback\.atom-comparator must retain outcome error InvalidAtomComparatorResultError/,
+        )
+
+        const droppedExecutionContract = mutableSet()
+        findPublicEntry(
+            droppedExecutionContract,
+            "core.invalid-synchronous-atom-value-error",
+        ).contractIds = [
+            "atom.exact-value",
+            "error.stable-name-and-code",
+            "mutation.value-vs-updater",
+        ]
+        expect(() => validateContractSet(droppedExecutionContract)).toThrow(
+            /core\.invalid-synchronous-atom-value-error differs from the required execution-error contract ownership/,
+        )
+
+        const callbackOwnedRuntimeError = mutableSet()
+        callbackOwnedRuntimeError.callbackManifest.entries.find(
+            (entry: any) => entry.id === "callback.external-subscribe",
+        ).errorRule += " ExternalSourceDeliveryLimitError."
+        expect(() => validateContractSet(callbackOwnedRuntimeError)).toThrow(
+            /callback\.external-subscribe cannot own runtime activity error ExternalSourceDeliveryLimitError/,
+        )
+    })
+
+    test("freezes the closed option bags and fully retires StoreOptions", () => {
+        const set = mutableSet()
+        const expectedOptions = new Map<string, string>([
+            [
+                "collection.materialize-options.priority",
+                "MaterializeOptions.priority",
+            ],
+            ["core.atom-options.equal", "AtomOptions.equal"],
+            ["core.atom-options.name", "AtomOptions.name"],
+            [
+                "core.collection-options.encode-key",
+                "CollectionOptions.encodeKey",
+            ],
+            ["core.collection-options.indexes", "CollectionOptions.indexes"],
+            ["core.external-atom-options.name", "ExternalAtomOptions.name"],
+            ["core.family-options.encode-key", "FamilyOptions.encodeKey"],
+            ["core.selector-options.equal", "SelectorOptions.equal"],
+            ["core.selector-options.name", "SelectorOptions.name"],
+            ["core.facet-options.mode", "FacetOptions.mode"],
+            ["core.facet-options.order", "FacetOptions.order"],
+            ["core.query-definition.facets", "QueryDefinition.facets"],
+            ["core.query-definition.limit", "QueryDefinition.limit"],
+            ["core.query-definition.offset", "QueryDefinition.offset"],
+            ["core.query-definition.order-by", "QueryDefinition.orderBy"],
+            ["core.query-definition.where", "QueryDefinition.where"],
+        ])
+        const closedOptions = set.publicManifest.entries.filter(
+            (entry: any) =>
+                entry.kind === "option" &&
+                entry.target.status === "stable" &&
+                entry.contractIds.includes("options.closed-surface"),
+        )
+        expect(
+            new Map(
+                closedOptions.map((entry: any) => [
+                    entry.id,
+                    entry.target.name,
+                ]),
+            ),
+        ).toEqual(expectedOptions)
+        expect(
+            closedOptions.every(
+                (entry: any) =>
+                    entry.migration.mode === "add" &&
+                    entry.migration.semver === "new",
+            ),
+        ).toBe(true)
+        expect(
+            findPublicEntry(set, "collection.materialize-options.priority")
+                .notes,
+        ).toBe(
+            'MaterializeOptions.priority is exactly "user-visible" | "background"; no user-blocking tier or callback scheduler enters the stable surface.',
+        )
+        expect(findPublicEntry(set, "core.facet-options.mode").notes).toBe(
+            'FacetOptions.mode is exactly "conjunctive" | "disjunctive".',
+        )
+        expect(findPublicEntry(set, "core.facet-options.order").notes).toBe(
+            'FacetOptions.order is exactly "count-desc" | "value-asc" | "value-desc".',
+        )
+        const finiteOptionValues = new Map<string, readonly string[]>([
+            [
+                "collection.materialize-options.priority",
+                ["user-visible", "background"],
+            ],
+            ["core.facet-options.mode", ["conjunctive", "disjunctive"]],
+            [
+                "core.facet-options.order",
+                ["count-desc", "value-asc", "value-desc"],
+            ],
+        ])
+        for (const [id, allowedValues] of finiteOptionValues) {
+            expect(findPublicEntry(set, id).allowedValues).toEqual(
+                allowedValues,
+            )
+            expect(
+                set.targetSurfaceCatalog.frozenPublicCoordinates.find(
+                    (coordinate: any) => coordinate.id === id,
+                )?.allowedValues,
+            ).toEqual(allowedValues)
+        }
+
+        const storeOptions = findPublicEntry(set, "core.type.store-options")
+        expect(storeOptions.target).toEqual({
+            package: null,
+            subpath: null,
+            name: null,
+            status: "removed",
+        })
+        expect(storeOptions.migration.mode).toBe("remove")
+        expect(storeOptions.legacy).toEqual([
+            {
+                package: "valdres",
+                subpath: ".",
+                kind: "type-export",
+                name: "StoreOptions",
+                baseline: "1.0.0-beta.23",
+            },
+        ])
+        expect(
+            set.legacyDispositionCatalog.entries.find(
+                (entry: any) =>
+                    entry.coordinate.kind === "type-export" &&
+                    entry.coordinate.name === "StoreOptions",
+            )?.dispositionId,
+        ).toBe("core.type.store-options")
+        expect(
+            set.targetSurfaceCatalog.frozenPublicCoordinates.some(
+                (coordinate: any) =>
+                    coordinate.id === "core.type.store-options" ||
+                    coordinate.name === "StoreOptions",
+            ),
+        ).toBe(false)
+        expect(findPublicEntry(set, "core.store").notes).toContain(
+            "exactly store() with zero options",
+        )
+        expect(findPublicEntry(set, "core.store").parameters).toEqual([])
+        expect(
+            set.targetSurfaceCatalog.frozenPublicCoordinates.find(
+                (coordinate: any) => coordinate.id === "core.store",
+            )?.parameters,
+        ).toEqual([])
+        expect(set.targetSurfaceCatalog.pendingSurfaceDecisions).toEqual([])
+
+        const callbackOwners = new Map<string, string>([
+            ["callback.atom-comparator", "core.atom-options.equal"],
+            ["callback.selector-comparator", "core.selector-options.equal"],
+            ["callback.family-encode-key", "core.family-options.encode-key"],
+            [
+                "callback.collection-encode-key",
+                "core.collection-options.encode-key",
+            ],
+            [
+                "callback.collection-index-extractor",
+                "core.collection-options.indexes",
+            ],
+        ])
+        for (const [callbackId, apiEntryId] of callbackOwners) {
+            expect(
+                set.callbackManifest.entries.find(
+                    (entry: any) => entry.id === callbackId,
+                )?.apiEntryId,
+            ).toBe(apiEntryId)
+        }
+
+        expect(
+            findPublicEntry(set, "legacy.subscription-deep-equality"),
+        ).toMatchObject({
+            target: { status: "removed" },
+            migration: {
+                mode: "remove",
+                replacementIds: ["core.selector-options.equal"],
+            },
+        })
+        expect(
+            findPublicEntry(set, "legacy.adapter-selector-error"),
+        ).toMatchObject({
+            target: { status: "removed" },
+            migration: {
+                mode: "remove",
+                replacementIds: ["core.selector-evaluation-error"],
+            },
+        })
+
+        const renamedEverywhere = mutableSet()
+        findPublicEntry(
+            renamedEverywhere,
+            "core.collection-options.encode-key",
+        ).target.name = "CollectionOptions.keyEncoder"
+        renamedEverywhere.targetSurfaceCatalog.frozenPublicCoordinates.find(
+            (coordinate: any) =>
+                coordinate.id === "core.collection-options.encode-key",
+        ).name = "CollectionOptions.keyEncoder"
+        expect(() => validateContractSet(renamedEverywhere)).toThrow(
+            /core\.collection-options\.encode-key frozen target catalog coordinate differs from the required standalone spelling/,
+        )
+
+        const oneSidedLiteralMutation = mutableSet()
+        findPublicEntry(
+            oneSidedLiteralMutation,
+            "collection.materialize-options.priority",
+        ).allowedValues = ["user-visible"]
+        expect(() => validateContractSet(oneSidedLiteralMutation)).toThrow(
+            /collection\.materialize-options\.priority target coordinate differs from the frozen target catalog/,
+        )
+
+        const coordinatedLiteralMutation = mutableSet()
+        findPublicEntry(
+            coordinatedLiteralMutation,
+            "core.facet-options.mode",
+        ).allowedValues = ["and", "or"]
+        coordinatedLiteralMutation.targetSurfaceCatalog.frozenPublicCoordinates.find(
+            (coordinate: any) => coordinate.id === "core.facet-options.mode",
+        ).allowedValues = ["and", "or"]
+        expect(() => validateContractSet(coordinatedLiteralMutation)).toThrow(
+            /core\.facet-options\.mode differs from the required finite option values/,
+        )
+
+        const oneSidedStoreArity = mutableSet()
+        findPublicEntry(oneSidedStoreArity, "core.store").parameters = [
+            "options?",
+        ]
+        expect(() => validateContractSet(oneSidedStoreArity)).toThrow(
+            /core\.store target coordinate differs from the frozen target catalog/,
+        )
+
+        const coordinatedStoreArity = mutableSet()
+        findPublicEntry(coordinatedStoreArity, "core.store").parameters = [
+            "options?",
+        ]
+        coordinatedStoreArity.targetSurfaceCatalog.frozenPublicCoordinates.find(
+            (coordinate: any) => coordinate.id === "core.store",
+        ).parameters = ["options?"]
+        expect(() => validateContractSet(coordinatedStoreArity)).toThrow(
+            /core\.store differs from the required call parameters \[\]/,
+        )
     })
 
     test("freezes the reviewed v1 public type-alias decisions", () => {

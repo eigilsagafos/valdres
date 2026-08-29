@@ -4,6 +4,39 @@
     "completeness": "partial",
     "entries": [
         {
+            "id": "callback.adapter-subscriber",
+            "apiEntryId": "adapter.subscribe",
+            "role": "Observe one final peer-owned Store snapshot through the versioned adapter subscription seam.",
+            "phase": "notifying-adapter",
+            "suppliedCapabilities": [
+                "settled callback value",
+                "idempotent unsubscribe for the already-owned adapter subscription",
+                "committed reads that do not sample dormant external sources"
+            ],
+            "allowedExternalWork": [
+                "framework scheduling or render invalidation outside Valdres"
+            ],
+            "rejectedCapturedOperations": [
+                "same-domain Store mutation",
+                "same-domain Store transaction",
+                "new subscription",
+                "scope access or creation",
+                "Store disposal",
+                "dormant external sampling"
+            ],
+            "guardDomain": "same-runtime-domain",
+            "errorRule": "Forbidden same-domain work throws CallbackCapabilityError; a read that would publish a dormant external source throws DormantExternalReadError. One callback error cannot starve the remaining frozen delivery snapshot.",
+            "thenableRule": "The subscriber is not awaited and no asynchronous Valdres capability survives delivery.",
+            "resultBoundary": "subscribe returns one idempotent unsubscribe and admits no delivery wrapper, batching hook, Transaction, Store ID, or adapter options.",
+            "requiredContractIds": [
+                "adapter.peer-owned-protocol",
+                "callback.subscriber-quarantine",
+                "error.stable-name-and-code",
+                "notification.after-stability"
+            ],
+            "decisionStatus": "approved"
+        },
+        {
             "id": "callback.atom-lazy-initializer",
             "apiEntryId": "core.atom.lazy",
             "role": "Resolve one StoreTree fallback synchronously on first required read.",
@@ -18,12 +51,41 @@
                 "source invalidation"
             ],
             "guardDomain": "same-runtime-domain",
-            "errorRule": "A thrown non-thenable becomes the owning fallback error outcome under the ordinary initializer rule.",
-            "thenableRule": "A returned or thrown thenable is normalized to the named invalid synchronous initializer error and receives one rejection-containment handler.",
+            "errorRule": "Forbidden same-domain work throws CallbackCapabilityError. A thrown non-thenable becomes the owning fallback error outcome under the ordinary initializer rule.",
+            "thenableRule": "A returned or thrown thenable becomes InvalidSynchronousAtomValueError and receives one rejection-containment handler.",
             "resultBoundary": "Exactly one synchronous value or error outcome is memoized at the owning fallback only when the approved read/commit path consumes it.",
             "requiredContractIds": [
                 "atom.lazy.sync-per-tree-fallback",
-                "callback.no-captured-store-capability"
+                "callback.no-captured-store-capability",
+                "error.stable-name-and-code"
+            ],
+            "decisionStatus": "approved"
+        },
+        {
+            "id": "callback.atom-comparator",
+            "apiEntryId": "core.atom-options.equal",
+            "role": "Compare one prior Atom value with one synchronous Set/update candidate before intent admission.",
+            "phase": "comparing-atom-candidate",
+            "suppliedCapabilities": [
+                "previous Atom value",
+                "next proposed Atom value"
+            ],
+            "allowedExternalWork": ["pure synchronous comparison"],
+            "rejectedCapturedOperations": [
+                "Store read or mutation",
+                "Store transaction",
+                "subscription registration",
+                "scope access",
+                "source invalidation"
+            ],
+            "guardDomain": "same-runtime-domain",
+            "errorRule": "Forbidden same-domain work throws CallbackCapabilityError. Any other throw rejects the operation before an intent is admitted; RuntimeMismatchError remains the exact sticky control fault.",
+            "thenableRule": "A returned or thrown thenable becomes InvalidAtomComparatorResultError and is never awaited or tested for truthiness.",
+            "resultBoundary": "The comparator returns exactly true or false; every other result becomes InvalidAtomComparatorResultError. True canonicalizes Set/update to the transaction baseline value; false admits the candidate. Reset never calls it.",
+            "requiredContractIds": [
+                "atom.object-is-default",
+                "callback.no-captured-store-capability",
+                "error.stable-name-and-code"
             ],
             "decisionStatus": "approved"
         },
@@ -45,19 +107,20 @@
                 "post-return supplied get"
             ],
             "guardDomain": "same-runtime-domain",
-            "errorRule": "Ordinary errors become stable selector error proposals; RuntimeMismatchError is a sticky host control fault and cannot be caught into a value.",
+            "errorRule": "Forbidden captured same-domain Store work and use of the supplied get after revocation throw SelectorCapabilityError. Ordinary errors become stable selector error proposals; RuntimeMismatchError is a sticky host control fault and cannot be caught into a value.",
             "thenableRule": "A returned or thrown thenable becomes the named invalid synchronous selector outcome with one rejection-containment handler; it is never awaited or served.",
             "resultBoundary": "The evaluator returns one immutable value/error/control proposal with its synchronously captured valid dependency prefix. A disposable or pre-apply host rejects a control proposal without publication; a persistent post-apply host installs the exact control outcome as authoritative current state.",
             "requiredContractIds": [
                 "selector.pure-sync-dag",
                 "selector.one-evaluator",
-                "callback.revocable-capability"
+                "callback.revocable-capability",
+                "error.stable-name-and-code"
             ],
             "decisionStatus": "approved"
         },
         {
             "id": "callback.selector-comparator",
-            "apiEntryId": "core.selector",
+            "apiEntryId": "core.selector-options.equal",
             "role": "Compare one previous selector value with one fully evaluated next proposal without changing its dependency capture.",
             "phase": "comparing-selector-proposal",
             "suppliedCapabilities": [
@@ -74,13 +137,14 @@
                 "supplied selector get"
             ],
             "guardDomain": "same-runtime-domain",
-            "errorRule": "A thrown non-thenable becomes the proposal's stable comparator error outcome; RuntimeMismatchError is a sticky exact host control fault and cannot be caught into a boolean or ordinary error proposal.",
+            "errorRule": "Forbidden captured same-domain Store work or use of a captured supplied selector get throws SelectorCapabilityError. A thrown non-thenable becomes the proposal's stable comparator error outcome; RuntimeMismatchError is a sticky exact host control fault and cannot be caught into a boolean or ordinary error proposal.",
             "thenableRule": "A returned or thrown thenable becomes the named invalid synchronous comparator error outcome with one rejection-containment handler; it is never awaited or tested for truthiness.",
             "resultBoundary": "The comparator must return exactly true or false; every other synchronous result becomes a named invalid comparator result error proposal. Exactly true canonicalizes the accepted proposal to the prior successful value and reuses its served token only while that success is still the current served outcome; an equal error-to-value recovery receives a new token. Exactly false accepts the next value. Every accepted value or error proposal retains the complete synchronously captured dependency set.",
             "requiredContractIds": [
                 "selector.pure-sync-dag",
                 "selector.one-evaluator",
-                "callback.no-captured-store-capability"
+                "callback.no-captured-store-capability",
+                "error.stable-name-and-code"
             ],
             "decisionStatus": "approved"
         },
@@ -104,12 +168,13 @@
                 "scope topology mutation"
             ],
             "guardDomain": "active-transaction",
-            "errorRule": "An escaping error aborts the TreeTransaction; a caught operation error preserves earlier valid intents in the same draft.",
+            "errorRule": "Forbidden captured same-domain work throws TransactionPhaseError. An escaping error aborts the TreeTransaction; a caught direct operation error preserves earlier valid intents in the same draft.",
             "thenableRule": "A returned thenable is rejected synchronously as InvalidTransactionCallbackResultError after preserving only its synchronous-prefix intents for outer catch semantics; the cursor closes when the outer callback exits.",
             "resultBoundary": "The callback result is returned only after successful preflight, apply, propagation, and settlement.",
             "requiredContractIds": [
                 "transaction.one-tree-draft",
-                "transaction.sync-derived-reads"
+                "transaction.sync-derived-reads",
+                "error.stable-name-and-code"
             ],
             "decisionStatus": "approved"
         },
@@ -130,10 +195,13 @@
                 "scope topology creation"
             ],
             "guardDomain": "active-transaction",
-            "errorRule": "An escaping error follows the outer transaction abort rule; an outer catch preserves prior shared-draft intents.",
-            "thenableRule": "A thenable receives the same synchronous invalid-callback-result rule as the outer transaction callback.",
+            "errorRule": "Forbidden captured same-domain work throws TransactionPhaseError. An escaping error follows the outer transaction abort rule; an outer catch preserves prior shared-draft intents.",
+            "thenableRule": "A thenable becomes InvalidTransactionCallbackResultError under the same synchronous rule as the outer transaction callback.",
             "resultBoundary": "Returns the synchronous callback result and leaves every same-Tree cursor active until the outer transaction exits.",
-            "requiredContractIds": ["transaction.scope-cursor-no-savepoint"],
+            "requiredContractIds": [
+                "error.stable-name-and-code",
+                "transaction.scope-cursor-no-savepoint"
+            ],
             "decisionStatus": "approved"
         },
         {
@@ -151,11 +219,14 @@
                 "source invalidation"
             ],
             "guardDomain": "same-runtime-domain",
-            "errorRule": "A throw rejects the operation before its intent is admitted.",
-            "thenableRule": "A returned or thrown thenable is a named invalid synchronous updater failure and is never staged.",
+            "errorRule": "Forbidden same-domain work throws CallbackCapabilityError. Any other throw rejects the operation before its intent is admitted.",
+            "thenableRule": "A returned or thrown thenable becomes InvalidSynchronousAtomValueError and is never staged.",
             "resultPolicy": "value-may-be-undefined",
             "resultBoundary": "Called exactly once; its valid synchronous result becomes the one staged Atom value intent, including undefined when that belongs to the Atom value type, and the public mutation returns void.",
-            "requiredContractIds": ["mutation.value-vs-updater"],
+            "requiredContractIds": [
+                "error.stable-name-and-code",
+                "mutation.value-vs-updater"
+            ],
             "decisionStatus": "approved"
         },
         {
@@ -173,13 +244,14 @@
                 "source invalidation"
             ],
             "guardDomain": "same-runtime-domain",
-            "errorRule": "Effective absence throws MissingCollectionRowError before the updater is invoked; an updater throw rejects the operation before its intent is admitted.",
+            "errorRule": "Effective absence throws MissingCollectionRowError before the updater is invoked; forbidden same-domain work throws CallbackCapabilityError; any other updater throw rejects before intent admission.",
             "thenableRule": "A returned or thrown thenable is a named invalid synchronous updater failure and is never staged.",
             "resultPolicy": "value-must-not-be-undefined",
             "resultBoundary": "Called exactly once for a present row; a valid non-undefined result becomes the one staged Present value intent and the public mutation returns void.",
             "requiredContractIds": [
                 "mutation.value-vs-updater",
-                "collection.update-existing-only"
+                "collection.update-existing-only",
+                "error.stable-name-and-code"
             ],
             "decisionStatus": "approved"
         },
@@ -202,18 +274,19 @@
                 "source invalidation"
             ],
             "guardDomain": "same-runtime-domain",
-            "errorRule": "A throw creates no family member and is not cached.",
+            "errorRule": "Forbidden same-domain work throws CallbackCapabilityError. Any other throw creates no family member and is not cached.",
             "thenableRule": "A thenable rejects as an invalid family factory result; the factory must synchronously return a same-domain State.",
             "resultBoundary": "One valid same-domain State subtype is weakly memoized for the canonical identity tuple.",
             "requiredContractIds": [
                 "family.variadic-primitive-identity",
-                "callback.definition-only"
+                "callback.definition-only",
+                "error.stable-name-and-code"
             ],
             "decisionStatus": "approved"
         },
         {
             "id": "callback.family-encode-key",
-            "apiEntryId": "core.family",
+            "apiEntryId": "core.family-options.encode-key",
             "role": "Map a richer argument tuple to one primitive SameValueZero identity key.",
             "phase": "definition-identity",
             "suppliedCapabilities": ["full family argument tuple"],
@@ -227,18 +300,19 @@
                 "source invalidation"
             ],
             "guardDomain": "same-runtime-domain",
-            "errorRule": "A throw creates and caches nothing.",
+            "errorRule": "Forbidden same-domain work throws CallbackCapabilityError. Any other throw creates and caches nothing.",
             "thenableRule": "A returned or thrown thenable rejects as an invalid synchronous encoder result.",
             "resultBoundary": "A valid JavaScript primitive becomes the sole identity key; original rich inputs are not retained by the family cache.",
             "requiredContractIds": [
                 "family.explicit-encode-key",
-                "callback.definition-only"
+                "callback.definition-only",
+                "error.stable-name-and-code"
             ],
             "decisionStatus": "approved"
         },
         {
             "id": "callback.collection-encode-key",
-            "apiEntryId": "core.collection",
+            "apiEntryId": "core.collection-options.encode-key",
             "role": "Map one richer row lookup input to the canonical portable scalar row key.",
             "phase": "definition-identity",
             "suppliedCapabilities": ["one collection lookup input"],
@@ -252,18 +326,19 @@
                 "source invalidation"
             ],
             "guardDomain": "same-runtime-domain",
-            "errorRule": "A throw or invalid scalar creates no row handle and is not cached.",
+            "errorRule": "Forbidden same-domain work throws CallbackCapabilityError. Any other throw or invalid scalar creates no row handle and is not cached.",
             "thenableRule": "A returned or thrown thenable rejects as an invalid synchronous collection-key encoder result.",
             "resultBoundary": "A valid string, finite number, bigint, boolean, or null is canonicalized before row-handle memoization; original input is not retained.",
             "requiredContractIds": [
                 "collection.row-identity",
-                "callback.definition-only"
+                "callback.definition-only",
+                "error.stable-name-and-code"
             ],
             "decisionStatus": "approved"
         },
         {
             "id": "callback.collection-index-extractor",
-            "apiEntryId": "core.collection",
+            "apiEntryId": "core.collection-options.indexes",
             "role": "Derive canonical structural index keys from one proposed present row value.",
             "phase": "guarded-delta-derivation-before-preflight",
             "suppliedCapabilities": [
@@ -280,12 +355,13 @@
                 "source invalidation"
             ],
             "guardDomain": "same-runtime-domain",
-            "errorRule": "A throw aborts the draft before apply; no source, membership, index, graph, or notification state changes.",
+            "errorRule": "Forbidden same-domain work throws CallbackCapabilityError. Any other throw aborts the draft before apply; no source, membership, index, graph, or notification state changes.",
             "thenableRule": "A returned or thrown thenable rejects as an invalid synchronous extractor result and produces no prepared delta.",
             "resultBoundary": "Only validated inert canonical deltas cross into final no-user-code preflight/apply.",
             "requiredContractIds": [
                 "collection.atomic-deltas",
-                "transaction.no-user-code-final-preflight"
+                "transaction.no-user-code-final-preflight",
+                "error.stable-name-and-code"
             ],
             "decisionStatus": "approved"
         },
@@ -310,12 +386,13 @@
                 "Store disposal"
             ],
             "guardDomain": "same-runtime-domain",
-            "errorRule": "The status transition remains installed; one listener error cannot starve the remaining frozen delivery snapshot, and the first escaping error surfaces after delivery.",
+            "errorRule": "Forbidden same-domain work throws CallbackCapabilityError. The status transition remains installed; one listener error cannot starve the remaining frozen delivery snapshot, and the first escaping error surfaces after delivery.",
             "thenableRule": "The listener is not awaited and no asynchronous Valdres capability survives delivery.",
             "resultBoundary": "The listener receives the same opaque immutable status snapshot returned by getMaterializationStatus; its return value is ignored.",
             "requiredContractIds": [
                 "callback.subscriber-quarantine",
-                "collection.materialization-observation"
+                "collection.materialization-observation",
+                "error.stable-name-and-code"
             ],
             "decisionStatus": "approved"
         },
@@ -336,12 +413,14 @@
                 "same-domain source invalidation"
             ],
             "guardDomain": "same-runtime-domain",
-            "errorRule": "An ordinary non-thenable throw becomes a recoverable external projection error; RuntimeMismatchError remains an exact control fault with host-specific publication rules.",
+            "errorRule": "Forbidden same-domain work throws CallbackCapabilityError. An ordinary non-thenable throw becomes a recoverable external projection error; RuntimeMismatchError remains an exact control fault with host-specific publication rules. Runtime drain non-convergence is owned outside this callback boundary.",
             "thenableRule": "A returned or thrown thenable becomes one contained named invalid synchronous snapshot outcome and is never awaited.",
             "resultBoundary": "One Object.is-stable live value or error is sampled per admitted generation/transaction capture according to the external lifecycle contract.",
             "requiredContractIds": [
                 "external.pull-contract",
-                "external.recoverable-snapshot-errors"
+                "external.recoverable-snapshot-errors",
+                "external.bounded-settlement",
+                "error.stable-name-and-code"
             ],
             "decisionStatus": "approved"
         },
@@ -362,12 +441,13 @@
                 "same-domain source invalidation"
             ],
             "guardDomain": "same-runtime-domain",
-            "errorRule": "A non-thenable throw is memoized exactly within the disposable host; a missing reader is a sticky host-fatal dependency-path error.",
+            "errorRule": "Forbidden same-domain work throws CallbackCapabilityError. A non-thenable throw is memoized exactly within the disposable host; a missing reader throws the sticky host-fatal ServerSnapshotUnavailableError with its dependency path.",
             "thenableRule": "A returned or thrown thenable becomes the named invalid synchronous server snapshot error and is never a Suspense wakeable.",
             "resultBoundary": "Sampled at most once per disposable host and never published into the live graph or external projection.",
             "requiredContractIds": [
                 "external.deterministic-server-snapshot",
-                "react.isolated-hydration-reader"
+                "react.isolated-hydration-reader",
+                "error.stable-name-and-code"
             ],
             "decisionStatus": "approved"
         },
@@ -389,12 +469,14 @@
                 "arbitrary same-domain publication"
             ],
             "guardDomain": "same-runtime-domain",
-            "errorRule": "A throw or invalid cleanup return rolls back provisional callback/retain admission and returns no unreachable subscription.",
-            "thenableRule": "subscribe itself is synchronous and must return a synchronous cleanup function; thenable setup results reject.",
+            "errorRule": "Forbidden same-domain work throws CallbackCapabilityError. A throw rolls back provisional admission; a missing, non-function, or thenable cleanup throws InvalidExternalCleanupError. Runtime delivery limits are owned outside this callback boundary.",
+            "thenableRule": "subscribe itself is synchronous and must return a cleanup function; a thenable setup or cleanup result throws InvalidExternalCleanupError and is never awaited.",
             "resultBoundary": "After a valid cleanup is returned, core performs the mandatory second sample and one admission settlement before sub returns.",
             "requiredContractIds": [
                 "external.race-closing-attach",
-                "external.startup-dirty-latch"
+                "external.startup-dirty-latch",
+                "external.bounded-settlement",
+                "error.stable-name-and-code"
             ],
             "decisionStatus": "approved"
         },
@@ -415,12 +497,13 @@
                 "publication through the revoked invalidator"
             ],
             "guardDomain": "same-runtime-domain",
-            "errorRule": "Cleanup is all-run; errors join the ordered outer lifecycle ledger and surface only after the target is idle or terminal.",
-            "thenableRule": "A returned or thrown thenable becomes one contained named synchronous lifecycle cleanup failure, is never awaited, and cannot add disposeAsync.",
+            "errorRule": "Forbidden same-domain work throws CallbackCapabilityError. Invalid synchronous cleanup results throw InvalidExternalCleanupError; cleanup remains all-run and ordinary errors join the ordered outer lifecycle ledger after the target is idle or terminal.",
+            "thenableRule": "A returned or thrown thenable becomes InvalidExternalCleanupError, is never awaited, and cannot add disposeAsync.",
             "resultBoundary": "The generation is revoked before invocation and remains revoked regardless of cleanup outcome.",
             "requiredContractIds": [
                 "external.generation-safe-cleanup",
-                "lifecycle.synchronous-cleanup"
+                "lifecycle.synchronous-cleanup",
+                "error.stable-name-and-code"
             ],
             "decisionStatus": "approved"
         },
@@ -447,12 +530,13 @@
                 "dormant external sampling"
             ],
             "guardDomain": "same-runtime-domain",
-            "errorRule": "One callback error does not starve the remaining snapshot; uncaught errors join the ordered outer workflow ledger and surface after idle.",
+            "errorRule": "Forbidden same-domain work throws CallbackCapabilityError; a read that would publish a dormant external source throws DormantExternalReadError. One callback error does not starve the remaining snapshot; uncaught errors join the ordered outer workflow ledger after idle.",
             "thenableRule": "The callback is not awaited and no asynchronous Valdres capability survives delivery.",
             "resultBoundary": "Each affected subscription runs at most once per settlement, subject to the separate one-budget startup admission rule.",
             "requiredContractIds": [
                 "notification.after-stability",
-                "callback.subscriber-quarantine"
+                "callback.subscriber-quarantine",
+                "error.stable-name-and-code"
             ],
             "decisionStatus": "evidence-required"
         },

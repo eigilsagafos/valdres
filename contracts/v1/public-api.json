@@ -22,6 +22,145 @@
     },
     "entries": [
         {
+            "id": "adapter.assert-store",
+            "kind": "runtime-export",
+            "owner": "adapter-boundary",
+            "legacy": [],
+            "target": {
+                "package": "valdres",
+                "subpath": "./adapter-internals/v1",
+                "name": "assertStore",
+                "status": "internal"
+            },
+            "migration": {
+                "mode": "add",
+                "replacementIds": [],
+                "semver": "new",
+                "codemod": "Import assertStore from valdres/adapter-internals/v1 and validate the exact peer-owned Store before adapter work.",
+                "typeError": "Non-Store and foreign-runtime values reject before reads, subscriptions, hydration, or adapter callbacks.",
+                "firstPartyOwner": "adapter-boundary",
+                "evidenceStatus": "planned"
+            },
+            "contractIds": [
+                "adapter.peer-owned-protocol",
+                "runtime.before-work-owner-check",
+                "store.object-identity"
+            ],
+            "decisionStatus": "approved",
+            "notes": "Standalone owner validation for the one valdres peer resolved by an adapter; it exposes no Store ID, registry, wrapper object, or runtime adoption path."
+        },
+        {
+            "id": "adapter.read",
+            "kind": "runtime-export",
+            "owner": "adapter-boundary",
+            "legacy": [],
+            "target": {
+                "package": "valdres",
+                "subpath": "./adapter-internals/v1",
+                "name": "read",
+                "status": "internal"
+            },
+            "migration": {
+                "mode": "add",
+                "replacementIds": [],
+                "semver": "new",
+                "codemod": "Import read from valdres/adapter-internals/v1 for adapter-owned synchronous Store reads.",
+                "typeError": "The Store and State must belong to the adapter's exact resolved valdres peer.",
+                "firstPartyOwner": "adapter-boundary",
+                "evidenceStatus": "planned"
+            },
+            "contractIds": [
+                "adapter.peer-owned-protocol",
+                "runtime.before-work-owner-check",
+                "selector.one-evaluator"
+            ],
+            "decisionStatus": "approved",
+            "notes": "read(store, state) has the same synchronous value/error semantics as public Store.get and exposes no late, async, transaction, or batching channel."
+        },
+        {
+            "id": "adapter.read-hydration-snapshot",
+            "kind": "runtime-export",
+            "owner": "adapter-boundary",
+            "legacy": [],
+            "target": {
+                "package": "valdres",
+                "subpath": "./adapter-internals/v1",
+                "name": "readHydrationSnapshot",
+                "status": "internal"
+            },
+            "migration": {
+                "mode": "add",
+                "replacementIds": [],
+                "semver": "new",
+                "codemod": "Use readHydrationSnapshot(store, state) only for an adapter's isolated server/hydration read.",
+                "typeError": "Foreign Store/State pairs and live-read or transaction substitutions reject before hydration work.",
+                "firstPartyOwner": "adapter-boundary",
+                "evidenceStatus": "planned"
+            },
+            "contractIds": [
+                "adapter.peer-owned-protocol",
+                "external.deterministic-server-snapshot",
+                "react.isolated-hydration-reader"
+            ],
+            "decisionStatus": "approved",
+            "notes": "The disposable hydration host publishes and warms no live graph or external projection and exposes no evaluator host capability."
+        },
+        {
+            "id": "adapter.subscribe",
+            "kind": "runtime-export",
+            "owner": "adapter-boundary",
+            "legacy": [],
+            "target": {
+                "package": "valdres",
+                "subpath": "./adapter-internals/v1",
+                "name": "subscribe",
+                "status": "internal"
+            },
+            "migration": {
+                "mode": "add",
+                "replacementIds": [],
+                "semver": "new",
+                "codemod": "Import subscribe from valdres/adapter-internals/v1 for peer-owned adapter subscriptions.",
+                "typeError": "The Store, State, and synchronous subscriber must satisfy the versioned peer protocol.",
+                "firstPartyOwner": "adapter-boundary",
+                "evidenceStatus": "planned"
+            },
+            "contractIds": [
+                "adapter.peer-owned-protocol",
+                "callback.subscriber-quarantine",
+                "notification.after-stability"
+            ],
+            "decisionStatus": "approved",
+            "notes": "subscribe(store, state, subscriber) matches public Store.sub delivery and returns one idempotent unsubscribe; there is no delivery wrapper or batching hook."
+        },
+        {
+            "id": "adapter.v1-subpath",
+            "kind": "subpath",
+            "owner": "adapter-boundary",
+            "legacy": [],
+            "target": {
+                "package": "valdres",
+                "subpath": "./adapter-internals/v1",
+                "name": "valdres/adapter-internals/v1",
+                "status": "internal"
+            },
+            "migration": {
+                "mode": "add",
+                "replacementIds": [],
+                "semver": "new",
+                "codemod": "First-party framework adapters import only the four reviewed standalone operations from valdres/adapter-internals/v1.",
+                "typeError": "StoreData, Transaction, Store IDs, options, batching probes, and delivery-wrapper imports are absent.",
+                "firstPartyOwner": "adapter-boundary",
+                "evidenceStatus": "planned"
+            },
+            "contractIds": [
+                "adapter.peer-owned-protocol",
+                "runtime.isolated-domains"
+            ],
+            "decisionStatus": "approved",
+            "notes": "The exact versioned internal export set is assertStore, read, subscribe, and readHydrationSnapshot; the adapter resolves valdres as a peer and never bundles another core copy."
+        },
+        {
             "id": "beta.cache-companion",
             "kind": "package",
             "owner": "independent-beta",
@@ -243,10 +382,39 @@
             },
             "contractIds": [
                 "collection.materialization-lifecycle",
-                "collection.operational-boundary"
+                "collection.operational-boundary",
+                "options.closed-surface"
             ],
             "decisionStatus": "approved",
-            "notes": "Returns the opaque materialization handle also returned by importArtifact; option members and scheduling policy remain unresolved."
+            "notes": "Returns the opaque materialization handle also returned by importArtifact. Its only option is priority; scheduling callbacks, retry, cancellation, artifact, and persistence options are absent."
+        },
+        {
+            "id": "collection.materialize-options.priority",
+            "kind": "option",
+            "owner": "collection",
+            "allowedValues": ["user-visible", "background"],
+            "legacy": [],
+            "target": {
+                "package": "valdres",
+                "subpath": "./collection",
+                "name": "MaterializeOptions.priority",
+                "status": "stable"
+            },
+            "migration": {
+                "mode": "add",
+                "replacementIds": [],
+                "semver": "new",
+                "codemod": "Use priority: \"user-visible\" or priority: \"background\" when explicit materialization priority is required.",
+                "typeError": "Every other priority literal and every scheduler callback or retry/cancel option is rejected.",
+                "firstPartyOwner": "collection",
+                "evidenceStatus": "planned"
+            },
+            "contractIds": [
+                "collection.operational-boundary",
+                "options.closed-surface"
+            ],
+            "decisionStatus": "approved",
+            "notes": "MaterializeOptions.priority is exactly \"user-visible\" | \"background\"; no user-blocking tier or callback scheduler enters the stable surface."
         },
         {
             "id": "collection.operations-subpath",
@@ -328,9 +496,13 @@
                 "firstPartyOwner": "core",
                 "evidenceStatus": "planned"
             },
-            "contractIds": ["atom.exact-value", "atom.object-is-default"],
+            "contractIds": [
+                "atom.exact-value",
+                "atom.object-is-default",
+                "options.closed-surface"
+            ],
             "decisionStatus": "approved",
-            "notes": "One writable StoreTree-local cell kind."
+            "notes": "One writable StoreTree-local cell kind. AtomOptions contains only name and equal and is shared by atom and atom.lazy."
         },
         {
             "id": "core.atom.lazy",
@@ -357,6 +529,54 @@
             "notes": "Produces the same Atom kind; only fallback construction differs."
         },
         {
+            "id": "core.atom-options.equal",
+            "kind": "option",
+            "owner": "core",
+            "legacy": [],
+            "target": {
+                "package": "valdres",
+                "subpath": ".",
+                "name": "AtomOptions.equal",
+                "status": "stable"
+            },
+            "migration": {
+                "mode": "add",
+                "replacementIds": [],
+                "semver": "new",
+                "codemod": "Keep deliberate atom equality as the two-argument AtomOptions.equal comparator.",
+                "typeError": "Comparator capability arguments, async results, and non-boolean results reject.",
+                "firstPartyOwner": "core",
+                "evidenceStatus": "planned"
+            },
+            "contractIds": ["atom.object-is-default", "options.closed-surface"],
+            "decisionStatus": "approved",
+            "notes": "Optional EqualFunc<Value>; reset never calls it, and Object.is remains the default."
+        },
+        {
+            "id": "core.atom-options.name",
+            "kind": "option",
+            "owner": "core",
+            "legacy": [],
+            "target": {
+                "package": "valdres",
+                "subpath": ".",
+                "name": "AtomOptions.name",
+                "status": "stable"
+            },
+            "migration": {
+                "mode": "add",
+                "replacementIds": [],
+                "semver": "new",
+                "codemod": "Keep only inert diagnostic AtomOptions.name metadata.",
+                "typeError": "Lifecycle, cache, freshness, identity, and Store-policy option keys reject.",
+                "firstPartyOwner": "core",
+                "evidenceStatus": "planned"
+            },
+            "contractIds": ["options.closed-surface"],
+            "decisionStatus": "approved",
+            "notes": "Optional inert string metadata; it is not a Store address, registry key, or transfer identity."
+        },
+        {
             "id": "core.collection",
             "kind": "runtime-export",
             "owner": "valdres",
@@ -379,10 +599,66 @@
             "contractIds": [
                 "collection.row-identity",
                 "collection.membership-order",
-                "collection.atomic-deltas"
+                "collection.atomic-deltas",
+                "options.closed-surface"
             ],
             "decisionStatus": "approved",
-            "notes": "Constructor option details still need the query/index Phase 0 spike."
+            "notes": "CollectionOptions contains exactly encodeKey and indexes; there is no Store policy, scheduler, or late index-definition option."
+        },
+        {
+            "id": "core.collection-options.encode-key",
+            "kind": "option",
+            "owner": "collection",
+            "legacy": [],
+            "target": {
+                "package": "valdres",
+                "subpath": ".",
+                "name": "CollectionOptions.encodeKey",
+                "status": "stable"
+            },
+            "migration": {
+                "mode": "add",
+                "replacementIds": [],
+                "semver": "new",
+                "codemod": "Use CollectionOptions.encodeKey only to canonicalize one richer lookup input before row-handle identity.",
+                "typeError": "Async, non-scalar, Store-aware, and post-definition encoders reject.",
+                "firstPartyOwner": "collection",
+                "evidenceStatus": "planned"
+            },
+            "contractIds": [
+                "collection.row-identity",
+                "options.closed-surface"
+            ],
+            "decisionStatus": "approved",
+            "notes": "The optional synchronous encoder returns one portable scalar and runs only before definition-level row memoization."
+        },
+        {
+            "id": "core.collection-options.indexes",
+            "kind": "option",
+            "owner": "collection",
+            "legacy": [],
+            "target": {
+                "package": "valdres",
+                "subpath": ".",
+                "name": "CollectionOptions.indexes",
+                "status": "stable"
+            },
+            "migration": {
+                "mode": "add",
+                "replacementIds": [],
+                "semver": "new",
+                "codemod": "Declare the complete immutable structural index map in CollectionOptions.indexes.",
+                "typeError": "Late index attachment and Store-specific index options reject.",
+                "firstPartyOwner": "collection",
+                "evidenceStatus": "planned"
+            },
+            "contractIds": [
+                "collection.atomic-deltas",
+                "options.closed-surface",
+                "transaction.no-user-code-final-preflight"
+            ],
+            "decisionStatus": "approved",
+            "notes": "The immutable definition-time map owns value, multi-value, and ordered index definitions; it starts no Store materialization."
         },
         {
             "id": "core.external-atom",
@@ -407,10 +683,35 @@
             "contractIds": [
                 "external.pull-contract",
                 "external.store-tree-projection",
-                "external.recoverable-snapshot-errors"
+                "external.recoverable-snapshot-errors",
+                "options.closed-surface"
             ],
             "decisionStatus": "approved",
-            "notes": "Async acquisition and stale/cache policy stay outside this primitive."
+            "notes": "ExternalAtomOptions contains only name. Async acquisition, equality overrides, and stale/cache policy stay outside this primitive."
+        },
+        {
+            "id": "core.external-atom-options.name",
+            "kind": "option",
+            "owner": "core",
+            "legacy": [],
+            "target": {
+                "package": "valdres",
+                "subpath": ".",
+                "name": "ExternalAtomOptions.name",
+                "status": "stable"
+            },
+            "migration": {
+                "mode": "add",
+                "replacementIds": [],
+                "semver": "new",
+                "codemod": "Keep only inert diagnostic ExternalAtomOptions.name metadata.",
+                "typeError": "Equality, cache, freshness, lifecycle, and scheduler option keys reject.",
+                "firstPartyOwner": "core",
+                "evidenceStatus": "planned"
+            },
+            "contractIds": ["external.pull-contract", "options.closed-surface"],
+            "decisionStatus": "approved",
+            "notes": "Optional inert string metadata; Object.is and source-owned lifecycle remain fixed semantics."
         },
         {
             "id": "core.family",
@@ -499,10 +800,38 @@
             "contractIds": [
                 "family.variadic-primitive-identity",
                 "family.same-value-zero",
-                "family.no-membership"
+                "family.no-membership",
+                "options.closed-surface"
             ],
             "decisionStatus": "approved",
-            "notes": "The current ShiftX family migration must be validated externally."
+            "notes": "FamilyOptions contains only encodeKey. The current ShiftX family migration must be validated externally."
+        },
+        {
+            "id": "core.family-options.encode-key",
+            "kind": "option",
+            "owner": "core",
+            "legacy": [],
+            "target": {
+                "package": "valdres",
+                "subpath": ".",
+                "name": "FamilyOptions.encodeKey",
+                "status": "stable"
+            },
+            "migration": {
+                "mode": "add",
+                "replacementIds": [],
+                "semver": "new",
+                "codemod": "Use FamilyOptions.encodeKey when a richer family argument tuple needs one primitive identity key.",
+                "typeError": "Async, non-primitive, Store-aware, and post-definition encoders reject.",
+                "firstPartyOwner": "core",
+                "evidenceStatus": "planned"
+            },
+            "contractIds": [
+                "family.explicit-encode-key",
+                "options.closed-surface"
+            ],
+            "decisionStatus": "approved",
+            "notes": "The optional synchronous encoder receives the full argument tuple and returns exactly one FamilyKey primitive."
         },
         {
             "id": "core.global-atom",
@@ -649,9 +978,269 @@
             "notes": "Readonly lazy State<boolean>."
         },
         {
+            "id": "core.callback-capability-error",
+            "kind": "error",
+            "owner": "core",
+            "errorCode": "VALDRES_CALLBACK_CAPABILITY",
+            "legacy": [],
+            "target": {
+                "package": "valdres",
+                "subpath": ".",
+                "name": "CallbackCapabilityError",
+                "status": "stable"
+            },
+            "migration": {
+                "mode": "add",
+                "replacementIds": [],
+                "semver": "new",
+                "codemod": "Treat forbidden same-runtime Store work inside capability-closed callbacks as CallbackCapabilityError.",
+                "typeError": "The static API exposes no captured privileged capability; untyped runtime violations throw VALDRES_CALLBACK_CAPABILITY.",
+                "firstPartyOwner": "core",
+                "evidenceStatus": "planned"
+            },
+            "contractIds": [
+                "callback.revocable-capability",
+                "error.stable-name-and-code"
+            ],
+            "decisionStatus": "approved",
+            "notes": "The exact root class/code pair is CallbackCapabilityError / VALDRES_CALLBACK_CAPABILITY; it is distinct from selector, subscriber, and transaction-result errors."
+        },
+        {
+            "id": "core.dormant-external-read-error",
+            "kind": "error",
+            "owner": "core",
+            "errorCode": "VALDRES_DORMANT_EXTERNAL_READ",
+            "legacy": [],
+            "target": {
+                "package": "valdres",
+                "subpath": ".",
+                "name": "DormantExternalReadError",
+                "status": "stable"
+            },
+            "migration": {
+                "mode": "add",
+                "replacementIds": [],
+                "semver": "new",
+                "codemod": "Move dormant external sampling out of subscriber delivery and into an admitted read or retained source path.",
+                "typeError": "Subscriber-time reads that would publish a dormant external source throw VALDRES_DORMANT_EXTERNAL_READ.",
+                "firstPartyOwner": "core",
+                "evidenceStatus": "planned"
+            },
+            "contractIds": [
+                "callback.subscriber-quarantine",
+                "error.stable-name-and-code",
+                "external.store-tree-projection"
+            ],
+            "decisionStatus": "approved",
+            "notes": "The exact root class/code pair is DormantExternalReadError / VALDRES_DORMANT_EXTERNAL_READ."
+        },
+        {
+            "id": "core.external-source-delivery-limit-error",
+            "kind": "error",
+            "owner": "core",
+            "errorCode": "VALDRES_EXTERNAL_SOURCE_DELIVERY_LIMIT",
+            "legacy": [],
+            "target": {
+                "package": "valdres",
+                "subpath": ".",
+                "name": "ExternalSourceDeliveryLimitError",
+                "status": "stable"
+            },
+            "migration": {
+                "mode": "add",
+                "replacementIds": [],
+                "semver": "new",
+                "codemod": "Break same-runtime nested source-delivery feedback instead of relying on unbounded re-entry.",
+                "typeError": "A delivery chain exceeding the fixed source-only bound throws VALDRES_EXTERNAL_SOURCE_DELIVERY_LIMIT.",
+                "firstPartyOwner": "core",
+                "evidenceStatus": "planned"
+            },
+            "contractIds": [
+                "error.stable-name-and-code",
+                "external.bounded-settlement",
+                "notification.after-stability"
+            ],
+            "decisionStatus": "approved",
+            "notes": "The exact root class/code pair is ExternalSourceDeliveryLimitError / VALDRES_EXTERNAL_SOURCE_DELIVERY_LIMIT."
+        },
+        {
+            "id": "core.external-source-non-convergence-error",
+            "kind": "error",
+            "owner": "core",
+            "errorCode": "VALDRES_EXTERNAL_SOURCE_NON_CONVERGENCE",
+            "legacy": [],
+            "target": {
+                "package": "valdres",
+                "subpath": ".",
+                "name": "ExternalSourceNonConvergenceError",
+                "status": "stable"
+            },
+            "migration": {
+                "mode": "add",
+                "replacementIds": [],
+                "semver": "new",
+                "codemod": "Make source snapshots converge inside the bounded StoreTree settlement protocol.",
+                "typeError": "A source generation that cannot settle within the fixed bound throws VALDRES_EXTERNAL_SOURCE_NON_CONVERGENCE.",
+                "firstPartyOwner": "core",
+                "evidenceStatus": "planned"
+            },
+            "contractIds": [
+                "error.stable-name-and-code",
+                "external.bounded-settlement",
+                "external.startup-dirty-latch"
+            ],
+            "decisionStatus": "approved",
+            "notes": "The exact root class/code pair is ExternalSourceNonConvergenceError / VALDRES_EXTERNAL_SOURCE_NON_CONVERGENCE."
+        },
+        {
+            "id": "core.invalid-external-cleanup-error",
+            "kind": "error",
+            "owner": "core",
+            "errorCode": "VALDRES_INVALID_EXTERNAL_CLEANUP",
+            "legacy": [],
+            "target": {
+                "package": "valdres",
+                "subpath": ".",
+                "name": "InvalidExternalCleanupError",
+                "status": "stable"
+            },
+            "migration": {
+                "mode": "add",
+                "replacementIds": [],
+                "semver": "new",
+                "codemod": "Return one synchronous cleanup function from ExternalSource.subscribe and return no async cleanup result.",
+                "typeError": "Missing, non-function, thenable, and otherwise invalid cleanup results throw VALDRES_INVALID_EXTERNAL_CLEANUP.",
+                "firstPartyOwner": "core",
+                "evidenceStatus": "planned"
+            },
+            "contractIds": [
+                "error.stable-name-and-code",
+                "external.generation-safe-cleanup",
+                "lifecycle.synchronous-cleanup"
+            ],
+            "decisionStatus": "approved",
+            "notes": "The exact root class/code pair is InvalidExternalCleanupError / VALDRES_INVALID_EXTERNAL_CLEANUP."
+        },
+        {
+            "id": "core.server-snapshot-unavailable-error",
+            "kind": "error",
+            "owner": "core",
+            "errorCode": "VALDRES_SERVER_SNAPSHOT_UNAVAILABLE",
+            "legacy": [],
+            "target": {
+                "package": "valdres",
+                "subpath": ".",
+                "name": "ServerSnapshotUnavailableError",
+                "status": "stable"
+            },
+            "migration": {
+                "mode": "add",
+                "replacementIds": [],
+                "semver": "new",
+                "codemod": "Provide ExternalSource.getServerSnapshot for every source reachable by an SSR/hydration read.",
+                "typeError": "A transitive hydration path reaching a source without a server snapshot throws VALDRES_SERVER_SNAPSHOT_UNAVAILABLE.",
+                "firstPartyOwner": "core-and-react",
+                "evidenceStatus": "planned"
+            },
+            "contractIds": [
+                "error.stable-name-and-code",
+                "external.deterministic-server-snapshot",
+                "react.isolated-hydration-reader"
+            ],
+            "decisionStatus": "approved",
+            "notes": "The exact root class/code pair is ServerSnapshotUnavailableError / VALDRES_SERVER_SNAPSHOT_UNAVAILABLE and carries the dynamic dependency path."
+        },
+        {
+            "id": "core.invalid-atom-comparator-result-error",
+            "kind": "error",
+            "owner": "valdres",
+            "errorCode": "VALDRES_INVALID_ATOM_COMPARATOR_RESULT",
+            "legacy": [],
+            "target": {
+                "package": "valdres",
+                "subpath": ".",
+                "name": "InvalidAtomComparatorResultError",
+                "status": "stable"
+            },
+            "migration": {
+                "mode": "add",
+                "replacementIds": [],
+                "semver": "new",
+                "codemod": "Return exactly true or false synchronously from AtomOptions.equal.",
+                "typeError": "A thenable or any non-boolean comparator result throws VALDRES_INVALID_ATOM_COMPARATOR_RESULT before intent admission.",
+                "firstPartyOwner": "core",
+                "evidenceStatus": "planned"
+            },
+            "contractIds": [
+                "atom.object-is-default",
+                "error.stable-name-and-code"
+            ],
+            "decisionStatus": "approved",
+            "notes": "The exact root class/code pair is InvalidAtomComparatorResultError / VALDRES_INVALID_ATOM_COMPARATOR_RESULT."
+        },
+        {
+            "id": "core.invalid-synchronous-atom-value-error",
+            "kind": "error",
+            "owner": "valdres",
+            "errorCode": "VALDRES_INVALID_SYNCHRONOUS_ATOM_VALUE",
+            "legacy": [],
+            "target": {
+                "package": "valdres",
+                "subpath": ".",
+                "name": "InvalidSynchronousAtomValueError",
+                "status": "stable"
+            },
+            "migration": {
+                "mode": "add",
+                "replacementIds": [],
+                "semver": "new",
+                "codemod": "Keep direct, lazy, and updater-produced Atom values synchronous and non-thenable.",
+                "typeError": "A thenable Atom value throws VALDRES_INVALID_SYNCHRONOUS_ATOM_VALUE and is neither stored nor awaited.",
+                "firstPartyOwner": "core",
+                "evidenceStatus": "planned"
+            },
+            "contractIds": [
+                "atom.exact-value",
+                "atom.lazy.sync-per-tree-fallback",
+                "error.stable-name-and-code",
+                "mutation.value-vs-updater"
+            ],
+            "decisionStatus": "approved",
+            "notes": "The exact root class/code pair is InvalidSynchronousAtomValueError / VALDRES_INVALID_SYNCHRONOUS_ATOM_VALUE."
+        },
+        {
+            "id": "core.invalid-transaction-callback-result-error",
+            "kind": "error",
+            "owner": "valdres",
+            "errorCode": "VALDRES_INVALID_TRANSACTION_CALLBACK_RESULT",
+            "legacy": [],
+            "target": {
+                "package": "valdres",
+                "subpath": ".",
+                "name": "InvalidTransactionCallbackResultError",
+                "status": "stable"
+            },
+            "migration": {
+                "mode": "add",
+                "replacementIds": [],
+                "semver": "new",
+                "codemod": "Keep Store transaction callbacks synchronous and return a non-thenable result.",
+                "typeError": "A returned thenable throws VALDRES_INVALID_TRANSACTION_CALLBACK_RESULT synchronously after its synchronous-prefix intents are staged.",
+                "firstPartyOwner": "core",
+                "evidenceStatus": "planned"
+            },
+            "contractIds": [
+                "error.stable-name-and-code",
+                "transaction.one-tree-draft"
+            ],
+            "decisionStatus": "approved",
+            "notes": "The exact root class/code pair is InvalidTransactionCallbackResultError / VALDRES_INVALID_TRANSACTION_CALLBACK_RESULT."
+        },
+        {
             "id": "core.runtime-mismatch-error",
             "kind": "error",
             "owner": "valdres",
+            "errorCode": "VALDRES_RUNTIME_MISMATCH",
             "legacy": [],
             "target": {
                 "package": "valdres",
@@ -703,9 +1292,94 @@
                 "firstPartyOwner": "core",
                 "evidenceStatus": "planned"
             },
-            "contractIds": ["selector.pure-sync-dag", "selector.one-evaluator"],
+            "contractIds": [
+                "options.closed-surface",
+                "selector.pure-sync-dag",
+                "selector.one-evaluator"
+            ],
             "decisionStatus": "approved",
-            "notes": "Pure synchronous dynamically branching derived State."
+            "notes": "Pure synchronous dynamically branching derived State. SelectorOptions contains only name and equal."
+        },
+        {
+            "id": "core.selector-options.equal",
+            "kind": "option",
+            "owner": "core",
+            "legacy": [],
+            "target": {
+                "package": "valdres",
+                "subpath": ".",
+                "name": "SelectorOptions.equal",
+                "status": "stable"
+            },
+            "migration": {
+                "mode": "add",
+                "replacementIds": [],
+                "semver": "new",
+                "codemod": "Keep deliberate selector equality as the two-argument SelectorOptions.equal comparator.",
+                "typeError": "Comparator capability arguments, async results, and non-boolean results reject.",
+                "firstPartyOwner": "core",
+                "evidenceStatus": "planned"
+            },
+            "contractIds": [
+                "options.closed-surface",
+                "selector.one-evaluator",
+                "selector.pure-sync-dag"
+            ],
+            "decisionStatus": "approved",
+            "notes": "Optional EqualFunc<Value>; it compares one final proposal and Object.is remains the default."
+        },
+        {
+            "id": "core.selector-options.name",
+            "kind": "option",
+            "owner": "core",
+            "legacy": [],
+            "target": {
+                "package": "valdres",
+                "subpath": ".",
+                "name": "SelectorOptions.name",
+                "status": "stable"
+            },
+            "migration": {
+                "mode": "add",
+                "replacementIds": [],
+                "semver": "new",
+                "codemod": "Keep only inert diagnostic SelectorOptions.name metadata.",
+                "typeError": "Async, cache, lifecycle, scheduler, and Store-policy option keys reject.",
+                "firstPartyOwner": "core",
+                "evidenceStatus": "planned"
+            },
+            "contractIds": ["options.closed-surface"],
+            "decisionStatus": "approved",
+            "notes": "Optional inert string metadata; it is not a cache key, registry address, or transfer identity."
+        },
+        {
+            "id": "core.selector-capability-error",
+            "kind": "error",
+            "owner": "valdres",
+            "errorCode": "VALDRES_SELECTOR_CAPABILITY_ERROR",
+            "legacy": [],
+            "target": {
+                "package": "valdres",
+                "subpath": ".",
+                "name": "SelectorCapabilityError",
+                "status": "stable"
+            },
+            "migration": {
+                "mode": "add",
+                "replacementIds": [],
+                "semver": "new",
+                "codemod": "Use only the supplied revocable selector get and keep selector getter/comparator work capability-closed.",
+                "typeError": "Captured same-domain Store work or use of a revoked supplied get throws VALDRES_SELECTOR_CAPABILITY_ERROR.",
+                "firstPartyOwner": "core",
+                "evidenceStatus": "planned"
+            },
+            "contractIds": [
+                "callback.revocable-capability",
+                "error.stable-name-and-code",
+                "selector.pure-sync-dag"
+            ],
+            "decisionStatus": "approved",
+            "notes": "The exact root class/code pair is SelectorCapabilityError / VALDRES_SELECTOR_CAPABILITY_ERROR."
         },
         {
             "id": "core.selector-circular-dependency-error",
@@ -775,6 +1449,7 @@
             "id": "core.store",
             "kind": "runtime-export",
             "owner": "valdres",
+            "parameters": [],
             "legacy": [
                 {
                     "kind": "overload",
@@ -802,14 +1477,18 @@
                 "mode": "keep",
                 "replacementIds": [],
                 "semver": "breaking",
-                "codemod": "Remove positional/name identity and initialize through explicit owner transactions.",
-                "typeError": "Positional IDs and identity options reject.",
+                "codemod": "Call store() with zero arguments; remove positional/name/options identity and initialize through explicit owner transactions.",
+                "typeError": "Every argument, StoreOptions bag, positional ID, and identity option rejects.",
                 "firstPartyOwner": "core",
                 "evidenceStatus": "external-handoff-required"
             },
-            "contractIds": ["store.object-identity", "store.explicit-owner"],
+            "contractIds": [
+                "options.closed-surface",
+                "store.object-identity",
+                "store.explicit-owner"
+            ],
             "decisionStatus": "approved",
-            "notes": "Current ShiftX ownership flows require external validation."
+            "notes": "The stable constructor is exactly store() with zero options. Current ShiftX ownership flows require external validation."
         },
         {
             "id": "core.store-disposed-error",
@@ -1221,6 +1900,198 @@
             "notes": "All mutation verbs return void."
         },
         {
+            "id": "core.facet-options.mode",
+            "kind": "option",
+            "owner": "collection",
+            "allowedValues": ["conjunctive", "disjunctive"],
+            "legacy": [],
+            "target": {
+                "package": "valdres",
+                "subpath": ".",
+                "name": "FacetOptions.mode",
+                "status": "stable"
+            },
+            "migration": {
+                "mode": "add",
+                "replacementIds": [],
+                "semver": "new",
+                "codemod": "Choose facet mode \"conjunctive\" or \"disjunctive\" explicitly when the default is not desired.",
+                "typeError": "Every other facet mode literal and every callback mode reject.",
+                "firstPartyOwner": "collection",
+                "evidenceStatus": "planned"
+            },
+            "contractIds": [
+                "options.closed-surface",
+                "query.single-collection-composite-result"
+            ],
+            "decisionStatus": "approved",
+            "notes": "FacetOptions.mode is exactly \"conjunctive\" | \"disjunctive\"."
+        },
+        {
+            "id": "core.facet-options.order",
+            "kind": "option",
+            "owner": "collection",
+            "allowedValues": ["count-desc", "value-asc", "value-desc"],
+            "legacy": [],
+            "target": {
+                "package": "valdres",
+                "subpath": ".",
+                "name": "FacetOptions.order",
+                "status": "stable"
+            },
+            "migration": {
+                "mode": "add",
+                "replacementIds": [],
+                "semver": "new",
+                "codemod": "Choose one deterministic built-in facet ordering literal.",
+                "typeError": "Custom comparators, locale order, and every other ordering literal reject.",
+                "firstPartyOwner": "collection",
+                "evidenceStatus": "planned"
+            },
+            "contractIds": [
+                "options.closed-surface",
+                "query.single-collection-composite-result"
+            ],
+            "decisionStatus": "approved",
+            "notes": "FacetOptions.order is exactly \"count-desc\" | \"value-asc\" | \"value-desc\"."
+        },
+        {
+            "id": "core.query-definition.facets",
+            "kind": "option",
+            "owner": "collection",
+            "legacy": [],
+            "target": {
+                "package": "valdres",
+                "subpath": ".",
+                "name": "QueryDefinition.facets",
+                "status": "stable"
+            },
+            "migration": {
+                "mode": "add",
+                "replacementIds": [],
+                "semver": "new",
+                "codemod": "Declare statically named typed facet fields in QueryDefinition.facets.",
+                "typeError": "Unknown indexes, callback ordering, and dynamically untyped facet definitions reject.",
+                "firstPartyOwner": "collection",
+                "evidenceStatus": "planned"
+            },
+            "contractIds": [
+                "options.closed-surface",
+                "query.recursive-object-definition",
+                "query.single-collection-composite-result"
+            ],
+            "decisionStatus": "approved",
+            "notes": "Optional exact facet map; unrequested facets do no work and only requested typed keys appear in the result."
+        },
+        {
+            "id": "core.query-definition.limit",
+            "kind": "option",
+            "owner": "collection",
+            "legacy": [],
+            "target": {
+                "package": "valdres",
+                "subpath": ".",
+                "name": "QueryDefinition.limit",
+                "status": "stable"
+            },
+            "migration": {
+                "mode": "add",
+                "replacementIds": [],
+                "semver": "new",
+                "codemod": "Use QueryDefinition.limit for deterministic result window length.",
+                "typeError": "Negative, fractional, and nonnumeric limits reject.",
+                "firstPartyOwner": "collection",
+                "evidenceStatus": "planned"
+            },
+            "contractIds": [
+                "options.closed-surface",
+                "query.recursive-object-definition"
+            ],
+            "decisionStatus": "approved",
+            "notes": "Optional nonnegative integer window length; total remains the pre-window match count."
+        },
+        {
+            "id": "core.query-definition.offset",
+            "kind": "option",
+            "owner": "collection",
+            "legacy": [],
+            "target": {
+                "package": "valdres",
+                "subpath": ".",
+                "name": "QueryDefinition.offset",
+                "status": "stable"
+            },
+            "migration": {
+                "mode": "add",
+                "replacementIds": [],
+                "semver": "new",
+                "codemod": "Use QueryDefinition.offset for deterministic result window start.",
+                "typeError": "Negative, fractional, and nonnumeric offsets reject.",
+                "firstPartyOwner": "collection",
+                "evidenceStatus": "planned"
+            },
+            "contractIds": [
+                "options.closed-surface",
+                "query.recursive-object-definition"
+            ],
+            "decisionStatus": "approved",
+            "notes": "Optional nonnegative integer window offset applied after filtering and ordering."
+        },
+        {
+            "id": "core.query-definition.order-by",
+            "kind": "option",
+            "owner": "collection",
+            "legacy": [],
+            "target": {
+                "package": "valdres",
+                "subpath": ".",
+                "name": "QueryDefinition.orderBy",
+                "status": "stable"
+            },
+            "migration": {
+                "mode": "add",
+                "replacementIds": [],
+                "semver": "new",
+                "codemod": "Use the ordered-index object grammar in QueryDefinition.orderBy.",
+                "typeError": "Unknown or non-ordered indexes, callback comparators, and invalid direction terms reject.",
+                "firstPartyOwner": "collection",
+                "evidenceStatus": "planned"
+            },
+            "contractIds": [
+                "options.closed-surface",
+                "query.recursive-object-definition"
+            ],
+            "decisionStatus": "approved",
+            "notes": "Optional deterministic ordered-index term or readonly term list; no arbitrary comparator callback."
+        },
+        {
+            "id": "core.query-definition.where",
+            "kind": "option",
+            "owner": "collection",
+            "legacy": [],
+            "target": {
+                "package": "valdres",
+                "subpath": ".",
+                "name": "QueryDefinition.where",
+                "status": "stable"
+            },
+            "migration": {
+                "mode": "add",
+                "replacementIds": [],
+                "semver": "new",
+                "codemod": "Use the zero-operator-import recursive object grammar in QueryDefinition.where.",
+                "typeError": "Unknown indexes, operators, recursive keys, and value domains reject statically and at untyped runtime boundaries.",
+                "firstPartyOwner": "collection",
+                "evidenceStatus": "planned"
+            },
+            "contractIds": [
+                "options.closed-surface",
+                "query.recursive-object-definition"
+            ],
+            "decisionStatus": "approved",
+            "notes": "Optional recursive object definition with implicit conjunction and explicit $all, $any, and $not groups."
+        },
+        {
             "id": "core.structural-query",
             "kind": "runtime-export",
             "owner": "valdres",
@@ -1243,10 +2114,69 @@
             "contractIds": [
                 "query.recursive-object-definition",
                 "query.single-collection-composite-result",
-                "query.ready-only-indexed-read"
+                "query.ready-only-indexed-read",
+                "options.closed-surface"
             ],
             "decisionStatus": "approved",
-            "notes": "The stable primitive is standalone and uses the zero-operator-import recursive object grammar with implicit conjunction and explicit $all/$any/$not. A fluent builder remains reserved for experimental multi-collection search."
+            "notes": "QueryDefinition contains exactly where, orderBy, offset, limit, and facets. The stable primitive is standalone and uses the zero-operator-import recursive object grammar with implicit conjunction and explicit $all/$any/$not; a fluent builder remains reserved for experimental multi-collection search."
+        },
+        {
+            "id": "core.transaction-closed-error",
+            "kind": "error",
+            "owner": "valdres",
+            "errorCode": "VALDRES_TRANSACTION_CLOSED",
+            "legacy": [],
+            "target": {
+                "package": "valdres",
+                "subpath": ".",
+                "name": "TransactionClosedError",
+                "status": "stable"
+            },
+            "migration": {
+                "mode": "add",
+                "replacementIds": [],
+                "semver": "new",
+                "codemod": "Use every Transaction cursor only during its owning outer store.txn callback.",
+                "typeError": "A cursor call after the outer callback exits throws VALDRES_TRANSACTION_CLOSED before work.",
+                "firstPartyOwner": "core",
+                "evidenceStatus": "planned"
+            },
+            "contractIds": [
+                "error.stable-name-and-code",
+                "transaction.one-tree-draft",
+                "transaction.scope-cursor-no-savepoint"
+            ],
+            "decisionStatus": "approved",
+            "notes": "The exact root class/code pair is TransactionClosedError / VALDRES_TRANSACTION_CLOSED."
+        },
+        {
+            "id": "core.transaction-phase-error",
+            "kind": "error",
+            "owner": "valdres",
+            "errorCode": "VALDRES_TRANSACTION_PHASE",
+            "legacy": [],
+            "target": {
+                "package": "valdres",
+                "subpath": ".",
+                "name": "TransactionPhaseError",
+                "status": "stable"
+            },
+            "migration": {
+                "mode": "add",
+                "replacementIds": [],
+                "semver": "new",
+                "codemod": "Use the supplied active Transaction cursor instead of captured Store mutation, topology, or nested transaction work.",
+                "typeError": "Forbidden captured work during the active transaction phase throws VALDRES_TRANSACTION_PHASE before work.",
+                "firstPartyOwner": "core",
+                "evidenceStatus": "planned"
+            },
+            "contractIds": [
+                "error.stable-name-and-code",
+                "transaction.one-tree-draft",
+                "transaction.scope-cursor-no-savepoint"
+            ],
+            "decisionStatus": "approved",
+            "notes": "The exact root class/code pair is TransactionPhaseError / VALDRES_TRANSACTION_PHASE."
         },
         {
             "id": "core.transaction.delete",
@@ -1528,9 +2458,9 @@
                 "firstPartyOwner": "core",
                 "evidenceStatus": "planned"
             },
-            "contractIds": ["atom.object-is-default"],
+            "contractIds": ["atom.object-is-default", "options.closed-surface"],
             "decisionStatus": "approved",
-            "notes": "AtomOptions remains public with the narrowed v1 synchronous contract."
+            "notes": "AtomOptions remains public with exactly optional name and equal members."
         },
         {
             "id": "core.type.equal-func",
@@ -1694,9 +2624,9 @@
                 "firstPartyOwner": "core",
                 "evidenceStatus": "planned"
             },
-            "contractIds": ["selector.pure-sync-dag"],
+            "contractIds": ["options.closed-surface", "selector.pure-sync-dag"],
             "decisionStatus": "approved",
-            "notes": "SelectorOptions remains public with the narrowed v1 synchronous contract."
+            "notes": "SelectorOptions remains public with exactly optional name and equal members."
         },
         {
             "id": "core.type.state",
@@ -1776,23 +2706,23 @@
                 }
             ],
             "target": {
-                "package": "valdres",
-                "subpath": ".",
-                "name": "StoreOptions",
-                "status": "stable"
+                "package": null,
+                "subpath": null,
+                "name": null,
+                "status": "removed"
             },
             "migration": {
-                "mode": "keep",
+                "mode": "remove",
                 "replacementIds": [],
                 "semver": "breaking",
-                "codemod": "Migrate the beta surface to StoreOptions.",
-                "typeError": "The beta form is rejected by the v1 StoreOptions declaration.",
+                "codemod": "Delete StoreOptions annotations and call store() with zero arguments.",
+                "typeError": "StoreOptions is absent from the v1 declarations and store rejects every argument.",
                 "firstPartyOwner": "core",
                 "evidenceStatus": "planned"
             },
-            "contractIds": ["store.explicit-owner"],
+            "contractIds": ["options.closed-surface", "store.explicit-owner"],
             "decisionStatus": "approved",
-            "notes": "StoreOptions remains public with the narrowed v1 synchronous contract."
+            "notes": "The legacy type coordinate remains exactly owned here, but stable v1 exports no empty StoreOptions bag."
         },
         {
             "id": "core.type.subscribe-fn",
@@ -1907,10 +2837,10 @@
                 "package": null,
                 "subpath": null,
                 "name": null,
-                "status": "pending"
+                "status": "removed"
             },
             "migration": {
-                "mode": "replace",
+                "mode": "remove",
                 "replacementIds": ["core.selector-evaluation-error"],
                 "semver": "breaking",
                 "codemod": "Rewrite to core.selector-evaluation-error.",
@@ -2790,14 +3720,20 @@
             },
             "migration": {
                 "mode": "remove",
-                "replacementIds": [],
+                "replacementIds": [
+                    "adapter.assert-store",
+                    "adapter.read",
+                    "adapter.read-hydration-snapshot",
+                    "adapter.subscribe"
+                ],
                 "semver": "breaking",
-                "codemod": "Remove the beta-only surface.",
-                "typeError": "The beta-only surface is absent from the v1 declarations.",
+                "codemod": "Replace the storeAdapter capability object with the four standalone peer-owned adapter operations.",
+                "typeError": "StoreData, mode/scope probes, batching, Store IDs, and wrapper-object access are absent.",
                 "firstPartyOwner": "adapter-boundary",
                 "evidenceStatus": "planned"
             },
             "contractIds": [
+                "adapter.peer-owned-protocol",
                 "runtime.isolated-domains",
                 "store.no-ambient-registry"
             ],
@@ -3028,20 +3964,20 @@
                 "package": null,
                 "subpath": null,
                 "name": null,
-                "status": "pending"
+                "status": "removed"
             },
             "migration": {
-                "mode": "replace",
-                "replacementIds": ["core.selector"],
+                "mode": "remove",
+                "replacementIds": ["core.selector-options.equal"],
                 "semver": "breaking",
-                "codemod": "Rewrite to core.selector.",
+                "codemod": "Move deliberate equality to SelectorOptions.equal and remove subscription-time deep-equality admission.",
                 "typeError": "The beta form is rejected by the replacement v1 declaration.",
                 "firstPartyOwner": "core",
                 "evidenceStatus": "planned"
             },
             "contractIds": ["atom.object-is-default", "selector.pure-sync-dag"],
             "decisionStatus": "approved",
-            "notes": "Equality belongs to the State definition or an explicit helper, not subscription admission."
+            "notes": "Equality belongs to SelectorOptions.equal or an explicit helper, never subscription admission."
         },
         {
             "id": "legacy.transaction-interface",

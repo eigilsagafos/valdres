@@ -3,6 +3,11 @@
     "schemaVersion": 1,
     "completeness": "partial",
     "publicApiIds": [
+        "adapter.assert-store",
+        "adapter.read",
+        "adapter.read-hydration-snapshot",
+        "adapter.subscribe",
+        "adapter.v1-subpath",
         "beta.cache-companion",
         "beta.search",
         "collection.artifact-export",
@@ -11,18 +16,43 @@
         "collection.materialization-status",
         "collection.materialization-subscribe",
         "collection.materialize",
+        "collection.materialize-options.priority",
         "collection.operations-subpath",
         "collection.scan",
         "core.atom",
         "core.atom.lazy",
+        "core.atom-options.equal",
+        "core.atom-options.name",
+        "core.callback-capability-error",
         "core.collection",
+        "core.collection-options.encode-key",
+        "core.collection-options.indexes",
+        "core.dormant-external-read-error",
         "core.external-atom",
+        "core.external-atom-options.name",
+        "core.external-source-delivery-limit-error",
+        "core.external-source-non-convergence-error",
+        "core.facet-options.mode",
+        "core.facet-options.order",
         "core.family",
+        "core.family-options.encode-key",
+        "core.invalid-atom-comparator-result-error",
+        "core.invalid-synchronous-atom-value-error",
+        "core.invalid-transaction-callback-result-error",
         "core.global-atom",
         "core.global-store",
         "core.presence",
+        "core.query-definition.facets",
+        "core.query-definition.limit",
+        "core.query-definition.offset",
+        "core.query-definition.order-by",
+        "core.query-definition.where",
         "core.runtime-mismatch-error",
+        "core.server-snapshot-unavailable-error",
         "core.selector",
+        "core.selector-capability-error",
+        "core.selector-options.equal",
+        "core.selector-options.name",
         "core.selector-circular-dependency-error",
         "core.selector-evaluation-error",
         "core.store",
@@ -38,12 +68,15 @@
         "core.store.txn",
         "core.store.update",
         "core.structural-query",
+        "core.invalid-external-cleanup-error",
+        "core.transaction-closed-error",
         "core.transaction.delete",
         "core.transaction.get",
         "core.transaction.reset",
         "core.transaction.scope",
         "core.transaction.set",
         "core.transaction.update",
+        "core.transaction-phase-error",
         "core.type.atom",
         "core.type.atom-options",
         "core.type.equal-func",
@@ -104,6 +137,8 @@
         "react.use-value"
     ],
     "callbackIds": [
+        "callback.adapter-subscriber",
+        "callback.atom-comparator",
         "callback.atom-lazy-initializer",
         "callback.atom-update",
         "callback.beta-cache-loader",
@@ -125,6 +160,41 @@
     ],
     "independentBetaPublicApiIds": ["beta.cache-companion", "beta.search"],
     "frozenPublicCoordinates": [
+        {
+            "id": "adapter.assert-store",
+            "kind": "runtime-export",
+            "package": "valdres",
+            "subpath": "./adapter-internals/v1",
+            "name": "assertStore"
+        },
+        {
+            "id": "adapter.read",
+            "kind": "runtime-export",
+            "package": "valdres",
+            "subpath": "./adapter-internals/v1",
+            "name": "read"
+        },
+        {
+            "id": "adapter.read-hydration-snapshot",
+            "kind": "runtime-export",
+            "package": "valdres",
+            "subpath": "./adapter-internals/v1",
+            "name": "readHydrationSnapshot"
+        },
+        {
+            "id": "adapter.subscribe",
+            "kind": "runtime-export",
+            "package": "valdres",
+            "subpath": "./adapter-internals/v1",
+            "name": "subscribe"
+        },
+        {
+            "id": "adapter.v1-subpath",
+            "kind": "subpath",
+            "package": "valdres",
+            "subpath": "./adapter-internals/v1",
+            "name": "valdres/adapter-internals/v1"
+        },
         {
             "id": "beta.search",
             "kind": "package",
@@ -175,6 +245,14 @@
             "name": "materialize"
         },
         {
+            "id": "collection.materialize-options.priority",
+            "kind": "option",
+            "package": "valdres",
+            "subpath": "./collection",
+            "name": "MaterializeOptions.priority",
+            "allowedValues": ["user-visible", "background"]
+        },
+        {
             "id": "collection.operations-subpath",
             "kind": "subpath",
             "package": "valdres",
@@ -201,6 +279,185 @@
             "package": "valdres",
             "subpath": ".",
             "name": "atom.lazy"
+        },
+        {
+            "id": "core.atom-options.equal",
+            "kind": "option",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "AtomOptions.equal"
+        },
+        {
+            "id": "core.atom-options.name",
+            "kind": "option",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "AtomOptions.name"
+        },
+        {
+            "id": "core.callback-capability-error",
+            "kind": "error",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "CallbackCapabilityError",
+            "errorCode": "VALDRES_CALLBACK_CAPABILITY"
+        },
+        {
+            "id": "core.collection-options.encode-key",
+            "kind": "option",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "CollectionOptions.encodeKey"
+        },
+        {
+            "id": "core.collection-options.indexes",
+            "kind": "option",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "CollectionOptions.indexes"
+        },
+        {
+            "id": "core.dormant-external-read-error",
+            "kind": "error",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "DormantExternalReadError",
+            "errorCode": "VALDRES_DORMANT_EXTERNAL_READ"
+        },
+        {
+            "id": "core.external-atom-options.name",
+            "kind": "option",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "ExternalAtomOptions.name"
+        },
+        {
+            "id": "core.external-source-delivery-limit-error",
+            "kind": "error",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "ExternalSourceDeliveryLimitError",
+            "errorCode": "VALDRES_EXTERNAL_SOURCE_DELIVERY_LIMIT"
+        },
+        {
+            "id": "core.external-source-non-convergence-error",
+            "kind": "error",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "ExternalSourceNonConvergenceError",
+            "errorCode": "VALDRES_EXTERNAL_SOURCE_NON_CONVERGENCE"
+        },
+        {
+            "id": "core.facet-options.mode",
+            "kind": "option",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "FacetOptions.mode",
+            "allowedValues": ["conjunctive", "disjunctive"]
+        },
+        {
+            "id": "core.facet-options.order",
+            "kind": "option",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "FacetOptions.order",
+            "allowedValues": ["count-desc", "value-asc", "value-desc"]
+        },
+        {
+            "id": "core.family-options.encode-key",
+            "kind": "option",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "FamilyOptions.encodeKey"
+        },
+        {
+            "id": "core.invalid-external-cleanup-error",
+            "kind": "error",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "InvalidExternalCleanupError",
+            "errorCode": "VALDRES_INVALID_EXTERNAL_CLEANUP"
+        },
+        {
+            "id": "core.invalid-atom-comparator-result-error",
+            "kind": "error",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "InvalidAtomComparatorResultError",
+            "errorCode": "VALDRES_INVALID_ATOM_COMPARATOR_RESULT"
+        },
+        {
+            "id": "core.invalid-synchronous-atom-value-error",
+            "kind": "error",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "InvalidSynchronousAtomValueError",
+            "errorCode": "VALDRES_INVALID_SYNCHRONOUS_ATOM_VALUE"
+        },
+        {
+            "id": "core.invalid-transaction-callback-result-error",
+            "kind": "error",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "InvalidTransactionCallbackResultError",
+            "errorCode": "VALDRES_INVALID_TRANSACTION_CALLBACK_RESULT"
+        },
+        {
+            "id": "core.query-definition.facets",
+            "kind": "option",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "QueryDefinition.facets"
+        },
+        {
+            "id": "core.query-definition.limit",
+            "kind": "option",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "QueryDefinition.limit"
+        },
+        {
+            "id": "core.query-definition.offset",
+            "kind": "option",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "QueryDefinition.offset"
+        },
+        {
+            "id": "core.query-definition.order-by",
+            "kind": "option",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "QueryDefinition.orderBy"
+        },
+        {
+            "id": "core.query-definition.where",
+            "kind": "option",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "QueryDefinition.where"
+        },
+        {
+            "id": "core.server-snapshot-unavailable-error",
+            "kind": "error",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "ServerSnapshotUnavailableError",
+            "errorCode": "VALDRES_SERVER_SNAPSHOT_UNAVAILABLE"
+        },
+        {
+            "id": "core.selector-options.equal",
+            "kind": "option",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "SelectorOptions.equal"
+        },
+        {
+            "id": "core.selector-options.name",
+            "kind": "option",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "SelectorOptions.name"
         },
         {
             "id": "core.collection",
@@ -235,7 +492,8 @@
             "kind": "error",
             "package": "valdres",
             "subpath": ".",
-            "name": "RuntimeMismatchError"
+            "name": "RuntimeMismatchError",
+            "errorCode": "VALDRES_RUNTIME_MISMATCH"
         },
         {
             "id": "core.selector",
@@ -243,6 +501,14 @@
             "package": "valdres",
             "subpath": ".",
             "name": "selector"
+        },
+        {
+            "id": "core.selector-capability-error",
+            "kind": "error",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "SelectorCapabilityError",
+            "errorCode": "VALDRES_SELECTOR_CAPABILITY_ERROR"
         },
         {
             "id": "core.selector-circular-dependency-error",
@@ -263,7 +529,8 @@
             "kind": "runtime-export",
             "package": "valdres",
             "subpath": ".",
-            "name": "store"
+            "name": "store",
+            "parameters": []
         },
         {
             "id": "core.store-disposed-error",
@@ -343,6 +610,14 @@
             "name": "query"
         },
         {
+            "id": "core.transaction-closed-error",
+            "kind": "error",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "TransactionClosedError",
+            "errorCode": "VALDRES_TRANSACTION_CLOSED"
+        },
+        {
             "id": "core.transaction.delete",
             "kind": "method",
             "package": "valdres",
@@ -383,6 +658,14 @@
             "package": "valdres",
             "subpath": ".",
             "name": "Transaction.update"
+        },
+        {
+            "id": "core.transaction-phase-error",
+            "kind": "error",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "TransactionPhaseError",
+            "errorCode": "VALDRES_TRANSACTION_PHASE"
         },
         {
             "id": "core.type.atom",
@@ -446,13 +729,6 @@
             "package": "valdres",
             "subpath": ".",
             "name": "Store"
-        },
-        {
-            "id": "core.type.store-options",
-            "kind": "type-export",
-            "package": "valdres",
-            "subpath": ".",
-            "name": "StoreOptions"
         },
         {
             "id": "core.type.subscribe-fn",
@@ -539,24 +815,5 @@
             "name": "useValue"
         }
     ],
-    "pendingSurfaceDecisions": [
-        {
-            "id": "pending.adapter-protocol",
-            "category": "adapter-protocol",
-            "status": "pending",
-            "notes": "readHydrationSnapshot is approved, but exact Store brand/read/sub adapter protocol names and any delivery wrapper remain unresolved."
-        },
-        {
-            "id": "pending.error-names",
-            "category": "error-names",
-            "status": "pending",
-            "notes": "Exact class and code spellings for the six additional callback, subscriber, cleanup, convergence, nested-delivery, and SSR snapshot failures remain unresolved."
-        },
-        {
-            "id": "pending.option-spellings",
-            "category": "option-spellings",
-            "status": "pending",
-            "notes": "Index/query, adapter, and batteries-included cache options such as staleIfError and maxAge remain pending; no spelling is frozen by implication."
-        }
-    ]
+    "pendingSurfaceDecisions": []
 }
