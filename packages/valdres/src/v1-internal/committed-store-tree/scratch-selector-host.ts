@@ -66,6 +66,7 @@ export class ScratchSelectorHost<Node extends object>
     >()
     #generation: number
     #nextToken = 1
+    #selectorGraphVersion = 0
 
     constructor(bindings: ScratchSelectorBindings<Node>, generation: number) {
         this.#bindings = bindings
@@ -124,6 +125,8 @@ export class ScratchSelectorHost<Node extends object>
             token: proposal.token,
             outcome: proposal.outcome,
         })
+        this.#selectorGraphVersion++
+        session.noteSelectorGraphPublication(this)
         this.#selectorRecords.set(
             node,
             Object.freeze({
@@ -141,6 +144,10 @@ export class ScratchSelectorHost<Node extends object>
         return record === undefined
             ? undefined
             : Object.freeze({ dependencies: record.dependencies })
+    }
+
+    getSelectorGraphVersion(): number {
+        return this.#selectorGraphVersion
     }
 
     getComparisonBaseline(

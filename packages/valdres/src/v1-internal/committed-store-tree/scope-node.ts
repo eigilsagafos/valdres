@@ -172,6 +172,7 @@ export class StoreScopeNode
     #selectorRecords = new WeakMap<AnySelector, SelectorRecord>()
     #reverseEdges = new WeakMap<AnyState, WeakHandleSet<AnySelector>>()
     #dirtySelectors = new WeakSet<AnySelector>()
+    #selectorGraphVersion = 0
     #facade: object | undefined
     #status: "live" | "disposing" | "disposed" = "live"
 
@@ -373,7 +374,7 @@ export class StoreScopeNode
         ) {
             throw proposal.outcome.error
         }
-        return this.#installSelectorProposal(selector, proposal)
+        return this.#installSelectorProposal(selector, proposal, session)
     }
 
     getSelectorRecord(
@@ -383,6 +384,10 @@ export class StoreScopeNode
         return record === undefined
             ? undefined
             : Object.freeze({ dependencies: record.dependencies })
+    }
+
+    getSelectorGraphVersion(): number {
+        return this.#selectorGraphVersion
     }
 
     getComparisonBaseline(
@@ -409,6 +414,7 @@ export class StoreScopeNode
     #installSelectorProposal(
         selector: AnySelector,
         proposal: SelectorEvaluationProposal<AnyState, OutcomeToken>,
+        session: SelectorEvaluationSession<AnyState>,
     ): ServedSelectorOutcome<OutcomeToken> {
         const previous = this.#selectorRecords.get(selector)
         const served = Object.freeze({
@@ -432,6 +438,8 @@ export class StoreScopeNode
             previous?.dependencies ?? EMPTY_DEPENDENCIES,
             proposal.dependencies,
         )
+        this.#selectorGraphVersion++
+        session.noteSelectorGraphPublication(this)
         this.#selectorRecords.set(selector, record)
         this.#dirtySelectors.delete(selector)
 

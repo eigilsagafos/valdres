@@ -62,8 +62,18 @@ export interface SelectorEvaluationHost<Node, Token extends object> {
         session: SelectorEvaluationSession<Node>,
     ): ServedSelectorOutcome<Token, unknown>
 
-    /** Current authoritative forward graph for an inactive selector. */
+    /**
+     * Current authoritative forward graph for an inactive selector. For a
+     * selector node, absence is graph-closed: no authoritative selector record
+     * may point to that absent node.
+     */
     getSelectorRecord(node: Node): SelectorRecordView<Node, Token> | undefined
+
+    /**
+     * Monotonic version advanced for every selector-graph publication or
+     * interleavable record removal/clear.
+     */
+    getSelectorGraphVersion(): number
 
     /** Host-selected prior successful comparison baseline, if one exists. */
     getComparisonBaseline(
@@ -75,9 +85,11 @@ export interface SelectorEvaluationHost<Node, Token extends object> {
 }
 
 interface ActiveSelectorFrame<Node> {
+    readonly host: object
     readonly selector: Node
     readonly acceptedDependencies: Node[]
     readonly acceptedDependencySet: Set<Node>
+    revalidatePrefix: (() => void) | undefined
     cycleError: unknown | undefined
 }
 
@@ -89,6 +101,9 @@ interface ActiveSelectorFrame<Node> {
  */
 export class SelectorEvaluationSession<Node> {
     readonly #frames: ActiveSelectorFrame<Node>[] = []
+    #selectorGraphPublicationHost: object | undefined
+    #selectorGraphPublicationCount = 0
+    #otherSelectorGraphPublications: WeakMap<object, number> | undefined
     #controlFault: ControlFault = NO_CONTROL_FAULT
 
     latchControlFault(error: unknown): void {
@@ -100,80 +115,197 @@ export class SelectorEvaluationSession<Node> {
         return this.#controlFault
     }
 
+    /** @internal Host-owned publication attribution for this exact session. */
+    noteSelectorGraphPublication(host: object): void {
+        const firstHost = this.#selectorGraphPublicationHost
+        if (firstHost === undefined) {
+            this.#selectorGraphPublicationHost = host
+            this.#selectorGraphPublicationCount = 1
+            return
+        }
+        if (Object.is(firstHost, host)) {
+            this.#selectorGraphPublicationCount++
+            return
+        }
+        const others =
+            this.#otherSelectorGraphPublications ??
+            (this.#otherSelectorGraphPublications = new WeakMap())
+        others.set(host, (others.get(host) ?? 0) + 1)
+    }
+
+    /** @internal Evaluator-owned host-local publication observation. */
+    getSelectorGraphPublicationCount(host: object): number {
+        return Object.is(this.#selectorGraphPublicationHost, host)
+            ? this.#selectorGraphPublicationCount
+            : (this.#otherSelectorGraphPublications?.get(host) ?? 0)
+    }
+
     /** @internal Evaluator-owned frame admission. */
-    enter(selector: Node): void {
+    enter(host: object, selector: Node): void {
         this.#frames.push({
+            host,
             selector,
             acceptedDependencies: [],
             acceptedDependencySet: new Set(),
+            revalidatePrefix: undefined,
             cycleError: undefined,
         })
     }
 
     /** @internal Evaluator-owned frame release. */
-    leave(selector: Node): void {
+    leave(host: object, selector: Node): void {
         const frame = this.#frames.pop()
-        if (!frame || !Object.is(frame.selector, selector)) {
+        if (
+            !frame ||
+            !Object.is(frame.host, host) ||
+            !Object.is(frame.selector, selector)
+        ) {
             throw new Error("Selector evaluation frame corruption")
         }
     }
 
     /** @internal */
-    isActive(node: Node): boolean {
-        return this.#frames.some(frame => Object.is(frame.selector, node))
+    isActive(host: object, node: Node): boolean {
+        return this.#frames.some(
+            frame =>
+                Object.is(frame.host, host) && Object.is(frame.selector, node),
+        )
     }
 
     /** @internal */
-    activeCyclePath(node: Node): readonly Node[] | undefined {
-        const index = this.#frames.findIndex(frame =>
-            Object.is(frame.selector, node),
+    activeCyclePath(host: object, node: Node): readonly Node[] | undefined {
+        const index = this.#frames.findIndex(
+            frame =>
+                Object.is(frame.host, host) && Object.is(frame.selector, node),
         )
         if (index === -1) return undefined
         return Object.freeze([
-            ...this.#frames.slice(index).map(frame => frame.selector),
+            ...this.#frames
+                .slice(index)
+                .filter(frame => Object.is(frame.host, host))
+                .map(frame => frame.selector),
             node,
         ])
     }
 
     /** @internal */
-    acceptDependency(selector: Node, dependency: Node): void {
-        const frame = this.#currentFrame(selector)
+    acceptDependency(host: object, selector: Node, dependency: Node): void {
+        const frame = this.#currentFrame(host, selector)
         if (!frame.acceptedDependencySet.has(dependency)) {
             frame.acceptedDependencySet.add(dependency)
             frame.acceptedDependencies.push(dependency)
         }
     }
 
-    /** @internal */
-    getAcceptedDependencies(selector: Node): readonly Node[] {
-        return this.#currentFrame(selector).acceptedDependencies
+    /** @internal Evaluator-owned active-frame coordination. */
+    setPrefixRevalidator(
+        host: object,
+        selector: Node,
+        revalidate: () => void,
+    ): void {
+        const frame = this.#currentFrame(host, selector)
+        if (frame.revalidatePrefix !== undefined) {
+            throw new Error("Selector prefix revalidator is already installed")
+        }
+        frame.revalidatePrefix = revalidate
+    }
+
+    /** @internal Revalidate outer frames before a nested proof. */
+    revalidateAncestorPrefixes(host: object, selector: Node): void {
+        this.#currentFrame(host, selector)
+        for (let index = 0; index < this.#frames.length - 1; index++) {
+            const frame = this.#frames[index]!
+            if (!Object.is(frame.host, host)) continue
+            const revalidate = frame.revalidatePrefix
+            if (revalidate === undefined) {
+                throw new Error("Selector prefix revalidator is not installed")
+            }
+            revalidate()
+        }
+    }
+
+    /** @internal Evaluator-owned proof rollback. */
+    truncateAcceptedDependencies(
+        host: object,
+        selector: Node,
+        length: number,
+    ): void {
+        const frame = this.#activeFrame(host, selector)
+        if (
+            !Number.isInteger(length) ||
+            length < 0 ||
+            length > frame.acceptedDependencies.length
+        ) {
+            throw new Error("Selector dependency prefix truncation is invalid")
+        }
+        for (
+            let index = frame.acceptedDependencies.length - 1;
+            index >= length;
+            index--
+        ) {
+            frame.acceptedDependencySet.delete(
+                frame.acceptedDependencies[index]!,
+            )
+        }
+        frame.acceptedDependencies.length = length
     }
 
     /** @internal */
-    getTransientDependencies(node: Node): readonly Node[] | undefined {
-        const frame = this.#frames.find(candidate =>
-            Object.is(candidate.selector, node),
-        )
-        return frame?.acceptedDependencies
+    getAcceptedDependencies(host: object, selector: Node): readonly Node[] {
+        return this.#currentFrame(host, selector).acceptedDependencies
     }
 
     /** @internal */
-    latchCycle(selector: Node, error: unknown): void {
-        const frame = this.#currentFrame(selector)
+    getTransientDependencies(
+        host: object,
+        node: Node,
+    ): readonly Node[] | undefined {
+        for (let index = this.#frames.length - 1; index >= 0; index--) {
+            const frame = this.#frames[index]!
+            if (
+                Object.is(frame.host, host) &&
+                Object.is(frame.selector, node)
+            ) {
+                return frame.acceptedDependencies
+            }
+        }
+        return undefined
+    }
+
+    /** @internal */
+    latchCycle(host: object, selector: Node, error: unknown): void {
+        const frame = this.#activeFrame(host, selector)
         frame.cycleError ??= error
     }
 
     /** @internal */
-    getCycle(selector: Node): unknown | undefined {
-        return this.#currentFrame(selector).cycleError
+    getCycle(host: object, selector: Node): unknown | undefined {
+        return this.#currentFrame(host, selector).cycleError
     }
 
-    #currentFrame(selector: Node): ActiveSelectorFrame<Node> {
+    #currentFrame(host: object, selector: Node): ActiveSelectorFrame<Node> {
         const frame = this.#frames[this.#frames.length - 1]
-        if (!frame || !Object.is(frame.selector, selector)) {
+        if (
+            !frame ||
+            !Object.is(frame.host, host) ||
+            !Object.is(frame.selector, selector)
+        ) {
             throw new Error("Selector evaluation frame is not active")
         }
         return frame
+    }
+
+    #activeFrame(host: object, selector: Node): ActiveSelectorFrame<Node> {
+        for (let index = this.#frames.length - 1; index >= 0; index--) {
+            const frame = this.#frames[index]!
+            if (
+                Object.is(frame.host, host) &&
+                Object.is(frame.selector, selector)
+            ) {
+                return frame
+            }
+        }
+        throw new Error("Selector evaluation frame is not active")
     }
 }
 

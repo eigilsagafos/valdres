@@ -117,7 +117,7 @@ const findDependencyPath = <Node, Token extends object>(
             return Object.freeze(reversed)
         }
 
-        const transient = session.getTransientDependencies(node)
+        const transient = session.getTransientDependencies(host, node)
         if (transient) {
             for (const dependency of transient) {
                 if (parent.has(dependency)) continue
@@ -185,12 +185,101 @@ export const evaluateSelector = <Node, Token extends object, Value>(
     const { node: selector } = definition
     const dependencies: SelectorDependencySnapshot<Node, Token>[] = []
     const dependencyNodes = new Set<Node>()
+    const currentRecord = host.getSelectorRecord(selector)
+    let currentDependencyNodes: Set<Node> | undefined
+    if (currentRecord !== undefined) {
+        currentDependencyNodes = new Set<Node>()
+        for (const dependency of currentRecord.dependencies) {
+            currentDependencyNodes.add(dependency.node)
+        }
+    }
     const comparisonBaseline = host.getComparisonBaseline(selector) as
         | SelectorComparisonBaseline<Token, Value>
         | undefined
     let suppliedReadActive = true
 
-    session.enter(selector)
+    session.enter(host, selector)
+    const graphVersionAtEntry = host.getSelectorGraphVersion()
+    const sessionPublicationsAtEntry =
+        session.getSelectorGraphPublicationCount(host)
+    let prefixProofVersion = graphVersionAtEntry
+    let prefixProofSessionPublications = sessionPublicationsAtEntry
+
+    const hasOnlyAttributedPublications = (
+        graphVersionBefore: number,
+        sessionPublicationsBefore: number,
+        graphVersionAfter: number,
+        sessionPublicationsAfter: number,
+    ): boolean =>
+        graphVersionAfter - graphVersionBefore ===
+        sessionPublicationsAfter - sessionPublicationsBefore
+
+    const revalidateOwnPrefix = (
+        graphVersion = host.getSelectorGraphVersion(),
+        sessionPublications = session.getSelectorGraphPublicationCount(host),
+        onlyAttributed = hasOnlyAttributedPublications(
+            prefixProofVersion,
+            prefixProofSessionPublications,
+            graphVersion,
+            sessionPublications,
+        ),
+    ): void => {
+        if (onlyAttributed) {
+            prefixProofVersion = graphVersion
+            prefixProofSessionPublications = sessionPublications
+            return
+        }
+        for (let index = 0; index < dependencies.length; index++) {
+            const dependency = dependencies[index]!
+            const cyclePath = findDependencyPath(
+                dependency.node,
+                selector,
+                host,
+                session,
+            )
+            if (!cyclePath) continue
+
+            for (
+                let removeIndex = dependencies.length - 1;
+                removeIndex >= index;
+                removeIndex--
+            ) {
+                dependencyNodes.delete(dependencies[removeIndex]!.node)
+            }
+            dependencies.length = index
+            session.truncateAcceptedDependencies(host, selector, index)
+
+            const controlFault = session.getControlFault()
+            if (controlFault.kind === "fault") return
+            const error = new SelectorCircularDependencyError(selector, [
+                selector,
+                ...cyclePath,
+            ])
+            session.latchCycle(host, selector, error)
+            return
+        }
+
+        prefixProofVersion = graphVersion
+        prefixProofSessionPublications = sessionPublications
+    }
+
+    const revalidateAcceptedPrefix = (): void => {
+        const graphVersion = host.getSelectorGraphVersion()
+        const sessionPublications =
+            session.getSelectorGraphPublicationCount(host)
+        const onlyAttributed = hasOnlyAttributedPublications(
+            prefixProofVersion,
+            prefixProofSessionPublications,
+            graphVersion,
+            sessionPublications,
+        )
+        if (!onlyAttributed) {
+            session.revalidateAncestorPrefixes(host, selector)
+        }
+        revalidateOwnPrefix(graphVersion, sessionPublications, onlyAttributed)
+    }
+
+    session.setPrefixRevalidator(host, selector, revalidateOwnPrefix)
 
     const suppliedGet = <DependencyValue>(
         dependency: Node,
@@ -202,45 +291,73 @@ export const evaluateSelector = <Node, Token extends object, Value>(
             throw priorControlFault.error
         }
 
-        const priorCycle = session.getCycle(selector)
+        const priorCycle = session.getCycle(host, selector)
         if (priorCycle !== undefined) throw priorCycle
 
-        const activePath = session.activeCyclePath(dependency)
+        const activePath = session.activeCyclePath(host, dependency)
         if (activePath) {
             const error = new SelectorCircularDependencyError(
                 selector,
                 activePath,
             )
-            session.latchCycle(selector, error)
+            session.latchCycle(host, selector, error)
             throw error
         }
 
+        const alreadyAccepted = dependencyNodes.has(dependency)
+        const wasCurrentDirectDependency =
+            currentDependencyNodes?.has(dependency) === true
         const served = host.serve(dependency, session)
 
-        const cyclePath = findDependencyPath(
-            dependency,
-            selector,
-            host,
-            session,
-        )
-        if (cyclePath) {
-            const controlFault = session.getControlFault()
-            if (controlFault.kind === "fault") throw controlFault.error
-            const error = new SelectorCircularDependencyError(selector, [
-                selector,
-                ...cyclePath,
-            ])
-            session.latchCycle(selector, error)
-            throw error
+        revalidateAcceptedPrefix()
+        const invalidatedPrefixCycle = session.getCycle(host, selector)
+        if (invalidatedPrefixCycle !== undefined) {
+            throw invalidatedPrefixCycle
         }
 
-        if (!dependencyNodes.has(dependency)) {
+        const graphVersionAfterServe = host.getSelectorGraphVersion()
+        const sessionPublicationsAfterServe =
+            session.getSelectorGraphPublicationCount(host)
+        const mayReusePriorProof =
+            alreadyAccepted ||
+            (wasCurrentDirectDependency &&
+                graphVersionAfterServe === graphVersionAtEntry)
+        const maySkipColdParentGraphProof =
+            currentDependencyNodes === undefined &&
+            hasOnlyAttributedPublications(
+                graphVersionAtEntry,
+                sessionPublicationsAtEntry,
+                graphVersionAfterServe,
+                sessionPublicationsAfterServe,
+            )
+        if (!mayReusePriorProof && !maySkipColdParentGraphProof) {
+            const cyclePath = findDependencyPath(
+                dependency,
+                selector,
+                host,
+                session,
+            )
+            if (cyclePath) {
+                const controlFault = session.getControlFault()
+                if (controlFault.kind === "fault") throw controlFault.error
+                const error = new SelectorCircularDependencyError(selector, [
+                    selector,
+                    ...cyclePath,
+                ])
+                session.latchCycle(host, selector, error)
+                throw error
+            }
+        }
+
+        if (!alreadyAccepted) {
             dependencyNodes.add(dependency)
             dependencies.push(
                 Object.freeze({ node: dependency, token: served.token }),
             )
-            session.acceptDependency(selector, dependency)
+            session.acceptDependency(host, selector, dependency)
         }
+        prefixProofVersion = graphVersionAfterServe
+        prefixProofSessionPublications = sessionPublicationsAfterServe
 
         if (served.outcome.kind === "control-error") {
             session.latchControlFault(served.outcome.error)
@@ -265,14 +382,18 @@ export const evaluateSelector = <Node, Token extends object, Value>(
             returned = definition.get(suppliedGet)
         } catch (error) {
             getterThrew = true
-            getterError = classifyThrown(error, "getter")
+            getterError = error
         } finally {
             suppliedReadActive = false
         }
 
+        if (getterThrew) getterError = classifyThrown(getterError, "getter")
+
         const classifiedResult = getterThrew
             ? undefined
             : classifyReturned(returned, "getter")
+
+        revalidateAcceptedPrefix()
 
         const controlFault = session.getControlFault()
         if (controlFault.kind === "fault") {
@@ -284,7 +405,7 @@ export const evaluateSelector = <Node, Token extends object, Value>(
             )
         }
 
-        const cycleError = session.getCycle(selector)
+        const cycleError = session.getCycle(host, selector)
         if (cycleError !== undefined) {
             return makeProposal(
                 selector,
@@ -365,6 +486,8 @@ export const evaluateSelector = <Node, Token extends object, Value>(
                 ? undefined
                 : classifyReturned(comparison, "comparator")
 
+            revalidateAcceptedPrefix()
+
             const comparatorControlFault = session.getControlFault()
             if (comparatorControlFault.kind === "fault") {
                 return makeProposal(
@@ -374,6 +497,16 @@ export const evaluateSelector = <Node, Token extends object, Value>(
                         kind: "control-error",
                         error: comparatorControlFault.error,
                     },
+                    dependencies,
+                )
+            }
+
+            const comparatorCycleError = session.getCycle(host, selector)
+            if (comparatorCycleError !== undefined) {
+                return makeProposal(
+                    selector,
+                    host.createOutcomeToken(),
+                    { kind: "error", error: comparatorCycleError },
                     dependencies,
                 )
             }
@@ -462,7 +595,6 @@ export const evaluateSelector = <Node, Token extends object, Value>(
             dependencies,
         )
     } finally {
-        suppliedReadActive = false
-        session.leave(selector)
+        session.leave(host, selector)
     }
 }

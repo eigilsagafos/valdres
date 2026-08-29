@@ -1085,6 +1085,96 @@ describe("v1 persistent committed StoreTree host", () => {
         })
     })
 
+    test("settles a new dependency closure before later fresh-session rewrites", () => {
+        const domain = createCommittedStoreTreeDomain()
+        const parentGate = domain.atom(false)
+        const changedGate = domain.atom(false)
+        const laterGate = domain.atom(false)
+        const evaluations = {
+            parent: 0,
+            changed: 0,
+            newEdge: 0,
+            cached: 0,
+            later: 0,
+        }
+        let parent!: Selector<number>
+        let cached!: Selector<number>
+        const changed = domain.selector(get => {
+            evaluations.changed++
+            return get(changedGate) ? get(cached) : 1
+        })
+        const newEdge = domain.selector(get => {
+            evaluations.newEdge++
+            return get(changed)
+        })
+        parent = domain.selector(get => {
+            evaluations.parent++
+            get(parentGate)
+            return get(parentGate) ? get(newEdge) : 1
+        })
+        cached = domain.selector(get => {
+            evaluations.cached++
+            return get(parent)
+        })
+        const later = domain.selector(get => {
+            evaluations.later++
+            return get(laterGate) ? 1 : get(changed)
+        })
+        const tree = domain.createStoreTree()
+
+        expect(tree.get(newEdge)).toBe(1)
+        expect(tree.get(cached)).toBe(1)
+        expect(tree.get(later)).toBe(1)
+
+        tree.txn(transaction => {
+            transaction.set(parentGate, true)
+            transaction.set(changedGate, true)
+            transaction.set(laterGate, true)
+        })
+
+        const error = thrownBy(() => tree.get(parent))
+        expect(error).toBeInstanceOf(SelectorCircularDependencyError)
+        expect((error as SelectorCircularDependencyError).path).toEqual([
+            parent,
+            newEdge,
+            changed,
+            cached,
+            parent,
+        ])
+        expect(tree.get(later)).toBe(1)
+        expect(evaluations).toEqual({
+            parent: 2,
+            changed: 2,
+            newEdge: 1,
+            cached: 1,
+            later: 2,
+        })
+    })
+
+    test("proves a warm parent's newly materialized selector edge", () => {
+        const domain = createCommittedStoreTreeDomain()
+        const gate = domain.atom(false)
+        let parent!: Selector<number>
+        let cached!: Selector<number>
+        const fresh = domain.selector(get => get(cached))
+        parent = domain.selector(get => (get(gate) ? get(fresh) : 1))
+        cached = domain.selector(get => get(parent))
+        const tree = domain.createStoreTree()
+
+        expect(tree.get(parent)).toBe(1)
+        expect(tree.get(cached)).toBe(1)
+        tree.set(gate, true)
+
+        const error = thrownBy(() => tree.get(parent))
+        expect(error).toBeInstanceOf(SelectorCircularDependencyError)
+        expect((error as SelectorCircularDependencyError).path).toEqual([
+            parent,
+            fresh,
+            cached,
+            parent,
+        ])
+    })
+
     test("replaces dynamic reverse edges while equal selector values prune parents", () => {
         const domain = createCommittedStoreTreeDomain()
         const gate = domain.atom(true)

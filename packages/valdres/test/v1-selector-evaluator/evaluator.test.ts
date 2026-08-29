@@ -39,10 +39,15 @@ class TestHost implements SelectorEvaluationHost<Node, Token> {
     readonly dirty = new Set<Node>()
     readonly evaluations = new Map<Node, number>()
     readonly leafReads = new Map<Node, number>()
+    readonly serveEffects = new Map<
+        Node,
+        (session: SelectorEvaluationSession<Node>) => void
+    >()
     readonly publications: SelectorEvaluationProposal<Node, Token>[] = []
     readonly liveRecords: Map<Node, TestRecord> | undefined
     readonly comparisonRecords: Map<Node, TestRecord> | undefined
     #nextToken = 1
+    #selectorGraphVersion = 0
     #activeSession: SelectorEvaluationSession<Node> | undefined
     #disposed = false
 
@@ -93,6 +98,13 @@ class TestHost implements SelectorEvaluationHost<Node, Token> {
         for (const node of nodes) this.dirty.add(node)
     }
 
+    setServeEffect(
+        node: Node,
+        effect: (session: SelectorEvaluationSession<Node>) => void,
+    ): void {
+        this.serveEffects.set(node, effect)
+    }
+
     read<Value = unknown>(node: Node): ServedSelectorOutcome<Token, Value> {
         if (this.#disposed) throw new Error("host disposed")
         return this.serve(
@@ -106,6 +118,7 @@ class TestHost implements SelectorEvaluationHost<Node, Token> {
         session: SelectorEvaluationSession<Node>,
     ): ServedSelectorOutcome<Token, unknown> {
         if (this.#disposed) throw new Error("host disposed")
+        this.serveEffects.get(node)?.(session)
         const leaf = this.leaves.get(node)
         if (leaf) {
             this.leafReads.set(node, (this.leafReads.get(node) ?? 0) + 1)
@@ -146,6 +159,8 @@ class TestHost implements SelectorEvaluationHost<Node, Token> {
         }
 
         const previous = this.records.get(node)
+        this.#selectorGraphVersion++
+        session.noteSelectorGraphPublication(this)
         const served = Object.freeze({
             token: proposal.token,
             outcome: proposal.outcome,
@@ -169,9 +184,26 @@ class TestHost implements SelectorEvaluationHost<Node, Token> {
 
     getSelectorRecord(node: Node): SelectorRecordView<Node, Token> | undefined {
         const record = this.records.get(node)
+        if (record === undefined && this.definitions.has(node)) {
+            for (const candidate of this.records.values()) {
+                if (
+                    candidate.dependencies.some(dependency =>
+                        Object.is(dependency.node, node),
+                    )
+                ) {
+                    throw new Error(
+                        "TestHost selector-record absence is not graph-closed",
+                    )
+                }
+            }
+        }
         return record
             ? Object.freeze({ dependencies: record.dependencies })
             : undefined
+    }
+
+    getSelectorGraphVersion(): number {
+        return this.#selectorGraphVersion
     }
 
     getComparisonBaseline(
@@ -446,6 +478,526 @@ describe("v1 selector evaluator cycles", () => {
             "a",
         ])
         expect(host.records.get("a")?.dependencies).toEqual([])
+    })
+
+    test("a stable parent edge cannot hide a child that dynamically closes the cycle", () => {
+        const host = new TestHost()
+        host.setLeaf("leaf", 1)
+        host.define({ node: "child", get: get => get("leaf") })
+        host.define({ node: "parent", get: get => get("child") })
+        expect(valueOf(host.read<number>("parent"))).toBe(1)
+
+        host.define({ node: "child", get: get => get("parent") })
+        host.markDirty("parent")
+        const parentError = errorOf(host.read("parent"))
+
+        expect(parentError).toBeInstanceOf(SelectorGetterError)
+        expect(errorOf(host.records.get("child")!.served)).toBeInstanceOf(
+            SelectorCircularDependencyError,
+        )
+        expect(host.records.get("child")?.dependencies).toEqual([])
+    })
+
+    test("an old direct edge is rechecked when its child installs a path back through a cached ancestor", () => {
+        const host = new TestHost()
+        host.setLeaf("leaf", 1)
+        host.define({ node: "descendant", get: get => get("leaf") })
+        host.define({ node: "selector", get: get => get("descendant") })
+        host.define({ node: "cached", get: get => get("selector") })
+        expect(valueOf(host.read<number>("cached"))).toBe(1)
+
+        host.define({ node: "descendant", get: get => get("cached") })
+        host.markDirty("selector")
+        const error = errorOf(host.read("selector"))
+
+        expect(error).toBeInstanceOf(SelectorCircularDependencyError)
+        expect((error as SelectorCircularDependencyError).path).toEqual([
+            "selector",
+            "descendant",
+            "cached",
+            "selector",
+        ])
+        expect(host.records.get("selector")?.dependencies).toEqual([])
+        expect(host.records.get("descendant")?.dependencies[0]?.node).toBe(
+            "cached",
+        )
+    })
+
+    test("an unchanged direct child is rechecked after an earlier read changes its shared descendant", () => {
+        const host = new TestHost()
+        host.setLeaf("leaf", 1)
+        host.setLeaf("side-effect", 0)
+        host.define({ node: "child", get: get => get("shared") })
+        host.define({ node: "shared", get: get => get("leaf") })
+        host.define({ node: "parent", get: get => get("child") })
+        host.define({ node: "cached", get: get => get("parent") })
+        expect(valueOf(host.read<number>("cached"))).toBe(1)
+
+        host.define({ node: "shared", get: get => get("cached") })
+        host.define({
+            node: "parent",
+            get: get => {
+                get("side-effect")
+                return get("child")
+            },
+        })
+        host.setServeEffect("side-effect", session => {
+            host.serve("shared", session)
+        })
+        const error = errorOf(host.read("parent"))
+
+        expect(error).toBeInstanceOf(SelectorCircularDependencyError)
+        expect((error as SelectorCircularDependencyError).path).toEqual([
+            "parent",
+            "child",
+            "shared",
+            "cached",
+            "parent",
+        ])
+        expect(
+            host.records.get("parent")?.dependencies.map(({ node }) => node),
+        ).toEqual(["side-effect"])
+        expect(host.records.get("child")?.dependencies[0]?.node).toBe("shared")
+        expect(host.records.get("shared")?.dependencies[0]?.node).toBe("cached")
+    })
+
+    test("a first materialization cannot hide a cached descendant that changes to close the cycle", () => {
+        const host = new TestHost()
+        host.setLeaf("leaf", 1)
+        host.define({ node: "outer", get: get => get("descendant") })
+        host.define({ node: "descendant", get: get => get("leaf") })
+        expect(valueOf(host.read<number>("descendant"))).toBe(1)
+        expect(host.records.has("outer")).toBe(false)
+
+        host.define({ node: "descendant", get: get => get("outer") })
+        const outerError = errorOf(host.read("outer"))
+
+        expect(outerError).toBeInstanceOf(SelectorGetterError)
+        expect(errorOf(host.records.get("descendant")!.served)).toBeInstanceOf(
+            SelectorCircularDependencyError,
+        )
+        expect(host.records.get("descendant")?.dependencies).toEqual([])
+    })
+
+    test("a fresh-session publication revalidates an earlier new prefix edge", () => {
+        const host = new TestHost()
+        host.define({ node: "parent", get: () => 1 })
+        host.define({ node: "changed", get: () => 1 })
+        host.define({ node: "new-edge", get: get => get("changed") })
+        host.define({ node: "cached", get: get => get("parent") })
+        host.define({ node: "later", get: () => 1 })
+        expect(valueOf(host.read<number>("new-edge"))).toBe(1)
+        expect(valueOf(host.read<number>("cached"))).toBe(1)
+        expect(valueOf(host.read<number>("later"))).toBe(1)
+
+        host.define({
+            node: "parent",
+            get: get => {
+                get("new-edge")
+                get("later")
+                return 1
+            },
+        })
+        host.define({
+            node: "later",
+            get: () => {
+                host.define({
+                    node: "changed",
+                    get: get => get("cached"),
+                })
+                expect(valueOf(host.read<number>("changed"))).toBe(1)
+                return 1
+            },
+        })
+
+        const error = errorOf(host.read("parent"))
+
+        expect(error).toBeInstanceOf(SelectorCircularDependencyError)
+        expect((error as SelectorCircularDependencyError).path).toEqual([
+            "parent",
+            "new-edge",
+            "changed",
+            "cached",
+            "parent",
+        ])
+        expect(host.records.get("parent")?.dependencies).toEqual([])
+    })
+
+    test("a same-session publication sees an already-accepted parent prefix", () => {
+        const host = new TestHost()
+        host.define({ node: "parent", get: () => 1 })
+        host.define({ node: "changed", get: () => 1 })
+        host.define({ node: "new-edge", get: get => get("changed") })
+        host.define({ node: "cached", get: get => get("parent") })
+        host.define({ node: "later", get: () => 1 })
+        expect(valueOf(host.read<number>("new-edge"))).toBe(1)
+        expect(valueOf(host.read<number>("cached"))).toBe(1)
+        expect(valueOf(host.read<number>("later"))).toBe(1)
+
+        host.define({
+            node: "parent",
+            get: get => {
+                get("new-edge")
+                get("later")
+                return 1
+            },
+        })
+        host.define({
+            node: "changed",
+            get: get => get("cached"),
+        })
+        host.setServeEffect("later", session => {
+            host.serve("changed", session)
+        })
+
+        expect(valueOf(host.read<number>("parent"))).toBe(1)
+        const changedError = errorOf(host.records.get("changed")!.served)
+        expect(changedError).toBeInstanceOf(SelectorCircularDependencyError)
+        expect((changedError as SelectorCircularDependencyError).path).toEqual([
+            "changed",
+            "cached",
+            "parent",
+            "new-edge",
+            "changed",
+        ])
+        expect(host.records.get("changed")?.dependencies).toEqual([])
+        expect(
+            host.records.get("parent")?.dependencies.map(({ node }) => node),
+        ).toEqual(["new-edge", "later"])
+    })
+
+    test("finalization revalidates a prefix changed after the last supplied get", () => {
+        const host = new TestHost()
+        host.define({ node: "parent", get: () => 1 })
+        host.define({ node: "changed", get: () => 1 })
+        host.define({ node: "new-edge", get: get => get("changed") })
+        host.define({ node: "cached", get: get => get("parent") })
+        expect(valueOf(host.read<number>("new-edge"))).toBe(1)
+        expect(valueOf(host.read<number>("cached"))).toBe(1)
+
+        host.define({
+            node: "parent",
+            get: get => {
+                get("new-edge")
+                host.define({
+                    node: "changed",
+                    get: changedGet => changedGet("cached"),
+                })
+                expect(valueOf(host.read<number>("changed"))).toBe(1)
+                return 1
+            },
+        })
+
+        const error = errorOf(host.read("parent"))
+
+        expect(error).toBeInstanceOf(SelectorCircularDependencyError)
+        expect((error as SelectorCircularDependencyError).path).toEqual([
+            "parent",
+            "new-edge",
+            "changed",
+            "cached",
+            "parent",
+        ])
+        expect(host.records.get("parent")?.dependencies).toEqual([])
+    })
+
+    test("a cold parent proves its first edge after a nested fresh-session publication", () => {
+        const host = new TestHost()
+        let nestedParentRead = false
+        host.define({
+            node: "parent",
+            get: get => (nestedParentRead ? 1 : get("new-edge")),
+        })
+        host.define({ node: "changed", get: () => 1 })
+        host.define({ node: "new-edge", get: get => get("changed") })
+        host.define({ node: "cached", get: get => get("parent") })
+        expect(valueOf(host.read<number>("new-edge"))).toBe(1)
+        expect(host.records.has("parent")).toBe(false)
+
+        host.setServeEffect("new-edge", () => {
+            host.define({
+                node: "changed",
+                get: get => get("cached"),
+            })
+            nestedParentRead = true
+            try {
+                expect(valueOf(host.read<number>("changed"))).toBe(1)
+            } finally {
+                nestedParentRead = false
+            }
+        })
+
+        const error = errorOf(host.read("parent"))
+
+        expect(error).toBeInstanceOf(SelectorCircularDependencyError)
+        expect((error as SelectorCircularDependencyError).path).toEqual([
+            "parent",
+            "new-edge",
+            "changed",
+            "cached",
+            "parent",
+        ])
+        expect(host.records.get("parent")?.dependencies).toEqual([])
+    })
+
+    test("a warm parent proves a newly materialized dependency after its same-session publication", () => {
+        const host = new TestHost()
+        host.define({ node: "parent", get: () => 1 })
+        host.define({ node: "cached", get: get => get("parent") })
+        expect(valueOf(host.read<number>("cached"))).toBe(1)
+
+        host.define({ node: "fresh", get: get => get("cached") })
+        host.define({ node: "parent", get: get => get("fresh") })
+
+        const error = errorOf(host.read("parent"))
+
+        expect(error).toBeInstanceOf(SelectorCircularDependencyError)
+        expect((error as SelectorCircularDependencyError).path).toEqual([
+            "parent",
+            "fresh",
+            "cached",
+            "parent",
+        ])
+        expect(host.records.get("parent")?.dependencies).toEqual([])
+        expect(host.records.get("fresh")?.dependencies[0]?.node).toBe("cached")
+    })
+
+    test("comparator thenable inspection preserves a newly latched prefix cycle", () => {
+        const host = new TestHost()
+        let readNewEdge = false
+        let publishDuringInspection = false
+        host.define({ node: "changed", get: () => 1 })
+        host.define({ node: "new-edge", get: get => get("changed") })
+        host.define({ node: "cached", get: get => get("parent") })
+        host.define({
+            node: "parent",
+            get: get => {
+                if (readNewEdge) get("new-edge")
+                return 1
+            },
+            equal: (() => {
+                if (!publishDuringInspection) return false
+                return {
+                    get then() {
+                        host.define({
+                            node: "changed",
+                            get: get => get("cached"),
+                        })
+                        expect(valueOf(host.read<number>("changed"))).toBe(1)
+                        return undefined
+                    },
+                }
+            }) as (previous: number, next: number) => boolean,
+        })
+        expect(valueOf(host.read<number>("parent"))).toBe(1)
+        expect(valueOf(host.read<number>("cached"))).toBe(1)
+
+        readNewEdge = true
+        publishDuringInspection = true
+        host.markDirty("parent")
+        const error = errorOf(host.read("parent"))
+
+        expect(error).toBeInstanceOf(SelectorCircularDependencyError)
+        expect((error as SelectorCircularDependencyError).path).toEqual([
+            "parent",
+            "new-edge",
+            "changed",
+            "cached",
+            "parent",
+        ])
+        expect(host.records.get("parent")?.dependencies).toEqual([])
+    })
+
+    test("a latched cycle still truncates a prefix invalidated by a later fresh session", () => {
+        const host = new TestHost()
+        let firstCycle: unknown
+        host.define({ node: "parent", get: () => 1 })
+        host.define({ node: "changed", get: () => 1 })
+        host.define({ node: "new-edge", get: get => get("changed") })
+        host.define({ node: "cached", get: get => get("parent") })
+        expect(valueOf(host.read<number>("new-edge"))).toBe(1)
+        expect(valueOf(host.read<number>("cached"))).toBe(1)
+
+        host.define({
+            node: "parent",
+            get: get => {
+                get("new-edge")
+                try {
+                    get("parent")
+                } catch (error) {
+                    firstCycle = error
+                }
+                host.define({
+                    node: "changed",
+                    get: changedGet => changedGet("cached"),
+                })
+                expect(valueOf(host.read<number>("changed"))).toBe(1)
+                return 1
+            },
+        })
+
+        const error = errorOf(host.read("parent"))
+
+        expect(error).toBe(firstCycle)
+        expect((error as SelectorCircularDependencyError).path).toEqual([
+            "parent",
+            "parent",
+        ])
+        expect(host.records.get("parent")?.dependencies).toEqual([])
+    })
+
+    test("prefix truncation removes stale transient edges before later same-session proofs", () => {
+        const host = new TestHost()
+        let parentSession: SelectorEvaluationSession<Node> | undefined
+        let nestedChild: ServedSelectorOutcome<Token> | undefined
+        let firstCycle: unknown
+        host.setLeaf("a", 1)
+        host.setLeaf("trigger", 0)
+        host.define({ node: "parent", get: () => 1 })
+        host.define({ node: "x", get: get => get("parent") })
+        host.define({ node: "d", get: get => get("parent") })
+        host.define({ node: "child", get: get => get("x") })
+        host.define({ node: "b", get: () => 1 })
+        expect(valueOf(host.read<number>("child"))).toBe(1)
+        expect(valueOf(host.read<number>("d"))).toBe(1)
+        expect(valueOf(host.read<number>("b"))).toBe(1)
+
+        host.setServeEffect("trigger", session => {
+            parentSession = session
+            host.define({ node: "b", get: get => get("child") })
+            expect(valueOf(host.read<number>("b"))).toBe(1)
+        })
+        host.define({
+            node: "parent",
+            get: get => {
+                get("a")
+                get("b")
+                try {
+                    get("trigger")
+                } catch (error) {
+                    firstCycle = error
+                }
+                host.define({ node: "child", get: childGet => childGet("d") })
+                nestedChild = host.serve("child", parentSession!)
+                return 1
+            },
+        })
+
+        const parentError = errorOf(host.read("parent"))
+
+        expect(parentError).toBe(firstCycle)
+        expect((parentError as SelectorCircularDependencyError).path).toEqual([
+            "parent",
+            "b",
+            "child",
+            "x",
+            "parent",
+        ])
+        expect(
+            host.records.get("parent")?.dependencies.map(({ node }) => node),
+        ).toEqual(["a"])
+        expect(valueOf(nestedChild!)).toBe(1)
+        expect(host.records.get("child")?.dependencies[0]?.node).toBe("d")
+    })
+
+    test("a child revalidates an invalidated ancestor prefix before its next proof", () => {
+        const host = new TestHost()
+        host.define({ node: "p", get: () => 1 })
+        host.define({ node: "b", get: () => 1 })
+        host.define({ node: "c", get: () => 1 })
+        host.define({ node: "q", get: get => get("c") })
+        host.define({ node: "x", get: get => get("p") })
+        host.define({ node: "d", get: get => get("p") })
+        for (const node of ["p", "b", "c", "q", "x", "d"] as const) {
+            expect(valueOf(host.read<number>(node))).toBe(1)
+        }
+
+        host.define({
+            node: "p",
+            get: get => {
+                get("b")
+                return get("c")
+            },
+        })
+        host.define({
+            node: "c",
+            get: get => {
+                host.define({
+                    node: "b",
+                    get: freshGet => {
+                        freshGet("x")
+                        return freshGet("q")
+                    },
+                })
+                expect(valueOf(host.read<number>("b"))).toBe(1)
+                return get("d")
+            },
+        })
+
+        const parentError = errorOf(host.read("p"))
+
+        expect(parentError).toBeInstanceOf(SelectorCircularDependencyError)
+        expect((parentError as SelectorCircularDependencyError).path).toEqual([
+            "p",
+            "b",
+            "x",
+            "p",
+        ])
+        expect(host.records.get("p")?.dependencies).toEqual([])
+        expect(valueOf(host.records.get("c")!.served)).toBe(1)
+        expect(host.records.get("c")?.dependencies[0]?.node).toBe("d")
+    })
+
+    test("selector publication attribution remains isolated across two hosts", () => {
+        const session = new SelectorEvaluationSession<Node>()
+        const first = new TestHost()
+        const second = new TestHost()
+
+        expect(session.getSelectorGraphPublicationCount(first)).toBe(0)
+        expect(session.getSelectorGraphPublicationCount(second)).toBe(0)
+        session.noteSelectorGraphPublication(first)
+        session.noteSelectorGraphPublication(second)
+        session.noteSelectorGraphPublication(second)
+        session.noteSelectorGraphPublication(first)
+
+        expect(session.getSelectorGraphPublicationCount(first)).toBe(2)
+        expect(session.getSelectorGraphPublicationCount(second)).toBe(2)
+    })
+
+    test("active selector frames remain isolated across two hosts", () => {
+        const first = new TestHost()
+        const second = new TestHost()
+        let child: ServedSelectorOutcome<Token, number> | undefined
+
+        first.setLeaf("bridge", 1)
+        first.define({ node: "outer", get: get => get("bridge") })
+        second.define({ node: "outer", get: () => 2 })
+        second.define({ node: "child", get: get => get("outer") })
+        first.setServeEffect("bridge", session => {
+            child = second.serve("child", session) as ServedSelectorOutcome<
+                Token,
+                number
+            >
+        })
+
+        expect(valueOf(first.read<number>("outer"))).toBe(1)
+        expect(valueOf(child!)).toBe(2)
+        expect(
+            second.records.get("child")?.dependencies.map(({ node }) => node),
+        ).toEqual(["outer"])
+    })
+
+    test("selector-record removal must preserve graph-closed absence", () => {
+        const host = new TestHost()
+        host.define({ node: "parent", get: () => 1 })
+        host.define({ node: "cached", get: get => get("parent") })
+        expect(valueOf(host.read<number>("cached"))).toBe(1)
+
+        host.records.delete("parent")
+
+        expect(() => host.getSelectorRecord("parent")).toThrow(
+            "TestHost selector-record absence is not graph-closed",
+        )
     })
 
     for (const [name, first, second] of [
@@ -732,6 +1284,98 @@ describe("v1 selector evaluator faults and revocation", () => {
         expect(thenCalls).toBe(1)
         expect(actualShadowedCalls).toBe(1)
         expect(shadowCallPropertyCalls).toBe(0)
+    })
+
+    test("a thrown thenable cannot use a captured get during containment", () => {
+        const host = new TestHost()
+        let capturedGet: ((node: Node) => unknown) | undefined
+        let thenCalls = 0
+        host.setLeaf("late", 1)
+        const thrownThenable = {
+            then() {
+                thenCalls++
+                capturedGet!("late")
+            },
+        }
+        host.define({
+            node: "derived",
+            get: get => {
+                capturedGet = get
+                throw thrownThenable
+            },
+        })
+
+        const error = errorOf(host.read("derived"))
+
+        expect(error).toBeInstanceOf(InvalidSynchronousSelectorResultError)
+        expect(thenCalls).toBe(1)
+        expect(host.leafReads.get("late")).toBeUndefined()
+        expect(host.records.get("derived")?.dependencies).toEqual([])
+    })
+
+    for (const accessorKind of ["nonfunction", "throwing"] as const) {
+        test(`a thrown ${accessorKind} then accessor cannot use a captured get during inspection`, () => {
+            const host = new TestHost()
+            let capturedGet: ((node: Node) => unknown) | undefined
+            let thenGets = 0
+            host.setLeaf("late", 1)
+            const thrownValue = {
+                get then() {
+                    thenGets++
+                    capturedGet!("late")
+                    if (accessorKind === "throwing") {
+                        throw new Error("hostile then getter")
+                    }
+                    return undefined
+                },
+            }
+            host.define({
+                node: "derived",
+                get: get => {
+                    capturedGet = get
+                    throw thrownValue
+                },
+            })
+
+            const error = errorOf(host.read("derived"))
+
+            expect(error).toBeInstanceOf(SelectorGetterError)
+            expect((error as SelectorGetterError).cause).toBeInstanceOf(
+                SelectorReadRevokedError,
+            )
+            expect(thenGets).toBe(1)
+            expect(host.leafReads.get("late")).toBeUndefined()
+            expect(host.records.get("derived")?.dependencies).toEqual([])
+        })
+    }
+
+    test("returned then inspection sees an already revoked captured get", () => {
+        const host = new TestHost()
+        let capturedGet: ((node: Node) => unknown) | undefined
+        let inspectionError: unknown
+        host.setLeaf("late", 1)
+        const returned = {
+            get then() {
+                try {
+                    capturedGet!("late")
+                } catch (error) {
+                    inspectionError = error
+                }
+                return undefined
+            },
+        }
+        host.define({
+            node: "derived",
+            get: get => {
+                capturedGet = get
+                return returned
+            },
+        })
+
+        expect(valueOf(host.read<typeof returned>("derived"))).toBe(returned)
+        expect(inspectionError).toBeInstanceOf(SelectorReadRevokedError)
+        expect(host.leafReads.get("late")).toBeUndefined()
+        expect(host.records.get("derived")?.dependencies).toEqual([])
     })
 
     test("control and cycle precedence still contain rejected thenable returns", async () => {
