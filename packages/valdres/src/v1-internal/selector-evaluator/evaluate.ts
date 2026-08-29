@@ -29,6 +29,7 @@ type InspectedThenable =
 const NOT_THENABLE = Object.freeze({ kind: "not-thenable" as const })
 const NOOP = (): void => {}
 const APPLY = Reflect.apply
+const DEPENDENCY_PATH_ROOT = Symbol("selector dependency path root")
 
 const inspectThenable = (value: unknown): InspectedThenable => {
     if (
@@ -102,16 +103,20 @@ const findDependencyPath = <Node, Token extends object>(
     session: SelectorEvaluationSession<Node>,
 ): readonly Node[] | undefined => {
     const pending = [start]
-    const parent = new Map<Node, Node | undefined>([[start, undefined]])
+    const parent = new Map<Node, Node | typeof DEPENDENCY_PATH_ROOT>([
+        [start, DEPENDENCY_PATH_ROOT],
+    ])
 
     while (pending.length > 0) {
         const node = pending.pop() as Node
         if (Object.is(node, target)) {
             const reversed: Node[] = []
-            let cursor: Node | undefined = node
-            while (cursor !== undefined) {
+            let cursor: Node | typeof DEPENDENCY_PATH_ROOT = node
+            while (cursor !== DEPENDENCY_PATH_ROOT) {
                 reversed.push(cursor)
-                cursor = parent.get(cursor)
+                cursor = parent.get(cursor) as
+                    | Node
+                    | typeof DEPENDENCY_PATH_ROOT
             }
             reversed.reverse()
             return Object.freeze(reversed)
@@ -186,13 +191,8 @@ export const evaluateSelector = <Node, Token extends object, Value>(
     const dependencies: SelectorDependencySnapshot<Node, Token>[] = []
     const dependencyNodes = new Set<Node>()
     const currentRecord = host.getSelectorRecord(selector)
-    let currentDependencyNodes: Set<Node> | undefined
-    if (currentRecord !== undefined) {
-        currentDependencyNodes = new Set<Node>()
-        for (const dependency of currentRecord.dependencies) {
-            currentDependencyNodes.add(dependency.node)
-        }
-    }
+    const currentDependencies = currentRecord?.dependencies
+    let unorderedCurrentDependencyNodes: Set<Node> | undefined
     const comparisonBaseline = host.getComparisonBaseline(selector) as
         | SelectorComparisonBaseline<Token, Value>
         | undefined
@@ -309,8 +309,29 @@ export const evaluateSelector = <Node, Token extends object, Value>(
         }
 
         const alreadyAccepted = dependencyNodes.has(dependency)
-        const wasCurrentDirectDependency =
-            currentDependencyNodes?.has(dependency) === true
+        let wasCurrentDirectDependency = false
+        if (
+            !alreadyAccepted &&
+            currentDependencies !== undefined &&
+            currentDependencies.length > 0
+        ) {
+            const positional = currentDependencies[dependencies.length]
+            if (
+                positional !== undefined &&
+                Object.is(positional.node, dependency)
+            ) {
+                wasCurrentDirectDependency = true
+            } else {
+                if (unorderedCurrentDependencyNodes === undefined) {
+                    unorderedCurrentDependencyNodes = new Set<Node>()
+                    for (const current of currentDependencies) {
+                        unorderedCurrentDependencyNodes.add(current.node)
+                    }
+                }
+                wasCurrentDirectDependency =
+                    unorderedCurrentDependencyNodes.has(dependency)
+            }
+        }
         const served = host.serve(dependency, session)
 
         revalidateAcceptedPrefix()
@@ -326,7 +347,7 @@ export const evaluateSelector = <Node, Token extends object, Value>(
             (wasCurrentDirectDependency &&
                 graphVersionAfterServe === graphVersionAtEntry)
         const maySkipColdParentGraphProof =
-            currentDependencyNodes === undefined &&
+            currentDependencies === undefined &&
             hasOnlyAttributedPublications(
                 graphVersionAtEntry,
                 sessionPublicationsAtEntry,

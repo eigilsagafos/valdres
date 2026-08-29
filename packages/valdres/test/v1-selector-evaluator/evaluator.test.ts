@@ -45,6 +45,7 @@ class TestHost implements SelectorEvaluationHost<Node, Token> {
     >()
     readonly publications: SelectorEvaluationProposal<Node, Token>[] = []
     graphVersionReads = 0
+    selectorRecordReads = 0
     readonly liveRecords: Map<Node, TestRecord> | undefined
     readonly comparisonRecords: Map<Node, TestRecord> | undefined
     #nextToken = 1
@@ -184,6 +185,7 @@ class TestHost implements SelectorEvaluationHost<Node, Token> {
     }
 
     getSelectorRecord(node: Node): SelectorRecordView<Node, Token> | undefined {
+        this.selectorRecordReads++
         const record = this.records.get(node)
         if (record === undefined && this.definitions.has(node)) {
             for (const candidate of this.records.values()) {
@@ -322,6 +324,38 @@ describe("v1 selector evaluator outcomes", () => {
         expect(host.graphVersionReads).toBe(3)
     })
 
+    test("falls back to old-topology membership when dependencies reorder", () => {
+        const host = new TestHost()
+        host.setLeaf("a", 1)
+        host.setLeaf("b", 2)
+        let reversed = false
+        host.define({
+            node: "ordered",
+            get: get => {
+                if (reversed) {
+                    get("b")
+                    get("a")
+                } else {
+                    get("a")
+                    get("b")
+                }
+                return 1
+            },
+        })
+
+        expect(valueOf(host.read<number>("ordered"))).toBe(1)
+        reversed = true
+        host.markDirty("ordered")
+        const recordReadsBefore = host.selectorRecordReads
+        expect(valueOf(host.read<number>("ordered"))).toBe(1)
+        expect(host.selectorRecordReads - recordReadsBefore).toBe(1)
+        expect(
+            host.records
+                .get("ordered")!
+                .dependencies.map(dependency => dependency.node),
+        ).toEqual(["b", "a"])
+    })
+
     test("V1M-SEL-002 custom equality reuses a current value token while replacing topology", () => {
         const host = new TestHost()
         const stable = Object.freeze({ count: 1 })
@@ -433,6 +467,49 @@ describe("v1 selector evaluator outcomes", () => {
 })
 
 describe("v1 selector evaluator cycles", () => {
+    test("does not mistake an out-of-range undefined node for an old edge", () => {
+        const host = new TestHost()
+        const undefinedNode = undefined as unknown as Node
+        host.setLeaf("stable", 1)
+        host.define({
+            node: "parent",
+            get: get => {
+                get("stable")
+                return 1
+            },
+        })
+        expect(valueOf(host.read<number>("parent"))).toBe(1)
+        host.define({
+            node: undefinedNode,
+            get: get => {
+                get("parent")
+                return 1
+            },
+        })
+        expect(valueOf(host.read<number>(undefinedNode))).toBe(1)
+        host.define({
+            node: "parent",
+            get: get => {
+                get("stable")
+                get(undefinedNode)
+                return 1
+            },
+        })
+
+        const error = errorOf(host.read("parent"))
+        expect(error).toBeInstanceOf(SelectorCircularDependencyError)
+        expect((error as SelectorCircularDependencyError).path).toEqual([
+            "parent",
+            undefined,
+            "parent",
+        ])
+        expect(
+            host.records
+                .get("parent")!
+                .dependencies.map(dependency => dependency.node),
+        ).toEqual(["stable"])
+    })
+
     test("V1M-SEL-003 direct recursion installs a cycle error with no offending edge", () => {
         const host = new TestHost()
         host.define({ node: "self", get: get => get("self") })
