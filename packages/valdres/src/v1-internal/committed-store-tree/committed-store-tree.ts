@@ -498,12 +498,30 @@ class CommittedStoreTreeHost
         state: AnyState,
         session: SelectorEvaluationSession<AnyState>,
     ): "local" | "invalid" {
-        if (this.#domain.activeSession !== undefined) {
-            return this.#classifyOwner(state, session)
+        if (
+            (typeof state === "object" || typeof state === "function") &&
+            state !== null &&
+            this.#domain.states.has(state)
+        ) {
+            return "local"
         }
-        return runWithDomainGuard(this.#domain, session, () =>
-            this.#classifyOwner(state, session),
-        )
+
+        const faultSession = this.#domain.activeSession ?? session
+        try {
+            const ownerStatus =
+                this.#domain.activeSession === undefined
+                    ? runWithDomainGuard(this.#domain, faultSession, () =>
+                          this.#classifyOwner(state, faultSession),
+                      )
+                    : this.#classifyOwner(state, faultSession)
+            const controlFault = faultSession.getControlFault()
+            if (controlFault.kind === "fault") throw controlFault.error
+            return ownerStatus
+        } catch (error) {
+            const controlFault = faultSession.getControlFault()
+            if (controlFault.kind === "fault") throw controlFault.error
+            throw error
+        }
     }
 
     #classifyOwner(

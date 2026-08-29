@@ -193,6 +193,55 @@ describe("v1 persistent committed StoreTree host", () => {
         expect(traps).toBe(2)
     })
 
+    test("preserves the first mismatch caught inside owner-brand inspection", () => {
+        const local = createCommittedStoreTreeDomain()
+        const foreign = createCommittedStoreTreeDomain()
+        const foreignAtom = foreign.atom(7)
+        const first = local.createStoreTree()
+        const sibling = local.createStoreTree()
+        const caught: unknown[] = []
+        const catchNestedMismatch = (): void => {
+            try {
+                sibling.get(foreignAtom)
+            } catch (error) {
+                caught.push(error)
+            }
+        }
+        const invalidProxy = new Proxy(
+            { kind: "atom" },
+            {
+                getOwnPropertyDescriptor(): undefined {
+                    catchNestedMismatch()
+                    return undefined
+                },
+            },
+        )
+
+        expect(thrownBy(() => first.get(invalidProxy as never))).toBe(caught[0])
+        expect(
+            thrownBy(() => first.set(invalidProxy as never, 1 as never)),
+        ).toBe(caught[1])
+        expect(caught).toHaveLength(2)
+        for (const error of caught) {
+            expect(error).toBeInstanceOf(RuntimeMismatchError)
+            expect(error).toMatchObject({ code: "VALDRES_RUNTIME_MISMATCH" })
+        }
+
+        const foreignProxy = new Proxy(foreignAtom, {
+            getOwnPropertyDescriptor(
+                target,
+                key,
+            ): PropertyDescriptor | undefined {
+                catchNestedMismatch()
+                return Reflect.getOwnPropertyDescriptor(target, key)
+            },
+        })
+        const outerMismatch = thrownBy(() => first.get(foreignProxy))
+        expect(outerMismatch).toBe(caught[2])
+        expect(outerMismatch).toBeInstanceOf(RuntimeMismatchError)
+        expect(caught).toHaveLength(3)
+    })
+
     test("sets over fresh and previously exposed lazy initializer errors without retry", () => {
         const domain = createCommittedStoreTreeDomain()
         const freshCause = new Error("fresh lazy failure")
