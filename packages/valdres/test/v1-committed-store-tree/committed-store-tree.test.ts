@@ -153,6 +153,46 @@ describe("v1 persistent committed StoreTree host", () => {
         expect(second.get(reentryTarget)).toBe(0)
     })
 
+    test("quarantines hostile owner-brand inspection before work", () => {
+        const domain = createCommittedStoreTreeDomain()
+        const target = domain.atom(0)
+        const first = domain.createStoreTree()
+        const second = domain.createStoreTree()
+        let traps = 0
+        let reentryError: unknown
+        const impostor = new Proxy(
+            { kind: "atom" },
+            {
+                getOwnPropertyDescriptor(): undefined {
+                    traps++
+                    try {
+                        second.set(target, 9)
+                    } catch (error) {
+                        reentryError = error
+                    }
+                    return undefined
+                },
+            },
+        )
+
+        expect(thrownBy(() => first.get(impostor as never))).toBeInstanceOf(
+            TypeError,
+        )
+        expect(reentryError).toMatchObject({
+            code: "VALDRES_SELECTOR_CAPABILITY_ERROR",
+        })
+        expect(second.get(target)).toBe(0)
+
+        expect(
+            thrownBy(() => first.set(impostor as never, 1 as never)),
+        ).toBeInstanceOf(TypeError)
+        expect(reentryError).toMatchObject({
+            code: "VALDRES_SELECTOR_CAPABILITY_ERROR",
+        })
+        expect(second.get(target)).toBe(0)
+        expect(traps).toBe(2)
+    })
+
     test("sets over fresh and previously exposed lazy initializer errors without retry", () => {
         const domain = createCommittedStoreTreeDomain()
         const freshCause = new Error("fresh lazy failure")

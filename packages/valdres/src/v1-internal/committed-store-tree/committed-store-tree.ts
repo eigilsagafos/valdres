@@ -229,7 +229,7 @@ class CommittedStoreTreeHost
     get<Value>(state: State<Value>): Value {
         const session = new SelectorEvaluationSession<AnyState>()
         const node = state as unknown as AnyState
-        const ownerStatus = this.#classifyOwner(node, session)
+        const ownerStatus = this.#classifyEntryOwner(node, session)
         if (this.#domain.activeSession !== undefined) {
             throw selectorCapabilityError("get")
         }
@@ -244,7 +244,7 @@ class CommittedStoreTreeHost
     set<Value>(atom: Atom<Value>, value: Value): void {
         const node = atom as unknown as AnyAtom
         const session = new SelectorEvaluationSession<AnyState>()
-        const ownerStatus = this.#classifyOwner(node, session)
+        const ownerStatus = this.#classifyEntryOwner(node, session)
         if (this.#domain.activeSession !== undefined) {
             throw selectorCapabilityError("set")
         }
@@ -492,6 +492,18 @@ class CommittedStoreTreeHost
             this.#propagationQueued.add(selector)
             this.#propagationQueue.push(selector)
         }
+    }
+
+    #classifyEntryOwner(
+        state: AnyState,
+        session: SelectorEvaluationSession<AnyState>,
+    ): "local" | "invalid" {
+        if (this.#domain.activeSession !== undefined) {
+            return this.#classifyOwner(state, session)
+        }
+        return runWithDomainGuard(this.#domain, session, () =>
+            this.#classifyOwner(state, session),
+        )
     }
 
     #classifyOwner(
