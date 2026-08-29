@@ -239,6 +239,19 @@ class TestHost implements SelectorEvaluationHost<Node, Token> {
         throw error
     }
 
+    activeDependencyPrefix(
+        selector: Node,
+    ): readonly Readonly<{ node: Node }>[] {
+        const prefix = this.#activeSession?.getTransientDependencies(
+            this,
+            selector,
+        )
+        if (prefix === undefined) {
+            throw new Error("no active selector dependency prefix")
+        }
+        return prefix
+    }
+
     dispose(): void {
         this.#disposed = true
         this.records.clear()
@@ -277,6 +290,43 @@ describe("v1 selector evaluator outcomes", () => {
         expect(
             host.records.get("sum")?.dependencies.map(({ node }) => node),
         ).toEqual(["a", "b"])
+    })
+
+    test("shares the proposal dependency prefix with the active transient frame", () => {
+        const host = new TestHost()
+        host.setLeaf("a", 2)
+        host.setLeaf("b", 3)
+        let activePrefix: readonly Readonly<{ node: Node }>[] | undefined
+        let activeSession: SelectorEvaluationSession<Node> | undefined
+        const observedLengths: number[] = []
+        host.setServeEffect("b", session => {
+            activeSession = session
+            const servedPrefix = session.getTransientDependencies(host, "sum")
+            expect(Object.is(servedPrefix, activePrefix)).toBe(true)
+            expect(servedPrefix?.map(({ node }) => node)).toEqual(["a"])
+        })
+        host.define({
+            node: "sum",
+            get: get => {
+                const a = get<number>("a")
+                activePrefix = host.activeDependencyPrefix("sum")
+                observedLengths.push(activePrefix.length)
+                const b = get<number>("b")
+                observedLengths.push(activePrefix.length)
+                return a + b
+            },
+        })
+
+        expect(valueOf(host.read<number>("sum"))).toBe(5)
+        const installed = host.records.get("sum")?.dependencies
+
+        expect(observedLengths).toEqual([1, 2])
+        expect(Object.is(activePrefix, installed)).toBe(true)
+        expect(activePrefix?.map(({ node }) => node)).toEqual(["a", "b"])
+        expect(Object.isFrozen(activePrefix)).toBe(true)
+        expect(
+            activeSession?.getTransientDependencies(host, "sum") === undefined,
+        ).toBe(true)
     })
 
     test("deduplicates a dependency accepted by a reentrant serve callback", () => {

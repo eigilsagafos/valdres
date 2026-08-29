@@ -87,7 +87,7 @@ export interface SelectorEvaluationHost<Node, Token extends object> {
 interface ActiveSelectorFrame<Node> {
     readonly host: object
     readonly selector: Node
-    readonly acceptedDependencies: Node[]
+    readonly dependencyPrefix: readonly Readonly<{ node: Node }>[]
     revalidatePrefix: (() => void) | undefined
     cycleError: unknown | undefined
 }
@@ -140,11 +140,15 @@ export class SelectorEvaluationSession<Node> {
     }
 
     /** @internal Evaluator-owned frame admission. */
-    enter(host: object, selector: Node): void {
+    enter(
+        host: object,
+        selector: Node,
+        dependencyPrefix: readonly Readonly<{ node: Node }>[],
+    ): void {
         this.#frames.push({
             host,
             selector,
-            acceptedDependencies: [],
+            dependencyPrefix,
             revalidatePrefix: undefined,
             cycleError: undefined,
         })
@@ -186,16 +190,6 @@ export class SelectorEvaluationSession<Node> {
         ])
     }
 
-    /** @internal Caller has already proved this dependency is absent. */
-    appendAcceptedDependency(
-        host: object,
-        selector: Node,
-        dependency: Node,
-    ): void {
-        const frame = this.#currentFrame(host, selector)
-        frame.acceptedDependencies.push(dependency)
-    }
-
     /** @internal Evaluator-owned active-frame coordination. */
     setPrefixRevalidator(
         host: object,
@@ -223,40 +217,18 @@ export class SelectorEvaluationSession<Node> {
         }
     }
 
-    /** @internal Evaluator-owned proof rollback. */
-    truncateAcceptedDependencies(
-        host: object,
-        selector: Node,
-        length: number,
-    ): void {
-        const frame = this.#activeFrame(host, selector)
-        if (
-            !Number.isInteger(length) ||
-            length < 0 ||
-            length > frame.acceptedDependencies.length
-        ) {
-            throw new Error("Selector dependency prefix truncation is invalid")
-        }
-        frame.acceptedDependencies.length = length
-    }
-
-    /** @internal */
-    getAcceptedDependencies(host: object, selector: Node): readonly Node[] {
-        return this.#currentFrame(host, selector).acceptedDependencies
-    }
-
     /** @internal */
     getTransientDependencies(
         host: object,
         node: Node,
-    ): readonly Node[] | undefined {
+    ): readonly Readonly<{ node: Node }>[] | undefined {
         for (let index = this.#frames.length - 1; index >= 0; index--) {
             const frame = this.#frames[index]!
             if (
                 Object.is(frame.host, host) &&
                 Object.is(frame.selector, node)
             ) {
-                return frame.acceptedDependencies
+                return frame.dependencyPrefix
             }
         }
         return undefined

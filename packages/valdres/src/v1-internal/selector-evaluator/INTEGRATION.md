@@ -58,13 +58,14 @@ where user-controlled inspection or another host activity publishes after the
 last supplied read but before the parent proposal is returned. Revalidation
 continues after a cycle is latched so later topology changes can still shorten
 the installed attempted prefix while the first cycle error keeps its identity.
-Every prefix truncation removes the same suffix from both the proposal-local
-dependency carriers and the session's active transient frame. When a nested
+The session's active transient frame holds a read-only alias to the evaluator's
+proposal-local dependency prefix. The evaluator is its only writer, so every
+accepted append and prefix truncation is visible to cycle traversal as one
+atomic carrier change rather than two synchronized mutations. When a nested
 frame observes a foreign publication, the session revalidates active ancestor
 frames outermost-first before the nested frame proves another edge. Each frame's
-registered revalidator updates its own proposal-local carrier and transient
-prefix together, so a child proof never traverses an ancestor edge that was
-already invalidated by the new topology.
+registered revalidator truncates its own aliased prefix, so a child proof never
+traverses an ancestor edge that was already invalidated by the new topology.
 
 Same-session publication reuse follows from one invariant: the installed graph
 plus every active frame's accepted transient prefix remains a DAG. A nested

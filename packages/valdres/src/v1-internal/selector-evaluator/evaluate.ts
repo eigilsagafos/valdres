@@ -125,9 +125,9 @@ const findDependencyPath = <Node, Token extends object>(
         const transient = session.getTransientDependencies(host, node)
         if (transient) {
             for (const dependency of transient) {
-                if (parent.has(dependency)) continue
-                parent.set(dependency, node)
-                pending.push(dependency)
+                if (parent.has(dependency.node)) continue
+                parent.set(dependency.node, node)
+                pending.push(dependency.node)
             }
             continue
         }
@@ -211,7 +211,7 @@ export const evaluateSelector = <Node, Token extends object, Value>(
         return current
     }
 
-    session.enter(host, selector)
+    session.enter(host, selector, dependencies)
     const graphVersionAtEntry = host.getSelectorGraphVersion()
     const sessionPublicationsAtEntry =
         session.getSelectorGraphPublicationCount(host)
@@ -265,7 +265,6 @@ export const evaluateSelector = <Node, Token extends object, Value>(
             }
             dependencies.length = index
             prefixTruncationRevision++
-            session.truncateAcceptedDependencies(host, selector, index)
 
             const controlFault = session.getControlFault()
             if (controlFault.kind === "fault") return
@@ -429,7 +428,6 @@ export const evaluateSelector = <Node, Token extends object, Value>(
                     ? previousSnapshot
                     : Object.freeze({ node: dependency, token: served.token }),
             )
-            session.appendAcceptedDependency(host, selector, dependency)
         }
         prefixProofVersion = graphVersionAfterServe
         prefixProofSessionPublications = sessionPublicationsAfterServe
