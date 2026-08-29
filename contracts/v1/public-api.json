@@ -238,26 +238,27 @@
             "owner": "valdres",
             "legacy": [],
             "target": {
-                "package": null,
-                "subpath": null,
-                "name": null,
-                "status": "pending"
+                "package": "valdres",
+                "subpath": ".",
+                "name": "query",
+                "status": "stable"
             },
             "migration": {
                 "mode": "add",
                 "replacementIds": [],
                 "semver": "new",
-                "codemod": "Pending D43.1 ownership and grammar evidence.",
-                "typeError": "Unknown indexes/operators/value domains reject in the chosen typed grammar.",
+                "codemod": "Define a single-collection structural query with query(collection, { where, orderBy, offset, limit, facets }); use $all, $any, and $not for explicit Boolean groups.",
+                "typeError": "Unknown indexes, operators, option keys, value domains, order fields, and facet fields reject recursively.",
                 "firstPartyOwner": "collection",
                 "evidenceStatus": "planned"
             },
             "contractIds": [
+                "query.recursive-object-definition",
                 "query.single-collection-composite-result",
                 "query.ready-only-indexed-read"
             ],
-            "decisionStatus": "pending-experiment",
-            "notes": "Compare standalone versus attached ownership and builder A versus object C before freezing the target spelling."
+            "decisionStatus": "approved",
+            "notes": "The stable primitive is standalone and uses the zero-operator-import recursive object grammar with implicit conjunction and explicit $all/$any/$not. A fluent builder remains reserved for experimental multi-collection search."
         },
         {
             "id": "core.store",
@@ -598,7 +599,7 @@
                 "query.single-collection-composite-result"
             ],
             "decisionStatus": "approved",
-            "notes": "The standalone exact path never starts materialization or silently switches algorithms; query-construction grammar remains unresolved."
+            "notes": "The standalone exact path reuses the frozen structural-query definition and never starts materialization or silently switches algorithms."
         },
         {
             "id": "collection.materialization-status",

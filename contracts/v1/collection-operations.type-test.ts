@@ -3,7 +3,7 @@
  *
  * The manifest owns the real package/subpath names. These placeholders prove
  * only the accepted call relationships. They intentionally do not freeze the
- * query grammar, materialization option members, scheduler, diagnostics,
+ * materialization option members, scheduler, diagnostics,
  * artifact bytes, codec, persistence, or async execution strategy.
  */
 

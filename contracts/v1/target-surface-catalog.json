@@ -52,7 +52,6 @@
         "callback.family-create-node",
         "callback.family-encode-key",
         "callback.materialization-status-listener",
-        "callback.query-builder",
         "callback.selector-comparator",
         "callback.selector-getter",
         "callback.store-subscriber",
@@ -109,6 +108,13 @@
             "package": "valdres",
             "subpath": ".",
             "name": "presence"
+        },
+        {
+            "id": "core.structural-query",
+            "kind": "runtime-export",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "query"
         },
         {
             "id": "core.store",
@@ -250,12 +256,6 @@
             "category": "alias-exports",
             "status": "pending",
             "notes": "Exact retained spellings for EqualFunc, FamilyKey, GetValue, ResetAtom, SetAtom, SetAtomValue, SubscribeFn, SyncSetAtom, and TransactionFn remain a founder/engineering decision."
-        },
-        {
-            "id": "pending.query-construction",
-            "category": "query-grammar",
-            "status": "pending",
-            "notes": "The Phase 0 spike must compare the approved A and C query-construction forms before an export spelling is frozen."
         },
         {
             "id": "pending.adapter-protocol",

@@ -38,7 +38,7 @@
         "mutation.value-vs-updater",
         "no-writable-cross-tree-state",
         "notification.after-stability",
-        "query.definition-grammar-a",
+        "query.recursive-object-definition",
         "query.exact-scan-operation",
         "query.ready-only-indexed-read",
         "query.single-collection-composite-result",

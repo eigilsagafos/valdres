@@ -458,7 +458,6 @@ const requiredCallbackIds = new Set([
     "callback.external-cleanup",
     "callback.store-subscriber",
     "callback.materialization-status-listener",
-    "callback.query-builder",
 ])
 const requiredKinds = new Set<PublicEntry["kind"]>([
     "runtime-export",
@@ -478,9 +477,9 @@ const frozenLegacyProvenanceInventorySha256 =
 const frozenReviewedLegacyDispositionSha256 =
     "e8a2097a3d88c2208575d1cc5384d149db29de4d22b48714173c5c68fe99ccc4"
 const frozenTargetCoordinateInventorySha256 =
-    "a2ad677a99d335fccc4948d07dee9c12da8474aea9f80683e03e3c96205b5fb5"
+    "91da520b8579cd60590ff5d9e058bbd1cccdb66d7c23f4eb1ea81b36f6dce55d"
 const frozenReleaseTrackOwnershipSha256 =
-    "f8b85a9a29f7310eca51fb858586d2e65ec1a8908e1db93895df79133e99b682"
+    "29e9c7c740e41521e2e4a25025b52e55510214e2b345a46d4873d011463d0d2b"
 const frozenWorkspaceBaseline = Object.freeze({
     commit: "ff1424bde13445eba07fcb426f5493dd43898f72",
     packageVersion: "1.0.0-beta.22",

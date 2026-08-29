@@ -102,9 +102,12 @@ they do not evaluate prototype, lazy, dynamic-import, or opt-in decorator
 designs. The gzip deltas are isolated single-entry bundles with no shared chunks
 or pre-existing query import, not marginal application costs after the query
 tier is already reachable. The evidence supports `query(collection, definition)`
-as the underlying API while leaving builder callback versus recursive object
-grammar open for runtime/editor trials.
+as the underlying API.
 
-No grammar choice is frozen until the type gate, editor snapshots, call-site
-metrics, packed reachability evidence, and runtime usability trials are reviewed
-together.
+Maintainer review selected the recursively typed object grammar for stable
+single-collection structural queries: it keeps operator imports at zero, uses
+fewer call-site tokens in the matched fixtures, introduces no public callback
+capability boundary, and matches the preferred authoring style. The query-local
+builder remains useful evidence for a future experimental multi-collection
+search algebra, where fluent alias/join/projection composition may justify the
+extra surface; it is not a stable Collection member or callback.

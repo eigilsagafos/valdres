@@ -457,35 +457,6 @@
             "decisionStatus": "evidence-required"
         },
         {
-            "id": "callback.query-builder",
-            "apiEntryId": "core.structural-query",
-            "role": "Candidate A constructs and freezes one inert typed query definition.",
-            "phase": "definition-construction",
-            "suppliedCapabilities": [
-                "query-local typed index/operator builder"
-            ],
-            "allowedExternalWork": [
-                "compose immutable predicate, order, and facet terms"
-            ],
-            "rejectedCapturedOperations": [
-                "Store read",
-                "Store mutation",
-                "Store transaction",
-                "subscription registration",
-                "scope access",
-                "source invalidation"
-            ],
-            "guardDomain": "same-runtime-domain",
-            "errorRule": "A throw creates no Query definition.",
-            "thenableRule": "An async callback or returned/thrown thenable rejects as an invalid synchronous query definition.",
-            "resultBoundary": "Runs exactly once during definition construction and is discarded after producing the frozen AST.",
-            "requiredContractIds": [
-                "query.definition-grammar-a",
-                "callback.definition-only"
-            ],
-            "decisionStatus": "pending-experiment"
-        },
-        {
             "id": "callback.beta-cache-loader",
             "apiEntryId": "beta.cache-companion",
             "role": "Acquire one keyed async cache entry generation outside the Valdres State contract.",

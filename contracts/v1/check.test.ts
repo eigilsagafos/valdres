@@ -824,8 +824,8 @@ describe("v1 contract manifest validation", () => {
 
         const relabelledPendingDecision = mutableSet()
         relabelledPendingDecision.targetSurfaceCatalog.pendingSurfaceDecisions.find(
-            (decision: any) => decision.id === "pending.query-construction",
-        ).category = "alias-exports"
+            (decision: any) => decision.id === "pending.error-names",
+        ).category = "query-grammar"
         expect(() => validateContractSet(relabelledPendingDecision)).toThrow(
             /reviewed release-track ownership differs from the independently pinned digest/,
         )
@@ -1099,6 +1099,32 @@ describe("v1 contract manifest validation", () => {
             (coordinate: any) => coordinate.id === "core.atom",
         ).name = "renamedAtom"
         expect(() => validateContractSet(renamedGeneralTarget)).toThrow(
+            /frozen target coordinate inventory differs from the independently pinned digest/,
+        )
+    })
+
+    test("freezes standalone recursive-object structural queries", () => {
+        const set = mutableSet()
+        const query = findPublicEntry(set, "core.structural-query")
+
+        expect(query.target).toEqual({
+            package: "valdres",
+            subpath: ".",
+            name: "query",
+            status: "stable",
+        })
+        expect(query.contractIds).toContain("query.recursive-object-definition")
+        expect(
+            set.callbackManifest.entries.some(
+                (entry: any) => entry.id === "callback.query-builder",
+            ),
+        ).toBe(false)
+
+        query.target.name = "buildQuery"
+        set.targetSurfaceCatalog.frozenPublicCoordinates.find(
+            (coordinate: any) => coordinate.id === "core.structural-query",
+        ).name = "buildQuery"
+        expect(() => validateContractSet(set)).toThrow(
             /frozen target coordinate inventory differs from the independently pinned digest/,
         )
     })

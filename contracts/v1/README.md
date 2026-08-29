@@ -22,12 +22,14 @@ deliberately removes behavior that the beta implements.
   public API and callback IDs plus the explicit independent-beta subset and
   frozen coordinates for every currently approved stable or experimental target.
   Manifest IDs must equal it in both directions, and frozen
-  kind/package/subpath/name coordinates must match independently. Unresolved
-  alias, query-grammar, adapter-protocol, error-name, and option-spelling
-  decisions are listed explicitly without invented coordinates. A second
-  reviewed digest pins public owner/status, callback-to-API ownership, the
-  independent-beta subset, and every pending decision so coordinated relabels or
-  deletions cannot self-authorize.
+  kind/package/subpath/name coordinates must match independently. The stable
+  structural-query primitive is the standalone, zero-operator-import recursive
+  object grammar proven by the D43.1 spike; its fluent builder remains reserved
+  for experimental multi-collection search. Unresolved alias, adapter-protocol,
+  error-name, and option-spelling decisions are listed explicitly without
+  invented coordinates. A second reviewed digest pins public owner/status,
+  callback-to-API ownership, the independent-beta subset, and every pending
+  decision so coordinated relabels or deletions cannot self-authorize.
 - `frozen-legacy-surface.json` records immutable, provenance-stamped coordinates
   for the beta.23 core root and adapter exports, the actual beta.4 React
   exports, Store/Transaction/adapter members and overloads, and public
