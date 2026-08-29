@@ -138,6 +138,11 @@ interface TestDispositionHeader {
     readonly recordType: "header"
     readonly schemaVersion: 1
     readonly completeness: Completeness
+    readonly classificationScope: {
+        readonly testCases: "complete"
+        readonly testFiles: "complete"
+        readonly productionFiles: "separate-artifact-pending"
+    }
     readonly inventory:
         | {
               readonly status: "pending"
@@ -177,6 +182,17 @@ interface TestDispositionEntry {
     readonly ownerIds: readonly string[]
     readonly destination: string | null
     readonly rationale: string
+    readonly needsReview?: {
+        readonly status: "needs-human-judgment"
+        readonly reasons: readonly Readonly<{
+            code:
+                | "destination-not-frozen"
+                | "mixed-contract-subject"
+                | "target-export-unresolved"
+                | "exact-shape-not-catalogued"
+            detail: string
+        }>[]
+    }
 }
 
 interface TestOwnerEntry {
@@ -205,13 +221,14 @@ interface FrozenTestInventory {
             readonly registeredFiles: number
             readonly zeroRegistrationFiles: readonly string[]
             readonly tests: number
-            readonly assertions: number
+            readonly minimumAssertions: number
             readonly failures: 0
             readonly skipped: 0
         }
     }
     readonly counts: {
         readonly productionFiles: number
+        readonly testFiles: number
         readonly testCases: number
         readonly total: number
     }
@@ -385,10 +402,16 @@ export function validateContractSet(input: ContractSet): Readonly<{
     contractIds: number
     completeness: `${Completeness}/${Completeness}/${Completeness}/${Completeness}`
     testDispositions: number
+    testDispositionCounts: Readonly<Record<Disposition, number>>
+    testDispositionNeedsReview: number
     testOwners: number
     testDispositionCompleteness: Completeness
     testInventorySubjects: number | null
+    testDispositionScopeSubjects: number | null
     testClassificationRemaining: number | null
+    testCaseClassificationRemaining: number | null
+    testFileClassificationRemaining: number | null
+    productionSourceSubjects: number | null
 }> {
     assertSchema(validatePublic, input.publicManifest, "public-api.json")
     assertSchema(
@@ -608,10 +631,16 @@ function assertTestDispositionLedger(
     testOwnerEvidence: readonly TestOwnerEvidence[] | null,
 ): Readonly<{
     testDispositions: number
+    testDispositionCounts: Readonly<Record<Disposition, number>>
+    testDispositionNeedsReview: number
     testOwners: number
     testDispositionCompleteness: Completeness
     testInventorySubjects: number | null
+    testDispositionScopeSubjects: number | null
     testClassificationRemaining: number | null
+    testCaseClassificationRemaining: number | null
+    testFileClassificationRemaining: number | null
+    productionSourceSubjects: number | null
 }> {
     assert(
         ledger[0].recordType === "header",
@@ -655,8 +684,24 @@ function assertTestDispositionLedger(
     }
     assertImplementedTestOwners(owners, testOwnerEvidence)
 
+    const dispositionCounts: Record<Disposition, number> = {
+        A: 0,
+        B: 0,
+        C: 0,
+        D: 0,
+        E: 0,
+    }
+    let needsReviewCount = 0
     const subjectCoordinates = new Set<string>()
     for (const entry of dispositions) {
+        dispositionCounts[entry.disposition] += 1
+        if (entry.needsReview !== undefined) {
+            needsReviewCount += 1
+            assert(
+                entry.reviewStatus === "proposed",
+                `${entry.id} cannot be approved while it needs human judgment`,
+            )
+        }
         if (entry.subject.kind === "test-case") {
             assert(
                 typeof entry.subject.testName === "string",
@@ -729,7 +774,7 @@ function assertTestDispositionLedger(
                   dispositions,
                   dispositionIds,
                   inventoryEvidence,
-                  header.completeness,
+                  header.classificationScope,
               )
             : null
     if (header.inventory.status !== "frozen") {
@@ -757,17 +802,26 @@ function assertTestDispositionLedger(
         )
         assert(
             inventoryResult?.classificationRemaining === 0,
-            "a complete test-disposition ledger requires exact frozen inventory parity",
+            "a complete test-disposition ledger requires exact frozen test-subject parity",
         )
     }
 
     return {
         testDispositions: dispositions.length,
+        testDispositionCounts: dispositionCounts,
+        testDispositionNeedsReview: needsReviewCount,
         testOwners: owners.length,
         testDispositionCompleteness: header.completeness,
         testInventorySubjects: inventoryResult?.subjects ?? null,
+        testDispositionScopeSubjects: inventoryResult?.scopeSubjects ?? null,
         testClassificationRemaining:
             inventoryResult?.classificationRemaining ?? null,
+        testCaseClassificationRemaining:
+            inventoryResult?.testCaseClassificationRemaining ?? null,
+        testFileClassificationRemaining:
+            inventoryResult?.testFileClassificationRemaining ?? null,
+        productionSourceSubjects:
+            inventoryResult?.productionSourceSubjects ?? null,
     }
 }
 
@@ -880,8 +934,15 @@ function assertFrozenTestInventory(
     dispositions: readonly TestDispositionEntry[],
     dispositionIds: ReadonlySet<string>,
     evidence: TestDispositionInventoryEvidence | null,
-    completeness: Completeness,
-): Readonly<{ subjects: number; classificationRemaining: number }> {
+    classificationScope: TestDispositionHeader["classificationScope"],
+): Readonly<{
+    subjects: number
+    scopeSubjects: number
+    classificationRemaining: number
+    testCaseClassificationRemaining: number
+    testFileClassificationRemaining: number
+    productionSourceSubjects: number
+}> {
     assert(
         evidence !== null,
         "a frozen test-disposition inventory requires independently loaded catalog evidence",
@@ -917,15 +978,18 @@ function assertFrozenTestInventory(
     }
     assertSchema(validateFrozenTestInventory, parsed, frozen.catalogPath)
     const inventory = parsed as FrozenTestInventory
-    const inventoryIds = uniqueIds(inventory.entries, "frozen test inventory")
-    assertExactLedgerInventory(
-        inventoryIds,
-        new Set(frozen.expectedDispositionIds),
+    uniqueIds(inventory.entries, "frozen test inventory")
+    const inventoryTestSubjectIds = new Set(
+        inventory.entries
+            .filter(entry => entry.subject.kind !== "production-file")
+            .map(entry => entry.id),
     )
-    assertInventorySubset(dispositionIds, inventoryIds)
-    if (completeness === "complete") {
-        assertExactLedgerInventory(dispositionIds, inventoryIds)
-    }
+    assertExactLedgerInventory(
+        new Set(frozen.expectedDispositionIds),
+        inventoryTestSubjectIds,
+    )
+    assertInventorySubset(dispositionIds, inventoryTestSubjectIds)
+    assertExactLedgerInventory(dispositionIds, inventoryTestSubjectIds)
 
     const dispositionsById = new Map(dispositions.map(row => [row.id, row]))
     const sourceCoordinates = new Set<string>()
@@ -948,14 +1012,54 @@ function assertFrozenTestInventory(
     const productionFiles = inventory.entries.filter(
         entry => entry.subject.kind === "production-file",
     ).length
+    const testFileEntries = inventory.entries.filter(
+        entry => entry.subject.kind === "test-file",
+    )
+    const testFiles = testFileEntries.length
     const testCases = inventory.entries.filter(
         entry => entry.subject.kind === "test-case",
     ).length
+    const inventoryTestCaseIds = new Set(
+        inventory.entries
+            .filter(entry => entry.subject.kind === "test-case")
+            .map(entry => entry.id),
+    )
+    const dispositionTestCaseIds = new Set(
+        dispositions
+            .filter(entry => entry.subject.kind === "test-case")
+            .map(entry => entry.id),
+    )
+    const inventoryTestFileIds = new Set(testFileEntries.map(entry => entry.id))
+    const dispositionTestFileIds = new Set(
+        dispositions
+            .filter(entry => entry.subject.kind === "test-file")
+            .map(entry => entry.id),
+    )
+    assertInventorySubset(dispositionTestCaseIds, inventoryTestCaseIds)
+    assertInventorySubset(dispositionTestFileIds, inventoryTestFileIds)
+    assertExactLedgerInventory(dispositionTestCaseIds, inventoryTestCaseIds)
+    assertExactLedgerInventory(dispositionTestFileIds, inventoryTestFileIds)
+    assert(
+        classificationScope.testCases === "complete" &&
+            classificationScope.testFiles === "complete" &&
+            classificationScope.productionFiles === "separate-artifact-pending",
+        "test-disposition classification scope differs from the frozen test-subject split",
+    )
+    assert(
+        dispositions.every(
+            entry =>
+                entry.subject.kind === "test-case" ||
+                entry.subject.kind === "test-file",
+        ),
+        "the test-subject ledger cannot classify production files owned by the separate production-source artifact",
+    )
     assert(
         inventory.counts.productionFiles === productionFiles &&
+            inventory.counts.testFiles === testFiles &&
             inventory.counts.testCases === testCases &&
             inventory.counts.total === inventory.entries.length &&
-            productionFiles + testCases === inventory.entries.length,
+            productionFiles + testFiles + testCases ===
+                inventory.entries.length,
         "frozen test inventory derived counts differ from its entries",
     )
     assert(
@@ -969,10 +1073,21 @@ function assertFrozenTestInventory(
                     .length,
         "frozen test inventory test-file registration counts are inconsistent",
     )
+    assertExactLedgerInventory(
+        new Set(testFileEntries.map(entry => entry.subject.path)),
+        new Set(inventory.provenance.testRegistration.zeroRegistrationFiles),
+    )
 
     return {
         subjects: inventory.entries.length,
-        classificationRemaining: inventory.entries.length - dispositions.length,
+        scopeSubjects: inventoryTestSubjectIds.size,
+        classificationRemaining:
+            inventoryTestSubjectIds.size - dispositions.length,
+        testCaseClassificationRemaining:
+            inventoryTestCaseIds.size - dispositionTestCaseIds.size,
+        testFileClassificationRemaining:
+            inventoryTestFileIds.size - dispositionTestFileIds.size,
+        productionSourceSubjects: productionFiles,
     }
 }
 
@@ -1542,9 +1657,17 @@ function main(): void {
             `${result.callbackEntries} callback entries, ` +
             `${result.contractIds} contract IDs; completeness=${result.completeness}; ` +
             `test-dispositions=${result.testDispositionCompleteness} ` +
-            `(${result.testDispositions} rows, ${result.testOwners} owners; ` +
+            `(${result.testDispositions} rows ` +
+            `[A=${result.testDispositionCounts.A}, B=${result.testDispositionCounts.B}, ` +
+            `C=${result.testDispositionCounts.C}, D=${result.testDispositionCounts.D}, ` +
+            `E=${result.testDispositionCounts.E}], ` +
+            `${result.testDispositionNeedsReview} need review, ${result.testOwners} owners; ` +
             `inventory=${result.testInventorySubjects ?? "pending"}, ` +
-            `unclassified=${result.testClassificationRemaining ?? "pending"})`,
+            `test-scope=${result.testDispositionScopeSubjects ?? "pending"}, ` +
+            `test-cases-unclassified=${result.testCaseClassificationRemaining ?? "pending"}, ` +
+            `test-files-unclassified=${result.testFileClassificationRemaining ?? "pending"}, ` +
+            `test-subjects-unclassified=${result.testClassificationRemaining ?? "pending"}, ` +
+            `production-source-subjects=${result.productionSourceSubjects ?? "pending"})`,
     )
 }
 

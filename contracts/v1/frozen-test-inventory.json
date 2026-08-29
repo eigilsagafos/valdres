@@ -16,6 +16,11 @@
       "npmSpec": "valdres@1.0.0-beta.23",
       "tarballSha256": "d98638aa0d8890d35f25b2a132fb7add0355206f925fcf2a4cfe0104a20cafa4"
     },
+    "sourceLockfile": {
+      "path": "bun.lock",
+      "gitBlobSha1": "8684a8d328c8e0bfdeb9c7f6ccb849d9cd9ecc05",
+      "sha256": "c79a4fe44e6caa93c294744ba6ded67ccf2844286d5218e509cfa944f8b6a2d0"
+    },
     "testRegistration": {
       "runner": "bun",
       "runnerVersion": "1.4.0",
@@ -29,7 +34,7 @@
         "packages/valdres/src/lib/transaction.types.test.ts"
       ],
       "tests": 1636,
-      "assertions": 328426,
+      "minimumAssertions": 328000,
       "failures": 0,
       "skipped": 0
     },
@@ -37,8 +42,9 @@
   },
   "counts": {
     "productionFiles": 190,
+    "testFiles": 4,
     "testCases": 1636,
-    "total": 1826
+    "total": 1830
   },
   "entries": [
     {
@@ -3317,6 +3323,17 @@
       }
     },
     {
+      "id": "beta23.test-file.src.lib.atom.family.types",
+      "subject": {
+        "origin": "published-beta.23",
+        "kind": "test-file",
+        "path": "packages/valdres/src/lib/atomFamily.types.test.ts"
+      },
+      "evidence": {
+        "gitBlobSha1": "34294645fe93e1db865748696bddc0ac230c5bfd"
+      }
+    },
+    {
       "id": "beta23.production.lib.atom.family.index",
       "subject": {
         "origin": "published-beta.23",
@@ -4208,6 +4225,17 @@
       },
       "evidence": {
         "gitBlobSha1": "c9d5aabb0c6f477f4b87ef0e2610014936a3e5f7"
+      }
+    },
+    {
+      "id": "beta23.test-file.src.lib.commit.plan.types",
+      "subject": {
+        "origin": "published-beta.23",
+        "kind": "test-file",
+        "path": "packages/valdres/src/lib/commitPlan.types.test.ts"
+      },
+      "evidence": {
+        "gitBlobSha1": "7d560be175eb32cdac1785e55b2776cd0740d114"
       }
     },
     {
@@ -11872,6 +11900,17 @@
       }
     },
     {
+      "id": "beta23.test-file.src.lib.set.atom.types",
+      "subject": {
+        "origin": "published-beta.23",
+        "kind": "test-file",
+        "path": "packages/valdres/src/lib/setAtom.types.test.ts"
+      },
+      "evidence": {
+        "gitBlobSha1": "e35134f813c5906cb2154600d8010bb42707c729"
+      }
+    },
+    {
       "id": "beta23.test.src.lib.set.atoms.l25.01",
       "subject": {
         "origin": "published-beta.23",
@@ -14385,6 +14424,17 @@
       },
       "evidence": {
         "gitBlobSha1": "3f808f098d6ec43fdb618ca2bc0b9aa42461ae0e"
+      }
+    },
+    {
+      "id": "beta23.test-file.src.lib.transaction.types",
+      "subject": {
+        "origin": "published-beta.23",
+        "kind": "test-file",
+        "path": "packages/valdres/src/lib/transaction.types.test.ts"
+      },
+      "evidence": {
+        "gitBlobSha1": "73692af36468c51e7eb242304f0326c604a867a0"
       }
     },
     {

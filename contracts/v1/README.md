@@ -18,13 +18,24 @@ deliberately removes behavior that the beta implements.
 - `frozen-legacy-surface.json` records the exact, unique beta.23 root and
   `adapter-internals/v1` runtime/type exports that a complete migration
   inventory must classify.
-- `frozen-test-inventory.json` freezes every beta.23 production TypeScript file
-  and every Bun-registered test case with source-blob and source-line evidence.
+- `frozen-test-inventory.json` freezes every beta.23 production TypeScript file,
+  every zero-registration type-test file, and every Bun-registered test case
+  with source-blob and, for registered cases, source-line evidence.
 - `generate-frozen-test-inventory.ts` reproduces that inventory from immutable
-  source/release commits, the published tarball, and an isolated Bun run.
+  source/release commits, the source revision's frozen lockfile, the published
+  tarball, and an isolated Bun run.
 - `test-dispositions.jsonl` is the scalable Phase 1 A/B/C/D/E ledger. Its first
   line is the header; later lines are dispositions or stable reference-model
   test owners. JSONL keeps future generated updates and reviews line-oriented.
+- `generate-test-dispositions.ts` deterministically proposes one disposition for
+  every test subject in the frozen inventory. It preserves the four existing
+  semantic review handles and their explicit evidence without assigning evidence
+  to any newly generated row.
+- `production-source-dispositions.jsonl` separately classifies the 190 frozen
+  production-file subjects by implementation action and review ownership; it
+  does not place production source into the test A/B/C/D/E taxonomy.
+- `generate-production-source-dispositions.ts` validates that separate ledger
+  and its exact join to the frozen inventory.
 - `schemas/` documents the file formats.
 - `check.ts` executes those JSON Schemas and enforces cross-file references,
   target/migration invariants, updater result policies, and the honesty of the
@@ -40,10 +51,12 @@ Run:
 bun run check:contracts-v1
 ```
 
-That command type-checks the checker, validates every artifact, executes each
-implemented owner file with Bun and verifies the exact owner test was collected
-and passed, then runs the checker regression suite. CI runs this same command;
-`bun run verify` reads it directly from the CI workflow.
+That command type-checks the contracts, regenerates the frozen inventory in
+check mode from the pinned beta.23 provenance, validates the separate production
+ledger, validates every manifest, executes each implemented owner file with Bun
+and verifies the exact owner test was collected and passed, then runs both
+ledger regression suites. CI runs this same command; `bun run verify` reads it
+directly from the CI workflow.
 
 The manifests and both reviewed catalogs currently declare themselves `partial`.
 That is intentional: Phase 0 cannot exit until the full beta.23 surface,
@@ -115,6 +128,25 @@ contract on the disposition. Approved `C` rows must name their destination.
 Duplicate IDs, duplicate source subjects, dangling owners, and uncatalogued
 contracts fail validation.
 
+The current first pass classifies all 1,640 beta.23 test subjects—1,636
+Bun-registered cases plus four zero-registration type-test files—as 24 `A`, 283
+`B`, 370 `C`, 726 `D`, and 237 `E`. Every row remains `proposed`; this is a
+review candidate, not approval. Newly proposed rows have empty `contractIds` and
+`ownerIds`, so classification does not fabricate replacement coverage. The four
+pre-existing semantic rows retain only their previously recorded explicit owner
+and contract evidence.
+
+The four type-file rows are proposed `E` migrations. Their destinations include
+an explicit `(planned)` suffix and their rationales describe the replacement
+compile-time gate; neither the inventory nor the ledger claims those destination
+files already exist.
+
+The focused review resolved all 57 structured `needsReview` markers into final
+proposed classifications: 13 `B`, three `C`, and 41 `D`. No test row now carries
+a human-judgment marker. Every row still requires normal review; resolving a
+marker is not approval and does not invent contract, owner, or replacement-test
+evidence.
+
 Reference-model owner IDs use the stable `V1M-<DOMAIN>-<NNN>` form and must be
 embedded in the implemented Bun test name. A planned owner records its intended
 path with `testName: null`; implementation changes that to the exact test name
@@ -130,29 +162,69 @@ IDs now point to passing model/evaluator tests. Selector behavior is also
 checked against a separate symbolic oracle; no legacy subject is silently
 classified on any owner's behalf.
 
-The ledger intentionally remains `partial`. Its frozen header contains all 1,826
-expected IDs, while only reviewed A/B/C/D/E rows appear in the ledger. For a
-partial ledger the checker requires every classified row to be an exact
-ID-and-subject subset of the frozen inventory and reports the exact remainder.
-For a complete ledger it upgrades that condition to bidirectional parity,
-requires every row to be approved, and requires the remainder to be zero. This
-keeps the current 1,822-subject classification backlog explicit without
-inventing dispositions.
+The test ledger intentionally remains `partial` because all classifications are
+still proposed. Its frozen header contains exactly 1,640 expected test-subject
+IDs and declares complete classification scopes for both the 1,636 registered
+test cases and four zero-registration test files. The checker requires exact
+bidirectional ID-and-subject parity for that union and reports zero unclassified
+test subjects. The 190 production-file subjects are reserved for the separate
+production-source ledger and are reported as that artifact's subjects, not as
+missing rows in the test ledger. Test-ledger `complete` means every scoped test
+row is approved, every referenced owner is implemented, and the scoped remainder
+is zero; it does not absorb production-source classification.
 
 The checker resolves the inventory without following a symlink outside the
 repository, validates its schema, verifies its exact bytes against the header
-SHA-256, and derives its production/test/total counts. The generator
-independently enumerates 190 non-test `packages/valdres/src/**/*.ts` production
-files from Git and captures 1,636 runtime-expanded names from all 141
+SHA-256, and derives its 190 production-file, four test-file, 1,636 test-case,
+and 1,830 total counts. The generator independently enumerates the production
+and test files from Git and captures 1,636 runtime-expanded names from all 141
 `*.test.ts` files. Four type-test files execute at module load but register no
-Bun test cases; the frozen provenance names them explicitly.
+Bun test cases; each now has a stable `test-file` inventory ID, source-blob
+evidence, and an explicit proposed disposition.
 
-Reproduce the audit from the checked-out Git objects and local archived tarball
-(the isolated test run takes roughly half a minute):
+Regenerate the proposed test-subject ledger from the frozen inventory:
+
+```sh
+bun contracts/v1/generate-test-dispositions.ts --write
+```
+
+Use `--check` to require byte-for-byte agreement with the checked-in ledger; the
+standard contract/CI gate runs that mode. Without `--write` or `--check`, the
+generator emits the candidate JSONL to stdout. Every mode asserts the exact
+category totals and zero unresolved human-review markers before returning.
+
+Validate the separate production-source ledger and its frozen-inventory join:
+
+```sh
+bun contracts/v1/generate-production-source-dispositions.ts
+```
+
+`--check-seed` additionally proves the current all-proposed ledger is byte-for-
+byte equal to its deterministic initial classification. It is a seed audit, not
+a rule that future reviewed/approved rows must remain unchanged.
+
+Reproduce the audit from the checked-out Git objects and published tarball (the
+isolated test run takes roughly half a minute):
 
 ```sh
 bun contracts/v1/generate-frozen-test-inventory.ts --check
 ```
+
+The generator archives the pinned source revision into a temporary directory,
+verifies its `bun.lock` Git blob and SHA-256, installs that lockfile with Bun
+1.4.0 using `--frozen-lockfile --ignore-scripts`, and runs the beta suite
+without linking the current workspace's `node_modules`. It uses the ignored
+local audit tarball when present; a clean clone fetches the exact immutable
+registry URL into the temporary directory, then applies the same pinned
+SHA/name/version checks. CI checks out full Git history because both pinned
+commit objects are required.
+
+The isolated runs observed 328,426–328,427 JUnit assertions because a legacy
+fuzz/property loop has a volatile aggregate count. That non-identity metric is
+not serialized into the inventory SHA. Regeneration instead requires at least
+328,000 assertions, along with exactly 1,636 registered subjects and zero
+failures or skips, so a materially incomplete run still fails without making the
+frozen artifact nondeterministic.
 
 An intentional re-audit uses `--write`; this rewrites only the inventory and its
 frozen header evidence while preserving ledger rows and completeness.
@@ -175,7 +247,9 @@ and release commit `6adb53a240a84fc90b8ad8dc2af77611e45dfd08`. Their Valdres
 source and test trees are byte-identical
 (`2e521d12d483d1d59030f95cacac6a1f2801232d` and
 `785381e6d0bf303ad8d67dd3ba2af1f58be2a121`), tying the unpublished tests to the
-exact source represented by the published beta.23 package.
+exact source represented by the published beta.23 package. The source lockfile
+is independently pinned as Git blob `8684a8d328c8e0bfdeb9c7f6ccb849d9cd9ecc05`
+and SHA-256 `c79a4fe44e6caa93c294744ba6ded67ccf2844286d5218e509cfa944f8b6a2d0`.
 
 No current ShiftX checkout exists in this workspace. `currentShiftX` therefore
 remains `external-handoff-required`; the historical sparse 2024 snapshot can

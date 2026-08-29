@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test"
+import { spawnSync } from "node:child_process"
 import { createHash } from "node:crypto"
 import {
+    copyFileSync,
     mkdirSync,
     mkdtempSync,
     readFileSync,
@@ -18,18 +20,122 @@ import {
     validateContractSet,
     type ContractSet,
 } from "./check"
+import { acquirePublishedTarball } from "./generate-frozen-test-inventory"
 
 const directory = dirname(fileURLToPath(import.meta.url))
+const ZERO_REGISTRATION_PATHS = [
+    "packages/valdres/src/lib/atomFamily.types.test.ts",
+    "packages/valdres/src/lib/commitPlan.types.test.ts",
+    "packages/valdres/src/lib/setAtom.types.test.ts",
+    "packages/valdres/src/lib/transaction.types.test.ts",
+] as const
 
 describe("v1 contract manifest validation", () => {
     test("accepts the checked-in partial manifests", () => {
         const result = validateContractSet(readSet())
         expect(result.completeness).toBe("partial/partial/partial/partial")
         expect(result.testDispositionCompleteness).toBe("partial")
-        expect(result.testDispositions).toBe(4)
+        expect(result.testDispositions).toBe(1640)
+        expect(result.testDispositionCounts).toEqual({
+            A: 24,
+            B: 283,
+            C: 370,
+            D: 726,
+            E: 237,
+        })
+        expect(result.testDispositionNeedsReview).toBe(0)
         expect(result.testOwners).toBe(31)
-        expect(result.testInventorySubjects).toBe(1826)
-        expect(result.testClassificationRemaining).toBe(1822)
+        expect(result.testInventorySubjects).toBe(1830)
+        expect(result.testDispositionScopeSubjects).toBe(1640)
+        expect(result.testCaseClassificationRemaining).toBe(0)
+        expect(result.testFileClassificationRemaining).toBe(0)
+        expect(result.testClassificationRemaining).toBe(0)
+        expect(result.productionSourceSubjects).toBe(190)
+    })
+
+    test("the test-disposition generator rejects fabricated evidence outside the reviewed four", () => {
+        const temporaryRoot = mkdtempSync(
+            join(tmpdir(), "valdres-test-disposition-seed-"),
+        )
+        const temporaryContracts = join(temporaryRoot, "contracts/v1")
+        try {
+            mkdirSync(temporaryContracts, { recursive: true })
+            for (const name of [
+                "generate-test-dispositions.ts",
+                "frozen-test-inventory.json",
+                "test-dispositions.jsonl",
+            ]) {
+                copyFileSync(
+                    join(directory, name),
+                    join(temporaryContracts, name),
+                )
+            }
+
+            const ledgerPath = join(
+                temporaryContracts,
+                "test-dispositions.jsonl",
+            )
+            const records = parseTestDispositionLedger(
+                readFileSync(ledgerPath, "utf8"),
+            ) as any[]
+            const fabricated = records.find(
+                record =>
+                    record.recordType === "disposition" &&
+                    record.id === "beta23.test.src.atom.l1220.01",
+            )
+            expect(fabricated).toBeDefined()
+            fabricated.contractIds = ["atom.object-is-default"]
+            fabricated.ownerIds = ["V1M-SUB-002"]
+            fabricated.rationale = "Fabricated evidence must not self-attest."
+            writeFileSync(
+                ledgerPath,
+                `${records.map(record => JSON.stringify(record)).join("\n")}\n`,
+            )
+
+            const result = spawnSync(
+                process.execPath,
+                [
+                    join(temporaryContracts, "generate-test-dispositions.ts"),
+                    "--check",
+                ],
+                { cwd: temporaryRoot, encoding: "utf8" },
+            )
+            expect(result.status).not.toBe(0)
+            expect(result.stderr).toContain(
+                "test disposition ledger differs from deterministic generator output",
+            )
+        } finally {
+            rmSync(temporaryRoot, { recursive: true, force: true })
+        }
+    })
+
+    test("fetches the immutable registry tarball when the ignored local archive is absent", async () => {
+        const temporaryRoot = mkdtempSync(
+            join(tmpdir(), "valdres-tarball-fallback-"),
+        )
+        try {
+            const fixture = Uint8Array.from([0x1f, 0x8b, 0x08, 0x00])
+            let requestedUrl = ""
+            const path = await acquirePublishedTarball(
+                join(temporaryRoot, "absent-local-archive.tgz"),
+                temporaryRoot,
+                async url => {
+                    requestedUrl = url
+                    return {
+                        ok: true,
+                        status: 200,
+                        statusText: "OK",
+                        arrayBuffer: async () => fixture.buffer,
+                    }
+                },
+            )
+            expect(requestedUrl).toBe(
+                "https://registry.npmjs.org/valdres/-/valdres-1.0.0-beta.23.tgz",
+            )
+            expect(new Uint8Array(readFileSync(path))).toEqual(fixture)
+        } finally {
+            rmSync(temporaryRoot, { recursive: true, force: true })
+        }
     })
 
     test("parses one JSON value per nonblank JSONL line", () => {
@@ -73,6 +179,62 @@ describe("v1 contract manifest validation", () => {
         unexpected.testDispositionLedger[1].unexpected = true
         expect(() => validateContractSet(unexpected)).toThrow(
             /must NOT have additional properties/,
+        )
+
+        const prematurelyApproved = mutableSet()
+        const proposed = prematurelyApproved.testDispositionLedger.find(
+            (record: any) => record.recordType === "disposition",
+        )
+        proposed.reviewStatus = "approved"
+        proposed.needsReview = {
+            status: "needs-human-judgment",
+            reasons: [
+                {
+                    code: "mixed-contract-subject",
+                    detail: "Fixture remains intentionally review-blocked.",
+                },
+            ],
+        }
+        expect(() => validateContractSet(prematurelyApproved)).toThrow(
+            /test-dispositions\.jsonl schema validation failed|cannot be approved while it needs human judgment/,
+        )
+    })
+
+    test("requires exact parity for the complete test-subject classification scope", () => {
+        const missing = mutableSet()
+        const index = missing.testDispositionLedger.findIndex(
+            (record: any) => record.recordType === "disposition",
+        )
+        missing.testDispositionLedger.splice(index, 1)
+
+        expect(() => validateContractSet(missing)).toThrow(
+            /test-disposition inventory differs from its frozen source catalog/,
+        )
+
+        const missingTypeFile = mutableSet()
+        const typeFileIndex = missingTypeFile.testDispositionLedger.findIndex(
+            (record: any) => record.subject?.kind === "test-file",
+        )
+        missingTypeFile.testDispositionLedger.splice(typeFileIndex, 1)
+        expect(() => validateContractSet(missingTypeFile)).toThrow(
+            /test-disposition inventory differs from its frozen source catalog/,
+        )
+
+        const productionLeak = mutableSet()
+        const inventory = JSON.parse(
+            new TextDecoder().decode(
+                productionLeak.testDispositionInventoryEvidence.bytes,
+            ),
+        )
+        testDispositionHeader(
+            productionLeak,
+        ).inventory.expectedDispositionIds.push(
+            inventory.entries.find(
+                (entry: any) => entry.subject.kind === "production-file",
+            ).id,
+        )
+        expect(() => validateContractSet(productionLeak)).toThrow(
+            /test-disposition inventory differs from its frozen source catalog/,
         )
     })
 
@@ -690,22 +852,24 @@ function completeTestDispositionCandidate(): any {
         destination: null,
         rationale: "The observable eager Atom contract remains stable in 1.0.",
     })
-    set.testDispositionLedger.push({
-        recordType: "disposition",
-        id: "legacy.production.atom",
-        subject: {
-            origin: "published-beta.23",
-            kind: "production-file",
-            path: "packages/valdres/src/atom.ts",
-        },
-        disposition: "E",
-        reviewStatus: "approved",
-        contractIds: [],
-        ownerIds: [],
-        destination: "packages/valdres/src/atom.ts",
-        rationale:
-            "The production source is migrated through the implementation workstream.",
-    })
+    for (const [index, path] of ZERO_REGISTRATION_PATHS.entries()) {
+        set.testDispositionLedger.push({
+            recordType: "disposition",
+            id: `legacy.type-file.${index + 1}`,
+            subject: {
+                origin: "published-beta.23",
+                kind: "test-file",
+                path,
+            },
+            disposition: "E",
+            reviewStatus: "approved",
+            contractIds: [],
+            ownerIds: [],
+            destination: "contracts/v1/replacement.type-test.ts (planned)",
+            rationale:
+                "The compile-time assertion moves to a replacement v1 type-test suite.",
+        })
+    }
     attachFrozenTestInventory(set)
     return set
 }
@@ -722,6 +886,15 @@ function attachFrozenTestInventory(set: any): void {
                     ? { gitBlobSha1: "1".repeat(40), sourceLine: 1 }
                     : { gitBlobSha1: "2".repeat(40) },
         }))
+    entries.push({
+        id: "legacy.production.atom",
+        subject: {
+            origin: "published-beta.23",
+            kind: "production-file",
+            path: "packages/valdres/src/atom.ts",
+        },
+        evidence: { gitBlobSha1: "3".repeat(40) },
+    })
     const source = `${JSON.stringify(
         {
             $schema: "./schemas/frozen-test-inventory.schema.json",
@@ -739,20 +912,20 @@ function attachFrozenTestInventory(set: any): void {
                     tarballSha256:
                         "d98638aa0d8890d35f25b2a132fb7add0355206f925fcf2a4cfe0104a20cafa4",
                 },
+                sourceLockfile: {
+                    path: "bun.lock",
+                    gitBlobSha1: "8684a8d328c8e0bfdeb9c7f6ccb849d9cd9ecc05",
+                    sha256: "c79a4fe44e6caa93c294744ba6ded67ccf2844286d5218e509cfa944f8b6a2d0",
+                },
                 testRegistration: {
                     runner: "bun",
                     runnerVersion: "1.4.0",
                     selection: "packages/valdres/**/*.test.ts",
                     files: 5,
                     registeredFiles: 1,
-                    zeroRegistrationFiles: [
-                        "packages/valdres/src/lib/atomFamily.types.test.ts",
-                        "packages/valdres/src/lib/commitPlan.types.test.ts",
-                        "packages/valdres/src/lib/setAtom.types.test.ts",
-                        "packages/valdres/src/lib/transaction.types.test.ts",
-                    ],
+                    zeroRegistrationFiles: ZERO_REGISTRATION_PATHS,
                     tests: 1,
-                    assertions: 1,
+                    minimumAssertions: 328000,
                     failures: 0,
                     skipped: 0,
                 },
@@ -760,8 +933,9 @@ function attachFrozenTestInventory(set: any): void {
             },
             counts: {
                 productionFiles: 1,
+                testFiles: 4,
                 testCases: 1,
-                total: 2,
+                total: 6,
             },
             entries,
         },
@@ -774,7 +948,9 @@ function attachFrozenTestInventory(set: any): void {
         status: "frozen",
         catalogPath,
         sha256: createHash("sha256").update(source).digest("hex"),
-        expectedDispositionIds: entries.map((entry: any) => entry.id),
+        expectedDispositionIds: entries
+            .filter((entry: any) => entry.subject.kind !== "production-file")
+            .map((entry: any) => entry.id),
     }
     set.testDispositionInventoryEvidence = {
         catalogPath,

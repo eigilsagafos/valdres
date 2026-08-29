@@ -37,6 +37,38 @@
             "items": { "$ref": "#/$defs/contractId" },
             "uniqueItems": true
         },
+        "needsReview": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["status", "reasons"],
+            "properties": {
+                "status": { "const": "needs-human-judgment" },
+                "reasons": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": ["code", "detail"],
+                        "properties": {
+                            "code": {
+                                "enum": [
+                                    "destination-not-frozen",
+                                    "mixed-contract-subject",
+                                    "target-export-unresolved",
+                                    "exact-shape-not-catalogued"
+                                ]
+                            },
+                            "detail": {
+                                "type": "string",
+                                "minLength": 12
+                            }
+                        }
+                    },
+                    "uniqueItems": true
+                }
+            }
+        },
         "pendingInventory": {
             "type": "object",
             "additionalProperties": false,
@@ -89,6 +121,7 @@
                 "recordType",
                 "schemaVersion",
                 "completeness",
+                "classificationScope",
                 "baseline",
                 "inventory",
                 "notes"
@@ -100,6 +133,18 @@
                 "recordType": { "const": "header" },
                 "schemaVersion": { "const": 1 },
                 "completeness": { "enum": ["partial", "complete"] },
+                "classificationScope": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["testCases", "testFiles", "productionFiles"],
+                    "properties": {
+                        "testCases": { "const": "complete" },
+                        "testFiles": { "const": "complete" },
+                        "productionFiles": {
+                            "const": "separate-artifact-pending"
+                        }
+                    }
+                },
                 "baseline": {
                     "type": "object",
                     "additionalProperties": false,
@@ -178,8 +223,22 @@
                         { "type": "string", "minLength": 1 }
                     ]
                 },
-                "rationale": { "type": "string", "minLength": 12 }
-            }
+                "rationale": { "type": "string", "minLength": 12 },
+                "needsReview": { "$ref": "#/$defs/needsReview" }
+            },
+            "allOf": [
+                {
+                    "if": {
+                        "properties": { "needsReview": {} },
+                        "required": ["needsReview"]
+                    },
+                    "then": {
+                        "properties": {
+                            "reviewStatus": { "const": "proposed" }
+                        }
+                    }
+                }
+            ]
         },
         "testOwner": {
             "type": "object",

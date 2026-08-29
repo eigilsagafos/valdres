@@ -1,0 +1,277 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://valdres.dev/contracts/v1/production-source-dispositions.schema.json",
+    "title": "Valdres Phase 0 production-source disposition ledger",
+    "type": "array",
+    "minItems": 1,
+    "items": {
+        "oneOf": [
+            { "$ref": "#/$defs/header" },
+            { "$ref": "#/$defs/owner" },
+            { "$ref": "#/$defs/decision" },
+            { "$ref": "#/$defs/sourceDisposition" }
+        ]
+    },
+    "contains": { "$ref": "#/$defs/header" },
+    "minContains": 1,
+    "maxContains": 1,
+    "$defs": {
+        "id": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9.-]+$"
+        },
+        "ownerId": {
+            "enum": [
+                "v1-contract-model",
+                "pure-dag",
+                "kernel-v1",
+                "shiftx-packed-canary",
+                "package-adapter-extraction"
+            ]
+        },
+        "relativePath": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$)).+$"
+        },
+        "targetRef": {
+            "type": "string",
+            "pattern": "^(?:path|package|boundary):[A-Za-z0-9@._/#-]+$"
+        },
+        "idArray": {
+            "type": "array",
+            "items": { "$ref": "#/$defs/id" },
+            "uniqueItems": true
+        },
+        "header": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "$schema",
+                "recordType",
+                "schemaVersion",
+                "completeness",
+                "baseline",
+                "inventory",
+                "notes"
+            ],
+            "properties": {
+                "$schema": {
+                    "const": "./schemas/production-source-dispositions.schema.json"
+                },
+                "recordType": { "const": "header" },
+                "schemaVersion": { "const": 1 },
+                "completeness": { "enum": ["partial", "complete"] },
+                "baseline": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["package", "version"],
+                    "properties": {
+                        "package": { "const": "valdres" },
+                        "version": { "const": "1.0.0-beta.23" }
+                    }
+                },
+                "inventory": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                        "catalogPath",
+                        "sha256",
+                        "subjectKind",
+                        "expectedSubjects"
+                    ],
+                    "properties": {
+                        "catalogPath": {
+                            "const": "contracts/v1/frozen-test-inventory.json"
+                        },
+                        "sha256": {
+                            "type": "string",
+                            "pattern": "^[0-9a-f]{64}$"
+                        },
+                        "subjectKind": { "const": "production-file" },
+                        "expectedSubjects": { "const": 190 }
+                    }
+                },
+                "notes": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": { "type": "string", "minLength": 1 },
+                    "uniqueItems": true
+                }
+            }
+        },
+        "owner": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["recordType", "id", "role", "description"],
+            "properties": {
+                "recordType": { "const": "owner" },
+                "id": { "$ref": "#/$defs/ownerId" },
+                "role": {
+                    "enum": ["review", "implementation", "evidence"]
+                },
+                "description": { "type": "string", "minLength": 12 }
+            }
+        },
+        "decision": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["recordType", "id", "title", "source", "rationale"],
+            "properties": {
+                "recordType": { "const": "architecture-decision" },
+                "id": { "$ref": "#/$defs/id" },
+                "title": { "type": "string", "minLength": 8 },
+                "source": {
+                    "const": ".context/valdres-1.0-recovery-plan.md"
+                },
+                "rationale": { "type": "string", "minLength": 12 }
+            }
+        },
+        "subject": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["origin", "kind", "path"],
+            "properties": {
+                "origin": { "const": "published-beta.23" },
+                "kind": { "const": "production-file" },
+                "path": { "$ref": "#/$defs/relativePath" }
+            }
+        },
+        "action": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "mode",
+                "responsibility",
+                "publicApiIds",
+                "contractIds",
+                "decisionIds",
+                "destinations",
+                "implementationOwnerId",
+                "evidenceOwnerIds"
+            ],
+            "properties": {
+                "mode": {
+                    "enum": ["retain", "replace", "move", "retire"]
+                },
+                "responsibility": { "type": "string", "minLength": 8 },
+                "publicApiIds": { "$ref": "#/$defs/idArray" },
+                "contractIds": { "$ref": "#/$defs/idArray" },
+                "decisionIds": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": { "$ref": "#/$defs/id" },
+                    "uniqueItems": true
+                },
+                "destinations": {
+                    "type": "array",
+                    "items": { "$ref": "#/$defs/targetRef" },
+                    "uniqueItems": true
+                },
+                "implementationOwnerId": {
+                    "oneOf": [{ "$ref": "#/$defs/ownerId" }, { "type": "null" }]
+                },
+                "evidenceOwnerIds": {
+                    "type": "array",
+                    "items": { "$ref": "#/$defs/ownerId" },
+                    "uniqueItems": true
+                }
+            },
+            "allOf": [
+                {
+                    "if": {
+                        "properties": { "mode": { "const": "retire" } },
+                        "required": ["mode"]
+                    },
+                    "then": {
+                        "properties": {
+                            "destinations": {
+                                "type": "array",
+                                "maxItems": 0
+                            },
+                            "implementationOwnerId": { "type": "null" }
+                        }
+                    },
+                    "else": {
+                        "properties": {
+                            "destinations": {
+                                "type": "array",
+                                "minItems": 1
+                            },
+                            "implementationOwnerId": {
+                                "$ref": "#/$defs/ownerId"
+                            }
+                        }
+                    }
+                }
+            ]
+        },
+        "review": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["classification", "reasons"],
+            "properties": {
+                "classification": {
+                    "enum": [
+                        "straightforward",
+                        "mixed-needs-review",
+                        "uncertain-needs-review"
+                    ]
+                },
+                "reasons": {
+                    "type": "array",
+                    "items": { "type": "string", "minLength": 12 },
+                    "uniqueItems": true
+                }
+            },
+            "allOf": [
+                {
+                    "if": {
+                        "properties": {
+                            "classification": { "const": "straightforward" }
+                        },
+                        "required": ["classification"]
+                    },
+                    "then": {
+                        "properties": {
+                            "reasons": { "type": "array", "maxItems": 0 }
+                        }
+                    },
+                    "else": {
+                        "properties": {
+                            "reasons": { "type": "array", "minItems": 1 }
+                        }
+                    }
+                }
+            ]
+        },
+        "sourceDisposition": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "recordType",
+                "id",
+                "subject",
+                "reviewStatus",
+                "reviewOwnerId",
+                "actions",
+                "review",
+                "rationale"
+            ],
+            "properties": {
+                "recordType": { "const": "source-disposition" },
+                "id": { "$ref": "#/$defs/id" },
+                "subject": { "$ref": "#/$defs/subject" },
+                "reviewStatus": { "enum": ["proposed", "approved"] },
+                "reviewOwnerId": { "$ref": "#/$defs/ownerId" },
+                "actions": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": { "$ref": "#/$defs/action" }
+                },
+                "review": { "$ref": "#/$defs/review" },
+                "rationale": { "type": "string", "minLength": 12 }
+            }
+        }
+    }
+}
