@@ -1,12 +1,22 @@
 import { describe, expect, test } from "bun:test"
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { spawnSync } from "node:child_process"
+import {
+    existsSync,
+    mkdtempSync,
+    readFileSync,
+    readdirSync,
+    rmSync,
+    writeFileSync,
+} from "node:fs"
 import { tmpdir } from "node:os"
-import { join } from "node:path"
+import { dirname, join, resolve } from "node:path"
+import { fileURLToPath } from "node:url"
 import {
     AUTHORITATIVE_DIGESTS,
     DEFAULT_FIXTURE_PATH,
     assertCanonicalCounters,
     assertCounterDrainStable,
+    assertExpectedResult,
     assertNoWriteCounterGate,
     assertOraclePreflightCoverage,
     assertTimingOracleLinks,
@@ -16,13 +26,21 @@ import {
     median,
     nearestRank,
     oracleEvidenceId,
+    publicWorkFrom,
     readFixture,
     resolveAdapter,
+    sha256File,
     validateFixture,
 } from "./lib.mjs"
 import { createBenchmarkAdapter as createV1Adapter } from "./adapters/v1.mjs"
+import { extractPackedArtifact, hashTree } from "./artifact.mjs"
 import { runAuthoritativeOraclePreflight } from "./oracle-preflight.mjs"
 import { runCoreLoadWorkload } from "./workload.mjs"
+
+const HERE = dirname(fileURLToPath(import.meta.url))
+const VALDRES_PACKAGE_ROOT = resolve(HERE, "../../..")
+const PACK_V1_CANDIDATE = resolve(HERE, "pack-v1-candidate.mjs")
+const RUN_SAMPLE = resolve(HERE, "run-sample.mjs")
 
 describe("core-load benchmark protocol", () => {
     test("computes an ordinary median and nearest-rank p95", () => {
@@ -223,6 +241,147 @@ describe("core-load benchmark protocol", () => {
         ).toContain("candidate source identity requires a clean repository")
     })
 
+    test("packs the public v1 candidate and passes both frozen scenarios in fresh Node processes", () => {
+        const temporaryRoot = mkdtempSync(
+            join(tmpdir(), "valdres-v1-candidate-test-"),
+        )
+        let artifact
+        try {
+            const outputDirectory = join(temporaryRoot, "output")
+            const sourceManifestPath = join(
+                VALDRES_PACKAGE_ROOT,
+                "package.json",
+            )
+            const sourceDistPath = join(VALDRES_PACKAGE_ROOT, "dist")
+            const sourceManifestBefore = readFileSync(sourceManifestPath)
+            const sourceDistBefore = snapshotTree(sourceDistPath)
+            const sourceHead = gitOutput(["rev-parse", "HEAD"])
+            const packed = spawnSync(
+                process.execPath,
+                [
+                    PACK_V1_CANDIDATE,
+                    "--output-dir",
+                    outputDirectory,
+                    "--allow-dirty",
+                ],
+                {
+                    encoding: "utf8",
+                    maxBuffer: 16 * 1024 * 1024,
+                    env: { ...process.env, NODE_ENV: "production" },
+                },
+            )
+            if (packed.error) throw packed.error
+            expect(packed.status, packed.stderr).toBe(0)
+            expect(readFileSync(sourceManifestPath)).toEqual(
+                sourceManifestBefore,
+            )
+            expect(snapshotTree(sourceDistPath)).toEqual(sourceDistBefore)
+            const packResult = JSON.parse(packed.stdout.trim())
+            expect(packResult.kind).toBe("valdres-v1-candidate-pack")
+            expect(packResult.gitHead).toBe(sourceHead)
+
+            artifact = extractPackedArtifact(packResult.tarball)
+            const packageJson = JSON.parse(
+                readFileSync(artifact.packageJsonPath, "utf8"),
+            )
+            const embeddedBuildMetadata = JSON.parse(
+                readFileSync(
+                    join(artifact.packageRoot, "build-metadata.json"),
+                    "utf8",
+                ),
+            )
+            const externalBuildMetadata = JSON.parse(
+                readFileSync(packResult.buildMetadata, "utf8"),
+            )
+
+            expect(readdirSync(artifact.packageRoot).sort()).toEqual([
+                "build-metadata.json",
+                "dist",
+                "package.json",
+            ])
+            expect(packageJson).toMatchObject({
+                name: "valdres",
+                private: true,
+                type: "module",
+                exports: { ".": "./dist/index.js" },
+                gitHead: packResult.gitHead,
+            })
+            expect(artifact.packageMetadata.gitHead).toBe(packResult.gitHead)
+            expect(packageJson.exports).toEqual({
+                ".": "./dist/index.js",
+            })
+            expect(artifact.exportPath).toBe("./dist/index.js")
+            expect(dirname(artifact.entryPath)).toBe(
+                resolve(artifact.packageRoot, "dist"),
+            )
+            expect(
+                readdirSync(join(artifact.packageRoot, "dist")).sort(),
+            ).toEqual(["index.js"])
+            expect(externalBuildMetadata).toEqual(embeddedBuildMetadata)
+            expect(externalBuildMetadata).toMatchObject({
+                gitSha: packResult.gitHead,
+                bundler: expect.stringContaining("Bun.build"),
+                minifier: expect.stringContaining("Bun"),
+                packer: expect.stringMatching(/^npm \d+/),
+                repositoryDirty: expect.any(Boolean),
+                sourceKind: expect.stringMatching(
+                    /^(?:git-archive-head|worktree-explicit-diagnostic)$/,
+                ),
+                sourceStatusEntries: expect.any(Number),
+                flags: expect.arrayContaining([
+                    "target=node",
+                    "format=esm",
+                    "minify=true",
+                ]),
+            })
+            expect(sha256File(artifact.entryPath)).toBe(artifact.entrySha256)
+
+            const distSource = readFileSync(artifact.entryPath, "utf8")
+            expect(internalImportSpecifiers(distSource)).toEqual([])
+
+            const fixture = readFixture()
+            const samples = ["writes", "no-writes"].map(scenario => {
+                const sample = runPackedCandidateSample(
+                    artifact.packageRoot,
+                    scenario,
+                )
+                assertExpectedResult(
+                    sample,
+                    fixture,
+                    scenario,
+                    `packed public v1 ${scenario}`,
+                )
+                const expected = fixture.scenarios[scenario].expected
+                expect(sample.mode).toBe("oracle")
+                expect(sample.elapsedMs).toBeNull()
+                expect(publicWorkFrom(sample)).toEqual({
+                    renderReads: expected.renderReads,
+                    notificationReads: expected.notificationReads,
+                    notifications: expected.notifications,
+                    subscriptions: expected.subscriptions,
+                    timedUnsubscriptions: expected.timedUnsubscriptions,
+                    totalUnsubscriptions: expected.totalUnsubscriptions,
+                    entityWrites: expected.entityWrites,
+                    metaWrites: expected.metaWrites,
+                })
+                expect(sample.semanticChecksum).toBe(expected.semanticChecksum)
+                expect(sample.oracleTraceSha256).toBe(
+                    expected.oracleTraceSha256,
+                )
+                expect(sample.target.entrySha256).toBe(artifact.entrySha256)
+                expect(sample.target.distTreeSha256).toBe(
+                    artifact.distTreeSha256,
+                )
+                expect(sample.process.node).toMatch(/^v\d+/)
+                return sample
+            })
+            expect(samples[0].process.pid).not.toBe(samples[1].process.pid)
+        } finally {
+            artifact?.cleanup()
+            rmSync(temporaryRoot, { recursive: true, force: true })
+        }
+    }, 120_000)
+
     test("runs and links complete oracle preflight evidence", () => {
         const fixture = readFixture()
         const targets = ["baseline", "candidate"].map((role, index) => ({
@@ -349,6 +508,85 @@ describe("core-load benchmark protocol", () => {
         expect(result.postDrain.notificationsAdded).toBe(0)
     })
 })
+
+function runPackedCandidateSample(packageRoot, scenario) {
+    const child = spawnSync(
+        "node",
+        [
+            RUN_SAMPLE,
+            "--package-root",
+            packageRoot,
+            "--fixture",
+            DEFAULT_FIXTURE_PATH,
+            "--adapter",
+            "v1",
+            "--scenario",
+            scenario,
+            "--mode",
+            "oracle",
+            "--role",
+            "candidate",
+            "--label",
+            "public-v1-candidate-test",
+        ],
+        {
+            encoding: "utf8",
+            maxBuffer: 32 * 1024 * 1024,
+            env: {
+                ...process.env,
+                NODE_ENV: "production",
+                NODE_OPTIONS: "",
+            },
+        },
+    )
+    if (child.error) throw child.error
+    if (child.status !== 0) {
+        throw new Error(
+            `packed public v1 ${scenario} process failed (${child.status}):\n${child.stderr.trim()}`,
+        )
+    }
+    const output = child.stdout.trim()
+    if (output.length === 0 || output.includes("\n")) {
+        throw new Error(
+            `packed public v1 ${scenario} must emit exactly one JSON line`,
+        )
+    }
+    return JSON.parse(output)
+}
+
+function internalImportSpecifiers(source) {
+    const specifiers = [
+        ...source.matchAll(
+            /(?:\bfrom\s*|\bimport\s*(?:\(\s*)?|\brequire\s*\(\s*)["']([^"']+)["']/g,
+        ),
+    ].map(match => match[1])
+    return specifiers.filter(
+        specifier =>
+            specifier.startsWith(".") ||
+            specifier.includes("/src/") ||
+            specifier.includes("/test/") ||
+            specifier.includes("v1-internal"),
+    )
+}
+
+function gitOutput(args) {
+    const child = spawnSync("git", args, {
+        cwd: VALDRES_PACKAGE_ROOT,
+        encoding: "utf8",
+        maxBuffer: 16 * 1024 * 1024,
+    })
+    if (child.error) throw child.error
+    if (child.status !== 0) {
+        throw new Error(`git ${args.join(" ")} failed: ${child.stderr.trim()}`)
+    }
+    return child.stdout.trim()
+}
+
+function snapshotTree(path) {
+    return existsSync(path)
+        ? { exists: true, sha256: hashTree(path) }
+        : { exists: false, sha256: null }
+}
 
 function smallFixture() {
     const fixture = structuredClone(readFixture())

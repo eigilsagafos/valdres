@@ -28,6 +28,8 @@
         "test:v1-model": "bunx tsc -p test/v1-model/tsconfig.json && bun test test/v1-model",
         "test:v1-selector-evaluator": "bunx tsc -p test/v1-selector-evaluator/tsconfig.json && bun test test/v1-selector-evaluator test/v1-model/selector-oracle.test.ts",
         "test:v1-committed-store-tree": "bunx tsc -p test/v1-committed-store-tree/tsconfig.json && bun test test/v1-committed-store-tree",
+        "pack:v1-candidate": "bun test/performance/core-load/pack-v1-candidate.mjs",
+        "test:v1-public-candidate": "bunx tsc -p test/v1-public-candidate/tsconfig.json && bun test test/v1-public-candidate test/performance/core-load/core-load.test.ts",
         "test:core-load-harness": "bun test test/performance/core-load/core-load.test.ts",
         "bench:core-load": "node test/performance/core-load/run-suite.mjs",
         "test:bench": "rm -f test/performance/bench-results.ndjson && BENCH_SUITE=standard NODE_ENV=production bun test --timeout 60000 --concurrency 1 ./test/performance/*.bench.ts && BENCH_SUITE=standard NODE_ENV=production bun test --timeout 60000 --concurrency 1 ./test/performance/architecture.timing.ts",
