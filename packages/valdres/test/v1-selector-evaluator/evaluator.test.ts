@@ -303,6 +303,35 @@ describe("v1 selector evaluator outcomes", () => {
         ).toEqual(["lazy"])
     })
 
+    test("does not confuse a different reentrant dependency with the suspended read", () => {
+        const host = new TestHost()
+        host.setLeaf("stable", 7)
+        host.setLeaf("nested", 11)
+        let suppliedGet: (<Value>(node: Node) => Value) | undefined
+        let reenter = false
+        host.define({
+            node: "parent",
+            get: get => {
+                suppliedGet = get
+                return get<number>("stable")
+            },
+        })
+        expect(valueOf(host.read<number>("parent"))).toBe(7)
+
+        host.setServeEffect("stable", () => {
+            if (!reenter) return
+            reenter = false
+            suppliedGet?.<number>("nested")
+        })
+        reenter = true
+        host.markDirty("parent")
+
+        expect(valueOf(host.read<number>("parent"))).toBe(7)
+        expect(
+            host.records.get("parent")?.dependencies.map(({ node }) => node),
+        ).toEqual(["nested", "stable"])
+    })
+
     test("reuses immutable dependency snapshots when node and token stay current", () => {
         const host = new TestHost()
         host.setLeaf("a", 2)
@@ -337,6 +366,64 @@ describe("v1 selector evaluator outcomes", () => {
         const changedToken = host.records.get("sum")!.dependencies
         expect(changedToken[0]).not.toBe(changedNode[0])
         expect(changedToken[1]).toBe(changedNode[1])
+    })
+
+    test("preserves generic node identity across stable replay and Set fallback", () => {
+        const evaluateIdentityCase = (
+            initial: Node,
+            next: Node,
+            repeat: Node,
+        ) => {
+            const host = new TestHost()
+            host.setLeaf(initial, 1)
+            let primary = initial
+            let duplicate = initial
+            host.define({
+                node: "parent",
+                get: get => {
+                    const result = get<number>(primary)
+                    get(duplicate)
+                    return result
+                },
+            })
+
+            expect(valueOf(host.read<number>("parent"))).toBe(1)
+            const previous = host.records.get("parent")!.dependencies
+            primary = next
+            duplicate = repeat
+            host.markDirty("parent")
+            expect(valueOf(host.read<number>("parent"))).toBe(1)
+            const current = host.records.get("parent")!.dependencies
+
+            expect(previous).toHaveLength(1)
+            expect(current).toHaveLength(1)
+            return { current, previous }
+        }
+
+        const undefinedNode = undefined as unknown as Node
+        const undefinedReplay = evaluateIdentityCase(
+            undefinedNode,
+            undefinedNode,
+            undefinedNode,
+        )
+        expect(undefinedReplay.current[0]).toBe(undefinedReplay.previous[0])
+        expect(undefinedReplay.current[0]!.node).toBeUndefined()
+
+        const nanNode = NaN as unknown as Node
+        const nanReplay = evaluateIdentityCase(nanNode, nanNode, nanNode)
+        expect(nanReplay.current[0]).toBe(nanReplay.previous[0])
+        expect(Object.is(nanReplay.current[0]!.node, NaN)).toBe(true)
+
+        const negativeZero = -0 as unknown as Node
+        const positiveZero = +0 as unknown as Node
+        const zeroFallback = evaluateIdentityCase(
+            negativeZero,
+            positiveZero,
+            negativeZero,
+        )
+        expect(Object.is(zeroFallback.previous[0]!.node, -0)).toBe(true)
+        expect(Object.is(zeroFallback.current[0]!.node, +0)).toBe(true)
+        expect(zeroFallback.current[0]).not.toBe(zeroFallback.previous[0])
     })
 
     test("reuses the graph observation validated immediately after serve", () => {
@@ -991,6 +1078,84 @@ describe("v1 selector evaluator cycles", () => {
             "parent",
             "parent",
         ])
+        expect(host.records.get("parent")?.dependencies).toEqual([])
+    })
+
+    test("resamples a replayed dependency after reentrant append and net-zero prefix truncation", () => {
+        const control = Object.freeze({ code: "CONTROL" })
+        const host = new TestHost("persistent-post")
+        let nestedParent = false
+        let suppliedGet: (<Value>(node: Node) => Value) | undefined
+        let invalidate = false
+        host.define({ node: "edge", get: () => 1 })
+        host.define({
+            node: "parent",
+            get: get => {
+                if (nestedParent) return 1
+                suppliedGet = get
+                return get<number>("edge")
+            },
+        })
+        expect(valueOf(host.read<number>("parent"))).toBe(1)
+
+        host.setServeEffect("edge", session => {
+            if (!invalidate) return
+            invalidate = false
+            suppliedGet?.<number>("edge")
+            session.latchControlFault(control)
+            nestedParent = true
+            host.markDirty("parent")
+            try {
+                expect(valueOf(host.read<number>("parent"))).toBe(1)
+            } finally {
+                nestedParent = false
+            }
+            host.define({ node: "edge", get: get => get<number>("parent") })
+            expect(valueOf(host.read<number>("edge"))).toBe(1)
+        })
+        host.markDirty("parent")
+        invalidate = true
+
+        expect(errorOf(host.read("parent"))).toBe(control)
+        expect(host.records.get("parent")?.dependencies).toEqual([])
+    })
+
+    test("removes a preaccepted dependency when serving its duplicate invalidates the prefix", () => {
+        const control = Object.freeze({ code: "CONTROL" })
+        const host = new TestHost("persistent-post")
+        let nestedParent = false
+        let duplicate = false
+        let serveCount = 0
+        host.define({ node: "edge", get: () => 1 })
+        host.define({
+            node: "parent",
+            get: get => {
+                if (nestedParent) return 1
+                const result = get<number>("edge")
+                if (duplicate) get("edge")
+                return result
+            },
+        })
+        expect(valueOf(host.read<number>("parent"))).toBe(1)
+
+        host.setServeEffect("edge", session => {
+            serveCount++
+            if (serveCount !== 2) return
+            session.latchControlFault(control)
+            nestedParent = true
+            host.markDirty("parent")
+            try {
+                expect(valueOf(host.read<number>("parent"))).toBe(1)
+            } finally {
+                nestedParent = false
+            }
+            host.define({ node: "edge", get: get => get<number>("parent") })
+            expect(valueOf(host.read<number>("edge"))).toBe(1)
+        })
+        duplicate = true
+        host.markDirty("parent")
+
+        expect(errorOf(host.read("parent"))).toBe(control)
         expect(host.records.get("parent")?.dependencies).toEqual([])
     })
 

@@ -189,14 +189,27 @@ export const evaluateSelector = <Node, Token extends object, Value>(
 ): SelectorEvaluationProposal<Node, Token, Value> => {
     const { node: selector } = definition
     const dependencies: SelectorDependencySnapshot<Node, Token>[] = []
-    const dependencyNodes = new Set<Node>()
     const currentRecord = host.getSelectorRecord(selector)
     const currentDependencies = currentRecord?.dependencies
+    let dependencyNodes =
+        currentDependencies === undefined ? new Set<Node>() : undefined
     let unorderedCurrentDependencyNodes: Set<Node> | undefined
+    let prefixTruncationRevision = 0
     const comparisonBaseline = host.getComparisonBaseline(selector) as
         | SelectorComparisonBaseline<Token, Value>
         | undefined
     let suppliedReadActive = true
+
+    const materializeDependencyNodes = (): Set<Node> => {
+        let current = dependencyNodes
+        if (current !== undefined) return current
+        current = new Set<Node>()
+        for (const dependency of dependencies) {
+            current.add(dependency.node)
+        }
+        dependencyNodes = current
+        return current
+    }
 
     session.enter(host, selector)
     const graphVersionAtEntry = host.getSelectorGraphVersion()
@@ -241,14 +254,17 @@ export const evaluateSelector = <Node, Token extends object, Value>(
             )
             if (!cyclePath) continue
 
-            for (
-                let removeIndex = dependencies.length - 1;
-                removeIndex >= index;
-                removeIndex--
-            ) {
-                dependencyNodes.delete(dependencies[removeIndex]!.node)
+            if (dependencyNodes !== undefined) {
+                for (
+                    let removeIndex = dependencies.length - 1;
+                    removeIndex >= index;
+                    removeIndex--
+                ) {
+                    dependencyNodes.delete(dependencies[removeIndex]!.node)
+                }
             }
             dependencies.length = index
+            prefixTruncationRevision++
             session.truncateAcceptedDependencies(host, selector, index)
 
             const controlFault = session.getControlFault()
@@ -308,10 +324,27 @@ export const evaluateSelector = <Node, Token extends object, Value>(
             throw error
         }
 
-        const wasAcceptedBeforeServe = dependencyNodes.has(dependency)
+        const dependencyIndex = dependencies.length
+        let wasAcceptedBeforeServe: boolean
         let wasCurrentDirectDependency = false
+        if (dependencyNodes === undefined) {
+            const positional = currentDependencies?.[dependencyIndex]
+            if (
+                positional !== undefined &&
+                Object.is(positional.node, dependency)
+            ) {
+                wasAcceptedBeforeServe = false
+                wasCurrentDirectDependency = true
+            } else {
+                wasAcceptedBeforeServe =
+                    materializeDependencyNodes().has(dependency)
+            }
+        } else {
+            wasAcceptedBeforeServe = dependencyNodes.has(dependency)
+        }
         if (
             !wasAcceptedBeforeServe &&
+            !wasCurrentDirectDependency &&
             currentDependencies !== undefined &&
             currentDependencies.length > 0
         ) {
@@ -332,6 +365,7 @@ export const evaluateSelector = <Node, Token extends object, Value>(
                     unorderedCurrentDependencyNodes.has(dependency)
             }
         }
+        const truncationRevisionBeforeServe = prefixTruncationRevision
         const served = host.serve(dependency, session)
 
         revalidateAcceptedPrefix()
@@ -344,7 +378,13 @@ export const evaluateSelector = <Node, Token extends object, Value>(
         // lazy host callback, or truncate the accepted prefix after a graph
         // publication. Re-read membership before deciding whether this call
         // must prove and capture the edge.
-        const alreadyAccepted = dependencyNodes.has(dependency)
+        const alreadyAccepted =
+            dependencyNodes !== undefined
+                ? dependencyNodes.has(dependency)
+                : prefixTruncationRevision === truncationRevisionBeforeServe &&
+                    dependencies.length === dependencyIndex
+                  ? false
+                  : materializeDependencyNodes().has(dependency)
         const graphVersionAfterServe = observedGraphVersion
         const sessionPublicationsAfterServe = observedSessionPublications
         const mayReusePriorProof =
@@ -381,7 +421,7 @@ export const evaluateSelector = <Node, Token extends object, Value>(
         if (!alreadyAccepted) {
             const previousSnapshot =
                 currentRecord?.dependencies[dependencies.length]
-            dependencyNodes.add(dependency)
+            dependencyNodes?.add(dependency)
             dependencies.push(
                 previousSnapshot !== undefined &&
                     Object.is(previousSnapshot.node, dependency) &&
