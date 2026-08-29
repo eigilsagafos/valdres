@@ -122,7 +122,7 @@ The versioned internal adapter seam is exactly the standalone `assertStore`,
 `read`, `subscribe`, and `readHydrationSnapshot` exports from
 `valdres/adapter-internals/v1`. It remains in the reviewed target catalog but is
 not stable public API. It does not expose a capability wrapper, `Transaction`,
-adapter options, a Store ID, or a batching protocol. The six new root errors
+adapter options, a Store ID, or a batching protocol. The seven new root errors
 freeze both class and machine-code spellings:
 
 ```text
@@ -132,7 +132,33 @@ InvalidExternalCleanupError           VALDRES_INVALID_EXTERNAL_CLEANUP
 ExternalSourceNonConvergenceError     VALDRES_EXTERNAL_SOURCE_NON_CONVERGENCE
 ExternalSourceDeliveryLimitError      VALDRES_EXTERNAL_SOURCE_DELIVERY_LIMIT
 ServerSnapshotUnavailableError        VALDRES_SERVER_SNAPSHOT_UNAVAILABLE
+SubscriberNotificationError           VALDRES_SUBSCRIBER_NOTIFICATION
 ```
+
+`Store.sub(state, callback)` creates an independent zero-argument invalidation
+registration and returns an idempotent unsubscribe. Registration performs the
+same outcome materialization as `get`, but catches the public read throw of a
+successfully materialized ordinary current error outcome so it remains
+subscribable; only admission, disposal, or internal-publication failure
+registers nothing. Lifecycle-free admission does not notify. Changed targets
+enter the frozen post-stability snapshot in first-reaching order, callbacks
+within each target retain subscription insertion order, and delivery attempts
+every snapshotted registration despite synchronous throws. Without an
+already-authoritative post-apply `RuntimeMismatchError`, delivery then reports
+one `SubscriberNotificationError`: `cause` is the exact first thrown value,
+`causes` is the frozen ordered subscriber-throw ledger, and its metadata is
+exactly `committed: true`, `phase: "notifying"`, and `source: "owned-mutation"`
+for this lifecycle-free slice. If that mismatch is already authoritative,
+delivery remains all-fire. With no subscriber throw, the exact
+`RuntimeMismatchError` surfaces directly after all callbacks are attempted. When
+subscriber throws coexist, `SubscriberNotificationError` is the required outer
+wrapper: `cause` is the exact mismatch and `causes` is the frozen
+`[mismatch, ...subscriber throws in delivery order]` ledger. The mismatch
+remains the semantic primary and is not replaced; every subscriber throw is
+retained as a secondary cause in delivery order. Callback return values are
+ignored. Returned and thrown thenables each receive exactly one stateless
+rejection-containment handler and are never awaited; only a thrown thenable
+remains an ordered notification cause.
 
 The transaction/Atom implementation boundary additionally freezes these consumed
 root errors before the corresponding kernel slice lands:

@@ -813,7 +813,7 @@ describe("v1 contract manifest validation", () => {
             (entry: any) => entry.id === "callback.store-subscriber",
         ).apiEntryId = "beta.search"
         expect(() => validateContractSet(relabelledCallback)).toThrow(
-            /reviewed release-track ownership differs from the independently pinned digest/,
+            /callback\.store-subscriber differs from the frozen zero-argument invalidator, quarantine, ordering, all-fire, or unsubscribe contract/,
         )
 
         const inventedPendingDecision = mutableSet()
@@ -1165,7 +1165,7 @@ describe("v1 contract manifest validation", () => {
         )
     })
 
-    test("freezes the six callback and external failure names and codes", () => {
+    test("freezes the callback and external failure names and codes", () => {
         const set = mutableSet()
         const expected = new Map<string, readonly [string, string]>([
             [
@@ -1202,6 +1202,13 @@ describe("v1 contract manifest validation", () => {
                 [
                     "ServerSnapshotUnavailableError",
                     "VALDRES_SERVER_SNAPSHOT_UNAVAILABLE",
+                ],
+            ],
+            [
+                "core.subscriber-notification-error",
+                [
+                    "SubscriberNotificationError",
+                    "VALDRES_SUBSCRIBER_NOTIFICATION",
                 ],
             ],
         ])
@@ -1256,7 +1263,11 @@ describe("v1 contract manifest validation", () => {
             ],
             [
                 "callback.store-subscriber",
-                ["CallbackCapabilityError", "DormantExternalReadError"],
+                [
+                    "CallbackCapabilityError",
+                    "DormantExternalReadError",
+                    "SubscriberNotificationError",
+                ],
             ],
         ])
         for (const [callbackId, names] of callbackErrorRules) {
@@ -1286,6 +1297,285 @@ describe("v1 contract manifest validation", () => {
             "VALDRES_NOT_AN_ERROR"
         expect(() => validateContractSet(codeOnNonError)).toThrow(
             /core\.atom has an error code but is not an error entry/,
+        )
+    })
+
+    test("freezes Store.sub as a zero-argument ordered invalidator with committed error metadata", () => {
+        const set = mutableSet()
+        const subscriber = set.callbackManifest.entries.find(
+            (entry: any) => entry.id === "callback.store-subscriber",
+        )
+        expect(subscriber.apiEntryId).toBe("core.store.sub")
+        expect(subscriber.phase).toBe("notifying")
+        expect(subscriber.suppliedCapabilities).toEqual([
+            "zero-argument invalidation signal; no settled value argument",
+            "idempotent unsubscribe for already-owned subscription",
+            "committed reads that do not sample dormant external sources",
+        ])
+        expect(subscriber.resultBoundary).toContain(
+            "Store.sub(state, callback: () => void): () => void",
+        )
+        expect(subscriber.resultBoundary).toContain(
+            "successfully materialized ordinary current error outcome so it can register",
+        )
+        expect(subscriber.resultBoundary).toContain(
+            "only admission, disposal, or internal-publication failure registers nothing",
+        )
+        expect(subscriber.resultBoundary).toContain(
+            "A lifecycle-free registration does not notify",
+        )
+        expect(subscriber.resultBoundary).toContain("first-reaching order")
+        expect(subscriber.resultBoundary).toContain(
+            "subscription insertion order",
+        )
+        expect(subscriber.resultBoundary).toContain(
+            "cannot edit the current snapshot",
+        )
+        expect(subscriber.thenableRule).toContain(
+            "A returned thenable receives exactly one stateless rejection-containment handler",
+        )
+        expect(subscriber.thenableRule).toContain(
+            "does not itself create a notification error",
+        )
+        expect(subscriber.thenableRule).toContain(
+            "A thrown thenable receives exactly one stateless rejection-containment handler",
+        )
+        expect(subscriber.thenableRule).toContain(
+            "remains the exact ordered subscriber cause",
+        )
+        expect(
+            subscriber.thenableRule.match(
+                /receives exactly one stateless rejection-containment handler/g,
+            ),
+        ).toHaveLength(2)
+        expect(subscriber.thenableRule.match(/is never awaited/g)).toHaveLength(
+            2,
+        )
+        expect(subscriber.decisionStatus).toBe("approved")
+
+        const notificationError = findPublicEntry(
+            set,
+            "core.subscriber-notification-error",
+        )
+        expect(notificationError.target.name).toBe(
+            "SubscriberNotificationError",
+        )
+        expect(notificationError.errorCode).toBe(
+            "VALDRES_SUBSCRIBER_NOTIFICATION",
+        )
+        for (const metadata of [
+            "exact first thrown value",
+            "frozen readonly array",
+            "committed is exactly true",
+            "phase is exactly notifying",
+            "source is exactly owned-mutation",
+        ]) {
+            expect(notificationError.notes).toContain(metadata)
+        }
+
+        const coordinatedValueCallback = mutableSet()
+        const changedSubscriber =
+            coordinatedValueCallback.callbackManifest.entries.find(
+                (entry: any) => entry.id === "callback.store-subscriber",
+            )
+        changedSubscriber.role = "Deliver one settled callback value."
+        changedSubscriber.suppliedCapabilities[0] = "settled callback value"
+        changedSubscriber.resultBoundary =
+            "Store.sub(state, callback: (value: unknown) => void): () => void delivers values."
+        findPublicEntry(coordinatedValueCallback, "core.store.sub").notes =
+            "Store.sub delivers settled values."
+        findPublicEntry(
+            coordinatedValueCallback,
+            "core.type.subscribe-fn",
+        ).notes = "SubscribeFn accepts a value callback."
+        expect(() => validateContractSet(coordinatedValueCallback)).toThrow(
+            /frozen zero-argument invalidator|frozen zero-argument subscription signature/,
+        )
+
+        const coordinatedMetadataChange = mutableSet()
+        coordinatedMetadataChange.callbackManifest.entries.find(
+            (entry: any) => entry.id === "callback.store-subscriber",
+        ).errorRule = subscriber.errorRule.replace(
+            "committed true",
+            "committed false",
+        )
+        findPublicEntry(
+            coordinatedMetadataChange,
+            "core.subscriber-notification-error",
+        ).notes = notificationError.notes.replace(
+            "committed is exactly true",
+            "committed is exactly false",
+        )
+        expect(() => validateContractSet(coordinatedMetadataChange)).toThrow(
+            /frozen zero-argument invalidator|frozen class, code, cause ledger, or committed notification metadata/,
+        )
+
+        const coordinatedOrderChange = mutableSet()
+        coordinatedOrderChange.callbackManifest.entries.find(
+            (entry: any) => entry.id === "callback.store-subscriber",
+        ).resultBoundary = subscriber.resultBoundary.replace(
+            "first-reaching order",
+            "last-reaching order",
+        )
+        findPublicEntry(coordinatedOrderChange, "core.store.sub").notes =
+            findPublicEntry(
+                coordinatedOrderChange,
+                "core.store.sub",
+            ).notes.replace("first-reaching order", "last-reaching order")
+        expect(() => validateContractSet(coordinatedOrderChange)).toThrow(
+            /frozen zero-argument invalidator|frozen zero-argument subscription signature/,
+        )
+
+        const coordinatedThenableChange = mutableSet()
+        coordinatedThenableChange.callbackManifest.entries.find(
+            (entry: any) => entry.id === "callback.store-subscriber",
+        ).thenableRule = subscriber.thenableRule.replace(
+            "does not itself create a notification error",
+            "creates a notification error",
+        )
+        expect(() => validateContractSet(coordinatedThenableChange)).toThrow(
+            /frozen zero-argument invalidator/,
+        )
+
+        const coordinatedAdmissionChange = mutableSet()
+        coordinatedAdmissionChange.callbackManifest.entries.find(
+            (entry: any) => entry.id === "callback.store-subscriber",
+        ).resultBoundary = subscriber.resultBoundary.replace(
+            "ordinary current error outcome so it can register",
+            "ordinary current error outcome so registration fails",
+        )
+        findPublicEntry(coordinatedAdmissionChange, "core.store.sub").notes =
+            findPublicEntry(
+                coordinatedAdmissionChange,
+                "core.store.sub",
+            ).notes.replace(
+                "ordinary current error outcome so it can register",
+                "ordinary current error outcome so registration fails",
+            )
+        expect(() => validateContractSet(coordinatedAdmissionChange)).toThrow(
+            /frozen zero-argument invalidator|frozen zero-argument subscription signature/,
+        )
+
+        const coordinatedCauseChange = mutableSet()
+        coordinatedCauseChange.callbackManifest.entries.find(
+            (entry: any) => entry.id === "callback.store-subscriber",
+        ).errorRule = subscriber.errorRule.replace(
+            "exact first thrown value",
+            "exact last thrown value",
+        )
+        findPublicEntry(
+            coordinatedCauseChange,
+            "core.subscriber-notification-error",
+        ).notes = notificationError.notes.replace(
+            "exact first thrown value",
+            "exact last thrown value",
+        )
+        expect(() => validateContractSet(coordinatedCauseChange)).toThrow(
+            /frozen zero-argument invalidator|frozen class, code, cause ledger, or committed notification metadata/,
+        )
+
+        const coordinatedUnsubscribeChange = mutableSet()
+        coordinatedUnsubscribeChange.callbackManifest.entries.find(
+            (entry: any) => entry.id === "callback.store-subscriber",
+        ).resultBoundary = subscriber.resultBoundary.replace(
+            "removes future eligibility immediately",
+            "removes future eligibility after delivery",
+        )
+        findPublicEntry(coordinatedUnsubscribeChange, "core.store.sub").notes =
+            findPublicEntry(
+                coordinatedUnsubscribeChange,
+                "core.store.sub",
+            ).notes.replace(
+                "removes future eligibility immediately",
+                "removes future eligibility after delivery",
+            )
+        expect(() => validateContractSet(coordinatedUnsubscribeChange)).toThrow(
+            /frozen zero-argument invalidator|frozen zero-argument subscription signature/,
+        )
+    })
+
+    test("keeps an authoritative post-apply RuntimeMismatchError primary across subscriber throws", () => {
+        const set = mutableSet()
+        const subscriber = set.callbackManifest.entries.find(
+            (entry: any) => entry.id === "callback.store-subscriber",
+        )
+        const storeSub = findPublicEntry(set, "core.store.sub")
+        const notificationError = findPublicEntry(
+            set,
+            "core.subscriber-notification-error",
+        )
+        const directMismatchClause =
+            "If no subscriber throws, the exact RuntimeMismatchError surfaces directly after all callbacks are attempted"
+        const coexistenceLedgerClause =
+            "SubscriberNotificationError is the required outer wrapper with cause equal to the exact RuntimeMismatchError and frozen causes equal to [mismatch, ...subscriber throws in delivery order]"
+        const secondaryCauseClause =
+            "every subscriber throw is retained as a secondary cause in delivery order"
+
+        for (const contractText of [
+            subscriber.errorRule,
+            storeSub.notes,
+            notificationError.notes,
+        ]) {
+            expect(contractText).toContain(directMismatchClause)
+            expect(contractText).toContain(coexistenceLedgerClause)
+            expect(contractText).toContain(secondaryCauseClause)
+            expect(contractText).toContain(
+                "the mismatch remains the semantic primary and is not replaced",
+            )
+        }
+        expect(subscriber.errorRule).toContain("Delivery remains all-fire")
+
+        const rewriteCoordinatedCollisionRule = (
+            candidate: any,
+            from: string,
+            to: string,
+        ): void => {
+            const candidateSubscriber = candidate.callbackManifest.entries.find(
+                (entry: any) => entry.id === "callback.store-subscriber",
+            )
+            const candidateStoreSub = findPublicEntry(
+                candidate,
+                "core.store.sub",
+            )
+            const candidateNotificationError = findPublicEntry(
+                candidate,
+                "core.subscriber-notification-error",
+            )
+            candidateSubscriber.errorRule =
+                candidateSubscriber.errorRule.replace(from, to)
+            candidateStoreSub.notes = candidateStoreSub.notes.replace(from, to)
+            candidateNotificationError.notes =
+                candidateNotificationError.notes.replace(from, to)
+
+            for (const contractText of [
+                candidateSubscriber.errorRule,
+                candidateStoreSub.notes,
+                candidateNotificationError.notes,
+            ]) {
+                expect(contractText).toContain(to)
+            }
+        }
+
+        const wrappedWithoutSubscriberThrow = mutableSet()
+        rewriteCoordinatedCollisionRule(
+            wrappedWithoutSubscriberThrow,
+            directMismatchClause,
+            "If no subscriber throws, SubscriberNotificationError replaces the exact RuntimeMismatchError",
+        )
+        expect(() =>
+            validateContractSet(wrappedWithoutSubscriberThrow),
+        ).toThrow(
+            /frozen zero-argument invalidator|frozen class, code, cause ledger, or committed notification metadata/,
+        )
+
+        const omittedMismatchFromLedger = mutableSet()
+        rewriteCoordinatedCollisionRule(
+            omittedMismatchFromLedger,
+            coexistenceLedgerClause,
+            "SubscriberNotificationError is the outer wrapper with cause equal to the first subscriber throw and frozen causes that omit the mismatch",
+        )
+        expect(() => validateContractSet(omittedMismatchFromLedger)).toThrow(
+            /frozen zero-argument invalidator|frozen class, code, cause ledger, or committed notification metadata/,
         )
     })
 

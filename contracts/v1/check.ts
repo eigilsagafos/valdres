@@ -80,6 +80,7 @@ interface PublicEntry {
     }
     readonly contractIds: readonly string[]
     readonly decisionStatus: DecisionStatus
+    readonly notes: string
 }
 
 interface PublicManifest {
@@ -134,6 +135,12 @@ interface PublicManifest {
 interface CallbackEntry {
     readonly id: string
     readonly apiEntryId: string
+    readonly role: string
+    readonly phase: string
+    readonly suppliedCapabilities: readonly string[]
+    readonly allowedExternalWork: readonly string[]
+    readonly rejectedCapturedOperations: readonly string[]
+    readonly guardDomain: string
     readonly errorRule: string
     readonly thenableRule: string
     readonly resultBoundary: string
@@ -465,6 +472,7 @@ const requiredPublicIds = new Set([
     "core.store",
     "core.store.txn",
     "core.store.update",
+    "core.subscriber-notification-error",
     "react.provider",
     "react.use-store",
     "react.use-value",
@@ -521,9 +529,9 @@ const frozenLegacyProvenanceInventorySha256 =
 const frozenReviewedLegacyDispositionSha256 =
     "e6fcb767cd68ed85f8dd5035190616fa1dbcc72094dc644ee3eb649ffc6bea63"
 const frozenTargetCoordinateInventorySha256 =
-    "36caed1fcea7f212db8722655dbe743365a1b0ec5663d8c836088c3e3b2fc93c"
+    "9fd0b0bfe7391a2ebaf39a6c328f9fc87ad02336783eab3c353cbbb884259b73"
 const frozenReleaseTrackOwnershipSha256 =
-    "e46a92669b9cd10b20a8e5ac02538fb73e1dc5b01374dbffa84ab3c50c64ba39"
+    "b157301483d2a07c86210c621f5e9f611f0b5e0b3539cabde9a4dffb73928ec3"
 const frozenWorkspaceBaseline = Object.freeze({
     commit: "ff1424bde13445eba07fcb426f5493dd43898f72",
     packageVersion: "1.0.0-beta.22",
@@ -782,6 +790,14 @@ const requiredFrozenPublicCoordinates = new Map([
         { package: "valdres", subpath: ".", name: "SelectorOptions.name" },
     ],
     [
+        "core.subscriber-notification-error",
+        {
+            package: "valdres",
+            subpath: ".",
+            name: "SubscriberNotificationError",
+        },
+    ],
+    [
         "core.store-disposed-error",
         { package: "valdres", subpath: ".", name: "StoreDisposedError" },
     ],
@@ -833,6 +849,7 @@ const requiredFrozenErrorCodes = new Map([
         "VALDRES_SERVER_SNAPSHOT_UNAVAILABLE",
     ],
     ["core.selector-capability-error", "VALDRES_SELECTOR_CAPABILITY_ERROR"],
+    ["core.subscriber-notification-error", "VALDRES_SUBSCRIBER_NOTIFICATION"],
     ["core.store-disposed-error", "VALDRES_STORE_DISPOSED"],
     ["core.store-tree-mismatch-error", "VALDRES_STORE_TREE_MISMATCH"],
     ["core.transaction-closed-error", "VALDRES_TRANSACTION_CLOSED"],
@@ -917,6 +934,14 @@ const requiredExecutionErrorContracts = new Map([
             "transaction.scope-cursor-no-savepoint",
         ],
     ],
+    [
+        "core.subscriber-notification-error",
+        [
+            "callback.subscriber-quarantine",
+            "error.stable-name-and-code",
+            "notification.after-stability",
+        ],
+    ],
 ] as const)
 const requiredFrozenAllowedValues = new Map([
     ["collection.materialize-options.priority", ["user-visible", "background"]],
@@ -944,6 +969,43 @@ const requiredCallbackOutcomeErrors = new Map([
     ["callback.transaction", "InvalidTransactionCallbackResultError"],
     ["callback.transaction-scope", "InvalidTransactionCallbackResultError"],
 ] as const)
+const storeSubscriberContract = Object.freeze({
+    role: "Invalidate one final settled subscription target after source and derived state stabilize; the callback receives no arguments.",
+    suppliedCapabilities: Object.freeze([
+        "zero-argument invalidation signal; no settled value argument",
+        "idempotent unsubscribe for already-owned subscription",
+        "committed reads that do not sample dormant external sources",
+    ]),
+    allowedExternalWork: Object.freeze([
+        "Web Storage persistence",
+        "DOM or application side effects outside Valdres",
+    ]),
+    rejectedCapturedOperations: Object.freeze([
+        "same-domain Store mutation",
+        "same-domain Store transaction",
+        "new subscription",
+        "scope access or creation",
+        "Store disposal",
+        "dormant external sampling",
+    ]),
+    errorRule:
+        "Forbidden same-domain work throws CallbackCapabilityError; a read that would publish a dormant external source throws DormantExternalReadError. Subscriber throws are all collected in deterministic target-reaching and callback-insertion order without starving the remaining snapshot. Without an already-authoritative post-apply RuntimeMismatchError, they surface after idle as SubscriberNotificationError / VALDRES_SUBSCRIBER_NOTIFICATION with immutable cause equal to the exact first thrown value, frozen ordered causes, committed true, phase notifying, and lifecycle-free source owned-mutation. Delivery remains all-fire when that mismatch is already authoritative. If no subscriber throws, the exact RuntimeMismatchError surfaces directly after all callbacks are attempted. If subscriber throws coexist, SubscriberNotificationError is the required outer wrapper with cause equal to the exact RuntimeMismatchError and frozen causes equal to [mismatch, ...subscriber throws in delivery order]; every subscriber throw is retained as a secondary cause in delivery order, and the mismatch remains the semantic primary and is not replaced.",
+    thenableRule:
+        "Callback return values are ignored. A returned thenable receives exactly one stateless rejection-containment handler, is never awaited, and does not itself create a notification error. A thrown thenable receives exactly one stateless rejection-containment handler, is never awaited, and remains the exact ordered subscriber cause; no asynchronous Valdres capability survives delivery.",
+    resultBoundary:
+        "Store.sub(state, callback: () => void): () => void creates one independent registration even when callback identity repeats. Registration performs the same outcome materialization as get, but internally catches the public read throw of a successfully materialized ordinary current error outcome so it can register; only admission, disposal, or internal-publication failure registers nothing. A lifecycle-free registration does not notify. Changed target callback sets enter the frozen settlement snapshot in first-reaching order and callbacks within each target retain subscription insertion order; every snapshotted registration is attempted at most once. The returned unsubscribe is idempotent, removes future eligibility immediately, and cannot edit the current snapshot.",
+    requiredContractIds: Object.freeze([
+        "notification.after-stability",
+        "callback.subscriber-quarantine",
+        "error.stable-name-and-code",
+    ]),
+    storeNotes:
+        "Store.sub(state, callback: () => void): () => void creates one independent synchronous zero-argument invalidation registration, even when callback identity repeats. Registration performs the same outcome materialization as get, but internally catches the public read throw of a successfully materialized ordinary current error outcome so it can register; only admission, disposal, or internal-publication failure registers nothing. A lifecycle-free registration does not notify. Changed target callback sets enter the frozen post-stability settlement snapshot in first-reaching order; callbacks within each target retain subscription insertion order; delivery is all-fire and each registration runs at most once. Without an already-authoritative post-apply RuntimeMismatchError, the first subscriber throw becomes the SubscriberNotificationError cause and later subscriber throws remain ordered causes. Delivery remains all-fire when that mismatch is already authoritative. If no subscriber throws, the exact RuntimeMismatchError surfaces directly after all callbacks are attempted. If subscriber throws coexist, SubscriberNotificationError is the required outer wrapper with cause equal to the exact RuntimeMismatchError and frozen causes equal to [mismatch, ...subscriber throws in delivery order]; every subscriber throw is retained as a secondary cause in delivery order, and the mismatch remains the semantic primary and is not replaced. The returned unsubscribe is idempotent, removes future eligibility immediately, and cannot edit the current snapshot.",
+    typeNotes:
+        "SubscribeFn is exactly <Value>(state: Atom<Value> | Selector<Value>, callback: () => void) => () => void. It returns one idempotent unsubscribe; family callback and deep-equality parameters are removed.",
+    errorNotes:
+        "SubscriberNotificationError / VALDRES_SUBSCRIBER_NOTIFICATION is the immutable post-commit delivery wrapper for subscriber throws. Without an already-authoritative post-apply RuntimeMismatchError, cause is the exact first thrown value and causes is a frozen readonly array of all subscriber-thrown values in deterministic delivery order; committed is exactly true; phase is exactly notifying; source is exactly owned-mutation for the lifecycle-free slice. Delivery remains all-fire when that mismatch is already authoritative. If no subscriber throws, the exact RuntimeMismatchError surfaces directly after all callbacks are attempted. If subscriber throws coexist, SubscriberNotificationError is the required outer wrapper with cause equal to the exact RuntimeMismatchError and frozen causes equal to [mismatch, ...subscriber throws in delivery order]; every subscriber throw is retained as a secondary cause in delivery order, and the mismatch remains the semantic primary and is not replaced. No external-source literal is frozen by this slice.",
+})
 const runtimeOwnedExternalErrorNames = [
     "ExternalSourceNonConvergenceError",
     "ExternalSourceDeliveryLimitError",
@@ -1121,6 +1183,10 @@ export function validateContractSet(input: ContractSet): Readonly<{
         }
     }
     assertCallbackErrorOwnership(callbackManifest.entries)
+    assertStoreSubscriberContract(
+        publicManifest.entries,
+        callbackManifest.entries,
+    )
 
     assertFrozenReleaseTrackOwnership(
         publicManifest,
@@ -1207,6 +1273,70 @@ function assertCallbackErrorOwnership(
             )
         }
     }
+}
+
+function assertStoreSubscriberContract(
+    publicEntries: readonly PublicEntry[],
+    callbackEntries: readonly CallbackEntry[],
+): void {
+    const publicById = new Map(
+        publicEntries.map(entry => [entry.id, entry] as const),
+    )
+    const callback = callbackEntries.find(
+        entry => entry.id === "callback.store-subscriber",
+    )
+    assert(callback !== undefined, "missing callback.store-subscriber")
+    assert(
+        callback.apiEntryId === "core.store.sub" &&
+            callback.role === storeSubscriberContract.role &&
+            callback.phase === "notifying" &&
+            JSON.stringify(callback.suppliedCapabilities) ===
+                JSON.stringify(storeSubscriberContract.suppliedCapabilities) &&
+            JSON.stringify(callback.allowedExternalWork) ===
+                JSON.stringify(storeSubscriberContract.allowedExternalWork) &&
+            JSON.stringify(callback.rejectedCapturedOperations) ===
+                JSON.stringify(
+                    storeSubscriberContract.rejectedCapturedOperations,
+                ) &&
+            callback.guardDomain === "same-runtime-domain" &&
+            callback.errorRule === storeSubscriberContract.errorRule &&
+            callback.thenableRule === storeSubscriberContract.thenableRule &&
+            callback.resultBoundary ===
+                storeSubscriberContract.resultBoundary &&
+            JSON.stringify(callback.requiredContractIds) ===
+                JSON.stringify(storeSubscriberContract.requiredContractIds) &&
+            callback.decisionStatus === "approved",
+        "callback.store-subscriber differs from the frozen zero-argument invalidator, quarantine, ordering, all-fire, or unsubscribe contract",
+    )
+
+    const storeSub = publicById.get("core.store.sub")
+    const subscribeFn = publicById.get("core.type.subscribe-fn")
+    const notificationError = publicById.get(
+        "core.subscriber-notification-error",
+    )
+    assert(
+        storeSub?.notes === storeSubscriberContract.storeNotes &&
+            subscribeFn?.notes === storeSubscriberContract.typeNotes,
+        "Store.sub and SubscribeFn differ from the frozen zero-argument subscription signature or delivery contract",
+    )
+    assert(
+        notificationError?.owner === "core" &&
+            notificationError.kind === "error" &&
+            notificationError.errorCode === "VALDRES_SUBSCRIBER_NOTIFICATION" &&
+            notificationError.target.package === "valdres" &&
+            notificationError.target.subpath === "." &&
+            notificationError.target.name === "SubscriberNotificationError" &&
+            notificationError.target.status === "stable" &&
+            notificationError.notes === storeSubscriberContract.errorNotes &&
+            JSON.stringify(notificationError.contractIds) ===
+                JSON.stringify([
+                    "callback.subscriber-quarantine",
+                    "error.stable-name-and-code",
+                    "notification.after-stability",
+                ]) &&
+            notificationError.decisionStatus === "approved",
+        "SubscriberNotificationError differs from the frozen class, code, cause ledger, or committed notification metadata contract",
+    )
 }
 
 function assertFrozenPublicCoordinates(

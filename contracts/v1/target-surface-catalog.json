@@ -70,6 +70,7 @@
         "core.store.sub",
         "core.store.txn",
         "core.store.update",
+        "core.subscriber-notification-error",
         "core.structural-query",
         "core.invalid-external-cleanup-error",
         "core.transaction-closed-error",
@@ -615,6 +616,14 @@
             "package": "valdres",
             "subpath": ".",
             "name": "Store.sub"
+        },
+        {
+            "id": "core.subscriber-notification-error",
+            "kind": "error",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "SubscriberNotificationError",
+            "errorCode": "VALDRES_SUBSCRIBER_NOTIFICATION"
         },
         {
             "id": "core.store.txn",

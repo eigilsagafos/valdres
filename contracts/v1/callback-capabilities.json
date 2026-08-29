@@ -509,11 +509,11 @@
         },
         {
             "id": "callback.store-subscriber",
-            "apiEntryId": "core.store",
-            "role": "Observe one final settled subscription target after source and derived state stabilize.",
+            "apiEntryId": "core.store.sub",
+            "role": "Invalidate one final settled subscription target after source and derived state stabilize; the callback receives no arguments.",
             "phase": "notifying",
             "suppliedCapabilities": [
-                "settled callback value",
+                "zero-argument invalidation signal; no settled value argument",
                 "idempotent unsubscribe for already-owned subscription",
                 "committed reads that do not sample dormant external sources"
             ],
@@ -530,15 +530,15 @@
                 "dormant external sampling"
             ],
             "guardDomain": "same-runtime-domain",
-            "errorRule": "Forbidden same-domain work throws CallbackCapabilityError; a read that would publish a dormant external source throws DormantExternalReadError. One callback error does not starve the remaining snapshot; uncaught errors join the ordered outer workflow ledger after idle.",
-            "thenableRule": "The callback is not awaited and no asynchronous Valdres capability survives delivery.",
-            "resultBoundary": "Each affected subscription runs at most once per settlement, subject to the separate one-budget startup admission rule.",
+            "errorRule": "Forbidden same-domain work throws CallbackCapabilityError; a read that would publish a dormant external source throws DormantExternalReadError. Subscriber throws are all collected in deterministic target-reaching and callback-insertion order without starving the remaining snapshot. Without an already-authoritative post-apply RuntimeMismatchError, they surface after idle as SubscriberNotificationError / VALDRES_SUBSCRIBER_NOTIFICATION with immutable cause equal to the exact first thrown value, frozen ordered causes, committed true, phase notifying, and lifecycle-free source owned-mutation. Delivery remains all-fire when that mismatch is already authoritative. If no subscriber throws, the exact RuntimeMismatchError surfaces directly after all callbacks are attempted. If subscriber throws coexist, SubscriberNotificationError is the required outer wrapper with cause equal to the exact RuntimeMismatchError and frozen causes equal to [mismatch, ...subscriber throws in delivery order]; every subscriber throw is retained as a secondary cause in delivery order, and the mismatch remains the semantic primary and is not replaced.",
+            "thenableRule": "Callback return values are ignored. A returned thenable receives exactly one stateless rejection-containment handler, is never awaited, and does not itself create a notification error. A thrown thenable receives exactly one stateless rejection-containment handler, is never awaited, and remains the exact ordered subscriber cause; no asynchronous Valdres capability survives delivery.",
+            "resultBoundary": "Store.sub(state, callback: () => void): () => void creates one independent registration even when callback identity repeats. Registration performs the same outcome materialization as get, but internally catches the public read throw of a successfully materialized ordinary current error outcome so it can register; only admission, disposal, or internal-publication failure registers nothing. A lifecycle-free registration does not notify. Changed target callback sets enter the frozen settlement snapshot in first-reaching order and callbacks within each target retain subscription insertion order; every snapshotted registration is attempted at most once. The returned unsubscribe is idempotent, removes future eligibility immediately, and cannot edit the current snapshot.",
             "requiredContractIds": [
                 "notification.after-stability",
                 "callback.subscriber-quarantine",
                 "error.stable-name-and-code"
             ],
-            "decisionStatus": "evidence-required"
+            "decisionStatus": "approved"
         },
         {
             "id": "callback.beta-cache-loader",
