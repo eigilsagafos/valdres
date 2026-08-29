@@ -88,7 +88,6 @@ interface ActiveSelectorFrame<Node> {
     readonly host: object
     readonly selector: Node
     readonly acceptedDependencies: Node[]
-    readonly acceptedDependencySet: Set<Node>
     revalidatePrefix: (() => void) | undefined
     cycleError: unknown | undefined
 }
@@ -146,7 +145,6 @@ export class SelectorEvaluationSession<Node> {
             host,
             selector,
             acceptedDependencies: [],
-            acceptedDependencySet: new Set(),
             revalidatePrefix: undefined,
             cycleError: undefined,
         })
@@ -188,13 +186,14 @@ export class SelectorEvaluationSession<Node> {
         ])
     }
 
-    /** @internal */
-    acceptDependency(host: object, selector: Node, dependency: Node): void {
+    /** @internal Caller has already proved this dependency is absent. */
+    appendAcceptedDependency(
+        host: object,
+        selector: Node,
+        dependency: Node,
+    ): void {
         const frame = this.#currentFrame(host, selector)
-        if (!frame.acceptedDependencySet.has(dependency)) {
-            frame.acceptedDependencySet.add(dependency)
-            frame.acceptedDependencies.push(dependency)
-        }
+        frame.acceptedDependencies.push(dependency)
     }
 
     /** @internal Evaluator-owned active-frame coordination. */
@@ -237,15 +236,6 @@ export class SelectorEvaluationSession<Node> {
             length > frame.acceptedDependencies.length
         ) {
             throw new Error("Selector dependency prefix truncation is invalid")
-        }
-        for (
-            let index = frame.acceptedDependencies.length - 1;
-            index >= length;
-            index--
-        ) {
-            frame.acceptedDependencySet.delete(
-                frame.acceptedDependencies[index]!,
-            )
         }
         frame.acceptedDependencies.length = length
     }

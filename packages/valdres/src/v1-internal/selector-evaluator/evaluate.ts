@@ -389,7 +389,7 @@ export const evaluateSelector = <Node, Token extends object, Value>(
                     ? previousSnapshot
                     : Object.freeze({ node: dependency, token: served.token }),
             )
-            session.acceptDependency(host, selector, dependency)
+            session.appendAcceptedDependency(host, selector, dependency)
         }
         prefixProofVersion = graphVersionAfterServe
         prefixProofSessionPublications = sessionPublicationsAfterServe
