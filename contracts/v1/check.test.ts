@@ -612,14 +612,14 @@ describe("v1 contract manifest validation", () => {
         const betaSearch = findPublicEntry(disguisedStable, "beta.search")
         betaSearch.target.status = "stable"
         expect(() => validateContractSet(disguisedStable)).toThrow(
-            /reviewed release-track ownership differs from the independently pinned digest/,
+            /owned by the independent beta but targets the stable\/internal v1 surface|reviewed release-track ownership differs from the independently pinned digest/,
         )
 
         const selfRelabelled = mutableSet()
         const storeDelete = findPublicEntry(selfRelabelled, "core.store.delete")
         storeDelete.owner = "independent-beta"
         expect(() => validateContractSet(selfRelabelled)).toThrow(
-            /reviewed release-track ownership differs from the independently pinned digest/,
+            /owner disagrees with the reviewed independent-beta catalog|reviewed release-track ownership differs from the independently pinned digest/,
         )
     })
 
@@ -968,6 +968,132 @@ describe("v1 contract manifest validation", () => {
         )
     })
 
+    test("reviewed public dispositions own all 174 frozen coordinates", () => {
+        const set = mutableSet()
+        const frozenCoordinates = collectFrozenCoordinates(
+            set.frozenLegacySurface,
+        )
+        expect(set.legacyDispositionCatalog.entries).toHaveLength(174)
+        expect(
+            set.legacyDispositionCatalog.entries.every(
+                (entry: any) => entry.reviewStatus === "approved",
+            ),
+        ).toBe(true)
+        expect(
+            generateProposedPublicApiSkeletons(
+                set.frozenLegacySurface,
+                set.legacyDispositionCatalog,
+            ),
+        ).toEqual([])
+        expect(
+            new Set(
+                set.legacyDispositionCatalog.entries.map((entry: any) =>
+                    coordinateKey(entry.coordinate),
+                ),
+            ),
+        ).toEqual(new Set(frozenCoordinates.map(coordinateKey)))
+
+        const migrationModeById = new Map<string, string>(
+            set.publicManifest.entries.map((entry: any) => [
+                entry.id,
+                entry.migration.mode,
+            ]),
+        )
+        const modeCounts = set.legacyDispositionCatalog.entries.reduce(
+            (counts: Record<string, number>, mapping: any) => {
+                const mode = migrationModeById.get(mapping.dispositionId)!
+                counts[mode] = (counts[mode] ?? 0) + 1
+                return counts
+            },
+            {},
+        )
+        expect(modeCounts).toEqual({
+            keep: 40,
+            replace: 41,
+            remove: 69,
+            move: 24,
+        })
+    })
+
+    test("freezes the reviewed v1 public type-alias decisions", () => {
+        const set = mutableSet()
+        const expected = new Map<string, readonly [string, string]>([
+            ["EqualFunc", ["core.type.equal-func", "keep"]],
+            ["FamilyKey", ["core.type.family-key", "keep"]],
+            ["GetValue", ["core.type.get-value", "keep"]],
+            ["SubscribeFn", ["core.type.subscribe-fn", "keep"]],
+            ["TransactionFn", ["core.type.transaction-fn", "keep"]],
+            ["ResetAtom", ["legacy.mutation-type-aliases", "remove"]],
+            ["SetAtom", ["legacy.mutation-type-aliases", "remove"]],
+            ["SetAtomValue", ["legacy.mutation-type-aliases", "remove"]],
+            ["SyncSetAtom", ["legacy.mutation-type-aliases", "remove"]],
+        ])
+        const entriesById = new Map<string, any>(
+            set.publicManifest.entries.map((entry: any) => [entry.id, entry]),
+        )
+        for (const [name, [dispositionId, mode]] of expected) {
+            const mapping = set.legacyDispositionCatalog.entries.find(
+                (entry: any) =>
+                    entry.coordinate.kind === "type-export" &&
+                    entry.coordinate.package === "valdres" &&
+                    entry.coordinate.name === name,
+            )
+            expect(mapping?.dispositionId).toBe(dispositionId)
+            expect(entriesById.get(dispositionId)?.migration.mode).toBe(mode)
+        }
+        expect(
+            set.targetSurfaceCatalog.pendingSurfaceDecisions.some(
+                (decision: any) => decision.category === "alias-exports",
+            ),
+        ).toBe(false)
+        expect(findPublicEntry(set, "core.type.family-key").target).toEqual({
+            package: "valdres",
+            subpath: ".",
+            name: "FamilyKey",
+            status: "stable",
+        })
+        expect(findPublicEntry(set, "core.type.family-key").notes).toContain(
+            "string | number | bigint | boolean | symbol | null | undefined",
+        )
+        expect(findPublicEntry(set, "core.type.equal-func").notes).toContain(
+            "exactly (previous: Value, next: Value) => boolean",
+        )
+        expect(
+            findPublicEntry(set, "core.type.transaction-fn").notes,
+        ).toContain("TransactionFn<Result = unknown>")
+    })
+
+    test("type-alias ownership cannot self-authorize across both writable artifacts", () => {
+        const set = mutableSet()
+        const kept = findPublicEntry(set, "core.type.family-key")
+        const removed = findPublicEntry(set, "legacy.mutation-type-aliases")
+        const familyKey = kept.legacy.find(
+            (surface: any) => surface.name === "FamilyKey",
+        )
+        kept.legacy = kept.legacy.filter(
+            (surface: any) => surface.name !== "FamilyKey",
+        )
+        removed.legacy.push(structuredClone(familyKey))
+        set.legacyDispositionCatalog.entries.find(
+            (mapping: any) => mapping.coordinate.name === "FamilyKey",
+        ).dispositionId = "legacy.mutation-type-aliases"
+
+        expect(() => validateContractSet(set)).toThrow(
+            /reviewed legacy disposition ownership differs from the independently pinned digest/,
+        )
+    })
+
+    test("reviewed public disposition semantics cannot self-authorize", () => {
+        const set = mutableSet()
+        const familyKey = findPublicEntry(set, "core.type.family-key")
+        familyKey.migration.mode = "replace"
+        familyKey.migration.replacementIds = ["core.family"]
+
+        expect(() => validateContractSet(set)).toThrow(
+            /reviewed release-track ownership differs from the independently pinned digest/,
+        )
+    })
+
     test("pending-review rows may remain evidence-free, while approved rows require contracts", () => {
         const pending = mutableSet()
         const pendingEntry = findPublicEntry(pending, "core.store.update")
@@ -1050,19 +1176,19 @@ describe("v1 contract manifest validation", () => {
 
     test("stable target coordinates and removal intent agree", () => {
         const missingTarget = mutableSet()
-        missingTarget.publicManifest.entries[0].target.name = null
+        findPublicEntry(missingTarget, "core.atom").target.name = null
         expect(() => validateContractSet(missingTarget)).toThrow(
             /stable target with missing coordinates|target coordinate differs from the frozen target catalog/,
         )
 
         const blankTarget = mutableSet()
-        blankTarget.publicManifest.entries[0].target.name = "   "
+        findPublicEntry(blankTarget, "core.atom").target.name = "   "
         expect(() => validateContractSet(blankTarget)).toThrow(
             /public-api\.json schema validation failed|stable target with missing coordinates/,
         )
 
         const wrongRemoval = mutableSet()
-        wrongRemoval.publicManifest.entries[0].migration.mode = "remove"
+        findPublicEntry(wrongRemoval, "core.atom").migration.mode = "remove"
         expect(() => validateContractSet(wrongRemoval)).toThrow(
             /remove migration without a removed target/,
         )

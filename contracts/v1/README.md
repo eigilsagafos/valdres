@@ -25,11 +25,15 @@ deliberately removes behavior that the beta implements.
   kind/package/subpath/name coordinates must match independently. The stable
   structural-query primitive is the standalone, zero-operator-import recursive
   object grammar proven by the D43.1 spike; its fluent builder remains reserved
-  for experimental multi-collection search. Unresolved alias, adapter-protocol,
-  error-name, and option-spelling decisions are listed explicitly without
-  invented coordinates. A second reviewed digest pins public owner/status,
-  callback-to-API ownership, the independent-beta subset, and every pending
-  decision so coordinated relabels or deletions cannot self-authorize.
+  for experimental multi-collection search. The reviewed alias decisions keep
+  narrowed `EqualFunc`, `FamilyKey`, `GetValue`, `SubscribeFn`, and generic
+  `TransactionFn`, while removing `ResetAtom`, `SetAtom`, `SetAtomValue`, and
+  `SyncSetAtom`; unresolved adapter-protocol, error-name, and option-spelling
+  decisions remain listed explicitly without invented coordinates. A second
+  reviewed digest pins each public entry's owner, kind, target status, migration
+  mode, and replacements, together with callback-to-API ownership, the
+  independent-beta subset, and every pending decision, so coordinated relabels
+  or semantic rewrites cannot self-authorize.
 - `frozen-legacy-surface.json` records immutable, provenance-stamped coordinates
   for the beta.23 core root and adapter exports, the actual beta.4 React
   exports, Store/Transaction/adapter members and overloads, and public
@@ -79,7 +83,7 @@ Run:
 ```sh
 bun run check:contracts-v1
 
-# Inspect deterministic, unreviewed migration skeletons (JSONL on stdout)
+# Audit for any unowned migration coordinate (currently expected to print nothing)
 bun contracts/v1/generate-public-api-skeletons.ts
 ```
 
@@ -91,11 +95,25 @@ ledger regression suites. CI runs this same command; `bun run verify` reads it
 directly from the CI workflow.
 
 The manifests and both reviewed catalogs currently declare themselves `partial`.
-That is intentional: the legacy coordinates are now frozen, but their semantic
-dispositions, unresolved target spellings, current ShiftX evidence, errors, and
-stable callback inputs are not complete. All four completeness flags still
-change together. Independent beta entries may remain evidence-gated; they do not
-open or block the stable-1.0 completeness gate.
+That is intentional. All 174 frozen legacy coordinates now have exact approved
+disposition ownership, the 156 formerly unowned coordinates resolve as 35
+`keep`, 35 `replace`, 63 `remove`, and 23 `move` decisions, and the skeleton
+generator therefore emits no rows. Completion still waits on the unresolved
+adapter-protocol, additional error-name, and option-spelling coordinates; the
+remaining target/package contracts; stable callback and contract-catalog gates;
+and stamped current ShiftX evidence. All four completeness flags still change
+together. Independent beta entries may remain evidence-gated; they do not open
+or block the stable-1.0 completeness gate.
+
+`FamilyKey` now means exactly
+`string | number | bigint | boolean | symbol | null | undefined`; it no longer
+accepts Date, Array, object, Map, or Set values. Structured family inputs
+require an explicit `encodeKey`. `EqualFunc<Value>` is exactly a two-argument
+previous/next comparator. `GetValue` and `SubscribeFn` remain the public
+synchronous Store method-capability types, and `TransactionFn<Result = unknown>`
+preserves the transaction callback result. The four removed mutation aliases are
+intentionally replaced by the canonical Store/Transaction method types and the
+exact-value-versus-updater split.
 
 Exact manifest/catalog parity does not prove that the target catalog is
 exhaustive. Before changing `target-surface-catalog.json` to `complete`, Phase 0
@@ -133,7 +151,8 @@ decision.
 
 This is a spelling and ownership freeze, not a production implementation or a
 freeze of every signature detail. `collection-operations.type-test.ts` proves
-only those call relationships. Query-construction grammar, materialization
+only those call relationships. Query construction is now frozen separately as
+the root `query(collection, recursiveObjectDefinition)` form. Materialization
 option members, scheduler and priority policy, public retry/cancel controls,
 status field vocabulary, artifact representation/codec/schema/security,
 persistence, and artifact execution timing remain unresolved. The executable
@@ -261,8 +280,8 @@ frozen artifact nondeterministic.
 An intentional re-audit uses `--write`; this rewrites only the inventory and its
 frozen header evidence while preserving ledger rows and completeness.
 `--junit <path>` can reuse a prior isolated beta.23 JUnit capture. Current
-ShiftX, query-grammar, and index evidence remain separate Phase 0 gates and are
-not implied by this ledger.
+Current ShiftX and index-operational evidence remain separate Phase 0 gates and
+are not implied by this ledger.
 
 ## Provenance
 

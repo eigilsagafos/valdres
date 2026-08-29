@@ -22,419 +22,22 @@
     },
     "entries": [
         {
-            "id": "core.atom",
-            "kind": "runtime-export",
-            "owner": "valdres",
+            "id": "beta.cache-companion",
+            "kind": "package",
+            "owner": "independent-beta",
             "legacy": [
                 {
                     "kind": "runtime-export",
                     "package": "valdres",
                     "subpath": ".",
-                    "name": "atom",
-                    "baseline": "1.0.0-beta.23"
-                }
-            ],
-            "target": {
-                "package": "valdres",
-                "subpath": ".",
-                "name": "atom",
-                "status": "stable"
-            },
-            "migration": {
-                "mode": "keep",
-                "replacementIds": [],
-                "semver": "breaking",
-                "codemod": "Rewrite initializer-looking atom(fn) calls to atom.lazy(fn); atom(fn) stores the function value.",
-                "typeError": "Promise-returning defaults and legacy callable-default intent are rejected by the v1 declarations or runtime guard.",
-                "firstPartyOwner": "core",
-                "evidenceStatus": "planned"
-            },
-            "contractIds": ["atom.exact-value", "atom.object-is-default"],
-            "decisionStatus": "approved",
-            "notes": "One writable StoreTree-local cell kind."
-        },
-        {
-            "id": "core.atom.lazy",
-            "kind": "method",
-            "owner": "valdres",
-            "legacy": [],
-            "target": {
-                "package": "valdres",
-                "subpath": ".",
-                "name": "atom.lazy",
-                "status": "stable"
-            },
-            "migration": {
-                "mode": "add",
-                "replacementIds": [],
-                "semver": "new",
-                "codemod": "Rewrite intentional lazy atom(() => value) calls to atom.lazy(() => value).",
-                "typeError": "A thenable initializer result is a named synchronous failure.",
-                "firstPartyOwner": "core",
-                "evidenceStatus": "planned"
-            },
-            "contractIds": ["atom.lazy.sync-per-tree-fallback"],
-            "decisionStatus": "approved",
-            "notes": "Produces the same Atom kind; only fallback construction differs."
-        },
-        {
-            "id": "core.selector",
-            "kind": "runtime-export",
-            "owner": "valdres",
-            "legacy": [
-                {
-                    "kind": "runtime-export",
-                    "package": "valdres",
-                    "subpath": ".",
-                    "name": "selector",
-                    "baseline": "1.0.0-beta.23"
-                }
-            ],
-            "target": {
-                "package": "valdres",
-                "subpath": ".",
-                "name": "selector",
-                "status": "stable"
-            },
-            "migration": {
-                "mode": "keep",
-                "replacementIds": [],
-                "semver": "breaking",
-                "codemod": "Remove async, late-get, and cyclic-value assumptions.",
-                "typeError": "Async getters and post-return supplied get calls reject.",
-                "firstPartyOwner": "core",
-                "evidenceStatus": "planned"
-            },
-            "contractIds": ["selector.pure-sync-dag", "selector.one-evaluator"],
-            "decisionStatus": "approved",
-            "notes": "Pure synchronous dynamically branching derived State."
-        },
-        {
-            "id": "core.external-atom",
-            "kind": "runtime-export",
-            "owner": "valdres",
-            "legacy": [],
-            "target": {
-                "package": "valdres",
-                "subpath": ".",
-                "name": "externalAtom",
-                "status": "stable"
-            },
-            "migration": {
-                "mode": "add",
-                "replacementIds": [],
-                "semver": "new",
-                "codemod": "Move synchronous browser/device ownership from onMount/global atoms to an ExternalSource snapshot and invalidation subscription.",
-                "typeError": "ExternalAtom is readonly and cannot be passed to set/update/reset.",
-                "firstPartyOwner": "core-and-browser-adapters",
-                "evidenceStatus": "planned"
-            },
-            "contractIds": [
-                "external.pull-contract",
-                "external.store-tree-projection",
-                "external.recoverable-snapshot-errors"
-            ],
-            "decisionStatus": "approved",
-            "notes": "Async acquisition and stale/cache policy stay outside this primitive."
-        },
-        {
-            "id": "core.family",
-            "kind": "runtime-export",
-            "owner": "valdres",
-            "legacy": [
-                {
-                    "kind": "runtime-export",
-                    "package": "valdres",
-                    "subpath": ".",
-                    "name": "atomFamily",
+                    "name": "cacheMeta",
                     "baseline": "1.0.0-beta.23"
                 },
                 {
-                    "kind": "runtime-export",
+                    "kind": "type-export",
                     "package": "valdres",
                     "subpath": ".",
-                    "name": "selectorFamily",
-                    "baseline": "1.0.0-beta.23"
-                }
-            ],
-            "target": {
-                "package": "valdres",
-                "subpath": ".",
-                "name": "family",
-                "status": "stable"
-            },
-            "migration": {
-                "mode": "replace",
-                "replacementIds": [],
-                "semver": "breaking",
-                "codemod": "Rewrite atomFamily/selectorFamily constructors as family((...keys) => atom(...)) or family((...keys) => selector(...)); add encodeKey for structured arguments.",
-                "typeError": "Structured default keys, zero arguments, and family-as-State operations reject.",
-                "firstPartyOwner": "core",
-                "evidenceStatus": "external-handoff-required"
-            },
-            "contractIds": [
-                "family.variadic-primitive-identity",
-                "family.same-value-zero",
-                "family.no-membership"
-            ],
-            "decisionStatus": "approved",
-            "notes": "The current ShiftX family migration must be validated externally."
-        },
-        {
-            "id": "core.collection",
-            "kind": "runtime-export",
-            "owner": "valdres",
-            "legacy": [],
-            "target": {
-                "package": "valdres",
-                "subpath": ".",
-                "name": "collection",
-                "status": "stable"
-            },
-            "migration": {
-                "mode": "add",
-                "replacementIds": [],
-                "semver": "new",
-                "codemod": "Move enumerable/indexed family state to a self-contained collection and explicit row writes.",
-                "typeError": "Invalid canonical keys and undefined row writes reject before Store work.",
-                "firstPartyOwner": "collection",
-                "evidenceStatus": "planned"
-            },
-            "contractIds": [
-                "collection.row-identity",
-                "collection.membership-order",
-                "collection.atomic-deltas"
-            ],
-            "decisionStatus": "approved",
-            "notes": "Constructor option details still need the query/index Phase 0 spike."
-        },
-        {
-            "id": "core.presence",
-            "kind": "runtime-export",
-            "owner": "valdres",
-            "legacy": [],
-            "target": {
-                "package": "valdres",
-                "subpath": ".",
-                "name": "presence",
-                "status": "stable"
-            },
-            "migration": {
-                "mode": "add",
-                "replacementIds": [],
-                "semver": "new",
-                "codemod": "Replace family/store membership probes with presence(row).",
-                "typeError": "Non-row arguments reject.",
-                "firstPartyOwner": "collection",
-                "evidenceStatus": "planned"
-            },
-            "contractIds": ["collection.effective-presence"],
-            "decisionStatus": "approved",
-            "notes": "Readonly lazy State<boolean>."
-        },
-        {
-            "id": "core.structural-query",
-            "kind": "runtime-export",
-            "owner": "valdres",
-            "legacy": [],
-            "target": {
-                "package": "valdres",
-                "subpath": ".",
-                "name": "query",
-                "status": "stable"
-            },
-            "migration": {
-                "mode": "add",
-                "replacementIds": [],
-                "semver": "new",
-                "codemod": "Define a single-collection structural query with query(collection, { where, orderBy, offset, limit, facets }); use $all, $any, and $not for explicit Boolean groups.",
-                "typeError": "Unknown indexes, operators, option keys, value domains, order fields, and facet fields reject recursively.",
-                "firstPartyOwner": "collection",
-                "evidenceStatus": "planned"
-            },
-            "contractIds": [
-                "query.recursive-object-definition",
-                "query.single-collection-composite-result",
-                "query.ready-only-indexed-read"
-            ],
-            "decisionStatus": "approved",
-            "notes": "The stable primitive is standalone and uses the zero-operator-import recursive object grammar with implicit conjunction and explicit $all/$any/$not. A fluent builder remains reserved for experimental multi-collection search."
-        },
-        {
-            "id": "core.store",
-            "kind": "runtime-export",
-            "owner": "valdres",
-            "legacy": [
-                {
-                    "kind": "runtime-export",
-                    "package": "valdres",
-                    "subpath": ".",
-                    "name": "store",
-                    "baseline": "1.0.0-beta.23"
-                }
-            ],
-            "target": {
-                "package": "valdres",
-                "subpath": ".",
-                "name": "store",
-                "status": "stable"
-            },
-            "migration": {
-                "mode": "keep",
-                "replacementIds": [],
-                "semver": "breaking",
-                "codemod": "Remove positional/name identity and initialize through explicit owner transactions.",
-                "typeError": "Positional IDs and identity options reject.",
-                "firstPartyOwner": "core",
-                "evidenceStatus": "external-handoff-required"
-            },
-            "contractIds": ["store.object-identity", "store.explicit-owner"],
-            "decisionStatus": "approved",
-            "notes": "Current ShiftX ownership flows require external validation."
-        },
-        {
-            "id": "core.store.scope",
-            "kind": "method",
-            "owner": "valdres",
-            "legacy": [
-                {
-                    "kind": "overload",
-                    "package": "valdres",
-                    "subpath": ".",
-                    "owner": "Store",
-                    "name": "scope(id)",
-                    "baseline": "1.0.0-beta.23"
-                }
-            ],
-            "target": {
-                "package": "valdres",
-                "subpath": ".",
-                "name": "Store.scope",
-                "status": "stable"
-            },
-            "migration": {
-                "mode": "replace",
-                "replacementIds": [],
-                "semver": "breaking",
-                "codemod": "Use scope() for a fresh child or scope(id) for parent-local get-or-create; owners dispose explicitly.",
-                "typeError": "Lease/detach/callback-borrow forms reject.",
-                "firstPartyOwner": "core",
-                "evidenceStatus": "external-handoff-required"
-            },
-            "contractIds": [
-                "scope.live-inheritance",
-                "scope.parent-local-name",
-                "scope.explicit-disposal"
-            ],
-            "decisionStatus": "approved",
-            "notes": "No React consumer-count ownership."
-        },
-        {
-            "id": "core.store.txn",
-            "kind": "method",
-            "owner": "valdres",
-            "legacy": [
-                {
-                    "kind": "overload",
-                    "package": "valdres",
-                    "subpath": ".",
-                    "owner": "Store",
-                    "name": "txn(callback)",
-                    "baseline": "1.0.0-beta.23"
-                }
-            ],
-            "target": {
-                "package": "valdres",
-                "subpath": ".",
-                "name": "Store.txn",
-                "status": "stable"
-            },
-            "migration": {
-                "mode": "keep",
-                "replacementIds": [],
-                "semver": "breaking",
-                "codemod": "Use the bound synchronous Store transaction and same-Tree scope cursors.",
-                "typeError": "Thenable callbacks, cross-tree targets, and closed cursors reject.",
-                "firstPartyOwner": "core",
-                "evidenceStatus": "external-handoff-required"
-            },
-            "contractIds": [
-                "transaction.one-tree-draft",
-                "transaction.sync-derived-reads"
-            ],
-            "decisionStatus": "approved",
-            "notes": "Current native ShiftX transaction shapes require external validation."
-        },
-        {
-            "id": "core.store.update",
-            "kind": "method",
-            "owner": "valdres",
-            "legacy": [],
-            "target": {
-                "package": "valdres",
-                "subpath": ".",
-                "name": "Store.update",
-                "status": "stable"
-            },
-            "migration": {
-                "mode": "replace",
-                "replacementIds": [],
-                "semver": "breaking",
-                "codemod": "Rewrite updater-valued set calls to update.",
-                "typeError": "A function passed to set is stored as a value; row update on absence rejects.",
-                "firstPartyOwner": "core",
-                "evidenceStatus": "planned"
-            },
-            "contractIds": [
-                "mutation.value-vs-updater",
-                "collection.update-existing-only"
-            ],
-            "decisionStatus": "approved",
-            "notes": "All mutation verbs return void."
-        },
-        {
-            "id": "core.store.delete",
-            "kind": "method",
-            "owner": "valdres",
-            "legacy": [
-                {
-                    "kind": "method",
-                    "package": "valdres",
-                    "subpath": ".",
-                    "owner": "Store",
-                    "name": "del",
-                    "baseline": "1.0.0-beta.23"
-                }
-            ],
-            "target": {
-                "package": "valdres",
-                "subpath": ".",
-                "name": "Store.delete",
-                "status": "stable"
-            },
-            "migration": {
-                "mode": "replace",
-                "replacementIds": [],
-                "semver": "breaking",
-                "codemod": "Rewrite del(row) to delete(row).",
-                "typeError": "delete accepts collection rows only.",
-                "firstPartyOwner": "collection",
-                "evidenceStatus": "planned"
-            },
-            "contractIds": ["collection.local-absent-tombstone"],
-            "decisionStatus": "approved",
-            "notes": "reset removes local ownership; delete forces local absence."
-        },
-        {
-            "id": "core.global-atom",
-            "kind": "runtime-export",
-            "owner": "valdres",
-            "legacy": [
-                {
-                    "kind": "runtime-export",
-                    "package": "valdres",
-                    "subpath": ".",
-                    "name": "globalAtom",
+                    "name": "CacheMeta",
                     "baseline": "1.0.0-beta.23"
                 }
             ],
@@ -442,243 +45,47 @@
                 "package": null,
                 "subpath": null,
                 "name": null,
-                "status": "removed"
+                "status": "pending"
             },
             "migration": {
-                "mode": "remove",
-                "replacementIds": ["core.atom", "core.external-atom"],
-                "semver": "breaking",
-                "codemod": "Use one explicitly shared StoreTree for writable app state or externalAtom for externally owned truth.",
-                "typeError": "globalAtom is absent from stable exports.",
-                "firstPartyOwner": "core-and-package-owners",
-                "evidenceStatus": "planned"
-            },
-            "contractIds": ["no-writable-cross-tree-state"],
-            "decisionStatus": "approved",
-            "notes": "A future sharedCell is additive and nontransactional."
-        },
-        {
-            "id": "core.global-store",
-            "kind": "runtime-export",
-            "owner": "valdres",
-            "legacy": [
-                {
-                    "kind": "runtime-export",
-                    "package": "valdres",
-                    "subpath": ".",
-                    "name": "globalStore",
-                    "baseline": "1.0.0-beta.23"
-                }
-            ],
-            "target": {
-                "package": null,
-                "subpath": null,
-                "name": null,
-                "status": "removed"
-            },
-            "migration": {
-                "mode": "remove",
-                "replacementIds": ["core.store"],
-                "semver": "breaking",
-                "codemod": "Create, hold, pass, and dispose an explicit Store.",
-                "typeError": "globalStore is absent from stable exports.",
-                "firstPartyOwner": "package-owners",
-                "evidenceStatus": "planned"
-            },
-            "contractIds": ["store.no-ambient-registry"],
-            "decisionStatus": "approved",
-            "notes": "No process-global Store authority survives."
-        },
-        {
-            "id": "core.store.on-dispose",
-            "kind": "method",
-            "owner": "valdres",
-            "legacy": [
-                {
-                    "kind": "method",
-                    "package": "valdres",
-                    "subpath": ".",
-                    "owner": "Store",
-                    "name": "onDispose",
-                    "baseline": "1.0.0-beta.23"
-                }
-            ],
-            "target": {
-                "package": null,
-                "subpath": null,
-                "name": null,
-                "status": "removed"
-            },
-            "migration": {
-                "mode": "remove",
+                "mode": "move",
                 "replacementIds": [],
                 "semver": "breaking",
-                "codemod": "Release Store and adjacent resources at the explicit owner boundary; borrowed libraries return a disposer or accept AbortSignal.",
-                "typeError": "Store.onDispose is absent.",
-                "firstPartyOwner": "resource-owners",
-                "evidenceStatus": "planned"
-            },
-            "contractIds": ["store.explicit-owner-teardown"],
-            "decisionStatus": "approved",
-            "notes": "Private internal and ExternalSource cleanup remains."
-        },
-        {
-            "id": "collection.operations-subpath",
-            "kind": "subpath",
-            "owner": "valdres",
-            "legacy": [],
-            "target": {
-                "package": "valdres",
-                "subpath": "./collection",
-                "name": "valdres/collection",
-                "status": "stable"
-            },
-            "migration": {
-                "mode": "add",
-                "replacementIds": [],
-                "semver": "new",
-                "codemod": "Import materialize, scan, getMaterializationStatus, and subscribeMaterialization from valdres/collection.",
-                "typeError": "Operational APIs are not root exports.",
-                "firstPartyOwner": "collection",
-                "evidenceStatus": "planned"
-            },
-            "contractIds": ["collection.operational-boundary"],
-            "decisionStatus": "approved",
-            "notes": "The stable subpath has no Store methods and no separate progress export."
-        },
-        {
-            "id": "collection.materialize",
-            "kind": "runtime-export",
-            "owner": "valdres",
-            "legacy": [],
-            "target": {
-                "package": "valdres",
-                "subpath": "./collection",
-                "name": "materialize",
-                "status": "stable"
-            },
-            "migration": {
-                "mode": "add",
-                "replacementIds": [],
-                "semver": "new",
-                "codemod": "Call materialize(store, index, options?) for explicit StoreTree-owned index demand.",
-                "typeError": "Transaction targets, non-index definitions, Store.materialize, and option keys not admitted by the final options type reject.",
-                "firstPartyOwner": "collection",
-                "evidenceStatus": "planned"
+                "codemod": "Move async acquisition, dedupe, freshness, SWR, stale-if-error, and wakeables to the independent client and React entrypoint.",
+                "typeError": "Cache entries are not State and cannot be passed to Store or useValue.",
+                "firstPartyOwner": "beta-cache",
+                "evidenceStatus": "external-handoff-required"
             },
             "contractIds": [
-                "collection.materialization-lifecycle",
-                "collection.operational-boundary"
+                "cache.no-store-internals",
+                "cache.client-owned-entries"
             ],
-            "decisionStatus": "approved",
-            "notes": "Returns the opaque materialization handle also returned by importArtifact; option members and scheduling policy remain unresolved."
+            "decisionStatus": "evidence-required",
+            "notes": "Exact package/client/entry/hook/projection names are a later non-gating beta decision."
         },
         {
-            "id": "collection.scan",
-            "kind": "runtime-export",
-            "owner": "valdres",
+            "id": "beta.search",
+            "kind": "package",
+            "owner": "independent-beta",
             "legacy": [],
             "target": {
-                "package": "valdres",
-                "subpath": "./collection",
-                "name": "scan",
-                "status": "stable"
+                "package": "@valdres/search",
+                "subpath": ".",
+                "name": "@valdres/search",
+                "status": "experimental"
             },
             "migration": {
                 "mode": "add",
                 "replacementIds": [],
                 "semver": "new",
-                "codemod": "Call scan(storeOrTxn, query) only when the explicit exact O(N) path is intended.",
-                "typeError": "scan requires a same-domain Store or Transaction and a structural Query definition.",
-                "firstPartyOwner": "collection",
+                "codemod": "No stable migration yet; ranked and multi-collection search require separate beta evidence.",
+                "typeError": "Ranked search nodes are not admitted to stable structural-query transaction reads.",
+                "firstPartyOwner": "search",
                 "evidenceStatus": "planned"
             },
-            "contractIds": [
-                "collection.operational-boundary",
-                "query.exact-scan-operation",
-                "query.single-collection-composite-result"
-            ],
+            "contractIds": ["search.beta-declarative-delta-seam"],
             "decisionStatus": "approved",
-            "notes": "The standalone exact path reuses the frozen structural-query definition and never starts materialization or silently switches algorithms."
-        },
-        {
-            "id": "collection.materialization-status",
-            "kind": "runtime-export",
-            "owner": "valdres",
-            "legacy": [],
-            "target": {
-                "package": "valdres",
-                "subpath": "./collection",
-                "name": "getMaterializationStatus",
-                "status": "stable"
-            },
-            "migration": {
-                "mode": "add",
-                "replacementIds": [],
-                "semver": "new",
-                "codemod": "Read getMaterializationStatus(materialization); progress is represented within that inert snapshot.",
-                "typeError": "Only a same-domain materialization handle is accepted; no standalone progress function exists.",
-                "firstPartyOwner": "collection",
-                "evidenceStatus": "planned"
-            },
-            "contractIds": [
-                "collection.materialization-lifecycle",
-                "collection.materialization-observation",
-                "collection.operational-boundary"
-            ],
-            "decisionStatus": "approved",
-            "notes": "The opaque status snapshot contains progress; its state vocabulary, progress representation, generation, revision, diagnostics, and scheduler fields are not frozen."
-        },
-        {
-            "id": "collection.materialization-subscribe",
-            "kind": "runtime-export",
-            "owner": "valdres",
-            "legacy": [],
-            "target": {
-                "package": "valdres",
-                "subpath": "./collection",
-                "name": "subscribeMaterialization",
-                "status": "stable"
-            },
-            "migration": {
-                "mode": "add",
-                "replacementIds": [],
-                "semver": "new",
-                "codemod": "Call subscribeMaterialization(materialization, listener) and retain its idempotent unsubscribe.",
-                "typeError": "Only a same-domain materialization handle and synchronous listener are accepted.",
-                "firstPartyOwner": "collection",
-                "evidenceStatus": "planned"
-            },
-            "contractIds": [
-                "collection.materialization-observation",
-                "collection.operational-boundary"
-            ],
-            "decisionStatus": "approved",
-            "notes": "The listener receives the same opaque immutable status snapshot returned by getMaterializationStatus, including its progress representation."
-        },
-        {
-            "id": "collection.artifacts-subpath",
-            "kind": "subpath",
-            "owner": "valdres",
-            "legacy": [],
-            "target": {
-                "package": "valdres",
-                "subpath": "./collection/artifacts",
-                "name": "valdres/collection/artifacts",
-                "status": "stable"
-            },
-            "migration": {
-                "mode": "add",
-                "replacementIds": [],
-                "semver": "new",
-                "codemod": "Import exportArtifact and importArtifact from valdres/collection/artifacts.",
-                "typeError": "Artifact APIs are not root exports.",
-                "firstPartyOwner": "collection",
-                "evidenceStatus": "planned"
-            },
-            "contractIds": ["collection.artifact-boundary"],
-            "decisionStatus": "approved",
-            "notes": "Only import/export spelling is frozen; raw bytes remain portable data and prepared candidates remain runtime-owned."
+            "notes": "The query spike reserves correlated multi-source hit typing without admitting the feature to stable 1.0."
         },
         {
             "id": "collection.artifact-export",
@@ -736,6 +143,3333 @@
             "notes": "Returns the same opaque handle as materialize; fallback scheduling, byte representation, codec/schema/security policy, persistence, and execution timing remain unresolved."
         },
         {
+            "id": "collection.artifacts-subpath",
+            "kind": "subpath",
+            "owner": "valdres",
+            "legacy": [],
+            "target": {
+                "package": "valdres",
+                "subpath": "./collection/artifacts",
+                "name": "valdres/collection/artifacts",
+                "status": "stable"
+            },
+            "migration": {
+                "mode": "add",
+                "replacementIds": [],
+                "semver": "new",
+                "codemod": "Import exportArtifact and importArtifact from valdres/collection/artifacts.",
+                "typeError": "Artifact APIs are not root exports.",
+                "firstPartyOwner": "collection",
+                "evidenceStatus": "planned"
+            },
+            "contractIds": ["collection.artifact-boundary"],
+            "decisionStatus": "approved",
+            "notes": "Only import/export spelling is frozen; raw bytes remain portable data and prepared candidates remain runtime-owned."
+        },
+        {
+            "id": "collection.materialization-status",
+            "kind": "runtime-export",
+            "owner": "valdres",
+            "legacy": [],
+            "target": {
+                "package": "valdres",
+                "subpath": "./collection",
+                "name": "getMaterializationStatus",
+                "status": "stable"
+            },
+            "migration": {
+                "mode": "add",
+                "replacementIds": [],
+                "semver": "new",
+                "codemod": "Read getMaterializationStatus(materialization); progress is represented within that inert snapshot.",
+                "typeError": "Only a same-domain materialization handle is accepted; no standalone progress function exists.",
+                "firstPartyOwner": "collection",
+                "evidenceStatus": "planned"
+            },
+            "contractIds": [
+                "collection.materialization-lifecycle",
+                "collection.materialization-observation",
+                "collection.operational-boundary"
+            ],
+            "decisionStatus": "approved",
+            "notes": "The opaque status snapshot contains progress; its state vocabulary, progress representation, generation, revision, diagnostics, and scheduler fields are not frozen."
+        },
+        {
+            "id": "collection.materialization-subscribe",
+            "kind": "runtime-export",
+            "owner": "valdres",
+            "legacy": [],
+            "target": {
+                "package": "valdres",
+                "subpath": "./collection",
+                "name": "subscribeMaterialization",
+                "status": "stable"
+            },
+            "migration": {
+                "mode": "add",
+                "replacementIds": [],
+                "semver": "new",
+                "codemod": "Call subscribeMaterialization(materialization, listener) and retain its idempotent unsubscribe.",
+                "typeError": "Only a same-domain materialization handle and synchronous listener are accepted.",
+                "firstPartyOwner": "collection",
+                "evidenceStatus": "planned"
+            },
+            "contractIds": [
+                "collection.materialization-observation",
+                "collection.operational-boundary"
+            ],
+            "decisionStatus": "approved",
+            "notes": "The listener receives the same opaque immutable status snapshot returned by getMaterializationStatus, including its progress representation."
+        },
+        {
+            "id": "collection.materialize",
+            "kind": "runtime-export",
+            "owner": "valdres",
+            "legacy": [],
+            "target": {
+                "package": "valdres",
+                "subpath": "./collection",
+                "name": "materialize",
+                "status": "stable"
+            },
+            "migration": {
+                "mode": "add",
+                "replacementIds": [],
+                "semver": "new",
+                "codemod": "Call materialize(store, index, options?) for explicit StoreTree-owned index demand.",
+                "typeError": "Transaction targets, non-index definitions, Store.materialize, and option keys not admitted by the final options type reject.",
+                "firstPartyOwner": "collection",
+                "evidenceStatus": "planned"
+            },
+            "contractIds": [
+                "collection.materialization-lifecycle",
+                "collection.operational-boundary"
+            ],
+            "decisionStatus": "approved",
+            "notes": "Returns the opaque materialization handle also returned by importArtifact; option members and scheduling policy remain unresolved."
+        },
+        {
+            "id": "collection.operations-subpath",
+            "kind": "subpath",
+            "owner": "valdres",
+            "legacy": [],
+            "target": {
+                "package": "valdres",
+                "subpath": "./collection",
+                "name": "valdres/collection",
+                "status": "stable"
+            },
+            "migration": {
+                "mode": "add",
+                "replacementIds": [],
+                "semver": "new",
+                "codemod": "Import materialize, scan, getMaterializationStatus, and subscribeMaterialization from valdres/collection.",
+                "typeError": "Operational APIs are not root exports.",
+                "firstPartyOwner": "collection",
+                "evidenceStatus": "planned"
+            },
+            "contractIds": ["collection.operational-boundary"],
+            "decisionStatus": "approved",
+            "notes": "The stable subpath has no Store methods and no separate progress export."
+        },
+        {
+            "id": "collection.scan",
+            "kind": "runtime-export",
+            "owner": "valdres",
+            "legacy": [],
+            "target": {
+                "package": "valdres",
+                "subpath": "./collection",
+                "name": "scan",
+                "status": "stable"
+            },
+            "migration": {
+                "mode": "add",
+                "replacementIds": [],
+                "semver": "new",
+                "codemod": "Call scan(storeOrTxn, query) only when the explicit exact O(N) path is intended.",
+                "typeError": "scan requires a same-domain Store or Transaction and a structural Query definition.",
+                "firstPartyOwner": "collection",
+                "evidenceStatus": "planned"
+            },
+            "contractIds": [
+                "collection.operational-boundary",
+                "query.exact-scan-operation",
+                "query.single-collection-composite-result"
+            ],
+            "decisionStatus": "approved",
+            "notes": "The standalone exact path reuses the frozen structural-query definition and never starts materialization or silently switches algorithms."
+        },
+        {
+            "id": "core.atom",
+            "kind": "runtime-export",
+            "owner": "valdres",
+            "legacy": [
+                {
+                    "kind": "runtime-export",
+                    "package": "valdres",
+                    "subpath": ".",
+                    "name": "atom",
+                    "baseline": "1.0.0-beta.23"
+                }
+            ],
+            "target": {
+                "package": "valdres",
+                "subpath": ".",
+                "name": "atom",
+                "status": "stable"
+            },
+            "migration": {
+                "mode": "keep",
+                "replacementIds": [],
+                "semver": "breaking",
+                "codemod": "Rewrite initializer-looking atom(fn) calls to atom.lazy(fn); atom(fn) stores the function value.",
+                "typeError": "Promise-returning defaults and legacy callable-default intent are rejected by the v1 declarations or runtime guard.",
+                "firstPartyOwner": "core",
+                "evidenceStatus": "planned"
+            },
+            "contractIds": ["atom.exact-value", "atom.object-is-default"],
+            "decisionStatus": "approved",
+            "notes": "One writable StoreTree-local cell kind."
+        },
+        {
+            "id": "core.atom.lazy",
+            "kind": "method",
+            "owner": "valdres",
+            "legacy": [],
+            "target": {
+                "package": "valdres",
+                "subpath": ".",
+                "name": "atom.lazy",
+                "status": "stable"
+            },
+            "migration": {
+                "mode": "add",
+                "replacementIds": [],
+                "semver": "new",
+                "codemod": "Rewrite intentional lazy atom(() => value) calls to atom.lazy(() => value).",
+                "typeError": "A thenable initializer result is a named synchronous failure.",
+                "firstPartyOwner": "core",
+                "evidenceStatus": "planned"
+            },
+            "contractIds": ["atom.lazy.sync-per-tree-fallback"],
+            "decisionStatus": "approved",
+            "notes": "Produces the same Atom kind; only fallback construction differs."
+        },
+        {
+            "id": "core.collection",
+            "kind": "runtime-export",
+            "owner": "valdres",
+            "legacy": [],
+            "target": {
+                "package": "valdres",
+                "subpath": ".",
+                "name": "collection",
+                "status": "stable"
+            },
+            "migration": {
+                "mode": "add",
+                "replacementIds": [],
+                "semver": "new",
+                "codemod": "Move enumerable/indexed family state to a self-contained collection and explicit row writes.",
+                "typeError": "Invalid canonical keys and undefined row writes reject before Store work.",
+                "firstPartyOwner": "collection",
+                "evidenceStatus": "planned"
+            },
+            "contractIds": [
+                "collection.row-identity",
+                "collection.membership-order",
+                "collection.atomic-deltas"
+            ],
+            "decisionStatus": "approved",
+            "notes": "Constructor option details still need the query/index Phase 0 spike."
+        },
+        {
+            "id": "core.external-atom",
+            "kind": "runtime-export",
+            "owner": "valdres",
+            "legacy": [],
+            "target": {
+                "package": "valdres",
+                "subpath": ".",
+                "name": "externalAtom",
+                "status": "stable"
+            },
+            "migration": {
+                "mode": "add",
+                "replacementIds": [],
+                "semver": "new",
+                "codemod": "Move synchronous browser/device ownership from onMount/global atoms to an ExternalSource snapshot and invalidation subscription.",
+                "typeError": "ExternalAtom is readonly and cannot be passed to set/update/reset.",
+                "firstPartyOwner": "core-and-browser-adapters",
+                "evidenceStatus": "planned"
+            },
+            "contractIds": [
+                "external.pull-contract",
+                "external.store-tree-projection",
+                "external.recoverable-snapshot-errors"
+            ],
+            "decisionStatus": "approved",
+            "notes": "Async acquisition and stale/cache policy stay outside this primitive."
+        },
+        {
+            "id": "core.family",
+            "kind": "runtime-export",
+            "owner": "valdres",
+            "legacy": [
+                {
+                    "kind": "runtime-export",
+                    "package": "valdres",
+                    "subpath": ".",
+                    "name": "atomFamily",
+                    "baseline": "1.0.0-beta.23"
+                },
+                {
+                    "kind": "runtime-export",
+                    "package": "valdres",
+                    "subpath": ".",
+                    "name": "selectorFamily",
+                    "baseline": "1.0.0-beta.23"
+                },
+                {
+                    "kind": "type-export",
+                    "package": "valdres",
+                    "subpath": ".",
+                    "name": "AtomFamily",
+                    "baseline": "1.0.0-beta.23"
+                },
+                {
+                    "kind": "type-export",
+                    "package": "valdres",
+                    "subpath": ".",
+                    "name": "AtomFamilyAtom",
+                    "baseline": "1.0.0-beta.23"
+                },
+                {
+                    "kind": "type-export",
+                    "package": "valdres",
+                    "subpath": ".",
+                    "name": "AtomFamilyDefaultValue",
+                    "baseline": "1.0.0-beta.23"
+                },
+                {
+                    "kind": "type-export",
+                    "package": "valdres",
+                    "subpath": ".",
+                    "name": "AtomFamilyOptions",
+                    "baseline": "1.0.0-beta.23"
+                },
+                {
+                    "kind": "type-export",
+                    "package": "valdres",
+                    "subpath": ".",
+                    "name": "AtomFamilySelector",
+                    "baseline": "1.0.0-beta.23"
+                },
+                {
+                    "kind": "type-export",
+                    "package": "valdres",
+                    "subpath": ".",
+                    "name": "SelectorFamily",
+                    "baseline": "1.0.0-beta.23"
+                },
+                {
+                    "kind": "type-export",
+                    "package": "valdres",
+                    "subpath": ".",
+                    "name": "SelectorFamilyOptions",
+                    "baseline": "1.0.0-beta.23"
+                }
+            ],
+            "target": {
+                "package": "valdres",
+                "subpath": ".",
+                "name": "family",
+                "status": "stable"
+            },
+            "migration": {
+                "mode": "replace",
+                "replacementIds": [],
+                "semver": "breaking",
+                "codemod": "Rewrite atomFamily/selectorFamily constructors as family((...keys) => atom(...)) or family((...keys) => selector(...)); add encodeKey for structured arguments.",
+                "typeError": "Structured default keys, zero arguments, and family-as-State operations reject.",
+                "firstPartyOwner": "core",
+                "evidenceStatus": "external-handoff-required"
+            },
+            "contractIds": [
+                "family.variadic-primitive-identity",
+                "family.same-value-zero",
+                "family.no-membership"
+            ],
+            "decisionStatus": "approved",
+            "notes": "The current ShiftX family migration must be validated externally."
+        },
+        {
+            "id": "core.global-atom",
+            "kind": "runtime-export",
+            "owner": "valdres",
+            "legacy": [
+                {
+                    "kind": "runtime-export",
+                    "package": "valdres",
+                    "subpath": ".",
+                    "name": "globalAtom",
+                    "baseline": "1.0.0-beta.23"
+                },
+                {
+                    "kind": "runtime-export",
+                    "package": "valdres",
+                    "subpath": ".",
+                    "name": "globalAtomFamily",
+                    "baseline": "1.0.0-beta.23"
+                },
+                {
+                    "kind": "type-export",
+                    "package": "valdres",
+                    "subpath": ".",
+                    "name": "GlobalAtom",
+                    "baseline": "1.0.0-beta.23"
+                },
+                {
+                    "kind": "type-export",
+                    "package": "valdres",
+                    "subpath": ".",
+                    "name": "GlobalAtomFamily",
+                    "baseline": "1.0.0-beta.23"
+                },
+                {
+                    "kind": "type-export",
+                    "package": "valdres",
+                    "subpath": ".",
+                    "name": "GlobalAtomFamilyOptions",
+                    "baseline": "1.0.0-beta.23"
+                },
+                {
+                    "kind": "type-export",
+                    "package": "valdres",
+                    "subpath": ".",
+                    "name": "GlobalAtomGetSelfFunc",
+                    "baseline": "1.0.0-beta.23"
+                },
+                {
+                    "kind": "type-export",
+                    "package": "valdres",
+                    "subpath": ".",
+                    "name": "GlobalAtomOptions",
+                    "baseline": "1.0.0-beta.23"
+                },
+                {
+                    "kind": "type-export",
+                    "package": "valdres",
+                    "subpath": ".",
+                    "name": "GlobalAtomResetSelfFunc",
+                    "baseline": "1.0.0-beta.23"
+                },
+                {
+                    "kind": "type-export",
+                    "package": "valdres",
+                    "subpath": ".",
+                    "name": "GlobalAtomSetSelfFunc",
+                    "baseline": "1.0.0-beta.23"
+                }
+            ],
+            "target": {
+                "package": null,
+                "subpath": null,
+                "name": null,
+                "status": "removed"
+            },
+            "migration": {
+                "mode": "remove",
+                "replacementIds": ["core.atom", "core.external-atom"],
+                "semver": "breaking",
+                "codemod": "Use one explicitly shared StoreTree for writable app state or externalAtom for externally owned truth.",
+                "typeError": "globalAtom is absent from stable exports.",
+                "firstPartyOwner": "core-and-package-owners",
+                "evidenceStatus": "planned"
+            },
+            "contractIds": ["no-writable-cross-tree-state"],
+            "decisionStatus": "approved",
+            "notes": "A future sharedCell is additive and nontransactional."
+        },
+        {
+            "id": "core.global-store",
+            "kind": "runtime-export",
+            "owner": "valdres",
+            "legacy": [
+                {
+                    "kind": "runtime-export",
+                    "package": "valdres",
+                    "subpath": ".",
+                    "name": "globalStore",
+                    "baseline": "1.0.0-beta.23"
+                }
+            ],
+            "target": {
+                "package": null,
+                "subpath": null,
+                "name": null,
+                "status": "removed"
+            },
+            "migration": {
+                "mode": "remove",
+                "replacementIds": ["core.store"],
+                "semver": "breaking",
+                "codemod": "Create, hold, pass, and dispose an explicit Store.",
+                "typeError": "globalStore is absent from stable exports.",
+                "firstPartyOwner": "package-owners",
+                "evidenceStatus": "planned"
+            },
+            "contractIds": ["store.no-ambient-registry"],
+            "decisionStatus": "approved",
+            "notes": "No process-global Store authority survives."
+        },
+        {
+            "id": "core.presence",
+            "kind": "runtime-export",
+            "owner": "valdres",
+            "legacy": [],
+            "target": {
+                "package": "valdres",
+                "subpath": ".",
+                "name": "presence",
+                "status": "stable"
+            },
+            "migration": {
+                "mode": "add",
+                "replacementIds": [],
+                "semver": "new",
+                "codemod": "Replace family/store membership probes with presence(row).",
+                "typeError": "Non-row arguments reject.",
+                "firstPartyOwner": "collection",
+                "evidenceStatus": "planned"
+            },
+            "contractIds": ["collection.effective-presence"],
+            "decisionStatus": "approved",
+            "notes": "Readonly lazy State<boolean>."
+        },
+        {
+            "id": "core.runtime-mismatch-error",
+            "kind": "error",
+            "owner": "valdres",
+            "legacy": [],
+            "target": {
+                "package": "valdres",
+                "subpath": ".",
+                "name": "RuntimeMismatchError",
+                "status": "stable"
+            },
+            "migration": {
+                "mode": "add",
+                "replacementIds": [],
+                "semver": "new",
+                "codemod": "Deduplicate compatible valdres peers and never mix handles from isolated runtime copies.",
+                "typeError": "Recognized mixed-domain operands throw code VALDRES_RUNTIME_MISMATCH before work.",
+                "firstPartyOwner": "core-and-package-owners",
+                "evidenceStatus": "planned"
+            },
+            "contractIds": [
+                "runtime.isolated-domains",
+                "runtime.before-work-owner-check"
+            ],
+            "decisionStatus": "approved",
+            "notes": "No same-version global adoption in 1.0."
+        },
+        {
+            "id": "core.selector",
+            "kind": "runtime-export",
+            "owner": "valdres",
+            "legacy": [
+                {
+                    "kind": "runtime-export",
+                    "package": "valdres",
+                    "subpath": ".",
+                    "name": "selector",
+                    "baseline": "1.0.0-beta.23"
+                }
+            ],
+            "target": {
+                "package": "valdres",
+                "subpath": ".",
+                "name": "selector",
+                "status": "stable"
+            },
+            "migration": {
+                "mode": "keep",
+                "replacementIds": [],
+                "semver": "breaking",
+                "codemod": "Remove async, late-get, and cyclic-value assumptions.",
+                "typeError": "Async getters and post-return supplied get calls reject.",
+                "firstPartyOwner": "core",
+                "evidenceStatus": "planned"
+            },
+            "contractIds": ["selector.pure-sync-dag", "selector.one-evaluator"],
+            "decisionStatus": "approved",
+            "notes": "Pure synchronous dynamically branching derived State."
+        },
+        {
+            "id": "core.selector-circular-dependency-error",
+            "kind": "error",
+            "owner": "core",
+            "legacy": [
+                {
+                    "kind": "runtime-export",
+                    "package": "valdres",
+                    "subpath": ".",
+                    "name": "SelectorCircularDependencyError",
+                    "baseline": "1.0.0-beta.23"
+                }
+            ],
+            "target": {
+                "package": "valdres",
+                "subpath": ".",
+                "name": "SelectorCircularDependencyError",
+                "status": "stable"
+            },
+            "migration": {
+                "mode": "keep",
+                "replacementIds": [],
+                "semver": "breaking",
+                "codemod": "Migrate the beta surface to SelectorCircularDependencyError.",
+                "typeError": "The beta form is rejected by the v1 SelectorCircularDependencyError declaration.",
+                "firstPartyOwner": "core",
+                "evidenceStatus": "planned"
+            },
+            "contractIds": ["selector.pure-sync-dag"],
+            "decisionStatus": "approved",
+            "notes": "The stable root keeps the named cycle error."
+        },
+        {
+            "id": "core.selector-evaluation-error",
+            "kind": "error",
+            "owner": "core",
+            "legacy": [
+                {
+                    "kind": "runtime-export",
+                    "package": "valdres",
+                    "subpath": ".",
+                    "name": "SelectorEvaluationError",
+                    "baseline": "1.0.0-beta.23"
+                }
+            ],
+            "target": {
+                "package": "valdres",
+                "subpath": ".",
+                "name": "SelectorEvaluationError",
+                "status": "stable"
+            },
+            "migration": {
+                "mode": "keep",
+                "replacementIds": [],
+                "semver": "breaking",
+                "codemod": "Migrate the beta surface to SelectorEvaluationError.",
+                "typeError": "The beta form is rejected by the v1 SelectorEvaluationError declaration.",
+                "firstPartyOwner": "core",
+                "evidenceStatus": "planned"
+            },
+            "contractIds": ["selector.pure-sync-dag", "selector.one-evaluator"],
+            "decisionStatus": "approved",
+            "notes": "The stable root keeps the named selector evaluation error."
+        },
+        {
+            "id": "core.store",
+            "kind": "runtime-export",
+            "owner": "valdres",
+            "legacy": [
+                {
+                    "kind": "overload",
+                    "subpath": ".",
+                    "owner": "store",
+                    "name": "(options?)",
+                    "package": "valdres",
+                    "baseline": "1.0.0-beta.23"
+                },
+                {
+                    "kind": "runtime-export",
+                    "package": "valdres",
+                    "subpath": ".",
+                    "name": "store",
+                    "baseline": "1.0.0-beta.23"
+                }
+            ],
+            "target": {
+                "package": "valdres",
+                "subpath": ".",
+                "name": "store",
+                "status": "stable"
+            },
+            "migration": {
+                "mode": "keep",
+                "replacementIds": [],
+                "semver": "breaking",
+                "codemod": "Remove positional/name identity and initialize through explicit owner transactions.",
+                "typeError": "Positional IDs and identity options reject.",
+                "firstPartyOwner": "core",
+                "evidenceStatus": "external-handoff-required"
+            },
+            "contractIds": ["store.object-identity", "store.explicit-owner"],
+            "decisionStatus": "approved",
+            "notes": "Current ShiftX ownership flows require external validation."
+        },
+        {
+            "id": "core.store-disposed-error",
+            "kind": "error",
+            "owner": "core",
+            "legacy": [
+                {
+                    "kind": "runtime-export",
+                    "package": "valdres",
+                    "subpath": ".",
+                    "name": "StoreDisposedError",
+                    "baseline": "1.0.0-beta.23"
+                }
+            ],
+            "target": {
+                "package": "valdres",
+                "subpath": ".",
+                "name": "StoreDisposedError",
+                "status": "stable"
+            },
+            "migration": {
+                "mode": "keep",
+                "replacementIds": [],
+                "semver": "breaking",
+                "codemod": "Migrate the beta surface to StoreDisposedError.",
+                "typeError": "The beta form is rejected by the v1 StoreDisposedError declaration.",
+                "firstPartyOwner": "core",
+                "evidenceStatus": "planned"
+            },
+            "contractIds": ["store.explicit-owner-teardown"],
+            "decisionStatus": "approved",
+            "notes": "Disposed Store generations remain terminal and code-addressable."
+        },
+        {
+            "id": "core.store.delete",
+            "kind": "method",
+            "owner": "valdres",
+            "legacy": [
+                {
+                    "kind": "method",
+                    "subpath": ".",
+                    "owner": "Store",
+                    "name": "del",
+                    "package": "valdres",
+                    "baseline": "1.0.0-beta.23"
+                }
+            ],
+            "target": {
+                "package": "valdres",
+                "subpath": ".",
+                "name": "Store.delete",
+                "status": "stable"
+            },
+            "migration": {
+                "mode": "replace",
+                "replacementIds": [],
+                "semver": "breaking",
+                "codemod": "Rewrite del(row) to delete(row).",
+                "typeError": "delete accepts collection rows only.",
+                "firstPartyOwner": "collection",
+                "evidenceStatus": "planned"
+            },
+            "contractIds": ["collection.local-absent-tombstone"],
+            "decisionStatus": "approved",
+            "notes": "reset removes local ownership; delete forces local absence."
+        },
+        {
+            "id": "core.store.dispose",
+            "kind": "method",
+            "owner": "core",
+            "legacy": [
+                {
+                    "kind": "method",
+                    "subpath": ".",
+                    "owner": "Store",
+                    "name": "dispose",
+                    "package": "valdres",
+                    "baseline": "1.0.0-beta.23"
+                }
+            ],
+            "target": {
+                "package": "valdres",
+                "subpath": ".",
+                "name": "Store.dispose",
+                "status": "stable"
+            },
+            "migration": {
+                "mode": "keep",
+                "replacementIds": [],
+                "semver": "breaking",
+                "codemod": "Migrate the beta surface to Store.dispose.",
+                "typeError": "The beta form is rejected by the v1 Store.dispose declaration.",
+                "firstPartyOwner": "core",
+                "evidenceStatus": "external-handoff-required"
+            },
+            "contractIds": [
+                "store.explicit-owner-teardown",
+                "scope.explicit-disposal"
+            ],
+            "decisionStatus": "approved",
+            "notes": "The explicit owner retains terminal Store disposal."
+        },
+        {
+            "id": "core.store.get",
+            "kind": "method",
+            "owner": "core",
+            "legacy": [
+                {
+                    "kind": "overload",
+                    "subpath": ".",
+                    "owner": "Store",
+                    "name": "get(atom)",
+                    "package": "valdres",
+                    "baseline": "1.0.0-beta.23"
+                },
+                {
+                    "kind": "overload",
+                    "subpath": ".",
+                    "owner": "Store",
+                    "name": "get(selector)",
+                    "package": "valdres",
+                    "baseline": "1.0.0-beta.23"
+                }
+            ],
+            "target": {
+                "package": "valdres",
+                "subpath": ".",
+                "name": "Store.get",
+                "status": "stable"
+            },
+            "migration": {
+                "mode": "keep",
+                "replacementIds": [],
+                "semver": "breaking",
+                "codemod": "Migrate the beta surface to Store.get.",
+                "typeError": "The beta form is rejected by the v1 Store.get declaration.",
+                "firstPartyOwner": "core",
+                "evidenceStatus": "planned"
+            },
+            "contractIds": [
+                "selector.one-evaluator",
+                "collection.membership-order"
+            ],
+            "decisionStatus": "approved",
+            "notes": "One synchronous read method serves every approved State and collection view."
+        },
+        {
+            "id": "core.store.on-dispose",
+            "kind": "method",
+            "owner": "valdres",
+            "legacy": [
+                {
+                    "kind": "method",
+                    "subpath": ".",
+                    "owner": "Store",
+                    "name": "onDispose",
+                    "package": "valdres",
+                    "baseline": "1.0.0-beta.23"
+                }
+            ],
+            "target": {
+                "package": null,
+                "subpath": null,
+                "name": null,
+                "status": "removed"
+            },
+            "migration": {
+                "mode": "remove",
+                "replacementIds": [],
+                "semver": "breaking",
+                "codemod": "Release Store and adjacent resources at the explicit owner boundary; borrowed libraries return a disposer or accept AbortSignal.",
+                "typeError": "Store.onDispose is absent.",
+                "firstPartyOwner": "resource-owners",
+                "evidenceStatus": "planned"
+            },
+            "contractIds": ["store.explicit-owner-teardown"],
+            "decisionStatus": "approved",
+            "notes": "Private internal and ExternalSource cleanup remains."
+        },
+        {
+            "id": "core.store.reset",
+            "kind": "method",
+            "owner": "core",
+            "legacy": [
+                {
+                    "kind": "method",
+                    "subpath": ".",
+                    "owner": "Store",
+                    "name": "reset",
+                    "package": "valdres",
+                    "baseline": "1.0.0-beta.23"
+                }
+            ],
+            "target": {
+                "package": "valdres",
+                "subpath": ".",
+                "name": "Store.reset",
+                "status": "stable"
+            },
+            "migration": {
+                "mode": "keep",
+                "replacementIds": [],
+                "semver": "breaking",
+                "codemod": "Migrate the beta surface to Store.reset.",
+                "typeError": "The beta form is rejected by the v1 Store.reset declaration.",
+                "firstPartyOwner": "core",
+                "evidenceStatus": "planned"
+            },
+            "contractIds": ["atom.exact-value", "scope.live-inheritance"],
+            "decisionStatus": "approved",
+            "notes": "Reset is the sole local-ownership removal operation."
+        },
+        {
+            "id": "core.store.scope",
+            "kind": "method",
+            "owner": "valdres",
+            "legacy": [
+                {
+                    "kind": "overload",
+                    "subpath": ".",
+                    "owner": "Store",
+                    "name": "scope(id)",
+                    "package": "valdres",
+                    "baseline": "1.0.0-beta.23"
+                },
+                {
+                    "kind": "type-export",
+                    "package": "valdres",
+                    "subpath": ".",
+                    "name": "BorrowedScopedStore",
+                    "baseline": "1.0.0-beta.23"
+                },
+                {
+                    "kind": "type-export",
+                    "package": "valdres",
+                    "subpath": ".",
+                    "name": "ScopedStore",
+                    "baseline": "1.0.0-beta.23"
+                },
+                {
+                    "kind": "type-export",
+                    "package": "valdres",
+                    "subpath": ".",
+                    "name": "ScopeFn",
+                    "baseline": "1.0.0-beta.23"
+                }
+            ],
+            "target": {
+                "package": "valdres",
+                "subpath": ".",
+                "name": "Store.scope",
+                "status": "stable"
+            },
+            "migration": {
+                "mode": "replace",
+                "replacementIds": [],
+                "semver": "breaking",
+                "codemod": "Use scope() for a fresh child or scope(id) for parent-local get-or-create; owners dispose explicitly.",
+                "typeError": "Lease/detach/callback-borrow forms reject.",
+                "firstPartyOwner": "core",
+                "evidenceStatus": "external-handoff-required"
+            },
+            "contractIds": [
+                "scope.live-inheritance",
+                "scope.parent-local-name",
+                "scope.explicit-disposal"
+            ],
+            "decisionStatus": "approved",
+            "notes": "No React consumer-count ownership."
+        },
+        {
+            "id": "core.store.set",
+            "kind": "method",
+            "owner": "core",
+            "legacy": [
+                {
+                    "kind": "overload",
+                    "subpath": ".",
+                    "owner": "Store",
+                    "name": "set(value | updater: general)",
+                    "package": "valdres",
+                    "baseline": "1.0.0-beta.23"
+                },
+                {
+                    "kind": "overload",
+                    "subpath": ".",
+                    "owner": "Store",
+                    "name": "set(value | updater: sync)",
+                    "package": "valdres",
+                    "baseline": "1.0.0-beta.23"
+                }
+            ],
+            "target": {
+                "package": "valdres",
+                "subpath": ".",
+                "name": "Store.set",
+                "status": "stable"
+            },
+            "migration": {
+                "mode": "replace",
+                "replacementIds": ["core.store.update"],
+                "semver": "breaking",
+                "codemod": "Migrate the beta surface to Store.set.",
+                "typeError": "The beta form is rejected by the v1 Store.set declaration.",
+                "firstPartyOwner": "core",
+                "evidenceStatus": "planned"
+            },
+            "contractIds": ["atom.exact-value", "mutation.value-vs-updater"],
+            "decisionStatus": "approved",
+            "notes": "Set stores an exact synchronous value; updater behavior belongs only to update."
+        },
+        {
+            "id": "core.store.sub",
+            "kind": "method",
+            "owner": "core",
+            "legacy": [
+                {
+                    "kind": "overload",
+                    "subpath": ".",
+                    "owner": "Store",
+                    "name": "sub(state)",
+                    "package": "valdres",
+                    "baseline": "1.0.0-beta.23"
+                }
+            ],
+            "target": {
+                "package": "valdres",
+                "subpath": ".",
+                "name": "Store.sub",
+                "status": "stable"
+            },
+            "migration": {
+                "mode": "keep",
+                "replacementIds": [],
+                "semver": "breaking",
+                "codemod": "Migrate the beta surface to Store.sub.",
+                "typeError": "The beta form is rejected by the v1 Store.sub declaration.",
+                "firstPartyOwner": "core",
+                "evidenceStatus": "planned"
+            },
+            "contractIds": [
+                "notification.after-stability",
+                "callback.subscriber-quarantine"
+            ],
+            "decisionStatus": "approved",
+            "notes": "Subscriptions deliver one final committed snapshot and return an idempotent unsubscribe."
+        },
+        {
+            "id": "core.store.txn",
+            "kind": "method",
+            "owner": "valdres",
+            "legacy": [
+                {
+                    "kind": "overload",
+                    "subpath": ".",
+                    "owner": "Store",
+                    "name": "txn(callback)",
+                    "package": "valdres",
+                    "baseline": "1.0.0-beta.23"
+                }
+            ],
+            "target": {
+                "package": "valdres",
+                "subpath": ".",
+                "name": "Store.txn",
+                "status": "stable"
+            },
+            "migration": {
+                "mode": "keep",
+                "replacementIds": [],
+                "semver": "breaking",
+                "codemod": "Use the bound synchronous Store transaction and same-Tree scope cursors.",
+                "typeError": "Thenable callbacks, cross-tree targets, and closed cursors reject.",
+                "firstPartyOwner": "core",
+                "evidenceStatus": "external-handoff-required"
+            },
+            "contractIds": [
+                "transaction.one-tree-draft",
+                "transaction.sync-derived-reads"
+            ],
+            "decisionStatus": "approved",
+            "notes": "Current native ShiftX transaction shapes require external validation."
+        },
+        {
+            "id": "core.store.update",
+            "kind": "method",
+            "owner": "valdres",
+            "legacy": [],
+            "target": {
+                "package": "valdres",
+                "subpath": ".",
+                "name": "Store.update",
+                "status": "stable"
+            },
+            "migration": {
+                "mode": "replace",
+                "replacementIds": [],
+                "semver": "breaking",
+                "codemod": "Rewrite updater-valued set calls to update.",
+                "typeError": "A function passed to set is stored as a value; row update on absence rejects.",
+                "firstPartyOwner": "core",
+                "evidenceStatus": "planned"
+            },
+            "contractIds": [
+                "mutation.value-vs-updater",
+                "collection.update-existing-only"
+            ],
+            "decisionStatus": "approved",
+            "notes": "All mutation verbs return void."
+        },
+        {
+            "id": "core.structural-query",
+            "kind": "runtime-export",
+            "owner": "valdres",
+            "legacy": [],
+            "target": {
+                "package": "valdres",
+                "subpath": ".",
+                "name": "query",
+                "status": "stable"
+            },
+            "migration": {
+                "mode": "add",
+                "replacementIds": [],
+                "semver": "new",
+                "codemod": "Define a single-collection structural query with query(collection, { where, orderBy, offset, limit, facets }); use $all, $any, and $not for explicit Boolean groups.",
+                "typeError": "Unknown indexes, operators, option keys, value domains, order fields, and facet fields reject recursively.",
+                "firstPartyOwner": "collection",
+                "evidenceStatus": "planned"
+            },
+            "contractIds": [
+                "query.recursive-object-definition",
+                "query.single-collection-composite-result",
+                "query.ready-only-indexed-read"
+            ],
+            "decisionStatus": "approved",
+            "notes": "The stable primitive is standalone and uses the zero-operator-import recursive object grammar with implicit conjunction and explicit $all/$any/$not. A fluent builder remains reserved for experimental multi-collection search."
+        },
+        {
+            "id": "core.transaction.delete",
+            "kind": "method",
+            "owner": "core",
+            "legacy": [
+                {
+                    "kind": "method",
+                    "subpath": ".",
+                    "owner": "Transaction",
+                    "name": "del",
+                    "package": "valdres",
+                    "baseline": "1.0.0-beta.23"
+                }
+            ],
+            "target": {
+                "package": "valdres",
+                "subpath": ".",
+                "name": "Transaction.delete",
+                "status": "stable"
+            },
+            "migration": {
+                "mode": "replace",
+                "replacementIds": [],
+                "semver": "breaking",
+                "codemod": "Migrate the beta surface to Transaction.delete.",
+                "typeError": "The beta form is rejected by the v1 Transaction.delete declaration.",
+                "firstPartyOwner": "core",
+                "evidenceStatus": "planned"
+            },
+            "contractIds": [
+                "collection.local-absent-tombstone",
+                "transaction.one-tree-draft"
+            ],
+            "decisionStatus": "approved",
+            "notes": "Collection row deletion uses the Map-like delete spelling."
+        },
+        {
+            "id": "core.transaction.get",
+            "kind": "method",
+            "owner": "core",
+            "legacy": [
+                {
+                    "kind": "overload",
+                    "subpath": ".",
+                    "owner": "Transaction",
+                    "name": "get(atom)",
+                    "package": "valdres",
+                    "baseline": "1.0.0-beta.23"
+                },
+                {
+                    "kind": "overload",
+                    "subpath": ".",
+                    "owner": "Transaction",
+                    "name": "get(selector)",
+                    "package": "valdres",
+                    "baseline": "1.0.0-beta.23"
+                }
+            ],
+            "target": {
+                "package": "valdres",
+                "subpath": ".",
+                "name": "Transaction.get",
+                "status": "stable"
+            },
+            "migration": {
+                "mode": "keep",
+                "replacementIds": [],
+                "semver": "breaking",
+                "codemod": "Migrate the beta surface to Transaction.get.",
+                "typeError": "The beta form is rejected by the v1 Transaction.get declaration.",
+                "firstPartyOwner": "core",
+                "evidenceStatus": "external-handoff-required"
+            },
+            "contractIds": [
+                "transaction.sync-derived-reads",
+                "selector.one-evaluator"
+            ],
+            "decisionStatus": "approved",
+            "notes": "Transaction reads use the one evaluator over the scratch overlay."
+        },
+        {
+            "id": "core.transaction.reset",
+            "kind": "method",
+            "owner": "core",
+            "legacy": [
+                {
+                    "kind": "method",
+                    "subpath": ".",
+                    "owner": "Transaction",
+                    "name": "reset",
+                    "package": "valdres",
+                    "baseline": "1.0.0-beta.23"
+                }
+            ],
+            "target": {
+                "package": "valdres",
+                "subpath": ".",
+                "name": "Transaction.reset",
+                "status": "stable"
+            },
+            "migration": {
+                "mode": "keep",
+                "replacementIds": [],
+                "semver": "breaking",
+                "codemod": "Migrate the beta surface to Transaction.reset.",
+                "typeError": "The beta form is rejected by the v1 Transaction.reset declaration.",
+                "firstPartyOwner": "core",
+                "evidenceStatus": "planned"
+            },
+            "contractIds": [
+                "transaction.one-tree-draft",
+                "scope.live-inheritance"
+            ],
+            "decisionStatus": "approved",
+            "notes": "Transaction reset stages local-ownership removal."
+        },
+        {
+            "id": "core.transaction.scope",
+            "kind": "method",
+            "owner": "core",
+            "legacy": [
+                {
+                    "kind": "overload",
+                    "subpath": ".",
+                    "owner": "Transaction",
+                    "name": "scope(id, callback)",
+                    "package": "valdres",
+                    "baseline": "1.0.0-beta.23"
+                }
+            ],
+            "target": {
+                "package": "valdres",
+                "subpath": ".",
+                "name": "Transaction.scope",
+                "status": "stable"
+            },
+            "migration": {
+                "mode": "keep",
+                "replacementIds": [],
+                "semver": "breaking",
+                "codemod": "Migrate the beta surface to Transaction.scope.",
+                "typeError": "The beta form is rejected by the v1 Transaction.scope declaration.",
+                "firstPartyOwner": "core",
+                "evidenceStatus": "external-handoff-required"
+            },
+            "contractIds": [
+                "transaction.scope-cursor-no-savepoint",
+                "scope.parent-local-name"
+            ],
+            "decisionStatus": "approved",
+            "notes": "The compatible callback form remains while cursor lookup adds exact Store targets."
+        },
+        {
+            "id": "core.transaction.set",
+            "kind": "method",
+            "owner": "core",
+            "legacy": [
+                {
+                    "kind": "overload",
+                    "subpath": ".",
+                    "owner": "Transaction",
+                    "name": "set(value | updater: general)",
+                    "package": "valdres",
+                    "baseline": "1.0.0-beta.23"
+                },
+                {
+                    "kind": "overload",
+                    "subpath": ".",
+                    "owner": "Transaction",
+                    "name": "set(value | updater: sync)",
+                    "package": "valdres",
+                    "baseline": "1.0.0-beta.23"
+                }
+            ],
+            "target": {
+                "package": "valdres",
+                "subpath": ".",
+                "name": "Transaction.set",
+                "status": "stable"
+            },
+            "migration": {
+                "mode": "replace",
+                "replacementIds": ["core.transaction.update"],
+                "semver": "breaking",
+                "codemod": "Migrate the beta surface to Transaction.set.",
+                "typeError": "The beta form is rejected by the v1 Transaction.set declaration.",
+                "firstPartyOwner": "core",
+                "evidenceStatus": "planned"
+            },
+            "contractIds": ["atom.exact-value", "mutation.value-vs-updater"],
+            "decisionStatus": "approved",
+            "notes": "Transaction set stores an exact synchronous value."
+        },
+        {
+            "id": "core.transaction.update",
+            "kind": "method",
+            "owner": "core",
+            "legacy": [],
+            "target": {
+                "package": "valdres",
+                "subpath": ".",
+                "name": "Transaction.update",
+                "status": "stable"
+            },
+            "migration": {
+                "mode": "add",
+                "replacementIds": [],
+                "semver": "new",
+                "codemod": "Migrate the beta surface to Transaction.update.",
+                "typeError": "The beta form is rejected by the v1 Transaction.update declaration.",
+                "firstPartyOwner": "core",
+                "evidenceStatus": "planned"
+            },
+            "contractIds": [
+                "mutation.value-vs-updater",
+                "transaction.one-tree-draft"
+            ],
+            "decisionStatus": "approved",
+            "notes": "Transaction update is the only cursor operation that invokes an updater callback."
+        },
+        {
+            "id": "core.type.atom",
+            "kind": "type-export",
+            "owner": "core",
+            "legacy": [
+                {
+                    "kind": "type-export",
+                    "package": "valdres",
+                    "subpath": ".",
+                    "name": "Atom",
+                    "baseline": "1.0.0-beta.23"
+                }
+            ],
+            "target": {
+                "package": "valdres",
+                "subpath": ".",
+                "name": "Atom",
+                "status": "stable"
+            },
+            "migration": {
+                "mode": "keep",
+                "replacementIds": [],
+                "semver": "breaking",
+                "codemod": "Migrate the beta surface to Atom.",
+                "typeError": "The beta form is rejected by the v1 Atom declaration.",
+                "firstPartyOwner": "core",
+                "evidenceStatus": "planned"
+            },
+            "contractIds": ["atom.exact-value"],
+            "decisionStatus": "approved",
+            "notes": "Atom remains public with the narrowed v1 synchronous contract."
+        },
+        {
+            "id": "core.type.atom-options",
+            "kind": "type-export",
+            "owner": "core",
+            "legacy": [
+                {
+                    "kind": "type-export",
+                    "package": "valdres",
+                    "subpath": ".",
+                    "name": "AtomOptions",
+                    "baseline": "1.0.0-beta.23"
+                }
+            ],
+            "target": {
+                "package": "valdres",
+                "subpath": ".",
+                "name": "AtomOptions",
+                "status": "stable"
+            },
+            "migration": {
+                "mode": "keep",
+                "replacementIds": [],
+                "semver": "breaking",
+                "codemod": "Migrate the beta surface to AtomOptions.",
+                "typeError": "The beta form is rejected by the v1 AtomOptions declaration.",
+                "firstPartyOwner": "core",
+                "evidenceStatus": "planned"
+            },
+            "contractIds": ["atom.object-is-default"],
+            "decisionStatus": "approved",
+            "notes": "AtomOptions remains public with the narrowed v1 synchronous contract."
+        },
+        {
+            "id": "core.type.equal-func",
+            "kind": "type-export",
+            "owner": "core",
+            "legacy": [
+                {
+                    "kind": "type-export",
+                    "package": "valdres",
+                    "subpath": ".",
+                    "name": "EqualFunc",
+                    "baseline": "1.0.0-beta.23"
+                }
+            ],
+            "target": {
+                "package": "valdres",
+                "subpath": ".",
+                "name": "EqualFunc",
+                "status": "stable"
+            },
+            "migration": {
+                "mode": "keep",
+                "replacementIds": [],
+                "semver": "breaking",
+                "codemod": "Migrate the beta surface to EqualFunc.",
+                "typeError": "The beta form is rejected by the v1 EqualFunc declaration.",
+                "firstPartyOwner": "core",
+                "evidenceStatus": "planned"
+            },
+            "contractIds": ["atom.object-is-default"],
+            "decisionStatus": "approved",
+            "notes": "EqualFunc<Value> remains public as exactly (previous: Value, next: Value) => boolean; the beta trigger-set argument is removed."
+        },
+        {
+            "id": "core.type.family-key",
+            "kind": "type-export",
+            "owner": "core",
+            "legacy": [
+                {
+                    "kind": "type-export",
+                    "package": "valdres",
+                    "subpath": ".",
+                    "name": "FamilyKey",
+                    "baseline": "1.0.0-beta.23"
+                }
+            ],
+            "target": {
+                "package": "valdres",
+                "subpath": ".",
+                "name": "FamilyKey",
+                "status": "stable"
+            },
+            "migration": {
+                "mode": "keep",
+                "replacementIds": [],
+                "semver": "breaking",
+                "codemod": "Migrate the beta surface to FamilyKey.",
+                "typeError": "The beta form is rejected by the v1 FamilyKey declaration.",
+                "firstPartyOwner": "core",
+                "evidenceStatus": "planned"
+            },
+            "contractIds": [
+                "family.variadic-primitive-identity",
+                "family.same-value-zero"
+            ],
+            "decisionStatus": "approved",
+            "notes": "FamilyKey is exactly string | number | bigint | boolean | symbol | null | undefined. Structured values require family encodeKey, and every primitive slot uses SameValueZero."
+        },
+        {
+            "id": "core.type.get-value",
+            "kind": "type-export",
+            "owner": "core",
+            "legacy": [
+                {
+                    "kind": "type-export",
+                    "package": "valdres",
+                    "subpath": ".",
+                    "name": "GetValue",
+                    "baseline": "1.0.0-beta.23"
+                }
+            ],
+            "target": {
+                "package": "valdres",
+                "subpath": ".",
+                "name": "GetValue",
+                "status": "stable"
+            },
+            "migration": {
+                "mode": "keep",
+                "replacementIds": [],
+                "semver": "breaking",
+                "codemod": "Migrate the beta surface to GetValue.",
+                "typeError": "The beta form is rejected by the v1 GetValue declaration.",
+                "firstPartyOwner": "core",
+                "evidenceStatus": "planned"
+            },
+            "contractIds": [
+                "selector.one-evaluator",
+                "transaction.sync-derived-reads"
+            ],
+            "decisionStatus": "approved",
+            "notes": "GetValue remains the synchronous typed read capability for every stable readable node kind; it contains no late, async, or Store-identity channel."
+        },
+        {
+            "id": "core.type.selector",
+            "kind": "type-export",
+            "owner": "core",
+            "legacy": [
+                {
+                    "kind": "type-export",
+                    "package": "valdres",
+                    "subpath": ".",
+                    "name": "Selector",
+                    "baseline": "1.0.0-beta.23"
+                }
+            ],
+            "target": {
+                "package": "valdres",
+                "subpath": ".",
+                "name": "Selector",
+                "status": "stable"
+            },
+            "migration": {
+                "mode": "keep",
+                "replacementIds": [],
+                "semver": "breaking",
+                "codemod": "Migrate the beta surface to Selector.",
+                "typeError": "The beta form is rejected by the v1 Selector declaration.",
+                "firstPartyOwner": "core",
+                "evidenceStatus": "planned"
+            },
+            "contractIds": ["selector.pure-sync-dag"],
+            "decisionStatus": "approved",
+            "notes": "Selector remains public with the narrowed v1 synchronous contract."
+        },
+        {
+            "id": "core.type.selector-options",
+            "kind": "type-export",
+            "owner": "core",
+            "legacy": [
+                {
+                    "kind": "type-export",
+                    "package": "valdres",
+                    "subpath": ".",
+                    "name": "SelectorOptions",
+                    "baseline": "1.0.0-beta.23"
+                }
+            ],
+            "target": {
+                "package": "valdres",
+                "subpath": ".",
+                "name": "SelectorOptions",
+                "status": "stable"
+            },
+            "migration": {
+                "mode": "keep",
+                "replacementIds": [],
+                "semver": "breaking",
+                "codemod": "Migrate the beta surface to SelectorOptions.",
+                "typeError": "The beta form is rejected by the v1 SelectorOptions declaration.",
+                "firstPartyOwner": "core",
+                "evidenceStatus": "planned"
+            },
+            "contractIds": ["selector.pure-sync-dag"],
+            "decisionStatus": "approved",
+            "notes": "SelectorOptions remains public with the narrowed v1 synchronous contract."
+        },
+        {
+            "id": "core.type.state",
+            "kind": "type-export",
+            "owner": "core",
+            "legacy": [
+                {
+                    "kind": "type-export",
+                    "package": "valdres",
+                    "subpath": ".",
+                    "name": "State",
+                    "baseline": "1.0.0-beta.23"
+                }
+            ],
+            "target": {
+                "package": "valdres",
+                "subpath": ".",
+                "name": "State",
+                "status": "stable"
+            },
+            "migration": {
+                "mode": "keep",
+                "replacementIds": [],
+                "semver": "breaking",
+                "codemod": "Migrate the beta surface to State.",
+                "typeError": "The beta form is rejected by the v1 State declaration.",
+                "firstPartyOwner": "core",
+                "evidenceStatus": "planned"
+            },
+            "contractIds": ["atom.exact-value", "selector.pure-sync-dag"],
+            "decisionStatus": "approved",
+            "notes": "State remains public with the narrowed v1 synchronous contract."
+        },
+        {
+            "id": "core.type.store",
+            "kind": "type-export",
+            "owner": "core",
+            "legacy": [
+                {
+                    "kind": "type-export",
+                    "package": "valdres",
+                    "subpath": ".",
+                    "name": "Store",
+                    "baseline": "1.0.0-beta.23"
+                }
+            ],
+            "target": {
+                "package": "valdres",
+                "subpath": ".",
+                "name": "Store",
+                "status": "stable"
+            },
+            "migration": {
+                "mode": "keep",
+                "replacementIds": [],
+                "semver": "breaking",
+                "codemod": "Migrate the beta surface to Store.",
+                "typeError": "The beta form is rejected by the v1 Store declaration.",
+                "firstPartyOwner": "core",
+                "evidenceStatus": "planned"
+            },
+            "contractIds": ["store.object-identity"],
+            "decisionStatus": "approved",
+            "notes": "Store remains public with the narrowed v1 synchronous contract."
+        },
+        {
+            "id": "core.type.store-options",
+            "kind": "type-export",
+            "owner": "core",
+            "legacy": [
+                {
+                    "kind": "type-export",
+                    "package": "valdres",
+                    "subpath": ".",
+                    "name": "StoreOptions",
+                    "baseline": "1.0.0-beta.23"
+                }
+            ],
+            "target": {
+                "package": "valdres",
+                "subpath": ".",
+                "name": "StoreOptions",
+                "status": "stable"
+            },
+            "migration": {
+                "mode": "keep",
+                "replacementIds": [],
+                "semver": "breaking",
+                "codemod": "Migrate the beta surface to StoreOptions.",
+                "typeError": "The beta form is rejected by the v1 StoreOptions declaration.",
+                "firstPartyOwner": "core",
+                "evidenceStatus": "planned"
+            },
+            "contractIds": ["store.explicit-owner"],
+            "decisionStatus": "approved",
+            "notes": "StoreOptions remains public with the narrowed v1 synchronous contract."
+        },
+        {
+            "id": "core.type.subscribe-fn",
+            "kind": "type-export",
+            "owner": "core",
+            "legacy": [
+                {
+                    "kind": "type-export",
+                    "package": "valdres",
+                    "subpath": ".",
+                    "name": "SubscribeFn",
+                    "baseline": "1.0.0-beta.23"
+                }
+            ],
+            "target": {
+                "package": "valdres",
+                "subpath": ".",
+                "name": "SubscribeFn",
+                "status": "stable"
+            },
+            "migration": {
+                "mode": "keep",
+                "replacementIds": [],
+                "semver": "breaking",
+                "codemod": "Migrate the beta surface to SubscribeFn.",
+                "typeError": "The beta form is rejected by the v1 SubscribeFn declaration.",
+                "firstPartyOwner": "core",
+                "evidenceStatus": "planned"
+            },
+            "contractIds": ["notification.after-stability"],
+            "decisionStatus": "approved",
+            "notes": "SubscribeFn remains the stable Store subscription method type and returns one idempotent unsubscribe; family callback and deep-equality parameters are removed."
+        },
+        {
+            "id": "core.type.transaction",
+            "kind": "type-export",
+            "owner": "core",
+            "legacy": [
+                {
+                    "kind": "type-export",
+                    "package": "valdres",
+                    "subpath": ".",
+                    "name": "Transaction",
+                    "baseline": "1.0.0-beta.23"
+                }
+            ],
+            "target": {
+                "package": "valdres",
+                "subpath": ".",
+                "name": "Transaction",
+                "status": "stable"
+            },
+            "migration": {
+                "mode": "keep",
+                "replacementIds": [],
+                "semver": "breaking",
+                "codemod": "Migrate the beta surface to Transaction.",
+                "typeError": "The beta form is rejected by the v1 Transaction declaration.",
+                "firstPartyOwner": "core",
+                "evidenceStatus": "planned"
+            },
+            "contractIds": ["transaction.one-tree-draft"],
+            "decisionStatus": "approved",
+            "notes": "Transaction remains public with the narrowed v1 synchronous contract."
+        },
+        {
+            "id": "core.type.transaction-fn",
+            "kind": "type-export",
+            "owner": "core",
+            "legacy": [
+                {
+                    "kind": "type-export",
+                    "package": "valdres",
+                    "subpath": ".",
+                    "name": "TransactionFn",
+                    "baseline": "1.0.0-beta.23"
+                }
+            ],
+            "target": {
+                "package": "valdres",
+                "subpath": ".",
+                "name": "TransactionFn",
+                "status": "stable"
+            },
+            "migration": {
+                "mode": "keep",
+                "replacementIds": [],
+                "semver": "breaking",
+                "codemod": "Migrate the beta surface to TransactionFn.",
+                "typeError": "The beta form is rejected by the v1 TransactionFn declaration.",
+                "firstPartyOwner": "core",
+                "evidenceStatus": "planned"
+            },
+            "contractIds": ["transaction.one-tree-draft"],
+            "decisionStatus": "approved",
+            "notes": "TransactionFn<Result = unknown> remains the generic synchronous (transaction: Transaction) => Result callback type; Promise and thenable results reject."
+        },
+        {
+            "id": "legacy.adapter-selector-error",
+            "kind": "runtime-export",
+            "owner": "adapter-boundary",
+            "legacy": [
+                {
+                    "kind": "runtime-export",
+                    "package": "valdres",
+                    "subpath": "./adapter-internals/v1",
+                    "name": "SelectorEvaluationError",
+                    "baseline": "1.0.0-beta.23"
+                }
+            ],
+            "target": {
+                "package": null,
+                "subpath": null,
+                "name": null,
+                "status": "pending"
+            },
+            "migration": {
+                "mode": "replace",
+                "replacementIds": ["core.selector-evaluation-error"],
+                "semver": "breaking",
+                "codemod": "Rewrite to core.selector-evaluation-error.",
+                "typeError": "The beta form is rejected by the replacement v1 declaration.",
+                "firstPartyOwner": "adapter-boundary",
+                "evidenceStatus": "planned"
+            },
+            "contractIds": ["selector.pure-sync-dag"],
+            "decisionStatus": "approved",
+            "notes": "Adapters import the canonical root error rather than a duplicate adapter-subpath export."
+        },
+        {
+            "id": "legacy.adapter-transaction",
+            "kind": "runtime-export",
+            "owner": "adapter-boundary",
+            "legacy": [
+                {
+                    "kind": "method",
+                    "subpath": "./adapter-internals/v1",
+                    "owner": "Transaction",
+                    "name": "abort",
+                    "package": "valdres",
+                    "baseline": "1.0.0-beta.23"
+                },
+                {
+                    "kind": "option",
+                    "subpath": "./adapter-internals/v1",
+                    "owner": "Transaction.commit",
+                    "name": "source",
+                    "package": "valdres",
+                    "baseline": "1.0.0-beta.23"
+                },
+                {
+                    "kind": "overload",
+                    "subpath": "./adapter-internals/v1",
+                    "owner": "Transaction",
+                    "name": "commit(source?)",
+                    "package": "valdres",
+                    "baseline": "1.0.0-beta.23"
+                },
+                {
+                    "kind": "overload",
+                    "subpath": "./adapter-internals/v1",
+                    "owner": "Transaction",
+                    "name": "constructor(store)",
+                    "package": "valdres",
+                    "baseline": "1.0.0-beta.23"
+                },
+                {
+                    "kind": "runtime-export",
+                    "package": "valdres",
+                    "subpath": "./adapter-internals/v1",
+                    "name": "Transaction",
+                    "baseline": "1.0.0-beta.23"
+                }
+            ],
+            "target": {
+                "package": null,
+                "subpath": null,
+                "name": null,
+                "status": "removed"
+            },
+            "migration": {
+                "mode": "remove",
+                "replacementIds": ["core.store.txn"],
+                "semver": "breaking",
+                "codemod": "Rewrite to core.store.txn.",
+                "typeError": "The beta-only surface is absent from the v1 declarations.",
+                "firstPartyOwner": "adapter-boundary",
+                "evidenceStatus": "planned"
+            },
+            "contractIds": [
+                "transaction.one-tree-draft",
+                "runtime.before-work-owner-check"
+            ],
+            "decisionStatus": "approved",
+            "notes": "Stable adapter internals expose no manually controlled Transaction."
+        },
+        {
+            "id": "legacy.atom-default-value",
+            "kind": "type-export",
+            "owner": "core",
+            "legacy": [
+                {
+                    "kind": "type-export",
+                    "package": "valdres",
+                    "subpath": ".",
+                    "name": "AtomDefaultValue",
+                    "baseline": "1.0.0-beta.23"
+                }
+            ],
+            "target": {
+                "package": null,
+                "subpath": null,
+                "name": null,
+                "status": "pending"
+            },
+            "migration": {
+                "mode": "replace",
+                "replacementIds": ["core.atom", "core.atom.lazy"],
+                "semver": "breaking",
+                "codemod": "Rewrite to core.atom, core.atom.lazy.",
+                "typeError": "The beta form is rejected by the replacement v1 declaration.",
+                "firstPartyOwner": "core",
+                "evidenceStatus": "planned"
+            },
+            "contractIds": [
+                "atom.exact-value",
+                "atom.lazy.sync-per-tree-fallback"
+            ],
+            "decisionStatus": "approved",
+            "notes": "The callable/Promise default union splits into exact atom values and the explicit synchronous atom.lazy initializer."
+        },
+        {
+            "id": "legacy.atom-lifecycle",
+            "kind": "type-export",
+            "owner": "core",
+            "legacy": [
+                {
+                    "kind": "type-export",
+                    "package": "valdres",
+                    "subpath": ".",
+                    "name": "AtomOnMount",
+                    "baseline": "1.0.0-beta.23"
+                },
+                {
+                    "kind": "type-export",
+                    "package": "valdres",
+                    "subpath": ".",
+                    "name": "AtomOnSet",
+                    "baseline": "1.0.0-beta.23"
+                }
+            ],
+            "target": {
+                "package": null,
+                "subpath": null,
+                "name": null,
+                "status": "removed"
+            },
+            "migration": {
+                "mode": "remove",
+                "replacementIds": ["core.external-atom"],
+                "semver": "breaking",
+                "codemod": "Rewrite to core.external-atom.",
+                "typeError": "The beta-only surface is absent from the v1 declarations.",
+                "firstPartyOwner": "core",
+                "evidenceStatus": "planned"
+            },
+            "contractIds": [
+                "external.pull-contract",
+                "external.store-tree-projection"
+            ],
+            "decisionStatus": "approved",
+            "notes": "Writable Atom lifecycle callbacks are replaced by the distinct read-only external source boundary."
+        },
+        {
+            "id": "legacy.cache-reactive",
+            "kind": "type-export",
+            "owner": "core",
+            "legacy": [
+                {
+                    "kind": "type-export",
+                    "package": "valdres",
+                    "subpath": ".",
+                    "name": "Reactive",
+                    "baseline": "1.0.0-beta.23"
+                }
+            ],
+            "target": {
+                "package": null,
+                "subpath": null,
+                "name": null,
+                "status": "removed"
+            },
+            "migration": {
+                "mode": "remove",
+                "replacementIds": ["beta.cache-companion"],
+                "semver": "breaking",
+                "codemod": "Rewrite to beta.cache-companion.",
+                "typeError": "The beta-only surface is absent from the v1 declarations.",
+                "firstPartyOwner": "core",
+                "evidenceStatus": "planned"
+            },
+            "contractIds": [
+                "cache.no-store-internals",
+                "cache.client-owned-entries"
+            ],
+            "decisionStatus": "approved",
+            "notes": "Reactive cache policy does not remain a stable State or core type."
+        },
+        {
+            "id": "legacy.deep-freeze",
+            "kind": "runtime-export",
+            "owner": "core",
+            "legacy": [
+                {
+                    "kind": "runtime-export",
+                    "package": "valdres",
+                    "subpath": ".",
+                    "name": "deepFreeze",
+                    "baseline": "1.0.0-beta.23"
+                }
+            ],
+            "target": {
+                "package": null,
+                "subpath": null,
+                "name": null,
+                "status": "removed"
+            },
+            "migration": {
+                "mode": "remove",
+                "replacementIds": [],
+                "semver": "breaking",
+                "codemod": "Remove the beta-only surface.",
+                "typeError": "The beta-only surface is absent from the v1 declarations.",
+                "firstPartyOwner": "core",
+                "evidenceStatus": "planned"
+            },
+            "contractIds": ["atom.exact-value"],
+            "decisionStatus": "approved",
+            "notes": "Valdres no longer recursively freezes application values by default or exports that helper from root."
+        },
+        {
+            "id": "legacy.family-membership-index",
+            "kind": "runtime-export",
+            "owner": "collection",
+            "legacy": [
+                {
+                    "kind": "method",
+                    "subpath": ".",
+                    "owner": "Transaction",
+                    "name": "batchSetFamilyAtoms",
+                    "package": "valdres",
+                    "baseline": "1.0.0-beta.23"
+                },
+                {
+                    "kind": "overload",
+                    "subpath": ".",
+                    "owner": "Store",
+                    "name": "get(family)",
+                    "package": "valdres",
+                    "baseline": "1.0.0-beta.23"
+                },
+                {
+                    "kind": "overload",
+                    "subpath": ".",
+                    "owner": "Store",
+                    "name": "sub(family)",
+                    "package": "valdres",
+                    "baseline": "1.0.0-beta.23"
+                },
+                {
+                    "kind": "overload",
+                    "subpath": ".",
+                    "owner": "Transaction",
+                    "name": "get(family)",
+                    "package": "valdres",
+                    "baseline": "1.0.0-beta.23"
+                },
+                {
+                    "kind": "runtime-export",
+                    "package": "valdres",
+                    "subpath": ".",
+                    "name": "index",
+                    "baseline": "1.0.0-beta.23"
+                },
+                {
+                    "kind": "type-export",
+                    "package": "valdres",
+                    "subpath": ".",
+                    "name": "IndexOptions",
+                    "baseline": "1.0.0-beta.23"
+                }
+            ],
+            "target": {
+                "package": null,
+                "subpath": null,
+                "name": null,
+                "status": "pending"
+            },
+            "migration": {
+                "mode": "replace",
+                "replacementIds": [
+                    "core.family",
+                    "core.collection",
+                    "core.structural-query"
+                ],
+                "semver": "breaking",
+                "codemod": "Rewrite to core.family, core.collection, core.structural-query.",
+                "typeError": "The beta form is rejected by the replacement v1 declaration.",
+                "firstPartyOwner": "collection",
+                "evidenceStatus": "external-handoff-required"
+            },
+            "contractIds": [
+                "family.no-membership",
+                "collection.atomic-deltas",
+                "query.single-collection-composite-result"
+            ],
+            "decisionStatus": "approved",
+            "notes": "Legacy read-created family membership, bulk family writes, and reactive family indexes split into identity-only family plus explicit collection/query surfaces."
+        },
+        {
+            "id": "legacy.initialize",
+            "kind": "runtime-export",
+            "owner": "core",
+            "legacy": [
+                {
+                    "kind": "runtime-export",
+                    "package": "valdres",
+                    "subpath": ".",
+                    "name": "applyInitialize",
+                    "baseline": "1.0.0-beta.23"
+                },
+                {
+                    "kind": "runtime-export",
+                    "package": "valdres",
+                    "subpath": ".",
+                    "name": "setAtomPairs",
+                    "baseline": "1.0.0-beta.23"
+                },
+                {
+                    "kind": "type-export",
+                    "package": "valdres",
+                    "subpath": ".",
+                    "name": "InitializeCallback",
+                    "baseline": "1.0.0-beta.23"
+                }
+            ],
+            "target": {
+                "package": null,
+                "subpath": null,
+                "name": null,
+                "status": "pending"
+            },
+            "migration": {
+                "mode": "replace",
+                "replacementIds": ["core.store.txn"],
+                "semver": "breaking",
+                "codemod": "Rewrite to core.store.txn.",
+                "typeError": "The beta form is rejected by the replacement v1 declaration.",
+                "firstPartyOwner": "core",
+                "evidenceStatus": "planned"
+            },
+            "contractIds": ["transaction.one-tree-draft"],
+            "decisionStatus": "approved",
+            "notes": "Owners initialize with an ordinary explicit transaction; there is no adapter initialization interpreter."
+        },
+        {
+            "id": "legacy.mutation-type-aliases",
+            "kind": "type-export",
+            "owner": "core",
+            "legacy": [
+                {
+                    "kind": "type-export",
+                    "package": "valdres",
+                    "subpath": ".",
+                    "name": "ResetAtom",
+                    "baseline": "1.0.0-beta.23"
+                },
+                {
+                    "kind": "type-export",
+                    "package": "valdres",
+                    "subpath": ".",
+                    "name": "SetAtom",
+                    "baseline": "1.0.0-beta.23"
+                },
+                {
+                    "kind": "type-export",
+                    "package": "valdres",
+                    "subpath": ".",
+                    "name": "SetAtomValue",
+                    "baseline": "1.0.0-beta.23"
+                },
+                {
+                    "kind": "type-export",
+                    "package": "valdres",
+                    "subpath": ".",
+                    "name": "SyncSetAtom",
+                    "baseline": "1.0.0-beta.23"
+                }
+            ],
+            "target": {
+                "package": null,
+                "subpath": null,
+                "name": null,
+                "status": "removed"
+            },
+            "migration": {
+                "mode": "remove",
+                "replacementIds": [
+                    "core.store.set",
+                    "core.store.reset",
+                    "core.store.update"
+                ],
+                "semver": "breaking",
+                "codemod": "Rewrite to core.store.set, core.store.reset, core.store.update.",
+                "typeError": "The beta-only surface is absent from the v1 declarations.",
+                "firstPartyOwner": "core",
+                "evidenceStatus": "planned"
+            },
+            "contractIds": ["atom.exact-value", "mutation.value-vs-updater"],
+            "decisionStatus": "approved",
+            "notes": "ResetAtom, SetAtom, SetAtomValue, and SyncSetAtom are redundant or encode rejected beta updater/Promise semantics; use indexed Store method types when needed."
+        },
+        {
+            "id": "legacy.predicates",
+            "kind": "runtime-export",
+            "owner": "core",
+            "legacy": [
+                {
+                    "kind": "runtime-export",
+                    "package": "valdres",
+                    "subpath": ".",
+                    "name": "isAtom",
+                    "baseline": "1.0.0-beta.23"
+                },
+                {
+                    "kind": "runtime-export",
+                    "package": "valdres",
+                    "subpath": ".",
+                    "name": "isAtomFamily",
+                    "baseline": "1.0.0-beta.23"
+                },
+                {
+                    "kind": "runtime-export",
+                    "package": "valdres",
+                    "subpath": ".",
+                    "name": "isFamily",
+                    "baseline": "1.0.0-beta.23"
+                },
+                {
+                    "kind": "runtime-export",
+                    "package": "valdres",
+                    "subpath": ".",
+                    "name": "isFamilyAtom",
+                    "baseline": "1.0.0-beta.23"
+                },
+                {
+                    "kind": "runtime-export",
+                    "package": "valdres",
+                    "subpath": ".",
+                    "name": "isFamilySelector",
+                    "baseline": "1.0.0-beta.23"
+                },
+                {
+                    "kind": "runtime-export",
+                    "package": "valdres",
+                    "subpath": ".",
+                    "name": "isFamilyState",
+                    "baseline": "1.0.0-beta.23"
+                },
+                {
+                    "kind": "runtime-export",
+                    "package": "valdres",
+                    "subpath": ".",
+                    "name": "isPromiseLike",
+                    "baseline": "1.0.0-beta.23"
+                },
+                {
+                    "kind": "runtime-export",
+                    "package": "valdres",
+                    "subpath": ".",
+                    "name": "isSelector",
+                    "baseline": "1.0.0-beta.23"
+                },
+                {
+                    "kind": "runtime-export",
+                    "package": "valdres",
+                    "subpath": ".",
+                    "name": "isSelectorFamily",
+                    "baseline": "1.0.0-beta.23"
+                },
+                {
+                    "kind": "runtime-export",
+                    "package": "valdres",
+                    "subpath": ".",
+                    "name": "isSuspendError",
+                    "baseline": "1.0.0-beta.23"
+                }
+            ],
+            "target": {
+                "package": null,
+                "subpath": null,
+                "name": null,
+                "status": "removed"
+            },
+            "migration": {
+                "mode": "remove",
+                "replacementIds": [],
+                "semver": "breaking",
+                "codemod": "Remove the beta-only surface.",
+                "typeError": "The beta-only surface is absent from the v1 declarations.",
+                "firstPartyOwner": "core",
+                "evidenceStatus": "planned"
+            },
+            "contractIds": [
+                "runtime.before-work-owner-check",
+                "runtime.isolated-domains"
+            ],
+            "decisionStatus": "approved",
+            "notes": "Stable root exposes no beta node-kind and Promise/Suspense predicate matrix."
+        },
+        {
+            "id": "legacy.promise-writes",
+            "kind": "method",
+            "owner": "core",
+            "legacy": [
+                {
+                    "kind": "overload",
+                    "subpath": ".",
+                    "owner": "Store",
+                    "name": "set(updater: async)",
+                    "package": "valdres",
+                    "baseline": "1.0.0-beta.23"
+                },
+                {
+                    "kind": "overload",
+                    "subpath": ".",
+                    "owner": "Store",
+                    "name": "set(value: PromiseLike)",
+                    "package": "valdres",
+                    "baseline": "1.0.0-beta.23"
+                },
+                {
+                    "kind": "overload",
+                    "subpath": ".",
+                    "owner": "Transaction",
+                    "name": "set(updater: async)",
+                    "package": "valdres",
+                    "baseline": "1.0.0-beta.23"
+                },
+                {
+                    "kind": "overload",
+                    "subpath": ".",
+                    "owner": "Transaction",
+                    "name": "set(value: PromiseLike)",
+                    "package": "valdres",
+                    "baseline": "1.0.0-beta.23"
+                }
+            ],
+            "target": {
+                "package": null,
+                "subpath": null,
+                "name": null,
+                "status": "removed"
+            },
+            "migration": {
+                "mode": "remove",
+                "replacementIds": [],
+                "semver": "breaking",
+                "codemod": "Remove the beta-only surface.",
+                "typeError": "The beta-only surface is absent from the v1 declarations.",
+                "firstPartyOwner": "core",
+                "evidenceStatus": "planned"
+            },
+            "contractIds": [
+                "atom.exact-value",
+                "mutation.value-vs-updater",
+                "transaction.one-tree-draft"
+            ],
+            "decisionStatus": "approved",
+            "notes": "Promise values and async updaters are outside the synchronous kernel."
+        },
+        {
+            "id": "legacy.provider-initialize",
+            "kind": "option",
+            "owner": "react",
+            "legacy": [
+                {
+                    "kind": "option",
+                    "subpath": ".",
+                    "owner": "ProviderProps",
+                    "name": "initialize",
+                    "package": "valdres-react",
+                    "baseline": "1.0.0-beta.4"
+                }
+            ],
+            "target": {
+                "package": null,
+                "subpath": null,
+                "name": null,
+                "status": "pending"
+            },
+            "migration": {
+                "mode": "replace",
+                "replacementIds": ["react.provider", "core.store.txn"],
+                "semver": "breaking",
+                "codemod": "Rewrite to react.provider, core.store.txn.",
+                "typeError": "The beta form is rejected by the replacement v1 declaration.",
+                "firstPartyOwner": "react",
+                "evidenceStatus": "external-handoff-required"
+            },
+            "contractIds": [
+                "react.provider-borrowed-only",
+                "transaction.one-tree-draft"
+            ],
+            "decisionStatus": "approved",
+            "notes": "Provider is borrowed-only; the Store owner initializes before render."
+        },
+        {
+            "id": "legacy.react-initialize-type",
+            "kind": "type-export",
+            "owner": "react",
+            "legacy": [
+                {
+                    "kind": "type-export",
+                    "package": "valdres-react",
+                    "subpath": ".",
+                    "name": "InitializeCallback",
+                    "baseline": "1.0.0-beta.4"
+                }
+            ],
+            "target": {
+                "package": null,
+                "subpath": null,
+                "name": null,
+                "status": "removed"
+            },
+            "migration": {
+                "mode": "remove",
+                "replacementIds": ["core.type.transaction-fn"],
+                "semver": "breaking",
+                "codemod": "Rewrite to core.type.transaction-fn.",
+                "typeError": "The beta-only surface is absent from the v1 declarations.",
+                "firstPartyOwner": "react",
+                "evidenceStatus": "external-handoff-required"
+            },
+            "contractIds": [
+                "react.provider-borrowed-only",
+                "transaction.one-tree-draft"
+            ],
+            "decisionStatus": "approved",
+            "notes": "React exports no initialization callback type; owners use Store.txn before render."
+        },
+        {
+            "id": "legacy.react-store-context",
+            "kind": "runtime-export",
+            "owner": "react",
+            "legacy": [
+                {
+                    "kind": "runtime-export",
+                    "package": "valdres-react",
+                    "subpath": ".",
+                    "name": "StoreContext",
+                    "baseline": "1.0.0-beta.4"
+                }
+            ],
+            "target": {
+                "package": null,
+                "subpath": null,
+                "name": null,
+                "status": "removed"
+            },
+            "migration": {
+                "mode": "remove",
+                "replacementIds": ["react.provider", "react.use-store"],
+                "semver": "breaking",
+                "codemod": "Rewrite to react.provider, react.use-store.",
+                "typeError": "The beta-only surface is absent from the v1 declarations.",
+                "firstPartyOwner": "react",
+                "evidenceStatus": "external-handoff-required"
+            },
+            "contractIds": [
+                "react.nearest-store-context",
+                "react.provider-borrowed-only"
+            ],
+            "decisionStatus": "approved",
+            "notes": "The raw React Context is private; Provider and useStore are the public bridge."
+        },
+        {
+            "id": "legacy.scope-leases",
+            "kind": "method",
+            "owner": "core",
+            "legacy": [
+                {
+                    "kind": "method",
+                    "subpath": ".",
+                    "owner": "ScopedStore",
+                    "name": "detach",
+                    "package": "valdres",
+                    "baseline": "1.0.0-beta.23"
+                },
+                {
+                    "kind": "method",
+                    "subpath": ".",
+                    "owner": "Store",
+                    "name": "hasScope",
+                    "package": "valdres",
+                    "baseline": "1.0.0-beta.23"
+                }
+            ],
+            "target": {
+                "package": null,
+                "subpath": null,
+                "name": null,
+                "status": "removed"
+            },
+            "migration": {
+                "mode": "remove",
+                "replacementIds": ["core.store.scope"],
+                "semver": "breaking",
+                "codemod": "Rewrite to core.store.scope.",
+                "typeError": "The beta-only surface is absent from the v1 declarations.",
+                "firstPartyOwner": "core",
+                "evidenceStatus": "external-handoff-required"
+            },
+            "contractIds": [
+                "scope.parent-local-name",
+                "scope.explicit-disposal"
+            ],
+            "decisionStatus": "approved",
+            "notes": "Named scopes have parent-local identity and explicit lifetime, never leases, detach, or required probing."
+        },
+        {
+            "id": "legacy.scoped-store-txn",
+            "kind": "method",
+            "owner": "core",
+            "legacy": [
+                {
+                    "kind": "overload",
+                    "subpath": ".",
+                    "owner": "ScopedStore",
+                    "name": "txn(callback)",
+                    "package": "valdres",
+                    "baseline": "1.0.0-beta.23"
+                }
+            ],
+            "target": {
+                "package": null,
+                "subpath": null,
+                "name": null,
+                "status": "pending"
+            },
+            "migration": {
+                "mode": "replace",
+                "replacementIds": ["core.store.txn"],
+                "semver": "breaking",
+                "codemod": "Rewrite to core.store.txn.",
+                "typeError": "The beta form is rejected by the replacement v1 declaration.",
+                "firstPartyOwner": "core",
+                "evidenceStatus": "external-handoff-required"
+            },
+            "contractIds": [
+                "transaction.one-tree-draft",
+                "transaction.sync-derived-reads"
+            ],
+            "decisionStatus": "approved",
+            "notes": "A scoped Store is an ordinary Store object; its transaction callback uses the one Transaction surface."
+        },
+        {
+            "id": "legacy.scoped-transaction-types",
+            "kind": "type-export",
+            "owner": "core",
+            "legacy": [
+                {
+                    "kind": "type-export",
+                    "package": "valdres",
+                    "subpath": ".",
+                    "name": "ScopedTransaction",
+                    "baseline": "1.0.0-beta.23"
+                },
+                {
+                    "kind": "type-export",
+                    "package": "valdres",
+                    "subpath": ".",
+                    "name": "ScopedTransactionFn",
+                    "baseline": "1.0.0-beta.23"
+                }
+            ],
+            "target": {
+                "package": null,
+                "subpath": null,
+                "name": null,
+                "status": "pending"
+            },
+            "migration": {
+                "mode": "replace",
+                "replacementIds": [
+                    "core.type.transaction",
+                    "core.transaction.scope"
+                ],
+                "semver": "breaking",
+                "codemod": "Rewrite to core.type.transaction, core.transaction.scope.",
+                "typeError": "The beta form is rejected by the replacement v1 declaration.",
+                "firstPartyOwner": "core",
+                "evidenceStatus": "external-handoff-required"
+            },
+            "contractIds": ["transaction.scope-cursor-no-savepoint"],
+            "decisionStatus": "approved",
+            "notes": "One Transaction type and lightweight scope cursors replace scoped transaction aliases."
+        },
+        {
+            "id": "legacy.selector-get-options",
+            "kind": "type-export",
+            "owner": "core",
+            "legacy": [
+                {
+                    "kind": "type-export",
+                    "package": "valdres",
+                    "subpath": ".",
+                    "name": "SelectorGetOptions",
+                    "baseline": "1.0.0-beta.23"
+                }
+            ],
+            "target": {
+                "package": null,
+                "subpath": null,
+                "name": null,
+                "status": "removed"
+            },
+            "migration": {
+                "mode": "remove",
+                "replacementIds": [],
+                "semver": "breaking",
+                "codemod": "Remove the beta-only surface.",
+                "typeError": "The beta-only surface is absent from the v1 declarations.",
+                "firstPartyOwner": "core",
+                "evidenceStatus": "planned"
+            },
+            "contractIds": [
+                "selector.pure-sync-dag",
+                "callback.revocable-capability"
+            ],
+            "decisionStatus": "approved",
+            "notes": "Selector getters receive only the supplied revocable get capability, not Store identity or AbortSignal options."
+        },
+        {
+            "id": "legacy.store-adapter",
+            "kind": "runtime-export",
+            "owner": "adapter-boundary",
+            "legacy": [
+                {
+                    "kind": "method",
+                    "subpath": "./adapter-internals/v1",
+                    "owner": "storeAdapter",
+                    "name": "hasScope",
+                    "package": "valdres",
+                    "baseline": "1.0.0-beta.23"
+                },
+                {
+                    "kind": "method",
+                    "subpath": "./adapter-internals/v1",
+                    "owner": "storeAdapter",
+                    "name": "hasScopePath",
+                    "package": "valdres",
+                    "baseline": "1.0.0-beta.23"
+                },
+                {
+                    "kind": "method",
+                    "subpath": "./adapter-internals/v1",
+                    "owner": "storeAdapter",
+                    "name": "isBatching",
+                    "package": "valdres",
+                    "baseline": "1.0.0-beta.23"
+                },
+                {
+                    "kind": "method",
+                    "subpath": "./adapter-internals/v1",
+                    "owner": "storeAdapter",
+                    "name": "isEnumerable",
+                    "package": "valdres",
+                    "baseline": "1.0.0-beta.23"
+                },
+                {
+                    "kind": "runtime-export",
+                    "package": "valdres",
+                    "subpath": "./adapter-internals/v1",
+                    "name": "storeAdapter",
+                    "baseline": "1.0.0-beta.23"
+                }
+            ],
+            "target": {
+                "package": null,
+                "subpath": null,
+                "name": null,
+                "status": "removed"
+            },
+            "migration": {
+                "mode": "remove",
+                "replacementIds": [],
+                "semver": "breaking",
+                "codemod": "Remove the beta-only surface.",
+                "typeError": "The beta-only surface is absent from the v1 declarations.",
+                "firstPartyOwner": "adapter-boundary",
+                "evidenceStatus": "planned"
+            },
+            "contractIds": [
+                "runtime.isolated-domains",
+                "store.no-ambient-registry"
+            ],
+            "decisionStatus": "approved",
+            "notes": "The beta StoreData capability object and its mode/scope probes are not a v1 adapter protocol."
+        },
+        {
+            "id": "legacy.store-identity",
+            "kind": "method",
+            "owner": "core-and-react",
+            "legacy": [
+                {
+                    "kind": "option",
+                    "subpath": ".",
+                    "owner": "useStore",
+                    "name": "id",
+                    "package": "valdres-react",
+                    "baseline": "1.0.0-beta.4"
+                },
+                {
+                    "kind": "option",
+                    "subpath": ".",
+                    "owner": "StoreOptions",
+                    "name": "id",
+                    "package": "valdres",
+                    "baseline": "1.0.0-beta.23"
+                },
+                {
+                    "kind": "overload",
+                    "subpath": ".",
+                    "owner": "store",
+                    "name": "(id, options?)",
+                    "package": "valdres",
+                    "baseline": "1.0.0-beta.23"
+                },
+                {
+                    "kind": "property",
+                    "subpath": ".",
+                    "owner": "Store",
+                    "name": "id",
+                    "package": "valdres",
+                    "baseline": "1.0.0-beta.23"
+                },
+                {
+                    "kind": "runtime-export",
+                    "package": "valdres-react",
+                    "subpath": ".",
+                    "name": "useStoreId",
+                    "baseline": "1.0.0-beta.4"
+                }
+            ],
+            "target": {
+                "package": null,
+                "subpath": null,
+                "name": null,
+                "status": "removed"
+            },
+            "migration": {
+                "mode": "remove",
+                "replacementIds": ["core.store", "react.use-store"],
+                "semver": "breaking",
+                "codemod": "Rewrite to core.store, react.use-store.",
+                "typeError": "The beta-only surface is absent from the v1 declarations.",
+                "firstPartyOwner": "core-and-react",
+                "evidenceStatus": "external-handoff-required"
+            },
+            "contractIds": [
+                "store.object-identity",
+                "store.no-ambient-registry",
+                "scope.parent-local-name"
+            ],
+            "decisionStatus": "approved",
+            "notes": "A held Store object is the only public live identity; IDs and ambient lookup are absent."
+        },
+        {
+            "id": "legacy.store-mode-options",
+            "kind": "option",
+            "owner": "core",
+            "legacy": [
+                {
+                    "kind": "option",
+                    "subpath": ".",
+                    "owner": "StoreOptions",
+                    "name": "batchUpdates",
+                    "package": "valdres",
+                    "baseline": "1.0.0-beta.23"
+                }
+            ],
+            "target": {
+                "package": null,
+                "subpath": null,
+                "name": null,
+                "status": "removed"
+            },
+            "migration": {
+                "mode": "remove",
+                "replacementIds": [],
+                "semver": "breaking",
+                "codemod": "Remove the beta-only surface.",
+                "typeError": "The beta-only surface is absent from the v1 declarations.",
+                "firstPartyOwner": "core",
+                "evidenceStatus": "planned"
+            },
+            "contractIds": [
+                "transaction.one-tree-draft",
+                "store.object-identity"
+            ],
+            "decisionStatus": "approved",
+            "notes": "Implicit microtask batching does not remain a kernel Store option."
+        },
+        {
+            "id": "legacy.store-on-commit-end",
+            "kind": "method",
+            "owner": "core",
+            "legacy": [
+                {
+                    "kind": "method",
+                    "subpath": ".",
+                    "owner": "Store",
+                    "name": "onCommitEnd",
+                    "package": "valdres",
+                    "baseline": "1.0.0-beta.23"
+                }
+            ],
+            "target": {
+                "package": null,
+                "subpath": null,
+                "name": null,
+                "status": "removed"
+            },
+            "migration": {
+                "mode": "remove",
+                "replacementIds": [],
+                "semver": "breaking",
+                "codemod": "Remove the beta-only surface.",
+                "typeError": "The beta-only surface is absent from the v1 declarations.",
+                "firstPartyOwner": "core",
+                "evidenceStatus": "planned"
+            },
+            "contractIds": ["notification.after-stability"],
+            "decisionStatus": "approved",
+            "notes": "Public commit-boundary observation does not remain in the hot Store surface."
+        },
+        {
+            "id": "legacy.store-scope-callback",
+            "kind": "method",
+            "owner": "core",
+            "legacy": [
+                {
+                    "kind": "overload",
+                    "subpath": ".",
+                    "owner": "Store",
+                    "name": "scope(id, callback)",
+                    "package": "valdres",
+                    "baseline": "1.0.0-beta.23"
+                }
+            ],
+            "target": {
+                "package": null,
+                "subpath": null,
+                "name": null,
+                "status": "removed"
+            },
+            "migration": {
+                "mode": "remove",
+                "replacementIds": ["core.store.scope"],
+                "semver": "breaking",
+                "codemod": "Rewrite to core.store.scope.",
+                "typeError": "The beta-only surface is absent from the v1 declarations.",
+                "firstPartyOwner": "core",
+                "evidenceStatus": "external-handoff-required"
+            },
+            "contractIds": [
+                "scope.parent-local-name",
+                "scope.explicit-disposal"
+            ],
+            "decisionStatus": "approved",
+            "notes": "Store-level callback borrowing and lease ownership are absent."
+        },
+        {
+            "id": "legacy.store-unset",
+            "kind": "method",
+            "owner": "core",
+            "legacy": [
+                {
+                    "kind": "method",
+                    "subpath": ".",
+                    "owner": "Store",
+                    "name": "unset",
+                    "package": "valdres",
+                    "baseline": "1.0.0-beta.23"
+                }
+            ],
+            "target": {
+                "package": null,
+                "subpath": null,
+                "name": null,
+                "status": "pending"
+            },
+            "migration": {
+                "mode": "replace",
+                "replacementIds": ["core.store.reset"],
+                "semver": "breaking",
+                "codemod": "Rewrite to core.store.reset.",
+                "typeError": "The beta form is rejected by the replacement v1 declaration.",
+                "firstPartyOwner": "core",
+                "evidenceStatus": "planned"
+            },
+            "contractIds": ["scope.live-inheritance", "atom.exact-value"],
+            "decisionStatus": "approved",
+            "notes": "Reset is the only local-ownership removal spelling."
+        },
+        {
+            "id": "legacy.subscription-deep-equality",
+            "kind": "option",
+            "owner": "core",
+            "legacy": [
+                {
+                    "kind": "option",
+                    "subpath": ".",
+                    "owner": "Store.sub",
+                    "name": "requireDeepEqualCheckBeforeCallback",
+                    "package": "valdres",
+                    "baseline": "1.0.0-beta.23"
+                }
+            ],
+            "target": {
+                "package": null,
+                "subpath": null,
+                "name": null,
+                "status": "pending"
+            },
+            "migration": {
+                "mode": "replace",
+                "replacementIds": ["core.selector"],
+                "semver": "breaking",
+                "codemod": "Rewrite to core.selector.",
+                "typeError": "The beta form is rejected by the replacement v1 declaration.",
+                "firstPartyOwner": "core",
+                "evidenceStatus": "planned"
+            },
+            "contractIds": ["atom.object-is-default", "selector.pure-sync-dag"],
+            "decisionStatus": "approved",
+            "notes": "Equality belongs to the State definition or an explicit helper, not subscription admission."
+        },
+        {
+            "id": "legacy.transaction-interface",
+            "kind": "type-export",
+            "owner": "core",
+            "legacy": [
+                {
+                    "kind": "type-export",
+                    "package": "valdres",
+                    "subpath": ".",
+                    "name": "TransactionInterface",
+                    "baseline": "1.0.0-beta.23"
+                }
+            ],
+            "target": {
+                "package": null,
+                "subpath": null,
+                "name": null,
+                "status": "pending"
+            },
+            "migration": {
+                "mode": "replace",
+                "replacementIds": ["core.type.transaction"],
+                "semver": "breaking",
+                "codemod": "Rewrite to core.type.transaction.",
+                "typeError": "The beta form is rejected by the replacement v1 declaration.",
+                "firstPartyOwner": "core",
+                "evidenceStatus": "planned"
+            },
+            "contractIds": ["transaction.one-tree-draft"],
+            "decisionStatus": "approved",
+            "notes": "The compatibility alias collapses into the one public Transaction type."
+        },
+        {
+            "id": "legacy.transaction-names",
+            "kind": "option",
+            "owner": "core",
+            "legacy": [
+                {
+                    "kind": "option",
+                    "subpath": ".",
+                    "owner": "ScopedStore.txn",
+                    "name": "name",
+                    "package": "valdres",
+                    "baseline": "1.0.0-beta.23"
+                },
+                {
+                    "kind": "option",
+                    "subpath": ".",
+                    "owner": "Store.txn",
+                    "name": "name",
+                    "package": "valdres",
+                    "baseline": "1.0.0-beta.23"
+                }
+            ],
+            "target": {
+                "package": null,
+                "subpath": null,
+                "name": null,
+                "status": "removed"
+            },
+            "migration": {
+                "mode": "remove",
+                "replacementIds": [],
+                "semver": "breaking",
+                "codemod": "Remove the beta-only surface.",
+                "typeError": "The beta-only surface is absent from the v1 declarations.",
+                "firstPartyOwner": "core",
+                "evidenceStatus": "planned"
+            },
+            "contractIds": ["transaction.one-tree-draft"],
+            "decisionStatus": "approved",
+            "notes": "Transaction names are not a Store hot-path option; future diagnostics own their metadata."
+        },
+        {
+            "id": "legacy.transaction-parent-scope",
+            "kind": "method",
+            "owner": "core",
+            "legacy": [
+                {
+                    "kind": "method",
+                    "subpath": ".",
+                    "owner": "Transaction",
+                    "name": "parentScope",
+                    "package": "valdres",
+                    "baseline": "1.0.0-beta.23"
+                }
+            ],
+            "target": {
+                "package": null,
+                "subpath": null,
+                "name": null,
+                "status": "pending"
+            },
+            "migration": {
+                "mode": "replace",
+                "replacementIds": ["core.transaction.scope"],
+                "semver": "breaking",
+                "codemod": "Rewrite to core.transaction.scope.",
+                "typeError": "The beta form is rejected by the replacement v1 declaration.",
+                "firstPartyOwner": "core",
+                "evidenceStatus": "external-handoff-required"
+            },
+            "contractIds": ["transaction.scope-cursor-no-savepoint"],
+            "decisionStatus": "approved",
+            "notes": "Pass the exact parent Store to Transaction.scope."
+        },
+        {
+            "id": "legacy.transaction-unset",
+            "kind": "method",
+            "owner": "core",
+            "legacy": [
+                {
+                    "kind": "method",
+                    "subpath": ".",
+                    "owner": "Transaction",
+                    "name": "unset",
+                    "package": "valdres",
+                    "baseline": "1.0.0-beta.23"
+                }
+            ],
+            "target": {
+                "package": null,
+                "subpath": null,
+                "name": null,
+                "status": "pending"
+            },
+            "migration": {
+                "mode": "replace",
+                "replacementIds": ["core.transaction.reset"],
+                "semver": "breaking",
+                "codemod": "Rewrite to core.transaction.reset.",
+                "typeError": "The beta form is rejected by the replacement v1 declaration.",
+                "firstPartyOwner": "core",
+                "evidenceStatus": "planned"
+            },
+            "contractIds": [
+                "transaction.one-tree-draft",
+                "scope.live-inheritance"
+            ],
+            "decisionStatus": "approved",
+            "notes": "Transaction reset is the only local-ownership removal spelling."
+        },
+        {
+            "id": "legacy.unset-all",
+            "kind": "method",
+            "owner": "core",
+            "legacy": [
+                {
+                    "kind": "method",
+                    "subpath": ".",
+                    "owner": "ScopedStore",
+                    "name": "unsetAll",
+                    "package": "valdres",
+                    "baseline": "1.0.0-beta.23"
+                },
+                {
+                    "kind": "method",
+                    "subpath": ".",
+                    "owner": "ScopedTransaction",
+                    "name": "unsetAll",
+                    "package": "valdres",
+                    "baseline": "1.0.0-beta.23"
+                }
+            ],
+            "target": {
+                "package": null,
+                "subpath": null,
+                "name": null,
+                "status": "removed"
+            },
+            "migration": {
+                "mode": "remove",
+                "replacementIds": [
+                    "core.store.reset",
+                    "core.transaction.reset"
+                ],
+                "semver": "breaking",
+                "codemod": "Rewrite to core.store.reset, core.transaction.reset.",
+                "typeError": "The beta-only surface is absent from the v1 declarations.",
+                "firstPartyOwner": "core",
+                "evidenceStatus": "planned"
+            },
+            "contractIds": [
+                "scope.live-inheritance",
+                "transaction.one-tree-draft"
+            ],
+            "decisionStatus": "approved",
+            "notes": "The kernel has no whole-scope hidden ownership reset command."
+        },
+        {
+            "id": "moved.inspect",
+            "kind": "package",
+            "owner": "future-package",
+            "legacy": [
+                {
+                    "kind": "method",
+                    "subpath": ".",
+                    "owner": "Store",
+                    "name": "snapshot",
+                    "package": "valdres",
+                    "baseline": "1.0.0-beta.23"
+                },
+                {
+                    "kind": "option",
+                    "subpath": ".",
+                    "owner": "Store.onChange",
+                    "name": "atoms",
+                    "package": "valdres",
+                    "baseline": "1.0.0-beta.23"
+                },
+                {
+                    "kind": "option",
+                    "subpath": ".",
+                    "owner": "Store.onChange",
+                    "name": "selectors",
+                    "package": "valdres",
+                    "baseline": "1.0.0-beta.23"
+                },
+                {
+                    "kind": "option",
+                    "subpath": ".",
+                    "owner": "StoreOptions",
+                    "name": "enumerable",
+                    "package": "valdres",
+                    "baseline": "1.0.0-beta.23"
+                },
+                {
+                    "kind": "overload",
+                    "subpath": ".",
+                    "owner": "Store",
+                    "name": "onChange(atoms-and-selectors)",
+                    "package": "valdres",
+                    "baseline": "1.0.0-beta.23"
+                },
+                {
+                    "kind": "overload",
+                    "subpath": ".",
+                    "owner": "Store",
+                    "name": "onChange(atoms-only)",
+                    "package": "valdres",
+                    "baseline": "1.0.0-beta.23"
+                },
+                {
+                    "kind": "overload",
+                    "subpath": ".",
+                    "owner": "Store",
+                    "name": "onChange(selectors-only)",
+                    "package": "valdres",
+                    "baseline": "1.0.0-beta.23"
+                },
+                {
+                    "kind": "type-export",
+                    "package": "valdres",
+                    "subpath": ".",
+                    "name": "AtomChange",
+                    "baseline": "1.0.0-beta.23"
+                },
+                {
+                    "kind": "type-export",
+                    "package": "valdres",
+                    "subpath": ".",
+                    "name": "SelectorChange",
+                    "baseline": "1.0.0-beta.23"
+                },
+                {
+                    "kind": "type-export",
+                    "package": "valdres",
+                    "subpath": ".",
+                    "name": "SnapshotEntry",
+                    "baseline": "1.0.0-beta.23"
+                },
+                {
+                    "kind": "type-export",
+                    "package": "valdres",
+                    "subpath": ".",
+                    "name": "StoreChange",
+                    "baseline": "1.0.0-beta.23"
+                },
+                {
+                    "kind": "type-export",
+                    "package": "valdres",
+                    "subpath": ".",
+                    "name": "StoreChangeCallback",
+                    "baseline": "1.0.0-beta.23"
+                },
+                {
+                    "kind": "type-export",
+                    "package": "valdres",
+                    "subpath": ".",
+                    "name": "StoreChangeMeta",
+                    "baseline": "1.0.0-beta.23"
+                },
+                {
+                    "kind": "type-export",
+                    "package": "valdres",
+                    "subpath": ".",
+                    "name": "StoreChangeSource",
+                    "baseline": "1.0.0-beta.23"
+                }
+            ],
+            "target": {
+                "package": null,
+                "subpath": null,
+                "name": null,
+                "status": "pending"
+            },
+            "migration": {
+                "mode": "move",
+                "replacementIds": [],
+                "semver": "breaking",
+                "codemod": "Move the capability to the future @valdres/inspect public boundary after that package freezes its exact API.",
+                "typeError": "The capability is absent from stable core until @valdres/inspect freezes its public API.",
+                "firstPartyOwner": "future-package",
+                "evidenceStatus": "planned"
+            },
+            "contractIds": ["inspect.no-core-enumeration"],
+            "decisionStatus": "approved",
+            "notes": "Snapshots, change streams, enumeration, and devtools observation leave the Store hot path."
+        },
+        {
+            "id": "moved.schema",
+            "kind": "package",
+            "owner": "future-package",
+            "legacy": [
+                {
+                    "kind": "option",
+                    "subpath": ".",
+                    "owner": "StoreOptions",
+                    "name": "schemaValidation",
+                    "package": "valdres",
+                    "baseline": "1.0.0-beta.23"
+                },
+                {
+                    "kind": "runtime-export",
+                    "package": "valdres",
+                    "subpath": ".",
+                    "name": "SchemaValidationError",
+                    "baseline": "1.0.0-beta.23"
+                },
+                {
+                    "kind": "type-export",
+                    "package": "valdres",
+                    "subpath": ".",
+                    "name": "Schema",
+                    "baseline": "1.0.0-beta.23"
+                },
+                {
+                    "kind": "type-export",
+                    "package": "valdres",
+                    "subpath": ".",
+                    "name": "StandardSchemaV1",
+                    "baseline": "1.0.0-beta.23"
+                }
+            ],
+            "target": {
+                "package": null,
+                "subpath": null,
+                "name": null,
+                "status": "pending"
+            },
+            "migration": {
+                "mode": "move",
+                "replacementIds": [],
+                "semver": "breaking",
+                "codemod": "Move the capability to the future @valdres/schema public boundary after that package freezes its exact API.",
+                "typeError": "The capability is absent from stable core until @valdres/schema freezes its public API.",
+                "firstPartyOwner": "future-package",
+                "evidenceStatus": "planned"
+            },
+            "contractIds": ["schema.no-store-policy"],
+            "decisionStatus": "approved",
+            "notes": "Schema validation and codecs move outside Store policy and the stable root."
+        },
+        {
+            "id": "moved.transfer",
+            "kind": "package",
+            "owner": "future-package",
+            "legacy": [
+                {
+                    "kind": "runtime-export",
+                    "package": "valdres",
+                    "subpath": ".",
+                    "name": "dehydrate",
+                    "baseline": "1.0.0-beta.23"
+                },
+                {
+                    "kind": "runtime-export",
+                    "package": "valdres",
+                    "subpath": ".",
+                    "name": "hydrate",
+                    "baseline": "1.0.0-beta.23"
+                },
+                {
+                    "kind": "type-export",
+                    "package": "valdres",
+                    "subpath": ".",
+                    "name": "DehydratedState",
+                    "baseline": "1.0.0-beta.23"
+                },
+                {
+                    "kind": "type-export",
+                    "package": "valdres",
+                    "subpath": ".",
+                    "name": "HydrateOptions",
+                    "baseline": "1.0.0-beta.23"
+                }
+            ],
+            "target": {
+                "package": null,
+                "subpath": null,
+                "name": null,
+                "status": "pending"
+            },
+            "migration": {
+                "mode": "move",
+                "replacementIds": [],
+                "semver": "breaking",
+                "codemod": "Move the capability to the future @valdres/transfer public boundary after that package freezes its exact API.",
+                "typeError": "The capability is absent from stable core until @valdres/transfer freezes its public API.",
+                "firstPartyOwner": "future-package",
+                "evidenceStatus": "planned"
+            },
+            "contractIds": ["transfer.caller-owned-registry"],
+            "decisionStatus": "approved",
+            "notes": "Hydration and transfer use an explicit caller-owned registry outside the stable root."
+        },
+        {
             "id": "react.provider",
             "kind": "runtime-export",
             "owner": "valdres-react",
@@ -768,10 +3502,100 @@
             "notes": "Current ShiftX Provider ownership shapes require external validation."
         },
         {
+            "id": "react.provider.children",
+            "kind": "option",
+            "owner": "react",
+            "legacy": [
+                {
+                    "kind": "option",
+                    "subpath": ".",
+                    "owner": "ProviderProps",
+                    "name": "children",
+                    "package": "valdres-react",
+                    "baseline": "1.0.0-beta.4"
+                }
+            ],
+            "target": {
+                "package": "valdres-react",
+                "subpath": ".",
+                "name": "ProviderProps.children",
+                "status": "stable"
+            },
+            "migration": {
+                "mode": "keep",
+                "replacementIds": [],
+                "semver": "breaking",
+                "codemod": "Migrate the beta surface to ProviderProps.children.",
+                "typeError": "The beta form is rejected by the v1 ProviderProps.children declaration.",
+                "firstPartyOwner": "react",
+                "evidenceStatus": "external-handoff-required"
+            },
+            "contractIds": ["react.provider-borrowed-only"],
+            "decisionStatus": "approved",
+            "notes": "Provider remains an ordinary React children boundary."
+        },
+        {
+            "id": "react.provider.store",
+            "kind": "option",
+            "owner": "react",
+            "legacy": [
+                {
+                    "kind": "option",
+                    "subpath": ".",
+                    "owner": "ProviderProps",
+                    "name": "store",
+                    "package": "valdres-react",
+                    "baseline": "1.0.0-beta.4"
+                }
+            ],
+            "target": {
+                "package": "valdres-react",
+                "subpath": ".",
+                "name": "ProviderProps.store",
+                "status": "stable"
+            },
+            "migration": {
+                "mode": "keep",
+                "replacementIds": [],
+                "semver": "breaking",
+                "codemod": "Migrate the beta surface to ProviderProps.store.",
+                "typeError": "The beta form is rejected by the v1 ProviderProps.store declaration.",
+                "firstPartyOwner": "react",
+                "evidenceStatus": "external-handoff-required"
+            },
+            "contractIds": ["react.provider-borrowed-only"],
+            "decisionStatus": "approved",
+            "notes": "The Store prop remains but becomes required and owner-supplied."
+        },
+        {
             "id": "react.scope",
             "kind": "runtime-export",
             "owner": "valdres-react",
             "legacy": [
+                {
+                    "kind": "option",
+                    "subpath": ".",
+                    "owner": "ScopeProps",
+                    "name": "children",
+                    "package": "valdres-react",
+                    "baseline": "1.0.0-beta.4"
+                },
+                {
+                    "kind": "option",
+                    "subpath": ".",
+                    "owner": "ScopeProps",
+                    "name": "initialize",
+                    "package": "valdres-react",
+                    "baseline": "1.0.0-beta.4"
+                },
+                {
+                    "kind": "option",
+                    "subpath": ".",
+                    "owner": "ScopeProps",
+                    "name": "scopeId",
+                    "package": "valdres-react",
+                    "baseline": "1.0.0-beta.4"
+                },
                 {
                     "kind": "runtime-export",
                     "package": "valdres-react",
@@ -798,6 +3622,132 @@
             "contractIds": ["react.no-render-time-topology"],
             "decisionStatus": "approved",
             "notes": "Automatic scope JSX may be reconsidered only after a separate lifecycle proof."
+        },
+        {
+            "id": "react.use-atom",
+            "kind": "runtime-export",
+            "owner": "react",
+            "legacy": [
+                {
+                    "kind": "option",
+                    "subpath": ".",
+                    "owner": "useAtom",
+                    "name": "store",
+                    "package": "valdres-react",
+                    "baseline": "1.0.0-beta.4"
+                },
+                {
+                    "kind": "runtime-export",
+                    "package": "valdres-react",
+                    "subpath": ".",
+                    "name": "useAtom",
+                    "baseline": "1.0.0-beta.4"
+                }
+            ],
+            "target": {
+                "package": "valdres-react",
+                "subpath": ".",
+                "name": "useAtom",
+                "status": "stable"
+            },
+            "migration": {
+                "mode": "keep",
+                "replacementIds": [],
+                "semver": "breaking",
+                "codemod": "Migrate the beta surface to useAtom.",
+                "typeError": "The beta form is rejected by the v1 useAtom declaration.",
+                "firstPartyOwner": "react",
+                "evidenceStatus": "external-handoff-required"
+            },
+            "contractIds": [
+                "react.universal-sync-read",
+                "react.value-vs-updater-hooks"
+            ],
+            "decisionStatus": "approved",
+            "notes": "The Atom-only tuple hook retains exact value-set semantics."
+        },
+        {
+            "id": "react.use-reset-atom",
+            "kind": "runtime-export",
+            "owner": "react",
+            "legacy": [
+                {
+                    "kind": "option",
+                    "subpath": ".",
+                    "owner": "useResetAtom",
+                    "name": "store",
+                    "package": "valdres-react",
+                    "baseline": "1.0.0-beta.4"
+                },
+                {
+                    "kind": "runtime-export",
+                    "package": "valdres-react",
+                    "subpath": ".",
+                    "name": "useResetAtom",
+                    "baseline": "1.0.0-beta.4"
+                }
+            ],
+            "target": {
+                "package": "valdres-react",
+                "subpath": ".",
+                "name": "useResetAtom",
+                "status": "stable"
+            },
+            "migration": {
+                "mode": "keep",
+                "replacementIds": [],
+                "semver": "breaking",
+                "codemod": "Migrate the beta surface to useResetAtom.",
+                "typeError": "The beta form is rejected by the v1 useResetAtom declaration.",
+                "firstPartyOwner": "react",
+                "evidenceStatus": "external-handoff-required"
+            },
+            "contractIds": [
+                "react.value-vs-updater-hooks",
+                "scope.live-inheritance"
+            ],
+            "decisionStatus": "approved",
+            "notes": "The Atom-only reset hook remains a small convenience."
+        },
+        {
+            "id": "react.use-set-atom",
+            "kind": "runtime-export",
+            "owner": "react",
+            "legacy": [
+                {
+                    "kind": "option",
+                    "subpath": ".",
+                    "owner": "useSetAtom",
+                    "name": "store",
+                    "package": "valdres-react",
+                    "baseline": "1.0.0-beta.4"
+                },
+                {
+                    "kind": "runtime-export",
+                    "package": "valdres-react",
+                    "subpath": ".",
+                    "name": "useSetAtom",
+                    "baseline": "1.0.0-beta.4"
+                }
+            ],
+            "target": {
+                "package": "valdres-react",
+                "subpath": ".",
+                "name": "useSetAtom",
+                "status": "stable"
+            },
+            "migration": {
+                "mode": "keep",
+                "replacementIds": [],
+                "semver": "breaking",
+                "codemod": "Migrate the beta surface to useSetAtom.",
+                "typeError": "The beta form is rejected by the v1 useSetAtom declaration.",
+                "firstPartyOwner": "react",
+                "evidenceStatus": "external-handoff-required"
+            },
+            "contractIds": ["react.value-vs-updater-hooks", "atom.exact-value"],
+            "decisionStatus": "approved",
+            "notes": "The Atom-only setter stores function values without invoking them."
         },
         {
             "id": "react.use-store",
@@ -832,10 +3782,130 @@
             "notes": "The raw StoreContext is private."
         },
         {
+            "id": "react.use-transaction",
+            "kind": "runtime-export",
+            "owner": "valdres-react",
+            "legacy": [
+                {
+                    "kind": "option",
+                    "subpath": ".",
+                    "owner": "useTransaction",
+                    "name": "store",
+                    "package": "valdres-react",
+                    "baseline": "1.0.0-beta.4"
+                },
+                {
+                    "kind": "runtime-export",
+                    "package": "valdres-react",
+                    "subpath": ".",
+                    "name": "useTransaction",
+                    "baseline": "1.0.0-beta.4"
+                }
+            ],
+            "target": {
+                "package": null,
+                "subpath": null,
+                "name": null,
+                "status": "removed"
+            },
+            "migration": {
+                "mode": "remove",
+                "replacementIds": ["react.use-store", "core.store.txn"],
+                "semver": "breaking",
+                "codemod": "const store = useStore(); useCallback(() => store.txn(txn => ...), [store]).",
+                "typeError": "useTransaction is absent from stable exports.",
+                "firstPartyOwner": "react-and-app-owners",
+                "evidenceStatus": "external-handoff-required"
+            },
+            "contractIds": ["react.direct-store-transactions"],
+            "decisionStatus": "approved",
+            "notes": "No adapter capture bypass."
+        },
+        {
+            "id": "react.use-update-atom",
+            "kind": "runtime-export",
+            "owner": "valdres-react",
+            "legacy": [],
+            "target": {
+                "package": "valdres-react",
+                "subpath": ".",
+                "name": "useUpdateAtom",
+                "status": "stable"
+            },
+            "migration": {
+                "mode": "add",
+                "replacementIds": [],
+                "semver": "new",
+                "codemod": "Move updater callback writes out of useSetAtom into useUpdateAtom.",
+                "typeError": "Only Atom inputs are accepted.",
+                "firstPartyOwner": "react",
+                "evidenceStatus": "planned"
+            },
+            "contractIds": ["react.value-vs-updater-hooks"],
+            "decisionStatus": "approved",
+            "notes": "Write-only hook; it does not subscribe."
+        },
+        {
+            "id": "react.use-valdres-callback",
+            "kind": "runtime-export",
+            "owner": "valdres-react",
+            "legacy": [
+                {
+                    "kind": "option",
+                    "subpath": ".",
+                    "owner": "useValdresCallback",
+                    "name": "callback",
+                    "package": "valdres-react",
+                    "baseline": "1.0.0-beta.4"
+                },
+                {
+                    "kind": "option",
+                    "subpath": ".",
+                    "owner": "useValdresCallback",
+                    "name": "deps",
+                    "package": "valdres-react",
+                    "baseline": "1.0.0-beta.4"
+                },
+                {
+                    "kind": "runtime-export",
+                    "package": "valdres-react",
+                    "subpath": ".",
+                    "name": "useValdresCallback",
+                    "baseline": "1.0.0-beta.4"
+                }
+            ],
+            "target": {
+                "package": null,
+                "subpath": null,
+                "name": null,
+                "status": "removed"
+            },
+            "migration": {
+                "mode": "remove",
+                "replacementIds": ["react.use-store", "core.store.txn"],
+                "semver": "breaking",
+                "codemod": "Capture the exact Store and use ordinary React useCallback around store.txn.",
+                "typeError": "useValdresCallback is absent from stable exports.",
+                "firstPartyOwner": "react-and-app-owners",
+                "evidenceStatus": "external-handoff-required"
+            },
+            "contractIds": ["react.direct-store-transactions"],
+            "decisionStatus": "approved",
+            "notes": "Retained callbacks stay pinned to their captured Store generation."
+        },
+        {
             "id": "react.use-value",
             "kind": "runtime-export",
             "owner": "valdres-react",
             "legacy": [
+                {
+                    "kind": "option",
+                    "subpath": ".",
+                    "owner": "useValue",
+                    "name": "store",
+                    "package": "valdres-react",
+                    "baseline": "1.0.0-beta.4"
+                },
                 {
                     "kind": "runtime-export",
                     "package": "valdres-react",
@@ -865,180 +3935,6 @@
             ],
             "decisionStatus": "approved",
             "notes": "IndexNotReadyError is the sole materialization/Suspense control exception."
-        },
-        {
-            "id": "react.use-transaction",
-            "kind": "runtime-export",
-            "owner": "valdres-react",
-            "legacy": [
-                {
-                    "kind": "runtime-export",
-                    "package": "valdres-react",
-                    "subpath": ".",
-                    "name": "useTransaction",
-                    "baseline": "1.0.0-beta.4"
-                }
-            ],
-            "target": {
-                "package": null,
-                "subpath": null,
-                "name": null,
-                "status": "removed"
-            },
-            "migration": {
-                "mode": "remove",
-                "replacementIds": ["react.use-store", "core.store.txn"],
-                "semver": "breaking",
-                "codemod": "const store = useStore(); useCallback(() => store.txn(txn => ...), [store]).",
-                "typeError": "useTransaction is absent from stable exports.",
-                "firstPartyOwner": "react-and-app-owners",
-                "evidenceStatus": "external-handoff-required"
-            },
-            "contractIds": ["react.direct-store-transactions"],
-            "decisionStatus": "approved",
-            "notes": "No adapter capture bypass."
-        },
-        {
-            "id": "react.use-valdres-callback",
-            "kind": "runtime-export",
-            "owner": "valdres-react",
-            "legacy": [
-                {
-                    "kind": "runtime-export",
-                    "package": "valdres-react",
-                    "subpath": ".",
-                    "name": "useValdresCallback",
-                    "baseline": "1.0.0-beta.4"
-                }
-            ],
-            "target": {
-                "package": null,
-                "subpath": null,
-                "name": null,
-                "status": "removed"
-            },
-            "migration": {
-                "mode": "remove",
-                "replacementIds": ["react.use-store", "core.store.txn"],
-                "semver": "breaking",
-                "codemod": "Capture the exact Store and use ordinary React useCallback around store.txn.",
-                "typeError": "useValdresCallback is absent from stable exports.",
-                "firstPartyOwner": "react-and-app-owners",
-                "evidenceStatus": "external-handoff-required"
-            },
-            "contractIds": ["react.direct-store-transactions"],
-            "decisionStatus": "approved",
-            "notes": "Retained callbacks stay pinned to their captured Store generation."
-        },
-        {
-            "id": "react.use-update-atom",
-            "kind": "runtime-export",
-            "owner": "valdres-react",
-            "legacy": [],
-            "target": {
-                "package": "valdres-react",
-                "subpath": ".",
-                "name": "useUpdateAtom",
-                "status": "stable"
-            },
-            "migration": {
-                "mode": "add",
-                "replacementIds": [],
-                "semver": "new",
-                "codemod": "Move updater callback writes out of useSetAtom into useUpdateAtom.",
-                "typeError": "Only Atom inputs are accepted.",
-                "firstPartyOwner": "react",
-                "evidenceStatus": "planned"
-            },
-            "contractIds": ["react.value-vs-updater-hooks"],
-            "decisionStatus": "approved",
-            "notes": "Write-only hook; it does not subscribe."
-        },
-        {
-            "id": "beta.cache-companion",
-            "kind": "package",
-            "owner": "independent-beta",
-            "legacy": [
-                {
-                    "kind": "runtime-export",
-                    "package": "valdres",
-                    "subpath": ".",
-                    "name": "cacheMeta",
-                    "baseline": "1.0.0-beta.23"
-                }
-            ],
-            "target": {
-                "package": null,
-                "subpath": null,
-                "name": null,
-                "status": "pending"
-            },
-            "migration": {
-                "mode": "move",
-                "replacementIds": [],
-                "semver": "breaking",
-                "codemod": "Move async acquisition, dedupe, freshness, SWR, stale-if-error, and wakeables to the independent client and React entrypoint.",
-                "typeError": "Cache entries are not State and cannot be passed to Store or useValue.",
-                "firstPartyOwner": "beta-cache",
-                "evidenceStatus": "external-handoff-required"
-            },
-            "contractIds": [
-                "cache.no-store-internals",
-                "cache.client-owned-entries"
-            ],
-            "decisionStatus": "evidence-required",
-            "notes": "Exact package/client/entry/hook/projection names are a later non-gating beta decision."
-        },
-        {
-            "id": "beta.search",
-            "kind": "package",
-            "owner": "independent-beta",
-            "legacy": [],
-            "target": {
-                "package": "@valdres/search",
-                "subpath": ".",
-                "name": "@valdres/search",
-                "status": "experimental"
-            },
-            "migration": {
-                "mode": "add",
-                "replacementIds": [],
-                "semver": "new",
-                "codemod": "No stable migration yet; ranked and multi-collection search require separate beta evidence.",
-                "typeError": "Ranked search nodes are not admitted to stable structural-query transaction reads.",
-                "firstPartyOwner": "search",
-                "evidenceStatus": "planned"
-            },
-            "contractIds": ["search.beta-declarative-delta-seam"],
-            "decisionStatus": "approved",
-            "notes": "The query spike reserves correlated multi-source hit typing without admitting the feature to stable 1.0."
-        },
-        {
-            "id": "core.runtime-mismatch-error",
-            "kind": "error",
-            "owner": "valdres",
-            "legacy": [],
-            "target": {
-                "package": "valdres",
-                "subpath": ".",
-                "name": "RuntimeMismatchError",
-                "status": "stable"
-            },
-            "migration": {
-                "mode": "add",
-                "replacementIds": [],
-                "semver": "new",
-                "codemod": "Deduplicate compatible valdres peers and never mix handles from isolated runtime copies.",
-                "typeError": "Recognized mixed-domain operands throw code VALDRES_RUNTIME_MISMATCH before work.",
-                "firstPartyOwner": "core-and-package-owners",
-                "evidenceStatus": "planned"
-            },
-            "contractIds": [
-                "runtime.isolated-domains",
-                "runtime.before-work-owner-check"
-            ],
-            "decisionStatus": "approved",
-            "notes": "No same-version global adoption in 1.0."
         }
     ]
 }

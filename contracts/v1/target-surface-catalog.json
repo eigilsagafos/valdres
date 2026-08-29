@@ -23,15 +23,80 @@
         "core.presence",
         "core.runtime-mismatch-error",
         "core.selector",
+        "core.selector-circular-dependency-error",
+        "core.selector-evaluation-error",
         "core.store",
+        "core.store-disposed-error",
         "core.store.delete",
+        "core.store.dispose",
+        "core.store.get",
         "core.store.on-dispose",
+        "core.store.reset",
         "core.store.scope",
+        "core.store.set",
+        "core.store.sub",
         "core.store.txn",
         "core.store.update",
         "core.structural-query",
+        "core.transaction.delete",
+        "core.transaction.get",
+        "core.transaction.reset",
+        "core.transaction.scope",
+        "core.transaction.set",
+        "core.transaction.update",
+        "core.type.atom",
+        "core.type.atom-options",
+        "core.type.equal-func",
+        "core.type.family-key",
+        "core.type.get-value",
+        "core.type.selector",
+        "core.type.selector-options",
+        "core.type.state",
+        "core.type.store",
+        "core.type.store-options",
+        "core.type.subscribe-fn",
+        "core.type.transaction",
+        "core.type.transaction-fn",
+        "legacy.adapter-selector-error",
+        "legacy.adapter-transaction",
+        "legacy.atom-default-value",
+        "legacy.atom-lifecycle",
+        "legacy.cache-reactive",
+        "legacy.deep-freeze",
+        "legacy.family-membership-index",
+        "legacy.initialize",
+        "legacy.mutation-type-aliases",
+        "legacy.predicates",
+        "legacy.promise-writes",
+        "legacy.provider-initialize",
+        "legacy.react-initialize-type",
+        "legacy.react-store-context",
+        "legacy.scope-leases",
+        "legacy.scoped-store-txn",
+        "legacy.scoped-transaction-types",
+        "legacy.selector-get-options",
+        "legacy.store-adapter",
+        "legacy.store-identity",
+        "legacy.store-mode-options",
+        "legacy.store-on-commit-end",
+        "legacy.store-scope-callback",
+        "legacy.store-unset",
+        "legacy.subscription-deep-equality",
+        "legacy.transaction-interface",
+        "legacy.transaction-names",
+        "legacy.transaction-parent-scope",
+        "legacy.transaction-unset",
+        "legacy.unset-all",
+        "moved.inspect",
+        "moved.schema",
+        "moved.transfer",
         "react.provider",
+        "react.provider.children",
+        "react.provider.store",
         "react.scope",
+        "react.use-atom",
+        "react.use-reset-atom",
+        "react.use-set-atom",
         "react.use-store",
         "react.use-transaction",
         "react.use-update-atom",
@@ -61,137 +126,11 @@
     "independentBetaPublicApiIds": ["beta.cache-companion", "beta.search"],
     "frozenPublicCoordinates": [
         {
-            "id": "core.atom",
-            "kind": "runtime-export",
-            "package": "valdres",
+            "id": "beta.search",
+            "kind": "package",
+            "package": "@valdres/search",
             "subpath": ".",
-            "name": "atom"
-        },
-        {
-            "id": "core.atom.lazy",
-            "kind": "method",
-            "package": "valdres",
-            "subpath": ".",
-            "name": "atom.lazy"
-        },
-        {
-            "id": "core.selector",
-            "kind": "runtime-export",
-            "package": "valdres",
-            "subpath": ".",
-            "name": "selector"
-        },
-        {
-            "id": "core.external-atom",
-            "kind": "runtime-export",
-            "package": "valdres",
-            "subpath": ".",
-            "name": "externalAtom"
-        },
-        {
-            "id": "core.family",
-            "kind": "runtime-export",
-            "package": "valdres",
-            "subpath": ".",
-            "name": "family"
-        },
-        {
-            "id": "core.collection",
-            "kind": "runtime-export",
-            "package": "valdres",
-            "subpath": ".",
-            "name": "collection"
-        },
-        {
-            "id": "core.presence",
-            "kind": "runtime-export",
-            "package": "valdres",
-            "subpath": ".",
-            "name": "presence"
-        },
-        {
-            "id": "core.structural-query",
-            "kind": "runtime-export",
-            "package": "valdres",
-            "subpath": ".",
-            "name": "query"
-        },
-        {
-            "id": "core.store",
-            "kind": "runtime-export",
-            "package": "valdres",
-            "subpath": ".",
-            "name": "store"
-        },
-        {
-            "id": "core.store.scope",
-            "kind": "method",
-            "package": "valdres",
-            "subpath": ".",
-            "name": "Store.scope"
-        },
-        {
-            "id": "core.store.txn",
-            "kind": "method",
-            "package": "valdres",
-            "subpath": ".",
-            "name": "Store.txn"
-        },
-        {
-            "id": "core.store.update",
-            "kind": "method",
-            "package": "valdres",
-            "subpath": ".",
-            "name": "Store.update"
-        },
-        {
-            "id": "core.store.delete",
-            "kind": "method",
-            "package": "valdres",
-            "subpath": ".",
-            "name": "Store.delete"
-        },
-        {
-            "id": "collection.operations-subpath",
-            "kind": "subpath",
-            "package": "valdres",
-            "subpath": "./collection",
-            "name": "valdres/collection"
-        },
-        {
-            "id": "collection.materialize",
-            "kind": "runtime-export",
-            "package": "valdres",
-            "subpath": "./collection",
-            "name": "materialize"
-        },
-        {
-            "id": "collection.scan",
-            "kind": "runtime-export",
-            "package": "valdres",
-            "subpath": "./collection",
-            "name": "scan"
-        },
-        {
-            "id": "collection.materialization-status",
-            "kind": "runtime-export",
-            "package": "valdres",
-            "subpath": "./collection",
-            "name": "getMaterializationStatus"
-        },
-        {
-            "id": "collection.materialization-subscribe",
-            "kind": "runtime-export",
-            "package": "valdres",
-            "subpath": "./collection",
-            "name": "subscribeMaterialization"
-        },
-        {
-            "id": "collection.artifacts-subpath",
-            "kind": "subpath",
-            "package": "valdres",
-            "subpath": "./collection/artifacts",
-            "name": "valdres/collection/artifacts"
+            "name": "@valdres/search"
         },
         {
             "id": "collection.artifact-export",
@@ -208,11 +147,375 @@
             "name": "importArtifact"
         },
         {
+            "id": "collection.artifacts-subpath",
+            "kind": "subpath",
+            "package": "valdres",
+            "subpath": "./collection/artifacts",
+            "name": "valdres/collection/artifacts"
+        },
+        {
+            "id": "collection.materialization-status",
+            "kind": "runtime-export",
+            "package": "valdres",
+            "subpath": "./collection",
+            "name": "getMaterializationStatus"
+        },
+        {
+            "id": "collection.materialization-subscribe",
+            "kind": "runtime-export",
+            "package": "valdres",
+            "subpath": "./collection",
+            "name": "subscribeMaterialization"
+        },
+        {
+            "id": "collection.materialize",
+            "kind": "runtime-export",
+            "package": "valdres",
+            "subpath": "./collection",
+            "name": "materialize"
+        },
+        {
+            "id": "collection.operations-subpath",
+            "kind": "subpath",
+            "package": "valdres",
+            "subpath": "./collection",
+            "name": "valdres/collection"
+        },
+        {
+            "id": "collection.scan",
+            "kind": "runtime-export",
+            "package": "valdres",
+            "subpath": "./collection",
+            "name": "scan"
+        },
+        {
+            "id": "core.atom",
+            "kind": "runtime-export",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "atom"
+        },
+        {
+            "id": "core.atom.lazy",
+            "kind": "method",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "atom.lazy"
+        },
+        {
+            "id": "core.collection",
+            "kind": "runtime-export",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "collection"
+        },
+        {
+            "id": "core.external-atom",
+            "kind": "runtime-export",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "externalAtom"
+        },
+        {
+            "id": "core.family",
+            "kind": "runtime-export",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "family"
+        },
+        {
+            "id": "core.presence",
+            "kind": "runtime-export",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "presence"
+        },
+        {
+            "id": "core.runtime-mismatch-error",
+            "kind": "error",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "RuntimeMismatchError"
+        },
+        {
+            "id": "core.selector",
+            "kind": "runtime-export",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "selector"
+        },
+        {
+            "id": "core.selector-circular-dependency-error",
+            "kind": "error",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "SelectorCircularDependencyError"
+        },
+        {
+            "id": "core.selector-evaluation-error",
+            "kind": "error",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "SelectorEvaluationError"
+        },
+        {
+            "id": "core.store",
+            "kind": "runtime-export",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "store"
+        },
+        {
+            "id": "core.store-disposed-error",
+            "kind": "error",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "StoreDisposedError"
+        },
+        {
+            "id": "core.store.delete",
+            "kind": "method",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "Store.delete"
+        },
+        {
+            "id": "core.store.dispose",
+            "kind": "method",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "Store.dispose"
+        },
+        {
+            "id": "core.store.get",
+            "kind": "method",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "Store.get"
+        },
+        {
+            "id": "core.store.reset",
+            "kind": "method",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "Store.reset"
+        },
+        {
+            "id": "core.store.scope",
+            "kind": "method",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "Store.scope"
+        },
+        {
+            "id": "core.store.set",
+            "kind": "method",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "Store.set"
+        },
+        {
+            "id": "core.store.sub",
+            "kind": "method",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "Store.sub"
+        },
+        {
+            "id": "core.store.txn",
+            "kind": "method",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "Store.txn"
+        },
+        {
+            "id": "core.store.update",
+            "kind": "method",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "Store.update"
+        },
+        {
+            "id": "core.structural-query",
+            "kind": "runtime-export",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "query"
+        },
+        {
+            "id": "core.transaction.delete",
+            "kind": "method",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "Transaction.delete"
+        },
+        {
+            "id": "core.transaction.get",
+            "kind": "method",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "Transaction.get"
+        },
+        {
+            "id": "core.transaction.reset",
+            "kind": "method",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "Transaction.reset"
+        },
+        {
+            "id": "core.transaction.scope",
+            "kind": "method",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "Transaction.scope"
+        },
+        {
+            "id": "core.transaction.set",
+            "kind": "method",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "Transaction.set"
+        },
+        {
+            "id": "core.transaction.update",
+            "kind": "method",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "Transaction.update"
+        },
+        {
+            "id": "core.type.atom",
+            "kind": "type-export",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "Atom"
+        },
+        {
+            "id": "core.type.atom-options",
+            "kind": "type-export",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "AtomOptions"
+        },
+        {
+            "id": "core.type.equal-func",
+            "kind": "type-export",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "EqualFunc"
+        },
+        {
+            "id": "core.type.family-key",
+            "kind": "type-export",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "FamilyKey"
+        },
+        {
+            "id": "core.type.get-value",
+            "kind": "type-export",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "GetValue"
+        },
+        {
+            "id": "core.type.selector",
+            "kind": "type-export",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "Selector"
+        },
+        {
+            "id": "core.type.selector-options",
+            "kind": "type-export",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "SelectorOptions"
+        },
+        {
+            "id": "core.type.state",
+            "kind": "type-export",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "State"
+        },
+        {
+            "id": "core.type.store",
+            "kind": "type-export",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "Store"
+        },
+        {
+            "id": "core.type.store-options",
+            "kind": "type-export",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "StoreOptions"
+        },
+        {
+            "id": "core.type.subscribe-fn",
+            "kind": "type-export",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "SubscribeFn"
+        },
+        {
+            "id": "core.type.transaction",
+            "kind": "type-export",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "Transaction"
+        },
+        {
+            "id": "core.type.transaction-fn",
+            "kind": "type-export",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "TransactionFn"
+        },
+        {
             "id": "react.provider",
             "kind": "runtime-export",
             "package": "valdres-react",
             "subpath": ".",
             "name": "Provider"
+        },
+        {
+            "id": "react.provider.children",
+            "kind": "option",
+            "package": "valdres-react",
+            "subpath": ".",
+            "name": "ProviderProps.children"
+        },
+        {
+            "id": "react.provider.store",
+            "kind": "option",
+            "package": "valdres-react",
+            "subpath": ".",
+            "name": "ProviderProps.store"
+        },
+        {
+            "id": "react.use-atom",
+            "kind": "runtime-export",
+            "package": "valdres-react",
+            "subpath": ".",
+            "name": "useAtom"
+        },
+        {
+            "id": "react.use-reset-atom",
+            "kind": "runtime-export",
+            "package": "valdres-react",
+            "subpath": ".",
+            "name": "useResetAtom"
+        },
+        {
+            "id": "react.use-set-atom",
+            "kind": "runtime-export",
+            "package": "valdres-react",
+            "subpath": ".",
+            "name": "useSetAtom"
         },
         {
             "id": "react.use-store",
@@ -222,13 +525,6 @@
             "name": "useStore"
         },
         {
-            "id": "react.use-value",
-            "kind": "runtime-export",
-            "package": "valdres-react",
-            "subpath": ".",
-            "name": "useValue"
-        },
-        {
             "id": "react.use-update-atom",
             "kind": "runtime-export",
             "package": "valdres-react",
@@ -236,27 +532,14 @@
             "name": "useUpdateAtom"
         },
         {
-            "id": "beta.search",
-            "kind": "package",
-            "package": "@valdres/search",
+            "id": "react.use-value",
+            "kind": "runtime-export",
+            "package": "valdres-react",
             "subpath": ".",
-            "name": "@valdres/search"
-        },
-        {
-            "id": "core.runtime-mismatch-error",
-            "kind": "error",
-            "package": "valdres",
-            "subpath": ".",
-            "name": "RuntimeMismatchError"
+            "name": "useValue"
         }
     ],
     "pendingSurfaceDecisions": [
-        {
-            "id": "pending.public-type-aliases",
-            "category": "alias-exports",
-            "status": "pending",
-            "notes": "Exact retained spellings for EqualFunc, FamilyKey, GetValue, ResetAtom, SetAtom, SetAtomValue, SubscribeFn, SyncSetAtom, and TransactionFn remain a founder/engineering decision."
-        },
         {
             "id": "pending.adapter-protocol",
             "category": "adapter-protocol",

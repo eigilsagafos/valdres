@@ -475,11 +475,11 @@ const frozenLegacyCoordinateInventorySha256 =
 const frozenLegacyProvenanceInventorySha256 =
     "5b01eda652cf7f3e281cc0b832eda76157d2939c9997dfc51eb6186b558e3f06"
 const frozenReviewedLegacyDispositionSha256 =
-    "e8a2097a3d88c2208575d1cc5384d149db29de4d22b48714173c5c68fe99ccc4"
+    "e6fcb767cd68ed85f8dd5035190616fa1dbcc72094dc644ee3eb649ffc6bea63"
 const frozenTargetCoordinateInventorySha256 =
-    "91da520b8579cd60590ff5d9e058bbd1cccdb66d7c23f4eb1ea81b36f6dce55d"
+    "4a2bad59e3511cd51d4e85b1aaef9f79c5d0222e1b9505edf19805f3a7eee6ed"
 const frozenReleaseTrackOwnershipSha256 =
-    "29e9c7c740e41521e2e4a25025b52e55510214e2b345a46d4873d011463d0d2b"
+    "6667552c255057340175196361907a164b7871f01c55571f55313b0fa05002d7"
 const frozenWorkspaceBaseline = Object.freeze({
     commit: "ff1424bde13445eba07fcb426f5493dd43898f72",
     packageVersion: "1.0.0-beta.22",
@@ -681,12 +681,6 @@ export function validateContractSet(input: ContractSet): Readonly<{
         expectedFrozenLegacyCoordinates(frozenLegacySurface),
         legacyDispositionCatalog,
     )
-    assertFrozenReleaseTrackOwnership(
-        publicManifest,
-        callbackManifest,
-        targetSurfaceCatalog,
-    )
-
     for (const entry of publicManifest.entries) {
         assertReleaseTrackInvariant(entry, independentBetaPublicIds)
         for (const replacementId of entry.migration.replacementIds) {
@@ -716,6 +710,12 @@ export function validateContractSet(input: ContractSet): Readonly<{
             )
         }
     }
+
+    assertFrozenReleaseTrackOwnership(
+        publicManifest,
+        callbackManifest,
+        targetSurfaceCatalog,
+    )
 
     if (publicManifest.generatedAgainst.currentShiftX.status === "complete") {
         assertReviewedCurrentShiftXEvidence(
@@ -856,7 +856,10 @@ function assertFrozenReleaseTrackOwnership(
                         JSON.stringify([
                             entry.id,
                             entry.owner,
+                            entry.kind,
                             entry.target.status,
+                            entry.migration.mode,
+                            [...entry.migration.replacementIds].sort(),
                         ]),
                     )
                     .sort(),

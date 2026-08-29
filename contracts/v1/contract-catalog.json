@@ -34,13 +34,14 @@
         "family.no-membership",
         "family.same-value-zero",
         "family.variadic-primitive-identity",
+        "inspect.no-core-enumeration",
         "lifecycle.synchronous-cleanup",
         "mutation.value-vs-updater",
         "no-writable-cross-tree-state",
         "notification.after-stability",
-        "query.recursive-object-definition",
         "query.exact-scan-operation",
         "query.ready-only-indexed-read",
+        "query.recursive-object-definition",
         "query.single-collection-composite-result",
         "react.direct-store-transactions",
         "react.isolated-hydration-reader",
@@ -52,6 +53,7 @@
         "react.value-vs-updater-hooks",
         "runtime.before-work-owner-check",
         "runtime.isolated-domains",
+        "schema.no-store-policy",
         "scope.explicit-disposal",
         "scope.live-inheritance",
         "scope.parent-local-name",
@@ -65,6 +67,7 @@
         "transaction.no-user-code-final-preflight",
         "transaction.one-tree-draft",
         "transaction.scope-cursor-no-savepoint",
-        "transaction.sync-derived-reads"
+        "transaction.sync-derived-reads",
+        "transfer.caller-owned-registry"
     ]
 }
