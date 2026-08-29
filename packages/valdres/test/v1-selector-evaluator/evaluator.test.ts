@@ -275,6 +275,42 @@ describe("v1 selector evaluator outcomes", () => {
         ).toEqual(["a", "b"])
     })
 
+    test("reuses immutable dependency snapshots when node and token stay current", () => {
+        const host = new TestHost()
+        host.setLeaf("a", 2)
+        host.setLeaf("b", 3)
+        host.setLeaf("c", 4)
+        let useB = true
+        host.define({
+            node: "sum",
+            get: get => get<number>("a") + get<number>(useB ? "b" : "c"),
+        })
+
+        expect(valueOf(host.read<number>("sum"))).toBe(5)
+        const previous = host.records.get("sum")!.dependencies
+        host.markDirty("sum")
+        expect(valueOf(host.read<number>("sum"))).toBe(5)
+        const next = host.records.get("sum")!.dependencies
+
+        expect(next).not.toBe(previous)
+        expect(next[0]).toBe(previous[0])
+        expect(next[1]).toBe(previous[1])
+
+        useB = false
+        host.markDirty("sum")
+        expect(valueOf(host.read<number>("sum"))).toBe(6)
+        const changedNode = host.records.get("sum")!.dependencies
+        expect(changedNode[0]).toBe(next[0])
+        expect(changedNode[1]).not.toBe(next[1])
+        expect(changedNode[1]!.node).toBe("c")
+
+        host.setLeaf("a", 4)
+        expect(valueOf(host.read<number>("sum"))).toBe(8)
+        const changedToken = host.records.get("sum")!.dependencies
+        expect(changedToken[0]).not.toBe(changedNode[0])
+        expect(changedToken[1]).toBe(changedNode[1])
+    })
+
     test("V1M-SEL-002 custom equality reuses a current value token while replacing topology", () => {
         const host = new TestHost()
         const stable = Object.freeze({ count: 1 })

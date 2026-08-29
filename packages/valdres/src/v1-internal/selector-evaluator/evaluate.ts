@@ -350,9 +350,15 @@ export const evaluateSelector = <Node, Token extends object, Value>(
         }
 
         if (!alreadyAccepted) {
+            const previousSnapshot =
+                currentRecord?.dependencies[dependencies.length]
             dependencyNodes.add(dependency)
             dependencies.push(
-                Object.freeze({ node: dependency, token: served.token }),
+                previousSnapshot !== undefined &&
+                    Object.is(previousSnapshot.node, dependency) &&
+                    Object.is(previousSnapshot.token, served.token)
+                    ? previousSnapshot
+                    : Object.freeze({ node: dependency, token: served.token }),
             )
             session.acceptDependency(host, selector, dependency)
         }
