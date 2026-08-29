@@ -171,6 +171,10 @@ const sameAtomOutcome = (
     )
 }
 
+const PROPAGATION_QUEUED = 1
+const PROPAGATION_SETTLING = 2
+const PROPAGATION_SETTLED = 4
+
 const createCommitWorksets = (onAllocation?: () => void): CommitWorksets => ({
     onAllocation,
     preflightAtom: undefined,
@@ -326,12 +330,13 @@ class CommittedStoreTreeHost
     #nextToken = 1
     #sourceEpoch = 0
     #postSourceApply = false
-    #propagationQueue:
-        | Readonly<{ scope: StoreScopeNode; selector: AnySelector }>[]
+    #propagationQueue: (StoreScopeNode | AnySelector)[] | undefined
+    #propagationStatusScope: StoreScopeNode | undefined
+    #propagationStatusSelector: AnySelector | undefined
+    #propagationStatusBits = 0
+    #propagationStatuses:
+        | Map<StoreScopeNode, Map<AnySelector, number>>
         | undefined
-    #propagationQueued: Map<StoreScopeNode, Set<AnySelector>> | undefined
-    #propagationSettled: Map<StoreScopeNode, Set<AnySelector>> | undefined
-    #propagationSettling: Map<StoreScopeNode, Set<AnySelector>> | undefined
     #propagationControlFault: unknown | undefined
     readonly #domain: RuntimeDomainRecords
     readonly #counters: Uint32Array | undefined
@@ -1565,9 +1570,10 @@ class CommittedStoreTreeHost
         if (firstSource === undefined) return
         this.recordCounter("propagationSettlements")
         this.#propagationQueue = []
-        this.#propagationQueued = new Map()
-        this.#propagationSettled = new Map()
-        this.#propagationSettling = new Map()
+        this.#propagationStatusScope = undefined
+        this.#propagationStatusSelector = undefined
+        this.#propagationStatusBits = 0
+        this.#propagationStatuses = undefined
         this.#propagationControlFault = undefined
         this.#postSourceApply = true
         try {
@@ -1579,15 +1585,17 @@ class CommittedStoreTreeHost
             }
             let cursor = 0
             while (cursor < this.#propagationQueue.length) {
-                const { scope, selector } = this.#propagationQueue[cursor++]!
+                const scope = this.#propagationQueue[cursor++] as StoreScopeNode
+                const selector = this.#propagationQueue[cursor++] as AnySelector
                 this.#settleSelector(scope, selector)
             }
         } finally {
             this.#postSourceApply = false
             this.#propagationQueue = undefined
-            this.#propagationQueued = undefined
-            this.#propagationSettled = undefined
-            this.#propagationSettling = undefined
+            this.#propagationStatusScope = undefined
+            this.#propagationStatusSelector = undefined
+            this.#propagationStatusBits = 0
+            this.#propagationStatuses = undefined
         }
         if (this.#propagationControlFault !== undefined) {
             throw this.#propagationControlFault
@@ -1595,49 +1603,31 @@ class CommittedStoreTreeHost
     }
 
     enqueueSelector(scope: StoreScopeNode, selector: AnySelector): boolean {
+        const queue = this.#propagationQueue
+        if (queue === undefined) return false
         if (
-            this.#propagationQueue === undefined ||
-            this.#propagationQueued === undefined
+            (this.#getPropagationStatus(scope, selector) &
+                PROPAGATION_QUEUED) !==
+            0
         ) {
-            return false
+            return true
         }
-        let queued = this.#propagationQueued.get(scope)
-        if (queued === undefined) {
-            queued = new Set()
-            this.#propagationQueued.set(scope, queued)
-        }
-        if (queued.has(selector)) return true
-        queued.add(selector)
-        this.#propagationQueue.push(Object.freeze({ scope, selector }))
+        this.#updatePropagationStatus(scope, selector, PROPAGATION_QUEUED)
+        queue.push(scope, selector)
         return true
     }
 
     prepareSelectorRead(scope: StoreScopeNode, selector: AnySelector): void {
-        if (this.#propagationSettled === undefined) return
+        if (this.#propagationQueue === undefined) return
         this.#settleSelector(scope, selector)
     }
 
     #settleSelector(scope: StoreScopeNode, selector: AnySelector): void {
-        const settledByScope = this.#propagationSettled
-        const settlingByScope = this.#propagationSettling
-        if (settledByScope === undefined || settlingByScope === undefined) {
+        const status = this.#getPropagationStatus(scope, selector)
+        if ((status & (PROPAGATION_SETTLED | PROPAGATION_SETTLING)) !== 0) {
             return
         }
-
-        let settled = settledByScope.get(scope)
-        if (settled === undefined) {
-            settled = new Set()
-            settledByScope.set(scope, settled)
-        }
-        if (settled.has(selector)) return
-
-        let settling = settlingByScope.get(scope)
-        if (settling === undefined) {
-            settling = new Set()
-            settlingByScope.set(scope, settling)
-        }
-        if (settling.has(selector)) return
-        settling.add(selector)
+        this.#updatePropagationStatus(scope, selector, PROPAGATION_SETTLING)
         try {
             const dependencies =
                 scope.getCommittedSelectorDependencies(selector)
@@ -1654,10 +1644,65 @@ class CommittedStoreTreeHost
             if (scope.isSelectorDirty(selector)) {
                 scope.serve(selector, new SelectorEvaluationSession<AnyState>())
             }
-            settled.add(selector)
+            this.#updatePropagationStatus(scope, selector, PROPAGATION_SETTLED)
         } finally {
-            settling.delete(selector)
+            this.#updatePropagationStatus(
+                scope,
+                selector,
+                0,
+                PROPAGATION_SETTLING,
+            )
         }
+    }
+
+    #getPropagationStatus(
+        scope: StoreScopeNode,
+        selector: AnySelector,
+    ): number {
+        if (
+            Object.is(this.#propagationStatusScope, scope) &&
+            Object.is(this.#propagationStatusSelector, selector)
+        ) {
+            return this.#propagationStatusBits
+        }
+        return this.#propagationStatuses?.get(scope)?.get(selector) ?? 0
+    }
+
+    #updatePropagationStatus(
+        scope: StoreScopeNode,
+        selector: AnySelector,
+        add: number,
+        remove = 0,
+    ): void {
+        if (this.#propagationStatusScope === undefined) {
+            this.#propagationStatusScope = scope
+            this.#propagationStatusSelector = selector
+            this.#propagationStatusBits = add & ~remove
+            return
+        }
+        if (
+            Object.is(this.#propagationStatusScope, scope) &&
+            Object.is(this.#propagationStatusSelector, selector)
+        ) {
+            this.#propagationStatusBits =
+                (this.#propagationStatusBits | add) & ~remove
+            return
+        }
+
+        let statuses = this.#propagationStatuses
+        if (statuses === undefined) {
+            statuses = new Map()
+            this.#propagationStatuses = statuses
+        }
+        let bySelector = statuses.get(scope)
+        if (bySelector === undefined) {
+            bySelector = new Map()
+            statuses.set(scope, bySelector)
+        }
+        bySelector.set(
+            selector,
+            ((bySelector.get(selector) ?? 0) | add) & ~remove,
+        )
     }
 
     latchPropagationControlFault(error: unknown): void {
