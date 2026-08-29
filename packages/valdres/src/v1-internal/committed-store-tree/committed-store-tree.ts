@@ -32,6 +32,8 @@ interface DomainRecords {
     readonly states: WeakSet<object>
     readonly atoms: WeakMap<object, AtomFallback>
     readonly selectors: WeakMap<object, SelectorDefinition<AnyState, any>>
+    readonly ownerToken: object
+    activeSession: SelectorEvaluationSession<AnyState> | undefined
 }
 
 type OutcomeToken = Readonly<{ id: number }>
@@ -63,6 +65,7 @@ type SynchronousResult =
 const NOT_THENABLE = Object.freeze({ kind: "not-thenable" as const })
 const NOOP = (): void => {}
 const APPLY = Reflect.apply
+const RUNTIME_OWNER_KEY = Symbol.for("valdres.runtime-owner/v1")
 
 /** The stable owner failure that a later public facade will re-export. */
 export class RuntimeMismatchError extends Error {
@@ -93,7 +96,9 @@ const invalidAtomValueError = () =>
         "Atom values and lazy initializers must be synchronous",
     )
 
-const selectorCapabilityError = (operation: "get" | "set") =>
+const selectorCapabilityError = (
+    operation: "get" | "set" | "createStoreTree",
+) =>
     immutableNamedError(
         "SelectorCapabilityError",
         "VALDRES_SELECTOR_CAPABILITY_ERROR",
@@ -167,6 +172,33 @@ const runLazyInitializer = (initialize: () => unknown): SynchronousResult => {
     }
 }
 
+const runWithDomainGuard = <Result>(
+    domain: DomainRecords,
+    session: SelectorEvaluationSession<AnyState>,
+    operation: () => Result,
+): Result => {
+    const previousSession = domain.activeSession
+    domain.activeSession = session
+    try {
+        return operation()
+    } finally {
+        domain.activeSession = previousSession
+    }
+}
+
+const inspectGuardedSynchronousValue = (
+    domain: DomainRecords,
+    session: SelectorEvaluationSession<AnyState>,
+    value: unknown,
+): SynchronousResult => {
+    const result = runWithDomainGuard(domain, session, () =>
+        inspectSynchronousValue(value),
+    )
+    const controlFault = session.getControlFault()
+    if (controlFault.kind === "fault") throw controlFault.error
+    return result
+}
+
 const freezeOutcome = <Value>(
     outcome: SelectorOutcome<Value>,
 ): SelectorOutcome<Value> => Object.freeze(outcome)
@@ -184,20 +216,25 @@ class CommittedStoreTreeHost
     readonly #reverseEdges = new Map<AnyState, Set<AnySelector>>()
     readonly #dirtySelectors = new Set<AnySelector>()
     #nextToken = 1
-    #activeSession: SelectorEvaluationSession<AnyState> | undefined
     #postSourceApply = false
     #propagationQueue: AnySelector[] | undefined
     #propagationQueued: Set<AnySelector> | undefined
     #propagationControlFault: unknown | undefined
+    readonly #domain: DomainRecords
 
-    constructor(readonly domain: DomainRecords) {}
+    constructor(domain: DomainRecords) {
+        this.#domain = domain
+    }
 
     get<Value>(state: State<Value>): Value {
         const session = new SelectorEvaluationSession<AnyState>()
         const node = state as unknown as AnyState
-        this.#assertOwner(node, session)
-        if (this.#activeSession !== undefined) {
+        const ownerStatus = this.#classifyOwner(node, session)
+        if (this.#domain.activeSession !== undefined) {
             throw selectorCapabilityError("get")
+        }
+        if (ownerStatus === "invalid") {
+            throw new TypeError("StoreTree.get requires a valid State")
         }
         const served = this.serve(node, session)
         if (served.outcome.kind !== "value") throw served.outcome.error
@@ -207,15 +244,22 @@ class CommittedStoreTreeHost
     set<Value>(atom: Atom<Value>, value: Value): void {
         const node = atom as unknown as AnyAtom
         const session = new SelectorEvaluationSession<AnyState>()
-        this.#assertOwner(node, session)
-        if (this.#activeSession !== undefined) {
+        const ownerStatus = this.#classifyOwner(node, session)
+        if (this.#domain.activeSession !== undefined) {
             throw selectorCapabilityError("set")
         }
-        if (!this.domain.atoms.has(node)) {
+        if (ownerStatus === "invalid") {
+            throw new TypeError("StoreTree.set requires a valid Atom")
+        }
+        if (!this.#domain.atoms.has(node)) {
             throw new TypeError("StoreTree.set requires an Atom")
         }
 
-        const inspected = inspectSynchronousValue(value)
+        const inspected = inspectGuardedSynchronousValue(
+            this.#domain,
+            session,
+            value,
+        )
         if (inspected.kind === "error") throw inspected.error
 
         const current = this.#serveAtom(node, session)
@@ -243,12 +287,14 @@ class CommittedStoreTreeHost
         node: AnyState,
         session: SelectorEvaluationSession<AnyState>,
     ): ServedSelectorOutcome<OutcomeToken> {
-        this.#assertOwner(node, session)
-        if (this.domain.atoms.has(node)) {
+        if (this.#classifyOwner(node, session) === "invalid") {
+            throw new TypeError("Selector get requires a valid State")
+        }
+        if (this.#domain.atoms.has(node)) {
             return this.#serveAtom(node as AnyAtom, session)
         }
 
-        const definition = this.domain.selectors.get(node)
+        const definition = this.#domain.selectors.get(node)
         if (definition === undefined) {
             throw new TypeError("Unknown committed StoreTree state")
         }
@@ -258,14 +304,9 @@ class CommittedStoreTreeHost
             return current.served
         }
 
-        const previousSession = this.#activeSession
-        this.#activeSession = session
-        let proposal: SelectorEvaluationProposal<AnyState, OutcomeToken>
-        try {
-            proposal = evaluateSelector(definition, this, session)
-        } finally {
-            this.#activeSession = previousSession
-        }
+        const proposal = runWithDomainGuard(this.#domain, session, () =>
+            evaluateSelector(definition, this, session),
+        )
 
         if (
             proposal.outcome.kind === "control-error" &&
@@ -313,7 +354,7 @@ class CommittedStoreTreeHost
         const current = this.#atomRecords.get(atom)
         if (current !== undefined) return current
 
-        const fallback = this.domain.atoms.get(atom)
+        const fallback = this.#domain.atoms.get(atom)
         if (fallback === undefined) {
             throw new TypeError("Unknown committed StoreTree Atom")
         }
@@ -344,13 +385,9 @@ class CommittedStoreTreeHost
         initialize: () => unknown,
         session: SelectorEvaluationSession<AnyState>,
     ): SynchronousResult {
-        const previousSession = this.#activeSession
-        this.#activeSession = session
-        try {
-            return runLazyInitializer(initialize)
-        } finally {
-            this.#activeSession = previousSession
-        }
+        return runWithDomainGuard(this.#domain, session, () =>
+            runLazyInitializer(initialize),
+        )
     }
 
     #installSelectorProposal(
@@ -426,8 +463,9 @@ class CommittedStoreTreeHost
         this.#postSourceApply = true
         try {
             this.#enqueueDependents(source)
-            while (this.#propagationQueue.length > 0) {
-                const selector = this.#propagationQueue.shift()!
+            let cursor = 0
+            while (cursor < this.#propagationQueue.length) {
+                const selector = this.#propagationQueue[cursor++]!
                 if (!this.#dirtySelectors.has(selector)) continue
                 this.serve(selector, new SelectorEvaluationSession<AnyState>())
             }
@@ -456,21 +494,54 @@ class CommittedStoreTreeHost
         }
     }
 
-    #assertOwner(
+    #classifyOwner(
         state: AnyState,
         session: SelectorEvaluationSession<AnyState>,
-    ): void {
+    ): "local" | "invalid" {
         if (
             (typeof state === "object" || typeof state === "function") &&
             state !== null &&
-            this.domain.states.has(state)
+            this.#domain.states.has(state)
         ) {
-            return
+            return "local"
         }
-        const error = new RuntimeMismatchError()
-        const faultSession = this.#activeSession ?? session
-        faultSession.latchControlFault(error)
-        throw error
+        if (
+            (typeof state === "object" || typeof state === "function") &&
+            state !== null
+        ) {
+            const ownerDescriptor = Object.getOwnPropertyDescriptor(
+                state,
+                RUNTIME_OWNER_KEY,
+            )
+            if (
+                ownerDescriptor !== undefined &&
+                "value" in ownerDescriptor &&
+                !Object.is(ownerDescriptor.value, this.#domain.ownerToken)
+            ) {
+                const error = new RuntimeMismatchError()
+                const faultSession = this.#domain.activeSession ?? session
+                faultSession.latchControlFault(error)
+                throw error
+            }
+        }
+        return "invalid"
+    }
+}
+
+class CommittedStoreTreeFacade implements CommittedStoreTree {
+    readonly #host: CommittedStoreTreeHost
+
+    constructor(domain: DomainRecords) {
+        this.#host = new CommittedStoreTreeHost(domain)
+        Object.freeze(this)
+    }
+
+    get<Value>(state: State<Value>): Value {
+        return this.#host.get(state)
+    }
+
+    set<Value>(atom: Atom<Value>, value: Value): void {
+        this.#host.set(atom, value)
     }
 }
 
@@ -480,19 +551,40 @@ const EMPTY_DEPENDENCIES = Object.freeze(
 
 const makeHandle = <Kind extends "atom" | "selector">(
     kind: Kind,
-): Readonly<{ kind: Kind }> => Object.freeze({ kind })
+    ownerToken: object,
+): Readonly<{ kind: Kind }> => {
+    const handle = { kind }
+    Object.defineProperty(handle, RUNTIME_OWNER_KEY, {
+        value: ownerToken,
+        enumerable: false,
+        writable: false,
+        configurable: false,
+    })
+    return Object.freeze(handle)
+}
 
 export const createCommittedStoreTreeDomain = (): CommittedStoreTreeDomain => {
     const records: DomainRecords = {
         states: new WeakSet(),
         atoms: new WeakMap(),
         selectors: new WeakMap(),
+        ownerToken: Object.freeze({}),
+        activeSession: undefined,
     }
 
     const atom = <Value>(fallback: Value): Atom<Value> => {
-        const inspected = inspectSynchronousValue(fallback)
+        const session =
+            records.activeSession ?? new SelectorEvaluationSession<AnyState>()
+        const inspected = inspectGuardedSynchronousValue(
+            records,
+            session,
+            fallback,
+        )
         if (inspected.kind === "error") throw inspected.error
-        const handle = makeHandle("atom") as unknown as Atom<Value>
+        const handle = makeHandle(
+            "atom",
+            records.ownerToken,
+        ) as unknown as Atom<Value>
         records.states.add(handle)
         records.atoms.set(
             handle,
@@ -505,7 +597,10 @@ export const createCommittedStoreTreeDomain = (): CommittedStoreTreeDomain => {
         if (typeof initialize !== "function") {
             throw new TypeError("atomLazy requires an initializer function")
         }
-        const handle = makeHandle("atom") as unknown as Atom<Value>
+        const handle = makeHandle(
+            "atom",
+            records.ownerToken,
+        ) as unknown as Atom<Value>
         records.states.add(handle)
         records.atoms.set(
             handle,
@@ -530,7 +625,10 @@ export const createCommittedStoreTreeDomain = (): CommittedStoreTreeDomain => {
         ) {
             throw new TypeError("selector equal must be a function")
         }
-        const handle = makeHandle("selector") as unknown as Selector<Value>
+        const handle = makeHandle(
+            "selector",
+            records.ownerToken,
+        ) as unknown as Selector<Value>
         const definition: SelectorDefinition<AnyState, Value> = Object.freeze({
             node: handle as unknown as AnyState,
             get: get as (
@@ -547,7 +645,12 @@ export const createCommittedStoreTreeDomain = (): CommittedStoreTreeDomain => {
         atom,
         atomLazy,
         selector,
-        createStoreTree: () => new CommittedStoreTreeHost(records),
+        createStoreTree: () => {
+            if (records.activeSession !== undefined) {
+                throw selectorCapabilityError("createStoreTree")
+            }
+            return new CommittedStoreTreeFacade(records)
+        },
     })
 }
 

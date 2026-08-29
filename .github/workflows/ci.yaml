@@ -57,6 +57,10 @@ jobs:
               # its host fixtures and independent symbolic oracle are both
               # typechecked before the future Store kernel can integrate it.
               run: bun --filter 'valdres' test:v1-selector-evaluator
+            - name: V1 committed StoreTree host contract
+              # This first persistent host is also intentionally outside every
+              # package entrypoint, so its dedicated tsconfig must run explicitly.
+              run: bun --filter 'valdres' test:v1-committed-store-tree
             - name: Ban unchecked TypeScript suppressions in valdres
               run: |
                   if git grep -n -E '^[[:space:]]*//[[:space:]]*@ts-ignore([[:space:]]|$)' -- packages/valdres/src; then

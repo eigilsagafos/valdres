@@ -122,6 +122,63 @@ describe("v1 persistent committed StoreTree host", () => {
         expect(thenCalls).toBe(4)
     })
 
+    test("quarantines direct-set thenable containment across same-domain StoreTrees", () => {
+        const domain = createCommittedStoreTreeDomain()
+        const target = domain.atom<unknown>(0)
+        const reentryTarget = domain.atom(0)
+        const first = domain.createStoreTree()
+        const second = domain.createStoreTree()
+        let reentryError: unknown
+        const hostileThenable = {
+            then(): void {
+                try {
+                    second.set(reentryTarget, 9)
+                } catch (error) {
+                    reentryError = error
+                }
+            },
+        }
+
+        expect(
+            thrownBy(() => first.set(target, hostileThenable)),
+        ).toMatchObject({
+            name: "InvalidSynchronousAtomValueError",
+            code: "VALDRES_INVALID_SYNCHRONOUS_ATOM_VALUE",
+        })
+        expect(reentryError).toMatchObject({
+            name: "SelectorCapabilityError",
+            code: "VALDRES_SELECTOR_CAPABILITY_ERROR",
+        })
+        expect(first.get(target)).toBe(0)
+        expect(second.get(reentryTarget)).toBe(0)
+    })
+
+    test("sets over fresh and previously exposed lazy initializer errors without retry", () => {
+        const domain = createCommittedStoreTreeDomain()
+        const freshCause = new Error("fresh lazy failure")
+        const exposedCause = new Error("exposed lazy failure")
+        let freshCalls = 0
+        let exposedCalls = 0
+        const fresh = domain.atomLazy<number>(() => {
+            freshCalls++
+            throw freshCause
+        })
+        const exposed = domain.atomLazy<number>(() => {
+            exposedCalls++
+            throw exposedCause
+        })
+        const tree = domain.createStoreTree()
+
+        expect(() => tree.set(fresh, 4)).not.toThrow()
+        expect(tree.get(fresh)).toBe(4)
+        expect(freshCalls).toBe(1)
+
+        expect(thrownBy(() => tree.get(exposed))).toBe(exposedCause)
+        expect(() => tree.set(exposed, 5)).not.toThrow()
+        expect(tree.get(exposed)).toBe(5)
+        expect(exposedCalls).toBe(1)
+    })
+
     test("integrates the evaluator once per relevant committed token change", () => {
         const domain = createCommittedStoreTreeDomain()
         const source = domain.atom(1)
@@ -154,6 +211,29 @@ describe("v1 persistent committed StoreTree host", () => {
             // @ts-expect-error Selectors are not writable cells.
             tree.set(parent, 1)
         }
+    })
+
+    test("settles a wide fanout with one evaluation per affected selector", () => {
+        const domain = createCommittedStoreTreeDomain()
+        const source = domain.atom(0)
+        const tree = domain.createStoreTree()
+        const width = 2_048
+        const evaluations = Array<number>(width).fill(0)
+        const selectors = evaluations.map((_, index) =>
+            domain.selector(get => {
+                evaluations[index]++
+                return get(source) + index
+            }),
+        )
+
+        expect(selectors.map(selector => tree.get(selector))).toEqual(
+            selectors.map((_, index) => index),
+        )
+        tree.set(source, 1)
+        expect(evaluations).toEqual(Array<number>(width).fill(2))
+        expect(selectors.map(selector => tree.get(selector))).toEqual(
+            selectors.map((_, index) => index + 1),
+        )
     })
 
     test("replaces dynamic reverse edges while equal selector values prune parents", () => {
@@ -292,6 +372,97 @@ describe("v1 persistent committed StoreTree host", () => {
         expect(tree.get(source)).toBe(1)
     })
 
+    test("shares callback quarantine across selector, comparator, and lazy hosts", () => {
+        const domain = createCommittedStoreTreeDomain()
+        const source = domain.atom(1)
+        const otherTreeTarget = domain.atom(0)
+        const first = domain.createStoreTree()
+        const second = domain.createStoreTree()
+        let selectorGetError: unknown
+        let selectorSetError: unknown
+        let invalidGetError: unknown
+        let createTreeError: unknown
+        let comparatorSetError: unknown
+        let lazySetError: unknown
+        let otherLazyCalls = 0
+        const otherLazy = domain.atomLazy(() => {
+            otherLazyCalls++
+            return 11
+        })
+        const derived = domain.selector(
+            get => {
+                try {
+                    second.get(otherLazy)
+                } catch (error) {
+                    selectorGetError = error
+                }
+                try {
+                    second.set(otherTreeTarget, 7)
+                } catch (error) {
+                    selectorSetError = error
+                }
+                try {
+                    second.get({ kind: "atom" } as never)
+                } catch (error) {
+                    invalidGetError = error
+                }
+                try {
+                    domain.createStoreTree()
+                } catch (error) {
+                    createTreeError = error
+                }
+                return get(source)
+            },
+            {
+                equal: (previous, next) => {
+                    try {
+                        second.set(otherTreeTarget, 8)
+                    } catch (error) {
+                        comparatorSetError = error
+                    }
+                    return Object.is(previous, next)
+                },
+            },
+        )
+        const guardedLazy = domain.atomLazy(() => {
+            try {
+                second.set(otherTreeTarget, 9)
+            } catch (error) {
+                lazySetError = error
+            }
+            return 3
+        })
+
+        expect(first.get(derived)).toBe(1)
+        expect(selectorGetError).toMatchObject({
+            code: "VALDRES_SELECTOR_CAPABILITY_ERROR",
+        })
+        expect(selectorSetError).toMatchObject({
+            code: "VALDRES_SELECTOR_CAPABILITY_ERROR",
+        })
+        expect(invalidGetError).toMatchObject({
+            code: "VALDRES_SELECTOR_CAPABILITY_ERROR",
+        })
+        expect(createTreeError).toMatchObject({
+            code: "VALDRES_SELECTOR_CAPABILITY_ERROR",
+        })
+        expect(otherLazyCalls).toBe(0)
+        expect(second.get(otherTreeTarget)).toBe(0)
+
+        first.set(source, 2)
+        expect(first.get(derived)).toBe(2)
+        expect(comparatorSetError).toMatchObject({
+            code: "VALDRES_SELECTOR_CAPABILITY_ERROR",
+        })
+        expect(second.get(otherTreeTarget)).toBe(0)
+
+        expect(first.get(guardedLazy)).toBe(3)
+        expect(lazySetError).toMatchObject({
+            code: "VALDRES_SELECTOR_CAPABILITY_ERROR",
+        })
+        expect(second.get(otherTreeTarget)).toBe(0)
+    })
+
     test("keeps owner mismatches nonpublishing before apply and authoritative after apply", () => {
         const local = createCommittedStoreTreeDomain()
         const foreign = createCommittedStoreTreeDomain()
@@ -301,6 +472,36 @@ describe("v1 persistent committed StoreTree host", () => {
             return 7
         })
         const tree = local.createStoreTree()
+        const sibling = local.createStoreTree()
+
+        expect(Object.keys(tree)).toEqual([])
+        expect("domain" in tree).toBe(false)
+        expect(Object.getOwnPropertyNames(Object.getPrototypeOf(tree))).toEqual(
+            ["constructor", "get", "set"],
+        )
+        expect((tree as CommittedStoreTree & { serve?: unknown }).serve).toBe(
+            undefined,
+        )
+
+        const impostor = Object.freeze({ kind: "atom" })
+        const impostorGetError = thrownBy(() => tree.get(impostor as never))
+        expect(impostorGetError).toBeInstanceOf(TypeError)
+        expect(impostorGetError).not.toBeInstanceOf(RuntimeMismatchError)
+        const impostorSetError = thrownBy(() =>
+            tree.set(impostor as never, 1 as never),
+        )
+        expect(impostorSetError).toBeInstanceOf(TypeError)
+        expect(impostorSetError).not.toBeInstanceOf(RuntimeMismatchError)
+
+        const brandedImpostor = { kind: "atom" }
+        Object.defineProperty(
+            brandedImpostor,
+            Symbol.for("valdres.runtime-owner/v1"),
+            { value: Object.freeze({}) },
+        )
+        expect(
+            thrownBy(() => tree.get(Object.freeze(brandedImpostor) as never)),
+        ).toBeInstanceOf(RuntimeMismatchError)
 
         expect(thrownBy(() => tree.get(foreignAtom))).toBeInstanceOf(
             RuntimeMismatchError,
@@ -313,7 +514,7 @@ describe("v1 persistent committed StoreTree host", () => {
             preApplyEvaluations++
             if (includeForeign) {
                 try {
-                    tree.get(foreignAtom)
+                    sibling.get(foreignAtom)
                 } catch {}
             }
             return 1
@@ -333,7 +534,7 @@ describe("v1 persistent committed StoreTree host", () => {
             const value = get(trigger)
             if (contaminate) {
                 try {
-                    tree.get(foreignAtom)
+                    sibling.get(foreignAtom)
                 } catch {}
             }
             return value
