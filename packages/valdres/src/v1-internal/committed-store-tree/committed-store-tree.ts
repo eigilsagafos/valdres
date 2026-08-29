@@ -887,24 +887,13 @@ class CommittedStoreTreeHost
         if (inspected.kind === "error") throw inspected.error
 
         const baseline = this.#getDraftAtomBaseline(draft, scope, atom, session)
-        const canonical =
-            baseline.outcome.kind === "value"
-                ? this.#canonicalizeAtomCandidate(
-                      atom,
-                      baseline.outcome.value,
-                      inspected.value,
-                      session,
-                  )
-                : inspected.value
-        draft.stage(
+        this.#stageAlreadyInspectedAtomSet(
+            draft,
             scope,
-            Object.freeze({
-                kind: "set",
-                atom,
-                value: canonical,
-                publishDraftFallback:
-                    baseline.reachesFallback && draft.hasFallback(atom),
-            }),
+            atom,
+            inspected.value,
+            baseline,
+            session,
         )
     }
 
@@ -920,10 +909,20 @@ class CommittedStoreTreeHost
             throw new TypeError(`${operation} requires an updater function`)
         }
 
-        const current = this.#readDraftAtomOutcome(draft, scope, atom, session)
+        const baseline = this.#getDraftAtomBaseline(draft, scope, atom, session)
+        const current = draft.hasIntents
+            ? this.#readDraftAtomOutcome(draft, scope, atom, session)
+            : baseline.outcome
         if (current.kind !== "value") throw current.error
         const candidate = this.#runAtomUpdater(update, current.value, session)
-        this.#stageAtomSet(draft, scope, atom, candidate, session)
+        this.#stageAlreadyInspectedAtomSet(
+            draft,
+            scope,
+            atom,
+            candidate,
+            baseline,
+            session,
+        )
     }
 
     #stageAtomReset(
@@ -1663,6 +1662,35 @@ class CommittedStoreTreeHost
 
     latchPropagationControlFault(error: unknown): void {
         this.#propagationControlFault ??= error
+    }
+
+    #stageAlreadyInspectedAtomSet(
+        draft: TreeDraft,
+        scope: StoreScopeNode,
+        atom: AnyAtom,
+        candidate: unknown,
+        baseline: AtomDraftBaseline,
+        session: SelectorEvaluationSession<AnyState>,
+    ): void {
+        const canonical =
+            baseline.outcome.kind === "value"
+                ? this.#canonicalizeAtomCandidate(
+                      atom,
+                      baseline.outcome.value,
+                      candidate,
+                      session,
+                  )
+                : candidate
+        draft.stage(
+            scope,
+            Object.freeze({
+                kind: "set",
+                atom,
+                value: canonical,
+                publishDraftFallback:
+                    baseline.reachesFallback && draft.hasFallback(atom),
+            }),
+        )
     }
 }
 

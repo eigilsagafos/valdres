@@ -379,6 +379,26 @@ describe("v1 persistent committed StoreTree host", () => {
         expect(first.get(target)).toBe(0)
     })
 
+    test("inspects a direct updater candidate exactly once before committing it", () => {
+        const domain = createCommittedStoreTreeDomain()
+        const target = domain.atom<unknown>(0)
+        const tree = domain.createStoreTree()
+        let thenGetterCalls = 0
+        const candidate = Object.freeze(
+            Object.defineProperty({}, "then", {
+                get(): undefined {
+                    thenGetterCalls++
+                    return undefined
+                },
+            }),
+        )
+
+        tree.update(target, () => candidate)
+
+        expect(thenGetterCalls).toBe(1)
+        expect(tree.get(target)).toBe(candidate)
+    })
+
     test("preserves updater control faults while quarantining same-domain and transaction reentry", () => {
         const local = createCommittedStoreTreeDomain()
         const foreign = createCommittedStoreTreeDomain()
