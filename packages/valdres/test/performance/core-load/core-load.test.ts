@@ -17,12 +17,15 @@ import {
     assertCanonicalCounters,
     assertCounterDrainStable,
     assertExpectedResult,
+    assertInitialViewCoreCounters,
     assertNoWriteCounterGate,
     assertOraclePreflightCoverage,
     assertTimingOracleLinks,
     assertZeroCanonicalCounters,
+    authoritativeInitialViewCoreProblems,
     authoritativeFixtureProblems,
     candidateSourceIdentityProblems,
+    expectedForScenario,
     median,
     nearestRank,
     oracleEvidenceId,
@@ -32,6 +35,11 @@ import {
     sha256File,
     validateFixture,
 } from "./lib.mjs"
+import {
+    INITIAL_VIEW_CORE,
+    INITIAL_VIEW_CORE_MANIFEST_PATH,
+    INITIAL_VIEW_CORE_SCENARIO,
+} from "./initial-view-core.mjs"
 import { createBenchmarkAdapter as createV1Adapter } from "./adapters/v1.mjs"
 import { extractPackedArtifact, hashTree } from "./artifact.mjs"
 import { runAuthoritativeOraclePreflight } from "./oracle-preflight.mjs"
@@ -45,6 +53,7 @@ const CI_TIMING_SAMPLES = 3
 const CI_CATASTROPHIC_CEILINGS_MS = Object.freeze({
     writes: 2_500,
     "no-writes": 750,
+    [INITIAL_VIEW_CORE_SCENARIO]: 100,
 })
 
 describe("core-load benchmark protocol", () => {
@@ -92,6 +101,48 @@ describe("core-load benchmark protocol", () => {
         expect(expected.notifications).toBe(0)
     })
 
+    test("initial-view-core isolates the first cold view without changing the frozen fixture", async () => {
+        const fixture = readFixture()
+        const { adapter, counts } = createCountingNoWriteTestAdapter()
+        const result = await runCoreLoadWorkload({
+            adapter,
+            fixture,
+            scenarioName: INITIAL_VIEW_CORE_SCENARIO,
+            mode: "oracle",
+        })
+
+        expect(fixture.inputs.steps).toBe(900)
+        expect(Object.keys(fixture.scenarios).sort()).toEqual([
+            "no-writes",
+            "writes",
+        ])
+        expect(result.work).toEqual({
+            renderReads: 150,
+            notificationReads: 0,
+            notifications: 0,
+            subscriptions: 150,
+            timedUnsubscriptions: 0,
+            totalUnsubscriptions: 150,
+            entityWrites: 0,
+            metaWrites: 0,
+        })
+        expect(result.semanticChecksum).toBe(
+            INITIAL_VIEW_CORE.expected.semanticChecksum,
+        )
+        expect(result.oracleTraceSha256).toBe(
+            INITIAL_VIEW_CORE.expected.oracleTraceSha256,
+        )
+        expect(counts).toEqual({
+            selectorEvaluations: INITIAL_VIEW_CORE.internal.selectorEvaluations,
+            suppliedDependencyReads:
+                INITIAL_VIEW_CORE.internal.suppliedDependencyReads,
+        })
+        expect(result.postDrain.notificationsAdded).toBe(0)
+        expect(
+            authoritativeFixtureProblems(DEFAULT_FIXTURE_PATH, fixture),
+        ).toEqual([])
+    })
+
     test("rejects a fixture that introduces workload warmup", () => {
         const fixture = structuredClone(readFixture())
         fixture.measurement.warmupProcesses = 1
@@ -105,6 +156,7 @@ describe("core-load benchmark protocol", () => {
         expect(
             authoritativeFixtureProblems(DEFAULT_FIXTURE_PATH, fixture),
         ).toEqual([])
+        expect(authoritativeInitialViewCoreProblems()).toEqual([])
 
         const mutated = structuredClone(fixture)
         mutated.scenarios.writes.expected.semanticChecksum = "00000000"
@@ -118,6 +170,15 @@ describe("core-load benchmark protocol", () => {
             authoritativeFixtureProblems(DEFAULT_FIXTURE_PATH, mutated),
         ).toContain("no-writes oracle trace digest is not frozen")
 
+        const mutatedInitialView = structuredClone(INITIAL_VIEW_CORE)
+        mutatedInitialView.expected.semanticChecksum = "00000000"
+        expect(
+            authoritativeInitialViewCoreProblems(
+                INITIAL_VIEW_CORE_MANIFEST_PATH,
+                mutatedInitialView,
+            ),
+        ).toContain("initial-view-core semantic checksum is not frozen")
+
         const temporaryRoot = mkdtempSync(join(tmpdir(), "core-load-fixture-"))
         try {
             const copiedFixture = join(temporaryRoot, "fixture.v1.json")
@@ -125,6 +186,23 @@ describe("core-load benchmark protocol", () => {
             expect(
                 authoritativeFixtureProblems(copiedFixture, fixture),
             ).toContain("fixture path is not the checked-in default fixture")
+
+            const copiedInitialView = join(
+                temporaryRoot,
+                "initial-view-core.v1.json",
+            )
+            writeFileSync(
+                copiedInitialView,
+                readFileSync(INITIAL_VIEW_CORE_MANIFEST_PATH),
+            )
+            expect(
+                authoritativeInitialViewCoreProblems(
+                    copiedInitialView,
+                    INITIAL_VIEW_CORE,
+                ),
+            ).toContain(
+                "initial-view-core manifest path is not the checked-in manifest",
+            )
         } finally {
             rmSync(temporaryRoot, { recursive: true, force: true })
         }
@@ -155,6 +233,27 @@ describe("core-load benchmark protocol", () => {
         expect(() =>
             assertNoWriteCounterGate(parsed, fixture, "test gate"),
         ).toThrow("validationWalks must be zero")
+
+        const initialViewCounters = Object.fromEntries(
+            fixture.canonicalV1CounterKeys.map(key => [key, 0]),
+        )
+        initialViewCounters.firstMaterializations =
+            INITIAL_VIEW_CORE.internal.firstMaterializations
+        expect(() =>
+            assertInitialViewCoreCounters(
+                initialViewCounters,
+                fixture,
+                "initial view gate",
+            ),
+        ).not.toThrow()
+        initialViewCounters.firstMaterializations--
+        expect(() =>
+            assertInitialViewCoreCounters(
+                initialViewCounters,
+                fixture,
+                "initial view gate",
+            ),
+        ).toThrow("firstMaterializations must be 1358")
     })
 
     test("requires zero initial counters and rejects hidden drain work", () => {
@@ -345,7 +444,12 @@ describe("core-load benchmark protocol", () => {
             expect(internalImportSpecifiers(distSource)).toEqual([])
 
             const fixture = readFixture()
-            const samples = ["writes", "no-writes"].map(scenario => {
+            const scenarios = [
+                "writes",
+                "no-writes",
+                INITIAL_VIEW_CORE_SCENARIO,
+            ]
+            const samples = scenarios.map(scenario => {
                 const sample = runPackedCandidateSample(
                     artifact.packageRoot,
                     scenario,
@@ -356,7 +460,7 @@ describe("core-load benchmark protocol", () => {
                     scenario,
                     `packed public v1 ${scenario}`,
                 )
-                const expected = fixture.scenarios[scenario].expected
+                const expected = expectedForScenario(fixture, scenario)
                 expect(sample.mode).toBe("oracle")
                 expect(sample.elapsedMs).toBeNull()
                 expect(publicWorkFrom(sample)).toEqual({
@@ -383,7 +487,7 @@ describe("core-load benchmark protocol", () => {
             expect(samples[0].process.pid).not.toBe(samples[1].process.pid)
 
             const timingMedians = Object.fromEntries(
-                ["writes", "no-writes"].map(scenario => {
+                scenarios.map(scenario => {
                     const timedSamples = Array.from(
                         { length: CI_TIMING_SAMPLES },
                         () =>
@@ -418,7 +522,7 @@ describe("core-load benchmark protocol", () => {
                 }),
             )
             console.info(
-                `packed v1 ShiftX CI smoke: writes p50=${timingMedians.writes.toFixed(3)}ms, no-writes p50=${timingMedians["no-writes"].toFixed(3)}ms`,
+                `packed v1 ShiftX CI smoke: initial-view-core p50=${timingMedians[INITIAL_VIEW_CORE_SCENARIO].toFixed(3)}ms, writes p50=${timingMedians.writes.toFixed(3)}ms, no-writes p50=${timingMedians["no-writes"].toFixed(3)}ms`,
             )
         } finally {
             artifact?.cleanup()
@@ -698,6 +802,60 @@ function createNoWriteTestAdapter() {
             return { kind: "unavailable", reason: "self-test" }
         },
     }
+}
+
+function createCountingNoWriteTestAdapter() {
+    const selectorValues = new Map()
+    const counts = {
+        selectorEvaluations: 0,
+        suppliedDependencyReads: 0,
+    }
+    const get = state => {
+        if (state.kind === "atom") return state.initialValue
+        if (selectorValues.has(state)) return selectorValues.get(state)
+        const value = state.read(dependency => {
+            counts.suppliedDependencyReads++
+            return get(dependency)
+        })
+        counts.selectorEvaluations++
+        selectorValues.set(state, value)
+        return value
+    }
+    const adapter = {
+        id: "counting-self-test",
+        implementationKind: "test-only",
+        instrumented: false,
+        createAtom(initialValue, name) {
+            return { kind: "atom", initialValue, name }
+        },
+        createSelector(read, name) {
+            return { kind: "selector", read, name }
+        },
+        createStore() {
+            return {}
+        },
+        createScope(root) {
+            return root
+        },
+        get(_store, state) {
+            return get(state)
+        },
+        update() {
+            throw new Error("counting initial-view adapter does not write")
+        },
+        set() {
+            throw new Error("counting initial-view adapter does not write")
+        },
+        subscribe() {
+            return () => {}
+        },
+        dispose() {},
+        resetWorkCounters() {},
+        snapshotWorkCounters() {
+            return { kind: "unavailable", reason: "self-test" }
+        },
+    }
+    return { adapter, counts }
 }
 
 function canonicalCounterSnapshot(fixture) {

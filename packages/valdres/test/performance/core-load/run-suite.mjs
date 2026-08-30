@@ -12,10 +12,12 @@ import {
     assertCanonicalCounters,
     assertCounterDrainStable,
     assertExpectedResult,
+    assertInitialViewCoreCounters,
     assertNoWriteCounterGate,
     assertOraclePreflightCoverage,
     assertTimingOracleLinks,
     assertZeroCanonicalCounters,
+    authoritativeInitialViewCoreProblems,
     authoritativeFixtureProblems,
     candidateSourceIdentityProblems,
     median,
@@ -25,6 +27,10 @@ import {
     resolveAdapter,
     sha256File,
 } from "./lib.mjs"
+import {
+    INITIAL_VIEW_CORE,
+    INITIAL_VIEW_CORE_SCENARIO,
+} from "./initial-view-core.mjs"
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const SAMPLE_RUNNER = resolve(HERE, "run-sample.mjs")
@@ -174,7 +180,10 @@ try {
             freshProcessPerSample: true,
             timedWorkloadsPerProcess: options.mode === "timed" ? 1 : 0,
             warmupProcesses: fixture.measurement.warmupProcesses,
-            timer: "after import/construction; before initial render/subscription; after final 900-step loop; before final unmount",
+            timer:
+                options.scenario === INITIAL_VIEW_CORE_SCENARIO
+                    ? INITIAL_VIEW_CORE.timer
+                    : "after import/construction; before initial render/subscription; after final 900-step loop; before final unmount",
             p50: fixture.measurement.percentiles.p50,
             p95: fixture.measurement.percentiles.p95,
             counterTimingSeparation: true,
@@ -336,6 +345,12 @@ function runScenario({
                             counters,
                             fixture,
                             "candidate no-writes counter gate",
+                        )
+                    } else if (scenario === INITIAL_VIEW_CORE_SCENARIO) {
+                        assertInitialViewCoreCounters(
+                            counters,
+                            fixture,
+                            "candidate initial-view-core counter gate",
                         )
                     }
                 }
@@ -534,8 +549,17 @@ function validateRunOptions(options, fixture) {
     if (!new Set(["timed", "oracle", "counters"]).has(options.mode)) {
         throw new Error("--mode must be timed, oracle, or counters")
     }
-    if (!new Set(["all", "writes", "no-writes"]).has(options.scenario)) {
-        throw new Error("--scenario must be all, writes, or no-writes")
+    if (
+        !new Set([
+            "all",
+            "writes",
+            "no-writes",
+            INITIAL_VIEW_CORE_SCENARIO,
+        ]).has(options.scenario)
+    ) {
+        throw new Error(
+            `--scenario must be all, writes, no-writes, or ${INITIAL_VIEW_CORE_SCENARIO}`,
+        )
     }
     if (!Number.isSafeInteger(options.samples) || options.samples <= 0) {
         throw new Error("--samples must be a positive safe integer")
@@ -560,8 +584,13 @@ function validateRunOptions(options, fixture) {
         if (options.mode !== "timed") {
             throw new Error("--authoritative is only valid for timed mode")
         }
-        if (options.scenario !== "all") {
-            throw new Error("--authoritative requires both fixture scenarios")
+        if (
+            options.scenario !== "all" &&
+            options.scenario !== INITIAL_VIEW_CORE_SCENARIO
+        ) {
+            throw new Error(
+                "--authoritative requires both historical fixture scenarios or initial-view-core",
+            )
         }
         if (options.samples < fixture.measurement.authoritativeSamples) {
             throw new Error(
@@ -585,11 +614,20 @@ function validateAuthoritativeEligibility({
     targets,
 }) {
     const reasons = authoritativeFixtureProblems(fixturePath, fixture)
+    if (options.scenario === INITIAL_VIEW_CORE_SCENARIO) {
+        reasons.push(...authoritativeInitialViewCoreProblems())
+    }
     const baseline = targets.find(target => target.role === "baseline")
     const candidate = targets.find(target => target.role === "candidate")
     if (options.mode !== "timed") reasons.push("mode is not timed")
-    if (options.scenario !== "all")
-        reasons.push("both scenarios were not selected")
+    if (
+        options.scenario !== "all" &&
+        options.scenario !== INITIAL_VIEW_CORE_SCENARIO
+    ) {
+        reasons.push(
+            "neither both historical scenarios nor initial-view-core was selected",
+        )
+    }
     if (options.samples < fixture.measurement.authoritativeSamples) {
         reasons.push(
             `sample count is below ${fixture.measurement.authoritativeSamples}`,

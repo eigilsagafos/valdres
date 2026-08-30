@@ -15,6 +15,21 @@ separate from the existing per-operation Mitata suite:
   median, and nearest-rank p95;
 - timing, full-oracle, and counter-instrumented runs are separate modes.
 
+It also exposes an explicit `initial-view-core` lane for the cold Valdres read
+path. That lane reuses the same frozen graph, performs no writes or scrolling,
+and times only the first 150 view reads (including lazy selector
+materialization) plus their 150 subscriptions. Graph descriptor construction,
+package import, cleanup, and disposal remain outside that timer. The lane has
+exactly 1,358 first selector materializations and 4,281 supplied dependency
+reads.
+
+`initial-view-core` is not an end-to-end ShiftX click benchmark. It contains no
+React work, routing, DOM/layout/paint, Suspense, fetch/IDB, or data hydration.
+The captured real-app beta.23 first click also interleaved thousands of state
+revisions and substantial mount/remount churn. Use this lane to isolate the
+Valdres cold read path, then verify the complete click-to-usable-view journey in
+ShiftX itself.
+
 The only runnable implementation target is an npm-style packed `valdres` ESM
 tarball whose production root export resolves inside `dist/`. The checked-in
 adapter must live in `adapters/`. Paths into `test/v1-model` or another
@@ -34,11 +49,13 @@ The test proves, among other protocol invariants, that `no-writes` still
 performs 900 scroll steps. It has 43,350 subscriptions and 43,200 timed
 unsubscriptions, while both write counters and notifications remain zero.
 Setting the number of steps/writes to zero is not an allowed no-write control.
-It also packs the v1 runtime and runs three fresh Node timing processes per
-scenario under deliberately broad Linux-CI catastrophic ceilings (2.5 seconds
-for writes, 750 milliseconds for no-writes). Those smoke ceilings prevent the
-legacy multi-second regression from returning; they do not replace the pinned
-Mac runner's authoritative 10/15 millisecond release target.
+`initial-view-core` is the separate, explicit zero-step protocol. It also packs
+the v1 runtime and runs three fresh Node timing processes per scenario under
+deliberately broad Linux-CI catastrophic ceilings (2.5 seconds for writes, 750
+milliseconds for no-writes, and 100 milliseconds for initial-view-core). Those
+smoke ceilings prevent the legacy multi-second regression from returning; they
+do not replace the pinned Mac runner's authoritative 10/15 millisecond release
+target.
 
 ## Diagnostic current-beta baseline
 
@@ -68,6 +85,26 @@ fixture, adapter, and harness. It also records the package version/git head,
 Node/V8, OS build, hardware, power/thermal observations, repository commit and
 dirty status, invocation, and export conditions. Unknown historical build flags,
 bundler, or minifier are reported as unknown rather than inferred.
+
+## Initial process-view core path
+
+Run the dedicated first-view lane without changing the historical `writes` and
+`no-writes` protocols:
+
+```sh
+bun run bench:core-load -- \
+  --baseline-tarball /absolute/path/to/valdres-1.0.0-beta.23.tgz \
+  --candidate-tarball /absolute/path/to/valdres-v1-candidate.tgz \
+  --candidate-build-metadata /absolute/path/to/build-metadata.json \
+  --scenario initial-view-core \
+  --samples 50 \
+  --authoritative
+```
+
+The packed targets still run in alternating fresh Node processes with zero
+warmups and the same absolute `<=10.0 ms` p50 / `<=15.0 ms` p95 candidate
+ceilings. `--scenario all` deliberately continues to mean only the two
+historical stress lanes; it does not silently add this lane.
 
 ## Full semantic oracle
 

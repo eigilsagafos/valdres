@@ -2,6 +2,11 @@ import { createHash } from "node:crypto"
 import { readFileSync, realpathSync } from "node:fs"
 import { dirname, resolve, sep } from "node:path"
 import { fileURLToPath } from "node:url"
+import {
+    INITIAL_VIEW_CORE,
+    INITIAL_VIEW_CORE_MANIFEST_PATH,
+    INITIAL_VIEW_CORE_SCENARIO,
+} from "./initial-view-core.mjs"
 
 export const HARNESS_SCHEMA_VERSION = 1
 
@@ -10,6 +15,13 @@ export const DEFAULT_FIXTURE_PATH = resolve(HERE, "fixture.v1.json")
 export const ADAPTERS_PATH = resolve(HERE, "adapters")
 export const AUTHORITATIVE_FIXTURE_SHA256 =
     "bc0e260b35d3deef4dbda8324d35e8eb409b7dd8625f2520ccda2c81aafb7c7a"
+export const AUTHORITATIVE_INITIAL_VIEW_CORE_SHA256 =
+    "7b6a1033baa3aa8bd54b586b71cb201506d167c4d34fc393f39c552c9b3c4cff"
+export const AUTHORITATIVE_INITIAL_VIEW_CORE_DIGESTS = Object.freeze({
+    semanticChecksum: "e82ecb39",
+    oracleTraceSha256:
+        "31eaf8af515a9c1a71f525c2c6c9fa2741c7849a6905fd457c517bf245cbf546",
+})
 export const AUTHORITATIVE_DIGESTS = Object.freeze({
     writes: Object.freeze({
         semanticChecksum: "d83b21cc",
@@ -88,6 +100,45 @@ export function authoritativeFixtureProblems(fixturePath, fixture) {
         if (expected?.oracleTraceSha256 !== frozen.oracleTraceSha256) {
             problems.push(`${scenario} oracle trace digest is not frozen`)
         }
+    }
+    return problems
+}
+
+export function authoritativeInitialViewCoreProblems(
+    manifestPath = INITIAL_VIEW_CORE_MANIFEST_PATH,
+    manifest = INITIAL_VIEW_CORE,
+) {
+    const problems = []
+    if (
+        realpathSync(manifestPath) !==
+        realpathSync(INITIAL_VIEW_CORE_MANIFEST_PATH)
+    ) {
+        problems.push(
+            "initial-view-core manifest path is not the checked-in manifest",
+        )
+    }
+    const manifestSha256 = sha256File(manifestPath)
+    if (manifestSha256 !== AUTHORITATIVE_INITIAL_VIEW_CORE_SHA256) {
+        problems.push(
+            `initial-view-core manifest SHA-256 ${manifestSha256} does not match frozen ${AUTHORITATIVE_INITIAL_VIEW_CORE_SHA256}`,
+        )
+    }
+    if (manifest.fixtureSha256 !== AUTHORITATIVE_FIXTURE_SHA256) {
+        problems.push(
+            "initial-view-core does not bind the frozen core-load fixture",
+        )
+    }
+    if (
+        manifest.expected?.semanticChecksum !==
+        AUTHORITATIVE_INITIAL_VIEW_CORE_DIGESTS.semanticChecksum
+    ) {
+        problems.push("initial-view-core semantic checksum is not frozen")
+    }
+    if (
+        manifest.expected?.oracleTraceSha256 !==
+        AUTHORITATIVE_INITIAL_VIEW_CORE_DIGESTS.oracleTraceSha256
+    ) {
+        problems.push("initial-view-core oracle trace digest is not frozen")
     }
     return problems
 }
@@ -326,7 +377,7 @@ export function assertExpectedResult(result, fixture, scenarioName, source) {
     if (result.fixtureId !== fixture.id || result.scenario !== scenarioName) {
         throw new Error(`${source}: sample fixture/scenario identity mismatch`)
     }
-    const expected = fixture.scenarios[scenarioName].expected
+    const expected = expectedForScenario(fixture, scenarioName)
     const actualWork = publicWorkFrom(result)
     for (const [key, expectedValue] of Object.entries(expected)) {
         if (key === "semanticChecksum" || key === "oracleTraceSha256") continue
@@ -361,6 +412,17 @@ export function assertExpectedResult(result, fixture, scenarioName, source) {
             )
         }
     }
+}
+
+export function expectedForScenario(fixture, scenarioName) {
+    if (scenarioName === INITIAL_VIEW_CORE_SCENARIO) {
+        return INITIAL_VIEW_CORE.expected
+    }
+    const expected = fixture.scenarios[scenarioName]?.expected
+    if (expected === undefined) {
+        throw new Error(`unknown benchmark scenario ${scenarioName}`)
+    }
+    return expected
 }
 
 export function assertCanonicalCounters(snapshot, fixture, source) {
@@ -544,6 +606,18 @@ export function assertNoWriteCounterGate(counters, fixture, source) {
                 `${source}: ${key} must be zero, received ${counters[key]}`,
             )
         }
+    }
+}
+
+export function assertInitialViewCoreCounters(counters, fixture, source) {
+    assertNoWriteCounterGate(counters, fixture, source)
+    if (
+        counters.firstMaterializations !==
+        INITIAL_VIEW_CORE.internal.firstMaterializations
+    ) {
+        throw new Error(
+            `${source}: firstMaterializations must be ${INITIAL_VIEW_CORE.internal.firstMaterializations}, received ${String(counters.firstMaterializations)}`,
+        )
     }
 }
 

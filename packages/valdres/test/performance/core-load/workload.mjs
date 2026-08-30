@@ -1,5 +1,9 @@
 import { createHash } from "node:crypto"
 import { performance } from "node:perf_hooks"
+import {
+    INITIAL_VIEW_CORE,
+    INITIAL_VIEW_CORE_SCENARIO,
+} from "./initial-view-core.mjs"
 import { assertSynchronousCounterReset } from "./lib.mjs"
 
 export async function runCoreLoadWorkload({
@@ -8,7 +12,10 @@ export async function runCoreLoadWorkload({
     scenarioName,
     mode,
 }) {
-    const scenario = fixture.scenarios[scenarioName]
+    const scenario =
+        scenarioName === INITIAL_VIEW_CORE_SCENARIO
+            ? INITIAL_VIEW_CORE
+            : fixture.scenarios[scenarioName]
     if (scenario === undefined) {
         throw new Error(`unknown scenario ${scenarioName}`)
     }
@@ -105,7 +112,8 @@ export async function runCoreLoadWorkload({
     }
 
     let top = 0
-    for (let step = 0; step < fixture.inputs.steps; step++) {
+    const steps = scenario.steps ?? fixture.inputs.steps
+    for (let step = 0; step < steps; step++) {
         if (scenario.writesEnabled) {
             const hot =
                 (top + (step % fixture.inputs.window)) % fixture.inputs.items

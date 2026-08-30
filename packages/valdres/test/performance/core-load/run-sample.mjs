@@ -8,6 +8,7 @@ import {
     sha256File,
 } from "./lib.mjs"
 import { inspectPackedPackage } from "./artifact.mjs"
+import { INITIAL_VIEW_CORE_SCENARIO } from "./initial-view-core.mjs"
 import { runCoreLoadWorkload } from "./workload.mjs"
 
 try {
@@ -103,8 +104,14 @@ function parseArguments(args) {
         throw new Error(`--mode must be timed, oracle, or counters`)
     }
     const scenario = values.get("--scenario")
-    if (!new Set(["writes", "no-writes"]).has(scenario)) {
-        throw new Error(`--scenario must be writes or no-writes`)
+    if (
+        !new Set(["writes", "no-writes", INITIAL_VIEW_CORE_SCENARIO]).has(
+            scenario,
+        )
+    ) {
+        throw new Error(
+            `--scenario must be writes, no-writes, or ${INITIAL_VIEW_CORE_SCENARIO}`,
+        )
     }
     const role = values.get("--role")
     if (role !== "baseline" && role !== "candidate") {
