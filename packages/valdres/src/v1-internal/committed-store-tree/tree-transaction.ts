@@ -401,6 +401,22 @@ export class TreeDraft {
         this.#singleFallback = undefined
     }
 
+    forEachFallback(
+        visit: (atom: AnyAtom, outcome: DraftAtomOutcome) => void,
+    ): void {
+        if (
+            this.#singleFallbackAtom !== undefined &&
+            this.#singleFallback !== undefined
+        ) {
+            visit(this.#singleFallbackAtom, this.#singleFallback)
+        }
+        if (this.#fallbackMemo !== undefined) {
+            for (const [atom, outcome] of this.#fallbackMemo) {
+                visit(atom, outcome)
+            }
+        }
+    }
+
     #advanceGeneration(): void {
         this.generation += 1
         const scratchHosts = this.#scratchHosts

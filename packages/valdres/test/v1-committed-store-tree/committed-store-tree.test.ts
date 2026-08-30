@@ -1566,20 +1566,19 @@ describe("v1 persistent committed StoreTree host", () => {
         const tree = local.createStoreTree()
         const sibling = local.createStoreTree()
 
-        expect(Object.keys(tree)).toEqual([])
+        expect(Object.keys(tree)).toEqual([
+            "get",
+            "sub",
+            "set",
+            "update",
+            "reset",
+            "txn",
+            "scope",
+            "dispose",
+        ])
         expect("domain" in tree).toBe(false)
         expect(Object.getOwnPropertyNames(Object.getPrototypeOf(tree))).toEqual(
-            [
-                "constructor",
-                "get",
-                "sub",
-                "set",
-                "update",
-                "reset",
-                "txn",
-                "scope",
-                "dispose",
-            ],
+            ["constructor"],
         )
         expect((tree as CommittedStoreTree & { serve?: unknown }).serve).toBe(
             undefined,
@@ -1680,7 +1679,7 @@ describe("v1 persistent committed StoreTree host", () => {
         expect(postApplyEvaluations).toBe(3)
     })
 
-    test("is absent from every current package export and entrypoint import graph", () => {
+    test("is the only runtime reachable from the reviewed package entrypoints", () => {
         const packageRoot = resolve(import.meta.dir, "../..")
         const manifest = JSON.parse(
             readFileSync(join(packageRoot, "package.json"), "utf8"),
@@ -1695,9 +1694,19 @@ describe("v1 persistent committed StoreTree host", () => {
             exportedSources,
             packageRoot,
         )
-        expect(reachable.size).toBeGreaterThan(20)
+        expect(reachable.size).toBeGreaterThan(10)
+        const v1Runtime = [...reachable]
+            .filter(path => path.includes("/src/v1-internal/"))
+            .map(path => relative(packageRoot, path))
+        expect(v1Runtime).toContain("src/v1-internal/public-domain.ts")
+        expect(v1Runtime).toContain(
+            "src/v1-internal/committed-store-tree/committed-store-tree.ts",
+        )
+        expect(v1Runtime).toContain(
+            "src/v1-internal/selector-evaluator/evaluate.ts",
+        )
         expect(
-            [...reachable].filter(path => path.includes("/src/v1-internal/")),
+            [...reachable].filter(path => path.includes("/src/lib/")),
         ).toEqual([])
     })
 })

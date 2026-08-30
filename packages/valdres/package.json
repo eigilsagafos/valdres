@@ -1,7 +1,7 @@
 {
     "name": "valdres",
     "description": "Fast atom-based state management for JavaScript. Inspired by Recoil and Jotai.",
-    "version": "1.0.0-beta.23",
+    "version": "1.0.0",
     "license": "MIT",
     "author": {
         "name": "Eigil Sagafos"
@@ -12,6 +12,7 @@
         "url": "git+https://github.com/eigilsagafos/valdres.git"
     },
     "type": "module",
+    "sideEffects": false,
     "exports": {
         ".": "./src/index.ts",
         "./adapter-internals/v1": "./src/adapter-internals/v1.ts"
@@ -24,7 +25,7 @@
         "build:types": "rm -rf dist/types && bunx tsgo && bun run ../../scripts/rewrite-declaration-imports.ts dist/types",
         "check:package": "bun run ../../scripts/check-valdres-package.ts --build",
         "typecheck:types": "bunx tsc -p tsconfig.types-test.json",
-        "test": "bun test --reporter=dots",
+        "test": "bun test --reporter=dots test/v1-model test/v1-selector-evaluator test/v1-committed-store-tree test/v1-public-candidate test/build.test.ts",
         "test:v1-model": "bunx tsc -p test/v1-model/tsconfig.json && bun test test/v1-model",
         "test:v1-selector-evaluator": "bunx tsc -p test/v1-selector-evaluator/tsconfig.json && bun test test/v1-selector-evaluator test/v1-model/selector-oracle.test.ts",
         "test:v1-committed-store-tree": "bunx tsc -p test/v1-committed-store-tree/tsconfig.json && bun test test/v1-committed-store-tree",

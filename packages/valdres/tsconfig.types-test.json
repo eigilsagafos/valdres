@@ -6,5 +6,5 @@
         "noEmit": true,
         "noUnusedLocals": false
     },
-    "include": ["src/**/*.types.test.ts"]
+    "include": ["src/v1-internal/**/*.types.test.ts"]
 }

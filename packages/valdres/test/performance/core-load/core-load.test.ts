@@ -41,6 +41,11 @@ const HERE = dirname(fileURLToPath(import.meta.url))
 const VALDRES_PACKAGE_ROOT = resolve(HERE, "../../..")
 const PACK_V1_CANDIDATE = resolve(HERE, "pack-v1-candidate.mjs")
 const RUN_SAMPLE = resolve(HERE, "run-sample.mjs")
+const CI_TIMING_SAMPLES = 3
+const CI_CATASTROPHIC_CEILINGS_MS = Object.freeze({
+    writes: 2_500,
+    "no-writes": 750,
+})
 
 describe("core-load benchmark protocol", () => {
     test("computes an ordinary median and nearest-rank p95", () => {
@@ -241,7 +246,7 @@ describe("core-load benchmark protocol", () => {
         ).toContain("candidate source identity requires a clean repository")
     })
 
-    test("packs the public v1 candidate and passes both frozen scenarios in fresh Node processes", () => {
+    test("packs the public v1 candidate and passes frozen ShiftX semantics plus broad CI latency ceilings", () => {
         const temporaryRoot = mkdtempSync(
             join(tmpdir(), "valdres-v1-candidate-test-"),
         )
@@ -376,6 +381,45 @@ describe("core-load benchmark protocol", () => {
                 return sample
             })
             expect(samples[0].process.pid).not.toBe(samples[1].process.pid)
+
+            const timingMedians = Object.fromEntries(
+                ["writes", "no-writes"].map(scenario => {
+                    const timedSamples = Array.from(
+                        { length: CI_TIMING_SAMPLES },
+                        () =>
+                            runPackedCandidateSample(
+                                artifact.packageRoot,
+                                scenario,
+                                "timed",
+                            ),
+                    )
+                    for (const sample of timedSamples) {
+                        assertExpectedResult(
+                            sample,
+                            fixture,
+                            scenario,
+                            `packed public v1 ${scenario} CI timing`,
+                        )
+                        expect(sample.mode).toBe("timed")
+                        expect(sample.elapsedMs).toBeNumber()
+                    }
+                    expect(
+                        new Set(timedSamples.map(sample => sample.process.pid))
+                            .size,
+                    ).toBe(CI_TIMING_SAMPLES)
+                    const p50Ms = median(
+                        timedSamples.map(sample => sample.elapsedMs),
+                    )
+                    expect(
+                        p50Ms,
+                        `${scenario} packed v1 p50 ${p50Ms.toFixed(3)}ms exceeded the broad CI catastrophic ceiling`,
+                    ).toBeLessThanOrEqual(CI_CATASTROPHIC_CEILINGS_MS[scenario])
+                    return [scenario, p50Ms]
+                }),
+            )
+            console.info(
+                `packed v1 ShiftX CI smoke: writes p50=${timingMedians.writes.toFixed(3)}ms, no-writes p50=${timingMedians["no-writes"].toFixed(3)}ms`,
+            )
         } finally {
             artifact?.cleanup()
             rmSync(temporaryRoot, { recursive: true, force: true })
@@ -509,7 +553,7 @@ describe("core-load benchmark protocol", () => {
     })
 })
 
-function runPackedCandidateSample(packageRoot, scenario) {
+function runPackedCandidateSample(packageRoot, scenario, mode = "oracle") {
     const child = spawnSync(
         "node",
         [
@@ -523,7 +567,7 @@ function runPackedCandidateSample(packageRoot, scenario) {
             "--scenario",
             scenario,
             "--mode",
-            "oracle",
+            mode,
             "--role",
             "candidate",
             "--label",

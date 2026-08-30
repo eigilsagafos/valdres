@@ -1,14 +1,14 @@
 import { useCallback } from "react"
-import type { Atom, Store } from "valdres"
+import type { Atom, AtomUpdater, Store } from "valdres"
 import { useSelectedStore } from "./lib/useSelectedStore"
 
-export const useSetAtom = <Value>(
+export const useUpdateAtom = <Value>(
     atom: Atom<Value>,
     store?: Store,
-): ((value: Value) => void) => {
+): ((update: AtomUpdater<Value>) => void) => {
     const selectedStore = useSelectedStore(store)
     return useCallback(
-        (value: Value) => selectedStore.set(atom, value),
+        (update: AtomUpdater<Value>) => selectedStore.update(atom, update),
         [atom, selectedStore],
     )
 }

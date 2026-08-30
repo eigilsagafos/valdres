@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test"
+import * as publicApi from "../../src/index"
 import {
     atom,
     selector,
@@ -9,8 +10,10 @@ import {
     type SelectorOptions,
     type State,
     type Store,
+    type SubscribeFn,
     type Transaction,
-} from "../../src/v1"
+    type TransactionFn,
+} from "../../src/index"
 
 const thrownBy = (operation: () => unknown): unknown => {
     try {
@@ -21,7 +24,31 @@ const thrownBy = (operation: () => unknown): unknown => {
     throw new Error("Expected operation to throw")
 }
 
-describe("private v1 public-spelling candidate", () => {
+describe("v1 public root", () => {
+    test("exports only the implemented v1 runtime surface", () => {
+        expect(Object.keys(publicApi).sort()).toEqual(
+            [
+                "CallbackCapabilityError",
+                "InvalidAtomComparatorResultError",
+                "InvalidSynchronousAtomValueError",
+                "InvalidTransactionCallbackResultError",
+                "InvalidTransactionTargetError",
+                "RuntimeMismatchError",
+                "ScopeNotFoundError",
+                "SelectorCapabilityError",
+                "SelectorCircularDependencyError",
+                "StoreDisposedError",
+                "StoreTreeMismatchError",
+                "SubscriberNotificationError",
+                "TransactionClosedError",
+                "TransactionPhaseError",
+                "atom",
+                "selector",
+                "store",
+            ].sort(),
+        )
+    })
+
     test("uses one module-owned runtime domain while isolating StoreTree values", () => {
         const count = atom(1)
         const doubled = selector(get => get(count) * 2)
@@ -158,6 +185,44 @@ describe("private v1 public-spelling candidate", () => {
         }
     })
 
+    test("exposes stable readonly bound Store operation fields", () => {
+        const count = atom(0)
+        const target = store()
+        const operations = [
+            "get",
+            "sub",
+            "set",
+            "update",
+            "reset",
+            "txn",
+            "scope",
+            "dispose",
+        ] as const
+
+        for (const operation of operations) {
+            expect(target[operation]).toBe(target[operation])
+            expect(
+                Object.getOwnPropertyDescriptor(target, operation),
+            ).toMatchObject({ writable: false, configurable: false })
+        }
+
+        const { get, set, update, reset, txn, scope, sub } = target
+        set(count, 2)
+        expect(get(count)).toBe(2)
+        update(count, current => current + 1)
+        expect(txn(transaction => transaction.get(count))).toBe(3)
+        const unsubscribe = sub(count, () => undefined)
+        unsubscribe()
+        reset(count)
+        expect(get(count)).toBe(0)
+        expect(scope()).not.toBe(target)
+
+        if (false) {
+            // @ts-expect-error Store operation fields are readonly.
+            target.txn = callback => callback({} as Transaction)
+        }
+    })
+
     test("preserves named and anonymous scope identity rules", () => {
         const count = atom(0)
         const root = store()
@@ -213,11 +278,15 @@ describe("private v1 public-spelling candidate", () => {
         const state: State<number> = doubled
         const target: Store = store()
         let transactionSeen: Transaction | undefined
+        const subscribe: SubscribeFn = target.sub
+        const transaction: TransactionFn<number> = current => current.get(state)
 
-        const result = target.txn(transaction => {
-            transactionSeen = transaction
-            transaction.update(count, current => current + 1)
-            return transaction.get(state)
+        const unsubscribe = subscribe(state, () => undefined)
+        unsubscribe()
+        const result = target.txn(current => {
+            transactionSeen = current
+            current.update(count, value => value + 1)
+            return transaction(current)
         })
 
         expect(result).toBe(2)

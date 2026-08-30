@@ -67,6 +67,7 @@ import type {
     AtomOptions,
     AtomUpdater,
     CommittedStoreTree,
+    CommittedStoreTreeAdapter,
     CommittedStoreTreeDomain,
     RootTransaction,
     Selector,
@@ -752,6 +753,53 @@ class CommittedStoreTreeHost
         return result
     }
 
+    readHydrationSnapshot<Value>(
+        scope: StoreScopeNode,
+        state: State<Value>,
+    ): Value {
+        const session = new SelectorEvaluationSession<AnyState>()
+        const node = state as unknown as AnyState
+        const ownerStatus = classifyEntryOwner(this.#domain, node, session)
+        assertStoreOperationAllowed(
+            this.#domain,
+            "adapter readHydrationSnapshot",
+        )
+        this.#assertScopeLive(scope)
+        if (
+            ownerStatus === "invalid" ||
+            (!this.#domain.atoms.has(node) && !this.#domain.selectors.has(node))
+        ) {
+            throw new TypeError("readHydrationSnapshot requires a valid State")
+        }
+
+        const draft = this.#createDraft()
+        let scratchHost: ScratchSelectorHost<AnyState> | undefined
+        try {
+            if (this.#domain.atoms.has(node)) {
+                const outcome = this.#readDraftAtomOutcome(
+                    draft,
+                    scope,
+                    node as AnyAtom,
+                    session,
+                )
+                if (outcome.kind !== "value") throw outcome.error
+                return outcome.value as Value
+            }
+
+            scratchHost = this.#createHydrationSelectorHost(draft, scope)
+            return scratchHost.readSelector<Value>(node)
+        } finally {
+            scratchHost?.revoke()
+            draft.close()
+            draft.forEachFallback((atom, outcome) => {
+                if (this.#fallbackRecords.has(atom)) return
+                this.#fallbackRecords.set(atom, outcome)
+                this.recordCounter("fallbackPublications")
+            })
+            draft.release()
+        }
+    }
+
     transactionGet<Value>(
         draft: TreeDraft,
         scope: StoreScopeNode,
@@ -931,6 +979,38 @@ class CommittedStoreTreeHost
                     scope.captureCommittedSelectorSuccess(
                         selector as AnySelector,
                     ),
+                runSelectorActivity: <Result>(
+                    session: SelectorEvaluationSession<AnyState>,
+                    operation: () => Result,
+                ): Result =>
+                    runSelectorActivity(this.#domain, session, operation),
+            }),
+            draft.generation,
+        )
+    }
+
+    #createHydrationSelectorHost(
+        draft: TreeDraft,
+        scope: StoreScopeNode,
+    ): ScratchSelectorHost<AnyState> {
+        this.recordCounter("scratchHostAllocations")
+        return new ScratchSelectorHost<AnyState>(
+            Object.freeze({
+                resolveState: (
+                    node: AnyState,
+                    session: SelectorEvaluationSession<AnyState>,
+                ) => this.#resolveScratchState(node, session),
+                readDraftAtomOutcome: (
+                    atom: AnyState,
+                    session: SelectorEvaluationSession<AnyState>,
+                ) =>
+                    this.#readDraftAtomOutcome(
+                        draft,
+                        scope,
+                        atom as AnyAtom,
+                        session,
+                    ),
+                captureCommittedSelectorSuccess: () => undefined,
                 runSelectorActivity: <Result>(
                     session: SelectorEvaluationSession<AnyState>,
                     operation: () => Result,
@@ -2138,51 +2218,40 @@ class CommittedStoreTreeHost
 }
 
 class CommittedStoreTreeFacade implements CommittedStoreTree {
-    readonly #host: CommittedStoreTreeHost
-    readonly #scope: StoreScopeNode
+    readonly get: <Value>(state: State<Value>) => Value
+    readonly sub: <Value>(
+        state: State<Value>,
+        callback: () => void,
+    ) => () => void
+    readonly set: <Value>(atom: Atom<Value>, value: Value) => void
+    readonly update: <Value>(
+        atom: Atom<Value>,
+        update: AtomUpdater<Value>,
+    ) => void
+    readonly reset: <Value>(atom: Atom<Value>) => void
+    readonly txn: <Result>(callback: TransactionCallback<Result>) => Result
+    readonly scope: {
+        (): CommittedStoreTree
+        (id: string): CommittedStoreTree
+    }
+    readonly dispose: () => void
 
     constructor(host: CommittedStoreTreeHost, scope: StoreScopeNode) {
-        this.#host = host
-        this.#scope = scope
+        this.get = state => host.get(scope, state)
+        this.sub = (state, callback) => host.sub(scope, state, callback)
+        this.set = (atom, value) => host.set(scope, atom, value)
+        this.update = (atom, update) => host.update(scope, atom, update)
+        this.reset = atom => host.reset(scope, atom)
+        this.txn = callback => host.txn(scope, callback)
+        this.scope = function (id?: string): CommittedStoreTree {
+            return host.scope(scope, arguments.length, id)
+        }
+        this.dispose = () => host.dispose(scope)
         scope.installFacade(this)
         brandRuntimeHandle(this, host.runtimeDomain.ownerToken)
         host.runtimeDomain.stores.set(this, scope)
         host.recordCounter("storeFacadesCreated")
         Object.freeze(this)
-    }
-
-    get<Value>(state: State<Value>): Value {
-        return this.#host.get(this.#scope, state)
-    }
-
-    sub<Value>(state: State<Value>, callback: () => void): () => void {
-        return this.#host.sub(this.#scope, state, callback)
-    }
-
-    set<Value>(atom: Atom<Value>, value: Value): void {
-        this.#host.set(this.#scope, atom, value)
-    }
-
-    update<Value>(atom: Atom<Value>, update: AtomUpdater<Value>): void {
-        this.#host.update(this.#scope, atom, update)
-    }
-
-    reset<Value>(atom: Atom<Value>): void {
-        this.#host.reset(this.#scope, atom)
-    }
-
-    txn<Result>(callback: TransactionCallback<Result>): Result {
-        return this.#host.txn(this.#scope, callback)
-    }
-
-    scope(): CommittedStoreTree
-    scope(id: string): CommittedStoreTree
-    scope(id?: string): CommittedStoreTree {
-        return this.#host.scope(this.#scope, arguments.length, id)
-    }
-
-    dispose(): void {
-        this.#host.dispose(this.#scope)
     }
 }
 
@@ -2296,10 +2365,74 @@ export const createCommittedStoreTreeDomain = (
         return handle
     }
 
+    const storeScope = (value: unknown): StoreScopeNode | undefined => {
+        const session = new SelectorEvaluationSession<AnyState>()
+        if (classifyEntryOwner(records, value, session) === "invalid") {
+            return undefined
+        }
+        return records.stores.get(value as object) as StoreScopeNode | undefined
+    }
+
+    const assertStore: CommittedStoreTreeAdapter["assertStore"] = (
+        value: unknown,
+    ): asserts value is CommittedStoreTree => {
+        const scope = storeScope(value)
+        assertStoreOperationAllowed(records, "adapter assertStore")
+        if (scope === undefined) {
+            throw new TypeError("assertStore requires a valid Store")
+        }
+    }
+
+    const adapter: CommittedStoreTreeAdapter = Object.freeze({
+        assertStore,
+        read: <Value>(
+            value: CommittedStoreTree,
+            state: State<Value>,
+        ): Value => {
+            const scope = storeScope(value)
+            if (scope === undefined) {
+                assertStoreReadAllowed(records, "adapter read")
+                throw new TypeError("read requires a valid Store")
+            }
+            return value.get(state)
+        },
+        subscribe: <Value>(
+            value: CommittedStoreTree,
+            state: State<Value>,
+            callback: () => void,
+        ): (() => void) => {
+            const scope = storeScope(value)
+            if (scope === undefined) {
+                assertStoreOperationAllowed(records, "adapter subscribe")
+                throw new TypeError("subscribe requires a valid Store")
+            }
+            return value.sub(state, callback)
+        },
+        readHydrationSnapshot: <Value>(
+            value: CommittedStoreTree,
+            state: State<Value>,
+        ): Value => {
+            const scope = storeScope(value)
+            if (scope === undefined) {
+                assertStoreOperationAllowed(
+                    records,
+                    "adapter readHydrationSnapshot",
+                )
+                throw new TypeError(
+                    "readHydrationSnapshot requires a valid Store",
+                )
+            }
+            return (
+                scope.coordinator as CommittedStoreTreeHost
+            ).readHydrationSnapshot(scope, state)
+        },
+    })
+
     return Object.freeze({
         atom,
         atomLazy,
         selector,
+        adapter,
         createStoreTree: () => {
             assertStoreOperationAllowed(records, "createStoreTree")
             const host = new CommittedStoreTreeHost(records, instrumentation)
@@ -2329,6 +2462,7 @@ export type {
     AtomOptions,
     AtomUpdater,
     CommittedStoreTree,
+    CommittedStoreTreeAdapter,
     CommittedStoreTreeDomain,
     RootTransaction,
     Selector,

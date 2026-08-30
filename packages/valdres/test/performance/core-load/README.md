@@ -34,6 +34,11 @@ The test proves, among other protocol invariants, that `no-writes` still
 performs 900 scroll steps. It has 43,350 subscriptions and 43,200 timed
 unsubscriptions, while both write counters and notifications remain zero.
 Setting the number of steps/writes to zero is not an allowed no-write control.
+It also packs the v1 runtime and runs three fresh Node timing processes per
+scenario under deliberately broad Linux-CI catastrophic ceilings (2.5 seconds
+for writes, 750 milliseconds for no-writes). Those smoke ceilings prevent the
+legacy multi-second regression from returning; they do not replace the pinned
+Mac runner's authoritative 10/15 millisecond release target.
 
 ## Diagnostic current-beta baseline
 

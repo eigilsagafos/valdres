@@ -1,7 +1,7 @@
 {
     "name": "valdres-react",
     "description": "React bindings for Valdres state management",
-    "version": "1.0.0-beta.4",
+    "version": "1.0.0",
     "license": "MIT",
     "author": {
         "name": "Eigil Sagafos"
@@ -23,9 +23,6 @@
         "build:types": "rm -rf dist/types && bunx tsgo && bun run ../../scripts/rewrite-declaration-imports.ts dist/types",
         "test": "bun test --reporter=dots --parallel"
     },
-    "dependencies": {
-        "valdres": "^1.0.0-beta.18"
-    },
     "devDependencies": {
         "@happy-dom/global-registrator": "20.0.5",
         "@testing-library/jest-dom": "6.9.1",
@@ -35,12 +32,15 @@
         "happy-dom": "20.0.5",
         "mitata": "0.1.14",
         "react": "19.1.1",
+        "react-dom": "19.1.1",
         "react-test-renderer": "19.1.1",
         "recoil": "0.7.7",
-        "typescript": "5.9.2"
+        "typescript": "5.9.2",
+        "valdres": "workspace:^"
     },
     "peerDependencies": {
-        "react": ">=18"
+        "react": "^18.0.0 || ^19.0.0",
+        "valdres": "^1.1.0-beta.0"
     },
     "publishConfig": {
         "access": "public",

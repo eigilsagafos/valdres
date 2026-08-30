@@ -53,15 +53,43 @@ export type TransactionCallback<Result> = (
  * public Store API, and grows only when a later reviewed kernel slice lands.
  */
 export interface CommittedStoreTree {
-    get<Value>(state: State<Value>): Value
-    sub<Value>(state: State<Value>, callback: () => void): () => void
-    set<Value>(atom: Atom<Value>, value: Value): void
-    update<Value>(atom: Atom<Value>, update: AtomUpdater<Value>): void
-    reset<Value>(atom: Atom<Value>): void
-    txn<Result>(callback: TransactionCallback<Result>): Result
-    scope(): CommittedStoreTree
-    scope(id: string): CommittedStoreTree
-    dispose(): void
+    readonly get: <Value>(state: State<Value>) => Value
+    readonly sub: <Value>(
+        state: State<Value>,
+        callback: () => void,
+    ) => () => void
+    readonly set: <Value>(atom: Atom<Value>, value: Value) => void
+    readonly update: <Value>(
+        atom: Atom<Value>,
+        update: AtomUpdater<Value>,
+    ) => void
+    readonly reset: <Value>(atom: Atom<Value>) => void
+    readonly txn: <Result>(callback: TransactionCallback<Result>) => Result
+    readonly scope: {
+        (): CommittedStoreTree
+        (id: string): CommittedStoreTree
+    }
+    readonly dispose: () => void
+}
+
+/** @internal The exact peer-owned operations exposed by the v1 adapter seam. */
+export interface CommittedStoreTreeAdapter {
+    readonly assertStore: (
+        value: unknown,
+    ) => asserts value is CommittedStoreTree
+    readonly read: <Value>(
+        store: CommittedStoreTree,
+        state: State<Value>,
+    ) => Value
+    readonly subscribe: <Value>(
+        store: CommittedStoreTree,
+        state: State<Value>,
+        callback: () => void,
+    ) => () => void
+    readonly readHydrationSnapshot: <Value>(
+        store: CommittedStoreTree,
+        state: State<Value>,
+    ) => Value
 }
 
 export interface CommittedStoreTreeDomain {
@@ -75,4 +103,5 @@ export interface CommittedStoreTreeDomain {
         options?: SelectorOptions<Value>,
     ): Selector<Value>
     createStoreTree(): CommittedStoreTree
+    readonly adapter: CommittedStoreTreeAdapter
 }
