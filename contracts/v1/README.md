@@ -363,8 +363,8 @@ frozen artifact nondeterministic.
 
 An intentional re-audit uses `--write`; this rewrites only the inventory and its
 frozen header evidence while preserving ledger rows and completeness.
-`--junit <path>` can reuse a prior isolated beta.23 JUnit capture. Current
-Current ShiftX and index-operational evidence remain separate Phase 0 gates and
+`--junit <path>` can reuse a prior isolated beta.23 JUnit capture. Current ShiftX
+and index-operational evidence remain separate Phase 0 gates and
 are not implied by this ledger.
 
 ## Provenance
