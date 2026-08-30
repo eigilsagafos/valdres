@@ -1,34 +1,38 @@
 # Valdres
 
-Reactive state management for **React, Vue, Svelte, Solid, and Angular** — one store, shared across frameworks. Inspired by Recoil and Jotai. The framework-agnostic core also runs in plain JavaScript, Node, and workers.
+Valdres is a synchronous atom and selector state engine for JavaScript, with React 18 and 19 bindings. The `1.1.0-beta` line is the first public build of the new module-owned runtime, scoped stores, atomic transactions, and lifecycle-free subscriptions.
 
-**Docs: [valdres.dev](https://valdres.dev)** · AI-readable: [llms.txt](https://valdres.dev/llms.txt) (every page is also available as markdown — append `.md` to any URL)
+The website currently documents the legacy beta. The install path and examples below are the source of truth for the v1 beta while the site is being migrated.
 
 ```bash
-npm install valdres valdres-react   # or valdres-vue / -svelte / -solid / -angular
+npm install valdres@beta valdres-react@beta react
 ```
 
 ```tsx
-import { atom, selector } from "valdres"
-import { Provider, useAtom, useValue } from "valdres-react"
+import { atom, selector, store } from "valdres"
+import { Provider, useUpdateAtom, useValue } from "valdres-react"
 
 const countAtom = atom(0)
 const doubledSelector = selector(get => get(countAtom) * 2)
+const appStore = store()
 
 function Counter() {
-    const [count, setCount] = useAtom(countAtom)
+    const count = useValue(countAtom)
     const doubled = useValue(doubledSelector)
-    return <button onClick={() => setCount(c => c + 1)}>{count} ×2 = {doubled}</button>
+    const increment = useUpdateAtom(countAtom)
+    return <button onClick={() => increment(c => c + 1)}>{count} ×2 = {doubled}</button>
 }
 
 const App = () => (
-    <Provider>
+    <Provider store={appStore}>
         <Counter />
     </Provider>
 )
 ```
 
-Atoms and selectors are identified by reference (no string keys), families are first-class, transactions batch updates, and scoped stores fork state for edit-and-cancel flows. The same atoms work in every framework — and in the [plugin packages](#plugins-framework-agnostic) that wrap browser APIs (geolocation, keyboard, visibility, …) as reactive state.
+Atoms and selectors are immutable capability handles identified by reference. A Store owns their values and derived graph. `set` stores an exact value, including functions; `update` applies an updater. Stores also provide synchronous subscriptions, transactions, nested scopes, reset, and explicit disposal.
+
+The first v1 beta certifies only `valdres` and `valdres-react`. The Angular, Vue, Svelte, Solid, plugin, and compatibility packages listed below remain on the legacy beta line and must not be installed with `valdres@1.1.0-beta` yet.
 
 ## Packages
 
@@ -93,8 +97,9 @@ The package tables below are auto-generated — do not hand-edit.
 
 ```bash
 bun install
-bun test            # all packages
-bun run docs:dev    # docs site at localhost:4321
+bun test             # certified v1 core + React cohort
+bun run test:all     # deferred legacy maintenance lane
+bun run docs:dev     # legacy docs site at localhost:4321
 ```
 
 ## Releasing
@@ -132,6 +137,8 @@ The repo is currently in `beta` prerelease mode (`bunx changeset pre exit` to gr
 ## Benchmarks
 
 ### Performance
+
+The table below is the archived legacy-engine benchmark and does not describe the `1.1.0-beta` runtime. New v1 numbers will replace it after the beta runs in real applications, including ShiftX.
 
 valdres is benchmarked against [Jotai](https://github.com/pmndrs/jotai) (and a raw `Map` floor) on every PR via [Bencher](https://bencher.dev) — live, always-current latency per operation under both Bun (JavaScriptCore) and Node.js (V8):
 
