@@ -1190,13 +1190,14 @@ class CommittedStoreTreeHost
                       session,
                   )
         if (after.outcome.kind !== "value") throw after.outcome.error
+        const publishDraftFallback =
+            after.reachesFallback && draft.hasFallback(atom)
         draft.stage(
             scope,
             Object.freeze({
                 kind: "reset",
                 atom,
-                publishDraftFallback:
-                    after.reachesFallback && draft.hasFallback(atom),
+                publishDraftFallback,
             }),
         )
     }
@@ -1367,6 +1368,18 @@ class CommittedStoreTreeHost
     #commitDraft(draft: TreeDraft): void {
         if (!draft.hasIntents) return
 
+        const singleIntent = draft.singleIntent
+        const singleScope = draft.singleIntentScope
+        if (
+            singleIntent?.kind === "reset" &&
+            singleScope !== undefined &&
+            !singleIntent.publishDraftFallback &&
+            draft.getAtomBaseline(singleScope, singleIntent.atom)?.owned ===
+                false
+        ) {
+            return
+        }
+
         /*
          * Commit is one ordered, user-code-free source settlement:
          *
@@ -1385,8 +1398,6 @@ class CommittedStoreTreeHost
         )
         let firstPlan: AtomApplyPlan | undefined
         let remainingPlan: AtomApplyPlan[] | undefined
-        const singleIntent = draft.singleIntent
-        const singleScope = draft.singleIntentScope
         if (singleIntent !== undefined && singleScope !== undefined) {
             firstPlan = this.#prepareAtomApplyPlan(
                 draft,
