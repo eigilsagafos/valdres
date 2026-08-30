@@ -6,7 +6,4 @@ export const PUBLISH_EXPORT_CONDITION_ORDER = [
     "import",
     "default",
 ] as const
-export const INSTANCE_GUARD_SIDE_EFFECTS = [
-    "./dist/index.js",
-    "./dist/development/index.js",
-] as const
+export const CORE_SIDE_EFFECTS = false

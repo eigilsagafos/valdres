@@ -1,6 +1,6 @@
 /**
- * JUnit coverage gate — every package with a runnable `test` script must
- * actually emit a JUnit report.
+ * JUnit coverage gate — every certified v1-beta package with a runnable `test`
+ * script must actually emit a JUnit report.
  *
  * `bun run test:ci` can exit 0 while a package produces no `junit.xml` at all:
  * a package whose test script does not understand the reporter flags, or one
@@ -15,9 +15,10 @@
  * Expectations also include packages that had a test script on the base branch,
  * so deleting one cannot silently remove coverage.
  *
- *   bun run scripts/check-junit-coverage.ts           # the gate; exits 1 on a gap
+ *   bun run scripts/check-junit-coverage.ts           # v1-beta gate
  *   bun run scripts/check-junit-coverage.ts --json    # pure query, always exits 0
  *   bun run scripts/check-junit-coverage.ts --base=<ref>
+ *   bun run scripts/check-junit-coverage.ts --all     # legacy maintenance query/gate
  *
  * This only means anything against freshly written reports. `junit*.xml` is
  * gitignored and would otherwise survive between local runs, letting a report
@@ -29,6 +30,7 @@
 import { join } from "node:path"
 
 const root = join(import.meta.dir, "..")
+const V1_BETA_PACKAGES = new Set(["valdres", "valdres-react"])
 
 /** The one opt-out spelling. Anything else in `scripts.test` is a real suite. */
 const NO_TESTS_PLACEHOLDER = /^echo\s+(['"])no tests\1$/
@@ -66,13 +68,21 @@ const expectsReport = (manifestSource: string) => {
     }
 }
 
-export const collectCoverage = async (base: string) => {
+export const collectCoverage = async (
+    base: string,
+    cohort: "all" | "v1-beta" = "all",
+) => {
     const manifests = await scan("packages/**/package.json")
     const current = new Set(manifests)
     const expected = new Set<string>()
+    const isIncluded = (path: string) =>
+        cohort === "all" || V1_BETA_PACKAGES.has(packageKey(path))
 
     for (const manifest of manifests)
-        if (expectsReport(await Bun.file(join(root, manifest)).text()))
+        if (
+            isIncluded(manifest) &&
+            expectsReport(await Bun.file(join(root, manifest)).text())
+        )
             expected.add(packageKey(manifest))
 
     // Include the base branch's test-bearing packages so deleting a test
@@ -87,14 +97,17 @@ export const collectCoverage = async (base: string) => {
         )
             .split("\n")
             .filter(
-                path => path.endsWith("/package.json") && current.has(path),
+                path =>
+                    path.endsWith("/package.json") &&
+                    current.has(path) &&
+                    isIncluded(path),
             )) {
             const source = git(["show", `${base}:${manifest}`])
             if (source !== null && expectsReport(source))
                 expected.add(packageKey(manifest))
         }
 
-    const reports = await scan("packages/**/junit*.xml")
+    const reports = (await scan("packages/**/junit*.xml")).filter(isIncluded)
     const found = new Set(reports.map(packageKey))
     const missing = [...expected].filter(pkg => !found.has(pkg)).sort()
 
@@ -113,7 +126,8 @@ if (import.meta.main) {
     const base =
         args.find(arg => arg.startsWith("--base="))?.slice("--base=".length) ??
         "origin/main"
-    const coverage = await collectCoverage(base)
+    const cohort = args.includes("--all") ? "all" : "v1-beta"
+    const coverage = await collectCoverage(base, cohort)
 
     if (args.includes("--json")) {
         console.log(JSON.stringify(coverage))

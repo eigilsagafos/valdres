@@ -3,10 +3,10 @@ import { readFileSync } from "node:fs"
 import { join } from "node:path"
 
 /**
- * The gate that keeps valdres.dev's demos alive is only as good as its wiring.
- * It caught nothing for three weeks because no workflow ran it: `docs-ci.yml`
- * is path-filtered to docs files, and the change that killed every demo was in
- * `packages/valdres/src`. These assertions pin the wiring that closes that hole.
+ * Legacy docs still have an executable-island gate, but they are deliberately
+ * outside the certified core+React beta train. These assertions keep them out
+ * of unfiltered package CI and require an explicit maintainer dispatch before
+ * the gated Pages deployment can run.
  */
 
 const GATE = "bun run scripts/check-docs-islands.ts"
@@ -15,26 +15,37 @@ const workflow = (name: string) =>
     readFileSync(join(import.meta.dir, `../.github/workflows/${name}`), "utf8")
 
 describe("docs island gate wiring", () => {
-    test("runs in the unfiltered CI job, not only the path-filtered docs job", () => {
+    test("stays outside the certified core and React CI job", () => {
         const ci = workflow("ci.yaml")
-        expect(ci).toContain(GATE)
-
-        // The `test` job has no `paths:` filter, so it runs on every PR —
-        // including core-only ones, which is exactly the case that broke.
+        expect(ci).not.toContain(GATE)
         const testJob = ci.slice(
             ci.indexOf("    test:"),
             ci.indexOf("    valdres-package:"),
         )
-        expect(testJob).toContain(GATE)
+        expect(testJob).not.toContain(GATE)
     })
 
-    test("gates the deploy, which races CI on push to main", () => {
+    test("gates an explicit manual deployment", () => {
         const publish = workflow("publish-docs.yaml")
+        expect(publish).toContain("workflow_dispatch:")
+        expect(publish).not.toContain("    push:")
         expect(publish).toContain(GATE)
-        // Before the upload, or a broken bundle still reaches the live site.
+        // It must run before upload, or a broken bundle still reaches Pages.
         expect(publish.indexOf(GATE)).toBeLessThan(
             publish.indexOf("upload-pages-artifact"),
         )
+    })
+
+    test("keeps the full legacy docs build manual during the v1 beta", () => {
+        const docs = workflow("docs-ci.yml")
+        expect(docs).toContain("workflow_dispatch:")
+        expect(docs).not.toContain("    pull_request:")
+        expect(docs).toContain("bun run docs:build")
+        expect(docs).toContain("bun run scripts/gen-readmes.ts --check")
+
+        const ci = workflow("ci.yaml")
+        expect(ci).toContain("bun run scripts/gen-readmes.ts --check")
+        expect(ci).not.toContain("bun run docs:build")
     })
 
     test("checks every island bundle the site loads with a script tag", () => {

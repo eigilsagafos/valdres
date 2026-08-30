@@ -1,5 +1,5 @@
 ---
-"valdres": patch
+"@valdres/hotkeys": patch
 ---
 
 Compare ArrayBuffer, SharedArrayBuffer, DataView, and typed-array values by

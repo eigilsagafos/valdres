@@ -1,5 +1,6 @@
 # Advisory paired-statistics calibration. This workflow never uploads to
 # Bencher and never participates in pull-request branch protection.
+# Legacy-engine microbenchmarks; the packed v1 ShiftX gate lives in ci.yaml.
 name: Bencher (deep)
 
 on:

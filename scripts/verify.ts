@@ -3,15 +3,11 @@
  * own file.
  *
  * `bun run test` is a single step in the `test` job. The others — the v1
- * contract/migration-ledger gate, build, build:types, typecheck, the type-level
- * tests, the `@ts-ignore` ban, the architecture gate, the Node/V8 rewrite-guard
- * lane, both retained-memory gates, the valdres-svelte publish lint, the JUnit
- * coverage gate, the `scripts/` tests — only ever ran on GitHub, so anything
- * they alone catch stayed invisible until the PR went red.
- * PR #329 landed exactly there: a new `src/lib/*Fuzz.test.ts` is
- * auto-collected by `vitest.rewrite-guards.config.ts`, where `bun:test` does
- * not resolve, so the file had to import `test/performance/test-compat` like
- * its three siblings. Nothing local surfaced that.
+ * contract/migration-ledger gate, certified build/typecheck, focused v1 model,
+ * evaluator and StoreTree contracts, the `@ts-ignore` ban, release-infrastructure
+ * tests, JUnit coverage, the core tarball validator, and the packed core+React
+ * consumer matrix all run as separate GitHub steps. Anything they alone catch
+ * would otherwise stay invisible until the PR went red.
  *
  * The step list is READ FROM `.github/workflows/ci.yaml` at run time rather
  * than copied here, because a hand-maintained duplicate drifts back into the
@@ -21,9 +17,10 @@
  *
  * SCOPE: both pull-request jobs in ci.yaml — `test` and `valdres-package` (the
  * published-tarball gate: publint, ATTW, size budgets; ~13s). It does NOT cover
- * `docs-ci.yml` or the Bencher gate; those are listed under NOT_COVERED and
- * printed on every run, because a "pre-PR command" that silently covers some of
- * the gates is the same class of problem verify exists to fix.
+ * the manual-only legacy docs workflows or the Bencher gate;
+ * those are listed under NOT_COVERED and printed on every run, because a
+ * "pre-PR command" that silently covers some of the gates is the same class of
+ * problem verify exists to fix.
  *
  * WHAT THIS IS NOT: a runner. It does not reproduce job isolation — GitHub gives
  * each job a fresh machine and a clean checkout, while verify runs both jobs
@@ -37,7 +34,7 @@
  *
  *   - "Verify publish (dry-run)" invokes `scripts/ci-publish.sh`, the real
  *     release script. `DRY_RUN=1` stops it short of publishing, but it still
- *     rewrites every package manifest in place and restores it afterwards.
+ *     rewrites both certified package manifests in place and restores them.
  *     That is fine on a throwaway runner; it is not something to point at a
  *     working tree with uncommitted edits in it.
  *   - "Verify publish cleanup" exists only to prove the dry-run left no
@@ -192,7 +189,8 @@ const IDEMPOTENT_SETUP = new Set(["bun install --frozen-lockfile"])
  *  that quietly covers two thirds of the gates is the same class of problem
  *  verify was written to fix. */
 const NOT_COVERED = [
-    "docs-ci.yml — bun run docs:build && bun run scripts/gen-readmes.ts --check",
+    "docs-ci.yml — manual-only legacy docs build",
+    "publish-docs.yaml — manual-only legacy docs build and Pages deployment",
     "bencher-pr.yml — benchmark gate (needs a base run to compare against)",
 ]
 
@@ -297,7 +295,7 @@ export const SKIPPED_STEPS: Record<
     "Verify publish (dry-run)": {
         job: "test",
         run: "DRY_RUN=1 bash scripts/ci-publish.sh",
-        reason: "runs the real release script (scripts/ci-publish.sh) — DRY_RUN=1 still rewrites every package manifest in place, which is fine on a throwaway runner and not on your working tree",
+        reason: "runs the real release script (scripts/ci-publish.sh) — DRY_RUN=1 still rewrites both certified package manifests in place, which is fine on a throwaway runner and not on your working tree",
     },
     "Verify publish cleanup": {
         job: "test",
@@ -358,8 +356,14 @@ const evaluateIf = (
     expression: string,
 ): { run: true } | { run: false; reason: string } | null => {
     const normalized = expression.trim()
-    // verify is the pre-PR command, so answer as a pull request would.
-    if (normalized === "github.event_name == 'pull_request'")
+    // verify is the pre-PR command, so answer as an ordinary feature pull
+    // request would. The generated Changesets release branch skips only the
+    // consumed-changeset gate in CI; local verification must still run it.
+    if (
+        normalized === "github.event_name == 'pull_request'" ||
+        normalized ===
+            "github.event_name == 'pull_request' && (github.event.pull_request.head.repo.full_name != github.repository || github.head_ref != 'changeset-release/main')"
+    )
         return { run: true }
     // The one outcome-gated shape verify understands: a step that re-fails the
     // job because an earlier `continue-on-error` step failed. Verify does not

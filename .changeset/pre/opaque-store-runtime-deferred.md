@@ -1,6 +1,12 @@
 ---
-"valdres": minor
-"valdres-react": patch
+"valdres-vue": patch
+"valdres-solid": patch
+"valdres-svelte": patch
+"valdres-angular": patch
+"@valdres/redux-devtools": patch
+"@valdres-react/jotai": patch
+"@valdres-react/recoil": patch
+"@valdres-react/panable": patch
 ---
 
 Make Store runtimes opaque. Stores now expose stable public identity through

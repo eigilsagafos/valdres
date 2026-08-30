@@ -1,5 +1,5 @@
 import {
-    INSTANCE_GUARD_SIDE_EFFECTS,
+    CORE_SIDE_EFFECTS,
     NODE_ENGINE_RANGE,
     PUBLISH_EXPORT_CONDITION_ORDER,
 } from "./publish-metadata.ts"
@@ -92,10 +92,11 @@ if (await packageTmpJsonFile.exists()) {
         json.typesVersions = { "*": legacyTypeMappings }
     }
 
-    // Importing valdres installs the duplicate-instance guard. Mark only the
-    // core entry as side-effectful; bindings retain their authored metadata.
+    // The isolated v1 root has no ambient registry or duplicate-instance
+    // mutation. Mark the complete package graph as tree-shakeable; runtime
+    // ownership checks happen only when a Store/State operation is invoked.
     if (json.name === "valdres") {
-        json.sideEffects = [...INSTANCE_GUARD_SIDE_EFFECTS]
+        json.sideEffects = CORE_SIDE_EFFECTS
     }
 
     // All published entrypoints are ESM. Node 22.12 is the oldest supported

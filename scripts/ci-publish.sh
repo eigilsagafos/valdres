@@ -7,37 +7,6 @@ ROOT_DIR="$(dirname "$SCRIPT_DIR")"
 PUBLIC_PACKAGES=(
   packages/valdres
   packages/valdres-react
-  packages/valdres-angular
-  packages/valdres-solid
-  packages/valdres-svelte
-  packages/valdres-vue
-  packages/@valdres/bandwidth
-  packages/@valdres/browser-color-scheme
-  packages/@valdres/browser-contrast
-  packages/@valdres/browser-device-motion
-  packages/@valdres/browser-device-orientation
-  packages/@valdres/browser-focus
-  packages/@valdres/browser-geolocation
-  packages/@valdres/browser-keyboard
-  packages/@valdres/browser-online
-  packages/@valdres/browser-presence
-  packages/@valdres/browser-reduced-data
-  packages/@valdres/browser-reduced-motion
-  packages/@valdres/browser-reduced-transparency
-  packages/@valdres/browser-screen
-  packages/@valdres/browser-screen-details
-  packages/@valdres/browser-visibility
-  packages/@valdres/browser-window
-  packages/@valdres/color-mode
-  packages/@valdres/hotkeys
-  packages/@valdres/public-ip
-  packages/@valdres/redux-devtools
-  packages/@valdres-react/color-mode
-  packages/@valdres-react/draggable
-  packages/@valdres-react/hotkeys
-  packages/@valdres-react/jotai
-  packages/@valdres-react/panable
-  packages/@valdres-react/recoil
 )
 
 # Restore prepacked package.json files even if the script aborts midway.
@@ -79,6 +48,38 @@ trap restore_on_exit EXIT
 # Sanity-check that `bunx changeset` resolves before doing any work — catches
 # missing-binary regressions on PR before they reach the real publish flow.
 bunx changeset --help > /dev/null
+
+# The feature PR temporarily seeds both manifests at 1.0.0 so a minor
+# Changeset starts an isolated 1.1.0-beta.0 line. changesets/action consumes
+# that Changeset into a release PR before it invokes this script. Refuse a live
+# manual publish of the seed (or any later stable version) while prerelease mode
+# is active. DRY_RUN still exercises prepack/restore on the feature PR.
+if [ "${DRY_RUN:-0}" != "1" ]; then
+  node - "$ROOT_DIR" "${PUBLIC_PACKAGES[@]}" <<'NODE'
+const fs = require("node:fs")
+const path = require("node:path")
+
+const [rootDir, ...packageDirs] = process.argv.slice(2)
+const preState = JSON.parse(
+  fs.readFileSync(path.join(rootDir, ".changeset", "pre.json"), "utf8"),
+)
+
+if (preState.mode !== "pre" || preState.tag !== "beta") {
+  throw new Error("Live v1-beta publish requires Changesets beta prerelease mode")
+}
+
+for (const packageDir of packageDirs) {
+  const manifest = JSON.parse(
+    fs.readFileSync(path.join(rootDir, packageDir, "package.json"), "utf8"),
+  )
+  if (!/^\d+\.\d+\.\d+-beta\.\d+$/.test(manifest.version)) {
+    throw new Error(
+      `Refusing to publish ${manifest.name}@${manifest.version}: certified packages must use an x.y.z-beta.N version`,
+    )
+  }
+}
+NODE
+fi
 
 # Prepack all public packages (rewrite package.json exports for dist)
 for dir in "${PUBLIC_PACKAGES[@]}"; do

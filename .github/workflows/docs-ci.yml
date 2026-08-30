@@ -1,21 +1,10 @@
-# Docs are generated artifacts all the way down (site pages, package READMEs,
-# llms.txt, the root README package table). This catches broken MDX and README
-# drift on the PR instead of at deploy time — but only when docs-related files
-# actually changed, so unrelated PRs skip it entirely.
+# The public site still targets the legacy framework/API surface. Keep its full
+# build available to maintainers while the isolated v1 beta certifies only core
+# and React; ordinary PRs retain the generated-README check in ci.yaml.
 name: Docs
 
 on:
-    pull_request:
-        branches: [main]
-        paths:
-            - "docs/**"
-            - "packages/**/*.mdx"
-            - "packages/**/README.md"
-            - "README.md"
-            - "scripts/gen-readmes.ts"
-            - "scripts/lib/mdx-to-markdown.ts"
-            - "scripts/lib/readme-sources.ts"
-            - ".github/workflows/docs-ci.yml"
+    workflow_dispatch:
 
 concurrency:
     group: docs-${{ github.ref }}

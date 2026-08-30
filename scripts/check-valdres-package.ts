@@ -20,7 +20,7 @@ import { basename, join } from "node:path"
 import { build as vite } from "vite"
 import webpack from "webpack"
 import {
-    INSTANCE_GUARD_SIDE_EFFECTS,
+    CORE_SIDE_EFFECTS,
     MINIMUM_NODE_VERSION,
     NODE_ENGINE_RANGE,
     PUBLISH_EXPORT_CONDITION_ORDER,
@@ -229,13 +229,8 @@ async function checkManifest(
             "root development export must be ./dist/development/index.js",
         )
     }
-    if (
-        JSON.stringify(manifest.sideEffects) !==
-        JSON.stringify(INSTANCE_GUARD_SIDE_EFFECTS)
-    ) {
-        errors.push(
-            `sideEffects must be ${JSON.stringify(INSTANCE_GUARD_SIDE_EFFECTS)}`,
-        )
+    if (manifest.sideEffects !== CORE_SIDE_EFFECTS) {
+        errors.push(`sideEffects must be ${String(CORE_SIDE_EFFECTS)}`)
     }
     if (manifest.engines?.node !== NODE_ENGINE_RANGE) {
         errors.push(`engines.node must be ${NODE_ENGINE_RANGE}`)
@@ -663,6 +658,16 @@ async function proveRed(tarballPath: string, mutationsDir: string) {
                         import: exp.import,
                     }
                 }
+                await writeFile(path, JSON.stringify(manifest, null, 4))
+            },
+        },
+        {
+            name: "wrong-side-effects",
+            checks: ["manifest"],
+            mutate: async packageRoot => {
+                const path = join(packageRoot, "package.json")
+                const manifest = JSON.parse(await readFile(path, "utf8"))
+                manifest.sideEffects = true
                 await writeFile(path, JSON.stringify(manifest, null, 4))
             },
         },

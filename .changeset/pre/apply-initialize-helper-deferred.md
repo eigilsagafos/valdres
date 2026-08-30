@@ -1,5 +1,5 @@
 ---
-"valdres": minor
+"valdres-svelte": patch
 ---
 
 Add `applyInitialize(txn, initialize)` — the single place the adapter

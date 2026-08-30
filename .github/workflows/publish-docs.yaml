@@ -1,8 +1,8 @@
 name: Publish Docs
 on:
-    push:
-        branches:
-            - main
+    # Legacy framework/API pages are frozen during the isolated v1 beta. Keep
+    # the workflow available for an explicit maintainer deployment, but never race
+    # a main-branch beta publish with a stale public docs deployment.
     workflow_dispatch:
 jobs:
     build:
@@ -19,9 +19,8 @@ jobs:
               env:
                   NODE_ENV: production
                   PUBLIC_POSTHOG_KEY: ${{ vars.PUBLIC_POSTHOG_KEY }}
-            # CI gates this on every PR too, but CI and this workflow both run on
-            # push to main — in parallel. Repeat the check here so a bundle that
-            # throws on load cannot reach the live site while CI is still going red.
+            # A manual deployment still proves every generated island can execute
+            # before its artifact is uploaded.
             - name: Docs island bundles load in a browser
               run: bun run scripts/check-docs-islands.ts
             - name: Upload website artifact

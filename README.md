@@ -106,7 +106,7 @@ bun run docs:dev     # legacy docs site at localhost:4321
 
 Versioning and publishing is handled by [Changesets](https://github.com/changesets/changesets). Each package versions independently.
 
-The 1.0 release is governed by the hard gates and RC burn-in checklist in [RELEASING.md](./RELEASING.md).
+The future v1 stable release is governed by the hard gates and RC burn-in checklist in [RELEASING.md](./RELEASING.md).
 
 **When you open a PR that changes a publishable package:**
 
@@ -122,7 +122,7 @@ For PRs that touch publishable code but intentionally don't trigger a release (r
 bunx changeset --empty
 ```
 
-This still generates a `.changeset/*.md` file — commit it like a regular changeset. The `Require changeset` check on each PR enforces that any change to a publishable package ships with a changeset (empty or otherwise).
+This still generates a `.changeset/*.md` file — commit it like a regular changeset. The `Require changeset` check on ordinary feature PRs enforces that any change to a publishable package ships with a changeset (empty or otherwise); the generated Version Packages PR has already consumed those changesets.
 
 When the PR merges to `main`, the `Publish` workflow opens (or updates) a **Version Packages** PR that applies the pending changesets, bumps versions, and updates CHANGELOGs. Merging that PR publishes the affected packages to npm.
 

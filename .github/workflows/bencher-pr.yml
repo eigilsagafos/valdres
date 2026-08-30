@@ -5,6 +5,7 @@
 # observations. bencher-pr-gate.yml is workflow 3: it runs from the trusted
 # default branch on workflow_run, re-analyzes this artifact, uploads it to
 # Bencher, and writes the required check to the PR head SHA.
+# Legacy-engine microbenchmarks; the packed v1 ShiftX gate lives in ci.yaml.
 # https://bencher.dev/docs/how-to/github-actions/#pull-requests-from-forks
 name: Bencher (PR measurement)
 
