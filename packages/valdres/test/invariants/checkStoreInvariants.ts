@@ -634,6 +634,36 @@ const checkStore = (
                             `${at}: orphaned selector ${label(s)} has a cold snapshot validated at ${cache.validatedAt}, ahead of tree revision ${data.tree.revision}`,
                         )
                     }
+                    // The pass stamp is the OTHER half of revalidatability, and
+                    // it fails differently: `validatedAt` going stale only costs
+                    // a re-walk, while a pass stamp that outruns the tree's pass
+                    // counter is accepted by `coldCacheIsCurrentInPass` and
+                    // silently serves the snapshot without any dependency
+                    // comparison at all. A stamp ahead of the counter therefore
+                    // means the snapshot can never be invalidated — the counter
+                    // is monotonic, so no future write can catch up to it.
+                    if (cache.validatedInPass > data.tree.coldValidationPass) {
+                        push(
+                            "retained-registration",
+                            `${at}: orphaned selector ${label(s)} has a cold snapshot stamped in pass ${cache.validatedInPass}, ahead of tree pass ${data.tree.coldValidationPass}, so the pass memo can never retire it`,
+                        )
+                    }
+                    // A non-validatable snapshot (`validatedAt < 0`) that still
+                    // carries a live pass stamp is the same failure by another
+                    // route: every reader checks `validatedAt < 0` BEFORE the
+                    // pass memo precisely so an invalidation cannot be memoed
+                    // away, and the two invalidation sites clear both fields
+                    // together. A snapshot holding one but not the other means a
+                    // third site invalidated only half of the pair.
+                    if (
+                        cache.validatedAt < 0 &&
+                        cache.validatedInPass === data.tree.coldValidationPass
+                    ) {
+                        push(
+                            "retained-registration",
+                            `${at}: orphaned selector ${label(s)} has a non-validatable cold snapshot still stamped in the current pass ${cache.validatedInPass}`,
+                        )
+                    }
                 }
             }
         }

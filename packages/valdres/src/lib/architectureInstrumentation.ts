@@ -24,6 +24,10 @@ export type ArchitectureCounters = {
     schedulerCycleFallbacks: number
     /** Dependency edges examined while propagating/reconciling liveness. */
     livenessEdgeVisits: number
+    /** Dependency-revision comparisons made while validating cold selector
+     *  snapshots. The bound that matters is per-EDGE, not per-edge-per-read;
+     *  before the validation pass this grew with fan-out × edges. */
+    coldCacheDependencyChecks: number
     /** Dependency edges examined by mount/unmount closure walks. */
     mountEdgeVisits: number
     /** Successful absent -> mounted lifecycle transitions. */
@@ -71,6 +75,7 @@ export const createArchitectureInstrumentation =
             livenessWorkAllocations: 0,
             schedulerCycleFallbacks: 0,
             livenessEdgeVisits: 0,
+            coldCacheDependencyChecks: 0,
             mountEdgeVisits: 0,
             mountTransitions: 0,
             unmountTransitions: 0,

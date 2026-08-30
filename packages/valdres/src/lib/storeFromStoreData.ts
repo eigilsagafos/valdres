@@ -38,6 +38,7 @@ import { setAtom } from "./setAtom"
 import { setValueInData } from "./setValueInData"
 import { snapshot } from "./snapshot"
 import { STORE_DATA_ACCESS } from "./storeDataAccessToken"
+import { coldCacheIsCurrentInPass } from "./storeTreeRuntime"
 import { BORROWED_STORE_RUNTIME, STORE_RUNTIME } from "./storeRuntimeKey"
 import {
     createStoreDisposedError,
@@ -246,7 +247,16 @@ const createStoreRuntime = (data: StoreData): StoreRuntime => {
                 // No state observed by this cache has changed since its last
                 // validation. Return at the store boundary so steady cold
                 // reads avoid opening a liveness pass only to collect no seeds.
-                if (coldCache.validatedAt === data.tree.revision) {
+                // The pass arm covers the same question for a snapshot whose
+                // `validatedAt` has merely aged behind a materialization that
+                // the validating walk performed itself — without it, a burst of
+                // top-level reads over one cold graph would drop into the full
+                // read path on every read after the first. See
+                // StoreTreeRuntime.coldValidationPass.
+                if (
+                    coldCache.validatedAt === data.tree.revision ||
+                    coldCacheIsCurrentInPass(coldCache, data.tree)
+                ) {
                     return data.values.get(state)
                 }
             } else {
