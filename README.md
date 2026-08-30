@@ -1,6 +1,6 @@
 # Valdres
 
-Valdres is a synchronous atom and selector state engine for JavaScript, with React 18 and 19 bindings. The `1.1.0-beta` line is the first public build of the new module-owned runtime, scoped stores, atomic transactions, and lifecycle-free subscriptions.
+Valdres is a synchronous atom and selector state engine for JavaScript, with React 18 and 19 bindings. `valdres@1.0.0-beta.24` and `valdres-react@1.0.0-beta.5` are the first public builds of the new module-owned runtime, scoped stores, atomic transactions, and lifecycle-free subscriptions.
 
 The website currently documents the legacy beta. The install path and examples below are the source of truth for the v1 beta while the site is being migrated.
 
@@ -32,7 +32,7 @@ const App = () => (
 
 Atoms and selectors are immutable capability handles identified by reference. A Store owns their values and derived graph. `set` stores an exact value, including functions; `update` applies an updater. Stores also provide synchronous subscriptions, transactions, nested scopes, reset, and explicit disposal.
 
-The first v1 beta certifies only `valdres` and `valdres-react`. The Angular, Vue, Svelte, Solid, plugin, and compatibility packages listed below remain on the legacy beta line and must not be installed with `valdres@1.1.0-beta` yet.
+This is an intentional breaking beta cutover. Only `valdres` and `valdres-react` are certified together. The Angular, Vue, Svelte, Solid, plugin, and compatibility packages listed below remain on the legacy API and are unsupported with `valdres@1.0.0-beta.24` or later until they are migrated. Their published semver ranges may still allow npm to install this core, so do not mix those packages with the new beta.
 
 ## Packages
 
@@ -132,13 +132,13 @@ To preview what publishing would do locally:
 bun run verify-publish
 ```
 
-The repo is currently in `beta` prerelease mode (`bunx changeset pre exit` to graduate to stable). While in prerelease mode, changesets that have already been versioned into a `beta` release move to `.changeset/pre/`, where they stay until the stable release consumes them — leave them alone unless a change genuinely no longer applies.
+The repo is currently in `beta` prerelease mode (`bunx changeset pre exit` to graduate to stable). While in prerelease mode, changesets that have already been versioned into a `beta` release move to `.changeset/pre/`. Certified core+React histories are consumed by their stable release; ignored deferred histories remain for their packages. Leave those files alone unless a change genuinely no longer applies to its eventual release.
 
 ## Benchmarks
 
 ### Performance
 
-The table below is the archived legacy-engine benchmark and does not describe the `1.1.0-beta` runtime. New v1 numbers will replace it after the beta runs in real applications, including ShiftX.
+The table below is the archived legacy-engine benchmark and does not describe the `1.0.0-beta.24` runtime. New v1 numbers will replace it after the beta runs in real applications, including ShiftX.
 
 valdres is benchmarked against [Jotai](https://github.com/pmndrs/jotai) (and a raw `Map` floor) on every PR via [Bencher](https://bencher.dev) — live, always-current latency per operation under both Bun (JavaScriptCore) and Node.js (V8):
 

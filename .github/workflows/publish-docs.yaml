@@ -1,6 +1,6 @@
 name: Publish Docs
 on:
-    # Legacy framework/API pages are frozen during the isolated v1 beta. Keep
+    # Legacy framework/API pages are frozen during the core+React v1 beta. Keep
     # the workflow available for an explicit maintainer deployment, but never race
     # a main-branch beta publish with a stale public docs deployment.
     workflow_dispatch:

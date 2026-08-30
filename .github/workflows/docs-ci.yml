@@ -1,5 +1,5 @@
 # The public site still targets the legacy framework/API surface. Keep its full
-# build available to maintainers while the isolated v1 beta certifies only core
+# build available to maintainers while the v1 beta certifies only core
 # and React; ordinary PRs retain the generated-README check in ci.yaml.
 name: Docs
 

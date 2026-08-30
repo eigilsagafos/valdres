@@ -65,7 +65,7 @@ const V1_CORE_BODY = [
     "",
     "## Beta compatibility",
     "",
-    "The `1.1.0-beta` line intentionally replaces the legacy `1.0.0-beta` API. It currently certifies the core package and `valdres-react`; the other framework adapters and plugin packages remain on the legacy line until they are migrated.",
+    "`valdres@1.0.0-beta.24` intentionally replaces the legacy beta API. Only the core package and `valdres-react@1.0.0-beta.5` are certified together. Deferred framework adapters and plugins remain unsupported even when their published semver ranges allow npm to resolve this core; do not mix them with the new beta until they are migrated.",
 ].join("\n")
 
 const V1_REACT_BODY = [
@@ -106,6 +106,8 @@ const V1_REACT_BODY = [
     "## Beta compatibility",
     "",
     "Use `useSetAtom` for exact values and `useUpdateAtom` for updater functions. The legacy `Scope`, `useStoreId`, `useTransaction`, `useValdresCallback`, and optional-store Provider APIs are not part of this beta.",
+    "",
+    "Only `valdres@1.0.0-beta.24` and `valdres-react@1.0.0-beta.5` are certified together. Deferred adapters and plugins remain unsupported even when their published semver ranges allow npm to resolve this core or React package; do not mix them with the new beta until they are migrated.",
 ].join("\n")
 
 function indexBody(pkg: PackageInfo): string {

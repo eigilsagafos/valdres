@@ -49,37 +49,59 @@ trap restore_on_exit EXIT
 # missing-binary regressions on PR before they reach the real publish flow.
 bunx changeset --help > /dev/null
 
-# The feature PR temporarily seeds both manifests at 1.0.0 so a minor
-# Changeset starts an isolated 1.1.0-beta.0 line. changesets/action consumes
-# that Changeset into a release PR before it invokes this script. Refuse a live
-# manual publish of the seed (or any later stable version) while prerelease mode
-# is active. DRY_RUN still exercises prepack/restore on the feature PR.
-if [ "${DRY_RUN:-0}" != "1" ]; then
-  node - "$ROOT_DIR" "${PUBLIC_PACKAGES[@]}" <<'NODE'
+# The feature PR keeps each manifest at its currently published prerelease.
+# Changesets advances their package-local counters independently: core beta.23
+# becomes beta.24 and React beta.4 becomes beta.5. changesets/action consumes
+# the pending Changeset into a release PR before it invokes this script. Every
+# dry run validates either the authored predecessors or exact target tuple; a
+# live publish accepts only the exact target tuple.
+node - "$ROOT_DIR" "${DRY_RUN:-0}" "${PUBLIC_PACKAGES[@]}" <<'NODE'
 const fs = require("node:fs")
 const path = require("node:path")
 
-const [rootDir, ...packageDirs] = process.argv.slice(2)
+const [rootDir, dryRunValue, ...packageDirs] = process.argv.slice(2)
+const dryRun = dryRunValue === "1"
+const expectedVersions = new Map([
+  ["valdres", "1.0.0-beta.24"],
+  ["valdres-react", "1.0.0-beta.5"],
+])
+const predecessorVersions = new Map([
+  ["valdres", "1.0.0-beta.23"],
+  ["valdres-react", "1.0.0-beta.4"],
+])
 const preState = JSON.parse(
   fs.readFileSync(path.join(rootDir, ".changeset", "pre.json"), "utf8"),
 )
 
 if (preState.mode !== "pre" || preState.tag !== "beta") {
-  throw new Error("Live v1-beta publish requires Changesets beta prerelease mode")
+  throw new Error("V1-beta publish validation requires Changesets beta prerelease mode")
 }
 
 for (const packageDir of packageDirs) {
   const manifest = JSON.parse(
     fs.readFileSync(path.join(rootDir, packageDir, "package.json"), "utf8"),
   )
-  if (!/^\d+\.\d+\.\d+-beta\.\d+$/.test(manifest.version)) {
+  const expectedVersion = expectedVersions.get(manifest.name)
+  const predecessorVersion = predecessorVersions.get(manifest.name)
+  const versionIsAllowed =
+    manifest.version === expectedVersion ||
+    (dryRun && manifest.version === predecessorVersion)
+  if (expectedVersion === undefined || !versionIsAllowed) {
     throw new Error(
-      `Refusing to publish ${manifest.name}@${manifest.version}: certified packages must use an x.y.z-beta.N version`,
+      `Refusing to publish ${manifest.name}@${manifest.version}: expected ${expectedVersion ?? "a certified package"}${dryRun && predecessorVersion ? ` (or ${predecessorVersion} in DRY_RUN)` : ""}`,
+    )
+  }
+
+  if (
+    manifest.name === "valdres-react" &&
+    manifest.peerDependencies?.valdres !== "^1.0.0-beta.24"
+  ) {
+    throw new Error(
+      `Refusing to publish valdres-react with core peer ${manifest.peerDependencies?.valdres}: expected ^1.0.0-beta.24`,
     )
   }
 }
 NODE
-fi
 
 # Prepack all public packages (rewrite package.json exports for dist)
 for dir in "${PUBLIC_PACKAGES[@]}"; do

@@ -101,7 +101,7 @@ prerelease mode.
 - **Before opening or updating a PR, run `bun run verify` and the `/before-pr`
   skill** — `verify` is ci.yaml's PR jobs, including generated README drift; the
   skill adds the remaining docs-coverage, quality, and artifact review. The
-  legacy docs-site build is manual-only while the isolated v1 beta ships.
+  legacy docs-site build is manual-only while the core+React v1 beta ships.
 
 ## Benchmarks
 
