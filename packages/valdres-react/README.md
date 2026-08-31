@@ -38,6 +38,6 @@ The public hooks are `useStore`, `useValue`, `useAtom`, `useSetAtom`, `useUpdate
 
 Use `useSetAtom` for exact values and `useUpdateAtom` for updater functions. The legacy `Scope`, `useStoreId`, `useTransaction`, `useValdresCallback`, and optional-store Provider APIs are not part of this beta.
 
-Only `valdres@1.0.0-beta.24` and `valdres-react@1.0.0-beta.5` are certified together. Deferred adapters and plugins remain unsupported even when their published semver ranges allow npm to resolve this core or React package; do not mix them with the new beta until they are migrated.
+`valdres-react@1.0.0-beta.5` is certified with `valdres@1.0.0-beta.24` and later v1 betas accepted by its `^1.0.0-beta.24` peer range. Deferred adapters and plugins remain unsupported even when their published semver ranges allow npm to resolve this core or React package; do not mix them with the new beta until they are migrated.
 
 <!-- DOCS:END -->

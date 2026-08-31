@@ -1,8 +1,8 @@
 {
     "bun": "1.4.0",
     "dist": {
-        "raw": 104110,
-        "gzip": 28020
+        "raw": 118576,
+        "gzip": 32436
     },
     "distFiles": {
         "adapter-internals/v1.js": {
@@ -21,9 +21,17 @@
             "raw": 50864,
             "gzip": 13296
         },
+        "development/equality.js": {
+            "raw": 7233,
+            "gzip": 2208
+        },
         "development/index.js": {
             "raw": 991,
             "gzip": 561
+        },
+        "equality.js": {
+            "raw": 7233,
+            "gzip": 2208
         },
         "index.js": {
             "raw": 991,
@@ -31,8 +39,8 @@
         }
     },
     "packed": {
-        "raw": 143909,
-        "gzip": 35323
+        "raw": 160466,
+        "gzip": 38661
     },
     "fixtures": {
         "atom": {
@@ -46,6 +54,10 @@
         "all-exports": {
             "raw": 51632,
             "gzip": 13596
+        },
+        "equality": {
+            "raw": 7231,
+            "gzip": 2210
         },
         "adapter-internals": {
             "raw": 50886,

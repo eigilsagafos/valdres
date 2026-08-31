@@ -40,6 +40,8 @@ test/
   exports. The re-export-only `index.ts` barrel is the intentional exception to
   the one-export guard.
 - `lib/` is internal; `utils/` is public. Put helpers in the right one.
+- `packages/valdres/src/equality.ts` is the opt-in `valdres/equality` entry and
+  intentionally stays outside the root barrel and ordinary root bundles.
 
 ## Browser-API package pattern
 
