@@ -1,16 +1,5 @@
 # valdres
 
-## 1.0.0-beta.25
-
-### Patch Changes
-
-- [#351](https://github.com/eigilsagafos/valdres/pull/351)
-  [`f395d6f`](https://github.com/eigilsagafos/valdres/commit/f395d6f98a4b0bfb5a6540a70737c983efebc938)
-  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! - Speed up dynamic
-  selector rewiring by excluding terminal source nodes from cycle-path searches.
-  Large graph-changing transactions now avoid repeatedly walking atom leaves
-  while preserving the same cycle errors, notifications, and committed values.
-
 ## 1.0.0-beta.24
 
 ### Minor Changes
