@@ -132,6 +132,17 @@ const findDependencyPath = <Node, Token extends object>(
             continue
         }
 
+        if (host.getSelectorDependencyNodes !== undefined) {
+            const dependencies = host.getSelectorDependencyNodes(node)
+            if (dependencies === undefined) continue
+            for (const dependency of dependencies) {
+                if (parent.has(dependency)) continue
+                parent.set(dependency, node)
+                pending.push(dependency)
+            }
+            continue
+        }
+
         const record = host.getSelectorRecord(node)
         if (!record) continue
         for (const dependency of record.dependencies) {
