@@ -70,6 +70,13 @@ export interface SelectorEvaluationHost<Node, Token extends object> {
     getSelectorRecord(node: Node): SelectorRecordView<Node, Token> | undefined
 
     /**
+     * Optional selector-only adjacency lookup used exclusively by closure
+     * proofs. When implemented, `undefined` identifies a terminal node rather
+     * than requesting fallback to `getSelectorRecord`.
+     */
+    getSelectorDependencyNodes?(node: Node): readonly Node[] | undefined
+
+    /**
      * Monotonic version advanced for every selector-graph publication or
      * interleavable record removal/clear.
      */

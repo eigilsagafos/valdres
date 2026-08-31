@@ -170,6 +170,9 @@ export class StoreScopeNode
     #atomViews = new WeakMap<AnyAtom, AtomViewRecord>()
     readonly #liveAtomViews: WeakHandleSet<AtomViewRecord>
     #selectorRecords = new WeakMap<AnySelector, SelectorRecord>()
+    #selectorDependencyNodes:
+        | WeakMap<AnySelector, readonly AnySelector[]>
+        | undefined
     #reverseEdges = new WeakMap<AnyState, WeakHandleSet<AnySelector>>()
     #dirtySelectors = new WeakSet<AnySelector>()
     #selectorGraphVersion = 0
@@ -321,6 +324,7 @@ export class StoreScopeNode
         this.atomOverrides = new WeakMap()
         this.#atomViews = new WeakMap()
         this.#selectorRecords = new WeakMap()
+        this.#selectorDependencyNodes = undefined
         this.#reverseEdges = new WeakMap()
         this.#dirtySelectors = new WeakSet()
     }
@@ -386,6 +390,36 @@ export class StoreScopeNode
             : Object.freeze({ dependencies: record.dependencies })
     }
 
+    getSelectorDependencyNodes(
+        node: AnyState,
+    ): readonly AnySelector[] | undefined {
+        const record = this.#selectorRecords.get(node as AnySelector)
+        if (record === undefined) return undefined
+        const selector = node as AnySelector
+        let selectorDependencyNodes =
+            this.#selectorDependencyNodes?.get(selector)
+        if (selectorDependencyNodes === undefined) {
+            const filtered: AnySelector[] = []
+            for (const dependency of record.dependencies) {
+                if (
+                    this.coordinator.runtimeDomain.selectors.has(
+                        dependency.node,
+                    )
+                ) {
+                    filtered.push(dependency.node as AnySelector)
+                }
+            }
+            selectorDependencyNodes = Object.freeze(filtered)
+            let cache = this.#selectorDependencyNodes
+            if (cache === undefined) {
+                cache = new WeakMap()
+                this.#selectorDependencyNodes = cache
+            }
+            cache.set(selector, selectorDependencyNodes)
+        }
+        return selectorDependencyNodes
+    }
+
     getSelectorGraphVersion(): number {
         return this.#selectorGraphVersion
     }
@@ -433,11 +467,12 @@ export class StoreScopeNode
                     : previous?.lastSuccess,
         })
 
-        this.#replaceReverseEdges(
+        const topologyChanged = this.#replaceReverseEdges(
             selector,
             previous?.dependencies ?? EMPTY_DEPENDENCIES,
             proposal.dependencies,
         )
+        if (topologyChanged) this.#selectorDependencyNodes?.delete(selector)
         this.#selectorGraphVersion++
         session.noteSelectorGraphPublication(this)
         this.#selectorRecords.set(selector, record)
@@ -462,7 +497,7 @@ export class StoreScopeNode
         selector: AnySelector,
         previous: readonly SelectorDependencySnapshot<AnyState, OutcomeToken>[],
         next: readonly SelectorDependencySnapshot<AnyState, OutcomeToken>[],
-    ): void {
+    ): boolean {
         if (previous.length === next.length) {
             let index = 0
             while (
@@ -471,7 +506,7 @@ export class StoreScopeNode
             ) {
                 index++
             }
-            if (index === previous.length) return
+            if (index === previous.length) return false
         }
 
         for (const dependency of previous) {
@@ -489,6 +524,7 @@ export class StoreScopeNode
             }
             dependents.add(selector)
         }
+        return true
     }
 
     #weakRoutes<Value extends object>(): WeakHandleSet<Value> {
