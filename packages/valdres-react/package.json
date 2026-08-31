@@ -1,7 +1,7 @@
 {
     "name": "valdres-react",
     "description": "React bindings for Valdres state management",
-    "version": "1.0.0-beta.4",
+    "version": "1.0.0-beta.5",
     "license": "MIT",
     "author": {
         "name": "Eigil Sagafos"

@@ -1,5 +1,23 @@
 # valdres-react
 
+## 1.0.0-beta.5
+
+### Minor Changes
+
+- [#348](https://github.com/eigilsagafos/valdres/pull/348)
+  [`48231ff`](https://github.com/eigilsagafos/valdres/commit/48231ff8e9b456b34e6375350d688b6810128b06)
+  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! - Continue the 1.0
+  prerelease train with the new synchronous core architecture and its React
+  adapter. This is an intentional breaking beta cutover: only `valdres` and
+  `valdres-react` are certified, while the deferred framework, feature, and
+  compatibility packages remain unsupported until they are migrated.
+
+### Patch Changes
+
+- Updated dependencies
+  [[`48231ff`](https://github.com/eigilsagafos/valdres/commit/48231ff8e9b456b34e6375350d688b6810128b06)]:
+    - valdres@1.0.0-beta.24
+
 ## 1.0.0-beta.4
 
 ### Patch Changes
