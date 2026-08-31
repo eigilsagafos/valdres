@@ -1,7 +1,14 @@
 import { afterAll, describe, expect, test } from "bun:test"
-import { mkdir, mkdtemp, readdir, rm } from "node:fs/promises"
+import {
+    mkdir,
+    mkdtemp,
+    readdir,
+    readFile,
+    rm,
+    writeFile,
+} from "node:fs/promises"
 import { tmpdir } from "node:os"
-import { join } from "node:path"
+import { basename, join } from "node:path"
 import { pathToFileURL } from "node:url"
 import {
     buildOptions,
@@ -9,37 +16,34 @@ import {
     removeStaleBuildJavaScript,
 } from "../build"
 
-// `outdir` is dropped so these bundle in memory; everything else — including
-// `minify` — matches what `bun run build` publishes.
-const { outdir: _outdir, ...inMemory } = buildOptions
+const temporaryDirectories: string[] = []
 
-const bundle = async (options: Parameters<typeof Bun.build>[0]) => {
-    const result = await Bun.build(options)
-    expect(result.success).toBe(true)
-    const outputs = await Promise.all(
-        result.outputs.map(output => output.text()),
-    )
-    return { result, outputs, code: outputs.join("\n") }
+const temporaryDirectory = async (prefix: string): Promise<string> => {
+    const directory = await mkdtemp(join(tmpdir(), prefix))
+    temporaryDirectories.push(directory)
+    return directory
 }
 
-/** The published artifact. Contracts a consumer depends on are asserted against
- *  THIS, never against a friendlier build. */
-let shippedCache: ReturnType<typeof bundle> | undefined
-const shipped = () => (shippedCache ??= bundle(inMemory))
+const run = (
+    command: string[],
+    cwd: string,
+): { exitCode: number; stdout: string; stderr: string } => {
+    const result = Bun.spawnSync(command, {
+        cwd,
+        stdout: "pipe",
+        stderr: "pipe",
+    })
+    return {
+        exitCode: result.exitCode,
+        stdout: result.stdout.toString(),
+        stderr: result.stderr.toString(),
+    }
+}
 
-/** The same module graph with identifiers preserved. Minification renames
- *  classes and locals but cannot move code between chunks, so structural
- *  "exactly one copy of X" assertions remain valid — and readable — here. */
-let readableCache: ReturnType<typeof bundle> | undefined
-const readable = () =>
-    (readableCache ??= bundle({ ...inMemory, minify: false }))
-
-/** Build both published graphs into an isolated directory so runtime probes do
- * not mutate the package's checked-out dist/. */
-let publishedDistCache: Promise<string> | undefined
-const publishedDist = () =>
-    (publishedDistCache ??= (async () => {
-        const outdir = await mkdtemp(join(tmpdir(), "valdres-dist-"))
+let builtDistPromise: Promise<string> | undefined
+const builtDist = (): Promise<string> =>
+    (builtDistPromise ??= (async () => {
+        const outdir = await temporaryDirectory("valdres-v1-dist-")
         const results = await Promise.all([
             Bun.build({ ...buildOptions, outdir }),
             Bun.build({
@@ -53,303 +57,213 @@ const publishedDist = () =>
         return outdir
     })())
 
-/** valdres bundled the way a *source* consumer's bundler sees it: from `src`,
- *  with no defines, for the browser. This repo's own docs site bundles the
- *  workspace source exactly like this. */
-let sourceBundleCache: Promise<string> | undefined
-const sourceBundle = () =>
-    (sourceBundleCache ??= (async () => {
-        const outdir = await mkdtemp(join(tmpdir(), "valdres-source-"))
-        const result = await Bun.build({
-            entrypoints: [join(import.meta.dir, "..", "src", "index.ts")],
-            outdir,
-            target: "browser",
-        })
-        expect(result.success, result.logs.join("\n")).toBe(true)
-        return outdir
-    })())
-
 afterAll(async () => {
-    const dirs = await Promise.all(
-        [publishedDistCache, sourceBundleCache].filter(Boolean),
-    )
     await Promise.all(
-        dirs.map(dir => rm(dir!, { recursive: true, force: true })),
+        temporaryDirectories.map(directory =>
+            rm(directory, { recursive: true, force: true }),
+        ),
     )
 })
 
-const probeAcceptedWriteFreeze = async (
-    entry: string,
-    options: {
-        nodeEnv?: string
-        withoutProcess?: boolean
-        withoutProcessEnv?: boolean
-    } = {},
-) => {
-    const dist = await publishedDist()
-    const entryUrl = pathToFileURL(join(dist, entry)).href
-    const script = `
-        const entryUrl = ${JSON.stringify(entryUrl)}
-        ${
-            options.withoutProcess
-                ? "delete globalThis.process"
-                : options.withoutProcessEnv
-                  ? "globalThis.process = {}"
-                  : ""
-        }
-        const { atom, store } = await import(entryUrl)
-        const state = atom(null)
-        const value = { nested: {} }
-        const target = store()
-        target.set(state, value)
-        console.log(JSON.stringify({
-            root: Object.isFrozen(value),
-            nested: Object.isFrozen(value.nested),
-        }))
-    `
-    const result = Bun.spawnSync(
-        ["node", "--input-type=module", "--eval", script],
-        {
-            env: {
-                ...process.env,
-                ...(options.nodeEnv === undefined
-                    ? {}
-                    : { NODE_ENV: options.nodeEnv }),
-            },
-            stdout: "pipe",
-            stderr: "pipe",
-        },
-    )
-    if (result.exitCode !== 0) {
-        throw new Error(result.stderr.toString())
-    }
-    const frozen = JSON.parse(result.stdout.toString())
-    return frozen.root && frozen.nested
-}
+describe("v1 build output", () => {
+    test("keeps root and adapter on one shared domain without the legacy global guard", async () => {
+        const dist = await builtDist()
+        const files = await readdir(dist, { recursive: true })
+        const JavaScript = await Promise.all(
+            files
+                .filter(file => file.endsWith(".js"))
+                .map(async file => readFile(join(dist, file), "utf8")),
+        )
+        const defaultJavaScript = await Promise.all(
+            files
+                .filter(
+                    file =>
+                        file.endsWith(".js") &&
+                        !file.startsWith("development/"),
+                )
+                .map(async file => readFile(join(dist, file), "utf8")),
+        )
 
-describe("build output", () => {
-    test("defaults process-less consumers to production without freezing accepted writes", async () => {
+        expect(files).toContain("index.js")
+        expect(files).toContain("adapter-internals/v1.js")
         expect(
-            await probeAcceptedWriteFreeze("index.js", {
-                withoutProcess: true,
-            }),
-        ).toBe(false)
+            defaultJavaScript.filter(code =>
+                code.includes("valdres.runtime-owner/v1"),
+            ),
+        ).toHaveLength(1)
+        expect(JavaScript.join("\n")).not.toContain("__valdres__")
+        expect(JavaScript.join("\n")).not.toContain("valdresGlobal")
+        expect(JavaScript.join("\n")).not.toContain("VALDRES_VERSION")
+        expect(JavaScript.join("\n")).not.toContain("process.env")
     })
 
-    test("honors NODE_ENV=development by freezing accepted writes", async () => {
-        expect(
-            await probeAcceptedWriteFreeze("index.js", {
-                nodeEnv: "development",
-            }),
-        ).toBe(true)
-    })
-
-    test("defaults a process shim without env to production", async () => {
-        expect(
-            await probeAcceptedWriteFreeze("index.js", {
-                withoutProcessEnv: true,
-            }),
-        ).toBe(false)
-    })
-
-    test("the development entry freezes accepted writes without process", async () => {
-        expect(
-            await probeAcceptedWriteFreeze("development/index.js", {
-                withoutProcess: true,
-            }),
-        ).toBe(true)
-    })
-
-    test("the development entry honors NODE_ENV=production", async () => {
-        expect(
-            await probeAcceptedWriteFreeze("development/index.js", {
-                nodeEnv: "production",
-            }),
-        ).toBe(false)
-    })
-
-    test("same-version build variants adopt the shared globalStore", async () => {
-        const dist = await publishedDist()
-        const defaultUrl = pathToFileURL(join(dist, "index.js")).href
-        const developmentUrl = pathToFileURL(
-            join(dist, "development/index.js"),
+    test("loads root and adapter from the built split graph with no ambient writes", async () => {
+        const dist = await builtDist()
+        const rootUrl = pathToFileURL(join(dist, "index.js")).href
+        const adapterUrl = pathToFileURL(
+            join(dist, "adapter-internals", "v1.js"),
         ).href
         const script = `
-            const first = await import(${JSON.stringify(defaultUrl)})
-            const state = first.atom(0)
-            first.globalStore.set(state, 42)
-            const second = await import(${JSON.stringify(developmentUrl)})
+            const before = new Set(Reflect.ownKeys(globalThis))
+            const root = await import(${JSON.stringify(rootUrl)})
+            const adapter = await import(${JSON.stringify(adapterUrl)})
+            const count = root.atom(1)
+            const target = root.store()
+            adapter.assertStore(target)
+            target.set(count, 4)
+            const addedGlobals = Reflect.ownKeys(globalThis)
+                .filter(key => !before.has(key))
+                .map(String)
             console.log(JSON.stringify({
-                sameStore: first.globalStore === second.globalStore,
-                value: second.globalStore.get(state),
+                addedGlobals,
+                value: adapter.read(target, count),
+                root: Object.keys(root).sort(),
+                adapter: Object.keys(adapter).sort(),
             }))
         `
-        const result = Bun.spawnSync(
+        const result = run(
             ["node", "--input-type=module", "--eval", script],
-            { stdout: "pipe", stderr: "pipe" },
+            import.meta.dir,
         )
-        expect(result.exitCode, result.stderr.toString()).toBe(0)
-        expect(JSON.parse(result.stdout.toString())).toEqual({
-            sameStore: true,
-            value: 42,
+        expect(result.exitCode, result.stderr).toBe(0)
+        expect(JSON.parse(result.stdout)).toMatchObject({
+            addedGlobals: [],
+            value: 4,
+            root: [
+                "CallbackCapabilityError",
+                "InvalidAtomComparatorResultError",
+                "InvalidSynchronousAtomValueError",
+                "InvalidTransactionCallbackResultError",
+                "InvalidTransactionTargetError",
+                "RuntimeMismatchError",
+                "ScopeNotFoundError",
+                "SelectorCapabilityError",
+                "SelectorCircularDependencyError",
+                "StoreDisposedError",
+                "StoreTreeMismatchError",
+                "SubscriberNotificationError",
+                "TransactionClosedError",
+                "TransactionPhaseError",
+                "atom",
+                "selector",
+                "store",
+            ],
+            adapter: [
+                "assertStore",
+                "read",
+                "readHydrationSnapshot",
+                "subscribe",
+            ],
         })
     })
 
-    // Regression guard for the dev-only freeze. valdres is built once under
-    // NODE_ENV=production; Bun special-cases `process.env.NODE_ENV` and would
-    // inline it, folding `process.env.NODE_ENV === "production"` to `true` in the
-    // dist. That bakes "always prod" into the published package and disables the
-    // freeze for EVERY consumer — even in their dev — silently removing the
-    // mutation safety net. The identity `define` in build.ts prevents the inlining
-    // so the consumer resolves NODE_ENV themselves. Source tests can't catch this
-    // (they run from src, not the bundle), hence a build-output assertion.
-    test("does not inline process.env.NODE_ENV — consumer resolves it", async () => {
-        const { code } = await shipped()
-        // The whole comparison must survive, not just the member expression:
-        // folding would leave a bare `true`/`false` with no "production" test,
-        // and a consumer's bundler would have nothing left to match on.
-        // Asserted on the minified output because that is what we publish —
-        // minification rewrites `typeof process !== "undefined"` to
-        // `typeof process < "u"`, so match only the part we actually rely on.
-        expect(code).toContain("process.env.NODE_ENV")
-        expect(code).toMatch(/process\.env\.NODE_ENV\s*===\s*"production"/)
-    })
+    test("works through an installed npm tarball with root and adapter sharing identity", async () => {
+        const workspace = await temporaryDirectory("valdres-v1-pack-")
+        const packageDirectory = join(workspace, "package")
+        const consumerDirectory = join(workspace, "consumer")
+        await mkdir(packageDirectory)
+        await mkdir(consumerDirectory)
 
-    // Companion guard for the engine self-checks — `assertPlanLegal` and the
-    // `commitPlanAllocations` counter. Both observe invariants and costs only
-    // valdres's own code can affect, so they are compiled OUT of the published
-    // bundle rather than shipped behind a runtime flag: build.ts defines
-    // `process.env.VALDRES_ENGINE_SELF_CHECKS` as "off" and the branches fold
-    // to constants a consumer's bundler drops. If that define were ever lost,
-    // the dist would ship both graphs AND unguarded `process.env` reads that
-    // throw on module load in raw browser ESM — so assert every half here,
-    // where a source test cannot see them.
-    test("compiles out the engine self-checks", async () => {
-        const { code } = await shipped()
-        expect(code).not.toContain("VALDRES_ENGINE_SELF_CHECKS")
-        expect(code).not.toContain("illegal CommitPlan")
-        expect(code).not.toContain("commitPlanAllocations")
-        expect(code).not.toContain("assertPlanLegal")
-        expect(code).not.toContain("assertTreeTriggersSealed")
-    })
-
-    // The assertions above prove the self-check *graph* is absent, but not WHY.
-    // If the define were lost, `process.env.VALDRES_ENGINE_SELF_CHECKS` would
-    // survive as an unguarded `process.env` read that throws on module load in
-    // raw browser ESM. Checking the folded branch on the unminified graph pins
-    // the mechanism — minification erases the branch entirely, which would let
-    // a regression here pass unnoticed above.
-    test("folds the self-check guard rather than merely shaking it out", async () => {
-        const { code } = await readable()
-        expect(code).toContain("if (!IS_PROD && false)")
-        expect(code).not.toContain("VALDRES_ENGINE_SELF_CHECKS")
-    })
-
-    // Symbol descriptions are string literals, so minification preserves them
-    // verbatim — which makes them the one single-instance check we can run
-    // directly against the published artifact.
-    test("public and adapter entrypoints share one transaction runtime", async () => {
-        const { outputs } = await shipped()
-        expect(
-            outputs.filter(code =>
-                code.includes('Symbol("valdres.storeDataAccess")'),
-            ),
-        ).toHaveLength(1)
-        // Cross-module protocol symbol: store lifecycle cancels open resources
-        // through it while TransactionContext implements it. Symbol.for also
-        // keeps the protocol coherent across adopted same-version copies.
-        expect(
-            outputs.filter(code =>
-                code.includes('Symbol.for("valdres.cancelOnStoreDispose")'),
-            ),
-        ).toHaveLength(1)
-    })
-
-    // Chunk placement of the runtime class itself. Minification renames
-    // `TransactionContext`, so this half runs on the unminified graph —
-    // splitting decides which chunk a declaration lands in before any renaming
-    // happens, so the placement being asserted is identical in both builds.
-    test("bundles the transaction runtime into the shared chunk, not an entry", async () => {
-        const { result, outputs } = await readable()
-        const index = result.outputs.findIndex(output =>
-            output.path.endsWith("/index.js"),
+        const output = await Bun.build({
+            ...buildOptions,
+            outdir: join(packageDirectory, "dist"),
+        })
+        expect(output.success, output.logs.join("\n")).toBe(true)
+        await writeFile(
+            join(packageDirectory, "package.json"),
+            JSON.stringify({
+                name: "valdres-packed-probe",
+                version: "1.0.0-beta.0",
+                type: "module",
+                sideEffects: false,
+                files: ["dist"],
+                exports: {
+                    ".": "./dist/index.js",
+                    "./adapter-internals/v1": "./dist/adapter-internals/v1.js",
+                },
+            }),
         )
-        const adapterInternals = result.outputs.findIndex(output =>
-            output.path.endsWith("adapter-internals/v1.js"),
+        const packed = run(
+            [
+                "npm",
+                "pack",
+                "--ignore-scripts",
+                "--json",
+                "--pack-destination",
+                workspace,
+            ],
+            packageDirectory,
         )
-
-        expect(index).toBeGreaterThanOrEqual(0)
-        expect(adapterInternals).toBeGreaterThanOrEqual(0)
-        expect(
-            outputs.filter(code => code.includes("class TransactionContext")),
-        ).toHaveLength(1)
-        // The single runtime must live in a shared chunk, not be duplicated
-        // into (or defined by) either entry. The public entry may still
-        // reference it by name: since the graph runtime stopped importing the
-        // store constructor, the adapter graph no longer reaches
-        // storeFromStoreData, which is therefore bundled index-only and imports
-        // TransactionContext from the chunk under its real name.
-        expect(outputs[index]).not.toContain("class TransactionContext")
-        expect(outputs[adapterInternals]).toContain("Transaction")
-    })
-
-    // Both guards above run against the dist, where the define has already
-    // folded every self-check away — so neither can see an unguarded
-    // `process.env` read in the source form. A source consumer gets no folding
-    // at all, and this repo's docs site is one: it bundles workspace `src`. One
-    // self-check that read the env BEFORE short-circuiting on `!IS_PROD` threw
-    // `process is not defined` on module load there (the module-static plan
-    // graph in commitPlans counts its own allocations), which took down every
-    // interactive demo on valdres.dev. Bundling from source and running with no
-    // `process` at all is the only place that shows up, so assert it here: every
-    // self-check must short-circuit on `!IS_PROD` before reading the env,
-    // because process-less runtimes default to production.
-    test("commits with no `process` at all when bundled from source", async () => {
-        const entryUrl = pathToFileURL(
-            join(await sourceBundle(), "index.js"),
-        ).href
-        const script = `
-            delete globalThis.process
-            const { atom, atomFamily, selector, store } =
-                await import(${JSON.stringify(entryUrl)})
-            const count = atom(1)
-            const member = atomFamily(0)
-            const total = selector(get => get(count) + get(member("a")))
-            const target = store()
-            target.sub(total, () => {})
-            target.set(count, 2)
-            target.set(member("a"), 4)
-            target.txn(({ set }) => set(count, 3))
-            console.log(String(target.get(total)))
-        `
-        const result = Bun.spawnSync(
-            ["node", "--input-type=module", "--eval", script],
-            { stdout: "pipe", stderr: "pipe" },
+        expect(packed.exitCode, packed.stderr).toBe(0)
+        const [{ filename }] = JSON.parse(packed.stdout) as [
+            { filename: string },
+        ]
+        await writeFile(
+            join(consumerDirectory, "package.json"),
+            JSON.stringify({ private: true, type: "module" }),
         )
-        expect(result.exitCode, result.stderr.toString()).toBe(0)
-        expect(result.stdout.toString().trim()).toBe("7")
+        const installed = run(
+            [
+                "npm",
+                "install",
+                "--ignore-scripts",
+                "--no-package-lock",
+                join(workspace, basename(filename)),
+            ],
+            consumerDirectory,
+        )
+        expect(installed.exitCode, installed.stderr).toBe(0)
+
+        const probe = run(
+            [
+                "node",
+                "--input-type=module",
+                "--eval",
+                `
+                    import { atom, selector, store } from "valdres-packed-probe"
+                    import {
+                        assertStore,
+                        read,
+                        readHydrationSnapshot,
+                        subscribe,
+                    } from "valdres-packed-probe/adapter-internals/v1"
+                    const count = atom(2)
+                    const doubled = selector(get => get(count) * 2)
+                    const target = store()
+                    assertStore(target)
+                    const unsubscribe = subscribe(target, count, () => {})
+                    unsubscribe()
+                    console.log(JSON.stringify({
+                        live: read(target, doubled),
+                        hydration: readHydrationSnapshot(target, doubled),
+                    }))
+                `,
+            ],
+            consumerDirectory,
+        )
+        expect(probe.exitCode, probe.stderr).toBe(0)
+        expect(JSON.parse(probe.stdout)).toEqual({
+            live: 4,
+            hydration: 4,
+        })
     })
 
     test("removes stale split chunks without deleting type output", async () => {
-        const outdir = await mkdtemp(join(tmpdir(), "valdres-build-"))
-        try {
-            await mkdir(join(outdir, "adapter-internals"))
-            await Promise.all([
-                Bun.write(join(outdir, "index.js"), "old index"),
-                Bun.write(join(outdir, "chunk-old.js"), "old chunk"),
-                Bun.write(join(outdir, "chunk-old.js.map"), "old map"),
-                Bun.write(
-                    join(outdir, "adapter-internals", "v1.js"),
-                    "old adapter",
-                ),
-                Bun.write(join(outdir, "index.d.ts"), "export {}"),
-            ])
+        const outdir = await temporaryDirectory("valdres-v1-build-")
+        await mkdir(join(outdir, "adapter-internals"))
+        await Promise.all([
+            writeFile(join(outdir, "index.js"), "old index"),
+            writeFile(join(outdir, "chunk-old.js"), "old chunk"),
+            writeFile(join(outdir, "chunk-old.js.map"), "old map"),
+            writeFile(
+                join(outdir, "adapter-internals", "v1.js"),
+                "old adapter",
+            ),
+            writeFile(join(outdir, "index.d.ts"), "export {}"),
+        ])
 
-            await removeStaleBuildJavaScript(outdir)
+        await removeStaleBuildJavaScript(outdir)
 
-            expect(await readdir(outdir)).toEqual(["index.d.ts"])
-        } finally {
-            await rm(outdir, { recursive: true, force: true })
-        }
+        expect(await readdir(outdir)).toEqual(["index.d.ts"])
     })
 })

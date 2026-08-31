@@ -13,12 +13,8 @@ import {
 
 // `bun run verify` reproduces ci.yaml's pull-request jobs by reading them out
 // of the workflow. These tests are the other half of that contract: they run
-// inside the job (`bun test scripts/`), so a workflow change verify cannot
-// faithfully reproduce fails in CI, not silently at someone's desk.
-//
-// The failure this whole mechanism exists for is PR #329: a new test file was
-// auto-collected by the Node/V8 rewrite-guard lane, which never ran locally
-// because `bun run test` is only one of the job's steps.
+// from the workflow itself, so a workflow change verify cannot faithfully
+// reproduce fails here rather than silently disappearing from local coverage.
 
 const rootDir = join(import.meta.dir, "..")
 const read = (path: string) => readFileSync(join(rootDir, path), "utf8")
@@ -126,34 +122,63 @@ describe("bun run verify", () => {
         )
     })
 
-    test("the plan covers the gates `bun run test` does not", () => {
-        // Naming them explicitly: deleting one from CI should be a deliberate
-        // edit here too, and this is the list the CLAUDE.md note promises.
+    test("the plan covers the certified v1-beta gates", () => {
+        // Naming them explicitly makes a release-lane deletion deliberate.
         const planned = buildPlan(workflowSource)
             .steps.map(step => step.run)
             .join("\n")
         for (const command of [
+            "bun run check:contracts-v1",
             "bun run build",
             "bun run build:types",
             "bun run typecheck",
-            "typecheck:types",
+            "test/v1-public-candidate/tsconfig.json",
+            "test:core-load-harness",
+            "test:v1-model",
+            "test:v1-selector-evaluator",
+            "test:v1-committed-store-tree",
             "@ts-ignore",
+            "VALDRES_ALLOW_ROOT_BUN_TEST=1 bun test scripts/",
+            "bun run scripts/gen-readmes.ts --check",
+            "bun run test:ci",
+            "check-junit-coverage",
+            "check-valdres-package",
+            "test:v1-beta:packed",
+        ])
+            expect(planned).toContain(command)
+
+        for (const deferred of [
+            "typecheck:types",
             "test:architecture",
             "test:rewrite-guards:node",
             "test:memory:bun",
             "test:memory:node",
             "lint:publish",
-            "bun test scripts/",
-            "bun run test:ci",
-            "check-junit-coverage",
-            "check-valdres-package",
+            "check-docs-islands",
         ])
-            expect(planned).toContain(command)
+            expect(planned).not.toContain(deferred)
     })
 
-    test("the root verify script points at this module", () => {
+    test("only the generated Changesets release PR bypasses the consumed changeset gate", () => {
+        expect(workflowSource.replace(/\s+/g, " ")).toContain(
+            "if: github.event_name == 'pull_request' && (github.event.pull_request.head.repo.full_name != github.repository || github.head_ref != 'changeset-release/main')",
+        )
+        expect(buildPlan(workflowSource).steps.map(step => step.run)).toContain(
+            "bunx changeset status --since=origin/main",
+        )
+    })
+
+    test("root scripts expose verify and explicit all-package maintenance lanes", () => {
         const { scripts } = JSON.parse(read("package.json"))
         expect(scripts.verify).toBe("bun run scripts/verify.ts")
+        for (const name of [
+            "build:all",
+            "build:types:all",
+            "typecheck:all",
+            "test:all",
+            "test:ci:all",
+        ])
+            expect(typeof scripts[name]).toBe("string")
     })
 })
 

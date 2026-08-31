@@ -1,6 +1,5 @@
 ---
 "valdres": patch
-"@valdres-react/jotai": patch
 ---
 
 Update Jotai compatibility coverage to Jotai 2.20.2. Preserve dependency read

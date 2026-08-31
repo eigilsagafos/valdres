@@ -1,107 +1,85 @@
-import { describe, test, expect, mock } from "bun:test"
-import { generateStoreAndRenderHook } from "../test/generateStoreAndRenderHook"
+import { afterEach, describe, expect, test } from "bun:test"
+import { act, cleanup, renderHook } from "@testing-library/react"
+import { renderToString } from "react-dom/server"
+import type { ReactNode } from "react"
+import { atom, selector, store, type Store } from "valdres"
+import { Provider } from "./Provider"
 import { useValue } from "./useValue"
-import { atom, atomFamily, selector, selectorFamily } from "valdres"
+
+afterEach(cleanup)
 
 describe("useValue", () => {
-    test("atom", () => {
-        const [store, renderHook] = generateStoreAndRenderHook()
-        const numberAtom = atom(10)
-        const { result, rerender } = renderHook(() => useValue(numberAtom))
-        expect(result.current).toBe(10)
-        store.set(numberAtom, 20)
-        rerender()
-        expect(result.current).toBe(20)
+    test("subscribes to atoms and synchronous selectors", () => {
+        const count = atom(2)
+        const doubled = selector(get => get(count) * 2)
+        const selectedStore = store()
+        const { result } = renderHook(
+            () => [useValue(count), useValue(doubled)] as const,
+            {
+                wrapper: ({ children }: { readonly children: ReactNode }) => (
+                    <Provider store={selectedStore}>{children}</Provider>
+                ),
+            },
+        )
+
+        expect(result.current).toEqual([2, 4])
+
+        act(() => selectedStore.set(count, 3))
+
+        expect(result.current).toEqual([3, 6])
     })
 
-    test("selector", () => {
-        const [store, renderHook] = generateStoreAndRenderHook()
-        const numberAtom = atom(10)
-        const doubleSelector = selector(get => get(numberAtom) * 2)
-        const { result, rerender } = renderHook(() => useValue(doubleSelector))
+    test("accepts an explicit Store without a Provider", () => {
+        const count = atom(1)
+        const explicitStore = store()
+        const { result } = renderHook(() => useValue(count, explicitStore))
+
+        act(() => explicitStore.set(count, 2))
+
+        expect(result.current).toBe(2)
+    })
+
+    test("always calls context before selecting an explicit Store", () => {
+        const count = atom(0)
+        const contextStore = store()
+        const explicitStore = store()
+        contextStore.set(count, 10)
+        explicitStore.set(count, 20)
+
+        const { result, rerender } = renderHook(
+            ({ target }: { readonly target: Store | undefined }) =>
+                useValue(count, target),
+            {
+                initialProps: { target: explicitStore as Store | undefined },
+                wrapper: ({ children }: { readonly children: ReactNode }) => (
+                    <Provider store={contextStore}>{children}</Provider>
+                ),
+            },
+        )
+
         expect(result.current).toBe(20)
-        store.set(numberAtom, 20)
-        rerender()
+
+        rerender({ target: undefined })
+        expect(result.current).toBe(10)
+
+        act(() => explicitStore.set(count, 30))
+        expect(result.current).toBe(10)
+
+        act(() => contextStore.set(count, 40))
         expect(result.current).toBe(40)
     })
 
-    test("selectorFamily", () => {
-        const [store, renderHook] = generateStoreAndRenderHook()
-        const numberAtom = atom(10)
-        const multiply = selectorFamily(
-            number => get => get(numberAtom) * number,
+    test("uses the isolated hydration reader during server rendering", () => {
+        const count = atom(7)
+        const selectedStore = store()
+        const Counter = () => <span>{useValue(count)}</span>
+
+        const html = renderToString(
+            <Provider store={selectedStore}>
+                <Counter />
+            </Provider>,
         )
-        const { result, rerender } = renderHook(() => useValue(multiply(10)))
-        expect(result.current).toBe(100)
-        store.set(numberAtom, 20)
-        rerender()
-        expect(result.current).toBe(200)
-    })
 
-    test("atomFamily", async () => {
-        const [store, renderHook] = generateStoreAndRenderHook()
-        const family = atomFamily(1)
-        const atom = family("1")
-        const { result, rerender } = renderHook(() => useValue(atom))
-        expect(result.current).toBe(1)
-        store.set(atom, 2)
-        rerender()
-        expect(result.current).toBe(2)
-        store.txn(({ set }) => {
-            set(atom, 3)
-            set(atom, 4)
-        })
-        rerender()
-        expect(result.current).toBe(4)
-    })
-
-    test("atomFamily id list", async () => {
-        const [store, renderHook] = generateStoreAndRenderHook()
-        const family = atomFamily<number, [string]>(0)
-        const atom1 = family("1")
-        const atom2 = family("2")
-        const { result, rerender } = renderHook(() => useValue(family))
-        expect(result.current).toStrictEqual([])
-        store.get(atom1)
-        // console.log(result.current)
-        // // expect(result.current).toStrictEqual(["1"]) // TODO: This should work when correctly handled in valdres package...
-        store.set(atom2, 2)
-        rerender()
-        expect(result.current).toStrictEqual([atom1, atom2])
-    })
-
-    test("nested selectors should only re-calculate when needed", () => {
-        const atom1 = atom(1)
-        const selector1cb = mock(get => {
-            get(atom1)
-            //We get the atom but we dont use the value
-            return 1
-        })
-        const selector1 = selector(selector1cb)
-        const selector2cb = mock(get => get(selector1) + 1)
-        const selector2 = selector(selector2cb)
-        const selector3cb = mock(get => get(selector2) + 1)
-        const selector3 = selector(selector3cb)
-        const [store, renderHook] = generateStoreAndRenderHook()
-        const { result } = renderHook(() => [
-            useValue(selector1),
-            useValue(selector2),
-            useValue(selector3),
-        ])
-        expect(result.current).toStrictEqual([1, 2, 3])
-        // Computed exactly once now: the read selector's freshly-computed value
-        // is kept cached after init-time propagation (getDefault restores it)
-        // instead of being dropped and recomputed on the next read.
-        expect(selector1cb).toHaveBeenCalledTimes(1)
-        expect(selector2cb).toHaveBeenCalledTimes(1)
-        expect(selector3cb).toHaveBeenCalledTimes(1)
-        store.set(atom1, 2)
-        // With batchUpdates, selector re-evaluation is deferred to commit, so the
-        // synchronous count here is unchanged from above (1 after the fix — the
-        // init-time double-eval is gone).
-        expect(result.current).toStrictEqual([1, 2, 3])
-        expect(selector1cb).toHaveBeenCalledTimes(1)
-        expect(selector2cb).toHaveBeenCalledTimes(1)
-        expect(selector3cb).toHaveBeenCalledTimes(1)
+        expect(html).toContain(">7</span>")
     })
 })

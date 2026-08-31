@@ -37,7 +37,83 @@ const CORE_EXAMPLE = [
     "```",
 ].join("\n")
 
+const V1_CORE_BODY = [
+    "# valdres",
+    "",
+    "The first public beta of Valdres's new synchronous state engine.",
+    "",
+    "## Installation",
+    "",
+    "```bash",
+    "npm install valdres@beta",
+    "```",
+    "",
+    CORE_EXAMPLE,
+    "",
+    "`set` always stores the exact value you pass, including functions. Use `update` when the next value depends on the current value:",
+    "",
+    "```ts",
+    "s.set(countAtom, 1)",
+    "s.update(countAtom, current => current + 1)",
+    "```",
+    "",
+    "A store also exposes `sub`, `reset`, `txn`, `scope`, and `dispose`. Store operations are stable bound functions, so they can be passed as callbacks without rebinding.",
+    "",
+    "`atom(initial, options)` and `atom.lazy(initialize, options)` create writable state. `selector(read, options)` creates synchronous derived state. Atom and selector options accept an inert diagnostic `name` and an `equal(previous, next)` comparator.",
+    "",
+    "The versioned `valdres/adapter-internals/v1` entry is for framework bindings. It exports only `assertStore`, `read`, `subscribe`, and `readHydrationSnapshot`; application code should use Store methods directly.",
+    "",
+    "## Beta compatibility",
+    "",
+    "`valdres@1.0.0-beta.24` intentionally replaces the legacy beta API. Only the core package and `valdres-react@1.0.0-beta.5` are certified together. Deferred framework adapters and plugins remain unsupported even when their published semver ranges allow npm to resolve this core; do not mix them with the new beta until they are migrated.",
+].join("\n")
+
+const V1_REACT_BODY = [
+    "# valdres-react",
+    "",
+    "React 18 and 19 bindings for the Valdres v1 beta.",
+    "",
+    "## Installation",
+    "",
+    "```bash",
+    "npm install valdres@beta valdres-react@beta react",
+    "```",
+    "",
+    "```tsx",
+    'import { atom, store } from "valdres"',
+    'import { Provider, useUpdateAtom, useValue } from "valdres-react"',
+    "",
+    "const appStore = store()",
+    "const count = atom(0)",
+    "",
+    "function Counter() {",
+    "    const value = useValue(count)",
+    "    const increment = useUpdateAtom(count)",
+    "    return <button onClick={() => increment(current => current + 1)}>{value}</button>",
+    "}",
+    "",
+    "export function App() {",
+    "    return (",
+    "        <Provider store={appStore}>",
+    "            <Counter />",
+    "        </Provider>",
+    "    )",
+    "}",
+    "```",
+    "",
+    "The public hooks are `useStore`, `useValue`, `useAtom`, `useSetAtom`, `useUpdateAtom`, and `useResetAtom`. State hooks may also receive an explicit Store as their second argument. Provider borrows the Store you pass; it never creates, initializes, or disposes it.",
+    "",
+    "## Beta compatibility",
+    "",
+    "Use `useSetAtom` for exact values and `useUpdateAtom` for updater functions. The legacy `Scope`, `useStoreId`, `useTransaction`, `useValdresCallback`, and optional-store Provider APIs are not part of this beta.",
+    "",
+    "Only `valdres@1.0.0-beta.24` and `valdres-react@1.0.0-beta.5` are certified together. Deferred adapters and plugins remain unsupported even when their published semver ranges allow npm to resolve this core or React package; do not mix them with the new beta until they are migrated.",
+].join("\n")
+
 function indexBody(pkg: PackageInfo): string {
+    if (pkg.name === "valdres") return V1_CORE_BODY
+    if (pkg.name === "valdres-react") return V1_REACT_BODY
+
     const lines = [`# ${pkg.name}`, ""]
     if (pkg.description) lines.push(pkg.description, "")
     lines.push("## Installation", "", installSnippet(pkg), "")
@@ -53,7 +129,10 @@ function indexBody(pkg: PackageInfo): string {
 async function docBody(pkg: PackageInfo): Promise<string> {
     const mdx = await Bun.file(pkg.mdxPath!).text()
     const warnings: string[] = []
-    const md = mdxToMarkdown(mdx, { liveUrl: pkg.liveUrl, onWarn: m => warnings.push(m) })
+    const md = mdxToMarkdown(mdx, {
+        liveUrl: pkg.liveUrl,
+        onWarn: m => warnings.push(m),
+    })
     for (const w of warnings) console.warn(`  ${pkg.name}: ${w}`)
     return `${md.trim()}\n\n---\n\nFull documentation: ${pkg.docUrl}`
 }
@@ -64,7 +143,11 @@ function splice(existing: string | null, generated: string): string | null {
         const i = existing.indexOf(START)
         const j = existing.indexOf(END)
         if (i !== -1 && j !== -1) {
-            return existing.slice(0, i) + block.trimEnd() + existing.slice(j + END.length)
+            return (
+                existing.slice(0, i) +
+                block.trimEnd() +
+                existing.slice(j + END.length)
+            )
         }
         // No markers but real hand-written content → don't clobber.
         if (existing.trim().length > 240) return null
@@ -81,12 +164,18 @@ function packagesTable(packages: PackageInfo[]): string {
     const row = (p: PackageInfo) =>
         `| [\`${p.name}\`](${p.docUrl}) | ${p.description} |`
     const table = (items: PackageInfo[]) =>
-        ["| Package | Description |", "|:--------|:------------|", ...items.map(row)].join("\n")
+        [
+            "| Package | Description |",
+            "|:--------|:------------|",
+            ...items.map(row),
+        ].join("\n")
 
     const core = packages.filter(p => p.name === "valdres")
     const adapters = packages.filter(p => /^valdres-/.test(p.name))
     const plugins = packages.filter(p => p.name.startsWith("@valdres/"))
-    const reactExtras = packages.filter(p => p.name.startsWith("@valdres-react/"))
+    const reactExtras = packages.filter(p =>
+        p.name.startsWith("@valdres-react/"),
+    )
 
     return [
         PKG_START,
@@ -119,7 +208,9 @@ async function updateRootReadme(
     const j = existing.indexOf(PKG_END)
     if (i === -1 || j === -1) return "skipped"
     const next =
-        existing.slice(0, i) + packagesTable(packages) + existing.slice(j + PKG_END.length)
+        existing.slice(0, i) +
+        packagesTable(packages) +
+        existing.slice(j + PKG_END.length)
     if (next === existing) return "ok"
     if (check) return "stale"
     await Bun.write(path, next)

@@ -1,11 +1,11 @@
 /**
  * Verifies the publish pipeline produces valid, publishable packages.
  *
- * Runs: build → build:types → prepack for each public package, then checks:
+ * Runs: build → build:types → prepack for the certified v1-beta packages, then checks:
  *   1. Exports are types-first and point to real files in dist/
  *   2. Types files exist for each export
  *   3. Legacy main/types and engines metadata is present
- *   4. The core side effect and Svelte's authored sideEffects are preserved
+ *   4. The isolated core is explicitly side-effect free
  *   5. No workspace: references remain in dependencies (after prepack)
  *   6. No scripts or devDependencies in prepacked package.json
  *   7. version field is present
@@ -22,46 +22,9 @@
  * like @valdres/test.)
  */
 
-import {
-    INSTANCE_GUARD_SIDE_EFFECTS,
-    NODE_ENGINE_RANGE,
-} from "./publish-metadata.ts"
+import { CORE_SIDE_EFFECTS, NODE_ENGINE_RANGE } from "./publish-metadata.ts"
 
-const PUBLIC_PACKAGES = [
-    "packages/valdres",
-    "packages/valdres-react",
-    "packages/valdres-angular",
-    "packages/valdres-solid",
-    "packages/valdres-svelte",
-    "packages/valdres-vue",
-    "packages/@valdres/bandwidth",
-    "packages/@valdres/browser-color-scheme",
-    "packages/@valdres/browser-contrast",
-    "packages/@valdres/browser-device-motion",
-    "packages/@valdres/browser-device-orientation",
-    "packages/@valdres/browser-focus",
-    "packages/@valdres/browser-geolocation",
-    "packages/@valdres/browser-keyboard",
-    "packages/@valdres/browser-online",
-    "packages/@valdres/browser-presence",
-    "packages/@valdres/browser-reduced-data",
-    "packages/@valdres/browser-reduced-motion",
-    "packages/@valdres/browser-reduced-transparency",
-    "packages/@valdres/browser-screen",
-    "packages/@valdres/browser-screen-details",
-    "packages/@valdres/browser-visibility",
-    "packages/@valdres/browser-window",
-    "packages/@valdres/color-mode",
-    "packages/@valdres/hotkeys",
-    "packages/@valdres/public-ip",
-    "packages/@valdres/redux-devtools",
-    "packages/@valdres-react/color-mode",
-    "packages/@valdres-react/draggable",
-    "packages/@valdres-react/hotkeys",
-    "packages/@valdres-react/jotai",
-    "packages/@valdres-react/panable",
-    "packages/@valdres-react/recoil",
-]
+const PUBLIC_PACKAGES = ["packages/valdres", "packages/valdres-react"]
 
 const errors: string[] = []
 const warnings: string[] = []
@@ -77,9 +40,9 @@ function warn(pkg: string, msg: string) {
 const rootDir = import.meta.dir + "/.."
 const prepackScript = `${import.meta.dir}/prepack.ts`
 
-// Step 1: Build all packages
-console.log("Building all packages...")
-const buildResult = Bun.spawnSync(["bun", "run", "build"], {
+// Step 1: Build only the certified release cohort.
+console.log("Building the v1-beta release cohort...")
+const buildResult = Bun.spawnSync(["bun", "run", "build:v1-beta"], {
     cwd: rootDir,
     stdio: ["inherit", "inherit", "inherit"],
 })
@@ -89,7 +52,7 @@ if (buildResult.exitCode !== 0) {
 }
 
 console.log("Building types...")
-const typesResult = Bun.spawnSync(["bun", "run", "build:types"], {
+const typesResult = Bun.spawnSync(["bun", "run", "build:types:v1-beta"], {
     cwd: rootDir,
     stdio: ["inherit", "inherit", "inherit"],
 })
@@ -145,23 +108,34 @@ for (const pkg of PUBLIC_PACKAGES) {
         }
 
         // Check: no workspace: references in any dependency field
-        for (const depField of ["dependencies", "peerDependencies", "optionalDependencies"]) {
+        for (const depField of [
+            "dependencies",
+            "peerDependencies",
+            "optionalDependencies",
+        ]) {
             const deps = packageJson[depField]
             if (!deps) continue
             for (const [dep, version] of Object.entries(deps)) {
-                if (typeof version === "string" && version.includes("workspace:")) {
-                    error(pkgName, `${depField}.${dep} still has workspace reference: ${version}`)
+                if (
+                    typeof version === "string" &&
+                    version.includes("workspace:")
+                ) {
+                    error(
+                        pkgName,
+                        `${depField}.${dep} still has workspace reference: ${version}`,
+                    )
                 }
             }
         }
 
         // Check: exports point to real files
         if (packageJson.exports) {
-            for (const [exportPath, exportValue] of Object.entries(packageJson.exports)) {
+            for (const [exportPath, exportValue] of Object.entries(
+                packageJson.exports,
+            )) {
                 const exp = exportValue as {
                     development?: string
                     import?: string
-                    svelte?: string
                     default?: string
                     types?: string
                 }
@@ -184,7 +158,7 @@ for (const pkg of PUBLIC_PACKAGES) {
                         if (
                             keys.includes("default") &&
                             keys.indexOf("development") >
-                            keys.indexOf("default")
+                                keys.indexOf("default")
                         ) {
                             error(
                                 pkgName,
@@ -207,7 +181,7 @@ for (const pkg of PUBLIC_PACKAGES) {
                     }
                 }
 
-                const conditionalRuntime = exp.import ?? exp.svelte
+                const conditionalRuntime = exp.import
                 if (!exp.default) {
                     error(
                         pkgName,
@@ -223,26 +197,36 @@ for (const pkg of PUBLIC_PACKAGES) {
                     )
                 }
 
-                // The runnable entry is `import` for the bun-built packages, or
-                // the `svelte`/`default` condition for the svelte-package build.
-                const runtimeField = exp.import ?? exp.svelte ?? exp.default
+                const runtimeField = exp.import ?? exp.default
                 if (runtimeField) {
                     const importPath = `${pkgDir}/${runtimeField}`
                     const file = Bun.file(importPath)
                     if (!(await file.exists())) {
-                        error(pkgName, `export "${exportPath}" entry file missing: ${runtimeField}`)
+                        error(
+                            pkgName,
+                            `export "${exportPath}" entry file missing: ${runtimeField}`,
+                        )
                     } else if (file.size === 0) {
-                        error(pkgName, `export "${exportPath}" entry file is empty: ${runtimeField}`)
+                        error(
+                            pkgName,
+                            `export "${exportPath}" entry file is empty: ${runtimeField}`,
+                        )
                     }
                 } else {
-                    error(pkgName, `export "${exportPath}" missing import/svelte/default field`)
+                    error(
+                        pkgName,
+                        `export "${exportPath}" missing import/default field`,
+                    )
                 }
 
                 if (exp.types) {
                     const typesPath = `${pkgDir}/${exp.types}`
                     const file = Bun.file(typesPath)
                     if (!(await file.exists())) {
-                        error(pkgName, `export "${exportPath}" types file missing: ${exp.types}`)
+                        error(
+                            pkgName,
+                            `export "${exportPath}" types file missing: ${exp.types}`,
+                        )
                     }
                 } else {
                     error(pkgName, `export "${exportPath}" missing types field`)
@@ -269,25 +253,12 @@ for (const pkg of PUBLIC_PACKAGES) {
         }
 
         if (pkgName === "valdres") {
-            if (packageJson.sideEffects === false) {
+            if (packageJson.sideEffects !== CORE_SIDE_EFFECTS) {
                 error(
                     pkgName,
-                    "sideEffects:false would remove the instance guard",
-                )
-            } else if (
-                JSON.stringify(packageJson.sideEffects) !==
-                JSON.stringify(INSTANCE_GUARD_SIDE_EFFECTS)
-            ) {
-                error(
-                    pkgName,
-                    `sideEffects must be ${JSON.stringify(INSTANCE_GUARD_SIDE_EFFECTS)}`,
+                    "sideEffects must be false for the isolated v1 root",
                 )
             }
-        } else if (
-            pkgName === "valdres-svelte" &&
-            packageJson.sideEffects !== false
-        ) {
-            error(pkgName, "prepack must preserve sideEffects:false")
         }
 
         if (packageJson.engines?.node !== NODE_ENGINE_RANGE) {
@@ -327,6 +298,8 @@ if (errors.length > 0) {
     console.log("")
     process.exit(1)
 } else {
-    console.log(`\nAll ${PUBLIC_PACKAGES.length} packages verified successfully`)
+    console.log(
+        `\nAll ${PUBLIC_PACKAGES.length} packages verified successfully`,
+    )
     console.log("")
 }

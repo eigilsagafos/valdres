@@ -1,12 +1,14 @@
-import type { Atom, SetAtomValue, Store } from "valdres"
-import { useStore } from "./useStore"
 import { useCallback } from "react"
+import type { Atom, Store } from "valdres"
+import { useSelectedStore } from "./lib/useSelectedStore"
 
-export const useSetAtom = <V>(atom: Atom<V>, store?: Store) => {
-    const selectedStore = store || useStore()
+export const useSetAtom = <Value>(
+    atom: Atom<Value>,
+    store?: Store,
+): ((value: Value) => void) => {
+    const selectedStore = useSelectedStore(store)
     return useCallback(
-        // @ts-ignore @ts-todo
-        (value: SetAtomValue<V>) => selectedStore.set(atom, value),
+        (value: Value) => selectedStore.set(atom, value),
         [atom, selectedStore],
     )
 }

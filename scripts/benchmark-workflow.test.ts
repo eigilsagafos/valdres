@@ -33,6 +33,14 @@ function jobBlock(source: string, name: string): string {
 }
 
 describe("fork-safe PR benchmark measurement", () => {
+    test("keeps the required v1 ShiftX gate separate from legacy Bencher rows", () => {
+        expect(measurementWorkflow).toContain(
+            "Legacy-engine microbenchmarks; the packed v1 ShiftX gate lives in ci.yaml.",
+        )
+        expect(ciWorkflow).toContain("V1 ShiftX packed core-load gate")
+        expect(ciWorkflow).toContain("test:core-load-harness")
+    })
+
     test("runs every PR in an unprivileged workflow", () => {
         expect(measurementWorkflow).toMatch(
             /^name: Bencher \(PR measurement\)$/m,
@@ -284,6 +292,10 @@ describe("trusted generated-release pull requests", () => {
         expect(publish).toContain("(?:pre\\/)?[a-z0-9-]+\\.md")
         expect(publish).toContain("path === 'bun.lock'")
         expect(publish).toContain("CHANGELOG\\.md|package\\.json")
+        expect(publish).toContain("file.previous_filename")
+        expect(publish).toContain(
+            "[file.filename, file.previous_filename].filter(Boolean)",
+        )
         expect(publish).toContain(
             "Refusing benchmark check for non-release files",
         )

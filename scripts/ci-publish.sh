@@ -7,37 +7,6 @@ ROOT_DIR="$(dirname "$SCRIPT_DIR")"
 PUBLIC_PACKAGES=(
   packages/valdres
   packages/valdres-react
-  packages/valdres-angular
-  packages/valdres-solid
-  packages/valdres-svelte
-  packages/valdres-vue
-  packages/@valdres/bandwidth
-  packages/@valdres/browser-color-scheme
-  packages/@valdres/browser-contrast
-  packages/@valdres/browser-device-motion
-  packages/@valdres/browser-device-orientation
-  packages/@valdres/browser-focus
-  packages/@valdres/browser-geolocation
-  packages/@valdres/browser-keyboard
-  packages/@valdres/browser-online
-  packages/@valdres/browser-presence
-  packages/@valdres/browser-reduced-data
-  packages/@valdres/browser-reduced-motion
-  packages/@valdres/browser-reduced-transparency
-  packages/@valdres/browser-screen
-  packages/@valdres/browser-screen-details
-  packages/@valdres/browser-visibility
-  packages/@valdres/browser-window
-  packages/@valdres/color-mode
-  packages/@valdres/hotkeys
-  packages/@valdres/public-ip
-  packages/@valdres/redux-devtools
-  packages/@valdres-react/color-mode
-  packages/@valdres-react/draggable
-  packages/@valdres-react/hotkeys
-  packages/@valdres-react/jotai
-  packages/@valdres-react/panable
-  packages/@valdres-react/recoil
 )
 
 # Restore prepacked package.json files even if the script aborts midway.
@@ -79,6 +48,60 @@ trap restore_on_exit EXIT
 # Sanity-check that `bunx changeset` resolves before doing any work — catches
 # missing-binary regressions on PR before they reach the real publish flow.
 bunx changeset --help > /dev/null
+
+# The feature PR keeps each manifest at its currently published prerelease.
+# Changesets advances their package-local counters independently: core beta.23
+# becomes beta.24 and React beta.4 becomes beta.5. changesets/action consumes
+# the pending Changeset into a release PR before it invokes this script. Every
+# dry run validates either the authored predecessors or exact target tuple; a
+# live publish accepts only the exact target tuple.
+node - "$ROOT_DIR" "${DRY_RUN:-0}" "${PUBLIC_PACKAGES[@]}" <<'NODE'
+const fs = require("node:fs")
+const path = require("node:path")
+
+const [rootDir, dryRunValue, ...packageDirs] = process.argv.slice(2)
+const dryRun = dryRunValue === "1"
+const expectedVersions = new Map([
+  ["valdres", "1.0.0-beta.24"],
+  ["valdres-react", "1.0.0-beta.5"],
+])
+const predecessorVersions = new Map([
+  ["valdres", "1.0.0-beta.23"],
+  ["valdres-react", "1.0.0-beta.4"],
+])
+const preState = JSON.parse(
+  fs.readFileSync(path.join(rootDir, ".changeset", "pre.json"), "utf8"),
+)
+
+if (preState.mode !== "pre" || preState.tag !== "beta") {
+  throw new Error("V1-beta publish validation requires Changesets beta prerelease mode")
+}
+
+for (const packageDir of packageDirs) {
+  const manifest = JSON.parse(
+    fs.readFileSync(path.join(rootDir, packageDir, "package.json"), "utf8"),
+  )
+  const expectedVersion = expectedVersions.get(manifest.name)
+  const predecessorVersion = predecessorVersions.get(manifest.name)
+  const versionIsAllowed =
+    manifest.version === expectedVersion ||
+    (dryRun && manifest.version === predecessorVersion)
+  if (expectedVersion === undefined || !versionIsAllowed) {
+    throw new Error(
+      `Refusing to publish ${manifest.name}@${manifest.version}: expected ${expectedVersion ?? "a certified package"}${dryRun && predecessorVersion ? ` (or ${predecessorVersion} in DRY_RUN)` : ""}`,
+    )
+  }
+
+  if (
+    manifest.name === "valdres-react" &&
+    manifest.peerDependencies?.valdres !== "^1.0.0-beta.24"
+  ) {
+    throw new Error(
+      `Refusing to publish valdres-react with core peer ${manifest.peerDependencies?.valdres}: expected ^1.0.0-beta.24`,
+    )
+  }
+}
+NODE
 
 # Prepack all public packages (rewrite package.json exports for dist)
 for dir in "${PUBLIC_PACKAGES[@]}"; do

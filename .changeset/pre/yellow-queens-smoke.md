@@ -1,6 +1,5 @@
 ---
 "valdres": minor
-"@valdres-react/jotai": patch
 ---
 
 Make `store.txn` own its complete atomic lifecycle. Transaction callbacks now

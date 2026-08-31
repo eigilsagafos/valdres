@@ -1,34 +1,38 @@
 # Valdres
 
-Reactive state management for **React, Vue, Svelte, Solid, and Angular** — one store, shared across frameworks. Inspired by Recoil and Jotai. The framework-agnostic core also runs in plain JavaScript, Node, and workers.
+Valdres is a synchronous atom and selector state engine for JavaScript, with React 18 and 19 bindings. `valdres@1.0.0-beta.24` and `valdres-react@1.0.0-beta.5` are the first public builds of the new module-owned runtime, scoped stores, atomic transactions, and lifecycle-free subscriptions.
 
-**Docs: [valdres.dev](https://valdres.dev)** · AI-readable: [llms.txt](https://valdres.dev/llms.txt) (every page is also available as markdown — append `.md` to any URL)
+The website currently documents the legacy beta. The install path and examples below are the source of truth for the v1 beta while the site is being migrated.
 
 ```bash
-npm install valdres valdres-react   # or valdres-vue / -svelte / -solid / -angular
+npm install valdres@beta valdres-react@beta react
 ```
 
 ```tsx
-import { atom, selector } from "valdres"
-import { Provider, useAtom, useValue } from "valdres-react"
+import { atom, selector, store } from "valdres"
+import { Provider, useUpdateAtom, useValue } from "valdres-react"
 
 const countAtom = atom(0)
 const doubledSelector = selector(get => get(countAtom) * 2)
+const appStore = store()
 
 function Counter() {
-    const [count, setCount] = useAtom(countAtom)
+    const count = useValue(countAtom)
     const doubled = useValue(doubledSelector)
-    return <button onClick={() => setCount(c => c + 1)}>{count} ×2 = {doubled}</button>
+    const increment = useUpdateAtom(countAtom)
+    return <button onClick={() => increment(c => c + 1)}>{count} ×2 = {doubled}</button>
 }
 
 const App = () => (
-    <Provider>
+    <Provider store={appStore}>
         <Counter />
     </Provider>
 )
 ```
 
-Atoms and selectors are identified by reference (no string keys), families are first-class, transactions batch updates, and scoped stores fork state for edit-and-cancel flows. The same atoms work in every framework — and in the [plugin packages](#plugins-framework-agnostic) that wrap browser APIs (geolocation, keyboard, visibility, …) as reactive state.
+Atoms and selectors are immutable capability handles identified by reference. A Store owns their values and derived graph. `set` stores an exact value, including functions; `update` applies an updater. Stores also provide synchronous subscriptions, transactions, nested scopes, reset, and explicit disposal.
+
+This is an intentional breaking beta cutover. Only `valdres` and `valdres-react` are certified together. The Angular, Vue, Svelte, Solid, plugin, and compatibility packages listed below remain on the legacy API and are unsupported with `valdres@1.0.0-beta.24` or later until they are migrated. Their published semver ranges may still allow npm to install this core, so do not mix those packages with the new beta.
 
 ## Packages
 
@@ -93,15 +97,16 @@ The package tables below are auto-generated — do not hand-edit.
 
 ```bash
 bun install
-bun test            # all packages
-bun run docs:dev    # docs site at localhost:4321
+bun test             # certified v1 core + React cohort
+bun run test:all     # deferred legacy maintenance lane
+bun run docs:dev     # legacy docs site at localhost:4321
 ```
 
 ## Releasing
 
 Versioning and publishing is handled by [Changesets](https://github.com/changesets/changesets). Each package versions independently.
 
-The 1.0 release is governed by the hard gates and RC burn-in checklist in [RELEASING.md](./RELEASING.md).
+The future v1 stable release is governed by the hard gates and RC burn-in checklist in [RELEASING.md](./RELEASING.md).
 
 **When you open a PR that changes a publishable package:**
 
@@ -117,7 +122,7 @@ For PRs that touch publishable code but intentionally don't trigger a release (r
 bunx changeset --empty
 ```
 
-This still generates a `.changeset/*.md` file — commit it like a regular changeset. The `Require changeset` check on each PR enforces that any change to a publishable package ships with a changeset (empty or otherwise).
+This still generates a `.changeset/*.md` file — commit it like a regular changeset. The `Require changeset` check on ordinary feature PRs enforces that any change to a publishable package ships with a changeset (empty or otherwise); the generated Version Packages PR has already consumed those changesets.
 
 When the PR merges to `main`, the `Publish` workflow opens (or updates) a **Version Packages** PR that applies the pending changesets, bumps versions, and updates CHANGELOGs. Merging that PR publishes the affected packages to npm.
 
@@ -127,11 +132,13 @@ To preview what publishing would do locally:
 bun run verify-publish
 ```
 
-The repo is currently in `beta` prerelease mode (`bunx changeset pre exit` to graduate to stable). While in prerelease mode, changesets that have already been versioned into a `beta` release move to `.changeset/pre/`, where they stay until the stable release consumes them — leave them alone unless a change genuinely no longer applies.
+The repo is currently in `beta` prerelease mode (`bunx changeset pre exit` to graduate to stable). While in prerelease mode, changesets that have already been versioned into a `beta` release move to `.changeset/pre/`. Certified core+React histories are consumed by their stable release; ignored deferred histories remain for their packages. Leave those files alone unless a change genuinely no longer applies to its eventual release.
 
 ## Benchmarks
 
 ### Performance
+
+The table below is the archived legacy-engine benchmark and does not describe the `1.0.0-beta.24` runtime. New v1 numbers will replace it after the beta runs in real applications, including ShiftX.
 
 valdres is benchmarked against [Jotai](https://github.com/pmndrs/jotai) (and a raw `Map` floor) on every PR via [Bencher](https://bencher.dev) — live, always-current latency per operation under both Bun (JavaScriptCore) and Node.js (V8):
 

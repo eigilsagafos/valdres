@@ -1,0 +1,213 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://valdres.dev/contracts/v1/frozen-legacy-surface.schema.json",
+    "title": "Frozen Valdres legacy public surface",
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["$schema", "schemaVersion", "packages"],
+    "properties": {
+        "$schema": { "const": "./schemas/frozen-legacy-surface.schema.json" },
+        "schemaVersion": { "const": 2 },
+        "packages": {
+            "type": "array",
+            "minItems": 2,
+            "maxItems": 2,
+            "items": {
+                "oneOf": [
+                    { "$ref": "#/$defs/valdresPackage" },
+                    { "$ref": "#/$defs/reactPackage" }
+                ]
+            },
+            "allOf": [
+                {
+                    "contains": { "$ref": "#/$defs/valdresPackage" },
+                    "minContains": 1,
+                    "maxContains": 1
+                },
+                {
+                    "contains": { "$ref": "#/$defs/reactPackage" },
+                    "minContains": 1,
+                    "maxContains": 1
+                }
+            ]
+        }
+    },
+    "$defs": {
+        "sha1": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+        "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "exportNames": {
+            "type": "array",
+            "items": { "type": "string", "minLength": 1 },
+            "uniqueItems": true
+        },
+        "entrypoint": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["subpath", "runtimeExports", "typeExports"],
+            "properties": {
+                "subpath": { "type": "string", "minLength": 1 },
+                "runtimeExports": { "$ref": "#/$defs/exportNames" },
+                "typeExports": { "$ref": "#/$defs/exportNames" }
+            }
+        },
+        "legacyMember": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["kind", "subpath", "owner", "name"],
+            "properties": {
+                "kind": { "enum": ["property", "method", "overload"] },
+                "subpath": { "type": "string", "minLength": 1 },
+                "owner": { "type": "string", "minLength": 1 },
+                "name": { "type": "string", "minLength": 1 }
+            }
+        },
+        "legacyOption": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["kind", "subpath", "owner", "name"],
+            "properties": {
+                "kind": { "const": "option" },
+                "subpath": { "type": "string", "minLength": 1 },
+                "owner": { "type": "string", "minLength": 1 },
+                "name": { "type": "string", "minLength": 1 }
+            }
+        },
+        "sourceBlob": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["path", "gitBlobSha1"],
+            "properties": {
+                "path": { "type": "string", "minLength": 1 },
+                "gitBlobSha1": { "$ref": "#/$defs/sha1" }
+            }
+        },
+        "entrypointBlob": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["subpath", "path", "gitBlobSha1"],
+            "properties": {
+                "subpath": { "type": "string", "minLength": 1 },
+                "path": { "type": "string", "minLength": 1 },
+                "gitBlobSha1": { "$ref": "#/$defs/sha1" }
+            }
+        },
+        "verifiedArtifact": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["status", "npmSpec", "integrity", "sha256"],
+            "properties": {
+                "status": { "const": "verified" },
+                "npmSpec": { "type": "string", "minLength": 1 },
+                "integrity": {
+                    "type": "string",
+                    "pattern": "^sha512-[A-Za-z0-9+/]+={0,2}$"
+                },
+                "sha256": { "$ref": "#/$defs/sha256" }
+            }
+        },
+        "unauditedArtifact": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["status", "notes"],
+            "properties": {
+                "status": { "const": "not-audited" },
+                "notes": { "type": "string", "minLength": 1 }
+            }
+        },
+        "provenance": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "sourceRevision",
+                "releaseRevision",
+                "sourcePackageTreeSha1",
+                "releasePackageTreeSha1",
+                "sourceTreeSha1",
+                "sourcePackageJsonBlobSha1",
+                "releasePackageJsonBlobSha1",
+                "entrypointBlobs",
+                "surfaceBlobs",
+                "publishedArtifact"
+            ],
+            "properties": {
+                "sourceRevision": { "$ref": "#/$defs/sha1" },
+                "releaseRevision": { "$ref": "#/$defs/sha1" },
+                "sourcePackageTreeSha1": { "$ref": "#/$defs/sha1" },
+                "releasePackageTreeSha1": { "$ref": "#/$defs/sha1" },
+                "sourceTreeSha1": { "$ref": "#/$defs/sha1" },
+                "sourcePackageJsonBlobSha1": { "$ref": "#/$defs/sha1" },
+                "releasePackageJsonBlobSha1": { "$ref": "#/$defs/sha1" },
+                "entrypointBlobs": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": { "$ref": "#/$defs/entrypointBlob" }
+                },
+                "surfaceBlobs": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": { "$ref": "#/$defs/sourceBlob" }
+                },
+                "publishedArtifact": {
+                    "oneOf": [
+                        { "$ref": "#/$defs/verifiedArtifact" },
+                        { "$ref": "#/$defs/unauditedArtifact" }
+                    ]
+                }
+            }
+        },
+        "package": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "package",
+                "baseline",
+                "provenance",
+                "entrypoints",
+                "members",
+                "options"
+            ],
+            "properties": {
+                "package": { "type": "string", "minLength": 1 },
+                "baseline": { "type": "string", "minLength": 1 },
+                "provenance": { "$ref": "#/$defs/provenance" },
+                "entrypoints": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": { "$ref": "#/$defs/entrypoint" }
+                },
+                "members": {
+                    "type": "array",
+                    "items": { "$ref": "#/$defs/legacyMember" }
+                },
+                "options": {
+                    "type": "array",
+                    "items": { "$ref": "#/$defs/legacyOption" }
+                }
+            }
+        },
+        "valdresPackage": {
+            "allOf": [
+                { "$ref": "#/$defs/package" },
+                {
+                    "type": "object",
+                    "properties": {
+                        "package": { "const": "valdres" },
+                        "baseline": { "const": "1.0.0-beta.23" }
+                    }
+                }
+            ]
+        },
+        "reactPackage": {
+            "allOf": [
+                { "$ref": "#/$defs/package" },
+                {
+                    "type": "object",
+                    "properties": {
+                        "package": { "const": "valdres-react" },
+                        "baseline": { "const": "1.0.0-beta.4" }
+                    }
+                }
+            ]
+        }
+    }
+}

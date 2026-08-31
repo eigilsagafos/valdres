@@ -1,6 +1,5 @@
 ---
 "valdres": patch
-"@valdres/redux-devtools": patch
 ---
 
 Keep root `unset()` lazy when `store.onChange` is active. Reporting an unset no

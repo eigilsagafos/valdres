@@ -1,10 +1,9 @@
-import type { Atom, SetAtomValue, Store } from "valdres"
+import type { Atom, Store } from "valdres"
 import { useSetAtom } from "./useSetAtom"
 import { useValue } from "./useValue"
 
-export const useAtom = <V>(
-    atom: Atom<V>,
+export const useAtom = <Value>(
+    atom: Atom<Value>,
     store?: Store,
-): [V | Promise<V>, (value: SetAtomValue<V>) => void] => {
-    return [useValue(atom, store), useSetAtom(atom, store)]
-}
+): readonly [Value, (value: Value) => void] =>
+    [useValue(atom, store), useSetAtom(atom, store)] as const

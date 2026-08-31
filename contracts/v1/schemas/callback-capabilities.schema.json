@@ -1,0 +1,127 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://valdres.dev/contracts/v1/callback-capabilities.schema.json",
+    "title": "Valdres v1 callback capability manifest",
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["$schema", "schemaVersion", "completeness", "entries"],
+    "properties": {
+        "$schema": { "const": "./schemas/callback-capabilities.schema.json" },
+        "schemaVersion": { "const": 1 },
+        "completeness": { "enum": ["partial", "complete"] },
+        "entries": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "$ref": "#/$defs/entry" }
+        }
+    },
+    "$defs": {
+        "entry": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "id",
+                "apiEntryId",
+                "role",
+                "phase",
+                "suppliedCapabilities",
+                "allowedExternalWork",
+                "rejectedCapturedOperations",
+                "guardDomain",
+                "errorRule",
+                "thenableRule",
+                "resultBoundary",
+                "requiredContractIds",
+                "decisionStatus"
+            ],
+            "properties": {
+                "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9.-]+$" },
+                "apiEntryId": { "type": "string", "minLength": 1 },
+                "role": { "type": "string", "minLength": 1 },
+                "phase": { "type": "string", "minLength": 1 },
+                "suppliedCapabilities": {
+                    "type": "array",
+                    "items": { "type": "string" },
+                    "uniqueItems": true
+                },
+                "allowedExternalWork": {
+                    "type": "array",
+                    "items": { "type": "string" },
+                    "uniqueItems": true
+                },
+                "rejectedCapturedOperations": {
+                    "type": "array",
+                    "items": { "type": "string" },
+                    "uniqueItems": true
+                },
+                "guardDomain": {
+                    "enum": [
+                        "same-runtime-domain",
+                        "same-store-tree",
+                        "active-transaction"
+                    ]
+                },
+                "errorRule": { "type": "string", "minLength": 1 },
+                "thenableRule": { "type": "string", "minLength": 1 },
+                "resultPolicy": {
+                    "enum": [
+                        "value-may-be-undefined",
+                        "value-must-not-be-undefined"
+                    ]
+                },
+                "resultBoundary": { "type": "string", "minLength": 1 },
+                "requiredContractIds": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": { "type": "string" },
+                    "uniqueItems": true
+                },
+                "decisionStatus": {
+                    "enum": [
+                        "approved",
+                        "pending-experiment",
+                        "evidence-required"
+                    ]
+                }
+            },
+            "allOf": [
+                {
+                    "if": {
+                        "type": "object",
+                        "properties": {
+                            "id": { "const": "callback.atom-update" }
+                        },
+                        "required": ["id"]
+                    },
+                    "then": {
+                        "type": "object",
+                        "properties": {
+                            "resultPolicy": {
+                                "const": "value-may-be-undefined"
+                            }
+                        },
+                        "required": ["resultPolicy"]
+                    }
+                },
+                {
+                    "if": {
+                        "type": "object",
+                        "properties": {
+                            "id": { "const": "callback.collection-row-update" }
+                        },
+                        "required": ["id"]
+                    },
+                    "then": {
+                        "type": "object",
+                        "properties": {
+                            "resultPolicy": {
+                                "const": "value-must-not-be-undefined"
+                            }
+                        },
+                        "required": ["resultPolicy"]
+                    }
+                }
+            ]
+        }
+    }
+}

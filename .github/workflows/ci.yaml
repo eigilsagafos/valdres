@@ -19,14 +19,14 @@ jobs:
         steps:
             - uses: actions/checkout@v6
               with:
-                  fetch-depth: ${{ github.event_name == 'pull_request' && '0' || '1' }}
+                  # The v1 provenance gate resolves the pinned beta.23 source and
+                  # release commits directly, including on pushes to main.
+                  fetch-depth: 0
             - uses: oven-sh/setup-bun@v2
               with:
-                  # Pinned to the Bencher benchmark runners (bencher-{base,pr}.yml)
-                  # so the architecture/memory gates and the perf lanes all measure
-                  # the same engine. The committed retained-memory baseline is still
-                  # calibrated on 1.3.14 (see ARCHITECTURE_PERFORMANCE.md) and holds
-                  # under 1.4.0 pending a deliberate recalibration.
+                  # Pinned to the repository toolchain and Bencher runners so
+                  # certified builds and the separate performance workflows use
+                  # the same Bun release.
                   bun-version: 1.4.0
             - uses: actions/setup-node@v6
               with:
@@ -34,77 +34,66 @@ jobs:
             - name: Install
               run: bun install --frozen-lockfile
             - name: Require changeset
-              if: github.event_name == 'pull_request'
+              # A Changesets Version Packages PR consumes the changeset that
+              # created it, so its release metadata diff cannot carry another
+              # changeset. All ordinary PRs still run the gate.
+              if:
+                  github.event_name == 'pull_request' &&
+                  (github.event.pull_request.head.repo.full_name !=
+                  github.repository || github.head_ref !=
+                  'changeset-release/main')
               run: bunx changeset status --since=origin/main
+            - name: V1 contracts and migration ledger
+              run: bun run check:contracts-v1
             - name: Build
               run: bun run build
             - name: Build types
               run: bun run build:types
             - name: Typecheck (noUnusedLocals gate)
-              # Type-checks every package's public source graph with noEmit,
-              # enforcing the root tsconfig's noUnusedLocals flag so unused
-              # imports/locals can't reaccumulate. Runs after build/build:types
-              # because cross-package imports resolve through built dist/types.
+              # Type-checks the certified core + React public source graphs.
+              # Deferred packages retain an explicit `typecheck:all`
+              # maintenance lane but cannot block this beta train.
               run: bun run typecheck
-            - name: Typecheck type-level tests
-              run: bun --filter 'valdres' typecheck:types
+            - name: Typecheck v1 public candidate
+              run:
+                  bunx tsgo --noEmit -p
+                  packages/valdres/test/v1-public-candidate/tsconfig.json
+            - name: V1 ShiftX packed core-load gate
+              # The required Bencher check still tracks the archived legacy
+              # microbenchmarks. This separately executes the packed v1 runtime
+              # through the exact frozen ShiftX workload in fresh Node processes
+              # with broad, cross-runner catastrophic ceilings.
+              run: bun --filter 'valdres' test:core-load-harness
+            - name: V1 model contract
+              # Proves the pure state/selector model before the evaluator and
+              # committed StoreTree host exercise it through their own lanes.
+              run: bun --filter 'valdres' test:v1-model
+            - name: V1 selector evaluator contract
+              # The evaluator remains unexported, so this dedicated lane proves
+              # its host fixtures and independent symbolic oracle are both
+              # typechecked before the future Store kernel can integrate it.
+              run: bun --filter 'valdres' test:v1-selector-evaluator
+            - name: V1 committed StoreTree host contract
+              # This first persistent host is also intentionally outside every
+              # package entrypoint, so its dedicated tsconfig must run explicitly.
+              run: bun --filter 'valdres' test:v1-committed-store-tree
             - name: Ban unchecked TypeScript suppressions in valdres
               run: |
                   if git grep -n -E '^[[:space:]]*//[[:space:]]*@ts-ignore([[:space:]]|$)' -- packages/valdres/src; then
                       echo "::error::Use @ts-expect-error with a specific reason instead of @ts-ignore"
                       exit 1
                   fi
-            - name: Docs island bundles load in a browser
-              # The demos on valdres.dev bundle valdres from workspace SOURCE, so
-              # a core change that is harmless for the published dist can still
-              # kill every demo on the site — and did, unnoticed for three weeks,
-              # because a bundle that throws on load still builds, still renders
-              # the page, and logs nothing. Lives HERE rather than in docs-ci.yml
-              # because that workflow does not run on `packages/**` changes, which
-              # is exactly what broke it. Bundles the islands itself, so it costs
-              # seconds instead of a 210-page site build.
-              run: bun run scripts/check-docs-islands.ts
-            - name: Deterministic architecture gates
-              run: bun --filter 'valdres' test:architecture
-            - name: Rewrite guards (Node/V8)
-              # Consumer V8 can expose oracle and matcher assumptions hidden by
-              # Bun/JSC. Parse JUnit too, so empty collection cannot pass quietly.
-              run: |
-                  report="$RUNNER_TEMP/valdres-rewrite-guards.xml"
-
-                  set +e
-                  bun --filter 'valdres' test:rewrite-guards:node -- \
-                      --reporter=default \
-                      --reporter=junit \
-                      --outputFile.junit="$report"
-                  vitest_status=$?
-                  set -e
-
-                  node - "$report" <<'NODE'
-                  const fs = require('fs');
-                  const report = process.argv[2];
-                  const xml = fs.readFileSync(report, 'utf8');
-                  const testCount = [...xml.matchAll(/<testsuite\b[^>]*\btests="(\d+)"/g)]
-                      .reduce((total, match) => total + Number(match[1]), 0);
-
-                  console.log(`Node/V8 rewrite guards collected ${testCount} tests.`);
-                  if (testCount === 0) {
-                      console.error('::error::Node/V8 rewrite-guard lane collected zero tests');
-                      process.exit(1);
-                  }
-                  NODE
-
-                  exit "$vitest_status"
-            - name: Retained-memory gates (Bun)
-              run: bun --filter 'valdres' test:memory:bun
-            - name: Retained-memory gates (Node)
-              run: bun --filter 'valdres' test:memory:node
-            - name: Lint valdres-svelte publish artifact
-              # Svelte libraries must ship uncompiled source + the `svelte` export
-              # condition; publint packs the real tarball and svelte-check
-              # type-checks the emitted d.ts, so a regression to the broken
-              # bundled-runes artifact (or a dropped condition) fails the PR.
-              run: bun --filter 'valdres-svelte' lint:publish
+            - name: Release infrastructure tests
+              # These root-owned tests cover the CI planner, Changesets cohort,
+              # JUnit gate, docs freeze, package metadata, and publish scripts.
+              # They are intentionally separate from the two certified package
+              # suites below, which cannot discover files under scripts/.
+              run: VALDRES_ALLOW_ROOT_BUN_TEST=1 bun test scripts/
+            - name: Generated READMEs stay in sync
+              # The legacy public site is frozen during this beta, but the root,
+              # core, and React package READMEs are part of the shipped package
+              # experience and remain deterministic generated artifacts.
+              run: bun run scripts/gen-readmes.ts --check
             - name: Verify publish (dry-run)
               run: DRY_RUN=1 bash scripts/ci-publish.sh
             - name: Verify publish cleanup
@@ -117,26 +106,21 @@ jobs:
                       echo "$stray_backups"
                       exit 1
                   fi
-            - name: Benchmark tooling tests
-              # scripts/ is intentionally not a workspace, so the root
-              # `bun --filter '*' test` sweep never reaches these; run the
-              # benchmark converter + Bencher fetch tests explicitly. The
-              # bunfig `[test].preload` guard blocks root-level `bun test`, so
-              # opt this legitimate scripts/ run in (see scripts/no-root-bun-test.ts).
-              run: VALDRES_ALLOW_ROOT_BUN_TEST=1 bun test scripts/
             - name: Clear stale JUnit reports
               # A no-op on CI's fresh checkout; the point is local. `junit*.xml`
               # is gitignored and never cleaned, so a report left by an earlier
               # run would satisfy the coverage gate below for a package that has
               # since stopped emitting one — `bun run verify` green, CI red.
               # Living here rather than in verify means both run the same thing.
-              run: find packages -name 'junit*.xml' -not -path '*/node_modules/*' -delete
+              run:
+                  find packages -name 'junit*.xml' -not -path '*/node_modules/*'
+                  -delete
             - name: Test
               id: test
               run: bun run test:ci
               continue-on-error: true
             - name: JUnit coverage gate
-              # A package with a runnable test script must emit a JUnit report;
+              # Each certified package with a runnable test script must emit a report;
               # `bun run test:ci` can exit 0 while one produces nothing. This
               # used to live only inside the github-script step below, where no
               # local command could run it — so `bun run verify` reported green
@@ -284,7 +268,10 @@ jobs:
                   filters: |
                       package:
                         - 'packages/valdres/**'
+                        - 'packages/valdres-react/**'
+                        - '.changeset/config.json'
                         - 'scripts/check-valdres-package.ts'
+                        - 'scripts/test-v1-beta-packed-consumer.ts'
                         - 'scripts/check-package-size.ts'
                         - 'scripts/size-baseline.json'
                         - 'scripts/prepack.ts'
@@ -323,6 +310,14 @@ jobs:
               # through publint, ATTW, TS resolution, Node/Bun runtime smokes,
               # browser/worker-target consumer builds, and committed budgets.
               run: bun run scripts/check-valdres-package.ts --build --self-test
+            - name: Validate packed v1-beta core and React consumers
+              if:
+                  github.event_name != 'pull_request' ||
+                  steps.changes.outputs.package == 'true'
+              # Shadow-packs intended valdres beta.24 + React beta.5 artifacts without
+              # mutating the source manifests, then installs them with React
+              # 18 and 19 across Node, Bun, TypeScript, esbuild, and SSR.
+              run: bun run test:v1-beta:packed
 
     publish:
         needs: [test, valdres-package]
@@ -366,7 +361,7 @@ jobs:
             - name: Install dependencies
               run: bun install --frozen-lockfile
 
-            - name: Build all packages
+            - name: Build certified v1-beta packages
               run: bun run build
 
             - name: Build types
@@ -408,8 +403,7 @@ jobs:
               if: steps.changesets.outputs.pr-number != ''
               uses: actions/github-script@v9
               env:
-                  RELEASE_PR_NUMBER:
-                      ${{ steps.changesets.outputs.pr-number }}
+                  RELEASE_PR_NUMBER: ${{ steps.changesets.outputs.pr-number }}
               with:
                   script: |
                       const pullNumber = Number(process.env.RELEASE_PR_NUMBER);
@@ -496,9 +490,9 @@ jobs:
                           path === '.changeset/pre.json' ||
                           /^\.changeset\/(?:pre\/)?[a-z0-9-]+\.md$/.test(path) ||
                           path === 'bun.lock' ||
-                          /^packages\/(?:@[^/]+\/)?[^/]+\/(?:CHANGELOG\.md|package\.json)$/.test(path);
+                          /^packages\/(?:valdres|valdres-react)\/(?:CHANGELOG\.md|package\.json)$/.test(path);
                       const unexpected = files
-                          .map(file => file.filename)
+                          .flatMap(file => [file.filename, file.previous_filename].filter(Boolean))
                           .filter(path => !generatedReleasePath(path));
                       if (unexpected.length > 0) {
                           throw new Error(

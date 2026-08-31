@@ -12,6 +12,7 @@
         "url": "git+https://github.com/eigilsagafos/valdres.git"
     },
     "type": "module",
+    "sideEffects": false,
     "exports": {
         ".": "./src/index.ts",
         "./adapter-internals/v1": "./src/adapter-internals/v1.ts"
@@ -24,12 +25,22 @@
         "build:types": "rm -rf dist/types && bunx tsgo && bun run ../../scripts/rewrite-declaration-imports.ts dist/types",
         "check:package": "bun run ../../scripts/check-valdres-package.ts --build",
         "typecheck:types": "bunx tsc -p tsconfig.types-test.json",
-        "test": "bun test --reporter=dots",
+        "test": "bun test --reporter=dots test/v1-model test/v1-selector-evaluator test/v1-committed-store-tree test/v1-public-candidate test/build.test.ts",
+        "test:v1-model": "bunx tsc -p test/v1-model/tsconfig.json && bun test test/v1-model",
+        "test:v1-selector-evaluator": "bunx tsc -p test/v1-selector-evaluator/tsconfig.json && bun test test/v1-selector-evaluator test/v1-model/selector-oracle.test.ts",
+        "test:v1-committed-store-tree": "bunx tsc -p test/v1-committed-store-tree/tsconfig.json && bun test test/v1-committed-store-tree",
+        "pack:v1-candidate": "bun test/performance/core-load/pack-v1-candidate.mjs",
+        "test:v1-public-candidate": "bunx tsc -p test/v1-public-candidate/tsconfig.json && bun test test/v1-public-candidate test/performance/core-load/core-load.test.ts",
+        "test:core-load-harness": "bun test test/performance/core-load/core-load.test.ts",
+        "bench:core-load": "node test/performance/core-load/run-suite.mjs",
         "test:bench": "rm -f test/performance/bench-results.ndjson && BENCH_SUITE=standard NODE_ENV=production bun test --timeout 60000 --concurrency 1 ./test/performance/*.bench.ts && BENCH_SUITE=standard NODE_ENV=production bun test --timeout 60000 --concurrency 1 ./test/performance/architecture.timing.ts",
         "test:bench:node": "rm -f test/performance/bench-results-node.ndjson && BENCH_SUITE=standard NODE_ENV=production npx vitest run --config vitest.bench.config.ts && BENCH_SUITE=standard NODE_ENV=production npx vitest run --config vitest.architecture-bench.config.ts",
         "test:bench:async": "rm -f test/performance/bench-results.ndjson && BENCH_SUITE=async NODE_ENV=production bun test --timeout 60000 --concurrency 1 ./test/performance/asyncSettlement.timing.ts",
         "test:bench:async:node": "rm -f test/performance/bench-results-node.ndjson && BENCH_SUITE=async NODE_ENV=production npx vitest run --config vitest.async-bench.config.ts",
         "test:architecture": "bun test ./src/lib/architecturePerformance.test.ts",
+        "spike:collection-operations": "bunx tsc -p test/api-spikes/collection-operations/tsconfig.json && bun test test/api-spikes/collection-operations",
+        "spike:query": "bunx tsc -p test/api-spikes/query-construction/tsconfig.json && bunx tsgo --noEmit -p test/api-spikes/query-construction/tsconfig.json && bun test/api-spikes/query-construction/check-editor.ts && bun test/api-spikes/query-construction/check-metrics.ts && bun test/api-spikes/query-construction/check-reachability.ts",
+        "spike:query:reachability": "bun test/api-spikes/query-construction/check-reachability.ts",
         "test:rewrite-guards:node": "npx vitest run --config vitest.rewrite-guards.config.ts",
         "test:memory:bun": "NODE_ENV=production bun test --timeout 120000 --concurrency 1 ./test/performance/*.memory.ts",
         "test:memory:node": "NODE_OPTIONS=--expose-gc NODE_ENV=production npx vitest run --config vitest.memory.config.ts"

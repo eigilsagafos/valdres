@@ -1,4 +1,4 @@
-# Releasing Valdres 1.0
+# Releasing Valdres v1
 
 This is the release gate for the first stable Valdres release. A green build is
 necessary but is not, by itself, approval to publish. The release owner must be
@@ -6,7 +6,7 @@ able to check every item below against the exact commit and npm artifacts being
 promoted.
 
 The public compatibility decisions that this process protects are documented in
-the [1.0 compatibility contract](https://valdres.dev/guides/compatibility).
+the [v1 compatibility contract](https://valdres.dev/guides/compatibility).
 
 ## Current prerelease state
 
@@ -14,6 +14,38 @@ The repository is still in Changesets prerelease mode. At the time this runbook
 was written, `.changeset/pre.json` has `"mode": "pre"` and `"tag": "beta"`. Do
 not assume that merging a Version Packages PR will publish to `latest` while
 that is true: Changesets publishes prereleases to the tag in this file.
+
+The v1 beta release cohort is exactly `valdres` and `valdres-react`. Angular,
+Vue, Svelte, Solid, feature packages, and compatibility packages stay on their
+last legacy beta versions until each is migrated and certified. The cohort is
+enforced in `.changeset/config.json`, `scripts/ci-publish.sh`, and
+`scripts/verify-publish.ts`; widening any one list is not a release decision.
+
+This release intentionally continues the existing `1.0.0-beta.N` train with a
+breaking runtime and API cutover. Already-published legacy packages commonly
+declare ranges such as `^1.0.0-beta.19`, which npm may satisfy with the new core
+even though those packages are incompatible with it. The release cohort is a
+certification boundary, not a semver-resolution boundary: only the new core and
+React packages are supported together. Do not combine beta.24 or later with a
+deferred adapter, plugin, or compatibility package until that package is
+migrated.
+
+The authored manifests remain at the package versions currently published on
+the beta tag. Changesets keeps prerelease counters package-local, so the
+checked-in minor Changeset generates:
+
+```text
+valdres@1.0.0-beta.24
+valdres-react@1.0.0-beta.5
+```
+
+`changesets/action` must first consume the minor Changeset into its generated
+Version Packages PR. The live publish script accepts only the exact beta.24 and
+beta.5 tuple above; dry runs accept either those targets or the authored
+beta.23/beta.4 predecessors so feature PRs can validate prepack and cleanup. In
+the generated PR, verify the exact two target versions, the React peer
+`valdres: ^1.0.0-beta.24`, and that release metadata changes are limited to the
+two certified packages before merging it.
 
 To move from the beta stream to the release-candidate stream, use Changesets; do
 not hand-edit `pre.json`, package versions, or changelogs:
@@ -24,20 +56,29 @@ bunx changeset pre enter rc
 ```
 
 Review and commit the resulting `.changeset/pre.json` change in its own release
-PR. These commands only change prerelease mode. The normal Version Packages PR
-does the versioning, and the publish workflow publishes after that PR merges.
-The first `rc` prerelease may be numbered `1.0.0-rc.0` by Changesets; it is the
-RC1 milestone in this document.
+PR. These commands only change prerelease mode. Add a non-empty patch Changeset
+for both certified packages after entering `rc`; the normal Version Packages PR
+then advances each package independently to `1.0.0-rc.N`. Before that PR may
+publish, update and review the live prerelease guard in `scripts/ci-publish.sh`,
+which intentionally accepts only `beta` today, and prove the cohort policy still
+matches the intended RC. Each prerelease counter continues from that package's
+beta history, so the first RC is not necessarily `rc.0`; it is the RC1 milestone
+in this document.
 
 Changesets keeps every changeset it has already versioned into a prerelease in
-`.changeset/pre/`, not in `pre.json`. Those files survive `pre exit`/`pre enter`
-and are consumed by the release that leaves prerelease mode, which is what makes
-the stable changelog cover the whole beta and rc history. Treat that folder as
-release state: don't bulk-delete it, and only remove an individual file if the
-change it describes genuinely no longer applies to the stable release.
+`.changeset/pre/`, not in `pre.json`. Those files survive `pre exit`/`pre enter`.
+Certified core+React histories are consumed into their stable release; the
+ignored `*-deferred.md` histories remain for the packages that did not join this
+cohort. Treat that folder as release state: don't bulk-delete it, and only
+remove an individual file if the change it describes genuinely no longer
+applies to its eventual release.
 
-After RC2 has passed every gate and the stable-release conditions below are met,
-leave prerelease mode once more:
+The intended stable destination is `1.0.0`, but do not leave prerelease mode
+while legacy packages can silently resolve an incompatible core. Before stable,
+migrate, retire, or explicitly deprecate every deferred package and prove that
+fresh npm resolution cannot present an unsupported combination as compatible.
+Only after that compatibility work and the stable-release conditions below are
+met may the release owner leave prerelease mode:
 
 ```bash
 bunx changeset pre exit
@@ -49,8 +90,8 @@ branch or edit the generated release files by hand.
 
 ## Gates for every candidate
 
-Every RC and the final 1.0 commit must pass all required CI checks, plus these
-release-specific gates.
+Every RC and any future stable candidate must pass all required CI checks, plus
+these release-specific gates.
 
 ### E3: packed-tarball gate
 
@@ -81,7 +122,7 @@ declaration-import rewrite. It does not snapshot `src`, source `.ts` files, or
 an editor's inferred types.
 
 - At RC1, build the tarball and freeze its complete normalized `dist/types` tree
-  as the 1.0 API snapshot.
+  as the v1 API snapshot.
 - On every later PR, rebuild `dist/types` and semantically diff it against that
   snapshot.
 - The check must report additions, removals, changed overloads, changed generic
@@ -112,25 +153,27 @@ npm view valdres dist-tags --json
 npm view valdres@latest version
 ```
 
-For RCs, the new version must be on `rc` and `latest` must remain the previous
-stable release. For 1.0, `valdres@latest` and `dist-tags.latest` must both
-resolve to exactly `1.0.0`. Repeat the checks for every package listed as
-published by Changesets. A version that exists only by explicit lookup has not
-completed the stable release.
+For betas, each exact package version must be on `beta` and `latest` must remain
+the previous stable release. For RCs, the new version must be on `rc` and
+`latest` must remain unchanged. For the v1 stable release, `valdres@latest` and
+`dist-tags.latest` must both resolve to exactly `1.0.0`. Repeat the checks for
+every package listed as published by Changesets. A version that exists only by
+explicit lookup has not completed the intended release.
 
-Install `valdres@latest` into a clean consumer after the tag has converged and
-run one final import/type smoke test. If a publish is partial, stop: reconcile
-the versions and tags before retrying the workflow.
+Install the published tag (`valdres@beta`, `valdres@rc`, or `valdres@latest`)
+into a clean consumer after the tag has converged and run one final import/type
+smoke test. If a publish is partial, stop: reconcile the versions and tags
+before retrying the workflow.
 
 ## RC1: API freeze
 
-RC1 is the first candidate with the intended 1.0 public API. It requires:
+RC1 is the first candidate with the intended v1 public API. It requires:
 
 - [ ] all ordinary CI checks green on the candidate commit;
 - [ ] E3 green on the exact packed tarball;
 - [ ] the normalized `dist/types` snapshot committed;
 - [ ] `api-snapshot / semver-diff` required and green;
-- [ ] the public 1.0 compatibility contract reviewed against the artifact; and
+- [ ] the public v1 compatibility contract reviewed against the artifact; and
 - [ ] no unresolved public-API decision.
 
 After RC1, feature work and opportunistic refactors stop. Only release-blocking
@@ -162,19 +205,22 @@ real applications, with evidence linked from the release issue:
 - [ ] SSR: concurrent request stores render and hydrate without cross-request
       state leakage, and request stores are disposed;
 - [ ] HMR: ordinary modules update as expected, duplicate runtime graphs fail
-      clearly, and global-name singletons preserve their documented first
-      definition until a full reload;
-- [ ] high-cardinality families: creation, lookup, subscription churn, release,
-      and garbage-collection behavior are exercised at realistic cardinality;
-- [ ] async cancellation: superseded, unmounted, and disposed selector work is
-      aborted without stale commits or unhandled rejections;
+      clearly, and the module-owned runtime domain behaves as documented across
+      reload boundaries;
+- [ ] high-cardinality State handles: creation, lookup, subscription churn,
+      release, and garbage-collection behavior are exercised at realistic
+      cardinality;
 - [ ] scopes: inheritance, shadowing, reset/unset, transactions, and disposal
       are exercised across nested scopes;
-- [ ] React adapter in a real application;
-- [ ] Vue adapter in a real application;
-- [ ] Svelte adapter in a real application;
-- [ ] Solid adapter in a real application; and
-- [ ] Angular adapter in a real application.
+- [ ] React adapter in a real application.
+
+This is the burn-in checklist for the core+React prerelease cohort. Vue, Svelte,
+Solid, Angular, and the deferred plugins are not certified against this train.
+Their legacy peer ranges may allow npm to resolve the new packages, but that
+combination is unsupported and does not count as burn-in evidence. Every package
+retained for stable must be migrated and gain its own real-application burn-in
+item before stable approval; packages that will not be migrated must be retired
+or explicitly deprecated first.
 
 Record the app or fixture, runtime and framework versions, scenario, result, and
 candidate tarball version for every item. A unit test or source-workspace demo
@@ -192,20 +238,32 @@ git diff --numstat valdres@1.0.0-beta.17..HEAD -- packages/valdres/src packages/
 RC2 exists to let that change settle under realistic workloads, not to create a
 deadline for more changes.
 
-## Stable 1.0 approval
+## Future stable approval
 
-Publish 1.0 only when all of the following are true:
+The present `1.0.0-beta.N` cutover does not authorize publishing stable `1.0.0`.
+Before leaving prerelease mode, migrate, retire, or deprecate every deferred
+legacy package and resolve its npm range so a fresh install cannot silently
+present an incompatible combination as supported. Update `valdres-react`'s plain
+core peer range to the approved stable range as part of the stable release;
+`bumpVersionsWithWorkspaceProtocolOnly` will not rewrite it automatically. A
+disposable `changeset version` proof must assert both package versions are
+exactly `1.0.0`, the packed React peer metadata is correct, and no deferred
+package changed unexpectedly. Publish stable only when all of the following are
+true:
 
 - [ ] there are zero known P0 or P1 defects;
 - [ ] there were no public API changes between the accepted RC1 freeze point and
       RC2;
 - [ ] RC2 completed the full burn-in checklist and quiet period;
+- [ ] every deferred package was migrated and certified, or explicitly retired
+      or deprecated with incompatible resolution paths addressed;
 - [ ] all candidate gates, including E3 and `api-snapshot / semver-diff`, are
       green on the exact stable commit;
 - [ ] `.changeset/pre.json` was moved out of `rc` prerelease mode with
       `bunx changeset pre exit` and the resulting Version Packages PR contains
       only expected release metadata; and
-- [ ] the published 1.0 versions resolve from npm's `latest` dist-tag.
+- [ ] `valdres@1.0.0` and `valdres-react@1.0.0` resolve from npm's `latest`
+      dist-tag.
 
 P0 means data loss, state corruption or isolation failure, a security issue, or
 a broadly unusable package. P1 means a broken documented contract, a broken

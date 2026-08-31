@@ -1,0 +1,25 @@
+{
+    "schemaVersion": 1,
+    "name": "initial-view-core",
+    "fixtureSha256": "bc0e260b35d3deef4dbda8324d35e8eb409b7dd8625f2520ccda2c81aafb7c7a",
+    "writesEnabled": false,
+    "steps": 0,
+    "expected": {
+        "renderReads": 150,
+        "notificationReads": 0,
+        "notifications": 0,
+        "subscriptions": 150,
+        "timedUnsubscriptions": 0,
+        "totalUnsubscriptions": 150,
+        "entityWrites": 0,
+        "metaWrites": 0,
+        "semanticChecksum": "e82ecb39",
+        "oracleTraceSha256": "31eaf8af515a9c1a71f525c2c6c9fa2741c7849a6905fd457c517bf245cbf546"
+    },
+    "internal": {
+        "firstMaterializations": 1358,
+        "selectorEvaluations": 1358,
+        "suppliedDependencyReads": 4281
+    },
+    "timer": "after import and graph definition; before the first view read; after the 150th initial subscription; before unmount"
+}

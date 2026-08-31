@@ -1,0 +1,1994 @@
+{
+    "$schema": "./schemas/legacy-disposition-catalog.schema.json",
+    "schemaVersion": 1,
+    "entries": [
+        {
+            "coordinate": {
+                "kind": "method",
+                "subpath": ".",
+                "owner": "ScopedStore",
+                "name": "detach",
+                "package": "valdres",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "legacy.scope-leases",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "method",
+                "subpath": ".",
+                "owner": "ScopedStore",
+                "name": "unsetAll",
+                "package": "valdres",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "legacy.unset-all",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "method",
+                "subpath": ".",
+                "owner": "ScopedTransaction",
+                "name": "unsetAll",
+                "package": "valdres",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "legacy.unset-all",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "method",
+                "subpath": ".",
+                "owner": "Store",
+                "name": "del",
+                "package": "valdres",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "core.store.delete",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "method",
+                "subpath": ".",
+                "owner": "Store",
+                "name": "dispose",
+                "package": "valdres",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "core.store.dispose",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "method",
+                "subpath": ".",
+                "owner": "Store",
+                "name": "hasScope",
+                "package": "valdres",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "legacy.scope-leases",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "method",
+                "subpath": ".",
+                "owner": "Store",
+                "name": "onCommitEnd",
+                "package": "valdres",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "legacy.store-on-commit-end",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "method",
+                "subpath": ".",
+                "owner": "Store",
+                "name": "onDispose",
+                "package": "valdres",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "core.store.on-dispose",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "method",
+                "subpath": ".",
+                "owner": "Store",
+                "name": "reset",
+                "package": "valdres",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "core.store.reset",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "method",
+                "subpath": ".",
+                "owner": "Store",
+                "name": "snapshot",
+                "package": "valdres",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "moved.inspect",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "method",
+                "subpath": ".",
+                "owner": "Store",
+                "name": "unset",
+                "package": "valdres",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "legacy.store-unset",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "method",
+                "subpath": ".",
+                "owner": "Transaction",
+                "name": "batchSetFamilyAtoms",
+                "package": "valdres",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "legacy.family-membership-index",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "method",
+                "subpath": ".",
+                "owner": "Transaction",
+                "name": "del",
+                "package": "valdres",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "core.transaction.delete",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "method",
+                "subpath": ".",
+                "owner": "Transaction",
+                "name": "parentScope",
+                "package": "valdres",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "legacy.transaction-parent-scope",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "method",
+                "subpath": ".",
+                "owner": "Transaction",
+                "name": "reset",
+                "package": "valdres",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "core.transaction.reset",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "method",
+                "subpath": ".",
+                "owner": "Transaction",
+                "name": "unset",
+                "package": "valdres",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "legacy.transaction-unset",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "method",
+                "subpath": "./adapter-internals/v1",
+                "owner": "storeAdapter",
+                "name": "hasScope",
+                "package": "valdres",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "legacy.store-adapter",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "method",
+                "subpath": "./adapter-internals/v1",
+                "owner": "storeAdapter",
+                "name": "hasScopePath",
+                "package": "valdres",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "legacy.store-adapter",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "method",
+                "subpath": "./adapter-internals/v1",
+                "owner": "storeAdapter",
+                "name": "isBatching",
+                "package": "valdres",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "legacy.store-adapter",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "method",
+                "subpath": "./adapter-internals/v1",
+                "owner": "storeAdapter",
+                "name": "isEnumerable",
+                "package": "valdres",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "legacy.store-adapter",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "method",
+                "subpath": "./adapter-internals/v1",
+                "owner": "Transaction",
+                "name": "abort",
+                "package": "valdres",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "legacy.adapter-transaction",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "option",
+                "subpath": ".",
+                "owner": "ProviderProps",
+                "name": "children",
+                "package": "valdres-react",
+                "baseline": "1.0.0-beta.4"
+            },
+            "dispositionId": "react.provider.children",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "option",
+                "subpath": ".",
+                "owner": "ProviderProps",
+                "name": "initialize",
+                "package": "valdres-react",
+                "baseline": "1.0.0-beta.4"
+            },
+            "dispositionId": "legacy.provider-initialize",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "option",
+                "subpath": ".",
+                "owner": "ProviderProps",
+                "name": "store",
+                "package": "valdres-react",
+                "baseline": "1.0.0-beta.4"
+            },
+            "dispositionId": "react.provider.store",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "option",
+                "subpath": ".",
+                "owner": "ScopeProps",
+                "name": "children",
+                "package": "valdres-react",
+                "baseline": "1.0.0-beta.4"
+            },
+            "dispositionId": "react.scope",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "option",
+                "subpath": ".",
+                "owner": "ScopeProps",
+                "name": "initialize",
+                "package": "valdres-react",
+                "baseline": "1.0.0-beta.4"
+            },
+            "dispositionId": "react.scope",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "option",
+                "subpath": ".",
+                "owner": "ScopeProps",
+                "name": "scopeId",
+                "package": "valdres-react",
+                "baseline": "1.0.0-beta.4"
+            },
+            "dispositionId": "react.scope",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "option",
+                "subpath": ".",
+                "owner": "useAtom",
+                "name": "store",
+                "package": "valdres-react",
+                "baseline": "1.0.0-beta.4"
+            },
+            "dispositionId": "react.use-atom",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "option",
+                "subpath": ".",
+                "owner": "useResetAtom",
+                "name": "store",
+                "package": "valdres-react",
+                "baseline": "1.0.0-beta.4"
+            },
+            "dispositionId": "react.use-reset-atom",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "option",
+                "subpath": ".",
+                "owner": "useSetAtom",
+                "name": "store",
+                "package": "valdres-react",
+                "baseline": "1.0.0-beta.4"
+            },
+            "dispositionId": "react.use-set-atom",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "option",
+                "subpath": ".",
+                "owner": "useStore",
+                "name": "id",
+                "package": "valdres-react",
+                "baseline": "1.0.0-beta.4"
+            },
+            "dispositionId": "legacy.store-identity",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "option",
+                "subpath": ".",
+                "owner": "useTransaction",
+                "name": "store",
+                "package": "valdres-react",
+                "baseline": "1.0.0-beta.4"
+            },
+            "dispositionId": "react.use-transaction",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "option",
+                "subpath": ".",
+                "owner": "useValdresCallback",
+                "name": "callback",
+                "package": "valdres-react",
+                "baseline": "1.0.0-beta.4"
+            },
+            "dispositionId": "react.use-valdres-callback",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "option",
+                "subpath": ".",
+                "owner": "useValdresCallback",
+                "name": "deps",
+                "package": "valdres-react",
+                "baseline": "1.0.0-beta.4"
+            },
+            "dispositionId": "react.use-valdres-callback",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "option",
+                "subpath": ".",
+                "owner": "useValue",
+                "name": "store",
+                "package": "valdres-react",
+                "baseline": "1.0.0-beta.4"
+            },
+            "dispositionId": "react.use-value",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "option",
+                "subpath": ".",
+                "owner": "ScopedStore.txn",
+                "name": "name",
+                "package": "valdres",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "legacy.transaction-names",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "option",
+                "subpath": ".",
+                "owner": "Store.onChange",
+                "name": "atoms",
+                "package": "valdres",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "moved.inspect",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "option",
+                "subpath": ".",
+                "owner": "Store.onChange",
+                "name": "selectors",
+                "package": "valdres",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "moved.inspect",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "option",
+                "subpath": ".",
+                "owner": "Store.sub",
+                "name": "requireDeepEqualCheckBeforeCallback",
+                "package": "valdres",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "legacy.subscription-deep-equality",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "option",
+                "subpath": ".",
+                "owner": "Store.txn",
+                "name": "name",
+                "package": "valdres",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "legacy.transaction-names",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "option",
+                "subpath": ".",
+                "owner": "StoreOptions",
+                "name": "batchUpdates",
+                "package": "valdres",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "legacy.store-mode-options",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "option",
+                "subpath": ".",
+                "owner": "StoreOptions",
+                "name": "enumerable",
+                "package": "valdres",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "moved.inspect",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "option",
+                "subpath": ".",
+                "owner": "StoreOptions",
+                "name": "id",
+                "package": "valdres",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "legacy.store-identity",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "option",
+                "subpath": ".",
+                "owner": "StoreOptions",
+                "name": "schemaValidation",
+                "package": "valdres",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "moved.schema",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "option",
+                "subpath": "./adapter-internals/v1",
+                "owner": "Transaction.commit",
+                "name": "source",
+                "package": "valdres",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "legacy.adapter-transaction",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "overload",
+                "subpath": ".",
+                "owner": "ScopedStore",
+                "name": "txn(callback)",
+                "package": "valdres",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "legacy.scoped-store-txn",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "overload",
+                "subpath": ".",
+                "owner": "store",
+                "name": "(id, options?)",
+                "package": "valdres",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "legacy.store-identity",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "overload",
+                "subpath": ".",
+                "owner": "store",
+                "name": "(options?)",
+                "package": "valdres",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "core.store",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "overload",
+                "subpath": ".",
+                "owner": "Store",
+                "name": "get(atom)",
+                "package": "valdres",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "core.store.get",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "overload",
+                "subpath": ".",
+                "owner": "Store",
+                "name": "get(family)",
+                "package": "valdres",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "legacy.family-membership-index",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "overload",
+                "subpath": ".",
+                "owner": "Store",
+                "name": "get(selector)",
+                "package": "valdres",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "core.store.get",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "overload",
+                "subpath": ".",
+                "owner": "Store",
+                "name": "onChange(atoms-and-selectors)",
+                "package": "valdres",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "moved.inspect",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "overload",
+                "subpath": ".",
+                "owner": "Store",
+                "name": "onChange(atoms-only)",
+                "package": "valdres",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "moved.inspect",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "overload",
+                "subpath": ".",
+                "owner": "Store",
+                "name": "onChange(selectors-only)",
+                "package": "valdres",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "moved.inspect",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "overload",
+                "subpath": ".",
+                "owner": "Store",
+                "name": "scope(id, callback)",
+                "package": "valdres",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "legacy.store-scope-callback",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "overload",
+                "subpath": ".",
+                "owner": "Store",
+                "name": "scope(id)",
+                "package": "valdres",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "core.store.scope",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "overload",
+                "subpath": ".",
+                "owner": "Store",
+                "name": "set(updater: async)",
+                "package": "valdres",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "legacy.promise-writes",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "overload",
+                "subpath": ".",
+                "owner": "Store",
+                "name": "set(value | updater: general)",
+                "package": "valdres",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "core.store.set",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "overload",
+                "subpath": ".",
+                "owner": "Store",
+                "name": "set(value | updater: sync)",
+                "package": "valdres",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "core.store.set",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "overload",
+                "subpath": ".",
+                "owner": "Store",
+                "name": "set(value: PromiseLike)",
+                "package": "valdres",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "legacy.promise-writes",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "overload",
+                "subpath": ".",
+                "owner": "Store",
+                "name": "sub(family)",
+                "package": "valdres",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "legacy.family-membership-index",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "overload",
+                "subpath": ".",
+                "owner": "Store",
+                "name": "sub(state)",
+                "package": "valdres",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "core.store.sub",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "overload",
+                "subpath": ".",
+                "owner": "Store",
+                "name": "txn(callback)",
+                "package": "valdres",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "core.store.txn",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "overload",
+                "subpath": ".",
+                "owner": "Transaction",
+                "name": "get(atom)",
+                "package": "valdres",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "core.transaction.get",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "overload",
+                "subpath": ".",
+                "owner": "Transaction",
+                "name": "get(family)",
+                "package": "valdres",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "legacy.family-membership-index",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "overload",
+                "subpath": ".",
+                "owner": "Transaction",
+                "name": "get(selector)",
+                "package": "valdres",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "core.transaction.get",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "overload",
+                "subpath": ".",
+                "owner": "Transaction",
+                "name": "scope(id, callback)",
+                "package": "valdres",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "core.transaction.scope",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "overload",
+                "subpath": ".",
+                "owner": "Transaction",
+                "name": "set(updater: async)",
+                "package": "valdres",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "legacy.promise-writes",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "overload",
+                "subpath": ".",
+                "owner": "Transaction",
+                "name": "set(value | updater: general)",
+                "package": "valdres",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "core.transaction.set",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "overload",
+                "subpath": ".",
+                "owner": "Transaction",
+                "name": "set(value | updater: sync)",
+                "package": "valdres",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "core.transaction.set",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "overload",
+                "subpath": ".",
+                "owner": "Transaction",
+                "name": "set(value: PromiseLike)",
+                "package": "valdres",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "legacy.promise-writes",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "overload",
+                "subpath": "./adapter-internals/v1",
+                "owner": "Transaction",
+                "name": "commit(source?)",
+                "package": "valdres",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "legacy.adapter-transaction",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "overload",
+                "subpath": "./adapter-internals/v1",
+                "owner": "Transaction",
+                "name": "constructor(store)",
+                "package": "valdres",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "legacy.adapter-transaction",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "property",
+                "subpath": ".",
+                "owner": "Store",
+                "name": "id",
+                "package": "valdres",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "legacy.store-identity",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "runtime-export",
+                "package": "valdres-react",
+                "subpath": ".",
+                "name": "Provider",
+                "baseline": "1.0.0-beta.4"
+            },
+            "dispositionId": "react.provider",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "runtime-export",
+                "package": "valdres-react",
+                "subpath": ".",
+                "name": "Scope",
+                "baseline": "1.0.0-beta.4"
+            },
+            "dispositionId": "react.scope",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "runtime-export",
+                "package": "valdres-react",
+                "subpath": ".",
+                "name": "StoreContext",
+                "baseline": "1.0.0-beta.4"
+            },
+            "dispositionId": "legacy.react-store-context",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "runtime-export",
+                "package": "valdres-react",
+                "subpath": ".",
+                "name": "useAtom",
+                "baseline": "1.0.0-beta.4"
+            },
+            "dispositionId": "react.use-atom",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "runtime-export",
+                "package": "valdres-react",
+                "subpath": ".",
+                "name": "useResetAtom",
+                "baseline": "1.0.0-beta.4"
+            },
+            "dispositionId": "react.use-reset-atom",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "runtime-export",
+                "package": "valdres-react",
+                "subpath": ".",
+                "name": "useSetAtom",
+                "baseline": "1.0.0-beta.4"
+            },
+            "dispositionId": "react.use-set-atom",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "runtime-export",
+                "package": "valdres-react",
+                "subpath": ".",
+                "name": "useStore",
+                "baseline": "1.0.0-beta.4"
+            },
+            "dispositionId": "react.use-store",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "runtime-export",
+                "package": "valdres-react",
+                "subpath": ".",
+                "name": "useStoreId",
+                "baseline": "1.0.0-beta.4"
+            },
+            "dispositionId": "legacy.store-identity",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "runtime-export",
+                "package": "valdres-react",
+                "subpath": ".",
+                "name": "useTransaction",
+                "baseline": "1.0.0-beta.4"
+            },
+            "dispositionId": "react.use-transaction",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "runtime-export",
+                "package": "valdres-react",
+                "subpath": ".",
+                "name": "useValdresCallback",
+                "baseline": "1.0.0-beta.4"
+            },
+            "dispositionId": "react.use-valdres-callback",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "runtime-export",
+                "package": "valdres-react",
+                "subpath": ".",
+                "name": "useValue",
+                "baseline": "1.0.0-beta.4"
+            },
+            "dispositionId": "react.use-value",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "runtime-export",
+                "package": "valdres",
+                "subpath": ".",
+                "name": "applyInitialize",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "legacy.initialize",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "runtime-export",
+                "package": "valdres",
+                "subpath": ".",
+                "name": "atom",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "core.atom",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "runtime-export",
+                "package": "valdres",
+                "subpath": ".",
+                "name": "atomFamily",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "core.family",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "runtime-export",
+                "package": "valdres",
+                "subpath": ".",
+                "name": "cacheMeta",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "beta.cache-companion",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "runtime-export",
+                "package": "valdres",
+                "subpath": ".",
+                "name": "deepFreeze",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "legacy.deep-freeze",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "runtime-export",
+                "package": "valdres",
+                "subpath": ".",
+                "name": "dehydrate",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "moved.transfer",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "runtime-export",
+                "package": "valdres",
+                "subpath": ".",
+                "name": "globalAtom",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "core.global-atom",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "runtime-export",
+                "package": "valdres",
+                "subpath": ".",
+                "name": "globalAtomFamily",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "core.global-atom",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "runtime-export",
+                "package": "valdres",
+                "subpath": ".",
+                "name": "globalStore",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "core.global-store",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "runtime-export",
+                "package": "valdres",
+                "subpath": ".",
+                "name": "hydrate",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "moved.transfer",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "runtime-export",
+                "package": "valdres",
+                "subpath": ".",
+                "name": "index",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "legacy.family-membership-index",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "runtime-export",
+                "package": "valdres",
+                "subpath": ".",
+                "name": "isAtom",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "legacy.predicates",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "runtime-export",
+                "package": "valdres",
+                "subpath": ".",
+                "name": "isAtomFamily",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "legacy.predicates",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "runtime-export",
+                "package": "valdres",
+                "subpath": ".",
+                "name": "isFamily",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "legacy.predicates",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "runtime-export",
+                "package": "valdres",
+                "subpath": ".",
+                "name": "isFamilyAtom",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "legacy.predicates",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "runtime-export",
+                "package": "valdres",
+                "subpath": ".",
+                "name": "isFamilySelector",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "legacy.predicates",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "runtime-export",
+                "package": "valdres",
+                "subpath": ".",
+                "name": "isFamilyState",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "legacy.predicates",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "runtime-export",
+                "package": "valdres",
+                "subpath": ".",
+                "name": "isPromiseLike",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "legacy.predicates",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "runtime-export",
+                "package": "valdres",
+                "subpath": ".",
+                "name": "isSelector",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "legacy.predicates",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "runtime-export",
+                "package": "valdres",
+                "subpath": ".",
+                "name": "isSelectorFamily",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "legacy.predicates",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "runtime-export",
+                "package": "valdres",
+                "subpath": ".",
+                "name": "isSuspendError",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "legacy.predicates",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "runtime-export",
+                "package": "valdres",
+                "subpath": ".",
+                "name": "SchemaValidationError",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "moved.schema",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "runtime-export",
+                "package": "valdres",
+                "subpath": ".",
+                "name": "selector",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "core.selector",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "runtime-export",
+                "package": "valdres",
+                "subpath": ".",
+                "name": "SelectorCircularDependencyError",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "core.selector-circular-dependency-error",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "runtime-export",
+                "package": "valdres",
+                "subpath": ".",
+                "name": "SelectorEvaluationError",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "core.selector-evaluation-error",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "runtime-export",
+                "package": "valdres",
+                "subpath": ".",
+                "name": "selectorFamily",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "core.family",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "runtime-export",
+                "package": "valdres",
+                "subpath": ".",
+                "name": "setAtomPairs",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "legacy.initialize",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "runtime-export",
+                "package": "valdres",
+                "subpath": ".",
+                "name": "store",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "core.store",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "runtime-export",
+                "package": "valdres",
+                "subpath": ".",
+                "name": "StoreDisposedError",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "core.store-disposed-error",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "runtime-export",
+                "package": "valdres",
+                "subpath": "./adapter-internals/v1",
+                "name": "SelectorEvaluationError",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "legacy.adapter-selector-error",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "runtime-export",
+                "package": "valdres",
+                "subpath": "./adapter-internals/v1",
+                "name": "storeAdapter",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "legacy.store-adapter",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "runtime-export",
+                "package": "valdres",
+                "subpath": "./adapter-internals/v1",
+                "name": "Transaction",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "legacy.adapter-transaction",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "type-export",
+                "package": "valdres-react",
+                "subpath": ".",
+                "name": "InitializeCallback",
+                "baseline": "1.0.0-beta.4"
+            },
+            "dispositionId": "legacy.react-initialize-type",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "type-export",
+                "package": "valdres",
+                "subpath": ".",
+                "name": "Atom",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "core.type.atom",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "type-export",
+                "package": "valdres",
+                "subpath": ".",
+                "name": "AtomChange",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "moved.inspect",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "type-export",
+                "package": "valdres",
+                "subpath": ".",
+                "name": "AtomDefaultValue",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "legacy.atom-default-value",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "type-export",
+                "package": "valdres",
+                "subpath": ".",
+                "name": "AtomFamily",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "core.family",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "type-export",
+                "package": "valdres",
+                "subpath": ".",
+                "name": "AtomFamilyAtom",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "core.family",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "type-export",
+                "package": "valdres",
+                "subpath": ".",
+                "name": "AtomFamilyDefaultValue",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "core.family",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "type-export",
+                "package": "valdres",
+                "subpath": ".",
+                "name": "AtomFamilyOptions",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "core.family",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "type-export",
+                "package": "valdres",
+                "subpath": ".",
+                "name": "AtomFamilySelector",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "core.family",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "type-export",
+                "package": "valdres",
+                "subpath": ".",
+                "name": "AtomOnMount",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "legacy.atom-lifecycle",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "type-export",
+                "package": "valdres",
+                "subpath": ".",
+                "name": "AtomOnSet",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "legacy.atom-lifecycle",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "type-export",
+                "package": "valdres",
+                "subpath": ".",
+                "name": "AtomOptions",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "core.type.atom-options",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "type-export",
+                "package": "valdres",
+                "subpath": ".",
+                "name": "BorrowedScopedStore",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "core.store.scope",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "type-export",
+                "package": "valdres",
+                "subpath": ".",
+                "name": "CacheMeta",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "beta.cache-companion",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "type-export",
+                "package": "valdres",
+                "subpath": ".",
+                "name": "DehydratedState",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "moved.transfer",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "type-export",
+                "package": "valdres",
+                "subpath": ".",
+                "name": "EqualFunc",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "core.type.equal-func",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "type-export",
+                "package": "valdres",
+                "subpath": ".",
+                "name": "FamilyKey",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "core.type.family-key",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "type-export",
+                "package": "valdres",
+                "subpath": ".",
+                "name": "GetValue",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "core.type.get-value",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "type-export",
+                "package": "valdres",
+                "subpath": ".",
+                "name": "GlobalAtom",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "core.global-atom",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "type-export",
+                "package": "valdres",
+                "subpath": ".",
+                "name": "GlobalAtomFamily",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "core.global-atom",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "type-export",
+                "package": "valdres",
+                "subpath": ".",
+                "name": "GlobalAtomFamilyOptions",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "core.global-atom",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "type-export",
+                "package": "valdres",
+                "subpath": ".",
+                "name": "GlobalAtomGetSelfFunc",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "core.global-atom",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "type-export",
+                "package": "valdres",
+                "subpath": ".",
+                "name": "GlobalAtomOptions",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "core.global-atom",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "type-export",
+                "package": "valdres",
+                "subpath": ".",
+                "name": "GlobalAtomResetSelfFunc",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "core.global-atom",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "type-export",
+                "package": "valdres",
+                "subpath": ".",
+                "name": "GlobalAtomSetSelfFunc",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "core.global-atom",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "type-export",
+                "package": "valdres",
+                "subpath": ".",
+                "name": "HydrateOptions",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "moved.transfer",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "type-export",
+                "package": "valdres",
+                "subpath": ".",
+                "name": "IndexOptions",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "legacy.family-membership-index",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "type-export",
+                "package": "valdres",
+                "subpath": ".",
+                "name": "InitializeCallback",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "legacy.initialize",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "type-export",
+                "package": "valdres",
+                "subpath": ".",
+                "name": "Reactive",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "legacy.cache-reactive",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "type-export",
+                "package": "valdres",
+                "subpath": ".",
+                "name": "ResetAtom",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "legacy.mutation-type-aliases",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "type-export",
+                "package": "valdres",
+                "subpath": ".",
+                "name": "Schema",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "moved.schema",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "type-export",
+                "package": "valdres",
+                "subpath": ".",
+                "name": "ScopedStore",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "core.store.scope",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "type-export",
+                "package": "valdres",
+                "subpath": ".",
+                "name": "ScopedTransaction",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "legacy.scoped-transaction-types",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "type-export",
+                "package": "valdres",
+                "subpath": ".",
+                "name": "ScopedTransactionFn",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "legacy.scoped-transaction-types",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "type-export",
+                "package": "valdres",
+                "subpath": ".",
+                "name": "ScopeFn",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "core.store.scope",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "type-export",
+                "package": "valdres",
+                "subpath": ".",
+                "name": "Selector",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "core.type.selector",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "type-export",
+                "package": "valdres",
+                "subpath": ".",
+                "name": "SelectorChange",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "moved.inspect",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "type-export",
+                "package": "valdres",
+                "subpath": ".",
+                "name": "SelectorFamily",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "core.family",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "type-export",
+                "package": "valdres",
+                "subpath": ".",
+                "name": "SelectorFamilyOptions",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "core.family",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "type-export",
+                "package": "valdres",
+                "subpath": ".",
+                "name": "SelectorGetOptions",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "legacy.selector-get-options",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "type-export",
+                "package": "valdres",
+                "subpath": ".",
+                "name": "SelectorOptions",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "core.type.selector-options",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "type-export",
+                "package": "valdres",
+                "subpath": ".",
+                "name": "SetAtom",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "legacy.mutation-type-aliases",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "type-export",
+                "package": "valdres",
+                "subpath": ".",
+                "name": "SetAtomValue",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "legacy.mutation-type-aliases",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "type-export",
+                "package": "valdres",
+                "subpath": ".",
+                "name": "SnapshotEntry",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "moved.inspect",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "type-export",
+                "package": "valdres",
+                "subpath": ".",
+                "name": "StandardSchemaV1",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "moved.schema",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "type-export",
+                "package": "valdres",
+                "subpath": ".",
+                "name": "State",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "core.type.state",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "type-export",
+                "package": "valdres",
+                "subpath": ".",
+                "name": "Store",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "core.type.store",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "type-export",
+                "package": "valdres",
+                "subpath": ".",
+                "name": "StoreChange",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "moved.inspect",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "type-export",
+                "package": "valdres",
+                "subpath": ".",
+                "name": "StoreChangeCallback",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "moved.inspect",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "type-export",
+                "package": "valdres",
+                "subpath": ".",
+                "name": "StoreChangeMeta",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "moved.inspect",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "type-export",
+                "package": "valdres",
+                "subpath": ".",
+                "name": "StoreChangeSource",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "moved.inspect",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "type-export",
+                "package": "valdres",
+                "subpath": ".",
+                "name": "StoreOptions",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "core.type.store-options",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "type-export",
+                "package": "valdres",
+                "subpath": ".",
+                "name": "SubscribeFn",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "core.type.subscribe-fn",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "type-export",
+                "package": "valdres",
+                "subpath": ".",
+                "name": "SyncSetAtom",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "legacy.mutation-type-aliases",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "type-export",
+                "package": "valdres",
+                "subpath": ".",
+                "name": "Transaction",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "core.type.transaction",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "type-export",
+                "package": "valdres",
+                "subpath": ".",
+                "name": "TransactionFn",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "core.type.transaction-fn",
+            "reviewStatus": "approved"
+        },
+        {
+            "coordinate": {
+                "kind": "type-export",
+                "package": "valdres",
+                "subpath": ".",
+                "name": "TransactionInterface",
+                "baseline": "1.0.0-beta.23"
+            },
+            "dispositionId": "legacy.transaction-interface",
+            "reviewStatus": "approved"
+        }
+    ]
+}

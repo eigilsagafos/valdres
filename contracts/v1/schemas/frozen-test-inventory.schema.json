@@ -1,0 +1,255 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://valdres.dev/contracts/v1/frozen-test-inventory.schema.json",
+    "title": "Valdres frozen beta.23 production and test-subject inventory",
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+        "$schema",
+        "schemaVersion",
+        "baseline",
+        "provenance",
+        "counts",
+        "entries"
+    ],
+    "properties": {
+        "$schema": {
+            "const": "./schemas/frozen-test-inventory.schema.json"
+        },
+        "schemaVersion": { "const": 1 },
+        "baseline": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["package", "version"],
+            "properties": {
+                "package": { "const": "valdres" },
+                "version": { "const": "1.0.0-beta.23" }
+            }
+        },
+        "provenance": { "$ref": "#/$defs/provenance" },
+        "counts": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["productionFiles", "testFiles", "testCases", "total"],
+            "properties": {
+                "productionFiles": { "type": "integer", "minimum": 1 },
+                "testFiles": { "type": "integer", "minimum": 1 },
+                "testCases": { "type": "integer", "minimum": 1 },
+                "total": { "type": "integer", "minimum": 3 }
+            }
+        },
+        "entries": {
+            "type": "array",
+            "minItems": 2,
+            "items": { "$ref": "#/$defs/entry" }
+        }
+    },
+    "$defs": {
+        "sha1": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+        "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "provenance": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "sourceRevision",
+                "releaseRevision",
+                "sourceTrees",
+                "publishedPackage",
+                "sourceLockfile",
+                "testRegistration",
+                "generator"
+            ],
+            "properties": {
+                "sourceRevision": {
+                    "const": "c071cdaba26a2f30243d43516a199a94a9137c6e"
+                },
+                "releaseRevision": {
+                    "const": "6adb53a240a84fc90b8ad8dc2af77611e45dfd08"
+                },
+                "sourceTrees": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["source", "tests"],
+                    "properties": {
+                        "source": {
+                            "const": "2e521d12d483d1d59030f95cacac6a1f2801232d"
+                        },
+                        "tests": {
+                            "const": "785381e6d0bf303ad8d67dd3ba2af1f58be2a121"
+                        }
+                    }
+                },
+                "publishedPackage": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["npmSpec", "tarballSha256"],
+                    "properties": {
+                        "npmSpec": { "const": "valdres@1.0.0-beta.23" },
+                        "tarballSha256": {
+                            "const": "d98638aa0d8890d35f25b2a132fb7add0355206f925fcf2a4cfe0104a20cafa4"
+                        }
+                    }
+                },
+                "sourceLockfile": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["path", "gitBlobSha1", "sha256"],
+                    "properties": {
+                        "path": { "const": "bun.lock" },
+                        "gitBlobSha1": {
+                            "const": "8684a8d328c8e0bfdeb9c7f6ccb849d9cd9ecc05"
+                        },
+                        "sha256": {
+                            "const": "c79a4fe44e6caa93c294744ba6ded67ccf2844286d5218e509cfa944f8b6a2d0"
+                        }
+                    }
+                },
+                "testRegistration": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                        "runner",
+                        "runnerVersion",
+                        "selection",
+                        "files",
+                        "registeredFiles",
+                        "zeroRegistrationFiles",
+                        "tests",
+                        "minimumAssertions",
+                        "failures",
+                        "skipped"
+                    ],
+                    "properties": {
+                        "runner": { "const": "bun" },
+                        "runnerVersion": { "const": "1.4.0" },
+                        "selection": {
+                            "const": "packages/valdres/**/*.test.ts"
+                        },
+                        "files": { "type": "integer", "minimum": 1 },
+                        "registeredFiles": {
+                            "type": "integer",
+                            "minimum": 1
+                        },
+                        "zeroRegistrationFiles": {
+                            "const": [
+                                "packages/valdres/src/lib/atomFamily.types.test.ts",
+                                "packages/valdres/src/lib/commitPlan.types.test.ts",
+                                "packages/valdres/src/lib/setAtom.types.test.ts",
+                                "packages/valdres/src/lib/transaction.types.test.ts"
+                            ]
+                        },
+                        "tests": { "type": "integer", "minimum": 1 },
+                        "minimumAssertions": { "const": 328000 },
+                        "failures": { "const": 0 },
+                        "skipped": { "const": 0 }
+                    }
+                },
+                "generator": {
+                    "const": "contracts/v1/generate-frozen-test-inventory.ts"
+                }
+            }
+        },
+        "entry": {
+            "oneOf": [
+                { "$ref": "#/$defs/productionEntry" },
+                { "$ref": "#/$defs/testFileEntry" },
+                { "$ref": "#/$defs/testCaseEntry" }
+            ]
+        },
+        "id": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9.-]+$"
+        },
+        "productionEntry": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "subject", "evidence"],
+            "properties": {
+                "id": { "$ref": "#/$defs/id" },
+                "subject": { "$ref": "#/$defs/productionSubject" },
+                "evidence": { "$ref": "#/$defs/productionEvidence" }
+            }
+        },
+        "testCaseEntry": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "subject", "evidence"],
+            "properties": {
+                "id": { "$ref": "#/$defs/id" },
+                "subject": { "$ref": "#/$defs/testCaseSubject" },
+                "evidence": { "$ref": "#/$defs/testCaseEvidence" }
+            }
+        },
+        "testFileEntry": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "subject", "evidence"],
+            "properties": {
+                "id": { "$ref": "#/$defs/id" },
+                "subject": { "$ref": "#/$defs/testFileSubject" },
+                "evidence": { "$ref": "#/$defs/productionEvidence" }
+            }
+        },
+        "productionSubject": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["origin", "kind", "path"],
+            "properties": {
+                "origin": { "const": "published-beta.23" },
+                "kind": { "const": "production-file" },
+                "path": {
+                    "type": "string",
+                    "pattern": "^packages/valdres/src/.+\\.tsx?$"
+                }
+            }
+        },
+        "testCaseSubject": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["origin", "kind", "path", "testName"],
+            "properties": {
+                "origin": { "const": "published-beta.23" },
+                "kind": { "const": "test-case" },
+                "path": {
+                    "type": "string",
+                    "pattern": "^packages/valdres/(?:src|test)/.+\\.test\\.tsx?$"
+                },
+                "testName": { "type": "string", "minLength": 1 }
+            }
+        },
+        "testFileSubject": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["origin", "kind", "path"],
+            "properties": {
+                "origin": { "const": "published-beta.23" },
+                "kind": { "const": "test-file" },
+                "path": {
+                    "enum": [
+                        "packages/valdres/src/lib/atomFamily.types.test.ts",
+                        "packages/valdres/src/lib/commitPlan.types.test.ts",
+                        "packages/valdres/src/lib/setAtom.types.test.ts",
+                        "packages/valdres/src/lib/transaction.types.test.ts"
+                    ]
+                }
+            }
+        },
+        "productionEvidence": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["gitBlobSha1"],
+            "properties": {
+                "gitBlobSha1": { "$ref": "#/$defs/sha1" }
+            }
+        },
+        "testCaseEvidence": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["gitBlobSha1", "sourceLine"],
+            "properties": {
+                "gitBlobSha1": { "$ref": "#/$defs/sha1" },
+                "sourceLine": { "type": "integer", "minimum": 1 }
+            }
+        }
+    }
+}

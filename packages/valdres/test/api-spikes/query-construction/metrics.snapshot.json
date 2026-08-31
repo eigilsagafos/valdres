@@ -1,0 +1,598 @@
+{
+    "typescript": "5.9.2",
+    "operatorImports": [],
+    "candidates": [
+        {
+            "caseId": "family",
+            "grammar": "builder",
+            "ownership": "attached",
+            "name": "attachedBuilderByGenre",
+            "tokens": 60,
+            "canonicalCharacters": 212,
+            "lines": 8,
+            "calls": 4,
+            "callbacks": 2,
+            "objectLiterals": 1,
+            "propertyAccesses": 7,
+            "concepts": [
+                "collection-attached-owner",
+                "query-local-builder-callback",
+                "filter",
+                "order",
+                "pagination",
+                "family-parameters"
+            ],
+            "conceptCount": 6
+        },
+        {
+            "caseId": "family",
+            "grammar": "object",
+            "ownership": "attached",
+            "name": "attachedObjectByGenre",
+            "tokens": 51,
+            "canonicalCharacters": 191,
+            "lines": 8,
+            "calls": 2,
+            "callbacks": 1,
+            "objectLiterals": 4,
+            "propertyAccesses": 1,
+            "concepts": [
+                "collection-attached-owner",
+                "recursive-object-grammar",
+                "filter",
+                "order",
+                "pagination",
+                "family-parameters"
+            ],
+            "conceptCount": 6
+        },
+        {
+            "caseId": "family",
+            "grammar": "builder",
+            "ownership": "standalone",
+            "name": "builderByGenre",
+            "tokens": 60,
+            "canonicalCharacters": 213,
+            "lines": 8,
+            "calls": 4,
+            "callbacks": 2,
+            "objectLiterals": 1,
+            "propertyAccesses": 6,
+            "concepts": [
+                "standalone-query-owner",
+                "query-local-builder-callback",
+                "filter",
+                "order",
+                "pagination",
+                "family-parameters"
+            ],
+            "conceptCount": 6
+        },
+        {
+            "caseId": "family",
+            "grammar": "object",
+            "ownership": "standalone",
+            "name": "objectByGenre",
+            "tokens": 51,
+            "canonicalCharacters": 192,
+            "lines": 8,
+            "calls": 2,
+            "callbacks": 1,
+            "objectLiterals": 4,
+            "propertyAccesses": 0,
+            "concepts": [
+                "standalone-query-owner",
+                "recursive-object-grammar",
+                "filter",
+                "order",
+                "pagination",
+                "family-parameters"
+            ],
+            "conceptCount": 6
+        },
+        {
+            "caseId": "nested-boolean",
+            "grammar": "builder",
+            "ownership": "attached",
+            "name": "attachedBuilderNestedBoolean",
+            "tokens": 73,
+            "canonicalCharacters": 228,
+            "lines": 7,
+            "calls": 8,
+            "callbacks": 1,
+            "objectLiterals": 1,
+            "propertyAccesses": 16,
+            "concepts": [
+                "collection-attached-owner",
+                "query-local-builder-callback",
+                "filter",
+                "nested-boolean"
+            ],
+            "conceptCount": 4
+        },
+        {
+            "caseId": "nested-boolean",
+            "grammar": "object",
+            "ownership": "attached",
+            "name": "attachedObjectNestedBoolean",
+            "tokens": 56,
+            "canonicalCharacters": 184,
+            "lines": 7,
+            "calls": 1,
+            "callbacks": 0,
+            "objectLiterals": 9,
+            "propertyAccesses": 1,
+            "concepts": [
+                "collection-attached-owner",
+                "recursive-object-grammar",
+                "filter",
+                "nested-boolean"
+            ],
+            "conceptCount": 4
+        },
+        {
+            "caseId": "nested-boolean",
+            "grammar": "builder",
+            "ownership": "standalone",
+            "name": "builderNestedBoolean",
+            "tokens": 73,
+            "canonicalCharacters": 229,
+            "lines": 7,
+            "calls": 8,
+            "callbacks": 1,
+            "objectLiterals": 1,
+            "propertyAccesses": 15,
+            "concepts": [
+                "standalone-query-owner",
+                "query-local-builder-callback",
+                "filter",
+                "nested-boolean"
+            ],
+            "conceptCount": 4
+        },
+        {
+            "caseId": "nested-boolean",
+            "grammar": "object",
+            "ownership": "standalone",
+            "name": "objectNestedBoolean",
+            "tokens": 56,
+            "canonicalCharacters": 185,
+            "lines": 7,
+            "calls": 1,
+            "callbacks": 0,
+            "objectLiterals": 9,
+            "propertyAccesses": 0,
+            "concepts": [
+                "standalone-query-owner",
+                "recursive-object-grammar",
+                "filter",
+                "nested-boolean"
+            ],
+            "conceptCount": 4
+        },
+        {
+            "caseId": "popular-drama",
+            "grammar": "builder",
+            "ownership": "attached",
+            "name": "attachedBuilderPopularDrama",
+            "tokens": 115,
+            "canonicalCharacters": 416,
+            "lines": 14,
+            "calls": 8,
+            "callbacks": 1,
+            "objectLiterals": 4,
+            "propertyAccesses": 20,
+            "concepts": [
+                "collection-attached-owner",
+                "query-local-builder-callback",
+                "filter",
+                "boolean-conjunction",
+                "order",
+                "pagination",
+                "facets"
+            ],
+            "conceptCount": 7
+        },
+        {
+            "caseId": "popular-drama",
+            "grammar": "object",
+            "ownership": "attached",
+            "name": "attachedObjectPopularDrama",
+            "tokens": 77,
+            "canonicalCharacters": 319,
+            "lines": 14,
+            "calls": 1,
+            "callbacks": 0,
+            "objectLiterals": 9,
+            "propertyAccesses": 1,
+            "concepts": [
+                "collection-attached-owner",
+                "recursive-object-grammar",
+                "filter",
+                "boolean-conjunction",
+                "order",
+                "pagination",
+                "facets"
+            ],
+            "conceptCount": 7
+        },
+        {
+            "caseId": "popular-drama",
+            "grammar": "builder",
+            "ownership": "standalone",
+            "name": "builderPopularDrama",
+            "tokens": 115,
+            "canonicalCharacters": 417,
+            "lines": 14,
+            "calls": 8,
+            "callbacks": 1,
+            "objectLiterals": 4,
+            "propertyAccesses": 19,
+            "concepts": [
+                "standalone-query-owner",
+                "query-local-builder-callback",
+                "filter",
+                "boolean-conjunction",
+                "order",
+                "pagination",
+                "facets"
+            ],
+            "conceptCount": 7
+        },
+        {
+            "caseId": "popular-drama",
+            "grammar": "object",
+            "ownership": "standalone",
+            "name": "objectPopularDrama",
+            "tokens": 77,
+            "canonicalCharacters": 320,
+            "lines": 14,
+            "calls": 1,
+            "callbacks": 0,
+            "objectLiterals": 9,
+            "propertyAccesses": 0,
+            "concepts": [
+                "standalone-query-owner",
+                "recursive-object-grammar",
+                "filter",
+                "boolean-conjunction",
+                "order",
+                "pagination",
+                "facets"
+            ],
+            "conceptCount": 7
+        },
+        {
+            "caseId": "repeated-constraint",
+            "grammar": "builder",
+            "ownership": "attached",
+            "name": "attachedBuilderRepeatedConstraint",
+            "tokens": 41,
+            "canonicalCharacters": 140,
+            "lines": 6,
+            "calls": 4,
+            "callbacks": 1,
+            "objectLiterals": 1,
+            "propertyAccesses": 8,
+            "concepts": [
+                "collection-attached-owner",
+                "query-local-builder-callback",
+                "filter",
+                "same-index-conjunction"
+            ],
+            "conceptCount": 4
+        },
+        {
+            "caseId": "repeated-constraint",
+            "grammar": "object",
+            "ownership": "attached",
+            "name": "attachedObjectRepeatedConstraint",
+            "tokens": 36,
+            "canonicalCharacters": 114,
+            "lines": 5,
+            "calls": 1,
+            "callbacks": 0,
+            "objectLiterals": 6,
+            "propertyAccesses": 1,
+            "concepts": [
+                "collection-attached-owner",
+                "recursive-object-grammar",
+                "filter",
+                "same-index-conjunction"
+            ],
+            "conceptCount": 4
+        },
+        {
+            "caseId": "repeated-constraint",
+            "grammar": "builder",
+            "ownership": "standalone",
+            "name": "builderRepeatedConstraint",
+            "tokens": 41,
+            "canonicalCharacters": 141,
+            "lines": 6,
+            "calls": 4,
+            "callbacks": 1,
+            "objectLiterals": 1,
+            "propertyAccesses": 7,
+            "concepts": [
+                "standalone-query-owner",
+                "query-local-builder-callback",
+                "filter",
+                "same-index-conjunction"
+            ],
+            "conceptCount": 4
+        },
+        {
+            "caseId": "repeated-constraint",
+            "grammar": "object",
+            "ownership": "standalone",
+            "name": "objectRepeatedConstraint",
+            "tokens": 36,
+            "canonicalCharacters": 115,
+            "lines": 5,
+            "calls": 1,
+            "callbacks": 0,
+            "objectLiterals": 6,
+            "propertyAccesses": 0,
+            "concepts": [
+                "standalone-query-owner",
+                "recursive-object-grammar",
+                "filter",
+                "same-index-conjunction"
+            ],
+            "conceptCount": 4
+        },
+        {
+            "caseId": "reusable-fragments",
+            "grammar": "builder",
+            "ownership": "attached",
+            "name": "attachedBuilderReusableFragments",
+            "tokens": 28,
+            "canonicalCharacters": 85,
+            "lines": 3,
+            "calls": 4,
+            "callbacks": 1,
+            "objectLiterals": 1,
+            "propertyAccesses": 2,
+            "concepts": [
+                "collection-attached-owner",
+                "query-local-builder-callback",
+                "filter",
+                "reusable-fragments"
+            ],
+            "conceptCount": 4
+        },
+        {
+            "caseId": "reusable-fragments",
+            "grammar": "object",
+            "ownership": "attached",
+            "name": "attachedObjectReusableFragments",
+            "tokens": 19,
+            "canonicalCharacters": 85,
+            "lines": 3,
+            "calls": 1,
+            "callbacks": 0,
+            "objectLiterals": 2,
+            "propertyAccesses": 1,
+            "concepts": [
+                "collection-attached-owner",
+                "recursive-object-grammar",
+                "filter",
+                "reusable-fragments"
+            ],
+            "conceptCount": 4
+        },
+        {
+            "caseId": "reusable-fragments",
+            "grammar": "builder",
+            "ownership": "standalone",
+            "name": "builderReusableFragments",
+            "tokens": 28,
+            "canonicalCharacters": 86,
+            "lines": 3,
+            "calls": 4,
+            "callbacks": 1,
+            "objectLiterals": 1,
+            "propertyAccesses": 1,
+            "concepts": [
+                "standalone-query-owner",
+                "query-local-builder-callback",
+                "filter",
+                "reusable-fragments"
+            ],
+            "conceptCount": 4
+        },
+        {
+            "caseId": "reusable-fragments",
+            "grammar": "object",
+            "ownership": "standalone",
+            "name": "objectReusableFragments",
+            "tokens": 19,
+            "canonicalCharacters": 86,
+            "lines": 3,
+            "calls": 1,
+            "callbacks": 0,
+            "objectLiterals": 2,
+            "propertyAccesses": 0,
+            "concepts": [
+                "standalone-query-owner",
+                "recursive-object-grammar",
+                "filter",
+                "reusable-fragments"
+            ],
+            "conceptCount": 4
+        },
+        {
+            "caseId": "simple",
+            "grammar": "builder",
+            "ownership": "attached",
+            "name": "attachedBuilderSimple",
+            "tokens": 24,
+            "canonicalCharacters": 70,
+            "lines": 3,
+            "calls": 2,
+            "callbacks": 1,
+            "objectLiterals": 1,
+            "propertyAccesses": 4,
+            "concepts": [
+                "collection-attached-owner",
+                "query-local-builder-callback",
+                "filter"
+            ],
+            "conceptCount": 3
+        },
+        {
+            "caseId": "simple",
+            "grammar": "object",
+            "ownership": "attached",
+            "name": "attachedObjectSimple",
+            "tokens": 19,
+            "canonicalCharacters": 56,
+            "lines": 3,
+            "calls": 1,
+            "callbacks": 0,
+            "objectLiterals": 3,
+            "propertyAccesses": 1,
+            "concepts": [
+                "collection-attached-owner",
+                "recursive-object-grammar",
+                "filter"
+            ],
+            "conceptCount": 3
+        },
+        {
+            "caseId": "simple",
+            "grammar": "builder",
+            "ownership": "standalone",
+            "name": "builderSimple",
+            "tokens": 24,
+            "canonicalCharacters": 71,
+            "lines": 3,
+            "calls": 2,
+            "callbacks": 1,
+            "objectLiterals": 1,
+            "propertyAccesses": 3,
+            "concepts": [
+                "standalone-query-owner",
+                "query-local-builder-callback",
+                "filter"
+            ],
+            "conceptCount": 3
+        },
+        {
+            "caseId": "simple",
+            "grammar": "object",
+            "ownership": "standalone",
+            "name": "objectSimple",
+            "tokens": 19,
+            "canonicalCharacters": 57,
+            "lines": 3,
+            "calls": 1,
+            "callbacks": 0,
+            "objectLiterals": 3,
+            "propertyAccesses": 0,
+            "concepts": [
+                "standalone-query-owner",
+                "recursive-object-grammar",
+                "filter"
+            ],
+            "conceptCount": 3
+        }
+    ],
+    "reusableSupport": [
+        {
+            "grammar": "builder",
+            "declarations": ["MovieQueryBuilder", "isClassic", "isRecent"],
+            "tokens": 45,
+            "canonicalCharacters": 209,
+            "lines": 3,
+            "concepts": ["builder-type-alias", "predicate-fragment-functions"]
+        },
+        {
+            "grammar": "object",
+            "declarations": ["classicObjectFragment", "recentObjectFragment"],
+            "tokens": 36,
+            "canonicalCharacters": 180,
+            "lines": 6,
+            "concepts": ["typed-object-fragments"]
+        }
+    ],
+    "reusableFragmentTotals": [
+        {
+            "caseId": "reusable-fragments",
+            "grammar": "builder",
+            "ownership": "attached",
+            "useSiteTokens": 28,
+            "supportTokens": 45,
+            "totalTokens": 73,
+            "totalCanonicalCharacters": 294,
+            "totalLines": 6,
+            "concepts": [
+                "collection-attached-owner",
+                "query-local-builder-callback",
+                "filter",
+                "reusable-fragments",
+                "builder-type-alias",
+                "predicate-fragment-functions"
+            ]
+        },
+        {
+            "caseId": "reusable-fragments",
+            "grammar": "object",
+            "ownership": "attached",
+            "useSiteTokens": 19,
+            "supportTokens": 36,
+            "totalTokens": 55,
+            "totalCanonicalCharacters": 265,
+            "totalLines": 9,
+            "concepts": [
+                "collection-attached-owner",
+                "recursive-object-grammar",
+                "filter",
+                "reusable-fragments",
+                "typed-object-fragments"
+            ]
+        },
+        {
+            "caseId": "reusable-fragments",
+            "grammar": "builder",
+            "ownership": "standalone",
+            "useSiteTokens": 28,
+            "supportTokens": 45,
+            "totalTokens": 73,
+            "totalCanonicalCharacters": 295,
+            "totalLines": 6,
+            "concepts": [
+                "standalone-query-owner",
+                "query-local-builder-callback",
+                "filter",
+                "reusable-fragments",
+                "builder-type-alias",
+                "predicate-fragment-functions"
+            ]
+        },
+        {
+            "caseId": "reusable-fragments",
+            "grammar": "object",
+            "ownership": "standalone",
+            "useSiteTokens": 19,
+            "supportTokens": 36,
+            "totalTokens": 55,
+            "totalCanonicalCharacters": 266,
+            "totalLines": 9,
+            "concepts": [
+                "standalone-query-owner",
+                "recursive-object-grammar",
+                "filter",
+                "reusable-fragments",
+                "typed-object-fragments"
+            ]
+        }
+    ],
+    "meanTokens": {
+        "standalone:builder": 56.83,
+        "standalone:object": 43,
+        "attached:builder": 56.83,
+        "attached:object": 43
+    }
+}

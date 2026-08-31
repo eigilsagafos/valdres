@@ -1,0 +1,1539 @@
+{
+    "schemaVersion": 1,
+    "experiment": "D43.1 packed query-construction reachability",
+    "interpretation": {
+        "valid": [
+            "Reachability and relative size under the pinned tool matrix for this straightforward preserved-ESM implementation.",
+            "Native ESM linkage for the tested export map.",
+            "Whether the harness detects a large observable query-engine boundary mutation."
+        ],
+        "invalid": [
+            "A production Valdres byte budget.",
+            "Proof that every possible attached-method implementation must retain the same bytes.",
+            "A grammar DX or runtime-performance winner.",
+            "Marginal whole-application cost when shared chunks or another query import already make the query tier reachable.",
+            "The eventual Valdres production build and export topology.",
+            "A direct Bun native-ESM module-linkage trace; Bun is behavior-smoked while Node supplies the trace.",
+            "The size of complete production grammar validation and normalization.",
+            "A reference oracle for production State, row-handle, ordering, or facet semantics."
+        ]
+    },
+    "tools": {
+        "bun": "1.4.0",
+        "bunNodeCompatibility": "26.3.0",
+        "node": "24.16.0",
+        "npm": "11.13.0",
+        "esbuild": "0.25.9",
+        "vite": "6.3.5",
+        "rollup": "4.49.0",
+        "webpack": "5.101.3"
+    },
+    "packedPackage": {
+        "name": "@valdres/query-construction-spike",
+        "version": "1.0.0-d43.1",
+        "sideEffects": false,
+        "tarball": "valdres-query-construction-spike-1.0.0-d43.1.tgz",
+        "files": {
+            "esm/attached-builder.js": {
+                "raw": 372,
+                "sha256": "8a97714ec26d76adb0f1d3666aae5d31885591e5ef3f0c8123b35f4df6b29348"
+            },
+            "esm/attached-object.js": {
+                "raw": 371,
+                "sha256": "c8a154c5080e157281b6a922c205eebbd0efb9ae661ffa4afb93be3c1ab4925f"
+            },
+            "esm/collection.js": {
+                "raw": 822,
+                "sha256": "930dc85096d23f8fb1ababc31f3ebfaf88a08dbe2752b8d8189f83c9f7193a0b"
+            },
+            "esm/query-builder.js": {
+                "raw": 2427,
+                "sha256": "e398f4c4b22fffb38a72df0ee5541c4a73201cf0680fed66911af2954f939702"
+            },
+            "esm/query-engine.js": {
+                "raw": 2964,
+                "sha256": "27b24aceb0a79865f63041144393eadb8365a08df63b07b6d0ae150f5b7fd2ed"
+            },
+            "esm/query-object.js": {
+                "raw": 2659,
+                "sha256": "9c431d86dcf806e1d27257451666704a574214a09908c6e63efc7ebc36c9eb1f"
+            },
+            "esm/standalone-builder.js": {
+                "raw": 107,
+                "sha256": "990026a9f5548ef30355c546365ccd2d812c69bf9b3b50390002baa931872ce0"
+            },
+            "esm/standalone-object.js": {
+                "raw": 106,
+                "sha256": "29e40687194b00d4be0a68d5ba2c37ca1170006420125cada85e3af100a206dc"
+            },
+            "package.json": {
+                "raw": 498,
+                "sha256": "1278e5efe315456f351dad1cd80e1cb58856c20eabbeba9a1065b52c9b8ebeb6"
+            }
+        },
+        "canonicalSha256": "0569de017dfd0f09f8c8ce4d12f5659d19a75d131fd503893842553449c2204a"
+    },
+    "cases": [
+        {
+            "id": "narrow-collection-membership",
+            "exportPath": "collection",
+            "ownership": "narrow",
+            "grammar": "none",
+            "usage": "membership",
+            "expectedMarkers": {
+                "collection": true,
+                "engine": false,
+                "builder": false,
+                "object": false
+            }
+        },
+        {
+            "id": "standalone-builder-membership",
+            "exportPath": "standalone-builder",
+            "ownership": "standalone",
+            "grammar": "builder",
+            "usage": "membership",
+            "expectedMarkers": {
+                "collection": true,
+                "engine": false,
+                "builder": false,
+                "object": false
+            }
+        },
+        {
+            "id": "standalone-builder-query",
+            "exportPath": "standalone-builder",
+            "ownership": "standalone",
+            "grammar": "builder",
+            "usage": "query",
+            "expectedMarkers": {
+                "collection": true,
+                "engine": true,
+                "builder": true,
+                "object": false
+            }
+        },
+        {
+            "id": "standalone-object-membership",
+            "exportPath": "standalone-object",
+            "ownership": "standalone",
+            "grammar": "object",
+            "usage": "membership",
+            "expectedMarkers": {
+                "collection": true,
+                "engine": false,
+                "builder": false,
+                "object": false
+            }
+        },
+        {
+            "id": "standalone-object-query",
+            "exportPath": "standalone-object",
+            "ownership": "standalone",
+            "grammar": "object",
+            "usage": "query",
+            "expectedMarkers": {
+                "collection": true,
+                "engine": true,
+                "builder": false,
+                "object": true
+            }
+        },
+        {
+            "id": "attached-builder-membership",
+            "exportPath": "attached-builder",
+            "ownership": "attached",
+            "grammar": "builder",
+            "usage": "membership",
+            "expectedMarkers": {
+                "collection": true,
+                "engine": true,
+                "builder": true,
+                "object": false
+            }
+        },
+        {
+            "id": "attached-builder-query",
+            "exportPath": "attached-builder",
+            "ownership": "attached",
+            "grammar": "builder",
+            "usage": "query",
+            "expectedMarkers": {
+                "collection": true,
+                "engine": true,
+                "builder": true,
+                "object": false
+            }
+        },
+        {
+            "id": "attached-object-membership",
+            "exportPath": "attached-object",
+            "ownership": "attached",
+            "grammar": "object",
+            "usage": "membership",
+            "expectedMarkers": {
+                "collection": true,
+                "engine": true,
+                "builder": false,
+                "object": true
+            }
+        },
+        {
+            "id": "attached-object-query",
+            "exportPath": "attached-object",
+            "ownership": "attached",
+            "grammar": "object",
+            "usage": "query",
+            "expectedMarkers": {
+                "collection": true,
+                "engine": true,
+                "builder": false,
+                "object": true
+            }
+        },
+        {
+            "id": "standalone-builder-filterless",
+            "exportPath": "standalone-builder",
+            "ownership": "standalone",
+            "grammar": "builder",
+            "usage": "filterless",
+            "expectedMarkers": {
+                "collection": true,
+                "engine": true,
+                "builder": true,
+                "object": false
+            }
+        },
+        {
+            "id": "standalone-object-filterless",
+            "exportPath": "standalone-object",
+            "ownership": "standalone",
+            "grammar": "object",
+            "usage": "filterless",
+            "expectedMarkers": {
+                "collection": true,
+                "engine": true,
+                "builder": false,
+                "object": true
+            }
+        },
+        {
+            "id": "standalone-object-order-array",
+            "exportPath": "standalone-object",
+            "ownership": "standalone",
+            "grammar": "object",
+            "usage": "order-array",
+            "expectedMarkers": {
+                "collection": true,
+                "engine": true,
+                "builder": false,
+                "object": true
+            }
+        }
+    ],
+    "bundles": {
+        "bun": {
+            "narrow-collection-membership": {
+                "raw": 1125,
+                "gzip": 543,
+                "sha256": "5f733ad1bca5215c23ade89b83746ccefd1d9788a0e0d49813ce2de9adc6a2be",
+                "markers": {
+                    "collection": true,
+                    "engine": false,
+                    "builder": false,
+                    "object": false
+                }
+            },
+            "standalone-builder-membership": {
+                "raw": 1125,
+                "gzip": 543,
+                "sha256": "073341e71c1b604df4e074cf1c131a1227ab9cfd21c8bdceeb177327de21c39f",
+                "markers": {
+                    "collection": true,
+                    "engine": false,
+                    "builder": false,
+                    "object": false
+                }
+            },
+            "standalone-builder-query": {
+                "raw": 4267,
+                "gzip": 1612,
+                "sha256": "60899ac8097d394c3e8135fba0b37e054eff581b9d7f30f2c76c395631918dba",
+                "markers": {
+                    "collection": true,
+                    "engine": true,
+                    "builder": true,
+                    "object": false
+                }
+            },
+            "standalone-object-membership": {
+                "raw": 1125,
+                "gzip": 543,
+                "sha256": "073341e71c1b604df4e074cf1c131a1227ab9cfd21c8bdceeb177327de21c39f",
+                "markers": {
+                    "collection": true,
+                    "engine": false,
+                    "builder": false,
+                    "object": false
+                }
+            },
+            "standalone-object-query": {
+                "raw": 3944,
+                "gzip": 1570,
+                "sha256": "8ab9a53e2a91e7b080be08a9b394aae0ce5ce0e23ac739de26b80c2705fc312a",
+                "markers": {
+                    "collection": true,
+                    "engine": true,
+                    "builder": false,
+                    "object": true
+                }
+            },
+            "attached-builder-membership": {
+                "raw": 4092,
+                "gzip": 1536,
+                "sha256": "d9da1c062f6fa25d59358ee7f0b4e961799e9928238459cb2145974e75bcae66",
+                "markers": {
+                    "collection": true,
+                    "engine": true,
+                    "builder": true,
+                    "object": false
+                }
+            },
+            "attached-builder-query": {
+                "raw": 4358,
+                "gzip": 1643,
+                "sha256": "fb312226dc3cc2789d801fee171be4df2622eff005781817cd33be98d2814508",
+                "markers": {
+                    "collection": true,
+                    "engine": true,
+                    "builder": true,
+                    "object": false
+                }
+            },
+            "attached-object-membership": {
+                "raw": 3853,
+                "gzip": 1525,
+                "sha256": "b2d2fe10c80a8fa0b39993358915766e6458b02a840f56483d116abae1ab1d5f",
+                "markers": {
+                    "collection": true,
+                    "engine": true,
+                    "builder": false,
+                    "object": true
+                }
+            },
+            "attached-object-query": {
+                "raw": 4035,
+                "gzip": 1597,
+                "sha256": "7aef2b2a54a988118d9c9ea52258defac9543360b49c72910d90e83bb91c0259",
+                "markers": {
+                    "collection": true,
+                    "engine": true,
+                    "builder": false,
+                    "object": true
+                }
+            },
+            "standalone-builder-filterless": {
+                "raw": 4012,
+                "gzip": 1526,
+                "sha256": "104e98fea9fbff83ab5916266e8f5a71de534e3251e07551c5ac24e69eda26a8",
+                "markers": {
+                    "collection": true,
+                    "engine": true,
+                    "builder": true,
+                    "object": false
+                }
+            },
+            "standalone-object-filterless": {
+                "raw": 3762,
+                "gzip": 1510,
+                "sha256": "d5f3401cc77e7845bf63e9600d5b0ac4a1392b35b5b4daddebd46f2dea6d3da9",
+                "markers": {
+                    "collection": true,
+                    "engine": true,
+                    "builder": false,
+                    "object": true
+                }
+            },
+            "standalone-object-order-array": {
+                "raw": 3808,
+                "gzip": 1526,
+                "sha256": "e2297c3d85d679c304d6dad19b7ad3bcb6f506e92293b44addc16a4b4467b0a8",
+                "markers": {
+                    "collection": true,
+                    "engine": true,
+                    "builder": false,
+                    "object": true
+                }
+            }
+        },
+        "esbuild": {
+            "narrow-collection-membership": {
+                "raw": 1123,
+                "gzip": 545,
+                "sha256": "365fb4056f83cd8509a06ce0657dfc6bb2160699b063a12d5bab3030b7fad8a3",
+                "markers": {
+                    "collection": true,
+                    "engine": false,
+                    "builder": false,
+                    "object": false
+                },
+                "fixtureModules": ["collection.js"]
+            },
+            "standalone-builder-membership": {
+                "raw": 1123,
+                "gzip": 545,
+                "sha256": "daf6992cb9497a86428b827e12b76f4b5ffb10973db5b057e017430c40fdc3a9",
+                "markers": {
+                    "collection": true,
+                    "engine": false,
+                    "builder": false,
+                    "object": false
+                },
+                "fixtureModules": ["collection.js"]
+            },
+            "standalone-builder-query": {
+                "raw": 4223,
+                "gzip": 1616,
+                "sha256": "c81d5c2fce2f760f6384becaef0d33a60e4e0fdc11be26300e95c34cb13bfede",
+                "markers": {
+                    "collection": true,
+                    "engine": true,
+                    "builder": true,
+                    "object": false
+                },
+                "fixtureModules": [
+                    "collection.js",
+                    "query-builder.js",
+                    "query-engine.js"
+                ]
+            },
+            "standalone-object-membership": {
+                "raw": 1123,
+                "gzip": 545,
+                "sha256": "daf6992cb9497a86428b827e12b76f4b5ffb10973db5b057e017430c40fdc3a9",
+                "markers": {
+                    "collection": true,
+                    "engine": false,
+                    "builder": false,
+                    "object": false
+                },
+                "fixtureModules": ["collection.js"]
+            },
+            "standalone-object-query": {
+                "raw": 3904,
+                "gzip": 1570,
+                "sha256": "54a5efff2b0fcae3d75298865424f03744b02b2fc0cae8ec7a537f517f951616",
+                "markers": {
+                    "collection": true,
+                    "engine": true,
+                    "builder": false,
+                    "object": true
+                },
+                "fixtureModules": [
+                    "collection.js",
+                    "query-engine.js",
+                    "query-object.js"
+                ]
+            },
+            "attached-builder-membership": {
+                "raw": 4048,
+                "gzip": 1538,
+                "sha256": "d0d385b8d2339ca938006afc33f81e3f1112f086d3225d5270099e63951c5bae",
+                "markers": {
+                    "collection": true,
+                    "engine": true,
+                    "builder": true,
+                    "object": false
+                },
+                "fixtureModules": [
+                    "attached-builder.js",
+                    "collection.js",
+                    "query-builder.js",
+                    "query-engine.js"
+                ]
+            },
+            "attached-builder-query": {
+                "raw": 4312,
+                "gzip": 1647,
+                "sha256": "f50a9132597fd5f1b7fb1d8911d180883025128b914f48a680745c03bf1cd382",
+                "markers": {
+                    "collection": true,
+                    "engine": true,
+                    "builder": true,
+                    "object": false
+                },
+                "fixtureModules": [
+                    "attached-builder.js",
+                    "collection.js",
+                    "query-builder.js",
+                    "query-engine.js"
+                ]
+            },
+            "attached-object-membership": {
+                "raw": 3811,
+                "gzip": 1526,
+                "sha256": "c2ef54c72ed3bef0e6606534888a6767c7bfff4d8c502e8fbaef9da1502d00ec",
+                "markers": {
+                    "collection": true,
+                    "engine": true,
+                    "builder": false,
+                    "object": true
+                },
+                "fixtureModules": [
+                    "attached-object.js",
+                    "collection.js",
+                    "query-engine.js",
+                    "query-object.js"
+                ]
+            },
+            "attached-object-query": {
+                "raw": 3993,
+                "gzip": 1597,
+                "sha256": "ef0537815aa8b38dc88a962e615eaef36ce60ddb7769c57c936fce31efa61efd",
+                "markers": {
+                    "collection": true,
+                    "engine": true,
+                    "builder": false,
+                    "object": true
+                },
+                "fixtureModules": [
+                    "attached-object.js",
+                    "collection.js",
+                    "query-engine.js",
+                    "query-object.js"
+                ]
+            },
+            "standalone-builder-filterless": {
+                "raw": 3968,
+                "gzip": 1530,
+                "sha256": "e358109871c9b8a9510fa90a03d784f9954571a978f582f7e3fc119cb2b4930a",
+                "markers": {
+                    "collection": true,
+                    "engine": true,
+                    "builder": true,
+                    "object": false
+                },
+                "fixtureModules": [
+                    "collection.js",
+                    "query-builder.js",
+                    "query-engine.js"
+                ]
+            },
+            "standalone-object-filterless": {
+                "raw": 3722,
+                "gzip": 1514,
+                "sha256": "4c435b494ba0182d8dcda01ebe0ae0af4ddd946e11e20da8512e6622c4d959b7",
+                "markers": {
+                    "collection": true,
+                    "engine": true,
+                    "builder": false,
+                    "object": true
+                },
+                "fixtureModules": [
+                    "collection.js",
+                    "query-engine.js",
+                    "query-object.js"
+                ]
+            },
+            "standalone-object-order-array": {
+                "raw": 3768,
+                "gzip": 1526,
+                "sha256": "1289500489752a1a8135988dea81dd12aee97256db71ac7a0d453b1ac02592e9",
+                "markers": {
+                    "collection": true,
+                    "engine": true,
+                    "builder": false,
+                    "object": true
+                },
+                "fixtureModules": [
+                    "collection.js",
+                    "query-engine.js",
+                    "query-object.js"
+                ]
+            }
+        },
+        "vite-rollup": {
+            "narrow-collection-membership": {
+                "raw": 1366,
+                "gzip": 595,
+                "sha256": "68896ac2f6665e407f69bc0c34678245fdb5a33f0dc3abd0a8beb8515020a217",
+                "markers": {
+                    "collection": true,
+                    "engine": false,
+                    "builder": false,
+                    "object": false
+                },
+                "fixtureModules": ["collection.js"]
+            },
+            "standalone-builder-membership": {
+                "raw": 1366,
+                "gzip": 595,
+                "sha256": "68896ac2f6665e407f69bc0c34678245fdb5a33f0dc3abd0a8beb8515020a217",
+                "markers": {
+                    "collection": true,
+                    "engine": false,
+                    "builder": false,
+                    "object": false
+                },
+                "fixtureModules": ["collection.js"]
+            },
+            "standalone-builder-query": {
+                "raw": 5430,
+                "gzip": 1829,
+                "sha256": "d59b141f93efa7889f058b0b18f77f501e13e44be72eaba5672f978b575e3266",
+                "markers": {
+                    "collection": true,
+                    "engine": true,
+                    "builder": true,
+                    "object": false
+                },
+                "fixtureModules": [
+                    "collection.js",
+                    "query-builder.js",
+                    "query-engine.js"
+                ]
+            },
+            "standalone-object-membership": {
+                "raw": 1366,
+                "gzip": 595,
+                "sha256": "68896ac2f6665e407f69bc0c34678245fdb5a33f0dc3abd0a8beb8515020a217",
+                "markers": {
+                    "collection": true,
+                    "engine": false,
+                    "builder": false,
+                    "object": false
+                },
+                "fixtureModules": ["collection.js"]
+            },
+            "standalone-object-query": {
+                "raw": 5198,
+                "gzip": 1818,
+                "sha256": "81a40efc58d0f17b0a29f302b1477b9b20945abbfa33c9b775ee8137db0d4ab5",
+                "markers": {
+                    "collection": true,
+                    "engine": true,
+                    "builder": false,
+                    "object": true
+                },
+                "fixtureModules": [
+                    "collection.js",
+                    "query-engine.js",
+                    "query-object.js"
+                ]
+            },
+            "attached-builder-membership": {
+                "raw": 5231,
+                "gzip": 1730,
+                "sha256": "bccebbff8d0247f5a1c08ac8165ade275ce5cfd17ea413201d9b8bd4f8cc6915",
+                "markers": {
+                    "collection": true,
+                    "engine": true,
+                    "builder": true,
+                    "object": false
+                },
+                "fixtureModules": [
+                    "attached-builder.js",
+                    "collection.js",
+                    "query-builder.js",
+                    "query-engine.js"
+                ]
+            },
+            "attached-builder-query": {
+                "raw": 5549,
+                "gzip": 1864,
+                "sha256": "29701b8d67d8dfec1e96b602e6223881b9ddfd56aadd6f05318929713a1a5657",
+                "markers": {
+                    "collection": true,
+                    "engine": true,
+                    "builder": true,
+                    "object": false
+                },
+                "fixtureModules": [
+                    "attached-builder.js",
+                    "collection.js",
+                    "query-builder.js",
+                    "query-engine.js"
+                ]
+            },
+            "attached-object-membership": {
+                "raw": 5071,
+                "gzip": 1758,
+                "sha256": "ab1312c6441e0b19ff4445532ac17a41883dabb94b7f9e449a510a7342cb69ab",
+                "markers": {
+                    "collection": true,
+                    "engine": true,
+                    "builder": false,
+                    "object": true
+                },
+                "fixtureModules": [
+                    "attached-object.js",
+                    "collection.js",
+                    "query-engine.js",
+                    "query-object.js"
+                ]
+            },
+            "attached-object-query": {
+                "raw": 5317,
+                "gzip": 1852,
+                "sha256": "f8e4227253720a7ec87a5e8b6eac9867b7a273ea6ddeaf7559a14aa703b693f2",
+                "markers": {
+                    "collection": true,
+                    "engine": true,
+                    "builder": false,
+                    "object": true
+                },
+                "fixtureModules": [
+                    "attached-object.js",
+                    "collection.js",
+                    "query-engine.js",
+                    "query-object.js"
+                ]
+            },
+            "standalone-builder-filterless": {
+                "raw": 5117,
+                "gzip": 1728,
+                "sha256": "3f48f6ca80ddca350601e26f7b8e56df93b17911648391f44441fff7da1b9ed2",
+                "markers": {
+                    "collection": true,
+                    "engine": true,
+                    "builder": true,
+                    "object": false
+                },
+                "fixtureModules": [
+                    "collection.js",
+                    "query-builder.js",
+                    "query-engine.js"
+                ]
+            },
+            "standalone-object-filterless": {
+                "raw": 4943,
+                "gzip": 1745,
+                "sha256": "79aef196df013d7d09b86cb36708bc58dac43eea576bd11dd0bcb57c77fda91a",
+                "markers": {
+                    "collection": true,
+                    "engine": true,
+                    "builder": false,
+                    "object": true
+                },
+                "fixtureModules": [
+                    "collection.js",
+                    "query-engine.js",
+                    "query-object.js"
+                ]
+            },
+            "standalone-object-order-array": {
+                "raw": 5002,
+                "gzip": 1764,
+                "sha256": "9a0aff3af0febd2c1a917016717eb1c4978f5dd7de62656c144d07df7a6a21aa",
+                "markers": {
+                    "collection": true,
+                    "engine": true,
+                    "builder": false,
+                    "object": true
+                },
+                "fixtureModules": [
+                    "collection.js",
+                    "query-engine.js",
+                    "query-object.js"
+                ]
+            }
+        },
+        "webpack": {
+            "narrow-collection-membership": {
+                "raw": 1476,
+                "gzip": 720,
+                "sha256": "8b24c8a40aa2cc2fc2421b98d336eaabbc32cff7b5fcdea8f2d0a43ec05fff78",
+                "markers": {
+                    "collection": true,
+                    "engine": false,
+                    "builder": false,
+                    "object": false
+                },
+                "fixtureModules": ["collection.js"]
+            },
+            "standalone-builder-membership": {
+                "raw": 1476,
+                "gzip": 720,
+                "sha256": "8b24c8a40aa2cc2fc2421b98d336eaabbc32cff7b5fcdea8f2d0a43ec05fff78",
+                "markers": {
+                    "collection": true,
+                    "engine": false,
+                    "builder": false,
+                    "object": false
+                },
+                "fixtureModules": ["collection.js"]
+            },
+            "standalone-builder-query": {
+                "raw": 4703,
+                "gzip": 1815,
+                "sha256": "686bfc80c6f9e7ee6f51e31e87542af6e4a7c0c8985c713298fa4ddfc1c767e9",
+                "markers": {
+                    "collection": true,
+                    "engine": true,
+                    "builder": true,
+                    "object": false
+                },
+                "fixtureModules": [
+                    "collection.js",
+                    "query-builder.js",
+                    "query-engine.js"
+                ]
+            },
+            "standalone-object-membership": {
+                "raw": 1476,
+                "gzip": 720,
+                "sha256": "8b24c8a40aa2cc2fc2421b98d336eaabbc32cff7b5fcdea8f2d0a43ec05fff78",
+                "markers": {
+                    "collection": true,
+                    "engine": false,
+                    "builder": false,
+                    "object": false
+                },
+                "fixtureModules": ["collection.js"]
+            },
+            "standalone-object-query": {
+                "raw": 4382,
+                "gzip": 1724,
+                "sha256": "d0113529f614d668f3edc0e2def74ce67f1ea3361f871cf5d237902256bf4b8e",
+                "markers": {
+                    "collection": true,
+                    "engine": true,
+                    "builder": false,
+                    "object": true
+                },
+                "fixtureModules": [
+                    "collection.js",
+                    "query-engine.js",
+                    "query-object.js"
+                ]
+            },
+            "attached-builder-membership": {
+                "raw": 4595,
+                "gzip": 1755,
+                "sha256": "2e52cd1331345654ae4da61fd952a985935e0af74310beda1e6bca28dec4513a",
+                "markers": {
+                    "collection": true,
+                    "engine": true,
+                    "builder": true,
+                    "object": false
+                },
+                "fixtureModules": [
+                    "attached-builder.js",
+                    "collection.js",
+                    "query-builder.js",
+                    "query-engine.js"
+                ]
+            },
+            "attached-builder-query": {
+                "raw": 4832,
+                "gzip": 1853,
+                "sha256": "ed42878cc240aeb089d711d21e245273f204d407aaf0c1dc5d0405f9c689d9b8",
+                "markers": {
+                    "collection": true,
+                    "engine": true,
+                    "builder": true,
+                    "object": false
+                },
+                "fixtureModules": [
+                    "attached-builder.js",
+                    "collection.js",
+                    "query-builder.js",
+                    "query-engine.js"
+                ]
+            },
+            "attached-object-membership": {
+                "raw": 4364,
+                "gzip": 1701,
+                "sha256": "6010a054c82eee6f668eb4a38038e9e94016142be603dfff5e465604ffac3c7a",
+                "markers": {
+                    "collection": true,
+                    "engine": true,
+                    "builder": false,
+                    "object": true
+                },
+                "fixtureModules": [
+                    "attached-object.js",
+                    "collection.js",
+                    "query-engine.js",
+                    "query-object.js"
+                ]
+            },
+            "attached-object-query": {
+                "raw": 4511,
+                "gzip": 1757,
+                "sha256": "f934eaf5830f62cbfdf09faf8539f1e4dd56e8ecfbfe4a16760f4b54952800e5",
+                "markers": {
+                    "collection": true,
+                    "engine": true,
+                    "builder": false,
+                    "object": true
+                },
+                "fixtureModules": [
+                    "attached-object.js",
+                    "collection.js",
+                    "query-engine.js",
+                    "query-object.js"
+                ]
+            },
+            "standalone-builder-filterless": {
+                "raw": 4448,
+                "gzip": 1729,
+                "sha256": "4b2ace1f615e1b061cdbc05b2cfe7e41c3248218675632f12701a3d3a395fa74",
+                "markers": {
+                    "collection": true,
+                    "engine": true,
+                    "builder": true,
+                    "object": false
+                },
+                "fixtureModules": [
+                    "collection.js",
+                    "query-builder.js",
+                    "query-engine.js"
+                ]
+            },
+            "standalone-object-filterless": {
+                "raw": 4200,
+                "gzip": 1665,
+                "sha256": "eecb64a82d0c83f8a2beb8e47b73e2dfb0ced0d53467dae246a355875a73e0e1",
+                "markers": {
+                    "collection": true,
+                    "engine": true,
+                    "builder": false,
+                    "object": true
+                },
+                "fixtureModules": [
+                    "collection.js",
+                    "query-engine.js",
+                    "query-object.js"
+                ]
+            },
+            "standalone-object-order-array": {
+                "raw": 4246,
+                "gzip": 1681,
+                "sha256": "7debdf01f6a55a263a73f1a4b8812ae22cd199a6f0246c60cb8d4882531146e0",
+                "markers": {
+                    "collection": true,
+                    "engine": true,
+                    "builder": false,
+                    "object": true
+                },
+                "fixtureModules": [
+                    "collection.js",
+                    "query-engine.js",
+                    "query-object.js"
+                ]
+            }
+        }
+    },
+    "native": {
+        "narrow-collection-membership": {
+            "nodeFixtureModules": ["collection.js"],
+            "node": {
+                "kind": "collection",
+                "marker": "D431_COLLECTION_SENTINEL_7M4Q2X9K6P1V8R5C",
+                "count": 7,
+                "first": "Alpha"
+            },
+            "bun": {
+                "kind": "collection",
+                "marker": "D431_COLLECTION_SENTINEL_7M4Q2X9K6P1V8R5C",
+                "count": 7,
+                "first": "Alpha"
+            }
+        },
+        "standalone-builder-membership": {
+            "nodeFixtureModules": [
+                "collection.js",
+                "query-builder.js",
+                "query-engine.js",
+                "standalone-builder.js"
+            ],
+            "node": {
+                "kind": "collection",
+                "marker": "D431_COLLECTION_SENTINEL_7M4Q2X9K6P1V8R5C",
+                "count": 7,
+                "first": "Alpha"
+            },
+            "bun": {
+                "kind": "collection",
+                "marker": "D431_COLLECTION_SENTINEL_7M4Q2X9K6P1V8R5C",
+                "count": 7,
+                "first": "Alpha"
+            }
+        },
+        "standalone-builder-query": {
+            "nodeFixtureModules": [
+                "collection.js",
+                "query-builder.js",
+                "query-engine.js",
+                "standalone-builder.js"
+            ],
+            "node": {
+                "rows": ["m5", "m6"],
+                "total": 4,
+                "facets": {
+                    "genre": [{ "value": "drama", "count": 4 }],
+                    "tags": [
+                        { "value": "award-winner", "count": 2 },
+                        { "value": "classic", "count": 3 }
+                    ]
+                },
+                "engine": "D431_ENGINE_SENTINEL_9Q2M7V4K1X8P6R5C",
+                "grammar": "D431_BUILDER_SENTINEL_5R8P1X4K7V2M9Q6C",
+                "definitionCalls": 1,
+                "repeatStable": true
+            },
+            "bun": {
+                "rows": ["m5", "m6"],
+                "total": 4,
+                "facets": {
+                    "genre": [{ "value": "drama", "count": 4 }],
+                    "tags": [
+                        { "value": "award-winner", "count": 2 },
+                        { "value": "classic", "count": 3 }
+                    ]
+                },
+                "engine": "D431_ENGINE_SENTINEL_9Q2M7V4K1X8P6R5C",
+                "grammar": "D431_BUILDER_SENTINEL_5R8P1X4K7V2M9Q6C",
+                "definitionCalls": 1,
+                "repeatStable": true
+            }
+        },
+        "standalone-object-membership": {
+            "nodeFixtureModules": [
+                "collection.js",
+                "query-engine.js",
+                "query-object.js",
+                "standalone-object.js"
+            ],
+            "node": {
+                "kind": "collection",
+                "marker": "D431_COLLECTION_SENTINEL_7M4Q2X9K6P1V8R5C",
+                "count": 7,
+                "first": "Alpha"
+            },
+            "bun": {
+                "kind": "collection",
+                "marker": "D431_COLLECTION_SENTINEL_7M4Q2X9K6P1V8R5C",
+                "count": 7,
+                "first": "Alpha"
+            }
+        },
+        "standalone-object-query": {
+            "nodeFixtureModules": [
+                "collection.js",
+                "query-engine.js",
+                "query-object.js",
+                "standalone-object.js"
+            ],
+            "node": {
+                "rows": ["m5", "m6"],
+                "total": 4,
+                "facets": {
+                    "genre": [{ "value": "drama", "count": 4 }],
+                    "tags": [
+                        { "value": "award-winner", "count": 2 },
+                        { "value": "classic", "count": 3 }
+                    ]
+                },
+                "engine": "D431_ENGINE_SENTINEL_9Q2M7V4K1X8P6R5C",
+                "grammar": "D431_OBJECT_SENTINEL_2V9K6P3R8M1X7Q5C",
+                "definitionCalls": 0,
+                "repeatStable": true
+            },
+            "bun": {
+                "rows": ["m5", "m6"],
+                "total": 4,
+                "facets": {
+                    "genre": [{ "value": "drama", "count": 4 }],
+                    "tags": [
+                        { "value": "award-winner", "count": 2 },
+                        { "value": "classic", "count": 3 }
+                    ]
+                },
+                "engine": "D431_ENGINE_SENTINEL_9Q2M7V4K1X8P6R5C",
+                "grammar": "D431_OBJECT_SENTINEL_2V9K6P3R8M1X7Q5C",
+                "definitionCalls": 0,
+                "repeatStable": true
+            }
+        },
+        "attached-builder-membership": {
+            "nodeFixtureModules": [
+                "attached-builder.js",
+                "collection.js",
+                "query-builder.js",
+                "query-engine.js"
+            ],
+            "node": {
+                "kind": "collection",
+                "marker": "D431_COLLECTION_SENTINEL_7M4Q2X9K6P1V8R5C",
+                "count": 7,
+                "first": "Alpha"
+            },
+            "bun": {
+                "kind": "collection",
+                "marker": "D431_COLLECTION_SENTINEL_7M4Q2X9K6P1V8R5C",
+                "count": 7,
+                "first": "Alpha"
+            }
+        },
+        "attached-builder-query": {
+            "nodeFixtureModules": [
+                "attached-builder.js",
+                "collection.js",
+                "query-builder.js",
+                "query-engine.js"
+            ],
+            "node": {
+                "rows": ["m5", "m6"],
+                "total": 4,
+                "facets": {
+                    "genre": [{ "value": "drama", "count": 4 }],
+                    "tags": [
+                        { "value": "award-winner", "count": 2 },
+                        { "value": "classic", "count": 3 }
+                    ]
+                },
+                "engine": "D431_ENGINE_SENTINEL_9Q2M7V4K1X8P6R5C",
+                "grammar": "D431_BUILDER_SENTINEL_5R8P1X4K7V2M9Q6C",
+                "definitionCalls": 1,
+                "repeatStable": true
+            },
+            "bun": {
+                "rows": ["m5", "m6"],
+                "total": 4,
+                "facets": {
+                    "genre": [{ "value": "drama", "count": 4 }],
+                    "tags": [
+                        { "value": "award-winner", "count": 2 },
+                        { "value": "classic", "count": 3 }
+                    ]
+                },
+                "engine": "D431_ENGINE_SENTINEL_9Q2M7V4K1X8P6R5C",
+                "grammar": "D431_BUILDER_SENTINEL_5R8P1X4K7V2M9Q6C",
+                "definitionCalls": 1,
+                "repeatStable": true
+            }
+        },
+        "attached-object-membership": {
+            "nodeFixtureModules": [
+                "attached-object.js",
+                "collection.js",
+                "query-engine.js",
+                "query-object.js"
+            ],
+            "node": {
+                "kind": "collection",
+                "marker": "D431_COLLECTION_SENTINEL_7M4Q2X9K6P1V8R5C",
+                "count": 7,
+                "first": "Alpha"
+            },
+            "bun": {
+                "kind": "collection",
+                "marker": "D431_COLLECTION_SENTINEL_7M4Q2X9K6P1V8R5C",
+                "count": 7,
+                "first": "Alpha"
+            }
+        },
+        "attached-object-query": {
+            "nodeFixtureModules": [
+                "attached-object.js",
+                "collection.js",
+                "query-engine.js",
+                "query-object.js"
+            ],
+            "node": {
+                "rows": ["m5", "m6"],
+                "total": 4,
+                "facets": {
+                    "genre": [{ "value": "drama", "count": 4 }],
+                    "tags": [
+                        { "value": "award-winner", "count": 2 },
+                        { "value": "classic", "count": 3 }
+                    ]
+                },
+                "engine": "D431_ENGINE_SENTINEL_9Q2M7V4K1X8P6R5C",
+                "grammar": "D431_OBJECT_SENTINEL_2V9K6P3R8M1X7Q5C",
+                "definitionCalls": 0,
+                "repeatStable": true
+            },
+            "bun": {
+                "rows": ["m5", "m6"],
+                "total": 4,
+                "facets": {
+                    "genre": [{ "value": "drama", "count": 4 }],
+                    "tags": [
+                        { "value": "award-winner", "count": 2 },
+                        { "value": "classic", "count": 3 }
+                    ]
+                },
+                "engine": "D431_ENGINE_SENTINEL_9Q2M7V4K1X8P6R5C",
+                "grammar": "D431_OBJECT_SENTINEL_2V9K6P3R8M1X7Q5C",
+                "definitionCalls": 0,
+                "repeatStable": true
+            }
+        },
+        "standalone-builder-filterless": {
+            "nodeFixtureModules": [
+                "collection.js",
+                "query-builder.js",
+                "query-engine.js",
+                "standalone-builder.js"
+            ],
+            "node": {
+                "rows": ["m1", "m2"],
+                "total": 7,
+                "facets": {},
+                "engine": "D431_ENGINE_SENTINEL_9Q2M7V4K1X8P6R5C",
+                "grammar": "D431_BUILDER_SENTINEL_5R8P1X4K7V2M9Q6C",
+                "definitionCalls": 1,
+                "repeatStable": true
+            },
+            "bun": {
+                "rows": ["m1", "m2"],
+                "total": 7,
+                "facets": {},
+                "engine": "D431_ENGINE_SENTINEL_9Q2M7V4K1X8P6R5C",
+                "grammar": "D431_BUILDER_SENTINEL_5R8P1X4K7V2M9Q6C",
+                "definitionCalls": 1,
+                "repeatStable": true
+            }
+        },
+        "standalone-object-filterless": {
+            "nodeFixtureModules": [
+                "collection.js",
+                "query-engine.js",
+                "query-object.js",
+                "standalone-object.js"
+            ],
+            "node": {
+                "rows": ["m1", "m2"],
+                "total": 7,
+                "facets": {},
+                "engine": "D431_ENGINE_SENTINEL_9Q2M7V4K1X8P6R5C",
+                "grammar": "D431_OBJECT_SENTINEL_2V9K6P3R8M1X7Q5C",
+                "definitionCalls": 0,
+                "repeatStable": true
+            },
+            "bun": {
+                "rows": ["m1", "m2"],
+                "total": 7,
+                "facets": {},
+                "engine": "D431_ENGINE_SENTINEL_9Q2M7V4K1X8P6R5C",
+                "grammar": "D431_OBJECT_SENTINEL_2V9K6P3R8M1X7Q5C",
+                "definitionCalls": 0,
+                "repeatStable": true
+            }
+        },
+        "standalone-object-order-array": {
+            "nodeFixtureModules": [
+                "collection.js",
+                "query-engine.js",
+                "query-object.js",
+                "standalone-object.js"
+            ],
+            "node": {
+                "rows": ["m3", "m1", "m4", "m5"],
+                "total": 7,
+                "facets": {},
+                "engine": "D431_ENGINE_SENTINEL_9Q2M7V4K1X8P6R5C",
+                "grammar": "D431_OBJECT_SENTINEL_2V9K6P3R8M1X7Q5C",
+                "definitionCalls": 0,
+                "repeatStable": true
+            },
+            "bun": {
+                "rows": ["m3", "m1", "m4", "m5"],
+                "total": 7,
+                "facets": {},
+                "engine": "D431_ENGINE_SENTINEL_9Q2M7V4K1X8P6R5C",
+                "grammar": "D431_OBJECT_SENTINEL_2V9K6P3R8M1X7Q5C",
+                "definitionCalls": 0,
+                "repeatStable": true
+            }
+        }
+    },
+    "comparisons": {
+        "bun": {
+            "builderAttachedMembershipCost": { "raw": 2967, "gzip": 993 },
+            "objectAttachedMembershipCost": { "raw": 2728, "gzip": 982 },
+            "builderAttachedQueryCost": { "raw": 91, "gzip": 31 },
+            "objectAttachedQueryCost": { "raw": 91, "gzip": 27 },
+            "standaloneObjectVsBuilderQuery": { "raw": -323, "gzip": -42 },
+            "attachedObjectVsBuilderQuery": { "raw": -323, "gzip": -46 }
+        },
+        "esbuild": {
+            "builderAttachedMembershipCost": { "raw": 2925, "gzip": 993 },
+            "objectAttachedMembershipCost": { "raw": 2688, "gzip": 981 },
+            "builderAttachedQueryCost": { "raw": 89, "gzip": 31 },
+            "objectAttachedQueryCost": { "raw": 89, "gzip": 27 },
+            "standaloneObjectVsBuilderQuery": { "raw": -319, "gzip": -46 },
+            "attachedObjectVsBuilderQuery": { "raw": -319, "gzip": -50 }
+        },
+        "vite-rollup": {
+            "builderAttachedMembershipCost": { "raw": 3865, "gzip": 1135 },
+            "objectAttachedMembershipCost": { "raw": 3705, "gzip": 1163 },
+            "builderAttachedQueryCost": { "raw": 119, "gzip": 35 },
+            "objectAttachedQueryCost": { "raw": 119, "gzip": 34 },
+            "standaloneObjectVsBuilderQuery": { "raw": -232, "gzip": -11 },
+            "attachedObjectVsBuilderQuery": { "raw": -232, "gzip": -12 }
+        },
+        "webpack": {
+            "builderAttachedMembershipCost": { "raw": 3119, "gzip": 1035 },
+            "objectAttachedMembershipCost": { "raw": 2888, "gzip": 981 },
+            "builderAttachedQueryCost": { "raw": 129, "gzip": 38 },
+            "objectAttachedQueryCost": { "raw": 129, "gzip": 33 },
+            "standaloneObjectVsBuilderQuery": { "raw": -321, "gzip": -91 },
+            "attachedObjectVsBuilderQuery": { "raw": -321, "gzip": -96 }
+        }
+    },
+    "redProof": {
+        "bun": {
+            "narrow-collection-membership": {
+                "changed": false,
+                "rawDelta": 0,
+                "gzipDelta": 0
+            },
+            "standalone-builder-membership": {
+                "changed": false,
+                "rawDelta": 0,
+                "gzipDelta": 0
+            },
+            "standalone-builder-query": {
+                "changed": true,
+                "rawDelta": 4097,
+                "gzipDelta": 3341
+            },
+            "standalone-object-membership": {
+                "changed": false,
+                "rawDelta": 0,
+                "gzipDelta": 0
+            },
+            "standalone-object-query": {
+                "changed": true,
+                "rawDelta": 4097,
+                "gzipDelta": 3340
+            },
+            "attached-builder-membership": {
+                "changed": true,
+                "rawDelta": 4097,
+                "gzipDelta": 3335
+            },
+            "attached-builder-query": {
+                "changed": true,
+                "rawDelta": 4097,
+                "gzipDelta": 3346
+            },
+            "attached-object-membership": {
+                "changed": true,
+                "rawDelta": 4097,
+                "gzipDelta": 3343
+            },
+            "attached-object-query": {
+                "changed": true,
+                "rawDelta": 4097,
+                "gzipDelta": 3348
+            },
+            "standalone-builder-filterless": {
+                "changed": true,
+                "rawDelta": 4097,
+                "gzipDelta": 3330
+            },
+            "standalone-object-filterless": {
+                "changed": true,
+                "rawDelta": 4097,
+                "gzipDelta": 3337
+            },
+            "standalone-object-order-array": {
+                "changed": true,
+                "rawDelta": 4097,
+                "gzipDelta": 3337
+            }
+        },
+        "esbuild": {
+            "narrow-collection-membership": {
+                "changed": false,
+                "rawDelta": 0,
+                "gzipDelta": 0
+            },
+            "standalone-builder-membership": {
+                "changed": false,
+                "rawDelta": 0,
+                "gzipDelta": 0
+            },
+            "standalone-builder-query": {
+                "changed": true,
+                "rawDelta": 4097,
+                "gzipDelta": 3341
+            },
+            "standalone-object-membership": {
+                "changed": false,
+                "rawDelta": 0,
+                "gzipDelta": 0
+            },
+            "standalone-object-query": {
+                "changed": true,
+                "rawDelta": 4097,
+                "gzipDelta": 3341
+            },
+            "attached-builder-membership": {
+                "changed": true,
+                "rawDelta": 4097,
+                "gzipDelta": 3334
+            },
+            "attached-builder-query": {
+                "changed": true,
+                "rawDelta": 4097,
+                "gzipDelta": 3345
+            },
+            "attached-object-membership": {
+                "changed": true,
+                "rawDelta": 4097,
+                "gzipDelta": 3344
+            },
+            "attached-object-query": {
+                "changed": true,
+                "rawDelta": 4097,
+                "gzipDelta": 3348
+            },
+            "standalone-builder-filterless": {
+                "changed": true,
+                "rawDelta": 4097,
+                "gzipDelta": 3329
+            },
+            "standalone-object-filterless": {
+                "changed": true,
+                "rawDelta": 4097,
+                "gzipDelta": 3333
+            },
+            "standalone-object-order-array": {
+                "changed": true,
+                "rawDelta": 4097,
+                "gzipDelta": 3337
+            }
+        },
+        "vite-rollup": {
+            "narrow-collection-membership": {
+                "changed": false,
+                "rawDelta": 0,
+                "gzipDelta": 0
+            },
+            "standalone-builder-membership": {
+                "changed": false,
+                "rawDelta": 0,
+                "gzipDelta": 0
+            },
+            "standalone-builder-query": {
+                "changed": true,
+                "rawDelta": 4097,
+                "gzipDelta": 3374
+            },
+            "standalone-object-membership": {
+                "changed": false,
+                "rawDelta": 0,
+                "gzipDelta": 0
+            },
+            "standalone-object-query": {
+                "changed": true,
+                "rawDelta": 4097,
+                "gzipDelta": 3377
+            },
+            "attached-builder-membership": {
+                "changed": true,
+                "rawDelta": 4097,
+                "gzipDelta": 3361
+            },
+            "attached-builder-query": {
+                "changed": true,
+                "rawDelta": 4097,
+                "gzipDelta": 3374
+            },
+            "attached-object-membership": {
+                "changed": true,
+                "rawDelta": 4097,
+                "gzipDelta": 3374
+            },
+            "attached-object-query": {
+                "changed": true,
+                "rawDelta": 4097,
+                "gzipDelta": 3380
+            },
+            "standalone-builder-filterless": {
+                "changed": true,
+                "rawDelta": 4097,
+                "gzipDelta": 3361
+            },
+            "standalone-object-filterless": {
+                "changed": true,
+                "rawDelta": 4097,
+                "gzipDelta": 3365
+            },
+            "standalone-object-order-array": {
+                "changed": true,
+                "rawDelta": 4097,
+                "gzipDelta": 3371
+            }
+        },
+        "webpack": {
+            "narrow-collection-membership": {
+                "changed": false,
+                "rawDelta": 0,
+                "gzipDelta": 0
+            },
+            "standalone-builder-membership": {
+                "changed": false,
+                "rawDelta": 0,
+                "gzipDelta": 0
+            },
+            "standalone-builder-query": {
+                "changed": true,
+                "rawDelta": 4097,
+                "gzipDelta": 3388
+            },
+            "standalone-object-membership": {
+                "changed": false,
+                "rawDelta": 0,
+                "gzipDelta": 0
+            },
+            "standalone-object-query": {
+                "changed": true,
+                "rawDelta": 4097,
+                "gzipDelta": 3377
+            },
+            "attached-builder-membership": {
+                "changed": true,
+                "rawDelta": 4097,
+                "gzipDelta": 3377
+            },
+            "attached-builder-query": {
+                "changed": true,
+                "rawDelta": 4097,
+                "gzipDelta": 3392
+            },
+            "attached-object-membership": {
+                "changed": true,
+                "rawDelta": 4097,
+                "gzipDelta": 3374
+            },
+            "attached-object-query": {
+                "changed": true,
+                "rawDelta": 4097,
+                "gzipDelta": 3384
+            },
+            "standalone-builder-filterless": {
+                "changed": true,
+                "rawDelta": 4097,
+                "gzipDelta": 3378
+            },
+            "standalone-object-filterless": {
+                "changed": true,
+                "rawDelta": 4097,
+                "gzipDelta": 3369
+            },
+            "standalone-object-order-array": {
+                "changed": true,
+                "rawDelta": 4097,
+                "gzipDelta": 3371
+            }
+        }
+    }
+}

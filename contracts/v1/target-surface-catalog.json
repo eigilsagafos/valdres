@@ -1,0 +1,856 @@
+{
+    "$schema": "./schemas/target-surface-catalog.schema.json",
+    "schemaVersion": 1,
+    "completeness": "partial",
+    "publicApiIds": [
+        "adapter.assert-store",
+        "adapter.read",
+        "adapter.read-hydration-snapshot",
+        "adapter.subscribe",
+        "adapter.v1-subpath",
+        "beta.cache-companion",
+        "beta.search",
+        "collection.artifact-export",
+        "collection.artifact-import",
+        "collection.artifacts-subpath",
+        "collection.materialization-status",
+        "collection.materialization-subscribe",
+        "collection.materialize",
+        "collection.materialize-options.priority",
+        "collection.operations-subpath",
+        "collection.scan",
+        "core.atom",
+        "core.atom.lazy",
+        "core.atom-options.equal",
+        "core.atom-options.name",
+        "core.callback-capability-error",
+        "core.collection",
+        "core.collection-options.encode-key",
+        "core.collection-options.indexes",
+        "core.dormant-external-read-error",
+        "core.external-atom",
+        "core.external-atom-options.name",
+        "core.external-source-delivery-limit-error",
+        "core.external-source-non-convergence-error",
+        "core.facet-options.mode",
+        "core.facet-options.order",
+        "core.family",
+        "core.family-options.encode-key",
+        "core.invalid-atom-comparator-result-error",
+        "core.invalid-synchronous-atom-value-error",
+        "core.invalid-transaction-callback-result-error",
+        "core.invalid-transaction-target-error",
+        "core.global-atom",
+        "core.global-store",
+        "core.presence",
+        "core.query-definition.facets",
+        "core.query-definition.limit",
+        "core.query-definition.offset",
+        "core.query-definition.order-by",
+        "core.query-definition.where",
+        "core.runtime-mismatch-error",
+        "core.scope-not-found-error",
+        "core.server-snapshot-unavailable-error",
+        "core.selector",
+        "core.selector-capability-error",
+        "core.selector-options.equal",
+        "core.selector-options.name",
+        "core.selector-circular-dependency-error",
+        "core.selector-evaluation-error",
+        "core.store",
+        "core.store-disposed-error",
+        "core.store-tree-mismatch-error",
+        "core.store.delete",
+        "core.store.dispose",
+        "core.store.get",
+        "core.store.on-dispose",
+        "core.store.reset",
+        "core.store.scope",
+        "core.store.set",
+        "core.store.sub",
+        "core.store.txn",
+        "core.store.update",
+        "core.subscriber-notification-error",
+        "core.structural-query",
+        "core.invalid-external-cleanup-error",
+        "core.transaction-closed-error",
+        "core.transaction.delete",
+        "core.transaction.get",
+        "core.transaction.reset",
+        "core.transaction.scope",
+        "core.transaction.set",
+        "core.transaction.update",
+        "core.transaction-phase-error",
+        "core.type.atom",
+        "core.type.atom-options",
+        "core.type.equal-func",
+        "core.type.family-key",
+        "core.type.get-value",
+        "core.type.selector",
+        "core.type.selector-options",
+        "core.type.state",
+        "core.type.store",
+        "core.type.store-options",
+        "core.type.subscribe-fn",
+        "core.type.transaction",
+        "core.type.transaction-fn",
+        "legacy.adapter-selector-error",
+        "legacy.adapter-transaction",
+        "legacy.atom-default-value",
+        "legacy.atom-lifecycle",
+        "legacy.cache-reactive",
+        "legacy.deep-freeze",
+        "legacy.family-membership-index",
+        "legacy.initialize",
+        "legacy.mutation-type-aliases",
+        "legacy.predicates",
+        "legacy.promise-writes",
+        "legacy.provider-initialize",
+        "legacy.react-initialize-type",
+        "legacy.react-store-context",
+        "legacy.scope-leases",
+        "legacy.scoped-store-txn",
+        "legacy.scoped-transaction-types",
+        "legacy.selector-get-options",
+        "legacy.store-adapter",
+        "legacy.store-identity",
+        "legacy.store-mode-options",
+        "legacy.store-on-commit-end",
+        "legacy.store-scope-callback",
+        "legacy.store-unset",
+        "legacy.subscription-deep-equality",
+        "legacy.transaction-interface",
+        "legacy.transaction-names",
+        "legacy.transaction-parent-scope",
+        "legacy.transaction-unset",
+        "legacy.unset-all",
+        "moved.inspect",
+        "moved.schema",
+        "moved.transfer",
+        "react.provider",
+        "react.provider.children",
+        "react.provider.store",
+        "react.scope",
+        "react.use-atom",
+        "react.use-reset-atom",
+        "react.use-set-atom",
+        "react.use-store",
+        "react.use-transaction",
+        "react.use-update-atom",
+        "react.use-valdres-callback",
+        "react.use-value"
+    ],
+    "callbackIds": [
+        "callback.adapter-subscriber",
+        "callback.atom-comparator",
+        "callback.atom-lazy-initializer",
+        "callback.atom-update",
+        "callback.beta-cache-loader",
+        "callback.collection-encode-key",
+        "callback.collection-index-extractor",
+        "callback.collection-row-update",
+        "callback.external-cleanup",
+        "callback.external-get-server-snapshot",
+        "callback.external-get-snapshot",
+        "callback.external-subscribe",
+        "callback.family-create-node",
+        "callback.family-encode-key",
+        "callback.materialization-status-listener",
+        "callback.selector-comparator",
+        "callback.selector-getter",
+        "callback.store-subscriber",
+        "callback.transaction",
+        "callback.transaction-scope"
+    ],
+    "independentBetaPublicApiIds": ["beta.cache-companion", "beta.search"],
+    "frozenPublicCoordinates": [
+        {
+            "id": "adapter.assert-store",
+            "kind": "runtime-export",
+            "package": "valdres",
+            "subpath": "./adapter-internals/v1",
+            "name": "assertStore"
+        },
+        {
+            "id": "adapter.read",
+            "kind": "runtime-export",
+            "package": "valdres",
+            "subpath": "./adapter-internals/v1",
+            "name": "read"
+        },
+        {
+            "id": "adapter.read-hydration-snapshot",
+            "kind": "runtime-export",
+            "package": "valdres",
+            "subpath": "./adapter-internals/v1",
+            "name": "readHydrationSnapshot"
+        },
+        {
+            "id": "adapter.subscribe",
+            "kind": "runtime-export",
+            "package": "valdres",
+            "subpath": "./adapter-internals/v1",
+            "name": "subscribe"
+        },
+        {
+            "id": "adapter.v1-subpath",
+            "kind": "subpath",
+            "package": "valdres",
+            "subpath": "./adapter-internals/v1",
+            "name": "valdres/adapter-internals/v1"
+        },
+        {
+            "id": "beta.search",
+            "kind": "package",
+            "package": "@valdres/search",
+            "subpath": ".",
+            "name": "@valdres/search"
+        },
+        {
+            "id": "collection.artifact-export",
+            "kind": "runtime-export",
+            "package": "valdres",
+            "subpath": "./collection/artifacts",
+            "name": "exportArtifact"
+        },
+        {
+            "id": "collection.artifact-import",
+            "kind": "runtime-export",
+            "package": "valdres",
+            "subpath": "./collection/artifacts",
+            "name": "importArtifact"
+        },
+        {
+            "id": "collection.artifacts-subpath",
+            "kind": "subpath",
+            "package": "valdres",
+            "subpath": "./collection/artifacts",
+            "name": "valdres/collection/artifacts"
+        },
+        {
+            "id": "collection.materialization-status",
+            "kind": "runtime-export",
+            "package": "valdres",
+            "subpath": "./collection",
+            "name": "getMaterializationStatus"
+        },
+        {
+            "id": "collection.materialization-subscribe",
+            "kind": "runtime-export",
+            "package": "valdres",
+            "subpath": "./collection",
+            "name": "subscribeMaterialization"
+        },
+        {
+            "id": "collection.materialize",
+            "kind": "runtime-export",
+            "package": "valdres",
+            "subpath": "./collection",
+            "name": "materialize"
+        },
+        {
+            "id": "collection.materialize-options.priority",
+            "kind": "option",
+            "package": "valdres",
+            "subpath": "./collection",
+            "name": "MaterializeOptions.priority",
+            "allowedValues": ["user-visible", "background"]
+        },
+        {
+            "id": "collection.operations-subpath",
+            "kind": "subpath",
+            "package": "valdres",
+            "subpath": "./collection",
+            "name": "valdres/collection"
+        },
+        {
+            "id": "collection.scan",
+            "kind": "runtime-export",
+            "package": "valdres",
+            "subpath": "./collection",
+            "name": "scan"
+        },
+        {
+            "id": "core.atom",
+            "kind": "runtime-export",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "atom"
+        },
+        {
+            "id": "core.atom.lazy",
+            "kind": "method",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "atom.lazy"
+        },
+        {
+            "id": "core.atom-options.equal",
+            "kind": "option",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "AtomOptions.equal"
+        },
+        {
+            "id": "core.atom-options.name",
+            "kind": "option",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "AtomOptions.name"
+        },
+        {
+            "id": "core.callback-capability-error",
+            "kind": "error",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "CallbackCapabilityError",
+            "errorCode": "VALDRES_CALLBACK_CAPABILITY"
+        },
+        {
+            "id": "core.collection-options.encode-key",
+            "kind": "option",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "CollectionOptions.encodeKey"
+        },
+        {
+            "id": "core.collection-options.indexes",
+            "kind": "option",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "CollectionOptions.indexes"
+        },
+        {
+            "id": "core.dormant-external-read-error",
+            "kind": "error",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "DormantExternalReadError",
+            "errorCode": "VALDRES_DORMANT_EXTERNAL_READ"
+        },
+        {
+            "id": "core.external-atom-options.name",
+            "kind": "option",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "ExternalAtomOptions.name"
+        },
+        {
+            "id": "core.external-source-delivery-limit-error",
+            "kind": "error",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "ExternalSourceDeliveryLimitError",
+            "errorCode": "VALDRES_EXTERNAL_SOURCE_DELIVERY_LIMIT"
+        },
+        {
+            "id": "core.external-source-non-convergence-error",
+            "kind": "error",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "ExternalSourceNonConvergenceError",
+            "errorCode": "VALDRES_EXTERNAL_SOURCE_NON_CONVERGENCE"
+        },
+        {
+            "id": "core.facet-options.mode",
+            "kind": "option",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "FacetOptions.mode",
+            "allowedValues": ["conjunctive", "disjunctive"]
+        },
+        {
+            "id": "core.facet-options.order",
+            "kind": "option",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "FacetOptions.order",
+            "allowedValues": ["count-desc", "value-asc", "value-desc"]
+        },
+        {
+            "id": "core.family-options.encode-key",
+            "kind": "option",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "FamilyOptions.encodeKey"
+        },
+        {
+            "id": "core.invalid-external-cleanup-error",
+            "kind": "error",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "InvalidExternalCleanupError",
+            "errorCode": "VALDRES_INVALID_EXTERNAL_CLEANUP"
+        },
+        {
+            "id": "core.invalid-atom-comparator-result-error",
+            "kind": "error",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "InvalidAtomComparatorResultError",
+            "errorCode": "VALDRES_INVALID_ATOM_COMPARATOR_RESULT"
+        },
+        {
+            "id": "core.invalid-synchronous-atom-value-error",
+            "kind": "error",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "InvalidSynchronousAtomValueError",
+            "errorCode": "VALDRES_INVALID_SYNCHRONOUS_ATOM_VALUE"
+        },
+        {
+            "id": "core.invalid-transaction-callback-result-error",
+            "kind": "error",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "InvalidTransactionCallbackResultError",
+            "errorCode": "VALDRES_INVALID_TRANSACTION_CALLBACK_RESULT"
+        },
+        {
+            "id": "core.invalid-transaction-target-error",
+            "kind": "error",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "InvalidTransactionTargetError",
+            "errorCode": "VALDRES_INVALID_TRANSACTION_TARGET"
+        },
+        {
+            "id": "core.query-definition.facets",
+            "kind": "option",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "QueryDefinition.facets"
+        },
+        {
+            "id": "core.query-definition.limit",
+            "kind": "option",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "QueryDefinition.limit"
+        },
+        {
+            "id": "core.query-definition.offset",
+            "kind": "option",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "QueryDefinition.offset"
+        },
+        {
+            "id": "core.query-definition.order-by",
+            "kind": "option",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "QueryDefinition.orderBy"
+        },
+        {
+            "id": "core.query-definition.where",
+            "kind": "option",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "QueryDefinition.where"
+        },
+        {
+            "id": "core.server-snapshot-unavailable-error",
+            "kind": "error",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "ServerSnapshotUnavailableError",
+            "errorCode": "VALDRES_SERVER_SNAPSHOT_UNAVAILABLE"
+        },
+        {
+            "id": "core.selector-options.equal",
+            "kind": "option",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "SelectorOptions.equal"
+        },
+        {
+            "id": "core.selector-options.name",
+            "kind": "option",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "SelectorOptions.name"
+        },
+        {
+            "id": "core.collection",
+            "kind": "runtime-export",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "collection"
+        },
+        {
+            "id": "core.external-atom",
+            "kind": "runtime-export",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "externalAtom"
+        },
+        {
+            "id": "core.family",
+            "kind": "runtime-export",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "family"
+        },
+        {
+            "id": "core.presence",
+            "kind": "runtime-export",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "presence"
+        },
+        {
+            "id": "core.runtime-mismatch-error",
+            "kind": "error",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "RuntimeMismatchError",
+            "errorCode": "VALDRES_RUNTIME_MISMATCH"
+        },
+        {
+            "id": "core.scope-not-found-error",
+            "kind": "error",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "ScopeNotFoundError",
+            "errorCode": "VALDRES_SCOPE_NOT_FOUND"
+        },
+        {
+            "id": "core.selector",
+            "kind": "runtime-export",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "selector"
+        },
+        {
+            "id": "core.selector-capability-error",
+            "kind": "error",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "SelectorCapabilityError",
+            "errorCode": "VALDRES_SELECTOR_CAPABILITY_ERROR"
+        },
+        {
+            "id": "core.selector-circular-dependency-error",
+            "kind": "error",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "SelectorCircularDependencyError"
+        },
+        {
+            "id": "core.selector-evaluation-error",
+            "kind": "error",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "SelectorEvaluationError"
+        },
+        {
+            "id": "core.store",
+            "kind": "runtime-export",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "store",
+            "parameters": []
+        },
+        {
+            "id": "core.store-disposed-error",
+            "kind": "error",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "StoreDisposedError",
+            "errorCode": "VALDRES_STORE_DISPOSED"
+        },
+        {
+            "id": "core.store-tree-mismatch-error",
+            "kind": "error",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "StoreTreeMismatchError",
+            "errorCode": "VALDRES_STORE_TREE_MISMATCH"
+        },
+        {
+            "id": "core.store.delete",
+            "kind": "method",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "Store.delete"
+        },
+        {
+            "id": "core.store.dispose",
+            "kind": "method",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "Store.dispose"
+        },
+        {
+            "id": "core.store.get",
+            "kind": "method",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "Store.get"
+        },
+        {
+            "id": "core.store.reset",
+            "kind": "method",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "Store.reset"
+        },
+        {
+            "id": "core.store.scope",
+            "kind": "method",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "Store.scope"
+        },
+        {
+            "id": "core.store.set",
+            "kind": "method",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "Store.set"
+        },
+        {
+            "id": "core.store.sub",
+            "kind": "method",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "Store.sub"
+        },
+        {
+            "id": "core.subscriber-notification-error",
+            "kind": "error",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "SubscriberNotificationError",
+            "errorCode": "VALDRES_SUBSCRIBER_NOTIFICATION"
+        },
+        {
+            "id": "core.store.txn",
+            "kind": "method",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "Store.txn"
+        },
+        {
+            "id": "core.store.update",
+            "kind": "method",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "Store.update"
+        },
+        {
+            "id": "core.structural-query",
+            "kind": "runtime-export",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "query"
+        },
+        {
+            "id": "core.transaction-closed-error",
+            "kind": "error",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "TransactionClosedError",
+            "errorCode": "VALDRES_TRANSACTION_CLOSED"
+        },
+        {
+            "id": "core.transaction.delete",
+            "kind": "method",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "Transaction.delete"
+        },
+        {
+            "id": "core.transaction.get",
+            "kind": "method",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "Transaction.get"
+        },
+        {
+            "id": "core.transaction.reset",
+            "kind": "method",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "Transaction.reset"
+        },
+        {
+            "id": "core.transaction.scope",
+            "kind": "method",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "Transaction.scope"
+        },
+        {
+            "id": "core.transaction.set",
+            "kind": "method",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "Transaction.set"
+        },
+        {
+            "id": "core.transaction.update",
+            "kind": "method",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "Transaction.update"
+        },
+        {
+            "id": "core.transaction-phase-error",
+            "kind": "error",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "TransactionPhaseError",
+            "errorCode": "VALDRES_TRANSACTION_PHASE"
+        },
+        {
+            "id": "core.type.atom",
+            "kind": "type-export",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "Atom"
+        },
+        {
+            "id": "core.type.atom-options",
+            "kind": "type-export",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "AtomOptions"
+        },
+        {
+            "id": "core.type.equal-func",
+            "kind": "type-export",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "EqualFunc"
+        },
+        {
+            "id": "core.type.family-key",
+            "kind": "type-export",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "FamilyKey"
+        },
+        {
+            "id": "core.type.get-value",
+            "kind": "type-export",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "GetValue"
+        },
+        {
+            "id": "core.type.selector",
+            "kind": "type-export",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "Selector"
+        },
+        {
+            "id": "core.type.selector-options",
+            "kind": "type-export",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "SelectorOptions"
+        },
+        {
+            "id": "core.type.state",
+            "kind": "type-export",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "State"
+        },
+        {
+            "id": "core.type.store",
+            "kind": "type-export",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "Store"
+        },
+        {
+            "id": "core.type.subscribe-fn",
+            "kind": "type-export",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "SubscribeFn"
+        },
+        {
+            "id": "core.type.transaction",
+            "kind": "type-export",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "Transaction"
+        },
+        {
+            "id": "core.type.transaction-fn",
+            "kind": "type-export",
+            "package": "valdres",
+            "subpath": ".",
+            "name": "TransactionFn"
+        },
+        {
+            "id": "react.provider",
+            "kind": "runtime-export",
+            "package": "valdres-react",
+            "subpath": ".",
+            "name": "Provider"
+        },
+        {
+            "id": "react.provider.children",
+            "kind": "option",
+            "package": "valdres-react",
+            "subpath": ".",
+            "name": "ProviderProps.children"
+        },
+        {
+            "id": "react.provider.store",
+            "kind": "option",
+            "package": "valdres-react",
+            "subpath": ".",
+            "name": "ProviderProps.store"
+        },
+        {
+            "id": "react.use-atom",
+            "kind": "runtime-export",
+            "package": "valdres-react",
+            "subpath": ".",
+            "name": "useAtom"
+        },
+        {
+            "id": "react.use-reset-atom",
+            "kind": "runtime-export",
+            "package": "valdres-react",
+            "subpath": ".",
+            "name": "useResetAtom"
+        },
+        {
+            "id": "react.use-set-atom",
+            "kind": "runtime-export",
+            "package": "valdres-react",
+            "subpath": ".",
+            "name": "useSetAtom"
+        },
+        {
+            "id": "react.use-store",
+            "kind": "runtime-export",
+            "package": "valdres-react",
+            "subpath": ".",
+            "name": "useStore"
+        },
+        {
+            "id": "react.use-update-atom",
+            "kind": "runtime-export",
+            "package": "valdres-react",
+            "subpath": ".",
+            "name": "useUpdateAtom"
+        },
+        {
+            "id": "react.use-value",
+            "kind": "runtime-export",
+            "package": "valdres-react",
+            "subpath": ".",
+            "name": "useValue"
+        }
+    ],
+    "pendingSurfaceDecisions": []
+}

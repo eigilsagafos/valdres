@@ -1,0 +1,118 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://valdres.dev/contracts/v1/target-surface-catalog.schema.json",
+    "title": "Valdres v1 reviewed target surface catalog",
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+        "$schema",
+        "schemaVersion",
+        "completeness",
+        "publicApiIds",
+        "callbackIds",
+        "independentBetaPublicApiIds",
+        "frozenPublicCoordinates",
+        "pendingSurfaceDecisions"
+    ],
+    "properties": {
+        "$schema": { "const": "./schemas/target-surface-catalog.schema.json" },
+        "schemaVersion": { "const": 1 },
+        "completeness": { "enum": ["partial", "complete"] },
+        "publicApiIds": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+                "type": "string",
+                "pattern": "^[a-z0-9][a-z0-9.-]+$"
+            },
+            "uniqueItems": true
+        },
+        "callbackIds": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+                "type": "string",
+                "pattern": "^[a-z0-9][a-z0-9.-]+$"
+            },
+            "uniqueItems": true
+        },
+        "independentBetaPublicApiIds": {
+            "type": "array",
+            "items": {
+                "type": "string",
+                "pattern": "^[a-z0-9][a-z0-9.-]+$"
+            },
+            "uniqueItems": true
+        },
+        "frozenPublicCoordinates": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["id", "kind", "package", "subpath", "name"],
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "pattern": "^[a-z0-9][a-z0-9.-]+$"
+                    },
+                    "kind": {
+                        "enum": [
+                            "runtime-export",
+                            "type-export",
+                            "method",
+                            "option",
+                            "subpath",
+                            "package",
+                            "error"
+                        ]
+                    },
+                    "package": { "type": "string", "minLength": 1 },
+                    "subpath": { "type": "string", "minLength": 1 },
+                    "name": { "type": "string", "minLength": 1 },
+                    "errorCode": {
+                        "type": "string",
+                        "pattern": "^VALDRES_[A-Z0-9_]+$"
+                    },
+                    "allowedValues": {
+                        "type": "array",
+                        "minItems": 1,
+                        "items": { "type": "string", "minLength": 1 },
+                        "uniqueItems": true
+                    },
+                    "parameters": {
+                        "type": "array",
+                        "items": { "type": "string", "minLength": 1 },
+                        "uniqueItems": true
+                    }
+                }
+            },
+            "uniqueItems": true
+        },
+        "pendingSurfaceDecisions": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["id", "category", "status", "notes"],
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "pattern": "^[a-z0-9][a-z0-9.-]+$"
+                    },
+                    "category": {
+                        "enum": [
+                            "alias-exports",
+                            "query-grammar",
+                            "adapter-protocol",
+                            "error-names",
+                            "option-spellings"
+                        ]
+                    },
+                    "status": { "const": "pending" },
+                    "notes": { "type": "string", "minLength": 1 }
+                }
+            }
+        }
+    }
+}

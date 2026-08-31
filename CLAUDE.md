@@ -4,11 +4,12 @@
 
 Bun, not Node. Don't reach for `npm`, `pnpm`, `vitest`, or `jest`.
 
-- Run tests **per-package** (`cd packages/<pkg> && bun test`) or across all
-  packages via `bun run test` (= `bun --filter '*' test`).
+- Run tests **per-package** (`cd packages/<pkg> && bun test`), run the certified
+  v1 core + React cohort via `bun run test`, or run every package via
+  `bun run test:all`.
 - **Never run bare `bun test` at the repo root.** The built-in runner scans
-  every package from the wrong cwd and fabricates ~240 bogus failures; a
-  bunfig `[test].preload` guard now hard-fails it with instructions.
+  every package from the wrong cwd and fabricates ~240 bogus failures; a bunfig
+  `[test].preload` guard now hard-fails it with instructions.
 - Fresh checkouts have no `node_modules` — run `bun install` first (Conductor
   workspaces do this automatically via `.conductor/settings.toml`).
 
@@ -57,30 +58,26 @@ Canonical reference: `packages/@valdres/browser-geolocation`.
 - `bun test` per package. Files colocated as `*.test.ts` next to source.
 - Happy-DOM is preloaded via each package's `bunfig.toml`
   (`preload = "./test/setup/happyDom.ts"`). Don't add jsdom.
-- **`bun run test` is not what CI runs.** It is a single step in CI's `test`
-  job. The rest — `build`, `build:types`, `typecheck`, `typecheck:types`, a
-  `git grep` ban on `@ts-ignore`, `test:architecture`,
-  `test:rewrite-guards:node` (vitest, not bun, so `bun:test` does not resolve
-  there), `test:memory:bun`, `test:memory:node`,
-  `valdres-svelte lint:publish`, the JUnit coverage gate, `bun test scripts/` —
-  only ever ran on GitHub. That gap turned PR #329 red: a
-  new `src/lib/*Fuzz.test.ts` is auto-collected by
-  `vitest.rewrite-guards.config.ts` and had to import
-  `test/performance/test-compat` like its three siblings; nothing local said so.
+- **`bun run test` is only the certified core + React package-test step, not the
+  full CI gate.** CI also runs the v1 contracts and migration ledger, certified
+  builds and typechecks, the packed ShiftX workload, focused v1 model/evaluator/
+  StoreTree contracts, release-infrastructure tests, generated-README drift,
+  JUnit coverage, the published-core artifact gate, and the packed core + React
+  consumer matrix. Use `bun run test:all` only for the deferred full-monorepo
+  maintenance lane.
 - **`bun run verify` is the pre-PR command** (~1m20s). It reads the step list
   out of `.github/workflows/ci.yaml` at run time (not a hand-copied duplicate)
   and runs both PR-gated jobs — `test` and `valdres-package` — in CI's order,
   omitting only the publish dry-run and its cleanup assertion, since the dry-run
   executes the real release script against your working tree. It does **not**
-  cover `docs-ci.yml` (`docs:build`, `gen-readmes --check`) or the Bencher gate;
-  it prints that list on every run. `--list` prints the plan without running it;
+  cover the manual-only legacy docs-site build or the Bencher gate; it prints
+  that list on every run. `--list` prints the plan without running it;
   `--from=N` resumes after a fix (and says so instead of claiming a full pass).
 - **verify refuses to run on a toolchain that doesn't match CI's pins.** Keep
   local Bun at `.bun-version` and Node at ci.yaml's `node-version` — bundler
   output is Bun-specific and the size gate runs inside verify, so the wrong
   version measures something other than what CI measures. `--list` needs no
-  toolchain; `--allow-toolchain-drift` overrides and downgrades the final
-  claim.
+  toolchain; `--allow-toolchain-drift` overrides and downgrades the final claim.
 
 ## Releasing
 
@@ -102,10 +99,9 @@ prerelease mode.
   regenerated (`bun run gen-readmes` / Bencher workflows) — edit the MDX
   instead.
 - **Before opening or updating a PR, run `bun run verify` and the `/before-pr`
-  skill** — `verify` is ci.yaml's PR jobs; the skill has the rest of the
-  checklist: docs coverage, quality bar, generated artifacts, and the docs
-  checks CI enforces (`docs:build` + `gen-readmes --check` run on PRs that touch
-  docs-related files).
+  skill** — `verify` is ci.yaml's PR jobs, including generated README drift; the
+  skill adds the remaining docs-coverage, quality, and artifact review. The
+  legacy docs-site build is manual-only while the core+React v1 beta ships.
 
 ## Benchmarks
 

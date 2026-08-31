@@ -1,0 +1,17 @@
+{
+    "name": "@valdres/query-construction-spike",
+    "version": "1.0.0-d43.1",
+    "private": false,
+    "type": "module",
+    "sideEffects": false,
+    "files": [
+        "esm"
+    ],
+    "exports": {
+        "./collection": "./esm/collection.js",
+        "./standalone-builder": "./esm/standalone-builder.js",
+        "./standalone-object": "./esm/standalone-object.js",
+        "./attached-builder": "./esm/attached-builder.js",
+        "./attached-object": "./esm/attached-object.js"
+    }
+}

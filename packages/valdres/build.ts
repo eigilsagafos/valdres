@@ -1,15 +1,11 @@
 import { readdir, rmdir, unlink } from "node:fs/promises"
 import { join } from "node:path"
 
-const pkg = await Bun.file("package.json").json()
-const version = pkg.version
-
 export const buildOptions = {
     entrypoints: ["./src/index.ts", "./src/adapter-internals/v1.ts"],
     outdir: "./dist",
-    // The adapter-internals entrypoint must share the exact transaction module
-    // instance used by the public store bundle. Without splitting, Bun would
-    // duplicate commit registries and adapter commits would miss listeners.
+    // Root and adapter-internals must share the exact module-local v1 domain.
+    // Without splitting, each entry would receive a different owner token.
     splitting: true,
     packages: "external" as const,
     // Ship a minified dist. Most consumers bundle valdres and would minify it
@@ -24,55 +20,13 @@ export const buildOptions = {
     // (112 KB -> 299 KB gzip) — every consumer pays that download so the rare
     // one stepping through our internals doesn't see mangled names. Revisit by
     // publishing maps as a separate artifact if that tradeoff ever inverts.
-    //
-    // Two contracts survive minification and are asserted in test/build.test.ts
-    // against this exact (minified) output: `process.env.NODE_ENV` must remain
-    // a runtime reference, and the engine self-checks must be gone.
     minify: true,
-    define: {
-        "process.env.VALDRES_VERSION": JSON.stringify(version),
-        // Raw CDN/edge runtimes do not expose process. The default artifact
-        // treats that absence as production; a second build below overrides
-        // this define for the explicit development export condition.
-        __VALDRES_PROCESSLESS_DEVELOPMENT__: "false",
-        __VALDRES_BUILD_VARIANT__: JSON.stringify("default"),
-        // Compile out the engine self-checks: assertPlanLegal (defined in
-        // src/lib/commitPlans.ts, called in src/lib/commitEngine.ts) and
-        // assertTreeTriggersSealed (defined in src/lib/treeTriggerGroups.ts,
-        // called in src/lib/propagateUpdatedAtoms.ts). Each is guarded at its
-        // call site by this same env read. They assert invariants only valdres's
-        // own code can violate, so they belong to this repo's test loop, not to
-        // a consumer's bundle.
-        "process.env.VALDRES_ENGINE_SELF_CHECKS": JSON.stringify("off"),
-        // Map NODE_ENV to itself so Bun does NOT inline it at *our* build time.
-        // valdres is built once under NODE_ENV=production; without this, Bun folds
-        // `process.env.NODE_ENV === "production"` to `true` in the dist, baking
-        // "always prod" into the published package — which disables the dev-only
-        // freeze for *every* consumer, even when they run in development. Keeping it
-        // a runtime reference lets the consumer's bundler/runtime resolve it for
-        // their own environment. See src/lib/IS_PROD.ts. Guarded by a build test.
-        "process.env.NODE_ENV": "process.env.NODE_ENV",
-    },
 }
 
-/** A parallel graph for bundlers that enable the `development` package export
- * condition. It still honors NODE_ENV when process.env exists; only the
- * process-less fallback differs from the default artifact. Keeping both public
- * entrypoints in this split graph preserves their shared transaction runtime.
- *
- * This intentionally adds roughly 35% to the packed-package gzip size while a
- * selected consumer bundle grows by less than 0.2%. A thin static ESM wrapper
- * cannot change the already-instantiated IS_PROD module without mutating a
- * global or making behavior depend on which entry loaded first, so the
- * install-time duplication buys deterministic, isolated runtime semantics. */
+/** Parallel graph selected by the existing `development` export condition. */
 export const developmentBuildOptions = {
     ...buildOptions,
     outdir: "./dist/development",
-    define: {
-        ...buildOptions.define,
-        __VALDRES_PROCESSLESS_DEVELOPMENT__: "true",
-        __VALDRES_BUILD_VARIANT__: JSON.stringify("development"),
-    },
 }
 
 /** Split builds emit content-hashed chunks. Remove prior JavaScript output so
