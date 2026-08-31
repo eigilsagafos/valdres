@@ -1,5 +1,28 @@
 # valdres
 
+## 1.0.0-beta.25
+
+### Minor Changes
+
+- [#350](https://github.com/eigilsagafos/valdres/pull/350)
+  [`5ff1c85`](https://github.com/eigilsagafos/valdres/commit/5ff1c852a2f57163fc42e075c21a503bf6dcf8c2)
+  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! - Add `deepEqual` as
+  an opt-in two-argument comparator from `valdres/equality`. Atoms and selectors
+  still default to `Object.is`, and the helper stays outside ordinary root
+  bundles. Use it to retain the previous reference and prune notifications or
+  downstream propagation when a replacement is structurally equal; comparison
+  cost grows with the values traversed, and cyclic structures remain
+  unsupported.
+
+### Patch Changes
+
+- [#351](https://github.com/eigilsagafos/valdres/pull/351)
+  [`f395d6f`](https://github.com/eigilsagafos/valdres/commit/f395d6f98a4b0bfb5a6540a70737c983efebc938)
+  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! - Speed up dynamic
+  selector rewiring by excluding terminal source nodes from cycle-path searches.
+  Large graph-changing transactions now avoid repeatedly walking atom leaves
+  while preserving the same cycle errors, notifications, and committed values.
+
 ## 1.0.0-beta.24
 
 ### Minor Changes
