@@ -1197,6 +1197,55 @@ describe("v1 persistent committed StoreTree host", () => {
         ])
     })
 
+    test("invalidates cached selector-only adjacency when committed topology changes", () => {
+        const domain = createCommittedStoreTreeDomain()
+        const parentUsesDependency = domain.atom(false)
+        const dependencyUsesCyclePath = domain.atom(false)
+        const leaf = domain.atom(1)
+        const oldPath = domain.selector(get => get(leaf))
+        let parent!: Selector<number>
+        let dependency!: Selector<number>
+        const cyclePath = domain.selector(get => get(parent))
+        dependency = domain.selector(get =>
+            get(dependencyUsesCyclePath) ? get(cyclePath) : get(oldPath),
+        )
+        parent = domain.selector(get =>
+            get(parentUsesDependency) ? get(dependency) : 0,
+        )
+        const tree = domain.createStoreTree()
+
+        // Materialize both sides while the authoritative graph is still a DAG:
+        // dependency -> oldPath and cyclePath -> parent.
+        expect(tree.get(cyclePath)).toBe(0)
+        expect(tree.get(dependency)).toBe(1)
+
+        // Adding parent -> dependency proves the edge and caches dependency's
+        // old selector-only adjacency. It is safe because dependency still
+        // reaches only oldPath.
+        tree.set(parentUsesDependency, true)
+        expect(tree.get(parent)).toBe(1)
+
+        // Remove the parent edge before replacing dependency's ordered
+        // topology with dependency -> cyclePath -> parent.
+        tree.set(parentUsesDependency, false)
+        expect(tree.get(parent)).toBe(0)
+        tree.set(dependencyUsesCyclePath, true)
+        expect(tree.get(dependency)).toBe(0)
+
+        // Re-adding parent -> dependency must traverse the updated adjacency,
+        // not the cached oldPath entry.
+        tree.set(parentUsesDependency, true)
+        const error = thrownBy(() => tree.get(parent))
+
+        expect(error).toBeInstanceOf(SelectorCircularDependencyError)
+        expect((error as SelectorCircularDependencyError).path).toEqual([
+            parent,
+            dependency,
+            cyclePath,
+            parent,
+        ])
+    })
+
     test("replaces dynamic reverse edges while equal selector values prune parents", () => {
         const domain = createCommittedStoreTreeDomain()
         const gate = domain.atom(true)

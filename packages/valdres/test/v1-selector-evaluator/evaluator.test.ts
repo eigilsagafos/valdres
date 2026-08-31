@@ -46,8 +46,13 @@ class TestHost implements SelectorEvaluationHost<Node, Token> {
     readonly publications: SelectorEvaluationProposal<Node, Token>[] = []
     graphVersionReads = 0
     selectorRecordReads = 0
+    readonly selectorRecordReadNodes: Node[] = []
+    readonly selectorDependencyNodeReadNodes: Node[] = []
     readonly liveRecords: Map<Node, TestRecord> | undefined
     readonly comparisonRecords: Map<Node, TestRecord> | undefined
+    readonly getSelectorDependencyNodes?: (
+        node: Node,
+    ) => readonly Node[] | undefined
     #nextToken = 1
     #selectorGraphVersion = 0
     #activeSession: SelectorEvaluationSession<Node> | undefined
@@ -62,6 +67,20 @@ class TestHost implements SelectorEvaluationHost<Node, Token> {
     ) {
         this.liveRecords = options.liveRecords
         this.comparisonRecords = options.comparisonRecords
+        if (mode === "persistent-pre" || mode === "persistent-post") {
+            this.getSelectorDependencyNodes = node => {
+                this.selectorDependencyNodeReadNodes.push(node)
+                const record = this.records.get(node)
+                if (record === undefined) return undefined
+                return Object.freeze(
+                    record.dependencies
+                        .filter(dependency =>
+                            this.definitions.has(dependency.node),
+                        )
+                        .map(dependency => dependency.node),
+                )
+            }
+        }
     }
 
     define<Value>(definition: SelectorDefinition<Node, Value>): void {
@@ -186,6 +205,7 @@ class TestHost implements SelectorEvaluationHost<Node, Token> {
 
     getSelectorRecord(node: Node): SelectorRecordView<Node, Token> | undefined {
         this.selectorRecordReads++
+        this.selectorRecordReadNodes.push(node)
         const record = this.records.get(node)
         if (record === undefined && this.definitions.has(node)) {
             for (const candidate of this.records.values()) {
@@ -200,9 +220,8 @@ class TestHost implements SelectorEvaluationHost<Node, Token> {
                 }
             }
         }
-        return record
-            ? Object.freeze({ dependencies: record.dependencies })
-            : undefined
+        if (record === undefined) return undefined
+        return Object.freeze({ dependencies: record.dependencies })
     }
 
     getSelectorGraphVersion(): number {
@@ -485,6 +504,19 @@ describe("v1 selector evaluator outcomes", () => {
         expect(host.graphVersionReads).toBe(3)
     })
 
+    test("does not request selector-only adjacency during an ordinary warm evaluation", () => {
+        const host = new TestHost()
+        host.setLeaf("leaf", 1)
+        host.define({ node: "derived", get: get => get<number>("leaf") })
+        expect(valueOf(host.read<number>("derived"))).toBe(1)
+        host.selectorDependencyNodeReadNodes.length = 0
+
+        host.setLeaf("leaf", 2)
+
+        expect(valueOf(host.read<number>("derived"))).toBe(2)
+        expect(host.selectorDependencyNodeReadNodes).toEqual([])
+    })
+
     test("falls back to old-topology membership when dependencies reorder", () => {
         const host = new TestHost()
         host.setLeaf("a", 1)
@@ -628,6 +660,115 @@ describe("v1 selector evaluator outcomes", () => {
 })
 
 describe("v1 selector evaluator cycles", () => {
+    test("selector-only adjacency excludes terminal leaf noise from a negative proof", () => {
+        const host = new TestHost()
+        const leaves = Array.from({ length: 32 }, (_, index) => `leaf-${index}`)
+        for (const leaf of leaves) host.setLeaf(leaf, 1)
+        host.define({
+            node: "start",
+            get: get => {
+                for (const leaf of leaves) get(leaf)
+                return 1
+            },
+        })
+        host.define({ node: "parent", get: () => 1 })
+        expect(valueOf(host.read<number>("start"))).toBe(1)
+        expect(valueOf(host.read<number>("parent"))).toBe(1)
+
+        host.define({
+            node: "parent",
+            get: get => {
+                get(leaves[0]!)
+                return get("start")
+            },
+        })
+        host.selectorRecordReadNodes.length = 0
+        host.selectorDependencyNodeReadNodes.length = 0
+
+        expect(valueOf(host.read<number>("parent"))).toBe(1)
+        expect(host.selectorRecordReadNodes).toEqual(["parent"])
+        expect(host.selectorDependencyNodeReadNodes).toEqual([
+            "leaf-0",
+            "start",
+        ])
+    })
+
+    test("selector-only adjacency preserves DFS order and the exact positive cycle path", () => {
+        const host = new TestHost()
+        host.setLeaf("noise-before", 1)
+        host.setLeaf("noise-between", 1)
+        host.setLeaf("noise-after", 1)
+        host.define({ node: "parent", get: () => 1 })
+        host.define({ node: "left", get: get => get("parent") })
+        host.define({ node: "right", get: get => get("parent") })
+        host.define({
+            node: "start",
+            get: get => {
+                get("noise-before")
+                get("left")
+                get("noise-between")
+                get("right")
+                get("noise-after")
+                return 1
+            },
+        })
+        expect(valueOf(host.read<number>("parent"))).toBe(1)
+        expect(valueOf(host.read<number>("start"))).toBe(1)
+
+        host.define({ node: "parent", get: get => get("start") })
+        host.selectorRecordReadNodes.length = 0
+        host.selectorDependencyNodeReadNodes.length = 0
+        const error = errorOf(host.read("parent"))
+
+        expect(error).toBeInstanceOf(SelectorCircularDependencyError)
+        expect((error as SelectorCircularDependencyError).path).toEqual([
+            "parent",
+            "start",
+            "right",
+            "parent",
+        ])
+        expect(host.selectorRecordReadNodes).toEqual(["parent"])
+        expect(host.selectorDependencyNodeReadNodes).toEqual(["start", "right"])
+    })
+
+    test("scratch and hydration hosts retain full-record closure traversal", () => {
+        for (const mode of ["scratch", "hydration"] as const) {
+            const host = new TestHost(mode)
+            host.setLeaf("noise", 1)
+            host.define({ node: "parent", get: () => 1 })
+            host.define({ node: "right", get: get => get("parent") })
+            host.define({
+                node: "start",
+                get: get => {
+                    get("right")
+                    get("noise")
+                    return 1
+                },
+            })
+            expect(host.getSelectorDependencyNodes).toBeUndefined()
+            expect(valueOf(host.read<number>("parent"))).toBe(1)
+            expect(valueOf(host.read<number>("start"))).toBe(1)
+
+            host.define({ node: "parent", get: get => get("start") })
+            host.selectorRecordReadNodes.length = 0
+            const error = errorOf(host.read("parent"))
+
+            expect(error).toBeInstanceOf(SelectorCircularDependencyError)
+            expect((error as SelectorCircularDependencyError).path).toEqual([
+                "parent",
+                "start",
+                "right",
+                "parent",
+            ])
+            expect(host.selectorRecordReadNodes).toEqual([
+                "parent",
+                "start",
+                "noise",
+                "right",
+            ])
+        }
+    })
+
     test("does not mistake an out-of-range undefined node for an old edge", () => {
         const host = new TestHost()
         const undefinedNode = undefined as unknown as Node

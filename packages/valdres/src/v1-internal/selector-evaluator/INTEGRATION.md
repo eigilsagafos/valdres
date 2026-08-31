@@ -22,6 +22,16 @@ may depend on that selector. Selective removal must remove every incoming edge
 needed to preserve that invariant; current persistent disposal and scratch
 generation replacement instead clear an entire closed graph.
 
+A host may expose an ordered selector-only adjacency lookup used exclusively by
+closure proofs to avoid traversing terminal source nodes. `undefined` from a
+supporting host identifies a terminal node and does not fall back to the full
+record. Returned adjacency must preserve the exact node identity and relative
+order of the authoritative dependency record. Active transient prefixes are
+never filtered through this host cache. The persistent host builds each
+subsequence lazily, reuses it only while the complete ordered node topology is
+unchanged, and invalidates it when that topology changes; hosts that omit the
+lookup retain the full-record traversal.
+
 | Host                 | Records and currentness                                                               | Control-error policy                                                              | Comparison baseline                                                          |
 | -------------------- | ------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
 | Persistent committed | Canonical forward/reverse graph and dirty routing                                     | Reject before source apply; install exact authoritative control error after apply | Last successful committed value; canonical token only while currently served |
