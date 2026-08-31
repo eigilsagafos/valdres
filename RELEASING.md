@@ -32,18 +32,18 @@ migrated.
 
 The authored manifests remain at the package versions currently published on
 the beta tag. Changesets keeps prerelease counters package-local, so the
-checked-in minor Changeset generates:
+checked-in core-only minor Changeset generates:
 
 ```text
-valdres@1.0.0-beta.24
+valdres@1.0.0-beta.25
 valdres-react@1.0.0-beta.5
 ```
 
 `changesets/action` must first consume the minor Changeset into its generated
-Version Packages PR. The live publish script accepts only the exact beta.24 and
+Version Packages PR. The live publish script accepts only the exact beta.25 and
 beta.5 tuple above; dry runs accept either those targets or the authored
-beta.23/beta.4 predecessors so feature PRs can validate prepack and cleanup. In
-the generated PR, verify the exact two target versions, the React peer
+beta.24/beta.5 predecessors so feature PRs can validate prepack and cleanup. In
+the generated PR, verify the exact target versions, the unchanged React peer
 `valdres: ^1.0.0-beta.24`, and that release metadata changes are limited to the
 two certified packages before merging it.
 

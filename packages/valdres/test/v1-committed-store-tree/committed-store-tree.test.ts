@@ -1732,18 +1732,38 @@ describe("v1 persistent committed StoreTree host", () => {
         const packageRoot = resolve(import.meta.dir, "../..")
         const manifest = JSON.parse(
             readFileSync(join(packageRoot, "package.json"), "utf8"),
-        ) as { readonly exports: unknown }
+        ) as { readonly exports: Readonly<Record<string, unknown>> }
         expect(JSON.stringify(manifest.exports)).not.toContain("v1-internal")
 
         const exportedSources = collectStrings(manifest.exports)
             .filter(path => path.endsWith(".ts") || path.endsWith(".tsx"))
             .map(path => resolve(packageRoot, path))
-        expect(exportedSources).toHaveLength(2)
+        expect(exportedSources).toHaveLength(3)
+
+        const runtimeEntrypoints = [".", "./adapter-internals/v1"].flatMap(
+            subpath =>
+                collectStrings(manifest.exports[subpath])
+                    .filter(
+                        path => path.endsWith(".ts") || path.endsWith(".tsx"),
+                    )
+                    .map(path => resolve(packageRoot, path)),
+        )
+        expect(runtimeEntrypoints).toHaveLength(2)
+        const equalityEntrypoints = collectStrings(
+            manifest.exports["./equality"],
+        )
+            .filter(path => path.endsWith(".ts") || path.endsWith(".tsx"))
+            .map(path => resolve(packageRoot, path))
+        expect(equalityEntrypoints).toHaveLength(1)
+
         const reachable = collectRuntimeSourceGraph(
-            exportedSources,
+            runtimeEntrypoints,
             packageRoot,
         )
         expect(reachable.size).toBeGreaterThan(10)
+        expect(
+            [...reachable].map(path => relative(packageRoot, path)),
+        ).not.toContain("src/equality.ts")
         const v1Runtime = [...reachable]
             .filter(path => path.includes("/src/v1-internal/"))
             .map(path => relative(packageRoot, path))
@@ -1757,6 +1777,12 @@ describe("v1 persistent committed StoreTree host", () => {
         expect(
             [...reachable].filter(path => path.includes("/src/lib/")),
         ).toEqual([])
+
+        expect(
+            [
+                ...collectRuntimeSourceGraph(equalityEntrypoints, packageRoot),
+            ].map(path => relative(packageRoot, path)),
+        ).toEqual(["src/equality.ts"])
     })
 })
 

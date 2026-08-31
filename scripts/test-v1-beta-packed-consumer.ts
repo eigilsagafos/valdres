@@ -5,10 +5,11 @@ import { basename, join } from "node:path"
 
 const rootDirectory = join(import.meta.dir, "..")
 const intendedCoreBetaVersion =
-    process.env.VALDRES_PACKED_CORE_BETA_VERSION ?? "1.0.0-beta.24"
+    process.env.VALDRES_PACKED_CORE_BETA_VERSION ?? "1.0.0-beta.25"
 const intendedReactBetaVersion =
     process.env.VALDRES_PACKED_REACT_BETA_VERSION ?? "1.0.0-beta.5"
-const intendedReactCorePeer = `^${intendedCoreBetaVersion}`
+const intendedReactCorePeer =
+    process.env.VALDRES_PACKED_REACT_CORE_PEER ?? "^1.0.0-beta.24"
 const keepWorkspace = process.env.VALDRES_KEEP_PACKED_SMOKE === "1"
 
 const intendedBetaVersions = {

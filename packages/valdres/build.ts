@@ -2,7 +2,11 @@ import { readdir, rmdir, unlink } from "node:fs/promises"
 import { join } from "node:path"
 
 export const buildOptions = {
-    entrypoints: ["./src/index.ts", "./src/adapter-internals/v1.ts"],
+    entrypoints: [
+        "./src/index.ts",
+        "./src/equality.ts",
+        "./src/adapter-internals/v1.ts",
+    ],
     outdir: "./dist",
     // Root and adapter-internals must share the exact module-local v1 domain.
     // Without splitting, each entry would receive a different owner token.

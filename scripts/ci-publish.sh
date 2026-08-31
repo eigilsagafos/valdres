@@ -50,11 +50,11 @@ trap restore_on_exit EXIT
 bunx changeset --help > /dev/null
 
 # The feature PR keeps each manifest at its currently published prerelease.
-# Changesets advances their package-local counters independently: core beta.23
-# becomes beta.24 and React beta.4 becomes beta.5. changesets/action consumes
-# the pending Changeset into a release PR before it invokes this script. Every
-# dry run validates either the authored predecessors or exact target tuple; a
-# live publish accepts only the exact target tuple.
+# Changesets advances package-local counters independently: this core-only
+# Changeset moves valdres beta.24 to beta.25 while React remains at beta.5.
+# changesets/action consumes the pending Changeset into a release PR before it
+# invokes this script. Every dry run validates either the authored predecessor
+# tuple or the exact target tuple; a live publish accepts only the target.
 node - "$ROOT_DIR" "${DRY_RUN:-0}" "${PUBLIC_PACKAGES[@]}" <<'NODE'
 const fs = require("node:fs")
 const path = require("node:path")
@@ -62,12 +62,12 @@ const path = require("node:path")
 const [rootDir, dryRunValue, ...packageDirs] = process.argv.slice(2)
 const dryRun = dryRunValue === "1"
 const expectedVersions = new Map([
-  ["valdres", "1.0.0-beta.24"],
+  ["valdres", "1.0.0-beta.25"],
   ["valdres-react", "1.0.0-beta.5"],
 ])
 const predecessorVersions = new Map([
-  ["valdres", "1.0.0-beta.23"],
-  ["valdres-react", "1.0.0-beta.4"],
+  ["valdres", "1.0.0-beta.24"],
+  ["valdres-react", "1.0.0-beta.5"],
 ])
 const preState = JSON.parse(
   fs.readFileSync(path.join(rootDir, ".changeset", "pre.json"), "utf8"),

@@ -85,6 +85,7 @@ describe("v1 build output", () => {
         )
 
         expect(files).toContain("index.js")
+        expect(files).toContain("equality.js")
         expect(files).toContain("adapter-internals/v1.js")
         expect(
             defaultJavaScript.filter(code =>
@@ -97,15 +98,17 @@ describe("v1 build output", () => {
         expect(JavaScript.join("\n")).not.toContain("process.env")
     })
 
-    test("loads root and adapter from the built split graph with no ambient writes", async () => {
+    test("loads root, equality, and adapter from the built split graph with no ambient writes", async () => {
         const dist = await builtDist()
         const rootUrl = pathToFileURL(join(dist, "index.js")).href
+        const equalityUrl = pathToFileURL(join(dist, "equality.js")).href
         const adapterUrl = pathToFileURL(
             join(dist, "adapter-internals", "v1.js"),
         ).href
         const script = `
             const before = new Set(Reflect.ownKeys(globalThis))
             const root = await import(${JSON.stringify(rootUrl)})
+            const equality = await import(${JSON.stringify(equalityUrl)})
             const adapter = await import(${JSON.stringify(adapterUrl)})
             const count = root.atom(1)
             const target = root.store()
@@ -116,8 +119,13 @@ describe("v1 build output", () => {
                 .map(String)
             console.log(JSON.stringify({
                 addedGlobals,
+                equal: equality.deepEqual(
+                    { id: 1, nested: [2, 3] },
+                    { id: 1, nested: [2, 3] },
+                ),
                 value: adapter.read(target, count),
                 root: Object.keys(root).sort(),
+                equality: Object.keys(equality).sort(),
                 adapter: Object.keys(adapter).sort(),
             }))
         `
@@ -128,6 +136,7 @@ describe("v1 build output", () => {
         expect(result.exitCode, result.stderr).toBe(0)
         expect(JSON.parse(result.stdout)).toMatchObject({
             addedGlobals: [],
+            equal: true,
             value: 4,
             root: [
                 "CallbackCapabilityError",
@@ -148,6 +157,7 @@ describe("v1 build output", () => {
                 "selector",
                 "store",
             ],
+            equality: ["deepEqual"],
             adapter: [
                 "assertStore",
                 "read",
@@ -157,7 +167,7 @@ describe("v1 build output", () => {
         })
     })
 
-    test("works through an installed npm tarball with root and adapter sharing identity", async () => {
+    test("works through an installed npm tarball with equality available and root and adapter sharing identity", async () => {
         const workspace = await temporaryDirectory("valdres-v1-pack-")
         const packageDirectory = join(workspace, "package")
         const consumerDirectory = join(workspace, "consumer")
@@ -179,6 +189,7 @@ describe("v1 build output", () => {
                 files: ["dist"],
                 exports: {
                     ".": "./dist/index.js",
+                    "./equality": "./dist/equality.js",
                     "./adapter-internals/v1": "./dist/adapter-internals/v1.js",
                 },
             }),
@@ -221,6 +232,7 @@ describe("v1 build output", () => {
                 "--eval",
                 `
                     import { atom, selector, store } from "valdres-packed-probe"
+                    import { deepEqual } from "valdres-packed-probe/equality"
                     import {
                         assertStore,
                         read,
@@ -234,6 +246,10 @@ describe("v1 build output", () => {
                     const unsubscribe = subscribe(target, count, () => {})
                     unsubscribe()
                     console.log(JSON.stringify({
+                        equal: deepEqual(
+                            { id: 1, nested: [2, 3] },
+                            { id: 1, nested: [2, 3] },
+                        ),
                         live: read(target, doubled),
                         hydration: readHydrationSnapshot(target, doubled),
                     }))
@@ -243,6 +259,7 @@ describe("v1 build output", () => {
         )
         expect(probe.exitCode, probe.stderr).toBe(0)
         expect(JSON.parse(probe.stdout)).toEqual({
+            equal: true,
             live: 4,
             hydration: 4,
         })
@@ -253,6 +270,7 @@ describe("v1 build output", () => {
         await mkdir(join(outdir, "adapter-internals"))
         await Promise.all([
             writeFile(join(outdir, "index.js"), "old index"),
+            writeFile(join(outdir, "equality.js"), "old equality"),
             writeFile(join(outdir, "chunk-old.js"), "old chunk"),
             writeFile(join(outdir, "chunk-old.js.map"), "old map"),
             writeFile(

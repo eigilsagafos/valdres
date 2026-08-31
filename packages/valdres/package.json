@@ -15,6 +15,7 @@
     "sideEffects": false,
     "exports": {
         ".": "./src/index.ts",
+        "./equality": "./src/equality.ts",
         "./adapter-internals/v1": "./src/adapter-internals/v1.ts"
     },
     "files": [
