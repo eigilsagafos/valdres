@@ -1,7 +1,8 @@
 # React inspection correlation — PR2 decisions
 
-Status: implementation record for a stacked follow-up to the inspectable Store
-flight recorder. PR2 is not merge-ready until core beta.26 has been published.
+Status: implementation record for the follow-up to the inspectable Store flight
+recorder. Core beta.26 is live and PR2 is staged as the coordinated beta.27 /
+beta.6 release.
 
 ## Goal
 
@@ -99,10 +100,10 @@ and React schemas settle.
 
 ## Release staging
 
-Develop PR2 stacked on PR1, but do not add final Changesets or publish-guard
-metadata until core beta.26 is versioned and live. Then rebase onto current
-`origin/main`, add core and React minor Changesets, raise the React peer floor,
-and publish the capture seam plus `valdres-react/inspect` as the next
-coordinated core/React beta pair. The exact beta numbers are selected from the
-live queue at that point; no temporary release tuple is added while PR2 is
-stacked.
+Core beta.26 is published and PR2 is synchronized with current `origin/main`.
+Separate core and React minor Changesets advance the pair to
+`valdres@1.0.0-beta.27` and `valdres-react@1.0.0-beta.6`. The React package sets
+its Valdres peer floor to `^1.0.0-beta.27` because the inspect entry requires
+the new recording-neutral capture seam. The publish guard accepts only that
+target pair for a live publish and the authored beta.26 / beta.5 predecessors
+for feature-branch dry runs.

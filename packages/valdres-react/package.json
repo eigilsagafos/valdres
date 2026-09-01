@@ -41,7 +41,7 @@
     },
     "peerDependencies": {
         "react": "^18.0.0 || ^19.0.0",
-        "valdres": "^1.0.0-beta.24"
+        "valdres": "^1.0.0-beta.27"
     },
     "publishConfig": {
         "access": "public",

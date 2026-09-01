@@ -74,6 +74,6 @@ The versioned `valdres/adapter-internals/v1` entry is for framework bindings. It
 
 ## Beta compatibility
 
-`valdres@1.0.0-beta.24` and later v1 betas intentionally replace the legacy beta API. `valdres-react@1.0.0-beta.5` is certified with core versions accepted by its `^1.0.0-beta.24` peer range. Deferred framework adapters and plugins remain unsupported even when their published semver ranges allow npm to resolve this core; do not mix them with the new beta until they are migrated.
+`valdres@1.0.0-beta.24` and later v1 betas intentionally replace the legacy beta API. `valdres-react@1.0.0-beta.6` is certified with `valdres@1.0.0-beta.27` and later v1 betas accepted by its `^1.0.0-beta.27` peer range. Deferred framework adapters and plugins remain unsupported even when their published semver ranges allow npm to resolve this core; do not mix them with the new beta until they are migrated.
 
 <!-- DOCS:END -->

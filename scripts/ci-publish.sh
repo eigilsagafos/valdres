@@ -50,8 +50,8 @@ trap restore_on_exit EXIT
 bunx changeset --help > /dev/null
 
 # The feature PR keeps each manifest at its currently published prerelease.
-# Changesets advances package-local counters independently: this core-only
-# Changeset moves valdres beta.25 to beta.26 while React remains at beta.5.
+# Changesets advances package-local counters independently: the coordinated
+# Changesets move valdres beta.26 to beta.27 and React beta.5 to beta.6.
 # changesets/action consumes the pending Changeset into a release PR before it
 # invokes this script. Every dry run validates either the authored predecessor
 # tuple or the exact target tuple; a live publish accepts only the target.
@@ -62,11 +62,11 @@ const path = require("node:path")
 const [rootDir, dryRunValue, ...packageDirs] = process.argv.slice(2)
 const dryRun = dryRunValue === "1"
 const expectedVersions = new Map([
-  ["valdres", "1.0.0-beta.26"],
-  ["valdres-react", "1.0.0-beta.5"],
+  ["valdres", "1.0.0-beta.27"],
+  ["valdres-react", "1.0.0-beta.6"],
 ])
 const predecessorVersions = new Map([
-  ["valdres", "1.0.0-beta.25"],
+  ["valdres", "1.0.0-beta.26"],
   ["valdres-react", "1.0.0-beta.5"],
 ])
 const preState = JSON.parse(
@@ -94,10 +94,10 @@ for (const packageDir of packageDirs) {
 
   if (
     manifest.name === "valdres-react" &&
-    manifest.peerDependencies?.valdres !== "^1.0.0-beta.24"
+    manifest.peerDependencies?.valdres !== "^1.0.0-beta.27"
   ) {
     throw new Error(
-      `Refusing to publish valdres-react with core peer ${manifest.peerDependencies?.valdres}: expected ^1.0.0-beta.24`,
+      `Refusing to publish valdres-react with core peer ${manifest.peerDependencies?.valdres}: expected ^1.0.0-beta.27`,
     )
   }
 }
