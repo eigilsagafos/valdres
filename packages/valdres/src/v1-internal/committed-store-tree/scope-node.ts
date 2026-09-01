@@ -90,7 +90,11 @@ export interface StoreScopeCoordinator {
         session: SelectorEvaluationSession<AnyState>,
     ): ServedSelectorOutcome<OutcomeToken>
     enqueueSelector(scope: StoreScopeNode, selector: AnySelector): boolean
-    prepareSelectorRead(scope: StoreScopeNode, selector: AnySelector): void
+    prepareSelectorRead(
+        scope: StoreScopeNode,
+        selector: AnySelector,
+        session: SelectorEvaluationSession<AnyState>,
+    ): void
     reachSubscriptionTarget(scope: StoreScopeNode, state: AnyState): void
     latchPropagationControlFault(error: unknown): void
     recordCounter(counter: StoreTreeCounter, amount?: number): void
@@ -367,7 +371,7 @@ export class StoreScopeNode
         const selector = node as AnySelector
         let current = this.#selectorRecords.get(selector)
         if (current !== undefined && this.coordinator.postSourceApply) {
-            this.coordinator.prepareSelectorRead(this, selector)
+            this.coordinator.prepareSelectorRead(this, selector, session)
             current = this.#selectorRecords.get(selector)
         }
         if (current !== undefined && !this.#dirtySelectors.has(selector)) {

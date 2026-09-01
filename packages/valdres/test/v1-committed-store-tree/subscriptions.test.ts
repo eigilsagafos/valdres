@@ -156,6 +156,40 @@ describe("v1 lifecycle-free synchronous Store subscriptions", () => {
         ])
     })
 
+    test("keeps old dependency notification order when a dynamic parent switches branches", () => {
+        const domain = createCommittedStoreTreeDomain()
+        const parentUsesBranch = domain.atom(false)
+        const branchUsesOldChild = domain.atom(true)
+        const oldSource = domain.atom(1)
+        const safe = domain.atom(7)
+        const oldChild = domain.selector(get => get(oldSource))
+        const branch = domain.selector(get =>
+            get(branchUsesOldChild) ? get(oldChild) : get(safe),
+        )
+        const parent = domain.selector(get =>
+            get(parentUsesBranch) ? get(branch) : 0,
+        )
+        const tree = domain.createStoreTree()
+        const order: string[] = []
+
+        expect(tree.get(branch)).toBe(1)
+        expect(tree.get(parent)).toBe(0)
+        tree.sub(oldChild, () => order.push("old"))
+        tree.sub(branch, () => order.push("branch"))
+        tree.sub(parent, () => order.push("parent"))
+
+        tree.txn(transaction => {
+            transaction.set(parentUsesBranch, true)
+            transaction.set(branchUsesOldChild, false)
+            transaction.set(oldSource, 2)
+        })
+
+        expect(order).toEqual(["old", "branch", "parent"])
+        expect(tree.get(oldChild)).toBe(2)
+        expect(tree.get(branch)).toBe(7)
+        expect(tree.get(parent)).toBe(7)
+    })
+
     test("notifies direct mutations and one multi-source transaction once per final target", () => {
         const domain = createCommittedStoreTreeDomain()
         const left = domain.atom(0)

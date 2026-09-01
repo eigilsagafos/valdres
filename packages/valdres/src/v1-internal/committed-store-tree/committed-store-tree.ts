@@ -2137,23 +2137,35 @@ class CommittedStoreTreeHost
         return true
     }
 
-    prepareSelectorRead(scope: StoreScopeNode, selector: AnySelector): void {
+    prepareSelectorRead(
+        scope: StoreScopeNode,
+        selector: AnySelector,
+        session: SelectorEvaluationSession<AnyState>,
+    ): void {
         if (this.#propagationQueue === undefined) return
-        this.#settleSelector(scope, selector)
+        this.#settleSelector(scope, selector, session)
     }
 
-    #settleSelector(scope: StoreScopeNode, selector: AnySelector): void {
+    #settleSelector(
+        scope: StoreScopeNode,
+        selector: AnySelector,
+        session?: SelectorEvaluationSession<AnyState>,
+    ): void {
         const status = this.#getPropagationStatus(scope, selector)
         if ((status & (PROPAGATION_SETTLED | PROPAGATION_SETTLING)) !== 0) {
             return
         }
         this.#updatePropagationStatus(scope, selector, PROPAGATION_SETTLING)
         try {
+            const graphVersionBeforeDependencies =
+                scope.getSelectorGraphVersion()
             const dependencies =
                 scope.getCommittedSelectorDependencies(selector)
             if (dependencies !== undefined) {
                 for (const dependency of dependencies) {
                     if (this.#domain.selectors.has(dependency.node)) {
+                        // Administrative settlement preserves established
+                        // propagation order and its isolated control faults.
                         this.#settleSelector(
                             scope,
                             dependency.node as AnySelector,
@@ -2162,7 +2174,20 @@ class CommittedStoreTreeHost
                 }
             }
             if (scope.isSelectorDirty(selector)) {
-                scope.serve(selector, new SelectorEvaluationSession<AnyState>())
+                const graphStayedCurrent =
+                    graphVersionBeforeDependencies ===
+                    scope.getSelectorGraphVersion()
+                if (session !== undefined && graphStayedCurrent) {
+                    // Reuse the dynamically active session only when no old
+                    // dependency published first. Its own publication is then
+                    // attributable without changing base settlement ordering.
+                    scope.serve(selector, session)
+                } else {
+                    scope.serve(
+                        selector,
+                        new SelectorEvaluationSession<AnyState>(),
+                    )
+                }
             }
             this.#updatePropagationStatus(scope, selector, PROPAGATION_SETTLED)
         } finally {
