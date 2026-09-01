@@ -9,6 +9,7 @@
  *   5. No workspace: references remain in dependencies (after prepack)
  *   6. No scripts or devDependencies in prepacked package.json
  *   7. version field is present
+ *   8. gitHead is omitted so npm records the actual publish checkout
  *
  * Always restores original package.json via postpublish, even on failure.
  *
@@ -105,6 +106,13 @@ for (const pkg of PUBLIC_PACKAGES) {
         // Check: version exists
         if (!packageJson.version) {
             error(pkgName, "missing version field")
+        }
+
+        // npm derives gitHead from the checkout being published. A committed
+        // value wins over that derivation and leaves immutable registry
+        // metadata pointing at an unrelated historical commit.
+        if (Object.hasOwn(packageJson, "gitHead")) {
+            error(pkgName, "gitHead must be owned by npm, not package.json")
         }
 
         // Check: no workspace: references in any dependency field
