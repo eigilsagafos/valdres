@@ -142,7 +142,7 @@ export interface ReactInspectionRecording {
     readonly recordingId: string
     readonly coreRecordingId: string
     readonly profiler: Readonly<{
-        /** Whether this factory has ever observed a Profiler callback. */
+        /** Whether this recording has observed a Profiler callback. */
         readonly commitCallbacksObserved: boolean
     }>
     readonly summaries: readonly ReactProfilerInspection[]
