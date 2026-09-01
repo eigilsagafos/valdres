@@ -91,6 +91,15 @@ latching, and ancestor revalidation ignore frames from other hosts sharing the
 same session. A selector identity reused by two hosts therefore cannot create a
 cross-host false cycle.
 
+The persistent host settles a selector's old committed dependencies in their
+established order and in isolated sessions before serving that selector during
+propagation. It may reuse the caller's active session for the requested selector
+only when this administrative pass did not advance the host graph version. If an
+old dependency published, the requested selector keeps a fresh session so the
+caller observes that foreign publication and revalidates its prefix. This gate
+preserves notification order and first-control-fault identity while attributing
+a directly nested target's own publication to the active evaluation.
+
 Owner validation happens before `serve` does dependency work, so a direct
 foreign handle latches and throws without returning an outcome or edge. A
 same-domain dependency whose authoritative current outcome is already a control

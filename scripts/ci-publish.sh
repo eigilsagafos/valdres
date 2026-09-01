@@ -50,8 +50,8 @@ trap restore_on_exit EXIT
 bunx changeset --help > /dev/null
 
 # The feature PR keeps each manifest at its currently published prerelease.
-# Changesets advances package-local counters independently: the coordinated
-# core-only Changeset moves valdres beta.27 to beta.28 while React stays beta.6.
+# Changesets advances package-local counters independently: the pending core
+# minor moves valdres beta.28 to beta.29 while React remains at beta.6.
 # changesets/action consumes the pending Changeset into a release PR before it
 # invokes this script. Every dry run validates either the authored predecessor
 # tuple or the exact target tuple; a live publish accepts only the target.
@@ -62,11 +62,11 @@ const path = require("node:path")
 const [rootDir, dryRunValue, ...packageDirs] = process.argv.slice(2)
 const dryRun = dryRunValue === "1"
 const expectedVersions = new Map([
-  ["valdres", "1.0.0-beta.28"],
+  ["valdres", "1.0.0-beta.29"],
   ["valdres-react", "1.0.0-beta.6"],
 ])
 const predecessorVersions = new Map([
-  ["valdres", "1.0.0-beta.27"],
+  ["valdres", "1.0.0-beta.28"],
   ["valdres-react", "1.0.0-beta.6"],
 ])
 const preState = JSON.parse(

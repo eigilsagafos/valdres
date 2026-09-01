@@ -675,6 +675,62 @@ describe("valdres/inspect public structural diagnostics", () => {
         unsubscribe()
     })
 
+    test("attributes nested propagation publications to the active parent session", () => {
+        const childCount = 6
+        const source = atom(0, { name: "nested-settlement/source" })
+        const children = Array.from({ length: childCount }, (_, index) =>
+            selector(get => get(source), {
+                name: `nested-settlement/child/${index}`,
+            }),
+        )
+        const parent = selector(
+            get => {
+                if (get(source) === 0) return 0
+                return children.reduce((sum, child) => sum + get(child), 0)
+            },
+            { name: "nested-settlement/parent" },
+        )
+        const { store, inspect } = createInspectableStore()
+
+        // Register the parent first so propagation reaches it before the
+        // individually materialized children. Its dynamic reads then settle
+        // those dirty children while the parent evaluation is active.
+        expect(store.get(parent)).toBe(0)
+        for (const child of children) expect(store.get(child)).toBe(0)
+        inspect.reset()
+
+        store.txn(
+            transaction => transaction.set(source, 1),
+            "nested settlement",
+        )
+
+        expect(store.get(parent)).toBe(childCount)
+        const report = inspect.export()
+        const operation = operationNamed(report, "nested settlement")
+        const evaluations = detailsOfType(report, "selector-evaluation").filter(
+            detail => detail.operationId === operation.operationId,
+        )
+
+        expect(operation.totals).toMatchObject({
+            selectorEvaluations: childCount + 1,
+            proposedTopologyChanges: 1,
+            proposedTopologyIdentical: childCount,
+        })
+        expect(
+            operation.totals.cycle.byLane.committed.prefixRevalidation,
+        ).toEqual(EMPTY_CYCLE_BUCKET)
+        expect(operation.totals.cycle.byLane.committed.newEdgeProof).toEqual({
+            searches: childCount,
+            visits: childCount,
+            maxVisits: 1,
+            found: 0,
+        })
+        expect(evaluations).toHaveLength(childCount + 1)
+        expect(new Set(evaluations.map(detail => detail.sessionId)).size).toBe(
+            1,
+        )
+    })
+
     test("captures a modest ShiftX-shaped cold first named drop", () => {
         const itemCount = 18
         const sequenceCount = 3
@@ -783,9 +839,7 @@ describe("valdres/inspect public structural diagnostics", () => {
         expect(cycle.searches).toBeGreaterThan(0)
         expect(cycle.visits).toBeGreaterThanOrEqual(cycle.searches)
         expect(cycle.found).toBe(0)
-        expect(
-            cycle.byLane.committed.prefixRevalidation.searches,
-        ).toBeGreaterThan(0)
+        expect(cycle.byLane.committed.prefixRevalidation.searches).toBe(2)
         expect(cycle.byLane.committed.newEdgeProof.searches).toBeGreaterThan(0)
         expect(cycle.byHost).toEqual({
             committed: cycle.searches,
@@ -809,13 +863,20 @@ describe("valdres/inspect public structural diagnostics", () => {
             searches.some(detail => referenceName(detail.start) !== undefined),
         ).toBe(true)
         expect(
-            searches.some(
-                detail =>
-                    detail.site === "prefix-revalidation" &&
-                    detail.evaluationGraphVersionDelta !==
+            searches.filter(detail => detail.site === "prefix-revalidation"),
+        ).toHaveLength(2)
+        expect(
+            searches
+                .filter(detail => detail.site === "prefix-revalidation")
+                .every(
+                    detail =>
+                        detail.evaluationGraphVersionDelta !==
                         detail.evaluationAttributedPublicationDelta,
-            ),
+                ),
         ).toBe(true)
+        expect(searches.some(detail => detail.site === "new-edge-proof")).toBe(
+            true,
+        )
         expect(
             searches.every(
                 detail =>
