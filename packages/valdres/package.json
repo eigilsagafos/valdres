@@ -1,7 +1,7 @@
 {
     "name": "valdres",
     "description": "Fast atom-based state management for JavaScript. Inspired by Recoil and Jotai.",
-    "version": "1.0.0-beta.25",
+    "version": "1.0.0-beta.26",
     "license": "MIT",
     "author": {
         "name": "Eigil Sagafos"
@@ -64,6 +64,5 @@
     "publishConfig": {
         "access": "public",
         "registry": "https://registry.npmjs.org/"
-    },
-    "gitHead": "53245fd1a080cdb1131f5be9056adc546d05ead4"
+    }
 }

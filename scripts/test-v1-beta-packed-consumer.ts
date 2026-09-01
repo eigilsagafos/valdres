@@ -674,7 +674,17 @@ try {
             name,
             "package.json",
         )
-        sourceManifests.set(name, await readFile(manifestPath, "utf8"))
+        const sourceManifest = await readFile(manifestPath, "utf8")
+        const parsedManifest = JSON.parse(sourceManifest) as Record<
+            string,
+            unknown
+        >
+        assert.equal(
+            Object.hasOwn(parsedManifest, "gitHead"),
+            false,
+            `${name} source manifest must leave gitHead to npm`,
+        )
+        sourceManifests.set(name, sourceManifest)
     }
 
     run(
@@ -720,6 +730,7 @@ try {
         >
         const intendedBetaVersion = intendedBetaVersions[name]
         manifest.version = intendedBetaVersion
+        manifest.gitHead = "0000000000000000000000000000000000000000"
         await writeJson(join(packageDirectory, "package.json"), manifest)
 
         run(
@@ -732,6 +743,7 @@ try {
             await readFile(join(packageDirectory, "package.json"), "utf8"),
         ) as {
             version: string
+            gitHead?: unknown
             scripts?: unknown
             devDependencies?: unknown
             sideEffects?: unknown
@@ -742,6 +754,7 @@ try {
             >
         }
         assert.equal(prepackedManifest.version, intendedBetaVersion)
+        assert.equal(prepackedManifest.gitHead, undefined)
         assert.equal(prepackedManifest.scripts, undefined)
         assert.equal(prepackedManifest.devDependencies, undefined)
         if (name === "valdres") {

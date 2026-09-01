@@ -13,6 +13,9 @@ if (await packageTmpJsonFile.exists()) {
     const json = await packageJsonFile.json()
     delete json.scripts
     delete json.devDependencies
+    // npm derives gitHead from the checkout at publish time. Never let stale
+    // authored metadata override the immutable package provenance it records.
+    delete json.gitHead
     if (
         !json.exports ||
         typeof json.exports !== "object" ||
