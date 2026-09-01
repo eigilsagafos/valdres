@@ -1,0 +1,17 @@
+{
+    "extends": "../../../../tsconfig.json",
+    "compilerOptions": {
+        "exactOptionalPropertyTypes": true,
+        "noEmit": true,
+        "types": ["bun"]
+    },
+    "include": [
+        "./*.ts",
+        "../../src/index.ts",
+        "../../src/inspect.ts",
+        "../../src/adapter-internals/v1.ts",
+        "../../src/v1.ts",
+        "../../src/v1-internal/committed-store-tree/*.ts",
+        "../../src/v1-internal/selector-evaluator/*.ts"
+    ]
+}

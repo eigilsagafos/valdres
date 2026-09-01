@@ -1,7 +1,9 @@
 import type {
     SelectorDefinition,
+    SelectorEvaluationStrategy,
     ServedSelectorOutcome,
 } from "../selector-evaluator/types"
+import { evaluateSelector } from "../selector-evaluator/evaluate"
 import { SelectorEvaluationSession } from "../selector-evaluator/types"
 import {
     CallbackCapabilityError,
@@ -131,6 +133,28 @@ const createUnsubscribe = (
 
 export interface InternalStoreTreeInstrumentation {
     read(counter: StoreTreeCounter): number
+}
+
+/** @internal Construction-time inspect seam. Ordinary StoreTrees omit it. */
+export type InternalStoreTreeTrace = ((
+    code: number,
+    first?: unknown,
+    second?: unknown,
+    third?: unknown,
+) => void) & {
+    readonly evaluate?: SelectorEvaluationStrategy
+}
+
+/** Internal domain surface used by the singleton public runtime. A domain-level
+ * instrumentation remains the default for the existing architecture harnesses,
+ * while one StoreTree may select its own instrumentation without creating a
+ * second runtime domain (and therefore without changing State ownership). */
+export interface InternalCommittedStoreTreeDomain
+    extends CommittedStoreTreeDomain {
+    createStoreTree(
+        instrumentation?: InternalStoreTreeInstrumentation,
+        trace?: InternalStoreTreeTrace,
+    ): CommittedStoreTree
 }
 
 const STORE_TREE_COUNTER_INDEX: Readonly<Record<StoreTreeCounter, number>> =
@@ -391,16 +415,21 @@ class CommittedStoreTreeHost
     #remainingNotificationTargets: SubscriptionTarget[] | undefined
     readonly #domain: RuntimeDomainRecords
     readonly #counters: Uint32Array | undefined
+    readonly #trace: InternalStoreTreeTrace | undefined
+    readonly evaluate: SelectorEvaluationStrategy
 
     constructor(
         domain: RuntimeDomainRecords,
         instrumentation?: InternalStoreTreeInstrumentation,
+        trace?: InternalStoreTreeTrace,
     ) {
         this.#domain = domain
         this.#counters =
             instrumentation === undefined
                 ? undefined
                 : internalInstrumentationCounters.get(instrumentation)
+        this.#trace = trace
+        this.evaluate = trace?.evaluate ?? evaluateSelector
         this.#rootScope = new StoreScopeNode(this)
         this.recordCounter("scopeNodesCreated")
     }
@@ -714,11 +743,15 @@ class CommittedStoreTreeHost
     txn<Result>(
         scope: StoreScopeNode,
         callback: TransactionCallback<Result>,
+        name?: string,
     ): Result {
         assertStoreOperationAllowed(this.#domain, "StoreTree.txn")
         this.#assertScopeLive(scope)
-        if (typeof callback !== "function") {
-            throw new TypeError("StoreTree.txn requires a callback function")
+        if (
+            typeof callback !== "function" ||
+            (name !== undefined && typeof name !== "string")
+        ) {
+            throw new TypeError("StoreTree.txn requires a callback")
         }
 
         const draft = this.#createDraft()
@@ -986,6 +1019,7 @@ class CommittedStoreTreeHost
                     runSelectorActivity(this.#domain, session, operation),
             }),
             draft.generation,
+            this.evaluate,
         )
     }
 
@@ -1018,6 +1052,7 @@ class CommittedStoreTreeHost
                     runSelectorActivity(this.#domain, session, operation),
             }),
             draft.generation,
+            this.evaluate,
         )
     }
 
@@ -1044,7 +1079,7 @@ class CommittedStoreTreeHost
     ): CommittedStoreTree {
         const child = new StoreScopeNode(this, parent, name)
         this.recordCounter("scopeNodesCreated")
-        const facade = new CommittedStoreTreeFacade(this, child)
+        const facade = new CommittedStoreTreeFacade(this, child, this.#trace)
         parent.children.add(child)
         if (name !== undefined) parent.namedChildren.set(name, child)
         return facade
@@ -1503,6 +1538,8 @@ class CommittedStoreTreeHost
         }
         if (firstPlan === undefined) return
 
+        this.#trace?.(1, draft, this.#domain.atoms)
+
         // Apply every fallback publication and owned source before propagation.
         this.#publishPlanFallback(draft, firstPlan)
         if (remainingPlan !== undefined) {
@@ -1518,7 +1555,6 @@ class CommittedStoreTreeHost
                 ownershipChanged ||= entryOwnershipChanged
             }
         }
-
         // Rewire every materialized target only after every local source applies.
         this.#rewirePlanAtomView(firstPlan)
         if (remainingPlan !== undefined) {
@@ -1584,6 +1620,12 @@ class CommittedStoreTreeHost
                 this.#sourceEpoch += 1
                 this.recordCounter("sourceEpoch")
             }
+            this.#trace?.(
+                2,
+                firstChangedSource === undefined
+                    ? 0
+                    : 1 + (remainingChangedSources?.length ?? 0),
+            )
             this.#propagateFromSources(
                 firstChangedSource,
                 remainingChangedSources,
@@ -2229,20 +2271,27 @@ class CommittedStoreTreeFacade implements CommittedStoreTree {
         update: AtomUpdater<Value>,
     ) => void
     readonly reset: <Value>(atom: Atom<Value>) => void
-    readonly txn: <Result>(callback: TransactionCallback<Result>) => Result
+    readonly txn: <Result>(
+        callback: TransactionCallback<Result>,
+        name?: string,
+    ) => Result
     readonly scope: {
         (): CommittedStoreTree
         (id: string): CommittedStoreTree
     }
     readonly dispose: () => void
 
-    constructor(host: CommittedStoreTreeHost, scope: StoreScopeNode) {
+    constructor(
+        host: CommittedStoreTreeHost,
+        scope: StoreScopeNode,
+        trace?: InternalStoreTreeTrace,
+    ) {
         this.get = state => host.get(scope, state)
         this.sub = (state, callback) => host.sub(scope, state, callback)
         this.set = (atom, value) => host.set(scope, atom, value)
         this.update = (atom, update) => host.update(scope, atom, update)
         this.reset = atom => host.reset(scope, atom)
-        this.txn = callback => host.txn(scope, callback)
+        this.txn = (callback, name) => host.txn(scope, callback, name)
         this.scope = function (id?: string): CommittedStoreTree {
             return host.scope(scope, arguments.length, id)
         }
@@ -2251,29 +2300,33 @@ class CommittedStoreTreeFacade implements CommittedStoreTree {
         brandRuntimeHandle(this, host.runtimeDomain.ownerToken)
         host.runtimeDomain.stores.set(this, scope)
         host.recordCounter("storeFacadesCreated")
+        trace?.(0, this, scope)
         Object.freeze(this)
     }
 }
 
 const readAtomOptions = <Value>(
     options: AtomOptions<Value>,
-): Pick<AtomDefinition, "equal"> => {
+): Pick<AtomDefinition, "equal" | "name"> => {
     if (options.equal !== undefined && typeof options.equal !== "function") {
         throw new TypeError("Atom equal must be a function")
     }
-    return options.equal === undefined
-        ? {}
-        : {
-              equal: options.equal as (
-                  previous: unknown,
-                  next: unknown,
-              ) => boolean,
-          }
+    return {
+        ...(options.name === undefined ? {} : { name: options.name }),
+        ...(options.equal === undefined
+            ? {}
+            : {
+                  equal: options.equal as (
+                      previous: unknown,
+                      next: unknown,
+                  ) => boolean,
+              }),
+    }
 }
 
 export const createCommittedStoreTreeDomain = (
-    instrumentation?: InternalStoreTreeInstrumentation,
-): CommittedStoreTreeDomain => {
+    defaultInstrumentation?: InternalStoreTreeInstrumentation,
+): InternalCommittedStoreTreeDomain => {
     const records: RuntimeDomainRecords = {
         states: new WeakSet(),
         atoms: new WeakMap(),
@@ -2358,6 +2411,7 @@ export const createCommittedStoreTreeDomain = (
             get: get as (
                 get: <DependencyValue>(node: AnyState) => DependencyValue,
             ) => Value,
+            ...(options.name === undefined ? {} : { name: options.name }),
             ...(options.equal === undefined ? {} : { equal: options.equal }),
         })
         records.states.add(handle)
@@ -2433,10 +2487,19 @@ export const createCommittedStoreTreeDomain = (
         atomLazy,
         selector,
         adapter,
-        createStoreTree: () => {
+        createStoreTree: (
+            instrumentation:
+                | InternalStoreTreeInstrumentation
+                | undefined = defaultInstrumentation,
+            trace?: InternalStoreTreeTrace,
+        ) => {
             assertStoreOperationAllowed(records, "createStoreTree")
-            const host = new CommittedStoreTreeHost(records, instrumentation)
-            return new CommittedStoreTreeFacade(host, host.rootScope)
+            const host = new CommittedStoreTreeHost(
+                records,
+                instrumentation,
+                trace,
+            )
+            return new CommittedStoreTreeFacade(host, host.rootScope, trace)
         },
     })
 }

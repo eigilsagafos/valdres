@@ -9,12 +9,17 @@ import {
     SelectorReadRevokedError,
 } from "../../src/v1-internal/selector-evaluator/errors"
 import { evaluateSelector } from "../../src/v1-internal/selector-evaluator/evaluate"
+import {
+    createInspectionRecorder,
+    type CycleSearchInspectionDetail,
+} from "../../src/v1-internal/inspection"
 import type {
     SelectorComparisonBaseline,
     SelectorDefinition,
     SelectorEvaluationHost,
     SelectorEvaluationProposal,
     SelectorRecordView,
+    SelectorCycleSearch,
     ServedSelectorOutcome,
 } from "../../src/v1-internal/selector-evaluator/types"
 import { SelectorEvaluationSession } from "../../src/v1-internal/selector-evaluator/types"
@@ -53,6 +58,7 @@ class TestHost implements SelectorEvaluationHost<Node, Token> {
     readonly getSelectorDependencyNodes?: (
         node: Node,
     ) => readonly Node[] | undefined
+    cycleTrace: SelectorCycleSearch<Node, Token> | undefined
     #nextToken = 1
     #selectorGraphVersion = 0
     #activeSession: SelectorEvaluationSession<Node> | undefined
@@ -167,7 +173,12 @@ class TestHost implements SelectorEvaluationHost<Node, Token> {
         this.#activeSession = session
         let proposal: SelectorEvaluationProposal<Node, Token>
         try {
-            proposal = evaluateSelector(definition, this, session)
+            proposal = evaluateSelector(
+                definition,
+                this,
+                session,
+                this.cycleTrace,
+            )
         } finally {
             this.#activeSession = previousSession
         }
@@ -288,6 +299,200 @@ const errorOf = (served: ServedSelectorOutcome<Token>): unknown => {
         throw new Error("expected an error outcome")
     }
     return served.outcome.error
+}
+
+const normalizeCycleParityError = (error: unknown): unknown => {
+    if (error instanceof SelectorCircularDependencyError) {
+        return Object.freeze({
+            name: error.name,
+            selector: error.selector,
+            path: error.path,
+        })
+    }
+    if (error instanceof SelectorGetterError) {
+        return Object.freeze({
+            name: error.name,
+            selector: error.selector,
+            cause: normalizeCycleParityError(error.cause),
+        })
+    }
+    if (error instanceof SelectorDependencyError) {
+        return Object.freeze({
+            name: error.name,
+            dependency: error.dependency,
+            cause: normalizeCycleParityError(error.cause),
+        })
+    }
+    if (error instanceof Error) {
+        return Object.freeze({ name: error.name, message: error.message })
+    }
+    return error
+}
+
+const normalizeCycleParityOutcome = (
+    served: ServedSelectorOutcome<Token>,
+): unknown =>
+    served.outcome.kind === "value"
+        ? Object.freeze({ kind: "value", value: served.outcome.value })
+        : Object.freeze({
+              kind: served.outcome.kind,
+              error: normalizeCycleParityError(served.outcome.error),
+          })
+
+const cycleParitySnapshot = (
+    host: TestHost,
+    served: ServedSelectorOutcome<Token>,
+): unknown =>
+    Object.freeze({
+        served: normalizeCycleParityOutcome(served),
+        records: [...host.records.entries()]
+            .sort(([left], [right]) => left.localeCompare(right))
+            .map(([node, record]) =>
+                Object.freeze({
+                    node,
+                    dependencies: record.dependencies.map(
+                        dependency => dependency.node,
+                    ),
+                    served: normalizeCycleParityOutcome(record.served),
+                }),
+            ),
+    })
+
+interface CycleParityCase {
+    readonly name: string
+    readonly mode: HostMode
+    readonly hostKind: "committed" | "scratch" | "hydration"
+    readonly prepare: (host: TestHost) => void
+    readonly mutate: (host: TestHost) => ServedSelectorOutcome<Token>
+    readonly verify: (searches: readonly CycleSearchInspectionDetail[]) => void
+}
+
+const runCycleParityCase = (scenario: CycleParityCase): void => {
+    const run = (
+        measured: boolean,
+    ): Readonly<{
+        snapshot: unknown
+        searches: readonly CycleSearchInspectionDetail[]
+    }> => {
+        const host = new TestHost(scenario.mode)
+        scenario.prepare(host)
+        const setup = measured ? createInspectionRecorder() : undefined
+        if (setup !== undefined) {
+            const hostRef = setup.recorder.reference(
+                host,
+                scenario.hostKind === "committed" ? "scope" : "scratch-host",
+            )
+            host.cycleTrace = (start, target, cycleHost, session, site) =>
+                setup.recorder.findDependencyPath(
+                    scenario.hostKind,
+                    hostRef,
+                    start,
+                    target,
+                    cycleHost,
+                    session,
+                    site,
+                    cycleHost.getSelectorGraphVersion(),
+                    session.getSelectorGraphPublicationCount(cycleHost),
+                    false,
+                )
+        }
+        const served = scenario.mutate(host)
+        const searches =
+            setup?.inspect
+                .export()
+                .details.filter(
+                    (detail): detail is CycleSearchInspectionDetail =>
+                        detail.type === "cycle-search",
+                ) ?? []
+        return Object.freeze({
+            snapshot: cycleParitySnapshot(host, served),
+            searches,
+        })
+    }
+
+    const fast = run(false)
+    const measured = run(true)
+    expect(measured.snapshot).toEqual(fast.snapshot)
+    scenario.verify(measured.searches)
+}
+
+const findExpectedDependencyPath = (
+    adjacency: ReadonlyMap<Node, readonly Node[]>,
+    start: Node,
+    target: Node,
+): Readonly<{ path: readonly Node[] | undefined; visits: number }> => {
+    const root = Symbol("dependency-path-root")
+    const pending = [start]
+    const parent = new Map<Node, Node | typeof root>([[start, root]])
+    let visits = 0
+
+    while (pending.length > 0) {
+        const node = pending.pop() as Node
+        visits++
+        if (Object.is(node, target)) {
+            const reversed: Node[] = []
+            let cursor: Node | typeof root = node
+            while (cursor !== root) {
+                reversed.push(cursor)
+                cursor = parent.get(cursor) as Node | typeof root
+            }
+            reversed.reverse()
+            return Object.freeze({ path: Object.freeze(reversed), visits })
+        }
+        for (const dependency of adjacency.get(node) ?? []) {
+            if (parent.has(dependency)) continue
+            parent.set(dependency, node)
+            pending.push(dependency)
+        }
+    }
+
+    return Object.freeze({ path: undefined, visits })
+}
+
+const createRandomDagCase = (
+    seed: number,
+    shouldFind: boolean,
+): Readonly<{
+    adjacency: ReadonlyMap<Node, readonly Node[]>
+    start: Node
+    target: Node
+    expected: Readonly<{ path: readonly Node[] | undefined; visits: number }>
+}> => {
+    let state = seed >>> 0
+    const random = (): number => {
+        state = (Math.imul(state, 1_664_525) + 1_013_904_223) >>> 0
+        return state / 0x1_0000_0000
+    }
+    const nodes = Array.from({ length: 24 }, (_, index) => `random-${index}`)
+    const adjacency = new Map<Node, readonly Node[]>()
+    adjacency.set(nodes[0]!, Object.freeze([]))
+    for (let index = 1; index < nodes.length; index++) {
+        const count = Math.min(index, 1 + Math.floor(random() * 3))
+        const dependencies: Node[] = []
+        while (dependencies.length < count) {
+            const dependency = nodes[Math.floor(random() * index)]!
+            if (!dependencies.includes(dependency))
+                dependencies.push(dependency)
+        }
+        adjacency.set(nodes[index]!, Object.freeze(dependencies))
+    }
+
+    for (let startIndex = nodes.length - 1; startIndex > 0; startIndex--) {
+        for (let targetIndex = 0; targetIndex < startIndex; targetIndex++) {
+            const start = nodes[startIndex]!
+            const target = nodes[targetIndex]!
+            const expected = findExpectedDependencyPath(
+                adjacency,
+                start,
+                target,
+            )
+            if ((expected.path !== undefined) === shouldFind) {
+                return Object.freeze({ adjacency, start, target, expected })
+            }
+        }
+    }
+
+    throw new Error(`seed ${seed} did not produce the requested graph case`)
 }
 
 describe("v1 selector evaluator outcomes", () => {
@@ -660,6 +865,385 @@ describe("v1 selector evaluator outcomes", () => {
 })
 
 describe("v1 selector evaluator cycles", () => {
+    const parityCases: readonly CycleParityCase[] = [
+        {
+            name: "committed positive new edge preserves exact DFS order",
+            mode: "persistent-pre",
+            hostKind: "committed",
+            prepare(host) {
+                for (const leaf of [
+                    "noise-before",
+                    "noise-between",
+                    "noise-after",
+                ]) {
+                    host.setLeaf(leaf, 1)
+                }
+                host.define({ node: "parent", get: () => 1 })
+                host.define({ node: "left", get: get => get("parent") })
+                host.define({ node: "right", get: get => get("parent") })
+                host.define({
+                    node: "start",
+                    get: get => {
+                        get("noise-before")
+                        get("left")
+                        get("noise-between")
+                        get("right")
+                        get("noise-after")
+                        return 1
+                    },
+                })
+                expect(valueOf(host.read<number>("parent"))).toBe(1)
+                expect(valueOf(host.read<number>("start"))).toBe(1)
+            },
+            mutate(host) {
+                host.define({ node: "parent", get: get => get("start") })
+                return host.read("parent")
+            },
+            verify(searches) {
+                expect(searches).toHaveLength(1)
+                expect(searches[0]).toMatchObject({
+                    host: "committed",
+                    site: "new-edge-proof",
+                    start: "start",
+                    target: "parent",
+                    found: true,
+                    path: ["start", "right", "parent"],
+                    visits: 3,
+                    edges: 3,
+                    recordExpansions: 2,
+                    terminalPrunes: 0,
+                })
+            },
+        },
+        {
+            name: "committed negative proofs prune terminal leaf noise",
+            mode: "persistent-pre",
+            hostKind: "committed",
+            prepare(host) {
+                const leaves = Array.from(
+                    { length: 32 },
+                    (_, index) => `leaf-${index}`,
+                )
+                for (const leaf of leaves) host.setLeaf(leaf, 1)
+                host.define({
+                    node: "start",
+                    get: get => {
+                        for (const leaf of leaves) get(leaf)
+                        return 1
+                    },
+                })
+                host.define({ node: "parent", get: () => 1 })
+                expect(valueOf(host.read<number>("start"))).toBe(1)
+                expect(valueOf(host.read<number>("parent"))).toBe(1)
+            },
+            mutate(host) {
+                host.define({
+                    node: "parent",
+                    get: get => {
+                        get("leaf-0")
+                        return get("start")
+                    },
+                })
+                return host.read("parent")
+            },
+            verify(searches) {
+                expect(
+                    searches.map(search => ({
+                        start: search.start,
+                        found: search.found,
+                        visits: search.visits,
+                        recordExpansions: search.recordExpansions,
+                        terminalPrunes: search.terminalPrunes,
+                    })),
+                ).toEqual([
+                    {
+                        start: "leaf-0",
+                        found: false,
+                        visits: 1,
+                        recordExpansions: 0,
+                        terminalPrunes: 1,
+                    },
+                    {
+                        start: "start",
+                        found: false,
+                        visits: 1,
+                        recordExpansions: 1,
+                        terminalPrunes: 0,
+                    },
+                ])
+            },
+        },
+        {
+            name: "fresh publication revalidates an accepted prefix",
+            mode: "persistent-pre",
+            hostKind: "committed",
+            prepare(host) {
+                host.define({ node: "parent", get: () => 1 })
+                host.define({ node: "changed", get: () => 1 })
+                host.define({
+                    node: "new-edge",
+                    get: get => get("changed"),
+                })
+                host.define({ node: "cached", get: get => get("parent") })
+                host.define({ node: "later", get: () => 1 })
+                expect(valueOf(host.read<number>("new-edge"))).toBe(1)
+                expect(valueOf(host.read<number>("cached"))).toBe(1)
+                expect(valueOf(host.read<number>("later"))).toBe(1)
+            },
+            mutate(host) {
+                host.define({
+                    node: "parent",
+                    get: get => {
+                        get("new-edge")
+                        get("later")
+                        return 1
+                    },
+                })
+                host.define({
+                    node: "later",
+                    get: () => {
+                        host.define({
+                            node: "changed",
+                            get: get => get("cached"),
+                        })
+                        expect(valueOf(host.read<number>("changed"))).toBe(1)
+                        return 1
+                    },
+                })
+                return host.read("parent")
+            },
+            verify(searches) {
+                expect(
+                    searches.some(
+                        search =>
+                            search.site === "new-edge-proof" && !search.found,
+                    ),
+                ).toBe(true)
+                expect(searches.find(search => search.found)).toMatchObject({
+                    host: "committed",
+                    site: "prefix-revalidation",
+                    start: "new-edge",
+                    target: "parent",
+                    found: true,
+                    path: ["new-edge", "changed", "cached", "parent"],
+                })
+            },
+        },
+        {
+            name: "same-session proof expands a transient parent prefix",
+            mode: "persistent-pre",
+            hostKind: "committed",
+            prepare(host) {
+                host.define({ node: "parent", get: () => 1 })
+                host.define({ node: "changed", get: () => 1 })
+                host.define({
+                    node: "new-edge",
+                    get: get => get("changed"),
+                })
+                host.define({ node: "cached", get: get => get("parent") })
+                host.define({ node: "later", get: () => 1 })
+                expect(valueOf(host.read<number>("new-edge"))).toBe(1)
+                expect(valueOf(host.read<number>("cached"))).toBe(1)
+                expect(valueOf(host.read<number>("later"))).toBe(1)
+            },
+            mutate(host) {
+                host.define({
+                    node: "parent",
+                    get: get => {
+                        get("new-edge")
+                        get("later")
+                        return 1
+                    },
+                })
+                host.define({ node: "changed", get: get => get("cached") })
+                host.setServeEffect("later", session => {
+                    host.serve("changed", session)
+                })
+                return host.read("parent")
+            },
+            verify(searches) {
+                expect(searches.find(search => search.found)).toMatchObject({
+                    host: "committed",
+                    site: "new-edge-proof",
+                    start: "cached",
+                    target: "changed",
+                    found: true,
+                    path: ["cached", "parent", "new-edge", "changed"],
+                    visits: 4,
+                    transientExpansions: 1,
+                    recordExpansions: 2,
+                })
+            },
+        },
+        {
+            name: "scratch host falls back to full selector records",
+            mode: "scratch",
+            hostKind: "scratch",
+            prepare(host) {
+                host.setLeaf("noise", 1)
+                host.define({ node: "parent", get: () => 1 })
+                host.define({ node: "right", get: get => get("parent") })
+                host.define({
+                    node: "start",
+                    get: get => {
+                        get("right")
+                        get("noise")
+                        return 1
+                    },
+                })
+                expect(valueOf(host.read<number>("parent"))).toBe(1)
+                expect(valueOf(host.read<number>("start"))).toBe(1)
+            },
+            mutate(host) {
+                host.define({ node: "parent", get: get => get("start") })
+                return host.read("parent")
+            },
+            verify(searches) {
+                expect(searches).toHaveLength(1)
+                expect(searches[0]).toMatchObject({
+                    host: "scratch",
+                    site: "new-edge-proof",
+                    start: "start",
+                    target: "parent",
+                    found: true,
+                    path: ["start", "right", "parent"],
+                    visits: 4,
+                    edges: 3,
+                    recordExpansions: 2,
+                    terminalPrunes: 1,
+                })
+            },
+        },
+    ]
+
+    for (const scenario of parityCases) {
+        test(`fast and measured DFS agree: ${scenario.name}`, () => {
+            runCycleParityCase(scenario)
+        })
+    }
+
+    for (const seed of [0x5eed, 0xc0ffee]) {
+        for (const shouldFind of [false, true]) {
+            test(`fast and measured DFS agree on seeded DAG ${seed.toString(16)} (${shouldFind ? "positive" : "negative"})`, () => {
+                const randomCase = createRandomDagCase(seed, shouldFind)
+                runCycleParityCase({
+                    name: `seeded DAG ${seed}`,
+                    mode: "persistent-pre",
+                    hostKind: "committed",
+                    prepare(host) {
+                        for (const [
+                            node,
+                            dependencies,
+                        ] of randomCase.adjacency) {
+                            host.define({
+                                node,
+                                get: get => {
+                                    for (const dependency of dependencies) {
+                                        get(dependency)
+                                    }
+                                    return 1
+                                },
+                            })
+                        }
+                        for (const node of randomCase.adjacency.keys()) {
+                            expect(valueOf(host.read<number>(node))).toBe(1)
+                        }
+                    },
+                    mutate(host) {
+                        host.define({
+                            node: randomCase.target,
+                            get: get => get(randomCase.start),
+                        })
+                        return host.read(randomCase.target)
+                    },
+                    verify(searches) {
+                        expect(searches).toHaveLength(1)
+                        expect(searches[0]).toMatchObject({
+                            host: "committed",
+                            site: "new-edge-proof",
+                            start: randomCase.start,
+                            target: randomCase.target,
+                            found: shouldFind,
+                            visits: randomCase.expected.visits,
+                        })
+                        if (randomCase.expected.path === undefined) {
+                            expect(searches[0]?.path).toBeUndefined()
+                        } else {
+                            expect(searches[0]?.path).toEqual(
+                                randomCase.expected.path,
+                            )
+                        }
+                    },
+                })
+            })
+        }
+    }
+
+    test("traced search preserves the fast path outcome and records one aggregate per proof", () => {
+        const host = new TestHost()
+        const { recorder, inspect } = createInspectionRecorder()
+        const hostRef = recorder.reference(host, "scope")
+        host.cycleTrace = (start, target, cycleHost, session, site) =>
+            recorder.findDependencyPath(
+                "committed",
+                hostRef,
+                start,
+                target,
+                cycleHost,
+                session,
+                site,
+                cycleHost.getSelectorGraphVersion(),
+                session.getSelectorGraphPublicationCount(cycleHost),
+                false,
+            )
+        const leaves = Array.from({ length: 32 }, (_, index) => `leaf-${index}`)
+        for (const leaf of leaves) host.setLeaf(leaf, 1)
+        host.define({ node: "parent", get: () => 1 })
+        host.define({ node: "right", get: get => get("parent") })
+        host.define({
+            node: "start",
+            get: get => {
+                for (const leaf of leaves) get(leaf)
+                get("right")
+                return 1
+            },
+        })
+        expect(valueOf(host.read<number>("parent"))).toBe(1)
+        expect(valueOf(host.read<number>("start"))).toBe(1)
+
+        host.define({ node: "parent", get: get => get("start") })
+        const error = errorOf(host.read("parent"))
+
+        expect(error).toBeInstanceOf(SelectorCircularDependencyError)
+        expect((error as SelectorCircularDependencyError).path).toEqual([
+            "parent",
+            "start",
+            "right",
+            "parent",
+        ])
+        const measurements = inspect
+            .export()
+            .details.filter(detail => detail.type === "cycle-search")
+        const found = measurements.filter(measurement => measurement.found)
+        expect(found).toHaveLength(1)
+        expect(found[0]).toMatchObject({
+            site: "new-edge-proof",
+            start: "start",
+            target: "parent",
+            path: ["start", "right", "parent"],
+            visits: 3,
+            recordExpansions: 2,
+        })
+        expect(
+            measurements.every(
+                measurement =>
+                    typeof measurement.visits === "number" &&
+                    measurement.visits > 0,
+            ),
+        ).toBe(true)
+        expect(measurements.length).toBeLessThan(10)
+    })
+
     test("selector-only adjacency excludes terminal leaf noise from a negative proof", () => {
         const host = new TestHost()
         const leaves = Array.from({ length: 32 }, (_, index) => `leaf-${index}`)

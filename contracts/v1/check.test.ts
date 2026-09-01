@@ -1007,9 +1007,9 @@ describe("v1 contract manifest validation", () => {
             {},
         )
         expect(modeCounts).toEqual({
-            keep: 39,
+            keep: 41,
             replace: 39,
-            remove: 72,
+            remove: 70,
             move: 24,
         })
 
@@ -1082,9 +1082,9 @@ describe("v1 contract manifest validation", () => {
                 return counts
             }, {})
         expect(recoveredModeCounts).toEqual({
-            keep: 34,
+            keep: 36,
             replace: 33,
-            remove: 66,
+            remove: 64,
             move: 23,
         })
     })

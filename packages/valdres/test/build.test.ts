@@ -8,7 +8,7 @@ import {
     writeFile,
 } from "node:fs/promises"
 import { tmpdir } from "node:os"
-import { basename, join } from "node:path"
+import { basename, join, resolve } from "node:path"
 import { pathToFileURL } from "node:url"
 import {
     buildOptions,
@@ -66,7 +66,7 @@ afterAll(async () => {
 })
 
 describe("v1 build output", () => {
-    test("keeps root and adapter on one shared domain without the legacy global guard", async () => {
+    test("keeps root, inspect, and adapter on one shared domain without the legacy global guard", async () => {
         const dist = await builtDist()
         const files = await readdir(dist, { recursive: true })
         const JavaScript = await Promise.all(
@@ -85,6 +85,7 @@ describe("v1 build output", () => {
         )
 
         expect(files).toContain("index.js")
+        expect(files).toContain("inspect.js")
         expect(files).toContain("equality.js")
         expect(files).toContain("adapter-internals/v1.js")
         expect(
@@ -98,9 +99,10 @@ describe("v1 build output", () => {
         expect(JavaScript.join("\n")).not.toContain("process.env")
     })
 
-    test("loads root, equality, and adapter from the built split graph with no ambient writes", async () => {
+    test("loads root, inspect, equality, and adapter from the built split graph with no ambient writes", async () => {
         const dist = await builtDist()
         const rootUrl = pathToFileURL(join(dist, "index.js")).href
+        const inspectUrl = pathToFileURL(join(dist, "inspect.js")).href
         const equalityUrl = pathToFileURL(join(dist, "equality.js")).href
         const adapterUrl = pathToFileURL(
             join(dist, "adapter-internals", "v1.js"),
@@ -108,12 +110,16 @@ describe("v1 build output", () => {
         const script = `
             const before = new Set(Reflect.ownKeys(globalThis))
             const root = await import(${JSON.stringify(rootUrl)})
+            const inspect = await import(${JSON.stringify(inspectUrl)})
             const equality = await import(${JSON.stringify(equalityUrl)})
             const adapter = await import(${JSON.stringify(adapterUrl)})
             const count = root.atom(1)
             const target = root.store()
+            const inspected = inspect.createInspectableStore()
             adapter.assertStore(target)
+            adapter.assertStore(inspected.store)
             target.set(count, 4)
+            inspected.store.set(count, 5)
             const addedGlobals = Reflect.ownKeys(globalThis)
                 .filter(key => !before.has(key))
                 .map(String)
@@ -124,7 +130,9 @@ describe("v1 build output", () => {
                     { id: 1, nested: [2, 3] },
                 ),
                 value: adapter.read(target, count),
+                inspectedValue: adapter.read(inspected.store, count),
                 root: Object.keys(root).sort(),
+                inspect: Object.keys(inspect).sort(),
                 equality: Object.keys(equality).sort(),
                 adapter: Object.keys(adapter).sort(),
             }))
@@ -138,6 +146,7 @@ describe("v1 build output", () => {
             addedGlobals: [],
             equal: true,
             value: 4,
+            inspectedValue: 5,
             root: [
                 "CallbackCapabilityError",
                 "InvalidAtomComparatorResultError",
@@ -157,6 +166,7 @@ describe("v1 build output", () => {
                 "selector",
                 "store",
             ],
+            inspect: ["createInspectableStore"],
             equality: ["deepEqual"],
             adapter: [
                 "assertStore",
@@ -167,7 +177,26 @@ describe("v1 build output", () => {
         })
     })
 
-    test("works through an installed npm tarball with equality available and root and adapter sharing identity", async () => {
+    test("emits a declaration entry for the inspect subpath", async () => {
+        const outdir = await temporaryDirectory("valdres-v1-types-")
+        const packageDirectory = resolve(import.meta.dir, "..")
+        const result = run(
+            [
+                resolve(import.meta.dir, "../../../node_modules/.bin/tsc"),
+                "-p",
+                join(packageDirectory, "tsconfig.json"),
+                "--outDir",
+                outdir,
+            ],
+            packageDirectory,
+        )
+        expect(result.exitCode, result.stderr).toBe(0)
+        expect(await readFile(join(outdir, "inspect.d.ts"), "utf8")).toContain(
+            "createInspectableStore",
+        )
+    })
+
+    test("works through an installed npm tarball with inspect and every runtime entry sharing identity", async () => {
         const workspace = await temporaryDirectory("valdres-v1-pack-")
         const packageDirectory = join(workspace, "package")
         const consumerDirectory = join(workspace, "consumer")
@@ -189,6 +218,7 @@ describe("v1 build output", () => {
                 files: ["dist"],
                 exports: {
                     ".": "./dist/index.js",
+                    "./inspect": "./dist/inspect.js",
                     "./equality": "./dist/equality.js",
                     "./adapter-internals/v1": "./dist/adapter-internals/v1.js",
                 },
@@ -232,6 +262,7 @@ describe("v1 build output", () => {
                 "--eval",
                 `
                     import { atom, selector, store } from "valdres-packed-probe"
+                    import { createInspectableStore } from "valdres-packed-probe/inspect"
                     import { deepEqual } from "valdres-packed-probe/equality"
                     import {
                         assertStore,
@@ -242,9 +273,12 @@ describe("v1 build output", () => {
                     const count = atom(2)
                     const doubled = selector(get => get(count) * 2)
                     const target = store()
+                    const inspected = createInspectableStore()
                     assertStore(target)
+                    assertStore(inspected.store)
                     const unsubscribe = subscribe(target, count, () => {})
                     unsubscribe()
+                    inspected.store.set(count, 3)
                     console.log(JSON.stringify({
                         equal: deepEqual(
                             { id: 1, nested: [2, 3] },
@@ -252,6 +286,7 @@ describe("v1 build output", () => {
                         ),
                         live: read(target, doubled),
                         hydration: readHydrationSnapshot(target, doubled),
+                        inspected: read(inspected.store, doubled),
                     }))
                 `,
             ],
@@ -262,6 +297,7 @@ describe("v1 build output", () => {
             equal: true,
             live: 4,
             hydration: 4,
+            inspected: 6,
         })
     })
 
@@ -270,6 +306,7 @@ describe("v1 build output", () => {
         await mkdir(join(outdir, "adapter-internals"))
         await Promise.all([
             writeFile(join(outdir, "index.js"), "old index"),
+            writeFile(join(outdir, "inspect.js"), "old inspect"),
             writeFile(join(outdir, "equality.js"), "old equality"),
             writeFile(join(outdir, "chunk-old.js"), "old chunk"),
             writeFile(join(outdir, "chunk-old.js.map"), "old map"),

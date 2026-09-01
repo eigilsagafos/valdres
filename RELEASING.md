@@ -30,19 +30,19 @@ React packages are supported together. Do not combine beta.24 or later with a
 deferred adapter, plugin, or compatibility package until that package is
 migrated.
 
-The authored manifests remain at the package versions currently published on
-the beta tag. Changesets keeps prerelease counters package-local, so the
-checked-in core-only minor Changeset generates:
+The authored manifests remain at the package versions currently published on the
+beta tag. Changesets keeps prerelease counters package-local, so the checked-in
+core-only minor Changeset generates:
 
 ```text
-valdres@1.0.0-beta.25
+valdres@1.0.0-beta.26
 valdres-react@1.0.0-beta.5
 ```
 
 `changesets/action` must first consume the minor Changeset into its generated
-Version Packages PR. The live publish script accepts only the exact beta.25 and
+Version Packages PR. The live publish script accepts only the exact beta.26 and
 beta.5 tuple above; dry runs accept either those targets or the authored
-beta.24/beta.5 predecessors so feature PRs can validate prepack and cleanup. In
+beta.25/beta.5 predecessors so feature PRs can validate prepack and cleanup. In
 the generated PR, verify the exact target versions, the unchanged React peer
 `valdres: ^1.0.0-beta.24`, and that release metadata changes are limited to the
 two certified packages before merging it.
@@ -66,12 +66,12 @@ beta history, so the first RC is not necessarily `rc.0`; it is the RC1 milestone
 in this document.
 
 Changesets keeps every changeset it has already versioned into a prerelease in
-`.changeset/pre/`, not in `pre.json`. Those files survive `pre exit`/`pre enter`.
-Certified core+React histories are consumed into their stable release; the
-ignored `*-deferred.md` histories remain for the packages that did not join this
-cohort. Treat that folder as release state: don't bulk-delete it, and only
-remove an individual file if the change it describes genuinely no longer
-applies to its eventual release.
+`.changeset/pre/`, not in `pre.json`. Those files survive
+`pre exit`/`pre enter`. Certified core+React histories are consumed into their
+stable release; the ignored `*-deferred.md` histories remain for the packages
+that did not join this cohort. Treat that folder as release state: don't
+bulk-delete it, and only remove an individual file if the change it describes
+genuinely no longer applies to its eventual release.
 
 The intended stable destination is `1.0.0`, but do not leave prerelease mode
 while legacy packages can silently resolve an incompatible core. Before stable,

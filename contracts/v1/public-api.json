@@ -203,6 +203,35 @@
             "notes": "Exact package/client/entry/hook/projection names are a later non-gating beta decision."
         },
         {
+            "id": "beta.inspect-flight-recorder",
+            "kind": "subpath",
+            "owner": "independent-beta",
+            "legacy": [],
+            "target": {
+                "package": "valdres",
+                "subpath": "./inspect",
+                "name": "valdres/inspect",
+                "status": "experimental"
+            },
+            "migration": {
+                "mode": "add",
+                "replacementIds": [],
+                "semver": "new",
+                "codemod": "Import createInspectableStore from valdres/inspect and replace only the Store whose work is being captured.",
+                "typeError": "The recorder is absent from the root entry; ordinary Stores expose no inspector, and runtime attach/detach or raw-value capture is unsupported.",
+                "firstPartyOwner": "inspect",
+                "evidenceStatus": "planned"
+            },
+            "contractIds": [
+                "inspect.bounded-structural-recorder",
+                "inspect.no-application-values",
+                "inspect.no-core-enumeration",
+                "inspect.same-domain-store"
+            ],
+            "decisionStatus": "approved",
+            "notes": "This freezes only the experimental subpath boundary. It creates a native Store in the public v1 domain with construction-time bounded recording; exact report types may continue to iterate before 1.0."
+        },
+        {
             "id": "beta.search",
             "kind": "package",
             "owner": "independent-beta",
@@ -1974,6 +2003,22 @@
                     "name": "txn(callback)",
                     "package": "valdres",
                     "baseline": "1.0.0-beta.23"
+                },
+                {
+                    "kind": "option",
+                    "subpath": ".",
+                    "owner": "ScopedStore.txn",
+                    "name": "name",
+                    "package": "valdres",
+                    "baseline": "1.0.0-beta.23"
+                },
+                {
+                    "kind": "option",
+                    "subpath": ".",
+                    "owner": "Store.txn",
+                    "name": "name",
+                    "package": "valdres",
+                    "baseline": "1.0.0-beta.23"
                 }
             ],
             "target": {
@@ -1986,17 +2031,18 @@
                 "mode": "keep",
                 "replacementIds": [],
                 "semver": "breaking",
-                "codemod": "Use the bound synchronous Store transaction and same-Tree scope cursors.",
-                "typeError": "Thenable callbacks, cross-tree targets, and closed cursors reject.",
+                "codemod": "Use the bound synchronous Store transaction and same-Tree scope cursors; pass an optional string label as the second argument only for diagnostics.",
+                "typeError": "Thenable callbacks, non-string labels, cross-tree targets, and closed cursors reject.",
                 "firstPartyOwner": "core",
                 "evidenceStatus": "external-handoff-required"
             },
             "contractIds": [
+                "inspect.transaction-label-metadata",
                 "transaction.one-tree-draft",
                 "transaction.sync-derived-reads"
             ],
             "decisionStatus": "approved",
-            "notes": "Current native ShiftX transaction shapes require external validation."
+            "notes": "Current native ShiftX transaction shapes require external validation. The optional label is inert human metadata: ordinary Stores validate and ignore it, inspectable Stores record it, duplicate labels are valid, and opaque operation/commit IDs provide correlation."
         },
         {
             "id": "core.store.update",
@@ -4138,47 +4184,6 @@
             "notes": "The compatibility alias collapses into the one public Transaction type."
         },
         {
-            "id": "legacy.transaction-names",
-            "kind": "option",
-            "owner": "core",
-            "legacy": [
-                {
-                    "kind": "option",
-                    "subpath": ".",
-                    "owner": "ScopedStore.txn",
-                    "name": "name",
-                    "package": "valdres",
-                    "baseline": "1.0.0-beta.23"
-                },
-                {
-                    "kind": "option",
-                    "subpath": ".",
-                    "owner": "Store.txn",
-                    "name": "name",
-                    "package": "valdres",
-                    "baseline": "1.0.0-beta.23"
-                }
-            ],
-            "target": {
-                "package": null,
-                "subpath": null,
-                "name": null,
-                "status": "removed"
-            },
-            "migration": {
-                "mode": "remove",
-                "replacementIds": [],
-                "semver": "breaking",
-                "codemod": "Remove the beta-only surface.",
-                "typeError": "The beta-only surface is absent from the v1 declarations.",
-                "firstPartyOwner": "core",
-                "evidenceStatus": "planned"
-            },
-            "contractIds": ["transaction.one-tree-draft"],
-            "decisionStatus": "approved",
-            "notes": "Transaction names are not a Store hot-path option; future diagnostics own their metadata."
-        },
-        {
             "id": "legacy.transaction-parent-scope",
             "kind": "method",
             "owner": "core",
@@ -4415,14 +4420,14 @@
                 "mode": "move",
                 "replacementIds": [],
                 "semver": "breaking",
-                "codemod": "Move the capability to the future @valdres/inspect public boundary after that package freezes its exact API.",
-                "typeError": "The capability is absent from stable core until @valdres/inspect freezes its public API.",
+                "codemod": "Legacy snapshot, onChange, and value-enumeration capabilities remain unavailable. The experimental valdres/inspect flight recorder captures bounded structural diagnostics only and is not their replacement.",
+                "typeError": "Legacy snapshot, onChange, and enumeration surfaces remain absent; valdres/inspect exposes no application-value enumeration or change stream.",
                 "firstPartyOwner": "future-package",
                 "evidenceStatus": "planned"
             },
             "contractIds": ["inspect.no-core-enumeration"],
             "decisionStatus": "approved",
-            "notes": "Snapshots, change streams, enumeration, and devtools observation leave the Store hot path."
+            "notes": "Snapshots, change streams, and value enumeration remain pending outside the Store hot path. The experimental structural flight recorder does not close this migration."
         },
         {
             "id": "moved.schema",

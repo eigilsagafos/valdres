@@ -1,9 +1,9 @@
-import { evaluateSelector } from "../selector-evaluator/evaluate"
 import type {
     SelectorComparisonBaseline,
     SelectorDefinition,
     SelectorDependencySnapshot,
     SelectorEvaluationHost,
+    SelectorEvaluationStrategy,
     SelectorRecordView,
     ServedSelectorOutcome,
 } from "../selector-evaluator/types"
@@ -67,10 +67,16 @@ export class ScratchSelectorHost<Node extends object>
     #generation: number
     #nextToken = 1
     #selectorGraphVersion = 0
+    readonly #evaluate: SelectorEvaluationStrategy
 
-    constructor(bindings: ScratchSelectorBindings<Node>, generation: number) {
+    constructor(
+        bindings: ScratchSelectorBindings<Node>,
+        generation: number,
+        evaluate: SelectorEvaluationStrategy,
+    ) {
         this.#bindings = bindings
         this.#generation = generation
+        this.#evaluate = evaluate
     }
 
     readSelector<Value>(selector: Node): Value {
@@ -116,7 +122,7 @@ export class ScratchSelectorHost<Node extends object>
         const current = this.#selectorRecords.get(node)
         if (current !== undefined) return current.served
         const proposal = bindings.runSelectorActivity(session, () =>
-            evaluateSelector(resolved.definition, this, session),
+            this.#evaluate(resolved.definition, this, session),
         )
         if (proposal.outcome.kind === "control-error") {
             throw proposal.outcome.error

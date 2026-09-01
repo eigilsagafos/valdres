@@ -4,12 +4,14 @@ import { join } from "node:path"
 export const buildOptions = {
     entrypoints: [
         "./src/index.ts",
+        "./src/inspect.ts",
         "./src/equality.ts",
         "./src/adapter-internals/v1.ts",
     ],
     outdir: "./dist",
-    // Root and adapter-internals must share the exact module-local v1 domain.
-    // Without splitting, each entry would receive a different owner token.
+    // Root, inspect, and adapter-internals must share the exact module-local v1
+    // domain. Without splitting, each entry would receive a different owner
+    // token.
     splitting: true,
     packages: "external" as const,
     // Ship a minified dist. Most consumers bundle valdres and would minify it

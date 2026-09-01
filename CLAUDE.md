@@ -42,6 +42,10 @@ test/
 - `lib/` is internal; `utils/` is public. Put helpers in the right one.
 - `packages/valdres/src/equality.ts` is the opt-in `valdres/equality` entry and
   intentionally stays outside the root barrel and ordinary root bundles.
+- `packages/valdres/src/inspect.ts` is the opt-in `valdres/inspect` entry. It
+  constructs an instrumented Store inside the singleton public v1 domain; never
+  import its recorder from the root entry or add observation state to an
+  ordinary Store.
 
 ## Browser-API package pattern
 

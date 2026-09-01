@@ -1,6 +1,6 @@
-import { evaluateSelector } from "../selector-evaluator/evaluate"
 import type {
     SelectorComparisonBaseline,
+    SelectorDefinition,
     SelectorDependencySnapshot,
     SelectorEvaluationHost,
     SelectorEvaluationProposal,
@@ -77,6 +77,11 @@ export interface StoreScopeCoordinator {
     readonly runtimeDomain: RuntimeDomainRecords
     readonly postSourceApply: boolean
     readonly instrumented: boolean
+    evaluate<Value>(
+        definition: SelectorDefinition<AnyState, Value>,
+        host: SelectorEvaluationHost<AnyState, OutcomeToken>,
+        session: SelectorEvaluationSession<AnyState>,
+    ): SelectorEvaluationProposal<AnyState, OutcomeToken, Value>
 
     createOutcomeToken(): OutcomeToken
     serveScopeAtom(
@@ -370,7 +375,7 @@ export class StoreScopeNode
         }
 
         const proposal = runSelectorActivity(domain, session, () =>
-            evaluateSelector(definition, this, session),
+            this.coordinator.evaluate(definition, this, session),
         )
         if (
             proposal.outcome.kind === "control-error" &&

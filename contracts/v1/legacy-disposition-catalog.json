@@ -431,7 +431,7 @@
                 "package": "valdres",
                 "baseline": "1.0.0-beta.23"
             },
-            "dispositionId": "legacy.transaction-names",
+            "dispositionId": "core.store.txn",
             "reviewStatus": "approved"
         },
         {
@@ -479,7 +479,7 @@
                 "package": "valdres",
                 "baseline": "1.0.0-beta.23"
             },
-            "dispositionId": "legacy.transaction-names",
+            "dispositionId": "core.store.txn",
             "reviewStatus": "approved"
         },
         {
