@@ -71,6 +71,13 @@ Structured arguments require a synchronous `encodeKey` that returns one
 canonical primitive key. The factory must construct and return its Atom or
 Selector during that member's construction, or return any member already
 published by a family. Returning an arbitrary pre-existing State is rejected.
+The exported `FamilyKey` type names the primitive-key union for reusable APIs.
+
+Factories and encoders are synchronous definition callbacks, not Store work.
+Neither may perform Store, scope, transaction, or subscription operations or
+borrow an active selector's `get`. Encoders also cannot construct State
+definitions or call a family; factories may do both. A violation throws without
+caching a member.
 
 The family cache is weak. A live reference, a committed Store override for a
 family Atom, an active subscription, or a retained selector dependency keeps
