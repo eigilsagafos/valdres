@@ -1,5 +1,21 @@
 # valdres-react
 
+## 1.0.0-beta.6
+
+### Minor Changes
+
+- [#358](https://github.com/eigilsagafos/valdres/pull/358)
+  [`bb4df8e`](https://github.com/eigilsagafos/valdres/commit/bb4df8e11b23c858bd445a7cc8153955b2dd7cc4)
+  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! - Add the opt-in
+  `valdres-react/inspect` entry with bounded subscriber, snapshot, and Profiler
+  timelines correlated to an inspectable Valdres Store.
+
+### Patch Changes
+
+- Updated dependencies
+  [[`bb4df8e`](https://github.com/eigilsagafos/valdres/commit/bb4df8e11b23c858bd445a7cc8153955b2dd7cc4)]:
+    - valdres@1.0.0-beta.27
+
 ## 1.0.0-beta.5
 
 ### Minor Changes

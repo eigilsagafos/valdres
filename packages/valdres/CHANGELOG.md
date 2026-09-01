@@ -1,5 +1,16 @@
 # valdres
 
+## 1.0.0-beta.27
+
+### Minor Changes
+
+- [#358](https://github.com/eigilsagafos/valdres/pull/358)
+  [`bb4df8e`](https://github.com/eigilsagafos/valdres/commit/bb4df8e11b23c858bd445a7cc8153955b2dd7cc4)
+  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! - Add the
+  recording-neutral `StoreInspector.capture(store, state?)` seam so opt-in
+  framework inspection can correlate its own timelines with active Store
+  diagnostic context without recording application values or extra core events.
+
 ## 1.0.0-beta.26
 
 ### Minor Changes
