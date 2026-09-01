@@ -1,5 +1,15 @@
 # valdres
 
+## 1.0.0-beta.28
+
+### Patch Changes
+
+- [#362](https://github.com/eigilsagafos/valdres/pull/362)
+  [`c39ff48`](https://github.com/eigilsagafos/valdres/commit/c39ff48254233bf722126d7c9ae3f60bba995c8b)
+  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! - Preserve the active
+  selector evaluation session during dynamically nested committed settlement so
+  large dependency trees avoid repeated cycle-prefix revalidation.
+
 ## 1.0.0-beta.27
 
 ### Minor Changes
