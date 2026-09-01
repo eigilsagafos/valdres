@@ -1,5 +1,17 @@
 # valdres
 
+## 1.0.0-beta.26
+
+### Minor Changes
+
+- [#357](https://github.com/eigilsagafos/valdres/pull/357)
+  [`6bac491`](https://github.com/eigilsagafos/valdres/commit/6bac491b962399a2b761077b3f3a713c74a18b76)
+  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! - Add the
+  experimental `valdres/inspect` flight recorder for bounded structural Store
+  diagnostics, and allow optional human-readable transaction labels via
+  `store.txn(callback, name?)`. Ordinary Stores keep the same behavior and do
+  not load the recorder.
+
 ## 1.0.0-beta.25
 
 ### Minor Changes
