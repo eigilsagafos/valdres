@@ -74,15 +74,16 @@ explicit releases. Ordinary Atom writes and cold family reads must leave all
 three at zero. The packed atom-only fixture must contain no family cache or
 accessor sentinel; only the small Store ownership/quarantine seam is shared.
 
-On pinned Bun 1.4.0, the hardened candidate adds 1,076 raw / 354 gzip bytes to
-the atom-only fixture versus the freshly rebuilt beta.28 artifact (+2.08% /
-+2.61%). The cache/accessor implementation itself still tree-shakes away; that
-delta is the construction quarantine, lifecycle pin, exact work counters, and
-the selector-capability guard. Prototypes that preserved domain/session
+On pinned Bun 1.4.0, the final candidate adds 1,313 raw / 387 gzip bytes to the
+atom-only fixture versus the freshly rebuilt beta.28 artifact (+2.53% / +2.85%).
+The cache/accessor implementation itself still tree-shakes away; that delta is
+the construction quarantine, lifecycle pin, exact work counters, and the
+selector-capability guard across every distinct active selector session.
+Prototypes that preserved domain/session
 encapsulation saved at most 32 gzip bytes; a module-global guard saved 82 gzip
 bytes but coupled independent runtime domains and custom evaluators, so it was
 rejected. The family seam intentionally exceeds the ordinary 2% ratchet by
-0.61 percentage points, so release review records and ratchets the reproducible
+0.85 percentage points, so release review records and ratchets the reproducible
 beta.28 delta rather than trading away lifecycle semantics for byte-budget
 headroom.
 
