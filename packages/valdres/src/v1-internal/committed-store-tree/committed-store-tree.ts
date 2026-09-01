@@ -174,30 +174,41 @@ export const runDefinitionCallback = <Result, Validated = Result>(
 ): Validated => {
     const records = domain[definitionDomainRecords]
     const session = new SelectorEvaluationSession<AnyState>()
-    const selectorActivity = records.activity
-    const selectorSession =
-        selectorActivity?.kind === "selector"
-            ? (selectorActivity.session as SelectorEvaluationSession<AnyState>)
-            : selectorActivity?.kind === "guarded-callback" &&
-                selectorActivity.selectorSession !== undefined
-              ? (selectorActivity.selectorSession as SelectorEvaluationSession<AnyState>)
+    const currentActivity = records.activity
+    let selectorActivity =
+        currentActivity?.kind === "selector"
+            ? currentActivity
+            : currentActivity?.kind === "guarded-callback"
+              ? currentActivity.selectorActivity
               : undefined
+    const selectorSessions: SelectorEvaluationSession<AnyState>[] = []
+    while (selectorActivity !== undefined) {
+        const selectorSession =
+            selectorActivity.session as SelectorEvaluationSession<AnyState>
+        if (!selectorSessions.includes(selectorSession)) {
+            selectorSessions.push(selectorSession)
+        }
+        selectorActivity = selectorActivity.parentSelectorActivity
+    }
     const previous = records[FAMILY_DEFINITION_FRAME]
     records[FAMILY_DEFINITION_FRAME] = {
         session,
         definitions: new WeakSet(),
         allowDefinitions: phase === "factory",
     }
-    const previousReadGuard = selectorSession?.setSuppliedReadGuard(
-        (): never => {
-            const activity = records.activity
-            return rejectGuardedSelectorRead(
-                activity?.kind === "guarded-callback"
-                    ? activity.session
-                    : session,
-                selectorSession,
-            )
-        },
+    const previousReadGuards = selectorSessions.map(selectorSession =>
+        Object.freeze({
+            selectorSession,
+            previous: selectorSession.setSuppliedReadGuard((): never => {
+                const activity = records.activity
+                return rejectGuardedSelectorRead(
+                    activity?.kind === "guarded-callback"
+                        ? activity.session
+                        : session,
+                    selectorSession,
+                )
+            }),
+        }),
     )
     try {
         return runGuardedCallback(records, session, () => {
@@ -207,7 +218,10 @@ export const runDefinitionCallback = <Result, Validated = Result>(
                 : validate(result)
         })
     } finally {
-        selectorSession?.setSuppliedReadGuard(previousReadGuard)
+        for (let index = previousReadGuards.length - 1; index >= 0; index--) {
+            const guard = previousReadGuards[index]!
+            guard.selectorSession.setSuppliedReadGuard(guard.previous)
+        }
         if (previous === undefined) {
             delete records[FAMILY_DEFINITION_FRAME]
         } else {

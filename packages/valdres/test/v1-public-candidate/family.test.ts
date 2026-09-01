@@ -472,6 +472,30 @@ describe("v1 public family failure semantics", () => {
         }
     })
 
+    test("contains a rejected native Promise without an unhandled rejection", async () => {
+        const rejection = new Error("rejected family result")
+        const unhandled: unknown[] = []
+        const onUnhandled = (reason: unknown): void => {
+            unhandled.push(reason)
+        }
+        process.on("unhandledRejection", onUnhandled)
+        try {
+            const rejected = Promise.reject(rejection)
+            const members = Reflect.apply(family, undefined, [
+                (_key: string) => rejected,
+            ]) as (key: string) => State<unknown>
+
+            expect(thrownBy(() => members("a"))).toMatchObject({
+                name: "TypeError",
+                message: "Definition callbacks must complete synchronously",
+            })
+            await Bun.sleep(0)
+            expect(unhandled).toEqual([])
+        } finally {
+            process.off("unhandledRejection", onUnhandled)
+        }
+    })
+
     test("rejects same-key factory recursion even when caught, then recovers", () => {
         let recurse = true
         let innerError: unknown
@@ -916,6 +940,123 @@ describe("v1 public family capability and Store semantics", () => {
             expect(read(store(), outer)).toBe(`${lane}:member`)
             expect(factoryCalls).toBe(2)
         }
+    })
+
+    test("quarantines an outer selector get during isolated dependency settlement", () => {
+        const seed = atom(0)
+        const parentEnabled = atom(false)
+        const branchUsesOld = atom(true)
+        const oldEnabled = atom(false)
+        let capturedOuterGet:
+            | (<Value>(state: State<Value>) => Value)
+            | undefined
+        let borrowedReadFault: unknown
+        let factoryCalls = 0
+        let attemptCapturedRead = true
+        const members = family((_key: string) => {
+            factoryCalls++
+            let value = -1
+            if (attemptCapturedRead) {
+                try {
+                    value = capturedOuterGet!(seed)
+                } catch (error) {
+                    borrowedReadFault = error
+                }
+            }
+            return atom(value)
+        })
+        const oldChild = selector(get =>
+            get(oldEnabled) ? get(members("member")) : 0,
+        )
+        const branch = selector(get => (get(branchUsesOld) ? get(oldChild) : 7))
+        const parent = selector(get => {
+            capturedOuterGet = get
+            return get(parentEnabled) ? get(branch) : 0
+        })
+        const first = store()
+        first.set(seed, 99)
+
+        expect(first.get(branch)).toBe(0)
+        expect(first.get(parent)).toBe(0)
+
+        const failure = thrownBy(() =>
+            first.txn(transaction => {
+                transaction.set(parentEnabled, true)
+                transaction.set(branchUsesOld, false)
+                transaction.set(oldEnabled, true)
+            }),
+        )
+        expect(failure).toBeInstanceOf(CallbackCapabilityError)
+        expect(borrowedReadFault).toBe(failure)
+        expect(factoryCalls).toBe(1)
+
+        attemptCapturedRead = false
+        expect(store().get(members("member"))).toBe(-1)
+        expect(factoryCalls).toBe(2)
+    })
+
+    test("quarantines an outer selector get from encodeKey during isolated dependency settlement", () => {
+        const seed = atom(0)
+        const parentEnabled = atom(false)
+        const branchUsesOld = atom(true)
+        const oldEnabled = atom(false)
+        let capturedOuterGet:
+            | (<Value>(state: State<Value>) => Value)
+            | undefined
+        let borrowedReadFault: unknown
+        let encoderCalls = 0
+        let factoryCalls = 0
+        let attemptCapturedRead = true
+        const members = family(
+            (input: { readonly id: string }) => {
+                factoryCalls++
+                return atom(input.id)
+            },
+            {
+                encodeKey: input => {
+                    encoderCalls++
+                    if (attemptCapturedRead) {
+                        try {
+                            capturedOuterGet!(seed)
+                        } catch (error) {
+                            borrowedReadFault = error
+                        }
+                    }
+                    return input.id
+                },
+            },
+        )
+        const oldChild = selector(get =>
+            get(oldEnabled) ? get(members({ id: "member" })) : "idle",
+        )
+        const branch = selector(get =>
+            get(branchUsesOld) ? get(oldChild) : "current",
+        )
+        const parent = selector(get => {
+            capturedOuterGet = get
+            return get(parentEnabled) ? get(branch) : "disabled"
+        })
+        const first = store()
+
+        expect(first.get(branch)).toBe("idle")
+        expect(first.get(parent)).toBe("disabled")
+
+        const failure = thrownBy(() =>
+            first.txn(transaction => {
+                transaction.set(parentEnabled, true)
+                transaction.set(branchUsesOld, false)
+                transaction.set(oldEnabled, true)
+            }),
+        )
+        expect(failure).toBeInstanceOf(CallbackCapabilityError)
+        expect(borrowedReadFault).toBe(failure)
+        expect(encoderCalls).toBe(1)
+        expect(factoryCalls).toBe(0)
+
+        attemptCapturedRead = false
+        expect(store().get(members({ id: "member" }))).toBe("member")
+        expect(encoderCalls).toBe(2)
+        expect(factoryCalls).toBe(1)
     })
 
     test("quarantines an ancestor selector get captured by encodeKey", () => {

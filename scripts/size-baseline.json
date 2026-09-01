@@ -7,7 +7,7 @@
     "distFiles": {
         "adapter-internals/v1.js": {
             "raw": 200,
-            "gzip": 153
+            "gzip": 150
         },
         "chunk-y5ja7h9m.js": {
             "raw": 63594,
@@ -15,7 +15,7 @@
         },
         "development/adapter-internals/v1.js": {
             "raw": 200,
-            "gzip": 153
+            "gzip": 150
         },
         "development/chunk-y5ja7h9m.js": {
             "raw": 63594,

@@ -30,11 +30,14 @@ export interface FamilyDefinitionFrame {
     readonly allowDefinitions: boolean
 }
 
+export interface SelectorRuntimeActivity {
+    readonly kind: "selector"
+    readonly session: ControlFaultSession
+    readonly parentSelectorActivity?: SelectorRuntimeActivity
+}
+
 export type RuntimeActivity =
-    | Readonly<{
-          kind: "selector"
-          session: ControlFaultSession
-      }>
+    | Readonly<SelectorRuntimeActivity>
     | Readonly<{
           kind: "transaction"
           transaction: object
@@ -46,7 +49,7 @@ export type RuntimeActivity =
     | Readonly<{
           kind: "guarded-callback"
           session: ControlFaultSession
-          selectorSession?: ControlFaultSession
+          selectorActivity?: SelectorRuntimeActivity
       }>
     | Readonly<{
           kind: "subscriber"
@@ -330,19 +333,19 @@ export const runGuardedCallback = <Result>(
     operation: () => Result,
 ): Result => {
     const previous = domain.activity
-    const selectorSession =
+    const selectorActivity =
         previous?.kind === "selector"
-            ? previous.session
+            ? previous
             : previous?.kind === "guarded-callback"
-              ? previous.selectorSession
+              ? previous.selectorActivity
               : undefined
     const activity: RuntimeActivity =
-        selectorSession === undefined
+        selectorActivity === undefined
             ? Object.freeze({ kind: "guarded-callback", session })
             : Object.freeze({
                   kind: "guarded-callback",
                   session,
-                  selectorSession,
+                  selectorActivity,
               })
     try {
         const result = runInRuntimeActivity(domain, activity, operation)
@@ -381,12 +384,32 @@ export const runSelectorActivity = <Result>(
     domain: RuntimeDomainRecords,
     session: ControlFaultSession,
     operation: () => Result,
-): Result =>
-    runInRuntimeActivity(
-        domain,
-        Object.freeze({ kind: "selector", session }),
-        operation,
+): Result => {
+    const previous = domain.activity
+    const currentSelectorActivity =
+        previous?.kind === "selector"
+            ? previous
+            : previous?.kind === "guarded-callback"
+              ? previous.selectorActivity
+              : undefined
+    // Recursive selectors ordinarily share one session. Skip that duplicate
+    // link while retaining any distinct administrative session underneath it.
+    const parentSelectorActivity = Object.is(
+        currentSelectorActivity?.session,
+        session,
     )
+        ? currentSelectorActivity?.parentSelectorActivity
+        : currentSelectorActivity
+    const activity: SelectorRuntimeActivity =
+        parentSelectorActivity === undefined
+            ? Object.freeze({ kind: "selector", session })
+            : Object.freeze({
+                  kind: "selector",
+                  session,
+                  parentSelectorActivity,
+              })
+    return runInRuntimeActivity(domain, activity, operation)
+}
 
 export const runTransactionActivity = <Result>(
     domain: RuntimeDomainRecords,
