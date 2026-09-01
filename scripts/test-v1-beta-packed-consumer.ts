@@ -5,7 +5,7 @@ import { basename, join } from "node:path"
 
 const rootDirectory = join(import.meta.dir, "..")
 const intendedCoreBetaVersion =
-    process.env.VALDRES_PACKED_CORE_BETA_VERSION ?? "1.0.0-beta.27"
+    process.env.VALDRES_PACKED_CORE_BETA_VERSION ?? "1.0.0-beta.28"
 const intendedReactBetaVersion =
     process.env.VALDRES_PACKED_REACT_BETA_VERSION ?? "1.0.0-beta.6"
 const intendedReactCorePeer =
@@ -123,6 +123,46 @@ assert.equal(functionCalls, 0)
 assert.equal(target.get(functionValue)(), "replacement-updated")
 assert.equal(functionCalls, 1)
 
+const familyAtoms = core.family((group, id) =>
+    core.atom({ group, id, created: String(group) + ":" + String(id) }),
+)
+const firstFamilyAtom = familyAtoms("packed", 1)
+assert.equal(familyAtoms("packed", 1), firstFamilyAtom)
+assert.notEqual(familyAtoms("packed", 2), firstFamilyAtom)
+assert.notEqual(familyAtoms("1", "packed"), firstFamilyAtom)
+assert.deepEqual(target.get(firstFamilyAtom), {
+    group: "packed",
+    id: 1,
+    created: "packed:1",
+})
+target.set(firstFamilyAtom, {
+    group: "packed",
+    id: 1,
+    created: "overridden",
+})
+assert.equal(target.get(familyAtoms("packed", 1)).created, "overridden")
+
+const structuredFamily = core.family(
+    input => core.atom(input.payload),
+    { encodeKey: input => input.id },
+)
+const firstStructuredMember = structuredFamily({
+    id: "shared",
+    payload: "first",
+})
+assert.equal(
+    structuredFamily({ id: "shared", payload: "ignored" }),
+    firstStructuredMember,
+)
+assert.equal(target.get(firstStructuredMember), "first")
+
+const familySelectors = core.family(factor =>
+    core.selector(get => get(count) * factor),
+)
+const tripled = familySelectors(3)
+assert.equal(familySelectors(3), tripled)
+assert.equal(target.get(tripled), 24)
+
 const isRuntimeMismatch = error =>
     error?.name === "RuntimeMismatchError" &&
     error?.code === "VALDRES_RUNTIME_MISMATCH"
@@ -141,6 +181,7 @@ console.log(JSON.stringify({
     runtime: typeof Bun === "undefined" ? "node" : "bun",
     sharedRootAdapterDomain: true,
     crossCopyRejected: true,
+    familyIdentity: true,
 }))
 `
 
@@ -515,9 +556,13 @@ console.log(JSON.stringify({
 const typeProbe = String.raw`
 import {
     atom,
+    family,
     selector,
     store,
+    type Atom,
     type AtomUpdater,
+    type FamilyKey,
+    type Selector,
     type State,
     type Store,
 } from "valdres"
@@ -560,6 +605,28 @@ const capture: StateInspectionCapture =
 const inspectionReport: InspectableReactExport =
     inspectedReact.inspect.export()
 
+const primitiveKey: FamilyKey = Symbol("packed-key")
+const familyAtoms = family((group: string, id: number) =>
+    atom({ group, id }),
+)
+const familySelectors = family((factor: number) =>
+    selector(get => get(count) * factor),
+)
+const atomMember: Atom<{ group: string; id: number }> = familyAtoms(
+    "packed",
+    1,
+)
+const selectorMember: Selector<number> = familySelectors(3)
+const structuredFamily = family(
+    (input: { readonly id: string; readonly payload: number }) =>
+        atom(input.payload),
+    { encodeKey: input => input.id },
+)
+const structuredMember: Atom<number> = structuredFamily({
+    id: "packed",
+    payload: 1,
+})
+
 apply(update)
 void Provider
 void value
@@ -568,23 +635,40 @@ void reset
 void selected
 void capture
 void inspectionReport
+void primitiveKey
+void atomMember
+void selectorMember
+void structuredMember
 
 // @ts-expect-error Selectors are read-only and cannot be passed to Atom setters.
 useSetAtom(doubled, target)
 // @ts-expect-error Exact setters do not interpret functions as updater syntax.
 set(current => current + 1)
+// @ts-expect-error Structured family arguments require an explicit encoder.
+family((input: { readonly id: string }) => atom(input.id))
+// @ts-expect-error FamilyKey excludes structured objects.
+const structuredKey: FamilyKey = { id: "packed" }
+void structuredKey
 `
 
 const bundleEntry = String.raw`
-import { atom, store } from "valdres"
+import { atom, family, store } from "valdres"
 import * as reactApi from "valdres-react"
 
 export const bundleSmoke = () => {
     const count = atom(4)
     const target = store()
     target.update(count, current => current + 1)
+    const members = family(
+        input => atom(input.payload),
+        { encodeKey: input => input.id },
+    )
+    const first = members({ id: "shared", payload: "first" })
+    const collision = members({ id: "shared", payload: "ignored" })
     return {
         value: target.get(count),
+        familyValue: target.get(first),
+        familyIdentity: first === collision,
         reactExports: Object.keys(reactApi).sort(),
     }
 }
@@ -615,6 +699,8 @@ import { bundleSmoke } from "./bundle.mjs"
 
 assert.deepEqual(bundleSmoke(), {
     value: 5,
+    familyValue: "first",
+    familyIdentity: true,
     reactExports: [
         "Provider",
         "useAtom",

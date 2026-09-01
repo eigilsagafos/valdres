@@ -263,7 +263,7 @@
             "suppliedCapabilities": ["canonical family arguments"],
             "allowedExternalWork": [
                 "construct immutable Valdres definitions",
-                "call other definition-level families"
+                "call family accessors, including the same family at a different identity"
             ],
             "rejectedCapturedOperations": [
                 "Store read",
@@ -271,12 +271,13 @@
                 "Store transaction",
                 "subscription registration",
                 "scope access",
-                "source invalidation"
+                "source invalidation",
+                "active selector-supplied get"
             ],
             "guardDomain": "same-runtime-domain",
-            "errorRule": "Forbidden same-domain work throws CallbackCapabilityError. Any other throw creates no family member and is not cached.",
+            "errorRule": "Forbidden same-domain work throws CallbackCapabilityError. A borrowed active selector get latches that fault even when caught. Any other throw creates no family member and is not cached.",
             "thenableRule": "A thenable rejects as an invalid family factory result; the factory must synchronously return a same-domain State.",
-            "resultBoundary": "One valid same-domain State subtype is weakly memoized for the canonical identity tuple.",
+            "resultBoundary": "One same-domain State subtype constructed in this callback, or any already-published family member, is weakly memoized for the canonical identity tuple. A pre-existing ordinary State rejects so weak family identity never requires retroactive reverse indexing across Store overrides.",
             "requiredContractIds": [
                 "family.variadic-primitive-identity",
                 "callback.definition-only",
@@ -297,10 +298,13 @@
                 "Store transaction",
                 "subscription registration",
                 "scope access",
-                "source invalidation"
+                "source invalidation",
+                "State definition construction",
+                "family accessor calls",
+                "active selector-supplied get"
             ],
             "guardDomain": "same-runtime-domain",
-            "errorRule": "Forbidden same-domain work throws CallbackCapabilityError. Any other throw creates and caches nothing.",
+            "errorRule": "A same-family call during encodeKey throws a sticky TypeError; other forbidden same-domain work throws CallbackCapabilityError. A borrowed active selector get latches that fault even when caught. Any other throw creates and caches nothing.",
             "thenableRule": "A returned or thrown thenable rejects as an invalid synchronous encoder result.",
             "resultBoundary": "A valid JavaScript primitive becomes the sole identity key; original rich inputs are not retained by the family cache.",
             "requiredContractIds": [

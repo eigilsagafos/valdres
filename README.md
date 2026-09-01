@@ -44,6 +44,43 @@ including functions; `update` applies an updater. Stores also provide
 synchronous subscriptions, transactions, nested scopes, reset, and explicit
 disposal.
 
+## Parameterized State identity
+
+`family(factory)` memoizes one Atom or Selector per non-empty ordered tuple of
+primitive keys (`string`, `number`, `bigint`, `boolean`, `symbol`, `null`, or
+`undefined`). Keys use SameValueZero, so `NaN` matches `NaN` and `0` matches
+`-0`; tuple arity and order still matter.
+
+```ts
+import { atom, family } from "valdres"
+
+const cellValue = family((sheetId: string, row: number) => atom(""))
+cellValue("budget", 4) === cellValue("budget", 4) // true
+
+type Step = { readonly id: string; readonly title: string }
+
+const stepProgress = family((step: Step) => atom(0), {
+    encodeKey: step => step.id,
+})
+
+stepProgress({ id: "step-1", title: "Draft" }) ===
+    stepProgress({ id: "step-1", title: "Review" }) // true
+```
+
+Structured arguments require a synchronous `encodeKey` that returns one
+canonical primitive key. The factory must construct and return its Atom or
+Selector during that member's construction, or return any member already
+published by a family. Returning an arbitrary pre-existing State is rejected.
+
+The family cache is weak. A live reference, a committed Store override for a
+family Atom, an active subscription, or a retained selector dependency keeps
+that member alive. Reset or disposal releases Store ownership, and
+unsubscription releases subscription ownership. After the last owner disappears,
+a later lookup may run the factory again.
+
+A family is only a callable identity cache. It has no membership or enumeration
+API and no `delete`, `release`, `index`, Store, or collection surface.
+
 ## Opt-in structural equality
 
 `Object.is` remains the default comparator. Import `deepEqual` from the separate
