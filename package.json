@@ -25,7 +25,7 @@
         "test:v1-beta:packed": "bun run scripts/test-v1-beta-packed-consumer.ts",
         "test:all": "bun --filter '*' test",
         "test:ci": "bun run test:v1-beta:ci",
-        "test:v1-beta:ci": "bun --filter 'valdres' test -- --reporter=junit --reporter-outfile=junit.xml && bun --filter 'valdres-react' test -- --reporter=junit --reporter-outfile=junit.xml",
+        "test:v1-beta:ci": "bun --filter 'valdres' test:ci && bun --filter 'valdres-react' test -- --reporter=junit --reporter-outfile=junit.xml",
         "test:ci:all": "bun --filter '*' test -- --reporter=junit --reporter-outfile=junit.xml",
         "verify": "bun run scripts/verify.ts",
         "changeset": "changeset",
