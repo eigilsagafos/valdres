@@ -13,13 +13,14 @@
     },
     "type": "module",
     "exports": {
-        ".": "./src/index.ts"
+        ".": "./src/index.ts",
+        "./inspect": "./src/inspect.tsx"
     },
     "files": [
         "dist"
     ],
     "scripts": {
-        "build": "NODE_ENV=production bun build src/index.ts --outdir ./dist --packages external",
+        "build": "NODE_ENV=production bun build.ts",
         "build:types": "rm -rf dist/types && bunx tsgo && bun run ../../scripts/rewrite-declaration-imports.ts dist/types",
         "test": "bun test --reporter=dots --parallel"
     },
@@ -40,7 +41,7 @@
     },
     "peerDependencies": {
         "react": "^18.0.0 || ^19.0.0",
-        "valdres": "^1.0.0-beta.24"
+        "valdres": "^1.0.0-beta.27"
     },
     "publishConfig": {
         "access": "public",

@@ -46,6 +46,13 @@ test/
   constructs an instrumented Store inside the singleton public v1 domain; never
   import its recorder from the root entry or add observation state to an
   ordinary Store.
+- `packages/valdres-react/src/inspect.tsx` is the opt-in `valdres-react/inspect`
+  entry and an intentional cohesive exception to the one-export-per-public-file
+  rule. It binds React hooks and Providers to an inspectable core, may share
+  only the private `StoreContext` chunk with the root entry, and uses the
+  recording-neutral `StoreInspector.capture` seam for active core IDs while
+  keeping React records separate. It must never be re-exported from
+  `valdres-react` or add capture work to ordinary hooks.
 
 ## Browser-API package pattern
 

@@ -105,6 +105,53 @@ ordinary consumer bundles remain within their existing size budget.
 `store.txn(callback, name?)` accepts the optional label on every Store; ordinary
 Stores validate and otherwise ignore it.
 
+## Correlate React work
+
+`valdres-react/inspect` binds the React adapter to an inspectable core. Use the
+returned Provider and hooks only for the tree being measured:
+
+```tsx
+import { createInspectableStore } from "valdres/inspect"
+import { createInspectableReact } from "valdres-react/inspect"
+
+const core = createInspectableStore()
+const react = createInspectableReact(core)
+const editorStore = core.store.scope("editor")
+
+function Editor() {
+    const document = react.useValue(documentAtom)
+    // render document
+}
+
+const app = (
+    <react.Provider store={editorStore}>
+        <Editor />
+    </react.Provider>
+)
+
+const report = react.inspect.export()
+react.inspect.reset()
+```
+
+Omit the Provider's `store` prop to use `core.store`, or pass a child scope from
+the same inspector as shown above. Explicit Store arguments on the returned
+hooks are also supported and must belong to that inspector.
+
+The immutable composite export contains the exact core flight-recorder report
+plus separately bounded React timelines. Subscriber rows retain the genuinely
+active core IDs read through the recording-neutral
+`core.inspect.capture(store, state?)` seam. Snapshot rows distinguish React's
+synchronous subscriber check from later reads; they are reads, not component
+render counts. Profiler rows are boundary callbacks on the same clock, while
+their `commitTimeGroupId` is only a timestamp grouping key—not a unique commit
+or a causal link to a Store operation.
+
+Subscriber and snapshot timelines work in ordinary production React builds.
+Profiler timing is present only in development or a profiling-enabled production
+build. The recording/export retains no State values, props, children, callbacks,
+errors, or component instances. This opt-in entry is absent from the ordinary
+`valdres-react` root bundle and adds no capture work to ordinary hooks.
+
 This is an intentional breaking beta cutover. Only `valdres` and `valdres-react`
 are certified together. The Angular, Vue, Svelte, Solid, plugin, and
 compatibility packages listed below remain on the legacy API and are unsupported

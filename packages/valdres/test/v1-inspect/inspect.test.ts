@@ -111,6 +111,177 @@ describe("valdres/inspect public contract", () => {
         expect(operationSummaries(recording)).toHaveLength(1)
     })
 
+    test("captures owned Store and State identity without recording work", () => {
+        const secret = "DO_NOT_CAPTURE_THIS_VALUE"
+        const count = atom({ secret }, { name: "capture/count" })
+        const { store, inspect } = createInspectableStore()
+        const child = store.scope("capture-child")
+        const before = inspect.export()
+
+        const rootCapture = inspect.capture(store, count)
+        const childCapture = inspect.capture(child, count)
+
+        expect(inspect.export()).toEqual(before)
+        expect(rootCapture).toEqual({
+            recordingId: inspect.recordingId,
+            timeUs: expect.any(Number),
+            monotonicTimeMs: expect.any(Number),
+            store: { id: expect.any(Number), kind: "scope" },
+            state: {
+                id: expect.any(Number),
+                kind: "atom",
+                name: "capture/count",
+            },
+        })
+        expect(childCapture).toMatchObject({
+            recordingId: inspect.recordingId,
+            store: {
+                id: expect.any(Number),
+                kind: "scope",
+                name: "capture-child",
+            },
+            state: rootCapture.state,
+        })
+        expect(childCapture.store.id).not.toBe(rootCapture.store.id)
+        expect(Number.isSafeInteger(rootCapture.timeUs)).toBe(true)
+        expect(Number.isFinite(rootCapture.monotonicTimeMs)).toBe(true)
+        expect(childCapture.timeUs).toBeGreaterThanOrEqual(rootCapture.timeUs)
+        expect(Object.isFrozen(rootCapture)).toBe(true)
+        expect(Object.isFrozen(rootCapture.store)).toBe(true)
+        expect(Object.isFrozen(rootCapture.state)).toBe(true)
+        assertJsonSafe(rootCapture)
+        expect(JSON.stringify(rootCapture)).not.toContain(secret)
+
+        child.set(count, { secret: "next" })
+        const recording = inspect.export()
+        const [operation] = operationSummaries(recording)
+        const intent = recording.details.find(
+            detail => detail.type === "intent",
+        )
+        expect(operation?.scope).toEqual(childCapture.store)
+        expect(intent?.type === "intent" ? intent.atom : undefined).toEqual(
+            childCapture.state,
+        )
+
+        if (false) {
+            const stateReference = inspect.capture(store, count).state
+            stateReference satisfies NonNullable<typeof stateReference>
+            // @ts-expect-error Capture requires a Store.
+            inspect.capture({})
+            // @ts-expect-error Capture accepts only State handles.
+            inspect.capture(store, {})
+        }
+    })
+
+    test("rejects Stores outside the inspector and invalid State handles", () => {
+        const count = atom(0)
+        const ordinary = createStore()
+        const first = createInspectableStore()
+        const second = createInspectableStore()
+        const before = first.inspect.export()
+
+        for (const invalidStore of [ordinary, second.store, {} as Store]) {
+            expect(
+                thrownBy(() =>
+                    Reflect.apply(first.inspect.capture, undefined, [
+                        invalidStore,
+                        count,
+                    ]),
+                ),
+            ).toBeInstanceOf(TypeError)
+        }
+        for (const invalidState of [
+            null,
+            {},
+            Object.freeze({ kind: "atom" }),
+        ]) {
+            expect(
+                thrownBy(() =>
+                    Reflect.apply(first.inspect.capture, undefined, [
+                        first.store,
+                        invalidState,
+                    ]),
+                ),
+            ).toBeInstanceOf(TypeError)
+        }
+
+        expect(first.inspect.export()).toEqual(before)
+        expect(first.inspect.capture(first.store)).not.toHaveProperty("state")
+    })
+
+    test("does not execute or retain malformed State names during capture", () => {
+        let reads = 0
+        const hostileName = Object.defineProperty({}, "length", {
+            get: () => {
+                reads++
+                throw new Error("State names are not application data")
+            },
+        })
+        const count = atom(0, {
+            name: hostileName as unknown as string,
+        })
+        const { store, inspect } = createInspectableStore()
+        const before = inspect.export()
+
+        const capture = inspect.capture(store, count)
+
+        expect(reads).toBe(0)
+        expect(capture.state).toEqual({
+            id: expect.any(Number),
+            kind: "atom",
+        })
+        expect(inspect.export()).toEqual(before)
+        expect(JSON.stringify(capture)).not.toContain("application data")
+    })
+
+    test("captures the active span, operation, and commit during notification", () => {
+        const count = atom(0, { name: "capture/notification-count" })
+        const { store, inspect } = createInspectableStore()
+        let notificationCapture:
+            | ReturnType<typeof inspect.capture<number>>
+            | undefined
+        const unsubscribe = store.sub(count, () => {
+            notificationCapture = inspect.capture(store, count)
+        })
+
+        inspect.span("react interaction", () => store.set(count, 1))
+        unsubscribe()
+
+        const recording = inspect.export()
+        const [operation] = operationSummaries(recording)
+        const [commit] = commitSummaries(recording)
+        const [span] = spanSummaries(recording)
+        expect(notificationCapture).toMatchObject({
+            recordingId: recording.recordingId,
+            spanId: span?.spanId,
+            operationId: operation?.operationId,
+            commitId: commit?.commitId,
+            store: operation?.scope,
+            state: {
+                kind: "atom",
+                name: "capture/notification-count",
+            },
+        })
+        expect(operation?.spanId).toBe(span?.spanId)
+        expect(commit?.operationId).toBe(operation?.operationId)
+    })
+
+    test("starts captures in the fresh recording after reset", () => {
+        const count = atom(0, { name: "capture/reset-count" })
+        const { store, inspect } = createInspectableStore()
+        const first = inspect.capture(store, count)
+
+        inspect.reset()
+        const second = inspect.capture(store, count)
+
+        expect(second.recordingId).toBe(inspect.recordingId)
+        expect(second.recordingId).not.toBe(first.recordingId)
+        expect(second.store).toEqual(first.store)
+        expect(second.state).toEqual(first.state)
+        expect(inspect.export().summaries).toEqual([])
+        expect(inspect.export().details).toEqual([])
+    })
+
     test("keeps the ordinary Store surface and behavior unchanged", () => {
         const count = atom(0)
         const ordinary = createStore()
