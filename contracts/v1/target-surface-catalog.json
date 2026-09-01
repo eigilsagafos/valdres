@@ -10,6 +10,7 @@
         "adapter.v1-subpath",
         "beta.cache-companion",
         "beta.inspect-flight-recorder",
+        "beta.inspect-react-correlation",
         "beta.search",
         "collection.artifact-export",
         "collection.artifact-import",
@@ -165,6 +166,7 @@
     "independentBetaPublicApiIds": [
         "beta.cache-companion",
         "beta.inspect-flight-recorder",
+        "beta.inspect-react-correlation",
         "beta.search"
     ],
     "frozenPublicCoordinates": [
@@ -209,6 +211,13 @@
             "package": "valdres",
             "subpath": "./inspect",
             "name": "valdres/inspect"
+        },
+        {
+            "id": "beta.inspect-react-correlation",
+            "kind": "subpath",
+            "package": "valdres-react",
+            "subpath": "./inspect",
+            "name": "valdres-react/inspect"
         },
         {
             "id": "beta.search",

@@ -232,6 +232,38 @@
             "notes": "This freezes only the experimental subpath boundary. It creates a native Store in the public v1 domain with construction-time bounded recording; exact report types may continue to iterate before 1.0."
         },
         {
+            "id": "beta.inspect-react-correlation",
+            "kind": "subpath",
+            "owner": "independent-beta",
+            "legacy": [],
+            "target": {
+                "package": "valdres-react",
+                "subpath": "./inspect",
+                "name": "valdres-react/inspect",
+                "status": "experimental"
+            },
+            "migration": {
+                "mode": "add",
+                "replacementIds": [],
+                "semver": "new",
+                "codemod": "Pass the result of createInspectableStore() to createInspectableReact() from valdres-react/inspect, then use the returned Provider and hooks only where React correlation is required.",
+                "typeError": "The correlation factory is absent from the root entry; ordinary React bindings expose no inspector, and unowned Stores cannot be attached to an inspection recording.",
+                "firstPartyOwner": "inspect-react",
+                "evidenceStatus": "planned"
+            },
+            "contractIds": [
+                "inspect.bounded-react-correlation",
+                "inspect.no-application-values",
+                "inspect.no-core-enumeration",
+                "inspect.same-domain-store",
+                "react.nearest-store-context",
+                "react.provider-borrowed-only",
+                "react.universal-sync-read"
+            ],
+            "decisionStatus": "approved",
+            "notes": "This freezes only the experimental valdres-react/inspect subpath boundary. It records independent bounded subscriber, snapshot-read, and Profiler-boundary timelines on the core recorder's clock. Subscriber rows retain genuinely active core IDs, while commitTimeGroupId is only a timestamp grouping key and no Store-to-React causality is asserted. Optional Profiler timing depends on the React build. Exact report-row types may continue to iterate before 1.0."
+        },
+        {
             "id": "beta.search",
             "kind": "package",
             "owner": "independent-beta",

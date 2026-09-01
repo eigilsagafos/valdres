@@ -117,6 +117,21 @@ value-enumeration surfaces are not provided by the flight recorder. Its exact
 report types may continue to iterate before 1.0 without becoming part of the
 stable-completion gate.
 
+`beta.inspect-react-correlation` separately freezes the experimental
+`valdres-react/inspect` subpath. Its factory binds Providers and hooks to one
+inspectable core and accepts child scopes owned by that inspector. A separately
+bounded, value-free React report records independent subscriber, snapshot, and
+Profiler-boundary timelines. Subscriber rows retain genuinely active core IDs
+through the recording-neutral `StoreInspector.capture` seam; snapshot rows mark
+reads made synchronously inside a subscriber callback. Shared-clock ordering and
+`commitTimeGroupId` are investigative grouping evidence, not unique React commit
+identity or Store-to-React causality. Subscriber and snapshot evidence remains
+available in ordinary production React builds, while Profiler timing requires
+development or a profiling-enabled production build. The root React entry
+remains uninstrumented. This addition does not close `moved.inspect`: legacy
+snapshot, `onChange`, and application-value enumeration remain unavailable, and
+exact experimental report-row types may continue to iterate before 1.0.
+
 `FamilyKey` now means exactly
 `string | number | bigint | boolean | symbol | null | undefined`; it no longer
 accepts Date, Array, object, Map, or Set values. Structured family inputs

@@ -529,9 +529,9 @@ const frozenLegacyProvenanceInventorySha256 =
 const frozenReviewedLegacyDispositionSha256 =
     "e59fc2432d3402205d77cf96095b4b57ca870044d9db6c64bc908752d8fa01f8"
 const frozenTargetCoordinateInventorySha256 =
-    "debc65e3cd6e546685de15d71e429bf4b239584ebae8de41bd416e29196e1208"
+    "dc24aae780a5197ffbaa307304163477842359a1970747eade36df8abc16d1c7"
 const frozenReleaseTrackOwnershipSha256 =
-    "8926a6e61ca24c53054d880d73de8a7222c3d1e0c319704db32c7c51d10952c7"
+    "3a8dbd8ffa92e0c43c87ebfbf8f860727250f003d35680fc2b7c964829c7130c"
 const frozenWorkspaceBaseline = Object.freeze({
     commit: "ff1424bde13445eba07fcb426f5493dd43898f72",
     packageVersion: "1.0.0-beta.22",

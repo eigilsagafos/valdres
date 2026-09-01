@@ -37,6 +37,7 @@
         "family.no-membership",
         "family.same-value-zero",
         "family.variadic-primitive-identity",
+        "inspect.bounded-react-correlation",
         "inspect.bounded-structural-recorder",
         "inspect.no-application-values",
         "inspect.no-core-enumeration",

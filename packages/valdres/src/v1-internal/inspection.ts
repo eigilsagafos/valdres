@@ -11,6 +11,7 @@ import type {
 import type { TreeDraft } from "./committed-store-tree/tree-transaction"
 import type {
     CommittedStoreTree,
+    State,
     TransactionCallback,
 } from "./committed-store-tree/types"
 import type {
@@ -285,11 +286,35 @@ export interface InspectableStoreOptions {
     }>
 }
 
+/** A point-in-time, value-free correlation token for companion adapters. */
+export interface InspectionCapture {
+    readonly recordingId: string
+    readonly timeUs: number
+    readonly monotonicTimeMs: number
+    readonly store: InspectionReference
+    readonly state?: InspectionReference
+    readonly spanId?: number
+    readonly operationId?: number
+    readonly commitId?: number
+    readonly sessionId?: number
+    readonly evaluationId?: number
+    readonly searchId?: number
+}
+
+export interface StateInspectionCapture extends InspectionCapture {
+    readonly state: InspectionReference
+}
+
 type SynchronousInspectionResult<Result> =
     Result extends PromiseLike<unknown> ? never : Result
 
 export interface StoreInspector {
     readonly recordingId: string
+    capture(store: CommittedStoreTree): InspectionCapture
+    capture<Value>(
+        store: CommittedStoreTree,
+        state: State<Value>,
+    ): StateInspectionCapture
     span<Result>(
         name: string,
         callback: () => SynchronousInspectionResult<Result>,
@@ -789,6 +814,7 @@ class StructuralInspectionRecorder implements InternalInspectionRecorder {
     #active: ActiveInterval[] = []
     #referenceIds = new WeakMap<object, number>()
     #referenceNames = new WeakMap<object, string>()
+    #storeScopes = new WeakMap<object, StoreScopeNode>()
     #sessionIds = new WeakMap<object, number>()
     #summaryOverflow = 0
     #detailOverflow = 0
@@ -821,6 +847,64 @@ class StructuralInspectionRecorder implements InternalInspectionRecorder {
 
     get recordingId(): string {
         return this.#recordingId
+    }
+
+    registerStore(store: CommittedStoreTree, scope: StoreScopeNode): void {
+        this.#storeScopes.set(store as object, scope)
+    }
+
+    capture<Value>(
+        store: CommittedStoreTree,
+        state?: State<Value>,
+    ): InspectionCapture {
+        const storeTarget =
+            (typeof store === "object" && store !== null) ||
+            typeof store === "function"
+                ? (store as object)
+                : undefined
+        const scope =
+            storeTarget === undefined
+                ? undefined
+                : this.#storeScopes.get(storeTarget)
+        if (scope === undefined) {
+            throw new TypeError(
+                "Inspection capture requires a Store owned by this inspector",
+            )
+        }
+
+        let stateReference: InspectionReference | undefined
+        if (state !== undefined) {
+            const stateTarget =
+                (typeof state === "object" && state !== null) ||
+                typeof state === "function"
+                    ? (state as object)
+                    : undefined
+            const domain = scope.coordinator.runtimeDomain
+            if (stateTarget === undefined || !domain.states.has(stateTarget)) {
+                throw new TypeError("Inspection capture requires a valid State")
+            }
+            const atom = domain.atoms.get(stateTarget)
+            const selector = domain.selectors.get(stateTarget)
+            if (atom === undefined && selector === undefined) {
+                throw new TypeError("Inspection capture requires a valid State")
+            }
+            const definitionName = atom?.name ?? selector?.name
+            stateReference = this.reference(
+                stateTarget,
+                atom === undefined ? "selector" : "atom",
+                typeof definitionName === "string" ? definitionName : undefined,
+            )
+        }
+
+        const monotonicTimeMs = this.#clockNow()
+        return Object.freeze({
+            recordingId: this.#recordingId,
+            timeUs: this.#timeUs(monotonicTimeMs),
+            monotonicTimeMs,
+            store: this.reference(scope, "scope", scope.name),
+            ...(stateReference === undefined ? {} : { state: stateReference }),
+            ...this.#activeLinks(),
+        })
     }
 
     reference(
@@ -1447,6 +1531,10 @@ class StructuralInspectionRecorder implements InternalInspectionRecorder {
             get recordingId(): string {
                 return recorder.recordingId
             },
+            capture: <Value>(
+                store: CommittedStoreTree,
+                state?: State<Value>,
+            ): InspectionCapture => recorder.capture(store, state),
             span: <Result>(name: string, callback: () => Result): Result =>
                 recorder.span(name, callback),
             export: (): InspectionExport => recorder.export(),
@@ -1654,11 +1742,15 @@ class StructuralInspectionRecorder implements InternalInspectionRecorder {
         return globalThis.performance?.now() ?? Date.now()
     }
 
-    #nowUs(): number {
+    #timeUs(monotonicTimeMs: number): number {
         return Math.max(
             0,
-            Math.round((this.#clockNow() - this.#clockOrigin) * 1_000),
+            Math.round((monotonicTimeMs - this.#clockOrigin) * 1_000),
         )
+    }
+
+    #nowUs(): number {
+        return this.#timeUs(this.#clockNow())
     }
 }
 
@@ -1709,6 +1801,7 @@ const createStoreTrace = (
         if (code === 0) {
             const store = first as CommittedStoreTree
             const scope = second as StoreScopeNode
+            recorder.registerStore(store, scope)
             const mutable = store as MutableStoreOperations
             const set = store.set
             const update = store.update

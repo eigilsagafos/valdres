@@ -13,13 +13,14 @@
     },
     "type": "module",
     "exports": {
-        ".": "./src/index.ts"
+        ".": "./src/index.ts",
+        "./inspect": "./src/inspect.tsx"
     },
     "files": [
         "dist"
     ],
     "scripts": {
-        "build": "NODE_ENV=production bun build src/index.ts --outdir ./dist --packages external",
+        "build": "NODE_ENV=production bun build.ts",
         "build:types": "rm -rf dist/types && bunx tsgo && bun run ../../scripts/rewrite-declaration-imports.ts dist/types",
         "test": "bun test --reporter=dots --parallel"
     },

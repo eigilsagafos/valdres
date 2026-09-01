@@ -149,6 +149,7 @@ import { strict as assert } from "node:assert"
 import { createRequire } from "node:module"
 import { GlobalRegistrator } from "@happy-dom/global-registrator"
 import { atom, selector, store } from "valdres"
+import { createInspectableStore } from "valdres/inspect"
 
 // Observe useSyncExternalStore's real subscription cleanup without replacing
 // either packed package. Patching the shared CommonJS React object before the
@@ -184,12 +185,19 @@ React.useSyncExternalStore = (subscribe, getSnapshot, getServerSnapshot) => {
     )
 }
 
-const [{ act, createElement }, { renderToString }, { create }, reactApi] =
+const [
+    { act, createElement },
+    { renderToString },
+    { create },
+    reactApi,
+    inspectReactApi,
+] =
     await Promise.all([
         import("react"),
         import("react-dom/server"),
         import("react-test-renderer"),
         import("valdres-react"),
+        import("valdres-react/inspect"),
     ])
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
@@ -203,6 +211,7 @@ assert.deepEqual(Object.keys(reactApi).sort(), [
     "useUpdateAtom",
     "useValue",
 ])
+assert.deepEqual(Object.keys(inspectReactApi), ["createInspectableReact"])
 
 const {
     Provider,
@@ -213,6 +222,7 @@ const {
     useUpdateAtom,
     useValue,
 } = reactApi
+const { createInspectableReact } = inspectReactApi
 
 const count = atom(1)
 const functionValue = atom(() => "initial")
@@ -353,6 +363,69 @@ assert.equal(activeExternalSubscriptions, 0)
 assert.equal(externalSubscriptionCleanups, 3)
 await GlobalRegistrator.unregister()
 
+const inspectionCore = createInspectableStore()
+const inspectionCount = atom(0, { name: "packed-inspection-count" })
+const inspectedReact = createInspectableReact(inspectionCore, {
+    capacity: { summaries: 4, details: 16 },
+})
+let inspectedValue
+const InspectedProbe = () => {
+    inspectedValue = inspectedReact.useValue(inspectionCount)
+    return createElement("output", null, inspectedValue)
+}
+let inspectedRenderer
+const cleanupsBeforeInspection = externalSubscriptionCleanups
+await act(async () => {
+    inspectedRenderer = create(
+        createElement(
+            inspectedReact.Provider,
+            null,
+            createElement(InspectedProbe),
+        ),
+    )
+})
+assert.equal(inspectedValue, 0)
+assert.equal(activeExternalSubscriptions, 1)
+inspectedReact.inspect.reset()
+await act(async () => {
+    inspectionCore.store.txn(
+        transaction => transaction.set(inspectionCount, 2),
+        "packed React inspection",
+    )
+})
+assert.equal(inspectedValue, 2)
+const inspectionReport = inspectedReact.inspect.export()
+assert.equal(inspectionReport.schema, "valdres.react.inspect")
+assert.equal(inspectionReport.schemaVersion, 1)
+assert.equal(inspectionReport.core.recordingId, inspectionReport.react.coreRecordingId)
+assert.equal(inspectionReport.react.totals.subscriberCallbacks, 1)
+assert.equal(inspectionReport.react.totals.commitTimeGroups, 1)
+assert.equal(inspectionReport.react.totals.profilerCallbacks, 1)
+assert.equal(inspectionReport.react.profiler.commitCallbacksObserved, true)
+assert.equal(inspectionReport.react.summaries.length, 1)
+assert.equal(inspectionReport.react.summaries[0].type, "react-profiler")
+assert.equal(inspectionReport.react.summaries[0].commitTimeGroupId, 1)
+assert.equal(inspectionReport.react.summaries[0].capture.store.id > 0, true)
+assert.equal(
+    inspectionReport.react.details.some(
+        detail =>
+            detail.type === "react-subscriber" &&
+            detail.start.state?.name === "packed-inspection-count",
+    ),
+    true,
+)
+assert.equal(
+    inspectionReport.core.summaries.some(
+        summary =>
+            summary.type === "operation" &&
+            summary.name === "packed React inspection",
+    ),
+    true,
+)
+await act(async () => inspectedRenderer.unmount())
+assert.equal(activeExternalSubscriptions, 0)
+assert.equal(externalSubscriptionCleanups, cleanupsBeforeInspection + 1)
+
 console.log(JSON.stringify({
     runtime: typeof Bun === "undefined" ? "node" : "bun",
     react: React.version,
@@ -362,6 +435,80 @@ console.log(JSON.stringify({
     unmountUnsubscribed: true,
     nestedScope: true,
     ssrHydration: true,
+    inspectCorrelation: true,
+}))
+`
+
+const reactInspectProductionProbe = String.raw`
+import { strict as assert } from "node:assert"
+import { GlobalRegistrator } from "@happy-dom/global-registrator"
+import { atom } from "valdres"
+import { createInspectableStore } from "valdres/inspect"
+
+GlobalRegistrator.register({ url: "https://valdres-production.test/" })
+const [React, { flushSync }, { createRoot }, { createInspectableReact }] =
+    await Promise.all([
+        import("react"),
+        import("react-dom"),
+        import("react-dom/client"),
+        import("valdres-react/inspect"),
+    ])
+assert.equal(
+    React.version.startsWith(process.env.EXPECTED_REACT_MAJOR + "."),
+    true,
+)
+
+const core = createInspectableStore()
+const count = atom(0, { name: "production-inspection-count" })
+const inspected = createInspectableReact(core, {
+    capacity: { summaries: 4, details: 32 },
+})
+const container = document.createElement("div")
+document.body.append(container)
+const root = createRoot(container)
+const Probe = () => React.createElement("output", null, inspected.useValue(count))
+
+flushSync(() => {
+    root.render(
+        React.createElement(
+            inspected.Provider,
+            null,
+            React.createElement(Probe),
+        ),
+    )
+})
+assert.equal(container.textContent, "0")
+inspected.inspect.reset()
+flushSync(() => core.store.set(count, 1))
+flushSync(() => core.store.set(count, 2))
+assert.equal(container.textContent, "2")
+
+const report = inspected.inspect.export()
+const subscribers = report.react.details.filter(
+    detail => detail.type === "react-subscriber",
+)
+assert.equal(report.react.profiler.commitCallbacksObserved, false)
+assert.deepEqual(report.react.summaries, [])
+assert.equal(report.react.totals.profilerCallbacks, 0)
+assert.equal(report.react.totals.commitTimeGroups, 0)
+assert.equal(report.react.totals.subscriberCallbacks, 2)
+assert.equal(
+    report.react.totals.clientSnapshotsDuringSubscriberCallbacks,
+    2,
+)
+assert.equal(subscribers.length, 2)
+assert.equal(new Set(subscribers.map(detail => detail.start.commitId)).size, 2)
+assert.equal(report.react.complete, true)
+assert.equal(report.complete, true)
+
+flushSync(() => root.unmount())
+await GlobalRegistrator.unregister()
+
+console.log(JSON.stringify({
+    runtime: "node",
+    react: React.version,
+    productionSubscriberTimeline: true,
+    fabricatedProfilerCommits: false,
 }))
 `
 
@@ -383,6 +530,15 @@ import {
     useUpdateAtom,
     useValue,
 } from "valdres-react"
+import {
+    createInspectableReact,
+    type InspectableReactExport,
+    type InspectableReactResult,
+} from "valdres-react/inspect"
+import {
+    createInspectableStore,
+    type StateInspectionCapture,
+} from "valdres/inspect"
 
 const count = atom(0)
 const doubled = selector(get => get(count) * 2)
@@ -396,6 +552,13 @@ const set: (value: number) => void = useSetAtom(count, target)
 const apply: (update: AtomUpdater<number>) => void = useUpdateAtom(count, target)
 const reset: () => void = useResetAtom(count, target)
 const selected: Store = useStore()
+const inspectableCore = createInspectableStore()
+const inspectedReact: InspectableReactResult =
+    createInspectableReact(inspectableCore)
+const capture: StateInspectionCapture =
+    inspectableCore.inspect.capture(inspectableCore.store, count)
+const inspectionReport: InspectableReactExport =
+    inspectedReact.inspect.export()
 
 apply(update)
 void Provider
@@ -403,6 +566,8 @@ void value
 void pair
 void reset
 void selected
+void capture
+void inspectionReport
 
 // @ts-expect-error Selectors are read-only and cannot be passed to Atom setters.
 useSetAtom(doubled, target)
@@ -425,6 +590,25 @@ export const bundleSmoke = () => {
 }
 `
 
+const inspectBundleEntry = String.raw`
+import { createInspectableStore } from "valdres/inspect"
+import { createInspectableReact } from "valdres-react/inspect"
+
+export const inspectBundleSmoke = () => {
+    const core = createInspectableStore()
+    const inspected = createInspectableReact(core, {
+        capacity: { summaries: 1, details: 0 },
+    })
+    const report = inspected.inspect.export()
+    return {
+        schema: report.schema,
+        coreRecordingId: report.core.recordingId,
+        reactCoreRecordingId: report.react.coreRecordingId,
+        surface: Object.keys(inspected),
+    }
+}
+`
+
 const bundleProbe = String.raw`
 import { strict as assert } from "node:assert"
 import { bundleSmoke } from "./bundle.mjs"
@@ -441,6 +625,25 @@ assert.deepEqual(bundleSmoke(), {
         "useValue",
     ],
 })
+`
+
+const inspectBundleProbe = String.raw`
+import { strict as assert } from "node:assert"
+import { inspectBundleSmoke } from "./inspect-bundle.mjs"
+
+const result = inspectBundleSmoke()
+assert.equal(result.schema, "valdres.react.inspect")
+assert.equal(result.coreRecordingId, result.reactCoreRecordingId)
+assert.deepEqual(result.surface, [
+    "Provider",
+    "useValue",
+    "useAtom",
+    "useStore",
+    "useSetAtom",
+    "useUpdateAtom",
+    "useResetAtom",
+    "inspect",
+])
 `
 
 interface PackedPackage {
@@ -588,6 +791,9 @@ try {
                 packedFiles.has("dist/types/adapter-internals/v1.d.ts"),
                 true,
             )
+        } else {
+            assert.equal(packedFiles.has("dist/inspect.js"), true)
+            assert.equal(packedFiles.has("dist/types/inspect.d.ts"), true)
         }
         packedPackages.push({
             name,
@@ -672,9 +878,16 @@ try {
                 ),
                 "utf8",
             ),
-        ) as { version: string }
+        ) as {
+            version: string
+            exports: Record<string, unknown>
+        }
         assert.equal(installedCoreManifest.version, intendedCoreBetaVersion)
         assert.equal(installedReactManifest.version, intendedReactBetaVersion)
+        assert.deepEqual(Object.keys(installedReactManifest.exports).sort(), [
+            ".",
+            "./inspect",
+        ])
         assert.equal(installedCoreManifest.sideEffects, false)
         assert.equal(installedCoreManifest.scripts, undefined)
         assert.equal(installedCoreManifest.devDependencies, undefined)
@@ -702,9 +915,21 @@ try {
         await Promise.all([
             writeFile(join(consumerDirectory, "core-probe.mjs"), coreProbe),
             writeFile(join(consumerDirectory, "react-probe.mjs"), reactProbe),
+            writeFile(
+                join(consumerDirectory, "react-inspect-production-probe.mjs"),
+                reactInspectProductionProbe,
+            ),
             writeFile(join(consumerDirectory, "types-probe.ts"), typeProbe),
             writeFile(join(consumerDirectory, "bundle-entry.mjs"), bundleEntry),
             writeFile(join(consumerDirectory, "bundle-probe.mjs"), bundleProbe),
+            writeFile(
+                join(consumerDirectory, "inspect-bundle-entry.mjs"),
+                inspectBundleEntry,
+            ),
+            writeFile(
+                join(consumerDirectory, "inspect-bundle-probe.mjs"),
+                inspectBundleProbe,
+            ),
             writeJson(join(consumerDirectory, "tsconfig.json"), {
                 compilerOptions: {
                     target: "ES2022",
@@ -743,6 +968,15 @@ try {
             consumerDirectory,
             { EXPECTED_REACT_MAJOR: react.major },
         )
+        run(
+            `Node React ${react.major} production inspection probe`,
+            ["node", "react-inspect-production-probe.mjs"],
+            consumerDirectory,
+            {
+                EXPECTED_REACT_MAJOR: react.major,
+                NODE_ENV: "production",
+            },
+        )
 
         run(
             `TypeScript declarations with React ${react.major}`,
@@ -770,13 +1004,54 @@ try {
                 "--platform=browser",
                 "--format=esm",
                 "--outfile=bundle.mjs",
+                "--metafile=bundle-meta.json",
+                "--log-level=warning",
+            ],
+            consumerDirectory,
+        )
+        const bundleInputs = Object.keys(
+            (
+                JSON.parse(
+                    await readFile(
+                        join(consumerDirectory, "bundle-meta.json"),
+                        "utf8",
+                    ),
+                ) as { inputs: Record<string, unknown> }
+            ).inputs,
+        ).map(path => path.replaceAll("\\", "/"))
+        assert.equal(
+            bundleInputs.some(path => path.endsWith("dist/inspect.js")),
+            false,
+            "root-only valdres-react consumer must not reach the inspect entry",
+        )
+        run(
+            `execute esbuild output for React ${react.major}`,
+            ["node", "bundle-probe.mjs"],
+            consumerDirectory,
+        )
+        run(
+            `esbuild inspection subpath with React ${react.major}`,
+            [
+                "node",
+                join(
+                    rootDirectory,
+                    "node_modules",
+                    "esbuild",
+                    "bin",
+                    "esbuild",
+                ),
+                "inspect-bundle-entry.mjs",
+                "--bundle",
+                "--platform=browser",
+                "--format=esm",
+                "--outfile=inspect-bundle.mjs",
                 "--log-level=warning",
             ],
             consumerDirectory,
         )
         run(
-            `execute esbuild output for React ${react.major}`,
-            ["node", "bundle-probe.mjs"],
+            `execute inspection bundle for React ${react.major}`,
+            ["node", "inspect-bundle-probe.mjs"],
             consumerDirectory,
         )
     }

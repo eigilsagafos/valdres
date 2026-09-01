@@ -7,6 +7,7 @@ import type {
     InspectableStoreOptions,
     InspectionCycleBucket,
     InspectionCycleTotals,
+    InspectionCapture,
     InspectionDetail,
     InspectionDetailType,
     InspectionExport,
@@ -23,6 +24,7 @@ import type {
     IntentInspectionDetail,
     SelectorEvaluationInspectionDetail,
     SpanInspection,
+    StateInspectionCapture,
     StoreInspector,
 } from "./v1-internal/inspection"
 
@@ -50,6 +52,7 @@ export type {
     InspectableStoreOptions,
     InspectionCycleBucket,
     InspectionCycleTotals,
+    InspectionCapture,
     InspectionDetail,
     InspectionDetailType,
     InspectionExport,
@@ -66,5 +69,6 @@ export type {
     IntentInspectionDetail,
     SelectorEvaluationInspectionDetail,
     SpanInspection,
+    StateInspectionCapture,
     StoreInspector,
 }
