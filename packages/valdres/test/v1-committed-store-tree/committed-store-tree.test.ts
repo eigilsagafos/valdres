@@ -1173,6 +1173,130 @@ describe("v1 persistent committed StoreTree host", () => {
         })
     })
 
+    test("does not carry an unused old dependency fault into a dynamic parent read", () => {
+        const local = createCommittedStoreTreeDomain()
+        const foreign = createCommittedStoreTreeDomain()
+        const parentUsesBranch = local.atom(false)
+        const branchUsesOldChild = local.atom(true)
+        const oldChildFails = local.atom(false)
+        const safe = local.atom(7)
+        const foreignAtom = foreign.atom(1)
+        const oldChild = local.selector(get =>
+            get(oldChildFails) ? get(foreignAtom) : 1,
+        )
+        const branch = local.selector(get =>
+            get(branchUsesOldChild) ? get(oldChild) : get(safe),
+        )
+        const parent = local.selector(get =>
+            get(parentUsesBranch) ? get(branch) : 0,
+        )
+        const tree = local.createStoreTree()
+
+        expect(tree.get(branch)).toBe(1)
+        expect(tree.get(parent)).toBe(0)
+
+        const commitError = thrownBy(() =>
+            tree.txn(transaction => {
+                // Queue the parent first so its dynamic branch read reaches a
+                // dirty branch whose committed dependency is also dirty.
+                transaction.set(parentUsesBranch, true)
+                transaction.set(branchUsesOldChild, false)
+                transaction.set(oldChildFails, true)
+            }),
+        )
+
+        expect(commitError).toBeInstanceOf(RuntimeMismatchError)
+        expect(tree.get(branch)).toBe(7)
+        expect(tree.get(parent)).toBe(7)
+        expect(thrownBy(() => tree.get(oldChild))).toBe(commitError)
+    })
+
+    test("keeps old-dependency first-fault precedence while a dynamic branch selects a new fault", () => {
+        const local = createCommittedStoreTreeDomain()
+        const firstForeign = createCommittedStoreTreeDomain()
+        const secondForeign = createCommittedStoreTreeDomain()
+        const parentUsesBranch = local.atom(false)
+        const branchUsesOldChild = local.atom(true)
+        const oldChildFails = local.atom(false)
+        const newChildFails = local.atom(false)
+        const firstForeignAtom = firstForeign.atom(1)
+        const secondForeignAtom = secondForeign.atom(2)
+        let oldFault: unknown
+        let newFault: unknown
+        const oldChild = local.selector(get => {
+            if (get(oldChildFails)) {
+                try {
+                    get(firstForeignAtom)
+                } catch (error) {
+                    oldFault = error
+                }
+            }
+            return 1
+        })
+        const newChild = local.selector(get => {
+            if (get(newChildFails)) {
+                try {
+                    get(secondForeignAtom)
+                } catch (error) {
+                    newFault = error
+                }
+            }
+            return 2
+        })
+        const branch = local.selector(get =>
+            get(branchUsesOldChild) ? get(oldChild) : get(newChild),
+        )
+        const parent = local.selector(get =>
+            get(parentUsesBranch) ? get(branch) : 0,
+        )
+        const tree = local.createStoreTree()
+
+        expect(tree.get(branch)).toBe(1)
+        expect(tree.get(newChild)).toBe(2)
+        expect(tree.get(parent)).toBe(0)
+
+        const commitError = thrownBy(() =>
+            tree.txn(transaction => {
+                transaction.set(parentUsesBranch, true)
+                transaction.set(branchUsesOldChild, false)
+                transaction.set(oldChildFails, true)
+                transaction.set(newChildFails, true)
+            }),
+        )
+        const parentError = thrownBy(() => tree.get(parent))
+
+        expect(commitError).toBe(oldFault)
+        expect(parentError).toBe(newFault)
+        expect(oldFault).toBeInstanceOf(RuntimeMismatchError)
+        expect(newFault).toBeInstanceOf(RuntimeMismatchError)
+        expect(newFault).not.toBe(oldFault)
+    })
+
+    test("settles a dirty old dependency before serving a dynamically reached clean selector", () => {
+        const domain = createCommittedStoreTreeDomain()
+        const parentUsesBranch = domain.atom(false)
+        const source = domain.atom(0)
+        const child = domain.selector(get => get(source) + 1)
+        const branch = domain.selector(get => get(child) + 1)
+        const parent = domain.selector(get =>
+            get(parentUsesBranch) ? get(branch) : 0,
+        )
+        const tree = domain.createStoreTree()
+
+        expect(tree.get(branch)).toBe(2)
+        expect(tree.get(parent)).toBe(0)
+
+        tree.txn(transaction => {
+            // Reach the parent before source propagation has made the clean
+            // branch dirty through its old child.
+            transaction.set(parentUsesBranch, true)
+            transaction.set(source, 1)
+        })
+
+        expect(tree.get(branch)).toBe(3)
+        expect(tree.get(parent)).toBe(3)
+    })
+
     test("proves a warm parent's newly materialized selector edge", () => {
         const domain = createCommittedStoreTreeDomain()
         const gate = domain.atom(false)
