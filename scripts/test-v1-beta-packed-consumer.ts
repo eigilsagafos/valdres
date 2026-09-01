@@ -5,7 +5,7 @@ import { basename, join } from "node:path"
 
 const rootDirectory = join(import.meta.dir, "..")
 const intendedCoreBetaVersion =
-    process.env.VALDRES_PACKED_CORE_BETA_VERSION ?? "1.0.0-beta.25"
+    process.env.VALDRES_PACKED_CORE_BETA_VERSION ?? "1.0.0-beta.26"
 const intendedReactBetaVersion =
     process.env.VALDRES_PACKED_REACT_BETA_VERSION ?? "1.0.0-beta.5"
 const intendedReactCorePeer =

@@ -15,6 +15,7 @@ import type {
     SelectorEvaluationProposal,
     SelectorEvaluationSession,
     SelectorOutcome,
+    SelectorCycleSearch,
 } from "./types"
 
 type InspectedThenable =
@@ -96,7 +97,7 @@ const makeProposal = <Node, Token extends object, Value>(
 
 const EMPTY_ATTEMPTED_PREFIX = Object.freeze([]) as readonly never[]
 
-const findDependencyPath = <Node, Token extends object>(
+const findDependencyPathFast = <Node, Token extends object>(
     start: Node,
     target: Node,
     host: SelectorEvaluationHost<Node, Token>,
@@ -197,6 +198,7 @@ export const evaluateSelector = <Node, Token extends object, Value>(
     definition: SelectorDefinition<Node, Value>,
     host: SelectorEvaluationHost<Node, Token>,
     session: SelectorEvaluationSession<Node>,
+    cycleSearch: SelectorCycleSearch<Node, Token> = findDependencyPathFast,
 ): SelectorEvaluationProposal<Node, Token, Value> => {
     const { node: selector } = definition
     const dependencies: SelectorDependencySnapshot<Node, Token>[] = []
@@ -257,11 +259,12 @@ export const evaluateSelector = <Node, Token extends object, Value>(
         }
         for (let index = 0; index < dependencies.length; index++) {
             const dependency = dependencies[index]!
-            const cyclePath = findDependencyPath(
+            const cyclePath = cycleSearch(
                 dependency.node,
                 selector,
                 host,
                 session,
+                0,
             )
             if (!cyclePath) continue
 
@@ -410,11 +413,12 @@ export const evaluateSelector = <Node, Token extends object, Value>(
                 sessionPublicationsAfterServe,
             )
         if (!mayReusePriorProof && !maySkipColdParentGraphProof) {
-            const cyclePath = findDependencyPath(
+            const cyclePath = cycleSearch(
                 dependency,
                 selector,
                 host,
                 session,
+                1,
             )
             if (cyclePath) {
                 const controlFault = session.getControlFault()

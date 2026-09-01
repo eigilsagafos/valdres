@@ -10,6 +10,7 @@ export type AtomFallback =
 
 export interface AtomDefinition {
     readonly fallback: AtomFallback
+    readonly name?: string
     readonly equal?: (previous: unknown, next: unknown) => boolean
 }
 

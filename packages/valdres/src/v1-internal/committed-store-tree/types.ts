@@ -19,10 +19,12 @@ export type State<Value> = Atom<Value> | Selector<Value>
 export type StateRead = <Value>(state: State<Value>) => Value
 
 export interface AtomOptions<Value> {
+    readonly name?: string
     readonly equal?: (previous: Value, next: Value) => boolean
 }
 
 export interface SelectorOptions<Value> {
+    readonly name?: string
     readonly equal?: (previous: Value, next: Value) => boolean
 }
 
@@ -64,7 +66,10 @@ export interface CommittedStoreTree {
         update: AtomUpdater<Value>,
     ) => void
     readonly reset: <Value>(atom: Atom<Value>) => void
-    readonly txn: <Result>(callback: TransactionCallback<Result>) => Result
+    readonly txn: <Result>(
+        callback: TransactionCallback<Result>,
+        name?: string,
+    ) => Result
     readonly scope: {
         (): CommittedStoreTree
         (id: string): CommittedStoreTree

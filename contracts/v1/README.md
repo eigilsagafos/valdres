@@ -98,8 +98,8 @@ directly from the CI workflow.
 
 The manifests and both reviewed catalogs currently declare themselves `partial`.
 That is intentional. All 174 frozen legacy coordinates now have exact approved
-disposition ownership, the 156 formerly unowned coordinates resolve as 34
-`keep`, 33 `replace`, 66 `remove`, and 23 `move` decisions, and the skeleton
+disposition ownership, the 156 formerly unowned coordinates resolve as 36
+`keep`, 33 `replace`, 64 `remove`, and 23 `move` decisions, and the skeleton
 generator therefore emits no rows. The adapter-protocol, additional error-name,
 and minimal option-spelling decisions are now closed, so the pending-surface
 decision list is empty. Completion still waits on the remaining target/package
@@ -108,14 +108,26 @@ ShiftX evidence. All four completeness flags still change together. Independent
 beta entries may remain evidence-gated; they do not open or block the stable-1.0
 completeness gate.
 
+`beta.inspect-flight-recorder` freezes only the experimental `valdres/inspect`
+subpath boundary. It creates a bounded, construction-time structural recorder on
+a native Store in the same public v1 domain, excludes application values, and
+leaves ordinary Stores without enumeration or recorder state. The separate
+`moved.inspect` migration remains pending: legacy `snapshot`, `onChange`, and
+value-enumeration surfaces are not provided by the flight recorder. Its exact
+report types may continue to iterate before 1.0 without becoming part of the
+stable-completion gate.
+
 `FamilyKey` now means exactly
 `string | number | bigint | boolean | symbol | null | undefined`; it no longer
 accepts Date, Array, object, Map, or Set values. Structured family inputs
 require an explicit `encodeKey`. `EqualFunc<Value>` is exactly a two-argument
 previous/next comparator. `GetValue` and `SubscribeFn` remain the public
 synchronous Store method-capability types, and `TransactionFn<Result = unknown>`
-preserves the transaction callback result. The four removed mutation aliases are
-intentionally replaced by the canonical Store/Transaction method types and the
+preserves the transaction callback result. `Store.txn(callback, name?)` retains
+the optional string label only as diagnostic metadata: ordinary Stores validate
+and ignore it, inspectable Stores record it, and opaque operation/commit IDs—not
+labels—provide correlation. The four removed mutation aliases are intentionally
+replaced by the canonical Store/Transaction method types and the
 exact-value-versus-updater split.
 
 The versioned internal adapter seam is exactly the standalone `assertStore`,
@@ -363,9 +375,9 @@ frozen artifact nondeterministic.
 
 An intentional re-audit uses `--write`; this rewrites only the inventory and its
 frozen header evidence while preserving ledger rows and completeness.
-`--junit <path>` can reuse a prior isolated beta.23 JUnit capture. Current ShiftX
-and index-operational evidence remain separate Phase 0 gates and
-are not implied by this ledger.
+`--junit <path>` can reuse a prior isolated beta.23 JUnit capture. Current
+ShiftX and index-operational evidence remain separate Phase 0 gates and are not
+implied by this ledger.
 
 ## Provenance
 

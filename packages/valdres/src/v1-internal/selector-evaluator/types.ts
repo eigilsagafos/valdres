@@ -3,6 +3,7 @@ export type SelectorRead<Node> = <Value>(node: Node) => Value
 export interface SelectorDefinition<Node, Value = unknown> {
     readonly node: Node
     readonly get: (get: SelectorRead<Node>) => Value
+    readonly name?: string
     readonly equal?: (previous: Value, next: Value) => boolean
 }
 
@@ -49,6 +50,28 @@ export interface SelectorEvaluationProposal<
     readonly dependencies: readonly SelectorDependencySnapshot<Node, Token>[]
     /** Failure-only accepted acyclic prefix; the offending/foreign edge is absent. */
     readonly attemptedPrefix: readonly Node[]
+}
+
+export type SelectorCycleSearchSite = 0 | 1
+
+/**
+ * Optional inspectable-Store strategy. Live nodes are valid only for the
+ * duration of the call; a recorder must translate them immediately.
+ */
+export type SelectorCycleSearch<Node, Token extends object> = (
+    start: Node,
+    target: Node,
+    host: SelectorEvaluationHost<Node, Token>,
+    session: SelectorEvaluationSession<Node>,
+    site: SelectorCycleSearchSite,
+) => readonly Node[] | undefined
+
+export interface SelectorEvaluationStrategy {
+    <Node, Token extends object, Value>(
+        definition: SelectorDefinition<Node, Value>,
+        host: SelectorEvaluationHost<Node, Token>,
+        session: SelectorEvaluationSession<Node>,
+    ): SelectorEvaluationProposal<Node, Token, Value>
 }
 
 export interface SelectorEvaluationHost<Node, Token extends object> {

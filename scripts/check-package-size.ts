@@ -115,6 +115,7 @@ try {
         atom: `export { atom } from "valdres"`,
         "atom-selector-store": `export { atom, selector, store } from "valdres"`,
         "all-exports": `export * from "valdres"`,
+        inspect: `export * from "valdres/inspect"`,
         equality: `export { deepEqual } from "valdres/equality"`,
         "adapter-internals": `export * from "valdres/adapter-internals/v1"`,
     }

@@ -1,46 +1,54 @@
 {
     "bun": "1.4.0",
     "dist": {
-        "raw": 118576,
-        "gzip": 32436
+        "raw": 158596,
+        "gzip": 45060
     },
     "distFiles": {
         "adapter-internals/v1.js": {
             "raw": 200,
-            "gzip": 153
+            "gzip": 154
         },
-        "chunk-13jzc8rs.js": {
-            "raw": 50864,
-            "gzip": 13296
+        "chunk-wzf3zmr8.js": {
+            "raw": 51905,
+            "gzip": 13623
         },
         "development/adapter-internals/v1.js": {
             "raw": 200,
-            "gzip": 153
+            "gzip": 154
         },
-        "development/chunk-13jzc8rs.js": {
-            "raw": 50864,
-            "gzip": 13296
+        "development/chunk-wzf3zmr8.js": {
+            "raw": 51905,
+            "gzip": 13623
         },
         "development/equality.js": {
             "raw": 7233,
             "gzip": 2208
         },
         "development/index.js": {
-            "raw": 991,
-            "gzip": 561
+            "raw": 996,
+            "gzip": 563
+        },
+        "development/inspect.js": {
+            "raw": 18964,
+            "gzip": 5982
         },
         "equality.js": {
             "raw": 7233,
             "gzip": 2208
         },
         "index.js": {
-            "raw": 991,
-            "gzip": 561
+            "raw": 996,
+            "gzip": 563
+        },
+        "inspect.js": {
+            "raw": 18964,
+            "gzip": 5982
         }
     },
     "packed": {
-        "raw": 160466,
-        "gzip": 38661
+        "raw": 216698,
+        "gzip": 48253
     },
     "fixtures": {
         "atom": {
@@ -54,6 +62,10 @@
         "all-exports": {
             "raw": 51632,
             "gzip": 13596
+        },
+        "inspect": {
+            "raw": 70728,
+            "gzip": 19048
         },
         "equality": {
             "raw": 7231,

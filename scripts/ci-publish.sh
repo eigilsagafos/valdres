@@ -51,7 +51,7 @@ bunx changeset --help > /dev/null
 
 # The feature PR keeps each manifest at its currently published prerelease.
 # Changesets advances package-local counters independently: this core-only
-# Changeset moves valdres beta.24 to beta.25 while React remains at beta.5.
+# Changeset moves valdres beta.25 to beta.26 while React remains at beta.5.
 # changesets/action consumes the pending Changeset into a release PR before it
 # invokes this script. Every dry run validates either the authored predecessor
 # tuple or the exact target tuple; a live publish accepts only the target.
@@ -62,11 +62,11 @@ const path = require("node:path")
 const [rootDir, dryRunValue, ...packageDirs] = process.argv.slice(2)
 const dryRun = dryRunValue === "1"
 const expectedVersions = new Map([
-  ["valdres", "1.0.0-beta.25"],
+  ["valdres", "1.0.0-beta.26"],
   ["valdres-react", "1.0.0-beta.5"],
 ])
 const predecessorVersions = new Map([
-  ["valdres", "1.0.0-beta.24"],
+  ["valdres", "1.0.0-beta.25"],
   ["valdres-react", "1.0.0-beta.5"],
 ])
 const preState = JSON.parse(

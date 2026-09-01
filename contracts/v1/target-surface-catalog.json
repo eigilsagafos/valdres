@@ -9,6 +9,7 @@
         "adapter.subscribe",
         "adapter.v1-subpath",
         "beta.cache-companion",
+        "beta.inspect-flight-recorder",
         "beta.search",
         "collection.artifact-export",
         "collection.artifact-import",
@@ -120,7 +121,6 @@
         "legacy.store-unset",
         "legacy.subscription-deep-equality",
         "legacy.transaction-interface",
-        "legacy.transaction-names",
         "legacy.transaction-parent-scope",
         "legacy.transaction-unset",
         "legacy.unset-all",
@@ -162,7 +162,11 @@
         "callback.transaction",
         "callback.transaction-scope"
     ],
-    "independentBetaPublicApiIds": ["beta.cache-companion", "beta.search"],
+    "independentBetaPublicApiIds": [
+        "beta.cache-companion",
+        "beta.inspect-flight-recorder",
+        "beta.search"
+    ],
     "frozenPublicCoordinates": [
         {
             "id": "adapter.assert-store",
@@ -198,6 +202,13 @@
             "package": "valdres",
             "subpath": "./adapter-internals/v1",
             "name": "valdres/adapter-internals/v1"
+        },
+        {
+            "id": "beta.inspect-flight-recorder",
+            "kind": "subpath",
+            "package": "valdres",
+            "subpath": "./inspect",
+            "name": "valdres/inspect"
         },
         {
             "id": "beta.search",

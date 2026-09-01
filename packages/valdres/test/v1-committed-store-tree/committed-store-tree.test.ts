@@ -1728,7 +1728,7 @@ describe("v1 persistent committed StoreTree host", () => {
         expect(postApplyEvaluations).toBe(3)
     })
 
-    test("is the only runtime reachable from the reviewed package entrypoints", () => {
+    test("keeps inspection opt-in while every runtime entry shares one public domain", () => {
         const packageRoot = resolve(import.meta.dir, "../..")
         const manifest = JSON.parse(
             readFileSync(join(packageRoot, "package.json"), "utf8"),
@@ -1738,7 +1738,7 @@ describe("v1 persistent committed StoreTree host", () => {
         const exportedSources = collectStrings(manifest.exports)
             .filter(path => path.endsWith(".ts") || path.endsWith(".tsx"))
             .map(path => resolve(packageRoot, path))
-        expect(exportedSources).toHaveLength(3)
+        expect(exportedSources).toHaveLength(4)
 
         const runtimeEntrypoints = [".", "./adapter-internals/v1"].flatMap(
             subpath =>
@@ -1755,6 +1755,10 @@ describe("v1 persistent committed StoreTree host", () => {
             .filter(path => path.endsWith(".ts") || path.endsWith(".tsx"))
             .map(path => resolve(packageRoot, path))
         expect(equalityEntrypoints).toHaveLength(1)
+        const inspectEntrypoints = collectStrings(manifest.exports["./inspect"])
+            .filter(path => path.endsWith(".ts") || path.endsWith(".tsx"))
+            .map(path => resolve(packageRoot, path))
+        expect(inspectEntrypoints).toHaveLength(1)
 
         const reachable = collectRuntimeSourceGraph(
             runtimeEntrypoints,
@@ -1774,15 +1778,38 @@ describe("v1 persistent committed StoreTree host", () => {
         expect(v1Runtime).toContain(
             "src/v1-internal/selector-evaluator/evaluate.ts",
         )
+        expect(v1Runtime).not.toContain("src/v1-internal/inspection.ts")
+        expect(
+            [...reachable].map(path => relative(packageRoot, path)),
+        ).not.toContain("src/inspect.ts")
         expect(
             [...reachable].filter(path => path.includes("/src/lib/")),
         ).toEqual([])
 
+        const equalityReachable = collectRuntimeSourceGraph(
+            equalityEntrypoints,
+            packageRoot,
+        )
         expect(
-            [
-                ...collectRuntimeSourceGraph(equalityEntrypoints, packageRoot),
-            ].map(path => relative(packageRoot, path)),
+            [...equalityReachable].map(path => relative(packageRoot, path)),
         ).toEqual(["src/equality.ts"])
+
+        const inspectReachable = collectRuntimeSourceGraph(
+            inspectEntrypoints,
+            packageRoot,
+        )
+        const inspectSources = [...inspectReachable].map(path =>
+            relative(packageRoot, path),
+        )
+        expect(inspectSources).toContain("src/inspect.ts")
+        expect(inspectSources).toContain("src/v1-internal/public-domain.ts")
+        expect(inspectSources).toContain("src/v1-internal/inspection.ts")
+
+        const publicDomain = realpathSync(
+            join(packageRoot, "src/v1-internal/public-domain.ts"),
+        )
+        expect(reachable.has(publicDomain)).toBe(true)
+        expect(inspectReachable.has(publicDomain)).toBe(true)
     })
 })
 
