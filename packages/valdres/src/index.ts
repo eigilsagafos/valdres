@@ -3,6 +3,7 @@ import * as v1 from "./v1"
 // Concrete entry-owned bindings avoid a Bun split-entry re-export bug while
 // preserving the exact constructor/function identities from src/v1.ts.
 export const atom: typeof v1.atom = v1.atom
+export const family: typeof v1.family = v1.family
 export const selector: typeof v1.selector = v1.selector
 export const store: typeof v1.store = v1.store
 
@@ -39,6 +40,7 @@ export type Atom<Value> = v1.Atom<Value>
 export type AtomOptions<Value> = v1.AtomOptions<Value>
 export type AtomUpdater<Value> = v1.AtomUpdater<Value>
 export type EqualFunc<Value> = v1.EqualFunc<Value>
+export type FamilyKey = v1.FamilyKey
 export type GetValue = v1.GetValue
 export type Selector<Value> = v1.Selector<Value>
 export type SelectorOptions<Value> = v1.SelectorOptions<Value>

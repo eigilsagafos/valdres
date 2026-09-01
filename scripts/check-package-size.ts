@@ -114,6 +114,7 @@ try {
     const fixtureSources: Record<string, string> = {
         atom: `export { atom } from "valdres"`,
         "atom-selector-store": `export { atom, selector, store } from "valdres"`,
+        family: `export { atom, family } from "valdres"`,
         "all-exports": `export * from "valdres"`,
         inspect: `export * from "valdres/inspect"`,
         equality: `export { deepEqual } from "valdres/equality"`,
@@ -140,6 +141,20 @@ try {
                 ),
             ).arrayBuffer(),
         )
+        if (name === "atom") {
+            const JavaScript = new TextDecoder().decode(bytes)
+            for (const familySentinel of [
+                "family cannot recursively construct the same member",
+                "family members require at least one key",
+                "family keys must be primitive; use encodeKey for structured arguments",
+            ]) {
+                if (JavaScript.includes(familySentinel)) {
+                    throw new Error(
+                        `atom-only fixture retained family implementation: ${familySentinel}`,
+                    )
+                }
+            }
+        }
         fixtures[name] = { raw: bytes.length, gzip: gzipSize(bytes) }
     }
 
