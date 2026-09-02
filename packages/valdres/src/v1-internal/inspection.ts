@@ -21,6 +21,7 @@ import type {
     SelectorEvaluationHost,
     SelectorEvaluationProposal,
     SelectorEvaluationStrategy,
+    SelectorNegativePathMemo,
     SelectorEvaluationSession,
 } from "./selector-evaluator/types"
 import { evaluateSelector } from "./selector-evaluator/evaluate"
@@ -396,6 +397,7 @@ export interface InternalInspectionRecorder {
         evaluationGraphVersionStart: number,
         evaluationAttributedPublicationStart: number,
         parentWasCold: boolean,
+        negativeMemo?: SelectorNegativePathMemo<Node>,
     ): readonly Node[] | undefined
     reference(
         target: object,
@@ -1317,7 +1319,9 @@ class StructuralInspectionRecorder implements InternalInspectionRecorder {
         evaluationGraphVersionStart: number,
         evaluationAttributedPublicationStart: number,
         parentWasCold: boolean,
+        negativeMemo?: SelectorNegativePathMemo<Node>,
     ): readonly Node[] | undefined {
+        negativeMemo?.beginSearch()
         const siteName = site === 0 ? "prefix-revalidation" : "new-edge-proof"
         const interval = this.beginInterval({
             type: "cycle-search",
@@ -1369,6 +1373,7 @@ class StructuralInspectionRecorder implements InternalInspectionRecorder {
                 path = Object.freeze(reversed)
                 break
             }
+            if (negativeMemo?.hasProvenNoPath(node)) continue
 
             const transient = session.getTransientDependencies(host, node)
             if (transient) {
@@ -1414,6 +1419,8 @@ class StructuralInspectionRecorder implements InternalInspectionRecorder {
             }
             if (pending.length > maxFrontier) maxFrontier = pending.length
         }
+
+        if (path === undefined) negativeMemo?.completeNegative(parent)
 
         this.addWork({
             cycle: {
@@ -1890,6 +1897,7 @@ const createStoreTrace = (
             cycleHost,
             cycleSession,
             site,
+            negativeMemo,
         ) =>
             recorder.findDependencyPath(
                 hostKind,
@@ -1902,6 +1910,7 @@ const createStoreTrace = (
                 graphVersionStart,
                 attributedPublicationStart,
                 previousDependencies === undefined,
+                negativeMemo,
             )
         try {
             const proposal = evaluateSelector(

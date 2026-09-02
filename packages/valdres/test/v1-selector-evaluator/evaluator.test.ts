@@ -18,6 +18,7 @@ import type {
     SelectorDefinition,
     SelectorEvaluationHost,
     SelectorEvaluationProposal,
+    SelectorNegativePathMemo,
     SelectorRecordView,
     SelectorCycleSearch,
     ServedSelectorOutcome,
@@ -382,7 +383,14 @@ const runCycleParityCase = (scenario: CycleParityCase): void => {
                 host,
                 scenario.hostKind === "committed" ? "scope" : "scratch-host",
             )
-            host.cycleTrace = (start, target, cycleHost, session, site) =>
+            host.cycleTrace = (
+                start,
+                target,
+                cycleHost,
+                session,
+                site,
+                negativeMemo,
+            ) =>
                 setup.recorder.findDependencyPath(
                     scenario.hostKind,
                     hostRef,
@@ -394,6 +402,7 @@ const runCycleParityCase = (scenario: CycleParityCase): void => {
                     cycleHost.getSelectorGraphVersion(),
                     session.getSelectorGraphPublicationCount(cycleHost),
                     false,
+                    negativeMemo,
                 )
         }
         const served = scenario.mutate(host)
@@ -1183,7 +1192,14 @@ describe("v1 selector evaluator cycles", () => {
         const host = new TestHost()
         const { recorder, inspect } = createInspectionRecorder()
         const hostRef = recorder.reference(host, "scope")
-        host.cycleTrace = (start, target, cycleHost, session, site) =>
+        host.cycleTrace = (
+            start,
+            target,
+            cycleHost,
+            session,
+            site,
+            negativeMemo,
+        ) =>
             recorder.findDependencyPath(
                 "committed",
                 hostRef,
@@ -1195,6 +1211,7 @@ describe("v1 selector evaluator cycles", () => {
                 cycleHost.getSelectorGraphVersion(),
                 session.getSelectorGraphPublicationCount(cycleHost),
                 false,
+                negativeMemo,
             )
         const leaves = Array.from({ length: 32 }, (_, index) => `leaf-${index}`)
         for (const leaf of leaves) host.setLeaf(leaf, 1)
@@ -1313,6 +1330,573 @@ describe("v1 selector evaluator cycles", () => {
         ])
         expect(host.selectorRecordReadNodes).toEqual(["parent"])
         expect(host.selectorDependencyNodeReadNodes).toEqual(["start", "right"])
+    })
+
+    test("keeps singleton prefix revalidation on the allocation-free search path", () => {
+        const host = new TestHost()
+        host.setLeaf("dependency", 1)
+        host.setLeaf("trigger", 1)
+        host.define({ node: "changed", get: () => 1 })
+        expect(valueOf(host.read<number>("changed"))).toBe(1)
+        const parent: SelectorDefinition<Node, number> = {
+            node: "parent",
+            get: get => {
+                get("dependency")
+                get("trigger")
+                return 1
+            },
+        }
+        host.define(parent)
+        expect(valueOf(host.read<number>("parent"))).toBe(1)
+
+        const prefixMemos: (SelectorNegativePathMemo<Node> | undefined)[] = []
+        host.cycleTrace = (
+            _start,
+            _target,
+            _cycleHost,
+            _session,
+            site,
+            negativeMemo,
+        ) => {
+            if (site === 0) prefixMemos.push(negativeMemo)
+            return undefined
+        }
+        host.define(parent)
+        host.define({ node: "changed", get: () => 2 })
+        let published = false
+        host.setServeEffect("trigger", () => {
+            if (published) return
+            published = true
+            expect(valueOf(host.read<number>("changed"))).toBe(2)
+        })
+
+        expect(valueOf(host.read<number>("parent"))).toBe(1)
+        expect(prefixMemos).toEqual([undefined])
+    })
+
+    test("shares proven-negative selector reads across one prefix revalidation batch", () => {
+        const host = new TestHost()
+        const width = 256
+        const depth = 512
+        host.setLeaf("tail", 1)
+        for (let index = depth - 1; index >= 0; index--) {
+            const dependency =
+                index + 1 === depth ? "tail" : `chain-${index + 1}`
+            host.define({
+                node: `chain-${index}`,
+                get: get => get(dependency),
+            })
+        }
+        const prefix = Array.from(
+            { length: width },
+            (_, index) => `dependency-${index}`,
+        )
+        for (const dependency of prefix) {
+            host.define({
+                node: dependency,
+                get: get => get("chain-0"),
+            })
+        }
+        host.define({ node: "changed", get: () => 1 })
+        expect(valueOf(host.read<number>("changed"))).toBe(1)
+        const parent: SelectorDefinition<Node, number> = {
+            node: "parent",
+            get: get => {
+                for (const dependency of prefix) get(dependency)
+                get(prefix[0]!)
+                return 1
+            },
+        }
+        host.define(parent)
+        expect(valueOf(host.read<number>("parent"))).toBe(1)
+
+        host.define(parent)
+        host.define({ node: "changed", get: () => 2 })
+        let firstDependencyServes = 0
+        host.setServeEffect(prefix[0]!, () => {
+            firstDependencyServes++
+            if (firstDependencyServes === 2) {
+                expect(valueOf(host.read<number>("changed"))).toBe(2)
+            }
+        })
+        const { recorder, inspect } = createInspectionRecorder()
+        const hostRef = recorder.reference(host, "scope")
+        const prefixMemos = new Set<SelectorNegativePathMemo<Node>>()
+        host.cycleTrace = (
+            start,
+            target,
+            cycleHost,
+            session,
+            site,
+            negativeMemo,
+        ) => {
+            const path = recorder.findDependencyPath(
+                "committed",
+                hostRef,
+                start,
+                target,
+                cycleHost,
+                session,
+                site,
+                cycleHost.getSelectorGraphVersion(),
+                session.getSelectorGraphPublicationCount(cycleHost),
+                false,
+                negativeMemo,
+            )
+            if (site === 0 && negativeMemo !== undefined) {
+                prefixMemos.add(negativeMemo)
+            }
+            return path
+        }
+        host.selectorDependencyNodeReadNodes.length = 0
+
+        expect(valueOf(host.read<number>("parent"))).toBe(1)
+        expect(firstDependencyServes).toBe(2)
+        expect(prefixMemos.size).toBe(1)
+        expect(host.selectorDependencyNodeReadNodes).toHaveLength(width + depth)
+        expect(
+            host.selectorDependencyNodeReadNodes.filter(
+                node => node === "chain-0",
+            ),
+        ).toHaveLength(1)
+        const searches = inspect
+            .export()
+            .details.filter(detail => detail.type === "cycle-search")
+        expect(searches).toHaveLength(width)
+        expect(searches.reduce((sum, search) => sum + search.visits, 0)).toBe(
+            depth + 2 * width - 1,
+        )
+    })
+
+    test("disables negative learning after three disjoint non-terminal proofs", () => {
+        const host = new TestHost()
+        const width = 4
+        const depth = 4
+        const prefix = Array.from(
+            { length: width },
+            (_, branch) => `branch-${branch}-0`,
+        )
+        for (let branch = 0; branch < width; branch++) {
+            host.setLeaf(`leaf-${branch}`, 1)
+            for (let index = depth - 1; index >= 0; index--) {
+                host.define({
+                    node: `branch-${branch}-${index}`,
+                    get: get =>
+                        get(
+                            index + 1 === depth
+                                ? `leaf-${branch}`
+                                : `branch-${branch}-${index + 1}`,
+                        ),
+                })
+            }
+        }
+        host.setLeaf("trigger", 1)
+        host.define({ node: "changed", get: () => 1 })
+        expect(valueOf(host.read<number>("changed"))).toBe(1)
+        const parent: SelectorDefinition<Node, number> = {
+            node: "parent",
+            get: get => {
+                for (const dependency of prefix) get(dependency)
+                get("trigger")
+                return 1
+            },
+        }
+        host.define(parent)
+        expect(valueOf(host.read<number>("parent"))).toBe(1)
+
+        host.define(parent)
+        host.define({ node: "changed", get: () => 2 })
+        let published = false
+        host.setServeEffect("trigger", () => {
+            if (published) return
+            published = true
+            expect(valueOf(host.read<number>("changed"))).toBe(2)
+        })
+        const { recorder, inspect } = createInspectionRecorder()
+        const hostRef = recorder.reference(host, "scope")
+        const memoEnabled: boolean[] = []
+        host.cycleTrace = (
+            start,
+            target,
+            cycleHost,
+            session,
+            site,
+            negativeMemo,
+        ) => {
+            const path = recorder.findDependencyPath(
+                "committed",
+                hostRef,
+                start,
+                target,
+                cycleHost,
+                session,
+                site,
+                cycleHost.getSelectorGraphVersion(),
+                session.getSelectorGraphPublicationCount(cycleHost),
+                false,
+                negativeMemo,
+            )
+            if (site === 0) memoEnabled.push(negativeMemo !== undefined)
+            return path
+        }
+
+        expect(valueOf(host.read<number>("parent"))).toBe(1)
+        expect(memoEnabled).toEqual([true, true, true, false])
+        const searches = inspect
+            .export()
+            .details.filter(
+                (detail): detail is CycleSearchInspectionDetail =>
+                    detail.type === "cycle-search" &&
+                    detail.site === "prefix-revalidation",
+            )
+        expect(searches).toHaveLength(width)
+        expect(searches.reduce((sum, search) => sum + search.visits, 0)).toBe(
+            width * depth,
+        )
+    })
+
+    test("retains two learned closures through terminal noise until later reuse", () => {
+        for (const inspected of [false, true]) {
+            const host = new TestHost()
+            const firstDepth = 16
+            const sharedDepth = 32
+            host.setLeaf("first-tail", 1)
+            host.setLeaf("shared-tail", 1)
+            host.setLeaf("trigger", 1)
+            for (let index = firstDepth - 1; index >= 0; index--) {
+                host.define({
+                    node: `first-${index}`,
+                    get: get =>
+                        get(
+                            index + 1 === firstDepth
+                                ? "first-tail"
+                                : `first-${index + 1}`,
+                        ),
+                })
+            }
+            for (let index = sharedDepth - 1; index >= 0; index--) {
+                host.define({
+                    node: `shared-${index}`,
+                    get: get =>
+                        get(
+                            index + 1 === sharedDepth
+                                ? "shared-tail"
+                                : `shared-${index + 1}`,
+                        ),
+                })
+            }
+            host.define({ node: "first-root", get: get => get("first-0") })
+            host.define({ node: "shared-a", get: get => get("shared-0") })
+            host.define({ node: "terminal-a", get: () => 1 })
+            host.define({ node: "terminal-b", get: () => 1 })
+            host.define({ node: "shared-b", get: get => get("shared-0") })
+            host.define({ node: "changed", get: () => 1 })
+            expect(valueOf(host.read<number>("changed"))).toBe(1)
+            const parent: SelectorDefinition<Node, number> = {
+                node: "parent",
+                get: get => {
+                    get("first-root")
+                    get("shared-a")
+                    get("terminal-a")
+                    get("terminal-b")
+                    get("shared-b")
+                    get("trigger")
+                    return 1
+                },
+            }
+            host.define(parent)
+            expect(valueOf(host.read<number>("parent"))).toBe(1)
+
+            let inspect:
+                | ReturnType<typeof createInspectionRecorder>["inspect"]
+                | undefined
+            if (inspected) {
+                const setup = createInspectionRecorder()
+                inspect = setup.inspect
+                const hostRef = setup.recorder.reference(host, "scope")
+                host.cycleTrace = (
+                    start,
+                    target,
+                    cycleHost,
+                    session,
+                    site,
+                    negativeMemo,
+                ) =>
+                    setup.recorder.findDependencyPath(
+                        "committed",
+                        hostRef,
+                        start,
+                        target,
+                        cycleHost,
+                        session,
+                        site,
+                        cycleHost.getSelectorGraphVersion(),
+                        session.getSelectorGraphPublicationCount(cycleHost),
+                        false,
+                        negativeMemo,
+                    )
+            }
+
+            host.define(parent)
+            host.define({ node: "changed", get: () => 2 })
+            let published = false
+            host.setServeEffect("trigger", () => {
+                if (published) return
+                published = true
+                expect(valueOf(host.read<number>("changed"))).toBe(2)
+            })
+            host.selectorDependencyNodeReadNodes.length = 0
+
+            expect(valueOf(host.read<number>("parent"))).toBe(1)
+            expect(
+                host.selectorDependencyNodeReadNodes.filter(
+                    node => node === "shared-0",
+                ),
+            ).toHaveLength(1)
+            expect(host.selectorDependencyNodeReadNodes).toHaveLength(
+                firstDepth + sharedDepth + 6,
+            )
+            if (inspect !== undefined) {
+                const searches = inspect
+                    .export()
+                    .details.filter(
+                        (detail): detail is CycleSearchInspectionDetail =>
+                            detail.type === "cycle-search" &&
+                            detail.site === "prefix-revalidation",
+                    )
+                expect(searches).toHaveLength(5)
+                expect(
+                    searches.reduce((sum, search) => sum + search.visits, 0),
+                ).toBe(firstDepth + sharedDepth + 6)
+            }
+        }
+    })
+
+    test("bounds locked negative learning and resets its miss streak on reuse", () => {
+        const host = new TestHost()
+        host.setLeaf("shared-tail", 1)
+        host.setLeaf("trigger", 1)
+        host.define({ node: "shared-hub", get: get => get("shared-tail") })
+        for (const node of ["shared-a", "shared-b", "shared-c"]) {
+            host.define({ node, get: get => get("shared-hub") })
+        }
+        host.define({ node: "terminal-a", get: () => 1 })
+        host.define({ node: "terminal-b", get: () => 1 })
+        for (const node of [
+            "disjoint-a",
+            "disjoint-b",
+            "disjoint-c",
+            "disjoint-d",
+            "disjoint-e",
+            "after-disabled",
+        ]) {
+            host.setLeaf(`${node}-tail`, 1)
+            host.define({
+                node: `${node}-child`,
+                get: get => get(`${node}-tail`),
+            })
+            host.define({ node, get: get => get(`${node}-child`) })
+        }
+        host.define({ node: "changed", get: () => 1 })
+        expect(valueOf(host.read<number>("changed"))).toBe(1)
+        const prefix = [
+            "shared-a",
+            "shared-b",
+            "terminal-a",
+            "disjoint-a",
+            "disjoint-b",
+            "shared-c",
+            "disjoint-c",
+            "terminal-b",
+            "disjoint-d",
+            "disjoint-e",
+            "after-disabled",
+        ]
+        const parent: SelectorDefinition<Node, number> = {
+            node: "parent",
+            get: get => {
+                for (const dependency of prefix) get(dependency)
+                get("trigger")
+                return 1
+            },
+        }
+        host.define(parent)
+        expect(valueOf(host.read<number>("parent"))).toBe(1)
+
+        const setup = createInspectionRecorder()
+        const hostRef = setup.recorder.reference(host, "scope")
+        const memoEnabled: boolean[] = []
+        host.cycleTrace = (
+            start,
+            target,
+            cycleHost,
+            session,
+            site,
+            negativeMemo,
+        ) => {
+            if (site === 0) memoEnabled.push(negativeMemo !== undefined)
+            return setup.recorder.findDependencyPath(
+                "committed",
+                hostRef,
+                start,
+                target,
+                cycleHost,
+                session,
+                site,
+                cycleHost.getSelectorGraphVersion(),
+                session.getSelectorGraphPublicationCount(cycleHost),
+                false,
+                negativeMemo,
+            )
+        }
+
+        host.define(parent)
+        host.define({ node: "changed", get: () => 2 })
+        let published = false
+        host.setServeEffect("trigger", () => {
+            if (published) return
+            published = true
+            expect(valueOf(host.read<number>("changed"))).toBe(2)
+        })
+        host.selectorDependencyNodeReadNodes.length = 0
+
+        expect(valueOf(host.read<number>("parent"))).toBe(1)
+        expect(memoEnabled).toEqual([
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            false,
+        ])
+        expect(
+            host.selectorDependencyNodeReadNodes.filter(
+                node => node === "shared-hub",
+            ),
+        ).toHaveLength(1)
+    })
+
+    test("a positive prefix proof keeps the canonical path after negative memo pruning", () => {
+        for (const inspected of [false, true]) {
+            const host = new TestHost()
+            host.setLeaf("leaf", 1)
+            host.setLeaf("trigger", 1)
+            host.define({ node: "dead", get: get => get("leaf") })
+            host.define({ node: "safe", get: get => get("dead") })
+            host.define({ node: "bridge", get: get => get("leaf") })
+            host.define({
+                node: "bad",
+                get: get => {
+                    get("bridge")
+                    get("dead")
+                    return 1
+                },
+            })
+            expect(valueOf(host.read<number>("bad"))).toBe(1)
+            let includeBad = false
+            const parent: SelectorDefinition<Node, number> = {
+                node: "parent",
+                get: get => {
+                    get("safe")
+                    if (includeBad) get("bad")
+                    get("trigger")
+                    return 1
+                },
+            }
+            host.define(parent)
+            expect(valueOf(host.read<number>("parent"))).toBe(1)
+            host.define({ node: "follower", get: get => get("parent") })
+            expect(valueOf(host.read<number>("follower"))).toBe(1)
+
+            let inspect:
+                | ReturnType<typeof createInspectionRecorder>["inspect"]
+                | undefined
+            if (inspected) {
+                const setup = createInspectionRecorder()
+                inspect = setup.inspect
+                const hostRef = setup.recorder.reference(host, "scope")
+                host.cycleTrace = (
+                    start,
+                    target,
+                    cycleHost,
+                    session,
+                    site,
+                    negativeMemo,
+                ) =>
+                    setup.recorder.findDependencyPath(
+                        "committed",
+                        hostRef,
+                        start,
+                        target,
+                        cycleHost,
+                        session,
+                        site,
+                        cycleHost.getSelectorGraphVersion(),
+                        session.getSelectorGraphPublicationCount(cycleHost),
+                        false,
+                        negativeMemo,
+                    )
+            }
+
+            includeBad = true
+            host.define(parent)
+            host.define({ node: "bridge", get: get => get("follower") })
+            let published = false
+            host.setServeEffect("trigger", () => {
+                if (published) return
+                published = true
+                expect(valueOf(host.read<number>("bridge"))).toBe(1)
+                host.selectorDependencyNodeReadNodes.length = 0
+            })
+            host.selectorDependencyNodeReadNodes.length = 0
+
+            const error = errorOf(host.read("parent"))
+
+            expect(error).toBeInstanceOf(SelectorCircularDependencyError)
+            expect((error as SelectorCircularDependencyError).path).toEqual([
+                "parent",
+                "bad",
+                "bridge",
+                "follower",
+                "parent",
+            ])
+            expect(host.selectorDependencyNodeReadNodes).toEqual([
+                "safe",
+                "dead",
+                "bad",
+                "bridge",
+                "follower",
+                "safe",
+                "dead",
+            ])
+            expect(
+                host.records
+                    .get("parent")
+                    ?.dependencies.map(({ node }) => node),
+            ).toEqual(["safe"])
+            if (inspect !== undefined) {
+                expect(
+                    inspect
+                        .export()
+                        .details.filter(
+                            (detail): detail is CycleSearchInspectionDetail =>
+                                detail.type === "cycle-search" && detail.found,
+                        ),
+                ).toEqual([
+                    expect.objectContaining({
+                        site: "prefix-revalidation",
+                        start: "bad",
+                        target: "parent",
+                        path: ["bad", "bridge", "follower", "parent"],
+                    }),
+                ])
+            }
+        }
     })
 
     test("scratch and hydration hosts retain full-record closure traversal", () => {

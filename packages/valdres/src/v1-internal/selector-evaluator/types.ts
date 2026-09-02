@@ -54,9 +54,28 @@ export interface SelectorEvaluationProposal<
 
 export type SelectorCycleSearchSite = 0 | 1
 
+/** Proposal-local coordinator for fully exhausted negative path proofs. */
+export interface SelectorNegativePathMemo<Node> {
+    /** False after bounded learning found no reusable closure. */
+    readonly enabled: boolean
+    /** Starts one physical reachability search. */
+    beginSearch(): void
+    /** Prunes a node covered by a retained fully-negative closure. */
+    hasProvenNoPath(node: Node): boolean
+    /** Publishes the search map only after complete negative exhaustion. */
+    completeNegative(closure: ReadonlyMap<Node, unknown>): void
+}
+
 /**
  * Optional inspectable-Store strategy. Live nodes are valid only for the
  * duration of the call; a recorder must translate them immediately.
+ *
+ * `negativeMemo`, when supplied, belongs only to one proposal-local prefix
+ * revalidation at one exact graph observation. A strategy must call
+ * `beginSearch` once, may use `hasProvenNoPath` before expanding each node, and
+ * calls `completeNegative` only after the whole search exhausts without a
+ * path. It must never publish a partial positive search or carry the memo to
+ * another graph observation, prefix batch, or new-edge proof.
  */
 export type SelectorCycleSearch<Node, Token extends object> = (
     start: Node,
@@ -64,6 +83,7 @@ export type SelectorCycleSearch<Node, Token extends object> = (
     host: SelectorEvaluationHost<Node, Token>,
     session: SelectorEvaluationSession<Node>,
     site: SelectorCycleSearchSite,
+    negativeMemo?: SelectorNegativePathMemo<Node>,
 ) => readonly Node[] | undefined
 
 export interface SelectorEvaluationStrategy {

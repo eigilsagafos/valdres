@@ -16,6 +16,8 @@ import type {
     SelectorEvaluationSession,
     SelectorOutcome,
     SelectorCycleSearch,
+    SelectorCycleSearchSite,
+    SelectorNegativePathMemo,
 } from "./types"
 
 type InspectedThenable =
@@ -97,12 +99,84 @@ const makeProposal = <Node, Token extends object, Value>(
 
 const EMPTY_ATTEMPTED_PREFIX = Object.freeze([]) as readonly never[]
 
+const createNegativePathMemo = <Node>(): SelectorNegativePathMemo<Node> => {
+    let first: ReadonlyMap<Node, unknown> | undefined
+    let second: ReadonlyMap<Node, unknown> | undefined
+    let hits = 0
+    let locked = false
+    let lockedMisses = 0
+    let enabled = true
+
+    const disable = (): void => {
+        first = undefined
+        second = undefined
+        lockedMisses = 0
+        enabled = false
+    }
+
+    return {
+        get enabled() {
+            return enabled
+        },
+        beginSearch() {
+            hits = 0
+        },
+        hasProvenNoPath(node) {
+            if (first?.has(node)) {
+                hits |= 1
+                return true
+            }
+            if (second?.has(node)) {
+                hits |= 2
+                return true
+            }
+            return false
+        },
+        completeNegative(closure) {
+            if (!enabled) return
+            if (hits !== 0) {
+                const selected =
+                    hits === 1
+                        ? first
+                        : hits === 2
+                          ? second
+                          : (first?.size ?? 0) >= (second?.size ?? 0)
+                            ? first
+                            : second
+                first = selected
+                second = undefined
+                locked = true
+                lockedMisses = 0
+                return
+            }
+            if (closure.size <= 1) return
+            if (locked) {
+                lockedMisses++
+                if (lockedMisses >= 3) disable()
+                return
+            }
+            if (first === undefined) {
+                first = closure
+                return
+            }
+            if (second === undefined) {
+                second = closure
+                return
+            }
+            disable()
+        },
+    }
+}
+
 const findDependencyPathFast = <Node, Token extends object>(
     start: Node,
     target: Node,
     host: SelectorEvaluationHost<Node, Token>,
     session: SelectorEvaluationSession<Node>,
+    _site: SelectorCycleSearchSite,
+    negativeMemo?: SelectorNegativePathMemo<Node>,
 ): readonly Node[] | undefined => {
+    negativeMemo?.beginSearch()
     const pending = [start]
     const parent = new Map<Node, Node | typeof DEPENDENCY_PATH_ROOT>([
         [start, DEPENDENCY_PATH_ROOT],
@@ -122,6 +196,7 @@ const findDependencyPathFast = <Node, Token extends object>(
             reversed.reverse()
             return Object.freeze(reversed)
         }
+        if (negativeMemo?.hasProvenNoPath(node)) continue
 
         const transient = session.getTransientDependencies(host, node)
         if (transient) {
@@ -153,6 +228,7 @@ const findDependencyPathFast = <Node, Token extends object>(
         }
     }
 
+    negativeMemo?.completeNegative(parent)
     return undefined
 }
 
@@ -257,6 +333,8 @@ export const evaluateSelector = <Node, Token extends object, Value>(
             prefixProofSessionPublications = sessionPublications
             return
         }
+        const negativeMemo: SelectorNegativePathMemo<Node> | undefined =
+            dependencies.length > 1 ? createNegativePathMemo<Node>() : undefined
         for (let index = 0; index < dependencies.length; index++) {
             const dependency = dependencies[index]!
             const cyclePath = cycleSearch(
@@ -265,6 +343,7 @@ export const evaluateSelector = <Node, Token extends object, Value>(
                 host,
                 session,
                 0,
+                negativeMemo?.enabled ? negativeMemo : undefined,
             )
             if (!cyclePath) continue
 
