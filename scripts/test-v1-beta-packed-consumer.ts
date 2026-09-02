@@ -4,26 +4,7 @@ import { tmpdir } from "node:os"
 import { basename, join } from "node:path"
 
 const rootDirectory = join(import.meta.dir, "..")
-const intendedCoreBetaVersion =
-    process.env.VALDRES_PACKED_CORE_BETA_VERSION ?? "1.0.0-beta.28"
-const intendedReactBetaVersion =
-    process.env.VALDRES_PACKED_REACT_BETA_VERSION ?? "1.0.0-beta.6"
-const intendedReactCorePeer =
-    process.env.VALDRES_PACKED_REACT_CORE_PEER ?? "^1.0.0-beta.27"
 const keepWorkspace = process.env.VALDRES_KEEP_PACKED_SMOKE === "1"
-
-const intendedBetaVersions = {
-    valdres: intendedCoreBetaVersion,
-    "valdres-react": intendedReactBetaVersion,
-} as const
-
-for (const [name, version] of Object.entries(intendedBetaVersions)) {
-    if (!/^\d+\.\d+\.\d+-beta\.\d+$/.test(version)) {
-        throw new Error(
-            `${name} packed beta version must be an x.y.z-beta.N version, received ${version}`,
-        )
-    }
-}
 
 interface CommandResult {
     readonly stdout: string
@@ -667,6 +648,7 @@ let passed = false
 
 try {
     const sourceManifests = new Map<string, string>()
+    const parsedSourceManifests = new Map<string, Record<string, unknown>>()
     for (const name of ["valdres", "valdres-react"] as const) {
         const manifestPath = join(
             rootDirectory,
@@ -685,7 +667,38 @@ try {
             `${name} source manifest must leave gitHead to npm`,
         )
         sourceManifests.set(name, sourceManifest)
+        parsedSourceManifests.set(name, parsedManifest)
     }
+
+    const coreSourceManifest = parsedSourceManifests.get("valdres")!
+    const reactSourceManifest = parsedSourceManifests.get("valdres-react")!
+    const coreBetaVersion = coreSourceManifest.version
+    const reactBetaVersion = reactSourceManifest.version
+    const reactCorePeer = (
+        reactSourceManifest.peerDependencies as
+            | Record<string, unknown>
+            | undefined
+    )?.valdres
+    const betaVersions = {
+        valdres: coreBetaVersion,
+        "valdres-react": reactBetaVersion,
+    } as const
+
+    for (const [name, version] of Object.entries(betaVersions)) {
+        if (
+            typeof version !== "string" ||
+            !/^\d+\.\d+\.\d+-beta\.\d+$/.test(version)
+        ) {
+            throw new Error(
+                `${name} packed beta version must be an x.y.z-beta.N version, received ${version}`,
+            )
+        }
+    }
+    assert.equal(
+        typeof reactCorePeer,
+        "string",
+        "valdres-react must declare its valdres peer range",
+    )
 
     run(
         "build core and React JavaScript",
@@ -728,8 +741,7 @@ try {
             string,
             unknown
         >
-        const intendedBetaVersion = intendedBetaVersions[name]
-        manifest.version = intendedBetaVersion
+        const betaVersion = betaVersions[name]
         manifest.gitHead = "0000000000000000000000000000000000000000"
         await writeJson(join(packageDirectory, "package.json"), manifest)
 
@@ -753,7 +765,7 @@ try {
                 { types: string; import?: string; default: string }
             >
         }
-        assert.equal(prepackedManifest.version, intendedBetaVersion)
+        assert.equal(prepackedManifest.version, betaVersion)
         assert.equal(prepackedManifest.gitHead, undefined)
         assert.equal(prepackedManifest.scripts, undefined)
         assert.equal(prepackedManifest.devDependencies, undefined)
@@ -762,7 +774,7 @@ try {
         } else {
             assert.equal(
                 prepackedManifest.peerDependencies?.valdres,
-                intendedReactCorePeer,
+                reactCorePeer,
             )
         }
         for (const [exportPath, targets] of Object.entries(
@@ -895,8 +907,8 @@ try {
             version: string
             exports: Record<string, unknown>
         }
-        assert.equal(installedCoreManifest.version, intendedCoreBetaVersion)
-        assert.equal(installedReactManifest.version, intendedReactBetaVersion)
+        assert.equal(installedCoreManifest.version, coreBetaVersion)
+        assert.equal(installedReactManifest.version, reactBetaVersion)
         assert.deepEqual(Object.keys(installedReactManifest.exports).sort(), [
             ".",
             "./inspect",
@@ -1071,7 +1083,7 @@ try {
 
     passed = true
     console.log(
-        `\nPacked valdres@${intendedCoreBetaVersion} + valdres-react@${intendedReactBetaVersion} consumer smoke passed for Node, Bun, TypeScript, esbuild, React 18, and React 19.`,
+        `\nPacked valdres@${coreBetaVersion} + valdres-react@${reactBetaVersion} consumer smoke passed for Node, Bun, TypeScript, esbuild, React 18, and React 19.`,
     )
 } finally {
     if (keepWorkspace || !passed) {

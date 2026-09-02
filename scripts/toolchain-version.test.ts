@@ -1,5 +1,14 @@
 import { describe, expect, test } from "bun:test"
-import { readFileSync, readdirSync } from "fs"
+import { spawnSync } from "child_process"
+import {
+    mkdirSync,
+    mkdtempSync,
+    readFileSync,
+    readdirSync,
+    rmSync,
+    writeFileSync,
+} from "fs"
+import { tmpdir } from "os"
 import { join } from "path"
 
 // `.bun-version` is the single source of truth for which Bun this repo is built
@@ -144,5 +153,141 @@ describe("pinned Bun toolchain", () => {
         const floor = engines?.bun?.match(/\d+\.\d+\.\d+/)?.[0]
         expect(floor).toBeDefined()
         expect(compareSemver(pinnedVersion, floor!)).toBeGreaterThanOrEqual(0)
+    })
+})
+
+const publishValidationSource = () => {
+    const script = read("scripts/ci-publish.sh")
+    const match = script.match(/node - .*?<<'NODE'\n([\s\S]*?)\nNODE/)
+    expect(match).not.toBeNull()
+    return match![1]!
+}
+
+interface ReleaseFixture {
+    readonly mode?: string
+    readonly tag?: string
+    readonly coreName?: string
+    readonly coreVersion?: unknown
+    readonly reactName?: string
+    readonly reactVersion?: unknown
+    readonly reactCorePeer?: string
+}
+
+const validateReleaseFixture = (fixture: ReleaseFixture) => {
+    const directory = mkdtempSync(join(tmpdir(), "valdres-release-policy-"))
+    const coreDirectory = join(directory, "packages", "valdres")
+    const reactDirectory = join(directory, "packages", "valdres-react")
+
+    try {
+        mkdirSync(join(directory, ".changeset"), { recursive: true })
+        mkdirSync(coreDirectory, { recursive: true })
+        mkdirSync(reactDirectory, { recursive: true })
+        writeFileSync(
+            join(directory, ".changeset", "pre.json"),
+            JSON.stringify({
+                mode: fixture.mode ?? "pre",
+                tag: fixture.tag ?? "beta",
+            }),
+        )
+        writeFileSync(
+            join(coreDirectory, "package.json"),
+            JSON.stringify({
+                name: fixture.coreName ?? "valdres",
+                version: fixture.coreVersion,
+            }),
+        )
+        writeFileSync(
+            join(reactDirectory, "package.json"),
+            JSON.stringify({
+                name: fixture.reactName ?? "valdres-react",
+                version: fixture.reactVersion,
+                peerDependencies: {
+                    valdres: fixture.reactCorePeer ?? "^1.0.0-beta.27",
+                },
+            }),
+        )
+
+        return spawnSync(
+            "node",
+            ["-", directory, "packages/valdres", "packages/valdres-react"],
+            {
+                encoding: "utf8",
+                input: publishValidationSource(),
+            },
+        )
+    } finally {
+        rmSync(directory, { recursive: true, force: true })
+    }
+}
+
+describe("release versions follow checked-in manifests", () => {
+    test("accepts any canonical beta counter without editing release scripts", () => {
+        const result = validateReleaseFixture({
+            coreVersion: "2.3.4-beta.912",
+            reactVersion: "0.8.0-beta.37",
+        })
+
+        expect(result.status).toBe(0)
+    })
+
+    test("release tooling contains no manually scheduled beta counter", () => {
+        const publish = read("scripts/ci-publish.sh")
+        const packedConsumer = read("scripts/test-v1-beta-packed-consumer.ts")
+
+        expect(publish).not.toContain("expectedVersions")
+        expect(publish).not.toContain("predecessorVersions")
+        expect(publish).not.toMatch(/\d+\.\d+\.\d+-beta\.\d+/)
+        expect(packedConsumer).not.toContain("VALDRES_PACKED_CORE_BETA_VERSION")
+        expect(packedConsumer).not.toContain(
+            "VALDRES_PACKED_REACT_BETA_VERSION",
+        )
+        expect(packedConsumer).not.toContain("VALDRES_PACKED_REACT_CORE_PEER")
+        expect(packedConsumer).not.toContain("manifest.version =")
+        expect(packedConsumer).not.toMatch(/\d+\.\d+\.\d+-beta\.\d+/)
+    })
+
+    test("still rejects a version outside the beta release channel", () => {
+        const invalidFixtures: readonly ReleaseFixture[] = [
+            {
+                coreVersion: "1.0.0",
+                reactVersion: "1.0.0-beta.6",
+            },
+            {
+                tag: "rc",
+                coreVersion: "1.0.0-rc.1",
+                reactVersion: "1.0.0-rc.1",
+            },
+            {
+                coreVersion: "1.0.0-beta.01",
+                reactVersion: "1.0.0-beta.6",
+            },
+            {
+                mode: "exit",
+                coreVersion: "1.0.0-beta.29",
+                reactVersion: "1.0.0-beta.6",
+            },
+            {
+                coreName: "not-valdres",
+                coreVersion: "1.0.0-beta.29",
+                reactVersion: "1.0.0-beta.6",
+            },
+            {
+                coreVersion: "1.0.0-beta.29",
+                reactName: "not-valdres-react",
+                reactVersion: "1.0.0-beta.6",
+            },
+            {
+                coreVersion: undefined,
+                reactVersion: "1.0.0-beta.6",
+            },
+            {
+                coreVersion: "1.0.0-beta.29",
+                reactVersion: 6,
+            },
+        ]
+
+        for (const fixture of invalidFixtures) {
+            expect(validateReleaseFixture(fixture).status).not.toBe(0)
+        }
     })
 })
