@@ -68,6 +68,28 @@ where user-controlled inspection or another host activity publishes after the
 last supplied read but before the parent proposal is returned. Revalidation
 continues after a cycle is latched so later topology changes can still shorten
 the installed attempted prefix while the first cycle error keeps its identity.
+Within one revalidation of one accepted prefix, negative closure proofs may
+share a proposal-local bounded learner. A search publishes its existing
+traversal map only after it exhausts without reaching the active selector. A
+later first-read candidate may prune either of at most two proven-negative
+closures without changing which edge is blamed or the canonical positive path.
+The first observed reuse locks that closure and releases the other one. Three
+disjoint non-terminal proofs disable learning, while terminal-only maps do not
+evict a potentially useful closure. Once reuse is demonstrated, a hit resets the
+locked closure's miss streak; two consecutive disjoint non-terminal proofs are
+tolerated and the third disables learning. The learner is discarded after that
+exact graph observation; it is never reused across a publication or a later
+prefix-revalidation call.
+
+```text
+foreign graph publication
+  -> accepted dependencies, still in first-read order
+       -> search, pruning up to two learned negative closures
+            -> no path with overlap: lock the reused closure
+            -> no path without overlap: learn, retain, or disable by the bound
+            -> path: publish nothing; keep the existing canonical path
+```
+
 The session's active transient frame holds a read-only alias to the evaluator's
 proposal-local dependency prefix. The evaluator is its only writer, so every
 accepted append and prefix truncation is visible to cycle traversal as one
