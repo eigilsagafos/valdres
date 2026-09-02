@@ -1,5 +1,16 @@
 # valdres
 
+## 1.0.0-beta.29
+
+### Patch Changes
+
+- [#364](https://github.com/eigilsagafos/valdres/pull/364)
+  [`027442c`](https://github.com/eigilsagafos/valdres/commit/027442c35877e595c474846c4389c3cce0aa47db)
+  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! - Bound selector
+  cycle-prefix revalidation by reusing fully exhausted negative path proofs
+  within one evaluation proposal, while preserving exact cycle errors, paths,
+  and dependency truncation.
+
 ## 1.0.0-beta.28
 
 ### Patch Changes
