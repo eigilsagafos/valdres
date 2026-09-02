@@ -154,6 +154,7 @@ export class SelectorEvaluationSession<Node> {
     #selectorGraphPublicationCount = 0
     #otherSelectorGraphPublications: WeakMap<object, number> | undefined
     #controlFault: ControlFault = NO_CONTROL_FAULT
+    #suppliedReadGuard: (() => never) | undefined
 
     latchControlFault(error: unknown): void {
         if (this.#controlFault.kind === "fault") return
@@ -161,6 +162,23 @@ export class SelectorEvaluationSession<Node> {
     }
 
     getControlFault(): ControlFault {
+        return this.#controlFault
+    }
+
+    /** @internal Temporarily replace the guard run before a selector-supplied
+     * getter observes evaluator or host state. */
+    setSuppliedReadGuard(
+        guard: (() => never) | undefined,
+    ): (() => never) | undefined {
+        const previous = this.#suppliedReadGuard
+        this.#suppliedReadGuard = guard
+        return previous
+    }
+
+    /** @internal Enforce any active callback-capability boundary before
+     * returning the first sticky evaluator fault. */
+    getControlFaultForSuppliedRead(): ControlFault {
+        this.#suppliedReadGuard?.()
         return this.#controlFault
     }
 

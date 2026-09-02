@@ -11,7 +11,10 @@ import {
     InvalidSynchronousAtomValueError,
     InvalidTransactionCallbackResultError,
     InvalidTransactionTargetError,
+    FAMILY_DEFINITION_FRAME,
+    FAMILY_DEFINITIONS,
     RuntimeMismatchError,
+    REACQUIRABLE_ATOMS,
     ScopeNotFoundError,
     SelectorCapabilityError,
     StoreDisposedError,
@@ -30,6 +33,7 @@ import {
     inspectSynchronousAtomValue,
     inspectThenable,
     makeStateHandle,
+    rejectGuardedSelectorRead,
     runGuardedCallback,
     runLazyInitializer,
     runSelectorActivity,
@@ -149,12 +153,138 @@ export type InternalStoreTreeTrace = ((
  * instrumentation remains the default for the existing architecture harnesses,
  * while one StoreTree may select its own instrumentation without creating a
  * second runtime domain (and therefore without changing State ownership). */
+const definitionDomainRecords = Symbol("definition domain records")
+
 export interface InternalCommittedStoreTreeDomain
     extends CommittedStoreTreeDomain {
+    readonly [definitionDomainRecords]: RuntimeDomainRecords
     createStoreTree(
         instrumentation?: InternalStoreTreeInstrumentation,
         trace?: InternalStoreTreeTrace,
     ): CommittedStoreTree
+}
+
+/** @internal Definition-only callback quarantine for identity helpers. */
+export const runDefinitionCallback = <Result, Validated = Result>(
+    domain: InternalCommittedStoreTreeDomain,
+    phase: "factory" | "encoder",
+    callback: (...args: any[]) => Result,
+    args: ArrayLike<unknown>,
+    validate?: (result: Result) => Validated,
+): Validated => {
+    const records = domain[definitionDomainRecords]
+    const session = new SelectorEvaluationSession<AnyState>()
+    const currentActivity = records.activity
+    let selectorActivity =
+        currentActivity?.kind === "selector"
+            ? currentActivity
+            : currentActivity?.kind === "guarded-callback"
+              ? currentActivity.selectorActivity
+              : undefined
+    const selectorSessions: SelectorEvaluationSession<AnyState>[] = []
+    while (selectorActivity !== undefined) {
+        const selectorSession =
+            selectorActivity.session as SelectorEvaluationSession<AnyState>
+        if (!selectorSessions.includes(selectorSession)) {
+            selectorSessions.push(selectorSession)
+        }
+        selectorActivity = selectorActivity.parentSelectorActivity
+    }
+    const previous = records[FAMILY_DEFINITION_FRAME]
+    records[FAMILY_DEFINITION_FRAME] = {
+        session,
+        definitions: new WeakSet(),
+        allowDefinitions: phase === "factory",
+    }
+    const previousReadGuards = selectorSessions.map(selectorSession =>
+        Object.freeze({
+            selectorSession,
+            previous: selectorSession.setSuppliedReadGuard((): never => {
+                const activity = records.activity
+                return rejectGuardedSelectorRead(
+                    activity?.kind === "guarded-callback"
+                        ? activity.session
+                        : session,
+                    selectorSession,
+                )
+            }),
+        }),
+    )
+    try {
+        return runGuardedCallback(records, session, () => {
+            const result = Reflect.apply(callback, undefined, args)
+            return validate === undefined
+                ? (result as unknown as Validated)
+                : validate(result)
+        })
+    } finally {
+        for (let index = previousReadGuards.length - 1; index >= 0; index--) {
+            const guard = previousReadGuards[index]!
+            guard.selectorSession.setSuppliedReadGuard(guard.previous)
+        }
+        if (previous === undefined) {
+            delete records[FAMILY_DEFINITION_FRAME]
+        } else {
+            records[FAMILY_DEFINITION_FRAME] = previous
+        }
+    }
+}
+
+/** @internal Rejects definition work reached from a pure family encoder. */
+export const assertDefinitionFamilyCallAllowed = (
+    domain: InternalCommittedStoreTreeDomain,
+): void => {
+    const frame = domain[definitionDomainRecords][FAMILY_DEFINITION_FRAME]
+    if (frame === undefined || frame.allowDefinitions) return
+    const error = new CallbackCapabilityError()
+    frame.session.latchControlFault(error)
+    throw error
+}
+
+/** @internal Exact same-domain State admission for definition helpers. */
+export const assertDefinitionState = (
+    domain: InternalCommittedStoreTreeDomain,
+    value: unknown,
+): AnyState | undefined => {
+    const records = domain[definitionDomainRecords]
+    if (
+        (typeof value === "object" || typeof value === "function") &&
+        value !== null &&
+        records.states.has(value)
+    ) {
+        const frame = records[FAMILY_DEFINITION_FRAME]
+        if (
+            frame?.definitions.has(value) ||
+            records[FAMILY_DEFINITIONS]?.has(value)
+        ) {
+            return value as AnyState
+        }
+        return undefined
+    }
+
+    classifyEntryOwner(
+        records,
+        value,
+        new SelectorEvaluationSession<AnyState>(),
+    )
+    return undefined
+}
+
+/** @internal Marks successful family members and only their Atoms as reacquirable. */
+export const markReacquirableDefinitionState = (
+    domain: InternalCommittedStoreTreeDomain,
+    state: AnyState,
+): void => {
+    const records = domain[definitionDomainRecords]
+    const definitions =
+        records[FAMILY_DEFINITIONS] ??
+        (records[FAMILY_DEFINITIONS] = new WeakSet())
+    definitions.add(state)
+    if (!records.atoms.has(state)) return
+    const reacquirable =
+        records[REACQUIRABLE_ATOMS] ??
+        (records[REACQUIRABLE_ATOMS] = new WeakSet())
+    reacquirable.add(state)
 }
 
 const STORE_TREE_COUNTER_INDEX: Readonly<Record<StoreTreeCounter, number>> =
@@ -191,9 +321,12 @@ const STORE_TREE_COUNTER_INDEX: Readonly<Record<StoreTreeCounter, number>> =
         notificationSnapshots: 29,
         subscriberCallbacksAttempted: 30,
         subscriberErrors: 31,
+        familyOwnerRetentionSetsCreated: 32,
+        familyOwnerRetains: 33,
+        familyOwnerReleases: 34,
     })
 
-const STORE_TREE_COUNTER_COUNT = 32
+const STORE_TREE_COUNTER_COUNT = 35
 const internalInstrumentationCounters = new WeakMap<
     InternalStoreTreeInstrumentation,
     Uint32Array
@@ -1682,8 +1815,26 @@ class CommittedStoreTreeHost
         const { intent, scope } = entry
         if (intent.kind === "set") {
             scope.atomOverrides.set(intent.atom, intent.value)
+            if (this.#domain[REACQUIRABLE_ATOMS]?.has(intent.atom)) {
+                let retained = scope[REACQUIRABLE_ATOMS]
+                if (retained === undefined) {
+                    retained = new Set()
+                    scope[REACQUIRABLE_ATOMS] = retained
+                    this.recordCounter("familyOwnerRetentionSetsCreated")
+                }
+                const retainedBefore = retained.size
+                retained.add(intent.atom)
+                if (retained.size !== retainedBefore) {
+                    this.recordCounter("familyOwnerRetains")
+                }
+            }
         } else {
             scope.atomOverrides.delete(intent.atom)
+            const retained = scope[REACQUIRABLE_ATOMS]
+            if (retained?.delete(intent.atom)) {
+                this.recordCounter("familyOwnerReleases")
+            }
+            if (retained?.size === 0) scope[REACQUIRABLE_ATOMS] = undefined
         }
         return entry.ownershipChanged
     }
@@ -2362,6 +2513,17 @@ export const createCommittedStoreTreeDomain = (
         activity: undefined,
     }
 
+    const registerDefinitionState = (state: object): void => {
+        const frame = records[FAMILY_DEFINITION_FRAME]
+        if (frame === undefined) return
+        if (!frame.allowDefinitions) {
+            const error = new CallbackCapabilityError()
+            frame.session.latchControlFault(error)
+            throw error
+        }
+        frame.definitions.add(state)
+    }
+
     const atom = <Value>(
         fallback: Value,
         options: AtomOptions<Value> = {},
@@ -2375,6 +2537,7 @@ export const createCommittedStoreTreeDomain = (
             "atom",
             records.ownerToken,
         ) as unknown as Atom<Value>
+        registerDefinitionState(handle)
         records.states.add(handle)
         records.atoms.set(
             handle,
@@ -2400,6 +2563,7 @@ export const createCommittedStoreTreeDomain = (
             "atom",
             records.ownerToken,
         ) as unknown as Atom<Value>
+        registerDefinitionState(handle)
         records.states.add(handle)
         records.atoms.set(
             handle,
@@ -2431,6 +2595,7 @@ export const createCommittedStoreTreeDomain = (
             "selector",
             records.ownerToken,
         ) as unknown as Selector<Value>
+        registerDefinitionState(handle)
         const definition: SelectorDefinition<AnyState, Value> = Object.freeze({
             node: handle as unknown as AnyState,
             get: get as (
@@ -2507,7 +2672,8 @@ export const createCommittedStoreTreeDomain = (
         },
     })
 
-    return Object.freeze({
+    const domain: InternalCommittedStoreTreeDomain = Object.freeze({
+        [definitionDomainRecords]: records,
         atom,
         atomLazy,
         selector,
@@ -2527,6 +2693,7 @@ export const createCommittedStoreTreeDomain = (
             return new CommittedStoreTreeFacade(host, host.rootScope, trace)
         },
     })
+    return domain
 }
 
 export {

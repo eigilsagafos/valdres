@@ -314,7 +314,7 @@ jobs:
               if:
                   github.event_name != 'pull_request' ||
                   steps.changes.outputs.package == 'true'
-              # Shadow-packs intended valdres beta.28 + React beta.6 artifacts without
+              # Shadow-packs intended valdres beta.29 + React beta.6 artifacts without
               # mutating the source manifests, then installs them with React
               # 18 and 19 across Node, Bun, TypeScript, esbuild, and SSR.
               run: bun run test:v1-beta:packed

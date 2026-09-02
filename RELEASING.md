@@ -32,20 +32,21 @@ migrated.
 
 The authored manifests remain at the package versions currently published on the
 beta tag. Changesets keeps prerelease counters package-local, so the checked-in
-core patch Changeset generates:
+core minor Changeset advances only `valdres` and generates:
 
 ```text
-valdres@1.0.0-beta.28
+valdres@1.0.0-beta.29
 valdres-react@1.0.0-beta.6
 ```
 
-`changesets/action` must first consume the core patch Changeset into its
-generated Version Packages PR. The live publish script accepts only the exact
-beta.28 and beta.6 tuple above; dry runs accept either those targets or the
-authored beta.27/beta.6 predecessors so feature PRs can validate prepack and
-cleanup. In the generated PR, verify the exact target versions, the React peer
-`valdres: ^1.0.0-beta.27`, and that only the core release cohort advances before
-merging it.
+`changesets/action` must first consume the minor Changeset into its generated
+Version Packages PR. The live publish script accepts only the exact beta.29 and
+beta.6 tuple above; dry runs accept either those targets or the authored
+beta.28/beta.6 predecessors so feature PRs can validate prepack and cleanup.
+React stays at beta.6 because this candidate changes only core. In the generated
+PR, verify the exact target versions, the unchanged React peer
+`valdres: ^1.0.0-beta.27`, and that release metadata changes are limited to the
+core package before merging it.
 
 To move from the beta stream to the release-candidate stream, use Changesets; do
 not hand-edit `pre.json`, package versions, or changelogs:

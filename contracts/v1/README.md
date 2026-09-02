@@ -135,15 +135,18 @@ exact experimental report-row types may continue to iterate before 1.0.
 `FamilyKey` now means exactly
 `string | number | bigint | boolean | symbol | null | undefined`; it no longer
 accepts Date, Array, object, Map, or Set values. Structured family inputs
-require an explicit `encodeKey`. `EqualFunc<Value>` is exactly a two-argument
-previous/next comparator. `GetValue` and `SubscribeFn` remain the public
-synchronous Store method-capability types, and `TransactionFn<Result = unknown>`
-preserves the transaction callback result. `Store.txn(callback, name?)` retains
-the optional string label only as diagnostic metadata: ordinary Stores validate
-and ignore it, inspectable Stores record it, and opaque operation/commit IDs—not
-labels—provide correlation. The four removed mutation aliases are intentionally
-replaced by the canonical Store/Transaction method types and the
-exact-value-versus-updater split.
+require an explicit `encodeKey`. A family factory constructs its returned State
+inside the active construction call or returns any already-published family
+member; arbitrary pre-existing States reject rather than forcing a reverse owner
+index into every ordinary Store write. `EqualFunc<Value>` is exactly a
+two-argument previous/next comparator. `GetValue` and `SubscribeFn` remain the
+public synchronous Store method-capability types, and
+`TransactionFn<Result = unknown>` preserves the transaction callback result.
+`Store.txn(callback, name?)` retains the optional string label only as
+diagnostic metadata: ordinary Stores validate and ignore it, inspectable Stores
+record it, and opaque operation/commit IDs—not labels—provide correlation. The
+four removed mutation aliases are intentionally replaced by the canonical
+Store/Transaction method types and the exact-value-versus-updater split.
 
 The versioned internal adapter seam is exactly the standalone `assertStore`,
 `read`, `subscribe`, and `readHydrationSnapshot` exports from
