@@ -31,21 +31,16 @@ deferred adapter, plugin, or compatibility package until that package is
 migrated.
 
 The authored manifests remain at the package versions currently published on the
-beta tag. Changesets keeps prerelease counters package-local, so the checked-in
-core patch Changeset generates:
+beta tag. Every merged feature PR contributes its Changeset to the next
+generated Version Packages PR. Changesets chooses each package-local prerelease
+counter; the publish script does not schedule those counters manually. Dry runs
+and live publishes both require canonical beta versions from the checked-in
+manifests.
 
-```text
-valdres@1.0.0-beta.28
-valdres-react@1.0.0-beta.6
-```
-
-`changesets/action` must first consume the core patch Changeset into its
-generated Version Packages PR. The live publish script accepts only the exact
-beta.28 and beta.6 tuple above; dry runs accept either those targets or the
-authored beta.27/beta.6 predecessors so feature PRs can validate prepack and
-cleanup. In the generated PR, verify the exact target versions, the React peer
-`valdres: ^1.0.0-beta.27`, and that only the core release cohort advances before
-merging it.
+Before merging the generated PR, verify that it represents every intended merged
+Changeset, that only the certified release cohort advances, and that the React
+peer range still describes the supported core versions. Do not edit generated
+versions or changelogs by hand.
 
 To move from the beta stream to the release-candidate stream, use Changesets; do
 not hand-edit `pre.json`, package versions, or changelogs:
