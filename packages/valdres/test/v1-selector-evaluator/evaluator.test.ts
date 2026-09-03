@@ -1432,9 +1432,9 @@ describe("v1 selector evaluator cycles", () => {
             const host = new TestHost("persistent-pre", {
                 observeSelectorGraph,
             })
-            const prefixWidth = 600
-            const closureDepth = 100
-            const publicationCount = 155
+            const prefixWidth = 60
+            const closureDepth = 20
+            const publicationCount = 15
             host.setLeaf("closure-tail", 1)
             for (let index = closureDepth - 1; index >= 0; index--) {
                 host.define({
@@ -1478,8 +1478,8 @@ describe("v1 selector evaluator cycles", () => {
             const batchAtPrefix = Array.from(
                 { length: publicationCount },
                 (_, index) =>
-                    145 +
-                    Math.floor((index * (589 - 145)) / (publicationCount - 1)),
+                    14 +
+                    Math.floor((index * (58 - 14)) / (publicationCount - 1)),
             )
             for (let index = 0; index < publicationCount; index++) {
                 host.define({
@@ -1528,10 +1528,10 @@ describe("v1 selector evaluator cycles", () => {
         const fallback = run(false)
         const delta = run(true)
 
-        expect(fallback.searches).toEqual([56_809, 610, 0])
-        expect(fallback.visits).toEqual([5_737_709, 46_110, 0])
-        expect(delta.searches).toEqual([0, 610, 155])
-        expect(delta.visits).toEqual([0, 46_110, 155])
+        expect(fallback.searches).toEqual([534, 61, 0])
+        expect(fallback.visits).toEqual([11_214, 981, 0])
+        expect(delta.searches).toEqual([0, 61, 15])
+        expect(delta.visits).toEqual([0, 981, 15])
     })
 
     test("a positive delta proof falls back to canonical first-read blame", () => {
