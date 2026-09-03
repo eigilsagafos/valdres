@@ -378,6 +378,7 @@ assert.equal(inspectedValue, 2)
 const inspectionReport = inspectedReact.inspect.export()
 assert.equal(inspectionReport.schema, "valdres.react.inspect")
 assert.equal(inspectionReport.schemaVersion, 1)
+assert.equal(inspectionReport.core.schemaVersion, 2)
 assert.equal(inspectionReport.core.recordingId, inspectionReport.react.coreRecordingId)
 assert.equal(inspectionReport.react.totals.subscriberCallbacks, 1)
 assert.equal(inspectionReport.react.totals.commitTimeGroups, 1)
@@ -518,6 +519,8 @@ import {
 } from "valdres-react/inspect"
 import {
     createInspectableStore,
+    type CycleSearchInspectionDetail,
+    type InspectionCycleTotals,
     type StateInspectionCapture,
 } from "valdres/inspect"
 
@@ -540,6 +543,19 @@ const capture: StateInspectionCapture =
     inspectableCore.inspect.capture(inspectableCore.store, count)
 const inspectionReport: InspectableReactExport =
     inspectedReact.inspect.export()
+const coreSchemaVersion: 2 = inspectionReport.core.schemaVersion
+const topologyDeltaSite: CycleSearchInspectionDetail["site"] =
+    "topology-delta-proof"
+const topologyDeltaSearches: InspectionCycleTotals["bySite"]["topologyDeltaProof"] =
+    0
+const topologyDeltaBucket: InspectionCycleTotals["byLane"]["committed"]["topologyDeltaProof"] =
+    inspectionReport.core.summaries[0]?.totals.cycle.byLane.committed
+        .topologyDeltaProof ?? {
+        searches: 0,
+        visits: 0,
+        maxVisits: 0,
+        found: 0,
+    }
 
 apply(update)
 void Provider
@@ -549,6 +565,10 @@ void reset
 void selected
 void capture
 void inspectionReport
+void coreSchemaVersion
+void topologyDeltaSite
+void topologyDeltaSearches
+void topologyDeltaBucket
 
 // @ts-expect-error Selectors are read-only and cannot be passed to Atom setters.
 useSetAtom(doubled, target)

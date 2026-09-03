@@ -17,7 +17,7 @@ import type {
     SelectorOutcome,
     SelectorCycleSearch,
     SelectorCycleSearchSite,
-    SelectorNegativePathMemo,
+    SelectorGraphObservation,
 } from "./types"
 
 type InspectedThenable =
@@ -99,84 +99,14 @@ const makeProposal = <Node, Token extends object, Value>(
 
 const EMPTY_ATTEMPTED_PREFIX = Object.freeze([]) as readonly never[]
 
-const createNegativePathMemo = <Node>(): SelectorNegativePathMemo<Node> => {
-    let first: ReadonlyMap<Node, unknown> | undefined
-    let second: ReadonlyMap<Node, unknown> | undefined
-    let hits = 0
-    let locked = false
-    let lockedMisses = 0
-    let enabled = true
-
-    const disable = (): void => {
-        first = undefined
-        second = undefined
-        lockedMisses = 0
-        enabled = false
-    }
-
-    return {
-        get enabled() {
-            return enabled
-        },
-        beginSearch() {
-            hits = 0
-        },
-        hasProvenNoPath(node) {
-            if (first?.has(node)) {
-                hits |= 1
-                return true
-            }
-            if (second?.has(node)) {
-                hits |= 2
-                return true
-            }
-            return false
-        },
-        completeNegative(closure) {
-            if (!enabled) return
-            if (hits !== 0) {
-                const selected =
-                    hits === 1
-                        ? first
-                        : hits === 2
-                          ? second
-                          : (first?.size ?? 0) >= (second?.size ?? 0)
-                            ? first
-                            : second
-                first = selected
-                second = undefined
-                locked = true
-                lockedMisses = 0
-                return
-            }
-            if (closure.size <= 1) return
-            if (locked) {
-                lockedMisses++
-                if (lockedMisses >= 3) disable()
-                return
-            }
-            if (first === undefined) {
-                first = closure
-                return
-            }
-            if (second === undefined) {
-                second = closure
-                return
-            }
-            disable()
-        },
-    }
-}
-
 const findDependencyPathFast = <Node, Token extends object>(
     start: Node,
     target: Node,
     host: SelectorEvaluationHost<Node, Token>,
     session: SelectorEvaluationSession<Node>,
     _site: SelectorCycleSearchSite,
-    negativeMemo?: SelectorNegativePathMemo<Node>,
+    _acceptedPrefixLength: number,
 ): readonly Node[] | undefined => {
-    negativeMemo?.beginSearch()
     const pending = [start]
     const parent = new Map<Node, Node | typeof DEPENDENCY_PATH_ROOT>([
         [start, DEPENDENCY_PATH_ROOT],
@@ -196,8 +126,6 @@ const findDependencyPathFast = <Node, Token extends object>(
             reversed.reverse()
             return Object.freeze(reversed)
         }
-        if (negativeMemo?.hasProvenNoPath(node)) continue
-
         const transient = session.getTransientDependencies(host, node)
         if (transient) {
             for (const dependency of transient) {
@@ -228,7 +156,6 @@ const findDependencyPathFast = <Node, Token extends object>(
         }
     }
 
-    negativeMemo?.completeNegative(parent)
     return undefined
 }
 
@@ -308,6 +235,16 @@ export const evaluateSelector = <Node, Token extends object, Value>(
     let prefixProofSessionPublications = sessionPublicationsAtEntry
     let observedGraphVersion = graphVersionAtEntry
     let observedSessionPublications = sessionPublicationsAtEntry
+    let graphObservation: SelectorGraphObservation<Node> | undefined
+    let graphObservationStarted = false
+
+    const beginGraphObservation = (dependency: Node): void => {
+        if (graphObservationStarted) return
+        const observation = host.beginSelectorGraphObservation?.(dependency)
+        if (observation === undefined) return
+        graphObservationStarted = true
+        graphObservation = observation
+    }
 
     const hasOnlyAttributedPublications = (
         graphVersionBefore: number,
@@ -328,13 +265,54 @@ export const evaluateSelector = <Node, Token extends object, Value>(
             sessionPublications,
         ),
     ): void => {
+        if (graphVersion === prefixProofVersion) return
+        if (
+            !graphObservationStarted &&
+            host.beginSelectorGraphObservation !== undefined
+        ) {
+            // Every accepted dependency has been declined by the host, which
+            // certifies that the prefix is selector-graph-terminal. A foreign
+            // publication cannot add a path from that prefix back here. The
+            // selector currently being served is not accepted yet and still
+            // receives the ordinary new-edge proof below.
+            prefixProofVersion = graphVersion
+            prefixProofSessionPublications = sessionPublications
+            return
+        }
+        const addedEdges = graphObservation?.takeAddedEdges()
         if (onlyAttributed) {
             prefixProofVersion = graphVersion
             prefixProofSessionPublications = sessionPublications
             return
         }
-        const negativeMemo: SelectorNegativePathMemo<Node> | undefined =
-            dependencies.length > 1 ? createNegativePathMemo<Node>() : undefined
+        if (addedEdges !== undefined) {
+            // The prior effective graph was proved acyclic. Any cycle created
+            // since then must contain an added tail -> head edge, so the final
+            // graph must contain the complementary head -> tail path. This is
+            // a negative-only certificate: a positive result falls back to
+            // the ordered proof below for canonical blame and path.
+            let addedEdgeMayCloseCycle = false
+            for (const edge of addedEdges) {
+                if (
+                    cycleSearch(
+                        edge.head,
+                        edge.tail,
+                        host,
+                        session,
+                        2,
+                        dependencies.length,
+                    ) !== undefined
+                ) {
+                    addedEdgeMayCloseCycle = true
+                    break
+                }
+            }
+            if (!addedEdgeMayCloseCycle) {
+                prefixProofVersion = graphVersion
+                prefixProofSessionPublications = sessionPublications
+                return
+            }
+        }
         for (let index = 0; index < dependencies.length; index++) {
             const dependency = dependencies[index]!
             const cyclePath = cycleSearch(
@@ -343,7 +321,7 @@ export const evaluateSelector = <Node, Token extends object, Value>(
                 host,
                 session,
                 0,
-                negativeMemo?.enabled ? negativeMemo : undefined,
+                dependencies.length,
             )
             if (!cyclePath) continue
 
@@ -498,6 +476,7 @@ export const evaluateSelector = <Node, Token extends object, Value>(
                 host,
                 session,
                 1,
+                dependencies.length,
             )
             if (cyclePath) {
                 const controlFault = session.getControlFault()
@@ -522,6 +501,7 @@ export const evaluateSelector = <Node, Token extends object, Value>(
                     ? previousSnapshot
                     : Object.freeze({ node: dependency, token: served.token }),
             )
+            beginGraphObservation(dependency)
         }
         prefixProofVersion = graphVersionAfterServe
         prefixProofSessionPublications = sessionPublicationsAfterServe
@@ -762,6 +742,10 @@ export const evaluateSelector = <Node, Token extends object, Value>(
             dependencies,
         )
     } finally {
-        session.leave(host, selector)
+        try {
+            graphObservation?.close()
+        } finally {
+            session.leave(host, selector)
+        }
     }
 }

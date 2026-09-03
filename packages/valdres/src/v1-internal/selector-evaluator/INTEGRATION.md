@@ -32,6 +32,21 @@ subsequence lazily, reuses it only while the complete ordered node topology is
 unchanged, and invalidates it when that topology changes; hosts that omit the
 lookup retain the full-record traversal.
 
+A persistent host may also expose a bounded synchronous observation of exact
+selector-edge additions. The observation starts lazily after an evaluator has
+accepted its first selector dependency, has an independent cursor for each
+active evaluator, and retains direct node references only until the last
+observer closes. Returning no observation certifies that the newly accepted
+dependency's identity cannot act as a selector-graph tail for the duration of
+the evaluation. An atom-only prefix therefore cannot participate in a selector
+cycle and allocates no observer; the evaluator retries observation setup when it
+accepts a later selector dependency. The observation records actual
+selector-to-selector additions, not value-only publications, topology-identical
+publications, removals, or terminal sources. Overflow, graph clearing, or any
+other incomplete interval must return `undefined` and force the evaluator onto
+its canonical proof. Hosts without this capability retain the same canonical
+fallback.
+
 | Host                 | Records and currentness                                                               | Control-error policy                                                              | Comparison baseline                                                          |
 | -------------------- | ------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
 | Persistent committed | Canonical forward/reverse graph and dirty routing                                     | Reject before source apply; install exact authoritative control error after apply | Last successful committed value; canonical token only while currently served |
@@ -68,26 +83,26 @@ where user-controlled inspection or another host activity publishes after the
 last supplied read but before the parent proposal is returned. Revalidation
 continues after a cycle is latched so later topology changes can still shorten
 the installed attempted prefix while the first cycle error keeps its identity.
-Within one revalidation of one accepted prefix, negative closure proofs may
-share a proposal-local bounded learner. A search publishes its existing
-traversal map only after it exhausts without reaching the active selector. A
-later first-read candidate may prune either of at most two proven-negative
-closures without changing which edge is blamed or the canonical positive path.
-The first observed reuse locks that closure and releases the other one. Three
-disjoint non-terminal proofs disable learning, while terminal-only maps do not
-evict a potentially useful closure. Once reuse is demonstrated, a hit resets the
-locked closure's miss streak; two consecutive disjoint non-terminal proofs are
-tolerated and the third disables learning. The learner is discarded after that
-exact graph observation; it is never reused across a publication or a later
-prefix-revalidation call.
+When the committed host retained a complete interval, the evaluator replays each
+exact added edge `tail -> head` by proving `head` cannot reach `tail` in the
+final effective graph, including active transient-prefix substitution. The
+previous graph was already a DAG, so all-negative edge replays certify the whole
+accepted prefix without multiplying work by its width. Removals and
+topology-identical publications produce an empty complete interval and require
+no walk. A positive edge replay is only a conservative signal: the evaluator
+discards that path and runs the unchanged first-read-ordered prefix proof to
+preserve selector blame, prefix truncation, and the canonical cycle path.
+Incomplete intervals and hosts without observation support take that same
+fallback. An observation is never reused after it closes or across hosts.
 
 ```text
 foreign graph publication
-  -> accepted dependencies, still in first-read order
-       -> search, pruning up to two learned negative closures
-            -> no path with overlap: lock the reused closure
-            -> no path without overlap: learn, retain, or disable by the bound
-            -> path: publish nothing; keep the existing canonical path
+  -> complete exact additions?
+       -> yes: replay each head -> tail proof in the final effective graph
+            -> all negative: certify the whole accepted prefix
+            -> any positive: discard the signal path and use canonical fallback
+       -> no: scan accepted dependencies in first-read order
+            -> first positive: preserve blame, truncation, and canonical path
 ```
 
 The session's active transient frame holds a read-only alias to the evaluator's
