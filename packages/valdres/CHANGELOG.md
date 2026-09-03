@@ -1,5 +1,17 @@
 # valdres
 
+## 1.0.0-beta.33
+
+### Patch Changes
+
+- [#374](https://github.com/eigilsagafos/valdres/pull/374)
+  [`b3392d0`](https://github.com/eigilsagafos/valdres/commit/b3392d0a4ca99942eb1d745a403179438c203703)
+  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! - Reuse one fully
+  exhausted negative selector proof across exact graph changes that preserve its
+  closed dependency set. Dynamic selector graphs avoid repeating the same cycle
+  walk after unrelated or internal edge publications, while incomplete or
+  escaping changes still fall back to canonical proofs.
+
 ## 1.0.0-beta.32
 
 ### Patch Changes
