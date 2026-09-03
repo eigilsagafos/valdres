@@ -277,6 +277,80 @@ describe("valdres/inspect public structural diagnostics", () => {
         expect(detailsOfType(report, "cycle-search")).toHaveLength(4)
     })
 
+    test("attributes exact-delta memo validation once in public summaries", () => {
+        const childCount = 6
+        const source = atom(0, { name: "cross-version/source" })
+        const leaf = atom(1, { name: "cross-version/leaf" })
+        const shared: Selector<number>[] = []
+        for (let index = 39; index >= 0; index--) {
+            const dependency = index === 39 ? leaf : shared[index + 1]!
+            shared[index] = selector(get => get(dependency), {
+                name: `cross-version/shared/${index}`,
+            })
+        }
+        const children = Array.from({ length: childCount }, (_, index) =>
+            selector(get => (get(source) === 0 ? 0 : get(shared[0]!)), {
+                name: `cross-version/child/${index}`,
+            }),
+        )
+        const parent = selector(
+            get => {
+                if (get(source) === 0) return 0
+                return children.reduce((sum, child) => sum + get(child), 0)
+            },
+            { name: "cross-version/parent" },
+        )
+        const { store, inspect } = createInspectableStore({
+            capacity: { summaries: 1_024, details: 16_384 },
+        })
+
+        // Register the parent first so its active evaluation observes each
+        // child's newly published selector edge under the same session.
+        expect(store.get(parent)).toBe(0)
+        expect(store.get(shared[0]!)).toBe(1)
+        for (const child of children) expect(store.get(child)).toBe(0)
+        const unsubscribe = store.sub(parent, () => {})
+        inspect.reset()
+
+        store.txn(
+            transaction => transaction.set(source, 1),
+            "cross-version memo",
+        )
+
+        expect(store.get(parent)).toBe(childCount)
+        const report = inspect.export()
+        const operation = operationNamed(report, "cross-version memo")
+        const evaluation = detailsOfType(report, "selector-evaluation").find(
+            detail => detail.selector.name === "cross-version/parent",
+        )
+        const parentSearches = detailsOfType(report, "cycle-search").filter(
+            detail =>
+                detail.site === "new-edge-proof" &&
+                referenceName(detail.target) === "cross-version/parent",
+        )
+
+        expect(parentSearches.map(search => search.visits)).toEqual([
+            41, 41, 41, 2, 2, 2,
+        ])
+        expect(evaluation?.newEdgeProofMemo).toMatchObject({
+            observing: 3,
+            consultedPruned: 3,
+            mapProbes: 11,
+            prunedNodes: 3,
+            resets: { graphVersion: 0 },
+            seeds: {
+                initial: 1,
+                activationReplacement: 1,
+                hitDerived: 3,
+            },
+        })
+        // Five exact-delta tail checks plus six search probes are aggregated
+        // once. Omitting transition probes would incorrectly report six.
+        expect(operation.totals.cycle.newEdgeProofMemo.mapProbes).toBe(11)
+        expect(operation.totals.cycle.bySite.topologyDeltaProof).toBe(0)
+        unsubscribe()
+    })
+
     test("reports deep-equal owner replacement as zero changed sources", () => {
         const initial = { id: 1, nested: { ready: true } }
         const value = atom(initial, {
