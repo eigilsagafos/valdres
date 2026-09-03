@@ -73,7 +73,9 @@ For every supplied `get(dependency)`:
    reused only when every intervening publication is attributed to this same
    session. A warm parent's new edge is always proved, including when serving
    that dependency first materializes it. An unaccepted old-direct edge may be
-   reused only when no publication occurred since entry.
+   reused only when no publication occurred since entry. Repeated site-1 proofs
+   for one target may share fully exhausted negative closures only while the
+   host graph version remains exact; any version change clears that evidence.
 5. Capture its token and edge only when the proposal remains acyclic.
 6. Serve its value or throw its error.
 
@@ -94,6 +96,26 @@ discards that path and runs the unchanged first-read-ordered prefix proof to
 preserve selector blame, prefix truncation, and the canonical cycle path.
 Incomplete intervals and hosts without observation support take that same
 fallback. An observation is never reused after it closes or across hosts.
+
+Site-1 sharing is strictly evaluator-local, and therefore also target- and
+host-local. It never participates in canonical prefix proofs or topology-delta
+proofs. The ordinary DFS parent map becomes reusable evidence only after the
+search exhausts negatively; a positive/partial walk publishes nothing, and the
+target check always precedes a cached prune so the positive path remains the
+canonical DFS path. Admission retains at most two existing parent maps without
+copying them, seeds only from closures of 32 through 8,192 nodes, and lets an
+overlapping exhausted approach map extend that certificate up to the same
+maximum. An over-cap hit-derived approach disables sharing for that graph
+version instead of repeatedly resetting the miss budget. It keeps the two
+broadest layers. Warm parents with at least three prior dependencies can learn
+on the first re-proof; cold or narrow parents wait for three proofs at one
+unchanged graph version. Graph-terminal adjacency is classified before probing
+the maps, and terminal closures remain neutral. Non-overlapping proofs consume a
+cumulative 64-node miss-work budget, with each proof charged at most 32 nodes; a
+second substantial anchor receives one chance to demonstrate reuse even when its
+admission crosses that budget. Exhausting the budget disables the memo for that
+version. The inspectable strategy runs the identical protocol and reports
+physical visits after cached pruning.
 
 ```text
 foreign graph publication

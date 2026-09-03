@@ -70,13 +70,34 @@ export interface SelectorEvaluationProposal<
 export type SelectorCycleSearchSite = 0 | 1 | 2
 
 /**
+ * Evaluation-local coordinator for fully exhausted negative site-1 proofs.
+ *
+ * A search may consult retained closures only when `beginSearch` returns true,
+ * and may publish its parent map only after exhausting without finding the
+ * target. The evaluator owns the coordinator's target, host, and exact graph
+ * version lifetime; strategies must not retain it or use it at another site.
+ */
+export interface SelectorNewEdgeProofMemo<Node> {
+    /** False after bounded admission found no reusable overlap. */
+    readonly enabled: boolean
+    /** Starts one physical search and reports whether anchors are available. */
+    beginSearch(): boolean
+    /** Prunes a node covered by a retained fully-negative closure. */
+    hasProvenNoPath(node: Node): boolean
+    /** Publishes a closure only after complete negative exhaustion. */
+    completeNegative(closure: ReadonlyMap<Node, unknown>): void
+}
+
+/**
  * Optional inspectable-Store strategy. Live nodes are valid only for the
  * duration of the call; a recorder must translate them immediately.
  *
  * Site 0 is the canonical accepted-prefix proof, site 1 is a newly proposed
  * edge proof, and site 2 is a negative-only replay of an exact committed edge
  * addition. A positive site-2 result must fall back to site 0 so first-read
- * blame and the canonical cycle path remain unchanged.
+ * blame and the canonical cycle path remain unchanged. `newEdgeProofMemo` is
+ * supplied only at site 1 and only while its evaluation-local graph-version
+ * certificate remains exact.
  */
 export type SelectorCycleSearch<Node, Token extends object> = (
     start: Node,
@@ -86,6 +107,7 @@ export type SelectorCycleSearch<Node, Token extends object> = (
     site: SelectorCycleSearchSite,
     /** Length of the active selector prefix whose acyclicity this proves. */
     acceptedPrefixLength: number,
+    newEdgeProofMemo?: SelectorNewEdgeProofMemo<Node>,
 ) => readonly Node[] | undefined
 
 export interface SelectorEvaluationStrategy {

@@ -14,6 +14,7 @@ import type {
     SelectorEvaluationHost,
     SelectorEvaluationProposal,
     SelectorEvaluationSession,
+    SelectorNewEdgeProofMemo,
     SelectorOutcome,
     SelectorCycleSearch,
     SelectorCycleSearchSite,
@@ -99,6 +100,138 @@ const makeProposal = <Node, Token extends object, Value>(
 
 const EMPTY_ATTEMPTED_PREFIX = Object.freeze([]) as readonly never[]
 
+// Retaining the existing DFS parent maps avoids copying any closure. Admission
+// is deliberately conservative: a useful seed must first pay for itself,
+// bounded disjoint work disables learning, and at most two proposal-local
+// anchors are ever retained.
+const NEW_EDGE_MEMO_MIN_SEED_SIZE = 32
+const NEW_EDGE_MEMO_MAX_ANCHOR_SIZE = 8_192
+const NEW_EDGE_MEMO_MAX_MISS_WORK = 2 * NEW_EDGE_MEMO_MIN_SEED_SIZE
+
+interface ResettableNewEdgeProofMemo<Node>
+    extends SelectorNewEdgeProofMemo<Node> {
+    reset(): void
+}
+
+const createNewEdgeProofMemo = <Node>(): ResettableNewEdgeProofMemo<Node> => {
+    let first: ReadonlyMap<Node, unknown> | undefined
+    let second: ReadonlyMap<Node, unknown> | undefined
+    let hits = 0
+    let missWork = 0
+    let locked = false
+    let enabled = true
+
+    const disable = (): void => {
+        first = undefined
+        second = undefined
+        missWork = 0
+        enabled = false
+    }
+
+    const reset = (): void => {
+        first = undefined
+        second = undefined
+        hits = 0
+        missWork = 0
+        locked = false
+        enabled = true
+    }
+
+    return {
+        get enabled() {
+            return enabled
+        },
+        beginSearch() {
+            hits = 0
+            return enabled && first !== undefined
+        },
+        hasProvenNoPath(node) {
+            if (first?.has(node)) {
+                hits |= 1
+                return true
+            }
+            if (second?.has(node)) {
+                hits |= 2
+                return true
+            }
+            return false
+        },
+        completeNegative(closure) {
+            if (!enabled) return
+            if (hits !== 0) {
+                // A broad approach that only touches a much smaller retained
+                // tail is not useful evidence to keep probing. It cannot be
+                // retained within the liveness bound, so disable rather than
+                // resetting the miss budget on every repeated broad walk.
+                if (closure.size > NEW_EDGE_MEMO_MAX_ANCHOR_SIZE) {
+                    disable()
+                    return
+                }
+                // A search that pruned a certified-negative anchor is itself
+                // a complete negative certificate. Keep its new approach path
+                // as well as the broadest prior layer, without copying either
+                // existing DFS map. This is what lets one shared-tail hit teach
+                // later roots to stop before walking that tail again.
+                const priorFirst = first
+                const priorSecond = second
+                first = undefined
+                second = undefined
+                const retain = (
+                    candidate: ReadonlyMap<Node, unknown> | undefined,
+                ): void => {
+                    if (
+                        candidate === undefined ||
+                        candidate.size > NEW_EDGE_MEMO_MAX_ANCHOR_SIZE ||
+                        candidate === first
+                    ) {
+                        return
+                    }
+                    if (first === undefined || candidate.size > first.size) {
+                        second = first
+                        first = candidate
+                    } else if (
+                        second === undefined ||
+                        candidate.size > second.size
+                    ) {
+                        second = candidate
+                    }
+                }
+                retain(priorFirst)
+                retain(priorSecond)
+                retain(closure)
+                locked = true
+                missWork = 0
+                return
+            }
+            // Terminal roots never perform a Map lookup and do not count as
+            // evidence against overlap: a useful shared selector layer may
+            // appear after a run of source dependencies.
+            if (closure.size === 1) return
+            const mayRetain =
+                closure.size >= NEW_EDGE_MEMO_MIN_SEED_SIZE &&
+                closure.size <= NEW_EDGE_MEMO_MAX_ANCHOR_SIZE
+            if (first === undefined) {
+                if (mayRetain) first = closure
+                return
+            }
+
+            const missCost = Math.min(closure.size, NEW_EDGE_MEMO_MIN_SEED_SIZE)
+            missWork += missCost
+            if (!locked && second === undefined && mayRetain) {
+                // Give a second substantial closure one following proof to
+                // demonstrate overlap, even when admitting it crosses the
+                // cumulative miss budget.
+                second = closure
+                return
+            }
+            if (missWork >= NEW_EDGE_MEMO_MAX_MISS_WORK) {
+                disable()
+            }
+        },
+        reset,
+    }
+}
+
 const findDependencyPathFast = <Node, Token extends object>(
     start: Node,
     target: Node,
@@ -106,7 +239,9 @@ const findDependencyPathFast = <Node, Token extends object>(
     session: SelectorEvaluationSession<Node>,
     _site: SelectorCycleSearchSite,
     _acceptedPrefixLength: number,
+    newEdgeProofMemo?: SelectorNewEdgeProofMemo<Node>,
 ): readonly Node[] | undefined => {
+    const consultMemo = newEdgeProofMemo?.beginSearch() ?? false
     const pending = [start]
     const parent = new Map<Node, Node | typeof DEPENDENCY_PATH_ROOT>([
         [start, DEPENDENCY_PATH_ROOT],
@@ -128,6 +263,10 @@ const findDependencyPathFast = <Node, Token extends object>(
         }
         const transient = session.getTransientDependencies(host, node)
         if (transient) {
+            if (transient.length === 0) continue
+            if (consultMemo && newEdgeProofMemo!.hasProvenNoPath(node)) {
+                continue
+            }
             for (const dependency of transient) {
                 if (parent.has(dependency.node)) continue
                 parent.set(dependency.node, node)
@@ -138,7 +277,12 @@ const findDependencyPathFast = <Node, Token extends object>(
 
         if (host.getSelectorDependencyNodes !== undefined) {
             const dependencies = host.getSelectorDependencyNodes(node)
-            if (dependencies === undefined) continue
+            if (dependencies === undefined || dependencies.length === 0) {
+                continue
+            }
+            if (consultMemo && newEdgeProofMemo!.hasProvenNoPath(node)) {
+                continue
+            }
             for (const dependency of dependencies) {
                 if (parent.has(dependency)) continue
                 parent.set(dependency, node)
@@ -148,7 +292,8 @@ const findDependencyPathFast = <Node, Token extends object>(
         }
 
         const record = host.getSelectorRecord(node)
-        if (!record) continue
+        if (!record || record.dependencies.length === 0) continue
+        if (consultMemo && newEdgeProofMemo!.hasProvenNoPath(node)) continue
         for (const dependency of record.dependencies) {
             if (parent.has(dependency.node)) continue
             parent.set(dependency.node, node)
@@ -156,6 +301,7 @@ const findDependencyPathFast = <Node, Token extends object>(
         }
     }
 
+    newEdgeProofMemo?.completeNegative(parent)
     return undefined
 }
 
@@ -237,6 +383,33 @@ export const evaluateSelector = <Node, Token extends object, Value>(
     let observedSessionPublications = sessionPublicationsAtEntry
     let graphObservation: SelectorGraphObservation<Node> | undefined
     let graphObservationStarted = false
+    let newEdgeProofMemoVersion = graphVersionAtEntry
+    let newEdgeProofsAtVersion = 0
+    let newEdgeProofMemo: ResettableNewEdgeProofMemo<Node> | undefined
+
+    const getNewEdgeProofMemo = (
+        graphVersion: number,
+    ): SelectorNewEdgeProofMemo<Node> | undefined => {
+        if (graphVersion !== newEdgeProofMemoVersion) {
+            newEdgeProofMemoVersion = graphVersion
+            newEdgeProofsAtVersion = 0
+            newEdgeProofMemo?.reset()
+        }
+        newEdgeProofsAtVersion++
+        // Warm wide parents can learn from their first retained-edge re-proof.
+        // A cold or narrow proposal waits for three proofs at one exact graph
+        // version, avoiding allocation on singleton and graph-churning paths.
+        if (
+            (currentDependencies?.length ?? 0) < 3 &&
+            newEdgeProofsAtVersion < 3
+        ) {
+            return undefined
+        }
+        if (newEdgeProofMemo === undefined) {
+            newEdgeProofMemo = createNewEdgeProofMemo<Node>()
+        }
+        return newEdgeProofMemo.enabled ? newEdgeProofMemo : undefined
+    }
 
     const beginGraphObservation = (dependency: Node): void => {
         if (graphObservationStarted) return
@@ -477,6 +650,7 @@ export const evaluateSelector = <Node, Token extends object, Value>(
                 session,
                 1,
                 dependencies.length,
+                getNewEdgeProofMemo(graphVersionAfterServe),
             )
             if (cyclePath) {
                 const controlFault = session.getControlFault()

@@ -2842,6 +2842,637 @@ describe("v1 selector evaluator cycles", () => {
         expect(operation.totals.cycle.visits).toBe(90_501)
     })
 
+    test("shares fully negative warm re-proofs at one exact graph version", () => {
+        const width = 200
+        const depth = 400
+        const run = (mode: "baseline" | "fast" | "measured") => {
+            const host = new TestHost()
+            host.setLeaf("tail", 1)
+            host.setLeaf("trigger-leaf", 1)
+            for (let index = depth - 1; index >= 0; index--) {
+                host.define({
+                    node: `shared-${index}`,
+                    get: get =>
+                        get(
+                            index + 1 === depth
+                                ? "tail"
+                                : `shared-${index + 1}`,
+                        ),
+                })
+            }
+            expect(valueOf(host.read<number>("shared-0"))).toBe(1)
+            host.define({ node: "small-seed", get: get => get("shared-350") })
+            expect(valueOf(host.read<number>("small-seed"))).toBe(1)
+            const roots = Array.from(
+                { length: width },
+                (_, index) => `root-${index}`,
+            )
+            for (const root of roots) {
+                host.define({ node: root, get: get => get("shared-0") })
+                expect(valueOf(host.read<number>(root))).toBe(1)
+            }
+            const trigger: SelectorDefinition<Node, number> = {
+                node: "trigger",
+                get: get => get("trigger-leaf"),
+            }
+            const parent: SelectorDefinition<Node, number> = {
+                node: "parent",
+                get: get => {
+                    let sum = get<number>("trigger")
+                    sum += get<number>("small-seed")
+                    for (const root of roots) sum += get<number>(root)
+                    return sum
+                },
+            }
+            host.define(trigger)
+            host.define(parent)
+            expect(valueOf(host.read<number>("parent"))).toBe(width + 2)
+
+            const setup =
+                mode === "fast" ? undefined : createInspectionRecorder()
+            if (setup !== undefined) {
+                const hostRef = setup.recorder.reference(host, "scope")
+                host.cycleTrace = (
+                    start,
+                    target,
+                    cycleHost,
+                    session,
+                    site,
+                    acceptedPrefixLength,
+                    newEdgeProofMemo,
+                ) =>
+                    setup.recorder.findDependencyPath(
+                        "committed",
+                        hostRef,
+                        start,
+                        target,
+                        cycleHost,
+                        session,
+                        site,
+                        acceptedPrefixLength,
+                        cycleHost.getSelectorGraphVersion(),
+                        session.getSelectorGraphPublicationCount(cycleHost),
+                        false,
+                        mode === "measured" ? newEdgeProofMemo : undefined,
+                    )
+            }
+            host.define(trigger)
+            host.markDirty("parent")
+            host.selectorDependencyNodeReadNodes.length = 0
+
+            const served = host.read<number>("parent")
+            const searches =
+                setup?.inspect
+                    .export()
+                    .details.filter(
+                        (detail): detail is CycleSearchInspectionDetail =>
+                            detail.type === "cycle-search" &&
+                            detail.site === "new-edge-proof",
+                    ) ?? []
+            return Object.freeze({
+                value: valueOf(served),
+                dependencies: host.records
+                    .get("parent")!
+                    .dependencies.map(dependency => dependency.node),
+                adjacencyReads: host.selectorDependencyNodeReadNodes.length,
+                searches,
+                visits: searches.reduce(
+                    (total, search) => total + search.visits,
+                    0,
+                ),
+            })
+        }
+
+        const baseline = run("baseline")
+        const fast = run("fast")
+        const measured = run("measured")
+
+        expect(baseline.visits).toBe(80_252)
+        expect(fast.value).toBe(width + 2)
+        expect(measured.value).toBe(fast.value)
+        expect(measured.dependencies).toEqual(fast.dependencies)
+        // The 51-node seed is hit only after the next root walks a much larger
+        // approach closure. Keeping both layers is the beta.29 falsifier: an
+        // implementation that retains only the hit seed repeatedly walks the
+        // 350-node approach for every sibling root.
+        expect(fast.adjacencyReads).toBe(802)
+        expect(measured.adjacencyReads).toBe(fast.adjacencyReads)
+        expect(measured.searches).toHaveLength(width + 2)
+        expect(measured.visits).toBe(fast.adjacencyReads)
+    })
+
+    test("keeps a positive site-1 path canonical after cached negative pruning", () => {
+        const run = (inspected: boolean) => {
+            const host = new TestHost()
+            const depth = 40
+            host.setLeaf("tail", 1)
+            host.setLeaf("kick-leaf", 1)
+            for (let index = depth - 1; index >= 0; index--) {
+                host.define({
+                    node: `shared-${index}`,
+                    get: get =>
+                        get(
+                            index + 1 === depth
+                                ? "tail"
+                                : `shared-${index + 1}`,
+                        ),
+                })
+            }
+            expect(valueOf(host.read<number>("shared-0"))).toBe(1)
+            for (const root of ["root-1", "root-2", "root-3"]) {
+                host.define({ node: root, get: get => get("shared-0") })
+                expect(valueOf(host.read<number>(root))).toBe(1)
+            }
+            const kick: SelectorDefinition<Node, number> = {
+                node: "kick",
+                get: get => get("kick-leaf"),
+            }
+            host.define(kick)
+            let includeCycleStart = false
+            const parent: SelectorDefinition<Node, number> = {
+                node: "parent",
+                get: get => {
+                    get("kick")
+                    get("root-1")
+                    get("root-2")
+                    get("root-3")
+                    if (includeCycleStart) get("cycle-start")
+                    return 1
+                },
+            }
+            host.define(parent)
+            expect(valueOf(host.read<number>("parent"))).toBe(1)
+            host.define({ node: "bridge", get: get => get("parent") })
+            host.define({
+                node: "cycle-start",
+                get: get => {
+                    get("bridge")
+                    get("shared-0")
+                    return 1
+                },
+            })
+            expect(valueOf(host.read<number>("cycle-start"))).toBe(1)
+
+            const setup = inspected ? createInspectionRecorder() : undefined
+            if (setup !== undefined) {
+                const hostRef = setup.recorder.reference(host, "scope")
+                host.cycleTrace = (
+                    start,
+                    target,
+                    cycleHost,
+                    session,
+                    site,
+                    acceptedPrefixLength,
+                    newEdgeProofMemo,
+                ) =>
+                    setup.recorder.findDependencyPath(
+                        "committed",
+                        hostRef,
+                        start,
+                        target,
+                        cycleHost,
+                        session,
+                        site,
+                        acceptedPrefixLength,
+                        cycleHost.getSelectorGraphVersion(),
+                        session.getSelectorGraphPublicationCount(cycleHost),
+                        false,
+                        newEdgeProofMemo,
+                    )
+            }
+            includeCycleStart = true
+            host.define(kick)
+            host.markDirty("parent")
+            const error = errorOf(host.read("parent"))
+            const positives =
+                setup?.inspect
+                    .export()
+                    .details.filter(
+                        (detail): detail is CycleSearchInspectionDetail =>
+                            detail.type === "cycle-search" && detail.found,
+                    ) ?? []
+            return Object.freeze({
+                error: normalizeCycleParityError(error),
+                dependencies: host.records
+                    .get("parent")!
+                    .dependencies.map(dependency => dependency.node),
+                positives,
+            })
+        }
+
+        const fast = run(false)
+        const measured = run(true)
+
+        expect(measured.error).toEqual(fast.error)
+        expect(measured.dependencies).toEqual(fast.dependencies)
+        expect(measured.error).toMatchObject({
+            name: "SelectorCircularDependencyError",
+            selector: "parent",
+            path: ["parent", "cycle-start", "bridge", "parent"],
+        })
+        expect(measured.dependencies).toEqual([
+            "kick",
+            "root-1",
+            "root-2",
+            "root-3",
+        ])
+        expect(measured.positives).toEqual([
+            expect.objectContaining({
+                site: "new-edge-proof",
+                start: "cycle-start",
+                target: "parent",
+                path: ["cycle-start", "bridge", "parent"],
+                visits: 4,
+            }),
+        ])
+    })
+
+    test("invalidates warm negative anchors on every graph-version change", () => {
+        const run = (inspected: boolean) => {
+            const host = new TestHost()
+            const depth = 40
+            host.setLeaf("leaf", 1)
+            host.setLeaf("trigger", 1)
+            for (let index = depth - 1; index >= 0; index--) {
+                host.define({
+                    node: `shared-${index}`,
+                    get: get =>
+                        get(
+                            index + 1 === depth
+                                ? "leaf"
+                                : `shared-${index + 1}`,
+                        ),
+                })
+            }
+            expect(valueOf(host.read<number>("shared-0"))).toBe(1)
+            for (const root of ["root-1", "root-2", "root-3"]) {
+                host.define({ node: root, get: get => get("shared-0") })
+                expect(valueOf(host.read<number>(root))).toBe(1)
+            }
+            const kick: SelectorDefinition<Node, number> = {
+                node: "kick",
+                get: get => get("leaf"),
+            }
+            host.define(kick)
+            let includeRoot3 = false
+            const parent: SelectorDefinition<Node, number> = {
+                node: "parent",
+                get: get => {
+                    get("kick")
+                    get("root-1")
+                    get("root-2")
+                    get("trigger")
+                    if (includeRoot3) get("root-3")
+                    return 1
+                },
+            }
+            host.define(parent)
+            expect(valueOf(host.read<number>("parent"))).toBe(1)
+            host.define({ node: "back", get: get => get("parent") })
+            expect(valueOf(host.read<number>("back"))).toBe(1)
+
+            const setup = inspected ? createInspectionRecorder() : undefined
+            if (setup !== undefined) {
+                const hostRef = setup.recorder.reference(host, "scope")
+                host.cycleTrace = (
+                    start,
+                    target,
+                    cycleHost,
+                    session,
+                    site,
+                    acceptedPrefixLength,
+                    newEdgeProofMemo,
+                ) =>
+                    setup.recorder.findDependencyPath(
+                        "committed",
+                        hostRef,
+                        start,
+                        target,
+                        cycleHost,
+                        session,
+                        site,
+                        acceptedPrefixLength,
+                        cycleHost.getSelectorGraphVersion(),
+                        session.getSelectorGraphPublicationCount(cycleHost),
+                        false,
+                        newEdgeProofMemo,
+                    )
+            }
+            let rewired = false
+            host.setServeEffect("trigger", () => {
+                if (rewired) return
+                rewired = true
+                host.define({ node: "root-1", get: get => get("leaf") })
+                host.define({ node: "root-2", get: get => get("leaf") })
+                host.define({ node: "shared-0", get: get => get("back") })
+                expect(valueOf(host.read<number>("root-1"))).toBe(1)
+                expect(valueOf(host.read<number>("root-2"))).toBe(1)
+                expect(valueOf(host.read<number>("shared-0"))).toBe(1)
+            })
+            includeRoot3 = true
+            host.define(kick)
+            host.markDirty("parent")
+
+            const error = errorOf(host.read("parent"))
+            const positives =
+                setup?.inspect
+                    .export()
+                    .details.filter(
+                        (detail): detail is CycleSearchInspectionDetail =>
+                            detail.type === "cycle-search" && detail.found,
+                    ) ?? []
+            return Object.freeze({
+                error: normalizeCycleParityError(error),
+                dependencies: host.records
+                    .get("parent")!
+                    .dependencies.map(dependency => dependency.node),
+                positives,
+            })
+        }
+
+        const fast = run(false)
+        const measured = run(true)
+
+        expect(measured.error).toEqual(fast.error)
+        expect(measured.dependencies).toEqual(fast.dependencies)
+        expect(measured.error).toMatchObject({
+            name: "SelectorCircularDependencyError",
+            selector: "parent",
+            path: ["parent", "root-3", "shared-0", "back", "parent"],
+        })
+        expect(measured.dependencies).toEqual([
+            "kick",
+            "root-1",
+            "root-2",
+            "trigger",
+        ])
+        expect(measured.positives).toEqual([
+            expect.objectContaining({
+                site: "new-edge-proof",
+                start: "root-3",
+                target: "parent",
+                path: ["root-3", "shared-0", "back", "parent"],
+            }),
+        ])
+    })
+
+    test("keeps terminal gaps free and bounds repeated short disjoint misses", () => {
+        const host = new TestHost()
+        const depth = 40
+        host.setLeaf("leaf", 1)
+        const defineChain = (prefix: string, chainDepth = depth): void => {
+            for (let index = chainDepth - 1; index >= 0; index--) {
+                host.define({
+                    node: `${prefix}-${index}`,
+                    get: get =>
+                        get(
+                            index + 1 === chainDepth
+                                ? "leaf"
+                                : `${prefix}-${index + 1}`,
+                        ),
+                })
+            }
+            expect(valueOf(host.read<number>(`${prefix}-0`))).toBe(1)
+        }
+        defineChain("shared")
+        for (const root of ["shared-a", "shared-b"]) {
+            host.define({ node: root, get: get => get("shared-0") })
+            expect(valueOf(host.read<number>(root))).toBe(1)
+        }
+        for (const terminal of ["terminal-a", "terminal-b"]) {
+            host.define({ node: terminal, get: get => get("leaf") })
+            expect(valueOf(host.read<number>(terminal))).toBe(1)
+        }
+        const disjointBranches = Array.from(
+            { length: 17 },
+            (_, index) => `disjoint-${index}`,
+        )
+        for (const branch of disjointBranches) defineChain(branch, 4)
+        const kick: SelectorDefinition<Node, number> = {
+            node: "kick",
+            get: get => get("leaf"),
+        }
+        const dependencyOrder = [
+            "kick",
+            "shared-a",
+            "terminal-a",
+            "terminal-b",
+            "shared-b",
+            ...disjointBranches.map(branch => `${branch}-0`),
+        ]
+        const parent: SelectorDefinition<Node, number> = {
+            node: "parent",
+            get: get => {
+                for (const dependency of dependencyOrder) get(dependency)
+                return 1
+            },
+        }
+        host.define(kick)
+        host.define(parent)
+        expect(valueOf(host.read<number>("parent"))).toBe(1)
+
+        const setup = createInspectionRecorder()
+        const hostRef = setup.recorder.reference(host, "scope")
+        const memoAvailability: boolean[] = []
+        host.cycleTrace = (
+            start,
+            target,
+            cycleHost,
+            session,
+            site,
+            acceptedPrefixLength,
+            newEdgeProofMemo,
+        ) => {
+            if (site === 1) {
+                memoAvailability.push(newEdgeProofMemo !== undefined)
+            }
+            return setup.recorder.findDependencyPath(
+                "committed",
+                hostRef,
+                start,
+                target,
+                cycleHost,
+                session,
+                site,
+                acceptedPrefixLength,
+                cycleHost.getSelectorGraphVersion(),
+                session.getSelectorGraphPublicationCount(cycleHost),
+                false,
+                newEdgeProofMemo,
+            )
+        }
+        host.define(kick)
+        host.markDirty("parent")
+        host.selectorDependencyNodeReadNodes.length = 0
+
+        expect(valueOf(host.read<number>("parent"))).toBe(1)
+        // Sixteen four-node misses consume the 64-node cumulative budget. The
+        // seventeenth proof must use the ordinary path with no memo supplied.
+        expect(memoAvailability).toEqual([
+            ...Array.from({ length: 21 }, () => true),
+            false,
+        ])
+        const searches = setup.inspect
+            .export()
+            .details.filter(
+                (detail): detail is CycleSearchInspectionDetail =>
+                    detail.type === "cycle-search" &&
+                    detail.site === "new-edge-proof",
+            )
+        expect(searches.map(search => search.start)).toEqual(dependencyOrder)
+        expect(searches.reduce((sum, search) => sum + search.visits, 0)).toBe(
+            114,
+        )
+        expect(host.selectorDependencyNodeReadNodes).toHaveLength(114)
+        for (const terminal of ["terminal-a", "terminal-b"]) {
+            expect(
+                searches.find(search => search.start === terminal),
+            ).toMatchObject({
+                visits: 1,
+                recordExpansions: 1,
+                terminalPrunes: 0,
+            })
+        }
+    })
+
+    test("disables sharing after an over-cap hit-derived approach", () => {
+        const host = new TestHost()
+        host.setLeaf("leaf", 1)
+        const kick: SelectorDefinition<Node, number> = {
+            node: "kick",
+            get: get => get("leaf"),
+        }
+        for (const node of ["root-a", "root-b"]) {
+            host.define({ node, get: get => get("leaf") })
+            expect(valueOf(host.read<number>(node))).toBe(1)
+        }
+        const parent: SelectorDefinition<Node, number> = {
+            node: "parent",
+            get: get =>
+                get<number>("kick") +
+                get<number>("root-a") +
+                get<number>("root-b"),
+        }
+        host.define(kick)
+        host.define(parent)
+        expect(valueOf(host.read<number>("parent"))).toBe(3)
+
+        const seedClosure = new Map<Node, unknown>()
+        for (let index = 0; index < 32; index++) {
+            seedClosure.set(`seed-${index}`, undefined)
+        }
+        const overCapClosure = new Map<Node, unknown>()
+        for (let index = 0; index < 8_193; index++) {
+            overCapClosure.set(`approach-${index}`, undefined)
+        }
+
+        const memoAvailability: boolean[] = []
+        let proof = 0
+        host.cycleTrace = (
+            _start,
+            _target,
+            _cycleHost,
+            _session,
+            site,
+            _acceptedPrefixLength,
+            newEdgeProofMemo,
+        ) => {
+            if (site !== 1) return undefined
+            memoAvailability.push(newEdgeProofMemo !== undefined)
+            if (proof === 0) {
+                expect(newEdgeProofMemo?.beginSearch()).toBe(false)
+                newEdgeProofMemo?.completeNegative(seedClosure)
+            } else if (proof === 1) {
+                expect(newEdgeProofMemo?.beginSearch()).toBe(true)
+                expect(newEdgeProofMemo?.hasProvenNoPath("seed-0")).toBe(true)
+                newEdgeProofMemo?.completeNegative(overCapClosure)
+            } else {
+                expect(newEdgeProofMemo).toBeUndefined()
+            }
+            proof++
+            return undefined
+        }
+        host.define(kick)
+        host.markDirty("parent")
+
+        expect(valueOf(host.read<number>("parent"))).toBe(3)
+        expect(proof).toBe(3)
+        expect(memoAvailability).toEqual([true, true, false])
+    })
+
+    test("gives a second large anchor one proof after crossing the miss budget", () => {
+        const host = new TestHost()
+        host.setLeaf("leaf", 1)
+        const kick: SelectorDefinition<Node, number> = {
+            node: "kick",
+            get: get => get("leaf"),
+        }
+        const roots = Array.from({ length: 4 }, (_, index) => `root-${index}`)
+        for (const root of roots) {
+            host.define({ node: root, get: get => get("leaf") })
+            expect(valueOf(host.read<number>(root))).toBe(1)
+        }
+        const parent: SelectorDefinition<Node, number> = {
+            node: "parent",
+            get: get => {
+                let sum = get<number>("kick")
+                for (const root of roots) sum += get<number>(root)
+                return sum
+            },
+        }
+        host.define(kick)
+        host.define(parent)
+        expect(valueOf(host.read<number>("parent"))).toBe(5)
+
+        const makeClosure = (
+            prefix: string,
+            size: number,
+        ): ReadonlyMap<Node, unknown> => {
+            const closure = new Map<Node, unknown>()
+            for (let index = 0; index < size; index++) {
+                closure.set(`${prefix}-${index}`, undefined)
+            }
+            return closure
+        }
+        const closures = [
+            makeClosure("first", 40),
+            makeClosure("small-a", 16),
+            makeClosure("small-b", 16),
+            makeClosure("second", 400),
+            makeClosure("approach", 2),
+        ]
+        const beginResults: boolean[] = []
+        let proof = 0
+        host.cycleTrace = (
+            _start,
+            _target,
+            _cycleHost,
+            _session,
+            site,
+            _acceptedPrefixLength,
+            newEdgeProofMemo,
+        ) => {
+            if (site !== 1) return undefined
+            expect(newEdgeProofMemo).toBeDefined()
+            beginResults.push(newEdgeProofMemo!.beginSearch())
+            if (proof === 4) {
+                // The 400-node second anchor was admitted when cumulative miss
+                // work reached 64. It must receive this one opportunity and be
+                // consulted after the first anchor misses.
+                expect(newEdgeProofMemo!.hasProvenNoPath("second-0")).toBe(true)
+            }
+            newEdgeProofMemo!.completeNegative(closures[proof]!)
+            proof++
+            return undefined
+        }
+        host.define(kick)
+        host.markDirty("parent")
+
+        expect(valueOf(host.read<number>("parent"))).toBe(5)
+        expect(proof).toBe(5)
+        expect(beginResults).toEqual([false, true, true, true, true])
+    })
+
     test("keeps the ShiftX-shaped cached-cycle path exact", () => {
         const cycleIndex = 100
         const graph = buildShiftXHub(cycleIndex)
