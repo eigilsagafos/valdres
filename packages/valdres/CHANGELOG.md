@@ -1,5 +1,16 @@
 # valdres
 
+## 1.0.0-beta.31
+
+### Patch Changes
+
+- [#369](https://github.com/eigilsagafos/valdres/pull/369)
+  [`fe59e20`](https://github.com/eigilsagafos/valdres/commit/fe59e20d393113a1c723e430873f887b7cfe6f37)
+  Thanks [@eigilsagafos](https://github.com/eigilsagafos)! - Reduce selector
+  reevaluation overhead by sharing completed negative cycle proofs across
+  repeated dependency checks at the same graph observation while preserving
+  cycle attribution and canonical path reporting.
+
 ## 1.0.0-beta.30
 
 ### Patch Changes
